@@ -100,7 +100,7 @@ const SELCheckIn = dynamic(() => import('@/components/SELCheckIn'), { ssr: false
 import { MessageInput } from './_components/MessageInput';
 import { ReportDialog } from './_components/ReportDialog';
 import { LanguagePicker, ModePicker } from './_components/FoxySettings';
-import { IconButton, Chip, Badge, ConfirmDialog, Field, Input, Button } from '@/components/ui/primitives';
+import { IconButton, Chip, Badge, ConfirmDialog, Field, Input, Button, Dialog, DialogTitle, DialogBody, DialogFooter, BottomSheet } from '@/components/ui/primitives';
 
 // Foxy chapter-mastery band → canonical Badge tone (presentation-only; the
 // exact MASTERY_COLORS hex values are dropped in favour of semantic tones so
@@ -1679,52 +1679,34 @@ export default function FoxyPage() {
           Server still 422s on writes for locked subjects, this just makes
           the gate friendlier and points at /pricing. */}
       {lockedTapped && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="upgrade-modal-title"
-          className="fixed inset-0 z-[95] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setLockedTapped(null); }}
-        >
-          <div
-            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
-            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}
-          >
-            <div className="text-center mb-4">
-              <div className="text-4xl mb-2" aria-hidden="true">{lockedTapped.icon}</div>
-              <h2 id="upgrade-modal-title" className="font-bold text-xl" style={{ color: 'var(--text-1)' }}>
-                {isHi
-                  ? `${lockedTapped.nameHi} अनलॉक करें`
-                  : `Unlock ${lockedTapped.name}`}
-              </h2>
-              <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
-                {isHi
-                  ? `${lockedTapped.nameHi} एक पेड प्लान में उपलब्ध है। अभी मुफ्त प्लान में मैथ्स, अंग्रेज़ी और हिंदी मिलते हैं।`
-                  : `${lockedTapped.name} is part of our paid plans. Your free plan includes Math, English and Hindi.`}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 mt-5">
-              <button
-                onClick={() => {
-                  setLockedTapped(null);
-                  router.push('/pricing');
-                }}
-                className="w-full px-4 py-3 rounded-2xl font-bold text-sm text-white"
-                style={{ background: lockedTapped.color }}
-              >
-                {isHi ? 'प्लान देखें' : 'View plans'}
-              </button>
-              <button
-                onClick={() => setLockedTapped(null)}
-                className="w-full px-4 py-2 rounded-2xl font-semibold text-xs"
-                style={{ background: 'transparent', color: 'var(--text-3)' }}
-              >
-                {isHi ? 'बाद में' : 'Maybe later'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <Dialog open onClose={() => setLockedTapped(null)} size="sm">
+          <DialogTitle className="text-center">
+            <span className="mb-2 block text-4xl" aria-hidden="true">{lockedTapped.icon}</span>
+            {isHi
+              ? `${lockedTapped.nameHi} अनलॉक करें`
+              : `Unlock ${lockedTapped.name}`}
+          </DialogTitle>
+          <DialogBody className="text-center">
+            {isHi
+              ? `${lockedTapped.nameHi} एक पेड प्लान में उपलब्ध है। अभी मुफ्त प्लान में मैथ्स, अंग्रेज़ी और हिंदी मिलते हैं।`
+              : `${lockedTapped.name} is part of our paid plans. Your free plan includes Math, English and Hindi.`}
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="ghost" fullWidth onClick={() => setLockedTapped(null)}>
+              {isHi ? 'बाद में' : 'Maybe later'}
+            </Button>
+            <Button
+              variant="primary"
+              fullWidth
+              onClick={() => {
+                setLockedTapped(null);
+                router.push('/pricing');
+              }}
+            >
+              {isHi ? 'प्लान देखें' : 'View plans'}
+            </Button>
+          </DialogFooter>
+        </Dialog>
       )}
 
 
@@ -1909,7 +1891,7 @@ export default function FoxyPage() {
                           if (prompt) sendMessage(prompt);
                           else sendMessage(language === 'hi' ? `${cfg.name} के बारे में मुझे सिखाओ` : `Teach me about ${cfg.name}`);
                         }}
-                        className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all active:scale-95"
+                        className="px-4 py-2 rounded-xl text-xs font-bold text-on-accent transition-all active:scale-95"
                         style={{ background: cfg.color }}
                       >
                         {MODES.find(m => m.id === (urlContext.mode || 'learn'))?.emoji}{' '}
@@ -2048,36 +2030,34 @@ export default function FoxyPage() {
 
       {/* Mobile topics sheet */}
       {showTopicSheet && (
-        <>
-          <div className="fixed inset-0 z-40 lg:hidden" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setShowTopicSheet(false)} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl max-h-[75vh] flex flex-col lg:hidden" style={{ background: 'var(--surface-1)', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}>
-            <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} /></div>
-            <div className="px-4 pb-2 flex items-center justify-between">
-              <span className="text-sm font-bold" style={{ color: cfg.color }}>{cfg.icon} {cfg.name} · {language === 'hi' ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span>
-              <button onClick={() => setShowTopicSheet(false)} className="text-xs text-[var(--text-3)] font-semibold">{language === 'hi' ? 'बंद करो' : 'Close'}</button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
-              {topics.map((topic: any) => {
-                const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
-                const pct = mastery?.mastery_percent || 0;
-                const lvl = mastery?.mastery_level || 'not_started';
-                const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
-                return (
-                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `${lc}15` }}>{cfg.icon}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: lc }} /></div>
-                        <span className="text-[10px] font-bold capitalize shrink-0" style={{ color: lc }}>{pct}%</span>
-                      </div>
+        <BottomSheet
+          open
+          onClose={() => setShowTopicSheet(false)}
+          title={<span style={{ color: cfg.color }}>{cfg.icon} {cfg.name} · {language === 'hi' ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span>}
+          handleLabel={language === 'hi' ? 'अध्याय सूची बंद करो' : 'Close chapters'}
+          className="lg:hidden"
+        >
+          <div className="space-y-2">
+            {topics.map((topic: any) => {
+              const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+              const pct = mastery?.mastery_percent || 0;
+              const lvl = mastery?.mastery_level || 'not_started';
+              const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
+              return (
+                <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `${lc}15` }}>{cfg.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: lc }} /></div>
+                      <span className="text-[10px] font-bold capitalize shrink-0" style={{ color: lc }}>{pct}%</span>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-        </>
+        </BottomSheet>
       )}
 
 

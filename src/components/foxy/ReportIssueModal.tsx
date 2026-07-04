@@ -2,12 +2,20 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { Button, IconButton, Textarea } from '@/components/ui/primitives';
 
 /* ═══════════════════════════════════════════════════════════════
    ReportIssueModal — student-facing issue reporter for AI answers.
 
    Posts to /api/support/ai-issue which inserts into ai_issue_reports.
    Referenced from ChatBubble's "Report an issue" link (Task 3.15).
+
+   Presentation: re-skinned to tokens + primitives (Textarea / Button /
+   IconButton), fully bilingual with Devanagari Hindi copy. The reason
+   picker stays a real radio-group (5 role="radio" options) and the shell
+   keeps its role="dialog" + data-testid contract — the pinned a11y/
+   regression surface is unchanged. The POST path/payload and every
+   handler are untouched (P12).
 
    Accepts optional traceId, messageId, questionBankId so the admin
    review queue can look up the exact generation that was flagged.
@@ -31,11 +39,11 @@ export interface ReportIssueModalProps {
 const MAX_COMMENT_LENGTH = 500;
 
 const REASON_OPTIONS: { value: ReportReasonCategory; en: string; hi: string }[] = [
-  { value: 'wrong_answer', en: 'Wrong answer', hi: 'Galat jawab' },
-  { value: 'off_topic', en: 'Off topic / not from my chapter', hi: 'Mere chapter se nahi hai' },
-  { value: 'inappropriate', en: 'Inappropriate or unsafe content', hi: 'Galat ya unsafe content' },
-  { value: 'unclear', en: 'Unclear / hard to understand', hi: 'Samjhane mein mushkil' },
-  { value: 'other', en: 'Other', hi: 'Doosra' },
+  { value: 'wrong_answer', en: 'Wrong answer', hi: 'गलत जवाब' },
+  { value: 'off_topic', en: 'Off topic / not from my chapter', hi: 'विषय से हटकर / मेरे अध्याय से नहीं' },
+  { value: 'inappropriate', en: 'Inappropriate or unsafe content', hi: 'अनुचित या असुरक्षित सामग्री' },
+  { value: 'unclear', en: 'Unclear / hard to understand', hi: 'अस्पष्ट / समझने में मुश्किल' },
+  { value: 'other', en: 'Other', hi: 'अन्य' },
 ];
 
 export function ReportIssueModal({
@@ -60,7 +68,7 @@ export function ReportIssueModal({
     setSubmitError(null);
 
     if (!reasonCategory) {
-      setValidationError(isHi ? 'Karan chune' : 'Please choose a reason');
+      setValidationError(isHi ? 'कृपया एक कारण चुनें' : 'Please choose a reason');
       return;
     }
 
@@ -93,7 +101,7 @@ export function ReportIssueModal({
     } catch (err) {
       setSubmitError(
         isHi
-          ? 'Report bhejte waqt problem aayi. Phir try karein.'
+          ? 'रिपोर्ट भेजते समय समस्या हुई। कृपया फिर से कोशिश करें।'
           : 'Something went wrong. Please try again.',
       );
     }
@@ -106,42 +114,38 @@ export function ReportIssueModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="report-issue-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      style={{ backgroundColor: 'var(--scrim)' }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+      <div className="w-full max-w-md rounded-2xl bg-surface-1 p-5 shadow-lg">
         {success ? (
           <div className="py-6 text-center" data-testid="report-issue-success">
-            <p className="text-lg font-semibold text-green-700">
-              ✓ {isHi ? 'Dhanyavaad — hum behtar karenge' : 'Got it — thanks for helping us improve'}
+            <p className="text-fluid-md font-semibold" style={{ color: 'var(--success)' }}>
+              ✓ {isHi ? 'धन्यवाद — हम इसे बेहतर बनाएँगे' : 'Got it — thanks for helping us improve'}
             </p>
           </div>
         ) : (
           <>
-            <div className="flex items-start justify-between">
-              <h2
-                id="report-issue-title"
-                className="text-base font-bold text-gray-900"
-              >
-                {isHi ? 'Is jawab mein kya problem hai?' : 'What\u2019s wrong with this answer?'}
+            <div className="flex items-start justify-between gap-2">
+              <h2 id="report-issue-title" className="text-fluid-base font-bold text-foreground">
+                {isHi ? 'इस जवाब में क्या समस्या है?' : 'What’s wrong with this answer?'}
               </h2>
-              <button
-                type="button"
+              <IconButton
+                variant="ghost"
+                size="sm"
                 onClick={onClose}
-                aria-label={isHi ? 'Band karein' : 'Close'}
-                className="ml-2 rounded-full p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
-              >
-                ✕
-              </button>
+                label={isHi ? 'बंद करें' : 'Close'}
+                icon={<span aria-hidden="true">✕</span>}
+                className="-me-1.5 -mt-1 shrink-0"
+              />
             </div>
 
             <fieldset className="mt-4 space-y-2">
-              <legend className="sr-only">
-                {isHi ? 'Karan' : 'Reason'}
-              </legend>
+              <legend className="sr-only">{isHi ? 'कारण' : 'Reason'}</legend>
               {REASON_OPTIONS.map((opt) => (
                 <label
                   key={opt.value}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm transition hover:bg-gray-50"
+                  className="flex cursor-pointer items-center gap-2 rounded-lg border border-surface-3 px-3 py-2.5 text-fluid-sm transition-colors hover:bg-surface-2"
                 >
                   <input
                     type="radio"
@@ -149,60 +153,55 @@ export function ReportIssueModal({
                     value={opt.value}
                     checked={reasonCategory === opt.value}
                     onChange={() => setReasonCategory(opt.value)}
-                    className="accent-orange-500"
+                    style={{ accentColor: 'var(--primary)' }}
                   />
-                  <span className="text-gray-800">{isHi ? opt.hi : opt.en}</span>
+                  <span className="text-foreground">{isHi ? opt.hi : opt.en}</span>
                 </label>
               ))}
             </fieldset>
 
             <label className="mt-4 block">
-              <span className="text-xs font-medium text-gray-700">
-                {isHi ? 'Aur detail (optional)' : 'Additional detail (optional)'}
+              <span className="text-fluid-xs font-medium" style={{ color: 'var(--text-2)' }}>
+                {isHi ? 'अतिरिक्त जानकारी (वैकल्पिक)' : 'Additional detail (optional)'}
               </span>
-              <textarea
+              <Textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value.slice(0, MAX_COMMENT_LENGTH))}
                 maxLength={MAX_COMMENT_LENGTH}
-                rows={3}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-400"
-                placeholder={isHi ? 'Kya galat hai samjhaiye...' : 'Tell us what went wrong...'}
+                minRows={3}
+                className="mt-1"
+                placeholder={isHi ? 'बताइए क्या गलत है...' : 'Tell us what went wrong...'}
               />
-              <span className="mt-1 block text-right text-[10px] text-gray-500">
+              <span className="mt-1 block text-right text-fluid-xs" style={{ color: 'var(--text-3)' }}>
                 {comment.length}/{MAX_COMMENT_LENGTH}
               </span>
             </label>
 
             {validationError && (
-              <p role="alert" className="mt-2 text-xs text-red-600" data-testid="report-issue-validation-error">
+              <p
+                role="alert"
+                className="mt-2 text-fluid-xs"
+                style={{ color: 'var(--danger)' }}
+                data-testid="report-issue-validation-error"
+              >
                 {validationError}
               </p>
             )}
             {submitError && (
-              <p role="alert" className="mt-2 text-xs text-red-600">
+              <p role="alert" className="mt-2 text-fluid-xs" style={{ color: 'var(--danger)' }}>
                 {submitError}
               </p>
             )}
 
             <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={submitting}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
-              >
-                {isHi ? 'Cancel' : 'Cancel'}
-              </button>
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 disabled:opacity-60"
-              >
+              <Button variant="ghost" size="sm" onClick={onClose} disabled={submitting}>
+                {isHi ? 'रद्द करें' : 'Cancel'}
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleSubmit} loading={submitting}>
                 {submitting
-                  ? (isHi ? 'Bhej rahe hain...' : 'Submitting...')
-                  : (isHi ? 'Bhejein' : 'Submit')}
-              </button>
+                  ? isHi ? 'भेजा जा रहा है...' : 'Submitting...'
+                  : isHi ? 'भेजें' : 'Submit'}
+              </Button>
             </div>
           </>
         )}

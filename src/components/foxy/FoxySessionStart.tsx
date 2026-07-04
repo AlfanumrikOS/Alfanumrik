@@ -1,11 +1,16 @@
 'use client';
 
-import { FoxyAvatar, Button } from '@/components/ui';
+import { FoxyAvatar } from '@/components/ui';
+import { Chip, Button } from '@/components/ui/primitives';
 
 /**
  * FoxySessionStart — Mode and subject picker for starting a Foxy session.
  * Replaces the complex toolbar with a clean, guided selection.
  * Foxy leads: "What shall we do?"
+ *
+ * Presentation-only, token-driven: subject pills → Chip, mode + Foxy
+ * recommendation → Button (real buttons, 44px, AA, no clickable divs).
+ * Bilingual via `isHi` (P7).
  */
 
 interface SessionMode {
@@ -52,70 +57,73 @@ export default function FoxySessionStart({
     <div className="flex flex-col items-center px-4 py-6 animate-fade-in">
       {/* Foxy greeting */}
       <FoxyAvatar state="idle" size="lg" />
-      <h2 className="text-lg font-bold mt-4" style={{ fontFamily: 'var(--font-display)' }}>
+      <h2 className="mt-4 text-fluid-lg font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
         {isHi ? 'आज क्या करें?' : 'What shall we do?'}
       </h2>
 
       {/* Subject pills */}
       {subjects.length > 1 && (
-        <div className="flex flex-wrap gap-2 justify-center mt-4">
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
           {subjects.map((s) => (
-            <button
+            <Chip
               key={s.code}
+              selected={selectedSubject === s.code}
               onClick={() => onSelectSubject(s.code)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all"
-              style={{
-                background: selectedSubject === s.code ? `${s.color}15` : 'var(--surface-1)',
-                border: `1.5px solid ${selectedSubject === s.code ? s.color : 'var(--border)'}`,
-                color: selectedSubject === s.code ? s.color : 'var(--text-2)',
-              }}
+              icon={<span aria-hidden="true">{s.icon}</span>}
             >
-              <span>{s.icon}</span>
               {s.name}
-            </button>
+            </Chip>
           ))}
         </div>
       )}
 
       {/* Foxy recommendation */}
       {foxyRecommendation && (
-        <button
+        <Button
+          variant="secondary"
+          fullWidth
           onClick={() => onSelectMode(foxyRecommendation.mode)}
-          className="w-full max-w-sm mt-5 p-4 rounded-xl text-left transition-all active:scale-[0.98]"
+          className="mt-5 h-auto max-w-sm justify-start rounded-xl py-4 text-left"
           style={{
-            background: 'linear-gradient(135deg, #FFF7ED, #FEF3E2)',
-            border: '1.5px solid rgba(232,88,28,0.2)',
+            backgroundColor: 'color-mix(in srgb, var(--accent-warm) 10%, var(--surface-1))',
+            borderColor: 'color-mix(in srgb, var(--accent-warm) 25%, transparent)',
           }}
         >
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm">🦊</span>
-            <span className="text-xs font-bold" style={{ color: 'var(--orange)' }}>
-              {isHi ? 'Foxy सुझाव' : 'Foxy suggests'}
+          <span className="flex min-w-0 flex-col">
+            <span className="flex items-center gap-2">
+              <span aria-hidden="true">🦊</span>
+              <span className="text-fluid-xs font-bold" style={{ color: 'var(--accent-warm)' }}>
+                {isHi ? 'Foxy का सुझाव' : 'Foxy suggests'}
+              </span>
             </span>
-          </div>
-          <p className="text-sm font-semibold text-[var(--text-1)]">{foxyRecommendation.topic}</p>
-        </button>
+            <span className="mt-1 text-fluid-sm font-semibold text-foreground">
+              {foxyRecommendation.topic}
+            </span>
+          </span>
+        </Button>
       )}
 
       {/* Mode cards */}
-      <div className="w-full max-w-sm mt-5 space-y-2">
+      <div className="mt-5 w-full max-w-sm space-y-2">
         {SESSION_MODES.map((mode) => (
-          <button
+          <Button
             key={mode.id}
+            variant="secondary"
+            fullWidth
             onClick={() => onSelectMode(mode.id)}
-            className="w-full p-4 rounded-xl text-left flex items-center gap-3 transition-all active:scale-[0.98]"
-            style={{
-              background: 'var(--surface-1)',
-              border: '1px solid var(--border)',
-            }}
+            leadingIcon={<span className="text-2xl">{mode.emoji}</span>}
+            trailingIcon={<span aria-hidden="true" style={{ color: 'var(--text-3)' }}>→</span>}
+            className="h-auto justify-start gap-3 rounded-xl py-4 text-left"
           >
-            <span className="text-2xl">{mode.emoji}</span>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold">{isHi ? mode.labelHi : mode.label}</div>
-              <div className="text-xs text-[var(--text-3)] mt-0.5">{isHi ? mode.descHi : mode.desc}</div>
-            </div>
-            <span className="text-[var(--text-3)]">→</span>
-          </button>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-fluid-sm font-semibold text-foreground">
+                {isHi ? mode.labelHi : mode.label}
+              </span>
+              <span className="mt-0.5 text-fluid-xs" style={{ color: 'var(--text-3)' }}>
+                {isHi ? mode.descHi : mode.desc}
+              </span>
+            </span>
+          </Button>
         ))}
       </div>
     </div>

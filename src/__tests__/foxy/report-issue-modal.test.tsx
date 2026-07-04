@@ -45,10 +45,11 @@ describe('ReportIssueModal', () => {
     expect(screen.getByLabelText(/other/i)).toBeInTheDocument();
   });
 
-  it('renders Hindi copy when isHi = true', () => {
+  it('renders Hindi (Devanagari) copy when isHi = true', () => {
     mockIsHi.value = true;
     render(<ReportIssueModal isOpen={true} onClose={vi.fn()} />);
-    expect(screen.getByLabelText(/Galat jawab/i)).toBeInTheDocument();
+    // Copy fixed from romanized "Galat jawab" to Devanagari "गलत जवाब" (P7).
+    expect(screen.getByLabelText(/गलत जवाब/)).toBeInTheDocument();
   });
 
   it('shows validation error when submitted without a reason', async () => {

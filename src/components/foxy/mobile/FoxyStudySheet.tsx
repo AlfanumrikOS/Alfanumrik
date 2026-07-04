@@ -4,25 +4,25 @@
  * FoxyStudySheet — Foxy OS (ff_foxy_os_v1) mobile Study bottom sheet (<lg only).
  *
  * Consolidates the legacy Foxy header rows (subject tabs · chapter dropdown ·
- * mode bar · lesson stepper) into a single bottom sheet built on the shared
- * `SheetModal` primitive (the same one ContextPanel uses).
+ * mode bar · lesson stepper) into a single bottom sheet built on the canonical
+ * `BottomSheet` primitive.
  *
  * PRESENTATION ONLY. Every action calls an existing handler passed as a prop
  * from /foxy/page.tsx — switchSubject / selectTopic / switchMode / onStartQuiz
  * (preserves P4 quiz routing through /quiz) / advanceLessonStep. No chat /
- * scoring / AI logic lives here. Cosmic light tokens only (no dark mode),
- * CSS-only motion (no framer-motion). Bilingual via `isHi`.
+ * scoring / AI logic lives here. Token-driven light surfaces only (no dark
+ * mode), CSS-only motion (no framer-motion). Bilingual via `isHi`.
  *
- * Accessibility: SheetModal already provides role="dialog" aria-modal and
- * Escape-to-close. This component fills the remaining gaps — it traps focus
- * within the sheet and returns focus to the element that opened it on close.
+ * Accessibility: BottomSheet provides role="dialog" aria-modal, Escape-to-close,
+ * scroll lock, a >=44px drag handle, focus trap, and focus-return-to-trigger.
+ * This component adds the subject-tablist roving-tabindex arrow-key navigation.
  *
  * Lazy-loaded via dynamic() at the call site so the OFF path fetches zero new
  * chunks (P10).
  */
 
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { SheetModal } from '@/components/ui';
+import { useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { BottomSheet } from '@/components/ui/primitives';
 
 export interface StudySheetSubject {
   code: string;
@@ -111,14 +111,8 @@ export function FoxyStudySheet({
   onStartQuiz,
   lesson,
 }: FoxyStudySheetProps) {
-  const sheetRef = useRef<HTMLDivElement>(null);
-  // Remember the element that had focus when the sheet opened so we can
-  // return focus to it on close (SheetModal does not do this for us).
-  const triggerRef = useRef<HTMLElement | null>(null);
-  // Cached focusable list, computed once per open (Phase 4 optimization — the
-  // Tab handler no longer re-queries the DOM on every keydown).
-  const focusablesRef = useRef<HTMLElement[]>([]);
   // Subject tablist — drives roving-tabindex arrow-key navigation (Phase 3 a11y).
+  // Focus trap + focus-return are provided by the BottomSheet primitive.
   const subjectTablistRef = useRef<HTMLDivElement>(null);
 
   // Left/Right arrow navigation across the subject tabs. Moves DOM focus to the
@@ -144,56 +138,14 @@ export function FoxyStudySheet({
     tabs[next]?.focus();
   };
 
-  useEffect(() => {
-    if (!open) return;
-    triggerRef.current = (document.activeElement as HTMLElement) ?? null;
-    const FOCUSABLE_SELECTOR =
-      'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])';
-    // Compute the focusable list once per open and cache it. The roving-tabindex
-    // tablist means tabindex="-1" tabs are correctly excluded at query time.
-    const refreshFocusables = () => {
-      focusablesRef.current = sheetRef.current
-        ? Array.from(sheetRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-        : [];
-    };
-    // Move focus into the sheet on open, then snapshot the focusable list.
-    const id = window.requestAnimationFrame(() => {
-      refreshFocusables();
-      focusablesRef.current[0]?.focus();
-    });
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-      const focusables = focusablesRef.current;
-      if (focusables.length === 0) return;
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-
-    return () => {
-      window.cancelAnimationFrame(id);
-      document.removeEventListener('keydown', onKeyDown);
-      focusablesRef.current = [];
-      // Return focus to the trigger.
-      triggerRef.current?.focus?.();
-    };
-  }, [open]);
-
   return (
-    <SheetModal
+    <BottomSheet
       open={open}
       onClose={onClose}
       title={isHi ? 'अध्ययन' : 'Study'}
+      handleLabel={isHi ? 'अध्ययन शीट बंद करें' : 'Close study sheet'}
     >
-      <div ref={sheetRef} className="foxy-os-study space-y-5">
+      <div className="foxy-os-study space-y-5">
         {/* ── Subject tabs ───────────────────────────────────── */}
         {/* Phase 3 a11y: a true ARIA tablist. Each subject is role="tab" with
             aria-selected + a roving tabindex (only the active tab is in the Tab
@@ -411,7 +363,7 @@ export function FoxyStudySheet({
               type="button"
               onClick={lesson.onNext}
               disabled={!lesson.canAdvance}
-              className="foxy-os-tap w-full rounded-xl text-xs font-bold text-white transition-all active:scale-[0.98] disabled:opacity-40"
+              className="foxy-os-tap w-full rounded-xl text-xs font-bold text-on-accent transition-all active:scale-[0.98] disabled:opacity-40"
               style={{ background: subjectColor }}
             >
               {lesson.isFinalStep
@@ -421,7 +373,7 @@ export function FoxyStudySheet({
           </section>
         )}
       </div>
-    </SheetModal>
+    </BottomSheet>
   );
 }
 
