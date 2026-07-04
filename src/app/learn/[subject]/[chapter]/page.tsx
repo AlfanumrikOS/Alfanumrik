@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense, type CSSProperties } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/lib/AuthContext';
@@ -19,6 +19,27 @@ import {
   isUsableChapterDeck,
 } from '@/lib/chapter-reader/get-concepts-from-table';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
+// Canonical primitive layer (Phase 5c-1). Aliased so the QUIZ + REPORT phases
+// (Phase 5c-2, P1/P4-sensitive — untouched here) keep rendering the legacy
+// Card/Button/ProgressBar above, while the chrome + EXPLAINING phase + Quick
+// Check below are rebuilt on the token-driven primitives.
+import {
+  Card as UICard,
+  Button as UIButton,
+  ProgressBar as UIProgressBar,
+  IconButton,
+  Badge,
+  Alert,
+  EmptyState,
+  Skeleton,
+  SkeletonText,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanel,
+  BottomSheet,
+  type Tone,
+} from '@/components/ui/primitives';
 // Mobile-first responsive shell (2026-05-19, Phase 2 — followup #1 of PR #867).
 // Wraps the chapter concept walkthrough in a CSS-Grid shell with safe-area
 // insets, scroll-compacting header, and one-handed mode. The page header
@@ -36,6 +57,7 @@ import { loadChapterContent } from './actions';
 import type { ChapterContent } from '@/lib/learn/fetchChapterContent';
 import { resolvePedagogyRule } from '@/lib/learn/pedagogy-content-rules';
 import { useChapterReadiness } from '@/lib/useChapterReadiness';
+import { cn } from '@/lib/utils';
 
 // Lazy-loaded so the markdown + KaTeX bundle stays out of first paint.
 // Only pulled when the student opens Read mode.
@@ -1033,31 +1055,39 @@ function ChapterConceptPageContent() {
         <AppShell
           variant="mobile"
           header={
-            <div className="page-header-inner flex items-center gap-3">
-              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
-              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+            <div className="page-header-inner flex items-center gap-2">
+              <IconButton
+                variant="ghost"
+                size="sm"
+                label={isHi ? 'वापस' : 'Back'}
+                icon={<span aria-hidden="true">&larr;</span>}
+                onClick={() => router.push('/dashboard')}
+                className="-ms-2"
+              />
+              <span className="text-fluid-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
                 {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
               </span>
             </div>
           }
         >
-        <main className="w-full px-4 md:px-8 py-12 text-center">
-          <div className="text-5xl mb-4">📡</div>
-          <p className="text-base font-semibold text-[var(--text-2)] mb-2">
-            {isHi ? 'यह अध्याय लोड नहीं हो सका' : "Couldn't load this chapter"}
-          </p>
-          <p className="text-sm text-[var(--text-3)] mb-6">
-            {isHi ? 'नेटवर्क धीमा लग रहा है — फिर से कोशिश करो।' : 'Your network looks slow — please try again.'}
-          </p>
-          <Button onClick={() => load()} color={subMeta?.color}>
-            🔄 {isHi ? 'फिर से कोशिश करो' : 'Retry'}
-          </Button>
-          <button
-            onClick={() => router.push('/learn')}
-            className="mt-3 block mx-auto px-6 py-2.5 rounded-xl text-sm font-semibold text-[var(--text-3)] hover:bg-gray-50 active:scale-[0.98] transition-all"
+        <main className="w-full px-4 md:px-8 py-8 max-w-md mx-auto flex flex-col gap-4">
+          <Alert
+            tone="danger"
+            icon={<span aria-hidden="true">📡</span>}
+            title={isHi ? 'यह अध्याय लोड नहीं हो सका' : "Couldn't load this chapter"}
+            action={
+              <div className="flex flex-col gap-2">
+                <UIButton onClick={() => load()}>
+                  🔄 {isHi ? 'फिर से कोशिश करो' : 'Retry'}
+                </UIButton>
+                <UIButton variant="ghost" onClick={() => router.push('/learn')}>
+                  {isHi ? '← विषय सूची पर वापस जाओ' : '← Back to Subjects'}
+                </UIButton>
+              </div>
+            }
           >
-            {isHi ? '← विषय सूची पर वापस जाओ' : '← Back to Subjects'}
-          </button>
+            {isHi ? 'नेटवर्क धीमा लग रहा है — फिर से कोशिश करो।' : 'Your network looks slow — please try again.'}
+          </Alert>
         </main>
         </AppShell>
       </div>
@@ -1075,34 +1105,44 @@ function ChapterConceptPageContent() {
           variant="mobile"
           
           header={
-            <div className="page-header-inner flex items-center gap-3">
-              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
-              <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+            <div className="page-header-inner flex items-center gap-2">
+              <IconButton
+                variant="ghost"
+                size="sm"
+                label={isHi ? 'वापस' : 'Back'}
+                icon={<span aria-hidden="true">&larr;</span>}
+                onClick={() => router.push('/dashboard')}
+                className="-ms-2"
+              />
+              <span className="text-fluid-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
                 {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
               </span>
             </div>
           }
         >
-        <main className="w-full px-4 md:px-8 py-12 text-center">
-          <div className="text-5xl mb-4">📚</div>
-          <p className="text-base font-semibold text-[var(--text-2)] mb-2">
-            {isHi ? 'अभी कोई अवधारणा नहीं मिली' : 'No concepts found for this chapter yet'}
-          </p>
-          <p className="text-sm text-[var(--text-3)] mb-6">
-            {isHi ? 'Foxy से इस अध्याय के बारे में पूछो' : 'Ask Foxy to teach you this chapter'}
-          </p>
-          <Button onClick={askFoxy} color={subMeta?.color}>
-            🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
-          </Button>
-          <button
-            onClick={() => {
-              const p = new URLSearchParams({ subject, mode: 'practice' });
-              router.push(`/quiz?${p.toString()}`);
-            }}
-            className="mt-3 px-6 py-2.5 rounded-xl text-sm font-semibold bg-orange-500 text-white hover:bg-orange-600 active:scale-[0.98] transition-all"
-          >
-            {isHi ? '⚡ क्विज़ लो' : '⚡ Take a Quiz'}
-          </button>
+        <main className="w-full px-4 md:px-8 py-8 max-w-md mx-auto">
+          <EmptyState
+            icon={<span aria-hidden="true">📚</span>}
+            title={isHi ? 'अभी कोई अवधारणा नहीं मिली' : 'No concepts found for this chapter yet'}
+            description={isHi ? 'Foxy से इस अध्याय के बारे में पूछो' : 'Ask Foxy to teach you this chapter'}
+            action={
+              <div className="flex w-full flex-col gap-2">
+                <UIButton fullWidth onClick={askFoxy}>
+                  🦊 {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+                </UIButton>
+                <UIButton
+                  fullWidth
+                  variant="secondary"
+                  onClick={() => {
+                    const p = new URLSearchParams({ subject, mode: 'practice' });
+                    router.push(`/quiz?${p.toString()}`);
+                  }}
+                >
+                  {isHi ? '⚡ क्विज़ लो' : '⚡ Take a Quiz'}
+                </UIButton>
+              </div>
+            }
+          />
         </main>
         </AppShell>
       </div>
@@ -1161,52 +1201,109 @@ function ChapterConceptPageContent() {
   // needing extra clearance.
   const learnHeaderContent = (
     <div className="w-full px-4 md:px-8 py-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] mr-1">&larr;</button>
-          <span className="text-lg">{subMeta?.icon}</span>
-          <span className="text-sm font-semibold truncate" style={{ color: subMeta?.color }}>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <IconButton
+            variant="ghost"
+            size="sm"
+            label={isHi ? 'वापस' : 'Back'}
+            icon={<span aria-hidden="true">&larr;</span>}
+            onClick={() => router.push('/dashboard')}
+            className="-ms-2 shrink-0"
+          />
+          <span className="text-fluid-base shrink-0" aria-hidden="true">{subMeta?.icon}</span>
+          <span className="text-fluid-sm font-semibold truncate" style={{ color: subMeta?.color }}>
             {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
             {chapterMeta ? `: ${isHi && chapterMeta.title_hi ? chapterMeta.title_hi : chapterMeta.title}` : ''}
             {chapterMeta?.ncert_page_start ? (isHi ? ` (पृष्ठ ${chapterMeta.ncert_page_start}-${chapterMeta.ncert_page_end})` : ` (Pages ${chapterMeta.ncert_page_start}-${chapterMeta.ncert_page_end})`) : ''}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {phase === 'explaining' && (
-            <button
-              type="button"
+            <IconButton
+              variant="ghost"
+              size="sm"
+              label={isHi ? 'अवधारणा सूची' : 'Concept index'}
+              icon={<span aria-hidden="true">📋</span>}
               onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden text-[10px] font-bold px-2.5 py-1 rounded-full transition-all active:scale-95 flex items-center gap-1"
-              style={{ background: 'rgba(232,88,28,0.10)', color: 'var(--orange)', border: '1px solid rgba(232,88,28,0.2)' }}
-            >
-              📋 {isHi ? 'सूची' : 'Index'}
-            </button>
+              className="md:hidden"
+            />
           )}
           {readModeFlagOn && (
-            <button
-              type="button"
+            <UIButton
+              variant="secondary"
+              size="sm"
               onClick={switchToReadMode}
-              className="text-[10px] font-bold px-2 py-1 rounded-full transition-all active:scale-95"
-              style={{ background: 'rgba(124,58,237,0.10)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)' }}
               data-testid="learn-mode-read-toggle"
               aria-label={isHi ? 'पढ़ाई मोड पर जाएँ' : 'Switch to Read mode'}
             >
               📖 {isHi ? 'पढ़ें' : 'Read'}
-            </button>
+            </UIButton>
           )}
           {phase === 'explaining' && (
-            <span className="text-xs font-medium text-[var(--text-3)]">
+            <span className="text-fluid-xs font-semibold text-muted-foreground tabular-nums">
               {currentIdx + 1}/{topics.length}
             </span>
           )}
           {phase === 'quiz' && (
-            <span className="text-xs font-medium text-[var(--text-3)]">
+            <span className="text-fluid-xs font-semibold text-muted-foreground tabular-nums">
               {quizCurrentIdx + 1}/{questions.length}
             </span>
           )}
         </div>
       </div>
-      <ProgressBar value={progressPct} color={subMeta?.color} height={5} />
+      <UIProgressBar
+        value={progressPct}
+        tone="brand"
+        size="sm"
+        ariaLabel={isHi ? 'अध्याय प्रगति' : 'Chapter progress'}
+      />
+    </div>
+  );
+
+  // Concept index — shared by the desktop aside and the mobile BottomSheet.
+  // `onNavigate` runs after selecting a concept (e.g. to close the sheet).
+  const conceptNavList = (onNavigate?: () => void) => (
+    <div className="flex flex-col gap-1.5">
+      {topics.map((t, idx) => {
+        const isSelected = idx === currentIdx;
+        const isCompleted = completedTopics.has(t.id);
+        return (
+          <button
+            key={t.id}
+            type="button"
+            aria-current={isSelected ? 'true' : undefined}
+            onClick={() => {
+              setCurrentIdx(idx);
+              setActiveTab('core');
+              onNavigate?.();
+            }}
+            className={cn(
+              'flex w-full min-h-12 items-center gap-3 rounded-xl border p-3 text-start text-fluid-sm transition-colors duration-150 motion-reduce:transition-none',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
+              isSelected
+                ? 'border-primary bg-surface-2 font-semibold text-foreground'
+                : 'border-transparent text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+            )}
+          >
+            <span
+              className={cn(
+                'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-fluid-xs font-bold',
+                isCompleted ? 'bg-success' : isSelected ? 'bg-primary' : 'bg-surface-3 text-muted-foreground',
+              )}
+              // 'white' is the sanctioned on-accent foreground (design-system §8 /
+              // primitives tokens.ts) — a CSS keyword, not a hex/text-white literal.
+              style={isCompleted || isSelected ? { color: 'white' } : undefined}
+              aria-hidden="true"
+            >
+              {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
+            </span>
+            <span className="line-clamp-2 leading-snug">
+              {isHi && t.title_hi ? t.title_hi : t.title}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -1225,100 +1322,27 @@ function ChapterConceptPageContent() {
         
         {/* Sidebar Index (hidden on mobile, permanent on desktop md:flex) */}
         {phase === 'explaining' && (
-          <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white/70 backdrop-blur-md border border-gray-100 rounded-2xl p-4 self-start sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'अध्याय की अवधारणाएँ' : 'Chapter Concepts'}
-            </h3>
-            <div className="space-y-1.5">
-              {topics.map((t, idx) => {
-                const isSelected = idx === currentIdx;
-                const isCompleted = completedTopics.has(t.id);
-
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      setCurrentIdx(idx);
-                      setActiveTab('core');
-                    }}
-                    className={`w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center gap-3 text-xs border ${
-                      isSelected 
-                        ? 'bg-orange-50/50 border-orange-200 shadow-sm font-semibold text-orange-950' 
-                        : 'border-transparent hover:bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
-                      isCompleted 
-                        ? 'bg-green-100 text-green-700 font-bold' 
-                        : isSelected 
-                          ? 'bg-orange-500 text-white shadow-sm' 
-                          : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
-                    </span>
-                    <span className="leading-snug font-medium line-clamp-2">
-                      {isHi && t.title_hi ? t.title_hi : t.title}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+          <aside className="hidden md:block w-64 shrink-0 self-start sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
+            <UICard variant="flat" className="p-4">
+              <h3 className="mb-3 text-fluid-xs font-bold uppercase tracking-wider text-muted-foreground" style={{ fontFamily: 'var(--font-display)' }}>
+                {isHi ? 'अध्याय की अवधारणाएँ' : 'Chapter Concepts'}
+              </h3>
+              {conceptNavList()}
+            </UICard>
           </aside>
         )}
 
-        {/* Slide-out Mobile Drawer */}
-        {phase === 'explaining' && isSidebarOpen && (
-          <div className="fixed inset-0 z-50 flex md:hidden animate-fadeIn">
-            {/* Backdrop */}
-            <div 
-              className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-              onClick={() => setIsSidebarOpen(false)}
-            />
-            {/* Drawer Content */}
-            <div className="absolute right-0 top-0 bottom-0 w-72 bg-white p-4 shadow-2xl flex flex-col gap-4 overflow-y-auto">
-              <div className="flex items-center justify-between border-b pb-2">
-                <h3 className="text-sm font-bold text-gray-800" style={{ fontFamily: 'var(--font-display)' }}>
-                  {isHi ? 'अध्याय की अवधारणाएँ' : 'Chapter Concepts'}
-                </h3>
-                <button onClick={() => setIsSidebarOpen(false)} className="text-gray-400 font-bold text-lg">&times;</button>
-              </div>
-              <div className="space-y-1.5 flex-1">
-                {topics.map((t, idx) => {
-                  const isSelected = idx === currentIdx;
-                  const isCompleted = completedTopics.has(t.id);
-
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => {
-                        setCurrentIdx(idx);
-                        setActiveTab('core');
-                        setIsSidebarOpen(false);
-                      }}
-                      className={`w-full text-left p-3 rounded-xl transition-all duration-200 flex items-center gap-3 text-xs border ${
-                        isSelected 
-                          ? 'bg-orange-50/50 border-orange-200 shadow-sm font-semibold text-orange-950' 
-                          : 'border-transparent hover:bg-gray-50 text-gray-700'
-                      }`}
-                    >
-                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all ${
-                        isCompleted 
-                          ? 'bg-green-100 text-green-700 font-bold' 
-                          : isSelected 
-                            ? 'bg-orange-500 text-white shadow-sm' 
-                            : 'bg-gray-100 text-gray-400'
-                      }`}>
-                        {isCompleted ? '✓' : isSelected ? '▶' : idx + 1}
-                      </span>
-                      <span className="leading-snug font-medium line-clamp-2">
-                        {isHi && t.title_hi ? t.title_hi : t.title}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+        {/* Mobile concept index — canonical BottomSheet (swipe/Escape/scrim close). */}
+        {phase === 'explaining' && (
+          <BottomSheet
+            open={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
+            title={isHi ? 'अध्याय की अवधारणाएँ' : 'Chapter Concepts'}
+            handleLabel={isHi ? 'सूची बंद करें' : 'Close concept index'}
+            className="md:hidden"
+          >
+            {conceptNavList(() => setIsSidebarOpen(false))}
+          </BottomSheet>
         )}
 
         {/* Main Card Panel Column */}
@@ -1340,30 +1364,36 @@ function ChapterConceptPageContent() {
 
               {/* Concept label */}
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
+                <span className="text-fluid-xs font-bold text-muted-foreground uppercase tracking-wider">
                   {isHi ? `अवधारणा ${currentIdx + 1}/${topics.length}` : `Concept ${currentIdx + 1} of ${topics.length}`}
                 </span>
                 <span
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: `${bloomCfg.color}18`, color: bloomCfg.color }}
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-fluid-xs font-semibold"
+                  style={{
+                    // bloomCfg.color is a data-driven theme value from the cognitive
+                    // engine (not a literal in this file) — token-equivalent tint.
+                    backgroundColor: `color-mix(in srgb, ${bloomCfg.color} 14%, var(--surface-1))`,
+                    borderColor: `color-mix(in srgb, ${bloomCfg.color} 34%, transparent)`,
+                    color: 'var(--text-1)',
+                  }}
                 >
-                  {bloomCfg.icon} {isHi ? bloomCfg.labelHi : bloomCfg.label}
+                  <span aria-hidden="true">{bloomCfg.icon}</span> {isHi ? bloomCfg.labelHi : bloomCfg.label}
                 </span>
               </div>
 
-              {/* Progress bar + estimated time */}
-              <div className="space-y-1">
-                <div className="w-full bg-gray-200 rounded-full h-1.5">
-                  <div
-                    className="bg-orange-500 h-1.5 rounded-full transition-all duration-500"
-                    style={{ width: `${((currentIdx + 1) / topics.length) * 100}%` }}
-                  />
-                </div>
+              {/* Concept-position progress + estimated time */}
+              <div className="flex flex-col gap-1">
+                <UIProgressBar
+                  value={((currentIdx + 1) / topics.length) * 100}
+                  tone="brand"
+                  size="sm"
+                  ariaLabel={isHi ? 'अवधारणा प्रगति' : 'Concept progress'}
+                />
                 {(() => {
                   const remaining = topics.length - currentIdx - 1;
                   const remainingMin = remaining * 3;
                   return remaining > 0 ? (
-                    <p className="text-[10px] text-gray-400 text-right">
+                    <p className="text-end text-fluid-xs text-muted-foreground">
                       {isHi ? `~${remainingMin} मिनट शेष` : `~${remainingMin} min remaining`}
                     </p>
                   ) : null;
@@ -1371,96 +1401,77 @@ function ChapterConceptPageContent() {
               </div>
 
               {/* Concept card with tabbed layout */}
-              <Card className="!p-5 flex flex-col gap-4">
+              <UICard variant="elevated" className="flex flex-col gap-4 p-5">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-bold leading-tight mb-1" style={{ fontFamily: 'var(--font-display)' }}>
+                  <div className="min-w-0">
+                    <h2 className="mb-1 text-fluid-lg font-bold leading-tight" style={{ fontFamily: 'var(--font-display)' }}>
                       {isHi && (topic as { title_hi?: string | null }).title_hi
                         ? (topic as { title_hi?: string | null }).title_hi
                         : topic.title}
                     </h2>
                     {topic.ncert_page_range && (
-                      <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
+                      <p className="flex items-center gap-1 text-fluid-xs font-semibold text-muted-foreground">
                         📖 {isHi ? `एनसीईआरटी पृष्ठ ${topic.ncert_page_range}` : `NCERT Page ${topic.ncert_page_range}`}
                       </p>
                     )}
                   </div>
                   {(topic as any).key_formula && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase whitespace-nowrap">
+                    <Badge tone="warning" className="shrink-0 uppercase">
                       {isHi ? '📐 सूत्र शामिल' : '📐 Formula Included'}
-                    </span>
+                    </Badge>
                   )}
                 </div>
 
-                <div className="flex p-1 bg-gray-50 rounded-xl border border-gray-100 gap-1">
-                  <button
-                    onClick={() => setActiveTab('core')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 ${
-                      activeTab === 'core'
-                        ? 'bg-white text-[var(--orange)] shadow-sm'
-                        : 'text-gray-500 hover:text-gray-800'
-                    }`}
-                  >
-                    📖 {isHi ? 'मुख्य पाठ' : 'Learning Core'}
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('example')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 ${
-                      activeTab === 'example'
-                        ? 'bg-white text-[var(--orange)] shadow-sm'
-                        : 'text-gray-500 hover:text-gray-800'
-                    }`}
-                  >
-                    📝 {isHi ? 'हल किया हुआ उदाहरण' : 'Solved Example'}
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('cheat')}
-                    className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 ${
-                      activeTab === 'cheat'
-                        ? 'bg-white text-[var(--orange)] shadow-sm'
-                        : 'text-gray-500 hover:text-gray-800'
-                    }`}
-                  >
-                    🦊 {isHi ? 'चीट शीट' : "Foxy's Notes"}
-                  </button>
-                </div>
+                {/* 3-tab switch → canonical Tabs primitive (roving tabindex, WAI-ARIA).
+                    Persona ordering: improve_basics (workedExampleFirst) sees the
+                    Solved Example tab first — example-before-concept. */}
+                <Tabs
+                  value={activeTab}
+                  onValueChange={(v) => setActiveTab(v as 'core' | 'example' | 'cheat')}
+                >
+                  <TabList aria-label={isHi ? 'अवधारणा दृश्य' : 'Concept views'}>
+                    {(productiveFailureRule.workedExampleFirst
+                      ? (['example', 'core', 'cheat'] as const)
+                      : (['core', 'example', 'cheat'] as const)
+                    ).map((tabKey) => (
+                      <Tab key={tabKey} value={tabKey} className="flex-1 gap-1.5">
+                        {tabKey === 'core' && <>📖 {isHi ? 'मुख्य पाठ' : 'Learning Core'}</>}
+                        {tabKey === 'example' && <>📝 {isHi ? 'हल किया हुआ उदाहरण' : 'Solved Example'}</>}
+                        {tabKey === 'cheat' && <>🦊 {isHi ? 'चीट शीट' : "Foxy's Notes"}</>}
+                      </Tab>
+                    ))}
+                  </TabList>
 
-                <div className="mt-2">
-                  {activeTab === 'core' && (
-                    <div className="space-y-4">
+                  <TabPanel value="core">
+                    <div className="flex flex-col gap-4">
                       {productiveFailureActive && question && !isAnswered && (
-                        <div
-                          className="rounded-xl p-3 mb-3"
-                          style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
+                        <Alert
+                          tone="info"
                           data-testid="productive-failure-banner"
+                          title={isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
                         >
-                          <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#F97316' }}>
-                            {isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
-                          </p>
-                          <p className="text-xs text-[var(--text-2)] leading-snug">
-                            {isHi
-                              ? 'पाठ देखने से पहले नीचे का सवाल हल करो — सीखने का यह सबसे असरदार तरीका है।'
-                              : 'Attempt the Quick Check below before reading the explanation — research shows this is the most effective way to learn.'}
-                          </p>
-                        </div>
+                          {isHi
+                            ? 'पाठ देखने से पहले नीचे का सवाल हल करो — सीखने का यह सबसे असरदार तरीका है।'
+                            : 'Attempt the Quick Check below before reading the explanation — research shows this is the most effective way to learn.'}
+                        </Alert>
                       )}
 
                       {(!productiveFailureActive || isAnswered) && diagram && diagram.image_url && (
-                        <div className="rounded-xl overflow-hidden mb-3" style={{ border: '1px solid var(--border)' }}>
+                        <UICard variant="flat">
+                          {/* DD-10: media sits in a Card media slot (overflow-hidden by contract). */}
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={diagram.image_url}
                             alt={diagram.alt_text || topic.title}
-                            className="w-full object-contain max-h-52"
-                            style={{ background: 'var(--surface-2)' }}
+                            className="max-h-52 w-full bg-surface-2 object-contain"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
                           {(diagram.caption || diagram.caption_hi) && (
-                            <p className="text-[11px] text-[var(--text-3)] px-3 py-2 text-center">
+                            <p className="px-3 py-2 text-center text-fluid-xs text-muted-foreground">
                               {isHi && diagram.caption_hi ? diagram.caption_hi : diagram.caption}
                             </p>
                           )}
-                        </div>
+                        </UICard>
                       )}
 
                       {(() => {
@@ -1478,198 +1489,175 @@ function ChapterConceptPageContent() {
                         if (totalBlocks <= 0) return null;
 
                         const visibleBlocks = showAll ? coreBlocks : coreBlocks.slice(0, currentRevealedCount);
+                        const revealedNow = showAll ? totalBlocks : currentRevealedCount;
 
                         return (
                           <>
                             {(!productiveFailureActive || isAnswered) && totalBlocks > 1 && (
-                              <div className="flex items-center justify-between mb-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider bg-gray-50/50 p-2 rounded-lg border border-gray-100">
-                                <div className="flex items-center gap-1.5">
-                                  <span>{isHi ? 'प्रगति' : 'Progress'}:</span>
-                                  <div className="flex gap-1">
-                                    {coreBlocks.map((_, bIdx) => (
-                                      <span
-                                        key={bIdx}
-                                        className="w-1.5 h-1.5 rounded-full transition-all duration-300"
-                                        style={{
-                                          backgroundColor: showAll || bIdx < currentRevealedCount
-                                            ? (subMeta?.color || 'var(--orange)')
-                                            : 'var(--border)'
-                                        }}
-                                      />
-                                    ))}
-                                  </div>
-                                  <span className="ml-1 text-gray-500">
-                                    {showAll ? totalBlocks : currentRevealedCount}/{totalBlocks}
-                                  </span>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                  <UIProgressBar
+                                    className="min-w-0 flex-1"
+                                    value={(revealedNow / totalBlocks) * 100}
+                                    tone="brand"
+                                    size="sm"
+                                    ariaLabel={isHi ? 'पठन प्रगति' : 'Reading progress'}
+                                  />
+                                  <Badge tone="brand" className="shrink-0 tabular-nums">
+                                    {revealedNow}/{totalBlocks}
+                                  </Badge>
                                 </div>
-                                <button
-                                  type="button"
+                                <UIButton
+                                  variant="ghost"
+                                  size="sm"
                                   onClick={() => setShowAllCore(prev => ({ ...prev, [currentIdx]: !showAll }))}
-                                  className="transition-all flex items-center gap-1 uppercase tracking-wider font-bold"
-                                  style={{ color: subMeta?.color || 'var(--orange)' }}
                                 >
-                                  {showAll 
-                                    ? (isHi ? '⚡ चरणबद्ध पढ़ें' : '⚡ Read Stepwise') 
+                                  {showAll
+                                    ? (isHi ? '⚡ चरणबद्ध पढ़ें' : '⚡ Read Stepwise')
                                     : (isHi ? '📖 सब दिखाएं' : '📖 Show All')}
-                                </button>
+                                </UIButton>
                               </div>
                             )}
 
                             {(!productiveFailureActive || isAnswered) && (
-                              <div className="space-y-4 animate-fadeIn">
+                              <div className="flex flex-col gap-4 animate-fadeIn">
                                 {visibleBlocks.map((block: any, bIdx) => {
                                   const theme = STEP_THEMES[block.type as keyof typeof STEP_THEMES] || STEP_THEMES.fact;
                                   return (
-                                    <div
+                                    <UICard
                                       key={bIdx}
-                                      className="p-5 rounded-2xl border transition-all duration-300 animate-fadeIn bg-white shadow-sm"
-                                      style={{
-                                        borderLeft: `4px solid ${theme.color}`,
-                                        borderColor: 'var(--border)',
-                                      }}
+                                      variant="elevated"
+                                      className="animate-fadeIn p-5"
+                                      style={{ borderInlineStartWidth: 4, borderInlineStartColor: TONE_CSS_VAR[theme.tone] }}
                                     >
-                                      <div className="flex items-center justify-between mb-3">
-                                        <span className="text-xs font-bold flex items-center gap-2" style={{ color: theme.color }}>
-                                          <span>{theme.icon}</span>
+                                      <div className="mb-3 flex items-center justify-between gap-2">
+                                        <span className="flex items-center gap-2 text-fluid-sm font-bold" style={{ color: TONE_CSS_VAR[theme.tone] }}>
+                                          <span aria-hidden="true">{theme.icon}</span>
                                           <span style={{ fontFamily: 'var(--font-display)' }}>
                                             {isHi && block.titleHi ? block.titleHi : block.title}
                                           </span>
                                         </span>
-                                        <span
-                                          className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full"
-                                          style={{ backgroundColor: theme.badgeBg, color: theme.badgeFg }}
-                                        >
-                                          {theme.label}
-                                        </span>
+                                        <Badge tone={theme.tone} className="shrink-0 uppercase">
+                                          {isHi ? theme.labelHi : theme.label}
+                                        </Badge>
                                       </div>
-                                      <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap text-[var(--text-2)]">
+                                      <p className="whitespace-pre-wrap text-fluid-sm font-normal leading-relaxed text-foreground">
                                         {isHi && block.contentHi ? block.contentHi : block.content}
                                       </p>
                                       {block.mathExpression && (
-                                        <div className="mt-3 p-3.5 bg-gray-50 rounded-xl font-mono text-center text-xs font-bold text-gray-900 border border-gray-100/80">
+                                        <div className="mt-3 rounded-xl border border-surface-3 bg-surface-2 p-3.5 text-center font-mono text-fluid-sm font-bold text-foreground">
                                           {block.mathExpression}
                                         </div>
                                       )}
-                                    </div>
+                                    </UICard>
                                   );
                                 })}
                               </div>
                             )}
 
                             {!showAll && currentRevealedCount < totalBlocks && (!productiveFailureActive || isAnswered) && (
-                              <Button
+                              <UIButton
                                 fullWidth
-                                variant="soft"
-                                color={subMeta?.color}
+                                variant="secondary"
                                 onClick={() => setRevealedCorePoints(prev => ({ ...prev, [currentIdx]: currentRevealedCount + 1 }))}
-                                className="mt-3 text-xs font-bold py-2.5 rounded-xl transition-all active:scale-[0.97]"
                               >
                                 👇 {isHi ? 'अगला बिंदु समझें' : 'Next Concept Point'} ({currentRevealedCount}/{totalBlocks})
-                              </Button>
+                              </UIButton>
                             )}
 
                             {(!showAll && currentRevealedCount === totalBlocks && totalBlocks > 1 && (!productiveFailureActive || isAnswered)) && (
-                              <div
-                                className="rounded-xl p-3 mt-3 flex items-center gap-2 border animate-fadeIn"
-                                style={{
-                                  background: 'rgba(22, 163, 74, 0.04)',
-                                  borderColor: 'rgba(22, 163, 74, 0.15)',
-                                }}
-                              >
-                                <span className="text-base">🚀</span>
-                                <span className="text-xs font-bold text-green-700">
-                                  {isHi 
-                                    ? 'सभी मुख्य बिंदु पढ़ लिए! नीचे के प्रश्न का उत्तर दें।' 
-                                    : 'All points read! Ready to check your understanding below.'}
-                                </span>
-                              </div>
+                              <Alert tone="success" icon={<span aria-hidden="true">🚀</span>}>
+                                {isHi
+                                  ? 'सभी मुख्य बिंदु पढ़ लिए! नीचे के प्रश्न का उत्तर दें।'
+                                  : 'All points read! Ready to check your understanding below.'}
+                              </Alert>
                             )}
                           </>
                         );
                       })()}
 
-                      {/* Teacher's Corner */}
+                      {/* Teacher's Corner — DD-16 decoupled-dark fix: paired
+                          surface-inverse / on-inverse tokens keep the ink legible
+                          regardless of the surface (never white-on-cream). */}
                       {(!productiveFailureActive || isAnswered) && (() => {
                         const insights = getTeacherInsights(topic.title, isHi);
                         return (
-                          <div className="mt-6 p-5 rounded-2xl bg-[#0F2A2E] text-[#F5F0EA] border border-emerald-950/40 shadow-lg space-y-4 animate-fadeIn">
-                            <div className="flex items-center justify-between pb-3 border-b border-emerald-900/30">
-                              <span className="text-sm font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-serif)' }}>
-                                <span>🎓</span>
+                          <div className="mt-2 flex flex-col gap-4 rounded-2xl border border-surface-3 bg-surface-inverse p-5 text-on-inverse shadow-md animate-fadeIn">
+                            <div className="flex items-center justify-between gap-2 border-b border-on-inverse-muted pb-3">
+                              <span className="flex items-center gap-2 text-fluid-sm font-bold text-on-inverse" style={{ fontFamily: 'var(--font-serif)' }}>
+                                <span aria-hidden="true">🎓</span>
                                 <span>{isHi ? 'शिक्षक का ब्लैकबोर्ड (Tricks & Analogy)' : "Teacher's Blackboard (Tricks & Analogy)"}</span>
                               </span>
-                              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300 bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+                              <span className="shrink-0 rounded-full border border-on-inverse-muted px-2.5 py-0.5 text-fluid-xs font-bold uppercase tracking-wider text-on-inverse-muted">
                                 CBSE Guide
                               </span>
                             </div>
 
                             {/* Analogy */}
-                            <div className="space-y-1.5">
-                              <p className="text-[10px] font-extrabold text-teal-300 uppercase tracking-widest flex items-center gap-1.5">
-                                <span>💡</span>
+                            <div className="flex flex-col gap-1.5">
+                              <p className="flex items-center gap-1.5 text-fluid-xs font-bold uppercase tracking-widest text-on-inverse-muted">
+                                <span aria-hidden="true">💡</span>
                                 <span>{isHi ? 'सरल दैनिक जीवन का उदाहरण (Analogy)' : 'Real-World Analogy'}</span>
                               </p>
-                              <p className="text-xs text-[#F5F0EA] leading-relaxed font-medium opacity-90">
+                              <p className="text-fluid-sm font-normal leading-relaxed text-on-inverse">
                                 {insights.analogy}
                               </p>
                             </div>
 
                             {/* Exam Hack */}
-                            <div className="space-y-1.5">
-                              <p className="text-[10px] font-extrabold text-teal-300 uppercase tracking-widest flex items-center gap-1.5">
-                                <span>🎯</span>
+                            <div className="flex flex-col gap-1.5">
+                              <p className="flex items-center gap-1.5 text-fluid-xs font-bold uppercase tracking-widest text-on-inverse-muted">
+                                <span aria-hidden="true">🎯</span>
                                 <span>{isHi ? 'बोर्ड परीक्षा टिप (Exam Secret)' : 'Board Exam Secret'}</span>
                               </p>
-                              <p className="text-xs text-[#F5F0EA] leading-relaxed font-medium opacity-90">
+                              <p className="text-fluid-sm font-normal leading-relaxed text-on-inverse">
                                 {insights.examHack}
                               </p>
                             </div>
 
                             {/* Mnemonic */}
                             {insights.mnemonic && (
-                              <div className="space-y-1.5">
-                                <p className="text-[10px] font-extrabold text-teal-300 uppercase tracking-widest flex items-center gap-1.5">
-                                  <span>🔑</span>
+                              <div className="flex flex-col gap-1.5">
+                                <p className="flex items-center gap-1.5 text-fluid-xs font-bold uppercase tracking-widest text-on-inverse-muted">
+                                  <span aria-hidden="true">🔑</span>
                                   <span>{isHi ? 'याद रखने का शॉर्टकट (Memory Trick)' : 'Memory Shortcut / Mnemonic'}</span>
                                 </p>
-                                <p className="text-xs text-amber-200 font-mono font-bold bg-teal-950/30 p-3 rounded-xl border border-teal-900/50">
+                                <p className="rounded-xl border border-on-inverse-muted p-3 font-mono font-bold text-on-inverse">
                                   {insights.mnemonic}
                                 </p>
                               </div>
                             )}
 
                             {/* Ask Doubt Link */}
-                            <div className="pt-2">
-                              <button
-                                onClick={() => {
-                                  const promptText = isHi
-                                    ? `कृपया मुझे "${topic.title}" की अवधारणा को एक और सरल उदाहरण और बोर्ड परीक्षा के प्रश्नों के साथ समझाएं।`
-                                    : `Please explain the concept of "${topic.title}" with another simple analogy and show me how CBSE asks questions from this topic.`;
-                                  const topicParam = encodeURIComponent(topic.title);
-                                  track('learn_foxy_doubt_clicked', {
-                                    ...telemetryBase,
-                                    source: 'in_flow',
-                                  });
-                                  router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}&prompt=${encodeURIComponent(promptText)}`);
-                                }}
-                                className="w-full py-3 px-4 rounded-xl text-xs font-bold bg-gradient-to-r from-[var(--orange)] to-amber-500 text-white hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-md shadow-orange-950/20"
-                              >
-                                💬 {isHi ? 'शिक्षक से इस विषय पर डाउट पूछें' : 'Ask Teacher a Doubt / Analogy'}
-                              </button>
-                            </div>
+                            <UIButton
+                              fullWidth
+                              onClick={() => {
+                                const promptText = isHi
+                                  ? `कृपया मुझे "${topic.title}" की अवधारणा को एक और सरल उदाहरण और बोर्ड परीक्षा के प्रश्नों के साथ समझाएं।`
+                                  : `Please explain the concept of "${topic.title}" with another simple analogy and show me how CBSE asks questions from this topic.`;
+                                const topicParam = encodeURIComponent(topic.title);
+                                track('learn_foxy_doubt_clicked', {
+                                  ...telemetryBase,
+                                  source: 'in_flow',
+                                });
+                                router.push(`/foxy?subject=${subject}&mode=doubt&topic=${topicParam}&prompt=${encodeURIComponent(promptText)}`);
+                              }}
+                            >
+                              💬 {isHi ? 'शिक्षक से इस विषय पर डाउट पूछें' : 'Ask Teacher a Doubt / Analogy'}
+                            </UIButton>
                           </div>
                         );
                       })()}
 
                       {(!productiveFailureActive || isAnswered) && topic.learning_objectives && topic.learning_objectives.length > 0 && (
-                        <div className="rounded-xl p-3" style={{ background: `${subMeta?.color || 'var(--orange)'}08`, border: `1px solid ${subMeta?.color || 'var(--orange)'}20` }}>
-                          <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: subMeta?.color }}>
+                        <div className="rounded-xl border border-surface-3 bg-surface-2 p-3">
+                          <p className="mb-2 text-fluid-xs font-bold uppercase tracking-wider text-muted-foreground">
                             {isHi ? 'इस अवधारणा में सीखोगे' : 'You will learn'}
                           </p>
-                          <ul className="space-y-1">
+                          <ul className="flex flex-col gap-1">
                             {topic.learning_objectives.slice(0, 4).map((obj, i) => (
-                              <li key={i} className="flex items-start gap-2 text-xs text-[var(--text-2)]">
-                                <span className="mt-0.5 flex-shrink-0" style={{ color: subMeta?.color }}>•</span>
+                              <li key={i} className="flex items-start gap-2 text-fluid-sm text-foreground">
+                                <span className="mt-0.5 shrink-0 text-primary" aria-hidden="true">•</span>
                                 {obj}
                               </li>
                             ))}
@@ -1677,9 +1665,10 @@ function ChapterConceptPageContent() {
                         </div>
                       )}
                     </div>
-                  )}
+                  </TabPanel>
 
-                  {activeTab === 'example' && (() => {
+                  <TabPanel value="example">
+                    {(activeTab === 'example') && (() => {
                     const exampleRaw = isHi && (topic as any).example_content_hi
                       ? (topic as any).example_content_hi
                       : (topic as any).example_content
@@ -1693,19 +1682,20 @@ function ChapterConceptPageContent() {
                     const revealedCount = visibleSteps[currentIdx] || 1;
 
                     return (
-                      <div className="space-y-4">
-                        <div className="space-y-3">
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col gap-3">
                           {steps.slice(0, revealedCount).map((stepText: string, sIdx: number) => {
                             return (
                               <div
                                 key={sIdx}
-                                className={`p-3 rounded-xl transition-all duration-300 animate-fadeIn ${
+                                className={cn(
+                                  'animate-fadeIn rounded-xl border p-3',
                                   sIdx === 0
-                                    ? 'bg-cream border border-orange-100'
-                                    : 'bg-gray-50 border border-gray-100'
-                                }`}
+                                    ? 'border-surface-3 bg-surface-2'
+                                    : 'border-surface-3 bg-surface-2',
+                                )}
                               >
-                                <p className="text-sm text-[var(--text-2)] whitespace-pre-wrap leading-relaxed">
+                                <p className="whitespace-pre-wrap text-fluid-sm leading-relaxed text-foreground">
                                   {stepText}
                                 </p>
                               </div>
@@ -1714,38 +1704,37 @@ function ChapterConceptPageContent() {
                         </div>
 
                         {revealedCount < maxSteps && (
-                          <Button
+                          <UIButton
                             fullWidth
-                            variant="soft"
-                            color={subMeta?.color}
+                            variant="secondary"
                             onClick={() => setVisibleSteps(prev => ({ ...prev, [currentIdx]: revealedCount + 1 }))}
-                            className="mt-2 text-xs font-bold py-2 rounded-xl transition-all active:scale-[0.97]"
                           >
                             👇 {isHi ? 'अगला चरण देखें' : 'Reveal Next Step'} ({revealedCount}/{maxSteps})
-                          </Button>
+                          </UIButton>
                         )}
                       </div>
                     );
                   })()}
+                  </TabPanel>
 
-                  {activeTab === 'cheat' && (
-                    <div className="space-y-3">
+                  <TabPanel value="cheat">
+                    <div className="flex flex-col gap-3">
                       {((topic as any).key_formula || isHi) && (
-                        <div className="p-3.5 rounded-xl bg-orange-50/40 border border-orange-100/60">
-                          <p className="text-[10px] font-bold text-orange-600 uppercase tracking-wider mb-1.5">
+                        <div className="rounded-xl border border-surface-3 bg-surface-2 p-3.5">
+                          <p className="mb-1.5 text-fluid-xs font-bold uppercase tracking-wider text-primary">
                             📐 {isHi ? 'महत्वपूर्ण सूत्र / दृष्टिकोण' : 'Key Formula / Mnemonic'}
                           </p>
-                          <p className="text-sm font-semibold text-gray-800 font-mono">
+                          <p className="font-mono text-fluid-sm font-semibold text-foreground">
                             {(topic as any).key_formula || (isHi ? 'मुख्य अवधारणाओं को याद रखें।' : 'Understand the relations and apply rules step by step.')}
                           </p>
                         </div>
                       )}
 
-                      <div className="p-3.5 rounded-xl bg-red-50/30 border border-red-100/50">
-                        <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1.5">
-                          ⚠️ {isHi ? 'सीबीएसई बोर्ड परीक्षा की सामान्य गलतियाँ' : 'Common Board Exam Mistakes to Avoid'}
-                        </p>
-                        <ul className="space-y-1.5 text-xs text-red-800/80 leading-relaxed list-disc pl-4">
+                      <Alert
+                        tone="warning"
+                        title={isHi ? 'सीबीएसई बोर्ड परीक्षा की सामान्य गलतियाँ' : 'Common Board Exam Mistakes to Avoid'}
+                      >
+                        <ul className="list-disc space-y-1.5 pl-4 leading-relaxed">
                           <li>
                             {isHi
                               ? 'जल्दबाजी में संकेतों (+/-) की गलती न करें।'
@@ -1762,188 +1751,174 @@ function ChapterConceptPageContent() {
                               : 'For maximum marks, write down the "Given parameters" before starting the calculation.'}
                           </li>
                         </ul>
-                      </div>
+                      </Alert>
 
-                      <div className="p-3.5 rounded-xl bg-teal-50/30 border border-teal-100/50">
-                        <p className="text-[10px] font-bold text-teal-700 uppercase tracking-wider mb-1">
-                          🦊 {isHi ? 'Foxy की सलाह' : "Foxy's Quick Revision Tip"}
-                        </p>
-                        <p className="text-xs text-teal-900/80 leading-relaxed">
-                          {isHi
-                            ? 'इस अवधारणा से सीधे सवाल पूछे जाते हैं। परिभाषा के साथ एक उदाहरण याद रखें!'
-                            : 'CBSE frequently asks direct theoretical or derivation questions on this concept. Memorize the basic statement along with one solved board example!'}
-                        </p>
-                      </div>
+                      <Alert
+                        tone="info"
+                        icon={<span aria-hidden="true">🦊</span>}
+                        title={isHi ? 'Foxy की सलाह' : "Foxy's Quick Revision Tip"}
+                      >
+                        {isHi
+                          ? 'इस अवधारणा से सीधे सवाल पूछे जाते हैं। परिभाषा के साथ एक उदाहरण याद रखें!'
+                          : 'CBSE frequently asks direct theoretical or derivation questions on this concept. Memorize the basic statement along with one solved board example!'}
+                      </Alert>
                     </div>
-                  )}
-                </div>
-              </Card>
+                  </TabPanel>
+                </Tabs>
+              </UICard>
 
-              {/* Quick Check */}
+              {/* Quick Check — presentation rebuilt on primitives. This records
+                  via recordLearningEvent ONLY (see submitAnswer): NO XP, NO atomic
+                  quiz submit. It is encoding/telemetry, never the grading path. */}
               {question && (() => {
-                const getQuestionParameter = (q: any) => {
+                const getQuestionParameter = (q: any): { label: string; tone: Tone } => {
                   const level = q?.bloom_level?.toLowerCase() || 'remember';
-                  if (level === 'remember') return { label: isHi ? '🧠 स्मरण और याद' : '🧠 Remember & Recall', color: '#6B7280', bg: 'rgba(107, 114, 128, 0.08)' };
-                  if (level === 'understand') return { label: isHi ? '💡 समझें और समझाएं' : '💡 Understand & Explain', color: '#2563EB', bg: 'rgba(37, 99, 235, 0.08)' };
-                  if (level === 'apply') return { label: isHi ? '🛠️ लागू करें और हल करें' : '🛠️ Apply & Solve', color: '#059669', bg: 'rgba(5, 150, 105, 0.08)' };
-                  return { label: isHi ? '🔥 उच्च स्तरीय सोच (HOTS)' : '🔥 Higher Order Thinking (HOTS)', color: '#7C3AED', bg: 'rgba(124, 58, 237, 0.08)' };
+                  if (level === 'remember') return { label: isHi ? '🧠 स्मरण और याद' : '🧠 Remember & Recall', tone: 'neutral' };
+                  if (level === 'understand') return { label: isHi ? '💡 समझें और समझाएं' : '💡 Understand & Explain', tone: 'info' };
+                  if (level === 'apply') return { label: isHi ? '🛠️ लागू करें और हल करें' : '🛠️ Apply & Solve', tone: 'success' };
+                  return { label: isHi ? '🔥 उच्च स्तरीय सोच (HOTS)' : '🔥 Higher Order Thinking (HOTS)', tone: 'brand' };
                 };
                 const param = getQuestionParameter(question);
 
                 return (
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-[11px] font-bold text-[var(--text-3)] uppercase tracking-wider">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-fluid-xs font-bold uppercase tracking-wider text-muted-foreground">
                         {isHi ? '⚡ त्वरित जाँच' : '⚡ Quick Check'}
                       </p>
-                      <span
-                        className="text-[10px] font-bold px-2.5 py-0.5 rounded-full"
-                        style={{ color: param.color, background: param.bg }}
-                      >
-                        {param.label}
-                      </span>
+                      <Badge tone={param.tone} className="shrink-0">{param.label}</Badge>
                     </div>
-                    <Card className="!p-4">
-                      <p className="text-sm font-semibold leading-relaxed mb-4" style={{ whiteSpace: 'pre-wrap' }}>
+                    <UICard variant="flat" className="flex flex-col gap-4 p-4">
+                      <p className="whitespace-pre-wrap text-fluid-sm font-semibold leading-relaxed text-foreground">
                         {isHi && question.question_hi ? question.question_hi : question.question_text}
                       </p>
 
                       {opts.length === 0 && !isAnswered && (
-                        <div className="rounded-xl p-4 flex items-start gap-3" style={{ background: 'rgba(232, 88, 28, 0.06)', border: '1px solid rgba(232, 88, 28, 0.18)' }}>
-                          <span className="text-xl shrink-0" aria-hidden="true">🦊</span>
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-1)' }}>
-                              {isHi ? 'यह प्रश्न खुले उत्तर का है — Foxy के साथ हल करो।' : 'This one needs working out — solve it with Foxy.'}
-                            </p>
-                            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                              {isHi ? 'Foxy तुम्हें step-by-step ले जाएगा। फिर अगली अवधारणा पर बढ़ो।' : 'Foxy will walk you through it step by step, then you can move to the next concept.'}
-                            </p>
-                            <Button color="#E8581C" className="mt-3" onClick={askFoxy}>
+                        <Alert
+                          tone="info"
+                          icon={<span aria-hidden="true">🦊</span>}
+                          title={isHi ? 'यह प्रश्न खुले उत्तर का है — Foxy के साथ हल करो।' : 'This one needs working out — solve it with Foxy.'}
+                          action={
+                            <UIButton onClick={askFoxy}>
                               🦊 {isHi ? 'Foxy से हल कराओ' : 'Solve with Foxy'}
-                            </Button>
-                          </div>
+                            </UIButton>
+                          }
+                        >
+                          {isHi ? 'Foxy तुम्हें step-by-step ले जाएगा। फिर अगली अवधारणा पर बढ़ो।' : 'Foxy will walk you through it step by step, then you can move to the next concept.'}
+                        </Alert>
+                      )}
+
+                      {opts.length > 0 && (
+                        <div className="flex flex-col gap-2">
+                          {opts.map((opt, idx) => {
+                            const letter = OPTION_LETTERS[idx] || String(idx + 1);
+                            const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
+                            const isSelected = conceptState?.selectedOption === idx;
+                            const isCorrectOpt = idx === question.correct_answer_index;
+
+                            // Token-only state styling (color-mix over tokens — zero hex).
+                            let btnStyle: CSSProperties | undefined;
+                            let letterStyle: CSSProperties = { backgroundColor: 'var(--surface-3)', color: 'var(--text-3)' };
+                            let textToneClass = 'text-foreground';
+
+                            if (isAnswered) {
+                              if (isCorrectOpt) {
+                                btnStyle = {
+                                  backgroundColor: 'color-mix(in srgb, var(--success) 12%, var(--surface-1))',
+                                  borderColor: 'color-mix(in srgb, var(--success) 40%, transparent)',
+                                };
+                                letterStyle = { backgroundColor: 'var(--success)', color: 'white' };
+                                textToneClass = 'text-success';
+                              } else if (isSelected) {
+                                btnStyle = {
+                                  backgroundColor: 'color-mix(in srgb, var(--danger) 10%, var(--surface-1))',
+                                  borderColor: 'color-mix(in srgb, var(--danger) 40%, transparent)',
+                                };
+                                letterStyle = { backgroundColor: 'var(--danger)', color: 'white' };
+                                textToneClass = 'text-danger';
+                              }
+                            } else if (isSelected) {
+                              btnStyle = {
+                                backgroundColor: 'color-mix(in srgb, var(--primary) 10%, var(--surface-1))',
+                                borderColor: 'var(--primary)',
+                              };
+                              letterStyle = { backgroundColor: 'var(--primary)', color: 'white' };
+                            }
+
+                            return (
+                              <UIButton
+                                key={idx}
+                                variant="secondary"
+                                fullWidth
+                                onClick={() => selectOption(idx)}
+                                aria-disabled={isAnswered || undefined}
+                                aria-pressed={isSelected}
+                                className={cn(
+                                  '!h-auto min-h-12 justify-start py-3 [&>span]:w-full',
+                                  isAnswered && 'pointer-events-none',
+                                )}
+                                style={btnStyle}
+                              >
+                                <span className="flex w-full items-center gap-3">
+                                  <span
+                                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-fluid-xs font-bold"
+                                    style={letterStyle}
+                                    aria-hidden="true"
+                                  >
+                                    {letter}
+                                  </span>
+                                  <span className={cn('min-w-0 flex-1 whitespace-normal text-start text-fluid-sm font-semibold leading-snug', textToneClass)}>
+                                    {optText}
+                                  </span>
+                                  {isAnswered && isCorrectOpt && <span className="shrink-0 font-bold text-success" aria-hidden="true">✓</span>}
+                                  {isAnswered && isSelected && !isCorrectOpt && <span className="shrink-0 font-bold text-danger" aria-hidden="true">✗</span>}
+                                </span>
+                              </UIButton>
+                            );
+                          })}
                         </div>
                       )}
 
-                      <div className="space-y-2">
-                        {opts.map((opt, idx) => {
-                          const letter = OPTION_LETTERS[idx] || String(idx + 1);
-                          const optText = opt.replace(/^[A-D][\.\)]\s*/, '');
-                          const isSelected = conceptState?.selectedOption === idx;
-                          const isCorrectOpt = idx === question.correct_answer_index;
-
-                          let bg = 'white';
-                          let border = 'rgba(26, 18, 7, 0.08)';
-                          let textColor = 'var(--text-2)';
-                          let letterBg = 'var(--surface-2)';
-                          let letterColor = 'var(--text-3)';
-
-                          if (isAnswered) {
-                            if (isCorrectOpt) {
-                              bg = 'rgba(22, 163, 74, 0.08)';
-                              border = 'rgba(22, 163, 74, 0.4)';
-                              textColor = '#16A34A';
-                              letterBg = '#16A34A';
-                              letterColor = '#fff';
-                            } else if (isSelected) {
-                              bg = 'rgba(220, 38, 38, 0.06)';
-                              border = 'rgba(220, 38, 38, 0.3)';
-                              textColor = '#DC2626';
-                              letterBg = '#DC2626';
-                              letterColor = '#fff';
-                            }
-                          } else if (isSelected) {
-                            const activeColor = subMeta?.color || 'var(--orange)';
-                            bg = `${activeColor}08`;
-                            border = activeColor;
-                            letterBg = activeColor;
-                            letterColor = '#fff';
-                          }
-
-                          return (
-                            <button
-                              key={idx}
-                              onClick={() => selectOption(idx)}
-                              disabled={isAnswered}
-                              className={`w-full rounded-xl py-3.5 px-4 flex items-center gap-3 border transition-all duration-200 text-left active:scale-[0.98] ${
-                                !isAnswered && !isSelected ? 'hover:border-gray-300 hover:bg-gray-50/50' : ''
-                              }`}
-                              style={{ 
-                                backgroundColor: bg, 
-                                border: `1.5px solid ${border}`, 
-                                minHeight: 52 
-                              }}
-                            >
-                              <span 
-                                className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all" 
-                                style={{ backgroundColor: letterBg, color: letterColor }}
-                              >
-                                {letter}
-                              </span>
-                              <span className="text-sm font-semibold leading-snug flex-1" style={{ color: textColor }}>
-                                {optText}
-                              </span>
-                              {isAnswered && isCorrectOpt && <span className="ml-auto text-base text-green-600 font-bold flex-shrink-0">✓</span>}
-                              {isAnswered && isSelected && !isCorrectOpt && <span className="ml-auto text-base text-red-600 font-bold flex-shrink-0">✗</span>}
-                            </button>
-                          );
-                        })}
-                      </div>
-
                       {!isAnswered && opts.length > 0 && (
-                        <Button
+                        <UIButton
                           fullWidth
-                          className="mt-3"
-                          color={subMeta?.color}
                           onClick={submitAnswer}
                           disabled={conceptState?.selectedOption === undefined || conceptState?.selectedOption === null}
                         >
                           {isHi ? 'जवाब जाँचो' : 'Check Answer'}
-                        </Button>
+                        </UIButton>
                       )}
 
                       {isAnswered && (
-                        <div
-                          className="mt-3 rounded-xl p-3"
-                          style={{
-                            background: isCorrect ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)',
-                            border: `1px solid ${isCorrect ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'}`,
-                          }}
+                        <Alert
+                          tone={isCorrect ? 'success' : 'danger'}
+                          icon={<span aria-hidden="true">{isCorrect ? '🎉' : '💡'}</span>}
+                          title={
+                            isCorrect
+                              ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct!')
+                              : (isHi ? 'गलत — पर सीखो!' : "Not quite — here's why:")
+                          }
                         >
-                          <div className="flex items-center gap-2 mb-1">
-                            <span>{isCorrect ? '🎉' : '💡'}</span>
-                            <span className="text-xs font-bold" style={{ color: isCorrect ? '#16A34A' : '#DC2626' }}>
-                              {isCorrect
-                                ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct!')
-                                : (isHi ? 'गलत — पर सीखो!' : 'Not quite — here\'s why:')}
-                            </span>
-                          </div>
-                          <p className="text-xs leading-relaxed text-[var(--text-2)]">
-                            {isHi && question.explanation_hi ? question.explanation_hi : question.explanation || (isHi ? 'ऊपर दी गई अवधारणा दोबारा पढ़ो।' : 'Review the concept.')}
-                          </p>
-                        </div>
+                          {isHi && question.explanation_hi ? question.explanation_hi : question.explanation || (isHi ? 'ऊपर दी गई अवधारणा दोबारा पढ़ो।' : 'Review the concept.')}
+                        </Alert>
                       )}
-                    </Card>
+                    </UICard>
                   </div>
                 );
               })()}
 
               {/* Explainer Phase Navigation */}
-              <div className="flex flex-col gap-2 mt-auto pb-2">
-                <Button
-                  fullWidth
-                  color={subMeta?.color}
-                  onClick={handleMarkUnderstood}
-                >
+              <div className="mt-auto flex flex-col gap-2 pb-2">
+                <UIButton fullWidth onClick={handleMarkUnderstood}>
                   {isHi ? '✓ अवधारणा समझी, आगे बढ़ें →' : '✓ Understood, Continue →'}
-                </Button>
+                </UIButton>
                 <div className="flex gap-2">
-                  <Button variant="ghost" onClick={goPrev} disabled={currentIdx === 0} className="flex-1">
+                  <UIButton variant="ghost" onClick={goPrev} disabled={currentIdx === 0} className="flex-1">
                     ← {isHi ? 'पिछला' : 'Prev'}
-                  </Button>
-                  <Button variant="soft" color="#E8581C" onClick={askFoxy} className="flex-1">
+                  </UIButton>
+                  <UIButton variant="secondary" onClick={askFoxy} className="flex-1">
                     🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
-                  </Button>
+                  </UIButton>
                 </div>
               </div>
             </>
@@ -2750,14 +2725,28 @@ interface CbseStep {
   listItems?: string[];
 }
 
-const STEP_THEMES: Record<string, { icon: string; badge: string; bg: string; label: string; color: string; badgeBg: string; badgeFg: string }> = {
-  story: { icon: "📖", badge: "Context / कहानी", bg: "bg-white", label: "Real-world Hook", color: "#10B981", badgeBg: "rgba(16, 185, 129, 0.12)", badgeFg: "#059669" },
-  problem: { icon: "❓", badge: "Problem / समस्या", bg: "bg-white", label: "Core Problem", color: "#F59E0B", badgeBg: "rgba(245, 158, 11, 0.12)", badgeFg: "#D97706" },
-  math: { icon: "📐", badge: "Math / गणना", bg: "bg-white", label: "Calculation Step", color: "#3B82F6", badgeBg: "rgba(59, 130, 246, 0.12)", badgeFg: "#2563EB" },
-  fact: { icon: "💡", badge: "Concept / अवधारणा", bg: "bg-white", label: "Concept Breakdown", color: "#6366F1", badgeBg: "rgba(99, 102, 241, 0.12)", badgeFg: "#4F46E5" },
-  summary: { icon: "🎯", badge: "Summary / सारांश", bg: "bg-white", label: "CBSE Exam Focus", color: "#8B5CF6", badgeBg: "rgba(139, 92, 246, 0.12)", badgeFg: "#7C3AED" },
-  definition: { icon: "📝", badge: "Definition / परिभाषा", bg: "bg-white", label: "Key Definition", color: "#0891B2", badgeBg: "rgba(8, 145, 178, 0.12)", badgeFg: "#0891B2" },
-  list: { icon: "📋", badge: "Key Points / मुख्य बिंदु", bg: "bg-white", label: "Important Points", color: "#F43F5E", badgeBg: "rgba(244, 63, 94, 0.12)", badgeFg: "#E11D48" },
+// Phase 5c-1: the 7-hue hardcoded palette is retired in favour of semantic
+// tone tokens. Each block type maps to a Badge `tone`; the card's left accent
+// is driven from the matching CSS var (TONE_CSS_VAR) — zero raw hex / rgb().
+const STEP_THEMES: Record<string, { icon: string; label: string; labelHi: string; tone: Tone }> = {
+  story: { icon: '📖', label: 'Real-world Hook', labelHi: 'वास्तविक संदर्भ', tone: 'success' },
+  problem: { icon: '❓', label: 'Core Problem', labelHi: 'मुख्य समस्या', tone: 'warning' },
+  math: { icon: '📐', label: 'Calculation Step', labelHi: 'गणना', tone: 'info' },
+  fact: { icon: '💡', label: 'Concept Breakdown', labelHi: 'अवधारणा', tone: 'brand' },
+  summary: { icon: '🎯', label: 'CBSE Exam Focus', labelHi: 'परीक्षा फोकस', tone: 'brand' },
+  definition: { icon: '📝', label: 'Key Definition', labelHi: 'परिभाषा', tone: 'info' },
+  list: { icon: '📋', label: 'Important Points', labelHi: 'मुख्य बिंदु', tone: 'danger' },
+};
+
+// Tone → semantic CSS var (mirrors primitives/tokens.ts TONE_VAR, which is not
+// exported). Used for token-only accent borders/glyphs in the explaining phase.
+const TONE_CSS_VAR: Record<Tone, string> = {
+  neutral: 'var(--text-3)',
+  success: 'var(--success)',
+  warning: 'var(--warning)',
+  danger: 'var(--danger)',
+  info: 'var(--info)',
+  brand: 'var(--primary)',
 };
 
 const getCbseCustomTutorCard = (text: string, title: string, isHi: boolean): CbseStep[] | null => {
