@@ -80,7 +80,10 @@ async function loginAs(
   password: string,
 ): Promise<void> {
   await page.goto('/login');
-  await page.getByRole('button', { name: role }).click();
+  // Role selector migrated to the canonical Tabs primitive: each role control
+  // now renders role="tab" (was a hand-rolled role="button"). Select by the same
+  // accessible name — non-weakening, just the corrected ARIA role.
+  await page.getByRole('tab', { name: role }).click();
   await page.getByLabel(/^email/i).fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /^log in$|^sign in$/i }).click();
