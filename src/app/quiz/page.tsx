@@ -10,7 +10,17 @@ import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabas
 import { invalidateDashboard } from '@/lib/swr';
 import { assembleQuiz } from '@/lib/quiz-assembler';
 import { XP_RULES } from '@/lib/xp-config';
-import { Card, Button, ProgressBar, LoadingFoxy } from '@/components/ui';
+import { Button, LoadingFoxy } from '@/components/ui';
+import {
+  Card,
+  Badge,
+  Alert,
+  ProgressBar,
+  Dialog,
+  DialogBody,
+  Skeleton,
+  type Tone,
+} from '@/components/ui/primitives';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import { authHeader } from '@/lib/api/auth-header';
 import QuizSetup from '@/components/quiz/QuizSetup';
@@ -189,6 +199,20 @@ function originalToShuffled(origIdx: number, _shuffleMap: number[]|null) {
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
+
+/**
+ * Bloom level → canonical semantic tone. The BLOOM_CONFIG glyph
+ * (○ ◔ ◑ ◕ ◉ ●) carries the ordinal level as a non-colour backup, so the
+ * tone is a pure accent — never the sole signal (design AA / P7 safe).
+ */
+const BLOOM_TONE: Record<BloomLevel, Tone> = {
+  remember: 'neutral',
+  understand: 'info',
+  apply: 'success',
+  analyze: 'warning',
+  evaluate: 'danger',
+  create: 'brand',
+};
 
 export default function QuizPage() {
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
@@ -1344,19 +1368,19 @@ export default function QuizPage() {
    * Chemistry with organic keywords → JEE Advanced
    * Else → Board
    */
-  function getExamTag(question: Question): { label: string; labelHi: string; color: string } {
+  function getExamTag(question: Question): { label: string; labelHi: string; tone: Tone } {
     const text = (question.question_text || '').toLowerCase();
     const subject = selectedSubject || '';
     if (subject === 'physics' && /\d+\s*(m\/s|newton|joule|kg|ms|rad|ohm|volt|watt|coulomb|ampere|hertz|pascal)/.test(text)) {
-      return { label: 'JEE Main', labelHi: 'JEE मेन', color: '#2563EB' };
+      return { label: 'JEE Main', labelHi: 'JEE मेन', tone: 'info' };
     }
     if (subject === 'biology' && (question.bloom_level === 'apply' || question.bloom_level === 'analyze' || /cell|enzyme|hormone|dna|rna|organ|gene|photosynthesis|respirat/.test(text))) {
-      return { label: 'NEET', labelHi: 'NEET', color: '#16A34A' };
+      return { label: 'NEET', labelHi: 'NEET', tone: 'success' };
     }
     if (subject === 'chemistry' && /organic|benzene|alkane|alkene|alkyl|ester|aldehyde|ketone|amine|polymer|aromatic/.test(text)) {
-      return { label: 'JEE Adv', labelHi: 'JEE एडवांस', color: '#7C3AED' };
+      return { label: 'JEE Adv', labelHi: 'JEE एडवांस', tone: 'brand' };
     }
-    return { label: 'Board', labelHi: 'बोर्ड', color: '#F97316' };
+    return { label: 'Board', labelHi: 'बोर्ड', tone: 'warning' };
   }
 
   if (isLoading || !student) return <LoadingFoxy />;
@@ -1432,37 +1456,49 @@ export default function QuizPage() {
         {/* Emotional feedback overlay */}
         <FeedbackOverlay feedback={activeFeedback} isHi={isHi} />
 
-        {/* Full-screen evaluation blocker for written answers */}
-        {isEvaluating && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-            <div className="bg-white rounded-xl p-8 text-center max-w-sm mx-4 shadow-xl">
-              <div className="text-4xl mb-4 animate-bounce">🤔</div>
-              <h3 className="text-lg font-semibold mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
-                {isHi ? 'तुम्हारा जवाब जांचा जा रहा है...' : 'Evaluating your answer...'}
-              </h3>
-              <p className="text-sm" style={{ color: 'var(--text-3)' }}>
-                {isHi ? 'AI शिक्षक तुम्हारे उत्तर की समीक्षा कर रहा है' : 'Our AI teacher is reviewing your response'}
-              </p>
-              <div className="mt-4 w-full bg-purple-100 rounded-full h-1 overflow-hidden">
-                <div className="bg-purple-600 h-1 rounded-full animate-pulse" style={{ width: '100%' }} />
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Full-screen evaluation blocker for written answers — non-dismissable
+            Dialog (token surface, no raw bg-white) while the AI grades. */}
+        <Dialog
+          open={isEvaluating}
+          onClose={() => { /* blocker — closes only when evaluation resolves */ }}
+          size="sm"
+          disableEscapeClose
+          disableScrimClose
+          aria-label={isHi ? 'तुम्हारा जवाब जांचा जा रहा है' : 'Evaluating your answer'}
+        >
+          <DialogBody className="text-center">
+            <div aria-hidden="true" className="text-4xl mb-4 animate-bounce motion-reduce:animate-none">🤔</div>
+            <h3 className="text-fluid-md font-semibold mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}>
+              {isHi ? 'तुम्हारा जवाब जांचा जा रहा है...' : 'Evaluating your answer...'}
+            </h3>
+            <p className="text-fluid-sm mb-4" style={{ color: 'var(--text-3)' }}>
+              {isHi ? 'AI शिक्षक तुम्हारे उत्तर की समीक्षा कर रहा है' : 'Our AI teacher is reviewing your response'}
+            </p>
+            <Skeleton radius="full" className="h-1 w-full" />
+          </DialogBody>
+        </Dialog>
 
         {/* Header — distraction-free: progress + timer only */}
-        <header className="page-header" style={{ background: 'rgba(251,248,244,0.92)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
+        <header className="page-header" style={{ background: 'color-mix(in srgb, var(--surface-1) 92%, transparent)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}>
           <div className="app-container py-3">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-lg">{subMeta?.icon}</span>
-                <span className="text-sm font-semibold" style={{ color: subMeta?.color }}>
+                <span aria-hidden="true" className="text-lg">{subMeta?.icon}</span>
+                <span className="text-fluid-sm font-semibold" style={{ color: subMeta?.color }}>
                   {isHi ? `सवाल ${currentIdx + 1}/${questions.length}` : `Q ${currentIdx + 1}/${questions.length}`}
                 </span>
               </div>
-              <div className="flex items-center gap-3 text-xs text-[var(--text-3)] font-medium">
+              <div className="flex items-center gap-3 text-fluid-xs font-medium text-muted-foreground">
                 <span>{correctSoFar}/{responses.length} ✓</span>
-                <span style={{ color: quizMode === 'exam' && timer < 300 ? '#DC2626' : 'var(--text-3)', fontWeight: 600, fontFamily: 'var(--font-mono, monospace)' }}>
+                <span
+                  aria-live="polite"
+                  aria-label={isHi ? `समय ${formatTime(timer)}` : `Time ${formatTime(timer)}`}
+                  style={{
+                    color: quizMode === 'exam' && timer < 300 ? 'var(--danger)' : 'var(--text-3)',
+                    fontWeight: 600,
+                    fontFamily: 'var(--font-mono, monospace)',
+                  }}
+                >
                   {formatTime(timer)}
                 </span>
                 {(student?.grade === '11' || student?.grade === '12') && (
@@ -1472,11 +1508,12 @@ export default function QuizPage() {
                       setJeeNeetMode(next);
                       localStorage.setItem('alfanumrik_jee_neet_mode', String(next));
                     }}
-                    className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
+                    aria-pressed={jeeNeetMode}
+                    className="text-fluid-xs font-bold px-2 py-1 rounded-full transition-all"
                     style={{
-                      background: jeeNeetMode ? '#2563EB18' : 'var(--surface-2)',
-                      color: jeeNeetMode ? '#2563EB' : 'var(--text-3)',
-                      border: `1px solid ${jeeNeetMode ? '#2563EB40' : 'transparent'}`,
+                      background: jeeNeetMode ? 'color-mix(in srgb, var(--info) 12%, transparent)' : 'var(--surface-2)',
+                      color: jeeNeetMode ? 'var(--info)' : 'var(--text-3)',
+                      border: `1px solid ${jeeNeetMode ? 'color-mix(in srgb, var(--info) 30%, transparent)' : 'transparent'}`,
                     }}
                     title={jeeNeetMode ? 'Hide JEE/NEET tags' : 'Show JEE/NEET tags'}
                   >
@@ -1485,7 +1522,12 @@ export default function QuizPage() {
                 )}
               </div>
             </div>
-            <ProgressBar value={progress} color={subMeta?.color} height={4} />
+            <ProgressBar
+              value={progress}
+              tone="brand"
+              size="sm"
+              ariaLabel={isHi ? `प्रगति ${Math.round(progress)}%` : `Progress ${Math.round(progress)}%`}
+            />
           </div>
         </header>
 
@@ -1494,36 +1536,35 @@ export default function QuizPage() {
           {isQuestionMCQ(q) ? (
             <>
               {/* Question */}
-              <Card className="!p-5">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">
+              <Card className="p-5">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <Badge tone="neutral" variant="soft" className="uppercase tracking-wide">
                     {isHi ? `अध्याय ${q.chapter_number}` : `Chapter ${q.chapter_number}`}
-                  </span>
+                  </Badge>
                   {(() => {
                     const bl = (q.bloom_level || 'remember') as BloomLevel;
                     const bc = BLOOM_CONFIG[bl] || BLOOM_CONFIG.remember;
                     return (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${bc.color}18`, color: bc.color }}>
-                        {bc.icon} {isHi ? bc.labelHi : bc.label}
-                      </span>
+                      <Badge tone={BLOOM_TONE[bl] ?? 'neutral'} variant="soft" icon={<span aria-hidden="true">{bc.icon}</span>}>
+                        {isHi ? bc.labelHi : bc.label}
+                      </Badge>
                     );
                   })()}
                   {quizMode === 'cognitive' && cogLoad.fatigueScore > 0.4 && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>
+                    <Badge tone="danger" variant="soft">
                       {isHi ? 'थकान' : 'Fatigue'} {Math.round(cogLoad.fatigueScore * 100)}%
-                    </span>
+                    </Badge>
                   )}
                   {jeeNeetMode && (student?.grade === '11' || student?.grade === '12') && (() => {
                     const tag = getExamTag(q);
                     return (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto"
-                        style={{ background: tag.color + '18', color: tag.color }}>
-                        🎯 {isHi ? tag.labelHi : tag.label}
-                      </span>
+                      <Badge tone={tag.tone} variant="soft" icon={<span aria-hidden="true">🎯</span>} className="ml-auto">
+                        {isHi ? tag.labelHi : tag.label}
+                      </Badge>
                     );
                   })()}
                 </div>
-                <div className="text-lg md:text-xl font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
+                <div className="text-fluid-lg font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap', color: 'var(--text-1)' }}>
                   {isHi && q.question_hi ? q.question_hi : q.question_text}
                 </div>
               </Card>
@@ -1542,6 +1583,9 @@ export default function QuizPage() {
               const isCorrectOpt = !isV2Question
                 && (idx === originalToShuffled(q.correct_answer_index, shuffleMaps[currentIdx] ?? null));
 
+                  // Token-driven 3-state: selected=brand/primary, correct=success,
+                  // wrong=danger. Colour is an accent only — the A-D letter chip
+                  // plus the ✓/✗ glyph are non-colour backups (AA safe).
                   let bg = 'var(--surface-1)';
                   let border = 'var(--border)';
                   let textColor = 'var(--text-1)';
@@ -1551,56 +1595,57 @@ export default function QuizPage() {
                   if (isAnswered) {
                     if (isV2Question && isSelected) {
                       // v2 mode: just show the student's pick highlighted
-                      // in neutral color since correctness is unknown.
-                      bg = `${subMeta?.color || 'var(--orange)'}10`;
-                      border = subMeta?.color || 'var(--orange)';
-                      letterBg = subMeta?.color || 'var(--orange)';
-                      letterColor = '#fff';
+                      // in the brand accent since correctness is unknown.
+                      bg = 'color-mix(in srgb, var(--primary) 8%, var(--surface-1))';
+                      border = 'var(--primary)';
+                      letterBg = 'var(--primary)';
+                      letterColor = 'white';
                     } else if (isCorrectOpt) {
-                      bg = 'rgba(22,163,74,0.08)';
-                      border = 'rgba(22,163,74,0.4)';
-                      textColor = '#16A34A';
-                      letterBg = '#16A34A';
-                      letterColor = '#fff';
+                      bg = 'color-mix(in srgb, var(--success) 10%, var(--surface-1))';
+                      border = 'color-mix(in srgb, var(--success) 45%, transparent)';
+                      textColor = 'var(--success)';
+                      letterBg = 'var(--success)';
+                      letterColor = 'white';
                     } else if (isSelected && !isCorrectOpt) {
-                      bg = 'rgba(220,38,38,0.06)';
-                      border = 'rgba(220,38,38,0.3)';
-                      textColor = '#DC2626';
-                      letterBg = '#DC2626';
-                      letterColor = '#fff';
+                      bg = 'color-mix(in srgb, var(--danger) 8%, var(--surface-1))';
+                      border = 'color-mix(in srgb, var(--danger) 35%, transparent)';
+                      textColor = 'var(--danger)';
+                      letterBg = 'var(--danger)';
+                      letterColor = 'white';
                     }
                   } else if (isSelected) {
-                    bg = `${subMeta?.color || 'var(--orange)'}08`;
-                    border = subMeta?.color || 'var(--orange)';
-                    letterBg = subMeta?.color || 'var(--orange)';
-                    letterColor = '#fff';
+                    bg = 'color-mix(in srgb, var(--primary) 8%, var(--surface-1))';
+                    border = 'var(--primary)';
+                    letterBg = 'var(--primary)';
+                    letterColor = 'white';
                   }
 
                   return (
                     <button
                       key={idx}
                       onClick={() => selectAnswer(idx)}
-                      className={`w-full rounded-2xl py-4 px-4 flex items-center gap-4 transition-all active:scale-[0.97] ${isAnswered && isCorrectOpt ? 'quiz-correct' : ''} ${isAnswered && isSelected && !isCorrectOpt ? 'quiz-wrong' : ''}`}
+                      className={`w-full rounded-2xl py-4 px-4 flex items-center gap-4 transition-all active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100 ${isAnswered && isCorrectOpt ? 'quiz-correct' : ''} ${isAnswered && isSelected && !isCorrectOpt ? 'quiz-wrong' : ''}`}
                       style={{
                         background: bg,
                         border: `1.5px solid ${border}`,
                         textAlign: 'left',
-                        minHeight: 56, /* Fat-finger friendly on budget phones */
-                        boxShadow: isSelected && !isAnswered ? `0 0 0 2px ${subMeta?.color || 'var(--orange)'}30` : 'none',
+                        minHeight: 56, /* Fat-finger friendly on budget phones (>= 44px) */
+                        boxShadow: isSelected && !isAnswered ? '0 0 0 2px color-mix(in srgb, var(--primary) 30%, transparent)' : 'none',
                       }}
                       disabled={isAnswered}
                     >
                       <span
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 transition-all"
+                        aria-hidden="true"
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-fluid-sm font-bold flex-shrink-0 transition-all"
                         style={{ background: letterBg, color: letterColor }}
                       >
                         {letter}
                       </span>
-                      <span className="text-sm md:text-base font-medium leading-snug flex-1" style={{ color: textColor }}>
+                      <span className="text-fluid-base font-medium leading-snug flex-1" style={{ color: textColor }}>
                         {optText}
                       </span>
-                      {isAnswered && isCorrectOpt && <span className="ml-auto text-xl flex-shrink-0">✓</span>}
-                      {isAnswered && isSelected && !isCorrectOpt && <span className="ml-auto text-xl flex-shrink-0">✗</span>}
+                      {isAnswered && isCorrectOpt && <span aria-hidden="true" className="ml-auto text-xl flex-shrink-0">✓</span>}
+                      {isAnswered && isSelected && !isCorrectOpt && <span aria-hidden="true" className="ml-auto text-xl flex-shrink-0">✗</span>}
                     </button>
                   );
                 })}
@@ -1608,39 +1653,30 @@ export default function QuizPage() {
 
               {/* Explanation */}
               {isAnswered && (
-                <div
-                  className="rounded-2xl p-4 border"
-                  style={{
-                    background: isV2Question
-                      ? 'rgba(124,58,237,0.05)'
-                      : (isCorrect ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)'),
-                    borderColor: isV2Question
-                      ? 'rgba(124,58,237,0.15)'
-                      : (isCorrect ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)'),
-                  }}
+                <Alert
+                  tone={isV2Question ? 'info' : (isCorrect ? 'success' : 'warning')}
+                  icon={<span aria-hidden="true">{isV2Question ? '✓' : (isCorrect ? '🎉' : '💡')}</span>}
+                  title={
+                    <span className="flex items-center justify-between gap-2">
+                      <span>
+                        {isV2Question
+                          ? (isHi ? 'जवाब जमा हो गया' : 'Answer submitted')
+                          : isCorrect
+                            ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct! Well done!')
+                            : (isHi ? 'गलत जवाब' : 'Incorrect')}
+                      </span>
+                      {!isV2Question && isCorrect && (
+                        <Badge tone="brand" variant="soft">+{XP_RULES.quiz_per_correct} XP</Badge>
+                      )}
+                    </span>
+                  }
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">
-                      {isV2Question ? '✓' : (isCorrect ? '🎉' : '💡')}
-                    </span>
-                    <span className="text-sm font-bold"
-                      style={{ color: isV2Question ? '#7C3AED' : (isCorrect ? '#16A34A' : '#DC2626') }}>
-                      {isV2Question
-                        ? (isHi ? 'जवाब जमा हो गया' : 'Answer submitted')
-                        : isCorrect
-                          ? (isHi ? 'शाबाश! सही जवाब!' : 'Correct! Well done!')
-                          : (isHi ? 'गलत जवाब' : 'Incorrect')}
-                    </span>
-                    {!isV2Question && isCorrect && <span className="ml-auto text-xs font-bold" style={{ color: 'var(--orange)' }}>+{XP_RULES.quiz_per_correct} XP</span>}
-                  </div>
-                  <p className="text-sm leading-relaxed text-[var(--text-2)]">
-                    {isV2Question
-                      ? (isHi
-                          ? 'क्विज़ ख़त्म होने पर सही जवाब और व्याख्या देखोगे।'
-                          : "You'll see the correct answer and explanation at the end of the quiz.")
-                      : (isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'कोई व्याख्या उपलब्ध नहीं' : 'No explanation available'))}
-                  </p>
-                </div>
+                  {isV2Question
+                    ? (isHi
+                        ? 'क्विज़ ख़त्म होने पर सही जवाब और व्याख्या देखोगे।'
+                        : "You'll see the correct answer and explanation at the end of the quiz.")
+                    : (isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'कोई व्याख्या उपलब्ध नहीं' : 'No explanation available'))}
+                </Alert>
               )}
 
               {/* Pedagogy v2 — Wave 1: distractor micro-explainer.
@@ -1656,53 +1692,43 @@ export default function QuizPage() {
 
               {/* Reflection Prompt — shown in cognitive and practice modes */}
               {isAnswered && (quizMode === 'cognitive' || quizMode === 'practice') && reflection && (
-                <div className="rounded-2xl p-4 border" style={{ background: 'rgba(124,58,237,0.05)', borderColor: 'rgba(124,58,237,0.15)' }}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg">🪞</span>
-                    <span className="text-xs font-bold" style={{ color: '#7C3AED' }}>
-                      {reflection.type === 'pause' ? (isHi ? 'रुको और सोचो' : 'Pause & Reflect') : (isHi ? 'सोचो' : 'Reflect')}
-                    </span>
-                  </div>
-                  <p className="text-sm leading-relaxed text-[var(--text-2)]">
-                    {isHi ? reflection.messageHi : reflection.message}
-                  </p>
-                </div>
+                <Alert
+                  tone="info"
+                  icon={<span aria-hidden="true">🪞</span>}
+                  title={reflection.type === 'pause' ? (isHi ? 'रुको और सोचो' : 'Pause & Reflect') : (isHi ? 'सोचो' : 'Reflect')}
+                >
+                  {isHi ? reflection.messageHi : reflection.message}
+                </Alert>
               )}
 
               {/* Cognitive Pause Alert — shown when fatigue detected */}
               {isAnswered && (quizMode === 'cognitive' || quizMode === 'practice') && cogLoad.shouldPause && (
-                <div className="rounded-2xl p-4 border" style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl">😮‍💨</span>
-                    <div>
-                      <p className="text-sm font-bold" style={{ color: '#EF4444' }}>
-                        {isHi ? 'ब्रेक ले लो!' : 'Take a break!'}
-                      </p>
-                      <p className="text-xs text-[var(--text-3)]">
-                        {isHi ? 'थोड़ा आराम करो, फिर वापस आओ।' : 'Rest a bit, then come back stronger.'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                <Alert
+                  tone="warning"
+                  icon={<span aria-hidden="true">😮‍💨</span>}
+                  title={isHi ? 'ब्रेक ले लो!' : 'Take a break!'}
+                >
+                  {isHi ? 'थोड़ा आराम करो, फिर वापस आओ।' : 'Rest a bit, then come back stronger.'}
+                </Alert>
               )}
 
               {/* Progressive Hints */}
               {!isAnswered && q.hint && (
                 <div className="space-y-2">
                   {hintLevel >= 1 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)', color: 'var(--text-2)' }}>
-                      💡 {q.hint}
-                    </div>
+                    <Alert tone="warning" icon={<span aria-hidden="true">💡</span>}>
+                      {q.hint}
+                    </Alert>
                   )}
                   {hintLevel >= 2 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)', color: 'var(--text-2)' }}>
-                      🔍 {q.hint} {isHi ? 'अंतर्निहित अवधारणा और सूत्र के बारे में सोचो।' : 'Think about the underlying concept and formula.'}
-                    </div>
+                    <Alert tone="info" icon={<span aria-hidden="true">🔍</span>}>
+                      {q.hint} {isHi ? 'अंतर्निहित अवधारणा और सूत्र के बारे में सोचो।' : 'Think about the underlying concept and formula.'}
+                    </Alert>
                   )}
                   {hintLevel >= 3 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.15)', color: 'var(--text-2)' }}>
-                      🎯 {isHi ? 'उत्तर से संबंधित:' : 'The answer involves:'} {q.explanation?.split('.')[0] || (isHi ? 'व्याख्या उपलब्ध नहीं' : 'No explanation available')}
-                    </div>
+                    <Alert tone="success" icon={<span aria-hidden="true">🎯</span>}>
+                      {isHi ? 'उत्तर से संबंधित:' : 'The answer involves:'} {q.explanation?.split('.')[0] || (isHi ? 'व्याख्या उपलब्ध नहीं' : 'No explanation available')}
+                    </Alert>
                   )}
                 </div>
               )}
@@ -1757,119 +1783,108 @@ export default function QuizPage() {
                   />
                   {/* Evaluation failure — retry/skip UI */}
                   {evalError && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center space-y-2">
-                      <p className="text-sm text-amber-800">{evalError}</p>
-                      <div className="flex gap-2 justify-center">
-                        <button
-                          onClick={() => { setEvalError(null); handleWrittenSubmit(lastWrittenAnswer, lastWrittenTimeSpent); }}
-                          className="px-4 py-2 bg-amber-600 text-white rounded text-sm font-medium hover:bg-amber-700 active:scale-[0.98] transition-all"
-                        >
-                          {isHi ? 'फिर से कोशिश करो' : 'Retry Evaluation'}
-                        </button>
-                        <button
-                          onClick={() => { setEvalError(null); handleWrittenSkip(); }}
-                          className="px-4 py-2 bg-gray-200 text-gray-700 rounded text-sm font-medium hover:bg-gray-300 active:scale-[0.98] transition-all"
-                        >
-                          {isHi ? 'छोड़ दो' : 'Skip'}
-                        </button>
-                      </div>
-                    </div>
+                    <Alert
+                      tone="warning"
+                      action={
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => { setEvalError(null); handleWrittenSubmit(lastWrittenAnswer, lastWrittenTimeSpent); }}
+                          >
+                            {isHi ? 'फिर से कोशिश करो' : 'Retry Evaluation'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => { setEvalError(null); handleWrittenSkip(); }}
+                          >
+                            {isHi ? 'छोड़ दो' : 'Skip'}
+                          </Button>
+                        </div>
+                      }
+                    >
+                      {evalError}
+                    </Alert>
                   )}
                 </>
               ) : (
                 /* Written answer post-evaluation feedback */
                 <>
-                  <Card className="!p-5">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">
+                  <Card className="p-5">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <Badge tone="neutral" variant="soft" className="uppercase tracking-wide">
                         {isHi ? `अध्याय ${q.chapter_number}` : `Chapter ${q.chapter_number}`}
-                      </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded"
-                        style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
+                      </Badge>
+                      <Badge tone="neutral" variant="soft">
                         {q.cbse_label ?? 'SA'} {q.marks_possible ?? 2} {isHi ? 'अंक' : 'marks'}
-                      </span>
+                      </Badge>
                     </div>
-                    <div className="text-lg md:text-xl font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
+                    <div className="text-fluid-lg font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap', color: 'var(--text-1)' }}>
                       {isHi && q.question_hi ? q.question_hi : q.question_text}
                     </div>
                   </Card>
 
                   {/* Written evaluation feedback — uses currentEval for richer display */}
-                  {currentEval && (
-                    <div className="rounded-2xl p-4 border space-y-3"
-                      style={{
-                        background: (currentEval.percentage ?? 0) >= 80 ? 'rgba(22,163,74,0.05)'
-                          : (currentEval.percentage ?? 0) >= 50 ? 'rgba(245,158,11,0.05)'
-                          : 'rgba(220,38,38,0.04)',
-                        borderColor: (currentEval.percentage ?? 0) >= 80 ? 'rgba(22,163,74,0.15)'
-                          : (currentEval.percentage ?? 0) >= 50 ? 'rgba(245,158,11,0.15)'
-                          : 'rgba(220,38,38,0.12)',
-                      }}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">
-                            {(currentEval.percentage ?? 0) >= 80 ? '🎉' : (currentEval.marks_awarded ?? 0) > 0 ? '📝' : '💡'}
-                          </span>
-                          <span className="text-base font-bold"
-                            style={{
-                              color: (currentEval.percentage ?? 0) >= 80 ? '#16A34A'
-                                : (currentEval.marks_awarded ?? 0) > 0 ? '#F59E0B'
-                                : '#DC2626',
-                            }}>
-                            {currentEval.marks_awarded}/{currentEval.marks_possible} {isHi ? 'अंक' : 'marks'}
-                          </span>
-                        </div>
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${
-                          (currentEval.percentage ?? 0) >= 80 ? 'bg-green-100 text-green-700'
-                            : (currentEval.percentage ?? 0) >= 50 ? 'bg-yellow-100 text-yellow-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}>
-                          {(currentEval.percentage ?? 0) >= 80
-                            ? (isHi ? 'बहुत अच्छा' : 'Good')
-                            : (currentEval.percentage ?? 0) >= 50
-                            ? (isHi ? 'ठीक' : 'Fair')
-                            : (isHi ? 'सुधार करो' : 'Needs Work')}
-                        </span>
-                      </div>
-
-                      {/* AI feedback */}
-                      {currentEval.feedback && (
-                        <p className="text-sm leading-relaxed text-[var(--text-2)]">
-                          {currentEval.feedback}
-                        </p>
-                      )}
-
-                      {/* Key points breakdown */}
-                      {currentEval.key_points && currentEval.key_points.length > 0 && (
-                        <div className="space-y-1">
-                          <span className="text-xs font-semibold" style={{ color: 'var(--text-3)' }}>
-                            {isHi ? 'मुख्य बिंदु:' : 'Key Points:'}
-                          </span>
-                          {currentEval.key_points.map((kp, i) => (
-                            <div key={i} className="flex items-start gap-2 text-xs">
-                              <span className="flex-shrink-0 mt-0.5">{kp.hit ? '✅' : '❌'}</span>
-                              <span style={{ color: kp.hit ? '#16A34A' : 'var(--text-3)' }}>{kp.point}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Model answer */}
-                      {(currentEval.model_answer_summary || q.explanation) && (
-                        <div className="pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-                          <div className="rounded-lg px-3 py-2 text-sm leading-relaxed"
-                            style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.12)' }}>
-                            <span className="font-semibold text-xs block mb-1" style={{ color: '#3B82F6' }}>
-                              {isHi ? 'आदर्श उत्तर' : 'Model Answer'}
+                  {currentEval && (() => {
+                    const pct = currentEval.percentage ?? 0;
+                    const evalTone: Tone = pct >= 80 ? 'success' : pct >= 50 ? 'warning' : 'danger';
+                    const evalGlyph = pct >= 80 ? '🎉' : (currentEval.marks_awarded ?? 0) > 0 ? '📝' : '💡';
+                    return (
+                      <Alert tone={evalTone} icon={<span aria-hidden="true">{evalGlyph}</span>}>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-fluid-base font-bold" style={{ color: 'var(--text-1)' }}>
+                              {currentEval.marks_awarded}/{currentEval.marks_possible} {isHi ? 'अंक' : 'marks'}
                             </span>
-                            <p className="text-[var(--text-2)]">
-                              {currentEval.model_answer_summary || q.explanation}
-                            </p>
+                            <Badge tone={evalTone} variant="soft">
+                              {pct >= 80
+                                ? (isHi ? 'बहुत अच्छा' : 'Good')
+                                : pct >= 50
+                                ? (isHi ? 'ठीक' : 'Fair')
+                                : (isHi ? 'सुधार करो' : 'Needs Work')}
+                            </Badge>
                           </div>
+
+                          {/* AI feedback */}
+                          {currentEval.feedback && (
+                            <p className="text-fluid-sm leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                              {currentEval.feedback}
+                            </p>
+                          )}
+
+                          {/* Key points breakdown */}
+                          {currentEval.key_points && currentEval.key_points.length > 0 && (
+                            <div className="space-y-1">
+                              <span className="text-fluid-xs font-semibold" style={{ color: 'var(--text-3)' }}>
+                                {isHi ? 'मुख्य बिंदु:' : 'Key Points:'}
+                              </span>
+                              {currentEval.key_points.map((kp, i) => (
+                                <div key={i} className="flex items-start gap-2 text-fluid-xs">
+                                  <span aria-hidden="true" className="flex-shrink-0 mt-0.5">{kp.hit ? '✅' : '❌'}</span>
+                                  <span style={{ color: kp.hit ? 'var(--success)' : 'var(--text-3)' }}>{kp.point}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Model answer */}
+                          {(currentEval.model_answer_summary || q.explanation) && (
+                            <div className="pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+                              <div className="rounded-lg px-3 py-2 text-fluid-sm leading-relaxed"
+                                style={{ background: 'color-mix(in srgb, var(--info) 6%, var(--surface-1))', border: '1px solid color-mix(in srgb, var(--info) 20%, transparent)' }}>
+                                <span className="font-semibold text-fluid-xs block mb-1" style={{ color: 'var(--info)' }}>
+                                  {isHi ? 'आदर्श उत्तर' : 'Model Answer'}
+                                </span>
+                                <p style={{ color: 'var(--text-2)' }}>
+                                  {currentEval.model_answer_summary || q.explanation}
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </Alert>
+                    );
+                  })()}
 
                   {/* Fallback if currentEval is null but showExplanation is true */}
                   {!currentEval && (() => {
@@ -1878,25 +1893,15 @@ export default function QuizPage() {
                     const awarded = lastResp.marks_awarded ?? 0;
                     const possible = lastResp.marks_possible ?? q.marks_possible ?? 2;
                     const gotFullMarks = awarded >= possible;
+                    const fbTone: Tone = gotFullMarks ? 'success' : awarded > 0 ? 'warning' : 'danger';
                     return (
-                      <div className="rounded-2xl p-4 border"
-                        style={{
-                          background: gotFullMarks ? 'rgba(22,163,74,0.05)' : 'rgba(220,38,38,0.04)',
-                          borderColor: gotFullMarks ? 'rgba(22,163,74,0.15)' : 'rgba(220,38,38,0.12)',
-                        }}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-lg">{gotFullMarks ? '🎉' : awarded > 0 ? '📝' : '💡'}</span>
-                          <span className="text-sm font-bold"
-                            style={{ color: gotFullMarks ? '#16A34A' : awarded > 0 ? '#F59E0B' : '#DC2626' }}>
-                            {awarded}/{possible} {isHi ? 'अंक' : 'marks'}
-                          </span>
-                        </div>
-                        {lastResp.rubric_feedback && (
-                          <p className="text-sm leading-relaxed text-[var(--text-2)]">
-                            {lastResp.rubric_feedback}
-                          </p>
-                        )}
-                      </div>
+                      <Alert
+                        tone={fbTone}
+                        icon={<span aria-hidden="true">{gotFullMarks ? '🎉' : awarded > 0 ? '📝' : '💡'}</span>}
+                        title={`${awarded}/${possible} ${isHi ? 'अंक' : 'marks'}`}
+                      >
+                        {lastResp.rubric_feedback || null}
+                      </Alert>
                     );
                   })()}
 
@@ -1954,12 +1959,12 @@ export default function QuizPage() {
             The real score_percent is still shown by QuizResults above; this only
             explains why no XP was awarded. Bilingual per P7. Never punitive. */}
         {results.flagged && (
-          <div className="fixed bottom-20 left-4 right-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-3 text-center z-30 shadow-sm animate-slide-up">
-            <p className="text-sm">
+          <div className="fixed bottom-20 left-4 right-4 z-30 animate-slide-up motion-reduce:animate-none">
+            <Alert tone="warning" className="shadow-sm">
               {isHi
                 ? 'इस प्रयास की समीक्षा के लिए चिह्नित किया गया, इसलिए कोई XP नहीं मिला। तुम्हारा स्कोर सहेज लिया गया है — दोबारा कोशिश करके XP कमाओ!'
                 : 'This attempt was flagged for review, so no XP was awarded. Your score is saved — try again to earn XP!'}
-            </p>
+            </Alert>
           </div>
         )}
         {networkError && (
