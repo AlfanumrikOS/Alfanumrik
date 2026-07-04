@@ -14,6 +14,8 @@
 import { memo } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useSubjectReadiness } from '@/lib/useSubjectReadiness';
+import { Card, Badge } from '@/components/ui/primitives';
+import type { Tone } from '@/components/ui/primitives';
 
 export interface SubjectReadinessSummaryProps {
   subjectCode: string;
@@ -26,16 +28,18 @@ interface BucketStyle {
   icon: string;
   labelEn: string;
   labelHi: string;
+  /** Canonical Badge tone for the recomposed count chip (Phase 5a). */
+  tone: Tone;
 }
 
 // Status palette is mapped to cosmic-aware semantic tokens (no hardcoded brand/
 // status hex). Foreground = the semantic token; background = a soft color-mix
 // tint of the same token onto surface-1 so it adapts across light + cosmic.
 const BUCKETS: Record<'ready' | 'almost' | 'building' | 'not_yet', BucketStyle> = {
-  ready:    { fg: 'var(--green)', bg: 'color-mix(in srgb, var(--green) 12%, var(--surface-1))', icon: '✅', labelEn: 'Ready',    labelHi: 'तैयार' },
-  almost:   { fg: 'var(--teal)',  bg: 'color-mix(in srgb, var(--teal) 12%, var(--surface-1))',  icon: '⚡', labelEn: 'Almost',   labelHi: 'लगभग' },
-  building: { fg: 'var(--gold)',  bg: 'color-mix(in srgb, var(--gold) 14%, var(--surface-1))',  icon: '🛠', labelEn: 'Building', labelHi: 'बन रहा' },
-  not_yet:  { fg: 'var(--red)',   bg: 'color-mix(in srgb, var(--red) 10%, var(--surface-1))',   icon: '🌱', labelEn: 'Not Yet',  labelHi: 'अभी नहीं' },
+  ready:    { fg: 'var(--green)', bg: 'color-mix(in srgb, var(--green) 12%, var(--surface-1))', icon: '✅', labelEn: 'Ready',    labelHi: 'तैयार',    tone: 'success' },
+  almost:   { fg: 'var(--teal)',  bg: 'color-mix(in srgb, var(--teal) 12%, var(--surface-1))',  icon: '⚡', labelEn: 'Almost',   labelHi: 'लगभग',    tone: 'info' },
+  building: { fg: 'var(--gold)',  bg: 'color-mix(in srgb, var(--gold) 14%, var(--surface-1))',  icon: '🛠', labelEn: 'Building', labelHi: 'बन रहा',   tone: 'warning' },
+  not_yet:  { fg: 'var(--red)',   bg: 'color-mix(in srgb, var(--red) 10%, var(--surface-1))',   icon: '🌱', labelEn: 'Not Yet',  labelHi: 'अभी नहीं', tone: 'neutral' },
 };
 
 function SubjectReadinessSummaryInner({
@@ -58,19 +62,16 @@ function SubjectReadinessSummaryInner({
   const readyPct = Math.round((readiness.summary.ready / total) * 100);
 
   return (
-    <div
+    <Card
+      variant="flat"
       data-testid="subject-readiness-summary"
-      className="rounded-2xl p-4 mb-4"
-      style={{
-        background: 'var(--surface-1)',
-        border: '1px solid var(--border)',
-      }}
+      className="mb-4 p-4"
     >
-      <div className="flex items-baseline justify-between mb-2">
-        <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h3 className="text-fluid-sm font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
           {isHi ? '📊 परीक्षा तैयारी' : '📊 Exam Readiness'}
         </h3>
-        <span className="text-[11px] font-semibold tabular-nums" style={{ color: subjectColor ?? 'var(--text-3)' }}>
+        <span className="text-fluid-xs font-semibold tabular-nums" style={{ color: subjectColor ?? 'var(--text-3)' }}>
           {readiness.summary.ready}/{total} {isHi ? 'अध्याय तैयार' : 'chapters ready'}
         </span>
       </div>
@@ -119,37 +120,33 @@ function SubjectReadinessSummaryInner({
         )}
       </div>
 
-      {/* Bucket counts row — only shows non-zero buckets to keep it compact */}
-      <div className="flex items-center gap-2 mt-2 flex-wrap">
+      {/* Bucket counts row — canonical Badge chips; only non-zero buckets. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         {(['ready', 'almost', 'building', 'not_yet'] as const).map((bucket) => {
           const count = readiness.summary[bucket];
           if (count === 0) return null;
           const style = BUCKETS[bucket];
           return (
-            <span
+            <Badge
               key={bucket}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full"
-              style={{
-                background: style.bg,
-                color: style.fg,
-                border: `1px solid color-mix(in srgb, ${style.fg} 25%, transparent)`,
-              }}
+              tone={style.tone}
+              variant="soft"
+              icon={<span aria-hidden="true">{style.icon}</span>}
             >
-              <span aria-hidden="true">{style.icon}</span>
               {count} {isHi ? style.labelHi : style.labelEn}
-            </span>
+            </Badge>
           );
         })}
       </div>
 
       {readyPct === 100 && (
-        <p className="text-[11px] text-[var(--text-3)] mt-2 font-medium">
+        <p className="mt-2 text-fluid-xs font-medium text-muted-foreground">
           {isHi
             ? '🎉 शानदार! इस विषय के सभी अध्याय परीक्षा-तैयार हैं।'
             : '🎉 Brilliant! Every chapter in this subject is exam-ready.'}
         </p>
       )}
-    </div>
+    </Card>
   );
 }
 

@@ -187,13 +187,18 @@ describe('Wave 4a — /learn locked subject → /pricing via LockedCard', () => 
     expect(styles).not.toMatch(SIX_DIGIT_HEX);
   });
 
-  // Drift canary: the /learn page must keep routing locked subjects to /pricing
-  // through LockedCard.onAction.
-  it('SOURCE: /learn renders <LockedCard> and routes its action to /pricing', () => {
+  // Drift canary: the /learn page must keep routing plan-locked subjects to
+  // /pricing. Phase 5a rebuilt the locked-subject affordance onto the canonical
+  // Card + Button primitives (assessment C5 — visible, never hidden, supportive
+  // upgrade CTA), so the legacy <LockedCard> is gone but the /pricing route and
+  // the growth-mindset "Unlock" behavior are preserved.
+  it('SOURCE: /learn routes plan-locked subjects to /pricing (canonical Card + Button)', () => {
     const src = readSrc('app/learn/page.tsx');
-    expect(src).toContain('<LockedCard');
-    expect(src).toContain("variant=\"plan\"");
-    expect(src).toContain("onAction={() => router.push('/pricing')}");
+    expect(src).toContain("router.push('/pricing')");
+    // The locked subject stays VISIBLE — the page must not hide it behind the flag.
+    expect(src).toContain('lockedSubjects.map');
+    // Legacy primitive fully retired on this surface.
+    expect(src).not.toContain('<LockedCard');
   });
 });
 
