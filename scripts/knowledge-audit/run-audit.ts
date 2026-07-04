@@ -3,13 +3,27 @@
 /**
  * scripts/knowledge-audit/run-audit.ts
  *
- * Wave 1 Task 1.2 — chunk-pass knowledge-audit engine (I/O orchestrator).
+ * Knowledge-audit engine v2 (I/O orchestrator) — deterministic-first redesign
+ * after the Wave 1 pilot-gate failure (33% accuracy, 0/4 contamination
+ * detections: single-pass LLM enumeration over 20k-84k-token contexts returned
+ * near-empty skeletons).
  *
  * Per chapter: reads rag_content_chunks (via the established
  * `get_chapter_rag_content` RPC) + known concept metadata (chapter_concepts),
- * runs the LLM chunk pass (22 chunk_pass dimensions), executes the
- * question_bank (5 dims) and generated-content (4 dims) scans, and upserts
- * chapter_asset_inventory rows on (syllabus_id, dimension) — 31 rows/chapter.
+ * then composes THREE lanes into the 22 chunk_pass dimensions:
+ *   1. STRUCTURAL SCAN (free, exact, code): the 12 structural dimensions are
+ *      regex-extracted + deduped-by-identifier across all chunks
+ *      (structural-scan.ts). audit_method stays 'chunk_pass'; the finding
+ *      notes say 'deterministic structural scan'.
+ *   2. CONTAMINATION (free, code): computed from series metadata + chunk text
+ *      (contamination.ts) — foreign-major series, multiple summary blocks,
+ *      garbled titles. The v1 LLM flag (which never flipped) is gone.
+ *   3. SEMANTIC LLM PASS (batched): the 10 semantic dimensions are enumerated
+ *      as ITEMS (short labels) in batches of ≤15 chunks (~10k tokens/call),
+ *      then label-deduped in code (prompt.ts + parse-semantic.ts).
+ * Finally the question_bank (5 dims) and generated-content (4 dims) scans run
+ * as before, and 31 chapter_asset_inventory rows upsert on
+ * (syllabus_id, dimension).
  *
  * MODEL / PROVIDER: this OFFLINE audit script follows the house offline-script
  * convention established (user-approved) in scripts/generate-chapter-concepts.ts
@@ -20,10 +34,11 @@
  * P13: evidence stores chunk IDs only — NEVER chunk text. suspected_missing
  * stores short labels only. No PII exists anywhere in this pipeline.
  *
- * CONTAMINATION: chapters the model flags as content_contaminated keep their
- * counts (count-as-is + flag, never abstain) and additionally emit one JSONL
- * line to scripts/knowledge-audit/output/hygiene-queue.jsonl — the input to
- * future syllabus-row-split / re-ingest corpus-hygiene work.
+ * CONTAMINATION: chapters code-flags as contaminated keep their counts
+ * (count-as-is + flag, never abstain) and additionally emit one JSONL line to
+ * scripts/knowledge-audit/output/hygiene-queue.jsonl — the input to future
+ * syllabus-row-split / re-ingest corpus-hygiene work. Unlike v1 this path is
+ * now actually reachable.
  *
  * USAGE:
  *   npx tsx scripts/knowledge-audit/run-audit.ts --grade 6 --subject science --chapter 4
@@ -57,12 +72,15 @@ import {
   type Dimension,
   type InventoryRow,
 } from './dimensions';
-import { buildAuditSystemPrompt, buildAuditUserMessage, estimateTokens } from './prompt';
-import { parseAuditResponse } from './parse-response';
+import { batchChunks, buildSemanticSystemPrompt, buildSemanticUserMessage, estimateTokens } from './prompt';
+import { mergeSemanticBatches, parseSemanticBatchResponse, type ParsedSemanticBatch } from './parse-semantic';
+import { runStructuralScan } from './structural-scan';
+import { detectContamination } from './contamination';
 import {
   buildChunkPassRows,
   buildGeneratedContentFilterSpec,
   buildQuestionBankFilterSpec,
+  composeChapterFindings,
   type ChapterRef,
   type ScanSpec,
 } from './coverage';
@@ -388,52 +406,71 @@ async function auditChapter(args: Args, ch: SyllabusChapter, fixture: GroundTrut
   }
   const knownConcepts = await getKnownConcepts(ch);
 
-  const systemPrompt = buildAuditSystemPrompt({
+  // Lane 1+2 (free, exact, code): deterministic structural scan + contamination
+  const structural = runStructuralScan(chunks, ch.chapter_number);
+  const contamination = detectContamination({
+    chapterNumber: ch.chapter_number,
+    chapterTitle: ch.chapter_title,
+    series: structural.series,
+    summaryBlockCount: structural.summaryBlockCount,
+    chunks,
+  });
+
+  // Lane 3: batched semantic LLM pass (items, label-deduped code-side)
+  const systemPrompt = buildSemanticSystemPrompt({
     grade: ch.grade,
     subject: ch.subject_code,
     chapterNumber: ch.chapter_number,
     chapterTitle: ch.chapter_title,
   });
-  const userMessage = buildAuditUserMessage(chunks, knownConcepts);
-  console.error(`    est. input tokens ~${estimateTokens(systemPrompt, userMessage)} (${chunks.length} chunks, ${knownConcepts.length} known concepts)`);
-
-  // LLM chunk pass (one extra full retry on parse failure)
-  const chunkIds = chunks.map((c) => c.chunk_id);
-  let parsed: ReturnType<typeof parseAuditResponse> | null = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const gen = await callModel(systemPrompt, userMessage);
-    if (!gen.ok) {
-      out.reasons.push(`model call failed: ${gen.error}`);
+  const batches = batchChunks(chunks);
+  const parsedBatches: ParsedSemanticBatch[] = [];
+  for (let b = 0; b < batches.length; b++) {
+    const batch = batches[b];
+    const userMessage = buildSemanticUserMessage(batch, b, batches.length, knownConcepts);
+    console.error(`    batch ${b + 1}/${batches.length}: est. input tokens ~${estimateTokens(systemPrompt, userMessage)} (${batch.length} chunks)`);
+    const batchIds = batch.map((c) => c.chunk_id);
+    let parsed: ParsedSemanticBatch | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const gen = await callModel(systemPrompt, userMessage);
+      if (!gen.ok) {
+        out.reasons.push(`model call failed (batch ${b + 1}/${batches.length}): ${gen.error}`);
+        return out;
+      }
+      out.inputTokens += gen.inputTokens;
+      out.outputTokens += gen.outputTokens;
+      const p = parseSemanticBatchResponse(gen.text, batchIds);
+      if (p.ok) { parsed = p; break; }
+      console.error(`    batch ${b + 1} parse failed (attempt ${attempt + 1}/2): ${p.error}`);
+      await sleep(1500);
+    }
+    if (!parsed) {
+      out.reasons.push(`unparseable model response (batch ${b + 1}/${batches.length}) after retries`);
       return out;
     }
-    out.inputTokens += gen.inputTokens;
-    out.outputTokens += gen.outputTokens;
-    parsed = parseAuditResponse(gen.text, chunkIds);
-    if (parsed.ok) break;
-    console.error(`    parse failed (attempt ${attempt + 1}/2): ${parsed.error}`);
-    await sleep(1500);
+    parsedBatches.push(parsed);
+    if (b + 1 < batches.length) await sleep(400); // rate-limit friendliness between batches
   }
-  if (!parsed || !parsed.ok) {
-    out.reasons.push('unparseable model response after retries');
-    return out;
-  }
+  const semantic = mergeSemanticBatches(parsedBatches);
+
+  const findings = composeChapterFindings({ structural, semantic, contamination });
 
   // Contamination is a first-class finding: counts stay (evidence), the chapter
   // is flagged and queued for corpus-hygiene work (syllabus-row split / re-ingest).
-  if (parsed.contentContaminated) {
-    console.error(`    CONTAMINATED: ${parsed.contaminationEvidence.join('; ') || '(no evidence labels)'} — queued to ${HYGIENE_QUEUE_PATH}`);
+  if (findings.contentContaminated) {
+    console.error(`    CONTAMINATED: ${findings.contaminationEvidence.join('; ') || '(no evidence labels)'} — queued to ${HYGIENE_QUEUE_PATH}`);
     appendHygieneQueue({
       syllabus_id: ch.id,
       grade: ch.grade,
       subject: ch.subject_code,
       chapter_number: ch.chapter_number,
-      evidence: parsed.contaminationEvidence,
+      evidence: findings.contaminationEvidence,
     });
   }
 
   // Assemble all 31 rows
   const ref: ChapterRef = { grade: ch.grade, subject: ch.subject_code, chapterNumber: ch.chapter_number };
-  const rows: InventoryRow[] = buildChunkPassRows({ syllabusId: ch.id, parsed, chunks });
+  const rows: InventoryRow[] = buildChunkPassRows({ syllabusId: ch.id, findings, chunks });
 
   for (const dim of QUESTION_BANK_SCAN_DIMENSIONS) {
     const res = await executeScanSpec(buildQuestionBankFilterSpec(dim, ref));

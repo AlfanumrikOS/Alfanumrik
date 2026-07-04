@@ -1,16 +1,30 @@
 /**
- * Wave 1 Task 1.2 — coverage math, expected-count heuristics on synthetic
- * NCERT-style text, scan filter-spec builders, and chunk-pass row assembly.
+ * Coverage math, expected-count heuristics on synthetic NCERT-style text, scan
+ * filter-spec builders, v2 finding composition, and chunk-pass row assembly.
  * Pure — no network, no DB.
+ *
+ * v2 ADAPTATIONS (engine redesign, 2026-07-03): buildChunkPassRows now consumes
+ * a code-composed ChapterFindings (structural scan + semantic batch merge +
+ * code contamination) instead of the retired v1 single-pass LLM response —
+ * test fixtures are built directly via makeFindings() rather than through
+ * parseAuditResponse. deriveExpectedExercises/maxSeriesIndex/isExerciseChunk
+ * MOVED to structural-scan.ts; coverage.ts re-exports them, and these tests
+ * keep importing from coverage.ts to pin that compatibility surface.
  */
 import { describe, it, expect } from 'vitest';
 
-import type { AuditChunk } from '../../../../scripts/knowledge-audit/dimensions';
+import {
+  ALL_DIMENSIONS,
+  type AuditChunk,
+  type Dimension,
+  type DimensionFinding,
+} from '../../../../scripts/knowledge-audit/dimensions';
 import {
   buildChunkPassRows,
   buildGeneratedContentFilterSpec,
   buildQuestionBankFilterSpec,
   COMPETENCY_DEAD_SOURCE_NOTE,
+  composeChapterFindings,
   computeCoverage,
   CONTAMINATED_LABEL,
   deriveExpectedCounts,
@@ -18,13 +32,34 @@ import {
   GARBLED_LABEL,
   maxSeriesIndex,
   routeSuspectedMissing,
+  type ChapterFindings,
 } from '../../../../scripts/knowledge-audit/coverage';
-import { parseAuditResponse } from '../../../../scripts/knowledge-audit/parse-response';
+import { runStructuralScan } from '../../../../scripts/knowledge-audit/structural-scan';
+import { mergeSemanticBatches, parseSemanticBatchResponse } from '../../../../scripts/knowledge-audit/parse-semantic';
 
 const REF = { grade: '6', subject: 'science', chapterNumber: 4 };
 
 function chunk(id: string, text: string, type: string | null = null): AuditChunk {
   return { chunk_id: id, chunk_text: text, content_type: type };
+}
+
+/** Build a ChapterFindings fixture directly (v1 built these via parseAuditResponse). */
+function makeFindings(
+  dims: Partial<Record<Dimension, Partial<DimensionFinding>>> = {},
+  flags: Partial<Omit<ChapterFindings, 'dimensions'>> = {},
+): ChapterFindings {
+  const dimensions = {} as Record<Dimension, DimensionFinding>;
+  for (const d of ALL_DIMENSIONS) {
+    dimensions[d] = { found_count: 0, evidence_chunk_ids: [], notes: '', ...(dims[d] ?? {}) };
+  }
+  return {
+    dimensions,
+    metadataGarbled: false,
+    contentContaminated: false,
+    contaminationEvidence: [],
+    suspectedMissing: [],
+    ...flags,
+  };
 }
 
 describe('computeCoverage', () => {
@@ -258,13 +293,62 @@ describe('buildGeneratedContentFilterSpec (pure query builder)', () => {
     expect(buildGeneratedContentFilterSpec('flashcards', REF).steps[0].table).toBe('spaced_repetition_cards');
   });
 
-  it('concept_graph_links -> two-step curriculum_topics projection into concept_edges either-endpoint match', () => {
-    const spec = buildGeneratedContentFilterSpec('concept_graph_links', REF);
+  // Assessment adjudication (2026-07-04): concepts = deterministic SSoT count of
+  // chapter_concepts — identical filter SHAPE to revision_notes (subject CODE
+  // column, no join). Both dims count the same curated rows.
+  it('concepts -> chapter_concepts SSoT, subject-CODE scoped (identical shape to revision_notes)', () => {
+    const spec = buildGeneratedContentFilterSpec('concepts', REF);
+    expect(spec.auditMethod).toBe('generated_content_scan');
+    expect(spec.steps).toHaveLength(1);
+    expect(spec.steps[0].table).toBe('chapter_concepts');
+    const filters = spec.steps[0].filters;
+    expect(filters).toContainEqual({ column: 'grade', op: 'eq', value: '6' });
+    expect(filters).toContainEqual({ column: 'subject', op: 'eq', value: 'science' });
+    expect(filters).toContainEqual({ column: 'chapter_number', op: 'eq', value: 4 });
+    expect(filters).toContainEqual({ column: 'is_active', op: 'eq', value: true });
+    // no subject_id / join step — chapter_concepts stores the code directly
+    expect(spec.steps.some((s) => s.table === 'subjects')).toBe(false);
+    // concepts and revision_notes produce the SAME step shape
+    expect(spec.steps).toEqual(buildGeneratedContentFilterSpec('revision_notes', REF).steps);
+  });
+
+  // Assessment adjudication (2026-07-04): topics = deterministic SSoT count of
+  // curriculum_topics, which is scoped by subject_id (uuid FK) — so the spec
+  // MUST resolve subjects.code → id first and reuse it via `in`. Filtering
+  // curriculum_topics by grade + chapter_number alone would over-count across
+  // all subjects sharing a chapter number.
+  it('topics -> curriculum_topics SSoT, subject-scoped via subjects.code→id join (two-step)', () => {
+    const spec = buildGeneratedContentFilterSpec('topics', REF);
+    expect(spec.auditMethod).toBe('generated_content_scan');
     expect(spec.steps).toHaveLength(2);
-    expect(spec.steps[0].table).toBe('curriculum_topics');
-    expect(spec.steps[0].captureIdsAs).toBe('topicIds');
-    expect(spec.steps[1].table).toBe('concept_edges');
-    const edgeFilter = spec.steps[1].filters[0];
+    // step 0: resolve subjects.code → id, capture it
+    expect(spec.steps[0].table).toBe('subjects');
+    expect(spec.steps[0].captureIdsAs).toBe('subjectIds');
+    expect(spec.steps[0].filters).toContainEqual({ column: 'code', op: 'eq', value: 'science' });
+    // step 1: curriculum_topics scoped by grade + chapter + is_active + subject_id IN captured
+    expect(spec.steps[1].table).toBe('curriculum_topics');
+    const filters = spec.steps[1].filters;
+    expect(filters).toContainEqual({ column: 'grade', op: 'eq', value: '6' });
+    expect(filters).toContainEqual({ column: 'chapter_number', op: 'eq', value: 4 });
+    expect(filters).toContainEqual({ column: 'is_active', op: 'eq', value: true });
+    expect(filters).toContainEqual({ column: 'subject_id', op: 'in', value: null, valueFrom: 'subjectIds' });
+    // the LAST step (row count) must be curriculum_topics, not subjects
+    expect(spec.steps[spec.steps.length - 1].table).toBe('curriculum_topics');
+  });
+
+  it('concept_graph_links -> three-step: subject id → subject-scoped curriculum_topics → concept_edges either-endpoint match', () => {
+    const spec = buildGeneratedContentFilterSpec('concept_graph_links', REF);
+    expect(spec.steps).toHaveLength(3);
+    // step 0: subject id resolution (the subject-scoping fix)
+    expect(spec.steps[0].table).toBe('subjects');
+    expect(spec.steps[0].captureIdsAs).toBe('subjectIds');
+    // step 1: curriculum_topics projection, now subject-scoped
+    expect(spec.steps[1].table).toBe('curriculum_topics');
+    expect(spec.steps[1].captureIdsAs).toBe('topicIds');
+    expect(spec.steps[1].filters).toContainEqual({ column: 'subject_id', op: 'in', value: null, valueFrom: 'subjectIds' });
+    // step 2: concept_edges either-endpoint match
+    expect(spec.steps[2].table).toBe('concept_edges');
+    const edgeFilter = spec.steps[2].filters[0];
     expect(edgeFilter.op).toBe('either_in');
     expect(edgeFilter.columns).toEqual(['from_topic_id', 'to_topic_id']);
     expect(edgeFilter.valueFrom).toBe('topicIds');
@@ -278,7 +362,7 @@ describe('buildGeneratedContentFilterSpec (pure query builder)', () => {
 });
 
 describe('routeSuspectedMissing', () => {
-  it('routes labels to their dimension by keyword; unrouted labels land on topics', () => {
+  it('routes labels to their dimension by keyword; unrouted labels land on headings (chunk-pass catch-all)', () => {
     const routed = routeSuspectedMissing([
       'Activity 4.5 referenced but not present',
       'Fig. 4.2 missing (numbering gap)',
@@ -288,7 +372,96 @@ describe('routeSuspectedMissing', () => {
     expect(routed.get('activities')).toEqual(['Activity 4.5 referenced but not present']);
     expect(routed.get('diagrams')).toEqual(['Fig. 4.2 missing (numbering gap)']);
     expect(routed.get('exercises')).toEqual(['Exercise section truncated after Q7']);
-    expect(routed.get('topics')).toEqual(['something completely unclassifiable']);
+    // catch-all is 'headings' now (topics left the chunk-pass lane 2026-07-04)
+    expect(routed.get('headings')).toEqual(['something completely unclassifiable']);
+    expect(routed.get('topics')).toBeUndefined();
+  });
+
+  it('never routes labels to topics/concepts (they left the chunk-pass lane — a routed label would vanish)', () => {
+    const routed = routeSuspectedMissing([
+      'new concept referenced but not developed',
+      'topic heading missing',
+    ]);
+    // no routing target may be a non-chunk-pass dimension
+    expect(routed.has('concepts')).toBe(false);
+    expect(routed.has('topics')).toBe(false);
+    // both fall through to the headings catch-all instead of being dropped
+    expect(routed.get('headings')).toEqual([
+      'new concept referenced but not developed',
+      'topic heading missing',
+    ]);
+  });
+});
+
+describe('composeChapterFindings (v2 three-lane composition)', () => {
+  const chunks = [
+    chunk('c-1', '4.1 Sorting Materials We group materials. Activity 4.1 Collect objects. Fig. 4.1: Objects made of wood. Fig. 4.3: Metal objects.'),
+    chunk('c-2', 'A material with lustre is called lustrous.'),
+  ];
+  const structural = runStructuralScan(chunks, 4);
+  const semanticBatch = parseSemanticBatchResponse(
+    JSON.stringify({
+      dimensions: { real_world_applications: { items: ['copper wiring'], evidence_chunk_ids: ['c-2'] } },
+      metadata_garbled: false,
+      suspected_missing: ['Fig. 4.2 referenced but not present'],
+    }),
+    ['c-1', 'c-2'],
+  );
+  if (!semanticBatch.ok) throw new Error('semantic fixture parse failed');
+  const semantic = mergeSemanticBatches([semanticBatch]);
+
+  it('merges structural (deterministic) + semantic (LLM) + contamination (code) into all 31 dims', () => {
+    const findings = composeChapterFindings({
+      structural,
+      semantic,
+      contamination: { contaminated: false, evidence: [] },
+    });
+    expect(Object.keys(findings.dimensions)).toHaveLength(31);
+    // structural lane: exact deterministic counts with the deterministic note
+    expect(findings.dimensions.diagrams.found_count).toBe(2);
+    expect(findings.dimensions.diagrams.notes).toMatch(/deterministic structural scan/);
+    expect(findings.dimensions.activities.found_count).toBe(1);
+    expect(findings.dimensions.headings.found_count).toBe(1);
+    // definitions is now on the DETERMINISTIC structural lane (2026-07-04):
+    // "...lustre is called lustrous" in c-2 is counted structurally, not by the LLM.
+    expect(findings.dimensions.definitions.found_count).toBe(1);
+    expect(findings.dimensions.definitions.notes).toMatch(/deterministic structural scan/);
+    // semantic lane: label-deduped items
+    expect(findings.dimensions.real_world_applications.found_count).toBe(1);
+    expect(findings.dimensions.real_world_applications.notes).toMatch(/semantic batch pass/);
+    // scan lane: 0-filled placeholders (overwritten later by DB scans)
+    expect(findings.dimensions.hots_questions.found_count).toBe(0);
+    expect(findings.dimensions.hots_questions.notes).toBe('measured by scan lane');
+  });
+
+  it('unions deterministic gap labels with LLM suspected_missing, deduped', () => {
+    const findings = composeChapterFindings({
+      structural,
+      semantic,
+      contamination: { contaminated: false, evidence: [] },
+    });
+    // structural gap (Fig 4.1 → 4.3) AND the LLM label both survive
+    expect(findings.suspectedMissing).toContain('Fig. 4.2 absent (numbering gap)');
+    expect(findings.suspectedMissing).toContain('Fig. 4.2 referenced but not present');
+  });
+
+  it('contamination comes from code, not the model', () => {
+    const findings = composeChapterFindings({
+      structural,
+      semantic,
+      contamination: { contaminated: true, evidence: ['multiple summary blocks (2)'] },
+    });
+    expect(findings.contentContaminated).toBe(true);
+    expect(findings.contaminationEvidence).toEqual(['multiple summary blocks (2)']);
+  });
+
+  it('metadata_garbled propagates from the semantic pass (OR across batches)', () => {
+    const findings = composeChapterFindings({
+      structural,
+      semantic: { ...semantic, metadataGarbled: true },
+      contamination: { contaminated: false, evidence: [] },
+    });
+    expect(findings.metadataGarbled).toBe(true);
   });
 });
 
@@ -297,28 +470,26 @@ describe('buildChunkPassRows (row assembly, P13)', () => {
     chunk('c-1', 'Activity 4.1 do this. Activity 4.2 do that.'),
     chunk('c-2', 'Fig. 4.1 and Fig. 4.3 are shown.'),
   ];
-  const parsed = parseAuditResponse(
-    JSON.stringify({
-      dimensions: {
-        activities: { found_count: 2, evidence_chunk_ids: ['c-1'], notes: '' },
-        diagrams: { found_count: 2, evidence_chunk_ids: ['c-2'], notes: '' },
-      },
-      metadata_garbled: false,
-      suspected_missing: ['Fig. 4.2 missing (numbering gap)'],
-    }),
-    ['c-1', 'c-2'],
+  const findings = makeFindings(
+    {
+      activities: { found_count: 2, evidence_chunk_ids: ['c-1'] },
+      diagrams: { found_count: 2, evidence_chunk_ids: ['c-2'] },
+    },
+    { suspectedMissing: ['Fig. 4.2 missing (numbering gap)'] },
   );
-  if (!parsed.ok) throw new Error('fixture parse failed');
 
-  it('emits exactly the 22 chunk_pass rows with method chunk_pass', () => {
-    const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed, chunks });
-    expect(rows).toHaveLength(22);
+  it('emits exactly the 20 chunk_pass rows with method chunk_pass (topics/concepts moved to the SSoT scan lane)', () => {
+    const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings, chunks });
+    expect(rows).toHaveLength(20);
     expect(rows.every((r) => r.audit_method === 'chunk_pass')).toBe(true);
     expect(rows.every((r) => r.syllabus_id === 'syl-1')).toBe(true);
+    // topics/concepts are no longer emitted as chunk_pass rows
+    expect(rows.some((r) => r.dimension === 'topics')).toBe(false);
+    expect(rows.some((r) => r.dimension === 'concepts')).toBe(false);
   });
 
   it('wires found/expected/coverage together (diagram gap 4.1->4.3 => expected 3, found 2 => 66.67%)', () => {
-    const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed, chunks });
+    const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings, chunks });
     const diagrams = rows.find((r) => r.dimension === 'diagrams')!;
     expect(diagrams.found_count).toBe(2);
     expect(diagrams.expected_count).toBe(3);
@@ -329,7 +500,7 @@ describe('buildChunkPassRows (row assembly, P13)', () => {
   });
 
   it('evidence carries chunk IDs only and suspected_missing routes to the right row (P13: labels/ids only)', () => {
-    const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed, chunks });
+    const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings, chunks });
     const diagrams = rows.find((r) => r.dimension === 'diagrams')!;
     expect(diagrams.evidence).toEqual(['c-2']);
     expect(diagrams.suspected_missing).toEqual(['Fig. 4.2 missing (numbering gap)']);
@@ -340,38 +511,32 @@ describe('buildChunkPassRows (row assembly, P13)', () => {
   });
 
   it('metadata_garbled taints every chunk-pass row with the garbled label', () => {
-    const garbled = parseAuditResponse(
-      JSON.stringify({ dimensions: {}, metadata_garbled: true, suspected_missing: [] }),
-      ['c-1'],
-    );
-    if (!garbled.ok) throw new Error('fixture parse failed');
-    const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed: garbled, chunks });
+    const garbled = makeFindings({}, { metadataGarbled: true });
+    const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings: garbled, chunks });
     expect(rows.every((r) => r.suspected_missing.includes(GARBLED_LABEL))).toBe(true);
   });
 
   // Assessment condition 1 (2026-07-03): contamination = count-as-is + flag.
   // Counts stay as evidence; every row is tainted with CONTAMINATED_LABEL; and
   // coverage_pct is NULLed for the series-numbered dimensions whose N.M
-  // denominators a foreign chapter pollutes.
+  // denominators a foreign chapter pollutes. (v2: the flag now originates from
+  // contamination.ts — code-computed — instead of the model, so this path is
+  // actually reachable.)
   describe('content_contaminated handling', () => {
-    const contaminated = parseAuditResponse(
-      JSON.stringify({
-        dimensions: {
-          activities: { found_count: 2, evidence_chunk_ids: ['c-1'], notes: '' },
-          diagrams: { found_count: 2, evidence_chunk_ids: ['c-2'], notes: '' },
-          definitions: { found_count: 5, evidence_chunk_ids: ['c-1'], notes: '' },
-        },
-        metadata_garbled: false,
-        content_contaminated: true,
-        contamination_evidence: ['second SUMMARY block', 'foreign major-number series 13.x'],
-        suspected_missing: [],
-      }),
-      ['c-1', 'c-2'],
+    const contaminated = makeFindings(
+      {
+        activities: { found_count: 2, evidence_chunk_ids: ['c-1'] },
+        diagrams: { found_count: 2, evidence_chunk_ids: ['c-2'] },
+        definitions: { found_count: 5, evidence_chunk_ids: ['c-1'] },
+      },
+      {
+        contentContaminated: true,
+        contaminationEvidence: ['second SUMMARY block', 'foreign major-number series 13.x'],
+      },
     );
-    if (!contaminated.ok) throw new Error('fixture parse failed');
 
     it('taints every chunk-pass row with CONTAMINATED_LABEL while counts remain', () => {
-      const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed: contaminated, chunks });
+      const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings: contaminated, chunks });
       expect(rows.every((r) => r.suspected_missing.includes(CONTAMINATED_LABEL))).toBe(true);
       expect(rows.find((r) => r.dimension === 'activities')!.found_count).toBe(2);
       expect(rows.find((r) => r.dimension === 'diagrams')!.found_count).toBe(2);
@@ -379,7 +544,7 @@ describe('buildChunkPassRows (row assembly, P13)', () => {
     });
 
     it('NULLs coverage_pct for series-numbered dimensions but keeps expected_count as evidence', () => {
-      const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed: contaminated, chunks });
+      const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings: contaminated, chunks });
       for (const dim of ['diagrams', 'activities', 'tables', 'examples', 'exercises'] as const) {
         expect(rows.find((r) => r.dimension === dim)!.coverage_pct).toBeNull();
       }
@@ -390,18 +555,14 @@ describe('buildChunkPassRows (row assembly, P13)', () => {
     });
 
     it('uncontaminated chapters keep series coverage (regression guard on the clean path)', () => {
-      const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed, chunks });
+      const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings, chunks });
       expect(rows.find((r) => r.dimension === 'diagrams')!.coverage_pct).toBe(66.67);
       expect(rows.every((r) => !r.suspected_missing.includes(CONTAMINATED_LABEL))).toBe(true);
     });
 
     it('garbled + contaminated stack both labels', () => {
-      const both = parseAuditResponse(
-        JSON.stringify({ dimensions: {}, metadata_garbled: true, content_contaminated: true }),
-        ['c-1'],
-      );
-      if (!both.ok) throw new Error('fixture parse failed');
-      const rows = buildChunkPassRows({ syllabusId: 'syl-1', parsed: both, chunks });
+      const both = makeFindings({}, { metadataGarbled: true, contentContaminated: true });
+      const rows = buildChunkPassRows({ syllabusId: 'syl-1', findings: both, chunks });
       expect(rows.every((r) => r.suspected_missing.includes(GARBLED_LABEL))).toBe(true);
       expect(rows.every((r) => r.suspected_missing.includes(CONTAMINATED_LABEL))).toBe(true);
     });

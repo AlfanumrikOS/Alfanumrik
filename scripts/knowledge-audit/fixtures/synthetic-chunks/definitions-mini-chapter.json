@@ -1,0 +1,37 @@
+{
+  "description": "Synthetic definitions-focused mini-chapter (g6 science style). Authored to exercise the deterministic definitions scanner moved off the semantic LLM lane 2026-07-04. OCR-FLATTENED (markers inline). Proves: (a) 10 distinct defined terms across the 4 cue forms (is/are called, known as, defined as, termed); (b) OVERLAP dedup — the photosynthesis sentence repeats in def-c1 and def-c2, counted once; (c) MULTI-SENTENCE collapse — respiration is defined by two different sentences, still one term; (d) SUB-TYPE head collapse — 'venation' + 'parallel venation' + 'reticulate venation' collapse to one head 'venation'; (e) TRAPS that must NOT count: object-article ('is called a meeting'), pronoun-subject idiom ('it is called a day'), conjunction-subject FRAGMENT ('and are called climbers'), and anti-tautology ('roots are called fibrous roots'). No corpus text copied — every sentence is authored. Authored truth in `truth`.",
+  "chapter_number": 2,
+  "chapter_title": "Life Processes in Plants and Animals",
+  "chunks": [
+    {
+      "chunk_id": "def-c1",
+      "chunk_text": "2.1 How Plants Make Food The process by which green plants prepare their own food using sunlight is called photosynthesis. The process by which living things release energy from food is called respiration. The change of water into vapour on heating is known as evaporation.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "def-c2",
+      "chunk_text": "The process by which green plants prepare their own food using sunlight is called photosynthesis. The change of vapour back into liquid water on cooling is termed condensation. The sprouting of a young plant from a seed is defined as germination.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "def-c3",
+      "chunk_text": "2.2 Feeding Relationships Breathing that releases energy inside living cells is called respiration. The transfer of pollen from one flower to another is called pollination. Animals that eat only plants are called herbivores. Animals that hunt and eat other animals are called carnivores.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "def-c4",
+      "chunk_text": "2.3 Leaves and Living Places The arrangement of veins in a leaf is called venation. Veins running side by side are called parallel venation. A net-like arrangement of veins is called reticulate venation. The natural place where an organism lives is called habitat.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "def-c5",
+      "chunk_text": "The gathering of all students in the hall is called a meeting. When the day's work is finished, it is called a day. Some plants have weak stems, grow upward, and are called climbers. Such roots are called fibrous roots.",
+      "content_type": "concept"
+    }
+  ],
+  "truth": {
+    "definitions": 10,
+    "definitions_kept": ["photosynthesis", "respiration", "evaporation", "condensation", "germination", "pollination", "herbivores", "carnivores", "venation", "habitat"],
+    "definitions_rejected": ["a meeting (object article)", "a day (pronoun-subject idiom)", "climbers (conjunction-subject fragment)", "fibrous roots (anti-tautology: subject head == object head)"]
+  }
+}

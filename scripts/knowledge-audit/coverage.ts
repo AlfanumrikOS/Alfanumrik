@@ -1,8 +1,8 @@
 /**
  * scripts/knowledge-audit/coverage.ts
  *
- * Pure coverage math + expected-count heuristics + scan filter-spec builders
- * for the chunk-pass knowledge audit.
+ * Pure coverage math + expected-count heuristics + scan filter-spec builders +
+ * v2 finding composition for the chunk-pass knowledge audit.
  *
  * - computeCoverage(found, expected): pct to 2dp, null when expected is null
  *   (or non-positive — no denominator), clamped to [0, 100] to satisfy the
@@ -11,28 +11,43 @@
  *   enumerable from NCERT text conventions — numbered-series continuity
  *   (Activity/Fig./Table/Example N.M: a gap like Fig 4.1 → 4.3 implies the
  *   book has ≥ 3 figures, so expected = max minor index observed) and
- *   exercise question-number continuity. All other dimensions → null.
+ *   exercise question-number continuity (implementation moved to
+ *   structural-scan.ts in v2; re-exported here for compatibility).
+ *   All other dimensions → null.
  * - buildQuestionBankFilterSpec / buildGeneratedContentFilterSpec: PURE query
  *   builders returning a declarative filter spec (no I/O) that run-audit.ts
  *   executes against PostgREST. Keeping them pure makes the routing unit-testable.
- * - buildChunkPassRows: assembles the 22 chunk_pass InventoryRows from a
- *   parsed model response (evidence ids only — P13). Garbled/contaminated
- *   chapters keep their counts but carry taint labels; contamination also
- *   NULLs coverage_pct on the series-numbered dimensions.
+ * - composeChapterFindings (v2): merges the deterministic structural scan, the
+ *   batched semantic LLM pass, and the code-computed contamination result into
+ *   one ChapterFindings object covering all 31 dimensions.
+ * - buildChunkPassRows: assembles the 22 chunk_pass InventoryRows from
+ *   ChapterFindings (evidence ids only — P13). Garbled/contaminated chapters
+ *   keep their counts but carry taint labels; contamination also NULLs
+ *   coverage_pct on the series-numbered dimensions.
  *
  * No I/O, no network. Unit-tested in
  * src/__tests__/scripts/knowledge-audit/coverage.test.ts.
  */
 
 import {
+  ALL_DIMENSIONS,
   CHUNK_PASS_DIMENSIONS,
+  SEMANTIC_DIMENSIONS,
+  STRUCTURAL_DIMENSIONS,
   type AuditChunk,
   type Dimension,
+  type DimensionFinding,
   type GeneratedContentScanDimension,
   type InventoryRow,
   type QuestionBankScanDimension,
 } from './dimensions';
-import type { ParsedAudit } from './parse-response';
+import type { ContaminationResult } from './contamination';
+import type { MergedSemanticPass } from './parse-semantic';
+import { deriveExpectedExercises, maxSeriesIndex, type StructuralScanResult } from './structural-scan';
+
+// v1 compatibility re-export: the exercise-continuity machinery moved to
+// structural-scan.ts (it is now the FOUND counter too, not just expected).
+export { deriveExpectedExercises, isExerciseChunk, maxSeriesIndex } from './structural-scan';
 
 // ─── Coverage math ────────────────────────────────────────────────────────────
 
@@ -49,116 +64,16 @@ export function computeCoverage(found: number, expected: number | null): number 
 
 // ─── Expected-count heuristics (NCERT numbering conventions) ─────────────────
 
-/** Sanity ceilings so OCR junk ("Fig 4.2019") never inflates expectations. */
-const MAX_MINOR_INDEX = 99;
-const MAX_EXERCISE_QUESTION = 80;
-
-/**
- * Scan text for a numbered series like "Activity 4.1" / "Fig. 4.3" and return
- * the implied series size: group matches by MAJOR number (chapter), take the
- * major with the most matches (references to other chapters are minority
- * noise), and return the MAX minor index — numbering continuity means a gap
- * (4.1 → 4.3) still implies the book has at least 3 items.
- * Returns null when no dotted matches exist.
- */
-export function maxSeriesIndex(text: string, label: RegExp): number | null {
-  const byMajor = new Map<number, number[]>();
-  for (const m of text.matchAll(label)) {
-    const major = parseInt(m[1], 10);
-    const minor = parseInt(m[2], 10);
-    if (!Number.isFinite(major) || !Number.isFinite(minor)) continue;
-    if (minor < 1 || minor > MAX_MINOR_INDEX) continue;
-    const arr = byMajor.get(major) ?? [];
-    arr.push(minor);
-    byMajor.set(major, arr);
-  }
-  if (byMajor.size === 0) return null;
-  let bestMajor: number[] | null = null;
-  for (const arr of byMajor.values()) {
-    if (!bestMajor || arr.length > bestMajor.length) bestMajor = arr;
-  }
-  return bestMajor ? Math.max(...bestMajor) : null;
-}
-
 /** Series regexes: capture group 1 = major (chapter), group 2 = minor. */
 const SERIES_PATTERNS: Partial<Record<Dimension, RegExp>> = {
   activities: /\bActivity\s+(\d{1,2})\.(\d{1,3})\b/gi,
   diagrams: /\bFig(?:ure)?\.?\s*(\d{1,2})\.(\d{1,3})\b/gi,
   tables: /\bTable\s+(\d{1,2})\.(\d{1,3})\b/gi,
-  examples: /\bExample\s+(\d{1,2})\.(\d{1,3})\b/gi,
+  // Case-sensitive on the capital E (matches structural-scan.ts, assessment
+  // pre-pilot condition 2026-07-04): prose "for example 2.5 litres" must not
+  // inflate the EXPECTED denominator either.
+  examples: /\b(?:Example|EXAMPLE)\s+(\d{1,2})\.(\d{1,3})\b/g,
 };
-
-/** Is this chunk plausibly part of an exercise / question-set block? */
-function isExerciseChunk(c: AuditChunk): boolean {
-  if (c.content_type && /exercise|question/i.test(c.content_type)) return true;
-  return (
-    /\bEXERCISES?\b/i.test(c.chunk_text.slice(0, 400)) ||
-    /\bExercises\b/.test(c.chunk_text) ||
-    /\bIntext\s+Questions?\b/i.test(c.chunk_text) ||
-    /\bLet us enhance our learning\b/i.test(c.chunk_text)
-  );
-}
-
-/**
- * Question-set header line: mid-chapter "Exercise N.M", end-of-chapter
- * "Exercises" / "Let us enhance our learning", or NCERT "Intext Questions".
- */
-const SET_HEADER_RE = /\bEXERCISES?\b(?:\s+(\d{1,2}\.\d{1,3}))?|\bIntext\s+Questions?\b|\bLet us enhance our learning\b/i;
-
-function setKeyForHeader(m: RegExpMatchArray): string {
-  if (m[1]) return `exercise ${m[1]}`; // e.g. "exercise 6.1" / "exercise 6.2"
-  const label = m[0].toLowerCase();
-  if (label.includes('intext')) return 'intext questions';
-  if (label.includes('enhance')) return 'let us enhance our learning';
-  return 'exercises';
-}
-
-/**
- * Expected chapter question count via per-set numbering continuity.
- *
- * NCERT chapters carry MULTIPLE question sets (mid-chapter Exercise N.M sets,
- * the end-of-chapter Exercises, Intext Questions) and EACH SET restarts its
- * numbering at 1 — so the chapter expectation is the SUM of per-set maxima
- * (Exercise 6.1 with 6 Qs + Exercise 6.2 with 6 Qs → 12, not max 6).
- *
- * Sets are keyed by their header label so overlap-duplicated chunks (the same
- * "EXERCISE 6.1" block stored 2-3x by sliding-window chunking) MERGE into one
- * set instead of double-counting. Within a set the old safety rules hold: the
- * series must start near 1 (min ≤ 2 — a stray "42." can't fabricate
- * 42 questions) and minors above MAX_EXERCISE_QUESTION are OCR junk.
- */
-export function deriveExpectedExercises(chunks: AuditChunk[]): number | null {
-  const exerciseText = chunks.filter(isExerciseChunk).map((c) => c.chunk_text).join('\n');
-  if (!exerciseText) return null;
-
-  const setNums = new Map<string, number[]>();
-  let currentKey = 'default';
-  for (const line of exerciseText.split('\n')) {
-    const header = line.match(SET_HEADER_RE);
-    if (header) {
-      currentKey = setKeyForHeader(header);
-      if (!setNums.has(currentKey)) setNums.set(currentKey, []);
-      continue;
-    }
-    const q = line.match(/^\s{0,4}(\d{1,2})[.)]\s+/);
-    if (!q) continue;
-    const n = parseInt(q[1], 10);
-    if (n < 1 || n > MAX_EXERCISE_QUESTION) continue;
-    const arr = setNums.get(currentKey) ?? [];
-    arr.push(n);
-    setNums.set(currentKey, arr);
-  }
-
-  let total = 0;
-  let anyReliable = false;
-  for (const nums of setNums.values()) {
-    if (nums.length === 0) continue;
-    if (Math.min(...nums) > 2) continue; // set doesn't start at the top — unreliable
-    total += Math.max(...nums);
-    anyReliable = true;
-  }
-  return anyReliable ? total : null;
-}
 
 /**
  * Expected count for a dimension, or null when no reliable text heuristic
@@ -269,15 +184,42 @@ export function buildQuestionBankFilterSpec(
 }
 
 /**
+ * curriculum_topics is scoped by subject_id (uuid FK → subjects.id), NOT by a
+ * subject-code column (chapter_concepts, by contrast, stores the code directly).
+ * So any curriculum_topics scan MUST resolve subjects.code → subjects.id first
+ * and reuse the captured id via an `in` filter. Filtering curriculum_topics on
+ * grade + chapter_number alone (no subject) over-counts across ALL subjects that
+ * happen to share a chapter number — the latent bug this helper closes.
+ */
+function subjectIdLookupStep(ref: ChapterRef): ScanStep {
+  return {
+    table: 'subjects',
+    select: 'id',
+    captureIdsAs: 'subjectIds',
+    filters: [{ column: 'code', op: 'eq', value: ref.subject }],
+  };
+}
+
+/**
  * Generated-content scan specs (audit_method='generated_content_scan'):
  * - revision_notes:      chapter_concepts deck rows for the chapter (the
  *                        curated concept cards ARE the platform's revision notes)
+ * - concepts:            chapter_concepts SSoT count — identical filter shape to
+ *                        revision_notes (grade + subject CODE + chapter +
+ *                        is_active). The curated concept rows ARE the single
+ *                        source of truth for how many concepts a chapter has;
+ *                        moved off the semantic LLM lane 2026-07-04.
+ * - topics:              curriculum_topics SSoT count, SUBJECT-SCOPED via the
+ *                        subjects.code → subjects.id join (curriculum_topics has
+ *                        no subject-code column). Moved off the semantic LLM lane
+ *                        2026-07-04.
  * - flashcards:          spaced_repetition_cards for the chapter (note:
  *                        student-scoped instances — counts card instances, not
  *                        unique templates)
  * - concept_graph_links: concept_edges touching the chapter's curriculum_topics
- *                        (two-step: project topic ids, then count edges whose
- *                        from_topic_id OR to_topic_id is in that set)
+ *                        (three-step: resolve subject id, project subject-scoped
+ *                        topic ids, then count edges whose from_topic_id OR
+ *                        to_topic_id is in that set)
  * - mind_maps:           NO on-platform source yet — empty spec, found 0 + note
  */
 export function buildGeneratedContentFilterSpec(
@@ -286,6 +228,11 @@ export function buildGeneratedContentFilterSpec(
 ): ScanSpec {
   switch (dimension) {
     case 'revision_notes':
+    case 'concepts':
+      // Both count chapter_concepts rows for the chapter (subject CODE column,
+      // no join): revision_notes because the curated concept cards ARE the
+      // revision notes; concepts because those same curated rows are the SSoT
+      // count of the chapter's concepts.
       return {
         dimension,
         auditMethod: 'generated_content_scan',
@@ -298,6 +245,25 @@ export function buildGeneratedContentFilterSpec(
               { column: 'subject', op: 'eq', value: ref.subject },
               { column: 'chapter_number', op: 'eq', value: ref.chapterNumber },
               { column: 'is_active', op: 'eq', value: true },
+            ],
+          },
+        ],
+      };
+    case 'topics':
+      // curriculum_topics SSoT count, subject-scoped via subjects.code → id.
+      return {
+        dimension,
+        auditMethod: 'generated_content_scan',
+        steps: [
+          subjectIdLookupStep(ref),
+          {
+            table: 'curriculum_topics',
+            select: 'id',
+            filters: [
+              { column: 'grade', op: 'eq', value: ref.grade },
+              { column: 'chapter_number', op: 'eq', value: ref.chapterNumber },
+              { column: 'is_active', op: 'eq', value: true },
+              { column: 'subject_id', op: 'in', value: null, valueFrom: 'subjectIds' },
             ],
           },
         ],
@@ -325,6 +291,7 @@ export function buildGeneratedContentFilterSpec(
         dimension,
         auditMethod: 'generated_content_scan',
         steps: [
+          subjectIdLookupStep(ref),
           {
             table: 'curriculum_topics',
             select: 'id',
@@ -333,6 +300,7 @@ export function buildGeneratedContentFilterSpec(
               { column: 'grade', op: 'eq', value: ref.grade },
               { column: 'chapter_number', op: 'eq', value: ref.chapterNumber },
               { column: 'is_active', op: 'eq', value: true },
+              { column: 'subject_id', op: 'in', value: null, valueFrom: 'subjectIds' },
             ],
           },
           {
@@ -375,19 +343,22 @@ const SUSPECTED_ROUTES: Array<{ pattern: RegExp; dimension: Dimension }> = [
   { pattern: /caption/i, dimension: 'captions' },
   { pattern: /keyword/i, dimension: 'keywords' },
   { pattern: /objective/i, dimension: 'learning_objectives' },
-  { pattern: /concept/i, dimension: 'concepts' },
 ];
 
 /**
  * Route chapter-level suspected_missing labels to their dimension rows by
- * keyword. Unrouted labels land on 'topics' (structural catch-all) so nothing
- * is silently dropped.
+ * keyword. Unrouted labels land on 'headings' (the chunk-pass structural
+ * catch-all) so nothing is silently dropped. NOTE: 'topics' and 'concepts' are
+ * NO LONGER chunk-pass dimensions (they moved to the generated_content_scan SSoT
+ * lane 2026-07-04), so they cannot be routing targets — buildChunkPassRows never
+ * emits rows for them, and a label routed there would vanish. The former
+ * /concept/i → 'concepts' route was removed for the same reason.
  */
 export function routeSuspectedMissing(entries: string[]): Map<Dimension, string[]> {
   const out = new Map<Dimension, string[]>();
   for (const entry of entries) {
     const route = SUSPECTED_ROUTES.find((r) => r.pattern.test(entry));
-    const dim: Dimension = route ? route.dimension : 'topics';
+    const dim: Dimension = route ? route.dimension : 'headings';
     const arr = out.get(dim) ?? [];
     arr.push(entry);
     out.set(dim, arr);
@@ -415,8 +386,69 @@ const SERIES_NUMBERED_DIMENSIONS: ReadonlySet<Dimension> = new Set([
 ]);
 
 /**
- * Assemble the 22 chunk_pass InventoryRows for one chapter from the parsed
- * model response. Evidence = chunk ids only (P13). When metadata_garbled is
+ * The chapter-level audit findings consumed by buildChunkPassRows.
+ *
+ * v1 this was the parsed single-pass LLM response (ParsedAudit in
+ * parse-response.ts). v2 it is COMPOSED in code by composeChapterFindings():
+ * deterministic structural scan + batched semantic LLM pass + code-computed
+ * contamination. Same shape, different (and now mostly deterministic) origin.
+ */
+export interface ChapterFindings {
+  dimensions: Record<Dimension, DimensionFinding>;
+  metadataGarbled: boolean;
+  /** Chapter mixes foreign-chapter/book content (count-as-is + flag, never abstain). */
+  contentContaminated: boolean;
+  /** Short labels only (e.g. "second SUMMARY block") — never passage text (P13). */
+  contaminationEvidence: string[];
+  suspectedMissing: string[];
+}
+
+/**
+ * v2 composition: merge the three measurement lanes into one ChapterFindings.
+ * - 12 structural dims: exact deterministic counts (notes carry
+ *   "deterministic structural scan: ...").
+ * - 10 semantic dims: batched-LLM item enumeration, label-deduped in code.
+ * - contamination: computed by contamination.ts from series metadata — the v1
+ *   LLM flag (which never flipped) is gone.
+ * - metadata_garbled comes from the semantic pass (OR across batches).
+ * - suspected_missing: deterministic numbering-gap labels + LLM labels, deduped.
+ * The 9 scan-lane dimensions are 0-filled here and OVERWRITTEN later by the
+ * question_bank / generated-content scans (unchanged v1 behavior).
+ */
+export function composeChapterFindings(args: {
+  structural: StructuralScanResult;
+  semantic: MergedSemanticPass;
+  contamination: ContaminationResult;
+}): ChapterFindings {
+  const { structural, semantic, contamination } = args;
+  const dimensions = {} as Record<Dimension, DimensionFinding>;
+  for (const dim of ALL_DIMENSIONS) {
+    dimensions[dim] = { found_count: 0, evidence_chunk_ids: [], notes: 'measured by scan lane' };
+  }
+  for (const dim of STRUCTURAL_DIMENSIONS) dimensions[dim] = structural.findings[dim];
+  for (const dim of SEMANTIC_DIMENSIONS) dimensions[dim] = semantic.dimensions[dim];
+
+  const suspectedSeen = new Set<string>();
+  const suspectedMissing: string[] = [];
+  for (const label of [...structural.suspectedMissing, ...semantic.suspectedMissing]) {
+    const key = label.trim().toLowerCase();
+    if (!key || suspectedSeen.has(key)) continue;
+    suspectedSeen.add(key);
+    suspectedMissing.push(label);
+  }
+
+  return {
+    dimensions,
+    metadataGarbled: semantic.metadataGarbled,
+    contentContaminated: contamination.contaminated,
+    contaminationEvidence: contamination.evidence,
+    suspectedMissing,
+  };
+}
+
+/**
+ * Assemble the 22 chunk_pass InventoryRows for one chapter from the composed
+ * chapter findings. Evidence = chunk ids only (P13). When metadata_garbled is
  * true, every chunk-pass row carries the GARBLED_LABEL in suspected_missing so
  * gap queries can't mistake corrupt-source zeros for genuine absence. When
  * content_contaminated is true, every row likewise carries CONTAMINATED_LABEL
@@ -425,18 +457,18 @@ const SERIES_NUMBERED_DIMENSIONS: ReadonlySet<Dimension> = new Set([
  */
 export function buildChunkPassRows(args: {
   syllabusId: string;
-  parsed: ParsedAudit;
+  findings: ChapterFindings;
   chunks: AuditChunk[];
 }): InventoryRow[] {
-  const { syllabusId, parsed, chunks } = args;
-  const routed = routeSuspectedMissing(parsed.suspectedMissing);
+  const { syllabusId, findings, chunks } = args;
+  const routed = routeSuspectedMissing(findings.suspectedMissing);
   return CHUNK_PASS_DIMENSIONS.map((dimension) => {
-    const finding = parsed.dimensions[dimension];
+    const finding = findings.dimensions[dimension];
     const expected = deriveExpectedCounts(chunks, dimension);
     const suspected = [...(routed.get(dimension) ?? [])];
-    if (parsed.metadataGarbled) suspected.push(GARBLED_LABEL);
-    if (parsed.contentContaminated) suspected.push(CONTAMINATED_LABEL);
-    const coverageUntrusted = parsed.contentContaminated && SERIES_NUMBERED_DIMENSIONS.has(dimension);
+    if (findings.metadataGarbled) suspected.push(GARBLED_LABEL);
+    if (findings.contentContaminated) suspected.push(CONTAMINATED_LABEL);
+    const coverageUntrusted = findings.contentContaminated && SERIES_NUMBERED_DIMENSIONS.has(dimension);
     return {
       syllabus_id: syllabusId,
       dimension,

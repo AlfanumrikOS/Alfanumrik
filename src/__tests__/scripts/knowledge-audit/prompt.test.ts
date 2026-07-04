@@ -1,7 +1,12 @@
 /**
- * Wave 1 Task 1.2 — knowledge-audit prompt builder (pure, no network).
- * Verifies: dimension model integrity, prompt shape, evidence-grounding
- * instructions, NCERT counting conventions, and P13 (ids-only evidence).
+ * Knowledge-audit v2 — semantic batch prompt builder (pure, no network).
+ *
+ * ADAPTED from the v1 single-pass prompt tests: the model no longer receives
+ * the 22-dimension counting contract. Structural dimensions moved to the
+ * deterministic scanner (structural-scan.test.ts), contamination moved to code
+ * (contamination.test.ts); the prompt now covers ONLY the 10 semantic
+ * dimensions, batched, returning ITEMS (labels) instead of counts. The
+ * dimension-model integrity tests carry over unchanged.
  */
 import { describe, it, expect } from 'vitest';
 
@@ -10,13 +15,17 @@ import {
   CHUNK_PASS_DIMENSIONS,
   GENERATED_CONTENT_SCAN_DIMENSIONS,
   QUESTION_BANK_SCAN_DIMENSIONS,
+  SEMANTIC_DIMENSIONS,
+  STRUCTURAL_DIMENSIONS,
   type AuditChunk,
 } from '../../../../scripts/knowledge-audit/dimensions';
 import {
-  buildAuditSystemPrompt,
-  buildAuditUserMessage,
-  buildOutputContract,
+  batchChunks,
+  buildSemanticOutputContract,
+  buildSemanticSystemPrompt,
+  buildSemanticUserMessage,
   estimateTokens,
+  MAX_CHUNKS_PER_BATCH,
 } from '../../../../scripts/knowledge-audit/prompt';
 
 const CTX = { grade: '6', subject: 'science', chapterNumber: 4, chapterTitle: 'Sorting Materials into Groups' };
@@ -26,13 +35,31 @@ const CHUNKS: AuditChunk[] = [
   { chunk_id: 'aaaa-2', chunk_text: 'Fig. 4.1 shows objects made of wood.', content_type: 'concept' },
 ];
 
-describe('dimension model', () => {
+describe('dimension model (carried over from v1 unchanged)', () => {
   it('has exactly 31 dimensions with no duplicates across the three lanes', () => {
     expect(ALL_DIMENSIONS).toHaveLength(31);
     expect(new Set(ALL_DIMENSIONS).size).toBe(31);
-    expect(CHUNK_PASS_DIMENSIONS).toHaveLength(22);
+    // Lane partition changed 2026-07-04: `topics` + `concepts` moved OFF the
+    // chunk_pass/semantic lane onto the deterministic generated_content_scan
+    // SSoT lane. chunk_pass 22→20, generated_content_scan 4→6.
+    expect(CHUNK_PASS_DIMENSIONS).toHaveLength(20);
     expect(QUESTION_BANK_SCAN_DIMENSIONS).toHaveLength(5);
-    expect(GENERATED_CONTENT_SCAN_DIMENSIONS).toHaveLength(4);
+    expect(GENERATED_CONTENT_SCAN_DIMENSIONS).toHaveLength(6);
+  });
+
+  it('topics + concepts are deterministic SSoT scan dims, NOT semantic/chunk-pass (2026-07-04 adjudication)', () => {
+    for (const d of ['topics', 'concepts'] as const) {
+      expect(GENERATED_CONTENT_SCAN_DIMENSIONS).toContain(d);
+      expect(SEMANTIC_DIMENSIONS).not.toContain(d);
+      expect(CHUNK_PASS_DIMENSIONS).not.toContain(d);
+      expect(STRUCTURAL_DIMENSIONS).not.toContain(d);
+    }
+    // the semantic lane is now 7 dims (was 10): topics + concepts left first,
+    // then definitions moved to the deterministic structural lane 2026-07-04.
+    expect(SEMANTIC_DIMENSIONS).toHaveLength(7);
+    expect(STRUCTURAL_DIMENSIONS).toHaveLength(13);
+    expect(SEMANTIC_DIMENSIONS).not.toContain('definitions');
+    expect(STRUCTURAL_DIMENSIONS).toContain('definitions');
   });
 
   it('matches the migration CHECK constraint dimension list exactly', () => {
@@ -48,8 +75,31 @@ describe('dimension model', () => {
   });
 });
 
-describe('buildAuditSystemPrompt', () => {
-  const prompt = buildAuditSystemPrompt(CTX);
+describe('batchChunks', () => {
+  it(`splits into ordered batches of at most ${MAX_CHUNKS_PER_BATCH} by default`, () => {
+    const items = Array.from({ length: 38 }, (_, i) => i);
+    const batches = batchChunks(items);
+    expect(batches.map((b) => b.length)).toEqual([15, 15, 8]);
+    expect(batches.flat()).toEqual(items); // order preserved, nothing lost
+  });
+
+  it('an exact multiple produces full batches only', () => {
+    expect(batchChunks(Array.from({ length: 30 }, (_, i) => i)).map((b) => b.length)).toEqual([15, 15]);
+  });
+
+  it('fewer chunks than the cap → a single batch; empty input → no batches', () => {
+    expect(batchChunks([1, 2, 3])).toEqual([[1, 2, 3]]);
+    expect(batchChunks([])).toEqual([]);
+  });
+
+  it('rejects invalid batch sizes', () => {
+    expect(() => batchChunks([1], 0)).toThrow(/invalid batch size/);
+    expect(() => batchChunks([1], 1.5)).toThrow(/invalid batch size/);
+  });
+});
+
+describe('buildSemanticSystemPrompt', () => {
+  const prompt = buildSemanticSystemPrompt(CTX);
 
   it('anchors the auditor to the grade/subject/chapter', () => {
     expect(prompt).toContain('Class 6 science');
@@ -57,123 +107,107 @@ describe('buildAuditSystemPrompt', () => {
     expect(prompt).toContain('Sorting Materials into Groups');
   });
 
-  it('instructs evidence-grounded counting: only what is present, never infer from titles', () => {
-    expect(prompt).toMatch(/Count ONLY what is present/i);
-    expect(prompt).toMatch(/NEVER infer counts from the chapter title/i);
-  });
-
-  it('spells out NCERT conventions: Activity N.M, distinct Fig counting, solved-example-with-steps, exercise question counting, formal definitions', () => {
-    expect(prompt).toContain('Activity N.M');
-    expect(prompt).toMatch(/figure referenced multiple times counts ONCE/i);
-    expect(prompt).toMatch(/worked solution with steps/i);
-    expect(prompt).toMatch(/count INDIVIDUAL questions/i);
-    expect(prompt).toMatch(/is defined as/i);
-  });
-
-  it('mentions every chunk-pass dimension by name and no scan-lane dimension', () => {
-    for (const d of CHUNK_PASS_DIMENSIONS) expect(prompt).toContain(d);
-    // scan-lane dims are measured elsewhere — the model must not be asked for them
+  it('covers every SEMANTIC dimension by name and requests NO structural dimension in the contract', () => {
+    for (const d of SEMANTIC_DIMENSIONS) expect(prompt).toContain(d);
+    const contract = buildSemanticOutputContract();
+    for (const d of STRUCTURAL_DIMENSIONS) expect(contract).not.toContain(`"${d}":`);
     for (const d of [...QUESTION_BANK_SCAN_DIMENSIONS, ...GENERATED_CONTENT_SCAN_DIMENSIONS]) {
-      expect(prompt).not.toContain(`"${d}"`);
+      expect(contract).not.toContain(`"${d}":`);
     }
   });
 
-  it('demands ids-only evidence (max 5) and label-only suspected_missing (P13)', () => {
-    expect(prompt).toMatch(/UP TO 5 chunk ids/i);
-    expect(prompt).toMatch(/never quote chunk text/i);
-    expect(prompt).toMatch(/Labels only/i);
+  it('demands ITEMS (short labels), never counts — the model is told counts are derived code-side', () => {
+    expect(prompt).toMatch(/ENUMERATE the distinct instances/i);
+    expect(prompt).toMatch(/You never return counts/);
+    expect(prompt).toMatch(/deduplicated across batches/i);
+    expect(prompt).toMatch(/at most 40 characters/);
+    expect(prompt).toMatch(/STABLE and CANONICAL/);
   });
 
-  it('embeds a strict JSON output contract containing all 22 chunk-pass dimensions', () => {
-    const contract = buildOutputContract();
-    expect(prompt).toContain(contract);
-    for (const d of CHUNK_PASS_DIMENSIONS) expect(contract).toContain(`"${d}":`);
-    expect(contract).toContain('"metadata_garbled"');
-    expect(contract).toContain('"suspected_missing"');
-    // the contract itself must be valid JSON
-    const parsed = JSON.parse(contract);
-    expect(Object.keys(parsed.dimensions)).toHaveLength(22);
+  it('carries the OCR-flattening notice (markers may appear mid-line; no own-line requirement)', () => {
+    expect(prompt).toMatch(/OCR-FLATTENED TEXT/);
+    expect(prompt).toMatch(/lost its original line breaks/i);
+    expect(prompt).toMatch(/MID-LINE/);
+    expect(prompt).toMatch(/Never require an item to sit on its own line/i);
   });
 
-  // Assessment condition 1 (2026-07-03): contamination is a first-class
-  // chapter-level output mirroring metadata_garbled — count-as-is + flag.
-  it('output contract carries content_contaminated (default false) + contamination_evidence (default [])', () => {
-    const contract = buildOutputContract();
-    expect(contract).toContain('"content_contaminated":false');
-    expect(contract).toContain('"contamination_evidence":[]');
-    const parsed = JSON.parse(contract);
-    expect(parsed.content_contaminated).toBe(false);
-    expect(parsed.contamination_evidence).toEqual([]);
+  it('instructs evidence-grounded enumeration: only what is present, never infer from titles', () => {
+    expect(prompt).toMatch(/Enumerate ONLY what is present/i);
+    expect(prompt).toMatch(/NEVER infer items from the chapter title/i);
   });
 
-  it('teaches the model what contamination looks like, and to count-as-is + flag (never abstain)', () => {
-    expect(prompt).toMatch(/content_contaminated/);
-    expect(prompt).toMatch(/more than one "Summary"/i);
-    expect(prompt).toMatch(/MAJOR number differs from this chapter/i);
-    expect(prompt).toMatch(/running page-headers naming a different book/i);
-    expect(prompt).toMatch(/abrupt subject shift/i);
-    expect(prompt).toMatch(/contamination is a flag, not a reason to abstain/i);
-    // evidence stays short labels only (P13)
-    expect(prompt).toMatch(/second SUMMARY block/);
-    expect(prompt).toMatch(/foreign major-number series 13\.x/);
-    expect(prompt).toMatch(/multiple running headers/);
-  });
-
-  // Assessment condition 2 (2026-07-03): the corpus stores each passage 2-3x
-  // (sliding-window chunking) — dedup across chunks is an explicit rule.
-  it('instructs overlap-dedup: same passage across chunks counts ONCE, binding for unnumbered dimensions', () => {
+  it('instructs overlap-dedup within the batch', () => {
     expect(prompt).toMatch(/Chunks OVERLAP/i);
-    expect(prompt).toMatch(/ONCE across ALL chunks/i);
-    for (const d of ['definitions', 'common_mistakes', 'real_world_applications', 'image_explanations', 'learning_objectives']) {
-      expect(prompt).toMatch(new RegExp(`OVERLAP[\\s\\S]*${d}`));
+    expect(prompt).toMatch(/ONE item, never two/i);
+  });
+
+  it('demands ids-only evidence (max 5) and label-only outputs (P13)', () => {
+    expect(prompt).toMatch(/UP TO 5 chunk ids/i);
+    expect(prompt).toMatch(/IDs ONLY/);
+    expect(prompt).toMatch(/never copy passage sentences into a label/i);
+    expect(prompt).toMatch(/Labels only — never passage text/i);
+  });
+
+  it('keeps the honest-empty rule (empty list is correct; padding is a failure)', () => {
+    expect(prompt).toMatch(/honest empty list is correct/i);
+  });
+
+  it('formulae rule: numbered equations labelled "eq N.M", unnumbered as compact symbolic form', () => {
+    expect(prompt).toMatch(/eq N\.M/);
+    expect(prompt).toMatch(/compact symbolic form/i);
+    expect(prompt).toMatch(/same formula restated is the SAME item/i);
+  });
+
+  it('embeds a strict JSON output contract that is valid JSON with exactly the 7 semantic dims', () => {
+    const contract = buildSemanticOutputContract();
+    expect(prompt).toContain(contract);
+    const parsed = JSON.parse(contract);
+    expect(Object.keys(parsed.dimensions)).toHaveLength(7);
+    // topics/concepts are SSoT scan dims now, and definitions is deterministic
+    // structural — none may appear in the LLM contract
+    expect(parsed.dimensions.topics).toBeUndefined();
+    expect(parsed.dimensions.concepts).toBeUndefined();
+    expect(parsed.dimensions.definitions).toBeUndefined();
+    for (const d of SEMANTIC_DIMENSIONS) {
+      expect(parsed.dimensions[d]).toEqual({ items: [], evidence_chunk_ids: [] });
     }
-  });
-
-  // Assessment condition 4 (2026-07-03): prompt↔fixture convention alignment.
-  it('summary counts BLOCKS (0/1 normal, 2+ = contamination signal) with bullets relegated to notes', () => {
-    expect(prompt).toMatch(/summary: count the number of "Summary" \/ "What you have learnt" BLOCKS/);
-    expect(prompt).toMatch(/2 or more is a contamination signal/i);
-    expect(prompt).toMatch(/bullet\/point count in notes, NOT in found_count/i);
-  });
-
-  it('subtopics counts named sub-section headings numbered or not (Curiosity books have no N.M.K numbering)', () => {
-    expect(prompt).toMatch(/new-generation NCERT \(Curiosity\) books carry NO N\.M\.K numbering/i);
-    expect(prompt).toMatch(/book has no numbered subtopics/);
-  });
-
-  it('exercises counts ALL question sets (mid-chapter + end-of-chapter + Intext Questions) summed, breakdown in notes', () => {
-    expect(prompt).toMatch(/count INDIVIDUAL questions across ALL question sets/i);
-    expect(prompt).toMatch(/Intext Questions/);
-    expect(prompt).toMatch(/Let us enhance our learning/);
-    expect(prompt).toMatch(/Exercise 6\.1 with 6 questions \+ Exercise 6\.2 with 6 questions = 12, not 6/);
-    expect(prompt).toMatch(/per-set breakdown in notes/i);
+    expect(parsed.metadata_garbled).toBe(false);
+    expect(parsed.suspected_missing).toEqual([]);
   });
 });
 
-describe('buildAuditUserMessage', () => {
+describe('buildSemanticUserMessage', () => {
+  it('carries the batch header: position, one-chapter framing, count-only-within-this-batch', () => {
+    const msg = buildSemanticUserMessage(CHUNKS, 1, 5, []);
+    expect(msg).toContain('BATCH 2 of 5');
+    expect(msg).toMatch(/batches of ONE chapter/);
+    expect(msg).toMatch(/ONLY in this batch/);
+    expect(msg).toMatch(/merged and deduplicated code-side/);
+  });
+
   it('lists chunks in order with id and type, and the known concept list', () => {
-    const msg = buildAuditUserMessage(CHUNKS, ['Materials and their properties']);
+    const msg = buildSemanticUserMessage(CHUNKS, 0, 1, ['Materials and their properties']);
     expect(msg).toContain('[chunk id=aaaa-1 type=activity]');
     expect(msg).toContain('[chunk id=aaaa-2 type=concept]');
     expect(msg.indexOf('aaaa-1')).toBeLessThan(msg.indexOf('aaaa-2'));
     expect(msg).toContain('- Materials and their properties');
-    expect(msg).toContain('CHAPTER CHUNKS (ordered, 2 total)');
+    expect(msg).toContain('BATCH CHUNKS (ordered, 2 in this batch)');
   });
 
-  it('marks concepts as cross-check only (never a counting source)', () => {
-    const msg = buildAuditUserMessage(CHUNKS, ['X']);
-    expect(msg).toMatch(/do NOT count from this list/i);
+  it('marks concepts as cross-check only (never an enumeration source)', () => {
+    const msg = buildSemanticUserMessage(CHUNKS, 0, 1, ['X']);
+    expect(msg).toMatch(/do NOT list from this alone/i);
   });
 
   it('handles an empty concept list and null content_type', () => {
-    const msg = buildAuditUserMessage([{ chunk_id: 'c1', chunk_text: 'text', content_type: null }], []);
+    const msg = buildSemanticUserMessage([{ chunk_id: 'c1', chunk_text: 'text', content_type: null }], 0, 1, []);
     expect(msg).toContain('(none on record)');
     expect(msg).toContain('[chunk id=c1]');
   });
 
   it('truncates a single megachunk so one chunk cannot blow the budget', () => {
     const mega = { chunk_id: 'big', chunk_text: 'x'.repeat(50_000), content_type: null };
-    const msg = buildAuditUserMessage([mega], []);
+    const msg = buildSemanticUserMessage([mega], 0, 1, []);
     expect(msg.length).toBeLessThan(20_000);
   });
 });

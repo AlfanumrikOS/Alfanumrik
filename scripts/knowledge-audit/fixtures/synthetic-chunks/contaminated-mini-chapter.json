@@ -1,0 +1,43 @@
+{
+  "description": "Synthetic CONTAMINATED mini-chapter modelled on the prod corpus finding: a grade-9-style geometry chapter 6 whose chunk store also carries a FOREIGN physics chapter (13.x series — 3 figure members) and a SECOND summary block. Deterministic truth: counts include the foreign material (count-as-is + flag, never abstain); contamination fires on (a) foreign major 13 with >=3 members in diagrams and (b) 2 distinct summary blocks. NOTE the deliberately ABSENT case: a same-major merge (two books both numbering 6.x) would NOT fire signal (a) — that is the documented g9 'Lines and Angles' limitation, tested separately.",
+  "chapter_number": 6,
+  "chapter_title": "Lines and Angles",
+  "chunks": [
+    {
+      "chunk_id": "cont-d1",
+      "chunk_text": "6.1 Basic Terms A line segment has two end points. An angle is formed when two rays originate from the same end point. Fig. 6.1: A line segment PQ and a ray with initial point A.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "cont-d2",
+      "chunk_text": "Fig. 6.2: Intersecting and non-intersecting lines. EXERCISE 6.1\n1. In the given figure, lines AB and CD intersect at O. Find the angles.\n2. Prove that vertically opposite angles are equal.",
+      "content_type": "exercise"
+    },
+    {
+      "chunk_id": "cont-d3",
+      "chunk_text": "Fig. 13.1: The magnetic field lines around a bar magnet. Fig. 13.2: Field lines of the magnetic field through and around a current carrying solenoid. Fig. 13.3: A simple electric motor. Activity 13.1 Take a bar magnet and spread iron filings around it.",
+      "content_type": "concept"
+    },
+    {
+      "chunk_id": "cont-d4",
+      "chunk_text": "SUMMARY In this chapter, you have studied points, lines and angles. Two angles whose sum is 180 degrees are called supplementary angles.",
+      "content_type": "revision"
+    },
+    {
+      "chunk_id": "cont-d5",
+      "chunk_text": "SUMMARY Magnetic field is a quantity that has both direction and magnitude. A current carrying conductor placed in a magnetic field experiences a force.",
+      "content_type": "revision"
+    }
+  ],
+  "truth": {
+    "diagrams": 5,
+    "captions": 5,
+    "activities": 1,
+    "headings": 1,
+    "exercises": 2,
+    "summary": 2,
+    "contaminated": true,
+    "foreign_major": 13,
+    "foreign_members_in_diagrams": 3
+  }
+}
