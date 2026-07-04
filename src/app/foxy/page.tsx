@@ -100,7 +100,7 @@ const SELCheckIn = dynamic(() => import('@/components/SELCheckIn'), { ssr: false
 import { MessageInput } from './_components/MessageInput';
 import { ReportDialog } from './_components/ReportDialog';
 import { LanguagePicker, ModePicker } from './_components/FoxySettings';
-import { IconButton, Chip, Badge, ConfirmDialog } from '@/components/ui/primitives';
+import { IconButton, Chip, Badge, ConfirmDialog, Field, Input, Button } from '@/components/ui/primitives';
 
 // Foxy chapter-mastery band → canonical Badge tone (presentation-only; the
 // exact MASTERY_COLORS hex values are dropped in favour of semantic tones so
@@ -1570,33 +1570,30 @@ export default function FoxyPage() {
           {/* Predict-before-reveal for active recall step */}
           {showPredictionInput && !predictionSubmitted && (
             <div className="mt-2 p-3 rounded-xl" style={{ background: `color-mix(in srgb, ${cfg.color} 6%, var(--surface-1))`, border: `1px solid color-mix(in srgb, ${cfg.color} 22%, transparent)` }}>
-              <p className="text-xs font-semibold mb-1.5" style={{ color: cfg.color }}>
-                🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={lessonPrediction}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLessonPrediction(e.target.value)}
-                  placeholder={language === 'hi' ? 'तुम्हारा अनुमान...' : 'Your prediction...'}
-                  className="flex-1 text-sm rounded-lg px-3 py-2 outline-none"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                />
-                <button
-                  onClick={() => {
-                    if (lessonPrediction.trim()) {
-                      setPredictionSubmitted(true);
-                      sendMessage(`My prediction: ${lessonPrediction.trim()}`);
-                      setLessonPrediction('');
-                    }
-                  }}
-                  disabled={!lessonPrediction.trim()}
-                  className="px-3 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40"
-                  style={{ background: cfg.color }}
-                >
-                  {language === 'hi' ? 'भेजो' : 'Submit'}
-                </button>
-              </div>
+              <Field label={<>🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}</>}>
+                <div className="flex items-end gap-2">
+                  <Input
+                    type="text"
+                    value={lessonPrediction}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLessonPrediction(e.target.value)}
+                    placeholder={language === 'hi' ? 'तुम्हारा अनुमान...' : 'Your prediction...'}
+                    className="flex-1"
+                  />
+                  <Button
+                    size="md"
+                    onClick={() => {
+                      if (lessonPrediction.trim()) {
+                        setPredictionSubmitted(true);
+                        sendMessage(`My prediction: ${lessonPrediction.trim()}`);
+                        setLessonPrediction('');
+                      }
+                    }}
+                    disabled={!lessonPrediction.trim()}
+                  >
+                    {language === 'hi' ? 'भेजो' : 'Submit'}
+                  </Button>
+                </div>
+              </Field>
             </div>
           )}
           {showPredictionInput && predictionSubmitted && (
