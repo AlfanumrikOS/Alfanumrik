@@ -401,7 +401,7 @@ describe('composeChapterFindings (v2 three-lane composition)', () => {
   const structural = runStructuralScan(chunks, 4);
   const semanticBatch = parseSemanticBatchResponse(
     JSON.stringify({
-      dimensions: { definitions: { items: ['lustrous'], evidence_chunk_ids: ['c-2'] } },
+      dimensions: { real_world_applications: { items: ['copper wiring'], evidence_chunk_ids: ['c-2'] } },
       metadata_garbled: false,
       suspected_missing: ['Fig. 4.2 referenced but not present'],
     }),
@@ -422,9 +422,13 @@ describe('composeChapterFindings (v2 three-lane composition)', () => {
     expect(findings.dimensions.diagrams.notes).toMatch(/deterministic structural scan/);
     expect(findings.dimensions.activities.found_count).toBe(1);
     expect(findings.dimensions.headings.found_count).toBe(1);
-    // semantic lane: label-deduped items
+    // definitions is now on the DETERMINISTIC structural lane (2026-07-04):
+    // "...lustre is called lustrous" in c-2 is counted structurally, not by the LLM.
     expect(findings.dimensions.definitions.found_count).toBe(1);
-    expect(findings.dimensions.definitions.notes).toMatch(/semantic batch pass/);
+    expect(findings.dimensions.definitions.notes).toMatch(/deterministic structural scan/);
+    // semantic lane: label-deduped items
+    expect(findings.dimensions.real_world_applications.found_count).toBe(1);
+    expect(findings.dimensions.real_world_applications.notes).toMatch(/semantic batch pass/);
     // scan lane: 0-filled placeholders (overwritten later by DB scans)
     expect(findings.dimensions.hots_questions.found_count).toBe(0);
     expect(findings.dimensions.hots_questions.notes).toBe('measured by scan lane');

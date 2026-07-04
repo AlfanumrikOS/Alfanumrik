@@ -46,13 +46,19 @@ function chunk(id: string, text: string, type: string | null = null): AuditChunk
 const clean = loadFixture('clean-mini-chapter.json');
 const contaminated = loadFixture('contaminated-mini-chapter.json');
 const newSyllabus = loadFixture('new-syllabus-mini-chapter.json');
+const definitionsFixture = loadFixture('definitions-mini-chapter.json');
 
 describe('dimension partition (v2 split)', () => {
-  it('STRUCTURAL (12) + SEMANTIC (8) exactly partition the 20 chunk-pass dimensions', () => {
+  it('STRUCTURAL (13) + SEMANTIC (7) exactly partition the 20 chunk-pass dimensions', () => {
     // 2026-07-04: topics + concepts moved off the semantic lane onto the
-    // deterministic generated_content_scan SSoT lane. semantic 10→8, chunk_pass 22→20.
-    expect(STRUCTURAL_DIMENSIONS).toHaveLength(12);
-    expect(SEMANTIC_DIMENSIONS).toHaveLength(8);
+    // deterministic generated_content_scan SSoT lane (chunk_pass 22→20). Then
+    // `definitions` moved from the semantic lane to the deterministic structural
+    // lane (NCERT "X is called Y" is lexically regular): structural 12→13,
+    // semantic 8→7. chunk_pass stays 20 (definitions was always chunk_pass).
+    expect(STRUCTURAL_DIMENSIONS).toHaveLength(13);
+    expect(SEMANTIC_DIMENSIONS).toHaveLength(7);
+    expect(STRUCTURAL_DIMENSIONS).toContain('definitions');
+    expect(SEMANTIC_DIMENSIONS).not.toContain('definitions');
     const union = new Set([...STRUCTURAL_DIMENSIONS, ...SEMANTIC_DIMENSIONS]);
     expect(union.size).toBe(20);
     expect([...union].sort()).toEqual([...CHUNK_PASS_DIMENSIONS].sort());
@@ -468,6 +474,78 @@ describe('named-subtopic fallback guards (BUG 2)', () => {
       3,
     );
     expect(scan.findings.subtopics.found_count).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Definitions (moved off the semantic LLM lane 2026-07-04). NCERT definitional
+// phrasing ("X is/are called/known as/defined as/termed Y") is lexically
+// regular, so definitions are counted deterministically — dedupe by the defined
+// term's HEAD noun (overlap-safe + sub-type collapse). Removing the
+// temperature-0.3 gpt-4o-mini variance was the last g6-science-ch2 pilot-gate
+// blocker (engine under-counted 5 vs truth 10).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runStructuralScan — definitions synthetic mini-chapter (EXACT count vs authored truth)', () => {
+  const scan = runStructuralScan(definitionsFixture.chunks, definitionsFixture.chapter_number);
+  const definitions = scan.findings.definitions;
+
+  it('counts exactly 10 distinct defined terms across all four cue forms', () => {
+    // is/are called, known as, defined as, termed — see fixture `truth.definitions_kept`.
+    expect(definitions.found_count).toBe(definitionsFixture.truth.definitions); // 10
+  });
+
+  it('OVERLAP dedup: the photosynthesis sentence repeated in def-c1 AND def-c2 counts once', () => {
+    // If overlap leaked, the count would exceed the 10 authored distinct terms.
+    expect(definitions.found_count).toBe(10);
+  });
+
+  it('SUB-TYPE collapse: venation + parallel venation + reticulate venation → one head', () => {
+    // All three share head "venation"; if not collapsed the count would be 12.
+    expect(definitions.found_count).toBe(10);
+  });
+
+  it('rejects the 4 non-definition traps (object-article, pronoun idiom, fragment subject, tautology)', () => {
+    // "is called a meeting" (article), "it is called a day" (pronoun subject +
+    // article), "and are called climbers" (conjunction subject fragment), "Such
+    // roots are called fibrous roots" (subject head == object head). If any
+    // leaked the count would be 11-14.
+    expect(definitions.found_count).toBe(10);
+  });
+
+  it('is on the deterministic structural lane (notes marker, no LLM)', () => {
+    expect(definitions.notes).toMatch(/^deterministic structural scan:/);
+    expect(definitions.notes).toMatch(/distinct defined terms/);
+  });
+
+  it('evidence: chunk ids only, subset of input, capped at 5 (P13)', () => {
+    const ids = new Set(definitionsFixture.chunks.map((c) => c.chunk_id));
+    expect(definitions.evidence_chunk_ids.length).toBeLessThanOrEqual(5);
+    for (const id of definitions.evidence_chunk_ids) expect(ids.has(id)).toBe(true);
+  });
+});
+
+describe('definitions — parser unit behavior (inline OCR-flattened, general not chapter-specific)', () => {
+  it('the four cue forms are each recognized inline', () => {
+    for (const [text, present] of [
+      ['A single point that has no size is called a node.', false], // object article "a" → rejected
+      ['The push or pull on an object is called force.', true],
+      ['The bending of light is known as refraction.', true],
+      ['The unit of current is defined as the ampere.', false], // object article "the" → rejected
+      ['The centre point of a circle is termed centre.', true],
+    ] as const) {
+      const scan = runStructuralScan([chunk('c', text)], 6);
+      expect(scan.findings.definitions.found_count).toBe(present ? 1 : 0);
+    }
+  });
+
+  it('demonstrative subjects ("These are known as X") ARE definitions; bare it/this/that/they are NOT', () => {
+    expect(runStructuralScan([chunk('c', 'Small soft-stemmed plants exist. These are known as herbs.')], 6).findings.definitions.found_count).toBe(1);
+    expect(runStructuralScan([chunk('c', 'When the work is over, it is called a day.')], 6).findings.definitions.found_count).toBe(0);
+  });
+
+  it('a chapter with no definitional sentences scores 0 (never guessed)', () => {
+    expect(runStructuralScan(clean.chunks, clean.chapter_number).findings.definitions.found_count).toBe(0);
   });
 });
 

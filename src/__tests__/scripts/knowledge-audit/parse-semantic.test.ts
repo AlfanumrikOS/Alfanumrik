@@ -24,7 +24,7 @@ const VALID_IDS = ['c-1', 'c-2', 'c-3'];
 function batchResponse(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     dimensions: {
-      definitions: { items: ['adaptation', 'habitat'], evidence_chunk_ids: ['c-1'] },
+      learning_objectives: { items: ['adaptation', 'habitat'], evidence_chunk_ids: ['c-1'] },
       formulae: { items: ['eq 6.1', 'v = u + at'], evidence_chunk_ids: ['c-2'] },
     },
     metadata_garbled: false,
@@ -85,12 +85,12 @@ describe('parseSemanticBatchResponse', () => {
     if (!r.ok) expect(r.error).toMatch(/unparseable/);
   });
 
-  it('normalizes to ALL 8 semantic dimensions, empty-filling absent ones', () => {
+  it('normalizes to ALL 7 semantic dimensions, empty-filling absent ones', () => {
     const r = parsedOrThrow(batchResponse());
-    // 2026-07-04: topics/concepts left the semantic lane; it is now 8 dims.
-    expect(Object.keys(r.dimensions)).toHaveLength(8);
+    // 2026-07-04: topics/concepts, then definitions, left the semantic lane; it is now 7 dims.
+    expect(Object.keys(r.dimensions)).toHaveLength(7);
     for (const dim of SEMANTIC_DIMENSIONS) expect(r.dimensions[dim]).toBeDefined();
-    expect(r.dimensions.definitions.items).toEqual(['adaptation', 'habitat']);
+    expect(r.dimensions.learning_objectives.items).toEqual(['adaptation', 'habitat']);
     expect(r.dimensions.real_world_applications.items).toEqual([]);
     expect(r.dimensions.real_world_applications.evidence_chunk_ids).toEqual([]);
   });
@@ -124,20 +124,20 @@ describe('parseSemanticBatchResponse', () => {
     const r = parsedOrThrow(
       JSON.stringify({
         dimensions: {
-          definitions: { items: ['x'], evidence_chunk_ids: ['c-1', 'HALLUCINATED-9', 'c-2'] },
+          learning_objectives: { items: ['x'], evidence_chunk_ids: ['c-1', 'HALLUCINATED-9', 'c-2'] },
         },
       }),
     );
-    expect(r.dimensions.definitions.evidence_chunk_ids).toEqual(['c-1', 'c-2']);
+    expect(r.dimensions.learning_objectives.evidence_chunk_ids).toEqual(['c-1', 'c-2']);
   });
 
   it('caps evidence at 5 ids per batch (first 5 valid ids kept)', () => {
     const many = ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6', 'c-7'];
     const r = parsedOrThrow(
-      JSON.stringify({ dimensions: { definitions: { items: ['x'], evidence_chunk_ids: many } } }),
+      JSON.stringify({ dimensions: { learning_objectives: { items: ['x'], evidence_chunk_ids: many } } }),
       many,
     );
-    expect(r.dimensions.definitions.evidence_chunk_ids).toEqual(['c-1', 'c-2', 'c-3', 'c-4', 'c-5']);
+    expect(r.dimensions.learning_objectives.evidence_chunk_ids).toEqual(['c-1', 'c-2', 'c-3', 'c-4', 'c-5']);
   });
 
   // Re-pinned from v1 parse-response.test.ts (retired): non-array evidence
@@ -146,15 +146,15 @@ describe('parseSemanticBatchResponse', () => {
     const r = parsedOrThrow(
       JSON.stringify({
         dimensions: {
-          definitions: { items: ['a'], evidence_chunk_ids: 'c-1' },
+          learning_objectives: { items: ['a'], evidence_chunk_ids: 'c-1' },
           real_world_applications: { items: ['b'], evidence_chunk_ids: { id: 'c-2' } },
         },
       }),
     );
-    expect(r.dimensions.definitions.evidence_chunk_ids).toEqual([]);
+    expect(r.dimensions.learning_objectives.evidence_chunk_ids).toEqual([]);
     expect(r.dimensions.real_world_applications.evidence_chunk_ids).toEqual([]);
     // items survive independently of evidence shape
-    expect(r.dimensions.definitions.items).toEqual(['a']);
+    expect(r.dimensions.learning_objectives.items).toEqual(['a']);
     expect(r.dimensions.real_world_applications.items).toEqual(['b']);
   });
 
@@ -166,9 +166,9 @@ describe('parseSemanticBatchResponse', () => {
 
   it('tolerates the model flattening dimensions to the top level', () => {
     const r = parsedOrThrow(
-      JSON.stringify({ definitions: { items: ['lustre'], evidence_chunk_ids: ['c-1'] }, metadata_garbled: true }),
+      JSON.stringify({ learning_objectives: { items: ['lustre'], evidence_chunk_ids: ['c-1'] }, metadata_garbled: true }),
     );
-    expect(r.dimensions.definitions.items).toEqual(['lustre']);
+    expect(r.dimensions.learning_objectives.items).toEqual(['lustre']);
     expect(r.metadataGarbled).toBe(true);
   });
 
@@ -190,7 +190,7 @@ describe('parseSemanticBatchResponse', () => {
     expect(parsedOrThrow(batchResponse({ suspected_missing: 'not an array' })).suspectedMissing).toEqual([]);
   });
 
-  it('handles a fully-empty but valid object (all 10 dims empty)', () => {
+  it('handles a fully-empty but valid object (all 7 dims empty)', () => {
     const r = parsedOrThrow('{}');
     for (const dim of SEMANTIC_DIMENSIONS) {
       expect(r.dimensions[dim].items).toEqual([]);
@@ -207,10 +207,10 @@ describe('mergeSemanticBatches (cross-batch label dedupe — counts are DERIVED,
 
   it('the same item labelled with case/whitespace/punctuation variants across batches counts ONCE', () => {
     const merged = mergeSemanticBatches([
-      batch({ definitions: { items: ['Adaptation', 'habitat'], evidence_chunk_ids: ['c-1'] } }),
-      batch({ definitions: { items: ['  adaptation.', '"HABITAT"', 'biodiversity'], evidence_chunk_ids: ['c-4'] } }),
+      batch({ learning_objectives: { items: ['Adaptation', 'habitat'], evidence_chunk_ids: ['c-1'] } }),
+      batch({ learning_objectives: { items: ['  adaptation.', '"HABITAT"', 'biodiversity'], evidence_chunk_ids: ['c-4'] } }),
     ]);
-    expect(merged.dimensions.definitions.found_count).toBe(3); // adaptation, habitat, biodiversity
+    expect(merged.dimensions.learning_objectives.found_count).toBe(3); // adaptation, habitat, biodiversity
   });
 
   it('distinct items across batches SUM (this is the cross-batch count contract)', () => {
@@ -247,7 +247,7 @@ describe('mergeSemanticBatches (cross-batch label dedupe — counts are DERIVED,
     expect(merged.dimensions.learning_objectives.found_count).toBe(1);
   });
 
-  it('zero batches → all 8 dims present with found_count 0', () => {
+  it('zero batches → all 7 dims present with found_count 0', () => {
     const merged = mergeSemanticBatches([]);
     for (const dim of SEMANTIC_DIMENSIONS) {
       expect(merged.dimensions[dim].found_count).toBe(0);

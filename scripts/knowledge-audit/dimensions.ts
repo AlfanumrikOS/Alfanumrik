@@ -59,17 +59,20 @@ export const CHUNK_PASS_DIMENSIONS = [
  * v2 split of the 22 chunk-pass dimensions (engine redesign after the Wave 1
  * pilot-gate failure — 33% accuracy, 0/4 contamination detections):
  *
- * - STRUCTURAL_DIMENSIONS (12): counted EXACTLY by the deterministic
+ * - STRUCTURAL_DIMENSIONS (13): counted EXACTLY by the deterministic
  *   cross-chunk scanner (structural-scan.ts) — NCERT numbered-series markers
  *   (Fig./Table/Activity/Example N.M), exercise question numbering, N.M
- *   headings, summary/keyword blocks. No LLM involvement; overlap-safe by
- *   identifier dedupe.
- * - SEMANTIC_DIMENSIONS (8): require semantic judgement — enumerated by the
+ *   headings, summary/keyword blocks, and definitional sentences ("X is/are
+ *   called Y"). No LLM involvement; overlap-safe by identifier dedupe.
+ * - SEMANTIC_DIMENSIONS (7): require semantic judgement — enumerated by the
  *   batched LLM pass (≤15 chunks/call) which returns ITEMS (short labels),
  *   deduped code-side across batches (prompt.ts + parse-semantic.ts).
  *   (`topics` and `concepts` were REMOVED from this lane on 2026-07-04 — they
  *   are now deterministic SSoT counts in GENERATED_CONTENT_SCAN, not LLM
- *   enumerations.)
+ *   enumerations. `definitions` was REMOVED on 2026-07-04 — definitional
+ *   phrases are lexically regular in NCERT ("X is called Y"), so it moved to
+ *   the deterministic structural lane to remove gpt-4o-mini temperature
+ *   variance that under-counted informal "is called" definitions.)
  *
  * Both lanes still upsert with audit_method='chunk_pass'.
  */
@@ -86,11 +89,15 @@ export const STRUCTURAL_DIMENSIONS = [
   'captions',
   'summary',
   'keywords',
+  // Moved off the semantic LLM lane 2026-07-04: NCERT definitional phrasing
+  // ("X is/are called Y", "known as", "defined as", "termed") is lexically
+  // regular, so definitions are counted deterministically (dedupe by defined
+  // term) instead of enumerated by a temperature-0.3 LLM that under-counted.
+  'definitions',
 ] as const;
 
 export const SEMANTIC_DIMENSIONS = [
   'learning_objectives',
-  'definitions',
   'formulae',
   'prerequisites',
   'common_mistakes',

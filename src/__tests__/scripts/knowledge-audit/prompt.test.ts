@@ -54,9 +54,12 @@ describe('dimension model (carried over from v1 unchanged)', () => {
       expect(CHUNK_PASS_DIMENSIONS).not.toContain(d);
       expect(STRUCTURAL_DIMENSIONS).not.toContain(d);
     }
-    // the semantic lane is now 8 dims (was 10)
-    expect(SEMANTIC_DIMENSIONS).toHaveLength(8);
-    expect(STRUCTURAL_DIMENSIONS).toHaveLength(12);
+    // the semantic lane is now 7 dims (was 10): topics + concepts left first,
+    // then definitions moved to the deterministic structural lane 2026-07-04.
+    expect(SEMANTIC_DIMENSIONS).toHaveLength(7);
+    expect(STRUCTURAL_DIMENSIONS).toHaveLength(13);
+    expect(SEMANTIC_DIMENSIONS).not.toContain('definitions');
+    expect(STRUCTURAL_DIMENSIONS).toContain('definitions');
   });
 
   it('matches the migration CHECK constraint dimension list exactly', () => {
@@ -155,14 +158,16 @@ describe('buildSemanticSystemPrompt', () => {
     expect(prompt).toMatch(/same formula restated is the SAME item/i);
   });
 
-  it('embeds a strict JSON output contract that is valid JSON with exactly the 8 semantic dims', () => {
+  it('embeds a strict JSON output contract that is valid JSON with exactly the 7 semantic dims', () => {
     const contract = buildSemanticOutputContract();
     expect(prompt).toContain(contract);
     const parsed = JSON.parse(contract);
-    expect(Object.keys(parsed.dimensions)).toHaveLength(8);
-    // topics/concepts are SSoT scan dims now — must not appear in the LLM contract
+    expect(Object.keys(parsed.dimensions)).toHaveLength(7);
+    // topics/concepts are SSoT scan dims now, and definitions is deterministic
+    // structural — none may appear in the LLM contract
     expect(parsed.dimensions.topics).toBeUndefined();
     expect(parsed.dimensions.concepts).toBeUndefined();
+    expect(parsed.dimensions.definitions).toBeUndefined();
     for (const d of SEMANTIC_DIMENSIONS) {
       expect(parsed.dimensions[d]).toEqual({ items: [], evidence_chunk_ids: [] });
     }

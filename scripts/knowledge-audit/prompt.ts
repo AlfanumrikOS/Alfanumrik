@@ -8,11 +8,12 @@
  * returned near-empty skeletons (443-1017 output tokens) and the strict
  * "own line" counting rules discarded OCR-flattened structural markers.
  * v2 changes all three failure axes:
- * - SCOPE: only the 8 SEMANTIC dimensions reach the model. The 12 structural
- *   dimensions are counted exactly in code (structural-scan.ts), `topics` and
- *   `concepts` are deterministic SSoT counts (curriculum_topics /
- *   chapter_concepts, see coverage.ts), and contamination is computed in code
- *   (contamination.ts).
+ * - SCOPE: only the 7 SEMANTIC dimensions reach the model. The 13 structural
+ *   dimensions are counted exactly in code (structural-scan.ts) — including
+ *   `definitions`, moved off this lane 2026-07-04 because NCERT definitional
+ *   phrasing is lexically regular — `topics` and `concepts` are deterministic
+ *   SSoT counts (curriculum_topics / chapter_concepts, see coverage.ts), and
+ *   contamination is computed in code (contamination.ts).
  * - CONTEXT: chunks are BATCHED (≤ MAX_CHUNKS_PER_BATCH per call, ~10k tokens)
  *   so the model never sees a context it collapses under.
  * - OUTPUT: each batch returns ITEMS (short labels, ≤40 chars) per dimension,
@@ -59,8 +60,6 @@ export function batchChunks<T>(chunks: T[], size: number = MAX_CHUNKS_PER_BATCH)
 const SEMANTIC_DIMENSION_RULES: Record<SemanticDimension, string> = {
   learning_objectives:
     'learning_objectives: one item per explicit objective/outcome statement ("In this chapter you will learn...", "After studying... you will be able to..."). Label = a short paraphrase of the objective, e.g. "classify materials by lustre". None stated → empty list.',
-  definitions:
-    'definitions: one item per formal definitional sentence — patterns like "X is defined as", "X is called", "is known as", or a new term immediately followed by its definition. Casual mentions are NOT definitions. Label = the TERM defined (e.g. "adaptation"), nothing else.',
   formulae:
     'formulae: one item per DISTINCT mathematical formula/equation. Numbered equations: label "eq N.M" (e.g. "eq 6.1"). Unnumbered: a compact symbolic form as the label (e.g. "v = u + at"). The same formula restated is the SAME item.',
   prerequisites:
@@ -75,7 +74,7 @@ const SEMANTIC_DIMENSION_RULES: Record<SemanticDimension, string> = {
     'image_explanations: one item per prose passage that explains what a figure/image SHOWS beyond its bare caption. Label = "fig N.M explanation" when the figure is numbered, else a 2-4 word subject.',
 };
 
-/** The exact JSON skeleton the model must return (8 semantic dims). */
+/** The exact JSON skeleton the model must return (7 semantic dims). */
 export function buildSemanticOutputContract(): string {
   const dims = SEMANTIC_DIMENSIONS.map((d) => `"${d}":{"items":[],"evidence_chunk_ids":[]}`).join(',');
   return `{"dimensions":{${dims}},"metadata_garbled":false,"suspected_missing":[]}`;

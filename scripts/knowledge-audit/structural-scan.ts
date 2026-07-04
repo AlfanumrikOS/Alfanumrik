@@ -36,6 +36,14 @@
  *                    Ponder), deduped by following-text fingerprint
  *                    (overlap-safe)
  * - keywords:        enumerable terms in Keywords / New Terms blocks
+ * - definitions:     distinct DEFINED TERMS from definitional sentences
+ *                    ("X is/are called Y", "known as", "defined as", "termed"),
+ *                    deduped by the defined term's head noun (overlap-safe;
+ *                    "reticulate venation" + "parallel venation" collapse to
+ *                    "venation"). Moved here off the semantic LLM lane
+ *                    2026-07-04 — NCERT definitional phrasing is lexically
+ *                    regular, and gpt-4o-mini at temperature 0.3 under-counted
+ *                    informal "is called" definitions non-deterministically.
  * - pages:           distinct explicit page markers (normally none → 0)
  *
  * Also emits per-dimension SERIES METADATA ({dimension, majorsSeen}) consumed
@@ -523,6 +531,111 @@ function scanKeywords(chunks: AuditChunk[]): { count: number; evidence: string[]
   return { count: terms.size, evidence, blocksSeen };
 }
 
+// ─── Definitions (defined-term dedupe — overlap-safe) ────────────────────────
+
+/**
+ * One definitional sentence: `<subject-word> is|are <cue> <object phrase>`.
+ * The DEFINED TERM is the OBJECT (the label a class is introduced by), e.g.
+ * "These plants are called TREES" defines "trees". Cues: called / known as /
+ * defined as / termed. The object phrase is 1-3 lowercase-initial words
+ * (glossary terms in NCERT are lowercase common nouns). group 1 = the single
+ * word immediately before is/are (the subject head, used for fragment +
+ * tautology guards); group 2 = the object phrase (the defined term).
+ *
+ * The "A/An <term> is a <...>" pattern is intentionally OMITTED: it fires on
+ * ordinary prose ("A stone is a solid") far too often to be safe, and NCERT's
+ * definitional style overwhelmingly uses the "is/are called/known as" object
+ * form. Adding it would inject false positives with no recall benefit on the
+ * books measured.
+ */
+const DEFINITION_RE =
+  /\b(\w+)\s+(?:is|are)\s+(?:called|known\s+as|defined\s+as|termed)\s+([a-z][a-z-]+(?:\s+[a-z][a-z-]+){0,2})/gi;
+
+/**
+ * SUBJECT fragment-words. A real definitional subject is a content noun sitting
+ * immediately before "is/are called". When the preceding token is a
+ * conjunction / relative / pronoun / adverb, the capture is a continuation
+ * FRAGMENT of a longer sentence ("... and are called climbers"), not a
+ * standalone definition — reject it. NOTE: the demonstratives "these"/"those"
+ * are deliberately ALLOWED (NCERT writes "These are known as herbs" as a real
+ * definition); only the SINGULAR bare pronouns it/this/that/they are rejected
+ * (they front idioms like "it is called a day").
+ */
+const DEFINITION_SUBJECT_STOPWORDS = new Set([
+  'it', 'this', 'that', 'they', 'which', 'who', 'whom', 'whose',
+  'and', 'or', 'but', 'nor', 'so', 'yet',
+  'then', 'thus', 'hence', 'also', 'too', 'now', 'here', 'there',
+  'when', 'where', 'therefore', 'however', 'because', 'while',
+]);
+
+/**
+ * OBJECT first-word killers: a defined term never opens with an article or a
+ * pronoun/determiner ("... is called A DAY", "... is called their habitat").
+ * Rejecting these kills the "it is called a day" idiom and possessive-object
+ * noise while leaving genuine bare-noun terms ("trees", "venation") intact.
+ */
+const DEFINITION_OBJECT_STOPWORDS = new Set([
+  'a', 'an', 'the', 'it', 'its', 'their', 'his', 'her', 'our', 'your',
+  'this', 'that', 'these', 'those', 'they', 'them', 'one', 'some', 'any',
+  'no', 'not', 'only', 'also', 'such', 'more', 'most', 'when', 'where', 'how',
+]);
+
+/**
+ * Generic-noun HEADS: an object whose head is a bland container noun ("... is
+ * called a KIND of ...", "... is called a PROCESS") is not naming a specific
+ * term. Reject on the head word.
+ */
+const DEFINITION_GENERIC_HEADS = new Set([
+  'day', 'time', 'way', 'thing', 'things', 'part', 'number', 'kind', 'kinds',
+  'type', 'types', 'sort', 'sorts', 'example', 'case', 'place', 'manner',
+  'result', 'reason', 'point', 'idea',
+]);
+
+function normalizeDefinitionTerm(s: string): string {
+  return s.toLowerCase().replace(/[^a-z\s-]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/** Head noun = last token; singularized for dedupe stability. */
+function definitionHead(term: string): string {
+  const words = term.split(' ');
+  return words[words.length - 1].replace(/s$/, '');
+}
+
+/**
+ * Scan for definitional sentences and count DISTINCT defined terms, deduped by
+ * the term's head noun so that (a) sliding-window overlap copies of the same
+ * sentence collapse, and (b) sub-types sharing a head ("reticulate venation",
+ * "parallel venation") collapse into their parent ("venation"). Conservative by
+ * design — fragment subjects, article/pronoun-led objects, generic-noun heads,
+ * and circular "X is called X" captures are all rejected. Evidence = up to 5
+ * chunk ids where a surviving definition appears (P13: ids only).
+ */
+function scanDefinitions(chunks: AuditChunk[]): { count: number; evidence: string[] } {
+  const heads = new Set<string>();
+  const evidence: string[] = [];
+  for (const c of chunks) {
+    for (const m of c.chunk_text.matchAll(fresh(DEFINITION_RE))) {
+      const subject = m[1].toLowerCase();
+      if (DEFINITION_SUBJECT_STOPWORDS.has(subject)) continue;
+      const term = normalizeDefinitionTerm(m[2]);
+      if (!term) continue;
+      const words = term.split(' ');
+      if (words.length < 1 || words.length > 3) continue;
+      if (DEFINITION_OBJECT_STOPWORDS.has(words[0])) continue;
+      const head = definitionHead(term);
+      if (!head || DEFINITION_GENERIC_HEADS.has(head)) continue;
+      // anti-tautology: "roots are called fibrous roots" — subject head equals
+      // object head ⇒ circular/fragment capture, not a fresh term.
+      if (subject === head || subject.replace(/s$/, '') === head) continue;
+      if (!heads.has(head)) {
+        heads.add(head);
+        if (!evidence.includes(c.chunk_id)) evidence.push(c.chunk_id);
+      }
+    }
+  }
+  return { count: heads.size, evidence };
+}
+
 // ─── Pages (explicit markers only — never estimated) ─────────────────────────
 
 const PAGE_MARKER_RE = /\[\s*page\s+(\d{1,4})\s*\]|\bPage\s+(\d{1,4})\b/g;
@@ -683,6 +796,7 @@ export function runStructuralScan(chunks: AuditChunk[], chapterNumber: number): 
   const subtopicCount = subtopics.ids.size + namedSubtopics.keys.size;
   const summary = scanSummaryBlocks(chunks);
   const keywords = scanKeywords(chunks);
+  const definitions = scanDefinitions(chunks);
   const pages = scanPages(chunks);
   const exerciseScan = scanExerciseSets(chunks);
   const exercisesFound = countFoundExerciseQuestions(chunks);
@@ -760,6 +874,15 @@ export function runStructuralScan(chunks: AuditChunk[], chapterNumber: number): 
         keywords.blocksSeen === 0
           ? 'no Keywords/New Terms block'
           : `${keywords.count} distinct terms across ${keywords.blocksSeen} block occurrence(s)`,
+      ),
+    },
+    definitions: {
+      found_count: definitions.count,
+      evidence_chunk_ids: capEvidence(definitions.evidence),
+      notes: det(
+        definitions.count === 0
+          ? 'no definitional sentences ("X is/are called/known as/defined as Y")'
+          : `${definitions.count} distinct defined terms (head-noun-deduped) from definitional sentences`,
       ),
     },
   };
