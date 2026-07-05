@@ -39,6 +39,7 @@ import {
   FOXY_LEARNING_ACTIONS_FLAGS,
   FOXY_MATH_PIPELINE_FLAGS,
   FOXY_CURRICULUM_GUARD_FLAGS,
+  FOXY_RESPONSE_CACHE_L2_FLAGS,
 } from './registries/foxy';
 
 /**
@@ -99,6 +100,8 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [FOXY_LEARNING_ACTIONS_FLAGS.V1]: false, // seeded OFF by 20260619000700_seed_ff_foxy_learning_actions_v1.sql
   [FOXY_MATH_PIPELINE_FLAGS.V1]: false, // seeded OFF by 20260619000800_seed_ff_foxy_math_pipeline_v1.sql
   [FOXY_CURRICULUM_GUARD_FLAGS.V1]: false, // seeded OFF by 20260619001000_seed_ff_foxy_curriculum_guard_v1.sql
+  [FOXY_RESPONSE_CACHE_L2_FLAGS.V1]: false, // seeded OFF by 20260705000000_seed_ff_foxy_response_cache_l2.sql
+  [FOXY_RESPONSE_CACHE_L2_FLAGS.SHADOW_V1]: false, // seeded OFF by 20260705000000_seed_ff_foxy_response_cache_l2.sql
   [QUIZ_TELEMETRY_FLAGS.V1]: false, // seeded OFF in a follow-up migration (SPEC-1..5)
   [WHITE_LABEL_FLAGS.TENANT_TYPE_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_MODULE_REGISTRY_V1]: false,

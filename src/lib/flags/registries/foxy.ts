@@ -107,3 +107,35 @@ export const FOXY_CURRICULUM_GUARD_FLAGS = {
   /** Foxy deterministic curriculum guard (T1 enrolled-grade + T4a out-of-grade math lexicon). Default off. */
   V1: 'ff_foxy_curriculum_guard_v1',
 } as const;
+
+/**
+ * Foxy shared Redis (Upstash) response-cache L2 tier for the `grounded-answer`
+ * Supabase Edge Function pipeline (the shared backend behind Foxy/ncert-solver/
+ * quiz-generator/concept-engine/diagnostic) (2026-07-05).
+ *
+ *  ff_foxy_response_cache_l2_v1 — master switch for REAL serving out of the L2
+ *    tier. When ON, `grounded-answer` consults the shared Redis cache before
+ *    falling back to the existing retrieval/generation path, and writes fresh
+ *    responses back into it. Rollout-percentage-capable (per-user deterministic
+ *    hashing via hashForRollout), so this can be ramped gradually once shadow
+ *    data validates the hit-rate assumption. When OFF, `grounded-answer` never
+ *    reads or writes the L2 tier — byte-identical to today.
+ *
+ *  ff_foxy_response_cache_l2_shadow_v1 — independent shadow/observability-only
+ *    switch. When ON, `grounded-answer` computes the L2 cache key and records
+ *    whether it WOULD have been a hit, purely for offline hit-rate analysis —
+ *    it never serves a cached value and never mutates student-visible output.
+ *    Intended to run ahead of `ff_foxy_response_cache_l2_v1` to validate
+ *    assumptions before any real-serving flip. Independent flag — either can be
+ *    ON/OFF without the other (shadow does not gate or require real-serving).
+ *
+ *    Both default: false. Both seeded OFF (is_enabled=false, rollout=0, scoping
+ *    NULL) by migration 20260705000000_seed_ff_foxy_response_cache_l2.sql.
+ *    Net-new capability; no existing behavior changes while both are OFF.
+ */
+export const FOXY_RESPONSE_CACHE_L2_FLAGS = {
+  /** Foxy grounded-answer shared Redis L2 cache — real serving (rollout-percentage-capable). Default off. */
+  V1: 'ff_foxy_response_cache_l2_v1',
+  /** Foxy grounded-answer shared Redis L2 cache — shadow/observability-only mode. Default off. */
+  SHADOW_V1: 'ff_foxy_response_cache_l2_shadow_v1',
+} as const;
