@@ -21,14 +21,21 @@
  * parent `t(isHi, en, hi)` helper passed in from the page (P7). No PII is
  * logged anywhere (P13) — the component logs nothing.
  *
- * Loading / empty / error states are all handled here. The parent page only
- * renders this once it already has `dash` resolved, so the "error" path is the
- * defensive case where the passed dash carries an error flag.
+ * Presentation rebuilt on canonical primitives (Phase 10) — token-only,
+ * growth-mindset framing. All read-only derivations + gates are byte-intact.
  */
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { Skeleton } from '@/components/ui';
+import {
+  Card,
+  CardBody,
+  Button,
+  Badge,
+  Alert,
+  EmptyState,
+  Skeleton,
+} from '@/components/ui/primitives';
 import { useFeatureFlags } from '@/lib/swr';
 import { CONSUMER_MINIMALISM_FLAGS } from '@/lib/feature-flags';
 
@@ -40,11 +47,13 @@ import { CONSUMER_MINIMALISM_FLAGS } from '@/lib/feature-flags';
 const WeeklyReport = dynamic(() => import('./WeeklyReport'), {
   ssr: false,
   loading: () => (
-    <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 animate-pulse">
-      <div className="h-5 bg-orange-100 rounded w-2/3 mb-3" />
-      <div className="h-4 bg-orange-50 rounded w-full mb-1.5" />
-      <div className="h-4 bg-orange-50 rounded w-5/6" />
-    </div>
+    <Card>
+      <CardBody className="space-y-2">
+        <Skeleton className="h-5 w-2/3" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+      </CardBody>
+    </Card>
   ),
 });
 
@@ -56,8 +65,8 @@ const WeeklyReport = dynamic(() => import('./WeeklyReport'), {
 const EncourageButton = dynamic(() => import('./EncourageButton'), {
   ssr: false,
   loading: () => (
-    <div className="min-h-[44px] px-4 py-3 bg-white border border-orange-200 rounded-[12px] animate-pulse">
-      <div className="h-4 bg-orange-50 rounded w-1/2" />
+    <div className="min-h-[44px] rounded-xl border border-surface-3 bg-surface-1 px-4 py-3">
+      <Skeleton className="h-4 w-1/2" />
     </div>
   ),
 });
@@ -140,17 +149,17 @@ function ActivityStrip({ data, t, isHi }: { data: WeeklyDay[]; t: TFn; isHi: boo
   const maxQ = Math.max(...data.map((d) => d.quizzes), 1);
   return (
     <div className="mt-3">
-      <p className="text-[11px] text-gray-500 uppercase tracking-[0.5px] mb-2">
+      <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
         {t(isHi, 'This week at a glance', 'इस सप्ताह एक नज़र में')}
       </p>
-      <div className="flex items-end gap-2 h-[64px]">
+      <div className="flex h-[64px] items-end gap-2">
         {data.map((d, i) => (
           <div key={i} className="flex-1 text-center">
             <div
-              className={`rounded mb-1 transition-[height] duration-300 ${d.active ? 'bg-orange-500' : 'bg-orange-50'}`}
+              className={`mb-1 rounded transition-[height] duration-300 ${d.active ? 'bg-primary' : 'bg-surface-3'}`}
               style={{ height: Math.max(4, (d.quizzes / maxQ) * 48) }}
             />
-            <span className={`text-[10px] ${d.active ? 'text-gray-900' : 'text-gray-400'}`}>{d.label}</span>
+            <span className={`text-2xs ${d.active ? 'text-foreground' : 'text-muted-foreground'}`}>{d.label}</span>
           </div>
         ))}
       </div>
@@ -159,30 +168,29 @@ function ActivityStrip({ data, t, isHi }: { data: WeeklyDay[]; t: TFn; isHi: boo
 }
 
 // ─── Snapshot stat pill — mirrors the legacy parent Stat card styling. ───
-function StatPill({ icon, label, value, color }: { icon: string; label: string; value: string | number; color: string }) {
+function StatPill({ icon, label, value, valueClass }: { icon: string; label: string; value: string | number; valueClass: string }) {
   return (
-    <div className="bg-white rounded-xl px-3 py-2.5 border border-orange-200">
-      <div className="flex items-center gap-1.5 mb-0.5">
-        <span className="text-sm">{icon}</span>
-        <span className="text-gray-500 text-[10px] uppercase tracking-[0.5px]">{label}</span>
+    <div className="rounded-xl border border-surface-3 bg-surface-1 px-3 py-2.5">
+      <div className="mb-0.5 flex items-center gap-1.5">
+        <span className="text-sm" aria-hidden="true">{icon}</span>
+        <span className="text-2xs uppercase tracking-wide text-muted-foreground">{label}</span>
       </div>
-      <span className="text-[20px] font-bold" style={{ color }}>{value}</span>
+      <span className={`text-xl font-bold ${valueClass}`}>{value}</span>
     </div>
   );
 }
 
 // ─── Timeline row for the Moments feed (read-only). ───
-function MomentRow({ icon, accent, text }: { icon: string; accent: string; text: string }) {
+function MomentRow({ icon, iconClass, text }: { icon: string; iconClass: string; text: string }) {
   return (
     <div className="flex items-start gap-2.5 py-2">
       <span
-        className="flex items-center justify-center w-6 h-6 rounded-full text-[12px] flex-shrink-0 mt-0.5"
-        style={{ background: `${accent}18`, color: accent }}
+        className={`mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs ${iconClass}`}
         aria-hidden="true"
       >
         {icon}
       </span>
-      <p className="text-[13px] text-gray-700 m-0 leading-relaxed">{text}</p>
+      <p className="text-sm leading-relaxed text-foreground">{text}</p>
     </div>
   );
 }
@@ -237,15 +245,15 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   // ── Loading state (Skeleton) ──
   if (loading) {
     return (
-      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
-        <Skeleton className="mb-4" height={28} width="55%" rounded="rounded-lg" />
-        <div className="grid grid-cols-2 gap-2.5 mb-4">
+      <div className="mx-auto min-h-dvh max-w-[600px] bg-surface-2 px-4 py-5 text-foreground">
+        <Skeleton className="mb-4 h-7 w-[55%]" />
+        <div className="mb-4 grid grid-cols-2 gap-2.5">
           {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} height={64} rounded="rounded-xl" />
+            <Skeleton key={i} className="h-16 rounded-xl" />
           ))}
         </div>
-        <Skeleton className="mb-3" height={120} rounded="rounded-[14px]" />
-        <Skeleton height={140} rounded="rounded-[14px]" />
+        <Skeleton className="mb-3 h-[120px] rounded-xl" />
+        <Skeleton className="h-[140px] rounded-xl" />
       </div>
     );
   }
@@ -253,17 +261,18 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   // ── Error state ──
   if (error) {
     return (
-      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
-        <div className="bg-white rounded-[14px] px-[18px] py-6 border border-orange-200 text-center">
-          <div className="text-3xl mb-2" aria-hidden="true">&#x26A0;</div>
-          <p className="text-[14px] text-red-500 mb-3">{error}</p>
-          <button
-            onClick={onRefresh}
-            className="min-h-[44px] px-5 py-2.5 bg-orange-500 text-white border-none rounded-[10px] text-[13px] font-semibold cursor-pointer"
-          >
-            {t(isHi, 'Try Again', 'पुनः प्रयास करें')}
-          </button>
-        </div>
+      <div className="mx-auto min-h-dvh max-w-[600px] bg-surface-2 px-4 py-5 text-foreground">
+        <Card>
+          <CardBody className="text-center">
+            <div className="mb-2 text-3xl" aria-hidden="true">
+              &#x26A0;
+            </div>
+            <Alert tone="danger" className="mb-3">
+              {error}
+            </Alert>
+            <Button onClick={onRefresh}>{t(isHi, 'Try Again', 'पुनः प्रयास करें')}</Button>
+          </CardBody>
+        </Card>
       </div>
     );
   }
@@ -283,11 +292,11 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   // ── Moments (read-only) derived directly from already-fetched payload. ──
   // Used as the fallback feed for link-code parents who can't load the AI
   // report, and as the always-present "milestone" rows alongside it.
-  const derivedMoments: Array<{ icon: string; accent: string; text: string }> = [];
+  const derivedMoments: Array<{ icon: string; iconClass: string; text: string }> = [];
   if ((weekSummary?.quizzes || 0) > 0) {
     derivedMoments.push({
       icon: '✓',
-      accent: '#059669',
+      iconClass: 'text-success',
       text: t(
         isHi,
         `Completed ${weekSummary!.quizzes} quiz${weekSummary!.quizzes > 1 ? 'zes' : ''} this week.`,
@@ -298,14 +307,14 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   if ((s.streak || 0) >= 3) {
     derivedMoments.push({
       icon: '🔥',
-      accent: '#EF4444',
+      iconClass: 'text-streak',
       text: t(isHi, `On a ${s.streak}-day learning streak.`, `${s.streak}-दिन की सीखने की स्ट्रीक पर।`),
     });
   }
   if (bktMastery && (bktMastery.levels?.mastered || 0) > 0) {
     derivedMoments.push({
       icon: '🌟',
-      accent: '#7C3AED',
+      iconClass: 'text-secondary',
       text: t(
         isHi,
         `Mastered ${bktMastery.levels.mastered} concept${bktMastery.levels.mastered > 1 ? 's' : ''} so far.`,
@@ -316,7 +325,7 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   if ((s.totalChats || 0) > 0) {
     derivedMoments.push({
       icon: '💬',
-      accent: '#EC4899',
+      iconClass: 'text-secondary',
       text: t(
         isHi,
         `Asked Foxy ${s.totalChats} question${s.totalChats > 1 ? 's' : ''}.`,
@@ -327,133 +336,128 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   if (labStreak !== null && labStreak > 0) {
     derivedMoments.push({
       icon: '🔬',
-      accent: '#0891B2',
+      iconClass: 'text-info',
       text: t(isHi, `${labStreak}-day STEM lab streak.`, `${labStreak}-दिन की STEM लैब स्ट्रीक।`),
     });
   }
   // Pull in up to one existing insight line as a "note" moment (read-only).
   if (insights && insights.length > 0) {
-    derivedMoments.push({ icon: '💡', accent: '#D97706', text: insights[0] });
+    derivedMoments.push({ icon: '💡', iconClass: 'text-warning', text: insights[0] });
   }
   const cappedMoments = derivedMoments.slice(0, 5);
 
   return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+    <div className="mx-auto min-h-dvh max-w-[600px] bg-surface-2 px-4 py-5 text-foreground">
       {/* ── Header ── */}
-      <div className="flex justify-between items-start mb-4 pb-3.5 border-b border-orange-200">
+      <div className="mb-4 flex items-start justify-between border-b border-surface-3 pb-3.5">
         <div>
-          <p className="text-[11px] text-orange-500 font-semibold uppercase tracking-[1px] mb-1">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">
             {t(isHi, "Today's glance", 'आज की झलक')}
           </p>
-          <h1 className="text-[22px] font-bold text-gray-900 m-0">{childName}</h1>
-          <p className="text-sm text-gray-500 mt-1 mb-0">
+          <h1 className="text-2xl font-bold text-foreground">{childName}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {t(isHi, 'Grade', 'कक्षा')} {grade}
             {subject ? ` | ${subject}` : ''}
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={onRefresh}
-            className="min-h-[36px] px-3 py-1.5 bg-transparent text-orange-500 border border-orange-200 rounded-md text-xs cursor-pointer"
-          >
+          <Button size="sm" variant="secondary" onClick={onRefresh}>
             {t(isHi, 'Refresh', 'रिफ्रेश')}
-          </button>
-          <button
-            onClick={onLogout}
-            className="min-h-[36px] px-3 py-1.5 bg-transparent text-gray-500 border border-orange-200 rounded-md text-xs cursor-pointer"
-          >
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onLogout}>
             {t(isHi, 'Logout', 'लॉग आउट')}
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* ════════ EMPTY STATE ════════ */}
       {hasNoActivity ? (
-        <div className="bg-white rounded-[14px] px-[18px] py-6 border border-orange-200 mb-4 text-center">
-          <div className="text-4xl mb-3" aria-hidden="true">&#x1F331;</div>
-          <h3 className="text-[16px] font-semibold text-gray-900 mb-2">
-            {t(isHi, `${childName} hasn't started learning yet`, `${childName} ने अभी तक पढ़ाई शुरू नहीं की है`)}
-          </h3>
-          <p className="text-[13px] text-gray-500 mb-0 leading-relaxed max-w-[320px] mx-auto">
-            {t(
-              isHi,
-              "Once they take their first quiz or chat with Foxy, you'll see a weekly glance of their progress right here.",
-              'जब वे अपनी पहली क्विज़ देंगे या Foxy से चैट करेंगे, तो आप यहाँ उनकी प्रगति की साप्ताहिक झलक देख सकेंगे।',
-            )}
-          </p>
-        </div>
+        <EmptyState
+          className="mb-4"
+          icon={<span aria-hidden="true">🌱</span>}
+          title={t(isHi, `${childName} hasn't started learning yet`, `${childName} ने अभी तक पढ़ाई शुरू नहीं की है`)}
+          description={t(
+            isHi,
+            "Once they take their first quiz or chat with Foxy, you'll see a weekly glance of their progress right here.",
+            'जब वे अपनी पहली क्विज़ देंगे या Foxy से चैट करेंगे, तो आप यहाँ उनकी प्रगति की साप्ताहिक झलक देख सकेंगे।',
+          )}
+        />
       ) : (
         <>
           {/* ════════ SECTION 1 — SNAPSHOT ════════ */}
           <section className="mb-5" aria-label={t(isHi, 'Weekly snapshot', 'साप्ताहिक झलक')}>
-            <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-3">
-              <p className="text-[15px] font-semibold text-gray-900 mb-1.5">{accuracyHeadline}</p>
-              <p className="text-[13px] text-gray-500 m-0 leading-relaxed">
-                {(weekSummary?.quizzes || 0) > 0
-                  ? t(
-                      isHi,
-                      `${weekSummary!.quizzes} session${weekSummary!.quizzes > 1 ? 's' : ''} this week`,
-                      `इस सप्ताह ${weekSummary!.quizzes} सत्र`,
-                    )
-                  : t(isHi, 'No sessions yet this week', 'इस सप्ताह अभी तक कोई सत्र नहीं')}
-                {' · '}
-                {(s.streak || 0) > 0
-                  ? t(isHi, `🔥 ${s.streak}-day streak`, `🔥 ${s.streak}-दिन की स्ट्रीक`)
-                  : t(isHi, 'Streak paused', 'स्ट्रीक रुकी हुई')}
-                {(weekSummary?.avgScore || 0) > 0
-                  ? ` · ${t(isHi, `${weekSummary!.avgScore}% avg`, `${weekSummary!.avgScore}% औसत`)}`
-                  : ''}
-              </p>
+            <Card className="mb-3">
+              <CardBody>
+                <p className="mb-1.5 text-base font-semibold text-foreground">{accuracyHeadline}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {(weekSummary?.quizzes || 0) > 0
+                    ? t(
+                        isHi,
+                        `${weekSummary!.quizzes} session${weekSummary!.quizzes > 1 ? 's' : ''} this week`,
+                        `इस सप्ताह ${weekSummary!.quizzes} सत्र`,
+                      )
+                    : t(isHi, 'No sessions yet this week', 'इस सप्ताह अभी तक कोई सत्र नहीं')}
+                  {' · '}
+                  {(s.streak || 0) > 0
+                    ? t(isHi, `🔥 ${s.streak}-day streak`, `🔥 ${s.streak}-दिन की स्ट्रीक`)
+                    : t(isHi, 'Streak paused', 'स्ट्रीक रुकी हुई')}
+                  {(weekSummary?.avgScore || 0) > 0
+                    ? ` · ${t(isHi, `${weekSummary!.avgScore}% avg`, `${weekSummary!.avgScore}% औसत`)}`
+                    : ''}
+                </p>
 
-              {/* One improving + one needs-help subject (existing perfScores). */}
-              {subjectPair && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[12px] text-emerald-700">
-                    <span aria-hidden="true">&#x2B06;</span>
-                    {t(isHi, `Strong: ${subjectPair.strong.subject}`, `मज़बूत: ${subjectPair.strong.subject}`)}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-700">
-                    <span aria-hidden="true">&#x1F91D;</span>
-                    {t(isHi, `Needs help: ${subjectPair.weak.subject}`, `मदद चाहिए: ${subjectPair.weak.subject}`)}
-                  </span>
-                </div>
-              )}
+                {/* One improving + one needs-help subject (existing perfScores). */}
+                {subjectPair && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge tone="success" icon={<span aria-hidden="true">⬆</span>}>
+                      {t(isHi, `Strong: ${subjectPair.strong.subject}`, `मज़बूत: ${subjectPair.strong.subject}`)}
+                    </Badge>
+                    <Badge tone="warning" icon={<span aria-hidden="true">🤝</span>}>
+                      {t(isHi, `Needs help: ${subjectPair.weak.subject}`, `मदद चाहिए: ${subjectPair.weak.subject}`)}
+                    </Badge>
+                  </div>
+                )}
 
-              {/* Small weekly activity strip — reuses the 7-day renderer. */}
-              {dailyActivity && dailyActivity.length > 0 && (
-                <ActivityStrip data={dailyActivity} t={t} isHi={isHi} />
-              )}
-            </div>
+                {/* Small weekly activity strip — reuses the 7-day renderer. */}
+                {dailyActivity && dailyActivity.length > 0 && (
+                  <ActivityStrip data={dailyActivity} t={t} isHi={isHi} />
+                )}
+              </CardBody>
+            </Card>
 
             {/* Compact snapshot stats — mirrors legacy Stat styling. */}
             <div className="grid grid-cols-2 gap-2.5">
-              <StatPill icon="&#x2B50;" label="XP" value={s.xp || 0} color="#F59E0B" />
-              <StatPill icon="&#x1F3AF;" label={t(isHi, 'Accuracy', 'सटीकता')} value={`${s.accuracy || 0}%`} color="#059669" />
-              <StatPill icon="&#x1F4DA;" label={t(isHi, 'Quizzes', 'क्विज़')} value={s.totalQuizzes || 0} color="#6366F1" />
-              <StatPill icon="&#x23F1;" label={t(isHi, 'Study time', 'अध्ययन समय')} value={`${s.minutes || 0}m`} color="#8B5CF6" />
+              <StatPill icon="⭐" label="XP" value={s.xp || 0} valueClass="text-xp" />
+              <StatPill icon="🎯" label={t(isHi, 'Accuracy', 'सटीकता')} value={`${s.accuracy || 0}%`} valueClass="text-success" />
+              <StatPill icon="📚" label={t(isHi, 'Quizzes', 'क्विज़')} value={s.totalQuizzes || 0} valueClass="text-info" />
+              <StatPill icon="⏱" label={t(isHi, 'Study time', 'अध्ययन समय')} value={`${s.minutes || 0}m`} valueClass="text-secondary" />
             </div>
           </section>
 
           {/* ════════ SECTION 2 — MOMENTS ════════ */}
           <section className="mb-5" aria-label={t(isHi, 'Recent moments', 'हाल के पल')}>
-            <h2 className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
               {t(isHi, 'Moments', 'पल')}
             </h2>
 
             {cappedMoments.length > 0 ? (
-              <div className="bg-white rounded-[14px] px-[18px] py-2.5 border border-orange-200 mb-3">
-                {cappedMoments.map((m, i) => (
-                  <div key={i} className={i < cappedMoments.length - 1 ? 'border-b border-orange-100' : ''}>
-                    <MomentRow icon={m.icon} accent={m.accent} text={m.text} />
-                  </div>
-                ))}
-              </div>
+              <Card className="mb-3">
+                <CardBody className="py-1">
+                  {cappedMoments.map((m, i) => (
+                    <div key={i} className={i < cappedMoments.length - 1 ? 'border-b border-surface-3' : ''}>
+                      <MomentRow icon={m.icon} iconClass={m.iconClass} text={m.text} />
+                    </div>
+                  ))}
+                </CardBody>
+              </Card>
             ) : (
-              <div className="bg-white rounded-[14px] px-[18px] py-4 border border-orange-200 mb-3 text-center">
-                <p className="text-[13px] text-gray-500 m-0">
-                  {t(isHi, 'No new moments this week yet.', 'इस सप्ताह अभी तक कोई नया पल नहीं।')}
-                </p>
-              </div>
+              <Card className="mb-3">
+                <CardBody className="text-center">
+                  <p className="text-sm text-muted-foreground">
+                    {t(isHi, 'No new moments this week yet.', 'इस सप्ताह अभी तक कोई नया पल नहीं।')}
+                  </p>
+                </CardBody>
+              </Card>
             )}
 
             {/* Richer AI report read — only for guardian-mode parents (Bearer
@@ -465,7 +469,7 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
 
           {/* ════════ SECTION 3 — ACTIONS ════════ */}
           <section aria-label={t(isHi, 'Quick actions', 'त्वरित क्रियाएँ')}>
-            <h2 className="text-[13px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+            <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
               {t(isHi, 'Actions', 'क्रियाएँ')}
             </h2>
             <div className="flex flex-col gap-2.5">
@@ -479,21 +483,21 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
               {/* View full report — opens the existing detailed reports page. */}
               <Link
                 href="/parent/reports"
-                className="flex items-center gap-3 min-h-[44px] px-4 py-3 bg-white text-gray-900 border border-orange-200 rounded-[12px] no-underline"
+                className="flex min-h-[44px] items-center gap-3 rounded-xl border border-surface-3 bg-surface-1 px-4 py-3 no-underline"
               >
-                <span className="text-lg" aria-hidden="true">&#x1F4CA;</span>
-                <span className="flex-1 text-[14px] font-semibold">{t(isHi, 'View full report', 'पूरी रिपोर्ट देखें')}</span>
-                <span className="text-orange-400 text-lg" aria-hidden="true">&#x2192;</span>
+                <span className="text-lg" aria-hidden="true">📊</span>
+                <span className="flex-1 text-sm font-semibold text-foreground">{t(isHi, 'View full report', 'पूरी रिपोर्ट देखें')}</span>
+                <span className="text-lg text-primary" aria-hidden="true">→</span>
               </Link>
 
               {/* Manage plan — existing billing page. */}
               <Link
                 href="/parent/billing"
-                className="flex items-center gap-3 min-h-[44px] px-4 py-3 bg-white text-gray-900 border border-orange-200 rounded-[12px] no-underline"
+                className="flex min-h-[44px] items-center gap-3 rounded-xl border border-surface-3 bg-surface-1 px-4 py-3 no-underline"
               >
-                <span className="text-lg" aria-hidden="true">&#x1F4B3;</span>
-                <span className="flex-1 text-[14px] font-semibold">{t(isHi, 'Manage plan', 'प्लान प्रबंधित करें')}</span>
-                <span className="text-orange-400 text-lg" aria-hidden="true">&#x2192;</span>
+                <span className="text-lg" aria-hidden="true">💳</span>
+                <span className="flex-1 text-sm font-semibold text-foreground">{t(isHi, 'Manage plan', 'प्लान प्रबंधित करें')}</span>
+                <span className="text-lg text-primary" aria-hidden="true">→</span>
               </Link>
 
               {/* Message teacher / support — existing pages. Guardian-mode
@@ -501,21 +505,20 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
                   get support (messages requires a JWT). */}
               <Link
                 href={canFetchReport ? '/parent/messages' : '/parent/support'}
-                className="flex items-center gap-3 min-h-[44px] px-4 py-3 bg-white text-gray-900 border border-orange-200 rounded-[12px] no-underline"
+                className="flex min-h-[44px] items-center gap-3 rounded-xl border border-surface-3 bg-surface-1 px-4 py-3 no-underline"
               >
-                <span className="text-lg" aria-hidden="true">&#x1F4AC;</span>
-                <span className="flex-1 text-[14px] font-semibold">
+                <span className="text-lg" aria-hidden="true">💬</span>
+                <span className="flex-1 text-sm font-semibold text-foreground">
                   {canFetchReport
                     ? t(isHi, 'Message teacher', 'शिक्षक को संदेश भेजें')
                     : t(isHi, 'Get support', 'सहायता प्राप्त करें')}
                 </span>
-                <span className="text-orange-400 text-lg" aria-hidden="true">&#x2192;</span>
+                <span className="text-lg text-primary" aria-hidden="true">→</span>
               </Link>
             </div>
           </section>
         </>
       )}
-
     </div>
   );
 }

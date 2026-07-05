@@ -82,9 +82,9 @@ interface CalendarResponse {
 // Per-type styling — colors used for the calendar dot legend, event chips, and
 // upcoming-events rows. quiz_activity is past engagement; the others upcoming.
 const EVENT_STYLE: Record<CalendarEventType, { color: string; en: string; hi: string }> = {
-  assignment: { color: '#2563EB', en: 'Assignment', hi: 'असाइनमेंट' },
-  school_exam: { color: '#EF4444', en: 'School Exam', hi: 'स्कूल परीक्षा' },
-  quiz_activity: { color: '#F97316', en: 'Quiz activity', hi: 'क्विज़ गतिविधि' },
+  assignment: { color: 'var(--info)', en: 'Assignment', hi: 'असाइनमेंट' },
+  school_exam: { color: 'var(--danger)', en: 'School Exam', hi: 'स्कूल परीक्षा' },
+  quiz_activity: { color: 'var(--primary)', en: 'Quiz activity', hi: 'क्विज़ गतिविधि' },
 };
 
 // ============================================================
@@ -265,10 +265,10 @@ export default function ParentCalendarPage() {
     return (
       <div style={pageStyle}>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
+        <div style={{ textAlign: 'center', padding: 80, color: 'var(--text-3)' }}>
           <div style={{
             width: 40, height: 40,
-            border: '3px solid #FDBA7444', borderTopColor: '#F97316',
+            border: '3px solid var(--surface-2)', borderTopColor: 'var(--primary)',
             borderRadius: '50%', margin: '0 auto 16px',
             animation: 'spin 0.8s linear infinite',
           }} />
@@ -290,27 +290,27 @@ export default function ParentCalendarPage() {
 
       {/* ── HEADER ── */}
       <div style={{
-        background: 'linear-gradient(135deg, #F97316, #EA580C)',
+        background: 'linear-gradient(135deg, var(--primary), var(--primary))',
         borderRadius: 16,
         padding: '24px 22px',
         marginBottom: 18,
-        color: '#fff',
+        color: 'var(--surface-1)',
       }}>
         <button
           onClick={() => { window.location.href = '/parent'; }}
           style={{
-            background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6,
-            padding: '4px 10px', color: '#fff', fontSize: 12, fontWeight: 600,
+            background: 'color-mix(in srgb, var(--surface-1) 20%, transparent)', border: 'none', borderRadius: 6,
+            padding: '4px 10px', color: 'var(--surface-1)', fontSize: 12, fontWeight: 600,
             cursor: 'pointer', marginBottom: 10,
             display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: 32,
           }}
         >
           &larr; {t(isHi, 'Dashboard', 'डैशबोर्ड')}
         </button>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: '0 0 4px' }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: 'var(--surface-1)', margin: '0 0 4px' }}>
           &#x1F4C5; {t(isHi, 'Academic Calendar', 'शैक्षणिक कैलेंडर')}
         </h1>
-        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', margin: 0 }}>
+        <p style={{ fontSize: 14, color: 'var(--surface-1)', margin: 0 }}>
           {student.name} &bull; {t(isHi, 'Grade', 'कक्षा')} {student.grade}
         </p>
       </div>
@@ -318,18 +318,18 @@ export default function ParentCalendarPage() {
       {/* ── NOT-LINKED STATE (403) ── */}
       {notLinked && (
         <div style={{
-          backgroundColor: '#FEF2F2',
-          border: '1px solid #FECACA',
+          backgroundColor: 'var(--surface-2)',
+          border: '1px solid var(--surface-3)',
           borderRadius: 14,
           padding: '18px',
           marginBottom: 16,
           textAlign: 'center',
         }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>&#x1F517;</div>
-          <p style={{ fontSize: 14, fontWeight: 600, color: '#991B1B', margin: '0 0 4px' }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--danger)', margin: '0 0 4px' }}>
             {t(isHi, 'Not linked to this child', 'इस बच्चे से जुड़े नहीं हैं')}
           </p>
-          <p style={{ fontSize: 12, color: '#B91C1C', margin: 0, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: 'var(--danger)', margin: 0, lineHeight: 1.5 }}>
             {t(
               isHi,
               'You need an approved link to view this child’s calendar. Open the Children page to connect.',
@@ -342,8 +342,8 @@ export default function ParentCalendarPage() {
       {/* ── BOARD EXAM COUNTDOWN (Grade 10 / 12 only — client-side static) ── */}
       {boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0 && (
         <div style={{
-          backgroundColor: '#FFF8F0',
-          border: '2px solid #FDBA74',
+          backgroundColor: 'var(--surface-2)',
+          border: '2px solid var(--surface-3)',
           borderRadius: 14,
           padding: '16px 18px',
           marginBottom: 16,
@@ -354,27 +354,27 @@ export default function ParentCalendarPage() {
         }}>
           <div style={{
             width: 52, height: 52, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #F97316, #EA580C)',
+            background: 'linear-gradient(135deg, var(--primary), var(--primary))',
             display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
-            <span style={{ fontSize: 18, fontWeight: 800, color: '#fff', lineHeight: 1 }}>
+            <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--surface-1)', lineHeight: 1 }}>
               {daysUntilBoard}
             </span>
-            <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.85)', lineHeight: 1 }}>
+            <span style={{ fontSize: 8, color: 'var(--surface-1)', lineHeight: 1 }}>
               {t(isHi, 'DAYS', 'दिन')}
             </span>
           </div>
           <div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: '#1E293B', margin: '0 0 2px' }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 2px' }}>
               {t(isHi, 'CBSE Board Exam', 'CBSE बोर्ड परीक्षा')}
             </p>
-            <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
               {t(isHi, 'Grade', 'कक्षा')} {grade} &bull; {boardExamDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
             {daysUntilBoard <= 30 && (
-              <p style={{ fontSize: 11, color: '#EF4444', margin: '4px 0 0', fontWeight: 600 }}>
+              <p style={{ fontSize: 11, color: 'var(--danger)', margin: '4px 0 0', fontWeight: 600 }}>
                 {t(isHi, 'Time to intensify preparation!', 'तैयारी तेज़ करने का समय!')}
               </p>
             )}
@@ -394,9 +394,9 @@ export default function ParentCalendarPage() {
             style={navBtnStyle}
             aria-label={t(isHi, 'Previous month', 'पिछला महीना')}
           >
-            &#8249;
+            &#x2039;
           </button>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#1E293B' }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)' }}>
             {monthName} {viewYear}
           </span>
           <button
@@ -404,7 +404,7 @@ export default function ParentCalendarPage() {
             style={navBtnStyle}
             aria-label={t(isHi, 'Next month', 'अगला महीना')}
           >
-            &#8250;
+            &#x203A;
           </button>
         </div>
 
@@ -413,7 +413,7 @@ export default function ParentCalendarPage() {
           {dayHeaders.map(d => (
             <div key={d} style={{
               textAlign: 'center', fontSize: 10, fontWeight: 700,
-              color: '#94A3B8', textTransform: 'uppercase',
+              color: 'var(--text-3)', textTransform: 'uppercase',
             }}>
               {d}
             </div>
@@ -434,8 +434,8 @@ export default function ParentCalendarPage() {
                 style={{
                   aspectRatio: '1',
                   borderRadius: 10,
-                  backgroundColor: isToday ? '#FFF3E0' : '#FAFAFA',
-                  border: isToday ? '2px solid #F97316' : '1px solid #F1F5F9',
+                  backgroundColor: isToday ? 'var(--surface-2)' : 'var(--surface-2)',
+                  border: isToday ? '2px solid var(--primary)' : '1px solid var(--surface-2)',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -447,7 +447,7 @@ export default function ParentCalendarPage() {
                 <span style={{
                   fontSize: 12,
                   fontWeight: isToday ? 700 : 400,
-                  color: isToday ? '#EA580C' : '#475569',
+                  color: isToday ? 'var(--primary)' : 'var(--text-2)',
                 }}>
                   {cell.date}
                 </span>
@@ -476,27 +476,27 @@ export default function ParentCalendarPage() {
           {(['assignment', 'school_exam', 'quiz_activity'] as CalendarEventType[]).map((ty) => (
             <div key={ty} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: EVENT_STYLE[ty].color }} />
-              <span style={{ fontSize: 11, color: '#64748B' }}>{t(isHi, EVENT_STYLE[ty].en, EVENT_STYLE[ty].hi)}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{t(isHi, EVENT_STYLE[ty].en, EVENT_STYLE[ty].hi)}</span>
             </div>
           ))}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 14, height: 14, borderRadius: 4, border: '2px solid #F97316', backgroundColor: '#FFF3E0' }} />
-            <span style={{ fontSize: 11, color: '#64748B' }}>{t(isHi, 'Today', 'आज')}</span>
+            <div style={{ width: 14, height: 14, borderRadius: 4, border: '2px solid var(--primary)', backgroundColor: 'var(--surface-2)' }} />
+            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{t(isHi, 'Today', 'आज')}</span>
           </div>
         </div>
       </div>
 
       {/* ── UPCOMING EVENTS ── */}
       <div style={cardStyle}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', margin: '0 0 14px' }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 14px' }}>
           &#x1F4CC; {t(isHi, 'Upcoming Events', 'आगामी कार्यक्रम')}
         </h3>
 
         {eventsLoading ? (
-          <div style={{ textAlign: 'center', padding: 20, color: '#94A3B8' }}>
+          <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-3)' }}>
             <div style={{
               width: 28, height: 28,
-              border: '3px solid #FDBA7444', borderTopColor: '#F97316',
+              border: '3px solid var(--surface-2)', borderTopColor: 'var(--primary)',
               borderRadius: '50%', margin: '0 auto 8px',
               animation: 'spin 0.8s linear infinite',
             }} />
@@ -504,12 +504,12 @@ export default function ParentCalendarPage() {
           </div>
         ) : eventsError ? (
           <div style={{ textAlign: 'center', padding: '16px 8px' }}>
-            <p style={{ fontSize: 13, color: '#DC2626', margin: '0 0 12px' }}>{eventsError}</p>
+            <p style={{ fontSize: 13, color: 'var(--danger)', margin: '0 0 12px' }}>{eventsError}</p>
             <button
               onClick={fetchEvents}
               style={{
-                padding: '8px 18px', backgroundColor: 'transparent', color: '#F97316',
-                border: '1px solid #FDBA74', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                padding: '8px 18px', backgroundColor: 'transparent', color: 'var(--primary)',
+                border: '1px solid var(--surface-3)', borderRadius: 8, fontSize: 13, fontWeight: 600,
                 cursor: 'pointer', minHeight: 44,
               }}
             >
@@ -524,7 +524,7 @@ export default function ParentCalendarPage() {
                 dateLabel={boardExamDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                 title={`${t(isHi, 'CBSE Board Exam', 'CBSE बोर्ड परीक्षा')} (${t(isHi, 'Grade', 'कक्षा')} ${grade})`}
                 chipLabel={t(isHi, 'Board', 'बोर्ड')}
-                chipColor="#EF4444"
+                chipColor="var(--danger)"
                 daysLeft={daysUntilBoard}
                 isHi={isHi}
               />
@@ -541,7 +541,7 @@ export default function ParentCalendarPage() {
                   dateLabel={evDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                   title={`${ev.title}${ev.subtitle ? ' — ' + ev.subtitle : ''}`}
                   chipLabel={t(isHi, style.en, style.hi)}
-                  chipColor={daysLeft <= 7 ? '#EF4444' : style.color}
+                  chipColor={daysLeft <= 7 ? 'var(--danger)' : style.color}
                   daysLeft={daysLeft}
                   isHi={isHi}
                 />
@@ -552,15 +552,15 @@ export default function ParentCalendarPage() {
             {upcoming.length === 0 && !(boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0) && (
               <div style={{
                 borderRadius: 12,
-                border: '1px dashed #FDBA7488',
-                backgroundColor: '#FFF8F0',
+                border: '1px dashed var(--surface-3)',
+                backgroundColor: 'var(--surface-2)',
                 padding: '18px 14px',
                 textAlign: 'center',
               }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#9A3412', margin: '0 0 4px' }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)', margin: '0 0 4px' }}>
                   {t(isHi, 'No upcoming events', 'कोई आगामी कार्यक्रम नहीं')}
                 </p>
-                <p style={{ fontSize: 11, color: '#B45309', margin: 0, lineHeight: 1.4 }}>
+                <p style={{ fontSize: 11, color: 'var(--warning)', margin: 0, lineHeight: 1.4 }}>
                   {t(
                     isHi,
                     "Assignments and exams added by your child's school will appear here.",
@@ -575,7 +575,7 @@ export default function ParentCalendarPage() {
 
       {/* ── RECOMMENDED HABITS ── */}
       <div style={cardStyle}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1E293B', margin: '0 0 14px' }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 14px' }}>
           &#x2728; {t(isHi, 'Recommended Habits', 'अनुशंसित आदतें')}
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -583,7 +583,7 @@ export default function ParentCalendarPage() {
             dateLabel={t(isHi, 'Ongoing', 'जारी')}
             title={t(isHi, 'Daily Practice Goal — 1 quiz per day', 'दैनिक अभ्यास लक्ष्य — प्रति दिन 1 क्विज़')}
             chipLabel={t(isHi, 'Goal', 'लक्ष्य')}
-            chipColor="#F97316"
+            chipColor="var(--primary)"
             daysLeft={null}
             isHi={isHi}
           />
@@ -591,7 +591,7 @@ export default function ParentCalendarPage() {
             dateLabel={t(isHi, 'Ongoing', 'जारी')}
             title={t(isHi, 'Weekly revision — Sundays recommended', 'साप्ताहिक दोहराई — रविवार की सलाह')}
             chipLabel={t(isHi, 'Habit', 'आदत')}
-            chipColor="#8B5CF6"
+            chipColor="var(--secondary)"
             daysLeft={null}
             isHi={isHi}
           />
@@ -599,7 +599,7 @@ export default function ParentCalendarPage() {
       </div>
 
       {/* Footer */}
-      <p style={{ textAlign: 'center', fontSize: 11, color: '#475569', margin: '20px 0 12px' }}>
+      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-2)', margin: '20px 0 12px' }}>
         Alfanumrik Learning OS | {t(isHi, 'Parent Portal', 'अभिभावक पोर्टल')}
       </p>
     </div>
@@ -621,9 +621,9 @@ function EventRow({ dateLabel, title, chipLabel, chipColor, daysLeft, isHi }: {
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
       padding: '10px 12px',
-      backgroundColor: '#FFF8F0',
+      backgroundColor: 'var(--surface-2)',
       borderRadius: 12,
-      border: '1px solid #FDBA7444',
+      border: '1px solid var(--surface-2)',
     }}>
       {/* Date chip */}
       <div style={{
@@ -631,15 +631,15 @@ function EventRow({ dateLabel, title, chipLabel, chipColor, daysLeft, isHi }: {
         minWidth: 52,
         textAlign: 'center',
         padding: '4px 6px',
-        backgroundColor: '#FFF3E0',
+        backgroundColor: 'var(--surface-2)',
         borderRadius: 8,
-        border: '1px solid #FDBA7455',
+        border: '1px solid var(--surface-3)',
       }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#EA580C' }}>{dateLabel}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)' }}>{dateLabel}</span>
       </div>
 
       {/* Title */}
-      <span style={{ flex: 1, fontSize: 13, color: '#1E293B', fontWeight: 500 }}>
+      <span style={{ flex: 1, fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>
         {title}
       </span>
 
@@ -647,13 +647,13 @@ function EventRow({ dateLabel, title, chipLabel, chipColor, daysLeft, isHi }: {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
         <span style={{
           fontSize: 10, fontWeight: 700, color: chipColor,
-          backgroundColor: `${chipColor}18`,
+          backgroundColor: `color-mix(in srgb, ${chipColor} 9%, transparent)`,
           borderRadius: 6, padding: '2px 8px',
         }}>
           {chipLabel}
         </span>
         {daysLeft !== null && (
-          <span style={{ fontSize: 10, color: '#64748B' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>
             {t(isHi, `${daysLeft}d left`, `${daysLeft} दिन शेष`)}
           </span>
         )}
@@ -670,16 +670,16 @@ const pageStyle: React.CSSProperties = {
   margin: '0 auto',
   padding: '20px 16px 40px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  color: '#1E293B',
-  backgroundColor: '#FFF8F0',
+  color: 'var(--text-1)',
+  backgroundColor: 'var(--surface-2)',
   minHeight: '100dvh',
 };
 
 const cardStyle: React.CSSProperties = {
-  backgroundColor: '#FFFFFF',
+  backgroundColor: 'var(--surface-1)',
   borderRadius: 16,
   padding: '18px 18px',
-  border: '1px solid #FDBA7444',
+  border: '1px solid var(--surface-2)',
   marginBottom: 14,
 };
 
@@ -687,9 +687,9 @@ const navBtnStyle: React.CSSProperties = {
   width: 36,
   height: 36,
   borderRadius: 10,
-  border: '1px solid #FDBA7444',
-  backgroundColor: '#FFF8F0',
-  color: '#F97316',
+  border: '1px solid var(--surface-2)',
+  backgroundColor: 'var(--surface-2)',
+  color: 'var(--primary)',
   fontSize: 20,
   cursor: 'pointer',
   display: 'flex',

@@ -140,19 +140,14 @@ export default function ParentMobileNav({
             ref={moreSheetRef}
             role="dialog"
             aria-label={isHi ? 'अधिक नेविगेशन विकल्प' : 'More navigation options'}
-            className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl"
+            className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl bg-surface-1 shadow-lg"
             style={{
-              background: 'var(--surface-1)',
               paddingBottom: 'env(safe-area-inset-bottom, 16px)',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.12)',
             }}
           >
             {/* Handle bar */}
             <div className="flex justify-center pt-3 pb-2">
-              <div
-                className="w-10 h-1 rounded-full"
-                style={{ background: 'var(--border-mid, #ccc)' }}
-              />
+              <div className="w-10 h-1 rounded-full bg-surface-3" />
             </div>
             <div className="px-5 pb-4 space-y-1">
               {MORE_ITEMS.map(item => {
@@ -169,38 +164,29 @@ export default function ParentMobileNav({
                     key={item.href}
                     type="button"
                     onClick={() => { setShowMore(false); router.push(item.href); }}
-                    className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
-                    style={{
-                      background: active ? 'rgba(249, 115, 22, 0.08)' : 'transparent',
-                      color: active ? '#F97316' : 'var(--text-2)',
-                    }}
+                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98] ${
+                      active ? 'bg-surface-2 text-primary' : 'bg-transparent text-foreground'
+                    }`}
                   >
                     <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
                     <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
                     {badgeCount > 0 && (
-                      <span
-                        className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
-                        style={{ background: '#F97316' }}
-                      >
+                      <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-2xs font-bold text-on-accent px-1 bg-primary">
                         {badgeCount > 99 ? '99+' : badgeCount}
                       </span>
                     )}
                     {active && badgeCount === 0 && (
-                      <span
-                        className="ml-auto w-1.5 h-1.5 rounded-full"
-                        style={{ background: '#F97316' }}
-                      />
+                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
                     )}
                   </button>
                 );
               })}
               {/* Logout at bottom of More sheet */}
-              <div className="pt-3 mt-2" style={{ borderTop: '1px solid var(--border)' }}>
+              <div className="pt-3 mt-2 border-t border-surface-3">
                 <button
                   type="button"
                   onClick={() => { setShowMore(false); onLogout(); }}
-                  className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
-                  style={{ color: 'var(--text-3)' }}
+                  className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98] text-muted-foreground"
                 >
                   <span className="text-xl w-7 text-center" aria-hidden="true">🚪</span>
                   <span className="text-sm font-semibold">{isHi ? 'लॉगआउट' : 'Logout'}</span>
@@ -229,8 +215,9 @@ export default function ParentMobileNav({
                 onClick={() => router.push(tab.href)}
                 aria-label={isHi ? tab.labelHi : tab.label}
                 aria-current={active ? 'page' : undefined}
-                className="flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center"
-                style={{ color: active ? '#F97316' : 'var(--ink-3, #64748b)' }}
+                className={`flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center ${
+                  active ? 'text-primary' : 'text-muted-foreground'
+                }`}
               >
                 <span
                   className="relative inline-block"
@@ -245,8 +232,8 @@ export default function ParentMobileNav({
                   {tab.icon}
                   {badgeCount > 0 && (
                     <span
-                      className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-0.5"
-                      style={{ background: '#DC2626', border: '1.5px solid var(--bg)' }}
+                      className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-2xs font-bold text-on-accent px-0.5 bg-danger"
+                      style={{ border: '1.5px solid var(--bg)' }}
                     >
                       {badgeCount > 9 ? '9+' : badgeCount}
                     </span>
@@ -272,8 +259,9 @@ export default function ParentMobileNav({
             onClick={() => setShowMore(!showMore)}
             aria-label={isHi ? 'अधिक विकल्प' : 'More options'}
             aria-expanded={showMore}
-            className="flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center"
-            style={{ color: isMoreActive ? '#F97316' : 'var(--ink-3, #64748b)' }}
+            className={`flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center ${
+              isMoreActive ? 'text-primary' : 'text-muted-foreground'
+            }`}
           >
             <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>⋯</span>
             <span
