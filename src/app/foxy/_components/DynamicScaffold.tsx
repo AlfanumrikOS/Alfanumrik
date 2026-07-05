@@ -10,7 +10,7 @@ export default function DynamicScaffold({ action }: { action: UiActionPayload })
     const { numerator, denominator } = action.data;
     if (typeof numerator !== 'number' || typeof denominator !== 'number' || denominator === 0) return null;
     return (
-      <div className="my-4 p-4 rounded-xl bg-white/5 border border-[var(--border-base)] shadow-sm">
+      <div className="my-4 p-4 rounded-xl bg-[color-mix(in_srgb,var(--text-1)_4%,transparent)] border border-[var(--border-base)] shadow-sm">
         <p className="text-sm font-medium mb-3">Fraction: {numerator}/{denominator}</p>
         <div className="flex w-full h-8 rounded-md overflow-hidden bg-[var(--surface-sunken)] border border-[var(--border-base)]">
           {Array.from({ length: denominator }).map((_, i) => (
@@ -30,7 +30,7 @@ export default function DynamicScaffold({ action }: { action: UiActionPayload })
     const range = max - min;
     if (range <= 0 || range > 50) return null; // sanity check
     return (
-      <div className="my-4 p-6 rounded-xl bg-white/5 border border-[var(--border-base)] shadow-sm overflow-x-auto">
+      <div className="my-4 p-6 rounded-xl bg-[color-mix(in_srgb,var(--text-1)_4%,transparent)] border border-[var(--border-base)] shadow-sm overflow-x-auto">
         <p className="text-sm font-medium mb-6">Number Line</p>
         <div className="relative w-full flex items-center h-12 min-w-[300px]">
           {/* Main line */}

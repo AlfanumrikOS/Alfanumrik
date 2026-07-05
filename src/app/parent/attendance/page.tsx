@@ -549,7 +549,7 @@ export default function ParentAttendancePage() {
                   {child.name.split(' ')[0]}
                   {child.grade && (
                     <span
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${active ? 'bg-surface-1/25 text-on-accent' : 'bg-surface-2 text-primary'}`}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${active ? 'bg-[color-mix(in_srgb,var(--surface-1)_25%,transparent)] text-on-accent' : 'bg-surface-2 text-primary'}`}
                     >
                       {tt(isHi, 'G', 'क')}{child.grade}
                     </span>

@@ -221,7 +221,7 @@ export default function UserDrawer({
             className={`whitespace-nowrap rounded-md px-4 py-1.5 text-xs font-bold transition ${
               selectedPlan === currentPlan
                 ? 'cursor-not-allowed bg-surface-3 text-muted-foreground'
-                : 'cursor-pointer bg-warning/20 text-warning hover:bg-warning/30 border border-warning/40'
+                : 'cursor-pointer bg-[color-mix(in_srgb,var(--warning)_20%,transparent)] text-warning hover:bg-[color-mix(in_srgb,var(--warning)_30%,transparent)] border border-[color-mix(in_srgb,var(--warning)_40%,transparent)]'
             } ${planLoading ? 'cursor-not-allowed opacity-70' : ''}`}
           >
             {planLoading
@@ -237,8 +237,8 @@ export default function UserDrawer({
             role="status"
             className={`mt-2.5 rounded-md border px-3 py-2 text-[11px] font-semibold ${
               planMsg.ok
-                ? 'border-success/30 bg-success/10 text-success'
-                : 'border-danger/30 bg-danger/10 text-danger'
+                ? 'border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[color-mix(in_srgb,var(--success)_10%,transparent)] text-success'
+                : 'border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-danger'
             }`}
           >
             {planMsg.ok ? '✓ ' : '✗ '}
@@ -259,7 +259,7 @@ export default function UserDrawer({
         <div
           role="status"
           className={`mb-2.5 rounded-md px-3 py-2 text-[11px] ${
-            actionMsg.ok ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'
+            actionMsg.ok ? 'bg-[color-mix(in_srgb,var(--success)_10%,transparent)] text-success' : 'bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-danger'
           }`}
         >
           {actionMsg.text}
@@ -270,7 +270,7 @@ export default function UserDrawer({
           <button
             onClick={() => doAction('suspend')}
             disabled={!!actionLoading}
-            className="rounded-md border border-danger/30 bg-danger/10 px-3 py-1.5 text-[11px] font-semibold text-danger hover:bg-danger/20 disabled:opacity-50"
+            className="rounded-md border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-3 py-1.5 text-[11px] font-semibold text-danger hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] disabled:opacity-50"
           >
             {actionLoading === 'suspend' ? '...' : '⛔ Suspend'}
           </button>
@@ -278,7 +278,7 @@ export default function UserDrawer({
           <button
             onClick={() => doAction('restore')}
             disabled={!!actionLoading}
-            className="rounded-md border border-success/30 bg-success/10 px-3.5 py-1.5 text-xs font-semibold text-success hover:bg-success/20 disabled:opacity-50"
+            className="rounded-md border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[color-mix(in_srgb,var(--success)_10%,transparent)] px-3.5 py-1.5 text-xs font-semibold text-success hover:bg-[color-mix(in_srgb,var(--success)_20%,transparent)] disabled:opacity-50"
           >
             {actionLoading === 'restore' ? '...' : '✅ Restore'}
           </button>
@@ -286,7 +286,7 @@ export default function UserDrawer({
         <button
           onClick={() => doAction('reset_streak')}
           disabled={!!actionLoading}
-          className="rounded-md border border-info/30 bg-info/10 px-3.5 py-1.5 text-xs font-semibold text-info hover:bg-info/20 disabled:opacity-50"
+          className="rounded-md border border-[color-mix(in_srgb,var(--info)_30%,transparent)] bg-[color-mix(in_srgb,var(--info)_10%,transparent)] px-3.5 py-1.5 text-xs font-semibold text-info hover:bg-[color-mix(in_srgb,var(--info)_20%,transparent)] disabled:opacity-50"
         >
           {actionLoading === 'reset_streak' ? '...' : '🔄 Reset Streak'}
         </button>

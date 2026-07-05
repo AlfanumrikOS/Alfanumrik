@@ -331,7 +331,7 @@ function NotificationRow({
             <div
               className={[
                 'truncate text-sm',
-                item.is_read ? 'font-medium text-foreground/80' : 'font-semibold text-foreground',
+                item.is_read ? 'font-medium text-[color-mix(in_srgb,var(--text-1)_80%,transparent)]' : 'font-semibold text-foreground',
               ].join(' ')}
             >
               {item.title}
@@ -350,7 +350,7 @@ function NotificationRow({
 
       {expanded && (
         <div className="mt-2 pl-5">
-          <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
+          <p className="whitespace-pre-line text-sm leading-relaxed text-[color-mix(in_srgb,var(--text-1)_90%,transparent)]">
             {longBody}
           </p>
           {!item.is_read && (

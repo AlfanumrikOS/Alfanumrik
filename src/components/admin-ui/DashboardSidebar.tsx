@@ -182,7 +182,7 @@ export default function DashboardSidebar({
               collapsed ? 'justify-center px-3' : 'justify-start',
               active
                 ? 'font-semibold'
-                : 'font-normal text-foreground/80 hover:bg-surface-2',
+                : 'font-normal text-[color-mix(in_srgb,var(--text-1)_80%,transparent)] hover:bg-surface-2',
             )}
             style={activeStyle}
           >

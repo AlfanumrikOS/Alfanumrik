@@ -1968,12 +1968,12 @@ export default function QuizPage() {
           </div>
         )}
         {networkError && (
-          <div className="fixed bottom-20 left-4 right-4 bg-amber-500 text-white rounded-xl p-4 text-center z-40 shadow-lg animate-slide-up">
+          <div className="fixed bottom-20 left-4 right-4 bg-warning text-on-accent rounded-xl p-4 text-center z-40 shadow-lg animate-slide-up">
             <p className="text-sm font-medium mb-2">{networkError}</p>
             <button
               onClick={retrySubmit}
               disabled={loading}
-              className="px-4 py-1.5 bg-white text-amber-700 rounded-lg text-sm font-medium disabled:opacity-50"
+              className="px-4 py-1.5 bg-surface-1 text-warning rounded-lg text-sm font-medium disabled:opacity-50"
             >
               {loading
                 ? (isHi ? 'भेज रहे हैं...' : 'Submitting...')

@@ -224,8 +224,8 @@ export function FoxyStudySheet({
                     onClick={() => onSelectTopic(topic.id)}
                     className="foxy-os-chapter w-full flex items-center gap-3 rounded-xl text-left transition-all active:scale-[0.99]"
                     style={{
-                      background: isActive ? `${ring}10` : 'var(--surface-2)',
-                      border: `1px solid ${isActive ? `${ring}40` : 'var(--border)'}`,
+                      background: isActive ? `color-mix(in srgb, ${ring} 6%, transparent)` : 'var(--surface-2)',
+                      border: `1px solid ${isActive ? `color-mix(in srgb, ${ring} 25%, transparent)` : 'var(--border)'}`,
                     }}
                     aria-pressed={isActive}
                   >

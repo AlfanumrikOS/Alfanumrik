@@ -47,8 +47,8 @@ export function LanguagePicker({ language, isLocked, onLanguageChange }: Languag
           }}
           className={`text-[10px] font-bold px-2 py-1 rounded-lg transition-all ${language !== l.code ? 'inline-block' : ''}`}
           style={{
-            background: language === l.code ? 'rgba(255,255,255,0.2)' : 'transparent',
-            color: language === l.code ? '#fff' : 'rgba(255,255,255,0.4)',
+            background: language === l.code ? 'color-mix(in srgb, var(--on-surface-inverse) 20%, transparent)' : 'transparent',
+            color: language === l.code ? 'var(--on-surface-inverse)' : 'color-mix(in srgb, var(--on-surface-inverse) 40%, transparent)',
             opacity: isLocked && language !== l.code ? 0.2 : 1,
             cursor: isLocked ? 'default' : 'pointer',
           }}
@@ -56,7 +56,7 @@ export function LanguagePicker({ language, isLocked, onLanguageChange }: Languag
           {l.label}
         </button>
       ))}
-      {isLocked && <span className="text-[8px] text-white/30">🔒</span>}
+      {isLocked && <span className="text-[8px] text-[color-mix(in_srgb,var(--on-surface-inverse)_30%,transparent)]">🔒</span>}
     </>
   );
 }

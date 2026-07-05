@@ -7448,3 +7448,33 @@ unpinnable at the JSDOM unit tier).
 **Total catalog: 204 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-238 — DD-16: no dead opacity-on-var utilities (semantic-token alpha guard)
+
+Premium-UI Phase 13 tail cleanup. The recurring DD-16 bug is a "dead
+opacity-on-var" Tailwind class: because every semantic colour token in
+`tailwind.config.js` is a full `var(--…)` VALUE (`primary: 'var(--primary)'`,
+`success: 'var(--success)'`, `surface-1: 'var(--surface-1)'`,
+`foreground: 'var(--text-1)'`, the `on-*` pairs, …), Tailwind's `/NN` opacity
+modifier cannot inject an alpha channel — it can only decompose palette
+hex/rgb or the `white`/`black`/`transparent`/`current` keywords. So
+`bg-primary/10`, `text-foreground/80`, `border-success/30` etc. emit no usable
+alpha and silently render the wrong opacity. They type-check and lint clean,
+which is exactly why they kept reappearing (found in `StatusBadge`,
+`DataTable`, `DashboardSidebar`, `UserDrawer`, parent `attendance`/
+`notifications`). The sanctioned fix is `color-mix`:
+`bg-primary/10 → bg-[color-mix(in_srgb,var(--primary)_10%,transparent)]`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-238 | `no dead opacity-on-var utilities across src/app + src/components` (fs-walk regex guard) | A single synchronous fs walk over every `.tsx` under `src/app` + `src/components` FAILS if any `(bg\|text\|border\|ring\|from\|to\|via\|divide\|outline\|fill\|stroke\|caret\|decoration\|accent)-<var-token>/NN` class appears, where `<var-token>` is one of the `var()`-valued semantic families (`surface-[0-9]/inverse/sunken/accent`, `primary{,-light,-hover}`, `secondary`, `success`, `warning`, `danger{,-light}`, `info`, `foreground`, `muted-foreground`, `on-*`). Palette colours (`white`/`black`/`transparent`/`current`, `orange-500`, …) DO support `/NN` and are intentionally allowed; `bg-[color-mix(…)]` arbitrary values and bare tokens without a modifier pass. Failure message points at `file:line → "matched class"` and prescribes the `color-mix` fix. Includes a regex self-check block: asserts the pattern flags 8 known-bad strings (`bg-primary/10`, `bg-surface-1/25`, `text-on-accent/50`, …) and does NOT flag 11 allowed strings (`bg-white/5`, `bg-orange-500/20`, the `color-mix` fix form, bare tokens). Also guards against a broken walk silently passing (`files.length > 50`). Fast, deterministic, no network. Lands with the Phase 13 cleanup that eliminated all 27 pre-existing dead classes. | `src/__tests__/design-system/no-dead-opacity-on-var.test.ts` | U | P7-adjacent (token layer), UX/a11y (correct opacity rendering) |
+
+### Catalog total
+
+Pre-REG-238: 204 entries (through REG-237, Premium-UI Phase 1 token contract).
+Premium-UI Phase 13 adds REG-238 (dead opacity-on-var guard — the unit-tier
+complement to REG-237's browser token-contract probe: REG-237 proves the tokens
+RESOLVE; REG-238 proves no utility silently drops their alpha).
+**Total catalog: 205 entries (target: 35 — TARGET EXCEEDED).**
+
+---

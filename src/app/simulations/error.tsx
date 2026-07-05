@@ -29,7 +29,7 @@ export default function SimulationsError({ error, reset }: { error: Error & { di
         <div className="flex gap-3 justify-center">
           <button
             onClick={reset}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-on-accent"
             style={{ background: 'var(--orange)' }}
           >
             {isHi ? 'फिर कोशिश करें' : 'Retry'}

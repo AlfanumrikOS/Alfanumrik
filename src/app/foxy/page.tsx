@@ -1757,7 +1757,7 @@ export default function FoxyPage() {
                       if (!confirmed) return;
                     }
                     setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50);
-                  }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
+                  }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid color-mix(in srgb, ${lc} 15%, transparent)`, background: activeTopic?.id === topic.id ? `color-mix(in srgb, ${lc} 6%, transparent)` : 'var(--surface-1)' }}>
                     <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="w-14 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: lc }} /></div>
@@ -2044,8 +2044,8 @@ export default function FoxyPage() {
               const lvl = mastery?.mastery_level || 'not_started';
               const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
               return (
-                <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `${lc}15` }}>{cfg.icon}</div>
+                <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid color-mix(in srgb, ${lc} 12%, transparent)` }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `color-mix(in srgb, ${lc} 8%, transparent)` }}>{cfg.icon}</div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
                     <div className="flex items-center gap-2 mt-1">
