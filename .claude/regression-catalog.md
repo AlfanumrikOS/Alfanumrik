@@ -7500,6 +7500,51 @@ unpinnable at the JSDOM unit tier).
 
 ---
 
+## grounded-answer cache-key caller-collision fix (2026-07-04)
+
+Source: ai-engineer fix to `supabase/functions/grounded-answer/cache.ts` +
+`pipeline.ts` (verified cache-key collision bug — 5 distinct callers of the
+shared grounded-answer pipeline, foxy/ncert-solver/quiz-generator/
+concept-engine/diagnostic, previously shared a cache keyed only on
+`query || scope || mode`; identical query/grade/subject/chapter/mode across
+two different callers collided on the same cache entry, silently serving one
+caller's response shape to another — e.g. Foxy's structured-JSON consumer
+receiving a plain-text concept-engine-shaped answer).
+
+**Why.** `buildCacheKey` is the sole entry point for cache read/write in the
+shared grounded-answer pipeline; a collision there is invisible until a
+consumer's parser breaks on a foreign contract shape, at production traffic
+volume, across services that don't share an on-call rotation. The companion
+normalization-safety property (query text is lowercased/whitespace-collapsed
+but punctuation/symbols are preserved) had no explicit pin despite being the
+other half of "what makes two queries the same key" — and a real analogue of
+getting this wrong already exists in the codebase as a cautionary precedent
+(see test notes below).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-239 | `buildCacheKey caller-scoping + punctuation-preserving normalization` | (a) **Caller-collision fix**: `buildCacheKey(query, scope, mode, caller)` now takes a `caller: Caller` parameter and hashes it into the SHA-256 key; the same normalized query/grade/subject/chapter/mode produces 5 DISTINCT keys across the 5 live callers (foxy, concept-engine, ncert-solver, quiz-generator, diagnostic) — no two collide (`new Set(keys).size === keys.length`). (b) **Normalization safety (new, this task)**: the live TS/JS normalizer (`.toLowerCase().trim().replace(/\s+/g, ' ')`) preserves mathematically/semantically significant punctuation — `"What is 5+3?"` vs `"What is 5-3?"`, `"20% of 50"` vs `"20 of 50"`, `"2x=10"` vs `"2x 10"`, and `"What is force?"` vs `"What is force"` (boundary `?`) all produce DIFFERENT cache keys under identical scope/mode/caller. Documents (does not directly test — different runtime, SQL vs TS) the cautionary precedent this guards against: the dormant, unwired `write_foxy_cache`/`lookup_foxy_cache` RPC pair in `supabase/migrations/00000000000000_baseline_from_prod.sql` (lines ~8690/~5594) normalizes with `regexp_replace(p_q, '[^a-zA-Z0-9\s]', '', 'g')`, which strips ALL punctuation/operators — under that regex `"What is 5+3?"` and `"What is 5-3?"` both collapse to `"what is 53"` and collide. That SQL has 0 live callers today but is earmarked as a candidate for a future Postgres L3 cache tier; this test pins the invariant any such revival must independently satisfy. | `supabase/functions/grounded-answer/__tests__/cache.test.ts` | E | P12 |
+
+### Invariants covered by this section
+
+- P12 (AI safety / response-contract integrity) — REG-239 pins that the
+  grounded-answer cache can never leak one caller's response shape to a
+  different caller (the fixed bug), and that the cache key's query
+  normalization cannot silently merge two semantically different NCERT
+  math/science questions into one entry (the adjacent safety property this
+  task adds a pin for).
+
+### Catalog total
+
+Pre-REG-239: 204 entries (through REG-237, Premium-UI Phase 1 token contract).
+Adds REG-239 (grounded-answer `buildCacheKey` caller-scoping fix + the
+punctuation-preserving query-normalization safety pin, guarding against the
+dormant SQL `write_foxy_cache`/`lookup_foxy_cache` all-punctuation-stripping
+regex as a documented cautionary precedent).
+**Total catalog: 205 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
 ## REG-238 — DD-16: no dead opacity-on-var utilities (semantic-token alpha guard)
 
 Premium-UI Phase 13 tail cleanup. The recurring DD-16 bug is a "dead
@@ -7522,10 +7567,87 @@ which is exactly why they kept reappearing (found in `StatusBadge`,
 
 ### Catalog total
 
-Pre-REG-238: 204 entries (through REG-237, Premium-UI Phase 1 token contract).
+Pre-REG-238: 205 entries (through REG-239, grounded-answer cache-key caller-collision fix).
 Premium-UI Phase 13 adds REG-238 (dead opacity-on-var guard — the unit-tier
 complement to REG-237's browser token-contract probe: REG-237 proves the tokens
 RESOLVE; REG-238 proves no utility silently drops their alpha).
-**Total catalog: 205 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 206 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-240 — grounded-answer L2 (Upstash Redis) response-cache tier: dual-flag write-gating + defense-in-depth tuple re-validation + REG-50 parity on L2 hits (2026-07-05)
+
+Source: ai-engineer build-out of a new Redis (Upstash) L2 cache tier for the
+shared `grounded-answer` pipeline (`supabase/functions/grounded-answer/cache-redis.ts`
++ `_l2-cache-flags.ts`), sitting BEHIND the existing in-memory L1 cache
+(`cache.ts`) so cache hits survive Edge Function cold starts and are shared
+across instances/regions instead of being trapped per-instance. Both new
+flags (`ff_foxy_response_cache_l2_v1` real-serving, `ff_foxy_response_cache_l2_shadow_v1`
+shadow/observability-only) are seeded OFF by migration
+`20260705000000_seed_ff_foxy_response_cache_l2.sql`, so this entire tier is a
+strict no-op in production until an operator ramps it.
+
+**Why.** Four properties make this tier safe to ship dark and safe to ramp,
+each independently load-bearing:
+
+1. **Marker-prefixed key design.** The key format
+   `rag:cache:v1:<grade>:<subject_code>:<mode>:<caller>:<sha256(query)>` keeps
+   grade/subject/mode/caller as literal VISIBLE segments (not just hashed in)
+   so two requests can only ever collide in the key namespace if all four
+   markers already match — and the `rag:cache:v1` prefix is verified distinct
+   from every other Redis prefix sharing the same Upstash instance
+   (`rl:general`/`rl:parent`/`rl:admin`/`rl:apikey`/`rl:parent_login`,
+   `sess:valid:*`).
+2. **Dual-flag write-gating fix.** The tail-of-pipeline write
+   (`putInRedisL2`) is gated by `isL2CacheServingEnabled(sb) ||
+   isL2CacheShadowEnabled(sb)` — EITHER flag, not serving-only. Pre-fix, an
+   operator running ONLY shadow mode (the intended "validate hit-rate before
+   flipping real-serving on" workflow) would never populate L2: shadow-mode
+   reads would always miss and the feature would be silently useless for its
+   actual purpose. The READ/SERVE path stays gated strictly by the
+   real-serving flag alone — shadow mode never serves, only observes
+   (`cache_shadow_hit` log, always falls through).
+3. **Defense-in-depth tuple re-validation.** The stored Redis payload carries
+   the ORIGINAL request tuple (`caller, mode, grade, subject_code,
+   chapter_number, query_normalized`) alongside the cached response.
+   `getFromRedisL2` re-compares the CURRENT request's tuple against the
+   stored one before ever treating a hit as valid — ANY mismatch (a future
+   key-derivation bug, a hash collision, a corrupted value) is treated as a
+   miss, never served. `chapter_number` is deliberately excluded from the
+   visible key (keeps it short) but is covered here instead.
+4. **REG-50 parity on L2 hits.** The single-retrieval contract (`retrieveChunks`
+   ≤ 1 call/turn, cache short-circuits before retrieval) already proven for
+   L1 hits now provably holds for L2 hits too: an L2 hit backfills L1 and
+   returns immediately, with zero calls to `retrieveChunks` and zero new
+   `grounded_ai_traces` rows — exactly the L1 cache's existing "cache hits do
+   NOT write a new trace row" guarantee, extended one tier deeper.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-240 | `l2_cache_write_gating_defense_in_depth_reg50_parity` | (a) **Namespace collision-avoidance**: `REDIS_CACHE_NAMESPACE === 'rag:cache:v1'` and is distinct from every existing `rl:*`/`sess:*` prefix (string-level, not comment-only). (b) **Key shape + determinism**: `buildRedisCacheKey` produces `rag:cache:v1:<grade>:<subject>:<mode>:<caller>:<64-hex-char-sha256>`, is case/whitespace-insensitive, preserves math/science-significant punctuation (`5+3?` vs `5-3?`), and differs across grade/subject/mode/caller. (c) **Fail-open on absent secrets**: `getFromRedisL2`/`putInRedisL2` return null/no-op (never throw) when `UPSTASH_REDIS_REST_URL`/`_TOKEN` are unset. (d) **Fail-open on a REACHABLE-BUT-ERRORING Redis** (new, this task — distinct from (c)'s absent-secrets path): with valid secrets pointed at a fake Upstash host whose fetch handler rejects every request (simulated network failure, not a missing-config skip), both `getFromRedisL2` (→ null) and `putInRedisL2` (→ resolves, no throw) degrade to a miss/no-op exactly as the "absent secrets" path does. (e) **Defense-in-depth tuple mismatch is REJECTED against a real stored payload** (new, this task — the pre-existing suite only asserted the tuple-comparison CONTRACT at the shape level, never exercised a real Redis round trip with a genuinely mismatched tuple): a payload is written via `putInRedisL2` against a fake Upstash REST backend with `chapter_number: 1`, then read back via `getFromRedisL2` with an otherwise-identical tuple but `chapter_number: 2` (simulating a hash collision / corrupted value at an unchanged key) — the mismatched read returns `null`, never the stored response. (f) **Dual-flag write-gating**: with the real-serving flag OFF and the shadow flag ON, running the full pipeline against a fake Upstash backend still performs a real `putInRedisL2` write (verified via an independent `getFromRedisL2` lookup afterward) — pins the fix against the pre-fix serving-only write gate. (g) **REG-50 parity on L2 hits** (new, this task — closes the gap the REG-50 catalog entry did not yet cover): with the real-serving flag ON and a matching entry pre-seeded in the fake Upstash backend, running the full pipeline against a Supabase stub whose `rpc()` throws on any call and whose `grounded_ai_traces` table throws on any insert returns the seeded response verbatim (same `answer`/`trace_id`), with the rpc-call and trace-insert counters both remaining exactly 0, and additionally backfills L1 (a subsequent `getFromCache` on the same key is non-null). | `supabase/functions/grounded-answer/__tests__/cache-redis.test.ts` (12 Deno tests — 10 pre-existing + 2 new: tuple-mismatch-rejection (e), network-error fail-open (d)); `supabase/functions/grounded-answer/__tests__/pipeline.test.ts` (2 Deno tests covering (f) pre-existing + (g) new: the L2-hit REG-50-parity test) | E | P12 |
+
+### Invariants covered by this section
+
+- P12 (AI safety / retrieval-cost integrity) — REG-240 extends the REG-50
+  single-retrieval contract one cache tier deeper: an L2 hit must be
+  observably as cheap as an L1 hit (zero retrieval, zero new trace row), not
+  just "returns grounded:true." Also pins that a corrupted/collided Redis
+  value can never be served to a student even though the visible key
+  matched, and that a genuinely unreachable/erroring Redis (as opposed to a
+  simply-unconfigured one) degrades the SAME way — fail-open, never a thrown
+  exception on the request path.
+- Operational-integrity — the dual-flag write-gating fix ((f) above) is the
+  difference between shadow mode being a real pre-ramp observability tool
+  and a silently-dead no-op; REG-240 keeps that fix pinned alongside the new
+  coverage added in this task.
+
+### Catalog total
+
+Pre-REG-240: 206 entries (through REG-238, Premium-UI Phase 13 dead
+opacity-on-var guard). Adds REG-240 (L2 Redis cache tier: namespace
+collision-avoidance, dual-flag write-gating, defense-in-depth tuple
+re-validation against a real stored/mismatched payload, Redis-reachable-but-
+erroring fail-open, and REG-50 single-retrieval-contract parity on L2 hits).
+**Total catalog: 207 entries (target: 35 — TARGET EXCEEDED).**
 
 ---

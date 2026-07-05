@@ -24,8 +24,16 @@ import {
   __setSupabaseClientForTests,
   __resetFeatureFlagCacheForTests,
 } from '../index.ts';
-import { __clearCacheForTests } from '../cache.ts';
+import { __clearCacheForTests, buildCacheKey, getFromCache } from '../cache.ts';
 import { __resetAllForTests as __resetCircuitsForTests } from '../circuit.ts';
+import {
+  buildRedisCacheKey,
+  buildCacheTuple,
+  getFromRedisL2,
+  putInRedisL2,
+  __resetRedisClientForTests,
+} from '../cache-redis.ts';
+import { __resetL2CacheFlagCacheForTests } from '../_l2-cache-flags.ts';
 import type { GroundedRequest } from '../types.ts';
 
 // ── Upstream fetch stub ──────────────────────────────────────────────────────
@@ -56,6 +64,49 @@ function installFetchStub(resp: StubResponses) {
       return Promise.resolve(resVal);
     }
     throw new Error(`unexpected fetch to ${u}`);
+  }) as typeof fetch;
+}
+
+// Minimal fake Upstash REST backend layered on top of installFetchStub, for
+// tests that need to prove an actual L2 (Redis) write happened. The real
+// @upstash/redis client batches every command through a single
+// `POST {url}/pipeline` call whose body is `[[op, ...args], ...]` and whose
+// response is `[{ result }, ...]` (one entry per command) — verified against
+// the live esm.sh@1 client, not guessed. `store` is the in-memory backing
+// map the test can inspect indirectly via getFromRedisL2 after the pipeline
+// runs.
+function installFetchStubWithFakeUpstash(
+  resp: StubResponses,
+  store: Map<string, string>,
+  upstashHost: string,
+) {
+  installFetchStub(resp);
+  const withoutUpstash = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.startsWith(upstashHost)) {
+      const body = JSON.parse(String(init?.body ?? '[]')) as unknown[][];
+      const results = body.map((cmd) => {
+        const [op, ...args] = cmd as [string, ...unknown[]];
+        if (op === 'set') {
+          const [key, val] = args as [string, string];
+          store.set(key, val);
+          return { result: 'OK' };
+        }
+        if (op === 'get') {
+          const [key] = args as [string];
+          return { result: store.has(key) ? store.get(key)! : null };
+        }
+        return { result: null };
+      });
+      return Promise.resolve(
+        new Response(JSON.stringify(results), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
+    return withoutUpstash(url, init);
   }) as typeof fetch;
 }
 
@@ -97,6 +148,12 @@ interface SbFixtures {
     chapter_title: string;
   }>;
   flag_enabled?: boolean;
+  // Optional per-flag_name override map. When a queried flag_name is present
+  // here, its value wins over the blanket `flag_enabled` default below — lets
+  // a single test set ff_grounded_ai_enabled and the two L2 flags
+  // (ff_foxy_response_cache_l2_v1 / ff_foxy_response_cache_l2_shadow_v1)
+  // independently instead of them all sharing one boolean.
+  flag_map?: Record<string, boolean>;
   chunks?: Array<{
     id: string;
     content: string;
@@ -139,12 +196,17 @@ function buildSbStub(fx: SbFixtures): any {
       if (table === 'feature_flags') {
         return {
           select: () => ({
-            eq: () => ({
-              single: () =>
-                Promise.resolve({
-                  data: { is_enabled: fx.flag_enabled !== false },
+            eq: (_col: string, flagName: string) => ({
+              single: () => {
+                const value =
+                  fx.flag_map && flagName in fx.flag_map
+                    ? fx.flag_map[flagName]
+                    : fx.flag_enabled !== false;
+                return Promise.resolve({
+                  data: { is_enabled: value },
                   error: null,
-                }),
+                });
+              },
             }),
           }),
         };
@@ -300,6 +362,193 @@ Deno.test('strict happy path → grounded:true with citations', async () => {
     }
   } finally {
     restoreFetch();
+  }
+});
+
+Deno.test('L2 write occurs when shadow flag is ON and serving flag is OFF (write no longer gated by serving-only)', async () => {
+  // Pins the fix: the L2 write-gating condition at the tail of runPipeline
+  // must be `isL2CacheServingEnabled(sb) || isL2CacheShadowEnabled(sb)`, not
+  // `isL2CacheServingEnabled(sb)` alone. Pre-fix, an operator running ONLY
+  // shadow mode (the intended "validate hit-rate before flipping real-serving
+  // on" workflow) would never populate L2 — shadow-mode reads would always
+  // miss and the feature would be silently useless. This test proves an
+  // actual Redis write happens by performing a real getFromRedisL2 lookup
+  // against a fake Upstash REST backend after the pipeline runs — it would
+  // fail (l2Entry === null) against the pre-fix `if (await
+  // isL2CacheServingEnabled(sb))`-only gate.
+  const fakeUpstashHost = 'http://fake-upstash-l2-shadow-write-test.example';
+  Deno.env.set('UPSTASH_REDIS_REST_URL', fakeUpstashHost);
+  Deno.env.set('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+  __resetRedisClientForTests();
+
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: true,
+      flag_map: {
+        ff_grounded_ai_enabled: true,
+        ff_foxy_response_cache_l2_v1: false, // real serving OFF
+        ff_foxy_response_cache_l2_shadow_v1: true, // shadow ON
+      },
+      chunks: fiveChunks(),
+      trace_insert_id: 'trace-l2-shadow-write',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __resetL2CacheFlagCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  const upstashStore = new Map<string, string>();
+  installFetchStubWithFakeUpstash(
+    {
+      voyage: voyageOk,
+      claude: [
+        () =>
+          claudeOk(
+            'Photosynthesis is the process where plants make food [1]. Chlorophyll absorbs light [2].',
+          ),
+        () =>
+          claudeOk(
+            JSON.stringify({ verdict: 'pass', unsupported_sentences: [] }),
+          ),
+      ],
+    },
+    upstashStore,
+    fakeUpstashHost,
+  );
+
+  try {
+    const req = makeRequest();
+    const resp = await runPipeline(req, Date.now(), 'anthropic-key', 'voyage-key');
+    assertEquals(resp.grounded, true);
+
+    // Verify the write actually landed in L2 by performing the SAME lookup
+    // a subsequent request would perform — this is the "a subsequent lookup
+    // would find the entry" assertion, not just an internal-state check.
+    const redisKey = await buildRedisCacheKey(req.query, req.scope, req.mode, req.caller);
+    const tuple = buildCacheTuple({
+      caller: req.caller,
+      mode: req.mode,
+      grade: req.scope.grade,
+      subject_code: req.scope.subject_code,
+      chapter_number: req.scope.chapter_number,
+      query: req.query,
+    });
+    const l2Entry = await getFromRedisL2(redisKey, tuple);
+    assert(
+      l2Entry !== null,
+      'expected an L2 write with shadow=ON/serving=OFF — pre-fix this is null because the write was gated by serving-only',
+    );
+    if (l2Entry) {
+      assertEquals(l2Entry.grounded, true);
+    }
+  } finally {
+    restoreFetch();
+    Deno.env.delete('UPSTASH_REDIS_REST_URL');
+    Deno.env.delete('UPSTASH_REDIS_REST_TOKEN');
+    __resetRedisClientForTests();
+    __resetL2CacheFlagCacheForTests();
+  }
+});
+
+Deno.test('L2 hit (serving flag ON) → served without retrieveChunks call or new trace row (REG-50 holds for L2 hits too)', async () => {
+  // Pins the REG-50 single-retrieval contract for the NEW L2 tier, matching
+  // the pre-existing L1 guarantee (cache.ts: "Cache hits do NOT write a new
+  // trace row"). An L2 hit must short-circuit at Step 2b — BEFORE Step 6
+  // (retrieveChunks) and BEFORE any grounded_ai_traces insert — exactly like
+  // an L1 hit. Without this test, a future edit that moved the L2 check
+  // after retrieval (or that called finalizeGrounded instead of returning
+  // l2Hit directly) would silently double the retrieval cost / trace volume
+  // this cache tier exists to avoid.
+  const fakeUpstashHost = 'http://fake-upstash-l2-hit-reg50-test.example';
+  Deno.env.set('UPSTASH_REDIS_REST_URL', fakeUpstashHost);
+  Deno.env.set('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+  __resetRedisClientForTests();
+
+  const upstashStore = new Map<string, string>();
+  let rpcCalls = 0;
+  let traceInserts = 0;
+  // mode: 'soft' skips the Step-1 coverage precheck entirely so the ONLY
+  // table this test needs to stub is feature_flags — any other table
+  // access (or an rpc call) is itself the failure signal.
+  const req = makeRequest({ mode: 'soft' });
+
+  installFetchStubWithFakeUpstash({}, upstashStore, fakeUpstashHost);
+
+  const seededResponse = {
+    grounded: true as const,
+    answer: 'Seeded L2 answer about photosynthesis.',
+    citations: [],
+    confidence: 0.87,
+    groundedFromChunks: true,
+    trace_id: 'seeded-trace-must-be-the-one-returned',
+    meta: { claude_model: 'haiku', tokens_used: 42, latency_ms: 10 },
+  };
+  const redisKey = await buildRedisCacheKey(req.query, req.scope, req.mode, req.caller);
+  const tuple = buildCacheTuple({
+    caller: req.caller,
+    mode: req.mode,
+    grade: req.scope.grade,
+    subject_code: req.scope.subject_code,
+    chapter_number: req.scope.chapter_number,
+    query: req.query,
+  });
+  await putInRedisL2(redisKey, seededResponse, tuple);
+
+  // deno-lint-ignore no-explicit-any
+  const sb: any = {
+    from(table: string) {
+      if (table === 'feature_flags') {
+        return {
+          select: () => ({
+            eq: (_col: string, flagName: string) => ({
+              single: () => {
+                const value =
+                  flagName === 'ff_foxy_response_cache_l2_v1' ? true : false;
+                return Promise.resolve({ data: { is_enabled: value }, error: null });
+              },
+            }),
+          }),
+        };
+      }
+      if (table === 'grounded_ai_traces') {
+        traceInserts++;
+        throw new Error('L2 hit must never write a new grounded_ai_traces row');
+      }
+      throw new Error(`unexpected table access on an L2 hit: ${table}`);
+    },
+    rpc(_name: string) {
+      rpcCalls++;
+      throw new Error('L2 hit must never call retrieveChunks (rpc match_rag_chunks_ncert)');
+    },
+  };
+  __setSupabaseClientForTests(sb);
+  __resetFeatureFlagCacheForTests();
+  __resetL2CacheFlagCacheForTests();
+  __clearCacheForTests(); // ensure L1 is empty so the pipeline actually reaches the L2 lookup
+
+  try {
+    const resp = await runPipeline(req, Date.now(), 'anthropic-key', 'voyage-key');
+    assertEquals(resp.grounded, true);
+    if (resp.grounded) {
+      assertEquals(resp.answer, seededResponse.answer);
+      assertEquals(resp.trace_id, seededResponse.trace_id);
+    }
+    assertEquals(rpcCalls, 0, 'retrieveChunks must never be called on an L2 hit');
+    assertEquals(traceInserts, 0, 'no new trace row must be written on an L2 hit');
+
+    // Bonus: confirm L1 backfill happened, so a subsequent request on this
+    // same instance would hit L1 without touching Redis at all.
+    const l1Key = await buildCacheKey(req.query, req.scope, req.mode, req.caller);
+    const l1Entry = getFromCache(l1Key);
+    assert(l1Entry !== null, 'expected an L2 hit to backfill L1');
+  } finally {
+    restoreFetch();
+    Deno.env.delete('UPSTASH_REDIS_REST_URL');
+    Deno.env.delete('UPSTASH_REDIS_REST_TOKEN');
+    __resetRedisClientForTests();
+    __resetL2CacheFlagCacheForTests();
+    __clearCacheForTests();
   }
 });
 

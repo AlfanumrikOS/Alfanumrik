@@ -19,7 +19,7 @@
 // treat this as "this query was answered at time T, trace T' is the
 // source of truth."
 
-import type { GroundedResponse } from './types.ts';
+import type { Caller, GroundedResponse } from './types.ts';
 import { CACHE_TTL_MS } from './config.ts';
 
 const MAX_ENTRIES = 500;
@@ -32,21 +32,46 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 /**
+ * Shared query normalization for cache keying. Used by BOTH the L1
+ * (in-memory) cache here and the L2 (Redis) cache in cache-redis.ts so the
+ * two tiers can never drift apart on what counts as "the same query".
+ *
+ * IMPORTANT: this intentionally does NOT strip punctuation/symbols. A
+ * dormant SQL-side cache (see REG-237 test comment in
+ * __tests__/cache.test.ts) had that bug — stripping punctuation collapses
+ * "What is 5+3?" and "What is 5-3?" into the same key, which is wrong for
+ * a CBSE math/science platform. Only case + whitespace are normalized.
+ */
+export function normalizeQuery(query: string): string {
+  return (query ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+/**
  * Build a stable cache key. Mode + scope matter (same query in strict vs
- * soft mode, or across grades/subjects, should NOT collide).
+ * soft mode, or across grades/subjects, should NOT collide). Caller also
+ * matters: the pipeline generates materially different output shapes per
+ * caller (e.g. `isFoxyStructured` gates a strict-JSON structured-output
+ * contract + a boosted max_tokens multiplier ONLY for caller === 'foxy').
+ * Two different callers submitting the same normalized query against the
+ * same grade/subject/chapter/mode must NOT collide on the same cache
+ * entry, or one caller's contract-shaped response leaks into another's
+ * parser (e.g. Foxy's structured-JSON consumer receiving a plain-text
+ * concept-engine-shaped answer).
  */
 export async function buildCacheKey(
   query: string,
   scope: { grade: string; subject_code: string; chapter_number: number | null },
   mode: 'strict' | 'soft',
+  caller: Caller,
 ): Promise<string> {
-  const normalized = (query ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
+  const normalized = normalizeQuery(query);
   const payload = JSON.stringify({
     q: normalized,
     g: scope.grade,
     s: scope.subject_code,
     c: scope.chapter_number,
     m: mode,
+    caller,
   });
   const bytes = new TextEncoder().encode(payload);
   const digest = await crypto.subtle.digest('SHA-256', bytes);

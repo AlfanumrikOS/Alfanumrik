@@ -92,6 +92,18 @@ import {
   recordSuccess,
 } from './circuit.ts';
 import { buildCacheKey, getFromCache, putInCache } from './cache.ts';
+// Shared Redis (Upstash) L2 cache tier — sits BEHIND the L1 in-memory cache
+// above so hits are shared across Edge Function instances/regions. See
+// cache-redis.ts header for the key format, TTL, and defense-in-depth
+// tuple-revalidation contract. Flag-gated via _l2-cache-flags.ts; both
+// flags default OFF so this is a strict no-op until an operator flips them.
+import {
+  buildRedisCacheKey,
+  buildCacheTuple,
+  getFromRedisL2,
+  putInRedisL2,
+} from './cache-redis.ts';
+import { isL2CacheServingEnabled, isL2CacheShadowEnabled } from './_l2-cache-flags.ts';
 import {
   STRICT_MIN_SIMILARITY,
   SOFT_MIN_SIMILARITY,
@@ -698,7 +710,7 @@ export async function runPipeline(
   // in the cache; miss on retrieve_only (concept-engine wants fresh data).
   // Cache hits do not write a new trace row — see cache.ts comment.
   if (!request.retrieve_only) {
-    const cacheKey = await buildCacheKey(request.query, request.scope, request.mode);
+    const cacheKey = await buildCacheKey(request.query, request.scope, request.mode, request.caller);
     const hit = getFromCache(cacheKey);
     if (hit && hit.grounded) {
       console.warn('cache_hit', {
@@ -707,6 +719,61 @@ export async function runPipeline(
         subject: request.scope.subject_code,
       });
       return hit;
+    }
+
+    // Step 2b. L2 (Upstash Redis) cache tier. Extends the L1 miss-fallthrough
+    // ABOVE — this only runs when L1 already missed, and on an L2 miss (or
+    // both flags off) falls straight through to Step 3 exactly as today.
+    // NEVER a parallel/racing check against retrieval — see REG-50.
+    //
+    //   - ff_foxy_response_cache_l2_v1 (real serving): on hit, backfill L1
+    //     and return immediately — same zero-retrieval / zero-new-trace-row
+    //     contract as an L1 hit.
+    //   - ff_foxy_response_cache_l2_shadow_v1 (shadow/observability only,
+    //     checked only when the real-serving flag is off): performs the
+    //     same lookup and logs a would-have-hit signal, but NEVER serves it
+    //     — always falls through. This can never affect REG-50 because it
+    //     never short-circuits the pipeline.
+    if (await isL2CacheServingEnabled(sb)) {
+      const redisKey = await buildRedisCacheKey(request.query, request.scope, request.mode, request.caller);
+      const tuple = buildCacheTuple({
+        caller: request.caller,
+        mode: request.mode,
+        grade: request.scope.grade,
+        subject_code: request.scope.subject_code,
+        chapter_number: request.scope.chapter_number,
+        query: request.query,
+      });
+      const l2Hit = await getFromRedisL2(redisKey, tuple);
+      if (l2Hit && l2Hit.grounded) {
+        console.warn('cache_l2_hit', {
+          caller: request.caller,
+          grade: request.scope.grade,
+          subject: request.scope.subject_code,
+        });
+        putInCache(cacheKey, l2Hit); // backfill L1 so subsequent hits on this instance skip Redis entirely
+        return l2Hit;
+      }
+    } else if (await isL2CacheShadowEnabled(sb)) {
+      const redisKey = await buildRedisCacheKey(request.query, request.scope, request.mode, request.caller);
+      const tuple = buildCacheTuple({
+        caller: request.caller,
+        mode: request.mode,
+        grade: request.scope.grade,
+        subject_code: request.scope.subject_code,
+        chapter_number: request.scope.chapter_number,
+        query: request.query,
+      });
+      const shadowHit = await getFromRedisL2(redisKey, tuple);
+      if (shadowHit && shadowHit.grounded) {
+        console.warn('cache_shadow_hit', {
+          caller: request.caller,
+          grade: request.scope.grade,
+          subject: request.scope.subject_code,
+        });
+      }
+      // Shadow mode NEVER serves — fall through to the normal pipeline
+      // regardless of the lookup outcome.
     }
   }
 
@@ -1341,8 +1408,38 @@ export async function runPipeline(
   // Cache the grounded response. retrieve_only responses skip the cache
   // because concept-engine expects fresh retrieval on every call.
   if (response.grounded) {
-    const cacheKey = await buildCacheKey(request.query, request.scope, request.mode);
+    const cacheKey = await buildCacheKey(request.query, request.scope, request.mode, request.caller);
     putInCache(cacheKey, response);
+
+    // Also write through to L2 (Upstash Redis), gated by EITHER the
+    // real-serving flag OR the shadow flag for this request context.
+    // Population is invisible/harmless — it never changes what's returned
+    // to any caller, it only stores data in Redis for a future lookup —
+    // so shadow mode (the intended "validate hit-rate before flipping
+    // real-serving on" workflow) needs writes to happen too. Without this,
+    // an operator turning on ONLY the shadow flag would never populate L2,
+    // shadow-mode reads would always miss, and the feature would be
+    // silently useless for its actual purpose.
+    //
+    // The READ/SERVE path above (Step 2b) stays gated strictly by
+    // isL2CacheServingEnabled alone — only real-serving actually returns a
+    // cached value to the client. Shadow mode there remains
+    // observability-only (logs cache_shadow_hit, never serves).
+    // Fire-and-forget-safe (putInRedisL2 never throws) but awaited here
+    // since this is the tail of the pipeline anyway — no added latency
+    // risk to the response already built above.
+    if ((await isL2CacheServingEnabled(sb)) || (await isL2CacheShadowEnabled(sb))) {
+      const redisKey = await buildRedisCacheKey(request.query, request.scope, request.mode, request.caller);
+      const tuple = buildCacheTuple({
+        caller: request.caller,
+        mode: request.mode,
+        grade: request.scope.grade,
+        subject_code: request.scope.subject_code,
+        chapter_number: request.scope.chapter_number,
+        query: request.query,
+      });
+      await putInRedisL2(redisKey, response, tuple);
+    }
   }
 
   return response;
