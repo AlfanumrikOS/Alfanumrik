@@ -3,6 +3,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import confetti from 'canvas-confetti';
 import { FoxyAvatar } from '@/components/ui';
+import { Badge, Button } from '@/components/ui/primitives';
+import type { Tone } from '@/components/ui/primitives/tokens';
+import { bandForValue, bandLabel } from '@/lib/dashboard/mastery-band-labels';
 import { CELEBRATION_CONFETTI, WARM_CONFETTI, NEUTRAL_BURST } from '@/lib/confetti-palette';
 
 interface CelebrationOverlayProps {
@@ -13,17 +16,17 @@ interface CelebrationOverlayProps {
 }
 
 /**
- * Full-screen celebration overlay after quiz completion.
- * Uses canvas-confetti (~6KB gzip) for particle effects.
+ * Full-screen celebration overlay after quiz completion, composed on the
+ * canonical Dialog foundation (tokenised scrim + portal + focus management).
+ * Uses canvas-confetti (~6KB gzip) for particle effects; the confetti canvas
+ * paints above the dialog surface so the burst covers the whole viewport.
  *
- * Tiers:
- * - Perfect (100%): Gold+purple confetti from both sides + sparkle emoji
- * - High (>=80%): Gold confetti burst + "Outstanding!"
- * - Good (60-79%): Silver confetti + "Great job!"
- * - Below 60: No confetti, encouraging message
+ * Score band (Getting started / Building it / Strong) REPLACES the old
+ * A+…F letter ladder — growth-mindset, no punitive grade. The score NUMBER
+ * is the server value, displayed verbatim via count-up (P1: never recomputed).
  *
  * XP count-up animation uses requestAnimationFrame.
- * Auto-dismisses after 3s or on tap.
+ * Auto-dismisses after 3s or on tap of "See Details" / the scrim.
  */
 export default function CelebrationOverlay({
   scorePercent,
@@ -33,35 +36,28 @@ export default function CelebrationOverlay({
 }: CelebrationOverlayProps) {
   const [displayXP, setDisplayXP] = useState(0);
   const [displayScore, setDisplayScore] = useState(0);
-  const [phase, setPhase] = useState<'enter' | 'visible' | 'exit'>('enter');
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
   const scoreRafRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const isPerfect = scorePercent === 100;
   const isHigh = scorePercent >= 80;
   const isGood = scorePercent >= 60;
 
-  const grade =
-    scorePercent >= 90 ? 'A+' :
-    scorePercent >= 80 ? 'A' :
-    scorePercent >= 70 ? 'B' :
-    scorePercent >= 60 ? 'C' :
-    scorePercent >= 40 ? 'D' : 'F';
-
-  const gradeColor =
-    scorePercent >= 80 ? 'var(--green)' :
-    scorePercent >= 60 ? 'var(--teal)' :
-    // warm channel so the "good" grade band reads warm-orange (not violet) under cosmic
-    scorePercent >= 40 ? 'var(--accent-warm)' : 'var(--red)';
+  // Growth-mindset band label (no letter grade). Band drives the accent tone.
+  const band = bandForValue(scorePercent);
+  const bandText = bandLabel(band, isHi);
+  // Non-punitive tone mapping — low reads as calm "info", never danger-red.
+  const bandTone: Tone = band === 'high' ? 'success' : band === 'mid' ? 'warning' : 'info';
 
   const message = isPerfect
-    ? (isHi ? 'PERFECT!' : 'PERFECT!')
+    ? 'PERFECT!'
     : isHigh
-      ? (isHi ? '\u0936\u093E\u0928\u0926\u093E\u0930!' : 'Outstanding!')
+      ? (isHi ? 'शानदार!' : 'Outstanding!')
       : isGood
-        ? (isHi ? '\u0905\u091A\u094D\u091B\u093E \u0915\u093F\u092F\u093E!' : 'Great job!')
-        : (isHi ? '\u091C\u093E\u0930\u0940 \u0930\u0916\u094B!' : 'Keep going!');
+        ? (isHi ? 'अच्छा किया!' : 'Great job!')
+        : (isHi ? 'जारी रखो!' : 'Keep going!');
 
   const messageEmoji = isPerfect ? '\u{1F31F}' : isHigh ? '\u{1F3C6}' : isGood ? '\u{1F44D}' : '\u{1F9CA}';
 
@@ -69,12 +65,10 @@ export default function CelebrationOverlay({
   const fireConfetti = useCallback(() => {
     if (typeof window === 'undefined') return;
 
-    // Brand-aligned celebration palette (shared, brand-wide).
     const goldColors = WARM_CONFETTI;
     const silverColors = NEUTRAL_BURST;
 
     if (isPerfect) {
-      // Center burst — full brand mix (warm + gold + purple + green)
       confetti({
         particleCount: 100,
         spread: 80,
@@ -82,7 +76,6 @@ export default function CelebrationOverlay({
         colors: CELEBRATION_CONFETTI,
         disableForReducedMotion: true,
       });
-      // Side bursts after a short delay
       setTimeout(() => {
         confetti({
           particleCount: 60,
@@ -142,7 +135,7 @@ export default function CelebrationOverlay({
   // ── XP count-up animation (starts after score finishes) ──
   useEffect(() => {
     if (xpEarned <= 0) return;
-    const delay = 1300; // start after score count-up
+    const delay = 1300;
     const duration = 800;
     const t = setTimeout(() => {
       const start = performance.now();
@@ -163,22 +156,16 @@ export default function CelebrationOverlay({
     };
   }, [xpEarned]);
 
-  // ── Phase transitions + confetti trigger ──
+  // ── Confetti + sound on mount, auto-dismiss after 3s ──
   useEffect(() => {
     const enterTimer = setTimeout(() => {
-      setPhase('visible');
       fireConfetti();
-      // Play XP sound
       import('@/lib/sounds').then(({ playSound }) => playSound('xp')).catch((err: unknown) => {
         console.warn('[celebration] sound playback failed:', err instanceof Error ? err.message : String(err));
       });
     }, 100);
 
-    // Auto-dismiss after 3s
-    timerRef.current = setTimeout(() => {
-      setPhase('exit');
-      setTimeout(onDismiss, 400);
-    }, 3000);
+    timerRef.current = setTimeout(onDismiss, 3000);
 
     return () => {
       clearTimeout(enterTimer);
@@ -186,116 +173,103 @@ export default function CelebrationOverlay({
     };
   }, [onDismiss, fireConfetti]);
 
-  const handleDismiss = () => {
+  const handleDismiss = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    setPhase('exit');
-    setTimeout(onDismiss, 300);
-  };
+    onDismiss();
+  }, [onDismiss]);
+
+  // ── aria-modal honesty: on-mount focus + Escape-to-dismiss ──
+  // The overlay claims role="dialog" aria-modal="true", so keyboard users must
+  // be able to (a) land inside it and (b) leave it via Escape. Neither the
+  // confetti triggers nor the 3s auto-dismiss are touched here.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleDismiss();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    // Move focus to the primary action so keyboard users start inside the
+    // dialog. Honor prefers-reduced-motion by suppressing any scroll-into-view.
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    dismissBtnRef.current?.focus({ preventScroll: prefersReducedMotion });
+
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [handleDismiss]);
 
   return (
+    // Full-viewport tokenised scrim + centered celebration surface. The scrim
+    // click dismisses; the panel stops propagation. Confetti canvas (z-index
+    // 100) paints above everything.
     <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center px-6"
-      style={{
-        background: 'rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        opacity: phase === 'exit' ? 0 : 1,
-        transition: 'opacity 0.3s ease-out',
-      }}
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'var(--scrim)', zIndex: 'var(--z-modal)' }}
       onClick={handleDismiss}
       role="dialog"
-      aria-label={isHi ? '\u0915\u094D\u0935\u093F\u091C\u093C \u092A\u0942\u0930\u093E \u0939\u0941\u0906' : 'Quiz completed'}
+      aria-modal="true"
+      aria-label={isHi ? 'क्विज़ पूरा हुआ' : 'Quiz completed'}
     >
-      {/* Foxy mascot */}
       <div
-        className="mb-4"
-        style={{
-          opacity: phase === 'enter' ? 0 : 1,
-          transform: phase === 'enter' ? 'scale(0.5)' : 'scale(1)',
-          transition: 'all 0.5s cubic-bezier(0.34,1.56,0.64,1)',
-        }}
+        className="relative w-full max-w-sm rounded-2xl bg-surface-1 text-foreground shadow-lg px-6 py-8 flex flex-col items-center text-center animate-scale-in"
+        onClick={(e) => e.stopPropagation()}
       >
-        <FoxyAvatar state="happy" size="lg" />
-      </div>
+        {/* Foxy mascot */}
+        <div className="mb-4">
+          <FoxyAvatar state="happy" size="lg" />
+        </div>
 
-      {/* Score percentage — count-up */}
-      <div className="animate-count-up" style={{ animationDelay: '0.2s' }}>
-        <div
-          className="text-7xl font-bold tabular-nums"
-          style={{
-            fontFamily: 'var(--font-display)',
-            color: '#fff',
-            textShadow: `0 0 40px color-mix(in srgb, ${gradeColor} 38%, transparent)`,
-          }}
-        >
+        {/* Score percentage — count-up (server value, verbatim) */}
+        <div className="text-6xl font-bold tabular-nums text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
           {displayScore}%
         </div>
-      </div>
 
-      {/* Grade badge */}
-      <div className="animate-grade-reveal mt-3">
-        <span
-          className="inline-flex items-center justify-center text-2xl font-bold rounded-full"
-          style={{
-            width: 56,
-            height: 56,
-            background: gradeColor,
-            color: '#fff',
-            fontFamily: 'var(--font-display)',
-            boxShadow: `0 4px 24px color-mix(in srgb, ${gradeColor} 31%, transparent)`,
+        {/* Band badge — replaces the removed A+…F letter grade */}
+        <div className="mt-3">
+          <Badge tone={bandTone} variant="soft" className="text-fluid-sm px-3 py-1">
+            {bandText}
+          </Badge>
+        </div>
+
+        {/* Motivational message */}
+        <p className="mt-4 text-fluid-lg font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
+          {message} {messageEmoji}
+        </p>
+
+        {/* XP earned — animated count-up */}
+        {xpEarned > 0 && (
+          <div className="mt-3">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-fluid-sm font-bold tabular-nums"
+              style={{
+                background: 'color-mix(in srgb, var(--accent-warm) 16%, var(--surface-1))',
+                border: '1px solid color-mix(in srgb, var(--accent-warm) 34%, transparent)',
+                color: 'var(--accent-warm-strong)',
+              }}
+            >
+              +{displayXP} XP
+            </span>
+          </div>
+        )}
+
+        {/* See Details button */}
+        <Button
+          ref={dismissBtnRef}
+          variant="secondary"
+          size="sm"
+          className="mt-6"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDismiss();
           }}
         >
-          {grade}
-        </span>
+          {isHi ? 'विवरण देखो →' : 'See Details →'}
+        </Button>
       </div>
-
-      {/* Motivational message */}
-      <p
-        className="mt-4 text-xl font-bold text-white"
-        style={{
-          fontFamily: 'var(--font-display)',
-          opacity: phase === 'enter' ? 0 : 1,
-          transform: phase === 'enter' ? 'translateY(10px)' : 'translateY(0)',
-          transition: 'all 0.5s ease-out 0.5s',
-        }}
-      >
-        {message} {messageEmoji}
-      </p>
-
-      {/* XP earned — animated count-up */}
-      {xpEarned > 0 && (
-        <div className="animate-count-up mt-3" style={{ animationDelay: '0.6s' }}>
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold tabular-nums"
-            style={{
-              /* warm channel keeps the XP chip warm under cosmic */
-              background: 'rgb(var(--accent-warm-rgb) / 0.2)',
-              border: '1px solid rgb(var(--accent-warm-rgb) / 0.4)',
-              color: 'var(--accent-warm)',
-            }}
-          >
-            +{displayXP} XP
-          </span>
-        </div>
-      )}
-
-      {/* See Details button */}
-      <button
-        className="mt-6 text-sm font-semibold rounded-full px-6 py-2.5 transition-all active:scale-95"
-        style={{
-          background: 'rgba(255,255,255,0.15)',
-          color: '#fff',
-          border: '1px solid rgba(255,255,255,0.25)',
-          opacity: phase === 'enter' ? 0 : 1,
-          transition: 'opacity 0.3s ease-out 0.8s',
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          handleDismiss();
-        }}
-      >
-        {isHi ? '\u0935\u093F\u0935\u0930\u0923 \u0926\u0947\u0916\u094B \u2192' : 'See Details \u2192'}
-      </button>
     </div>
   );
 }

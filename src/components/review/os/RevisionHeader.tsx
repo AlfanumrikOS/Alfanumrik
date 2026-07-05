@@ -10,13 +10,19 @@
  * mastery/scoring computation. The big number students read is the actionable
  * due-now count (overdue + dueToday), encoded number + glyph (not colour alone).
  *
+ * Phase 8 rebuild: rides the canonical ProgressRing (a GENERIC caught-up
+ * progress ring — deliberately NOT MasteryRing, since this % is neither an
+ * accuracy score nor a BKT mastery reading) + Card + Badge primitives. The ring
+ * tone (success when caught up, brand otherwise) is the reinforcement; the
+ * caught-up % + due-now count carried in the aria-label is the real signal.
+ *
  * Streak comes from the existing useStudentSnapshot reader (server-authored
  * `current_streak`); never client-counted.
  *
  * States: loading (skeleton), error (distinct from empty), empty (all caught up).
  */
 
-import { MasteryRing, Skeleton } from '@/components/ui';
+import { Card, ProgressRing, Badge, Skeleton } from '@/components/ui/primitives';
 import { useStudentSnapshot } from '@/lib/swr';
 import type { RevisionOverview } from './useRevisionOverview';
 
@@ -40,16 +46,13 @@ export default function RevisionHeader({
 
   if (isLoading && !overview) {
     return (
-      <header
-        className="flex items-center gap-4 rounded-2xl p-4"
-        style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
-      >
-        <Skeleton width={72} height={72} rounded="rounded-full" />
+      <Card variant="flat" className="flex items-center gap-4 p-4">
+        <Skeleton radius="full" className="h-[72px] w-[72px]" />
         <div className="flex-1">
-          <Skeleton width="55%" height={20} className="mb-2" />
-          <Skeleton width="35%" height={12} />
+          <Skeleton className="mb-2 h-5 w-[55%]" />
+          <Skeleton className="h-3 w-[35%]" />
         </div>
-      </header>
+      </Card>
     );
   }
 
@@ -60,73 +63,62 @@ export default function RevisionHeader({
   // Ring fills toward "caught up". With nothing scheduled the ring is full.
   const cleared = Math.max(0, scheduled - dueNow);
   const ringValue = scheduled === 0 ? 100 : Math.round((cleared / scheduled) * 100);
-  const ringColor = dueNow === 0 ? 'var(--green, #16A34A)' : 'var(--orange, #E8581C)';
+  const caughtUp = dueNow === 0;
+
+  const ringAria = caughtUp
+    ? isHi
+      ? `सब दोहराव पूरे — ${ringValue}% तैयार`
+      : `All caught up — ${ringValue}% complete`
+    : isHi
+      ? `अभी ${dueNow} रिवीजन बाकी — ${ringValue}% पूरे`
+      : `${dueNow} review${dueNow === 1 ? '' : 's'} due now — ${ringValue}% caught up`;
 
   return (
-    <header
-      className="flex items-center gap-4 rounded-2xl p-4"
-      style={{
-        background: 'var(--surface-1)',
-        border: '1px solid var(--border)',
-        boxShadow: 'var(--shadow-sm)',
-      }}
-    >
+    <Card variant="flat" className="flex items-center gap-4 p-4">
       {/*
-        The shared MasteryRing primitive hardcodes role="img" + aria-label="Mastery: X%".
-        Here the ring means "% caught up on revision", not mastery — so we hide the
-        misleading label from assistive tech and announce the actionable due-now count
-        (and caught-up %) via an adjacent sr-only element instead.
+        Generic caught-up ProgressRing — the tone (success/brand) reinforces the
+        state, the centred due-now count is the encoded non-colour signal, and
+        the full caught-up sentence rides on the ring's aria-label.
       */}
-      <div aria-hidden="true">
-        <MasteryRing value={ringValue} size={72} strokeWidth={7} color={ringColor}>
-          <span
-            className="text-xl font-bold"
-            style={{ color: 'var(--text-1)', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono)' }}
-          >
-            {dueNow}
-          </span>
-        </MasteryRing>
-      </div>
-      <span className="sr-only">
-        {dueNow === 0
-          ? isHi
-            ? `सब दोहराव पूरे — ${ringValue}% तैयार`
-            : `All caught up — ${ringValue}% complete`
-          : isHi
-            ? `अभी ${dueNow} रिवीजन बाकी — ${ringValue}% पूरे`
-            : `${dueNow} review${dueNow === 1 ? '' : 's'} due now — ${ringValue}% caught up`}
-      </span>
+      <ProgressRing
+        value={ringValue}
+        size={72}
+        strokeWidth={7}
+        tone={caughtUp ? 'success' : 'brand'}
+        ariaLabel={ringAria}
+      >
+        <span
+          className="text-fluid-lg font-bold tabular-nums text-foreground"
+          style={{ fontFamily: 'var(--font-mono)' }}
+        >
+          {dueNow}
+        </span>
+      </ProgressRing>
 
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <h1
-          className="text-lg font-bold"
-          style={{ color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}
+          className="text-fluid-lg font-bold text-foreground"
+          style={{ fontFamily: 'var(--font-display)' }}
         >
           {isHi ? 'दोहराव केंद्र' : 'Revision Center'}
         </h1>
 
         {error && !overview ? (
-          <p className="text-xs mt-0.5" style={{ color: 'var(--orange)' }} role="status">
+          <p className="mt-0.5 text-fluid-xs text-muted-foreground" role="status">
             {isHi
               ? 'दोहराव की सूची अभी लोड नहीं हो पाई।'
               : "Couldn't load your revision list right now."}
           </p>
-        ) : dueNow === 0 ? (
-          <p
-            className="text-xs mt-0.5 flex items-center gap-1.5"
-            style={{ color: 'var(--text-3)' }}
-          >
-            <span aria-hidden="true" style={{ color: 'var(--green, #16A34A)' }}>
+        ) : caughtUp ? (
+          <p className="mt-0.5 flex items-center gap-1.5 text-fluid-xs text-muted-foreground">
+            <span aria-hidden="true" style={{ color: 'var(--success)' }}>
               ✓
             </span>
             <span>{isHi ? 'सब दोहराव पूरे — शाबाश!' : 'All caught up — nice work!'}</span>
           </p>
         ) : (
-          <p
-            className="text-xs mt-0.5 flex items-center gap-1.5"
-            style={{ color: 'var(--text-3)' }}
-          >
-            <span aria-hidden="true" style={{ color: ringColor }}>
+          <p className="mt-0.5 flex items-center gap-1.5 text-fluid-xs text-muted-foreground">
+            <span aria-hidden="true" style={{ color: 'var(--primary)' }}>
               ●
             </span>
             <span>
@@ -138,17 +130,11 @@ export default function RevisionHeader({
         )}
 
         {streak > 0 && (
-          <p
-            className="text-xs mt-1 flex items-center gap-1.5"
-            style={{ color: 'var(--text-3)' }}
-          >
-            <span aria-hidden="true">🔥</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-              {isHi ? `${streak} दिन की लय` : `${streak}-day streak`}
-            </span>
-          </p>
+          <Badge tone="warning" variant="soft" icon={<span>🔥</span>} className="mt-1.5 tabular-nums">
+            {isHi ? `${streak} दिन की लय` : `${streak}-day streak`}
+          </Badge>
         )}
       </div>
-    </header>
+    </Card>
   );
 }

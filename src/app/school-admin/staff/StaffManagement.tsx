@@ -83,7 +83,7 @@ function roleColor(role: SchoolAdminRole): string {
     case 'academic_coordinator':
       return 'var(--teal)';
     case 'institution_admin':
-      return '#0EA5E9';
+      return 'var(--info)';
     default:
       return 'var(--text-3)';
   }
@@ -236,7 +236,7 @@ function StaffRow({ member, isSelf, isHi, busy, onChangeRole, onRevoke }: StaffR
               minHeight: '40px',
               background: 'var(--surface-2)',
               border: '1px solid var(--border)',
-              color: '#DC2626',
+              color: 'var(--danger)',
               opacity: busy ? 0.6 : 1,
               cursor: busy ? 'not-allowed' : 'pointer',
             }}
@@ -505,7 +505,7 @@ export default function StaffManagement() {
       <header
         className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3"
         style={{
-          background: 'rgba(251,248,244,0.92)',
+          background: 'color-mix(in srgb, var(--surface-1) 92%, transparent)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
           borderBottom: '1px solid var(--border)',
@@ -576,14 +576,14 @@ export default function StaffManagement() {
           <div
             role="alert"
             className="mb-4 rounded-2xl p-4 flex items-start gap-3"
-            style={{ background: '#FEF2F2', border: '1.5px solid #DC262633' }}
+            style={{ background: 'color-mix(in srgb, var(--danger) 8%, transparent)', border: '1.5px solid color-mix(in srgb, var(--danger) 20%, transparent)' }}
           >
             <span aria-hidden="true" className="text-xl leading-none">⛔</span>
             <div>
-              <p className="text-sm font-semibold" style={{ color: '#B91C1C' }}>
+              <p className="text-sm font-semibold" style={{ color: 'var(--danger)' }}>
                 {t(isHi, 'Action blocked', 'कार्रवाई अवरुद्ध')}
               </p>
-              <p className="text-xs mt-1" style={{ color: '#B91C1C' }}>
+              <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>
                 {lockoutMsg}
               </p>
             </div>
@@ -595,7 +595,7 @@ export default function StaffManagement() {
           <div
             role="alert"
             className="mb-4 rounded-xl p-3 text-xs font-medium"
-            style={{ background: '#FFF7ED', border: '1px solid #F9731633', color: '#9A3412' }}
+            style={{ background: 'color-mix(in srgb, var(--orange) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--orange) 20%, transparent)', color: 'var(--orange)' }}
           >
             {actionError}
           </div>

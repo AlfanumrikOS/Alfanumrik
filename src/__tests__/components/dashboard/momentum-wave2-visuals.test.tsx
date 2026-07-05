@@ -3,22 +3,35 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import React from 'react';
 
 /**
- * Alfa Momentum — Wave 2 (dashboard premium elevation) value-bearing visuals.
+ * Alfa dashboard glance panels — value-bearing visuals (Phase 3b rebuild).
  *
- * Wave 2 was presentation-only: tokenization (hardcoded brand hex → semantic
- * CSS vars), primitive adoption (MasteryRing → StatRing in BoardScoreWidget,
- * added a mastered-share StatRing to MasterySnapshot), warm-channel tints, and
- * a rebuilt DashboardSkeleton. No engine/scoring code changed (P1/P2 untouched).
+ * Phase 3b re-composed MasterySnapshot and BoardScoreWidget entirely on the
+ * canonical primitives (Card / MasteryRing / ProgressRing / ProgressBar / Badge
+ * / Tabs / EmptyState / Alert / Skeleton), token-only. These tests pin the
+ * VALUE-BEARING half of that rebuild — the numbers the student reads off the new
+ * visualizations, the ARIA the new primitives expose, and token-purity on the
+ * changed surfaces — following the hook/fetch-seam + inline-style-scan patterns
+ * in momentum-primitives.test.tsx and TodaysMission.test.tsx.
  *
- * These tests pin the VALUE-BEARING half of those changes — the numbers the
- * student reads off the new visualizations, plus token-purity on the changed
- * surfaces — following the patterns in:
- *   - momentum-primitives.test.tsx (token-purity via inline-style scan)
- *   - TodaysMission.test.tsx       (hook-mock seam for SWR-fed components)
+ * INTENDED SEMANTIC CHANGE (assessment condition C1): the MasterySnapshot
+ * headline ring now shows ACCURACY % (aggregateAccuracyPercent =
+ * round(Σcorrect_attempts / Σattempts * 100), the P1-canonical helper), NOT the
+ * old mastered-share (mastered / total). The ring must reconcile with quiz
+ * accuracy, not with how many topics happen to be mastered. These tests assert
+ * the NEW accuracy semantics and will fail loudly if the panel ever regresses to
+ * mastered-share.
  *
  * JSDOM has no layout/CSS, so we assert DOM structure, rendered text, ARIA, and
  * the ABSENCE of 6-digit brand hex literals — never computed visual styles.
  */
+
+// ── next/navigation router mock ──────────────────────────────────────────────
+// Both panels now call useRouter() (EmptyState / demoted-CTA navigation), so the
+// app-router invariant must be satisfied under JSDOM.
+const mockPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush, replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
+}));
 
 // ── Token-purity helpers (shared with momentum-primitives.test.tsx) ───────────
 function inlineStyles(root: HTMLElement): string {
@@ -41,8 +54,17 @@ function stripVarFallbacks(styles: string): string {
   return styles.replace(/var\(\s*--[^,)]+,[^)]*\)/g, 'var(--token)');
 }
 
+/** All role=progressbar nodes in a subtree (MasteryRing wrapper + ProgressBars). */
+function progressbars(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>('[role="progressbar"]'));
+}
+/** The distribution bars carry "…topics…" in their aria-label; the ring does not. */
+function isDistributionBar(el: HTMLElement): boolean {
+  return /topics|विषय/.test(el.getAttribute('aria-label') ?? '');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// MasterySnapshot — bucket counts + new StatRing mastered-share denominator
+// MasterySnapshot — bucket distribution + headline ACCURACY ring (C1)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Drive the component's only data seam: the useMasteryOverview SWR hook.
@@ -52,18 +74,22 @@ vi.mock('@/lib/swr', () => ({
   useMasteryOverview: () => mockMasteryState,
 }));
 
-// One overview row per topic. `mastery_level` + `due_for_review` are the only
-// fields countBuckets / bucketForRow read.
+// One overview row per topic. `mastery_level` + `due_for_review` drive bucketing;
+// `attempts` / `correct_attempts` drive the C1 accuracy ring.
 function row(
   topic_id: string,
   mastery_level: string,
   due_for_review = false,
+  attempts = 0,
+  correct_attempts = 0,
 ): Record<string, unknown> {
   return {
     topic_id,
     title: topic_id,
     mastery_level,
     mastery_probability: 0.5,
+    attempts,
+    correct_attempts,
     due_for_review,
     subject: 'science',
   };
@@ -78,13 +104,13 @@ async function renderMastery(isHi = false) {
   );
 }
 
-describe('Wave 2 — MasterySnapshot value-bearing visuals', () => {
+describe('Phase 3b — MasterySnapshot value-bearing visuals', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockMasteryState = { data: undefined, isLoading: false, error: null };
   });
 
-  it('renders the three bucket counts correctly from the overview rows', async () => {
+  it('renders the three bucket counts + shares on the new primitive distribution (no role="list")', async () => {
     // 4 mastered, 3 learning (beginner/developing/proficient), 2 needs-revision
     // (due_for_review wins regardless of level), 1 not_started (excluded).
     mockMasteryState = {
@@ -105,77 +131,116 @@ describe('Wave 2 — MasterySnapshot value-bearing visuals', () => {
     };
     const { container } = await renderMastery(false);
 
-    // role="list" enumerates the three buckets; each row's aria-label encodes
-    // "<label>: <count> topics" — assert the count per bucket by aria-label.
-    const items = within(
-      container.querySelector('[role="list"]') as HTMLElement,
-    ).getAllByRole('listitem');
-    expect(items).toHaveLength(3);
-    expect(items[0]).toHaveAttribute('aria-label', expect.stringContaining('Mastered: 4'));
-    expect(items[1]).toHaveAttribute('aria-label', expect.stringContaining('Learning: 3'));
-    expect(items[2]).toHaveAttribute(
-      'aria-label',
-      expect.stringContaining('Needs Revision: 2'),
-    );
+    // NEW structure: the bespoke role="list"/listitem strip is gone — the
+    // distribution is now one count Badge + ProgressBar per bucket.
+    expect(container.querySelector('[role="list"]')).toBeNull();
 
-    // Total chip = 4 + 3 + 2 = 9 (not_started excluded).
-    expect(screen.getByText(/9/)).toBeInTheDocument();
+    // Each bucket's ProgressBar aria-label encodes "<label>: <count> topics
+    // (<share>%)". Shares: 4/9=44%, 3/9=33%, 2/9=22%.
+    const bars = progressbars(container).filter(isDistributionBar);
+    expect(bars.map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Mastered: 4 topics (44%)',
+      'Learning: 3 topics (33%)',
+      'Needs revision: 2 topics (22%)',
+    ]);
+
+    // Count Badges render the raw per-bucket tallies …
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    // … and the total chip = 4 + 3 + 2 = 9 (not_started excluded).
+    expect(screen.getByText('9')).toBeInTheDocument();
   });
 
-  it('new StatRing mastered-share uses the CORRECT denominator (mastered / total, not /all-rows)', async () => {
-    // 3 mastered out of 6 BUCKETED topics (one not_started must NOT inflate the
-    // denominator). Correct share = round(3/6 * 100) = 50%. A naive /all-rows
-    // denominator (3/7) would yield 43% — the bug this test guards.
+  it('C1: the headline ring shows ACCURACY % (Σcorrect/Σattempts), NOT mastered-share', async () => {
+    // Σcorrect = 4+1+2 = 7, Σattempts = 4+2+4 = 10 → accuracy = round(7/10*100)
+    // = 70%. Buckets: mastered 2, learning 1 → mastered-share would be
+    // round(2/3*100) = 67%. The ring MUST read 70% (accuracy), never 67%
+    // (mastered-share) — that is the C1 semantic. The not_started row has 0
+    // attempts and contributes nothing to either the buckets or the accuracy.
     mockMasteryState = {
       data: [
-        row('m1', 'mastered'),
-        row('m2', 'mastered'),
-        row('m3', 'mastered'),
-        row('l1', 'beginner'),
-        row('l2', 'developing'),
-        row('r1', 'proficient', true),
-        row('x1', 'not_started'), // excluded — must not change the denominator
+        row('m1', 'mastered', false, 4, 4),
+        row('m2', 'mastered', false, 2, 1),
+        row('l1', 'beginner', false, 4, 2),
+        row('x1', 'not_started', false, 0, 0),
       ],
       isLoading: false,
       error: null,
     };
-    await renderMastery(false);
+    const { container } = await renderMastery(false);
 
-    // The mastered-share StatRing renders "<pct>%" in its center; 50%, not 43%.
-    expect(screen.getByText('50%')).toBeInTheDocument();
-    expect(screen.queryByText('43%')).toBeNull();
+    // The headline MasteryRing is the one role=progressbar WITHOUT "topics".
+    const ring = progressbars(container).find((b) => !isDistributionBar(b));
+    expect(ring).toBeDefined();
+    // 70% accuracy, band high → growth-mindset label "Strong".
+    expect(ring).toHaveAttribute('aria-valuenow', '70');
+    expect(ring).toHaveAttribute('aria-label', 'Strong: 70%');
+    // Regression guard: the ring must NOT reproduce the old mastered-share (67%).
+    expect(ring?.getAttribute('aria-valuenow')).not.toBe('67');
+    // Center readout + band label reconcile with accuracy.
+    expect(screen.getByText('70%')).toBeInTheDocument();
+    expect(screen.getByText('Strong')).toBeInTheDocument();
   });
 
-  it('mastered-share is 0% when there are no mastered topics (no divide-by-zero)', async () => {
+  it('accuracy ring is 0% when there are no attempts (no divide-by-zero)', async () => {
     mockMasteryState = {
-      data: [row('l1', 'beginner'), row('l2', 'developing')],
+      data: [row('l1', 'beginner', false, 0, 0), row('l2', 'developing', false, 0, 0)],
       isLoading: false,
       error: null,
     };
-    await renderMastery(false);
-    expect(screen.getByText('0%')).toBeInTheDocument();
+    const { container } = await renderMastery(false);
+    // Assert on the ring specifically — bucket shares also render "0%", so a bare
+    // getByText('0%') would be ambiguous.
+    const ring = progressbars(container).find((b) => !isDistributionBar(b));
+    expect(ring).toHaveAttribute('aria-valuenow', '0');
+    expect(ring).toHaveAttribute('aria-label', 'Getting started: 0%');
   });
 
-  it('bucket→colour uses semantic tokens — no unguarded 6-digit brand hex in output', async () => {
+  it('renders the Hindi accuracy caption + bilingual bucket labels (P7)', async () => {
     mockMasteryState = {
-      data: [row('m1', 'mastered'), row('l1', 'beginner'), row('r1', 'proficient', true)],
+      data: [row('m1', 'mastered', false, 2, 2), row('r1', 'proficient', true, 2, 1)],
+      isLoading: false,
+      error: null,
+    };
+    const { container } = await renderMastery(true);
+    // Hindi caption for the accuracy ring.
+    expect(screen.getByText('कुल सटीकता — सभी विषयों में')).toBeInTheDocument();
+    // Bucket labels are localized; numbers stay Arabic numerals (P7).
+    const bars = progressbars(container).filter(isDistributionBar);
+    const labels = bars.map((b) => b.getAttribute('aria-label') ?? '');
+    expect(labels.some((l) => l.startsWith('महारत हासिल:') && /विषय/.test(l))).toBe(true);
+    expect(labels.some((l) => l.startsWith('दोहराना ज़रूरी:') && /विषय/.test(l))).toBe(true);
+  });
+
+  it('bucket + ring colour uses semantic tokens — no unguarded 6-digit brand hex in output', async () => {
+    mockMasteryState = {
+      data: [
+        row('m1', 'mastered', false, 2, 2),
+        row('l1', 'beginner', false, 2, 1),
+        row('r1', 'proficient', true, 2, 1),
+      ],
       isLoading: false,
       error: null,
     };
     const { container } = await renderMastery(false);
 
     const styles = inlineStyles(container);
-    // Tokens are present …
-    expect(styles).toContain('var(--green');
-    expect(styles).toContain('var(--accent-warm');
-    expect(styles).toContain('var(--purple');
+    // The three bucket tones now route through --success / --warning / --info
+    // (Badge tint + ProgressBar fill), and the headline ring band through
+    // --mastery-* — the old brand aliases (--green/--accent-warm/--purple) are
+    // gone from this surface.
+    expect(styles).toContain('var(--success');
+    expect(styles).toContain('var(--warning');
+    expect(styles).toContain('var(--info');
+    expect(styles).toContain('var(--mastery-');
     // … and once var() fallbacks are stripped, no brand hex remains hardcoded.
     expect(stripVarFallbacks(styles)).not.toMatch(SIX_DIGIT_HEX);
   });
 
-  it('renders the os-reveal-card stagger wrapper (Wave 2 reveal, reduced-motion-handled globally)', async () => {
+  it('renders the os-reveal-card stagger wrapper (reveal, reduced-motion-handled globally)', async () => {
     mockMasteryState = {
-      data: [row('m1', 'mastered')],
+      data: [row('m1', 'mastered', false, 1, 1)],
       isLoading: false,
       error: null,
     };
@@ -185,7 +250,7 @@ describe('Wave 2 — MasterySnapshot value-bearing visuals', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BoardScoreWidget — StatRing gauge value mapping + status band (raw fetch seam)
+// BoardScoreWidget — ProgressRing gauge value mapping + status band (fetch seam)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Minimal contract-shaped prediction. The gauge reads predicted_score/max_score
@@ -234,7 +299,7 @@ async function renderBoardScore(isHi = false) {
   );
 }
 
-describe('Wave 2 — BoardScoreWidget StatRing gauge value mapping', () => {
+describe('Phase 3b — BoardScoreWidget ProgressRing gauge value mapping', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.unstubAllGlobals());
 
@@ -243,15 +308,16 @@ describe('Wave 2 — BoardScoreWidget StatRing gauge value mapping', () => {
     mockFetchOnce({ code: 'ok', data: [prediction({ predicted_score: 60, max_score: 80 })] });
     await renderBoardScore(false);
 
-    // The gauge value text appears once it has loaded. 75% is also the band
-    // threshold (>= 75 → green) so it doubles as the status-band assertion.
-    await waitFor(() => expect(screen.getByText('75%')).toBeInTheDocument());
+    // The gauge is now the ProgressRing primitive (role="progressbar"), not the
+    // old StatRing (role="img"). Its accessible name + value carry the 75%.
+    const gauge = await screen.findByRole('progressbar', { name: '75%' });
+    expect(gauge).toHaveAttribute('aria-valuenow', '75');
     // Predicted-marks readout = round(totalPredicted) "/" totalMax.
     expect(screen.getByText('60')).toBeInTheDocument();
     expect(screen.getByText('/80')).toBeInTheDocument();
   });
 
-  it('StatRing gauge ARIA clamps an out-of-range upstream pct to 0–100', async () => {
+  it('ProgressRing gauge ARIA clamps an out-of-range upstream pct to 0–100', async () => {
     // totalMax 0 forces the widget's fallback to round(predicted_pct); set an
     // out-of-range pct (150) to exercise the clamp.
     mockFetchOnce({
@@ -260,16 +326,14 @@ describe('Wave 2 — BoardScoreWidget StatRing gauge value mapping', () => {
     });
     await renderBoardScore(false);
 
-    // The StatRing ring itself (role="img") clamps to 100 — this is the visual
-    // gauge geometry, which can never overshoot the ring.
-    // NOTE: the widget's caller-supplied CENTER text is `{overallPct}%` and is
-    // NOT clamped by the widget, so it would read "150%". The ring geometry +
-    // its ARIA value are the clamped, authoritative gauge signal. We assert the
-    // clamped ring; documenting the unclamped center as a (cosmetic, non-P1)
-    // observation — board-score % is a display-only prediction, not a score.
-    await waitFor(() =>
-      expect(screen.getByRole('img')).toHaveAttribute('aria-label', '100%'),
-    );
+    // The ProgressRing clamps its geometry + ARIA to 0–100 — the authoritative,
+    // never-overshooting gauge signal is aria-valuenow=100 / aria-label "100%".
+    const gauge = await screen.findByRole('progressbar', { name: '100%' });
+    expect(gauge).toHaveAttribute('aria-valuenow', '100');
+    // The caller-supplied CENTER text is `{overallPct}%` and is intentionally
+    // NOT clamped by the widget, so it reads "150%" — a cosmetic, non-P1
+    // observation (board-score % is a display-only prediction, not a score).
+    expect(screen.getByText('150%')).toBeInTheDocument();
   });
 
   it('sums marks across multiple subjects for the overall gauge', async () => {
@@ -282,26 +346,35 @@ describe('Wave 2 — BoardScoreWidget StatRing gauge value mapping', () => {
       ],
     });
     await renderBoardScore(false);
-    await waitFor(() => expect(screen.getByText('60%')).toBeInTheDocument());
+    const gauge = await screen.findByRole('progressbar', { name: '60%' });
+    expect(gauge).toHaveAttribute('aria-valuenow', '60');
   });
 
-  it('uses semantic tokens for the gauge band — no unguarded 6-digit brand hex', async () => {
+  it('gauge band uses a semantic tone token on the ProgressRing arc — no unguarded 6-digit brand hex', async () => {
+    // 60/80 = 75% → success tone.
     mockFetchOnce({ code: 'ok', data: [prediction()] });
     const { container } = await renderBoardScore(false);
-    await waitFor(() => expect(screen.getByText('75%')).toBeInTheDocument());
+    await screen.findByRole('progressbar', { name: '75%' });
 
+    // The ProgressRing primitive paints the arc via an SVG `stroke` ATTRIBUTE
+    // (TONE_VAR), not the old inline `var(--green)` StatRing style. At 75% the
+    // tone is success → var(--success).
+    const arc = container.querySelector('circle[stroke-linecap="round"]');
+    expect(arc?.getAttribute('stroke')).toContain('var(--success');
+    expect(arc?.getAttribute('stroke')).not.toContain('#');
+
+    // Inline styles (badges / bars) still carry no unguarded 6-digit brand hex.
     const styles = inlineStyles(container);
-    // Gauge band at 75% → --green; tints route through --accent-warm-rgb.
-    expect(styles).toContain('var(--green');
+    expect(styles).toContain('var(--success'); // CBSE badge soft tint
     expect(stripVarFallbacks(styles)).not.toMatch(SIX_DIGIT_HEX);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RoadmapNode — status→colour token + numeric % unchanged
+// RoadmapNode — status→colour token + numeric % unchanged (Phase 3b left as-is)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Wave 2 — RoadmapNode status→colour tokenization', () => {
+describe('RoadmapNode status→colour tokenization', () => {
   it('needs-revision status uses the --purple token (was #8B5CF6) on the ring stroke', async () => {
     const { RoadmapNode } = await import('@/components/ui/RoadmapNode');
     const { container } = render(

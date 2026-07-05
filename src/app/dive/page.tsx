@@ -223,7 +223,7 @@ export default function DivePage() {
           href={foxyHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-block rounded-lg bg-purple-700 text-white px-4 py-2 text-sm font-semibold"
+          className="inline-block rounded-lg bg-secondary text-on-accent px-4 py-2 text-sm font-semibold"
           data-testid="dive-foxy-link"
         >
           🦊 {isHi ? 'फॉक्सी खोलो (नया टैब)' : 'Open Foxy (new tab)'}

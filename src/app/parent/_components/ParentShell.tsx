@@ -219,11 +219,11 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="flex min-h-dvh bg-orange-50/30">
+    <div className="flex min-h-dvh bg-surface-2">
       <DashboardSidebar
         brandTitle="Alfanumrik"
         brandSubtitle={isHi ? 'अभिभावक' : 'Parent'}
-        primaryColor="#F97316" /* brand orange — parent portal accent */
+        primaryColor="var(--primary)" /* brand accent — token-driven, no raw hex */
         items={visibleItems}
         currentPath={pathname || ''}
         isHi={isHi}
@@ -231,11 +231,11 @@ export default function ParentShell({ children }: { children: React.ReactNode })
         footer={
           <div>
             {parentName && (
-              <div className="mb-2 truncate text-[11px] text-muted-foreground">{parentName}</div>
+              <div className="mb-2 truncate text-2xs text-muted-foreground">{parentName}</div>
             )}
             <button
               onClick={handleLogout}
-              className="w-full rounded-md border border-surface-3 bg-surface-1 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
+              className="w-full rounded-md border border-surface-3 bg-surface-1 py-1.5 text-2xs font-medium text-muted-foreground hover:bg-surface-2"
             >
               {isHi ? 'लॉगआउट' : 'Logout'}
             </button>

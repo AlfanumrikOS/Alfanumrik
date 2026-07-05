@@ -35,20 +35,24 @@ export const FOXY_FACES: Record<string, string> = { idle: '🦊', thinking: '�
 /**
  * MASTERY_COLORS — Foxy chapter-mastery band colours.
  *
- * Consumed as JS hex VALUES inside inline `style={{ ... }}` (page.tsx chapter
- * dropdown), NOT as CSS classes, so we keep them as plain hex strings. The
- * 5-band structure is unchanged; the values are re-aligned (Alfa Momentum
- * Wave 3) to the platform's semantic palette so a chapter's mastery pill in
- * Foxy reads consistently with the dashboard mastery bands and the design
- * tokens in globals.css. Mapping (hex chosen to MATCH the token it mirrors):
- *   not_started  → neutral tertiary text  (--text-3  #7D7264)
- *   beginner     → warning / saffron      (--gold    #F5A623)
- *   developing   → info / teal            (--teal    #0891B2)
- *   proficient   → purple accent          (--purple  #7C3AED)
- *   mastered     → success / green        (--green   #16A34A)
+ * Consumed as CSS colour VALUES inside inline `style={{ ... }}` (page.tsx
+ * chapter dropdown + FoxyStudySheet mastery rings), NOT as CSS classes. The
+ * 5-band structure is unchanged; the values are semantic `var(--token)`
+ * references (DD-16 tokenization) so a chapter's mastery pill in Foxy reads
+ * consistently with the dashboard mastery bands and every dialect skin in
+ * globals.css (light/dark/cosmic all remap these tokens). Mapping:
+ *   not_started  → neutral tertiary text  (--text-3)
+ *   beginner     → warning / saffron      (--gold)
+ *   developing   → info / teal            (--teal)
+ *   proficient   → purple accent          (--purple)
+ *   mastered     → success / green        (--green)
+ *
+ * NOTE: these are `var(...)`, so consumers MUST wrap any alpha blend in
+ * `color-mix(in srgb, <value> N%, transparent)` — the old `${color}25`
+ * hex-suffix concatenation is invalid on a var() value.
  */
 export const MASTERY_COLORS: Record<string, string> = {
-  not_started: '#7D7264', beginner: '#F5A623', developing: '#0891B2', proficient: '#7C3AED', mastered: '#16A34A',
+  not_started: 'var(--text-3)', beginner: 'var(--gold)', developing: 'var(--teal)', proficient: 'var(--purple)', mastered: 'var(--green)',
 };
 
 export const REPORT_REASONS = [

@@ -386,7 +386,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
             options={[{ value: '', label: t(isHi, 'Select...', 'चुनें...') }, ...subjectOpts]}
           />
           {errors.subject && (
-            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.subject}</p>
+            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.subject}</p>
           )}
         </div>
         <div>
@@ -397,7 +397,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
             options={[{ value: '', label: t(isHi, 'Select...', 'चुनें...') }, ...gradeOpts]}
           />
           {errors.grade && (
-            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.grade}</p>
+            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.grade}</p>
           )}
         </div>
       </div>
@@ -428,7 +428,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
             width: '100%',
             padding: '10px 12px',
             borderRadius: 12,
-            border: errors.question_text ? '1px solid #DC2626' : '1px solid var(--border)',
+            border: errors.question_text ? '1px solid var(--danger)' : '1px solid var(--border)',
             background: 'var(--surface-1)',
             color: 'var(--text-1)',
             fontSize: 14,
@@ -437,7 +437,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
           }}
         />
         {errors.question_text && (
-          <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.question_text}</p>
+          <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.question_text}</p>
         )}
       </div>
 
@@ -473,7 +473,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
         />
       </div>
       {errors.options_distinct && (
-        <p className="text-xs ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.options_distinct}</p>
+        <p className="text-xs ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.options_distinct}</p>
       )}
 
       {/* Correct Answer */}
@@ -497,7 +497,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
           ))}
         </div>
         {errors.correct_answer && (
-          <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.correct_answer}</p>
+          <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.correct_answer}</p>
         )}
       </div>
 
@@ -518,7 +518,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
             width: '100%',
             padding: '10px 12px',
             borderRadius: 12,
-            border: errors.explanation ? '1px solid #DC2626' : '1px solid var(--border)',
+            border: errors.explanation ? '1px solid var(--danger)' : '1px solid var(--border)',
             background: 'var(--surface-1)',
             color: 'var(--text-1)',
             fontSize: 14,
@@ -527,7 +527,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
           }}
         />
         {errors.explanation && (
-          <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.explanation}</p>
+          <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.explanation}</p>
         )}
       </div>
 
@@ -541,7 +541,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
             options={[{ value: '', label: t(isHi, 'Select...', 'चुनें...') }, ...diffOpts]}
           />
           {errors.difficulty && (
-            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.difficulty}</p>
+            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.difficulty}</p>
           )}
         </div>
         <div>
@@ -552,14 +552,14 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
             options={[{ value: '', label: t(isHi, 'Select...', 'चुनें...') }, ...bloomOpts]}
           />
           {errors.bloom_level && (
-            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.bloom_level}</p>
+            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.bloom_level}</p>
           )}
         </div>
       </div>
 
       {/* Submit error */}
       {submitError && (
-        <p className="text-xs font-medium px-1" style={{ color: '#DC2626' }} role="alert">{submitError}</p>
+        <p className="text-xs font-medium px-1" style={{ color: 'var(--danger)' }} role="alert">{submitError}</p>
       )}
 
       {/* Buttons */}
@@ -689,12 +689,12 @@ function BulkUploadForm({ isHi, onUpload, onClose }: BulkUploadProps) {
                     key={idx}
                     style={{
                       borderBottom: '1px solid var(--border)',
-                      background: row.valid ? 'transparent' : 'rgba(239,68,68,0.04)',
+                      background: row.valid ? 'transparent' : 'color-mix(in srgb, var(--danger) 4%, transparent)',
                     }}
                   >
                     <td style={{ padding: '6px 12px', color: 'var(--text-3)' }}>{idx + 1}</td>
                     <td style={{ padding: '6px 12px' }}>
-                      <span style={{ color: row.valid ? '#22C55E' : '#EF4444', fontWeight: 600 }}>
+                      <span style={{ color: row.valid ? 'var(--success)' : 'var(--danger)', fontWeight: 600 }}>
                         {row.valid ? '✓' : '✗'}
                       </span>
                     </td>
@@ -703,7 +703,7 @@ function BulkUploadForm({ isHi, onUpload, onClose }: BulkUploadProps) {
                     </td>
                     <td style={{ padding: '6px 12px', color: 'var(--text-2)' }}>{row.subject}</td>
                     <td style={{ padding: '6px 12px', color: 'var(--text-2)' }}>{row.grade}</td>
-                    <td style={{ padding: '6px 12px', color: '#EF4444', fontSize: 11 }}>
+                    <td style={{ padding: '6px 12px', color: 'var(--danger)', fontSize: 12 }}>
                       {row.errors.join(', ')}
                     </td>
                   </tr>
@@ -716,7 +716,7 @@ function BulkUploadForm({ isHi, onUpload, onClose }: BulkUploadProps) {
 
       {/* Upload error */}
       {uploadError && (
-        <p className="text-xs font-medium" style={{ color: '#DC2626' }} role="alert">{uploadError}</p>
+        <p className="text-xs font-medium" style={{ color: 'var(--danger)' }} role="alert">{uploadError}</p>
       )}
 
       {/* Actions */}
@@ -772,7 +772,7 @@ function DeleteConfirm({ isHi, questionText, onConfirm, onCancel, loading }: Del
           fullWidth
           onClick={onConfirm}
           disabled={loading}
-          style={{ minHeight: 48, background: '#DC2626' }}
+          style={{ minHeight: 48, background: 'var(--danger)' }}
         >
           {loading
             ? t(isHi, 'Deleting...', 'हटा रहे हैं...')
@@ -1232,14 +1232,14 @@ export default function SchoolAdminContentPage() {
               className="rounded-xl py-3 px-4 text-center"
               style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
             >
-              <div className="text-xl font-bold" style={{ color: '#22C55E' }}>{stats.approved}</div>
+              <div className="text-xl font-bold" style={{ color: 'var(--success)' }}>{stats.approved}</div>
               <div className="text-xs text-[var(--text-3)] font-medium mt-0.5">{t(isHi, 'Approved', 'स्वीकृत')}</div>
             </div>
             <div
               className="rounded-xl py-3 px-4 text-center"
               style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
             >
-              <div className="text-xl font-bold" style={{ color: '#EAB308' }}>{stats.pending}</div>
+              <div className="text-xl font-bold" style={{ color: 'var(--warning)' }}>{stats.pending}</div>
               <div className="text-xs text-[var(--text-3)] font-medium mt-0.5">{t(isHi, 'Pending', 'लंबित')}</div>
             </div>
             <div
@@ -1343,7 +1343,7 @@ export default function SchoolAdminContentPage() {
                 header: t(isHi, 'Difficulty', 'कठिनाई'),
                 render: (q) => (
                   <Badge
-                    color={q.difficulty === 'easy' ? '#22C55E' : q.difficulty === 'medium' ? '#EAB308' : '#EF4444'}
+                    color={q.difficulty === 'easy' ? 'var(--success)' : q.difficulty === 'medium' ? 'var(--warning)' : 'var(--danger)'}
                     size="sm"
                   >
                     {q.difficulty}
@@ -1359,7 +1359,7 @@ export default function SchoolAdminContentPage() {
                 key: 'status',
                 header: t(isHi, 'Status', 'स्थिति'),
                 render: (q) => (
-                  <Badge color={q.status === 'approved' ? '#22C55E' : '#EAB308'} size="sm">
+                  <Badge color={q.status === 'approved' ? 'var(--success)' : 'var(--warning)'} size="sm">
                     {q.status === 'approved'
                       ? t(isHi, 'Approved', 'स्वीकृत')
                       : t(isHi, 'Pending', 'लंबित')}
@@ -1389,9 +1389,9 @@ export default function SchoolAdminContentPage() {
                       onClick={() => handleToggleApproval(q)}
                       className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
                       style={{
-                        background: q.status === 'approved' ? 'rgba(234,179,8,0.06)' : 'rgba(22,163,74,0.06)',
-                        border: `1px solid ${q.status === 'approved' ? 'rgba(234,179,8,0.2)' : 'rgba(22,163,74,0.2)'}`,
-                        color: q.status === 'approved' ? '#EAB308' : '#16A34A',
+                        background: q.status === 'approved' ? 'color-mix(in srgb, var(--warning) 6%, transparent)' : 'color-mix(in srgb, var(--success) 6%, transparent)',
+                        border: `1px solid ${q.status === 'approved' ? 'color-mix(in srgb, var(--warning) 20%, transparent)' : 'color-mix(in srgb, var(--success) 20%, transparent)'}`,
+                        color: q.status === 'approved' ? 'var(--warning)' : 'var(--success)',
                         minHeight: 30,
                       }}
                     >
@@ -1403,9 +1403,9 @@ export default function SchoolAdminContentPage() {
                       onClick={() => setDeleteTarget(q)}
                       className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
                       style={{
-                        background: 'rgba(220,38,38,0.06)',
-                        border: '1px solid rgba(220,38,38,0.2)',
-                        color: '#DC2626',
+                        background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
+                        border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+                        color: 'var(--danger)',
                         minHeight: 30,
                       }}
                     >
@@ -1552,9 +1552,9 @@ export default function SchoolAdminContentPage() {
       {/* ── Success Toast ── */}
       {successMsg && (
         <div
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-lg pointer-events-none animate-fade-in"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-on-accent shadow-lg pointer-events-none animate-fade-in"
           style={{
-            background: 'rgba(22,163,74,0.92)',
+            background: 'color-mix(in srgb, var(--success) 92%, transparent)',
             backdropFilter: 'blur(8px)',
             whiteSpace: 'nowrap',
           }}

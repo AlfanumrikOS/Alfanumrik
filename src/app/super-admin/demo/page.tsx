@@ -238,13 +238,13 @@ function DemoContent() {
 
   const roleBadge = (role: string): React.CSSProperties => {
     const palette: Record<string, { bg: string; fg: string }> = {
-      student:      { bg: '#EFF6FF', fg: '#2563EB' },
-      teacher:      { bg: '#FFFBEB', fg: '#D97706' },
-      parent:       { bg: '#F0FDF4', fg: '#16A34A' },
-      school_admin: { bg: '#F3E8FF', fg: '#7C3AED' },
-      super_admin:  { bg: '#FCE7F3', fg: '#DB2777' },
+      student:      { bg: 'color-mix(in srgb, var(--info) 10%, transparent)', fg: 'var(--info)' },
+      teacher:      { bg: 'color-mix(in srgb, var(--warning) 12%, transparent)', fg: 'var(--warning)' },
+      parent:       { bg: 'color-mix(in srgb, var(--success) 10%, transparent)', fg: 'var(--success)' },
+      school_admin: { bg: 'color-mix(in srgb, var(--secondary) 12%, transparent)', fg: 'var(--secondary)' },
+      super_admin:  { bg: 'color-mix(in srgb, var(--secondary) 12%, var(--surface-1))', fg: 'color-mix(in srgb, var(--secondary) 50%, var(--danger))' },
     };
-    const colors = palette[role] || { bg: '#F3F4F6', fg: '#6B7280' };
+    const colors = palette[role] || { bg: 'var(--surface-2)', fg: 'var(--text-2)' };
     return {
       fontSize: 10,
       padding: '2px 8px',
@@ -264,20 +264,20 @@ function DemoContent() {
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
-    background: status === 'active' ? '#F0FDF4' : '#FEF2F2',
-    color: status === 'active' ? '#16A34A' : '#DC2626',
+    background: status === 'active' ? 'color-mix(in srgb, var(--success) 10%, transparent)' : 'color-mix(in srgb, var(--danger) 8%, transparent)',
+    color: status === 'active' ? 'var(--success)' : 'var(--danger)',
   });
 
   const tableThStyle: React.CSSProperties = {
     textAlign: 'left',
     padding: '10px 14px',
-    borderBottom: `2px solid #E5E7EB`,
-    color: '#6B7280',
+    borderBottom: `2px solid var(--border)`,
+    color: 'var(--text-2)',
     fontSize: 11,
     fontWeight: 600,
     textTransform: 'uppercase',
     letterSpacing: 1,
-    background: '#F9FAFB',
+    background: 'var(--surface-2)',
     position: 'sticky',
     top: 0,
     zIndex: 1,
@@ -285,8 +285,8 @@ function DemoContent() {
 
   const tableTdStyle: React.CSSProperties = {
     padding: '10px 14px',
-    borderBottom: `1px solid #F3F4F6`,
-    color: '#111827',
+    borderBottom: `1px solid var(--surface-2)`,
+    color: 'var(--text-1)',
     fontSize: 13,
   };
 
@@ -296,11 +296,11 @@ function DemoContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground">Demo Accounts</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
             Manage demo accounts for sales presentations and testing
           </p>
         </div>
-        <div style={{ fontSize: 13, color: '#6B7280' }}>
+        <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
           {accounts.length} accounts total
         </div>
       </div>
@@ -310,9 +310,9 @@ function DemoContent() {
         <div
           role="alert"
           style={{
-            background: '#FEF2F2',
-            border: '1px solid #FCA5A5',
-            color: '#991B1B',
+            background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--danger) 40%, transparent)',
+            color: 'var(--danger)',
             padding: '10px 14px',
             borderRadius: 6,
             marginBottom: 16,
@@ -326,18 +326,18 @@ function DemoContent() {
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600, marginBottom: 2 }}>
               {error.message}{' '}
-              <code style={{ fontSize: 11, color: '#7F1D1D' }}>[{error.code}]</code>
+              <code style={{ fontSize: 11, color: 'var(--danger)' }}>[{error.code}]</code>
             </div>
             {error.details && (
               <details style={{ marginTop: 4 }}>
-                <summary style={{ cursor: 'pointer', fontSize: 11, color: '#7F1D1D' }}>details</summary>
+                <summary style={{ cursor: 'pointer', fontSize: 11, color: 'var(--danger)' }}>details</summary>
                 <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{error.details}</pre>
               </details>
             )}
           </div>
           <button
             onClick={() => setError(null)}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#991B1B', fontSize: 16 }}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 16 }}
             aria-label="Dismiss"
           >×</button>
         </div>
@@ -345,13 +345,13 @@ function DemoContent() {
 
       {/* Overview Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <StatCard label="Students" value={byRole('student').length} accentColor="#2563EB" />
-        <StatCard label="Teachers" value={byRole('teacher').length} accentColor="#D97706" />
-        <StatCard label="Parents" value={byRole('parent').length} accentColor="#16A34A" />
-        <StatCard label="School Admins" value={byRole('school_admin').length} accentColor="#7C3AED" />
-        <StatCard label="Super Admins" value={byRole('super_admin').length} accentColor="#DB2777" />
-        <StatCard label="Active" value={activeCount} accentColor="#16A34A" />
-        <StatCard label="Inactive" value={inactiveCount} accentColor="#DC2626" />
+        <StatCard label="Students" value={byRole('student').length} accentColor="var(--info)" />
+        <StatCard label="Teachers" value={byRole('teacher').length} accentColor="var(--warning)" />
+        <StatCard label="Parents" value={byRole('parent').length} accentColor="var(--success)" />
+        <StatCard label="School Admins" value={byRole('school_admin').length} accentColor="var(--secondary)" />
+        <StatCard label="Super Admins" value={byRole('super_admin').length} accentColor="color-mix(in srgb, var(--secondary) 50%, var(--danger))" />
+        <StatCard label="Active" value={activeCount} accentColor="var(--success)" />
+        <StatCard label="Inactive" value={inactiveCount} accentColor="var(--danger)" />
         <StatCard label="Last Reset" value={formatDate(lastReset)} />
       </div>
 
@@ -361,8 +361,8 @@ function DemoContent() {
         <button
           onClick={handleResetAll}
           disabled={actionLoading === 'reset-all'}
-          className="rounded-md border border-danger bg-danger/10 px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/20"
-          style={{ opacity: actionLoading === 'reset-all' ? 0.6 : 1 }}
+          className="rounded-md border border-danger px-4 py-2 text-sm font-semibold text-danger hover:opacity-90"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)', opacity: actionLoading === 'reset-all' ? 0.6 : 1 }}
         >
           {actionLoading === 'reset-all' ? 'Resetting...' : 'Reset All Demo Accounts'}
         </button>
@@ -374,7 +374,7 @@ function DemoContent() {
         >
           {actionLoading === 'create-set' ? 'Creating...' : 'Create Demo Set (5 roles)'}
         </button>
-        <span style={{ fontSize: 12, color: '#9CA3AF', alignSelf: 'center' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-3)', alignSelf: 'center' }}>
           Creates one of each: student, teacher, parent, school-admin, super-admin
         </span>
       </div>
@@ -387,7 +387,7 @@ function DemoContent() {
       >
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignItems: 'end' }}>
           <div>
-            <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Role</label>
+            <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Role</label>
             <select
               value={formRole}
               onChange={e => setFormRole(e.target.value as DemoRole)}
@@ -401,7 +401,7 @@ function DemoContent() {
           {formRole === 'student' && (
             <>
               <div>
-                <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Persona</label>
+                <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Persona</label>
                 <select
                   value={formPersona}
                   onChange={e => setFormPersona(e.target.value as DemoPersona)}
@@ -413,7 +413,7 @@ function DemoContent() {
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Grade</label>
+                <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Grade</label>
                 <select
                   value={formGrade}
                   onChange={e => setFormGrade(e.target.value)}
@@ -426,7 +426,7 @@ function DemoContent() {
               </div>
               {streamRequiredForGrade(formGrade) && (
                 <div>
-                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Stream</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Stream</label>
                   <select
                     value={formStream}
                     onChange={e => setFormStream(e.target.value as DemoStream)}
@@ -441,7 +441,7 @@ function DemoContent() {
             </>
           )}
           <div>
-            <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Name</label>
+            <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Name</label>
             <input
               value={formName}
               onChange={e => setFormName(e.target.value)}
@@ -450,7 +450,7 @@ function DemoContent() {
             />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Email</label>
+            <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Email</label>
             <input
               value={formEmail}
               onChange={e => setFormEmail(e.target.value)}
@@ -474,17 +474,17 @@ function DemoContent() {
       {/* Credentials Modal */}
       {credentials && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex',
+          position: 'fixed', inset: 0, background: 'var(--scrim)', display: 'flex',
           alignItems: 'center', justifyContent: 'center', zIndex: 100,
         }}>
           <div
             className="rounded-lg border border-surface-3 bg-surface-1"
             style={{ maxWidth: 480, width: '90%', padding: 24 }}
           >
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 4, marginTop: 0 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4, marginTop: 0 }}>
               Demo Account Credentials
             </h3>
-            <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 16, marginTop: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16, marginTop: 0 }}>
               Save these credentials. The password cannot be retrieved later.
             </p>
             {credentials.map((cred, i) => (
@@ -494,30 +494,30 @@ function DemoContent() {
                 style={{ marginBottom: 8, padding: 12 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: '#111827' }}>{cred.name}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-1)' }}>{cred.name}</span>
                   <span style={roleBadge(cred.role)}>{cred.role}</span>
                 </div>
-                <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 2 }}>
-                  Email: <code style={{ color: '#111827' }}>{cred.email}</code>
+                <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 2 }}>
+                  Email: <code style={{ color: 'var(--text-1)' }}>{cred.email}</code>
                 </div>
-                <div style={{ fontSize: 12, color: '#6B7280' }}>
-                  Password: <code style={{ color: '#111827' }}>{cred.password}</code>
+                <div style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                  Password: <code style={{ color: 'var(--text-1)' }}>{cred.password}</code>
                 </div>
                 {cred.login_url && !cred.student_invite_code && (
                   <>
-                    <div style={{ fontSize: 12, color: '#2563EB', marginTop: 6, fontWeight: 600 }}>
+                    <div style={{ fontSize: 12, color: 'var(--info)', marginTop: 6, fontWeight: 600 }}>
                       Login at:{' '}
                       <a
                         href={cred.login_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{ color: '#2563EB', textDecoration: 'underline', fontWeight: 700 }}
+                        style={{ color: 'var(--info)', textDecoration: 'underline', fontWeight: 700 }}
                       >
                         {cred.login_url}
                       </a>
                     </div>
                     {cred.login_instructions && (
-                      <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2, fontStyle: 'italic' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2, fontStyle: 'italic' }}>
                         {cred.login_instructions}
                       </div>
                     )}
@@ -525,13 +525,13 @@ function DemoContent() {
                 )}
                 {cred.student_invite_code && (
                   <>
-                    <div style={{ fontSize: 12, color: '#2563EB', marginTop: 6, fontWeight: 600 }}>
+                    <div style={{ fontSize: 12, color: 'var(--info)', marginTop: 6, fontWeight: 600 }}>
                       Parent Portal Login
                     </div>
-                    <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
-                      Link Code: <code style={{ color: '#111827', fontWeight: 700 }}>{cred.student_invite_code}</code>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>
+                      Link Code: <code style={{ color: 'var(--text-1)', fontWeight: 700 }}>{cred.student_invite_code}</code>
                     </div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
                       {cred.login_instructions || 'Go to /parent and enter the link code (not email/password).'}
                     </div>
                   </>
@@ -550,7 +550,7 @@ function DemoContent() {
 
       {/* Accounts Table */}
       <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Demo Accounts</h2>
-      <div style={{ overflowX: 'auto', border: `1px solid #E5E7EB`, borderRadius: 8 }}>
+      <div style={{ overflowX: 'auto', border: `1px solid var(--border)`, borderRadius: 8 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
@@ -565,30 +565,30 @@ function DemoContent() {
           </thead>
           <tbody>
             {loading && accounts.length === 0 && (
-              <tr><td colSpan={7} style={{ ...tableTdStyle, textAlign: 'center', color: '#9CA3AF', padding: 32 }}>Loading...</td></tr>
+              <tr><td colSpan={7} style={{ ...tableTdStyle, textAlign: 'center', color: 'var(--text-3)', padding: 32 }}>Loading...</td></tr>
             )}
             {!loading && accounts.length === 0 && (
-              <tr><td colSpan={7} style={{ ...tableTdStyle, textAlign: 'center', color: '#9CA3AF', padding: 32 }}>No demo accounts yet. Create one above or use &quot;Create Demo Set&quot;.</td></tr>
+              <tr><td colSpan={7} style={{ ...tableTdStyle, textAlign: 'center', color: 'var(--text-3)', padding: 32 }}>No demo accounts yet. Create one above or use &quot;Create Demo Set&quot;.</td></tr>
             )}
             {accounts.map(account => (
               <tr key={account.id}>
                 <td style={tableTdStyle}>
-                  <span style={{ fontWeight: 600, color: '#111827' }}>{account.name}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{account.name}</span>
                 </td>
                 <td style={tableTdStyle}>
-                  <code style={{ fontSize: 12, color: '#6B7280' }}>{account.email}</code>
+                  <code style={{ fontSize: 12, color: 'var(--text-2)' }}>{account.email}</code>
                 </td>
                 <td style={tableTdStyle}>
                   <span style={roleBadge(account.role)}>{account.role}</span>
                 </td>
                 <td style={tableTdStyle}>
-                  <span style={{ fontSize: 12, color: '#6B7280' }}>{account.persona || '—'}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{account.persona || '—'}</span>
                 </td>
                 <td style={tableTdStyle}>
                   <span style={statusBadge(account.status)}>{account.status}</span>
                 </td>
                 <td style={tableTdStyle}>
-                  <span style={{ fontSize: 12, color: '#9CA3AF' }}>{formatDate(account.last_reset)}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{formatDate(account.last_reset)}</span>
                 </td>
                 <td style={{ ...tableTdStyle, textAlign: 'right' as const }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -604,8 +604,8 @@ function DemoContent() {
                       disabled={actionLoading === account.id + '-toggle'}
                       className="rounded-md border bg-transparent px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2"
                       style={{
-                        color: account.status === 'active' ? '#D97706' : '#16A34A',
-                        borderColor: account.status === 'active' ? '#D97706' : '#16A34A',
+                        color: account.status === 'active' ? 'var(--warning)' : 'var(--success)',
+                        borderColor: account.status === 'active' ? 'var(--warning)' : 'var(--success)',
                       }}
                     >
                       {actionLoading === account.id + '-toggle'
@@ -616,7 +616,7 @@ function DemoContent() {
                       onClick={() => handleDelete(account.id, account.name)}
                       disabled={actionLoading === account.id + '-delete'}
                       className="rounded-md border bg-transparent px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2"
-                      style={{ color: '#DC2626', borderColor: '#DC2626' }}
+                      style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
                     >
                       {actionLoading === account.id + '-delete' ? '...' : 'Delete'}
                     </button>

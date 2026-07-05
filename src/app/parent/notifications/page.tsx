@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { Alert } from '@/components/ui/primitives';
 import type { ParentNotificationRow } from '@/app/api/parent/notifications/route';
 
 const POLL_MS = 30_000;
@@ -157,7 +158,7 @@ function ParentNotificationsContent() {
           <h1 className="text-xl font-bold text-foreground md:text-2xl">
             {t(isHi, 'Notifications', 'सूचनाएँ')}
           </h1>
-          <p className="mt-1 text-[12px] text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             {t(
               isHi,
               "Updates about your child's learning",
@@ -171,7 +172,7 @@ function ParentNotificationsContent() {
           disabled={unreadCount === 0 || marking}
           aria-label={t(isHi, 'Mark all as read', 'सभी को पढ़ा हुआ चिह्नित करें')}
           data-testid="mark-all-read"
-          className="self-start rounded-md border border-surface-3 bg-surface-1 px-3 py-1.5 text-[12px] font-medium text-foreground hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
+          className="self-start rounded-md border border-surface-3 bg-surface-1 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50 md:self-auto"
         >
           {marking
             ? t(isHi, 'Marking…', 'चिह्नित कर रहे हैं…')
@@ -199,16 +200,13 @@ function ParentNotificationsContent() {
       </div>
 
       {isLoading && !data ? (
-        <div className="py-12 text-center text-[13px] text-muted-foreground">
+        <div className="py-12 text-center text-sm text-muted-foreground">
           {t(isHi, 'Loading…', 'लोड हो रहा है…')}
         </div>
       ) : error ? (
-        <div
-          role="alert"
-          className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-800"
-        >
+        <Alert tone="danger">
           {t(isHi, "Couldn't load notifications. Please refresh.", 'सूचनाएँ लोड नहीं हो सकीं। कृपया रिफ्रेश करें।')}
-        </div>
+        </Alert>
       ) : items.length === 0 ? (
         <EmptyState isHi={isHi} filter={filter} />
       ) : (
@@ -256,9 +254,9 @@ function FilterTab({
       data-testid={testId}
       onClick={onClick}
       className={[
-        'border-b-2 px-3 py-2 text-[13px] font-medium transition-colors',
+        'border-b-2 px-3 py-2 text-sm font-medium transition-colors',
         active
-          ? 'border-orange-500 text-orange-700'
+          ? 'border-primary text-primary'
           : 'border-transparent text-muted-foreground hover:text-foreground',
       ].join(' ')}
     >
@@ -276,12 +274,12 @@ function EmptyState({ isHi, filter }: { isHi: boolean; filter: 'all' | 'unread' 
       <div className="mb-2 text-2xl" aria-hidden="true">
         ✓
       </div>
-      <div className="text-[15px] font-semibold text-foreground">
+      <div className="text-base font-semibold text-foreground">
         {filter === 'unread'
           ? t(isHi, "You're all caught up", 'सब कुछ पढ़ लिया है')
           : t(isHi, 'No notifications yet', 'अभी कोई सूचना नहीं')}
       </div>
-      <p className="mt-1 text-[12px] text-muted-foreground">
+      <p className="mt-1 text-xs text-muted-foreground">
         {t(
           isHi,
           "We'll let you know when something needs your attention.",
@@ -312,7 +310,7 @@ function NotificationRow({
       data-unread={!item.is_read}
       className={[
         'rounded-lg border bg-surface-1 px-4 py-3 transition-colors',
-        item.is_read ? 'border-surface-3' : 'border-orange-200 bg-orange-50/40',
+        item.is_read ? 'border-surface-3' : 'border-primary bg-surface-2',
       ].join(' ')}
     >
       <button
@@ -325,25 +323,25 @@ function NotificationRow({
           aria-hidden="true"
           className={[
             'mt-1.5 inline-block h-2 w-2 flex-shrink-0 rounded-full',
-            item.is_read ? 'bg-transparent' : 'bg-orange-500',
+            item.is_read ? 'bg-transparent' : 'bg-primary',
           ].join(' ')}
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline justify-between gap-3">
             <div
               className={[
-                'truncate text-[14px]',
-                item.is_read ? 'font-medium text-foreground/80' : 'font-semibold text-foreground',
+                'truncate text-sm',
+                item.is_read ? 'font-medium text-[color-mix(in_srgb,var(--text-1)_80%,transparent)]' : 'font-semibold text-foreground',
               ].join(' ')}
             >
               {item.title}
             </div>
-            <div className="flex-shrink-0 text-[11px] text-muted-foreground">
+            <div className="flex-shrink-0 text-2xs text-muted-foreground">
               {relativeTime(item.created_at, isHi)}
             </div>
           </div>
           {!expanded && (
-            <div className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">
               {item.message}
             </div>
           )}
@@ -352,7 +350,7 @@ function NotificationRow({
 
       {expanded && (
         <div className="mt-2 pl-5">
-          <p className="whitespace-pre-line text-[13px] leading-relaxed text-foreground/90">
+          <p className="whitespace-pre-line text-sm leading-relaxed text-[color-mix(in_srgb,var(--text-1)_90%,transparent)]">
             {longBody}
           </p>
           {!item.is_read && (
@@ -360,7 +358,7 @@ function NotificationRow({
               type="button"
               onClick={onMarkRead}
               data-testid={`mark-read-${item.id}`}
-              className="mt-2 text-[11px] font-medium text-orange-700 hover:text-orange-900"
+              className="mt-2 text-2xs font-medium text-primary hover:text-primary"
             >
               {t(isHi, 'Mark as read', 'पढ़ा हुआ चिह्नित करें')}
             </button>

@@ -15,17 +15,17 @@ import AdminShell, { useAdmin } from '../../_components/AdminShell';
 import StatusBadge from '../../_components/StatusBadge';
 
 const colors = {
-  bg: '#FFFFFF',
-  surface: '#F9FAFB',
-  border: '#E5E7EB',
-  borderLight: '#F3F4F6',
-  text1: '#111827',
-  text2: '#6B7280',
-  text3: '#9CA3AF',
-  accent: '#2563EB',
-  accentLight: '#EFF6FF',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
+  bg: 'var(--surface-1)',
+  surface: 'var(--surface-2)',
+  border: 'var(--surface-3)',
+  borderLight: 'var(--surface-2)',
+  text1: 'var(--text-1)',
+  text2: 'var(--text-2)',
+  text3: 'var(--text-3)',
+  accent: 'var(--info)',
+  accentLight: 'color-mix(in srgb, var(--info) 10%, transparent)',
+  danger: 'var(--danger)',
+  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
 } as const;
 
 const S = {
@@ -347,7 +347,7 @@ function EditSubjectsModal({
 
   return (
     <>
-      <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 999 }} />
+      <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--text-1) 35%, transparent)', zIndex: 999 }} />
       <div
         role="dialog"
         aria-modal="true"
@@ -355,7 +355,7 @@ function EditSubjectsModal({
         style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
           background: colors.bg, borderRadius: 10, padding: 24, width: 560, maxHeight: '85vh',
-          boxShadow: '0 12px 48px rgba(0,0,0,0.18)', zIndex: 1000,
+          boxShadow: '0 12px 48px color-mix(in srgb, var(--text-1) 18%, transparent)', zIndex: 1000,
           display: 'flex', flexDirection: 'column',
         }}
       >

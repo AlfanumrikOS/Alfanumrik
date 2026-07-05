@@ -26,35 +26,35 @@ const tableStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 14px',
-  borderBottom: '2px solid #E5E7EB',
-  color: '#6B7280',
+  borderBottom: '2px solid var(--surface-3)',
+  color: 'var(--text-2)',
   fontSize: 11,
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: 1,
-  background: '#F9FAFB',
+  background: 'var(--surface-2)',
   position: 'sticky',
   top: 0,
   zIndex: 1,
 };
 const tdStyle: React.CSSProperties = {
   padding: '10px 14px',
-  borderBottom: '1px solid #F3F4F6',
-  color: '#111827',
+  borderBottom: '1px solid var(--surface-2)',
+  color: 'var(--text-1)',
   fontSize: 13,
 };
 const cardStyle: React.CSSProperties = {
   padding: 16,
   borderRadius: 8,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
+  border: '1px solid var(--surface-3)',
+  background: 'var(--surface-1)',
 };
 const primaryBtnStyle: React.CSSProperties = {
   padding: '8px 16px',
   borderRadius: 6,
   border: 'none',
-  background: '#111827',
-  color: '#FFFFFF',
+  background: 'var(--text-1)',
+  color: 'var(--surface-1)',
   fontSize: 13,
   fontWeight: 600,
   cursor: 'pointer',
@@ -63,9 +63,9 @@ const primaryBtnStyle: React.CSSProperties = {
 const secondaryBtnStyle: React.CSSProperties = {
   padding: '8px 16px',
   borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#111827',
+  border: '1px solid var(--surface-3)',
+  background: 'var(--surface-1)',
+  color: 'var(--text-1)',
   fontSize: 13,
   fontWeight: 500,
   cursor: 'pointer',
@@ -364,7 +364,7 @@ function BulkOnboardSchoolsContent() {
           <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>
             Bulk Onboard Schools
           </h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
             Provision multiple trial schools from a single CSV. Up to {MAX_ROWS_PER_CSV} rows per upload.
           </p>
         </div>
@@ -384,14 +384,14 @@ function BulkOnboardSchoolsContent() {
             padding: '10px 16px',
             borderRadius: 8,
             marginBottom: 16,
-            background: '#FEF2F2',
-            border: '1px solid #DC2626',
+            background: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+            border: '1px solid var(--danger)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
           }}
         >
-          <span style={{ fontSize: 13, color: '#DC2626', fontWeight: 500 }}>{error}</span>
+          <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 500 }}>{error}</span>
           <button
             onClick={() => setError('')}
             style={{
@@ -399,7 +399,7 @@ function BulkOnboardSchoolsContent() {
               border: 'none',
               cursor: 'pointer',
               fontSize: 16,
-              color: '#DC2626',
+              color: 'var(--danger)',
               fontWeight: 700,
             }}
           >
@@ -410,10 +410,10 @@ function BulkOnboardSchoolsContent() {
 
       {/* Drop zone */}
       <div style={{ ...cardStyle, maxWidth: 720, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 4 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>
           1. Upload CSV
         </div>
-        <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 0, marginBottom: 12 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 0, marginBottom: 12 }}>
           Required columns: <code>{REQUIRED_COLUMNS.join(', ')}</code>. Optional:{' '}
           <code>{OPTIONAL_COLUMNS.join(', ')}</code>.
         </p>
@@ -426,20 +426,20 @@ function BulkOnboardSchoolsContent() {
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
           style={{
-            border: `2px dashed ${dragOver ? '#2563EB' : '#E5E7EB'}`,
+            border: `2px dashed ${dragOver ? 'var(--info)' : 'var(--surface-3)'}`,
             borderRadius: 8,
             padding: '40px 20px',
             textAlign: 'center',
             cursor: 'pointer',
-            background: dragOver ? '#EFF6FF' : '#F9FAFB',
+            background: dragOver ? 'color-mix(in srgb, var(--info) 10%, transparent)' : 'var(--surface-2)',
             transition: 'all 0.2s',
           }}
         >
           <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.5 }}>+</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', marginBottom: 4 }}>
             {dragOver ? 'Drop your CSV here' : 'Drag and drop CSV file here'}
           </div>
-          <div style={{ fontSize: 12, color: '#9CA3AF' }}>or click to browse (max 5 MB)</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)' }}>or click to browse (max 5 MB)</div>
           <input
             ref={fileInputRef}
             type="file"
@@ -453,15 +453,15 @@ function BulkOnboardSchoolsContent() {
             style={{
               marginTop: 12,
               padding: '8px 12px',
-              background: '#F9FAFB',
+              background: 'var(--surface-2)',
               borderRadius: 6,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
             }}
           >
-            <span style={{ fontSize: 12, color: '#111827', fontWeight: 500 }}>{file.name}</span>
-            <span style={{ fontSize: 11, color: '#9CA3AF' }}>{(file.size / 1024).toFixed(1)} KB</span>
+            <span style={{ fontSize: 12, color: 'var(--text-1)', fontWeight: 500 }}>{file.name}</span>
+            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{(file.size / 1024).toFixed(1)} KB</span>
           </div>
         )}
       </div>
@@ -469,7 +469,7 @@ function BulkOnboardSchoolsContent() {
       {/* Preview */}
       {parsed && parsed.rowObjects.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>
             2. Preview ({parsed.rowObjects.length} row{parsed.rowObjects.length !== 1 ? 's' : ''})
           </div>
           <div
@@ -480,22 +480,22 @@ function BulkOnboardSchoolsContent() {
               marginBottom: 12,
             }}
           >
-            <StatCard label="Total Rows" value={parsed.rowObjects.length} accentColor={'#2563EB'} />
+            <StatCard label="Total Rows" value={parsed.rowObjects.length} accentColor={'var(--info)'} />
             <StatCard
               label="Client-side OK"
               value={parsed.rowObjects.length - invalidCount}
-              accentColor={'#16A34A'}
+              accentColor={'var(--success)'}
             />
             <StatCard
               label="Client-side Issues"
               value={invalidCount}
-              accentColor={invalidCount > 0 ? '#DC2626' : '#9CA3AF'}
+              accentColor={invalidCount > 0 ? 'var(--danger)' : 'var(--text-3)'}
             />
           </div>
           <div
             style={{
               overflowX: 'auto',
-              border: '1px solid #E5E7EB',
+              border: '1px solid var(--surface-3)',
               borderRadius: 8,
               marginBottom: 12,
             }}
@@ -519,12 +519,12 @@ function BulkOnboardSchoolsContent() {
                   return (
                     <tr
                       key={rowIdx}
-                      style={{ background: isValid ? undefined : 'rgba(220,38,38,0.04)' }}
+                      style={{ background: isValid ? undefined : 'color-mix(in srgb, var(--danger) 4%, transparent)' }}
                     >
-                      <td style={{ ...tdStyle, fontWeight: 600, color: '#9CA3AF' }}>{rowIdx + 1}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600, color: 'var(--text-3)' }}>{rowIdx + 1}</td>
                       {parsed.headers.map((h, cellIdx) => (
                         <td key={cellIdx} style={tdStyle}>
-                          {row[h] || <span style={{ color: '#9CA3AF' }}>--</span>}
+                          {row[h] || <span style={{ color: 'var(--text-3)' }}>--</span>}
                         </td>
                       ))}
                       <td style={tdStyle}>
@@ -543,8 +543,8 @@ function BulkOnboardSchoolsContent() {
                 style={{
                   padding: '8px 14px',
                   fontSize: 12,
-                  color: '#9CA3AF',
-                  background: '#F9FAFB',
+                  color: 'var(--text-3)',
+                  background: 'var(--surface-2)',
                   textAlign: 'center',
                 }}
               >
@@ -558,10 +558,10 @@ function BulkOnboardSchoolsContent() {
       {/* Actions */}
       {parsed && parsed.rowObjects.length > 0 && parsed.missingRequired.length === 0 && (
         <div style={{ ...cardStyle, marginBottom: 16, maxWidth: 720 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>
             3. Validate, then commit
           </div>
-          <p style={{ fontSize: 12, color: '#9CA3AF', marginTop: 0, marginBottom: 12 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 0, marginBottom: 12 }}>
             Dry-run never writes to the database and NEVER sends invite emails. Use it first to confirm
             outcomes. Commit fires invite emails to each new principal.
           </p>
@@ -598,7 +598,7 @@ function BulkOnboardSchoolsContent() {
       {/* Outcomes */}
       {summary && (
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 12 }}>
             {summary.dry_run ? 'Dry-run outcome (no rows created)' : 'Onboarding complete'}
           </div>
           <div
@@ -609,21 +609,21 @@ function BulkOnboardSchoolsContent() {
               marginBottom: 16,
             }}
           >
-            <StatCard label="Total" value={summary.total} accentColor={'#2563EB'} />
+            <StatCard label="Total" value={summary.total} accentColor={'var(--info)'} />
             <StatCard
               label={summary.dry_run ? 'Would create' : 'Created'}
               value={summary.created}
-              accentColor={'#16A34A'}
+              accentColor={'var(--success)'}
             />
             <StatCard
               label="Skipped"
               value={summary.skipped}
-              accentColor={summary.skipped > 0 ? '#D97706' : '#9CA3AF'}
+              accentColor={summary.skipped > 0 ? 'var(--warning)' : 'var(--text-3)'}
             />
             <StatCard
               label="Failed"
               value={summary.failed}
-              accentColor={summary.failed > 0 ? '#DC2626' : '#9CA3AF'}
+              accentColor={summary.failed > 0 ? 'var(--danger)' : 'var(--text-3)'}
             />
           </div>
 
@@ -631,7 +631,7 @@ function BulkOnboardSchoolsContent() {
             <div style={{ marginBottom: 12 }}>
               <button
                 onClick={downloadErrorReport}
-                style={{ ...secondaryBtnStyle, color: '#DC2626', borderColor: '#DC2626' }}
+                style={{ ...secondaryBtnStyle, color: 'var(--danger)', borderColor: 'var(--danger)' }}
               >
                 Download Error Report ({summary.failed})
               </button>
@@ -641,7 +641,7 @@ function BulkOnboardSchoolsContent() {
           <div
             style={{
               overflowX: 'auto',
-              border: '1px solid #E5E7EB',
+              border: '1px solid var(--surface-3)',
               borderRadius: 8,
             }}
           >
@@ -673,11 +673,11 @@ function BulkOnboardSchoolsContent() {
                       {r.school_id ? (
                         <code style={{ fontSize: 11 }}>{r.school_id}</code>
                       ) : r.reason ? (
-                        <span style={{ color: '#9CA3AF' }}>{r.reason}</span>
+                        <span style={{ color: 'var(--text-3)' }}>{r.reason}</span>
                       ) : r.error ? (
-                        <span style={{ color: '#DC2626' }}>{r.error}</span>
+                        <span style={{ color: 'var(--danger)' }}>{r.error}</span>
                       ) : (
-                        <span style={{ color: '#9CA3AF' }}>--</span>
+                        <span style={{ color: 'var(--text-3)' }}>--</span>
                       )}
                     </td>
                   </tr>
@@ -689,8 +689,8 @@ function BulkOnboardSchoolsContent() {
                 style={{
                   padding: '8px 14px',
                   fontSize: 12,
-                  color: '#9CA3AF',
-                  background: '#F9FAFB',
+                  color: 'var(--text-3)',
+                  background: 'var(--surface-2)',
                   textAlign: 'center',
                 }}
               >

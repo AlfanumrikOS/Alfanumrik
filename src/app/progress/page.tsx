@@ -6,10 +6,33 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { calculateScorePercent } from '@/lib/scoring';
 import { getStudentProfiles, getSubjects, getBloomProgression, getLearningVelocity, getKnowledgeGaps, supabase } from '@/lib/supabase';
-import { BLOOM_CONFIG, BLOOM_LEVELS, BLOOM_ORDER, getHighestMasteredBloom, predictMasteryDate } from '@/lib/cognitive-engine';
+import { BLOOM_CONFIG, BLOOM_LEVELS, predictMasteryDate } from '@/lib/cognitive-engine';
 import { getLevelFromScore } from '@/lib/score-config';
+import {
+  bandForValue,
+  bandLabelForValue,
+  MASTERY_BAND_LABELS,
+  type MasteryBand,
+} from '@/lib/dashboard/mastery-band-labels';
 import type { BloomLevel, KnowledgeGap, LearningVelocity, CognitiveSessionMetrics, StudentLearningProfile, Subject } from '@/lib/types';
-import { Card, Badge, ProgressBar, SectionHeader, StatCard, MasteryRing, LoadingFoxy, Button, EmptyState, PremiumCard, GlowButton } from '@/components/ui';
+import {
+  Card,
+  Badge,
+  Button,
+  IconButton,
+  MasteryRing,
+  ProgressBar,
+  Alert,
+  EmptyState,
+  Skeleton,
+  SkeletonCircle,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanel,
+  type Tone,
+} from '@/components/ui/primitives';
+import { SectionHeader } from '@/components/ui';
 import { LineChart } from '@/components/admin-ui';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import ScoreHero from '@/components/score/ScoreHero';
@@ -21,7 +44,7 @@ import { StudentPulse } from '@/components/pulse';
 import { calculateLevel } from '@/lib/xp-config';
 import type { StudentSnapshot } from '@/lib/types';
 
-/* ── Types for new Performance Score data ── */
+/* ── Types for Performance Score data ── */
 interface PerformanceScoreRow {
   id: string;
   student_id: string;
@@ -50,27 +73,36 @@ interface DecayTopic {
   next_review_at: string | null;
 }
 
-/* ── Helpers ── */
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: 'var(--red)',
-  high: 'var(--gold)',
-  medium: 'var(--teal)',
-  low: 'var(--text-3)',
+/* ── Shared band → primitive tone + non-colour backup ── */
+const BAND_TONE: Record<MasteryBand, Tone> = { high: 'success', mid: 'warning', low: 'danger' };
+const BAND_GLYPH: Record<MasteryBand, string> = { high: '●', mid: '◐', low: '▲' };
+const BAND_VAR: Record<MasteryBand, string> = {
+  high: 'var(--mastery-high)',
+  mid: 'var(--mastery-mid)',
+  low: 'var(--mastery-low)',
 };
 
+/* ── Knowledge-gap severity → supportive, bilingual, non-harsh label ── */
+const GAP_SEVERITY: Record<string, { tone: Tone; en: string; hi: string }> = {
+  critical: { tone: 'danger', en: 'Top priority', hi: 'सर्वोच्च प्राथमिकता' },
+  high: { tone: 'warning', en: 'Focus area', hi: 'ध्यान क्षेत्र' },
+  medium: { tone: 'info', en: 'Review', hi: 'समीक्षा' },
+};
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
+const masteryBandLabel = (k: MasteryBand, isHi: boolean) => (isHi ? MASTERY_BAND_LABELS[k].hi : MASTERY_BAND_LABELS[k].en);
+
 function formatDate(d: Date | string | null): string {
-  if (!d) return '---';
+  if (!d) return '—';
   const date = typeof d === 'string' ? new Date(d) : d;
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-/* ── Score Trend Sparkline — Recharts LineChart via admin-ui (Plan 4 Task 6) ── */
+/* ── Score Trend Sparkline — Recharts LineChart via admin-ui ── */
 function ScoreTrendSparkline({ datapoints, isHi }: { datapoints: ScoreHistoryRow[]; isHi: boolean }) {
   if (!datapoints || datapoints.length < 2) {
     return (
-      <span className="text-[10px] text-[var(--text-3)]">
+      <span className="text-fluid-2xs text-muted-foreground">
         {isHi ? 'अभी तक ट्रेंड नहीं' : 'No trend yet'}
       </span>
     );
@@ -79,14 +111,13 @@ function ScoreTrendSparkline({ datapoints, isHi }: { datapoints: ScoreHistoryRow
   const sorted = [...datapoints].sort((a, b) =>
     new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
   );
-  // Take last 4 data points for a compact visualization
   const recent = sorted.slice(-4);
   const first = recent[0].score;
   const last = recent[recent.length - 1].score;
   const delta = Math.round(last - first);
   const isUp = delta > 0;
   const isFlat = delta === 0;
-  const deltaColor = isUp ? 'var(--green)' : isFlat ? 'var(--text-3)' : 'var(--red)';
+  const deltaColor = isUp ? 'var(--success)' : isFlat ? 'var(--text-3)' : 'var(--danger)';
 
   const seriesName = isHi ? 'अंक' : 'Score';
   const series = [{
@@ -106,94 +137,54 @@ function ScoreTrendSparkline({ datapoints, isHi }: { datapoints: ScoreHistoryRow
           emptyLabel={isHi ? 'अभी तक कोई क्विज़ नहीं' : 'No quizzes yet'}
         />
       </div>
-      <span className="text-[10px] font-semibold" style={{ color: deltaColor }}>
+      <span className="text-fluid-2xs font-semibold tabular-nums" style={{ color: deltaColor }}>
         {isUp ? '+' : ''}{delta}
       </span>
     </div>
   );
 }
 
-/* ── Bloom Mastery Heatmap for a single subject ── */
-function BloomHeatmap({ data, isHi }: { data: Array<{ bloom_level: BloomLevel; mastery: number }>; isHi: boolean }) {
-  // Aggregate mastery per bloom level
+/* ── Bloom Mastery grid (Phase 0 fix) ──
+   Mastery shown as an ALWAYS-VISIBLE number + Bloom label + non-colour band
+   glyph + a determinate bar — never opacity-encoded, never hover-only. Fully
+   touch-accessible + glanceable (WCAG 1.4.1). Underlying data unchanged. */
+function BloomMasteryGrid({ data, isHi }: { data: Array<{ bloom_level: BloomLevel; mastery: number }>; isHi: boolean }) {
   const masteryByLevel: Record<BloomLevel, number[]> = {
     remember: [], understand: [], apply: [], analyze: [], evaluate: [], create: [],
   };
   for (const row of data) {
-    if (masteryByLevel[row.bloom_level]) {
-      masteryByLevel[row.bloom_level].push(row.mastery ?? 0);
-    }
+    if (masteryByLevel[row.bloom_level]) masteryByLevel[row.bloom_level].push(row.mastery ?? 0);
   }
 
   return (
-    <div className="flex gap-1 items-center w-full">
+    <div className="grid grid-cols-3 gap-2">
       {BLOOM_LEVELS.map((level) => {
         const values = masteryByLevel[level];
         const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+        const pct = Math.round(avg * 100);
+        const band = bandForValue(pct);
         const cfg = BLOOM_CONFIG[level];
-        const opacity = Math.max(0.1, avg);
+        const label = isHi ? cfg.labelHi : cfg.label;
         return (
-          <div
-            key={level}
-            className="flex-1 rounded-sm relative group"
-            style={{
-              height: 24,
-              background: cfg.color,
-              opacity,
-              minWidth: 0,
-            }}
-            title={`${isHi ? cfg.labelHi : cfg.label}: ${Math.round(avg * 100)}%`}
-          >
-            <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
-              {Math.round(avg * 100)}%
+          <div key={level} className="min-w-0 rounded-lg border border-surface-3 bg-surface-1 p-2">
+            <div className="truncate text-fluid-2xs font-semibold text-muted-foreground">{label}</div>
+            <div className="mt-0.5 flex items-baseline gap-1">
+              <span className="text-fluid-base font-bold tabular-nums text-foreground">{pct}%</span>
+              <span aria-hidden="true" className="text-fluid-2xs" style={{ color: BAND_VAR[band] }}>
+                {BAND_GLYPH[band]}
+              </span>
             </div>
+            <ProgressBar
+              value={pct}
+              tone={BAND_TONE[band]}
+              size="sm"
+              ariaLabel={`${label}: ${pct}%`}
+              className="mt-1.5"
+            />
           </div>
         );
       })}
     </div>
-  );
-}
-
-/* ── Bloom Legend ── */
-function BloomLegend({ isHi }: { isHi: boolean }) {
-  return (
-    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
-      {BLOOM_LEVELS.map((level) => {
-        const cfg = BLOOM_CONFIG[level];
-        return (
-          <div key={level} className="flex items-center gap-1">
-            <div className="w-2.5 h-2.5 rounded-sm" style={{ background: cfg.color }} />
-            <span className="text-[10px] text-[var(--text-3)]">{isHi ? cfg.labelHi : cfg.label}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ── Learning Velocity Mini-Chart (sparkline-style) ── */
-function VelocitySparkline({ datapoints }: { datapoints: Array<{ date: string; mastery: number }> }) {
-  if (!datapoints || datapoints.length < 2) return <span className="text-[10px] text-[var(--text-3)]">---</span>;
-
-  const sorted = [...datapoints].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  const maxM = Math.max(...sorted.map((d) => d.mastery), 0.01);
-  const width = 80;
-  const height = 24;
-  const step = width / (sorted.length - 1);
-
-  const points = sorted.map((d, i) => `${i * step},${height - (d.mastery / maxM) * height}`).join(' ');
-
-  return (
-    <svg width={width} height={height} className="inline-block">
-      <polyline
-        points={points}
-        fill="none"
-        stroke="var(--teal)"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
 
@@ -203,68 +194,55 @@ function SessionMetricCard({ session, isHi }: { session: CognitiveSessionMetrics
   const dur = session.session_start && session.session_end
     ? Math.round((new Date(session.session_end).getTime() - new Date(session.session_start).getTime()) / 60000)
     : null;
+  const totalQ = (session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0);
+  const zpdTone: Tone = zpdAcc == null ? 'neutral' : zpdAcc >= 70 ? 'success' : zpdAcc >= 40 ? 'warning' : 'danger';
 
   return (
-    <PremiumCard className="!p-3">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-[var(--text-2)]">
-          {(session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0)} {isHi ? 'प्रश्न' : 'questions'}
+    <Card className="p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-fluid-xs font-semibold text-foreground">
+          {totalQ} {isHi ? 'प्रश्न' : 'questions'}
         </span>
         <div className="flex items-center gap-2">
           {session.fatigue_detected && (
-            <Badge color="var(--red)" size="sm">{isHi ? 'थकान' : 'Low Energy'}</Badge>
+            <Badge tone="danger">{isHi ? 'थकान' : 'Low energy'}</Badge>
           )}
-          {dur != null && (
-            <span className="text-[10px] text-[var(--text-3)]">{dur}m</span>
-          )}
+          {dur != null && <span className="text-fluid-2xs text-muted-foreground">{dur}m</span>}
         </div>
       </div>
 
-      {/* ZPD Accuracy */}
       {zpdAcc != null && (
-        <div className="mb-2">
-          <div className="flex justify-between text-[10px] text-[var(--text-3)] mb-0.5">
-            <span>{isHi ? 'सही स्तर पर सटीकता' : 'Right-Level Accuracy'}</span>
-            <span>{zpdAcc}%</span>
-          </div>
-          <div className="w-full h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}>
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${zpdAcc}%`,
-                background: zpdAcc >= 70 ? 'var(--green)' : zpdAcc >= 40 ? 'var(--accent-warm)' : 'var(--red)',
-              }}
-            />
-          </div>
-        </div>
+        <ProgressBar
+          value={zpdAcc}
+          tone={zpdTone}
+          size="sm"
+          label={isHi ? 'सही स्तर पर सटीकता' : 'Right-level accuracy'}
+          showValue
+          className="mb-2"
+        />
       )}
 
-      {/* ZPD Distribution */}
-      {(session.questions_in_zpd ?? 0) + (session.questions_too_easy ?? 0) + (session.questions_too_hard ?? 0) > 0 && (
-        <div className="flex gap-0.5">
-          {session.questions_in_zpd ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--green)', minWidth: 16 }} title={`In ZPD: ${session.questions_in_zpd}`}>{session.questions_in_zpd}</div> : null}
-          {session.questions_too_easy ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--teal)', minWidth: 16 }} title={`Too Easy: ${session.questions_too_easy}`}>{session.questions_too_easy}</div> : null}
-          {session.questions_too_hard ? <div className="rounded-sm text-center text-[9px] font-bold text-white px-1" style={{ background: 'var(--red)', minWidth: 16 }} title={`Too Hard: ${session.questions_too_hard}`}>{session.questions_too_hard}</div> : null}
+      {totalQ > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {session.questions_in_zpd ? (
+            <Badge tone="success">{isHi ? 'सही स्तर' : 'In zone'}: {session.questions_in_zpd}</Badge>
+          ) : null}
+          {session.questions_too_easy ? (
+            <Badge tone="info">{isHi ? 'आसान' : 'Too easy'}: {session.questions_too_easy}</Badge>
+          ) : null}
+          {session.questions_too_hard ? (
+            <Badge tone="danger">{isHi ? 'कठिन' : 'Too hard'}: {session.questions_too_hard}</Badge>
+          ) : null}
         </div>
       )}
-    </PremiumCard>
+    </Card>
   );
 }
 
-/* ── My Pulse (student self lens) ──
- * Self-contained section: always calls useMyPulse() (hook order safe) but the
- * PARENT only mounts it when can('progress.view_own') is true. usePermissions is
- * UX-only; the /api/pulse/me route enforces P9 server-side. */
-function MyPulseSection({
-  isHi,
-  snapshot,
-}: {
-  isHi: boolean;
-  snapshot: StudentSnapshot | null;
-}) {
+/* ── My Pulse (student self lens) ── */
+function MyPulseSection({ isHi, snapshot }: { isHi: boolean; snapshot: StudentSnapshot | null }) {
   const { data, error, isLoading, mutate } = useMyPulse();
-  const level =
-    snapshot?.total_xp != null ? calculateLevel(snapshot.total_xp) : null;
+  const level = snapshot?.total_xp != null ? calculateLevel(snapshot.total_xp) : null;
   return (
     <div>
       <SectionHeader icon="🩺">{isHi ? 'मेरा पल्स' : 'My Pulse'}</SectionHeader>
@@ -286,7 +264,7 @@ function MyPulseSection({
 }
 
 /* =================================================================
-   PROGRESS PAGE -- Performance Score System + Cognitive Analytics
+   PROGRESS PAGE
    ================================================================= */
 
 export default function ProgressPage() {
@@ -317,18 +295,15 @@ export default function ProgressPage() {
     if (!student) return;
     refreshSnapshot();
 
-    // Core data
     Promise.all([getStudentProfiles(student.id), getSubjects()]).then(([p, s]) => {
       setProfiles(p);
       setSubjects(s);
     });
 
-    // Cognitive 2.0 data
     getBloomProgression(student.id).then(setBloomData).catch(() => {});
     getLearningVelocity(student.id).then(setVelocityData).catch(() => {});
     getKnowledgeGaps(student.id, undefined, 20).then(setKnowledgeGaps).catch(() => {});
 
-    // Cognitive session metrics
     supabase
       .from('cognitive_session_metrics')
       .select('*')
@@ -337,28 +312,23 @@ export default function ProgressPage() {
       .limit(10)
       .then(({ data }) => setSessionMetrics((data as CognitiveSessionMetrics[]) ?? []));
 
-    // Performance Scores
     setPerfLoading(true);
     Promise.all([
-      // Fetch performance_scores for this student
       supabase
         .from('performance_scores')
         .select('id, student_id, subject, overall_score, performance_component, behavior_component, level_name, updated_at')
         .eq('student_id', student.id),
-      // Fetch score_history for the last 30 days
       supabase
         .from('score_history')
         .select('id, student_id, subject, score, recorded_at')
         .eq('student_id', student.id)
         .gte('recorded_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
         .order('recorded_at', { ascending: true }),
-      // Fetch coin balance
       supabase
         .from('coin_balances')
         .select('balance')
         .eq('student_id', student.id)
         .single(),
-      // Fetch decaying topics (concept_mastery with low mastery_probability and overdue review)
       supabase
         .from('concept_mastery')
         .select('id, topic_id, mastery_probability, next_review_at')
@@ -370,26 +340,19 @@ export default function ProgressPage() {
       setPerfScores((perfRes.data as PerformanceScoreRow[]) ?? []);
       setScoreHistory((histRes.data as ScoreHistoryRow[]) ?? []);
       setCoinBalance(coinRes.data?.balance ?? 0);
-      // Map decay data — concept_mastery rows have topic_id but no topic name.
-      // The display label is a human-readable "Topic N" fallback; the actual Foxy
-      // route always uses topic_id when available so it carries a real identifier.
-      // TODO(data-gap): add topic_name to concept_mastery or join via a lookup RPC
-      // so the displayed label can show the real concept name.
+      // concept_mastery carries topic_id but NO human topic name. We keep the id
+      // for Foxy routing but display a graceful placeholder rather than a raw
+      // UUID (or a fabricated "Topic N"). FLAG(backend): join topic_id → a concept
+      // name (add topic_name column or a lookup RPC) so a real label can render.
       const decayRaw = decayRes.data ?? [];
-      const decayData = decayRaw.map((d: any) => {
-        // topic_id is a UUID — show first 8 chars as a readable chip.
-        // TODO(data-gap): add topic_name to concept_mastery or join via a lookup RPC
-        // so the displayed label can show the real concept name.
-        const shortId = d.topic_id ? `${String(d.topic_id).substring(0, 8)}…` : '—';
-        return {
-          id: d.id,
-          topic_id: d.topic_id,
-          topic: shortId,
-          subject: '',
-          mastery_probability: d.mastery_probability ?? 0,
-          next_review_at: d.next_review_at,
-        };
-      });
+      const decayData = decayRaw.map((d: any) => ({
+        id: d.id,
+        topic_id: d.topic_id,
+        topic: '', // no name available — see placeholder in render
+        subject: '',
+        mastery_probability: d.mastery_probability ?? 0,
+        next_review_at: d.next_review_at,
+      }));
       setDecayTopics(decayData);
       setPerfLoading(false);
     }).catch(() => {
@@ -399,9 +362,19 @@ export default function ProgressPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- depend on student.id to avoid re-running on object reference changes
   }, [student?.id]);
 
-  if (isLoading || !student) return <LoadingFoxy />;
+  if (isLoading || !student) {
+    return (
+      <div className="mesh-bg min-h-dvh pb-nav">
+        <main className="app-container space-y-4 py-6" aria-busy="true" aria-label={isHi ? 'लोड हो रहा है' : 'Loading'}>
+          <Skeleton className="h-10 w-40" radius="lg" />
+          <Skeleton className="h-40 w-full" radius="lg" />
+          <Skeleton className="h-24 w-full" radius="lg" />
+        </main>
+      </div>
+    );
+  }
 
-  /* ── Aggregate stats ── */
+  /* ── Aggregate stats (server values — no client score recompute) ── */
   const totalXp = snapshot?.total_xp ?? profiles.reduce((a, p) => a + (p.xp ?? 0), 0);
   const totalMinutes = profiles.reduce((a, p) => a + (p.total_time_minutes ?? 0), 0);
   const totalSessions = profiles.reduce((a, p) => a + (p.total_sessions ?? 0), 0);
@@ -409,59 +382,38 @@ export default function ProgressPage() {
   const totalAsked = profiles.reduce((a, p) => a + (p.total_questions_asked ?? 0), 0);
   const accuracy = calculateScorePercent(totalCorrect, totalAsked);
 
-  /* ── Performance Score aggregates ── */
   const overallPerfScore = perfScores.length > 0
     ? Math.round(perfScores.reduce((a, p) => a + Number(p.overall_score), 0) / perfScores.length)
     : 0;
   const overallLevelName = getLevelFromScore(overallPerfScore);
   const hasPerfScores = perfScores.length > 0;
 
-  /* ── Score history grouped by subject ── */
   const historyBySubject = new Map<string, ScoreHistoryRow[]>();
   for (const row of scoreHistory) {
     if (!historyBySubject.has(row.subject)) historyBySubject.set(row.subject, []);
     historyBySubject.get(row.subject)!.push(row);
   }
 
-  /* ── Previous score for trend arrows (use oldest point in 30-day history) ── */
   function getPreviousScore(subjectCode: string): number | undefined {
     const hist = historyBySubject.get(subjectCode);
     if (!hist || hist.length < 2) return undefined;
     return Number(hist[0].score);
   }
 
-  /* ── Bloom aggregate: transform DB rows into per-level mastery data ── */
   const bloomFlattened = bloomData.flatMap((b: Record<string, unknown>) =>
     BLOOM_LEVELS.map((level) => ({
       bloom_level: level as BloomLevel,
       mastery: Number(b[`${level}_mastery`]) || 0,
       subject: (b.subject as string) ?? 'unknown',
-    })).filter(item => item.mastery > 0)
+    })).filter((item) => item.mastery > 0)
   );
-  const highestBloom: BloomLevel = bloomFlattened.length > 0
-    ? getHighestMasteredBloom(
-        bloomFlattened.map((b) => ({
-          bloomLevel: b.bloom_level,
-          mastery: b.mastery,
-          attempts: 1,
-          correct: b.mastery > 0.5 ? 1 : 0,
-        }))
-      )
-    : 'remember';
 
-  /* ── Average velocity ── */
-  const avgVelocity = velocityData.length > 0
-    ? velocityData.reduce((a, v) => a + (v.weekly_mastery_rate ?? 0), 0) / velocityData.length
-    : 0;
-
-  /* ── Mastery predictions: top 3 weakest topics ── */
   const weakestTopics = [...velocityData]
     .filter((v) => (v.weekly_mastery_rate ?? 0) > 0)
     .sort((a, b) => (a.weekly_mastery_rate ?? 0) - (b.weekly_mastery_rate ?? 0))
     .slice(0, 3);
 
-  /* ── Knowledge gaps grouped by severity (computed from confidence_score) ── */
-  const gapsWithSeverity = knowledgeGaps.map(g => ({
+  const gapsWithSeverity = knowledgeGaps.map((g) => ({
     ...g,
     severity: (g.confidence_score ?? 0) > 0.7 ? 'critical' : (g.confidence_score ?? 0) > 0.4 ? 'high' : 'medium',
     topic_title: g.target_concept_name,
@@ -472,7 +424,6 @@ export default function ProgressPage() {
     (a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3)
   );
 
-  /* ── Bloom data grouped by subject ── */
   const bloomBySubject = new Map<string, Array<{ bloom_level: BloomLevel; mastery: number; subject: string }>>();
   for (const row of bloomFlattened) {
     const subj = row.subject ?? 'unknown';
@@ -480,559 +431,493 @@ export default function ProgressPage() {
     bloomBySubject.get(subj)!.push(row);
   }
 
-  /* ── Helper to find subject metadata ── */
   function getSubjectMeta(code: string) {
     return subjects.find((s) => s.code === code);
   }
+
+  const cognitiveEmpty =
+    bloomFlattened.length === 0 && velocityData.length === 0 && gapsBySeverity.length === 0 && sessionMetrics.length === 0;
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
-          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
-          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
+          <IconButton
+            variant="ghost"
+            size="sm"
+            label={isHi ? 'वापस जाएं' : 'Go back'}
+            icon={<span aria-hidden="true">←</span>}
+            onClick={() => router.push('/dashboard')}
+          />
+          <h1 className="text-fluid-lg font-bold text-foreground" style={{ fontFamily: 'var(--font-serif)' }}>
             {isHi ? 'प्रगति' : 'Progress'}
           </h1>
-          {/* Foxy Coins in header */}
           <div className="ml-auto">
-            <Link href="/foxy">
+            <Link href="/foxy" aria-label={isHi ? 'फॉक्सी कॉइन' : 'Foxy Coins'}>
               <CoinBalance balance={coinBalance} isHi={isHi} />
             </Link>
           </div>
         </div>
       </header>
 
-      <main className="app-container py-6 space-y-4">
+      <main className="app-container py-6">
         <SectionErrorBoundary section="Progress">
-        {/* ── Tab Switcher (premium pills) ── */}
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
-            style={
-              activeTab === 'overview'
-                ? {
-                    background: 'linear-gradient(135deg, var(--accent-warm), var(--accent-warm-strong))',
-                    color: '#fff',
-                    boxShadow: '0 4px 14px rgb(var(--accent-warm-rgb) / 0.30)',
-                  }
-                : {
-                    background: 'var(--surface-2)',
-                    color: 'var(--text-3)',
-                    border: '1px solid var(--border)',
-                  }
-            }
-          >
-            {isHi ? 'सारांश' : 'Overview'}
-          </button>
-          <button
-            onClick={() => setActiveTab('cognitive')}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-[0.98]"
-            style={
-              activeTab === 'cognitive'
-                ? {
-                    background: 'linear-gradient(135deg, var(--purple), var(--purple-light))',
-                    color: '#fff',
-                    boxShadow: '0 4px 14px rgb(var(--purple-rgb) / 0.30)',
-                  }
-                : {
-                    background: 'var(--surface-2)',
-                    color: 'var(--text-3)',
-                    border: '1px solid var(--border)',
-                  }
-            }
-          >
-            {isHi ? 'गहन विश्लेषण' : 'Deep Analysis'}
-          </button>
-        </div>
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'overview' | 'cognitive')}>
+            <TabList aria-label={isHi ? 'प्रगति दृश्य' : 'Progress views'}>
+              <Tab value="overview">{isHi ? 'सारांश' : 'Overview'}</Tab>
+              <Tab value="cognitive">{isHi ? 'गहन विश्लेषण' : 'Deep Analysis'}</Tab>
+            </TabList>
 
-        {/* ==============================================================
-           OVERVIEW TAB -- Performance Scores + Subject Progress
-           ============================================================== */}
-        {activeTab === 'overview' && (
-          <>
-            {/* === MY PULSE (student self lens) — gated by progress.view_own (UX only;
-                   /api/pulse/me enforces server-side). Shown once the student has
-                   any quiz history so the empty-state hero stays the first thing
-                   a brand-new learner sees. === */}
-            {can('progress.view_own') && !permsLoading && totalSessions > 0 && (
-              <MyPulseSection isHi={isHi} snapshot={snapshot} />
-            )}
+            {/* ═════════ OVERVIEW ═════════ */}
+            <TabPanel value="overview" className="space-y-4">
+              {can('progress.view_own') && !permsLoading && totalSessions > 0 && (
+                <MyPulseSection isHi={isHi} snapshot={snapshot} />
+              )}
 
-            {/* === EMPTY STATE -- show when student has zero quiz history === */}
-            {totalSessions === 0 && !hasPerfScores ? (
-              <Card className="!p-6 text-center">
-                <div className="text-5xl mb-3">📊</div>
-                <h2 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-                  {isHi ? 'तुम्हारी प्रगति यहाँ दिखेगी' : 'Your progress will show up here'}
-                </h2>
-                <p className="text-sm text-[var(--text-2)] max-w-xs mx-auto leading-relaxed mb-2">
-                  {isHi
-                    ? 'पहला क्विज़ लो और Foxy तुम्हारी सटीकता, स्कोर, और विषय-वार महारत track करेगा।'
-                    : 'Take your first quiz and Foxy will track your accuracy, score, and subject-wise mastery.'}
-                </p>
-                <div className="flex flex-col items-center gap-3 mt-4 rounded-xl p-4" style={{ background: 'var(--surface-2)' }}>
-                  <div className="flex items-center gap-4 text-xs text-[var(--text-3)]">
-                    <span>🎯 {isHi ? 'स्कोर' : 'Score'}</span>
-                    <span>🔥 {isHi ? 'स्ट्रीक' : 'Streak'}</span>
-                    <span>🧠 {isHi ? 'Bloom विश्लेषण' : "Bloom's Analysis"}</span>
-                  </div>
-                  <p className="text-xs text-[var(--text-3)]">
-                    {isHi ? 'ये सब 1 क्विज़ के बाद unlock होगा' : 'All unlocked after just 1 quiz'}
-                  </p>
-                </div>
-                <div className="flex gap-3 mt-5 justify-center">
-                  <GlowButton size="md" className="warm-cta" onClick={() => router.push('/quiz')}>
-                    {isHi ? 'पहला क्विज़ लो' : 'Take First Quiz'}
-                  </GlowButton>
-                  <Button variant="ghost" size="md" onClick={() => router.push('/foxy')}>
-                    {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
-                  </Button>
-                </div>
-              </Card>
-            ) : (
-              <>
-                {/* ===========================================================
-                    PERFORMANCE SCORE HERO -- Overall Score (0-100)
-                    =========================================================== */}
-                <PremiumCard gradient glow className="warm-cta !p-4">
-                  {perfLoading ? (
-                    <div className="flex flex-col items-center py-6">
-                      <div className="w-20 h-20 rounded-full animate-pulse" style={{ background: 'var(--surface-2)' }} />
-                      <div className="w-32 h-4 mt-3 rounded animate-pulse" style={{ background: 'var(--surface-2)' }} />
+              {totalSessions === 0 && !hasPerfScores ? (
+                <Card className="p-2">
+                  <EmptyState
+                    icon="📊"
+                    title={isHi ? 'तुम्हारी प्रगति यहाँ दिखेगी' : 'Your progress will show up here'}
+                    description={
+                      isHi
+                        ? 'पहला क्विज़ लो और Foxy तुम्हारी सटीकता, स्कोर, और विषय-वार महारत track करेगा।'
+                        : 'Take your first quiz and Foxy will track your accuracy, score, and subject-wise mastery.'
+                    }
+                    action={
+                      <div className="flex flex-wrap justify-center gap-3">
+                        <Button size="md" onClick={() => router.push('/quiz')}>
+                          {isHi ? 'पहला क्विज़ लो' : 'Take First Quiz'}
+                        </Button>
+                        <Button variant="ghost" size="md" onClick={() => router.push('/foxy')}>
+                          {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+                        </Button>
+                      </div>
+                    }
+                  />
+                  <div className="mx-3 mb-3 flex flex-col items-center gap-2 rounded-xl bg-surface-2 p-4">
+                    <div className="flex items-center gap-4 text-fluid-xs text-muted-foreground">
+                      <span>🎯 {isHi ? 'स्कोर' : 'Score'}</span>
+                      <span>🔥 {isHi ? 'स्ट्रीक' : 'Streak'}</span>
+                      <span>🧠 {isHi ? 'Bloom विश्लेषण' : "Bloom's Analysis"}</span>
                     </div>
-                  ) : hasPerfScores ? (
-                    <ScoreHero
-                      overallScore={overallPerfScore}
-                      levelName={overallLevelName}
-                      isHi={isHi}
-                    />
-                  ) : (
-                    <div className="text-center py-4">
-                      <MasteryRing value={accuracy} size={80} strokeWidth={6}>
-                        <div className="text-center">
-                          <div className="text-lg font-bold" style={{ color: accuracy >= 70 ? 'var(--green)' : accuracy >= 40 ? 'var(--accent-warm)' : 'var(--red)' }}>{accuracy}%</div>
-                        </div>
-                      </MasteryRing>
-                      <p className="text-sm font-semibold mt-2" style={{ fontFamily: 'var(--font-display)' }}>
-                        {isHi ? 'कुल सटीकता' : 'Overall Accuracy'}
-                      </p>
-                      <p className="text-xs text-[var(--text-3)] mt-1">
-                        {isHi
-                          ? 'Performance Score जल्द ही calculate होगा'
-                          : 'Performance Score will be calculated soon'}
-                      </p>
-                      {/* Honest daily-update notice so students who already quizzed aren't confused */}
-                      <div
-                        className="mt-3 rounded-xl px-4 py-3 text-xs text-left space-y-1"
-                        style={{ background: 'var(--surface-2)' }}
-                      >
-                        <p style={{ color: 'var(--text-2)' }}>
+                    <p className="text-fluid-xs text-muted-foreground">
+                      {isHi ? 'ये सब 1 क्विज़ के बाद unlock होगा' : 'All unlocked after just 1 quiz'}
+                    </p>
+                  </div>
+                </Card>
+              ) : (
+                <>
+                  {/* Performance Score hero */}
+                  <Card variant="elevated" className="p-4">
+                    {perfLoading ? (
+                      <div className="flex flex-col items-center gap-3 py-6">
+                        <SkeletonCircle size="lg" />
+                        <Skeleton className="h-4 w-32" />
+                      </div>
+                    ) : hasPerfScores ? (
+                      <ScoreHero overallScore={overallPerfScore} levelName={overallLevelName} isHi={isHi} />
+                    ) : (
+                      <div className="flex flex-col items-center text-center">
+                        <MasteryRing
+                          value={accuracy}
+                          size={80}
+                          strokeWidth={6}
+                          bandLabel={(k) => masteryBandLabel(k, isHi)}
+                        />
+                        <p className="mt-2 text-fluid-sm font-semibold text-foreground">
+                          {isHi ? 'कुल सटीकता' : 'Overall Accuracy'}
+                        </p>
+                        <p className="mt-1 text-fluid-xs text-muted-foreground">
+                          {isHi ? 'Performance Score जल्द ही calculate होगा' : 'Performance Score will be calculated soon'}
+                        </p>
+                        <Alert
+                          tone="info"
+                          className="mt-3 w-full text-start"
+                          action={
+                            <Button size="sm" onClick={() => router.push('/quiz')}>
+                              {isHi ? 'अभी क्विज़ लो' : 'Take a quiz now'}
+                            </Button>
+                          }
+                        >
                           {isHi
                             ? 'आपके विस्तृत आँकड़े प्रतिदिन अपडेट होते हैं। आज की activity कल यहाँ दिखेगी।'
                             : "Your detailed stats update daily. Today's activity will show here tomorrow."}
-                        </p>
-                        <a
-                          href="/quiz"
-                          className="inline-block mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors"
-                          style={{
-                            background: 'var(--accent-warm)',
-                            boxShadow: '0 2px 8px rgb(var(--accent-warm-rgb) / 0.28)',
-                          }}
-                        >
-                          {isHi ? 'अभी क्विज़ लो →' : 'Take a quiz now →'}
-                        </a>
+                        </Alert>
+                      </div>
+                    )}
+                  </Card>
+
+                  {/* Subject Performance Scores */}
+                  {hasPerfScores && (
+                    <div>
+                      <SectionHeader icon="📊">
+                        {isHi ? 'विषयवार Performance Score' : 'Subject Performance Scores'}
+                      </SectionHeader>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {perfScores.map((ps) => {
+                          const meta = getSubjectMeta(ps.subject);
+                          const hist = historyBySubject.get(ps.subject);
+                          return (
+                            <div key={ps.id} className="space-y-1">
+                              <ScoreCard
+                                subject={meta?.name ?? ps.subject}
+                                subjectHi={meta?.name_hi ?? meta?.name ?? ps.subject}
+                                score={Number(ps.overall_score)}
+                                previousScore={getPreviousScore(ps.subject) != null ? getPreviousScore(ps.subject) : undefined}
+                                isHi={isHi}
+                              />
+                              {hist && hist.length >= 2 && (
+                                <div className="flex items-center gap-2 px-2">
+                                  <span className="text-fluid-2xs text-muted-foreground">
+                                    {isHi ? '30 दिन का ट्रेंड' : '30-day trend'}
+                                  </span>
+                                  <ScoreTrendSparkline datapoints={hist} isHi={isHi} />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
-                </PremiumCard>
 
-                {/* ===========================================================
-                    SUBJECT SCORE CARDS -- ScoreCard per subject
-                    =========================================================== */}
-                {hasPerfScores && (
-                  <div>
-                    <SectionHeader icon="📊">
-                      {isHi ? 'विषयवार Performance Score' : 'Subject Performance Scores'}
-                    </SectionHeader>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {perfScores.map((ps) => {
-                        const meta = getSubjectMeta(ps.subject);
-                        const hist = historyBySubject.get(ps.subject);
-                        return (
-                          <div key={ps.id} className="space-y-1">
-                            <ScoreCard
-                              subject={meta?.name ?? ps.subject}
-                              subjectHi={meta?.name_hi ?? meta?.name ?? ps.subject}
-                              score={Number(ps.overall_score)}
-                              previousScore={getPreviousScore(ps.subject) != null ? getPreviousScore(ps.subject) : undefined}
-                              isHi={isHi}
-                            />
-                            {/* Score trend sparkline below each card */}
-                            {hist && hist.length >= 2 && (
-                              <div className="flex items-center gap-2 px-2">
-                                <span className="text-[10px] text-[var(--text-3)]">
-                                  {isHi ? '30 दिन का ट्रेंड' : '30-day trend'}
-                                </span>
-                                <ScoreTrendSparkline datapoints={hist} isHi={isHi} />
+                  {/* Topics that need revision (decay) — supportive framing */}
+                  {decayTopics.length > 0 && (
+                    <div>
+                      <SectionHeader icon="🔄">
+                        {isHi ? 'जिन विषयों को revision की ज़रूरत है' : 'Topics that need revision'}
+                      </SectionHeader>
+                      <div className="space-y-2">
+                        {decayTopics.map((dt) => {
+                          const retentionPct = Math.round((dt.mastery_probability ?? 0) * 100);
+                          const tone: Tone = retentionPct < 30 ? 'danger' : 'warning';
+                          // Graceful placeholder — never a raw UUID or fabricated name.
+                          const label = dt.topic || (isHi ? 'पुनरावलोकन योग्य विषय' : 'A topic to revise');
+                          return (
+                            <Card key={dt.id} className="p-3">
+                              <div className="flex items-center gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-fluid-sm font-semibold text-foreground">{label}</div>
+                                  <ProgressBar
+                                    value={retentionPct}
+                                    tone={tone}
+                                    size="sm"
+                                    label={isHi ? 'याद' : 'Retained'}
+                                    showValue
+                                    className="mt-1.5"
+                                  />
+                                </div>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  className="shrink-0"
+                                  onClick={() => {
+                                    const foxyUrl = dt.topic
+                                      ? `/foxy?topic=${encodeURIComponent(dt.topic)}`
+                                      : dt.topic_id
+                                        ? `/foxy?topic_id=${encodeURIComponent(dt.topic_id)}`
+                                        : '/foxy';
+                                    router.push(foxyUrl);
+                                  }}
+                                >
+                                  {isHi ? 'अभी revision करो' : 'Revise Now'}
+                                </Button>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                            </Card>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* ===========================================================
-                    DECAY ALERTS -- Topics needing revision
-                    =========================================================== */}
-                {decayTopics.length > 0 && (
+                  {/* Subject Mastery — accuracy rings + growth-mindset band */}
                   <div>
-                    <SectionHeader icon="🔄">
-                      {isHi ? 'जिन विषयों को revision की ज़रूरत है' : 'Topics that need revision'}
-                    </SectionHeader>
-                    <div className="space-y-2">
-                      {decayTopics.map((dt) => {
-                        const retentionPct = Math.round((dt.mastery_probability ?? 0) * 100);
-                        const isLow = retentionPct < 30;
-                        return (
-                          <PremiumCard key={dt.id} className="!p-3">
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold truncate">{dt.topic}</div>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}>
-                                    <div
-                                      className="h-full rounded-full transition-all"
-                                      style={{
-                                        width: `${retentionPct}%`,
-                                        background: isLow ? 'var(--red)' : 'var(--gold)',
-                                      }}
-                                    />
-                                  </div>
-                                  <span className="text-[10px] font-semibold shrink-0" style={{ color: isLow ? 'var(--red)' : 'var(--gold)' }}>
-                                    {retentionPct}% {isHi ? 'याद' : 'retained'}
+                    <SectionHeader icon="📚">{isHi ? 'विषयवार महारत' : 'Subject Mastery'}</SectionHeader>
+                    {profiles.length === 0 ? (
+                      <Card className="p-2">
+                        <EmptyState
+                          compact
+                          icon="📚"
+                          title={isHi ? 'और quiz दो' : 'Take more quizzes'}
+                          description={isHi ? 'ताकि विषयवार प्रगति दिखे' : 'to see subject-wise progress'}
+                        />
+                      </Card>
+                    ) : (
+                      <div className="space-y-2">
+                        {profiles.map((p) => {
+                          const meta = subjects.find((s: { code: string }) => s.code === p.subject);
+                          const correctPct = calculateScorePercent(p.total_questions_answered_correctly, p.total_questions_asked);
+                          const band = bandForValue(correctPct);
+                          return (
+                            <Card key={p.id} className="flex items-center gap-3 p-3">
+                              <MasteryRing
+                                value={correctPct}
+                                size={48}
+                                strokeWidth={4}
+                                showLabel={false}
+                                bandLabel={(k) => masteryBandLabel(k, isHi)}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span aria-hidden="true">{meta?.icon ?? '📚'}</span>
+                                  <span className="truncate text-fluid-sm font-semibold text-foreground">
+                                    {isHi ? (meta?.name_hi ?? meta?.name ?? p.subject) : (meta?.name ?? p.subject)}
                                   </span>
                                 </div>
+                                <div className="text-fluid-xs text-muted-foreground">
+                                  {correctPct}% {isHi ? 'सटीकता' : 'accuracy'} · {p.total_sessions} {isHi ? 'सत्र' : 'sessions'}
+                                </div>
                               </div>
-                              <Button
-                                variant="soft"
-                                size="sm"
-                                color="var(--accent-warm)"
-                                onClick={() => {
-                                  // Prefer named topic; fall back to topic_id so Foxy gets a real identifier.
-                                  const isFallbackLabel = /^Topic \d+$/.test(dt.topic);
-                                  const foxyUrl = (!isFallbackLabel)
-                                    ? `/foxy?topic=${encodeURIComponent(dt.topic)}`
-                                    : dt.topic_id
-                                      ? `/foxy?topic_id=${encodeURIComponent(dt.topic_id)}`
-                                      : `/foxy`;
-                                  router.push(foxyUrl);
-                                }}
-                                className="shrink-0"
-                              >
-                                {isHi ? 'अभी revision करो' : 'Revise Now'}
-                              </Button>
+                              <Badge tone={BAND_TONE[band]} icon={<span>{BAND_GLYPH[band]}</span>}>
+                                {bandLabelForValue(correctPct, isHi)}
+                              </Badge>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Mastery Predictions */}
+                  {weakestTopics.length > 0 && (
+                    <div>
+                      <SectionHeader icon="🔮">{isHi ? 'महारत की भविष्यवाणी' : 'Mastery Predictions'}</SectionHeader>
+                      <div className="space-y-2">
+                        {weakestTopics.map((v) => {
+                          const rate = v.weekly_mastery_rate ?? 0;
+                          const predicted = v.predicted_mastery_date ? new Date(v.predicted_mastery_date) : predictMasteryDate(rate, rate);
+                          return (
+                            <Card key={v.id} className="p-3">
+                              <div className="flex items-center gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-fluid-sm font-semibold text-foreground">{v.subject}</div>
+                                  <div className="text-fluid-2xs text-muted-foreground">
+                                    {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-fluid-2xs text-muted-foreground">
+                                    {isHi ? 'अनुमानित तिथि' : 'Predicted by'}
+                                  </div>
+                                  <div className="text-fluid-xs font-semibold" style={{ color: 'var(--info)' }}>
+                                    {predicted ? formatDate(predicted) : (isHi ? 'अनिश्चित' : 'Uncertain')}
+                                  </div>
+                                </div>
+                              </div>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* XP Summary */}
+                  {totalXp > 0 && (
+                    <div>
+                      <SectionHeader icon="⭐">{isHi ? 'XP सारांश' : 'XP Summary'}</SectionHeader>
+                      <Card className="p-3">
+                        <div className="grid grid-cols-3 gap-3 text-center">
+                          <div>
+                            <div className="text-fluid-lg font-bold tabular-nums" style={{ color: 'var(--xp-color)' }}>
+                              {totalXp.toLocaleString()}
                             </div>
-                          </PremiumCard>
-                        );
-                      })}
+                            <div className="text-fluid-2xs text-muted-foreground">{isHi ? 'कुल XP' : 'Total XP'}</div>
+                          </div>
+                          <div>
+                            <div className="text-fluid-lg font-bold tabular-nums text-foreground">{totalMinutes}m</div>
+                            <div className="text-fluid-2xs text-muted-foreground">{isHi ? 'पढ़ाई का समय' : 'Study Time'}</div>
+                          </div>
+                          <div>
+                            <div className="text-fluid-lg font-bold tabular-nums text-foreground">{totalSessions}</div>
+                            <div className="text-fluid-2xs text-muted-foreground">{isHi ? 'सत्र' : 'Sessions'}</div>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* NEP Holistic Progress Card link */}
+              {totalSessions > 0 && (
+                <Card variant="interactive" onClick={() => router.push('/hpc')} className="flex items-center gap-3 p-4">
+                  <span aria-hidden="true" className="text-fluid-2xl">📋</span>
+                  <div className="flex-1">
+                    <div className="text-fluid-sm font-semibold text-foreground">
+                      {isHi ? 'NEP समग्र प्रगति कार्ड' : 'NEP Holistic Progress Card'}
+                    </div>
+                    <div className="text-fluid-xs text-muted-foreground">
+                      {isHi ? 'Bloom, दक्षता, और CBSE तैयारी देखें' : "View Bloom's, competencies, and CBSE readiness"}
                     </div>
                   </div>
-                )}
+                  <span className="text-muted-foreground" aria-hidden="true">→</span>
+                </Card>
+              )}
 
-                {/* ===========================================================
-                    SUBJECT MASTERY -- rings per subject (existing)
-                    =========================================================== */}
+              {/* Lab Notebook link */}
+              <Card
+                variant="interactive"
+                onClick={() => router.push(`/lab-notebook/${student.id}`)}
+                className="flex items-center gap-3 p-4"
+              >
+                <span aria-hidden="true" className="text-fluid-2xl">📓</span>
+                <div className="flex-1">
+                  <div className="text-fluid-sm font-semibold text-foreground">
+                    {isHi ? 'मेरी लैब नोटबुक' : 'My Lab Notebook'}
+                  </div>
+                  <div className="text-fluid-xs text-muted-foreground">
+                    {isHi ? 'स्कूल रिकॉर्ड के लिए PDF प्रिंट करें' : 'Print as PDF for school records'}
+                  </div>
+                </div>
+                <span className="text-muted-foreground" aria-hidden="true">→</span>
+              </Card>
+            </TabPanel>
+
+            {/* ═════════ COGNITIVE ═════════ */}
+            <TabPanel value="cognitive" className="space-y-4">
+              {/* Bloom Mastery */}
+              {bloomFlattened.length > 0 && (
                 <div>
-                  <SectionHeader icon="📚">{isHi ? 'विषयवार महारत' : 'Subject Mastery'}</SectionHeader>
-                  {profiles.length === 0 ? (
-                    <Card className="!p-4 text-center">
-                      <div className="text-2xl mb-1">📚</div>
-                      <div className="text-sm text-[var(--text-3)]">
-                        {isHi ? 'और quiz दो ताकि विषयवार प्रगति दिखे' : 'Take more quizzes to see subject-wise progress'}
-                      </div>
-                    </Card>
-                  ) : (
-                    <div className="space-y-2">
-                      {profiles.map((p) => {
-                        const meta = subjects.find((s: { code: string }) => s.code === p.subject);
-                        const correctPct = calculateScorePercent(p.total_questions_answered_correctly, p.total_questions_asked);
-
+                  <SectionHeader icon="🧠">{isHi ? "Bloom's स्तर महारत" : "Bloom's Level Mastery"}</SectionHeader>
+                  <Card className="space-y-2 p-3">
+                    <div className="text-fluid-xs font-semibold text-foreground">
+                      {isHi ? 'सभी विषय (औसत)' : 'All Subjects (avg)'}
+                    </div>
+                    <BloomMasteryGrid data={bloomFlattened} isHi={isHi} />
+                  </Card>
+                  {bloomBySubject.size > 1 && (
+                    <div className="mt-2 space-y-2">
+                      {Array.from(bloomBySubject.entries()).map(([subj, rows]) => {
+                        const meta = getSubjectMeta(subj);
                         return (
-                          <Card key={p.id} className="!p-3 flex items-center gap-3">
-                            <MasteryRing value={correctPct} size={48} strokeWidth={4} color={meta?.color}>
-                              <span className="text-base">{meta?.icon ?? '📚'}</span>
-                            </MasteryRing>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-semibold text-sm">
-                                {isHi ? (meta?.name_hi ?? meta?.name ?? p.subject) : (meta?.name ?? p.subject)}
-                              </div>
-                              <div className="text-xs text-[var(--text-3)]">
-                                {correctPct}% {isHi ? 'सटीकता' : 'accuracy'} · {p.total_sessions} {isHi ? 'सत्र' : 'sessions'}
-                              </div>
+                          <Card key={subj} className="space-y-2 p-3">
+                            <div className="text-fluid-xs font-semibold text-foreground">
+                              {isHi ? (meta?.name_hi ?? meta?.name ?? subj) : (meta?.name ?? subj)}
                             </div>
-                            <div className="text-right">
-                              <div className="text-sm font-bold" style={{ color: meta?.color ?? 'var(--accent-warm)' }}>{correctPct}%</div>
-                            </div>
+                            <BloomMasteryGrid data={rows} isHi={isHi} />
                           </Card>
                         );
                       })}
                     </div>
                   )}
                 </div>
+              )}
 
-                {/* Mastery Predictions */}
-                {weakestTopics.length > 0 && (
-                  <div>
-                    <SectionHeader icon="🔮">{isHi ? 'महारत की भविष्यवाणी' : 'Mastery Predictions'}</SectionHeader>
-                    <div className="space-y-2">
-                      {weakestTopics.map((v) => {
-                        const rate = v.weekly_mastery_rate ?? 0;
-                        const predicted = v.predicted_mastery_date
-                          ? new Date(v.predicted_mastery_date)
-                          : predictMasteryDate(rate, rate);
-
-                        return (
-                          <PremiumCard key={v.id} className="!p-3">
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold truncate">{v.subject}</div>
-                                <div className="text-[11px] text-[var(--text-3)]">
-                                  {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="text-[10px] text-[var(--text-3)]">
-                                  {isHi ? 'अनुमानित तिथि' : 'Predicted by'}
-                                </div>
-                                <div className="text-xs font-semibold" style={{ color: 'var(--teal)' }}>
-                                  {predicted ? formatDate(predicted) : (isHi ? 'अनिश्चित' : 'Uncertain')}
-                                </div>
+              {/* Learning Velocity */}
+              {velocityData.length > 0 && (
+                <div>
+                  <SectionHeader icon="🚀">{isHi ? 'सीखने की गति' : 'Learning Velocity'}</SectionHeader>
+                  <div className="space-y-2">
+                    {velocityData.slice(0, 8).map((v) => {
+                      const rate = v.weekly_mastery_rate ?? 0;
+                      const predicted = v.predicted_mastery_date ? new Date(v.predicted_mastery_date) : predictMasteryDate(rate, rate);
+                      return (
+                        <Card key={v.id} className="p-3">
+                          <div className="flex items-center gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-fluid-xs font-semibold text-foreground">{v.subject}</div>
+                              <div className="text-fluid-2xs text-muted-foreground">
+                                {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
                               </div>
                             </div>
-                          </PremiumCard>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* === LEGACY XP (smaller section at bottom) === */}
-                {totalXp > 0 && (
-                  <div>
-                    <SectionHeader icon="⭐">{isHi ? 'XP सारांश' : 'XP Summary'}</SectionHeader>
-                    <PremiumCard className="!p-3">
-                      <div className="grid grid-cols-3 gap-3 text-center">
-                        <div>
-                          <div className="text-lg font-bold" style={{ color: 'var(--accent-warm)' }}>{totalXp.toLocaleString()}</div>
-                          <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'कुल XP' : 'Total XP'}</div>
-                        </div>
-                        <div>
-                          <div className="text-lg font-bold">{totalMinutes}m</div>
-                          <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'पढ़ाई का समय' : 'Study Time'}</div>
-                        </div>
-                        <div>
-                          <div className="text-lg font-bold">{totalSessions}</div>
-                          <div className="text-[10px] text-[var(--text-3)]">{isHi ? 'सत्र' : 'Sessions'}</div>
-                        </div>
-                      </div>
-                    </PremiumCard>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* === NEP Holistic Progress Card link === */}
-            {totalSessions > 0 && (
-              <Link href="/hpc" className="block">
-                <Card className="!p-4 flex items-center gap-3 hover:shadow-md transition-shadow">
-                  <span className="text-2xl">📋</span>
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
-                      {isHi ? 'NEP समग्र प्रगति कार्ड' : 'NEP Holistic Progress Card'}
-                    </div>
-                    <div className="text-xs text-[var(--text-3)]">
-                      {isHi ? 'Bloom, दक्षता, और CBSE तैयारी देखें' : 'View Bloom\'s, competencies, and CBSE readiness'}
-                    </div>
-                  </div>
-                  <span className="text-[var(--text-3)]" aria-hidden="true">&rarr;</span>
-                </Card>
-              </Link>
-            )}
-
-            {/* === Lab Notebook link (Tier 3 R13 — print as PDF for school records) === */}
-            <Link href={`/lab-notebook/${student.id}`} className="block min-h-[44px]">
-              <Card className="!p-4 flex items-center gap-3 hover:shadow-md transition-shadow">
-                <span className="text-2xl">📓</span>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold" style={{ fontFamily: 'var(--font-display)' }}>
-                    {isHi ? 'मेरी लैब नोटबुक' : 'My Lab Notebook'}
-                  </div>
-                  <div className="text-xs text-[var(--text-3)]">
-                    {isHi ? 'स्कूल रिकॉर्ड के लिए PDF प्रिंट करें' : 'Print as PDF for school records'}
+                            <div className="shrink-0 text-right">
+                              <div className="text-fluid-xs font-bold tabular-nums" style={{ color: 'var(--info)' }}>
+                                {Math.round(rate * 100)}%
+                              </div>
+                              {predicted && (
+                                <div className="text-fluid-2xs text-muted-foreground">
+                                  {isHi ? 'तक' : 'by'} {formatDate(predicted)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </Card>
+                      );
+                    })}
                   </div>
                 </div>
-                <span className="text-[var(--text-3)]" aria-hidden="true">&rarr;</span>
-              </Card>
-            </Link>
-          </>
-        )}
+              )}
 
-        {/* ==============================================================
-           COGNITIVE TAB -- Bloom Heatmap, Gaps, Velocity, Sessions
-           ============================================================== */}
-        {activeTab === 'cognitive' && (
-          <>
-            {/* Bloom Mastery Heatmap — per-subject or aggregated all-subjects */}
-            {bloomFlattened.length > 0 && (
+              {/* Knowledge Gaps — supportive framing */}
               <div>
-                <SectionHeader icon="🧠">
-                  {isHi ? "Bloom's स्तर महारत" : "Bloom's Level Mastery"}
-                </SectionHeader>
-                {/* All-subjects aggregate row */}
-                <Card className="!p-3 space-y-2">
-                  <div className="text-xs font-semibold text-[var(--text-2)] mb-1">
-                    {isHi ? 'सभी विषय (औसत)' : 'All Subjects (avg)'}
-                  </div>
-                  <BloomHeatmap data={bloomFlattened} isHi={isHi} />
-                  <BloomLegend isHi={isHi} />
-                </Card>
-                {/* Per-subject breakdown (when more than one subject) */}
-                {bloomBySubject.size > 1 && (
-                  <div className="space-y-2 mt-2">
-                    {Array.from(bloomBySubject.entries()).map(([subj, rows]) => {
-                      const meta = getSubjectMeta(subj);
+                <SectionHeader icon="🕳️">{isHi ? 'ज्ञान की कमियाँ' : 'Knowledge Gaps'}</SectionHeader>
+                {gapsBySeverity.length === 0 ? (
+                  <Card className="p-2">
+                    <EmptyState
+                      compact
+                      icon="✅"
+                      title={isHi ? 'कोई ज्ञान की कमी नहीं मिली!' : 'No knowledge gaps detected!'}
+                    />
+                  </Card>
+                ) : (
+                  <div className="space-y-2">
+                    {gapsBySeverity.map((gap) => {
+                      const sev = GAP_SEVERITY[gap.severity ?? 'medium'] ?? GAP_SEVERITY.medium;
                       return (
-                        <Card key={subj} className="!p-3">
-                          <div className="text-xs font-semibold text-[var(--text-2)] mb-1">
-                            {isHi ? (meta?.name_hi ?? meta?.name ?? subj) : (meta?.name ?? subj)}
+                        <Card key={gap.id} className="p-3">
+                          <div className="flex items-start gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-1 flex flex-wrap items-center gap-2">
+                                <span className="truncate text-fluid-xs font-semibold text-foreground">
+                                  {gap.topic_title ?? gap.target_concept_name}
+                                </span>
+                                <Badge tone={sev.tone}>{isHi ? sev.hi : sev.en}</Badge>
+                              </div>
+                              <div className="text-fluid-2xs text-muted-foreground">
+                                {isHi && gap.description_hi ? gap.description_hi : (gap.description ?? `Missing: ${gap.missing_prerequisite_name}`)}
+                              </div>
+                            </div>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="shrink-0"
+                              onClick={() => router.push(`/foxy?topic=${encodeURIComponent(gap.topic_title ?? gap.target_concept_name)}`)}
+                            >
+                              {isHi ? 'अभ्यास करो' : 'Practise'}
+                            </Button>
                           </div>
-                          <BloomHeatmap data={rows} isHi={isHi} />
                         </Card>
                       );
                     })}
                   </div>
                 )}
               </div>
-            )}
 
-            {/* Learning Velocity */}
-            {velocityData.length > 0 && (
-              <div>
-                <SectionHeader icon="🚀">{isHi ? 'सीखने की गति' : 'Learning Velocity'}</SectionHeader>
-                <div className="space-y-2">
-                  {velocityData.slice(0, 8).map((v) => {
-                    const rate = v.weekly_mastery_rate ?? 0;
-                    const predicted = v.predicted_mastery_date
-                      ? new Date(v.predicted_mastery_date)
-                      : predictMasteryDate(rate, rate);
-
-                    return (
-                      <Card key={v.id} className="!p-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold truncate">{v.subject}</div>
-                            <div className="text-[10px] text-[var(--text-3)]">
-                              {isHi ? 'गति' : 'Rate'}: {(rate * 100).toFixed(1)}%/wk
-                            </div>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <div className="text-xs font-bold" style={{ color: 'var(--teal)' }}>
-                              {Math.round(rate * 100)}%
-                            </div>
-                            {predicted && (
-                              <div className="text-[9px] text-[var(--text-3)]">
-                                {isHi ? 'तक' : 'by'} {formatDate(predicted)}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Knowledge Gaps */}
-            <div>
-              <SectionHeader icon="🕳️">{isHi ? 'ज्ञान की कमियाँ' : 'Knowledge Gaps'}</SectionHeader>
-              {gapsBySeverity.length === 0 ? (
-                <Card className="!p-4 text-center">
-                  <div className="text-2xl mb-1">✅</div>
-                  <div className="text-sm text-[var(--text-3)]">
-                    {isHi ? 'कोई ज्ञान की कमी नहीं मिली!' : 'No knowledge gaps detected!'}
+              {/* Smart Quiz Sessions */}
+              {sessionMetrics.length > 0 && (
+                <div>
+                  <SectionHeader icon="🧠">{isHi ? 'स्मार्ट क्विज़ सत्र' : 'Smart Quiz Sessions'}</SectionHeader>
+                  <div className="space-y-2">
+                    {sessionMetrics.map((s) => (
+                      <SessionMetricCard key={s.id} session={s} isHi={isHi} />
+                    ))}
                   </div>
-                </Card>
-              ) : (
-                <div className="space-y-2">
-                  {gapsBySeverity.map((gap) => (
-                    <PremiumCard key={gap.id} className="!p-3">
-                      <div className="flex items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1 flex-wrap">
-                            <span className="text-xs font-semibold truncate">{gap.topic_title ?? gap.target_concept_name}</span>
-                            <Badge color={SEVERITY_COLORS[gap.severity ?? 'medium'] ?? 'var(--text-3)'} size="sm">
-                              {gap.severity ?? 'medium'}
-                            </Badge>
-                            <span className="text-[10px] text-[var(--text-3)] px-1.5 py-0.5 rounded-md" style={{ background: 'var(--surface-2)' }}>
-                              {gap.detection_method?.replace(/_/g, ' ') ?? 'detected'}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
-                            {isHi && gap.description_hi ? gap.description_hi : (gap.description ?? `Missing: ${gap.missing_prerequisite_name}`)}
-                          </div>
-                        </div>
-                        <Button
-                          variant="soft"
-                          size="sm"
-                          color="var(--accent-warm)"
-                          onClick={() => router.push(`/foxy?topic=${encodeURIComponent(gap.topic_title ?? gap.target_concept_name)}`)}
-                          className="shrink-0"
-                        >
-                          {isHi ? 'ठीक करो' : 'Fix'}
-                        </Button>
-                      </div>
-                    </PremiumCard>
-                  ))}
                 </div>
               )}
-            </div>
 
-            {/* Cognitive Session History */}
-            {sessionMetrics.length > 0 && (
-              <div>
-                <SectionHeader icon="🧠">{isHi ? 'स्मार्ट क्विज़ सत्र' : 'Smart Quiz Sessions'}</SectionHeader>
-                <div className="space-y-2">
-                  {sessionMetrics.map((s) => (
-                    <SessionMetricCard key={s.id} session={s} isHi={isHi} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Empty state for cognitive tab */}
-            {bloomFlattened.length === 0 && velocityData.length === 0 && gapsBySeverity.length === 0 && sessionMetrics.length === 0 && (
-              <EmptyState
-                icon="📈"
-                title={isHi ? 'प्रगति देखने के लिए सीखना शुरू करो' : 'Start learning to see your progress'}
-                description={isHi
-                  ? 'कुछ quiz दो, फिर यहाँ analytics दिखेगा!'
-                  : 'Take a few quizzes and your cognitive analytics will appear here!'}
-                action={
-                  <Button variant="primary" size="sm" onClick={() => router.push('/quiz')}>
-                    {isHi ? 'Quiz शुरू करो' : 'Start a Quiz'}
-                  </Button>
-                }
-              />
-            )}
-          </>
-        )}
+              {cognitiveEmpty && (
+                <Card className="p-2">
+                  <EmptyState
+                    icon="📈"
+                    title={isHi ? 'प्रगति देखने के लिए सीखना शुरू करो' : 'Start learning to see your progress'}
+                    description={
+                      isHi
+                        ? 'कुछ quiz दो, फिर यहाँ analytics दिखेगा!'
+                        : 'Take a few quizzes and your cognitive analytics will appear here!'
+                    }
+                    action={
+                      <Button size="sm" onClick={() => router.push('/quiz')}>
+                        {isHi ? 'Quiz शुरू करो' : 'Start a Quiz'}
+                      </Button>
+                    }
+                  />
+                </Card>
+              )}
+            </TabPanel>
+          </Tabs>
         </SectionErrorBoundary>
       </main>
-      
     </div>
   );
 }

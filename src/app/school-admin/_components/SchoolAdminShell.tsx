@@ -191,7 +191,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
   // request) to before these features.
   const { role: adminRole } = useSchoolAdminRole(rbacOn || principalAiOn ? authUserId : null);
 
-  const primaryColor = tenant.branding.primaryColor || '#7C3AED';
+  const primaryColor = tenant.branding.primaryColor || 'var(--purple)';
 
   // ─── Single authoritative brand title (the value the avatar initial derives
   // from). Priority: tenant → DB-resolved name → email-prefix → neutral

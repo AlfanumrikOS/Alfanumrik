@@ -15,6 +15,8 @@
  * lives here — assessment owns that. This is frontend presentation only.
  */
 
+import { calculateScorePercent } from '@/lib/scoring';
+
 export interface MasteryOverviewRow {
   topic_id: string;
   title: string | null;
@@ -24,6 +26,10 @@ export interface MasteryOverviewRow {
   subject_icon?: string | null;
   mastery_level: string;
   mastery_probability: number | null;
+  /** Questions attempted for this topic (from the RPC's `attempts`). */
+  attempts?: number | null;
+  /** Questions answered correctly (from the RPC's `correct_attempts`). */
+  correct_attempts?: number | null;
   due_for_review?: boolean | null;
   next_review_at?: string | null;
 }
@@ -76,10 +82,36 @@ export function roadmapStatusForRow(row: MasteryOverviewRow): RoadmapStatus {
   return 'learning';
 }
 
-/** Mastery percentage 0–100 from the engine's 0–1 probability. */
+/** Mastery percentage 0–100 from the engine's 0–1 probability (BKT). */
 export function masteryPercent(row: MasteryOverviewRow): number {
   const p = typeof row.mastery_probability === 'number' ? row.mastery_probability : 0;
   return Math.round(Math.min(1, Math.max(0, p)) * 100);
+}
+
+/**
+ * Per-topic ACCURACY % (0–100), the P1-canonical
+ * `Math.round((correct / total) * 100)` computed from the RPC's
+ * `correct_attempts` / `attempts`. This is the number the student reads on a
+ * dashboard MasteryRing so it reconciles with quiz results (assessment C1) —
+ * NOT `masteryPercent()`, which is the BKT probability used only for bucketing
+ * and roadmap-node fill.
+ */
+export function accuracyPercent(row: MasteryOverviewRow): number {
+  return calculateScorePercent(row.correct_attempts ?? 0, row.attempts ?? 0);
+}
+
+/**
+ * Aggregate ACCURACY % across rows: `round((Σcorrect / Σattempts) * 100)`
+ * via the same P1-canonical helper. Rows with no attempts contribute nothing.
+ */
+export function aggregateAccuracyPercent(rows: MasteryOverviewRow[]): number {
+  let correct = 0;
+  let attempts = 0;
+  for (const r of rows) {
+    correct += r.correct_attempts ?? 0;
+    attempts += r.attempts ?? 0;
+  }
+  return calculateScorePercent(correct, attempts);
 }
 
 /**

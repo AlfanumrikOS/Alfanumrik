@@ -20,23 +20,23 @@ import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { StatCard, StatusBadge } from '@/components/admin-ui';
 
 const colors = {
-  bg: '#FFFFFF',
-  text1: '#111827',
-  text2: '#6B7280',
-  text3: '#9CA3AF',
-  border: '#E5E7EB',
-  borderStrong: '#D1D5DB',
-  borderLight: '#F3F4F6',
-  surface: '#F9FAFB',
-  surfaceHover: '#F3F4F6',
-  accent: '#2563EB',
-  accentLight: '#EFF6FF',
-  success: '#16A34A',
-  successLight: '#F0FDF4',
-  warning: '#D97706',
-  warningLight: '#FFFBEB',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
+  bg: 'var(--surface-1)',
+  text1: 'var(--text-1)',
+  text2: 'var(--text-2)',
+  text3: 'var(--text-3)',
+  border: 'var(--border)',
+  borderStrong: 'var(--border-strong)',
+  borderLight: 'var(--border)',
+  surface: 'var(--surface-2)',
+  surfaceHover: 'var(--surface-3)',
+  accent: 'var(--info)',
+  accentLight: 'color-mix(in srgb, var(--info) 10%, transparent)',
+  success: 'var(--success)',
+  successLight: 'color-mix(in srgb, var(--success) 10%, transparent)',
+  warning: 'var(--warning)',
+  warningLight: 'color-mix(in srgb, var(--warning) 12%, transparent)',
+  danger: 'var(--danger)',
+  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
 } as const;
 
 const S = {
@@ -190,12 +190,12 @@ function ForensicModal({
     <div
       style={{
         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-        background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center',
+        background: 'var(--scrim)', display: 'flex', alignItems: 'center',
         justifyContent: 'center', zIndex: 1000,
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{ background: colors.bg, borderRadius: 12, padding: 24, width: 560, maxWidth: '92vw', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+      <div style={{ background: colors.bg, borderRadius: 12, padding: 24, width: 560, maxWidth: '92vw', boxShadow: 'var(--shadow-lg)' }}>
         <h2 style={{ ...S.h1, marginBottom: 4 }}>
           {isHi ? 'Forensic रिपोर्ट चलाएँ' : 'Run Forensic Report'}
         </h2>

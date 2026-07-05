@@ -7448,6 +7448,58 @@ only, P13 — plus the vitest lane carve-out pin).
 
 ---
 
+## Premium-UI Phase 1 — design-system token contract (2026-07-04)
+
+Source: commit `e8b3c032` (`feat(design-system): unified token foundation —
+radius/spacing/semantic fixes, AA contrast, P7 Devanagari`) on branch
+`feat/premium-ui-ux-rebuild`. Phase 1 introduced a runtime CSS-var token layer
+that `tailwind.config.js` maps utilities onto (`rounded-* → var(--radius-*)`,
+`bg-secondary/text-xp/bg-streak/bg-level-up/bg-danger-light → var(--secondary)`
+etc., `shadow-* → var(--shadow-*)`, `p-sp-* → var(--space-*)`, `brand.orange →
+var(--orange)`), darkened `--text-3` to `#6B6053` and added the AA-safe CTA
+gradient stops `--btn-primary-from/to` (`#CB4710`/`#C2440F`), a 12px
+arbitrary-type floor, and Devanagari font fallbacks (P7).
+
+**Why.** The token layer is a silent-failure trap. Before Phase 1 the
+`--radius-*` and `--space-*` tokens were REFERENCED by `tailwind.config.js` but
+never DEFINED, so `rounded-xl` (used ~670×) and friends computed to the
+undefined-token fallback (`border-radius: 0`) — ~1,916 elements rendered
+square app-wide with zero build/type/lint error and zero unit-test failure.
+The same class of bug hid `bg-secondary` / `text-xp` / `shadow-md` as no-ops.
+This is invisible to the JSDOM unit layer (it does not evaluate CSS custom-
+property resolution or the cascade), so the ONLY place it can be pinned is a
+real browser computing styles. A future edit that drops a token from `:root`,
+regresses `--text-3`/CTA contrast below WCAG AA, unpoints `brand.orange`, or
+lets sub-12px arbitrary type through would re-introduce a silent, app-wide
+visual/accessibility regression — exactly what DD-01's harness guards.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-237 | `design-system token contract resolves — no silent no-op utilities; AA on text-3 + primary CTA` (Playwright computed-style probe) | Device-independent computed-style probing on the public no-auth surfaces `/` (→ welcome), `/pricing`, `/login` at mobile **375px** and desktop **1280px**: (a) **no silent no-op utilities** — every `tailwind.config.js`-referenced CSS var resolves on the DEFAULT (non-cosmic) `:root`: all 23 color tokens (`--orange`, `--primary{,-light,-hover}`, `--secondary`, `--success/--warning/--info/--danger/--danger-light`, `--surface-1..3`, `--text-1..3`, `--xp-color`, `--streak-color`, `--mastery-low/mid/high`, `--level-up`) resolve to a real (non-transparent) color; all 5 `--radius-sm..2xl` resolve to a NON-ZERO radius (the ~1,916-corner square→rounded flip); all 4 `--shadow-sm/md/lg/glow` ≠ `none`; all 9 `--space-1..16` resolve to non-zero padding — each probed by applying `var(--token)` to a real element and reading the fully-resolved computed value (catches both undefined AND resolves-to-nothing var() chains). (b) **end-to-end tailwind wiring** — a real `.rounded-xl` element computes `border-radius: 12px` (not `0`), proving the utility→var mapping, not just the raw var. (c) **AA contrast (≥4.5:1)** computed in-page via sRGB relative luminance: `--text-3` (#6B6053) on `--surface-3` (#EDE6DC); `--btn-primary-from` (#CB4710) on white; `--btn-primary-to` (#C2440F) on white. (d) **brand.orange maps to `var(--orange)`** → resolves to burnt-orange `rgb(232, 88, 28)`. (e) **type floor** — a `.text-[9px]` element computes `font-size: 12px` (sub-12px arbitrary type floors up). (f) **no horizontal overflow** — `documentElement.scrollWidth ≤ clientWidth` (+1px sub-pixel tolerance) at both widths. Pin type is a Playwright computed-style probe BY NECESSITY: the JSDOM unit layer cannot evaluate CSS-var resolution/cascade, so this contract is unpinnable at the unit tier. Full-page screenshots are captured as artifacts (`test-results/visual/`) but are NOT the gate — the assertions are deterministic/device-independent. Authed student surfaces (`/dashboard`, `/quiz`, `/foxy` — the radius flip's highest blast radius) are covered best-effort in an OPT-IN (`VISUAL_AUTHED=1`), non-gating describe via a mocked session; real content QA there needs a seeded student session (documented manual steps). | `e2e/visual-regression/design-system-tokens.spec.ts` (npm script `test:e2e:visual` runs the public-surface gate) | E | P7 (Devanagari fallback stack), UX/a11y (WCAG AA) |
+
+### Invariants covered by this section
+
+- P7 (bilingual UI) — the token layer carries the Devanagari font-fallback
+  stacks Phase 1 appended to every family; the harness pins that the token
+  contract those stacks ride on resolves rather than falling back to nothing.
+- UX / accessibility (WCAG AA) — `--text-3`-on-`--surface-3` and both primary-
+  CTA gradient stops on white are pinned ≥4.5:1; the 12px type floor keeps
+  micro-labels legible on budget phones in harsh sunlight (the stated design
+  rationale). Not a numbered P-invariant, but a release-gating UX contract.
+
+### Catalog total
+
+Pre-REG-237: 203 entries (through REG-236, Knowledge Intelligence Wave 1).
+Premium-UI Phase 1 adds REG-237 (design-system token contract — every
+tailwind-referenced CSS var resolves on the default `:root` so no
+`rounded-*`/`bg-secondary`/`text-xp` computes to the undefined-token fallback;
+`--text-3` + both CTA stops clear WCAG AA; `brand.orange → var(--orange)`;
+sub-12px arbitrary type floors to 12px — Playwright computed-style probe,
+unpinnable at the JSDOM unit tier).
+**Total catalog: 204 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
 ## grounded-answer cache-key caller-collision fix (2026-07-04)
 
 Source: ai-engineer fix to `supabase/functions/grounded-answer/cache.ts` +
@@ -7471,11 +7523,11 @@ getting this wrong already exists in the codebase as a cautionary precedent
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-237 | `buildCacheKey caller-scoping + punctuation-preserving normalization` | (a) **Caller-collision fix**: `buildCacheKey(query, scope, mode, caller)` now takes a `caller: Caller` parameter and hashes it into the SHA-256 key; the same normalized query/grade/subject/chapter/mode produces 5 DISTINCT keys across the 5 live callers (foxy, concept-engine, ncert-solver, quiz-generator, diagnostic) — no two collide (`new Set(keys).size === keys.length`). (b) **Normalization safety (new, this task)**: the live TS/JS normalizer (`.toLowerCase().trim().replace(/\s+/g, ' ')`) preserves mathematically/semantically significant punctuation — `"What is 5+3?"` vs `"What is 5-3?"`, `"20% of 50"` vs `"20 of 50"`, `"2x=10"` vs `"2x 10"`, and `"What is force?"` vs `"What is force"` (boundary `?`) all produce DIFFERENT cache keys under identical scope/mode/caller. Documents (does not directly test — different runtime, SQL vs TS) the cautionary precedent this guards against: the dormant, unwired `write_foxy_cache`/`lookup_foxy_cache` RPC pair in `supabase/migrations/00000000000000_baseline_from_prod.sql` (lines ~8690/~5594) normalizes with `regexp_replace(p_q, '[^a-zA-Z0-9\s]', '', 'g')`, which strips ALL punctuation/operators — under that regex `"What is 5+3?"` and `"What is 5-3?"` both collapse to `"what is 53"` and collide. That SQL has 0 live callers today but is earmarked as a candidate for a future Postgres L3 cache tier; this test pins the invariant any such revival must independently satisfy. | `supabase/functions/grounded-answer/__tests__/cache.test.ts` | E | P12 |
+| REG-239 | `buildCacheKey caller-scoping + punctuation-preserving normalization` | (a) **Caller-collision fix**: `buildCacheKey(query, scope, mode, caller)` now takes a `caller: Caller` parameter and hashes it into the SHA-256 key; the same normalized query/grade/subject/chapter/mode produces 5 DISTINCT keys across the 5 live callers (foxy, concept-engine, ncert-solver, quiz-generator, diagnostic) — no two collide (`new Set(keys).size === keys.length`). (b) **Normalization safety (new, this task)**: the live TS/JS normalizer (`.toLowerCase().trim().replace(/\s+/g, ' ')`) preserves mathematically/semantically significant punctuation — `"What is 5+3?"` vs `"What is 5-3?"`, `"20% of 50"` vs `"20 of 50"`, `"2x=10"` vs `"2x 10"`, and `"What is force?"` vs `"What is force"` (boundary `?`) all produce DIFFERENT cache keys under identical scope/mode/caller. Documents (does not directly test — different runtime, SQL vs TS) the cautionary precedent this guards against: the dormant, unwired `write_foxy_cache`/`lookup_foxy_cache` RPC pair in `supabase/migrations/00000000000000_baseline_from_prod.sql` (lines ~8690/~5594) normalizes with `regexp_replace(p_q, '[^a-zA-Z0-9\s]', '', 'g')`, which strips ALL punctuation/operators — under that regex `"What is 5+3?"` and `"What is 5-3?"` both collapse to `"what is 53"` and collide. That SQL has 0 live callers today but is earmarked as a candidate for a future Postgres L3 cache tier; this test pins the invariant any such revival must independently satisfy. | `supabase/functions/grounded-answer/__tests__/cache.test.ts` | E | P12 |
 
 ### Invariants covered by this section
 
-- P12 (AI safety / response-contract integrity) — REG-237 pins that the
+- P12 (AI safety / response-contract integrity) — REG-239 pins that the
   grounded-answer cache can never leak one caller's response shape to a
   different caller (the fixed bug), and that the cache key's query
   normalization cannot silently merge two semantically different NCERT
@@ -7484,16 +7536,46 @@ getting this wrong already exists in the codebase as a cautionary precedent
 
 ### Catalog total
 
-Pre-REG-237: 203 entries (through REG-236, Knowledge Intelligence Wave 1).
-Adds REG-237 (grounded-answer `buildCacheKey` caller-scoping fix + the
+Pre-REG-239: 204 entries (through REG-237, Premium-UI Phase 1 token contract).
+Adds REG-239 (grounded-answer `buildCacheKey` caller-scoping fix + the
 punctuation-preserving query-normalization safety pin, guarding against the
 dormant SQL `write_foxy_cache`/`lookup_foxy_cache` all-punctuation-stripping
 regex as a documented cautionary precedent).
-**Total catalog: 204 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 205 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 
-## REG-238 — grounded-answer L2 (Upstash Redis) response-cache tier: dual-flag write-gating + defense-in-depth tuple re-validation + REG-50 parity on L2 hits (2026-07-05)
+## REG-238 — DD-16: no dead opacity-on-var utilities (semantic-token alpha guard)
+
+Premium-UI Phase 13 tail cleanup. The recurring DD-16 bug is a "dead
+opacity-on-var" Tailwind class: because every semantic colour token in
+`tailwind.config.js` is a full `var(--…)` VALUE (`primary: 'var(--primary)'`,
+`success: 'var(--success)'`, `surface-1: 'var(--surface-1)'`,
+`foreground: 'var(--text-1)'`, the `on-*` pairs, …), Tailwind's `/NN` opacity
+modifier cannot inject an alpha channel — it can only decompose palette
+hex/rgb or the `white`/`black`/`transparent`/`current` keywords. So
+`bg-primary/10`, `text-foreground/80`, `border-success/30` etc. emit no usable
+alpha and silently render the wrong opacity. They type-check and lint clean,
+which is exactly why they kept reappearing (found in `StatusBadge`,
+`DataTable`, `DashboardSidebar`, `UserDrawer`, parent `attendance`/
+`notifications`). The sanctioned fix is `color-mix`:
+`bg-primary/10 → bg-[color-mix(in_srgb,var(--primary)_10%,transparent)]`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-238 | `no dead opacity-on-var utilities across src/app + src/components` (fs-walk regex guard) | A single synchronous fs walk over every `.tsx` under `src/app` + `src/components` FAILS if any `(bg\|text\|border\|ring\|from\|to\|via\|divide\|outline\|fill\|stroke\|caret\|decoration\|accent)-<var-token>/NN` class appears, where `<var-token>` is one of the `var()`-valued semantic families (`surface-[0-9]/inverse/sunken/accent`, `primary{,-light,-hover}`, `secondary`, `success`, `warning`, `danger{,-light}`, `info`, `foreground`, `muted-foreground`, `on-*`). Palette colours (`white`/`black`/`transparent`/`current`, `orange-500`, …) DO support `/NN` and are intentionally allowed; `bg-[color-mix(…)]` arbitrary values and bare tokens without a modifier pass. Failure message points at `file:line → "matched class"` and prescribes the `color-mix` fix. Includes a regex self-check block: asserts the pattern flags 8 known-bad strings (`bg-primary/10`, `bg-surface-1/25`, `text-on-accent/50`, …) and does NOT flag 11 allowed strings (`bg-white/5`, `bg-orange-500/20`, the `color-mix` fix form, bare tokens). Also guards against a broken walk silently passing (`files.length > 50`). Fast, deterministic, no network. Lands with the Phase 13 cleanup that eliminated all 27 pre-existing dead classes. | `src/__tests__/design-system/no-dead-opacity-on-var.test.ts` | U | P7-adjacent (token layer), UX/a11y (correct opacity rendering) |
+
+### Catalog total
+
+Pre-REG-238: 205 entries (through REG-239, grounded-answer cache-key caller-collision fix).
+Premium-UI Phase 13 adds REG-238 (dead opacity-on-var guard — the unit-tier
+complement to REG-237's browser token-contract probe: REG-237 proves the tokens
+RESOLVE; REG-238 proves no utility silently drops their alpha).
+**Total catalog: 206 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-240 — grounded-answer L2 (Upstash Redis) response-cache tier: dual-flag write-gating + defense-in-depth tuple re-validation + REG-50 parity on L2 hits (2026-07-05)
 
 Source: ai-engineer build-out of a new Redis (Upstash) L2 cache tier for the
 shared `grounded-answer` pipeline (`supabase/functions/grounded-answer/cache-redis.ts`
@@ -7542,11 +7624,11 @@ each independently load-bearing:
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-238 | `l2_cache_write_gating_defense_in_depth_reg50_parity` | (a) **Namespace collision-avoidance**: `REDIS_CACHE_NAMESPACE === 'rag:cache:v1'` and is distinct from every existing `rl:*`/`sess:*` prefix (string-level, not comment-only). (b) **Key shape + determinism**: `buildRedisCacheKey` produces `rag:cache:v1:<grade>:<subject>:<mode>:<caller>:<64-hex-char-sha256>`, is case/whitespace-insensitive, preserves math/science-significant punctuation (`5+3?` vs `5-3?`), and differs across grade/subject/mode/caller. (c) **Fail-open on absent secrets**: `getFromRedisL2`/`putInRedisL2` return null/no-op (never throw) when `UPSTASH_REDIS_REST_URL`/`_TOKEN` are unset. (d) **Fail-open on a REACHABLE-BUT-ERRORING Redis** (new, this task — distinct from (c)'s absent-secrets path): with valid secrets pointed at a fake Upstash host whose fetch handler rejects every request (simulated network failure, not a missing-config skip), both `getFromRedisL2` (→ null) and `putInRedisL2` (→ resolves, no throw) degrade to a miss/no-op exactly as the "absent secrets" path does. (e) **Defense-in-depth tuple mismatch is REJECTED against a real stored payload** (new, this task — the pre-existing suite only asserted the tuple-comparison CONTRACT at the shape level, never exercised a real Redis round trip with a genuinely mismatched tuple): a payload is written via `putInRedisL2` against a fake Upstash REST backend with `chapter_number: 1`, then read back via `getFromRedisL2` with an otherwise-identical tuple but `chapter_number: 2` (simulating a hash collision / corrupted value at an unchanged key) — the mismatched read returns `null`, never the stored response. (f) **Dual-flag write-gating**: with the real-serving flag OFF and the shadow flag ON, running the full pipeline against a fake Upstash backend still performs a real `putInRedisL2` write (verified via an independent `getFromRedisL2` lookup afterward) — pins the fix against the pre-fix serving-only write gate. (g) **REG-50 parity on L2 hits** (new, this task — closes the gap the REG-50 catalog entry did not yet cover): with the real-serving flag ON and a matching entry pre-seeded in the fake Upstash backend, running the full pipeline against a Supabase stub whose `rpc()` throws on any call and whose `grounded_ai_traces` table throws on any insert returns the seeded response verbatim (same `answer`/`trace_id`), with the rpc-call and trace-insert counters both remaining exactly 0, and additionally backfills L1 (a subsequent `getFromCache` on the same key is non-null). | `supabase/functions/grounded-answer/__tests__/cache-redis.test.ts` (12 Deno tests — 10 pre-existing + 2 new: tuple-mismatch-rejection (e), network-error fail-open (d)); `supabase/functions/grounded-answer/__tests__/pipeline.test.ts` (2 Deno tests covering (f) pre-existing + (g) new: the L2-hit REG-50-parity test) | E | P12 |
+| REG-240 | `l2_cache_write_gating_defense_in_depth_reg50_parity` | (a) **Namespace collision-avoidance**: `REDIS_CACHE_NAMESPACE === 'rag:cache:v1'` and is distinct from every existing `rl:*`/`sess:*` prefix (string-level, not comment-only). (b) **Key shape + determinism**: `buildRedisCacheKey` produces `rag:cache:v1:<grade>:<subject>:<mode>:<caller>:<64-hex-char-sha256>`, is case/whitespace-insensitive, preserves math/science-significant punctuation (`5+3?` vs `5-3?`), and differs across grade/subject/mode/caller. (c) **Fail-open on absent secrets**: `getFromRedisL2`/`putInRedisL2` return null/no-op (never throw) when `UPSTASH_REDIS_REST_URL`/`_TOKEN` are unset. (d) **Fail-open on a REACHABLE-BUT-ERRORING Redis** (new, this task — distinct from (c)'s absent-secrets path): with valid secrets pointed at a fake Upstash host whose fetch handler rejects every request (simulated network failure, not a missing-config skip), both `getFromRedisL2` (→ null) and `putInRedisL2` (→ resolves, no throw) degrade to a miss/no-op exactly as the "absent secrets" path does. (e) **Defense-in-depth tuple mismatch is REJECTED against a real stored payload** (new, this task — the pre-existing suite only asserted the tuple-comparison CONTRACT at the shape level, never exercised a real Redis round trip with a genuinely mismatched tuple): a payload is written via `putInRedisL2` against a fake Upstash REST backend with `chapter_number: 1`, then read back via `getFromRedisL2` with an otherwise-identical tuple but `chapter_number: 2` (simulating a hash collision / corrupted value at an unchanged key) — the mismatched read returns `null`, never the stored response. (f) **Dual-flag write-gating**: with the real-serving flag OFF and the shadow flag ON, running the full pipeline against a fake Upstash backend still performs a real `putInRedisL2` write (verified via an independent `getFromRedisL2` lookup afterward) — pins the fix against the pre-fix serving-only write gate. (g) **REG-50 parity on L2 hits** (new, this task — closes the gap the REG-50 catalog entry did not yet cover): with the real-serving flag ON and a matching entry pre-seeded in the fake Upstash backend, running the full pipeline against a Supabase stub whose `rpc()` throws on any call and whose `grounded_ai_traces` table throws on any insert returns the seeded response verbatim (same `answer`/`trace_id`), with the rpc-call and trace-insert counters both remaining exactly 0, and additionally backfills L1 (a subsequent `getFromCache` on the same key is non-null). | `supabase/functions/grounded-answer/__tests__/cache-redis.test.ts` (12 Deno tests — 10 pre-existing + 2 new: tuple-mismatch-rejection (e), network-error fail-open (d)); `supabase/functions/grounded-answer/__tests__/pipeline.test.ts` (2 Deno tests covering (f) pre-existing + (g) new: the L2-hit REG-50-parity test) | E | P12 |
 
 ### Invariants covered by this section
 
-- P12 (AI safety / retrieval-cost integrity) — REG-238 extends the REG-50
+- P12 (AI safety / retrieval-cost integrity) — REG-240 extends the REG-50
   single-retrieval contract one cache tier deeper: an L2 hit must be
   observably as cheap as an L1 hit (zero retrieval, zero new trace row), not
   just "returns grounded:true." Also pins that a corrupted/collided Redis
@@ -7556,16 +7638,16 @@ each independently load-bearing:
   exception on the request path.
 - Operational-integrity — the dual-flag write-gating fix ((f) above) is the
   difference between shadow mode being a real pre-ramp observability tool
-  and a silently-dead no-op; REG-238 keeps that fix pinned alongside the new
+  and a silently-dead no-op; REG-240 keeps that fix pinned alongside the new
   coverage added in this task.
 
 ### Catalog total
 
-Pre-REG-238: 204 entries (through REG-237, grounded-answer cache-key
-caller-collision fix). Adds REG-238 (L2 Redis cache tier: namespace
+Pre-REG-240: 206 entries (through REG-238, Premium-UI Phase 13 dead
+opacity-on-var guard). Adds REG-240 (L2 Redis cache tier: namespace
 collision-avoidance, dual-flag write-gating, defense-in-depth tuple
 re-validation against a real stored/mismatched payload, Redis-reachable-but-
 erroring fail-open, and REG-50 single-retrieval-contract parity on L2 hits).
-**Total catalog: 205 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 207 entries (target: 35 — TARGET EXCEEDED).**
 
 ---

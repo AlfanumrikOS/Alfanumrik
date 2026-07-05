@@ -179,7 +179,7 @@ function UsersContent() {
 
       {/* Test Account Form */}
       {showTestForm && (
-        <div className="mb-5 rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #2563EB' }}>
+        <div className="mb-5 rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid var(--info)' }}>
           <h3 className="mb-3 text-sm font-bold text-foreground">Create Test Account</h3>
           <div className="flex flex-wrap items-end gap-2">
             <div>
@@ -206,7 +206,7 @@ function UsersContent() {
 
       {/* Role Management Panel */}
       {showRolePanel && (
-        <div className="mb-5 rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #D97706' }}>
+        <div className="mb-5 rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid var(--warning)' }}>
           <h3 className="mb-3 text-sm font-bold text-foreground">Role Management</h3>
 
           {/* Assign Role */}
@@ -228,7 +228,7 @@ function UsersContent() {
               <div
                 key={r.id}
                 className="rounded-lg border border-surface-3 bg-surface-1 p-2.5"
-                style={{ borderLeft: `3px solid ${r.hierarchy_level >= 90 ? '#DC2626' : r.hierarchy_level >= 50 ? '#D97706' : '#9CA3AF'}` }}
+                style={{ borderLeft: `3px solid ${r.hierarchy_level >= 90 ? 'var(--danger)' : r.hierarchy_level >= 50 ? 'var(--warning)' : 'var(--text-3)'}` }}
               >
                 <div className="text-[13px] font-semibold text-foreground">{r.display_name || r.name}</div>
                 <div className="text-[10px] text-muted-foreground">Level {r.hierarchy_level}</div>
@@ -323,11 +323,10 @@ function UsersContent() {
         {/* Bulk Actions */}
         {selectedIds.size > 0 && (
           <div
-            className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-foreground px-5 py-2.5 text-surface-1"
-            style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}
+            className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-foreground px-5 py-2.5 text-surface-1 shadow-lg"
           >
             <span className="text-[13px] font-semibold">{selectedIds.size} selected</span>
-            <button onClick={() => setSelectedIds(new Set())} className="rounded border-0 bg-white/20 px-3 py-1 text-xs text-surface-1 cursor-pointer">
+            <button onClick={() => setSelectedIds(new Set())} className="rounded border-0 px-3 py-1 text-xs text-surface-1 cursor-pointer" style={{ backgroundColor: 'color-mix(in srgb, var(--surface-1) 20%, transparent)' }}>
               Clear
             </button>
             <button onClick={downloadCSV} className="rounded border-0 bg-surface-1 px-3 py-1 text-xs font-semibold text-foreground cursor-pointer">
@@ -412,7 +411,7 @@ function UsersContent() {
 
             {selectedUser.role === 'student' && selectedUser.id && (
               <div className="mt-3">
-                <Link href={`/super-admin/students/${selectedUser.id}`} className="text-sm text-blue-600 hover:underline">
+                <Link href={`/super-admin/students/${selectedUser.id}`} className="text-sm text-info hover:underline">
                   View Full Profile &rarr;
                 </Link>
               </div>

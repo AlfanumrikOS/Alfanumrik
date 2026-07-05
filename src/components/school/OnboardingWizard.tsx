@@ -87,10 +87,10 @@ function StepIndicator({ currentStep, completedSteps, isHi }: StepIndicatorProps
               className="flex-1 h-1.5 rounded-full transition-all duration-300"
               style={{
                 background: isComplete
-                  ? '#7C3AED'
+                  ? 'var(--purple)'
                   : isCurrent
-                    ? '#F97316'
-                    : '#E5E7EB',
+                    ? 'var(--orange)'
+                    : 'var(--surface-3)',
               }}
             />
           );
@@ -109,10 +109,10 @@ function StepIndicator({ currentStep, completedSteps, isHi }: StepIndicatorProps
               className="text-[10px] font-medium transition-colors duration-200"
               style={{
                 color: isComplete
-                  ? '#7C3AED'
+                  ? 'var(--purple)'
                   : isCurrent
-                    ? '#F97316'
-                    : '#9CA3AF',
+                    ? 'var(--orange)'
+                    : 'var(--text-3)',
               }}
             >
               {label}
@@ -138,21 +138,21 @@ function WelcomeStep({ schoolName, isHi, onNext }: WelcomeStepProps) {
     <div className="flex flex-col items-center text-center px-2">
       <div
         className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6"
-        style={{ background: '#7C3AED12' }}
+        style={{ background: 'color-mix(in srgb, var(--purple) 7%, transparent)' }}
       >
         <span className="text-4xl" aria-hidden="true">🏫</span>
       </div>
 
       <h2
         className="text-xl font-bold mb-2"
-        style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1, #111)' }}
+        style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1)' }}
       >
         {schoolName}
       </h2>
 
       <p
         className="text-lg font-semibold mb-2"
-        style={{ color: '#7C3AED' }}
+        style={{ color: 'var(--purple)' }}
       >
         {t(isHi,
           'Welcome to Alfanumrik!',
@@ -162,7 +162,7 @@ function WelcomeStep({ schoolName, isHi, onNext }: WelcomeStepProps) {
 
       <p
         className="text-sm mb-8 max-w-xs"
-        style={{ color: 'var(--text-3, #666)' }}
+        style={{ color: 'var(--text-3)' }}
       >
         {t(isHi,
           "Let's set up your school in 5 easy steps. It only takes a few minutes.",
@@ -172,8 +172,8 @@ function WelcomeStep({ schoolName, isHi, onNext }: WelcomeStepProps) {
 
       <button
         onClick={onNext}
-        className="w-full max-w-xs py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-[0.98]"
-        style={{ background: '#F97316', minHeight: 48 }}
+        className="w-full max-w-xs py-3 rounded-xl text-on-accent font-semibold text-sm transition-all active:scale-[0.98]"
+        style={{ background: 'var(--orange)', minHeight: 48 }}
       >
         {t(isHi, 'Get Started', 'शुरू करें')}
       </button>
@@ -192,8 +192,8 @@ interface BrandingStepProps {
 
 function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
   const [logoUrl, setLogoUrl] = useState('');
-  const [primaryColor, setPrimaryColor] = useState('#7C3AED');
-  const [secondaryColor, setSecondaryColor] = useState('#F97316');
+  const [primaryColor, setPrimaryColor] = useState('var(--purple)');
+  const [secondaryColor, setSecondaryColor] = useState('var(--orange)');
   const [tagline, setTagline] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -224,11 +224,11 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
       <div className="text-center mb-2">
         <h2
           className="text-lg font-bold"
-          style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1, #111)' }}
+          style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1)' }}
         >
           {t(isHi, 'School Branding', 'स्कूल ब्रांडिंग')}
         </h2>
-        <p className="text-xs mt-1" style={{ color: 'var(--text-3, #666)' }}>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
           {t(isHi,
             'Customize how your school appears on Alfanumrik',
             'Alfanumrik पर आपका स्कूल कैसा दिखे, यह अनुकूलित करें'
@@ -238,7 +238,7 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
 
       {/* Logo URL */}
       <div>
-        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
           {t(isHi, 'School Logo URL', 'स्कूल लोगो URL')}
         </label>
         <input
@@ -246,11 +246,11 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
           value={logoUrl}
           onChange={(e) => setLogoUrl(e.target.value)}
           placeholder="https://example.com/logo.png"
-          className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[#7C3AED]"
+          className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--purple)]"
           style={{
-            background: 'var(--surface-1, #fff)',
-            border: '1px solid var(--border, #e5e7eb)',
-            color: 'var(--text-1, #111)',
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border, var(--surface-3))',
+            color: 'var(--text-1)',
           }}
         />
         {/* Logo preview — only render for validated https:// URLs */}
@@ -264,19 +264,19 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
                 height={40}
                 unoptimized
                 className="w-10 h-10 rounded-lg object-contain"
-                style={{ border: '1px solid var(--border, #e5e7eb)' }}
+                style={{ border: '1px solid var(--border, var(--surface-3))' }}
                 referrerPolicy="no-referrer"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             ) : (
               <div
                 className="w-10 h-10 rounded-lg flex items-center justify-center text-xs"
-                style={{ border: '1px solid var(--border, #e5e7eb)', background: 'var(--surface-2, #f5f5f5)', color: 'var(--text-4, #999)' }}
+                style={{ border: '1px solid var(--border, var(--surface-3))', background: 'var(--surface-2)', color: 'var(--text-4, var(--text-3))' }}
               >
                 ?
               </div>
             )}
-            <span className="text-xs" style={{ color: 'var(--text-3, #666)' }}>
+            <span className="text-xs" style={{ color: 'var(--text-3)' }}>
               {logoUrl.startsWith('https://')
                 ? t(isHi, 'Preview', 'पूर्वावलोकन')
                 : t(isHi, 'URL must start with https://', 'URL https:// से शुरू होना चाहिए')
@@ -289,7 +289,7 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
       {/* Color pickers */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
             {t(isHi, 'Primary Color', 'मुख्य रंग')}
           </label>
           <div className="flex items-center gap-2">
@@ -300,13 +300,13 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
               className="w-10 h-10 rounded-lg cursor-pointer border-0 p-0"
               style={{ minHeight: 44, minWidth: 44 }}
             />
-            <span className="text-xs font-mono" style={{ color: 'var(--text-3, #666)' }}>
+            <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>
               {primaryColor}
             </span>
           </div>
         </div>
         <div>
-          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
             {t(isHi, 'Secondary Color', 'गौण रंग')}
           </label>
           <div className="flex items-center gap-2">
@@ -317,7 +317,7 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
               className="w-10 h-10 rounded-lg cursor-pointer border-0 p-0"
               style={{ minHeight: 44, minWidth: 44 }}
             />
-            <span className="text-xs font-mono" style={{ color: 'var(--text-3, #666)' }}>
+            <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>
               {secondaryColor}
             </span>
           </div>
@@ -326,7 +326,7 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
 
       {/* Tagline */}
       <div>
-        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
           {t(isHi, 'School Tagline', 'स्कूल टैगलाइन')}
         </label>
         <input
@@ -335,21 +335,21 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
           onChange={(e) => setTagline(e.target.value)}
           maxLength={200}
           placeholder={t(isHi, 'e.g., "Empowering young minds"', 'जैसे, "युवा मन को सशक्त बनाना"')}
-          className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[#7C3AED]"
+          className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--purple)]"
           style={{
-            background: 'var(--surface-1, #fff)',
-            border: '1px solid var(--border, #e5e7eb)',
-            color: 'var(--text-1, #111)',
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border, var(--surface-3))',
+            color: 'var(--text-1)',
           }}
         />
-        <p className="text-[10px] mt-1 text-right" style={{ color: 'var(--text-4, #999)' }}>
+        <p className="text-[10px] mt-1 text-right" style={{ color: 'var(--text-4, var(--text-3))' }}>
           {tagline.length}/200
         </p>
       </div>
 
       {/* Error */}
       {error && (
-        <p className="text-xs text-red-600 text-center">{error}</p>
+        <p className="text-xs text-danger text-center">{error}</p>
       )}
 
       {/* Actions */}
@@ -358,9 +358,9 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
           onClick={onBack}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: 'var(--surface-2, #f5f5f5)',
-            border: '1px solid var(--border, #e5e7eb)',
-            color: 'var(--text-2, #333)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border, var(--surface-3))',
+            color: 'var(--text-2, var(--text-1))',
             minHeight: 44,
           }}
         >
@@ -369,8 +369,8 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
-          style={{ background: '#F97316', minHeight: 44 }}
+          className="flex-1 py-2.5 rounded-xl text-on-accent text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
+          style={{ background: 'var(--orange)', minHeight: 44 }}
         >
           {saving
             ? t(isHi, 'Saving...', 'सहेजा जा रहा है...')
@@ -431,11 +431,11 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
       <div className="text-center mb-2">
         <h2
           className="text-lg font-bold"
-          style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1, #111)' }}
+          style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1)' }}
         >
           {t(isHi, 'Invite Teachers', 'शिक्षकों को आमंत्रित करें')}
         </h2>
-        <p className="text-xs mt-1" style={{ color: 'var(--text-3, #666)' }}>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
           {t(isHi,
             'Add your first teacher. You can add more later.',
             'अपने पहले शिक्षक को जोड़ें। आप बाद में और जोड़ सकते हैं।'
@@ -447,9 +447,9 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
       {successCount > 0 && (
         <div
           className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm"
-          style={{ background: '#ECFDF5', border: '1px solid #A7F3D0' }}
+          style={{ background: 'color-mix(in srgb, var(--success) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)' }}
         >
-          <span style={{ color: '#065F46' }}>
+          <span style={{ color: 'var(--success)' }}>
             {t(isHi,
               `${lastInvitedName} invited! They'll receive an email.`,
               `${lastInvitedName} को आमंत्रित किया गया! उन्हें एक ईमेल मिलेगा।`
@@ -460,7 +460,7 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
 
       {/* Teacher name */}
       <div>
-        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
           {t(isHi, 'Teacher Name', 'शिक्षक का नाम')}
         </label>
         <input
@@ -468,18 +468,18 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t(isHi, 'e.g., Priya Sharma', 'जैसे, प्रिया शर्मा')}
-          className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[#7C3AED]"
+          className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--purple)]"
           style={{
-            background: 'var(--surface-1, #fff)',
-            border: '1px solid var(--border, #e5e7eb)',
-            color: 'var(--text-1, #111)',
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border, var(--surface-3))',
+            color: 'var(--text-1)',
           }}
         />
       </div>
 
       {/* Teacher email */}
       <div>
-        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+        <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
           {t(isHi, 'Teacher Email', 'शिक्षक का ईमेल')}
         </label>
         <input
@@ -487,18 +487,18 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="teacher@school.edu"
-          className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[#7C3AED]"
+          className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--purple)]"
           style={{
-            background: 'var(--surface-1, #fff)',
-            border: '1px solid var(--border, #e5e7eb)',
-            color: 'var(--text-1, #111)',
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border, var(--surface-3))',
+            color: 'var(--text-1)',
           }}
         />
       </div>
 
       {/* Error */}
       {error && (
-        <p className="text-xs text-red-600 text-center">{error}</p>
+        <p className="text-xs text-danger text-center">{error}</p>
       )}
 
       {/* Invite button */}
@@ -507,8 +507,8 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
         disabled={saving}
         className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
         style={{
-          background: '#7C3AED',
-          color: '#fff',
+          background: 'var(--purple)',
+          color: 'var(--surface-1)',
           minHeight: 44,
         }}
       >
@@ -520,7 +520,7 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
 
       {/* Teacher count */}
       {successCount > 0 && (
-        <p className="text-xs text-center" style={{ color: 'var(--text-3, #666)' }}>
+        <p className="text-xs text-center" style={{ color: 'var(--text-3)' }}>
           {t(isHi,
             `${successCount} teacher${successCount > 1 ? 's' : ''} invited so far`,
             `अब तक ${successCount} शिक्षक आमंत्रित`
@@ -534,9 +534,9 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
           onClick={onBack}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: 'var(--surface-2, #f5f5f5)',
-            border: '1px solid var(--border, #e5e7eb)',
-            color: 'var(--text-2, #333)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border, var(--surface-3))',
+            color: 'var(--text-2, var(--text-1))',
             minHeight: 44,
           }}
         >
@@ -546,9 +546,9 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
           onClick={onNext}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: successCount > 0 ? '#F97316' : 'var(--surface-2, #f5f5f5)',
-            color: successCount > 0 ? '#fff' : 'var(--text-2, #333)',
-            border: successCount > 0 ? 'none' : '1px solid var(--border, #e5e7eb)',
+            background: successCount > 0 ? 'var(--orange)' : 'var(--surface-2)',
+            color: successCount > 0 ? 'var(--surface-1)' : 'var(--text-2, var(--text-1))',
+            border: successCount > 0 ? 'none' : '1px solid var(--border, var(--surface-3))',
             minHeight: 44,
           }}
         >
@@ -605,11 +605,11 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
       <div className="text-center mb-2">
         <h2
           className="text-lg font-bold"
-          style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1, #111)' }}
+          style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1)' }}
         >
           {t(isHi, 'Create First Class', 'पहली कक्षा बनाएं')}
         </h2>
-        <p className="text-xs mt-1" style={{ color: 'var(--text-3, #666)' }}>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
           {t(isHi,
             'Set up your first class. You can add more later.',
             'अपनी पहली कक्षा बनाएं। आप बाद में और जोड़ सकते हैं।'
@@ -621,21 +621,21 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
       {createdClassCode && (
         <div
           className="flex flex-col items-center gap-2 px-4 py-4 rounded-xl text-center"
-          style={{ background: '#ECFDF5', border: '1px solid #A7F3D0' }}
+          style={{ background: 'color-mix(in srgb, var(--success) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)' }}
         >
-          <p className="text-sm font-semibold" style={{ color: '#065F46' }}>
+          <p className="text-sm font-semibold" style={{ color: 'var(--success)' }}>
             {t(isHi, 'Class created!', 'कक्षा बन गई!')}
           </p>
-          <p className="text-xs" style={{ color: '#065F46' }}>
+          <p className="text-xs" style={{ color: 'var(--success)' }}>
             {t(isHi, 'Class code:', 'कक्षा कोड:')}
           </p>
           <span
             className="text-lg font-bold font-mono px-4 py-1.5 rounded-lg"
-            // Cosmic compat: var(--surface-1) === #FFFFFF in the light scope
-            // (byte-identical to the old '#fff') and bridges to the dark card
+            // Cosmic compat: var(--surface-1) === var(--surface-1) in the light scope
+            // (byte-identical to the old 'var(--surface-1)') and bridges to the dark card
             // surface under html[data-design="cosmic"]. Purple accent text stays
             // legible on both (architect-confirmed colored-accent case).
-            style={{ background: 'var(--surface-1)', color: '#7C3AED', border: '1px solid #A7F3D0' }}
+            style={{ background: 'var(--surface-1)', color: 'var(--purple)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)' }}
           >
             {createdClassCode}
           </span>
@@ -646,7 +646,7 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
       {!createdClassCode && (
         <>
           <div>
-            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
               {t(isHi, 'Grade', 'कक्षा')}
             </label>
             <div className="flex flex-wrap gap-2">
@@ -656,9 +656,9 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
                   onClick={() => setGrade(g)}
                   className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
                   style={{
-                    background: grade === g ? '#7C3AED' : 'var(--surface-2, #f5f5f5)',
-                    color: grade === g ? '#fff' : 'var(--text-2, #333)',
-                    border: grade === g ? '1px solid #7C3AED' : '1px solid var(--border, #e5e7eb)',
+                    background: grade === g ? 'var(--purple)' : 'var(--surface-2)',
+                    color: grade === g ? 'var(--surface-1)' : 'var(--text-2, var(--text-1))',
+                    border: grade === g ? '1px solid var(--purple)' : '1px solid var(--border, var(--surface-3))',
                     minHeight: 44,
                     minWidth: 44,
                   }}
@@ -671,7 +671,7 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
 
           {/* Section selector */}
           <div>
-            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
               {t(isHi, 'Section', 'अनुभाग')}
             </label>
             <div className="flex gap-2">
@@ -681,9 +681,9 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
                   onClick={() => setSection(s)}
                   className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
                   style={{
-                    background: section === s ? '#F97316' : 'var(--surface-2, #f5f5f5)',
-                    color: section === s ? '#fff' : 'var(--text-2, #333)',
-                    border: section === s ? '1px solid #F97316' : '1px solid var(--border, #e5e7eb)',
+                    background: section === s ? 'var(--orange)' : 'var(--surface-2)',
+                    color: section === s ? 'var(--surface-1)' : 'var(--text-2, var(--text-1))',
+                    border: section === s ? '1px solid var(--orange)' : '1px solid var(--border, var(--surface-3))',
                     minHeight: 44,
                     minWidth: 44,
                   }}
@@ -696,7 +696,7 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
 
           {/* Error */}
           {error && (
-            <p className="text-xs text-red-600 text-center">{error}</p>
+            <p className="text-xs text-danger text-center">{error}</p>
           )}
 
           {/* Create button */}
@@ -705,8 +705,8 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
             disabled={saving}
             className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
             style={{
-              background: '#7C3AED',
-              color: '#fff',
+              background: 'var(--purple)',
+              color: 'var(--surface-1)',
               minHeight: 44,
             }}
           >
@@ -724,9 +724,9 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
           onClick={onBack}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: 'var(--surface-2, #f5f5f5)',
-            border: '1px solid var(--border, #e5e7eb)',
-            color: 'var(--text-2, #333)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border, var(--surface-3))',
+            color: 'var(--text-2, var(--text-1))',
             minHeight: 44,
           }}
         >
@@ -736,9 +736,9 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
           onClick={onNext}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: createdClassCode ? '#F97316' : 'var(--surface-2, #f5f5f5)',
-            color: createdClassCode ? '#fff' : 'var(--text-2, #333)',
-            border: createdClassCode ? 'none' : '1px solid var(--border, #e5e7eb)',
+            background: createdClassCode ? 'var(--orange)' : 'var(--surface-2)',
+            color: createdClassCode ? 'var(--surface-1)' : 'var(--text-2, var(--text-1))',
+            border: createdClassCode ? 'none' : '1px solid var(--border, var(--surface-3))',
             minHeight: 44,
           }}
         >
@@ -817,11 +817,11 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
       <div className="text-center mb-2">
         <h2
           className="text-lg font-bold"
-          style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1, #111)' }}
+          style={{ fontFamily: 'var(--font-display, Sora, system-ui, sans-serif)', color: 'var(--text-1)' }}
         >
           {t(isHi, 'Generate Invite Code', 'आमंत्रण कोड बनाएं')}
         </h2>
-        <p className="text-xs mt-1" style={{ color: 'var(--text-3, #666)' }}>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
           {t(isHi,
             'Generate a code for students to join your school',
             'छात्रों को अपने स्कूल में शामिल करने के लिए एक कोड बनाएं'
@@ -834,16 +834,16 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
         <div className="space-y-4">
           <div
             className="flex flex-col items-center gap-3 px-4 py-6 rounded-xl text-center"
-            style={{ background: '#F5F3FF', border: '1px solid #DDD6FE' }}
+            style={{ background: 'color-mix(in srgb, var(--purple) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--purple) 25%, transparent)' }}
           >
-            <p className="text-xs font-semibold" style={{ color: '#5B21B6' }}>
+            <p className="text-xs font-semibold" style={{ color: 'var(--purple)' }}>
               {t(isHi, 'Your student invite code:', 'आपका छात्र आमंत्रण कोड:')}
             </p>
             <span
               className="text-2xl font-bold font-mono tracking-wider px-5 py-2.5 rounded-xl"
-              // Cosmic compat: var(--surface-1) === #FFFFFF under flag-OFF,
+              // Cosmic compat: var(--surface-1) === var(--surface-1) under flag-OFF,
               // bridges dark under cosmic. Purple accent kept (legible on both).
-              style={{ background: 'var(--surface-1)', color: '#7C3AED', border: '2px solid #7C3AED' }}
+              style={{ background: 'var(--surface-1)', color: 'var(--purple)', border: '2px solid var(--purple)' }}
             >
               {generatedCode}
             </span>
@@ -851,13 +851,13 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
               onClick={handleCopy}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
               style={{
-                // Cosmic compat: the non-copied state's '#fff' → var(--surface-1)
+                // Cosmic compat: the non-copied state's 'var(--surface-1)' → var(--surface-1)
                 // (identical white under flag-OFF, bridged dark under cosmic).
                 // The copied state keeps its green success tint (colored-accent
                 // case, architect-confirmed legible in both themes).
-                background: copied ? '#ECFDF5' : 'var(--surface-1)',
-                border: copied ? '1px solid #A7F3D0' : '1px solid #DDD6FE',
-                color: copied ? '#065F46' : '#5B21B6',
+                background: copied ? 'color-mix(in srgb, var(--success) 6%, transparent)' : 'var(--surface-1)',
+                border: copied ? '1px solid color-mix(in srgb, var(--success) 30%, transparent)' : '1px solid color-mix(in srgb, var(--purple) 25%, transparent)',
+                color: copied ? 'var(--success)' : 'var(--purple)',
                 minHeight: 44,
               }}
             >
@@ -871,18 +871,18 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
           {/* Instructions */}
           <div
             className="px-4 py-3 rounded-xl text-xs space-y-1.5"
-            style={{ background: 'var(--surface-2, #f5f5f5)', border: '1px solid var(--border, #e5e7eb)' }}
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border, var(--surface-3))' }}
           >
-            <p className="font-semibold" style={{ color: 'var(--text-1, #111)' }}>
+            <p className="font-semibold" style={{ color: 'var(--text-1)' }}>
               {t(isHi, 'How to use this code:', 'इस कोड का उपयोग कैसे करें:')}
             </p>
-            <p style={{ color: 'var(--text-3, #666)' }}>
+            <p style={{ color: 'var(--text-3)' }}>
               {t(isHi,
                 'Share this code with students. They enter it during signup to join your school automatically.',
                 'यह कोड छात्रों के साथ साझा करें। साइनअप के दौरान इसे दर्ज करने पर वे स्वचालित रूप से आपके स्कूल में शामिल हो जाएंगे।'
               )}
             </p>
-            <p style={{ color: 'var(--text-4, #999)' }}>
+            <p style={{ color: 'var(--text-4, var(--text-3))' }}>
               {t(isHi,
                 `Valid for ${maxUses} students, expires in 90 days.`,
                 `${maxUses} छात्रों के लिए मान्य, 90 दिनों में समाप्त।`
@@ -894,7 +894,7 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
         <>
           {/* Max uses input */}
           <div>
-            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, #333)' }}>
+            <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2, var(--text-1))' }}>
               {t(isHi, 'Maximum number of students', 'छात्रों की अधिकतम संख्या')}
             </label>
             <input
@@ -903,14 +903,14 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
               onChange={(e) => setMaxUses(Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
               min={1}
               max={100}
-              className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[#7C3AED]"
+              className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--purple)]"
               style={{
-                background: 'var(--surface-1, #fff)',
-                border: '1px solid var(--border, #e5e7eb)',
-                color: 'var(--text-1, #111)',
+                background: 'var(--surface-1)',
+                border: '1px solid var(--border, var(--surface-3))',
+                color: 'var(--text-1)',
               }}
             />
-            <p className="text-[10px] mt-1" style={{ color: 'var(--text-4, #999)' }}>
+            <p className="text-[10px] mt-1" style={{ color: 'var(--text-4, var(--text-3))' }}>
               {t(isHi,
                 'How many students can use this code (1-100)',
                 'कितने छात्र इस कोड का उपयोग कर सकते हैं (1-100)'
@@ -920,7 +920,7 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
 
           {/* Error */}
           {error && (
-            <p className="text-xs text-red-600 text-center">{error}</p>
+            <p className="text-xs text-danger text-center">{error}</p>
           )}
 
           {/* Generate button */}
@@ -929,8 +929,8 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
             disabled={saving}
             className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
             style={{
-              background: '#7C3AED',
-              color: '#fff',
+              background: 'var(--purple)',
+              color: 'var(--surface-1)',
               minHeight: 44,
             }}
           >
@@ -948,9 +948,9 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
           onClick={onBack}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: 'var(--surface-2, #f5f5f5)',
-            border: '1px solid var(--border, #e5e7eb)',
-            color: 'var(--text-2, #333)',
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border, var(--surface-3))',
+            color: 'var(--text-2, var(--text-1))',
             minHeight: 44,
           }}
         >
@@ -958,9 +958,9 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
         </button>
         <button
           onClick={onComplete}
-          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[0.98]"
+          className="flex-1 py-2.5 rounded-xl text-on-accent text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: generatedCode ? '#16A34A' : '#F97316',
+            background: generatedCode ? 'var(--success)' : 'var(--orange)',
             minHeight: 44,
           }}
         >
@@ -1043,7 +1043,7 @@ export default function OnboardingWizard({ schoolName }: OnboardingWizardProps) 
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{
         zIndex: 1000,
-        background: 'rgba(0, 0, 0, 0.5)',
+        background: 'var(--scrim)',
         backdropFilter: 'blur(4px)',
         WebkitBackdropFilter: 'blur(4px)',
       }}
@@ -1055,12 +1055,12 @@ export default function OnboardingWizard({ schoolName }: OnboardingWizardProps) 
       <div
         className="w-full max-w-[600px] max-h-[90vh] overflow-y-auto rounded-2xl p-6 sm:p-8"
         style={{
-          // Cosmic compat: the modal card surface. var(--surface-1) is #FFFFFF
-          // under flag-OFF (byte-identical to '#fff') and bridges to the dark
+          // Cosmic compat: the modal card surface. var(--surface-1) is var(--surface-1)
+          // under flag-OFF (byte-identical to 'var(--surface-1)') and bridges to the dark
           // elevated card under html[data-design="cosmic"], so the wizard dialog
           // is never a white island on the cosmic canvas.
           background: 'var(--surface-1)',
-          boxShadow: '0 24px 48px rgba(0,0,0,0.12)',
+          boxShadow: '0 24px 48px color-mix(in srgb, var(--text-1) 12%, transparent)',
         }}
       >
         {/* Step indicator */}
@@ -1112,7 +1112,7 @@ export default function OnboardingWizard({ schoolName }: OnboardingWizardProps) 
         )}
 
         {/* Step counter */}
-        <p className="text-[10px] text-center mt-6" style={{ color: 'var(--text-4, #999)' }}>
+        <p className="text-[10px] text-center mt-6" style={{ color: 'var(--text-4, var(--text-3))' }}>
           {t(isHi,
             `Step ${currentStep} of ${TOTAL_STEPS}`,
             `चरण ${currentStep} / ${TOTAL_STEPS}`

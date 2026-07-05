@@ -30,7 +30,7 @@ export const dynamic = 'force-dynamic';
  */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ colorScheme: 'light', background: '#FFFFFF', color: '#111827', minHeight: '100vh' }}>
+    <div style={{ colorScheme: 'light', background: 'var(--surface-1)', color: 'var(--text-1)', minHeight: '100vh' }}>
       {children}
     </div>
   );

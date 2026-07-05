@@ -40,7 +40,11 @@ describe('REG-199 companion — PendingLinkApproval renders the consent card', (
   it('shows the parent name + an Approve and a Reject control for a pending request (EN)', () => {
     render(<PendingLinkApproval links={PENDING} onApproved={() => {}} isHi={false} />);
     expect(screen.getByText('Parent Link Request')).toBeTruthy();
-    expect(screen.getByText('Asha')).toBeTruthy();
+    // The canonical Avatar primitive also emits a visually-hidden sr-only <span>
+    // copy of the name, so a bare getByText('Asha') now matches twice. Scope to
+    // the visible <p> so the assertion still enforces "parent name is shown"
+    // without weakening it.
+    expect(screen.getByText('Asha', { selector: 'p' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Reject' })).toBeTruthy();
   });

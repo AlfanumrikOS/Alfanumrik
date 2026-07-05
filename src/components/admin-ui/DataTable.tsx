@@ -128,7 +128,7 @@ export default function DataTable<T extends Record<string, unknown>>({
                 className={twMerge(
                   'transition-colors',
                   onRowClick && 'cursor-pointer',
-                  isSelected ? 'bg-primary/5' : 'hover:bg-surface-2',
+                  isSelected ? 'bg-[color-mix(in_srgb,var(--primary)_5%,transparent)]' : 'hover:bg-surface-2',
                 )}
               >
                 {selectable && (

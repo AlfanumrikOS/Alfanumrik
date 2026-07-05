@@ -18,6 +18,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { Button, Textarea, Alert } from '@/components/ui/primitives';
 
 const LIST_POLL_MS = 30_000;
 const PANEL_POLL_MS = 15_000;
@@ -160,21 +161,21 @@ function ParentMessagesContent() {
   }, [draftBody, selectedThread, sending, mutateMessages, mutateThreads]);
 
   return (
-    <div className="flex h-dvh w-full flex-col bg-orange-50/30 text-slate-900 md:flex-row">
+    <div className="flex h-dvh w-full flex-col bg-surface-2 text-foreground md:flex-row">
       <aside
-        className={`flex w-full flex-col border-r border-orange-200/60 bg-white md:w-80 md:flex-shrink-0 ${
+        className={`flex w-full flex-col border-r border-surface-3 bg-surface-1 md:w-80 md:flex-shrink-0 ${
           selectedThreadId ? 'hidden md:flex' : 'flex'
         }`}
       >
-        <header className="border-b border-orange-200/60 p-4">
+        <header className="border-b border-surface-3 p-4">
           <h1 className="text-base font-semibold">{tt(isHi, 'Messages', 'संदेश')}</h1>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {tt(isHi, "Talk to your child's teachers", 'अपने बच्चे के शिक्षकों से बात करें')}
           </p>
         </header>
-        <ul className="flex-1 divide-y divide-orange-100 overflow-y-auto">
+        <ul className="flex-1 divide-y divide-surface-3 overflow-y-auto">
           {threads.length === 0 ? (
-            <li className="p-6 text-center text-sm text-slate-500">
+            <li className="p-6 text-center text-sm text-muted-foreground">
               {tt(isHi, 'No conversations yet.', 'अभी तक कोई बातचीत नहीं।')}
             </li>
           ) : (
@@ -185,30 +186,30 @@ function ParentMessagesContent() {
                   <button
                     type="button"
                     onClick={() => selectThread(t.id)}
-                    className={`flex w-full flex-col gap-1 p-4 text-left transition-colors hover:bg-orange-50 ${
-                      isActive ? 'bg-orange-100/60' : ''
+                    className={`flex w-full flex-col gap-1 p-4 text-left transition-colors hover:bg-surface-2 ${
+                      isActive ? 'bg-surface-2' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-medium">
                         {t.teacher_name || tt(isHi, 'Teacher', 'शिक्षक')}
                       </span>
-                      <span className="shrink-0 text-[10px] text-slate-500">
+                      <span className="shrink-0 text-2xs text-muted-foreground">
                         {relativeTime(t.last_message_at, isHi)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs text-slate-500">
+                      <span className="truncate text-xs text-muted-foreground">
                         {t.student_name ? `${tt(isHi, 'For', 'के लिए')} ${t.student_name}` : ''}
                       </span>
                       {t.unread_count > 0 && (
-                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1.5 text-[10px] font-semibold text-white">
+                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-2xs font-semibold text-on-accent">
                           {t.unread_count > 99 ? '99+' : t.unread_count}
                         </span>
                       )}
                     </div>
                     {t.last_message_preview && (
-                      <p className="line-clamp-2 text-xs text-slate-600">{t.last_message_preview}</p>
+                      <p className="line-clamp-2 text-xs text-muted-foreground">{t.last_message_preview}</p>
                     )}
                   </button>
                 </li>
@@ -221,7 +222,7 @@ function ParentMessagesContent() {
       <section className={`flex flex-1 flex-col ${selectedThreadId ? 'flex' : 'hidden md:flex'}`}>
         {selectedThread ? (
           <>
-            <header className="flex items-center justify-between border-b border-orange-200/60 bg-white p-4">
+            <header className="flex items-center justify-between border-b border-surface-3 bg-surface-1 p-4">
               <div>
                 <button
                   type="button"
@@ -231,7 +232,7 @@ function ParentMessagesContent() {
                     params.delete('thread');
                     router.replace(`/parent/messages${params.toString() ? `?${params}` : ''}`);
                   }}
-                  className="mr-2 text-xs text-orange-700 hover:underline md:hidden"
+                  className="mr-2 text-xs text-primary hover:underline md:hidden"
                 >
                   ← {tt(isHi, 'Back', 'वापस')}
                 </button>
@@ -239,7 +240,7 @@ function ParentMessagesContent() {
                   {selectedThread.teacher_name || tt(isHi, 'Teacher', 'शिक्षक')}
                 </h2>
                 {selectedThread.student_name && (
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     {tt(isHi, 'For', 'के लिए')} {selectedThread.student_name}
                   </p>
                 )}
@@ -248,7 +249,7 @@ function ParentMessagesContent() {
 
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               {messages.length === 0 ? (
-                <p className="py-8 text-center text-sm text-slate-500">
+                <p className="py-8 text-center text-sm text-muted-foreground">
                   {tt(isHi, 'No messages yet.', 'अभी तक कोई संदेश नहीं।')}
                 </p>
               ) : (
@@ -259,12 +260,12 @@ function ParentMessagesContent() {
                       <div
                         className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                           mine
-                            ? 'rounded-br-md bg-orange-500 text-white'
-                            : 'rounded-bl-md bg-white text-slate-900 shadow-sm ring-1 ring-orange-100'
+                            ? 'rounded-br-md bg-primary text-on-accent'
+                            : 'rounded-bl-md border border-surface-3 bg-surface-1 text-foreground shadow-sm'
                         }`}
                       >
                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                        <div className={`mt-1 text-[10px] ${mine ? 'text-orange-100' : 'text-slate-500'}`}>
+                        <div className={`mt-1 text-2xs ${mine ? 'text-on-accent opacity-80' : 'text-muted-foreground'}`}>
                           {relativeTime(m.created_at, isHi)}
                         </div>
                       </div>
@@ -275,18 +276,20 @@ function ParentMessagesContent() {
             </div>
 
             <form
-              className="border-t border-orange-200/60 bg-white p-3"
+              className="border-t border-surface-3 bg-surface-1 p-3"
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleSend();
               }}
             >
               {errorMsg && (
-                <p className="mb-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">{errorMsg}</p>
+                <div className="mb-2">
+                  <Alert tone="danger">{errorMsg}</Alert>
+                </div>
               )}
               <div className="flex items-end gap-2">
-                <textarea
-                  className="min-h-[44px] flex-1 resize-none rounded-md border border-orange-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-orange-500 focus:outline-none"
+                <Textarea
+                  className="min-h-[44px] flex-1 resize-none"
                   rows={2}
                   maxLength={4000}
                   value={draftBody}
@@ -294,18 +297,18 @@ function ParentMessagesContent() {
                   placeholder={tt(isHi, 'Type a message…', 'संदेश लिखें…')}
                   disabled={sending}
                 />
-                <button
+                <Button
                   type="submit"
+                  loading={sending}
                   disabled={sending || draftBody.trim().length === 0}
-                  className="rounded-md bg-orange-500 px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
-                </button>
+                </Button>
               </div>
             </form>
           </>
         ) : (
-          <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-slate-500">
+          <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
             {tt(isHi, 'Select a conversation.', 'एक बातचीत चुनें।')}
           </div>
         )}

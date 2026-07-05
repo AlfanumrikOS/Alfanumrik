@@ -34,7 +34,7 @@ interface InstitutionRecord {
   // Phase B fields surfaced by /api/super-admin/institutions GET (see route.ts).
   // tenant_type is editable from this page (super-admin owns the change);
   // typography fields are display-only here — school admin owns them via
-  // /school-admin/branding (#563).
+  // /school-admin/branding (PR 563).
   tenant_type?: TenantType;
   font_heading?: string | null;
   font_body?: string | null;
@@ -95,11 +95,11 @@ interface ProvisionForm {
 /* ------------------------------------------------------------------ */
 
 const PIPELINE_STAGES: { key: PipelineStage; label: string; color: string }[] = [
-  { key: 'lead', label: 'Lead', color: '#94A3B8' },
-  { key: 'trial', label: 'Trial', color: '#3B82F6' },
-  { key: 'active', label: 'Active', color: '#22C55E' },
-  { key: 'at_risk', label: 'At Risk', color: '#EAB308' },
-  { key: 'churned', label: 'Churned', color: '#EF4444' },
+  { key: 'lead', label: 'Lead', color: 'var(--text-3)' },
+  { key: 'trial', label: 'Trial', color: 'var(--info)' },
+  { key: 'active', label: 'Active', color: 'var(--success)' },
+  { key: 'at_risk', label: 'At Risk', color: 'var(--warning)' },
+  { key: 'churned', label: 'Churned', color: 'var(--danger)' },
 ];
 
 const PIPELINE_VARIANT: Record<PipelineStage, 'neutral' | 'info' | 'success' | 'warning' | 'danger'> = {
@@ -123,17 +123,17 @@ const STAGE_LABELS: Record<PipelineStage, string> = {
 /* ------------------------------------------------------------------ */
 
 function healthColor(score: number): string {
-  if (score >= 70) return '#22C55E';
-  if (score >= 40) return '#EAB308';
-  return '#EF4444';
+  if (score >= 70) return 'var(--success)';
+  if (score >= 40) return 'var(--warning)';
+  return 'var(--danger)';
 }
 
 function utilizationColor(used: number, total: number): string {
-  if (total === 0) return '#9CA3AF';
+  if (total === 0) return 'var(--text-3)';
   const pct = (used / total) * 100;
-  if (pct >= 80) return '#22C55E';
-  if (pct >= 50) return '#EAB308';
-  return '#EF4444';
+  if (pct >= 80) return 'var(--success)';
+  if (pct >= 50) return 'var(--warning)';
+  return 'var(--danger)';
 }
 
 const EMPTY_FORM: ProvisionForm = {
@@ -151,7 +151,7 @@ function HealthBar({ score }: { score: number }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <div style={{
-        width: 60, height: 6, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden',
+        width: 60, height: 6, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden',
       }}>
         <div style={{
           width: `${Math.min(100, Math.max(0, score))}%`, height: '100%',
@@ -172,11 +172,11 @@ function HealthBar({ score }: { score: number }) {
 function MiniBar({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6B7280', marginBottom: 3 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-2)', marginBottom: 3 }}>
         <span>{label}</span>
-        <span style={{ fontWeight: 600, color: '#111827' }}>{value}/100</span>
+        <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>{value}/100</span>
       </div>
-      <div style={{ width: '100%', height: 5, borderRadius: 3, background: '#F3F4F6', overflow: 'hidden' }}>
+      <div style={{ width: '100%', height: 5, borderRadius: 3, background: 'var(--surface-2)', overflow: 'hidden' }}>
         <div style={{
           width: `${Math.min(100, Math.max(0, value))}%`, height: '100%',
           borderRadius: 3, background: healthColor(value), transition: 'width 0.3s',
@@ -199,7 +199,7 @@ function CircularGauge({ score }: { score: number }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 16 }}>
       <svg width={110} height={110} viewBox="0 0 110 110">
-        <circle cx={55} cy={55} r={r} fill="none" stroke={'#F3F4F6'} strokeWidth={8} />
+        <circle cx={55} cy={55} r={r} fill="none" stroke={'var(--surface-2)'} strokeWidth={8} />
         <circle
           cx={55} cy={55} r={r} fill="none" stroke={color} strokeWidth={8}
           strokeDasharray={circumference} strokeDashoffset={circumference - filled}
@@ -212,7 +212,7 @@ function CircularGauge({ score }: { score: number }) {
           {score}
         </text>
       </svg>
-      <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
+      <span style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>
         Health Score
       </span>
     </div>
@@ -257,9 +257,9 @@ function ProvisionModal({
   const inputStyle: React.CSSProperties = {
     padding: '8px 12px',
     borderRadius: 6,
-    border: '1px solid #E5E7EB',
-    background: '#FFFFFF',
-    color: '#111827',
+    border: '1px solid var(--border)',
+    background: 'var(--surface-1)',
+    color: 'var(--text-1)',
     fontSize: 13,
     outline: 'none',
     fontFamily: 'inherit',
@@ -268,7 +268,7 @@ function ProvisionModal({
   };
 
   const labelStyle: React.CSSProperties = {
-    fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 4,
+    fontSize: 11, fontWeight: 600, color: 'var(--text-2)', marginBottom: 4,
     textTransform: 'uppercase', letterSpacing: 0.8, display: 'block',
   };
 
@@ -278,25 +278,25 @@ function ProvisionModal({
     return (
       <>
         <div onClick={onDone} style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 999,
+          position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 999,
         }} />
         <div style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
           width: 520, maxHeight: '90vh', overflowY: 'auto',
-          background: '#FFFFFF', borderRadius: 12, zIndex: 1000,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: '1px solid #E5E7EB',
+          background: 'var(--surface-1)', borderRadius: 12, zIndex: 1000,
+          boxShadow: 'var(--shadow-lg)', border: '1px solid var(--border)',
         }}>
           {/* Header */}
           <div style={{
-            padding: '16px 20px', borderBottom: '1px solid #E5E7EB',
+            padding: '16px 20px', borderBottom: '1px solid var(--border)',
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: '#16A34A', margin: 0 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--success)', margin: 0 }}>
               School created!
             </h3>
             <button onClick={onDone} style={{
-              background: 'none', border: '1px solid #E5E7EB', borderRadius: 6,
-              padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: '#6B7280',
+              background: 'none', border: '1px solid var(--border)', borderRadius: 6,
+              padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: 'var(--text-2)',
             }}>Close</button>
           </div>
 
@@ -306,7 +306,7 @@ function ProvisionModal({
             {result.warn ? (
               <div style={{
                 padding: 12, marginBottom: 16, borderRadius: 6,
-                background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E',
+                background: 'color-mix(in srgb, var(--warning) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)', color: 'color-mix(in srgb, var(--warning) 55%, var(--text-1))',
                 fontSize: 12, lineHeight: 1.5,
               }}>
                 Invite email failed — share the invite code manually.
@@ -314,7 +314,7 @@ function ProvisionModal({
             ) : result.admin_invite_sent ? (
               <div style={{
                 padding: 12, marginBottom: 16, borderRadius: 6,
-                background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534',
+                background: 'color-mix(in srgb, var(--success) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)', color: 'color-mix(in srgb, var(--success) 60%, var(--text-1))',
                 fontSize: 12, lineHeight: 1.5,
               }}>
                 Admin invite email sent successfully.
@@ -324,7 +324,7 @@ function ProvisionModal({
             {/* Subdomain */}
             <div style={{ marginBottom: 16 }}>
               <div style={{
-                fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6,
+                fontSize: 11, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6,
                 textTransform: 'uppercase', letterSpacing: 0.8,
               }}>
                 Subdomain
@@ -332,17 +332,17 @@ function ProvisionModal({
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
                   flex: 1, padding: '8px 12px', borderRadius: 6,
-                  border: '1px solid #E5E7EB', background: '#F9FAFB',
-                  fontFamily: 'monospace', fontSize: 13, color: '#111827',
+                  border: '1px solid var(--border)', background: 'var(--surface-2)',
+                  fontFamily: 'monospace', fontSize: 13, color: 'var(--text-1)',
                 }}>
                   {subdomainUrl}
                 </div>
                 <button
                   onClick={() => copyToClipboard(subdomainUrl, 'subdomain')}
                   style={{
-                    padding: '8px 14px', borderRadius: 6, border: '1px solid #E5E7EB',
-                    background: '#FFFFFF', fontSize: 12, cursor: 'pointer',
-                    color: copied === 'subdomain' ? '#16A34A' : '#6B7280',
+                    padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                    background: 'var(--surface-1)', fontSize: 12, cursor: 'pointer',
+                    color: copied === 'subdomain' ? 'var(--success)' : 'var(--text-2)',
                     fontWeight: 500, whiteSpace: 'nowrap',
                   }}
                 >
@@ -354,7 +354,7 @@ function ProvisionModal({
             {/* Invite code */}
             <div style={{ marginBottom: 16 }}>
               <div style={{
-                fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6,
+                fontSize: 11, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6,
                 textTransform: 'uppercase', letterSpacing: 0.8,
               }}>
                 Admin Invite Code
@@ -362,25 +362,25 @@ function ProvisionModal({
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{
                   flex: 1, padding: '10px 14px', borderRadius: 6,
-                  border: '2px solid #E5E7EB', background: '#F9FAFB',
+                  border: '2px solid var(--border)', background: 'var(--surface-2)',
                   fontFamily: 'monospace', fontSize: 16, fontWeight: 700,
-                  color: '#111827', letterSpacing: 2,
+                  color: 'var(--text-1)', letterSpacing: 2,
                 }}>
                   {result.invite_code}
                 </div>
                 <button
                   onClick={() => copyToClipboard(result.invite_code, 'invite')}
                   style={{
-                    padding: '8px 14px', borderRadius: 6, border: '1px solid #E5E7EB',
-                    background: '#FFFFFF', fontSize: 12, cursor: 'pointer',
-                    color: copied === 'invite' ? '#16A34A' : '#6B7280',
+                    padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)',
+                    background: 'var(--surface-1)', fontSize: 12, cursor: 'pointer',
+                    color: copied === 'invite' ? 'var(--success)' : 'var(--text-2)',
                     fontWeight: 500, whiteSpace: 'nowrap',
                   }}
                 >
                   {copied === 'invite' ? 'Copied!' : 'Copy'}
                 </button>
               </div>
-              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 6 }}>
                 Share this code with the school admin so they can activate their account.
               </div>
             </div>
@@ -388,7 +388,7 @@ function ProvisionModal({
 
           {/* Footer */}
           <div style={{
-            padding: '12px 20px', borderTop: '1px solid #E5E7EB',
+            padding: '12px 20px', borderTop: '1px solid var(--border)',
             display: 'flex', justifyContent: 'flex-end',
           }}>
             <button
@@ -407,35 +407,35 @@ function ProvisionModal({
   return (
     <>
       <div onClick={onClose} style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 999,
+        position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 999,
       }} />
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
         width: 560, maxHeight: '90vh', overflowY: 'auto',
-        background: '#FFFFFF', borderRadius: 12, zIndex: 1000,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: `1px solid ${'#E5E7EB'}`,
+        background: 'var(--surface-1)', borderRadius: 12, zIndex: 1000,
+        boxShadow: 'var(--shadow-lg)', border: `1px solid ${'var(--border)'}`,
       }}>
         {/* Header */}
         <div style={{
-          padding: '16px 20px', borderBottom: `1px solid ${'#E5E7EB'}`,
+          padding: '16px 20px', borderBottom: `1px solid ${'var(--border)'}`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', margin: 0 }}>Provision New School</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>Provision New School</h3>
           <button onClick={onClose} style={{
-            background: 'none', border: `1px solid ${'#E5E7EB'}`, borderRadius: 6,
-            padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: '#6B7280',
+            background: 'none', border: `1px solid ${'var(--border)'}`, borderRadius: 6,
+            padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: 'var(--text-2)',
           }}>Close</button>
         </div>
 
         {/* Body */}
         <div style={{ padding: 20 }}>
-          <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16 }}>
             This will create the school record, subscription, and school administrator account.
           </div>
 
           {/* School Details */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 10, borderBottom: `1px solid ${'#F3F4F6'}`, paddingBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', marginBottom: 10, borderBottom: `1px solid ${'var(--surface-2)'}`, paddingBottom: 6 }}>
               School Details
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -472,7 +472,7 @@ function ProvisionModal({
 
           {/* Subscription */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 10, borderBottom: `1px solid ${'#F3F4F6'}`, paddingBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', marginBottom: 10, borderBottom: `1px solid ${'var(--surface-2)'}`, paddingBottom: 6 }}>
               Subscription
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
@@ -497,7 +497,7 @@ function ProvisionModal({
 
           {/* Admin Account */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#111827', marginBottom: 10, borderBottom: `1px solid ${'#F3F4F6'}`, paddingBottom: 6 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)', marginBottom: 10, borderBottom: `1px solid ${'var(--surface-2)'}`, paddingBottom: 6 }}>
               School Administrator Account
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -515,7 +515,7 @@ function ProvisionModal({
 
         {/* Footer */}
         <div style={{
-          padding: '12px 20px', borderTop: `1px solid ${'#E5E7EB'}`,
+          padding: '12px 20px', borderTop: `1px solid ${'var(--border)'}`,
           display: 'flex', justifyContent: 'flex-end', gap: 8,
         }}>
           <button onClick={onClose} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Cancel</button>
@@ -580,7 +580,7 @@ function PauseResumeModal({
   const canSubmit = nameMatches && reasonOk && !submitting;
 
   const isPause = mode === 'pause';
-  const headerColor = isPause ? '#DC2626' : '#16A34A';
+  const headerColor = isPause ? 'var(--danger)' : 'var(--success)';
   const headerLabel = isPause ? 'Pause School' : 'Resume School';
   const ctaLabel = submitting
     ? isPause ? 'Pausing…' : 'Resuming…'
@@ -590,17 +590,17 @@ function PauseResumeModal({
     <>
       <div
         onClick={onClose}
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)', zIndex: 999 }}
+        style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 999 }}
       />
       <div style={{
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
         width: 520, maxHeight: '90vh', overflowY: 'auto',
-        background: '#FFFFFF', borderRadius: 12, zIndex: 1000,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.12)', border: `1px solid ${'#E5E7EB'}`,
+        background: 'var(--surface-1)', borderRadius: 12, zIndex: 1000,
+        boxShadow: 'var(--shadow-lg)', border: `1px solid ${'var(--border)'}`,
       }}>
         {/* Header */}
         <div style={{
-          padding: '16px 20px', borderBottom: `1px solid ${'#E5E7EB'}`,
+          padding: '16px 20px', borderBottom: `1px solid ${'var(--border)'}`,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, color: headerColor, margin: 0 }}>
@@ -609,8 +609,8 @@ function PauseResumeModal({
           <button
             onClick={onClose}
             style={{
-              background: 'none', border: `1px solid ${'#E5E7EB'}`, borderRadius: 6,
-              padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: '#6B7280',
+              background: 'none', border: `1px solid ${'var(--border)'}`, borderRadius: 6,
+              padding: '4px 10px', fontSize: 13, cursor: 'pointer', color: 'var(--text-2)',
             }}
           >
             Close
@@ -622,9 +622,9 @@ function PauseResumeModal({
           {/* Warning banner */}
           <div style={{
             padding: 12, marginBottom: 16, borderRadius: 6,
-            background: isPause ? '#FEF2F2' : '#F0FDF4',
-            border: `1px solid ${isPause ? '#FECACA' : '#BBF7D0'}`,
-            color: isPause ? '#991B1B' : '#166534',
+            background: isPause ? 'color-mix(in srgb, var(--danger) 8%, transparent)' : 'color-mix(in srgb, var(--success) 10%, transparent)',
+            border: `1px solid ${isPause ? 'color-mix(in srgb, var(--danger) 30%, transparent)' : 'color-mix(in srgb, var(--success) 30%, transparent)'}`,
+            color: isPause ? 'var(--danger)' : 'color-mix(in srgb, var(--success) 60%, var(--text-1))',
             fontSize: 12, lineHeight: 1.5,
           }}>
             {isPause ? (
@@ -644,12 +644,12 @@ function PauseResumeModal({
           {/* Retype name guardrail */}
           <div style={{ marginBottom: 16 }}>
             <label style={{
-              fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6,
+              fontSize: 11, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6,
               textTransform: 'uppercase', letterSpacing: 0.8, display: 'block',
             }}>
               Type the school name to confirm
             </label>
-            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4, fontFamily: 'monospace' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4, fontFamily: 'monospace' }}>
               Expected: {schoolName}
             </div>
             <input
@@ -661,13 +661,13 @@ function PauseResumeModal({
               disabled={submitting}
               style={{
                 padding: '8px 12px', borderRadius: 6,
-                border: `1px solid ${retypedName && !nameMatches ? '#DC2626' : '#E5E7EB'}`,
-                background: '#FFFFFF', color: '#111827', fontSize: 13,
+                border: `1px solid ${retypedName && !nameMatches ? 'var(--danger)' : 'var(--border)'}`,
+                background: 'var(--surface-1)', color: 'var(--text-1)', fontSize: 13,
                 outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box',
               }}
             />
             {retypedName && !nameMatches && (
-              <div style={{ fontSize: 11, color: '#DC2626', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
                 Does not match. Type the school name exactly as shown above.
               </div>
             )}
@@ -677,7 +677,7 @@ function PauseResumeModal({
           {isPause && (
             <div style={{ marginBottom: 8 }}>
               <label style={{
-                fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6,
+                fontSize: 11, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6,
                 textTransform: 'uppercase', letterSpacing: 0.8, display: 'block',
               }}>
                 Reason (min {PAUSE_REASON_MIN_LENGTH} chars)
@@ -690,13 +690,13 @@ function PauseResumeModal({
                 rows={3}
                 style={{
                   padding: '8px 12px', borderRadius: 6,
-                  border: '1px solid #E5E7EB',
-                  background: '#FFFFFF', color: '#111827', fontSize: 13,
+                  border: '1px solid var(--border)',
+                  background: 'var(--surface-1)', color: 'var(--text-1)', fontSize: 13,
                   outline: 'none', fontFamily: 'inherit', width: '100%', boxSizing: 'border-box',
                   resize: 'vertical', minHeight: 60,
                 }}
               />
-              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
                 {reason.trim().length} / {PAUSE_REASON_MIN_LENGTH}+ characters
               </div>
             </div>
@@ -705,7 +705,7 @@ function PauseResumeModal({
 
         {/* Footer */}
         <div style={{
-          padding: '12px 20px', borderTop: `1px solid ${'#E5E7EB'}`,
+          padding: '12px 20px', borderTop: `1px solid ${'var(--border)'}`,
           display: 'flex', justifyContent: 'flex-end', gap: 8,
         }}>
           <button
@@ -741,10 +741,10 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', padding: '7px 0',
-      borderBottom: `1px solid ${'#F3F4F6'}`,
+      borderBottom: `1px solid ${'var(--surface-2)'}`,
     }}>
-      <span style={{ fontSize: 12, color: '#9CA3AF' }}>{label}</span>
-      <span style={{ fontSize: 12, color: '#111827', fontWeight: 500, textAlign: 'right', maxWidth: '60%' }}>
+      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{label}</span>
+      <span style={{ fontSize: 12, color: 'var(--text-1)', fontWeight: 500, textAlign: 'right', maxWidth: '60%' }}>
         {value ?? '—'}
       </span>
     </div>
@@ -1145,8 +1145,8 @@ function InstitutionsContent() {
       key: 'name', label: 'School',
       render: r => (
         <div>
-          <strong style={{ color: '#111827', fontSize: 13 }}>{r.name || '—'}</strong>
-          {r.board && <div style={{ fontSize: 11, color: '#9CA3AF' }}>{r.board}</div>}
+          <strong style={{ color: 'var(--text-1)', fontSize: 13 }}>{r.name || '—'}</strong>
+          {r.board && <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{r.board}</div>}
         </div>
       ),
     },
@@ -1154,7 +1154,7 @@ function InstitutionsContent() {
     {
       key: 'health_score', label: 'Health',
       render: r => r.health ? <HealthBar score={r.health.health_score} /> : (
-        <span style={{ fontSize: 11, color: '#9CA3AF' }}>{healthLoading ? '...' : '—'}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{healthLoading ? '...' : '—'}</span>
       ),
     },
     {
@@ -1201,14 +1201,14 @@ function InstitutionsContent() {
           onClick={e => { e.stopPropagation(); openPauseResumeModal(r); }}
           style={{
             background: 'none',
-            border: '1px solid #E5E7EB',
+            border: '1px solid var(--border)',
             borderRadius: 5,
             padding: '4px 10px',
             fontSize: 12,
             cursor: 'pointer',
             fontWeight: 500,
-            color: r.is_active !== false ? '#DC2626' : '#16A34A',
-            borderColor: r.is_active !== false ? '#DC2626' : '#16A34A',
+            color: r.is_active !== false ? 'var(--danger)' : 'var(--success)',
+            borderColor: r.is_active !== false ? 'var(--danger)' : 'var(--success)',
           }}
         >
           {r.is_active !== false ? 'Pause' : 'Resume'}
@@ -1226,12 +1226,12 @@ function InstitutionsContent() {
       {error && (
         <div style={{
           padding: '10px 16px', marginBottom: 16, borderRadius: 6,
-          background: '#FEF2F2', color: '#DC2626', fontSize: 13,
+          background: 'color-mix(in srgb, var(--danger) 8%, transparent)', color: 'var(--danger)', fontSize: 13,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <span>{error}</span>
           <button onClick={() => setError(null)} style={{
-            background: 'none', border: 'none', color: '#DC2626',
+            background: 'none', border: 'none', color: 'var(--danger)',
             cursor: 'pointer', fontWeight: 600, fontSize: 14,
           }}>x</button>
         </div>
@@ -1243,13 +1243,13 @@ function InstitutionsContent() {
       {pauseToast && (
         <div style={{
           padding: '10px 16px', marginBottom: 16, borderRadius: 6,
-          background: '#F0FDF4', color: '#166534', fontSize: 13,
+          background: 'color-mix(in srgb, var(--success) 10%, transparent)', color: 'color-mix(in srgb, var(--success) 60%, var(--text-1))', fontSize: 13,
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          border: '1px solid #BBF7D0',
+          border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)',
         }}>
           <span>{pauseToast}</span>
           <button onClick={() => setPauseToast(null)} style={{
-            background: 'none', border: 'none', color: '#166534',
+            background: 'none', border: 'none', color: 'color-mix(in srgb, var(--success) 60%, var(--text-1))',
             cursor: 'pointer', fontWeight: 600, fontSize: 14,
           }}>x</button>
         </div>
@@ -1259,7 +1259,7 @@ function InstitutionsContent() {
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1 className="text-xl font-bold text-foreground">School CRM</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
             Manage school lifecycle, health, and billing
           </p>
         </div>
@@ -1274,7 +1274,7 @@ function InstitutionsContent() {
       {/* Pipeline View */}
       <div style={{
         display: 'flex', gap: 0, marginBottom: 24,
-        border: `1px solid ${'#E5E7EB'}`, borderRadius: 8, overflow: 'hidden',
+        border: `1px solid ${'var(--border)'}`, borderRadius: 8, overflow: 'hidden',
       }}>
         {PIPELINE_STAGES.map((stage, idx) => {
           const count = pipelineCounts[stage.key];
@@ -1287,15 +1287,15 @@ function InstitutionsContent() {
                 flex: 1,
                 padding: '14px 16px',
                 cursor: 'pointer',
-                background: isActive ? stage.color + '12' : '#FFFFFF',
-                borderRight: idx < PIPELINE_STAGES.length - 1 ? `1px solid ${'#E5E7EB'}` : 'none',
+                background: isActive ? stage.color + '12' : 'var(--surface-1)',
+                borderRight: idx < PIPELINE_STAGES.length - 1 ? `1px solid ${'var(--border)'}` : 'none',
                 borderBottom: isActive ? `2px solid ${stage.color}` : '2px solid transparent',
                 textAlign: 'center',
                 transition: 'background 0.15s, border-bottom 0.15s',
                 position: 'relative',
               }}
-              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#F3F4F6'; }}
-              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? stage.color + '12' : '#FFFFFF'; }}
+              onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--surface-2)'; }}
+              onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = isActive ? stage.color + '12' : 'var(--surface-1)'; }}
             >
               <div style={{
                 fontSize: 24, fontWeight: 800, color: stage.color,
@@ -1304,7 +1304,7 @@ function InstitutionsContent() {
                 {count}
               </div>
               <div style={{
-                fontSize: 11, fontWeight: 600, color: isActive ? stage.color : '#9CA3AF',
+                fontSize: 11, fontWeight: 600, color: isActive ? stage.color : 'var(--text-3)',
                 textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 4,
               }}>
                 {stage.label}
@@ -1313,7 +1313,7 @@ function InstitutionsContent() {
               {idx < PIPELINE_STAGES.length - 1 && (
                 <span style={{
                   position: 'absolute', right: -6, top: '50%', transform: 'translateY(-50%)',
-                  fontSize: 10, color: '#9CA3AF', zIndex: 1,
+                  fontSize: 10, color: 'var(--text-3)', zIndex: 1,
                 }}>
                   &#9654;
                 </span>
@@ -1328,16 +1328,16 @@ function InstitutionsContent() {
         <div style={{
           marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-            Filtered by: <strong style={{ color: '#111827' }}>{STAGE_LABELS[pipelineFilter]}</strong>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+            Filtered by: <strong style={{ color: 'var(--text-1)' }}>{STAGE_LABELS[pipelineFilter]}</strong>
           </span>
           <button onClick={() => setPipelineFilter(null)} style={{
             background: 'none',
-            border: '1px solid #E5E7EB',
+            border: '1px solid var(--border)',
             borderRadius: 5,
             cursor: 'pointer',
             fontWeight: 500,
-            color: '#6B7280',
+            color: 'var(--text-2)',
             fontSize: 11,
             padding: '2px 8px',
           }}>Clear</button>
@@ -1346,8 +1346,8 @@ function InstitutionsContent() {
 
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <StatCard label="Total Schools" value={total} icon="&#9875;" accentColor={'#2563EB'} />
-        <StatCard label="Total Students" value={totalStudents} icon="&#9733;" accentColor={'#16A34A'} />
+        <StatCard label="Total Schools" value={total} icon="&#9875;" accentColor={'var(--info)'} />
+        <StatCard label="Total Students" value={totalStudents} icon="&#9733;" accentColor={'var(--success)'} />
         <StatCard
           label="Avg Health"
           value={avgHealth}
@@ -1359,14 +1359,14 @@ function InstitutionsContent() {
           label="MRR"
           value={`₹${totalMRR.toLocaleString('en-IN')}`}
           icon="&#8377;"
-          accentColor={'#2563EB'}
+          accentColor={'var(--info)'}
         />
-        <StatCard label="Active Trials" value={activeTrials} icon="&#9711;" accentColor="#3B82F6" />
-        <StatCard label="At Risk" value={atRiskCount} icon="&#9888;" accentColor="#EAB308" />
+        <StatCard label="Active Trials" value={activeTrials} icon="&#9711;" accentColor="var(--info)" />
+        <StatCard label="At Risk" value={atRiskCount} icon="&#9888;" accentColor="var(--warning)" />
       </div>
 
       {/* School count */}
-      <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 8 }}>
+      <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 8 }}>
         {pipelineFilter ? `${filteredRows.length} schools in ${STAGE_LABELS[pipelineFilter]}` : `${total} schools found`}
       </div>
 
@@ -1444,7 +1444,7 @@ function InstitutionsContent() {
             {selected.is_active === false && (
               <div style={{
                 padding: 12, marginBottom: 16, borderRadius: 6,
-                background: '#FEF2F2', border: '1px solid #FECACA', color: '#991B1B',
+                background: 'color-mix(in srgb, var(--danger) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)', color: 'var(--danger)',
                 fontSize: 12, lineHeight: 1.5,
               }}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>School is paused</div>
@@ -1454,7 +1454,7 @@ function InstitutionsContent() {
                   </div>
                 )}
                 {selected.paused_at && (
-                  <div style={{ color: '#9F1239' }}>
+                  <div style={{ color: 'color-mix(in srgb, var(--danger) 70%, var(--text-1))' }}>
                     Paused at: {new Date(selected.paused_at).toLocaleString('en-IN')}
                   </div>
                 )}
@@ -1465,7 +1465,7 @@ function InstitutionsContent() {
             {h ? (
               <CircularGauge score={h.health_score} />
             ) : (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: '#9CA3AF', fontSize: 13 }}>
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-3)', fontSize: 13 }}>
                 {healthLoading ? 'Loading health data...' : 'No health data available'}
               </div>
             )}
@@ -1473,7 +1473,7 @@ function InstitutionsContent() {
             {/* Score Breakdown */}
             {h && (
               <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
                   Score Breakdown
                 </div>
                 <MiniBar label="Engagement" value={h.engagement_score} />
@@ -1489,13 +1489,13 @@ function InstitutionsContent() {
                 onClick={e => { e.stopPropagation(); openPauseResumeModal(selected); }}
                 style={{
                   background: 'none',
-                  border: '1px solid #E5E7EB',
+                  border: '1px solid var(--border)',
                   borderRadius: 5,
                   fontSize: 12,
                   cursor: 'pointer',
                   fontWeight: 500,
-                  color: selected.is_active !== false ? '#DC2626' : '#16A34A',
-                  borderColor: selected.is_active !== false ? '#DC2626' : '#16A34A',
+                  color: selected.is_active !== false ? 'var(--danger)' : 'var(--success)',
+                  borderColor: selected.is_active !== false ? 'var(--danger)' : 'var(--success)',
                   padding: '6px 14px',
                 }}
               >
@@ -1506,12 +1506,12 @@ function InstitutionsContent() {
                   onClick={() => window.open(`/super-admin/view-as?school=${selected.slug}`, '_blank')}
                   style={{
                     background: 'none',
-                    border: '1px solid #E5E7EB',
+                    border: '1px solid var(--border)',
                     borderRadius: 5,
                     fontSize: 12,
                     cursor: 'pointer',
                     fontWeight: 500,
-                    color: '#6B7280',
+                    color: 'var(--text-2)',
                     padding: '6px 14px',
                   }}
                 >
@@ -1522,7 +1522,7 @@ function InstitutionsContent() {
 
             {/* School Info */}
             <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                 School Info
               </div>
               <InfoRow label="Name" value={selected.name} />
@@ -1535,7 +1535,7 @@ function InstitutionsContent() {
               {selected.subdomain && (
                 <InfoRow label="Subdomain" value={
                   <a href={`https://${selected.subdomain}.alfanumrik.com`} target="_blank" rel="noopener noreferrer"
-                    style={{ color: '#2563EB', textDecoration: 'none', fontSize: 12 }}>
+                    style={{ color: 'var(--info)', textDecoration: 'none', fontSize: 12 }}>
                     {selected.subdomain}.alfanumrik.com
                   </a>
                 } />
@@ -1573,7 +1573,7 @@ function InstitutionsContent() {
 
             {/* Custom Domain — white-label routing */}
             <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                 Custom Domain
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -1595,14 +1595,14 @@ function InstitutionsContent() {
                 <button
                   onClick={() => verifyCustomDomain(selected)}
                   disabled={savingDomain || verifyingDomain || !selected.custom_domain}
-                  style={{ fontSize: 12, background: '#2563EB', color: '#fff' }}
+                  style={{ fontSize: 12, background: 'var(--info)', color: 'var(--on-accent)' }}
                 >
                   {verifyingDomain ? 'Checking…' : 'Verify'}
                 </button>
               </div>
 
               {selected.custom_domain && (
-                <div style={{ fontSize: 11, color: '#6B7280', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 8 }}>
                   Status:{' '}
                   {selected.domain_verified ? (
                     <StatusBadge label="verified" variant="success" />
@@ -1616,8 +1616,8 @@ function InstitutionsContent() {
                 <div
                   style={{
                     fontSize: 11,
-                    color: verifyResult.verified ? '#16A34A' : '#6B7280',
-                    background: verifyResult.verified ? `${'#16A34A'}10` : '#F9FAFB',
+                    color: verifyResult.verified ? 'var(--success)' : 'var(--text-2)',
+                    background: verifyResult.verified ? `${'var(--success)'}10` : 'var(--surface-2)',
                     padding: 10,
                     borderRadius: 4,
                     marginTop: 6,
@@ -1630,11 +1630,11 @@ function InstitutionsContent() {
                   {!verifyResult.verified && (
                     <div style={{ fontFamily: 'monospace', fontSize: 11 }}>
                       <div>TXT record name:</div>
-                      <div style={{ background: '#FFFFFF', padding: 4, borderRadius: 3, marginBottom: 4 }}>
+                      <div style={{ background: 'var(--surface-1)', padding: 4, borderRadius: 3, marginBottom: 4 }}>
                         {verifyResult.expectedRecord}
                       </div>
                       <div>TXT record value:</div>
-                      <div style={{ background: '#FFFFFF', padding: 4, borderRadius: 3 }}>
+                      <div style={{ background: 'var(--surface-1)', padding: 4, borderRadius: 3 }}>
                         {verifyResult.expectedToken}
                       </div>
                     </div>
@@ -1645,8 +1645,8 @@ function InstitutionsContent() {
               {/* Vercel attach — independent of ownership verification.
                   Pairs with the DNS-TXT verify above. */}
               {selected.custom_domain && (
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${'#E5E7EB'}` }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', marginBottom: 6 }}>
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${'var(--border)'}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>
                     Vercel routing + TLS
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -1670,8 +1670,8 @@ function InstitutionsContent() {
                     <div
                       style={{
                         fontSize: 11,
-                        color: vercelResult.verified ? '#16A34A' : '#6B7280',
-                        background: vercelResult.verified ? `${'#16A34A'}10` : '#F9FAFB',
+                        color: vercelResult.verified ? 'var(--success)' : 'var(--text-2)',
+                        background: vercelResult.verified ? `${'var(--success)'}10` : 'var(--surface-2)',
                         padding: 10,
                         borderRadius: 4,
                         marginTop: 6,
@@ -1703,10 +1703,10 @@ function InstitutionsContent() {
                             <div style={{ fontFamily: 'monospace', fontSize: 11 }}>
                               <div style={{ marginBottom: 4 }}>Required DNS records:</div>
                               {vercelResult.verification.map((rec, i) => (
-                                <div key={i} style={{ background: '#FFFFFF', padding: 4, borderRadius: 3, marginBottom: 4 }}>
+                                <div key={i} style={{ background: 'var(--surface-1)', padding: 4, borderRadius: 3, marginBottom: 4 }}>
                                   <div>{rec.type} {rec.domain}</div>
-                                  <div style={{ color: '#9CA3AF' }}>→ {rec.value}</div>
-                                  {rec.reason && <div style={{ color: '#9CA3AF', marginTop: 2 }}>{rec.reason}</div>}
+                                  <div style={{ color: 'var(--text-3)' }}>→ {rec.value}</div>
+                                  {rec.reason && <div style={{ color: 'var(--text-3)', marginTop: 2 }}>{rec.reason}</div>}
                                 </div>
                               ))}
                             </div>
@@ -1722,14 +1722,14 @@ function InstitutionsContent() {
             {/* Subscription */}
             {h && (
               <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                   Subscription
                 </div>
                 <InfoRow label="Plan" value={selected.subscription_plan || 'free'} />
                 <InfoRow label="Seats" value={`${h.active_students} used / ${h.total_seats} total`} />
                 <InfoRow label="Price / Seat" value={`₹${h.price_per_seat}`} />
                 <InfoRow label="MRR" value={
-                  <span style={{ fontWeight: 700, color: '#111827' }}>₹{h.mrr.toLocaleString('en-IN')}</span>
+                  <span style={{ fontWeight: 700, color: 'var(--text-1)' }}>₹{h.mrr.toLocaleString('en-IN')}</span>
                 } />
                 {h.subscription_start && (
                   <InfoRow label="Period" value={
@@ -1742,7 +1742,7 @@ function InstitutionsContent() {
             {/* Activity */}
             {h && (
               <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
                   Activity
                 </div>
                 <InfoRow label="Last Quiz" value={
@@ -1754,7 +1754,7 @@ function InstitutionsContent() {
                 <InfoRow label="Days Since Activity" value={
                   h.days_since_activity != null ? (
                     <span style={{
-                      color: h.days_since_activity > 14 ? '#DC2626' : h.days_since_activity > 7 ? '#D97706' : '#16A34A',
+                      color: h.days_since_activity > 14 ? 'var(--danger)' : h.days_since_activity > 7 ? 'var(--warning)' : 'var(--success)',
                       fontWeight: 600,
                     }}>
                       {h.days_since_activity} days
@@ -1765,11 +1765,11 @@ function InstitutionsContent() {
             )}
 
             {/* ID */}
-            <div style={{ marginTop: 16, fontSize: 10, color: '#9CA3AF' }}>
+            <div style={{ marginTop: 16, fontSize: 10, color: 'var(--text-3)' }}>
               ID: <code style={{ fontSize: 10 }}>{selected.id}</code>
             </div>
             {selected.created_at && (
-              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>
                 Created: {new Date(selected.created_at).toLocaleDateString('en-IN')}
               </div>
             )}

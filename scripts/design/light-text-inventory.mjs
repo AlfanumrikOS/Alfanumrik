@@ -1,0 +1,156 @@
+#!/usr/bin/env node
+/**
+ * light-text-inventory.mjs — READ-ONLY light-text migration inventory.
+ *
+ * DRY-RUN ONLY. Reads src/**, MODIFIES NO SOURCE FILES. Writes a single markdown
+ * report to docs/design/light-text-migration-inventory.md (pass --stdout to print
+ * instead of writing).
+ *
+ * WHY: ~468 hardcoded light-text sites (`text-white` + inline `color:#fff`) are
+ * DECOUPLED from their backgrounds — they assume a companion dark/gradient
+ * surface paints. When it fails, text renders white-on-cream = invisible (DD-16).
+ * The Phase-2 paired on-surface token layer (--on-surface-inverse / --on-accent,
+ * see globals.css + design-system.md §8.1) is the migration target. This script
+ * categorizes each site so a later codemod knows which to touch first.
+ *
+ * Categories:
+ *   SAFE            — light text co-located with a guaranteed dark/gradient surface
+ *                     (foxy-header-premium, gradient-brand/warm, bg-gradient-to-*,
+ *                     dark hex bg, btn-primary, bg-surface-inverse/accent, dark
+ *                     Tailwind bg like bg-black / bg-*-800/900 / bg-purple-700…).
+ *                     Low migration priority.
+ *   RISKY           — light text whose only nearby background is CONDITIONAL /
+ *                     SCOPED (ternary-driven className, a scoped/module class, or
+ *                     a var()/token bg that may resolve light). High priority.
+ *   NEEDS_REVIEW    — no background signal found in the local window. Manual triage.
+ *
+ * Heuristic only: it scans a small line window around each site. Reported counts
+ * are a targeting aid, not ground truth. Never auto-migrate from this alone.
+ *
+ * Usage: node scripts/design/light-text-inventory.mjs [--stdout]
+ */
+import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
+const ROOT = process.cwd();
+const SRC = join(ROOT, 'src');
+const OUT = join(ROOT, 'docs/design/light-text-migration-inventory.md');
+const WINDOW = 4; // lines of context each side
+
+// Light-text foreground signals (the FOREGROUND, not bg/border).
+const LIGHT_TEXT = [
+  /\btext-white\b/,
+  /(?<!background|border|outline|box-shadow|fill|stroke)color:\s*['"]?#f{3,6}\b/i,
+  /\bcolor:\s*['"]?white['"]?/i,
+];
+// Guaranteed-dark / gradient surface signals → SAFE.
+const SAFE_BG = [
+  /foxy-header-premium/,
+  /\bgradient-brand\b/, /\bgradient-warm\b/,
+  /\bbg-gradient-to-/,
+  /\bbg-surface-inverse\b/, /\bbg-surface-accent\b/,
+  /\bbtn-primary\b/,
+  /\bbg-black\b/, /\bbg-slate-(7|8|9)\d{2}\b/, /\bbg-gray-(7|8|9)\d{2}\b/,
+  /\bbg-zinc-(7|8|9)\d{2}\b/, /\bbg-neutral-(8|9)\d{2}\b/,
+  /\bbg-purple-(6|7|8|9)\d{2}\b/, /\bbg-indigo-(6|7|8|9)\d{2}\b/,
+  /\bbg-orange-(5|6|7)\d{2}\b/, /\bbg-violet-(6|7|8|9)\d{2}\b/,
+  // inline dark hex background (#0x, #1x, #2x, #3x luminance range)
+  /background(?:-color|Color|Image)?:\s*['"]?(?:linear-gradient|radial-gradient|#[0-3][0-9a-f]{2}[0-9a-f]{0,3})/i,
+];
+// Conditional / scoped background → RISKY.
+const RISKY_BG = [
+  /className=\{[^}]*\?[^}]*bg-/,        // ternary-driven bg class
+  /style=\{\{[^}]*background[^}]*\?/,    // ternary-driven inline bg
+  /background[^;]*var\(--/i,             // token bg (may resolve light)
+  /\bbg-\[var\(/,                        // arbitrary token bg
+  /\$\{[^}]*\}.*bg-/,                    // template-literal className bg
+  /styles\.[A-Za-z]/,                    // CSS-module scoped class nearby
+];
+
+function walk(dir, acc = []) {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    const s = statSync(p);
+    if (s.isDirectory()) { if (name !== 'node_modules' && name !== '.next') walk(p, acc); }
+    else if (/\.(tsx|ts|jsx|js)$/.test(name)) acc.push(p);
+  }
+  return acc;
+}
+
+const files = walk(SRC);
+const byCat = { SAFE: [], RISKY: [], NEEDS_REVIEW: [] };
+const perFileRisk = new Map();
+
+for (const file of files) {
+  const rel = relative(ROOT, file).replace(/\\/g, '/');
+  const lines = readFileSync(file, 'utf8').split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!LIGHT_TEXT.some((re) => re.test(line))) continue;
+    const lo = Math.max(0, i - WINDOW);
+    const hi = Math.min(lines.length, i + WINDOW + 1);
+    const win = lines.slice(lo, hi).join('\n');
+    let cat;
+    if (SAFE_BG.some((re) => re.test(win))) cat = 'SAFE';
+    else if (RISKY_BG.some((re) => re.test(win))) cat = 'RISKY';
+    else cat = 'NEEDS_REVIEW';
+    byCat[cat].push({ rel, line: i + 1, text: line.trim().slice(0, 120) });
+    if (cat === 'RISKY' || cat === 'NEEDS_REVIEW') {
+      perFileRisk.set(rel, (perFileRisk.get(rel) || 0) + 1);
+    }
+  }
+}
+
+const total = byCat.SAFE.length + byCat.RISKY.length + byCat.NEEDS_REVIEW.length;
+const topRisky = [...perFileRisk.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+
+const md = `# Light-text migration inventory (DD-16)
+
+> **Generated by \`scripts/design/light-text-inventory.mjs\` — READ-ONLY.**
+> Regenerate with \`node scripts/design/light-text-inventory.mjs\`. Heuristic
+> targeting aid for the later scripted migration onto the paired on-surface token
+> layer (\`--on-surface-inverse\` / \`--on-accent\`, see design-system.md §8.1).
+> **No source file is modified by this phase or this script.**
+
+## The bug (DD-16)
+~${total} hardcoded light-text sites (\`text-white\` + inline \`color:#fff\`) are
+decoupled from their backgrounds — they assume a companion dark/gradient surface
+paints. When it fails (e.g. Foxy \`.foxy-header-premium\` not applied), the text
+renders white-on-cream = invisible, across all roles. The migration repoints each
+to its paired \`--on-*\` token so legibility becomes a surface invariant.
+
+## Category counts
+
+| Category | Count | Meaning | Priority |
+|---|---|---|---|
+| SAFE | ${byCat.SAFE.length} | co-located with a guaranteed dark/gradient surface | low |
+| RISKY | ${byCat.RISKY.length} | background is conditional/scoped/token — may not paint | **high** |
+| NEEDS_REVIEW | ${byCat.NEEDS_REVIEW.length} | no local background signal — manual triage | high |
+| **Total** | **${total}** | | |
+
+## Top ${topRisky.length} highest-risk files (RISKY + NEEDS_REVIEW sites)
+
+| # | File | At-risk sites |
+|---|---|---|
+${topRisky.map(([f, n], k) => `| ${k + 1} | \`${f}\` | ${n} |`).join('\n')}
+
+## Migration guidance (later phase — NOT this phase)
+- **RISKY / NEEDS_REVIEW first.** Replace \`text-white\`/\`color:#fff\` with the
+  paired token for the intended surface: \`text-on-inverse\` on dark chrome
+  (\`bg-surface-inverse\` / Foxy header), \`text-on-accent\` on the CTA gradient
+  (\`.btn-primary\` / \`bg-surface-accent\`). Never \`#fff\` on bare \`bg-brand-orange\`.
+- **SAFE** can wait, but should still migrate for consistency + future dark mode.
+- Guard regressions with a lint rule (reject raw \`text-white\`/\`color:#fff\` in
+  \`src/\`) + visual-regression coverage once migrated.
+`;
+
+if (process.argv.includes('--stdout')) {
+  process.stdout.write(md);
+} else {
+  writeFileSync(OUT, md, 'utf8');
+  process.stdout.write(
+    `light-text inventory: total=${total} SAFE=${byCat.SAFE.length} ` +
+    `RISKY=${byCat.RISKY.length} NEEDS_REVIEW=${byCat.NEEDS_REVIEW.length}\n` +
+    `report → ${relative(ROOT, OUT).replace(/\\/g, '/')}\n`,
+  );
+}

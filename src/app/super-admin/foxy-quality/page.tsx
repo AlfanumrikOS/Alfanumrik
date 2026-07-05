@@ -168,7 +168,7 @@ function FoxyQualityPageInner() {
 
       {/* Drift banner */}
       {data.weeklyDelta !== null && data.weeklyDelta <= -10 && (
-        <div className="mb-4 rounded-lg border border-danger bg-danger/10 p-4 text-[13px] text-danger">
+        <div className="mb-4 rounded-lg border border-danger p-4 text-[13px] text-danger" style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}>
           ⚠ Quality drift: overall is {deltaPrefix}
           {data.weeklyDelta} points vs the prior 7 days. Investigate before promoting any prompt change.
         </div>

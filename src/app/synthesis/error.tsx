@@ -12,7 +12,7 @@ export default function SynthesisError({ error, reset }: { error: Error; reset: 
       <p className="text-sm text-red-800">Something went wrong loading the monthly synthesis.</p>
       <button
         onClick={reset}
-        className="mt-3 rounded-lg bg-purple-700 text-white px-4 py-2 text-sm"
+        className="mt-3 rounded-lg bg-secondary text-on-accent px-4 py-2 text-sm"
       >
         Try again
       </button>

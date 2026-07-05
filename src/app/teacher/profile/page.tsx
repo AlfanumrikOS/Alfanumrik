@@ -3,9 +3,16 @@
 import { useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { useTeacherAllowedSubjects } from '@/lib/useTeacherAllowedSubjects';
 import { authHeader } from '@/lib/api/auth-header';
+import {
+  Card,
+  Button,
+  Field,
+  Input,
+  Badge,
+  Alert,
+} from '@/components/ui/primitives';
 
 const tt = (hi: boolean, en: string, hiText: string) => hi ? hiText : en;
 
@@ -19,7 +26,11 @@ export default function TeacherProfilePage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  if (authLoading) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}><div style={{ fontSize: 48 }}>👩‍🏫</div></div>;
+  if (authLoading) return (
+    <div className="min-h-dvh flex items-center justify-center bg-surface-2">
+      <div className="text-5xl" role="img" aria-label="Teacher">👩‍🏫</div>
+    </div>
+  );
   if (!isLoggedIn || (activeRole !== 'teacher' && !teacher)) { router.replace('/login'); return null; }
 
   const startEdit = () => {
@@ -66,103 +77,106 @@ export default function TeacherProfilePage() {
     (code: string) => subjects.find(s => s.code === code)?.name || code
   );
 
+  const toastIsError =
+    toast.includes('Failed') || toast.includes('must') || toast.includes('too long') ||
+    toast.includes('विफल') || toast.includes('होना चाहिए') || toast.includes('लंबा');
+
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--bg)', paddingBottom: 100 }}>
-      <div style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
+    <div className="min-h-dvh bg-surface-2 pb-nav">
+      {/* Branded header */}
+      <div className="relative bg-surface-accent text-on-surface-accent px-5 pt-8 pb-7">
         <button
           onClick={() => router.push('/teacher')}
-          style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          className="absolute top-4 left-4 min-h-[44px] rounded-lg px-3 py-1.5 text-[13px] font-semibold text-on-surface-accent transition-colors"
+          style={{ background: 'color-mix(in srgb, var(--surface-1) 20%, transparent)' }}
         >
           &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
         </button>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, margin: '0 auto 12px' }}>
+        <div className="text-center">
+          <div className="mx-auto mb-3 flex h-[72px] w-[72px] items-center justify-center rounded-full text-4xl" style={{ background: 'color-mix(in srgb, var(--surface-1) 20%, transparent)' }}>
             {teacher?.name?.[0]?.toUpperCase() || '👩‍🏫'}
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>{teacher?.name || (isHi ? 'शिक्षक' : 'Teacher')}</h1>
-          <p style={{ fontSize: 13, opacity: 0.8, marginTop: 4 }}>{teacher?.school_name || 'Alfanumrik Educator'}</p>
+          <h1 className="text-[22px] font-bold m-0">{teacher?.name || (isHi ? 'शिक्षक' : 'Teacher')}</h1>
+          <p className="text-[13px] opacity-80 mt-1">{teacher?.school_name || 'Alfanumrik Educator'}</p>
         </div>
       </div>
 
       {toast && (
-        <div role="alert" style={{ margin: '16px 20px 0', padding: '10px 16px', borderRadius: 10, background: toast.includes('Failed') || toast.includes('must') || toast.includes('too long') ? '#FEE2E2' : '#D1FAE5', color: toast.includes('Failed') || toast.includes('must') || toast.includes('too long') ? '#DC2626' : '#059669', fontSize: 13, fontWeight: 600, textAlign: 'center' }}>
-          {toast}
+        <div className="mx-5 mt-4">
+          <Alert tone={toastIsError ? 'danger' : 'success'}>{toast}</Alert>
         </div>
       )}
 
-      <div style={{ padding: '20px' }}>
+      <div className="p-5">
         {!editing ? (
-          <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: '#1a1a1a' }}>{tt(isHi, 'Profile Details', 'प्रोफ़ाइल विवरण')}</div>
+          <Card className="p-5">
+            <div className="text-[15px] font-bold mb-4 text-foreground">{tt(isHi, 'Profile Details', 'प्रोफ़ाइल विवरण')}</div>
 
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>{tt(isHi, 'Name', 'नाम')}</div>
-              <div style={{ fontSize: 15, color: '#1a1a1a', fontWeight: 500 }}>{teacher?.name || '—'}</div>
+            <div className="mb-3.5">
+              <div className="text-[12px] text-muted-foreground font-semibold uppercase mb-1">{tt(isHi, 'Name', 'नाम')}</div>
+              <div className="text-[15px] text-foreground font-medium">{teacher?.name || '—'}</div>
             </div>
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>{tt(isHi, 'School', 'स्कूल')}</div>
-              <div style={{ fontSize: 15, color: '#1a1a1a', fontWeight: 500 }}>{teacher?.school_name || '—'}</div>
+            <div className="mb-3.5">
+              <div className="text-[12px] text-muted-foreground font-semibold uppercase mb-1">{tt(isHi, 'School', 'स्कूल')}</div>
+              <div className="text-[15px] text-foreground font-medium">{teacher?.school_name || '—'}</div>
             </div>
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>{tt(isHi, 'Subjects', 'विषय')}</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div className="mb-3.5">
+              <div className="text-[12px] text-muted-foreground font-semibold uppercase mb-1">{tt(isHi, 'Subjects', 'विषय')}</div>
+              <div className="flex gap-1.5 flex-wrap">
                 {subjectNames.length > 0 ? subjectNames.map((s: string, i: number) => (
-                  <span key={i} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, background: '#EFF6FF', color: '#2563EB', fontWeight: 500 }}>{s}</span>
-                )) : <span style={{ fontSize: 13, color: '#888' }}>{tt(isHi, 'Not set', 'सेट नहीं')}</span>}
+                  <Badge key={i} tone="info" variant="soft">{s}</Badge>
+                )) : <span className="text-[13px] text-muted-foreground">{tt(isHi, 'Not set', 'सेट नहीं')}</span>}
               </div>
             </div>
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>{tt(isHi, 'Grades', 'कक्षाएँ')}</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div className="mb-3.5">
+              <div className="text-[12px] text-muted-foreground font-semibold uppercase mb-1">{tt(isHi, 'Grades', 'कक्षाएँ')}</div>
+              <div className="flex gap-1.5 flex-wrap">
                 {(teacher?.grades_taught || []).length > 0 ? (teacher?.grades_taught || []).map((g: string, i: number) => (
-                  <span key={i} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, background: '#F0FDF4', color: '#16A34A', fontWeight: 500 }}>Class {g}</span>
-                )) : <span style={{ fontSize: 13, color: '#888' }}>{tt(isHi, 'Not set', 'सेट नहीं')}</span>}
+                  <Badge key={i} tone="success" variant="soft">Class {g}</Badge>
+                )) : <span className="text-[13px] text-muted-foreground">{tt(isHi, 'Not set', 'सेट नहीं')}</span>}
               </div>
             </div>
 
-            <button onClick={startEdit} style={{ marginTop: 8, padding: '10px 24px', borderRadius: 10, border: '1.5px solid #2563EB', background: '#fff', color: '#2563EB', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <Button variant="secondary" size="sm" onClick={startEdit} className="mt-2">
               {tt(isHi, 'Edit Profile', 'प्रोफ़ाइल संपादित करें')}
-            </button>
-          </div>
+            </Button>
+          </Card>
         ) : (
-          <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, color: '#1a1a1a' }}>{tt(isHi, 'Edit Profile', 'प्रोफ़ाइल संपादित करें')}</div>
-            <div style={{ marginBottom: 12 }}>
-              <label htmlFor="teacher-name" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>{tt(isHi, 'Name', 'नाम')}</label>
-              <input id="teacher-name" value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 16, outline: 'none' }} />
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label htmlFor="teacher-school" style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>{tt(isHi, 'School Name', 'स्कूल का नाम')}</label>
-              <input id="teacher-school" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 16, outline: 'none' }} />
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <Card className="p-5">
+            <div className="text-[15px] font-bold mb-4 text-foreground">{tt(isHi, 'Edit Profile', 'प्रोफ़ाइल संपादित करें')}</div>
+            <Field label={tt(isHi, 'Name', 'नाम')} htmlFor="teacher-name" className="mb-3">
+              <Input id="teacher-name" value={name} onChange={e => setName(e.target.value)} />
+            </Field>
+            <Field label={tt(isHi, 'School Name', 'स्कूल का नाम')} htmlFor="teacher-school" className="mb-4">
+              <Input id="teacher-school" value={schoolName} onChange={e => setSchoolName(e.target.value)} />
+            </Field>
+            <div className="flex gap-2.5">
+              <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
                 {saving ? tt(isHi, 'Saving...', 'सहेज रहे हैं...') : tt(isHi, 'Save', 'सहेजें')}
-              </button>
-              <button onClick={() => setEditing(false)} style={{ padding: '10px 24px', borderRadius: 10, border: '1.5px solid #e0e0e0', background: '#fff', color: '#555', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setEditing(false)}>
                 {tt(isHi, 'Cancel', 'रद्द करें')}
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Quick links */}
-        <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <button onClick={() => router.push('/teacher/classes')} style={{ padding: '14px', borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', textAlign: 'center' }}>
-            <div style={{ fontSize: 24, marginBottom: 4 }}>🏫</div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{tt(isHi, 'Classes', 'कक्षाएँ')}</div>
+        <div className="mt-5 grid grid-cols-2 gap-2.5">
+          <button onClick={() => router.push('/teacher/classes')} className="min-h-[44px] rounded-xl border border-surface-3 bg-surface-1 p-3.5 text-center cursor-pointer hover:border-primary transition-colors">
+            <div className="text-2xl mb-1">🏫</div>
+            <div className="text-[12px] font-semibold text-foreground">{tt(isHi, 'Classes', 'कक्षाएँ')}</div>
           </button>
-          <button onClick={() => router.push('/teacher/reports')} style={{ padding: '14px', borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer', textAlign: 'center' }}>
-            <div style={{ fontSize: 24, marginBottom: 4 }}>📊</div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{tt(isHi, 'Reports', 'रिपोर्ट')}</div>
+          <button onClick={() => router.push('/teacher/reports')} className="min-h-[44px] rounded-xl border border-surface-3 bg-surface-1 p-3.5 text-center cursor-pointer hover:border-primary transition-colors">
+            <div className="text-2xl mb-1">📊</div>
+            <div className="text-[12px] font-semibold text-foreground">{tt(isHi, 'Reports', 'रिपोर्ट')}</div>
           </button>
         </div>
 
-        <button onClick={handleSignOut} style={{ marginTop: 20, width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid #EF4444', background: '#FEF2F2', color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+        <Button variant="danger" fullWidth onClick={handleSignOut} className="mt-5">
           {tt(isHi, 'Sign Out', 'साइन आउट')}
-        </button>
+        </Button>
       </div>
-      
     </div>
   );
 }

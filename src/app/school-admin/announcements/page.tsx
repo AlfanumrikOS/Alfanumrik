@@ -126,7 +126,7 @@ function AnnouncementCard({ announcement, isHi, onEdit, onTogglePublish, onDelet
           </p>
         </div>
         <Badge
-          color={isPublished ? 'var(--green)' : '#7D7264'}
+          color={isPublished ? 'var(--green)' : 'var(--text-3)'}
           size="sm"
         >
           {isPublished
@@ -163,9 +163,9 @@ function AnnouncementCard({ announcement, isHi, onEdit, onTogglePublish, onDelet
           onClick={() => onTogglePublish(announcement)}
           className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
           style={{
-            background: isPublished ? 'rgba(220,38,38,0.06)' : 'rgba(22,163,74,0.06)',
-            border: `1px solid ${isPublished ? 'rgba(220,38,38,0.2)' : 'rgba(22,163,74,0.2)'}`,
-            color: isPublished ? '#DC2626' : '#16A34A',
+            background: isPublished ? 'color-mix(in srgb, var(--danger) 6%, transparent)' : 'color-mix(in srgb, var(--success) 6%, transparent)',
+            border: `1px solid ${isPublished ? 'color-mix(in srgb, var(--danger) 20%, transparent)' : 'color-mix(in srgb, var(--success) 20%, transparent)'}`,
+            color: isPublished ? 'var(--danger)' : 'var(--success)',
             minHeight: 32,
           }}
         >
@@ -177,9 +177,9 @@ function AnnouncementCard({ announcement, isHi, onEdit, onTogglePublish, onDelet
           onClick={() => onDelete(announcement)}
           className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
           style={{
-            background: 'rgba(220,38,38,0.06)',
-            border: '1px solid rgba(220,38,38,0.2)',
-            color: '#DC2626',
+            background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+            color: 'var(--danger)',
             minHeight: 32,
           }}
         >
@@ -443,7 +443,7 @@ function AnnouncementForm({ isHi, existing, classes, onSave, onClose }: Announce
       {formError && (
         <p
           className="text-xs font-medium px-1"
-          style={{ color: '#DC2626' }}
+          style={{ color: 'var(--danger)' }}
           role="alert"
         >
           {formError}
@@ -504,7 +504,7 @@ function DeleteConfirm({ isHi, announcementTitle, onConfirm, onCancel, loading }
           fullWidth
           onClick={onConfirm}
           disabled={loading}
-          style={{ minHeight: 48, background: '#DC2626' }}
+          style={{ minHeight: 48, background: 'var(--danger)' }}
         >
           {loading
             ? t(isHi, 'Deleting...', 'हटा रहे हैं...')
@@ -787,7 +787,7 @@ export default function SchoolAdminAnnouncementsPage() {
             style={{
               background: isActive ? 'var(--surface-1)' : 'transparent',
               color: isActive ? 'var(--text-1)' : 'var(--text-3)',
-              boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              boxShadow: isActive ? '0 1px 3px color-mix(in srgb, var(--text-1) 8%, transparent)' : 'none',
             }}
           >
             {tab === 'published'
@@ -972,9 +972,9 @@ export default function SchoolAdminAnnouncementsPage() {
       {/* ── Success Toast ── */}
       {successMsg && (
         <div
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-lg pointer-events-none animate-fade-in"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-on-accent shadow-lg pointer-events-none animate-fade-in"
           style={{
-            background: 'rgba(22,163,74,0.92)',
+            background: 'color-mix(in srgb, var(--success) 92%, transparent)',
             backdropFilter: 'blur(8px)',
             whiteSpace: 'nowrap',
           }}

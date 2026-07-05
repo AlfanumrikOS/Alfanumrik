@@ -19,21 +19,26 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Plus Jakarta Sans', 'Sora', 'system-ui', 'sans-serif'],
-        heading: ['Sora', 'Plus Jakarta Sans', 'sans-serif'],
+        // Devanagari fallbacks appended to every stack (P7). The self-hosted
+        // next/font vars (--font-noto-*-deva, mounted on <html> by
+        // momentum-fonts.ts) win first; the literal family names catch a
+        // system-installed copy. Latin runs still resolve the primary face.
+        sans: ['Plus Jakarta Sans', 'Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
+        heading: ['Sora', 'Plus Jakarta Sans', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'sans-serif'],
         // Alfa Momentum triad (Wave 0). `display` = premium editorial
         // headlines (Fraunces); Fraunces lacks Devanagari glyphs, so the
-        // sans fallbacks keep Hindi (isHi) headings legible. `data` = the
-        // numeric/stat/XP/score voice (Sora). `heading` kept for back-compat.
-        display: ['Fraunces', 'Georgia', 'serif'],
-        data: ['Sora', 'system-ui', 'sans-serif'],
+        // Noto Devanagari fallbacks keep Hindi (isHi) headings legible. `data`
+        // = the numeric/stat/XP/score voice (Sora). `heading` kept for back-compat.
+        display: ['Fraunces', 'var(--font-noto-serif-deva)', 'Noto Serif Devanagari', 'Georgia', 'serif'],
+        data: ['Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
       },
       colors: {
         brand: {
-          // Unified to the real runtime token (--orange in globals.css). The
-          // old #F97316 was config-only drift; #E8581C is the canonical brand
-          // signal across the app. (Alfa Momentum Wave 0.)
-          orange: '#E8581C',
+          // Repointed to the runtime token so `bg-brand-orange` follows the
+          // active theme (burnt-orange on default/Atlas light, violet under
+          // data-design="cosmic") instead of freezing at a literal. Resolves to
+          // #E8581C on the shipping light theme — identical to the old literal.
+          orange: 'var(--orange)',
           purple: '#7C3AED',
           cream: '#FBF8F4',
           warm: '#FEF3E2',
@@ -63,6 +68,17 @@ module.exports = {
         // Foreground tokens — used by admin-ui shared kit (Plan 0)
         foreground: 'var(--text-1)',
         'muted-foreground': 'var(--text-3)',
+        // Paired on-surface / on-accent tokens (Phase 2 legibility layer).
+        // These pair a foreground with the surface it MUST sit on (AA-verified —
+        // see globals.css :root + design-system.md §8). `bg-surface-inverse`
+        // MUST use `text-on-inverse` / `text-on-inverse-muted`; `text-on-accent`
+        // pairs with the .btn-primary / bg-surface-accent CTA gradient ONLY,
+        // never bare `bg-brand-orange` (#fff on --orange is 3.59:1 — FAIL).
+        'surface-inverse': 'var(--surface-inverse)',
+        'on-inverse': 'var(--on-surface-inverse)',
+        'on-inverse-muted': 'var(--on-surface-inverse-muted)',
+        'on-accent': 'var(--on-accent)',
+        'on-surface-accent': 'var(--on-surface-accent)',
         // Gamification
         xp: 'var(--xp-color)',
         streak: 'var(--streak-color)',
@@ -76,6 +92,12 @@ module.exports = {
         'md': 'var(--shadow-md)',
         'lg': 'var(--shadow-lg)',
         'glow': 'var(--shadow-glow)',
+      },
+      backgroundImage: {
+        // Branded/gradient header fill; pair with `text-on-surface-accent` (#fff,
+        // AA on the darkened CTA stops). Gradient, so exposed as a bg-image util
+        // (`bg-surface-accent`), not a bg-color.
+        'surface-accent': 'var(--surface-accent)',
       },
       borderRadius: {
         'sm': 'var(--radius-sm)',

@@ -29,10 +29,10 @@ describe('StatusBadge', () => {
   });
 
   it.each([
-    ['success', 'bg-success/10', 'text-success'],
-    ['danger', 'bg-danger/10', 'text-danger'],
-    ['warning', 'bg-warning/10', 'text-warning'],
-    ['info', 'bg-info/10', 'text-info'],
+    ['success', 'bg-[color-mix(in_srgb,var(--success)_10%,transparent)]', 'text-success'],
+    ['danger', 'bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]', 'text-danger'],
+    ['warning', 'bg-[color-mix(in_srgb,var(--warning)_10%,transparent)]', 'text-warning'],
+    ['info', 'bg-[color-mix(in_srgb,var(--info)_10%,transparent)]', 'text-info'],
     ['neutral', 'bg-surface-2', 'text-muted-foreground'],
   ] as const)('maps the %s variant to its token classes', (variant, bg, fg) => {
     render(<StatusBadge label={variant} variant={variant} />);

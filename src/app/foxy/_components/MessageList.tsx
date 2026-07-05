@@ -23,6 +23,7 @@
 
 import Image from 'next/image';
 import ChatBubble, { type LearningActionType } from '@/components/foxy/ChatBubble';
+import { Button } from '@/components/ui/primitives';
 import { StructuredRenderBoundary } from '@/components/foxy/StructuredRenderBoundary';
 import { isFoxyResponse } from '@/lib/foxy/is-foxy-response';
 import { recoverFoxyResponseFromText } from '@/lib/foxy/recover-from-text';
@@ -97,27 +98,36 @@ export function MessageList({
     <>
       {/* Messages — with collapsing for long threads */}
       {messages.length > 10 && collapsedAbove === null && (
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
+          fullWidth
+          className="mb-3"
           onClick={() => onSetCollapsedAbove(messages.length - 6)}
-          className="w-full text-center py-2 mb-3 rounded-xl text-[11px] font-semibold transition-all active:scale-[0.98]"
-          style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
         >
           {isHi
             ? `↑ केवल हाल के संदेश दिखाओ (कुल ${messages.length})`
             : `↑ Show only recent messages (${messages.length} total)`}
-        </button>
+        </Button>
       )}
 
       {collapsedAbove !== null && (
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
+          fullWidth
+          className="mb-3"
+          style={{
+            background: `color-mix(in srgb, ${cfgColor} 8%, transparent)`,
+            color: cfgColor,
+            borderColor: `color-mix(in srgb, ${cfgColor} 20%, transparent)`,
+          }}
           onClick={() => onSetCollapsedAbove(null)}
-          className="w-full text-center py-2 mb-3 rounded-xl text-[11px] font-semibold transition-all active:scale-[0.98]"
-          style={{ background: `${cfgColor}08`, color: cfgColor, border: `1px solid ${cfgColor}20` }}
         >
           {isHi
             ? `↓ सभी ${messages.length} संदेश दिखाओ`
             : `↓ Show all ${messages.length} messages`}
-        </button>
+        </Button>
       )}
 
       {/* P0 (2026-04-28) defensive dedup — guards against the duplicate-render

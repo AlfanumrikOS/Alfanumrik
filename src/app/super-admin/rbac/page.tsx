@@ -248,16 +248,16 @@ function RBACContent() {
   };
 
   const dangerActionClass = "rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2";
-  const dangerActionStyle: React.CSSProperties = { color: '#DC2626', borderColor: '#DC2626' };
+  const dangerActionStyle: React.CSSProperties = { color: 'var(--danger)', borderColor: 'var(--danger)' };
 
   /* ── Column Definitions ── */
   const elevationColumns: Column<ElevationRecord>[] = [
     { key: 'user_id', label: 'User ID', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.user_id)}</code> },
     { key: 'role_id', label: 'Role ID', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.role_id)}</code> },
     { key: 'granted_by', label: 'Granted By', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.granted_by)}</code> },
-    { key: 'reason', label: 'Reason', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.reason || '—'}</span> },
+    { key: 'reason', label: 'Reason', render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{r.reason || '—'}</span> },
     { key: 'status', label: 'Status', render: r => <StatusBadge label={r.status} variant={statusVariant(r.status)} /> },
-    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{relativeTime(r.expires_at)}</span> },
+    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{relativeTime(r.expires_at)}</span> },
     {
       key: '_actions', label: 'Actions', sortable: false, render: r =>
         r.status === 'active' ? (
@@ -268,7 +268,7 @@ function RBACContent() {
           >
             Revoke
           </button>
-        ) : <span style={{ fontSize: 12, color: '#9CA3AF' }}>{'—'}</span>,
+        ) : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{'—'}</span>,
     },
   ];
 
@@ -277,8 +277,8 @@ function RBACContent() {
     { key: 'target_user_id', label: 'Target User ID', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.target_user_id)}</code> },
     { key: 'status', label: 'Status', render: r => <StatusBadge label={r.status} variant={statusVariant(r.status)} /> },
     { key: 'action_count', label: 'Action Count', render: r => <span style={{ fontWeight: 600 }}>{r.action_count ?? 0}</span> },
-    { key: 'started_at', label: 'Started At', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</span> },
-    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{relativeTime(r.expires_at)}</span> },
+    { key: 'started_at', label: 'Started At', render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{r.started_at ? new Date(r.started_at).toLocaleString() : '—'}</span> },
+    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{relativeTime(r.expires_at)}</span> },
     {
       key: '_actions', label: 'Actions', sortable: false, render: r =>
         r.status === 'active' ? (
@@ -289,18 +289,18 @@ function RBACContent() {
           >
             End Session
           </button>
-        ) : <span style={{ fontSize: 12, color: '#9CA3AF' }}>{'—'}</span>,
+        ) : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{'—'}</span>,
     },
   ];
 
   const delegationColumns: Column<DelegationRecord>[] = [
     { key: 'granter', label: 'Granter', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.granter)}</code> },
-    { key: 'grantee', label: 'Grantee', render: r => <span style={{ fontSize: 12 }}>{r.grantee ? <code style={{ fontSize: 11 }}>{truncateId(r.grantee)}</code> : <em style={{ color: '#9CA3AF' }}>Bearer</em>}</span> },
+    { key: 'grantee', label: 'Grantee', render: r => <span style={{ fontSize: 12 }}>{r.grantee ? <code style={{ fontSize: 11 }}>{truncateId(r.grantee)}</code> : <em style={{ color: 'var(--text-3)' }}>Bearer</em>}</span> },
     { key: 'school_id', label: 'School ID', render: r => <code style={{ fontSize: 11 }}>{truncateId(r.school_id)}</code> },
-    { key: 'permissions', label: 'Permissions', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{Array.isArray(r.permissions) ? r.permissions.join(', ') : '—'}</span> },
+    { key: 'permissions', label: 'Permissions', render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{Array.isArray(r.permissions) ? r.permissions.join(', ') : '—'}</span> },
     { key: 'status', label: 'Status', render: r => <StatusBadge label={r.status} variant={statusVariant(r.status)} /> },
     { key: 'use_count', label: 'Uses', render: r => <span style={{ fontSize: 12 }}>{r.use_count ?? 0}{r.max_uses != null ? `/${r.max_uses}` : ''}</span> },
-    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{relativeTime(r.expires_at)}</span> },
+    { key: 'expires_at', label: 'Expires At', render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{relativeTime(r.expires_at)}</span> },
     {
       key: '_actions', label: 'Actions', sortable: false, render: r =>
         r.status === 'active' ? (
@@ -311,7 +311,7 @@ function RBACContent() {
           >
             Revoke
           </button>
-        ) : <span style={{ fontSize: 12, color: '#9CA3AF' }}>{'—'}</span>,
+        ) : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{'—'}</span>,
     },
   ];
 
@@ -329,7 +329,7 @@ function RBACContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground">RBAC Management</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Privilege elevations, impersonation sessions, and delegation tokens</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Privilege elevations, impersonation sessions, and delegation tokens</p>
         </div>
       </div>
 
@@ -339,10 +339,10 @@ function RBACContent() {
           className="rounded-lg border border-surface-3 bg-surface-1"
           style={{
             marginBottom: 16,
-            borderLeft: `3px solid ${message.type === 'success' ? '#16A34A' : '#DC2626'}`,
+            borderLeft: `3px solid ${message.type === 'success' ? 'var(--success)' : 'var(--danger)'}`,
             padding: '10px 16px',
             fontSize: 13,
-            color: message.type === 'success' ? '#16A34A' : '#DC2626',
+            color: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
           }}
         >
           {message.text}
@@ -375,17 +375,17 @@ function RBACContent() {
           <StatCard
             label="Active Elevations"
             value={loading ? '—' : stats.activeElevations}
-            accentColor="#D97706"
+            accentColor="var(--warning)"
           />
           <StatCard
             label="Active Impersonation Sessions"
             value={loading ? '—' : stats.activeSessions}
-            accentColor="#7C3AED"
+            accentColor="var(--secondary)"
           />
           <StatCard
             label="Active Delegation Tokens"
             value={loading ? '—' : stats.activeTokens}
-            accentColor="#2563EB"
+            accentColor="var(--info)"
           />
         </div>
       )}
@@ -405,12 +405,12 @@ function RBACContent() {
           {showElevationForm && (
             <div
               className="rounded-lg border border-surface-3 bg-surface-1 p-4"
-              style={{ marginBottom: 16, borderLeft: `3px solid #D97706` }}
+              style={{ marginBottom: 16, borderLeft: `3px solid var(--warning)` }}
             >
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 12 }}>Grant Elevation</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 12 }}>Grant Elevation</h3>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div>
-                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>User ID</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>User ID</label>
                   <input
                     value={elevUserId}
                     onChange={e => setElevUserId(e.target.value)}
@@ -419,7 +419,7 @@ function RBACContent() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Role ID</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Role ID</label>
                   <input
                     value={elevRoleId}
                     onChange={e => setElevRoleId(e.target.value)}
@@ -428,7 +428,7 @@ function RBACContent() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Duration (hours)</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Duration (hours)</label>
                   <input
                     type="number"
                     value={elevDuration}
@@ -440,7 +440,7 @@ function RBACContent() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Reason</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Reason</label>
                   <input
                     value={elevReason}
                     onChange={e => setElevReason(e.target.value)}
@@ -484,12 +484,12 @@ function RBACContent() {
           {showImpersonationForm && (
             <div
               className="rounded-lg border border-surface-3 bg-surface-1 p-4"
-              style={{ marginBottom: 16, borderLeft: `3px solid #7C3AED` }}
+              style={{ marginBottom: 16, borderLeft: `3px solid var(--secondary)` }}
             >
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 12 }}>Start Impersonation</h3>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 12 }}>Start Impersonation</h3>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <div>
-                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Target User ID</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Target User ID</label>
                   <input
                     value={impTargetId}
                     onChange={e => setImpTargetId(e.target.value)}
@@ -498,7 +498,7 @@ function RBACContent() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Reason</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Reason</label>
                   <input
                     value={impReason}
                     onChange={e => setImpReason(e.target.value)}
@@ -508,7 +508,7 @@ function RBACContent() {
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4 }}>Max Minutes</label>
+                  <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>Max Minutes</label>
                   <input
                     type="number"
                     value={impMaxMinutes}

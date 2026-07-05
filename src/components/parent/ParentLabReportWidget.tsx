@@ -1,7 +1,18 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import {
+  Card,
+  CardBody,
+  Button,
+  Badge,
+  Alert,
+  EmptyState,
+  Skeleton as UiSkeleton,
+  type Tone,
+} from '@/components/ui/primitives';
 
 // ─── Bilingual helper (P7) ─────────────────────────────────────
 const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
@@ -100,21 +111,30 @@ function truncate(text: string | null, max = 80): string {
   return trimmed.slice(0, max - 1).trimEnd() + '…';
 }
 
+/** Viva score % → primitive tone (presentation only; the number is server-read). */
+function vivaTone(pct: number): Tone {
+  if (pct >= 70) return 'success';
+  if (pct >= 40) return 'warning';
+  return 'danger';
+}
+
 // ─── Skeleton ───────────────────────────────────────────────────
-function Skeleton() {
+function LabSkeleton() {
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-5 border border-orange-200">
-      <div className="h-5 w-44 bg-orange-100 rounded animate-pulse mb-4" />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-        <div className="h-16 bg-orange-50 rounded-xl animate-pulse" />
-        <div className="h-16 bg-orange-50 rounded-xl animate-pulse" />
-        <div className="h-16 bg-orange-50 rounded-xl animate-pulse" />
-      </div>
-      <div className="space-y-2">
-        <div className="h-12 bg-gray-50 rounded-xl animate-pulse" />
-        <div className="h-12 bg-gray-50 rounded-xl animate-pulse" />
-      </div>
-    </div>
+    <Card>
+      <CardBody className="p-4 sm:p-5">
+        <UiSkeleton className="mb-4 h-5 w-44" />
+        <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <UiSkeleton className="h-16 rounded-xl" />
+          <UiSkeleton className="h-16 rounded-xl" />
+          <UiSkeleton className="h-16 rounded-xl" />
+        </div>
+        <div className="space-y-2">
+          <UiSkeleton className="h-12 rounded-xl" />
+          <UiSkeleton className="h-12 rounded-xl" />
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -125,6 +145,7 @@ export default function ParentLabReportWidget({
   isHi,
   onScheduleClick,
 }: ParentLabReportWidgetProps) {
+  const router = useRouter();
   const [obs, setObs] = useState<ObservationRow[]>([]);
   const [weekCount, setWeekCount] = useState(0);
   const [streak, setStreak] = useState<StreakRow | null>(null);
@@ -179,26 +200,23 @@ export default function ParentLabReportWidget({
     load();
   }, [load]);
 
-  if (loading) return <Skeleton />;
+  if (loading) return <LabSkeleton />;
 
   if (error) {
     return (
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-red-200">
-        <div className="flex items-center justify-between gap-3 mb-2">
-          <h3 className="text-[15px] sm:text-base font-semibold text-gray-900">
+      <Card>
+        <CardBody className="p-4 sm:p-5">
+          <h3 className="mb-2 text-base font-semibold text-foreground">
             {t(isHi, '🔬 Lab Activity — This Week', '🔬 लैब गतिविधि — इस सप्ताह')}
           </h3>
-        </div>
-        <p className="text-sm text-red-600 mb-3">
-          {t(isHi, "Couldn't load lab activity. Try again.", 'लैब गतिविधि लोड नहीं हो सकी। पुनः प्रयास करें।')}
-        </p>
-        <button
-          onClick={load}
-          className="min-h-[44px] px-4 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-semibold cursor-pointer hover:bg-red-100"
-        >
-          {t(isHi, 'Retry', 'पुनः प्रयास')}
-        </button>
-      </div>
+          <Alert tone="danger" className="mb-3">
+            {t(isHi, "Couldn't load lab activity. Try again.", 'लैब गतिविधि लोड नहीं हो सकी। पुनः प्रयास करें।')}
+          </Alert>
+          <Button size="sm" variant="secondary" onClick={load}>
+            {t(isHi, 'Retry', 'पुनः प्रयास')}
+          </Button>
+        </CardBody>
+      </Card>
     );
   }
 
@@ -211,142 +229,119 @@ export default function ParentLabReportWidget({
   const isEmpty = obs.length === 0 && weekCount === 0;
 
   return (
-    <div className="bg-white rounded-2xl p-4 sm:p-5 border border-orange-200">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <h3 className="text-[15px] sm:text-base font-semibold text-gray-900">
-          {t(isHi, '🔬 Lab Activity — This Week', '🔬 लैब गतिविधि — इस सप्ताह')}
-        </h3>
-        <span className="text-[11px] text-gray-500 hidden sm:inline">
-          {t(isHi, 'Last 7 days', 'पिछले 7 दिन')}
-        </span>
-      </div>
+    <Card>
+      <CardBody className="p-4 sm:p-5">
+        {/* Header */}
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h3 className="text-base font-semibold text-foreground">
+            {t(isHi, '🔬 Lab Activity — This Week', '🔬 लैब गतिविधि — इस सप्ताह')}
+          </h3>
+          <span className="hidden text-xs text-muted-foreground sm:inline">
+            {t(isHi, 'Last 7 days', 'पिछले 7 दिन')}
+          </span>
+        </div>
 
-      {/* Empty state */}
-      {isEmpty ? (
-        <div className="text-center py-6 px-2">
-          <div className="text-4xl mb-2" aria-hidden="true">{'🧪'}</div>
-          <p className="text-[14px] text-gray-700 leading-relaxed mb-4 max-w-[320px] mx-auto">
-            {t(
+        {/* Empty state */}
+        {isEmpty ? (
+          <EmptyState
+            icon={<span aria-hidden="true">🧪</span>}
+            title={t(isHi, 'No labs yet', 'अभी तक कोई प्रयोग नहीं')}
+            description={t(
               isHi,
               `${studentName} hasn't done any labs yet. Encourage them with a lab challenge!`,
               `${studentName} ने अभी तक कोई प्रयोग नहीं किया है। उन्हें एक लैब चुनौती के लिए प्रेरित करें!`,
             )}
-          </p>
-          {onScheduleClick ? (
-            <button
-              onClick={onScheduleClick}
-              className="inline-flex items-center justify-center min-h-[44px] px-5 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-semibold cursor-pointer hover:bg-orange-600"
-            >
-              {t(isHi, 'Schedule a lab →', 'एक लैब निर्धारित करें →')}
-            </button>
-          ) : (
-            <a
-              href="/parent/calendar"
-              className="inline-flex items-center justify-center min-h-[44px] px-5 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-semibold no-underline hover:bg-orange-600"
-            >
-              {t(isHi, 'Schedule a lab →', 'एक लैब निर्धारित करें →')}
-            </a>
-          )}
-        </div>
-      ) : (
-        <>
-          {/* Stats: stack on mobile, 3-col on sm+ */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-            <div className="bg-orange-50 rounded-xl px-3 py-2.5 border border-orange-100">
-              <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-0.5">
-                {t(isHi, 'Experiments', 'प्रयोग')}
+            action={
+              <Button onClick={onScheduleClick ?? (() => router.push('/parent/calendar'))}>
+                {t(isHi, 'Schedule a lab →', 'एक लैब निर्धारित करें →')}
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            {/* Stats: stack on mobile, 3-col on sm+ */}
+            <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded-xl border border-surface-3 bg-surface-2 px-3 py-2.5">
+                <div className="mb-0.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t(isHi, 'Experiments', 'प्रयोग')}
+                </div>
+                <div className="text-xl font-bold text-primary">{weekCount}</div>
               </div>
-              <div className="text-xl font-bold text-orange-600">{weekCount}</div>
-            </div>
-            <div className="bg-amber-50 rounded-xl px-3 py-2.5 border border-amber-100">
-              <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-0.5">
-                {t(isHi, 'Lab Streak', 'लैब स्ट्रीक')}
+              <div className="rounded-xl border border-surface-3 bg-surface-2 px-3 py-2.5">
+                <div className="mb-0.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t(isHi, 'Lab Streak', 'लैब स्ट्रीक')}
+                </div>
+                <div className="text-xl font-bold text-streak">
+                  {currentStreak}
+                  <span className="ml-1 text-xs font-medium text-streak">
+                    {t(isHi, currentStreak === 1 ? 'day' : 'days', 'दिन')}
+                  </span>
+                </div>
               </div>
-              <div className="text-xl font-bold text-amber-600">
-                {currentStreak}
-                <span className="text-xs font-medium text-amber-500 ml-1">
-                  {t(isHi, currentStreak === 1 ? 'day' : 'days', 'दिन')}
-                </span>
+              <div className="rounded-xl border border-surface-3 bg-surface-2 px-3 py-2.5">
+                <div className="mb-0.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t(isHi, 'Avg Viva', 'औसत वाइवा')}
+                </div>
+                <div className="text-xl font-bold text-secondary">
+                  {vivaPct === null ? <span className="text-muted-foreground">—</span> : `${vivaPct}%`}
+                </div>
               </div>
             </div>
-            <div className="bg-purple-50 rounded-xl px-3 py-2.5 border border-purple-100">
-              <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold mb-0.5">
-                {t(isHi, 'Avg Viva', 'औसत वाइवा')}
-              </div>
-              <div className="text-xl font-bold text-purple-600">
-                {vivaPct === null ? <span className="text-gray-400">—</span> : `${vivaPct}%`}
-              </div>
-            </div>
-          </div>
 
-          {/* Recent labs list */}
-          {obs.length > 0 ? (
-            <ul className="space-y-2 md:grid md:grid-cols-2 md:gap-2 md:space-y-0">
-              {obs.map(o => {
-                const sim = getSimLabel(o.simulation_id, isHi);
-                const isGuided = o.observation_type === 'guided';
-                const hasViva = isGuided && o.total_questions != null && o.total_questions > 0;
-                const vivaItemPct = hasViva
-                  ? Math.round(((o.quiz_score ?? 0) / (o.total_questions ?? 1)) * 100)
-                  : null;
-                const snippet = truncate(o.observation_text, 80);
-                return (
-                  <li
-                    key={o.id}
-                    className="bg-gray-50 rounded-xl px-3 py-2.5 border border-gray-100"
-                  >
-                    <div className="flex items-start gap-2">
-                      <span className="text-lg flex-shrink-0 leading-none mt-0.5" aria-hidden="true">{sim.emoji}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[13px] font-semibold text-gray-900 truncate">{sim.title}</span>
-                          <span
-                            className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                              isGuided
-                                ? 'bg-purple-100 text-purple-700'
-                                : 'bg-blue-100 text-blue-700'
-                            }`}
-                          >
-                            {isGuided ? t(isHi, 'Guided', 'गाइडेड') : t(isHi, 'Simple', 'सरल')}
-                          </span>
-                          {vivaItemPct !== null && (
-                            <span
-                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                                vivaItemPct >= 70
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : vivaItemPct >= 40
-                                    ? 'bg-amber-100 text-amber-700'
-                                    : 'bg-red-100 text-red-700'
-                              }`}
-                            >
-                              {t(isHi, `Viva ${vivaItemPct}%`, `वाइवा ${vivaItemPct}%`)}
-                            </span>
+            {/* Recent labs list */}
+            {obs.length > 0 ? (
+              <ul className="space-y-2 md:grid md:grid-cols-2 md:gap-2 md:space-y-0">
+                {obs.map(o => {
+                  const sim = getSimLabel(o.simulation_id, isHi);
+                  const isGuided = o.observation_type === 'guided';
+                  const hasViva = isGuided && o.total_questions != null && o.total_questions > 0;
+                  const vivaItemPct = hasViva
+                    ? Math.round(((o.quiz_score ?? 0) / (o.total_questions ?? 1)) * 100)
+                    : null;
+                  const snippet = truncate(o.observation_text, 80);
+                  return (
+                    <li
+                      key={o.id}
+                      className="rounded-xl border border-surface-3 bg-surface-2 px-3 py-2.5"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="mt-0.5 flex-shrink-0 text-lg leading-none" aria-hidden="true">{sim.emoji}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="truncate text-sm font-semibold text-foreground">{sim.title}</span>
+                            <Badge tone={isGuided ? 'brand' : 'info'}>
+                              {isGuided ? t(isHi, 'Guided', 'गाइडेड') : t(isHi, 'Simple', 'सरल')}
+                            </Badge>
+                            {vivaItemPct !== null && (
+                              <Badge tone={vivaTone(vivaItemPct)}>
+                                {t(isHi, `Viva ${vivaItemPct}%`, `वाइवा ${vivaItemPct}%`)}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{relativeDate(o.created_at, isHi)}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>{formatDuration(o.time_spent_seconds, isHi)}</span>
+                          </div>
+                          {snippet && (
+                            <p className="mt-1 break-words text-xs leading-snug text-muted-foreground">
+                              “{snippet}”
+                            </p>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 text-[11px] text-gray-500 mt-0.5">
-                          <span>{relativeDate(o.created_at, isHi)}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>{formatDuration(o.time_spent_seconds, isHi)}</span>
-                        </div>
-                        {snippet && (
-                          <p className="text-[12px] text-gray-600 mt-1 leading-snug break-words">
-                            “{snippet}”
-                          </p>
-                        )}
                       </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="text-[13px] text-gray-500 text-center py-3">
-              {t(isHi, 'No labs in the last 7 days.', 'पिछले 7 दिनों में कोई प्रयोग नहीं।')}
-            </p>
-          )}
-        </>
-      )}
-    </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="py-3 text-center text-sm text-muted-foreground">
+                {t(isHi, 'No labs in the last 7 days.', 'पिछले 7 दिनों में कोई प्रयोग नहीं।')}
+              </p>
+            )}
+          </>
+        )}
+      </CardBody>
+    </Card>
   );
 }

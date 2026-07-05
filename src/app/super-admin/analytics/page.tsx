@@ -32,14 +32,14 @@ interface V2Data {
   }[];
 }
 
-// Hex literal palette (matches deprecated admin-styles.ts colors).
+// Token palette (mapped to CSS custom properties).
 const C = {
-  text1: '#111827',
-  text2: '#6B7280',
-  text3: '#9CA3AF',
-  accent: '#2563EB',
-  success: '#16A34A',
-  warning: '#D97706',
+  text1: 'var(--text-1)',
+  text2: 'var(--text-2)',
+  text3: 'var(--text-3)',
+  accent: 'var(--info)',
+  success: 'var(--success)',
+  warning: 'var(--warning)',
 };
 
 function timeAgo(dateStr: string): string {
@@ -52,7 +52,7 @@ function timeAgo(dateStr: string): string {
 
 function planColor(plan: string): string {
   if (plan === 'unlimited') return C.warning;
-  if (plan === 'pro') return '#7C3AED';
+  if (plan === 'pro') return 'var(--secondary)';
   if (plan === 'starter') return C.accent;
   return C.text3;
 }
@@ -127,7 +127,7 @@ function AnalyticsContent() {
           label="Total Foxy Sessions"
           value={v2?.total_foxy_all_time ?? 0}
           icon="🦊"
-          accentColor="#EC4899"
+          accentColor="color-mix(in srgb, var(--secondary) 60%, var(--danger))"
         />
       </div>
 
@@ -298,7 +298,7 @@ function AnalyticsContent() {
               label="Pro"
               value={v2.subscription_distribution?.pro ?? 0}
               icon="◉"
-              accentColor="#7C3AED"
+              accentColor="var(--secondary)"
             />
             <StatCard
               label="Unlimited"

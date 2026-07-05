@@ -4,7 +4,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { Card, Button, StatCard } from '@/components/ui';
+import { Card, Button, IconButton, Badge, Alert, MasteryRing } from '@/components/ui/primitives';
+import { bandForValue, bandLabel } from '@/lib/dashboard/mastery-band-labels';
 import { SectionErrorBoundary } from '@/components/SectionErrorBoundary';
 import { useAllowedSubjects } from '@/lib/useAllowedSubjects';
 import {
@@ -157,6 +158,10 @@ export default function QuizResults({
   // ADR-001 Phase 4 — picks Re-read CTA target (legacy /learn vs /revise).
   const { data: reviseFlags } = useFeatureFlags();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
+  // Phase 6a progressive disclosure — TIER 3 detail sections stay mounted
+  // (so their side-effects + computations are unchanged) but collapse behind
+  // this single show/hide flag to fix the ~15-section overload.
+  const [showDetails, setShowDetails] = useState(false);
   const [showCelebration, setShowCelebration] = useState(true);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [flashcardCount, setFlashcardCount] = useState(0);
@@ -396,7 +401,14 @@ export default function QuizResults({
   const { unlocked: allowedSubjects } = useAllowedSubjects();
   const subMeta = allowedSubjects.find(s => s.code === selectedSubject);
   const pct = results.score_percent;
-  const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
+  // Letter-grade ladder REMOVED (Phase 6a): replaced by the growth-mindset
+  // mastery band (Getting started / Building it / Strong) — no punitive "F".
+  // The score NUMBER (pct) is the server value, displayed verbatim (P1).
+  const band = bandForValue(pct);
+  const bandText = bandLabel(band, isHi);
+  // Band → semantic accent token (design-system.md §2). Low reads as a calm
+  // "info" here (never danger-red) to keep the headline non-punitive.
+  const bandToneVar = band === 'high' ? 'var(--mastery-high)' : band === 'mid' ? 'var(--mastery-mid)' : 'var(--info)';
   const emoji = pct >= 80 ? '🏆' : pct >= 60 ? '👍' : pct >= 40 ? '💪' : '📚';
   const message = pct >= 80
     ? (isHi ? 'शानदार! तुम तो CBSE topper हो!' : 'Outstanding! You nailed it!')
@@ -439,105 +451,121 @@ export default function QuizResults({
      <SectionErrorBoundary section="Quiz Results">
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
-          <button onClick={onRetry} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
+          <IconButton
+            variant="ghost"
+            size="sm"
+            label={isHi ? 'वापस जाएं' : 'Go back'}
+            icon={<span aria-hidden="true">←</span>}
+            onClick={onRetry}
+          />
           <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi ? 'क्विज़ नतीजे' : 'Quiz Results'}
           </h1>
         </div>
       </header>
       <main className="app-container py-6 space-y-5 max-w-lg mx-auto">
-        {/* First Quiz Celebration */}
+        {/* First Quiz Celebration — correctness-critical onboarding signal (P15) */}
         {isFirstQuiz && (
-          <div
-            className="rounded-2xl p-6 text-center text-white animate-scale-in"
-            style={{ background: 'linear-gradient(135deg, var(--purple), var(--accent-warm))' }}
+          <Alert
+            tone="success"
+            icon={<span>🎊</span>}
+            title={isHi ? 'पहला क्विज़ पूरा!' : 'First Quiz Complete!'}
           >
-            <div className="text-5xl mb-3">🎊</div>
-            <h2 className="text-2xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-              {isHi ? 'पहला क्विज़ पूरा!' : 'First Quiz Complete!'}
-            </h2>
-            <p className="text-sm opacity-90 mb-4">
+            <p>
               {isHi ? 'तुमने शुरुआत की — यही सबसे ज़रूरी कदम है!' : "You've started — that's the most important step!"}
             </p>
-            <div className="flex gap-3 justify-center">
-              <Link href="/foxy" className="px-4 py-2 bg-white/20 rounded-lg text-sm backdrop-blur-sm hover:bg-white/30 transition-colors">
-                {isHi ? '🦊 फॉक्सी से बात करो' : '🦊 Chat with Foxy'}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link href="/foxy">
+                <Button variant="secondary" size="sm">
+                  {isHi ? '🦊 फॉक्सी से बात करो' : '🦊 Chat with Foxy'}
+                </Button>
               </Link>
-              <Link href="/learn" className="px-4 py-2 bg-white/20 rounded-lg text-sm backdrop-blur-sm hover:bg-white/30 transition-colors">
-                {isHi ? '📚 पढ़ना शुरू करो' : '📚 Start Learning'}
+              <Link href="/learn">
+                <Button variant="secondary" size="sm">
+                  {isHi ? '📚 पढ़ना शुरू करो' : '📚 Start Learning'}
+                </Button>
               </Link>
             </div>
-          </div>
+          </Alert>
         )}
 
         {/* Idempotent-replay subtitle — when the server returned a cached
             result for an already-submitted session. Bilingual per P7. */}
         {isReplay && (
-          <div
-            className="rounded-xl px-3 py-2 text-center"
-            style={{
-              background: 'color-mix(in srgb, var(--teal) 6%, transparent)',
-              border: '1px solid color-mix(in srgb, var(--teal) 18%, transparent)',
-              color: 'var(--teal)',
-            }}
-            data-testid="quiz-results-replay-banner"
-          >
-            <p className="text-xs font-semibold">
-              {isHi ? 'पिछला नतीजा दिखा रहे हैं' : 'Showing previous result'}
-            </p>
-          </div>
+          <Alert tone="info" data-testid="quiz-results-replay-banner">
+            {isHi ? 'पिछला नतीजा दिखा रहे हैं' : 'Showing previous result'}
+          </Alert>
         )}
 
         {/* Daily XP cap banner — server-reported via xp_capped flag.
             P2: numbers come from the submission response, NEVER hardcoded.
             P7: bilingual via isHi. */}
         {results.xp_capped === true && (
-          <div
-            className="rounded-xl p-3"
-            style={{
-              background: 'color-mix(in srgb, var(--accent-warm) 10%, white)',
-              border: '1px solid color-mix(in srgb, var(--accent-warm) 30%, transparent)',
-              color: 'var(--accent-warm-strong)',
-            }}
-            data-testid="quiz-results-xp-cap-banner"
-          >
-            <p className="text-xs font-semibold leading-relaxed">
-              {isHi
-                ? `🎯 आज की XP सीमा पूरी हो गई! आज आपने ${results.xp_earned} XP कमाए${
-                    typeof results.xp_uncapped === 'number' && results.xp_uncapped > results.xp_earned
-                      ? ` (${results.xp_uncapped} होते)`
-                      : ''
-                  }. कल फिर मिलते हैं!`
-                : `🎯 Daily XP cap reached! You earned ${results.xp_earned} XP today${
-                    typeof results.xp_uncapped === 'number' && results.xp_uncapped > results.xp_earned
-                      ? ` (would have been ${results.xp_uncapped})`
-                      : ''
-                  }. Come back tomorrow for more!`}
-            </p>
-          </div>
+          <Alert tone="warning" icon={<span>🎯</span>} data-testid="quiz-results-xp-cap-banner">
+            {isHi
+              ? `आज की XP सीमा पूरी हो गई! आज आपने ${results.xp_earned} XP कमाए${
+                  typeof results.xp_uncapped === 'number' && results.xp_uncapped > results.xp_earned
+                    ? ` (${results.xp_uncapped} होते)`
+                    : ''
+                }. कल फिर मिलते हैं!`
+              : `Daily XP cap reached! You earned ${results.xp_earned} XP today${
+                  typeof results.xp_uncapped === 'number' && results.xp_uncapped > results.xp_earned
+                    ? ` (would have been ${results.xp_uncapped})`
+                    : ''
+                }. Come back tomorrow for more!`}
+          </Alert>
         )}
 
-        {/* Score Card */}
-        <Card accent={pct >= 60 ? 'var(--success)' : 'var(--danger)'}>
-          <div className="text-center py-4">
-            <div className="text-5xl mb-3">{emoji}</div>
-            <div className="text-6xl font-bold mb-1 animate-score-reveal" style={{ fontFamily: 'var(--font-display)', color: pct >= 60 ? 'var(--success)' : 'var(--danger)' }}>
-              {pct}%
-            </div>
-            <div className="text-xl font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
-              Grade: {grade}
-            </div>
-            <p className="text-sm text-[var(--text-3)]">{message}</p>
+        {/* ── TIER 1 · Score Card ──
+            Letter grade REMOVED. MasteryRing renders the server score verbatim
+            (P1) with a growth-mindset band label (non-colour icon backup inside
+            the ring). Card accent follows the band, not a punitive pct>=60 red. */}
+        <Card
+          variant="elevated"
+          className="p-6"
+          style={{ borderTopWidth: 4, borderTopColor: bandToneVar }}
+        >
+          <div className="flex flex-col items-center text-center gap-3">
+            <div className="text-4xl" aria-hidden="true">{emoji}</div>
+            <MasteryRing
+              value={pct}
+              size={144}
+              strokeWidth={12}
+              showLabel={false}
+              bandLabel={() => bandText}
+            />
+            <Badge
+              tone={band === 'high' ? 'success' : band === 'mid' ? 'warning' : 'info'}
+              variant="soft"
+              className="text-fluid-sm px-3 py-1"
+            >
+              {bandText}
+            </Badge>
+            <p className="text-fluid-sm text-muted-foreground">{message}</p>
+            {/* TODO(6a-defer · score-delta): the "what improved vs. last time"
+                delta mounts HERE once the backend exposes
+                results.previous_score_percent. Do NOT client-aggregate quiz
+                history — needs a server endpoint (out of Phase 6a scope). */}
           </div>
         </Card>
 
-        {/* Stats Grid */}
-        <div className="grid-stats">
-          <StatCard icon="✓" value={results.correct} label={isHi ? 'सही' : 'Correct'} color="var(--green)" />
-          <StatCard icon="✗" value={results.total - results.correct} label={isHi ? 'गलत' : 'Wrong'} color="var(--red)" />
-          <StatCard icon="✨" value={`+${results.xp_earned}`} label="XP" color="var(--accent-warm)" />
-          <StatCard icon="⏱" value={formatTime(timer)} label={isHi ? 'समय' : 'Time'} color="var(--teal)" />
-        </div>
+        {/* ── TIER 1 · Compact stat strip ── */}
+        <Card variant="flat" className="p-3">
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {[
+              { icon: '✓', value: results.correct, label: isHi ? 'सही' : 'Correct', color: 'var(--success)' },
+              { icon: '✗', value: results.total - results.correct, label: isHi ? 'गलत' : 'Wrong', color: 'var(--danger)' },
+              { icon: '✨', value: `+${results.xp_earned}`, label: 'XP', color: 'var(--accent-warm)' },
+              { icon: '⏱', value: formatTime(timer), label: isHi ? 'समय' : 'Time', color: 'var(--info)' },
+            ].map((s) => (
+              <div key={s.label} className="flex flex-col items-center gap-0.5">
+                <span className="text-base leading-none" aria-hidden="true" style={{ color: s.color }}>{s.icon}</span>
+                <span className="text-fluid-base font-bold tabular-nums text-foreground">{s.value}</span>
+                <span className="text-fluid-xs text-muted-foreground">{s.label}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
 
         {/* Goal-aware scorecard sentence (Phase 1, flag-gated, additive).
             Renders nothing when ff_goal_aware_foxy is off OR the student has
@@ -556,99 +584,83 @@ export default function QuizResults({
           </div>
         )}
 
-        {/* Post-quiz nudge -- contextual encouragement based on score */}
-        {(() => {
+        {/* ── TIER 1 · ONE recommended next action ──
+            When the CME returns a next action, that is the single primary
+            recommendation (NextActionCard). Otherwise a single score-band
+            nudge — never the old three peer CTAs. */}
+        {results.cme_next_action ? (
+          <NextActionCard
+            action={results.cme_next_action as 'teach' | 'practice' | 'challenge' | 'revise' | 'remediate' | 'exam_prep'}
+            conceptId={results.cme_next_concept_id || null}
+            reason={results.cme_reason || ''}
+            isHi={isHi}
+            wrongAnswerCount={results.total - results.correct}
+            scorePercent={pct}
+            subject={selectedSubject}
+            onRetry={onRetry}
+            onAction={(action, conceptId) => {
+              const mode = action === 'teach' ? 'learn'
+                : action === 'revise' ? 'revision'
+                : action === 'remediate' ? 'doubt'
+                : action === 'exam_prep' ? 'quiz'
+                : action === 'practice' ? 'quiz'
+                : 'quiz'; // challenge
+              router.push(`/foxy?mode=${mode}${conceptId ? `&topic_id=${conceptId}` : ''}`);
+            }}
+          />
+        ) : (() => {
           const subjectParam = selectedSubject || '';
           if (pct >= 80) {
             return (
-              <div
-                className="rounded-2xl p-4 flex items-center gap-3"
-                style={{
-                  background: 'color-mix(in srgb, var(--green) 6%, transparent)',
-                  border: '1.5px solid color-mix(in srgb, var(--green) 15%, transparent)',
-                }}
+              <Alert
+                tone="success"
+                icon={<span>🚀</span>}
+                title={isHi ? 'शानदार! अब Level Up करो' : 'Great score! Ready to level up?'}
+                action={
+                  <Button variant="primary" size="sm" onClick={() => router.push('/quiz')}>
+                    {isHi ? 'करो →' : 'Go →'}
+                  </Button>
+                }
               >
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: 'color-mix(in srgb, var(--green) 12%, transparent)' }}>🚀</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold" style={{ color: 'var(--green)' }}>
-                    {isHi ? 'शानदार! अब Level Up करो' : 'Great score! Ready to level up?'}
-                  </p>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-                    {isHi ? 'कठिन सवालों से खुद को challenge करो' : 'Challenge yourself with harder questions'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => router.push('/quiz')}
-                  className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: 'var(--green)', color: '#fff' }}
-                >
-                  {isHi ? 'करो →' : 'Go →'}
-                </button>
-              </div>
-            );
-          } else if (pct < 50) {
-            return (
-              <div
-                className="rounded-2xl p-4 flex items-center gap-3"
-                style={{
-                  background: 'color-mix(in srgb, var(--accent-warm) 6%, transparent)',
-                  border: '1.5px solid color-mix(in srgb, var(--accent-warm) 15%, transparent)',
-                }}
-              >
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: 'color-mix(in srgb, var(--accent-warm) 12%, transparent)' }}>🦊</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold" style={{ color: 'var(--accent-warm)' }}>
-                    {isHi ? 'Foxy तुम्हारी मदद कर सकती है!' : 'Foxy can help you improve!'}
-                  </p>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-                    {isHi ? 'कमजोर topics को step-by-step समझो' : 'Get step-by-step help on weak topics'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => router.push(`/foxy?subject=${subjectParam}&mode=doubt`)}
-                  className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: 'var(--accent-warm)', color: '#fff' }}
-                >
-                  {isHi ? 'पूछो →' : 'Ask →'}
-                </button>
-              </div>
-            );
-          } else {
-            return (
-              <div
-                className="rounded-2xl p-4 flex items-center gap-3"
-                style={{
-                  background: 'color-mix(in srgb, var(--teal) 6%, transparent)',
-                  border: '1.5px solid color-mix(in srgb, var(--teal) 15%, transparent)',
-                }}
-              >
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-                  style={{ background: 'color-mix(in srgb, var(--teal) 12%, transparent)' }}>💪</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold" style={{ color: 'var(--teal)' }}>
-                    {isHi ? 'अच्छा काम! और अभ्यास करो' : 'Good effort! Keep practicing'}
-                  </p>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-                    {isHi ? 'एक और क्विज़ से score बढ़ाओ' : 'One more quiz to push your score higher'}
-                  </p>
-                </div>
-                <button
-                  onClick={onRetry}
-                  className="flex-shrink-0 text-xs font-bold px-3 py-2 rounded-xl transition-all active:scale-95"
-                  style={{ background: 'var(--teal)', color: '#fff' }}
-                >
-                  {isHi ? 'फिर से →' : 'Retry →'}
-                </button>
-              </div>
+                {isHi ? 'कठिन सवालों से खुद को challenge करो' : 'Challenge yourself with harder questions'}
+              </Alert>
             );
           }
+          if (pct < 50) {
+            return (
+              <Alert
+                tone="warning"
+                icon={<span>🦊</span>}
+                title={isHi ? 'Foxy तुम्हारी मदद कर सकती है!' : 'Foxy can help you improve!'}
+                action={
+                  <Button variant="primary" size="sm" onClick={() => router.push(`/foxy?subject=${subjectParam}&mode=doubt`)}>
+                    {isHi ? 'पूछो →' : 'Ask →'}
+                  </Button>
+                }
+              >
+                {isHi ? 'कमजोर topics को step-by-step समझो' : 'Get step-by-step help on weak topics'}
+              </Alert>
+            );
+          }
+          return (
+            <Alert
+              tone="info"
+              icon={<span>💪</span>}
+              title={isHi ? 'अच्छा काम! और अभ्यास करो' : 'Good effort! Keep practicing'}
+              action={
+                <Button variant="primary" size="sm" onClick={onRetry}>
+                  {isHi ? 'फिर से →' : 'Retry →'}
+                </Button>
+              }
+            >
+              {isHi ? 'एक और क्विज़ से score बढ़ाओ' : 'One more quiz to push your score higher'}
+            </Alert>
+          );
         })()}
 
         {/* Pedagogy v2 — Wave 1A v2-quiz-path distractor explainer.
             Surfaces curated wrong-answer remediations on the QuizResults
-            screen for the v2 path (legacy in-quiz path was wired in #635).
+            screen for the v2 path (legacy in-quiz path was wired in PR 635).
             MisconceptionExplainer renders null when no remediation exists,
             so this section silently produces only the entries with curated
             content. Gated server-side by ff_distractor_micro_explainer_v1
@@ -669,20 +681,20 @@ export default function QuizResults({
           }
           if (wrongMcq.length === 0) return null;
           return (
-            <Card className="!p-4" data-testid="quizresults-wrong-review">
-              <p className="text-xs font-semibold text-[var(--text-3)] mb-3 uppercase tracking-wider">
+            <Card variant="flat" className="p-4" data-testid="quizresults-wrong-review">
+              <p className="text-fluid-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
                 {isHi ? 'गलत जवाबों की समीक्षा' : 'Review wrong answers'}
               </p>
               <ul className="space-y-3">
                 {wrongMcq.map((w, idx) => (
                   <li key={`${w.questionId}-${idx}`} className="space-y-2">
-                    <p className="text-xs text-[var(--text-2)] font-medium leading-snug">
-                      <span className="text-[10px] uppercase tracking-wider text-[var(--text-3)] mr-1">
+                    <p className="text-fluid-xs text-foreground font-medium leading-snug">
+                      <span className="text-2xs uppercase tracking-wider text-muted-foreground mr-1">
                         Q{idx + 1}
                       </span>
                       {w.questionText}
                     </p>
-                    <p className="text-[10px] text-[var(--text-3)]">
+                    <p className="text-2xs text-muted-foreground">
                       {isHi ? 'तुम्हारा जवाब' : 'You picked'}
                       {' '}
                       <span className="font-semibold">{OPTION_LETTERS[w.selectedOption] ?? String(w.selectedOption + 1)}</span>
@@ -698,6 +710,23 @@ export default function QuizResults({
           );
         })()}
 
+        {/* ── TIER 3 · "See details" disclosure ──
+            All the deep-dive sections stay MOUNTED (their computations +
+            side-effects are unchanged) but collapse behind this single
+            show/hide flag. Only the numbers relocate — never change. */}
+        <Button
+          variant="secondary"
+          fullWidth
+          aria-expanded={showDetails}
+          aria-controls="quiz-results-details"
+          onClick={() => setShowDetails((v) => !v)}
+        >
+          {showDetails
+            ? (isHi ? 'विवरण छुपाओ ▲' : 'Hide details ▲')
+            : (isHi ? 'पूरा विवरण देखो ▼' : 'See details ▼')}
+        </Button>
+
+        <div id="quiz-results-details" hidden={!showDetails} className="space-y-5">
         {/* Separate MCQ/Written subscores — shown when quiz has both types */}
         {(() => {
           const mcqResponses = responses.filter((r) => r.selected_option >= 0);
@@ -709,8 +738,8 @@ export default function QuizResults({
           const writtenPossible = writtenResponses.reduce((sum, r) => sum + (r.marks_possible ?? 0), 0);
           const writtenPct = writtenPossible > 0 ? Math.round((writtenEarned / writtenPossible) * 100) : 0;
           return (
-            <Card className="!p-4">
-              <p className="text-xs font-semibold text-[var(--text-3)] mb-3 uppercase tracking-wider">
+            <Card variant="flat" className="p-4">
+              <p className="text-fluid-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
                 {isHi ? 'अंकों का विवरण' : 'Score Breakdown'}
               </p>
               <div className="space-y-3">
@@ -725,7 +754,7 @@ export default function QuizResults({
                     <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                       <div className="h-full rounded-full transition-all" style={{ width: `${mcqPct}%`, background: mcqPct >= 60 ? 'var(--green)' : 'var(--red)' }} />
                     </div>
-                    <span className="text-[10px] text-[var(--text-3)] mt-0.5 block">
+                    <span className="text-2xs text-muted-foreground mt-0.5 block">
                       {mcqCorrect}/{mcqResponses.length} {isHi ? 'सही' : 'correct'}
                     </span>
                   </div>
@@ -743,7 +772,7 @@ export default function QuizResults({
                     <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                       <div className="h-full rounded-full transition-all" style={{ width: `${writtenPct}%`, background: writtenPct >= 60 ? 'var(--green)' : 'var(--red)' }} />
                     </div>
-                    <span className="text-[10px] text-[var(--text-3)] mt-0.5 block">
+                    <span className="text-2xs text-muted-foreground mt-0.5 block">
                       {writtenEarned}/{writtenPossible} {isHi ? 'अंक' : 'marks'}
                     </span>
                   </div>
@@ -755,49 +784,30 @@ export default function QuizResults({
 
         {/* ── Performance Score update hint ── */}
         {selectedSubject && (
-          <div
-            className="rounded-xl p-3 flex items-center gap-3"
-            style={{
-              background: 'rgba(124, 58, 237, 0.05)',
-              border: '1px solid rgba(124, 58, 237, 0.12)',
-            }}
-          >
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: 'rgba(124, 58, 237, 0.10)' }}
-            >
-              <span className="text-lg font-bold" style={{ color: '#7C3AED', fontFamily: 'var(--font-display)' }}>
-                {perfScoreInfo ? perfScoreInfo.currentScore : '--'}
-              </span>
+          <Card variant="flat" className="p-3">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'color-mix(in srgb, var(--secondary) 10%, transparent)' }}
+              >
+                <span className="text-lg font-bold" style={{ color: 'var(--secondary)', fontFamily: 'var(--font-display)' }}>
+                  {perfScoreInfo ? perfScoreInfo.currentScore : '--'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-fluid-xs font-semibold" style={{ color: 'var(--secondary)' }}>
+                  {perfScoreInfo
+                    ? `${subMeta?.name ?? selectedSubject}: ${perfScoreInfo.levelName}`
+                    : 'Performance Score'}
+                </p>
+                <p className="text-2xs mt-0.5 text-muted-foreground">
+                  {perfScoreInfo
+                    ? (isHi ? 'तुम्हारा Performance Score जल्द अपडेट होगा' : 'Your Performance Score will update shortly')
+                    : (isHi ? 'तुम्हारा स्कोर जल्द अपडेट होगा' : 'Your score will update shortly')}
+                </p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              {perfScoreInfo ? (
-                <>
-                  <p className="text-xs font-semibold" style={{ color: '#7C3AED' }}>
-                    {isHi
-                      ? `${subMeta?.name ?? selectedSubject}: ${perfScoreInfo.levelName}`
-                      : `${subMeta?.name ?? selectedSubject}: ${perfScoreInfo.levelName}`}
-                  </p>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-                    {isHi
-                      ? 'तुम्हारा Performance Score जल्द अपडेट होगा'
-                      : 'Your Performance Score will update shortly'}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-xs font-semibold" style={{ color: '#7C3AED' }}>
-                    {isHi ? 'Performance Score' : 'Performance Score'}
-                  </p>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-3)' }}>
-                    {isHi
-                      ? 'तुम्हारा स्कोर जल्द अपडेट होगा'
-                      : 'Your score will update shortly'}
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
+          </Card>
         )}
 
         {/* ── Ask Foxy about your weakest topic ── */}
@@ -835,83 +845,57 @@ export default function QuizResults({
               }}
             >
               <div
+                aria-hidden="true"
                 className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
                 style={{ background: 'color-mix(in srgb, var(--accent-warm) 12%, transparent)' }}
               >
                 🦊
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                <p className="text-fluid-sm font-bold text-foreground">
                   {isHi
                     ? `"${topicLabel.hi}" में मदद चाहिए?`
                     : `Struggling with ${topicLabel.en}?`}
                 </p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+                <p className="text-fluid-xs mt-0.5 text-muted-foreground">
                   {isHi ? 'Foxy तुम्हें step-by-step समझाएगी' : 'Foxy will explain it step by step'}
                 </p>
               </div>
-              <button
-                onClick={() => router.push(foxyHref)}
-                className="flex-shrink-0 text-sm font-bold px-4 py-2 rounded-xl transition-all active:scale-95"
-                style={{ background: 'var(--accent-warm)', color: '#fff' }}
-              >
+              <Button variant="primary" size="sm" className="flex-shrink-0" onClick={() => router.push(foxyHref)}>
                 {isHi ? 'पूछो →' : 'Ask →'}
-              </button>
+              </Button>
             </div>
           );
         })()}
 
-        {/* Flashcard creation banner */}
+        {/* Flashcard creation banner (keeps the auto-create side-effect intact) */}
         {flashcardBanner && flashcardCount > 0 && (
-          <div
-            className="rounded-xl p-3 flex items-center gap-3"
-            style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}
+          <Alert
+            tone="info"
+            icon={<span>📝</span>}
+            action={
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => router.push(reviewRoute((reviseFlags ?? {}) as Record<string, boolean>))}
+              >
+                {isHi ? 'रिव्यू करो' : 'Review'}
+              </Button>
+            }
           >
-            <span className="text-2xl flex-shrink-0">📝</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold" style={{ color: '#7C3AED' }}>
-                {isHi
-                  ? `${flashcardCount} फ्लैशकार्ड बन गए तुम्हारी गलतियों से — रिव्यू करो और master करो!`
-                  : `${flashcardCount} flashcard${flashcardCount > 1 ? 's' : ''} created from your mistakes — review them to master these concepts!`}
-              </p>
-            </div>
-            <button
-              onClick={() => router.push(reviewRoute((reviseFlags ?? {}) as Record<string, boolean>))}
-              className="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95"
-              style={{ background: 'rgba(124,58,237,0.12)', color: '#7C3AED' }}
-            >
-              {isHi ? 'रिव्यू करो' : 'Review'}
-            </button>
-          </div>
+            {isHi
+              ? `${flashcardCount} फ्लैशकार्ड बन गए तुम्हारी गलतियों से — रिव्यू करो और master करो!`
+              : `${flashcardCount} flashcard${flashcardCount > 1 ? 's' : ''} created from your mistakes — review them to master these concepts!`}
+          </Alert>
         )}
 
-        {/* CME Next Action Recommendation */}
-        {results.cme_next_action && (
-          <NextActionCard
-            action={results.cme_next_action as 'teach' | 'practice' | 'challenge' | 'revise' | 'remediate' | 'exam_prep'}
-            conceptId={results.cme_next_concept_id || null}
-            reason={results.cme_reason || ''}
-            isHi={isHi}
-            wrongAnswerCount={results.total - results.correct}
-            scorePercent={pct}
-            subject={selectedSubject}
-            onRetry={onRetry}
-            onAction={(action, conceptId) => {
-              const mode = action === 'teach' ? 'learn'
-                : action === 'revise' ? 'revision'
-                : action === 'remediate' ? 'doubt'
-                : action === 'exam_prep' ? 'quiz'
-                : action === 'practice' ? 'quiz'
-                : 'quiz'; // challenge
-              router.push(`/foxy?mode=${mode}${conceptId ? `&topic_id=${conceptId}` : ''}`);
-            }}
-          />
-        )}
+        {/* NOTE: the CME NextActionCard now renders in TIER 1 (single recommended
+            next action). It was removed from this folded region in Phase 6a. */}
 
         {/* Error Classification Breakdown */}
         {responses.some(r => !r.is_correct) && (
           <div>
-            <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+            <p className="text-fluid-sm font-semibold text-foreground mb-3">
               {isHi ? 'गलती विश्लेषण' : 'Error Breakdown'}
             </p>
             <Card className="!p-4">
@@ -934,7 +918,7 @@ export default function QuizResults({
                       <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `color-mix(in srgb, ${item.color} 12%, transparent)` }}>
                         <div className="h-full rounded-full transition-all" style={{ width: total > 0 ? `${(item.count / total) * 100}%` : '0%', background: item.color }} />
                       </div>
-                      <span className="text-[10px] text-[var(--text-3)] w-12 text-right">
+                      <span className="text-2xs text-muted-foreground w-12 text-right">
                         {item.count} ({total > 0 ? Math.round((item.count / total) * 100) : 0}%)
                       </span>
                     </div>
@@ -999,7 +983,7 @@ export default function QuizResults({
                       ? `अध्याय ${firstChapter} दोबारा पढ़ें`
                       : `Re-read Chapter ${firstChapter}`}
                     {moreCount > 0 && (
-                      <span className="ml-2 text-[10px] text-[var(--text-3)]">
+                      <span className="ml-2 text-2xs text-muted-foreground">
                         {isHi ? `+${moreCount} और` : `+${moreCount} more`}
                       </span>
                     )}
@@ -1013,7 +997,7 @@ export default function QuizResults({
         {/* Bloom Analysis */}
         {quizMode === 'cognitive' && (
           <div>
-            <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+            <p className="text-fluid-sm font-semibold text-foreground mb-3">
               {isHi ? 'ब्लूम विश्लेषण' : 'Bloom Analysis'}
             </p>
             <Card className="!p-4">
@@ -1036,7 +1020,7 @@ export default function QuizResults({
                       <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: `${bc.color}15` }}>
                         <div className="h-full rounded-full transition-all" style={{ width: `${pctCorrect}%`, background: bc.color }} />
                       </div>
-                      <span className="text-[10px] text-[var(--text-3)] w-16 text-right">
+                      <span className="text-2xs text-muted-foreground w-16 text-right">
                         {correctAtLevel}/{qsAtLevel.length} ({pctCorrect}%)
                       </span>
                     </div>
@@ -1046,7 +1030,7 @@ export default function QuizResults({
               {cogLoad.fatigueScore > 0.3 && (
                 <div className="mt-3 pt-3 border-t flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
                   <span className="text-sm">😮‍💨</span>
-                  <span className="text-[10px] text-[var(--text-3)]">
+                  <span className="text-2xs text-muted-foreground">
                     {isHi ? `थकान स्कोर: ${Math.round(cogLoad.fatigueScore * 100)}%` : `Fatigue detected: ${Math.round(cogLoad.fatigueScore * 100)}%`}
                   </span>
                 </div>
@@ -1057,7 +1041,7 @@ export default function QuizResults({
 
         {/* Question Review */}
         <div>
-          <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+          <p className="text-fluid-sm font-semibold text-foreground mb-3">
             {isHi ? 'सवालों की समीक्षा' : 'Question Review'}
           </p>
           <div className="space-y-3">
@@ -1114,7 +1098,7 @@ export default function QuizResults({
                         background: correct ? 'var(--green)'
                           : (resp?.student_answer_text !== undefined && (resp?.marks_awarded ?? 0) > 0) ? 'var(--gold)'
                           : 'var(--red)',
-                        color: '#fff',
+                        color: 'var(--on-accent)',
                       }}
                     >
                       {resp?.student_answer_text !== undefined && resp?.selected_option < 0
@@ -1127,9 +1111,9 @@ export default function QuizResults({
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-[10px] text-[var(--text-3)]">{resp?.time_spent || 0}s</span>
+                      <span className="text-2xs text-muted-foreground">{resp?.time_spent || 0}s</span>
                       {correct && (
-                        <span className="text-[10px] text-[var(--text-3)]">{isExpanded ? '▲' : '▼'}</span>
+                        <span className="text-2xs text-muted-foreground">{isExpanded ? '▲' : '▼'}</span>
                       )}
                     </div>
                   </button>
@@ -1142,7 +1126,7 @@ export default function QuizResults({
                         <>
                           {/* Student's written answer */}
                           {resp.student_answer_text && (
-                            <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}>
+                            <div className="rounded-lg px-3 py-2 text-2xs leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }}>
                               <span className="font-semibold block mb-1" style={{ color: 'var(--text-3)' }}>
                                 {isHi ? 'तुम्हारा उत्तर:' : 'Your answer:'}
                               </span>
@@ -1172,8 +1156,8 @@ export default function QuizResults({
 
                           {/* AI rubric feedback */}
                           {resp.rubric_feedback && resp.rubric_feedback !== 'Skipped' && (
-                            <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.12)', color: 'var(--text-2)' }}>
-                              <span className="font-semibold" style={{ color: '#7C3AED' }}>
+                            <div className="rounded-lg px-3 py-2 text-2xs leading-relaxed" style={{ background: 'color-mix(in srgb, var(--secondary) 5%, transparent)', border: '1px solid color-mix(in srgb, var(--secondary) 12%, transparent)', color: 'var(--text-2)' }}>
+                              <span className="font-semibold" style={{ color: 'var(--secondary)' }}>
                                 {isHi ? 'AI मूल्यांकन: ' : 'AI Feedback: '}
                               </span>
                               {resp.rubric_feedback}
@@ -1182,8 +1166,8 @@ export default function QuizResults({
 
                           {/* Model answer (from explanation field) */}
                           {explanation && (
-                            <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.12)', color: 'var(--text-2)' }}>
-                              <span className="font-semibold" style={{ color: 'var(--teal)' }}>
+                            <div className="rounded-lg px-3 py-2 text-2xs leading-relaxed" style={{ background: 'color-mix(in srgb, var(--info) 5%, transparent)', border: '1px solid color-mix(in srgb, var(--info) 12%, transparent)', color: 'var(--text-2)' }}>
+                              <span className="font-semibold" style={{ color: 'var(--info)' }}>
                                 {isHi ? 'आदर्श उत्तर: ' : 'Model Answer: '}
                               </span>
                               {explanation}
@@ -1226,7 +1210,7 @@ export default function QuizResults({
                                 return (
                                   <div
                                     key={oi}
-                                    className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[11px]"
+                                    className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-2xs"
                                     style={{ background: bg, border: `1px solid ${borderColor}`, color: textColor }}
                                   >
                                     <span className="font-bold w-4 flex-shrink-0">{OPTION_LETTERS[oi]}.</span>
@@ -1241,7 +1225,7 @@ export default function QuizResults({
 
                           {/* Explanation */}
                           {explanation && (
-                            <div className="rounded-lg px-3 py-2 text-[11px] leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-3)' }}>
+                            <div className="rounded-lg px-3 py-2 text-2xs leading-relaxed" style={{ background: 'var(--surface-1)', color: 'var(--text-3)' }}>
                               <span className="font-semibold" style={{ color: 'var(--text-2)' }}>
                                 {isHi ? 'व्याख्या: ' : 'Explanation: '}
                               </span>
@@ -1255,8 +1239,11 @@ export default function QuizResults({
                       {!correct && selectedSubject && question.chapter_number && (
                         <button
                           onClick={() => router.push(`/learn/${selectedSubject}/${question.chapter_number}`)}
-                          className="text-[11px] font-semibold px-3 py-1.5 rounded-lg w-full text-left"
-                          style={{ background: `${subMeta?.color || '#7C3AED'}15`, color: subMeta?.color || '#7C3AED' }}
+                          className="text-2xs font-semibold px-3 py-2 rounded-lg w-full text-left min-h-[44px] flex items-center"
+                          style={{
+                            background: `color-mix(in srgb, ${subMeta?.color || 'var(--secondary)'} 12%, transparent)`,
+                            color: subMeta?.color || 'var(--secondary)',
+                          }}
                         >
                           📖 {isHi ? `अध्याय ${question.chapter_number} के concept पढ़ो ->` : `Study Chapter ${question.chapter_number} concepts ->`}
                         </button>
@@ -1264,9 +1251,11 @@ export default function QuizResults({
 
                       {/* Ask Foxy deep-link for wrong answers */}
                       {!correct && (
-                        <button
-                          className="w-full rounded-lg py-2 px-3 flex items-center justify-center gap-2 text-xs font-semibold transition-colors"
-                          style={{ background: 'var(--accent-warm)', color: '#fff' }}
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          fullWidth
+                          leadingIcon={<span>🦊</span>}
                           onClick={(e) => {
                             e.stopPropagation();
                             const subjectParam = selectedSubject || '';
@@ -1276,9 +1265,8 @@ export default function QuizResults({
                             router.push(`/foxy?subject=${subjectParam}&mode=doubt&message=${msg}`);
                           }}
                         >
-                          <span>🦊</span>
                           {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )}
@@ -1298,40 +1286,50 @@ export default function QuizResults({
           if (weakChapters.length === 0 || !selectedSubject) return null;
           return (
             <div>
-              <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+              <p className="text-fluid-sm font-semibold text-foreground mb-3">
                 {isHi ? 'इन अध्यायों को दोबारा पढ़ो' : 'Chapters to Review'}
               </p>
-              <Card className="!p-4">
+              <Card variant="flat" className="p-4">
                 <div className="space-y-2">
-                  {weakChapters.map(ch => (
-                    <button
-                      key={ch}
-                      onClick={() => router.push(`/learn/${selectedSubject}/${ch}`)}
-                      className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all active:scale-[0.98]"
-                      style={{ background: `${subMeta?.color || '#7C3AED'}10`, border: `1px solid ${subMeta?.color || '#7C3AED'}30` }}
-                    >
-                      <span className="text-base">{subMeta?.icon || '📚'}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold" style={{ color: subMeta?.color || '#7C3AED' }}>
-                          {isHi ? `अध्याय ${ch}` : `Chapter ${ch}`}
+                  {weakChapters.map(ch => {
+                    const subColor = subMeta?.color || 'var(--secondary)';
+                    return (
+                      <button
+                        key={ch}
+                        onClick={() => router.push(`/learn/${selectedSubject}/${ch}`)}
+                        className="w-full min-h-[44px] flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all active:scale-[0.98]"
+                        style={{
+                          background: `color-mix(in srgb, ${subColor} 10%, transparent)`,
+                          border: `1px solid color-mix(in srgb, ${subColor} 30%, transparent)`,
+                        }}
+                      >
+                        <span className="text-base" aria-hidden="true">{subMeta?.icon || '📚'}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-fluid-xs font-semibold" style={{ color: subColor }}>
+                            {isHi ? `अध्याय ${ch}` : `Chapter ${ch}`}
+                          </div>
+                          <div className="text-2xs text-muted-foreground">
+                            {isHi ? 'concepts और notes देखो' : 'Review concepts & notes'}
+                          </div>
                         </div>
-                        <div className="text-[10px] text-[var(--text-3)]">
-                          {isHi ? 'concepts और notes देखो' : 'Review concepts & notes'}
-                        </div>
-                      </div>
-                      <span className="text-[10px]" style={{ color: subMeta?.color || '#7C3AED' }}>→</span>
-                    </button>
-                  ))}
+                        <span className="text-fluid-xs" aria-hidden="true" style={{ color: subColor }}>→</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </Card>
             </div>
           );
         })()}
+        </div>{/* /TIER 3 · #quiz-results-details */}
 
-        {/* Action Buttons */}
+        {/* ── Action Buttons (pinned at the bottom, always visible) ── */}
         <div className="space-y-2" data-testid="bottom-nav">
-          {/* Share — the growth engine. Indian parents share on WhatsApp. */}
+          {/* Share — the growth engine. Indian parents share on WhatsApp.
+              No WhatsApp brand token exists in the design system, so the
+              share CTA rides the primary (warm gradient) action surface. */}
           <Button
+            variant="primary"
             fullWidth
             onClick={() => shareResult(quizShareMessage({
               studentName,
@@ -1340,21 +1338,20 @@ export default function QuizResults({
               xpEarned: results.xp_earned,
               isHi,
             }))}
-            style={{ background: '#25D366', color: '#fff' }}
           >
             {isHi ? '📱 WhatsApp पर शेयर करो' : '📱 Share on WhatsApp'}
           </Button>
           {/* Review Mistakes — shown when flashcards were created */}
           {flashcardCount > 0 && (
             <Button
+              variant="secondary"
               fullWidth
               onClick={() => router.push('/review?filter=quiz_wrong_answer')}
-              style={{ background: '#7C3AED', color: '#fff' }}
             >
               📝 {isHi ? 'गलतियाँ रिव्यू करो' : 'Review Your Mistakes'}
             </Button>
           )}
-          <Button fullWidth onClick={onRetry}>
+          <Button variant="secondary" fullWidth onClick={onRetry}>
             {isHi ? 'एक और क्विज़ खेलो' : 'Take Another Quiz'} ⚡
           </Button>
           {/* Score-contextual actions */}

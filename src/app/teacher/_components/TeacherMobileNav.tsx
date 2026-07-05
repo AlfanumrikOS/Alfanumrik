@@ -140,7 +140,7 @@ export default function TeacherMobileNav({
   };
 
   // Atlas warm-cream surface for the teacher portal — matches the sidebar +
-  // CommandCenter re-theme (Phase 2). Teacher accent = purple #7C3AED.
+  // CommandCenter re-theme (Phase 2). Teacher accent = purple (var --purple).
   const navStyle = {
     background: 'var(--surface-1)',
     backdropFilter: 'none',
@@ -149,7 +149,7 @@ export default function TeacherMobileNav({
     paddingBottom: 'env(safe-area-inset-bottom, 0px)',
   } as React.CSSProperties;
 
-  const activeColor = '#7C3AED';
+  const activeColor = 'var(--purple)';
   const inactiveColor = 'var(--text-3)';
 
   return (
@@ -157,7 +157,8 @@ export default function TeacherMobileNav({
       {showMore && (
         <>
           <div
-            className="fixed inset-0 z-[60] bg-black/30"
+            className="fixed inset-0 z-[60]"
+            style={{ background: 'var(--scrim)' }}
             onClick={() => setShowMore(false)}
             role="presentation"
             aria-hidden="true"
@@ -170,7 +171,7 @@ export default function TeacherMobileNav({
             style={{
               background: 'var(--surface-1)',
               paddingBottom: 'env(safe-area-inset-bottom, 16px)',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.12)',
+              boxShadow: 'var(--shadow-lg)',
               border: '1px solid var(--border)',
             }}
           >
@@ -178,7 +179,7 @@ export default function TeacherMobileNav({
             <div className="flex justify-center pt-3 pb-2">
               <div
                 className="w-10 h-1 rounded-full"
-                style={{ background: 'var(--border-mid, #ccc)' }}
+                style={{ background: 'var(--border-mid)' }}
               />
             </div>
             <div className="px-5 pb-4 space-y-1">
@@ -191,8 +192,8 @@ export default function TeacherMobileNav({
                     onClick={() => { setShowMore(false); router.push(item.href); }}
                     className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
                     style={{
-                      background: active ? 'rgba(124, 58, 237, 0.10)' : 'transparent',
-                      color: active ? '#7C3AED' : 'var(--text-2)',
+                      background: active ? 'var(--surface-2)' : 'transparent',
+                      color: active ? 'var(--purple)' : 'var(--text-2)',
                     }}
                   >
                     <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
@@ -200,7 +201,7 @@ export default function TeacherMobileNav({
                     {active && (
                       <span
                         className="ml-auto w-1.5 h-1.5 rounded-full"
-                        style={{ background: '#7C3AED' }}
+                        style={{ background: 'var(--purple)' }}
                       />
                     )}
                   </button>
@@ -260,8 +261,8 @@ export default function TeacherMobileNav({
                   {tab.icon}
                   {badgeCount > 0 && (
                     <span
-                      className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-0.5"
-                      style={{ background: '#DC2626', border: '1.5px solid var(--surface-1)' }}
+                      className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[12px] font-bold text-on-accent px-0.5"
+                      style={{ background: 'var(--danger)', border: '1.5px solid var(--surface-1)' }}
                     >
                       {badgeCount > 9 ? '9+' : badgeCount}
                     </span>

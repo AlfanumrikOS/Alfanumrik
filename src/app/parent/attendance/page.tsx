@@ -45,10 +45,10 @@ const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const STATUS_COLORS: Record<string, string> = {
-  present: 'bg-green-100 text-green-800 border-green-200',
-  absent: 'bg-red-100 text-red-800 border-red-200',
-  late: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  excused: 'bg-blue-100 text-blue-700 border-blue-200',
+  present: 'bg-surface-2 text-success border-surface-3',
+  absent: 'bg-surface-2 text-danger border-danger',
+  late: 'bg-surface-2 text-warning border-surface-3',
+  excused: 'bg-surface-2 text-info border-surface-3',
 };
 
 const MONTH_NAMES_EN = [
@@ -106,7 +106,7 @@ async function api(action: string, params: Record<string, unknown> = {}): Promis
 function Skeleton({ className }: { className?: string }) {
   return (
     <div
-      className={`animate-pulse bg-orange-100 rounded ${className ?? ''}`}
+      className={`animate-pulse bg-surface-2 rounded ${className ?? ''}`}
       aria-hidden="true"
     />
   );
@@ -143,10 +143,10 @@ function SummaryCard({
   icon: string;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-orange-200 p-3 flex flex-col gap-1">
+    <div className="bg-surface-1 rounded-xl border border-surface-3 p-3 flex flex-col gap-1">
       <div className="flex items-center gap-1.5">
         <span className="text-base" aria-hidden="true">{icon}</span>
-        <span className="text-[11px] text-gray-500 uppercase tracking-[0.4px] leading-none">{label}</span>
+        <span className="text-[11px] text-muted-foreground uppercase tracking-[0.4px] leading-none">{label}</span>
       </div>
       <span className="text-[22px] font-bold leading-none" style={{ color }}>{value}</span>
     </div>
@@ -185,13 +185,13 @@ function CalendarGrid({
   const dayLabels = isHi ? DAY_LABELS_HI : DAY_LABELS_EN;
 
   return (
-    <div className="bg-white rounded-xl border border-orange-200 p-4">
+    <div className="bg-surface-1 rounded-xl border border-surface-3 p-4">
       {/* Day-of-week header */}
       <div className="grid grid-cols-7 mb-2">
         {dayLabels.map((label) => (
           <div
             key={label}
-            className="text-center text-[10px] font-semibold text-gray-400 uppercase py-1"
+            className="text-center text-[10px] font-semibold text-muted-foreground uppercase py-1"
           >
             {label}
           </div>
@@ -215,15 +215,15 @@ function CalendarGrid({
           let statusText = '';
 
           if (record) {
-            cellClass += STATUS_COLORS[record.status] ?? 'bg-white border-gray-200';
+            cellClass += STATUS_COLORS[record.status] ?? 'bg-surface-1 border-surface-3';
             statusText = STATUS_LABEL(record.status, isHi);
             dayTextClass += 'text-inherit';
           } else if (isWeekend) {
-            cellClass += 'bg-gray-50 border-gray-100 text-gray-400';
-            dayTextClass += 'text-gray-400';
+            cellClass += 'bg-surface-2 border-surface-3 text-muted-foreground';
+            dayTextClass += 'text-muted-foreground';
           } else {
-            cellClass += 'bg-white border-gray-100 text-gray-700';
-            dayTextClass += 'text-gray-700';
+            cellClass += 'bg-surface-1 border-surface-3 text-foreground';
+            dayTextClass += 'text-foreground';
           }
 
           return (
@@ -268,8 +268,8 @@ function RecentAbsences({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-orange-200 p-4">
-      <h3 className="text-[14px] font-semibold text-gray-900 mb-3">
+    <div className="bg-surface-1 rounded-xl border border-surface-3 p-4">
+      <h3 className="text-[14px] font-semibold text-foreground mb-3">
         {tt(isHi, 'Recent Absences', 'हाल की अनुपस्थिति')}
       </h3>
       <div className="space-y-2">
@@ -278,16 +278,16 @@ function RecentAbsences({
           return (
             <div
               key={r.id}
-              className="flex items-start justify-between gap-3 py-2 border-b border-orange-50 last:border-b-0"
+              className="flex items-start justify-between gap-3 py-2 border-b border-surface-3 last:border-b-0"
             >
               <div className="flex flex-col">
-                <span className="text-[13px] font-semibold text-gray-900">{r.date}</span>
+                <span className="text-[13px] font-semibold text-foreground">{r.date}</span>
                 {r.notes && (
-                  <span className="text-[12px] text-gray-500 mt-0.5">{r.notes}</span>
+                  <span className="text-[12px] text-muted-foreground mt-0.5">{r.notes}</span>
                 )}
               </div>
               <span
-                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[r.status] ?? 'bg-surface-2 text-muted-foreground border-surface-3'}`}
               >
                 {isHi ? hi : en}
               </span>
@@ -452,7 +452,7 @@ export default function ParentAttendancePage() {
   // ── Auth loading ─────────────────────────────────────────────────────────
   if (!authChecked || auth.isLoading) {
     return (
-      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[#FFF8F0]">
+      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-foreground min-h-dvh bg-[var(--surface-2)]">
         <PageSkeleton />
       </div>
     );
@@ -461,7 +461,7 @@ export default function ParentAttendancePage() {
   // ── Main loading ─────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[#FFF8F0]">
+      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-foreground min-h-dvh bg-[var(--surface-2)]">
         <PageSkeleton />
       </div>
     );
@@ -470,16 +470,16 @@ export default function ParentAttendancePage() {
   // ── Error state ───────────────────────────────────────────────────────────
   if (error) {
     return (
-      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[#FFF8F0]">
+      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-foreground min-h-dvh bg-[var(--surface-2)]">
         <div className="max-w-2xl mx-auto px-4 py-8 text-center">
           <div className="text-4xl mb-3" aria-hidden="true">!</div>
-          <p className="text-red-600 text-[14px] font-semibold mb-1">
+          <p className="text-danger text-[14px] font-semibold mb-1">
             {tt(isHi, 'Could not load attendance', 'उपस्थिति लोड नहीं हो सकी')}
           </p>
-          <p className="text-gray-500 text-[13px] mb-4">{error}</p>
+          <p className="text-muted-foreground text-[13px] mb-4">{error}</p>
           <button
             onClick={fetchAttendance}
-            className="px-5 py-2.5 bg-orange-500 text-white rounded-[10px] text-[14px] font-semibold border-0 cursor-pointer min-h-[44px]"
+            className="px-5 py-2.5 bg-primary text-on-accent rounded-[10px] text-[14px] font-semibold border-0 cursor-pointer min-h-[44px]"
           >
             {tt(isHi, 'Try Again', 'पुनः प्रयास करें')}
           </button>
@@ -501,20 +501,20 @@ export default function ParentAttendancePage() {
 
   return (
     <div
-      className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[#FFF8F0]"
+      className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-foreground min-h-dvh bg-[var(--surface-2)]"
     >
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div>
-          <p className="text-[11px] text-orange-500 font-semibold uppercase tracking-[1px] mb-0.5">
+          <p className="text-[11px] text-primary font-semibold uppercase tracking-[1px] mb-0.5">
             {tt(isHi, 'Parent Portal', 'अभिभावक पोर्टल')}
           </p>
-          <h1 className="text-[22px] font-bold text-gray-900 m-0">
+          <h1 className="text-[22px] font-bold text-foreground m-0">
             {tt(isHi, 'Attendance', 'उपस्थिति')}
           </h1>
           {selectedChild && (
-            <p className="text-[13px] text-gray-500 mt-0.5">
+            <p className="text-[13px] text-muted-foreground mt-0.5">
               {childName}
               {selectedChild.grade ? ` — ${tt(isHi, 'Grade', 'कक्षा')} ${selectedChild.grade}` : ''}
               {selectedChild.school_name ? ` | ${selectedChild.school_name}` : ''}
@@ -535,13 +535,13 @@ export default function ParentAttendancePage() {
                   className={[
                     'flex items-center gap-2 px-3 py-2 rounded-2xl text-[13px] font-semibold whitespace-nowrap border min-h-[44px] transition-all',
                     active
-                      ? 'bg-orange-500 text-white border-orange-500'
-                      : 'bg-white text-gray-700 border-orange-200 hover:bg-orange-50',
+                      ? 'bg-primary text-on-accent border-primary'
+                      : 'bg-surface-1 text-foreground border-surface-3 hover:bg-surface-2',
                   ].join(' ')}
                 >
                   <span
-                    className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-[11px] font-bold"
-                    style={{ background: active ? 'rgba(255,255,255,0.3)' : '#F97316' }}
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-full text-on-accent text-[11px] font-bold"
+                    style={{ background: active ? 'color-mix(in srgb, var(--surface-1) 30%, transparent)' : 'var(--primary)' }}
                     aria-hidden="true"
                   >
                     {child.name.charAt(0).toUpperCase()}
@@ -549,7 +549,7 @@ export default function ParentAttendancePage() {
                   {child.name.split(' ')[0]}
                   {child.grade && (
                     <span
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${active ? 'bg-white/25 text-white' : 'bg-orange-100 text-orange-600'}`}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${active ? 'bg-[color-mix(in_srgb,var(--surface-1)_25%,transparent)] text-on-accent' : 'bg-surface-2 text-primary'}`}
                     >
                       {tt(isHi, 'G', 'क')}{child.grade}
                     </span>
@@ -561,23 +561,23 @@ export default function ParentAttendancePage() {
         )}
 
         {/* ── Month navigation ─────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between bg-white border border-orange-200 rounded-xl px-4 py-3">
+        <div className="flex items-center justify-between bg-surface-1 border border-surface-3 rounded-xl px-4 py-3">
           <button
             type="button"
             onClick={goToPrevMonth}
-            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-orange-50 text-orange-500 font-bold text-lg border-0 bg-transparent cursor-pointer"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-surface-2 text-primary font-bold text-lg border-0 bg-transparent cursor-pointer"
             aria-label={tt(isHi, 'Previous month', 'पिछला महीना')}
           >
             &lt;
           </button>
-          <span className="text-[15px] font-semibold text-gray-900">
+          <span className="text-[15px] font-semibold text-foreground">
             {monthLabel} {year}
           </span>
           <button
             type="button"
             onClick={goToNextMonth}
             disabled={isCurrentOrFuture}
-            className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg font-bold text-lg border-0 bg-transparent cursor-pointer ${isCurrentOrFuture ? 'text-gray-300 cursor-not-allowed' : 'text-orange-500 hover:bg-orange-50'}`}
+            className={`min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg font-bold text-lg border-0 bg-transparent cursor-pointer ${isCurrentOrFuture ? 'text-muted-foreground cursor-not-allowed' : 'text-primary hover:bg-surface-2'}`}
             aria-label={tt(isHi, 'Next month', 'अगला महीना')}
           >
             &gt;
@@ -590,28 +590,28 @@ export default function ParentAttendancePage() {
             <SummaryCard
               label={tt(isHi, 'Present', 'उपस्थित')}
               value={presentPct !== null ? `${presentPct}%` : '—'}
-              color="#059669"
+              color="var(--success)"
               icon="✓"
             />
             <SummaryCard
               label={tt(isHi, 'Absent', 'अनुपस्थित')}
               value={summary.absent}
-              color="#DC2626"
+              color="var(--danger)"
               icon="✗"
             />
             <SummaryCard
               label={tt(isHi, 'Late', 'विलंब')}
               value={summary.late}
-              color="#D97706"
+              color="var(--warning)"
               icon="●"
             />
           </div>
         ) : (
           /* Empty summary placeholder so grid doesn't collapse */
           <div className="grid grid-cols-3 gap-3">
-            <SummaryCard label={tt(isHi, 'Present', 'उपस्थित')} value="—" color="#059669" icon="✓" />
-            <SummaryCard label={tt(isHi, 'Absent', 'अनुपस्थित')} value="—" color="#DC2626" icon="✗" />
-            <SummaryCard label={tt(isHi, 'Late', 'विलंब')} value="—" color="#D97706" icon="●" />
+            <SummaryCard label={tt(isHi, 'Present', 'उपस्थित')} value="—" color="var(--success)" icon="✓" />
+            <SummaryCard label={tt(isHi, 'Absent', 'अनुपस्थित')} value="—" color="var(--danger)" icon="✗" />
+            <SummaryCard label={tt(isHi, 'Late', 'विलंब')} value="—" color="var(--warning)" icon="●" />
           </div>
         )}
 
@@ -632,25 +632,25 @@ export default function ParentAttendancePage() {
               >
                 {STATUS_LABEL(status, isHi)}
               </span>
-              <span className="text-[12px] text-gray-600">{isHi ? hi : en}</span>
+              <span className="text-[12px] text-muted-foreground">{isHi ? hi : en}</span>
             </div>
           ))}
           <div className="flex items-center gap-1.5">
-            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold border bg-gray-50 border-gray-100 text-gray-400">
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-bold border bg-surface-2 border-surface-3 text-muted-foreground">
               {isHi ? 'र' : 'S'}
             </span>
-            <span className="text-[12px] text-gray-600">{tt(isHi, 'Weekend', 'सप्ताहांत')}</span>
+            <span className="text-[12px] text-muted-foreground">{tt(isHi, 'Weekend', 'सप्ताहांत')}</span>
           </div>
         </div>
 
         {/* ── Empty state ──────────────────────────────────────────────────── */}
         {records.length === 0 && (
-          <div className="bg-white rounded-xl border border-orange-200 p-6 text-center">
+          <div className="bg-surface-1 rounded-xl border border-surface-3 p-6 text-center">
             <div className="text-3xl mb-2" aria-hidden="true">&#x1F4C5;</div>
-            <p className="text-[14px] font-semibold text-gray-900 mb-1">
+            <p className="text-[14px] font-semibold text-foreground mb-1">
               {tt(isHi, 'No attendance records for this month', 'इस महीने कोई उपस्थिति रिकॉर्ड नहीं')}
             </p>
-            <p className="text-[12px] text-gray-500">
+            <p className="text-[12px] text-muted-foreground">
               {tt(
                 isHi,
                 'Records will appear here once the school submits attendance.',
@@ -665,7 +665,7 @@ export default function ParentAttendancePage() {
 
         {/* ── Footer note ──────────────────────────────────────────────────── */}
         {summary && summary.total > 0 && (
-          <p className="text-[11px] text-gray-400 text-center pb-2">
+          <p className="text-[11px] text-muted-foreground text-center pb-2">
             {tt(isHi, `${summary.total} school days recorded this month`, `इस महीने ${summary.total} स्कूल दिन दर्ज`)}
           </p>
         )}

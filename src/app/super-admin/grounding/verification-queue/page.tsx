@@ -161,7 +161,8 @@ function VerificationQueueContent() {
       {error && (
         <div
           data-testid="grounding-queue-error"
-          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
+          className="mb-4 rounded-md p-3 text-[13px] text-danger"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
         >
           Error: {error}
         </div>
@@ -178,10 +179,10 @@ function VerificationQueueContent() {
           {/* Counts */}
           <h2 className={H2}>Counts by state</h2>
           <div data-testid="queue-counts-section" className="mb-6 grid grid-cols-4 gap-3">
-            <StatCard label="Legacy unverified" value={data.counts.legacy_unverified} accentColor="#D97706" />
-            <StatCard label="Pending" value={data.counts.pending} accentColor="#2563EB" />
-            <StatCard label="Verified" value={data.counts.verified} accentColor="#16A34A" />
-            <StatCard label="Failed" value={data.counts.failed} accentColor="#DC2626" />
+            <StatCard label="Legacy unverified" value={data.counts.legacy_unverified} accentColor="var(--warning)" />
+            <StatCard label="Pending" value={data.counts.pending} accentColor="var(--info)" />
+            <StatCard label="Verified" value={data.counts.verified} accentColor="var(--success)" />
+            <StatCard label="Failed" value={data.counts.failed} accentColor="var(--danger)" />
           </div>
 
           {/* Throughput */}
@@ -191,13 +192,13 @@ function VerificationQueueContent() {
               label="Verified / hour"
               value={data.throughputLast24h.verified_per_hour}
               subtitle={`${data.throughputLast24h.verified_total} total in 24h`}
-              accentColor="#16A34A"
+              accentColor="var(--success)"
             />
             <StatCard
               label="Failed / hour"
               value={data.throughputLast24h.failed_per_hour}
               subtitle={`${data.throughputLast24h.failed_total} total in 24h`}
-              accentColor="#DC2626"
+              accentColor="var(--danger)"
             />
           </div>
 
@@ -318,7 +319,7 @@ function VerificationQueueContent() {
                       <button
                         onClick={() => runAction('soft-delete', { id: f.id }, `delete:${f.id}`)}
                         disabled={pending !== null}
-                        className={`rounded-md border border-danger bg-transparent px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger/10 ${
+                        className={`rounded-md border border-danger bg-transparent px-2.5 py-1 text-xs font-medium text-danger hover:bg-surface-2 ${
                           pending !== null ? 'cursor-not-allowed opacity-40' : ''
                         }`}
                         data-testid={`soft-delete-${f.id}`}

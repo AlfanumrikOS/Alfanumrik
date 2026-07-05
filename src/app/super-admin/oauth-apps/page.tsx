@@ -46,19 +46,19 @@ function statusVariant(status: string): 'success' | 'danger' | 'warning' | 'neut
 
 function appTypeBadge(type: string): { bg: string; fg: string; label: string } {
   switch (type) {
-    case 'first_party': return { bg: 'rgba(124,58,237,0.1)', fg: '#7C3AED', label: 'First Party' };
-    case 'third_party': return { bg: 'rgba(37,99,235,0.1)', fg: '#2563EB', label: 'Third Party' };
-    case 'school_internal': return { bg: 'rgba(249,115,22,0.1)', fg: '#F97316', label: 'School Internal' };
-    default: return { bg: '#F9FAFB', fg: '#9CA3AF', label: type };
+    case 'first_party': return { bg: 'color-mix(in srgb, var(--secondary) 10%, transparent)', fg: 'var(--secondary)', label: 'First Party' };
+    case 'third_party': return { bg: 'color-mix(in srgb, var(--info) 10%, transparent)', fg: 'var(--info)', label: 'Third Party' };
+    case 'school_internal': return { bg: 'color-mix(in srgb, var(--primary) 10%, transparent)', fg: 'var(--primary)', label: 'School Internal' };
+    default: return { bg: 'var(--surface-2)', fg: 'var(--text-3)', label: type };
   }
 }
 
 function riskBadge(level: string): { bg: string; fg: string } {
   switch (level) {
-    case 'low': return { bg: 'rgba(22,163,74,0.1)', fg: '#16A34A' };
-    case 'medium': return { bg: 'rgba(217,119,6,0.1)', fg: '#D97706' };
-    case 'high': return { bg: 'rgba(220,38,38,0.1)', fg: '#DC2626' };
-    default: return { bg: '#F9FAFB', fg: '#9CA3AF' };
+    case 'low': return { bg: 'color-mix(in srgb, var(--success) 10%, transparent)', fg: 'var(--success)' };
+    case 'medium': return { bg: 'color-mix(in srgb, var(--warning) 10%, transparent)', fg: 'var(--warning)' };
+    case 'high': return { bg: 'color-mix(in srgb, var(--danger) 10%, transparent)', fg: 'var(--danger)' };
+    default: return { bg: 'var(--surface-2)', fg: 'var(--text-3)' };
   }
 }
 
@@ -166,18 +166,18 @@ function OAuthAppsContent() {
   const dangerActionClass = "rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2";
   const successActionClass = "rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2";
   const neutralActionClass = "rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-surface-2";
-  const dangerActionStyle: React.CSSProperties = { color: '#DC2626', borderColor: '#DC2626' };
-  const successActionStyle: React.CSSProperties = { color: '#16A34A', borderColor: '#16A34A' };
+  const dangerActionStyle: React.CSSProperties = { color: 'var(--danger)', borderColor: 'var(--danger)' };
+  const successActionStyle: React.CSSProperties = { color: 'var(--success)', borderColor: 'var(--success)' };
 
   /* ── Column Definitions ── */
   const columns: Column<OAuthApp>[] = [
     {
       key: 'name', label: 'Name',
-      render: r => <strong style={{ color: '#111827' }}>{r.name || '—'}</strong>,
+      render: r => <strong style={{ color: 'var(--text-1)' }}>{r.name || '—'}</strong>,
     },
     {
       key: 'developer_org', label: 'Developer',
-      render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.developer_org || '—'}</span>,
+      render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{r.developer_org || '—'}</span>,
     },
     {
       key: 'app_type', label: 'Type',
@@ -200,18 +200,18 @@ function OAuthAppsContent() {
     {
       key: 'requested_scopes', label: 'Scopes', sortable: false,
       render: r => (
-        <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 500 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 500 }}>
           {Array.isArray(r.requested_scopes) ? r.requested_scopes.length : 0}
         </span>
       ),
     },
     {
       key: 'rate_limit', label: 'Rate Limit',
-      render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.rate_limit ? `${r.rate_limit}/h` : '—'}</span>,
+      render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{r.rate_limit ? `${r.rate_limit}/h` : '—'}</span>,
     },
     {
       key: 'created_at', label: 'Created',
-      render: r => <span style={{ fontSize: 12, color: '#6B7280' }}>{r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</span>,
+      render: r => <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</span>,
     },
     {
       key: '_actions', label: 'Actions', sortable: false,
@@ -238,7 +238,7 @@ function OAuthAppsContent() {
             </button>
           );
         }
-        return <span style={{ fontSize: 12, color: '#9CA3AF' }}>{'—'}</span>;
+        return <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{'—'}</span>;
       },
     },
   ];
@@ -250,12 +250,12 @@ function OAuthAppsContent() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div>
             <h1 className="text-xl font-bold text-foreground">OAuth Apps</h1>
-            <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Manage registered OAuth applications and review requests</p>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Manage registered OAuth applications and review requests</p>
           </div>
           {pendingApps.length > 0 && (
             <span style={{
               fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 12,
-              background: '#FFFBEB', color: '#D97706',
+              background: 'color-mix(in srgb, var(--warning) 12%, transparent)', color: 'var(--warning)',
             }}>
               {pendingApps.length} Pending Review
             </span>
@@ -269,10 +269,10 @@ function OAuthAppsContent() {
           className="rounded-lg border border-surface-3 bg-surface-1"
           style={{
             marginBottom: 16,
-            borderLeft: `3px solid ${message.type === 'success' ? '#16A34A' : '#DC2626'}`,
+            borderLeft: `3px solid ${message.type === 'success' ? 'var(--success)' : 'var(--danger)'}`,
             padding: '10px 16px',
             fontSize: 13,
-            color: message.type === 'success' ? '#16A34A' : '#DC2626',
+            color: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
           }}
         >
           {message.text}
@@ -283,7 +283,7 @@ function OAuthAppsContent() {
       {pendingApps.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <div style={{
-            fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1.5,
+            fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1.5,
             fontWeight: 600, marginBottom: 12,
           }}>
             Pending Review ({pendingApps.length})
@@ -293,12 +293,12 @@ function OAuthAppsContent() {
               <div
                 key={app.id}
                 className="rounded-lg border border-surface-3 bg-surface-1 p-4"
-                style={{ borderLeft: `3px solid #D97706` }}
+                style={{ borderLeft: `3px solid var(--warning)` }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{app.name}</div>
-                    <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{app.developer_org}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{app.name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>{app.developer_org}</div>
                   </div>
                   {(() => {
                     const badge = appTypeBadge(app.app_type);
@@ -337,7 +337,7 @@ function OAuthAppsContent() {
                       href={app.privacy_policy_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      style={{ fontSize: 11, color: '#2563EB', textDecoration: 'underline' }}
+                      style={{ fontSize: 11, color: 'var(--info)', textDecoration: 'underline' }}
                       onClick={e => e.stopPropagation()}
                     >
                       Privacy Policy
@@ -397,7 +397,7 @@ function OAuthAppsContent() {
 
       {/* All Apps section header */}
       <div style={{
-        fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1.5,
+        fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1.5,
         fontWeight: 600, marginBottom: 12,
       }}>
         All Apps ({apps.length})
@@ -419,7 +419,7 @@ function OAuthAppsContent() {
           <div>
             {/* App info */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
                 App Information
               </div>
 
@@ -429,7 +429,7 @@ function OAuthAppsContent() {
                   <img
                     src={selectedApp.logo_url}
                     alt={`${selectedApp.name} logo`}
-                    style={{ width: 48, height: 48, borderRadius: 8, border: `1px solid #E5E7EB`, objectFit: 'cover' }}
+                    style={{ width: 48, height: 48, borderRadius: 8, border: `1px solid var(--border)`, objectFit: 'cover' }}
                   />
                 </div>
               )}
@@ -441,9 +441,9 @@ function OAuthAppsContent() {
                 { label: 'Developer Email', value: selectedApp.developer_email },
                 { label: 'Created', value: selectedApp.created_at ? new Date(selectedApp.created_at).toLocaleString() : null },
               ].filter(f => f.value).map(f => (
-                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid #F3F4F6` }}>
-                  <span style={{ fontSize: 13, color: '#9CA3AF' }}>{f.label}</span>
-                  <span style={{ fontSize: 13, color: '#111827', fontWeight: 500, textAlign: 'right', maxWidth: '60%' }}>{f.value}</span>
+                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid var(--surface-2)` }}>
+                  <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{f.label}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 500, textAlign: 'right', maxWidth: '60%' }}>{f.value}</span>
                 </div>
               ))}
 
@@ -466,33 +466,33 @@ function OAuthAppsContent() {
 
             {/* Links */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
                 Links
               </div>
               {[
                 { label: 'Homepage', url: selectedApp.homepage_url },
                 { label: 'Privacy Policy', url: selectedApp.privacy_policy_url },
               ].filter(l => l.url).map(l => (
-                <div key={l.label} style={{ padding: '6px 0', borderBottom: `1px solid #F3F4F6` }}>
-                  <span style={{ fontSize: 12, color: '#9CA3AF', marginRight: 8 }}>{l.label}:</span>
+                <div key={l.label} style={{ padding: '6px 0', borderBottom: `1px solid var(--surface-2)` }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-3)', marginRight: 8 }}>{l.label}:</span>
                   <a
                     href={l.url!}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ fontSize: 12, color: '#2563EB', textDecoration: 'underline', wordBreak: 'break-all' }}
+                    style={{ fontSize: 12, color: 'var(--info)', textDecoration: 'underline', wordBreak: 'break-all' }}
                   >
                     {l.url}
                   </a>
                 </div>
               ))}
               {!selectedApp.homepage_url && !selectedApp.privacy_policy_url && (
-                <div style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>No links provided</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>No links provided</div>
               )}
             </div>
 
             {/* Redirect URIs */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
                 Redirect URIs
               </div>
               {Array.isArray(selectedApp.redirect_uris) && selectedApp.redirect_uris.length > 0 ? (
@@ -500,21 +500,21 @@ function OAuthAppsContent() {
                   {selectedApp.redirect_uris.map((uri, i) => (
                     <code key={i} style={{
                       fontSize: 11, padding: '4px 8px', borderRadius: 4,
-                      background: '#F9FAFB', border: `1px solid #F3F4F6`,
-                      color: '#111827', wordBreak: 'break-all',
+                      background: 'var(--surface-2)', border: `1px solid var(--surface-2)`,
+                      color: 'var(--text-1)', wordBreak: 'break-all',
                     }}>
                       {uri}
                     </code>
                   ))}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>No redirect URIs</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>No redirect URIs</div>
               )}
             </div>
 
             {/* Requested Scopes with risk levels */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
                 Requested Scopes ({Array.isArray(selectedApp.requested_scopes) ? selectedApp.requested_scopes.length : 0})
               </div>
               {Array.isArray(selectedApp.requested_scopes) && selectedApp.requested_scopes.length > 0 ? (
@@ -525,12 +525,12 @@ function OAuthAppsContent() {
                       <div key={scope.name} style={{
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         padding: '6px 10px', borderRadius: 6,
-                        border: `1px solid #F3F4F6`, background: '#F9FAFB',
+                        border: `1px solid var(--surface-2)`, background: 'var(--surface-2)',
                       }}>
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{scope.name}</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-1)' }}>{scope.name}</div>
                           {scope.description && (
-                            <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>{scope.description}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{scope.description}</div>
                           )}
                         </div>
                         <span style={{
@@ -544,36 +544,36 @@ function OAuthAppsContent() {
                   })}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, color: '#9CA3AF', fontStyle: 'italic' }}>No scopes requested</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic' }}>No scopes requested</div>
               )}
             </div>
 
             {/* Review history */}
             {(selectedApp.reviewed_by || selectedApp.reviewed_at) && (
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
                   Review History
                 </div>
                 <div
                   className="rounded-lg border border-surface-3"
-                  style={{ padding: 12, background: '#F9FAFB' }}
+                  style={{ padding: 12, background: 'var(--surface-2)' }}
                 >
                   {selectedApp.reviewed_by && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>Reviewed By</span>
-                      <code style={{ fontSize: 11, color: '#111827' }}>{selectedApp.reviewed_by}</code>
+                      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Reviewed By</span>
+                      <code style={{ fontSize: 11, color: 'var(--text-1)' }}>{selectedApp.reviewed_by}</code>
                     </div>
                   )}
                   {selectedApp.reviewed_at && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>Reviewed At</span>
-                      <span style={{ fontSize: 12, color: '#111827' }}>{new Date(selectedApp.reviewed_at).toLocaleString()}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Reviewed At</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-1)' }}>{new Date(selectedApp.reviewed_at).toLocaleString()}</span>
                     </div>
                   )}
                   {selectedApp.review_reason && (
-                    <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 4, background: '#FFFFFF', border: `1px solid #F3F4F6` }}>
-                      <span style={{ fontSize: 11, color: '#9CA3AF' }}>Reason: </span>
-                      <span style={{ fontSize: 12, color: '#111827' }}>{selectedApp.review_reason}</span>
+                    <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 4, background: 'var(--surface-1)', border: `1px solid var(--surface-2)` }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Reason: </span>
+                      <span style={{ fontSize: 12, color: 'var(--text-1)' }}>{selectedApp.review_reason}</span>
                     </div>
                   )}
                 </div>
@@ -582,7 +582,7 @@ function OAuthAppsContent() {
 
             {/* Usage stats */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, fontWeight: 600 }}>
                 Usage
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -590,28 +590,28 @@ function OAuthAppsContent() {
                   className="rounded-lg border border-surface-3 bg-surface-1"
                   style={{ padding: 12, textAlign: 'center' }}
                 >
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#111827' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-1)' }}>
                     {selectedApp.active_consents_count ?? 0}
                   </div>
-                  <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>Active Consents</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>Active Consents</div>
                 </div>
                 <div
                   className="rounded-lg border border-surface-3 bg-surface-1"
                   style={{ padding: 12, textAlign: 'center' }}
                 >
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#111827' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-1)' }}>
                     {selectedApp.active_tokens_count ?? 0}
                   </div>
-                  <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>Active Tokens</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>Active Tokens</div>
                 </div>
               </div>
             </div>
 
             {/* Rate limit */}
             <div style={{ marginBottom: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid #F3F4F6` }}>
-                <span style={{ fontSize: 13, color: '#9CA3AF' }}>Rate Limit</span>
-                <span style={{ fontSize: 13, color: '#111827', fontWeight: 500 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: `1px solid var(--surface-2)` }}>
+                <span style={{ fontSize: 13, color: 'var(--text-3)' }}>Rate Limit</span>
+                <span style={{ fontSize: 13, color: 'var(--text-1)', fontWeight: 500 }}>
                   {selectedApp.rate_limit ? `${selectedApp.rate_limit} requests/hour` : '—'}
                 </span>
               </div>
@@ -658,7 +658,7 @@ function OAuthAppsContent() {
             </div>
 
             {/* ID */}
-            <div style={{ marginTop: 20, fontSize: 10, color: '#9CA3AF' }}>
+            <div style={{ marginTop: 20, fontSize: 10, color: 'var(--text-3)' }}>
               App ID: <code>{selectedApp.id}</code>
             </div>
           </div>

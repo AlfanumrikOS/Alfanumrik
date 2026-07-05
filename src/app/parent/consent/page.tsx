@@ -18,6 +18,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { Card, CardBody, Button, Checkbox, Alert } from '@/components/ui/primitives';
 
 const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -227,7 +228,7 @@ function ParentConsentContent() {
 
   if (loadingChildren) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-10 text-center text-sm text-gray-500">
+      <div className="max-w-2xl mx-auto px-4 py-10 text-center text-sm text-muted-foreground">
         {t(isHi, 'Loading…', 'लोड हो रहा है…')}
       </div>
     );
@@ -240,10 +241,10 @@ function ParentConsentContent() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-foreground">
           {t(isHi, 'Parental consent (DPDP)', 'अभिभावक की सहमति (DPDP)')}
         </h1>
-        <p className="mt-2 text-sm text-gray-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           {t(
             isHi,
             'India\'s Digital Personal Data Protection Act requires explicit consent from a parent or legal guardian before Alfanumrik can process a child\'s data. Please review and confirm below.',
@@ -253,8 +254,8 @@ function ParentConsentContent() {
       </header>
 
       {errorMsg && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMsg}
+        <div className="mb-4">
+          <Alert tone="danger">{errorMsg}</Alert>
         </div>
       )}
 
@@ -262,81 +263,67 @@ function ParentConsentContent() {
         {children.map((child) => {
           const scopes = scopesByChild[child.studentId] ?? DEFAULT_SCOPES;
           return (
-            <section
-              key={child.studentId}
-              className="rounded-xl border border-orange-200 bg-white p-5"
-            >
-              <h2 className="text-lg font-semibold text-gray-900">
-                {child.name || t(isHi, 'Child', 'बच्चा')}
-                {child.grade && (
-                  <span className="ml-2 text-sm font-normal text-gray-500">
-                    {t(isHi, `Grade ${child.grade}`, `कक्षा ${child.grade}`)}
-                  </span>
-                )}
-              </h2>
-              <ul className="mt-4 space-y-3">
-                {SCOPE_META.map((meta) => {
-                  const m = isHi ? meta.hi : meta.en;
-                  const checked = !!scopes[meta.key];
-                  return (
-                    <li key={meta.key} className="flex items-start gap-3">
-                      <input
-                        id={`scope-${child.studentId}-${meta.key}`}
-                        type="checkbox"
-                        checked={checked}
-                        disabled={meta.required}
-                        onChange={() => toggleScope(child.studentId, meta.key)}
-                        className="mt-1 h-4 w-4 rounded border-gray-300"
-                      />
-                      <label
-                        htmlFor={`scope-${child.studentId}-${meta.key}`}
-                        className="flex-1 text-sm"
-                      >
-                        <span className="font-medium text-gray-900">
-                          {m.label}
-                          {meta.required && (
-                            <span className="ml-1 text-xs text-orange-600">
-                              {t(isHi, '(required)', '(आवश्यक)')}
+            <Card key={child.studentId}>
+              <CardBody>
+                <h2 className="text-lg font-semibold text-foreground">
+                  {child.name || t(isHi, 'Child', 'बच्चा')}
+                  {child.grade && (
+                    <span className="ml-2 text-sm font-normal text-muted-foreground">
+                      {t(isHi, `Grade ${child.grade}`, `कक्षा ${child.grade}`)}
+                    </span>
+                  )}
+                </h2>
+                <ul className="mt-4 space-y-1">
+                  {SCOPE_META.map((meta) => {
+                    const m = isHi ? meta.hi : meta.en;
+                    const checked = !!scopes[meta.key];
+                    return (
+                      <li key={meta.key}>
+                        <Checkbox
+                          id={`scope-${child.studentId}-${meta.key}`}
+                          checked={checked}
+                          disabled={meta.required}
+                          onChange={() => toggleScope(child.studentId, meta.key)}
+                          hint={m.desc}
+                          label={
+                            <span className="font-medium text-foreground">
+                              {m.label}
+                              {meta.required && (
+                                <span className="ml-1 text-xs text-primary">
+                                  {t(isHi, '(required)', '(आवश्यक)')}
+                                </span>
+                              )}
                             </span>
-                          )}
-                        </span>
-                        <p className="mt-0.5 text-xs text-gray-600">{m.desc}</p>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
+                          }
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </CardBody>
+            </Card>
           );
         })}
       </div>
 
-      <label className="mt-6 flex items-start gap-3 text-sm">
-        <input
-          type="checkbox"
+      <div className="mt-6">
+        <Checkbox
           checked={attested}
           onChange={() => setAttested((v) => !v)}
-          className="mt-1 h-4 w-4 rounded border-gray-300"
-        />
-        <span className="text-gray-900">
-          {t(
+          label={t(
             isHi,
             'I confirm I am the parent or legal guardian of the child(ren) above, and I have read and agree to this consent.',
             'मैं पुष्टि करता/करती हूँ कि मैं उपरोक्त बच्चे/बच्चों का अभिभावक हूँ, और मैंने यह सहमति पढ़ी है और सहमत हूँ।',
           )}
-        </span>
-      </label>
+        />
+      </div>
 
       <div className="mt-6 flex justify-end gap-3">
-        <button
-          onClick={handleSubmit}
-          disabled={submitting || !attested}
-          className="rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button onClick={handleSubmit} loading={submitting} disabled={submitting || !attested}>
           {submitting
             ? t(isHi, 'Submitting…', 'जमा कर रहे हैं…')
             : t(isHi, 'Confirm consent', 'सहमति पुष्टि करें')}
-        </button>
+        </Button>
       </div>
     </div>
   );

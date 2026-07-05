@@ -116,7 +116,10 @@ function SessionDetailInner() {
     // 403 carries a distinct UX — permission gate.
     if (error.status === 403) {
       return (
-        <div className="rounded-lg border border-warning bg-warning/10 p-6 text-[13px] text-warning">
+        <div
+          className="rounded-lg border border-warning p-6 text-[13px] text-warning"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--warning) 10%, transparent)' }}
+        >
           <h2 className="mb-1 text-base font-bold">Permission required</h2>
           <p className="mb-2">
             Forensic message review requires the <code>alfabot.read_messages</code>{' '}
@@ -133,7 +136,10 @@ function SessionDetailInner() {
       );
     }
     return (
-      <div className="rounded-lg border border-danger bg-danger/10 p-4 text-[13px] text-danger">
+      <div
+        className="rounded-lg border border-danger p-4 text-[13px] text-danger"
+        style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
+      >
         Failed to load session: {error.message}
       </div>
     );
@@ -173,7 +179,7 @@ function SessionDetailInner() {
         <StatCard
           label="Rate-limited"
           value={session.rateLimitHit ? 'YES' : 'no'}
-          accentColor={session.rateLimitHit ? '#F59E0B' : undefined}
+          accentColor={session.rateLimitHit ? 'var(--warning)' : undefined}
         />
       </section>
 
@@ -186,7 +192,10 @@ function SessionDetailInner() {
 
       {/* Abuse events */}
       {abuseEvents.length > 0 && (
-        <section className="mb-6 rounded-lg border border-danger bg-danger/10 p-4">
+        <section
+          className="mb-6 rounded-lg border border-danger p-4"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
+        >
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-danger">
             Abuse events for this session
           </h2>
@@ -217,13 +226,17 @@ function SessionDetailInner() {
             {messages.map((m) => (
               <li
                 key={m.id}
-                className={`rounded-lg border p-4 ${
-                  m.role === 'user'
-                    ? 'border-surface-3 bg-surface-1'
-                    : m.role === 'assistant'
-                      ? 'border-purple-500/30 bg-purple-500/5'
-                      : 'border-surface-3 bg-surface-2'
-                }`}
+                className="rounded-lg border p-4"
+                style={
+                  m.role === 'assistant'
+                    ? {
+                        borderColor: 'color-mix(in srgb, var(--purple) 30%, transparent)',
+                        backgroundColor: 'color-mix(in srgb, var(--purple) 5%, transparent)',
+                      }
+                    : m.role === 'user'
+                      ? { borderColor: 'var(--surface-3)', backgroundColor: 'var(--surface-1)' }
+                      : { borderColor: 'var(--surface-3)', backgroundColor: 'var(--surface-2)' }
+                }
               >
                 <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
                   <div>
@@ -241,7 +254,10 @@ function SessionDetailInner() {
                     {m.tokensUsed !== null && <span>{m.tokensUsed} tokens · </span>}
                     {m.latencyMs !== null && <span>{m.latencyMs} ms</span>}
                     {m.degradedMode && (
-                      <span className="ml-2 rounded-md bg-warning/20 px-1.5 py-0.5 text-warning">
+                      <span
+                        className="ml-2 rounded-md px-1.5 py-0.5 text-warning"
+                        style={{ backgroundColor: 'color-mix(in srgb, var(--warning) 20%, transparent)' }}
+                      >
                         degraded
                       </span>
                     )}
@@ -266,7 +282,11 @@ function SessionDetailInner() {
 
       <p className="m-0 text-[11px] text-muted-foreground">
         Reading this page emits an audit row at the API layer. Suspected abuse?{' '}
-        <Link href="/super-admin/alfabot" className="text-purple-500 underline-offset-2 hover:underline">
+        <Link
+          href="/super-admin/alfabot"
+          className="underline-offset-2 hover:underline"
+          style={{ color: 'var(--purple)' }}
+        >
           Back to dashboard
         </Link>{' '}
         to add this anon_id to the denylist.

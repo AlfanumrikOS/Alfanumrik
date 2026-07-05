@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { captureException } from '@sentry/nextjs';
+import { Button } from '@/components/ui/primitives';
 
 export default function ParentError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
@@ -16,29 +17,21 @@ export default function ParentError({ error, reset }: { error: Error & { digest?
     <div className="mesh-bg min-h-dvh pb-nav flex items-center justify-center p-6">
       <div className="text-center max-w-sm">
         <span className="text-5xl block mb-4" role="img" aria-label="Fox">&#x1F98A;</span>
-        <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--text-1)' }}>
+        <h2 className="text-lg font-bold mb-2 text-foreground">
           {isHi ? 'डैशबोर्ड लोड नहीं हुआ' : "Couldn't load dashboard"}
         </h2>
-        <p className="text-sm mb-5" style={{ color: 'var(--text-3)' }}>
+        <p className="text-sm mb-5 text-muted-foreground">
           {isHi
             ? 'कुछ गलत हो गया। फिर से कोशिश करें — आपके बच्चे का डेटा सुरक्षित है।'
             : "Something went wrong. Please try again — your child's data is safe."}
         </p>
         <div className="flex gap-3 justify-center">
-          <button
-            onClick={reset}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: 'var(--orange)' }}
-          >
+          <Button onClick={reset}>
             {isHi ? 'फिर से कोशिश करो' : 'Retry'}
-          </button>
-          <button
-            onClick={() => { window.location.href = '/parent'; }}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold"
-            style={{ color: 'var(--text-2)', border: '1.5px solid var(--border)' }}
-          >
+          </Button>
+          <Button variant="secondary" onClick={() => { window.location.href = '/parent'; }}>
             {isHi ? 'होम' : 'Home'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

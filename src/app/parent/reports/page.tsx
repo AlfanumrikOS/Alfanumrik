@@ -176,11 +176,11 @@ async function api(action: string, params: Record<string, unknown> = {}) {
 // instead of `${color}15` hex-concat.
 function getMasteryColor(level: string): string {
   switch (level) {
-    case 'mastered': return '#16A34A';
-    case 'proficient': return '#7C3AED';
-    case 'familiar': return '#2563EB';
-    case 'developing': return '#D97706';
-    default: return '#64748B';
+    case 'mastered': return 'var(--success)';
+    case 'proficient': return 'var(--secondary)';
+    case 'familiar': return 'var(--info)';
+    case 'developing': return 'var(--warning)';
+    default: return 'var(--text-3)';
   }
 }
 
@@ -219,31 +219,31 @@ const pageStyle: React.CSSProperties = {
   margin: '0 auto',
   padding: '0 0 40px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  color: '#1E293B',
-  backgroundColor: '#F0FDF4',
+  color: 'var(--text-1)',
+  backgroundColor: 'var(--surface-2)',
   minHeight: '100dvh',
 };
 
 const cardStyle: React.CSSProperties = {
-  backgroundColor: '#FFFFFF',
+  backgroundColor: 'var(--surface-1)',
   borderRadius: 16,
   padding: '20px 22px',
-  border: '1px solid #E2E8F0',
+  border: '1px solid var(--surface-3)',
   marginBottom: 16,
-  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+  boxShadow: '0 1px 3px var(--border)',
 };
 
 const cardTitle: React.CSSProperties = {
   fontSize: 17,
   fontWeight: 700,
-  color: '#1E293B',
+  color: 'var(--text-1)',
   margin: '0 0 14px',
 };
 
 const sectionHeading: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 600,
-  color: '#16A34A',
+  color: 'var(--success)',
   textTransform: 'uppercase' as const,
   letterSpacing: 0.8,
   margin: '0 0 8px',
@@ -251,7 +251,7 @@ const sectionHeading: React.CSSProperties = {
 
 const emptyText: React.CSSProperties = {
   fontSize: 14,
-  color: '#64748B',
+  color: 'var(--text-3)',
   fontStyle: 'italic',
   textAlign: 'center',
   padding: '20px 16px',
@@ -266,11 +266,11 @@ function SummaryCard({ icon, label, value, sub, ringColor }: {
   }) {
   return (
     <div style={{
-      backgroundColor: '#FFFFFF',
+      backgroundColor: 'var(--surface-1)',
       borderRadius: 14,
       padding: '16px 14px',
-      border: '1px solid #E2E8F0',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+      border: '1px solid var(--surface-3)',
+      boxShadow: '0 1px 3px var(--border)',
       textAlign: 'center',
       position: 'relative',
     }}>
@@ -283,9 +283,9 @@ function SummaryCard({ icon, label, value, sub, ringColor }: {
         }}>{icon}</div>
       )}
       {!ringColor && <div style={{ fontSize: 24, marginBottom: 6 }}>{icon}</div>}
-      <div style={{ fontSize: 11, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, color: '#1E293B' }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{sub}</div>}
+      <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-1)' }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -295,24 +295,24 @@ function SummaryCard({ icon, label, value, sub, ringColor }: {
 // ============================================================
 function SubjectCard({ subject, isHi = false }: { subject: SubjectData; isHi?: boolean }) {
   const mastery = subject.mastery ?? 0;
-  const barColor = mastery >= 80 ? '#16A34A' : mastery >= 50 ? '#D97706' : '#EF4444';
+  const barColor = mastery >= 80 ? 'var(--success)' : mastery >= 50 ? 'var(--warning)' : 'var(--danger)';
   const subjectColors: Record<string, string> = {
-    math: '#2563EB', science: '#16A34A', english: '#7C3AED',
-    hindi: '#D97706', social: '#EC4899', evs: '#059669',
+    math: 'var(--info)', science: 'var(--success)', english: 'var(--secondary)',
+    hindi: 'var(--warning)', social: 'var(--secondary)', evs: 'var(--success)',
   };
   const subjectIcons: Record<string, string> = {
     math: '\u2795', science: '\uD83E\uDDEA', english: '\uD83D\uDCD6',
     hindi: '\uD83C\uDDEE\uD83C\uDDF3', social: '\uD83C\uDF0D', evs: '\uD83C\uDF3F',
   };
   const key = (subject.name || '').toLowerCase();
-  const color = subjectColors[key] || '#6366F1';
+  const color = subjectColors[key] || 'var(--info)';
   const icon = subjectIcons[key] || '\uD83D\uDCDA';
 
   return (
     <div style={{ ...cardStyle, borderLeft: `4px solid ${color}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <span style={{ fontSize: 22 }}>{icon}</span>
-        <span style={{ fontSize: 16, fontWeight: 700, color: '#1E293B' }}>{subject.name}</span>
+        <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)' }}>{subject.name}</span>
         {subject.recentScore != null && (
           <span style={{
             marginLeft: 'auto', fontSize: 12, fontWeight: 600,
@@ -328,29 +328,29 @@ function SubjectCard({ subject, isHi = false }: { subject: SubjectData; isHi?: b
       {/* Mastery bar */}
       <div style={{ marginBottom: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ fontSize: 12, color: '#64748B' }}>{t(isHi, 'Mastery', 'महारत')}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{t(isHi, 'Mastery', 'महारत')}</span>
           <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>{mastery}%</span>
         </div>
-        <div style={{ height: 10, backgroundColor: '#F1F5F9', borderRadius: 5, overflow: 'hidden' }}>
+        <div style={{ height: 10, backgroundColor: 'var(--surface-2)', borderRadius: 5, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${mastery}%`, backgroundColor: barColor, borderRadius: 5, transition: 'width 0.5s ease' }} />
         </div>
       </div>
 
       {/* Topics count */}
       {subject.topicsMastered != null && subject.totalTopics != null && (
-        <div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}>
+        <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 8 }}>
           {t(isHi, `${subject.topicsMastered} of ${subject.totalTopics} topics mastered`, `${subject.totalTopics} में से ${subject.topicsMastered} विषय पूरे`)}
         </div>
       )}
 
       {/* Strong / Weak topics */}
       {subject.strongTopics && subject.strongTopics.length > 0 && (
-        <div style={{ fontSize: 13, color: '#16A34A', marginBottom: 4 }}>
+        <div style={{ fontSize: 13, color: 'var(--success)', marginBottom: 4 }}>
           {t(isHi, 'Strong in', 'मजबूत')}: {subject.strongTopics.join(', ')}
         </div>
       )}
       {subject.weakTopics && subject.weakTopics.length > 0 && (
-        <div style={{ fontSize: 13, color: '#D97706' }}>
+        <div style={{ fontSize: 13, color: 'var(--warning)' }}>
           {t(isHi, 'Needs practice', 'अभ्यास चाहिए')}: {subject.weakTopics.join(', ')}
         </div>
       )}
@@ -371,34 +371,34 @@ function WeeklyTimeline({ days, mostActiveDay, isHi = false }: { days: DayActivi
           const active = day.quizzes > 0 || day.xp > 0;
           return (
             <div key={i} style={{
-              backgroundColor: active ? '#F0FDF4' : '#F8FAFC',
+              backgroundColor: active ? 'var(--surface-2)' : 'var(--surface-2)',
               borderRadius: 12,
               padding: '10px 6px',
               textAlign: 'center',
-              border: active ? '1px solid #BBF7D0' : '1px solid #E2E8F0',
+              border: active ? '1px solid var(--surface-3)' : '1px solid var(--surface-3)',
               opacity: active ? 1 : 0.5,
             }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: active ? '#16A34A' : '#94A3B8', marginBottom: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: active ? 'var(--success)' : 'var(--text-3)', marginBottom: 6 }}>
                 {day.label || dayNames[i]}
               </div>
               {active ? (
                 <>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: '#1E293B' }}>{day.quizzes}</div>
-                  <div style={{ fontSize: 10, color: '#64748B' }}>{t(isHi, 'quizzes', 'क्विज़')}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-1)' }}>{day.quizzes}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{t(isHi, 'quizzes', 'क्विज़')}</div>
                   {day.studyTime != null && (
-                    <div style={{ fontSize: 10, color: '#64748B', marginTop: 2 }}>{formatTime(day.studyTime)}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{formatTime(day.studyTime)}</div>
                   )}
-                  <div style={{ fontSize: 10, color: '#F59E0B', fontWeight: 600, marginTop: 3 }}>+{day.xp} XP</div>
+                  <div style={{ fontSize: 10, color: 'var(--warning)', fontWeight: 600, marginTop: 3 }}>+{day.xp} XP</div>
                 </>
               ) : (
-                <div style={{ fontSize: 10, color: '#CBD5E1', marginTop: 8 }}>{t(isHi, 'Rest day', 'आराम का दिन')}</div>
+                <div style={{ fontSize: 10, color: 'var(--surface-3)', marginTop: 8 }}>{t(isHi, 'Rest day', 'आराम का दिन')}</div>
               )}
             </div>
           );
         })}
       </div>
       {mostActiveDay && (
-        <div style={{ fontSize: 13, color: '#16A34A', marginTop: 12, textAlign: 'center', fontWeight: 600 }}>
+        <div style={{ fontSize: 13, color: 'var(--success)', marginTop: 12, textAlign: 'center', fontWeight: 600 }}>
           {t(isHi, `Your child was most active on ${mostActiveDay}!`, `आपका बच्चा ${mostActiveDay} को सबसे ज़्यादा सक्रिय था!`)}
         </div>
       )}
@@ -434,22 +434,22 @@ function ConceptMasteryMap({ concepts, isHi = false }: { concepts: ConceptItem[]
       {/* Legend */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
         {[
-          { label: t(isHi, 'Mastered', 'माहिर'), color: '#16A34A' },
-          { label: t(isHi, 'Proficient', 'कुशल'), color: '#7C3AED' },
-          { label: t(isHi, 'Familiar', 'परिचित'), color: '#2563EB' },
-          { label: t(isHi, 'Developing', 'विकासशील'), color: '#D97706' },
-          { label: t(isHi, 'Not Started', 'शुरू नहीं हुआ'), color: '#CBD5E1' },
+          { label: t(isHi, 'Mastered', 'माहिर'), color: 'var(--success)' },
+          { label: t(isHi, 'Proficient', 'कुशल'), color: 'var(--secondary)' },
+          { label: t(isHi, 'Familiar', 'परिचित'), color: 'var(--info)' },
+          { label: t(isHi, 'Developing', 'विकासशील'), color: 'var(--warning)' },
+          { label: t(isHi, 'Not Started', 'शुरू नहीं हुआ'), color: 'var(--surface-3)' },
         ].map(l => (
           <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: l.color }} />
-            <span style={{ fontSize: 11, color: '#64748B' }}>{l.label}</span>
+            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{l.label}</span>
           </div>
         ))}
       </div>
 
       {Object.entries(grouped).map(([subject, items]) => (
         <div key={subject} style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#475569', marginBottom: 6 }}>{subject}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>{subject}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {items.map((c: ConceptItem, i: number) => (
               <div key={i} style={{
@@ -497,13 +497,13 @@ function QuizHistory({ quizzes, isHi = false }: { quizzes: QuizRecord[]; isHi?: 
             <div key={i} style={{
               display: 'flex', alignItems: 'center', gap: 12,
               padding: '10px 14px',
-              backgroundColor: '#F8FAFC',
+              backgroundColor: 'var(--surface-2)',
               borderRadius: 10,
               borderLeft: `3px solid ${scoreColor}`,
             }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{q.topic || q.subject || 'Quiz'}</div>
-                <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>{q.topic || q.subject || 'Quiz'}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
                   {q.subject && q.topic ? `${q.subject} \u00B7 ` : ''}{formatDate(q.date || q.created_at || '')}
                   {q.timeSpent != null && ` \u00B7 ${formatTime(q.timeSpent)}`}
                 </div>
@@ -536,12 +536,12 @@ function InsightsSection({ insights, tips, isHi = false }: { insights: Array<str
           {insights.map((insight: string | InsightItem, i: number) => (
             <div key={i} style={{
               padding: '12px 14px',
-              backgroundColor: '#F0FDF4',
+              backgroundColor: 'var(--surface-2)',
               borderRadius: 10,
               marginBottom: 8,
-              borderLeft: '3px solid #16A34A',
+              borderLeft: '3px solid var(--success)',
               fontSize: 14,
-              color: '#1E293B',
+              color: 'var(--text-1)',
               lineHeight: 1.6,
             }}>
               {typeof insight === 'string' ? insight : insight.text || insight.message || ''}
@@ -556,22 +556,22 @@ function InsightsSection({ insights, tips, isHi = false }: { insights: Array<str
 
       {/* How to Help at Home */}
       <div style={{ marginTop: 8 }}>
-        <div style={{ ...sectionHeading, color: '#15803D', fontSize: 13 }}>{t(isHi, 'How to Help at Home', 'घर पर कैसे मदद करें')}</div>
+        <div style={{ ...sectionHeading, color: 'var(--success)', fontSize: 13 }}>{t(isHi, 'How to Help at Home', 'घर पर कैसे मदद करें')}</div>
         {tips && tips.length > 0 ? (
           tips.map((tip: string | TipItem, i: number) => (
             <div key={i} style={{
               display: 'flex', gap: 10, padding: '10px 0',
-              borderBottom: i < tips.length - 1 ? '1px solid #F1F5F9' : 'none',
+              borderBottom: i < tips.length - 1 ? '1px solid var(--surface-2)' : 'none',
             }}>
               <span style={{ fontSize: 16, flexShrink: 0 }}>{(typeof tip === 'string' ? undefined : tip.icon) || '\uD83D\uDCA1'}</span>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{(typeof tip === 'string' ? undefined : tip.title) || `Tip ${i + 1}`}</div>
-                <div style={{ fontSize: 13, color: '#64748B', marginTop: 2, lineHeight: 1.5 }}>{typeof tip === 'string' ? tip : tip.description || tip.text || ''}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>{(typeof tip === 'string' ? undefined : tip.title) || `Tip ${i + 1}`}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 2, lineHeight: 1.5 }}>{typeof tip === 'string' ? tip : tip.description || tip.text || ''}</div>
               </div>
             </div>
           ))
         ) : (
-          <div style={{ fontSize: 13, color: '#64748B', lineHeight: 1.6 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6 }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83D\uDCDA</span><span>{t(isHi, 'Set aside 15-20 minutes daily for focused learning time.', 'हर दिन 15-20 मिनट पढ़ाई के लिए अलग रखें।')}</span></div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83C\uDFC6</span><span>{t(isHi, 'Celebrate small wins and streaks to keep motivation high.', 'छोटी सफलताओं को मनाएँ और प्रेरणा बनाए रखें।')}</span></div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}><span>\uD83D\uDDE3\uFE0F</span><span>{t(isHi, 'Ask your child to explain what they learned today - teaching reinforces learning.', 'अपने बच्चे से पूछें कि आज उन्होंने क्या सीखा - सिखाने से सीखना मजबूत होता है।')}</span></div>
@@ -603,7 +603,7 @@ function PerformanceScoreTrends({ trends, isHi = false }: { trends: ScoreTrendEn
       <h3 style={cardTitle}>
         {t(isHi, 'Performance Score Trends', 'प्रदर्शन स्कोर रुझान')}
       </h3>
-      <p style={{ fontSize: 13, color: '#64748B', marginBottom: 14, lineHeight: 1.5 }}>
+      <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 14, lineHeight: 1.5 }}>
         {t(isHi,
           `समग्र औसत: ${avgCurrent}/100 — ${getLevelFromScore(avgCurrent)}`,
           `Overall average: ${avgCurrent}/100 — ${getLevelFromScore(avgCurrent)}`
@@ -612,8 +612,8 @@ function PerformanceScoreTrends({ trends, isHi = false }: { trends: ScoreTrendEn
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {trends.map((tr) => {
           const delta = tr.previousScore != null ? tr.currentScore - tr.previousScore : null;
-          const deltaColor = delta != null ? (delta > 0 ? '#16A34A' : delta < 0 ? '#EF4444' : '#64748B') : '#64748B';
-          const barColor = tr.currentScore >= 75 ? '#16A34A' : tr.currentScore >= 50 ? '#D97706' : '#EF4444';
+          const deltaColor = delta != null ? (delta > 0 ? 'var(--success)' : delta < 0 ? 'var(--danger)' : 'var(--text-3)') : 'var(--text-3)';
+          const barColor = tr.currentScore >= 75 ? 'var(--success)' : tr.currentScore >= 50 ? 'var(--warning)' : 'var(--danger)';
           const subjectHiMap: Record<string, string> = {
             math: 'गणित', science: 'विज्ञान', english: 'अंग्रेज़ी',
             hindi: 'हिंदी', social: 'सामाजिक विज्ञान', evs: 'पर्यावरण',
@@ -625,22 +625,22 @@ function PerformanceScoreTrends({ trends, isHi = false }: { trends: ScoreTrendEn
           return (
             <div key={tr.subject} style={{
               padding: '12px 14px',
-              backgroundColor: '#F8FAFC',
+              backgroundColor: 'var(--surface-2)',
               borderRadius: 10,
               borderLeft: `3px solid ${barColor}`,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <div>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#1E293B' }}>{displaySubject}</span>
-                  <span style={{ fontSize: 11, color: '#94A3B8', marginLeft: 8 }}>{tr.levelName}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>{displaySubject}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 8 }}>{tr.levelName}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 18, fontWeight: 800, color: barColor }}>{tr.currentScore}</span>
-                  <span style={{ fontSize: 11, color: '#94A3B8' }}>/100</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-3)' }}>/100</span>
                 </div>
               </div>
               {/* Progress bar */}
-              <div style={{ height: 6, backgroundColor: '#E2E8F0', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+              <div style={{ height: 6, backgroundColor: 'var(--surface-3)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
                 <div style={{
                   height: '100%',
                   width: `${tr.currentScore}%`,
@@ -663,7 +663,7 @@ function PerformanceScoreTrends({ trends, isHi = false }: { trends: ScoreTrendEn
                 </div>
               )}
               {delta == null && (
-                <div style={{ fontSize: 11, color: '#94A3B8' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
                   {t(isHi, 'पिछले सप्ताह का डेटा उपलब्ध नहीं', 'No data from last week')}
                 </div>
               )}
@@ -687,16 +687,16 @@ function downloadReportPDF(studentName: string, grade: string, reportData: Repor
 
   const subjectRows = subjects.map((s: SubjectData) => `
     <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-weight:600">${s.name}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center">
-        <span style="color:${(s.mastery ?? 0) >= 80 ? '#16A34A' : (s.mastery ?? 0) >= 50 ? '#D97706' : '#EF4444'};font-weight:700">
+      <td style="padding:8px 12px;border-bottom:1px solid var(--surface-2);font-weight:600">${s.name}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid var(--surface-2);text-align:center">
+        <span style="color:${(s.mastery ?? 0) >= 80 ? 'var(--success)' : (s.mastery ?? 0) >= 50 ? 'var(--warning)' : 'var(--danger)'};font-weight:700">
           ${s.mastery ?? 0}%
         </span>
       </td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center">
+      <td style="padding:8px 12px;border-bottom:1px solid var(--surface-2);text-align:center">
         ${s.recentScore != null ? `${s.recentScore}%` : '--'}
       </td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#64748B">
+      <td style="padding:8px 12px;border-bottom:1px solid var(--surface-2);font-size:11px;color:var(--text-3)">
         ${(s.weakTopics || []).slice(0, 2).join(', ') || '—'}
       </td>
     </tr>
@@ -704,14 +704,14 @@ function downloadReportPDF(studentName: string, grade: string, reportData: Repor
 
   const quizRows = quizzes.map((q: QuizRecord) => `
     <tr>
-      <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9">${q.topic || q.subject || 'Quiz'}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9;text-align:center;font-weight:700;color:${(q.score ?? 0) >= 80 ? '#16A34A' : (q.score ?? 0) >= 50 ? '#D97706' : '#EF4444'}">${q.score ?? 0}%</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94A3B8">${q.date || q.created_at ? new Date(q.date || q.created_at || '').toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : ''}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--surface-2)">${q.topic || q.subject || 'Quiz'}</td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--surface-2);text-align:center;font-weight:700;color:${(q.score ?? 0) >= 80 ? 'var(--success)' : (q.score ?? 0) >= 50 ? 'var(--warning)' : 'var(--danger)'}">${q.score ?? 0}%</td>
+      <td style="padding:7px 12px;border-bottom:1px solid var(--surface-2);font-size:11px;color:var(--text-3)">${q.date || q.created_at ? new Date(q.date || q.created_at || '').toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : ''}</td>
     </tr>
   `).join('');
 
   const insightHtml = insights.slice(0, 3).map((ins: string | InsightItem) =>
-    `<li style="margin-bottom:6px;color:#1E293B;font-size:13px">${typeof ins === 'string' ? ins : ins.text || ins.message || ''}</li>`
+    `<li style="margin-bottom:6px;color:var(--text-1);font-size:13px">${typeof ins === 'string' ? ins : ins.text || ins.message || ''}</li>`
   ).join('');
 
   const html = `<!DOCTYPE html>
@@ -721,20 +721,20 @@ function downloadReportPDF(studentName: string, grade: string, reportData: Repor
   <title>Report — ${studentName}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, 'Plus Jakarta Sans', sans-serif; background: #fff; color: #1E293B; font-size: 13px; }
-    .header { background: linear-gradient(135deg, #F97316, #EA580C); color: #fff; padding: 24px 28px; margin-bottom: 24px; }
+    body { font-family: Arial, 'Plus Jakarta Sans', sans-serif; background: var(--surface-1); color: var(--text-1); font-size: 13px; }
+    .header { background: linear-gradient(135deg, var(--primary), var(--primary)); color: var(--surface-1); padding: 24px 28px; margin-bottom: 24px; }
     .header h1 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
     .header p { font-size: 13px; opacity: 0.9; }
     .container { padding: 0 28px 28px; }
     .section { margin-bottom: 22px; }
-    .section-title { font-size: 14px; font-weight: 700; color: #F97316; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 2px solid #FFF3E0; padding-bottom: 4px; }
+    .section-title { font-size: 14px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 2px solid var(--surface-2); padding-bottom: 4px; }
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
-    .stat-box { background: #FFF8F0; border-radius: 10px; padding: 12px; text-align: center; border: 1px solid #FDBA7444; }
-    .stat-value { font-size: 22px; font-weight: 800; color: #F97316; }
-    .stat-label { font-size: 10px; color: #64748B; text-transform: uppercase; margin-top: 2px; }
-    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #F1F5F9; }
-    th { background: #FFF8F0; padding: 10px 12px; font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; text-align: left; }
-    .footer { text-align: center; margin-top: 28px; padding-top: 14px; border-top: 1px solid #F1F5F9; font-size: 11px; color: #94A3B8; }
+    .stat-box { background: var(--surface-2); border-radius: 10px; padding: 12px; text-align: center; border: 1px solid var(--surface-2); }
+    .stat-value { font-size: 22px; font-weight: 800; color: var(--primary); }
+    .stat-label { font-size: 10px; color: var(--text-3); text-transform: uppercase; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; background: var(--surface-1); border-radius: 10px; overflow: hidden; border: 1px solid var(--surface-2); }
+    th { background: var(--surface-2); padding: 10px 12px; font-size: 11px; font-weight: 700; color: var(--text-3); text-transform: uppercase; text-align: left; }
+    .footer { text-align: center; margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--surface-2); font-size: 11px; color: var(--text-3); }
     ul { padding-left: 18px; }
     @media print {
       body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -838,21 +838,21 @@ function PrintShareSection({ studentName, grade, reportData, isHi = false }: { s
       <h3 style={{ ...cardTitle, textAlign: 'center' }}>{t(isHi, 'Share This Report', 'यह रिपोर्ट साझा करें')}</h3>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         <button onClick={() => downloadReportPDF(studentName, grade, reportData)} style={{
-          padding: '12px 24px', backgroundColor: '#F97316', color: '#fff',
+          padding: '12px 24px', backgroundColor: 'var(--primary)', color: 'var(--surface-1)',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <span>&#x1F4C4;</span> {t(isHi, 'Download PDF', 'PDF डाउनलोड करें')}
         </button>
         <button onClick={handlePrint} style={{
-          padding: '12px 24px', backgroundColor: '#16A34A', color: '#fff',
+          padding: '12px 24px', backgroundColor: 'var(--success)', color: 'var(--surface-1)',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>
           <span>\uD83D\uDDA8\uFE0F</span> {t(isHi, 'Print Report', 'रिपोर्ट प्रिंट करें')}
         </button>
         <button onClick={handleWhatsApp} style={{
-          padding: '12px 24px', backgroundColor: '#25D366', color: '#fff',
+          padding: '12px 24px', backgroundColor: 'var(--success)', color: 'var(--surface-1)',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>
@@ -883,7 +883,7 @@ function getLastNMonths(n: number): { label: string; value: string }[] {
 // ============================================================
 // CIRCULAR PROGRESS (for monthly report)
 // ============================================================
-function CircularProgressRing({ value, size = 72, color = '#16A34A', label }: {
+function CircularProgressRing({ value, size = 72, color = 'var(--success)', label }: {
   value: number; size?: number; color?: string; label?: string;
 }) {
   const pct = Math.min(100, Math.max(0, value));
@@ -893,23 +893,24 @@ function CircularProgressRing({ value, size = 72, color = '#16A34A', label }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#F1F5F9" strokeWidth={6} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" strokeWidth={6} style={{ stroke: 'var(--surface-2)' }} />
         <circle
           cx={size / 2} cy={size / 2} r={radius} fill="none"
-          stroke={color} strokeWidth={6} strokeLinecap="round"
+          strokeWidth={6} strokeLinecap="round"
           strokeDasharray={circumference} strokeDashoffset={offset}
-          style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+          style={{ stroke: color, transition: 'stroke-dashoffset 0.5s ease' }}
         />
         <text
           x={size / 2} y={size / 2}
           textAnchor="middle" dominantBaseline="central"
-          fill="#1E293B" fontSize={size * 0.22} fontWeight={700}
+          fontSize={size * 0.22} fontWeight={700}
           transform={`rotate(90, ${size / 2}, ${size / 2})`}
+          style={{ fill: 'var(--text-1)' }}
         >
           {Math.round(pct)}%
         </text>
       </svg>
-      {label && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{label}</span>}
+      {label && <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 600 }}>{label}</span>}
     </div>
   );
 }
@@ -968,8 +969,8 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
               border: 'none',
               fontSize: 12,
               fontWeight: selectedMonth === m.value ? 700 : 500,
-              backgroundColor: selectedMonth === m.value ? '#16A34A' : '#F1F5F9',
-              color: selectedMonth === m.value ? '#fff' : '#64748B',
+              backgroundColor: selectedMonth === m.value ? 'var(--success)' : 'var(--surface-2)',
+              color: selectedMonth === m.value ? 'var(--surface-1)' : 'var(--text-3)',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               transition: 'all 0.2s',
@@ -982,15 +983,15 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
 
       {monthlyLoading && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: 40 }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
-          <span style={{ fontSize: 13, color: '#64748B' }}>{t(isHi, 'Loading monthly report...', 'मासिक रिपोर्ट लोड हो रही है...')}</span>
+          <div style={{ width: 32, height: 32, border: '3px solid var(--surface-3)', borderTopColor: 'var(--success)', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+          <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{t(isHi, 'Loading monthly report...', 'मासिक रिपोर्ट लोड हो रही है...')}</span>
         </div>
       )}
 
       {!monthlyLoading && !monthlyData && (
         <div style={{ ...cardStyle, textAlign: 'center', padding: 30 }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>{'\uD83D\uDCCA'}</div>
-          <p style={{ fontSize: 14, color: '#64748B' }}>{t(isHi, 'No monthly report available for this period.', 'इस अवधि के लिए कोई मासिक रिपोर्ट उपलब्ध नहीं है।')}</p>
+          <p style={{ fontSize: 14, color: 'var(--text-3)' }}>{t(isHi, 'No monthly report available for this period.', 'इस अवधि के लिए कोई मासिक रिपोर्ट उपलब्ध नहीं है।')}</p>
         </div>
       )}
 
@@ -1002,12 +1003,12 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
             <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: 16 }}>
               <CircularProgressRing
                 value={monthlyData.conceptMasteryPct ?? 0}
-                color="#16A34A"
+                color="var(--success)"
                 label={t(isHi, 'Concept Mastery', 'अवधारणा महारत')}
               />
               <CircularProgressRing
                 value={monthlyData.retentionScore ?? 0}
-                color="#0891B2"
+                color="var(--info)"
                 label={t(isHi, '7-Day Retention', '7-दिन याददाश्त')}
               />
             </div>
@@ -1015,20 +1016,20 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
             {/* Weak areas prominently displayed */}
             {monthlyData.weakChapters && monthlyData.weakChapters.length > 0 && (
               <div style={{
-                backgroundColor: '#FEF2F2',
+                backgroundColor: 'var(--surface-2)',
                 borderRadius: 12,
                 padding: '12px 14px',
                 marginBottom: 10,
-                border: '1px solid #FECACA',
+                border: '1px solid var(--surface-3)',
               }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', marginBottom: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', marginBottom: 6 }}>
                   {'\u26A0\uFE0F'} {t(isHi, 'Needs Attention', 'ध्यान देने की ज़रूरत')}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {monthlyData.weakChapters.map((ch: string, i: number) => (
                     <span key={i} style={{
                       fontSize: 11, padding: '3px 10px', borderRadius: 12,
-                      backgroundColor: '#FEE2E2', color: '#DC2626', fontWeight: 600,
+                      backgroundColor: 'var(--surface-2)', color: 'var(--danger)', fontWeight: 600,
                     }}>
                       {ch}
                     </span>
@@ -1039,19 +1040,19 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
 
             {monthlyData.strongChapters && monthlyData.strongChapters.length > 0 && (
               <div style={{
-                backgroundColor: '#F0FDF4',
+                backgroundColor: 'var(--surface-2)',
                 borderRadius: 12,
                 padding: '12px 14px',
-                border: '1px solid #BBF7D0',
+                border: '1px solid var(--surface-3)',
               }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#16A34A', marginBottom: 6 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--success)', marginBottom: 6 }}>
                   {'\u2705'} {t(isHi, 'Strong In', 'मजबूत')}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {monthlyData.strongChapters.map((ch: string, i: number) => (
                     <span key={i} style={{
                       fontSize: 11, padding: '3px 10px', borderRadius: 12,
-                      backgroundColor: '#DCFCE7', color: '#16A34A', fontWeight: 600,
+                      backgroundColor: 'var(--surface-2)', color: 'var(--success)', fontWeight: 600,
                     }}>
                       {ch}
                     </span>
@@ -1065,16 +1066,16 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
           <div style={cardStyle}>
             <h3 style={cardTitle}>{t(isHi, 'Performance & Exam Readiness', 'प्रदर्शन और परीक्षा तैयारी')}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
-              <div style={{ textAlign: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 12 }}>
-                <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>{t(isHi, 'Predicted Score', 'अनुमानित अंक')}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#E8581C' }}>
+              <div style={{ textAlign: 'center', padding: 12, backgroundColor: 'var(--surface-2)', borderRadius: 12 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase' as const }}>{t(isHi, 'Predicted Score', 'अनुमानित अंक')}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary)' }}>
                   {monthlyData.predictedScore ?? '--'}
                 </div>
-                <div style={{ fontSize: 10, color: '#94A3B8' }}>/80</div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)' }}>/80</div>
               </div>
-              <div style={{ textAlign: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 12 }}>
-                <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>{t(isHi, 'Syllabus Done', 'पाठ्यक्रम पूरा')}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#0891B2' }}>
+              <div style={{ textAlign: 'center', padding: 12, backgroundColor: 'var(--surface-2)', borderRadius: 12 }}>
+                <div style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase' as const }}>{t(isHi, 'Syllabus Done', 'पाठ्यक्रम पूरा')}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--info)' }}>
                   {monthlyData.syllabusCompletionPct ?? 0}%
                 </div>
               </div>
@@ -1083,20 +1084,20 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
             {/* Accuracy trend bars */}
             {monthlyData.accuracyTrend && monthlyData.accuracyTrend.length > 0 && (
               <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>{t(isHi, 'Weekly Accuracy', 'साप्ताहिक सटीकता')}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>{t(isHi, 'Weekly Accuracy', 'साप्ताहिक सटीकता')}</div>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 60 }}>
                   {monthlyData.accuracyTrend.map((val: number, i: number) => {
                     const h = Math.max(4, (val / 100) * 100);
                     return (
                       <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B' }}>{Math.round(val)}%</span>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)' }}>{Math.round(val)}%</span>
                         <div style={{
                           width: '100%', borderRadius: '4px 4px 0 0',
                           height: `${h}%`,
-                          backgroundColor: val >= 70 ? '#16A34A' : val >= 40 ? '#F59E0B' : '#EF4444',
+                          backgroundColor: val >= 70 ? 'var(--success)' : val >= 40 ? 'var(--warning)' : 'var(--danger)',
                           transition: 'height 0.4s ease',
                         }} />
-                        <span style={{ fontSize: 10, color: '#94A3B8' }}>W{i + 1}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-3)' }}>W{i + 1}</span>
                       </div>
                     );
                   })}
@@ -1104,7 +1105,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
               </div>
             )}
 
-            <div style={{ fontSize: 13, color: '#475569' }}>
+            <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
               {t(isHi, 'Time Efficiency', 'समय दक्षता')}: <strong>{(monthlyData.timeEfficiency ?? 0).toFixed(2)} {t(isHi, 'questions/min', 'प्रश्न/मिनट')}</strong>
             </div>
           </div>
@@ -1113,17 +1114,17 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
           <div style={cardStyle}>
             <h3 style={cardTitle}>{t(isHi, 'Study Consistency', 'अध्ययन नियमितता')}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
-              <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: '#16A34A' }}>{monthlyData.studyConsistencyPct ?? 0}%</div>
-                <div style={{ fontSize: 10, color: '#64748B' }}>{t(isHi, 'Consistency', 'नियमितता')}</div>
+              <div style={{ textAlign: 'center', padding: 10, backgroundColor: 'var(--surface-2)', borderRadius: 10 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--success)' }}>{monthlyData.studyConsistencyPct ?? 0}%</div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{t(isHi, 'Consistency', 'नियमितता')}</div>
               </div>
-              <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: '#0891B2' }}>{monthlyData.totalStudyMinutes ?? 0}m</div>
-                <div style={{ fontSize: 10, color: '#64748B' }}>{t(isHi, 'Study Time', 'अध्ययन समय')}</div>
+              <div style={{ textAlign: 'center', padding: 10, backgroundColor: 'var(--surface-2)', borderRadius: 10 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--info)' }}>{monthlyData.totalStudyMinutes ?? 0}m</div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{t(isHi, 'Study Time', 'अध्ययन समय')}</div>
               </div>
-              <div style={{ textAlign: 'center', padding: 10, backgroundColor: '#F8FAFC', borderRadius: 10 }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: '#7C3AED' }}>{monthlyData.totalQuestionsAttempted ?? 0}</div>
-                <div style={{ fontSize: 10, color: '#64748B' }}>{t(isHi, 'Questions', 'प्रश्न')}</div>
+              <div style={{ textAlign: 'center', padding: 10, backgroundColor: 'var(--surface-2)', borderRadius: 10 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--secondary)' }}>{monthlyData.totalQuestionsAttempted ?? 0}</div>
+                <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{t(isHi, 'Questions', 'प्रश्न')}</div>
               </div>
             </div>
           </div>
@@ -1138,7 +1139,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
                   {monthlyData.achievements.map((a: string, i: number) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <span style={{ fontSize: 14 }}>{'\u2705'}</span>
-                      <span style={{ fontSize: 13, color: '#1E293B' }}>{a}</span>
+                      <span style={{ fontSize: 13, color: 'var(--text-1)' }}>{a}</span>
                     </div>
                   ))}
                 </div>
@@ -1148,7 +1149,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
                   {monthlyData.improvementAreas.map((a: string, i: number) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <span style={{ fontSize: 14 }}>{'\uD83D\uDCA1'}</span>
-                      <span style={{ fontSize: 13, color: '#475569' }}>{a}</span>
+                      <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{a}</span>
                     </div>
                   ))}
                 </div>
@@ -1159,7 +1160,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
           {/* Download PDF */}
           <div className="no-print" style={{ textAlign: 'center', marginTop: 12 }}>
             <button onClick={handlePrintMonthly} style={{
-              padding: '12px 28px', backgroundColor: '#16A34A', color: '#fff',
+              padding: '12px 28px', backgroundColor: 'var(--success)', color: 'var(--surface-1)',
               border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
               cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8,
             }}>
@@ -1195,11 +1196,11 @@ interface AssignmentSubmissionRow {
 function assignmentStatusConfig(status: string): { label: string; labelHi: string; bg: string; color: string } {
   switch (status) {
     case 'graded':
-      return { label: 'Graded', labelHi: 'ग्रेड किया', bg: '#DCFCE7', color: '#15803D' };
+      return { label: 'Graded', labelHi: 'ग्रेड किया', bg: 'var(--surface-2)', color: 'var(--success)' };
     case 'submitted':
-      return { label: 'Submitted', labelHi: 'जमा किया', bg: '#DBEAFE', color: '#1D4ED8' };
+      return { label: 'Submitted', labelHi: 'जमा किया', bg: 'var(--surface-2)', color: 'var(--info)' };
     default:
-      return { label: 'Not Started', labelHi: 'शुरू नहीं', bg: '#F3F4F6', color: '#6B7280' };
+      return { label: 'Not Started', labelHi: 'शुरू नहीं', bg: 'var(--surface-2)', color: 'var(--text-3)' };
   }
 }
 
@@ -1262,10 +1263,10 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[1, 2, 3].map(i => (
             <div key={i} style={{
-              height: 56, borderRadius: 10, backgroundColor: '#F1F5F9',
+              height: 56, borderRadius: 10, backgroundColor: 'var(--surface-2)',
               animation: 'spin 0s, fadeIn 0s',
             }}>
-              <div style={{ height: '100%', background: 'linear-gradient(90deg,#F1F5F9 25%,#E2E8F0 50%,#F1F5F9 75%)', backgroundSize: '200% 100%' }} />
+              <div style={{ height: '100%', background: 'linear-gradient(90deg,var(--surface-2) 25%,var(--surface-3) 50%,var(--surface-2) 75%)', backgroundSize: '200% 100%' }} />
             </div>
           ))}
         </div>
@@ -1275,8 +1276,8 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
 
   if (error) {
     return (
-      <div style={{ ...cardStyle, border: '1px solid #FECACA', backgroundColor: '#FEF2F2' }}>
-        <p style={{ fontSize: 13, color: '#B91C1C', margin: 0 }}>{error}</p>
+      <div style={{ ...cardStyle, border: '1px solid var(--surface-3)', backgroundColor: 'var(--surface-2)' }}>
+        <p style={{ fontSize: 13, color: 'var(--danger)', margin: 0 }}>{error}</p>
       </div>
     );
   }
@@ -1311,19 +1312,19 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
           const scoreNum = sub.questions_correct != null && sub.questions_total != null && sub.questions_total > 0
             ? calculateScorePercent(sub.questions_correct, sub.questions_total)
             : sub.score ?? 0;
-          const scoreColor = scoreNum >= 80 ? '#16A34A' : scoreNum >= 50 ? '#D97706' : '#EF4444';
+          const scoreColor = scoreNum >= 80 ? 'var(--success)' : scoreNum >= 50 ? 'var(--warning)' : 'var(--danger)';
 
           return (
             <div key={sub.id} style={{
               padding: '12px 14px',
-              backgroundColor: '#F8FAFC',
+              backgroundColor: 'var(--surface-2)',
               borderRadius: 10,
               borderLeft: `3px solid ${statusCfg.color}`,
             }}>
               {/* Title row */}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1E293B', marginBottom: 4 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', marginBottom: 4 }}>
                     {asgn?.title ?? t(isHi, 'Assignment', 'असाइनमेंट')}
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1331,7 +1332,7 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
                     {asgn?.subject && (
                       <span style={{
                         fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                        backgroundColor: '#EDE9FE', color: '#5B21B6', fontWeight: 600,
+                        backgroundColor: 'var(--surface-2)', color: 'var(--secondary)', fontWeight: 600,
                       }}>
                         {asgn.subject}
                       </span>
@@ -1340,7 +1341,7 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
                     {asgn?.assignment_type && (
                       <span style={{
                         fontSize: 11, padding: '2px 8px', borderRadius: 6,
-                        backgroundColor: '#FEF9C3', color: '#713F12', fontWeight: 600,
+                        backgroundColor: 'var(--surface-2)', color: 'var(--text-1)', fontWeight: 600,
                       }}>
                         {asgn.assignment_type}
                       </span>
@@ -1360,7 +1361,7 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
                   <div style={{ fontSize: 18, fontWeight: 800, color: scoreColor }}>
                     {scoreDisplay}
                   </div>
-                  <div style={{ fontSize: 10, color: '#94A3B8' }}>
+                  <div style={{ fontSize: 10, color: 'var(--text-3)' }}>
                     {t(isHi, 'Score', 'अंक')}
                   </div>
                 </div>
@@ -1368,7 +1369,7 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
 
               {/* Submitted date */}
               {sub.submitted_at && (
-                <div style={{ fontSize: 12, color: '#64748B', marginTop: 6 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
                   {t(isHi, 'Submitted', 'जमा किया')}: {formatDate(sub.submitted_at)}
                 </div>
               )}
@@ -1380,7 +1381,7 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
                     onClick={() => toggleFeedback(sub.id)}
                     style={{
                       background: 'none', border: 'none', padding: 0,
-                      fontSize: 12, color: '#3B82F6', fontWeight: 600, cursor: 'pointer',
+                      fontSize: 12, color: 'var(--info)', fontWeight: 600, cursor: 'pointer',
                     }}
                   >
                     {feedbackOpen
@@ -1391,11 +1392,11 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
                   {feedbackOpen && (
                     <div style={{
                       marginTop: 6, padding: '8px 12px',
-                      backgroundColor: '#EFF6FF', borderRadius: 8,
-                      fontSize: 13, color: '#1E40AF', lineHeight: 1.6,
-                      borderLeft: '3px solid #3B82F6',
+                      backgroundColor: 'var(--surface-2)', borderRadius: 8,
+                      fontSize: 13, color: 'var(--info)', lineHeight: 1.6,
+                      borderLeft: '3px solid var(--info)',
                     }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#3B82F6', display: 'block', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--info)', display: 'block', marginBottom: 4 }}>
                         {t(isHi, 'Feedback', 'प्रतिक्रिया')}
                       </span>
                       {sub.teacher_feedback}
@@ -1429,9 +1430,9 @@ function ChildSelector({ childList, selectedId, onSelect }: {
           style={{
             padding: '8px 16px',
             borderRadius: 12,
-            border: selectedId === child.id ? '2px solid #16A34A' : '1px solid #E2E8F0',
-            backgroundColor: selectedId === child.id ? '#F0FDF4' : '#FFFFFF',
-            color: selectedId === child.id ? '#16A34A' : '#475569',
+            border: selectedId === child.id ? '2px solid var(--success)' : '1px solid var(--surface-3)',
+            backgroundColor: selectedId === child.id ? 'var(--surface-2)' : 'var(--surface-1)',
+            color: selectedId === child.id ? 'var(--success)' : 'var(--text-2)',
             fontSize: 13,
             fontWeight: selectedId === child.id ? 700 : 500,
             cursor: 'pointer',
@@ -1621,7 +1622,7 @@ function ParentReportsPage() {
   // Print styles
   const printStyles = `
     @media print {
-      body { background: #fff !important; }
+      body { background: var(--surface-1) !important; }
       .no-print { display: none !important; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
@@ -1634,8 +1635,8 @@ function ParentReportsPage() {
     return (
       <div style={pageStyle}>
         <style>{printStyles}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ textAlign: 'center', padding: 80, color: 'var(--text-3)' }}>
+          <div style={{ width: 40, height: 40, border: '3px solid var(--surface-3)', borderTopColor: 'var(--success)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
           {t(isHi, 'Loading...', 'लोड हो रहा है...')}
         </div>
       </div>
@@ -1646,7 +1647,7 @@ function ParentReportsPage() {
     return (
       <div style={pageStyle}>
         <style>{printStyles}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>{t(isHi, 'Redirecting...', 'रीडायरेक्ट हो रहा है...')}</div>
+        <div style={{ textAlign: 'center', padding: 80, color: 'var(--text-3)' }}>{t(isHi, 'Redirecting...', 'रीडायरेक्ट हो रहा है...')}</div>
       </div>
     );
   }
@@ -1683,23 +1684,23 @@ function ParentReportsPage() {
 
       {/* ── HEADER ── */}
       <div style={{
-        background: 'linear-gradient(135deg, #16A34A, #15803D)',
+        background: 'linear-gradient(135deg, var(--success), var(--success))',
         padding: '28px 22px 22px',
         borderRadius: '0 0 24px 24px',
         marginBottom: 20,
-        color: '#FFFFFF',
+        color: 'var(--surface-1)',
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h1 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 6px', color: '#FFFFFF' }}>
+            <h1 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 6px', color: 'var(--surface-1)' }}>
               {'\uD83D\uDCCA'} {t(isHi, 'Learning Report', 'लर्निंग रिपोर्ट')}
             </h1>
             <div style={{ fontSize: 16, fontWeight: 600, opacity: 0.95 }}>{student.name}</div>
             <div style={{ fontSize: 13, opacity: 0.8, marginTop: 2 }}>{t(isHi, 'Grade', 'कक्षा')} {student.grade}</div>
           </div>
           <a href="/parent" className="no-print" style={{
-            padding: '8px 14px', backgroundColor: 'rgba(255,255,255,0.2)',
-            color: '#fff', border: 'none', borderRadius: 8,
+            padding: '8px 14px', backgroundColor: 'var(--surface-2)',
+            color: 'var(--surface-1)', border: 'none', borderRadius: 8,
             fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none',
           }}>
             {'\u2190'} {t(isHi, 'Dashboard', 'डैशबोर्ड')}
@@ -1712,8 +1713,8 @@ function ParentReportsPage() {
             onClick={() => setViewMode('weekly')}
             style={{
               padding: '7px 16px',
-              backgroundColor: viewMode === 'weekly' ? '#FFFFFF' : 'rgba(255,255,255,0.15)',
-              color: viewMode === 'weekly' ? '#15803D' : 'rgba(255,255,255,0.9)',
+              backgroundColor: viewMode === 'weekly' ? 'var(--surface-1)' : 'var(--surface-2)',
+              color: viewMode === 'weekly' ? 'var(--success)' : 'var(--surface-1)',
               border: 'none', borderRadius: 20, fontSize: 13,
               fontWeight: viewMode === 'weekly' ? 700 : 500,
               cursor: 'pointer', transition: 'all 0.2s',
@@ -1725,8 +1726,8 @@ function ParentReportsPage() {
             onClick={() => setViewMode('monthly')}
             style={{
               padding: '7px 16px',
-              backgroundColor: viewMode === 'monthly' ? '#FFFFFF' : 'rgba(255,255,255,0.15)',
-              color: viewMode === 'monthly' ? '#15803D' : 'rgba(255,255,255,0.9)',
+              backgroundColor: viewMode === 'monthly' ? 'var(--surface-1)' : 'var(--surface-2)',
+              color: viewMode === 'monthly' ? 'var(--success)' : 'var(--surface-1)',
               border: 'none', borderRadius: 20, fontSize: 13,
               fontWeight: viewMode === 'monthly' ? 700 : 500,
               cursor: 'pointer', transition: 'all 0.2s',
@@ -1749,8 +1750,8 @@ function ParentReportsPage() {
                 onClick={() => setDateRange(opt.key)}
                 style={{
                   padding: '7px 16px',
-                  backgroundColor: dateRange === opt.key ? '#FFFFFF' : 'rgba(255,255,255,0.15)',
-                  color: dateRange === opt.key ? '#15803D' : 'rgba(255,255,255,0.9)',
+                  backgroundColor: dateRange === opt.key ? 'var(--surface-1)' : 'var(--surface-2)',
+                  color: dateRange === opt.key ? 'var(--success)' : 'var(--surface-1)',
                   border: 'none',
                   borderRadius: 20,
                   fontSize: 13,
@@ -1788,19 +1789,19 @@ function ParentReportsPage() {
 
         {/* ── WEEKLY / RANGE VIEW ── */}
         {viewMode === 'weekly' && loading && (
-          <div style={{ textAlign: 'center', padding: 60, color: '#64748B' }}>
-            <div style={{ width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 14px', animation: 'spin 0.8s linear infinite' }} />
+          <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-3)' }}>
+            <div style={{ width: 36, height: 36, border: '3px solid var(--surface-3)', borderTopColor: 'var(--success)', borderRadius: '50%', margin: '0 auto 14px', animation: 'spin 0.8s linear infinite' }} />
             {t(isHi, `Loading ${student.name}'s report...`, `${student.name} की रिपोर्ट लोड हो रही है...`)}
           </div>
         )}
 
         {viewMode === 'weekly' && error && !loading && (
-          <div style={{ ...cardStyle, textAlign: 'center', color: '#EF4444' }}>
+          <div style={{ ...cardStyle, textAlign: 'center', color: 'var(--danger)' }}>
             <div style={{ fontSize: 36, marginBottom: 8 }}>{'\uD83D\uDE1F'}</div>
             <p style={{ fontSize: 15, fontWeight: 600 }}>{error}</p>
             <button onClick={fetchReport} style={{
-              marginTop: 12, padding: '8px 20px', backgroundColor: '#16A34A',
-              color: '#fff', border: 'none', borderRadius: 8, fontSize: 13,
+              marginTop: 12, padding: '8px 20px', backgroundColor: 'var(--success)',
+              color: 'var(--surface-1)', border: 'none', borderRadius: 8, fontSize: 13,
               fontWeight: 600, cursor: 'pointer',
             }}>{t(isHi, 'Try Again', 'फिर से कोशिश करें')}</button>
           </div>
@@ -1927,7 +1928,7 @@ function ParentReportsPage() {
             <PrintShareSection studentName={student.name} grade={student.grade} reportData={report} isHi={isHi} />
 
             {/* Footer */}
-            <p style={{ textAlign: 'center', fontSize: 11, color: '#94A3B8', margin: '24px 0 8px' }}>
+            <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-3)', margin: '24px 0 8px' }}>
               Alfanumrik Learning OS | {t(isHi, 'Learning Report', 'लर्निंग रिपोर्ट')} | {student.name}, {t(isHi, 'Grade', 'कक्षा')} {student.grade}
             </p>
           </>
@@ -1940,7 +1941,7 @@ function ParentReportsPage() {
 
 export default function Page() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100dvh', backgroundColor: '#F0FDF4' }} className="animate-pulse" />}>
+    <Suspense fallback={<div style={{ minHeight: '100dvh', backgroundColor: 'var(--surface-2)' }} className="animate-pulse" />}>
       <ParentReportsPage />
     </Suspense>
   );

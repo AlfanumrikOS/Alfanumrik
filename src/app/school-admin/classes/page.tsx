@@ -67,7 +67,7 @@ const GRADE_SELECT_OPTIONS_HI = GRADE_VALUES.map((g) => ({
    MASTERY COLOR HELPER
 ───────────────────────────────────────────────────────────── */
 function masteryColor(value: number): string {
-  if (value < 40) return '#DC2626';
+  if (value < 40) return 'var(--danger)';
   if (value <= 70) return 'var(--orange)';
   return 'var(--green)';
 }
@@ -350,7 +350,7 @@ function CreateClassForm({ isHi, onSuccess, onClose }: CreateClassFormProps) {
       {formError && (
         <p
           className="text-xs font-medium px-1"
-          style={{ color: '#DC2626' }}
+          style={{ color: 'var(--danger)' }}
           role="alert"
         >
           {formError}
@@ -502,9 +502,9 @@ function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
               onClick={handleCopy}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
               style={{
-                background: copied ? '#16A34A18' : 'var(--surface-1)',
-                border: `1px solid ${copied ? '#16A34A' : 'var(--border)'}`,
-                color: copied ? '#16A34A' : 'var(--text-2)',
+                background: copied ? 'color-mix(in srgb, var(--success) 9%, transparent)' : 'var(--surface-1)',
+                border: `1px solid ${copied ? 'var(--success)' : 'var(--border)'}`,
+                color: copied ? 'var(--success)' : 'var(--text-2)',
                 minHeight: 36,
                 minWidth: 64,
               }}
@@ -817,9 +817,9 @@ export default function SchoolAdminClassesPage() {
       ══════════════════════════════════════════════════════ */}
       {successMsg && (
         <div
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-lg pointer-events-none animate-fade-in"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-on-accent shadow-lg pointer-events-none animate-fade-in"
           style={{
-            background: 'rgba(22,163,74,0.92)',
+            background: 'color-mix(in srgb, var(--success) 92%, transparent)',
             backdropFilter: 'blur(8px)',
             whiteSpace: 'nowrap',
           }}

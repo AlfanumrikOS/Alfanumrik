@@ -18,18 +18,18 @@ interface Notification {
 }
 
 const TYPE_CONFIG: Record<string, { icon: string; color: string }> = {
-  announcement: { icon: '📢', color: '#3B82F6' },
-  exam_reminder: { icon: '📋', color: '#EAB308' },
-  renewal_reminder_30: { icon: '🔔', color: '#F97316' },
-  renewal_reminder_14: { icon: '🔔', color: '#EAB308' },
-  renewal_reminder_7: { icon: '⚠️', color: '#EF4444' },
-  seat_approaching_limit: { icon: '⚠️', color: '#EAB308' },
+  announcement: { icon: '📢', color: 'var(--info)' },
+  exam_reminder: { icon: '📋', color: 'var(--warning)' },
+  renewal_reminder_30: { icon: '🔔', color: 'var(--orange)' },
+  renewal_reminder_14: { icon: '🔔', color: 'var(--warning)' },
+  renewal_reminder_7: { icon: '⚠️', color: 'var(--danger)' },
+  seat_approaching_limit: { icon: '⚠️', color: 'var(--warning)' },
   // Phase 3B Wave B: soft-allow grace flag inserted by the seat-enforcement path
   // (recipient_type school + super_admin). Amber = action-needed-but-not-blocked.
-  seat_grace_warn: { icon: '⏳', color: '#F59E0B' },
-  score_notification: { icon: '🎯', color: '#22C55E' },
-  streak_warning: { icon: '🔥', color: '#F97316' },
-  default: { icon: '💬', color: '#6B7280' },
+  seat_grace_warn: { icon: '⏳', color: 'var(--warning)' },
+  score_notification: { icon: '🎯', color: 'var(--success)' },
+  streak_warning: { icon: '🔥', color: 'var(--orange)' },
+  default: { icon: '💬', color: 'var(--text-3)' },
 };
 
 function timeAgo(date: string, isHi: boolean): string {
@@ -146,8 +146,8 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
         🔔
         {unreadCount > 0 && (
           <span style={{
-            position: 'absolute', top: -2, right: -4, background: '#EF4444',
-            color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 10,
+            position: 'absolute', top: -2, right: -4, background: 'var(--danger)',
+            color: 'var(--surface-1)', fontSize: 12, fontWeight: 700, borderRadius: 10,
             minWidth: 18, height: 18, display: 'flex', alignItems: 'center',
             justifyContent: 'center', padding: '0 4px',
           }}>
@@ -160,13 +160,13 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
       {open && (
         <div style={{
           position: 'absolute', top: '100%', right: 0, marginTop: 8,
-          width: 380, maxHeight: 480, background: '#fff', borderRadius: 12,
-          border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+          width: 380, maxHeight: 480, background: 'var(--surface-1)', borderRadius: 12,
+          border: '1px solid var(--surface-3)', boxShadow: '0 8px 24px color-mix(in srgb, var(--text-1) 12%, transparent)',
           overflow: 'hidden', zIndex: 1000,
         }}>
           {/* Header */}
           <div style={{
-            padding: '12px 16px', borderBottom: '1px solid #e5e7eb',
+            padding: '12px 16px', borderBottom: '1px solid var(--surface-3)',
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
             <span style={{ fontSize: 14, fontWeight: 700 }}>
@@ -185,21 +185,21 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
           {/* List */}
           <div style={{ overflowY: 'auto', maxHeight: 380 }} role="list">
             {loading ? (
-              <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 13 }}>
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
                 {t(isHi, 'Loading...', 'लोड हो रहा है...')}
               </div>
             ) : notifications.length === 0 ? (
-              <div style={{ padding: 32, textAlign: 'center', color: '#888', fontSize: 13 }}>
+              <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
                 {t(isHi, 'No notifications', 'कोई सूचना नहीं')}
               </div>
             ) : (
               notifications.map(n => {
                 const config = TYPE_CONFIG[n.notification_type || 'default'] || TYPE_CONFIG.default;
                 const itemStyle: React.CSSProperties = {
-                  padding: '12px 16px', borderBottom: '1px solid #f3f4f6',
+                  padding: '12px 16px', borderBottom: '1px solid var(--surface-2)',
                   cursor: n.is_read ? 'default' : 'pointer',
                   borderLeft: n.is_read ? '3px solid transparent' : `3px solid ${config.color}`,
-                  background: n.is_read ? '#fff' : '#f8fafc',
+                  background: n.is_read ? 'var(--surface-1)' : 'var(--surface-2)',
                   display: 'flex', gap: 10, alignItems: 'flex-start',
                   width: '100%', textAlign: 'left', font: 'inherit',
                 };
@@ -207,15 +207,15 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
                   <>
                     <span style={{ fontSize: 16, flexShrink: 0 }}>{config.icon}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: n.is_read ? 400 : 600, color: '#111' }}>
+                      <div style={{ fontSize: 13, fontWeight: n.is_read ? 400 : 600, color: 'var(--text-1)' }}>
                         {n.title || t(isHi, 'Notification', 'सूचना')}
                       </div>
                       {n.body && (
-                        <div style={{ fontSize: 12, color: '#666', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {n.body.length > 80 ? n.body.slice(0, 80) + '...' : n.body}
                         </div>
                       )}
-                      <div style={{ fontSize: 10, color: '#aaa', marginTop: 4 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>
                         {timeAgo(n.created_at, isHi)}
                       </div>
                     </div>
@@ -244,7 +244,7 @@ export default function NotificationCenter({ maxItems = 10 }: Props) {
           <Link
             href="/notifications"
             style={{
-              display: 'block', padding: '10px 16px', borderTop: '1px solid #e5e7eb',
+              display: 'block', padding: '10px 16px', borderTop: '1px solid var(--surface-3)',
               textAlign: 'center', fontSize: 12, color: primaryColor, textDecoration: 'none',
             }}
           >
