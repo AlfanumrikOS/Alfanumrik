@@ -171,9 +171,19 @@ export default function RootLayout({
               "var flagOn=false;" +
               "try{var raw=localStorage.getItem('alfanumrik_cosmic_flag_v1');" +
               "if(raw){var c=JSON.parse(raw);if(c&&typeof c.ts==='number'&&Date.now()-c.ts<=36e5&&c.on)flagOn=true;}}catch(e){}" +
-              // ── enable = preview || forceOn || cached flag || student role (OS always cosmic-light) ──
+              // ── enable = preview || forceOn || cached flag || LOGGED-IN student (OS is cosmic-light) ──
+              //    NOTE: a stored role of exactly 'student' means a signed-in learner. An
+              //    ANONYMOUS visitor (no role key at all) must NOT auto-enable cosmic — the
+              //    public marketing/auth surfaces (/welcome, /login, /pricing) carry the
+              //    default burnt-orange brand identity, and CosmicThemeProvider's
+              //    computeCosmicEnabled() (dbFlag||preview||force) never enables cosmic for
+              //    them either. Treating no-role as student caused a first-paint cosmic FLASH
+              //    on every public page (violet --orange), which React then reverted — a
+              //    nondeterministic race pinned by the REG-237 token-contract probe. Requiring
+              //    an explicit 'student' role keeps signed-in students on cosmic-light with no
+              //    behavior change while removing the anonymous leak.
               "var r=localStorage.getItem('alfanumrik_active_role');" +
-              "var isStudent=(!r||r==='student');" +
+              "var isStudent=(r==='student');" +
               "if(!(PREVIEW||force==='on'||flagOn||isStudent))return;" +
               "var h=document.documentElement;" +
               "h.setAttribute('data-design','cosmic');" +
