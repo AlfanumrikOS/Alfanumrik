@@ -32,6 +32,7 @@ import { BLOOM_LEVEL_ORDER } from '@/lib/types';
 import type { StudentMasteryReport as StudentMasteryReportData } from '@/lib/types';
 import { heatColorClass } from '@/lib/teacher/heat-scale';
 import { StatusBadge } from '@/components/admin-ui/StatusBadge';
+import { Button } from '@/components/ui/primitives';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -51,7 +52,7 @@ function StatTile({ label, value, color }: { label: string; value: string | numb
       className="rounded-xl py-3 px-3.5"
       style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
     >
-      <p className="text-[10px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>{label}</p>
+      <p className="text-[12px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>{label}</p>
       <p className="text-[22px] font-extrabold mt-1" style={{ color }}>{value}</p>
     </div>
   );
@@ -135,17 +136,18 @@ export default function StudentMasteryReport({
                 />
               </span>
             ) : (
-              <button
+              <Button
                 type="button"
+                variant="primary"
+                size="sm"
                 onClick={onShareWithParent}
                 disabled={shareWithParentBusy}
                 data-testid="report-share-parent-btn"
-                className="py-1 px-2.5 bg-[#E8581C] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
               >
                 {shareWithParentBusy
                   ? tt(isHi, 'Sending…', 'भेजा जा रहा है…')
                   : tt(isHi, 'Share with parent', 'अभिभावक के साथ साझा करें')}
-              </button>
+              </Button>
             ))}
           {report && !loading && !error && (
             <button
@@ -153,8 +155,8 @@ export default function StudentMasteryReport({
               onClick={onExport}
               disabled={exporting}
               data-testid="report-export-btn"
-              className="py-1 px-2.5 text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
-              style={{ background: 'var(--success, #059669)' }}
+              className="py-1 px-2.5 border-none rounded-md text-[12px] font-semibold cursor-pointer disabled:opacity-50"
+              style={{ background: 'var(--success)', color: 'white' }}
             >
               {exporting
                 ? tt(isHi, 'Preparing…', 'तैयार हो रहा है…')
@@ -165,7 +167,7 @@ export default function StudentMasteryReport({
             type="button"
             onClick={onClose}
             data-testid="report-close-btn"
-            className="py-1 px-2.5 bg-transparent rounded-md text-[11px] font-semibold cursor-pointer hover:border-[#7C3AED]"
+            className="py-1 px-2.5 bg-transparent rounded-md text-[12px] font-semibold cursor-pointer hover:border-primary"
             style={{ color: 'var(--text-3)', border: '1px solid var(--border)' }}
           >
             {tt(isHi, 'Close', 'बंद करें')}
@@ -188,13 +190,9 @@ export default function StudentMasteryReport({
             <p className="text-[14px] font-semibold mb-3" style={{ color: 'var(--text-2)' }}>
               {tt(isHi, "Couldn't load the report", 'रिपोर्ट लोड नहीं हो सकी')}
             </p>
-            <button
-              type="button"
-              onClick={onRetry}
-              className="py-2 px-5 bg-[#E8581C] text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
-            >
+            <Button type="button" variant="primary" size="sm" onClick={onRetry}>
               {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
-            </button>
+            </Button>
           </div>
         ) : !report ? null : (
           <div className="flex flex-col gap-5">
@@ -211,22 +209,22 @@ export default function StudentMasteryReport({
               <StatTile
                 label={tt(isHi, 'Overall mastery', 'कुल मास्टरी')}
                 value={`${report.mastery.overall_pct}%`}
-                color="#7C3AED"
+                color="var(--purple)"
               />
               <StatTile
                 label={tt(isHi, 'Quizzes', 'क्विज़')}
                 value={report.recent.quizzes}
-                color="#7C3AED"
+                color="var(--purple)"
               />
               <StatTile
                 label={tt(isHi, 'Avg score', 'औसत स्कोर')}
                 value={`${report.recent.avg_score}%`}
-                color="var(--info, #2563EB)"
+                color="var(--info)"
               />
               <StatTile
                 label={tt(isHi, 'Streak', 'स्ट्रीक')}
                 value={report.recent.streak}
-                color="var(--success, #059669)"
+                color="var(--success)"
               />
             </div>
 
@@ -259,7 +257,7 @@ export default function StudentMasteryReport({
                       <span className="text-[12px] font-bold w-[40px] text-right tabular-nums" style={{ color: 'var(--text-1)' }}>
                         {c.mastery_pct}%
                       </span>
-                      <span className="text-[10px] w-[58px] text-right" style={{ color: 'var(--text-3)' }}>
+                      <span className="text-[12px] w-[58px] text-right" style={{ color: 'var(--text-3)' }}>
                         {c.attempts} {tt(isHi, 'tries', 'प्रयास')}
                       </span>
                     </div>
@@ -286,8 +284,8 @@ export default function StudentMasteryReport({
                       style={
                         isWeakest
                           ? {
-                              background: 'rgba(220,38,38,0.08)',
-                              border: '1px solid rgba(220,38,38,0.35)',
+                              background: 'var(--danger-light)',
+                              border: '1px solid var(--danger)',
                             }
                           : undefined
                       }
@@ -310,14 +308,14 @@ export default function StudentMasteryReport({
                       >
                         {b.attempted ? `${b.accuracy_pct}%` : '—'}
                       </span>
-                      <span className="text-[10px] w-[58px] text-right" style={{ color: 'var(--text-3)' }}>
+                      <span className="text-[12px] w-[58px] text-right" style={{ color: 'var(--text-3)' }}>
                         {b.attempted ? `${b.correct}/${b.total}` : '—'}
                       </span>
                       {isWeakest && (
                         <span
                           data-testid="bloom-weakest-badge"
-                          className="text-[9px] font-bold uppercase tracking-wide whitespace-nowrap"
-                          style={{ color: 'var(--danger, #DC2626)' }}
+                          className="text-[12px] font-bold uppercase tracking-wide whitespace-nowrap"
+                          style={{ color: 'var(--danger)' }}
                         >
                           {tt(isHi, 'Weakest', 'सबसे कमज़ोर')}
                         </span>

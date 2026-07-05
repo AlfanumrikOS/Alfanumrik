@@ -72,7 +72,7 @@ interface ClassData {
 }
 
 /* ─── Helpers ─── */
-const AVATAR_COLORS = ['#E8581C', '#7C3AED', '#059669', '#D97706', '#DC2626', '#0891B2', '#DB2777', '#4F46E5'];
+const AVATAR_COLORS = ['var(--orange)', 'var(--purple)', 'var(--success)', 'var(--warning)', 'var(--danger)', 'var(--info)', 'var(--purple)', 'var(--info)'];
 
 function avatarColor(name: string): string {
   let hash = 0;
@@ -81,9 +81,9 @@ function avatarColor(name: string): string {
 }
 
 function accuracyColor(pct: number): string {
-  if (pct > 80) return '#059669';
-  if (pct >= 50) return '#D97706';
-  return '#DC2626';
+  if (pct > 80) return 'var(--success)';
+  if (pct >= 50) return 'var(--warning)';
+  return 'var(--danger)';
 }
 
 /* ─── Teacher Student Pulse (teacher single-student lens) ─── */
@@ -105,7 +105,7 @@ function TeacherStudentPulseSection({
   const { data, error, isLoading, mutate } = usePulse(enabled ? studentId : undefined);
   return (
     <div style={{ marginTop: 14 }}>
-      <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1A1207', margin: '0 0 10px' }}>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', margin: '0 0 10px' }}>
         🩺 {tt(isHi, 'Learning Pulse', 'सीखने का पल्स')}
       </h4>
       <StudentPulse
@@ -176,9 +176,9 @@ function StudentCard({
   return (
     <div
       style={{
-        backgroundColor: '#FFFFFF',
+        backgroundColor: 'var(--surface-1)',
         borderRadius: 14,
-        border: isStruggling ? '1px solid #DC262666' : needsAttention ? '1px solid #D9770644' : '1px solid #F5F0EA',
+        border: isStruggling ? '1px solid var(--danger)' : needsAttention ? '1px solid var(--warning)' : '1px solid var(--surface-2)',
         overflow: 'hidden',
         transition: 'all 0.3s ease',
         position: 'relative',
@@ -187,28 +187,28 @@ function StudentCard({
       {/* Struggling student indicator */}
       {isStruggling && (
         <div style={{
-          backgroundColor: '#FCEEEE',
-          borderBottom: '1px solid #DC262633',
+          backgroundColor: 'var(--red-soft)',
+          borderBottom: '1px solid var(--danger)',
           padding: '6px 18px',
           display: 'flex',
           alignItems: 'center',
           gap: 6,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>{tt(isHi, 'Needs help', 'मदद चाहिए')}</span>
-          <span style={{ fontSize: 11, color: '#B91C1C' }}>{tt(isHi, 'Low mastery and accuracy — consider targeted revision', 'कम मास्टरी और सटीकता — लक्षित रिवीज़न पर विचार करें')}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--danger)', color: 'white', textTransform: 'uppercase' }}>{tt(isHi, 'Needs help', 'मदद चाहिए')}</span>
+          <span style={{ fontSize: 12, color: 'var(--danger)' }}>{tt(isHi, 'Low mastery and accuracy — consider targeted revision', 'कम मास्टरी और सटीकता — लक्षित रिवीज़न पर विचार करें')}</span>
         </div>
       )}
       {needsAttention && !isStruggling && (
         <div style={{
-          backgroundColor: '#FBEBD2',
-          borderBottom: '1px solid #D9770633',
+          backgroundColor: 'var(--surface-2)',
+          borderBottom: '1px solid var(--warning)',
           padding: '6px 18px',
           display: 'flex',
           alignItems: 'center',
           gap: 6,
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: '#D97706', color: '#fff', textTransform: 'uppercase' }}>{tt(isHi, 'At risk', 'जोखिम में')}</span>
-          <span style={{ fontSize: 11, color: '#9A5B16' }}>{tt(isHi, 'Below average — monitor closely', 'औसत से नीचे — ध्यान से देखें')}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--warning)', color: 'white', textTransform: 'uppercase' }}>{tt(isHi, 'At risk', 'जोखिम में')}</span>
+          <span style={{ fontSize: 12, color: 'var(--orange)' }}>{tt(isHi, 'Below average — monitor closely', 'औसत से नीचे — ध्यान से देखें')}</span>
         </div>
       )}
       {/* Card Header */}
@@ -220,23 +220,23 @@ function StudentCard({
               width: 44,
               height: 44,
               borderRadius: '50%',
-              backgroundColor: isStruggling ? '#DC2626' : avatarColor(student.name),
+              backgroundColor: isStruggling ? 'var(--danger)' : avatarColor(student.name),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: 18,
               fontWeight: 700,
-              color: '#fff',
+              color: 'white',
               flexShrink: 0,
             }}
           >
             {student.name.charAt(0).toUpperCase()}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: '#1A1207', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {student.name}
             </h3>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: '#7D7264' }}>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-3)' }}>
               {tt(isHi, 'Grade', 'कक्षा')} {student.grade}
             </p>
           </div>
@@ -244,33 +244,33 @@ function StudentCard({
 
         {/* Stats Row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-          <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-            <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>XP</p>
-            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#7C3AED' }}>{student.xp.toLocaleString()}</p>
+          <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>XP</p>
+            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: 'var(--purple)' }}>{student.xp.toLocaleString()}</p>
           </div>
-          <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-            <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Streak', 'स्ट्रीक')}</p>
-            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#F59E0B' }}>{student.streak}d</p>
+          <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Streak', 'स्ट्रीक')}</p>
+            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: 'var(--warning)' }}>{student.streak}d</p>
           </div>
-          <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-            <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Mastery', 'मास्टरी')}</p>
-            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#E8581C' }}>{student.mastery}%</p>
+          <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Mastery', 'मास्टरी')}</p>
+            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: 'var(--orange)' }}>{student.mastery}%</p>
           </div>
         </div>
 
         {/* Accuracy */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 12, color: '#7D7264' }}>{tt(isHi, 'Accuracy', 'सटीकता')}:</span>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{tt(isHi, 'Accuracy', 'सटीकता')}:</span>
           <span style={{ fontSize: 14, fontWeight: 700, color: accuracyColor(student.accuracy) }}>{student.accuracy}%</span>
         </div>
 
         {/* Mastery Progress Bar */}
-        <div style={{ backgroundColor: '#F5F0EA', borderRadius: 6, height: 6, overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 6, height: 6, overflow: 'hidden' }}>
           <div
             style={{
               width: `${Math.min(student.mastery, 100)}%`,
               height: '100%',
-              backgroundColor: '#E8581C',
+              backgroundColor: 'var(--orange)',
               borderRadius: 6,
               transition: 'width 0.5s ease',
             }}
@@ -284,9 +284,9 @@ function StudentCard({
             style={{
               flex: 1,
               padding: '8px 0',
-              backgroundColor: expanded ? '#C2410C' : 'transparent',
-              color: expanded ? '#fff' : '#E8581C',
-              border: expanded ? 'none' : '1px solid #E8581C',
+              backgroundColor: expanded ? 'var(--orange)' : 'transparent',
+              color: expanded ? 'var(--surface-1)' : 'var(--orange)',
+              border: expanded ? 'none' : '1px solid var(--orange)',
               borderRadius: 8,
               fontSize: 13,
               fontWeight: 600,
@@ -302,8 +302,8 @@ function StudentCard({
               flex: 1,
               padding: '8px 0',
               backgroundColor: 'transparent',
-              color: '#7C3AED',
-              border: '1px solid #7C3AED',
+              color: 'var(--purple)',
+              border: '1px solid var(--purple)',
               borderRadius: 8,
               fontSize: 13,
               fontWeight: 600,
@@ -325,11 +325,11 @@ function StudentCard({
           transition: 'max-height 0.4s ease',
         }}
       >
-        <div style={{ padding: '0 18px 18px', borderTop: '1px solid #F5F0EA' }}>
+        <div style={{ padding: '0 18px 18px', borderTop: '1px solid var(--surface-2)' }}>
           {/* Subject Breakdown */}
-          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1A1207', margin: '14px 0 10px' }}>{tt(isHi, 'Subject Breakdown', 'विषयवार विवरण')}</h4>
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', margin: '14px 0 10px' }}>{tt(isHi, 'Subject Breakdown', 'विषयवार विवरण')}</h4>
           {subjects.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#7D7264', fontStyle: 'italic', margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', fontStyle: 'italic', margin: 0 }}>
               {tt(isHi, 'Subject breakdown not yet available', 'विषय डेटा उपलब्ध नहीं')}
             </p>
           ) : (
@@ -337,10 +337,10 @@ function StudentCard({
               {subjects.map((subj) => (
                 <div key={subj.name}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: '#7D7264' }}>{subj.name}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{subj.name}</span>
                     <span style={{ fontSize: 12, fontWeight: 600, color: subj.color }}>{Math.min(subj.mastery, 100)}%</span>
                   </div>
-                  <div style={{ backgroundColor: '#F5F0EA', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                  <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
                     <div
                       style={{
                         width: `${Math.min(subj.mastery, 100)}%`,
@@ -359,21 +359,21 @@ function StudentCard({
           {/* Recent Quiz Scores */}
           {recentScores.length > 0 && (
             <>
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1A1207', margin: '14px 0 10px' }}>{tt(isHi, 'Recent Quiz Scores', 'हाल की क्विज़ स्कोर')}</h4>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', margin: '14px 0 10px' }}>{tt(isHi, 'Recent Quiz Scores', 'हाल की क्विज़ स्कोर')}</h4>
               <div style={{ display: 'flex', gap: 6 }}>
                 {recentScores.slice(-5).map((score, i) => (
                   <div
                     key={i}
                     style={{
                       flex: 1,
-                      backgroundColor: '#F5F0EA',
+                      backgroundColor: 'var(--surface-2)',
                       borderRadius: 8,
                       padding: '8px 4px',
                       textAlign: 'center',
                     }}
                   >
                     <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: accuracyColor(score) }}>{score}%</p>
-                    <p style={{ margin: '2px 0 0', fontSize: 10, color: '#A89B86' }}>{tt(isHi, `Quiz ${i + 1}`, `क्विज़ ${i + 1}`)}</p>
+                    <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-3)' }}>{tt(isHi, `Quiz ${i + 1}`, `क्विज़ ${i + 1}`)}</p>
                   </div>
                 ))}
               </div>
@@ -383,27 +383,27 @@ function StudentCard({
           {/* Strengths & Improvements */}
           {strengths.length > 0 && (
             <>
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#059669', margin: '14px 0 8px' }}>{tt(isHi, 'Strengths', 'मज़बूत पक्ष')}</h4>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--success)', margin: '14px 0 8px' }}>{tt(isHi, 'Strengths', 'मज़बूत पक्ष')}</h4>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {strengths.map((s, i) => (
-                  <span key={i} style={{ fontSize: 11, padding: '4px 10px', backgroundColor: '#DDEFE3', color: '#1F7A4C', borderRadius: 99 }}>{s}</span>
+                  <span key={i} style={{ fontSize: 12, padding: '4px 10px', backgroundColor: 'var(--green-soft)', color: 'var(--success)', borderRadius: 99 }}>{s}</span>
                 ))}
               </div>
             </>
           )}
           {improvements.length > 0 && (
             <>
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: '#D97706', margin: '14px 0 8px' }}>{tt(isHi, 'Areas for Improvement', 'सुधार के क्षेत्र')}</h4>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)', margin: '14px 0 8px' }}>{tt(isHi, 'Areas for Improvement', 'सुधार के क्षेत्र')}</h4>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {improvements.map((s, i) => (
-                  <span key={i} style={{ fontSize: 11, padding: '4px 10px', backgroundColor: '#FBEBD2', color: '#9A5B16', borderRadius: 99 }}>{s}</span>
+                  <span key={i} style={{ fontSize: 12, padding: '4px 10px', backgroundColor: 'var(--surface-2)', color: 'var(--orange)', borderRadius: 99 }}>{s}</span>
                 ))}
               </div>
             </>
           )}
 
           {/* Teacher Note */}
-          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1A1207', margin: '14px 0 8px' }}>{tt(isHi, 'Teacher Note', 'शिक्षक नोट')}</h4>
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', margin: '14px 0 8px' }}>{tt(isHi, 'Teacher Note', 'शिक्षक नोट')}</h4>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -412,10 +412,10 @@ function StudentCard({
               width: '100%',
               minHeight: 60,
               padding: '10px 12px',
-              backgroundColor: '#F5F0EA',
-              border: '1px solid #EDE6DC',
+              backgroundColor: 'var(--surface-2)',
+              border: '1px solid var(--surface-3)',
               borderRadius: 8,
-              color: '#1A1207',
+              color: 'var(--text-1)',
               fontSize: 13,
               resize: 'vertical',
               outline: 'none',
@@ -425,7 +425,7 @@ function StudentCard({
           />
 
           {/* Custom Goal */}
-          <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1A1207', margin: '12px 0 8px' }}>{tt(isHi, 'Custom Goal', 'कस्टम लक्ष्य')}</h4>
+          <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', margin: '12px 0 8px' }}>{tt(isHi, 'Custom Goal', 'कस्टम लक्ष्य')}</h4>
           <input
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
@@ -433,10 +433,10 @@ function StudentCard({
             style={{
               width: '100%',
               padding: '10px 12px',
-              backgroundColor: '#F5F0EA',
-              border: '1px solid #EDE6DC',
+              backgroundColor: 'var(--surface-2)',
+              border: '1px solid var(--surface-3)',
               borderRadius: 8,
-              color: '#1A1207',
+              color: 'var(--text-1)',
               fontSize: 13,
               outline: 'none',
               boxSizing: 'border-box',
@@ -451,8 +451,8 @@ function StudentCard({
               marginTop: 12,
               width: '100%',
               padding: '10px 0',
-              backgroundColor: saved ? '#059669' : '#E8581C',
-              color: '#fff',
+              backgroundColor: saved ? 'var(--success)' : 'var(--orange)',
+              color: 'white',
               border: 'none',
               borderRadius: 8,
               fontSize: 13,
@@ -599,13 +599,13 @@ export default function TeacherStudentsPage() {
   if (authLoading || (loading && !error)) {
     return (
       <div style={pageStyle}>
-        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
+        <div style={{ textAlign: 'center', padding: 80, color: 'var(--text-3)' }}>
           <div
             style={{
               width: 40,
               height: 40,
-              border: '3px solid #F5F0EA',
-              borderTopColor: '#E8581C',
+              border: '3px solid var(--surface-2)',
+              borderTopColor: 'var(--orange)',
               borderRadius: '50%',
               margin: '0 auto 16px',
               animation: 'spin 0.8s linear infinite',
@@ -625,7 +625,7 @@ export default function TeacherStudentsPage() {
       {/* Header */}
       <header
         style={{
-          background: 'linear-gradient(135deg, #E8581C, #C2410C)',
+          background: 'linear-gradient(135deg, var(--orange), var(--orange))',
           borderRadius: 16,
           padding: '24px 28px',
           marginBottom: 24,
@@ -633,14 +633,15 @@ export default function TeacherStudentsPage() {
       >
         <button
           onClick={() => router.push('/teacher')}
-          style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          className="transition-colors"
+          style={{ background: 'color-mix(in srgb, var(--surface-1) 18%, transparent)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'var(--on-surface-accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
         >
           &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
         </button>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: '#fff' }}>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 700, color: 'white' }}>
           {'👨‍🎓'} {tt(isHi, 'My Students', 'मेरे छात्र')}
         </h1>
-        <p style={{ margin: '6px 0 0', fontSize: 14, color: 'rgba(255,255,255,0.75)' }}>
+        <p style={{ margin: '6px 0 0', fontSize: 14, color: 'var(--on-surface-accent)' }}>
           {tt(isHi,
             `${allStudents.length} student${allStudents.length !== 1 ? 's' : ''} across ${classes.length} class${classes.length !== 1 ? 'es' : ''}`,
             `${classes.length} कक्षाओं में ${allStudents.length} छात्र`
@@ -652,8 +653,8 @@ export default function TeacherStudentsPage() {
       {error && (
         <div
           style={{
-            backgroundColor: '#FCEEEE',
-            border: '1px solid #DC2626',
+            backgroundColor: 'var(--red-soft)',
+            border: '1px solid var(--danger)',
             borderRadius: 10,
             padding: '14px 18px',
             marginBottom: 16,
@@ -662,13 +663,13 @@ export default function TeacherStudentsPage() {
             alignItems: 'center',
           }}
         >
-          <span style={{ color: '#B91C1C', fontSize: 14 }}>{error}</span>
+          <span style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</span>
           <button
             onClick={load}
             style={{
               padding: '6px 14px',
-              backgroundColor: '#DC2626',
-              color: '#fff',
+              backgroundColor: 'var(--danger)',
+              color: 'white',
               border: 'none',
               borderRadius: 6,
               fontSize: 12,
@@ -701,10 +702,10 @@ export default function TeacherStudentsPage() {
               style={{
                 width: '100%',
                 padding: '11px 14px 11px 38px',
-                backgroundColor: '#FFFFFF',
-                border: '1px solid #F5F0EA',
+                backgroundColor: 'var(--surface-1)',
+                border: '1px solid var(--surface-2)',
                 borderRadius: 10,
-                color: '#1A1207',
+                color: 'var(--text-1)',
                 fontSize: 14,
                 outline: 'none',
                 boxSizing: 'border-box',
@@ -722,10 +723,10 @@ export default function TeacherStudentsPage() {
             onChange={(e) => setSelectedClass(e.target.value)}
             style={{
               padding: '11px 14px',
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #F5F0EA',
+              backgroundColor: 'var(--surface-1)',
+              border: '1px solid var(--surface-2)',
               borderRadius: 10,
-              color: '#1A1207',
+              color: 'var(--text-1)',
               fontSize: 14,
               outline: 'none',
               cursor: 'pointer',
@@ -747,10 +748,10 @@ export default function TeacherStudentsPage() {
               onClick={() => setFilterStruggling(!filterStruggling)}
               style={{
                 padding: '11px 16px',
-                backgroundColor: filterStruggling ? '#DC2626' : '#FFFFFF',
-                border: filterStruggling ? '1px solid #DC2626' : '1px solid #DC262666',
+                backgroundColor: filterStruggling ? 'var(--danger)' : 'var(--surface-1)',
+                border: filterStruggling ? '1px solid var(--danger)' : '1px solid var(--danger)',
                 borderRadius: 10,
-                color: filterStruggling ? '#fff' : '#B91C1C',
+                color: filterStruggling ? 'var(--surface-1)' : 'var(--danger)',
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -770,9 +771,9 @@ export default function TeacherStudentsPage() {
       {/* Struggling students summary */}
       {strugglingCount > 0 && !filterStruggling && allStudents.length > 0 && (
         <div style={{
-          backgroundColor: '#FFFFFF',
+          backgroundColor: 'var(--surface-1)',
           borderRadius: 14,
-          border: '1px solid #DC262633',
+          border: '1px solid var(--danger)',
           padding: '14px 18px',
           marginBottom: 16,
           display: 'flex',
@@ -780,10 +781,10 @@ export default function TeacherStudentsPage() {
           justifyContent: 'space-between',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 4, backgroundColor: '#DC2626', color: '#fff', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 4, backgroundColor: 'var(--danger)', color: 'white', textTransform: 'uppercase' }}>
               {tt(isHi, 'Alert', 'अलर्ट')}
             </span>
-            <span style={{ fontSize: 14, color: '#B91C1C' }}>
+            <span style={{ fontSize: 14, color: 'var(--danger)' }}>
               <strong>{strugglingCount}</strong> {tt(isHi,
                 `out of ${allStudents.length} student${allStudents.length > 1 ? 's' : ''} ${strugglingCount > 1 ? 'are' : 'is'} below 50% mastery or accuracy`,
                 `/ ${allStudents.length} छात्र 50% से कम मास्टरी या सटीकता पर हैं`
@@ -795,8 +796,8 @@ export default function TeacherStudentsPage() {
             style={{
               padding: '6px 14px',
               backgroundColor: 'transparent',
-              color: '#E8581C',
-              border: '1px solid #E8581C',
+              color: 'var(--orange)',
+              border: '1px solid var(--orange)',
               borderRadius: 6,
               fontSize: 12,
               fontWeight: 500,
@@ -813,16 +814,16 @@ export default function TeacherStudentsPage() {
       {classes.length === 0 && !loading && (
         <div
           style={{
-            backgroundColor: '#FFFFFF',
+            backgroundColor: 'var(--surface-1)',
             borderRadius: 14,
-            border: '1px solid #F5F0EA',
+            border: '1px solid var(--surface-2)',
             padding: '60px 24px',
             textAlign: 'center',
           }}
         >
           <div style={{ fontSize: 48, marginBottom: 16 }}>{'📚'}</div>
-          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600, color: '#1A1207' }}>{tt(isHi, 'No Classes Yet', 'अभी तक कोई कक्षा नहीं')}</h2>
-          <p style={{ margin: 0, fontSize: 14, color: '#7D7264', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
+          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600, color: 'var(--text-1)' }}>{tt(isHi, 'No Classes Yet', 'अभी तक कोई कक्षा नहीं')}</h2>
+          <p style={{ margin: 0, fontSize: 14, color: 'var(--text-3)', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
             {tt(isHi, 'Create a class from the Dashboard to start tracking students.', 'छात्रों को ट्रैक करने के लिए डैशबोर्ड से कक्षा बनाएं।')}
           </p>
           <button
@@ -830,8 +831,8 @@ export default function TeacherStudentsPage() {
             style={{
               marginTop: 20,
               padding: '10px 24px',
-              backgroundColor: '#E8581C',
-              color: '#fff',
+              backgroundColor: 'var(--orange)',
+              color: 'white',
               border: 'none',
               borderRadius: 8,
               fontSize: 14,
@@ -847,16 +848,16 @@ export default function TeacherStudentsPage() {
       {classes.length > 0 && allStudents.length === 0 && !loading && (
         <div
           style={{
-            backgroundColor: '#FFFFFF',
+            backgroundColor: 'var(--surface-1)',
             borderRadius: 14,
-            border: '1px solid #F5F0EA',
+            border: '1px solid var(--surface-2)',
             padding: '60px 24px',
             textAlign: 'center',
           }}
         >
           <div style={{ fontSize: 48, marginBottom: 16 }}>{'👋'}</div>
-          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600, color: '#1A1207' }}>{tt(isHi, 'No Students Yet', 'अभी तक कोई छात्र नहीं')}</h2>
-          <p style={{ margin: 0, fontSize: 14, color: '#7D7264', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
+          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 600, color: 'var(--text-1)' }}>{tt(isHi, 'No Students Yet', 'अभी तक कोई छात्र नहीं')}</h2>
+          <p style={{ margin: 0, fontSize: 14, color: 'var(--text-3)', maxWidth: 400, marginLeft: 'auto', marginRight: 'auto' }}>
             {tt(isHi, 'No students have joined this class yet. Share the class code!', 'अभी तक कोई छात्र इस कक्षा में शामिल नहीं हुआ। कक्षा कोड साझा करें!')}
           </p>
         </div>
@@ -866,14 +867,14 @@ export default function TeacherStudentsPage() {
       {allStudents.length > 0 && filtered.length === 0 && (
         <div
           style={{
-            backgroundColor: '#FFFFFF',
+            backgroundColor: 'var(--surface-1)',
             borderRadius: 14,
-            border: '1px solid #F5F0EA',
+            border: '1px solid var(--surface-2)',
             padding: '40px 24px',
             textAlign: 'center',
           }}
         >
-          <p style={{ margin: 0, fontSize: 14, color: '#7D7264' }}>
+          <p style={{ margin: 0, fontSize: 14, color: 'var(--text-3)' }}>
             {tt(isHi, `No students match "${search}"`, `"${search}" से कोई छात्र नहीं मिला`)}
           </p>
         </div>
@@ -905,7 +906,7 @@ const pageStyle: React.CSSProperties = {
   margin: '0 auto',
   padding: '20px 16px',
   fontFamily: "'Sora', system-ui, sans-serif",
-  color: '#1A1207',
-  backgroundColor: '#FBF8F4',
+  color: 'var(--text-1)',
+  backgroundColor: 'var(--surface-2)',
   minHeight: '100dvh',
 };
