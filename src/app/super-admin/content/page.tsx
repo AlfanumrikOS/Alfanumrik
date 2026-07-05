@@ -55,28 +55,28 @@ const tableStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 14px',
-  borderBottom: '2px solid #E5E7EB',
-  color: '#6B7280',
+  borderBottom: '2px solid var(--border)',
+  color: 'var(--text-2)',
   fontSize: 11,
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: 1,
-  background: '#F9FAFB',
+  background: 'var(--surface-2)',
   position: 'sticky',
   top: 0,
   zIndex: 1,
 };
 const tdStyle: React.CSSProperties = {
   padding: '10px 14px',
-  borderBottom: '1px solid #F3F4F6',
-  color: '#111827',
+  borderBottom: '1px solid var(--border)',
+  color: 'var(--text-1)',
   fontSize: 13,
 };
 
 function coverageColor(percent: number): string {
-  if (percent >= 80) return '#16A34A';
-  if (percent >= 50) return '#D97706';
-  return '#DC2626';
+  if (percent >= 80) return 'var(--success)';
+  if (percent >= 50) return 'var(--warning)';
+  return 'var(--danger)';
 }
 
 function coverageVariant(percent: number): 'success' | 'warning' | 'danger' {
@@ -138,21 +138,21 @@ function ContentCoverageDashboard() {
     return (
       <div>
         <div style={{ marginBottom: 24 }}>
-          <div style={{ width: 200, height: 24, background: '#F9FAFB', borderRadius: 4, marginBottom: 8 }} />
-          <div style={{ width: 320, height: 14, background: '#F9FAFB', borderRadius: 4 }} />
+          <div style={{ width: 200, height: 24, background: 'var(--surface-2)', borderRadius: 4, marginBottom: 8 }} />
+          <div style={{ width: 320, height: 14, background: 'var(--surface-2)', borderRadius: 4 }} />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
           {[1, 2, 3, 4].map(i => (
             <div key={i} className="rounded-lg border border-surface-3 bg-surface-1 p-4">
-              <div style={{ width: 60, height: 28, background: '#F9FAFB', borderRadius: 4, marginBottom: 8 }} />
-              <div style={{ width: 100, height: 12, background: '#F9FAFB', borderRadius: 4 }} />
+              <div style={{ width: 60, height: 28, background: 'var(--surface-2)', borderRadius: 4, marginBottom: 8 }} />
+              <div style={{ width: 100, height: 12, background: 'var(--surface-2)', borderRadius: 4 }} />
             </div>
           ))}
         </div>
         {[1, 2].map(i => (
           <div key={i} style={{ marginBottom: 24 }}>
-            <div style={{ width: 180, height: 14, background: '#F9FAFB', borderRadius: 4, marginBottom: 12 }} />
-            <div style={{ height: 120, background: '#F9FAFB', borderRadius: 8, border: '1px solid #E5E7EB' }} />
+            <div style={{ width: 180, height: 14, background: 'var(--surface-2)', borderRadius: 4, marginBottom: 12 }} />
+            <div style={{ height: 120, background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)' }} />
           </div>
         ))}
       </div>
@@ -164,9 +164,9 @@ function ContentCoverageDashboard() {
     return (
       <div>
         <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Content Coverage</h1>
-        <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid #DC2626', marginTop: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#DC2626', marginBottom: 4 }}>Error</div>
-          <div style={{ fontSize: 13, color: '#6B7280' }}>{error}</div>
+        <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ borderLeft: '3px solid var(--danger)', marginTop: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--danger)', marginBottom: 4 }}>Error</div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)' }}>{error}</div>
           <button onClick={fetchData} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2" style={{ marginTop: 12 }}>Retry</button>
         </div>
       </div>
@@ -184,7 +184,7 @@ function ContentCoverageDashboard() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Content Coverage</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Question bank coverage across grades, subjects, and chapters</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Question bank coverage across grades, subjects, and chapters</p>
         </div>
         <button onClick={fetchData} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Refresh</button>
       </div>
@@ -194,7 +194,7 @@ function ContentCoverageDashboard() {
         <StatCard
           label="Total Questions"
           value={summary.totalQuestions}
-          accentColor="#2563EB"
+          accentColor="var(--info)"
           subtitle={`${summary.activeQuestions} active`}
         />
         <StatCard
@@ -206,13 +206,13 @@ function ContentCoverageDashboard() {
         <StatCard
           label="Thin Coverage"
           value={summary.thinCoverage}
-          accentColor={summary.thinCoverage > 0 ? '#D97706' : '#16A34A'}
+          accentColor={summary.thinCoverage > 0 ? 'var(--warning)' : 'var(--success)'}
           subtitle="Topics with < 5 questions"
         />
         <StatCard
           label="Uncovered Topics"
           value={summary.uncoveredTopics}
-          accentColor={summary.uncoveredTopics > 0 ? '#DC2626' : '#16A34A'}
+          accentColor={summary.uncoveredTopics > 0 ? 'var(--danger)' : 'var(--success)'}
           subtitle="Topics with 0 questions"
         />
       </div>
@@ -220,8 +220,8 @@ function ContentCoverageDashboard() {
       {/* Coverage health indicator */}
       <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 6 }}>Overall Coverage Health</div>
-          <div style={{ height: 8, background: '#F9FAFB', borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>Overall Coverage Health</div>
+          <div style={{ height: 8, background: 'var(--surface-2)', borderRadius: 4, overflow: 'hidden' }}>
             <div style={{
               width: `${Math.min(covPct, 100)}%`,
               height: '100%',
@@ -240,7 +240,7 @@ function ContentCoverageDashboard() {
       {/* By Grade Table */}
       <div style={{ marginBottom: 24 }}>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Coverage by Grade</h2>
-        <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -264,7 +264,7 @@ function ContentCoverageDashboard() {
                     <td style={tdStyle}>{row.covered}</td>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 60, height: 6, background: '#F9FAFB', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: 60, height: 6, background: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden' }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: coverageColor(pct), borderRadius: 3 }} />
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 600, color: coverageColor(pct) }}>{pct}%</span>
@@ -281,7 +281,7 @@ function ContentCoverageDashboard() {
       {/* By Subject Table */}
       <div style={{ marginBottom: 24 }}>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Coverage by Subject</h2>
-        <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -305,7 +305,7 @@ function ContentCoverageDashboard() {
                     <td style={tdStyle}>{row.covered}</td>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 60, height: 6, background: '#F9FAFB', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: 60, height: 6, background: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden' }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: coverageColor(pct), borderRadius: 3 }} />
                         </div>
                         <span style={{ fontSize: 12, fontWeight: 600, color: coverageColor(pct) }}>{pct}%</span>
@@ -355,14 +355,14 @@ function ContentCoverageDashboard() {
 
         {filteredGaps.length === 0 ? (
           <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ textAlign: 'center', padding: 32 }}>
-            <div style={{ fontSize: 14, color: '#9CA3AF' }}>
+            <div style={{ fontSize: 14, color: 'var(--text-3)' }}>
               {data.gaps.length === 0
                 ? 'No content gaps found. All topics have adequate coverage.'
                 : 'No gaps match the current filters.'}
             </div>
           </div>
         ) : (
-          <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
             <div style={{ maxHeight: 480, overflowY: 'auto' }}>
               <table style={tableStyle}>
                 <thead>
@@ -382,7 +382,7 @@ function ContentCoverageDashboard() {
                       <td style={{ ...tdStyle, textTransform: 'capitalize' }}>{gap.subject}</td>
                       <td style={tdStyle}>Ch. {gap.chapterNumber}</td>
                       <td style={{ ...tdStyle, maxWidth: 280 }}>{gap.title}</td>
-                      <td style={{ ...tdStyle, fontWeight: 700, color: gap.questionCount === 0 ? '#DC2626' : '#D97706' }}>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: gap.questionCount === 0 ? 'var(--danger)' : 'var(--warning)' }}>
                         {gap.questionCount}
                       </td>
                       <td style={tdStyle}>

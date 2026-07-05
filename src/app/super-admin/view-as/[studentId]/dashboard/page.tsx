@@ -3,14 +3,14 @@
 import { useState, useEffect, useCallback, use } from 'react';
 
 const colors = {
-  bg: '#FFFFFF',
-  surface: '#F9FAFB',
-  border: '#E5E7EB',
-  borderLight: '#F3F4F6',
-  text1: '#111827',
-  text3: '#9CA3AF',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
+  bg: 'var(--surface-1)',
+  surface: 'var(--surface-2)',
+  border: 'var(--surface-3)',
+  borderLight: 'var(--surface-2)',
+  text1: 'var(--text-1)',
+  text3: 'var(--text-3)',
+  danger: 'var(--danger)',
+  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
 } as const;
 
 const S = {

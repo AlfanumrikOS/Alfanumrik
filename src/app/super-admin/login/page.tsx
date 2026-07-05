@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const colors = {
-  bg: '#FFFFFF', surface: '#F9FAFB', border: '#E5E7EB', borderStrong: '#D1D5DB',
-  text1: '#111827', text2: '#6B7280', text3: '#9CA3AF', danger: '#DC2626', dangerLight: '#FEF2F2',
+  bg: 'var(--surface-1)', surface: 'var(--surface-2)', border: 'var(--border)', borderStrong: 'var(--border-strong)',
+  text1: 'var(--text-1)', text2: 'var(--text-2)', text3: 'var(--text-3)', danger: 'var(--danger)', dangerLight: 'color-mix(in srgb, var(--danger) 8%, transparent)',
 };
 
 export default function AdminLoginPage() {
@@ -77,7 +77,7 @@ export default function AdminLoginPage() {
         width: '100%', maxWidth: 400, padding: 36,
         background: colors.bg, borderRadius: 12,
         border: `1px solid ${colors.border}`,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04)',
+        boxShadow: 'var(--shadow-lg)',
       }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: colors.text1, letterSpacing: 1 }}>ALFANUMRIK</div>
@@ -92,7 +92,7 @@ export default function AdminLoginPage() {
         {error && (
           <div style={{
             padding: '10px 14px', borderRadius: 8, marginBottom: 16,
-            background: colors.dangerLight, border: '1px solid #FECACA',
+            background: colors.dangerLight, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
             color: colors.danger, fontSize: 12, whiteSpace: 'pre-wrap' as const,
             maxHeight: 200, overflowY: 'auto' as const, wordBreak: 'break-word' as const,
           }}>
@@ -100,7 +100,7 @@ export default function AdminLoginPage() {
             {suggestedLoginUrl && (
               <a
                 href={suggestedLoginUrl}
-                style={{ color: '#2563EB', fontWeight: 600, marginTop: 8, display: 'inline-block' }}
+                style={{ color: 'var(--info)', fontWeight: 600, marginTop: 8, display: 'inline-block' }}
               >
                 {`→ Go to ${suggestedLoginUrl}`}
               </a>

@@ -138,17 +138,17 @@ function RevenueContent() {
 
       {/* KPI cards */}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatCard label="MRR" value={latest ? formatINR(latest.total_mrr) : '—'} accentColor="#16A34A" />
-        <StatCard label="ARR" value={latest ? formatINR(latest.arr) : '—'} accentColor="#2563EB" />
+        <StatCard label="MRR" value={latest ? formatINR(latest.total_mrr) : '—'} accentColor="var(--success)" />
+        <StatCard label="ARR" value={latest ? formatINR(latest.arr) : '—'} accentColor="var(--info)" />
         <div>
-          <StatCard label="New MRR" value={latest ? formatINR(latest.new_mrr) : '—'} accentColor="#16A34A" />
+          <StatCard label="New MRR" value={latest ? formatINR(latest.new_mrr) : '—'} accentColor="var(--success)" />
           <div className="mt-1 px-[18px] text-[10px] leading-tight text-muted-foreground"><Caveat text={NEW_MRR_CAVEAT} /> {NEW_MRR_CAVEAT}</div>
         </div>
-        <StatCard label="Churned MRR" value={latest ? formatINR(latest.churn_mrr) : '—'} accentColor="#DC2626" />
+        <StatCard label="Churned MRR" value={latest ? formatINR(latest.churn_mrr) : '—'} accentColor="var(--danger)" />
         <StatCard
           label="Net New MRR"
           value={latest ? formatINR(netNew) : '—'}
-          accentColor={netNew >= 0 ? '#16A34A' : '#DC2626'}
+          accentColor={netNew >= 0 ? 'var(--success)' : 'var(--danger)'}
           subtitle="New − Churn"
         />
       </div>

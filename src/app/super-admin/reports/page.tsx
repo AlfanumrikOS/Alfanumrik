@@ -47,12 +47,12 @@ function ReportsContent() {
 
       {status && (
         <div
-          className={[
-            'mb-4 rounded-lg border px-3.5 py-2.5 text-[13px]',
-            isError
-              ? 'border-[#FECACA] bg-[#FEF2F2] text-[#DC2626]'
-              : 'border-[#BBF7D0] bg-[#F0FDF4] text-[#16A34A]',
-          ].join(' ')}
+          className="mb-4 rounded-lg border px-3.5 py-2.5 text-[13px]"
+          style={{
+            borderColor: `color-mix(in srgb, var(--${isError ? 'danger' : 'success'}) 35%, transparent)`,
+            backgroundColor: `color-mix(in srgb, var(--${isError ? 'danger' : 'success'}) 8%, transparent)`,
+            color: `var(--${isError ? 'danger' : 'success'})`,
+          }}
         >
           {status}
         </div>

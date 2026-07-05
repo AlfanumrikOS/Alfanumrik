@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
-import { StatCard } from '@/components/admin-ui';
+import { StatCard, CHART_PALETTE } from '@/components/admin-ui';
 
 /**
  * Grounding Health — super-admin page (Task 3.16)
@@ -29,15 +29,12 @@ const ABSTAIN_REASONS = [
   'circuit_open',
 ] as const;
 
-const ABSTAIN_COLORS: Record<string, string> = {
-  chapter_not_ready: '#F59E0B',
-  no_chunks_retrieved: '#F97316',
-  low_similarity: '#FB923C',
-  no_supporting_chunks: '#FBBF24',
-  scope_mismatch: '#A855F7',
-  upstream_error: '#DC2626',
-  circuit_open: '#B91C1C',
-};
+// Categorical palette — each colour only identifies a reason (no semantic
+// load). Cycles the canonical token-driven CHART_PALETTE so no hex leaks in.
+const ABSTAIN_COLORS: Record<string, string> = Object.fromEntries(
+  ABSTAIN_REASONS.map((r, i) => [r, CHART_PALETTE[i % CHART_PALETTE.length]]),
+);
+const CATEGORICAL_FALLBACK = 'var(--text-3)';
 
 interface HealthData {
   callsPerMin: Record<Caller, number>;
@@ -97,27 +94,27 @@ function pct(x: number): string {
 }
 
 function circuitStyle(state?: string): {
-  bgClass: string;
+  bg: string;
   fgClass: string;
   border: string;
   label: string;
 } {
   switch (state) {
     case 'closed':
-      return { bgClass: 'bg-success/10', fgClass: 'text-success', border: '#16A34A', label: 'Closed' };
+      return { bg: 'color-mix(in srgb, var(--success) 10%, transparent)', fgClass: 'text-success', border: 'var(--success)', label: 'Closed' };
     case 'degraded':
-      return { bgClass: 'bg-warning/10', fgClass: 'text-warning', border: '#D97706', label: 'Degraded' };
+      return { bg: 'color-mix(in srgb, var(--warning) 10%, transparent)', fgClass: 'text-warning', border: 'var(--warning)', label: 'Degraded' };
     case 'open':
-      return { bgClass: 'bg-danger/10', fgClass: 'text-danger', border: '#DC2626', label: 'Open' };
+      return { bg: 'color-mix(in srgb, var(--danger) 10%, transparent)', fgClass: 'text-danger', border: 'var(--danger)', label: 'Open' };
     default:
-      return { bgClass: 'bg-surface-2', fgClass: 'text-muted-foreground', border: '#9CA3AF', label: 'Unknown' };
+      return { bg: 'var(--surface-2)', fgClass: 'text-muted-foreground', border: 'var(--text-3)', label: 'Unknown' };
   }
 }
 
 function gaugeAccent(rate: number): string {
-  if (rate >= 0.05) return '#DC2626';
-  if (rate >= 0.01) return '#D97706';
-  return '#16A34A';
+  if (rate >= 0.05) return 'var(--danger)';
+  if (rate >= 0.01) return 'var(--warning)';
+  return 'var(--success)';
 }
 
 function GroundingHealthContent() {
@@ -223,7 +220,8 @@ function GroundingHealthContent() {
       {error && (
         <div
           data-testid="grounding-health-error"
-          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
+          className="mb-4 rounded-md p-3 text-[13px] text-danger"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
         >
           Error loading health: {error}
         </div>
@@ -245,7 +243,7 @@ function GroundingHealthContent() {
                 key={caller}
                 label={caller}
                 value={data.callsPerMin[caller] ?? 0}
-                accentColor="#2563EB"
+                accentColor="var(--info)"
               />
             ))}
           </div>
@@ -255,7 +253,7 @@ function GroundingHealthContent() {
           <div data-testid="grounded-rate-section" className="mb-6 grid grid-cols-5 gap-3">
             {CALLERS.map((caller) => {
               const rate = data.groundedRate[caller] ?? 0;
-              const accent = rate >= 0.9 ? '#16A34A' : rate >= 0.7 ? '#D97706' : '#DC2626';
+              const accent = rate >= 0.9 ? 'var(--success)' : rate >= 0.7 ? 'var(--warning)' : 'var(--danger)';
               return (
                 <StatCard
                   key={caller}
@@ -288,7 +286,7 @@ function GroundingHealthContent() {
                         data-testid={`abstain-bar-${r}`}
                         style={{
                           width: `${width}%`,
-                          background: ABSTAIN_COLORS[r] ?? '#9CA3AF',
+                          background: ABSTAIN_COLORS[r] ?? CATEGORICAL_FALLBACK,
                         }}
                       />
                     );
@@ -299,7 +297,7 @@ function GroundingHealthContent() {
                     <div key={r} className="flex items-center gap-1.5 text-[11px]">
                       <span
                         className="inline-block h-2.5 w-2.5 rounded-sm"
-                        style={{ background: ABSTAIN_COLORS[r] ?? '#9CA3AF' }}
+                        style={{ background: ABSTAIN_COLORS[r] ?? CATEGORICAL_FALLBACK }}
                       />
                       <span className="text-muted-foreground">
                         {r}: <b className="text-foreground">{data.abstainBreakdown[r] ?? 0}</b>
@@ -314,9 +312,9 @@ function GroundingHealthContent() {
           {/* Latency */}
           <h2 className={H2}>Latency (ms, last hour)</h2>
           <div data-testid="latency-section" className="mb-6 grid grid-cols-3 gap-3">
-            <StatCard label="p50" value={`${data.latency.p50} ms`} accentColor="#16A34A" />
-            <StatCard label="p95" value={`${data.latency.p95} ms`} accentColor="#D97706" />
-            <StatCard label="p99" value={`${data.latency.p99} ms`} accentColor="#DC2626" />
+            <StatCard label="p50" value={`${data.latency.p50} ms`} accentColor="var(--success)" />
+            <StatCard label="p95" value={`${data.latency.p95} ms`} accentColor="var(--warning)" />
+            <StatCard label="p99" value={`${data.latency.p99} ms`} accentColor="var(--danger)" />
           </div>
 
           {/* Circuit states */}
@@ -329,8 +327,8 @@ function GroundingHealthContent() {
                 <div
                   key={name}
                   data-testid={`circuit-tile-${name}`}
-                  className={`rounded-lg border border-surface-3 p-4 ${style.bgClass}`}
-                  style={{ borderLeft: `3px solid ${style.border}` }}
+                  className="rounded-lg border border-surface-3 p-4"
+                  style={{ borderLeft: `3px solid ${style.border}`, backgroundColor: style.bg }}
                 >
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     {name}
@@ -374,21 +372,21 @@ function GroundingHealthContent() {
               value={String(data.studyPathFallback?.totalLastHour ?? 0)}
               accentColor={
                 (data.studyPathFallback?.totalLastHour ?? 0) === 0
-                  ? '#16A34A'
+                  ? 'var(--success)'
                   : (data.studyPathFallback?.totalLastHour ?? 0) > 100
-                    ? '#DC2626'
-                    : '#D97706'
+                    ? 'var(--danger)'
+                    : 'var(--warning)'
               }
             />
             <StatCard
               label="Subjects route"
               value={String(data.studyPathFallback?.subjectsLastHour ?? 0)}
-              accentColor="#9CA3AF"
+              accentColor="var(--text-3)"
             />
             <StatCard
               label="Chapters route"
               value={String(data.studyPathFallback?.chaptersLastHour ?? 0)}
-              accentColor="#9CA3AF"
+              accentColor="var(--text-3)"
             />
           </div>
         </>
@@ -423,21 +421,10 @@ const ORACLE_REJECTION_CATEGORIES = [
 ] as const;
 
 // Categorical palette — no semantic load (each colour just identifies a
-// reason). Reuses the abstain palette feel for visual consistency.
-const ORACLE_REASON_COLORS: Record<string, string> = {
-  p6_text_empty_or_placeholder: '#DC2626',
-  p6_options_not_4: '#F97316',
-  p6_options_not_distinct: '#FB923C',
-  p6_correct_index_out_of_range: '#F59E0B',
-  p6_explanation_empty: '#FBBF24',
-  p6_invalid_difficulty: '#A855F7',
-  p6_invalid_bloom: '#8B5CF6',
-  options_overlap_semantic: '#EAB308',
-  numeric_inconsistency: '#84CC16',
-  llm_mismatch: '#0EA5E9',
-  llm_ambiguous: '#3B82F6',
-  llm_grader_unavailable: '#B91C1C',
-};
+// reason). Cycles the canonical token-driven CHART_PALETTE so no hex leaks in.
+const ORACLE_REASON_COLORS: Record<string, string> = Object.fromEntries(
+  ORACLE_REJECTION_CATEGORIES.map((r, i) => [r, CHART_PALETTE[i % CHART_PALETTE.length]]),
+);
 
 function formatRejectionRate(
   rate: number | null,
@@ -446,15 +433,15 @@ function formatRejectionRate(
   if (rate === null) {
     return {
       text: acceptedEventMissing ? '—' : 'N/A',
-      accent: '#9CA3AF',
+      accent: 'var(--text-3)',
     };
   }
   // Health bands per spec: <2% too lax, 2-5% borderline, 5-15% healthy,
   // 15-25% noisy, >25% generator/oracle broken.
-  if (rate < 0.02) return { text: pct(rate), accent: '#D97706' };
-  if (rate <= 0.15) return { text: pct(rate), accent: '#16A34A' };
-  if (rate <= 0.25) return { text: pct(rate), accent: '#D97706' };
-  return { text: pct(rate), accent: '#DC2626' };
+  if (rate < 0.02) return { text: pct(rate), accent: 'var(--warning)' };
+  if (rate <= 0.15) return { text: pct(rate), accent: 'var(--success)' };
+  if (rate <= 0.25) return { text: pct(rate), accent: 'var(--warning)' };
+  return { text: pct(rate), accent: 'var(--danger)' };
 }
 
 function OracleHealthSection({
@@ -479,7 +466,8 @@ function OracleHealthSection({
       {error && (
         <div
           data-testid="oracle-health-error"
-          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
+          className="mb-4 rounded-md p-3 text-[13px] text-danger"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
         >
           Error loading oracle health: {error}
         </div>
@@ -498,7 +486,7 @@ function OracleHealthSection({
             <StatCard
               label="Total rejected (24h)"
               value={oracle.totalRejected}
-              accentColor={oracle.totalRejected === 0 ? '#16A34A' : '#D97706'}
+              accentColor={oracle.totalRejected === 0 ? 'var(--success)' : 'var(--warning)'}
             />
             <StatCard
               label="Total candidates (24h)"
@@ -506,7 +494,7 @@ function OracleHealthSection({
               subtitle={
                 oracle.notes.acceptedEventMissing ? 'Accepted-event not yet emitted' : undefined
               }
-              accentColor="#9CA3AF"
+              accentColor="var(--text-3)"
             />
             <StatCard
               label="Rejection rate"
@@ -579,7 +567,7 @@ function OracleReasonBreakdown({
               title={`${r.reason}: ${r.count}`}
               style={{
                 width: `${width}%`,
-                background: ORACLE_REASON_COLORS[r.reason] ?? '#9CA3AF',
+                background: ORACLE_REASON_COLORS[r.reason] ?? CATEGORICAL_FALLBACK,
               }}
             />
           );
@@ -600,7 +588,7 @@ function OracleReasonBreakdown({
               <td className={TD}>
                 <span
                   className="mr-2 inline-block h-2.5 w-2.5 rounded-sm align-middle"
-                  style={{ background: ORACLE_REASON_COLORS[r.reason] ?? '#9CA3AF' }}
+                  style={{ background: ORACLE_REASON_COLORS[r.reason] ?? CATEGORICAL_FALLBACK }}
                 />
                 <code className="text-xs">{r.reason}</code>
               </td>
@@ -653,14 +641,14 @@ function OracleSparkline({
           y1={H - PAD}
           x2={W - PAD}
           y2={H - PAD}
-          stroke="#E5E7EB"
+          stroke="var(--surface-3)"
           strokeWidth={1}
         />
         {total > 0 && (
           <polyline
             points={points}
             fill="none"
-            stroke="#2563EB"
+            stroke="var(--info)"
             strokeWidth={1.5}
           />
         )}

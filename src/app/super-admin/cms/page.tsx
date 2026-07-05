@@ -14,35 +14,35 @@ const tableStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 14px',
-  borderBottom: '2px solid #E5E7EB',
-  color: '#6B7280',
+  borderBottom: '2px solid var(--border)',
+  color: 'var(--text-2)',
   fontSize: 11,
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: 1,
-  background: '#F9FAFB',
+  background: 'var(--surface-2)',
   position: 'sticky',
   top: 0,
   zIndex: 1,
 };
 const tdStyle: React.CSSProperties = {
   padding: '10px 14px',
-  borderBottom: '1px solid #F3F4F6',
-  color: '#111827',
+  borderBottom: '1px solid var(--surface-2)',
+  color: 'var(--text-1)',
   fontSize: 13,
 };
 const cardStyle: React.CSSProperties = {
   padding: 16,
   borderRadius: 8,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
 };
 const searchInputStyle: React.CSSProperties = {
   padding: '8px 12px',
   borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#111827',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
+  color: 'var(--text-1)',
   fontSize: 13,
   outline: 'none',
   fontFamily: 'inherit',
@@ -52,29 +52,29 @@ const searchInputStyle: React.CSSProperties = {
 const selectStyle: React.CSSProperties = {
   padding: '8px 12px',
   borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#111827',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
+  color: 'var(--text-1)',
   fontSize: 13,
   outline: 'none',
   cursor: 'pointer',
 };
 const actionBtnStyle: React.CSSProperties = {
   background: 'none',
-  border: '1px solid #E5E7EB',
+  border: '1px solid var(--border)',
   borderRadius: 5,
   padding: '4px 10px',
   fontSize: 12,
   cursor: 'pointer',
   fontWeight: 500,
-  color: '#6B7280',
+  color: 'var(--text-2)',
 };
 const pageBtnStyle: React.CSSProperties = {
   padding: '7px 16px',
   borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#6B7280',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
+  color: 'var(--text-2)',
   fontSize: 12,
   cursor: 'pointer',
 };
@@ -106,10 +106,10 @@ interface CmsStats { topics: number; questions: number; workflow: { published: n
 
 const GRADES = VALID_GRADES;
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  draft: { bg: '#F9FAFB', fg: '#9CA3AF' },
-  review: { bg: '#FFFBEB', fg: '#D97706' },
-  published: { bg: '#F0FDF4', fg: '#16A34A' },
-  archived: { bg: '#F9FAFB', fg: '#9CA3AF' },
+  draft: { bg: 'var(--surface-2)', fg: 'var(--text-3)' },
+  review: { bg: 'color-mix(in srgb, var(--warning) 12%, transparent)', fg: 'var(--warning)' },
+  published: { bg: 'color-mix(in srgb, var(--success) 10%, transparent)', fg: 'var(--success)' },
+  archived: { bg: 'var(--surface-2)', fg: 'var(--text-3)' },
 };
 
 function CmsContent() {
@@ -354,7 +354,7 @@ function CmsContent() {
       <div style={{ display: 'flex', gap: 4 }}>
         {available.map(s => (
           <button key={s} onClick={() => transitionStatus(entityType, entityId, s)}
-            style={{ ...actionBtnStyle, color: STATUS_COLORS[s]?.fg || '#9CA3AF', fontSize: 10, padding: '3px 8px' }}>
+            style={{ ...actionBtnStyle, color: STATUS_COLORS[s]?.fg || 'var(--text-3)', fontSize: 10, padding: '3px 8px' }}>
             &rarr; {s}
           </button>
         ))}
@@ -368,12 +368,12 @@ function CmsContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Content Management</h1>
-          <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Topics, questions, versions, and assets</p>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>Topics, questions, versions, and assets</p>
         </div>
       </div>
 
       {/* Nav Tabs */}
-      <nav style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${'#E5E7EB'}`, marginBottom: 20 }}>
+      <nav style={{ display: 'flex', gap: 0, borderBottom: `2px solid ${'var(--border)'}`, marginBottom: 20 }}>
         {[
           { key: 'overview' as View, label: 'Overview' },
           { key: 'topics' as View, label: 'Topics' },
@@ -382,8 +382,8 @@ function CmsContent() {
         ].map(tab => (
           <button key={tab.key} onClick={() => { setView(tab.key); setPage(1); }} style={{
             padding: '10px 18px', fontSize: 13, fontWeight: view === tab.key ? 700 : 400,
-            color: view === tab.key ? '#111827' : '#9CA3AF', background: 'transparent', border: 'none',
-            borderBottom: view === tab.key ? `2px solid ${'#111827'}` : '2px solid transparent', cursor: 'pointer',
+            color: view === tab.key ? 'var(--text-1)' : 'var(--text-3)', background: 'transparent', border: 'none',
+            borderBottom: view === tab.key ? `2px solid ${'var(--text-1)'}` : '2px solid transparent', cursor: 'pointer',
             marginBottom: -2,
           }}>
             {tab.label}
@@ -391,31 +391,31 @@ function CmsContent() {
         ))}
       </nav>
 
-      {loading && <div style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 12 }}>Loading...</div>}
-      {error && <div style={{ padding: '8px 14px', borderRadius: 8, background: '#FEF2F2', color: '#DC2626', fontSize: 12, marginBottom: 12, border: '1px solid #FECACA' }}>{error} <button onClick={() => setError('')} style={{ color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 8 }}>Close</button></div>}
+      {loading && <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>Loading...</div>}
+      {error && <div style={{ padding: '8px 14px', borderRadius: 8, background: 'color-mix(in srgb, var(--danger) 8%, transparent)', color: 'var(--danger)', fontSize: 12, marginBottom: 12, border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>{error} <button onClick={() => setError('')} style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', marginLeft: 8 }}>Close</button></div>}
 
         {/* Overview */}
         {view === 'overview' && stats && (
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Content Overview</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 28 }}>
-              <div style={{ ...cardStyle, borderLeft: `2px solid ${'#2563EB'}` }}>
-                <div style={{ fontSize: 28, fontWeight: 800, color: '#111827' }}>{stats.topics}</div>
-                <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 }}>Topics</div>
+              <div style={{ ...cardStyle, borderLeft: `2px solid ${'var(--info)'}` }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-1)' }}>{stats.topics}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1 }}>Topics</div>
               </div>
-              <div style={{ ...cardStyle, borderLeft: `2px solid ${'#2563EB'}` }}>
-                <div style={{ fontSize: 28, fontWeight: 800, color: '#6B7280' }}>{stats.questions}</div>
-                <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 1 }}>Questions</div>
+              <div style={{ ...cardStyle, borderLeft: `2px solid ${'var(--info)'}` }}>
+                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-2)' }}>{stats.questions}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: 1 }}>Questions</div>
               </div>
             </div>
 
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Workflow Status (Topics)</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28 }}>
               {Object.entries(stats.workflow).map(([status, count]) => (
-                <div key={status} style={{ ...cardStyle, borderLeft: `3px solid ${STATUS_COLORS[status]?.fg || '#9CA3AF'}`, cursor: 'pointer' }}
+                <div key={status} style={{ ...cardStyle, borderLeft: `3px solid ${STATUS_COLORS[status]?.fg || 'var(--text-3)'}`, cursor: 'pointer' }}
                   onClick={() => { setFilterStatus(status); setView('topics'); }}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: STATUS_COLORS[status]?.fg || '#9CA3AF' }}>{count}</div>
-                  <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'capitalize' }}>{status}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: STATUS_COLORS[status]?.fg || 'var(--text-3)' }}>{count}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'capitalize' }}>{status}</div>
                 </div>
               ))}
             </div>
@@ -428,7 +428,7 @@ function CmsContent() {
                   <span style={{ fontSize: 20 }}>{s.icon}</span>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</div>
-                    <div style={{ fontSize: 10, color: '#9CA3AF' }}>{s.code}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{s.code}</div>
                   </div>
                 </div>
               ))}
@@ -441,9 +441,9 @@ function CmsContent() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <h2 style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Curriculum Topics</h2>
+                <h2 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Curriculum Topics</h2>
                 <button onClick={() => { setShowCreateTopic(!showCreateTopic); setTopicForm({}); }}
-                  style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 11 }}>
+                  style={{ ...actionBtnStyle, color: 'var(--text-2)', borderColor: 'var(--border)', fontSize: 11 }}>
                   {showCreateTopic ? '✕ Cancel' : '+ New Topic'}
                 </button>
               </div>
@@ -468,11 +468,11 @@ function CmsContent() {
               </div>
             </div>
 
-            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 8 }}>{topicTotal} topics found</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>{topicTotal} topics found</div>
 
             {showCreateTopic && (
-              <div style={{ ...cardStyle, marginBottom: 16, borderLeft: `2px solid ${'#2563EB'}` }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', marginBottom: 12 }}>Create New Topic</h3>
+              <div style={{ ...cardStyle, marginBottom: 16, borderLeft: `2px solid ${'var(--info)'}` }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-2)', marginBottom: 12 }}>Create New Topic</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <input placeholder="Title *" value={topicForm.title || ''} onChange={e => setTopicForm(f => ({ ...f, title: e.target.value }))} style={searchInputStyle} />
                   <input placeholder="Title (Hindi)" value={topicForm.title_hi || ''} onChange={e => setTopicForm(f => ({ ...f, title_hi: e.target.value }))} style={searchInputStyle} />
@@ -502,7 +502,7 @@ function CmsContent() {
                 </div>
                 <textarea placeholder="Description" value={topicForm.description || ''} onChange={e => setTopicForm(f => ({ ...f, description: e.target.value }))}
                   style={{ ...searchInputStyle, width: '100%', minHeight: 80, marginTop: 10, resize: 'vertical' as const }} />
-                <button onClick={createTopic} style={{ ...actionBtnStyle, marginTop: 10, color: '#6B7280', borderColor: '#E5E7EB', padding: '8px 20px' }}>
+                <button onClick={createTopic} style={{ ...actionBtnStyle, marginTop: 10, color: 'var(--text-2)', borderColor: 'var(--border)', padding: '8px 20px' }}>
                   Create Topic (Draft)
                 </button>
               </div>
@@ -523,22 +523,22 @@ function CmsContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {topics.length === 0 && <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: '#9CA3AF', padding: 24 }}>No topics found</td></tr>}
+                  {topics.length === 0 && <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)', padding: 24 }}>No topics found</td></tr>}
                   {topics.map(t => (
                     <tr key={t.id}>
                       <td style={tdStyle}>{t.chapter_number ?? '—'}</td>
                       <td style={tdStyle}>
                         <strong>{t.title}</strong>
-                        {t.title_hi && <div style={{ fontSize: 10, color: '#9CA3AF' }}>{t.title_hi}</div>}
+                        {t.title_hi && <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{t.title_hi}</div>}
                       </td>
                       <td style={tdStyle}>{t.grade}</td>
-                      <td style={tdStyle}><span style={{ fontSize: 10, color: '#6B7280' }}>{t.topic_type}</span></td>
+                      <td style={tdStyle}><span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.topic_type}</span></td>
                       <td style={tdStyle}><CmsStatusBadge status={t.content_status} /></td>
-                      <td style={tdStyle}><span style={{ fontSize: 10, color: '#6B7280' }}>{t.bloom_focus}</span></td>
+                      <td style={tdStyle}><span style={{ fontSize: 10, color: 'var(--text-2)' }}>{t.bloom_focus}</span></td>
                       <td style={tdStyle}><TransitionButtons entityType="topic" entityId={t.id} currentStatus={t.content_status} /></td>
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { loadAssets('topic', t.id); }} style={{ ...actionBtnStyle, fontSize: 10, color: '#6B7280', borderColor: '#E5E7EB' }}>Assets</button>
+                          <button onClick={() => { loadAssets('topic', t.id); }} style={{ ...actionBtnStyle, fontSize: 10, color: 'var(--text-2)', borderColor: 'var(--border)' }}>Assets</button>
                           <button onClick={() => openVersions('topic', t.id)} style={{ ...actionBtnStyle, fontSize: 10 }}>History</button>
                         </div>
                       </td>
@@ -550,7 +550,7 @@ function CmsContent() {
 
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={pageBtnStyle}>← Prev</button>
-              <span style={{ fontSize: 12, color: '#9CA3AF', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(topicTotal / 25))}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-3)', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(topicTotal / 25))}</span>
               <button disabled={topics.length < 25} onClick={() => setPage(p => p + 1)} style={pageBtnStyle}>Next →</button>
             </div>
           </div>
@@ -561,9 +561,9 @@ function CmsContent() {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <h2 style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Question Bank</h2>
+                <h2 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Question Bank</h2>
                 <button onClick={() => { setShowCreateQuestion(!showCreateQuestion); setQuestionForm({}); }}
-                  style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 11 }}>
+                  style={{ ...actionBtnStyle, color: 'var(--text-2)', borderColor: 'var(--border)', fontSize: 11 }}>
                   {showCreateQuestion ? '✕ Cancel' : '+ New Question'}
                 </button>
               </div>
@@ -584,11 +584,11 @@ function CmsContent() {
               </div>
             </div>
 
-            <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 8 }}>{questionTotal} questions found</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 8 }}>{questionTotal} questions found</div>
 
             {showCreateQuestion && (
-              <div style={{ ...cardStyle, marginBottom: 16, borderLeft: `2px solid ${'#2563EB'}` }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: '#6B7280', marginBottom: 12 }}>Create New Question</h3>
+              <div style={{ ...cardStyle, marginBottom: 16, borderLeft: `2px solid ${'var(--info)'}` }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-2)', marginBottom: 12 }}>Create New Question</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <select value={questionForm.grade || ''} onChange={e => setQuestionForm(f => ({ ...f, grade: e.target.value }))} style={selectStyle}>
                     <option value="">Grade *</option>
@@ -630,7 +630,7 @@ function CmsContent() {
                   const opts = [questionForm.opt_a || 'A', questionForm.opt_b || 'B', questionForm.opt_c || 'C', questionForm.opt_d || 'D'].filter(Boolean);
                   setQuestionForm(f => ({ ...f, options: JSON.stringify(opts) }));
                   setTimeout(createQuestion, 50);
-                }} style={{ ...actionBtnStyle, marginTop: 10, color: '#6B7280', borderColor: '#E5E7EB', padding: '8px 20px' }}>
+                }} style={{ ...actionBtnStyle, marginTop: 10, color: 'var(--text-2)', borderColor: 'var(--border)', padding: '8px 20px' }}>
                   Create Question (Draft)
                 </button>
               </div>
@@ -651,7 +651,7 @@ function CmsContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {questions.length === 0 && <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: '#9CA3AF', padding: 24 }}>No questions found</td></tr>}
+                  {questions.length === 0 && <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: 'var(--text-3)', padding: 24 }}>No questions found</td></tr>}
                   {questions.map(q => (
                     <tr key={q.id}>
                       <td style={{ ...tdStyle, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.question_text.slice(0, 80)}{q.question_text.length > 80 ? '...' : ''}</td>
@@ -663,7 +663,7 @@ function CmsContent() {
                       <td style={tdStyle}><TransitionButtons entityType="question" entityId={q.id} currentStatus={q.content_status} /></td>
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => { loadAssets('question', q.id); }} style={{ ...actionBtnStyle, fontSize: 10, color: '#6B7280', borderColor: '#E5E7EB' }}>Assets</button>
+                          <button onClick={() => { loadAssets('question', q.id); }} style={{ ...actionBtnStyle, fontSize: 10, color: 'var(--text-2)', borderColor: 'var(--border)' }}>Assets</button>
                           <button onClick={() => openVersions('question', q.id)} style={{ ...actionBtnStyle, fontSize: 10 }}>History</button>
                         </div>
                       </td>
@@ -675,7 +675,7 @@ function CmsContent() {
 
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'center' }}>
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={pageBtnStyle}>← Prev</button>
-              <span style={{ fontSize: 12, color: '#9CA3AF', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(questionTotal / 25))}</span>
+              <span style={{ fontSize: 12, color: 'var(--text-3)', padding: '6px 12px' }}>Page {page} of {Math.max(1, Math.ceil(questionTotal / 25))}</span>
               <button disabled={questions.length < 25} onClick={() => setPage(p => p + 1)} style={pageBtnStyle}>Next →</button>
             </div>
           </div>
@@ -687,31 +687,31 @@ function CmsContent() {
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Version History — {versionEntityType} {versionEntityId.slice(0, 8)}</h2>
             <button onClick={() => setView(versionEntityType === 'topic' ? 'topics' : 'questions')} style={{ ...actionBtnStyle, marginBottom: 16 }}>← Back to list</button>
 
-            {versions.length === 0 && <div style={{ ...cardStyle, textAlign: 'center', color: '#9CA3AF', padding: 24 }}>No versions recorded yet.</div>}
+            {versions.length === 0 && <div style={{ ...cardStyle, textAlign: 'center', color: 'var(--text-3)', padding: 24 }}>No versions recorded yet.</div>}
 
             <div style={{ display: 'grid', gap: 10 }}>
               {versions.map(v => (
                 <div key={v.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>v{v.version_number}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>v{v.version_number}</span>
                       <CmsStatusBadge status={v.status} />
                     </div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
                       {v.change_summary || 'No description'}
                     </div>
-                    <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
+                    <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
                       {new Date(v.created_at).toLocaleString()}
                       {v.created_by && <span> · by {v.created_by.slice(0, 8)}</span>}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={() => viewVersionDiff(v.id, v.version_number)}
-                      style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 10 }}>
+                      style={{ ...actionBtnStyle, color: 'var(--text-2)', borderColor: 'var(--border)', fontSize: 10 }}>
                       View
                     </button>
                     <button onClick={() => rollbackVersion(v.id)}
-                      style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 10 }}>
+                      style={{ ...actionBtnStyle, color: 'var(--text-2)', borderColor: 'var(--border)', fontSize: 10 }}>
                       Rollback
                     </button>
                   </div>
@@ -737,11 +737,11 @@ function CmsContent() {
                         .sort(([a], [b]) => a.localeCompare(b))
                         .map(([key, val]) => (
                         <tr key={key}>
-                          <td style={{ ...tdStyle, fontWeight: 600, color: '#6B7280', fontSize: 11 }}>{key}</td>
+                          <td style={{ ...tdStyle, fontWeight: 600, color: 'var(--text-2)', fontSize: 11 }}>{key}</td>
                           <td style={{ ...tdStyle, fontSize: 12, maxWidth: 600, wordBreak: 'break-word' as const }}>
-                            {val === null ? <span style={{ color: '#9CA3AF' }}>null</span>
-                              : typeof val === 'object' ? <pre style={{ margin: 0, fontSize: 10, color: '#9CA3AF', whiteSpace: 'pre-wrap' as const }}>{JSON.stringify(val, null, 2)}</pre>
-                              : typeof val === 'boolean' ? <span style={{ color: val ? '#16A34A' : '#9CA3AF' }}>{String(val)}</span>
+                            {val === null ? <span style={{ color: 'var(--text-3)' }}>null</span>
+                              : typeof val === 'object' ? <pre style={{ margin: 0, fontSize: 10, color: 'var(--text-3)', whiteSpace: 'pre-wrap' as const }}>{JSON.stringify(val, null, 2)}</pre>
+                              : typeof val === 'boolean' ? <span style={{ color: val ? 'var(--success)' : 'var(--text-3)' }}>{String(val)}</span>
                               : String(val)}
                           </td>
                         </tr>
@@ -756,12 +756,12 @@ function CmsContent() {
         )}
         {/* Asset Panel */}
         {assetEntityId && (
-          <div style={{ marginTop: 20, padding: 16, background: '#F9FAFB', borderRadius: 10, border: `1px solid ${'#E5E7EB'}` }}>
+          <div style={{ marginTop: 20, padding: 16, background: 'var(--surface-2)', borderRadius: 10, border: `1px solid ${'var(--border)'}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h2 style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Assets — {assetEntityType} {assetEntityId.slice(0, 8)}</h2>
+              <h2 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase' as const, letterSpacing: 1.5, marginBottom: 12, margin: 0 }}>Assets — {assetEntityType} {assetEntityId.slice(0, 8)}</h2>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => setShowAssetForm(!showAssetForm)}
-                  style={{ ...actionBtnStyle, color: '#6B7280', borderColor: '#E5E7EB', fontSize: 10 }}>
+                  style={{ ...actionBtnStyle, color: 'var(--text-2)', borderColor: 'var(--border)', fontSize: 10 }}>
                   {showAssetForm ? 'Cancel' : '+ Attach Asset'}
                 </button>
                 <button onClick={() => { setAssetEntityId(''); setAssets([]); }}
@@ -770,7 +770,7 @@ function CmsContent() {
             </div>
 
             {showAssetForm && (
-              <div style={{ marginBottom: 12, padding: 12, background: '#FFFFFF', borderRadius: 8 }}>
+              <div style={{ marginBottom: 12, padding: 12, background: 'var(--surface-1)', borderRadius: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <input placeholder="File name *" value={assetForm.file_name || ''} onChange={e => setAssetForm(f => ({ ...f, file_name: e.target.value }))} style={searchInputStyle} />
                   <input placeholder="Storage path * (e.g. cms-media/topics/abc.png)" value={assetForm.storage_path || ''} onChange={e => setAssetForm(f => ({ ...f, storage_path: e.target.value }))} style={searchInputStyle} />
@@ -779,12 +779,12 @@ function CmsContent() {
                   <input placeholder="Alt text" value={assetForm.alt_text || ''} onChange={e => setAssetForm(f => ({ ...f, alt_text: e.target.value }))} style={searchInputStyle} />
                   <input placeholder="Caption" value={assetForm.caption || ''} onChange={e => setAssetForm(f => ({ ...f, caption: e.target.value }))} style={searchInputStyle} />
                 </div>
-                <button onClick={registerAsset} style={{ ...actionBtnStyle, marginTop: 8, color: '#6B7280', borderColor: '#E5E7EB', padding: '6px 16px' }}>Register Asset</button>
+                <button onClick={registerAsset} style={{ ...actionBtnStyle, marginTop: 8, color: 'var(--text-2)', borderColor: 'var(--border)', padding: '6px 16px' }}>Register Asset</button>
               </div>
             )}
 
             {assets.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#9CA3AF' }}>No assets attached. Click &quot;+ Attach Asset&quot; to add one.</div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)' }}>No assets attached. Click &quot;+ Attach Asset&quot; to add one.</div>
             ) : (
               <table style={tableStyle}>
                 <thead>
@@ -808,7 +808,7 @@ function CmsContent() {
                       <td style={{ ...tdStyle, fontSize: 10 }}>{a.alt_text || '—'}</td>
                       <td style={{ ...tdStyle, fontSize: 10 }}>{new Date(a.created_at).toLocaleDateString()}</td>
                       <td style={tdStyle}>
-                        <button onClick={() => deleteAsset(a.id)} style={{ ...actionBtnStyle, color: '#9CA3AF', borderColor: '#E5E7EB', fontSize: 10 }}>Remove</button>
+                        <button onClick={() => deleteAsset(a.id)} style={{ ...actionBtnStyle, color: 'var(--text-3)', borderColor: 'var(--border)', fontSize: 10 }}>Remove</button>
                       </td>
                     </tr>
                   ))}

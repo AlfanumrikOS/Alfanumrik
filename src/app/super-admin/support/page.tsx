@@ -196,14 +196,14 @@ function SupportContent() {
           label="Failed Jobs"
           value={jobsLoading ? '...' : failedCount}
           icon="!"
-          accentColor={failedCount > 0 ? '#DC2626' : '#16A34A'}
+          accentColor={failedCount > 0 ? 'var(--danger)' : 'var(--success)'}
           subtitle={failedCount === 0 ? 'All clear' : `${failedCount} failed`}
         />
         <StatCard
           label="Pending Tasks"
           value={jobsLoading ? '...' : pendingCount}
           icon="~"
-          accentColor={pendingCount > 0 ? '#D97706' : '#16A34A'}
+          accentColor={pendingCount > 0 ? 'var(--warning)' : 'var(--success)'}
           subtitle={pendingCount === 0 ? 'None queued' : `${pendingCount} pending`}
         />
         <div className="flex flex-col justify-center gap-1.5 rounded-lg border border-surface-3 bg-surface-1 p-4">
@@ -350,7 +350,7 @@ function SupportContent() {
               </div>
             </div>
             {userQuery.trim() && (
-              <Link href={`/super-admin/students/${encodeURIComponent(userQuery.trim())}`} className="text-sm text-blue-600 hover:underline mt-2 inline-block">
+              <Link href={`/super-admin/students/${encodeURIComponent(userQuery.trim())}`} className="text-sm text-info hover:underline mt-2 inline-block">
                 View Full Profile &rarr;
               </Link>
             )}

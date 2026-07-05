@@ -290,41 +290,41 @@ function OverviewContent() {
         <StatCard
           label="Platform MRR"
           value={mrr ? formatINR(mrr.total) : '—'}
-          accentColor="#16A34A"
+          accentColor="var(--success)"
           subtitle={mrr ? `ARR ${formatINR(mrr.arr)}` : 'No snapshot'}
         />
         <div>
           <StatCard
             label="Net New MRR"
             value={mrr ? formatINR(netNew) : '—'}
-            accentColor={netNew >= 0 ? '#16A34A' : '#DC2626'}
+            accentColor={netNew >= 0 ? 'var(--success)' : 'var(--danger)'}
             subtitle={mrr ? `New ${formatINR(mrr.new)} · Churn ${formatINR(mrr.churn)}` : '—'}
           />
           <div className="mt-1 px-[18px] text-[10px] leading-tight text-muted-foreground">
             <Caveat text={NEW_MRR_CAVEAT} /> {NEW_MRR_CAVEAT}
           </div>
         </div>
-        <StatCard label="Active Schools" value={activeSchools} accentColor="#2563EB" subtitle="Scored in latest rollup" />
+        <StatCard label="Active Schools" value={activeSchools} accentColor="var(--info)" subtitle="Scored in latest rollup" />
         <StatCard
           label="At-Risk Schools"
           value={atRisk}
-          accentColor={atRisk > 0 ? '#DC2626' : '#6B7280'}
+          accentColor={atRisk > 0 ? 'var(--danger)' : 'var(--text-2)'}
           subtitle="High + critical churn band"
         />
         <StatCard
           label="Avg Composite Health"
           value={health.avg_composite}
           accentColor={
-            health.avg_composite >= 80 ? '#16A34A'
-              : health.avg_composite >= 60 ? '#2563EB'
-              : health.avg_composite >= 40 ? '#D97706' : '#DC2626'
+            health.avg_composite >= 80 ? 'var(--success)'
+              : health.avg_composite >= 60 ? 'var(--info)'
+              : health.avg_composite >= 40 ? 'var(--warning)' : 'var(--danger)'
           }
           subtitle="0-100, latest per school"
         />
         <StatCard
           label="Churn Rate"
           value={`${churnRate}%`}
-          accentColor={churnRate >= 15 ? '#DC2626' : churnRate >= 5 ? '#D97706' : '#16A34A'}
+          accentColor={churnRate >= 15 ? 'var(--danger)' : churnRate >= 5 ? 'var(--warning)' : 'var(--success)'}
           subtitle="High/critical share of scored schools"
         />
       </div>

@@ -41,10 +41,10 @@ interface CoverageResponse {
 }
 
 const SEVERITY_ACCENT: Record<string, string> = {
-  critical: '#DC2626',
-  high: '#D97706',
-  medium: '#2563EB',
-  low: '#9CA3AF',
+  critical: 'var(--danger)',
+  high: 'var(--warning)',
+  medium: 'var(--info)',
+  low: 'var(--text-3)',
 };
 
 const SEVERITY_VARIANT: Record<string, 'danger' | 'warning' | 'info' | 'neutral'> = {
@@ -159,7 +159,8 @@ function CoverageContent() {
       {error && (
         <div
           data-testid="grounding-coverage-error"
-          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
+          className="mb-4 rounded-md p-3 text-[13px] text-danger"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
         >
           Error: {error}
         </div>

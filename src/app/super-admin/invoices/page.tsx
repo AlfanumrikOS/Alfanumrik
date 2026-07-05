@@ -30,17 +30,17 @@ interface School {
 
 // Hex literal palette (matches deprecated admin-styles.ts colors).
 const C = {
-  bg: '#FFFFFF',
-  text1: '#111827',
-  text2: '#6B7280',
-  text3: '#9CA3AF',
-  border: '#E5E7EB',
-  accent: '#2563EB',
-  success: '#16A34A',
-  successLight: '#F0FDF4',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
-  warning: '#D97706',
+  bg: 'var(--surface-1)',
+  text1: 'var(--text-1)',
+  text2: 'var(--text-2)',
+  text3: 'var(--text-3)',
+  border: 'var(--border)',
+  accent: 'var(--info)',
+  success: 'var(--success)',
+  successLight: 'color-mix(in srgb, var(--success) 8%, transparent)',
+  danger: 'var(--danger)',
+  dangerLight: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+  warning: 'var(--warning)',
 };
 
 /* ─────────────────────────────────────────────────────────────
@@ -353,12 +353,11 @@ function InvoicesContent() {
       {showModal && (
         <div
           className="fixed inset-0 z-[1000] flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.4)' }}
+          style={{ background: 'var(--scrim)' }}
           onClick={() => { setShowModal(false); setGenMsg(null); }}
         >
           <div
-            className="w-[420px] max-w-[90vw] rounded-xl border border-surface-3 bg-surface-1 p-7"
-            style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
+            className="w-[420px] max-w-[90vw] rounded-xl border border-surface-3 bg-surface-1 p-7 shadow-lg"
             onClick={e => e.stopPropagation()}
           >
             <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">Generate Invoice</h2>

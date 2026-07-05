@@ -14,35 +14,35 @@ const tableStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 14px',
-  borderBottom: '2px solid #E5E7EB',
-  color: '#6B7280',
+  borderBottom: '2px solid var(--border)',
+  color: 'var(--text-2)',
   fontSize: 11,
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: 1,
-  background: '#F9FAFB',
+  background: 'var(--surface-2)',
   position: 'sticky',
   top: 0,
   zIndex: 1,
 };
 const tdStyle: React.CSSProperties = {
   padding: '10px 14px',
-  borderBottom: '1px solid #F3F4F6',
-  color: '#111827',
+  borderBottom: '1px solid var(--surface-2)',
+  color: 'var(--text-1)',
   fontSize: 13,
 };
 const cardStyle: React.CSSProperties = {
   padding: 16,
   borderRadius: 8,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
 };
 const selectStyle: React.CSSProperties = {
   padding: '8px 12px',
   borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#111827',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
+  color: 'var(--text-1)',
   fontSize: 13,
   outline: 'none',
   cursor: 'pointer',
@@ -51,8 +51,8 @@ const primaryBtnStyle: React.CSSProperties = {
   padding: '8px 16px',
   borderRadius: 6,
   border: 'none',
-  background: '#111827',
-  color: '#FFFFFF',
+  background: 'var(--text-1)',
+  color: 'var(--on-accent)',
   fontSize: 13,
   fontWeight: 600,
   cursor: 'pointer',
@@ -61,9 +61,9 @@ const primaryBtnStyle: React.CSSProperties = {
 const secondaryBtnStyle: React.CSSProperties = {
   padding: '8px 16px',
   borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#111827',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
+  color: 'var(--text-1)',
   fontSize: 13,
   fontWeight: 500,
   cursor: 'pointer',
@@ -71,9 +71,9 @@ const secondaryBtnStyle: React.CSSProperties = {
 const dlBtnStyle: React.CSSProperties = {
   padding: '8px 14px',
   borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#F9FAFB',
-  color: '#111827',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-2)',
+  color: 'var(--text-1)',
   fontSize: 12,
   fontWeight: 600,
   cursor: 'pointer',
@@ -392,11 +392,11 @@ function BulkUploadContent() {
   const currentStepIdx = stepOrder.indexOf(step);
 
   const jobColumns: Column<UploadJob>[] = [
-    { key: 'school_name', label: 'School', render: r => <strong style={{ color: '#111827' }}>{r.school_name || '—'}</strong> },
+    { key: 'school_name', label: 'School', render: r => <strong style={{ color: 'var(--text-1)' }}>{r.school_name || '—'}</strong> },
     { key: 'file_name', label: 'File' },
     { key: 'total', label: 'Total', render: r => <span style={{ fontWeight: 600 }}>{r.total}</span> },
-    { key: 'success_count', label: 'Success', render: r => <span style={{ fontWeight: 600, color: '#16A34A' }}>{r.success_count}</span> },
-    { key: 'error_count', label: 'Errors', render: r => <span style={{ fontWeight: 600, color: r.error_count > 0 ? '#DC2626' : '#9CA3AF' }}>{r.error_count}</span> },
+    { key: 'success_count', label: 'Success', render: r => <span style={{ fontWeight: 600, color: 'var(--success)' }}>{r.success_count}</span> },
+    { key: 'error_count', label: 'Errors', render: r => <span style={{ fontWeight: 600, color: r.error_count > 0 ? 'var(--danger)' : 'var(--text-3)' }}>{r.error_count}</span> },
     { key: 'status', label: 'Status', render: r => (
       <StatusBadge
         label={r.status}
@@ -404,7 +404,7 @@ function BulkUploadContent() {
       />
     )},
     { key: 'created_at', label: 'Date', render: r => (
-      <span style={{ fontSize: 12, color: '#9CA3AF' }}>{new Date(r.created_at).toLocaleDateString()}</span>
+      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{new Date(r.created_at).toLocaleDateString()}</span>
     )},
   ];
 
@@ -414,7 +414,7 @@ function BulkUploadContent() {
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Bulk Student Upload</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Import students from CSV files for onboarded schools</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Import students from CSV files for onboarded schools</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <a href="/super-admin/bulk-upload/schools" style={{ ...secondaryBtnStyle, textDecoration: 'none' }}>
@@ -433,10 +433,10 @@ function BulkUploadContent() {
       {showHistory && (
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-            <StatCard label="Total Uploads" value={jobs.length} icon="^" accentColor={'#2563EB'} />
-            <StatCard label="Completed" value={jobs.filter(j => j.status === 'completed').length} icon="*" accentColor={'#16A34A'} />
-            <StatCard label="Total Students" value={jobs.reduce((s, j) => s + (j.success_count || 0), 0)} icon="+" accentColor={'#D97706'} />
-            <StatCard label="Total Errors" value={jobs.reduce((s, j) => s + (j.error_count || 0), 0)} icon="!" accentColor={'#DC2626'} />
+            <StatCard label="Total Uploads" value={jobs.length} icon="^" accentColor={'var(--info)'} />
+            <StatCard label="Completed" value={jobs.filter(j => j.status === 'completed').length} icon="*" accentColor={'var(--success)'} />
+            <StatCard label="Total Students" value={jobs.reduce((s, j) => s + (j.success_count || 0), 0)} icon="+" accentColor={'var(--warning)'} />
+            <StatCard label="Total Errors" value={jobs.reduce((s, j) => s + (j.error_count || 0), 0)} icon="!" accentColor={'var(--danger)'} />
           </div>
           <DataTable columns={jobColumns} data={jobs} keyField="id" emptyMessage="No upload history" />
           return;
@@ -458,22 +458,22 @@ function BulkUploadContent() {
                       width: 28, height: 28, borderRadius: '50%',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 12, fontWeight: 700,
-                      background: isComplete ? '#16A34A' : isActive ? '#111827' : '#F9FAFB',
-                      color: isComplete || isActive ? '#fff' : '#9CA3AF',
-                      border: `2px solid ${isComplete ? '#16A34A' : isActive ? '#111827' : '#E5E7EB'}`,
+                      background: isComplete ? 'var(--success)' : isActive ? 'var(--text-1)' : 'var(--surface-2)',
+                      color: isComplete || isActive ? 'var(--on-accent)' : 'var(--text-3)',
+                      border: `2px solid ${isComplete ? 'var(--success)' : isActive ? 'var(--text-1)' : 'var(--border)'}`,
                     }}>
                       {isComplete ? '\u2713' : s.number}
                     </div>
                     <span style={{
                       fontSize: 12, fontWeight: isActive ? 700 : 400,
-                      color: isActive ? '#111827' : isComplete ? '#16A34A' : '#9CA3AF',
+                      color: isActive ? 'var(--text-1)' : isComplete ? 'var(--success)' : 'var(--text-3)',
                       whiteSpace: 'nowrap',
                     }}>{s.label}</span>
                   </div>
                   {i < stepLabels.length - 1 && (
                     <div style={{
                       flex: 1, height: 2, marginLeft: 12, marginRight: 12,
-                      background: isComplete ? '#16A34A' : '#E5E7EB',
+                      background: isComplete ? 'var(--success)' : 'var(--border)',
                     }} />
                   )}
                 </div>
@@ -485,13 +485,13 @@ function BulkUploadContent() {
           {error && (
             <div style={{
               padding: '10px 16px', borderRadius: 8, marginBottom: 16,
-              background: '#FEF2F2', border: `1px solid ${'#DC2626'}`,
+              background: 'color-mix(in srgb, var(--danger) 8%, transparent)', border: `1px solid ${'var(--danger)'}`,
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             }}>
-              <span style={{ fontSize: 13, color: '#DC2626', fontWeight: 500 }}>{error}</span>
+              <span style={{ fontSize: 13, color: 'var(--danger)', fontWeight: 500 }}>{error}</span>
               <button onClick={() => setError('')} style={{
                 background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 16, color: '#DC2626', fontWeight: 700,
+                fontSize: 16, color: 'var(--danger)', fontWeight: 700,
               }}>x</button>
             </div>
           )}
@@ -499,15 +499,15 @@ function BulkUploadContent() {
           {/* Step 1: Select School */}
           {step === 'select' && (
             <div style={{ ...cardStyle, maxWidth: 600 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 4 }}>Step 1: Select School</div>
-              <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 16, marginTop: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>Step 1: Select School</div>
+              <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16, marginTop: 0 }}>
                 Choose the institution to upload students for.
               </p>
               {loadingSchools ? (
-                <div style={{ color: '#9CA3AF', fontSize: 13 }}>Loading schools...</div>
+                <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading schools...</div>
               ) : schools.length === 0 ? (
-                <div style={{ color: '#9CA3AF', fontSize: 13 }}>
-                  No schools onboarded yet. <a href="/super-admin/institutions" style={{ color: '#2563EB' }}>Add one first</a>.
+                <div style={{ color: 'var(--text-3)', fontSize: 13 }}>
+                  No schools onboarded yet. <a href="/super-admin/institutions" style={{ color: 'var(--info)' }}>Add one first</a>.
                 </div>
               ) : (
                 <div>
@@ -532,9 +532,9 @@ function BulkUploadContent() {
           {step === 'upload' && (
             <div style={{ maxWidth: 600 }}>
               <div style={{ ...cardStyle, marginBottom: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 4 }}>Step 2: Upload CSV</div>
-                <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 16, marginTop: 0 }}>
-                  Uploading for: <strong style={{ color: '#111827' }}>{selectedSchoolName}</strong>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>Step 2: Upload CSV</div>
+                <p style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16, marginTop: 0 }}>
+                  Uploading for: <strong style={{ color: 'var(--text-1)' }}>{selectedSchoolName}</strong>
                 </p>
 
                 {/* Drop zone */}
@@ -544,20 +544,20 @@ function BulkUploadContent() {
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
                   style={{
-                    border: `2px dashed ${dragOver ? '#2563EB' : '#E5E7EB'}`,
+                    border: `2px dashed ${dragOver ? 'var(--info)' : 'var(--border)'}`,
                     borderRadius: 8,
                     padding: '40px 20px',
                     textAlign: 'center',
                     cursor: 'pointer',
-                    background: dragOver ? '#EFF6FF' : '#F9FAFB',
+                    background: dragOver ? 'color-mix(in srgb, var(--info) 10%, transparent)' : 'var(--surface-2)',
                     transition: 'all 0.2s',
                   }}
                 >
                   <div style={{ fontSize: 32, marginBottom: 8, opacity: 0.5 }}>+</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 4 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', marginBottom: 4 }}>
                     {dragOver ? 'Drop your CSV here' : 'Drag and drop CSV file here'}
                   </div>
-                  <div style={{ fontSize: 12, color: '#9CA3AF' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
                     or click to browse (max 5 MB)
                   </div>
                   <input
@@ -570,9 +570,9 @@ function BulkUploadContent() {
                 </div>
 
                 {file && (
-                  <div style={{ marginTop: 12, padding: '8px 12px', background: '#F9FAFB', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 12, color: '#111827', fontWeight: 500 }}>{file.name}</span>
-                    <span style={{ fontSize: 11, color: '#9CA3AF' }}>{(file.size / 1024).toFixed(1)} KB</span>
+                  <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-1)', fontWeight: 500 }}>{file.name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{(file.size / 1024).toFixed(1)} KB</span>
                   </div>
                 )}
               </div>
@@ -588,22 +588,22 @@ function BulkUploadContent() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 4 }}>Step 3: Preview Data</div>
-                  <div style={{ fontSize: 12, color: '#9CA3AF' }}>
-                    {previewData.length} rows found. School: <strong style={{ color: '#111827' }}>{selectedSchoolName}</strong>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>Step 3: Preview Data</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                    {previewData.length} rows found. School: <strong style={{ color: 'var(--text-1)' }}>{selectedSchoolName}</strong>
                   </div>
                 </div>
               </div>
 
               {/* Validation summary */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
-                <StatCard label="Total Rows" value={previewData.length} accentColor={'#2563EB'} />
-                <StatCard label="Valid" value={validCount} accentColor={'#16A34A'} />
-                <StatCard label="Invalid" value={invalidCount} accentColor={invalidCount > 0 ? '#DC2626' : '#9CA3AF'} />
+                <StatCard label="Total Rows" value={previewData.length} accentColor={'var(--info)'} />
+                <StatCard label="Valid" value={validCount} accentColor={'var(--success)'} />
+                <StatCard label="Invalid" value={invalidCount} accentColor={invalidCount > 0 ? 'var(--danger)' : 'var(--text-3)'} />
               </div>
 
               {/* Preview table */}
-              <div style={{ overflowX: 'auto', border: `1px solid ${'#E5E7EB'}`, borderRadius: 8, marginBottom: 16 }}>
+              <div style={{ overflowX: 'auto', border: `1px solid ${'var(--border)'}`, borderRadius: 8, marginBottom: 16 }}>
                 <table style={tableStyle}>
                   <thead>
                     <tr>
@@ -619,17 +619,17 @@ function BulkUploadContent() {
                       const validation = validationResults[rowIdx];
                       const isValid = validation?.valid !== false;
                       return (
-                        <tr key={rowIdx} style={{ background: isValid ? undefined : 'rgba(220,38,38,0.04)' }}>
-                          <td style={{ ...tdStyle, fontWeight: 600, color: '#9CA3AF' }}>{rowIdx + 1}</td>
+                        <tr key={rowIdx} style={{ background: isValid ? undefined : 'color-mix(in srgb, var(--danger) 4%, transparent)' }}>
+                          <td style={{ ...tdStyle, fontWeight: 600, color: 'var(--text-3)' }}>{rowIdx + 1}</td>
                           {row.map((cell, cellIdx) => {
                             const isGradeCol = headers[cellIdx]?.toLowerCase().includes('grade');
                             const isEmailCol = headers[cellIdx]?.toLowerCase().includes('email');
-                            let cellColor: string = '#111827';
-                            if (isGradeCol && cell && !VALID_GRADES.includes(cell.trim())) cellColor = '#DC2626';
-                            if (isEmailCol && cell && !EMAIL_REGEX.test(cell.trim())) cellColor = '#DC2626';
+                            let cellColor: string = 'var(--text-1)';
+                            if (isGradeCol && cell && !VALID_GRADES.includes(cell.trim())) cellColor = 'var(--danger)';
+                            if (isEmailCol && cell && !EMAIL_REGEX.test(cell.trim())) cellColor = 'var(--danger)';
                             return (
                               <td key={cellIdx} style={{ ...tdStyle, color: cellColor }}>
-                                {cell || <span style={{ color: '#9CA3AF' }}>--</span>}
+                                {cell || <span style={{ color: 'var(--text-3)' }}>--</span>}
                               </td>
                             );
                           })}
@@ -645,7 +645,7 @@ function BulkUploadContent() {
                   </tbody>
                 </table>
                 {previewData.length > 10 && (
-                  <div style={{ padding: '8px 14px', fontSize: 12, color: '#9CA3AF', background: '#F9FAFB', textAlign: 'center' }}>
+                  <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--text-3)', background: 'var(--surface-2)', textAlign: 'center' }}>
                     Showing first 10 of {previewData.length} rows
                   </div>
                 )}
@@ -653,14 +653,14 @@ function BulkUploadContent() {
 
               {/* Validation errors detail */}
               {invalidCount > 0 && (
-                <div style={{ ...cardStyle, padding: 12, marginBottom: 16, borderLeft: `3px solid ${'#DC2626'}` }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626', marginBottom: 8 }}>Validation Issues</div>
+                <div style={{ ...cardStyle, padding: 12, marginBottom: 16, borderLeft: `3px solid ${'var(--danger)'}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', marginBottom: 8 }}>Validation Issues</div>
                   {validationResults.slice(0, 10).map((v, i) => {
                     if (v.valid) return null;
                     return (
-                      <div key={i} style={{ padding: '4px 0', borderBottom: `1px solid ${'#F3F4F6'}`, fontSize: 12 }}>
-                        <span style={{ fontWeight: 600, color: '#111827' }}>Row {i + 1}:</span>{' '}
-                        <span style={{ color: '#DC2626' }}>{v.errors.join('; ')}</span>
+                      <div key={i} style={{ padding: '4px 0', borderBottom: `1px solid ${'var(--surface-2)'}`, fontSize: 12 }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-1)' }}>Row {i + 1}:</span>{' '}
+                        <span style={{ color: 'var(--danger)' }}>{v.errors.join('; ')}</span>
                       </div>
                     );
                   })}
@@ -687,18 +687,18 @@ function BulkUploadContent() {
           {/* Step 4: Processing */}
           {step === 'processing' && (
             <div style={{ ...cardStyle, maxWidth: 500, textAlign: 'center', padding: '40px 24px' }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 16 }}>Processing Upload...</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 16 }}>Processing Upload...</div>
               <div style={{
-                height: 8, background: '#F9FAFB', borderRadius: 4, overflow: 'hidden', marginBottom: 12,
+                height: 8, background: 'var(--surface-2)', borderRadius: 4, overflow: 'hidden', marginBottom: 12,
               }}>
                 <div style={{
                   width: `${uploadProgress}%`, height: '100%',
-                  background: '#2563EB', borderRadius: 4,
+                  background: 'var(--info)', borderRadius: 4,
                   transition: 'width 0.3s',
                 }} />
               </div>
-              <div style={{ fontSize: 12, color: '#9CA3AF' }}>{uploadProgress}% complete</div>
-              <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{uploadProgress}% complete</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 8 }}>
                 Uploading {previewData.length} students to {selectedSchoolName}
               </div>
             </div>
@@ -707,21 +707,21 @@ function BulkUploadContent() {
           {/* Step 5: Results */}
           {step === 'results' && uploadResult && (
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 16 }}>Upload Complete</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 16 }}>Upload Complete</div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
-                <StatCard label="Total Processed" value={uploadResult.total} accentColor={'#2563EB'} />
-                <StatCard label="Successful" value={uploadResult.success_count} accentColor={'#16A34A'} />
-                <StatCard label="Errors" value={uploadResult.error_count} accentColor={uploadResult.error_count > 0 ? '#DC2626' : '#9CA3AF'} />
+                <StatCard label="Total Processed" value={uploadResult.total} accentColor={'var(--info)'} />
+                <StatCard label="Successful" value={uploadResult.success_count} accentColor={'var(--success)'} />
+                <StatCard label="Errors" value={uploadResult.error_count} accentColor={uploadResult.error_count > 0 ? 'var(--danger)' : 'var(--text-3)'} />
               </div>
 
               {/* Success message */}
               {uploadResult.success_count > 0 && (
                 <div style={{
                   padding: '12px 16px', borderRadius: 8, marginBottom: 16,
-                  background: '#F0FDF4', border: `1px solid ${'#16A34A'}`,
+                  background: 'color-mix(in srgb, var(--success) 10%, transparent)', border: `1px solid ${'var(--success)'}`,
                 }}>
-                  <span style={{ fontSize: 13, color: '#16A34A', fontWeight: 600 }}>
+                  <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
                     {uploadResult.success_count} student{uploadResult.success_count !== 1 ? 's' : ''} imported successfully to {selectedSchoolName}
                   </span>
                 </div>
@@ -731,14 +731,14 @@ function BulkUploadContent() {
               {uploadResult.errors.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#DC2626' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)' }}>
                       {uploadResult.error_count} Error{uploadResult.error_count !== 1 ? 's' : ''}
                     </div>
-                    <button onClick={downloadErrorReport} style={{ ...dlBtnStyle, color: '#DC2626', borderColor: '#DC2626' }}>
+                    <button onClick={downloadErrorReport} style={{ ...dlBtnStyle, color: 'var(--danger)', borderColor: 'var(--danger)' }}>
                       Download Error Report
                     </button>
                   </div>
-                  <div style={{ overflowX: 'auto', border: `1px solid ${'#E5E7EB'}`, borderRadius: 8 }}>
+                  <div style={{ overflowX: 'auto', border: `1px solid ${'var(--border)'}`, borderRadius: 8 }}>
                     <table style={tableStyle}>
                       <thead>
                         <tr>
@@ -752,15 +752,15 @@ function BulkUploadContent() {
                         {uploadResult.errors.slice(0, 20).map((err, i) => (
                           <tr key={i}>
                             <td style={{ ...tdStyle, fontWeight: 600 }}>{err.row}</td>
-                            <td style={tdStyle}><code style={{ fontSize: 11, background: '#F9FAFB', padding: '1px 4px', borderRadius: 2 }}>{err.field}</code></td>
-                            <td style={{ ...tdStyle, color: '#DC2626' }}>{err.message}</td>
-                            <td style={{ ...tdStyle, color: '#9CA3AF' }}>{err.value || '—'}</td>
+                            <td style={tdStyle}><code style={{ fontSize: 11, background: 'var(--surface-2)', padding: '1px 4px', borderRadius: 2 }}>{err.field}</code></td>
+                            <td style={{ ...tdStyle, color: 'var(--danger)' }}>{err.message}</td>
+                            <td style={{ ...tdStyle, color: 'var(--text-3)' }}>{err.value || '—'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                     {uploadResult.errors.length > 20 && (
-                      <div style={{ padding: '8px 14px', fontSize: 12, color: '#9CA3AF', background: '#F9FAFB', textAlign: 'center' }}>
+                      <div style={{ padding: '8px 14px', fontSize: 12, color: 'var(--text-3)', background: 'var(--surface-2)', textAlign: 'center' }}>
                         Showing first 20 of {uploadResult.errors.length} errors. Download the full report for all errors.
                       </div>
                     )}

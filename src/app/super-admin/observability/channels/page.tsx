@@ -5,20 +5,20 @@ import useSWR from 'swr';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
 
 const colors = {
-  bg: '#FFFFFF',
-  text1: '#111827',
-  text2: '#6B7280',
-  text3: '#9CA3AF',
-  border: '#E5E7EB',
-  surface: '#F9FAFB',
-  accent: '#2563EB',
-  accentLight: '#EFF6FF',
-  success: '#16A34A',
-  successLight: '#F0FDF4',
-  warning: '#D97706',
-  warningLight: '#FFFBEB',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
+  bg: 'var(--surface-1)',
+  text1: 'var(--text-1)',
+  text2: 'var(--text-2)',
+  text3: 'var(--text-3)',
+  border: 'var(--surface-3)',
+  surface: 'var(--surface-2)',
+  accent: 'var(--info)',
+  accentLight: 'color-mix(in srgb, var(--info) 10%, transparent)',
+  success: 'var(--success)',
+  successLight: 'color-mix(in srgb, var(--success) 10%, transparent)',
+  warning: 'var(--warning)',
+  warningLight: 'color-mix(in srgb, var(--warning) 10%, transparent)',
+  danger: 'var(--danger)',
+  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
 } as const;
 
 const S = {
@@ -105,7 +105,11 @@ const TYPE_LABELS: Record<string, string> = {
 function typeBadge(type: string): { label: string; bg: string; color: string } {
   switch (type) {
     case 'slack_webhook':
-      return { label: 'Slack', bg: '#E8D5F5', color: '#6B21A8' };
+      return {
+        label: 'Slack',
+        bg: 'color-mix(in srgb, var(--purple) 18%, transparent)',
+        color: 'var(--purple)',
+      };
     case 'email':
       return { label: 'Email', bg: colors.accentLight, color: colors.accent };
     default:
@@ -415,12 +419,12 @@ function ChannelsContent() {
         <div
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center',
+            background: 'color-mix(in srgb, var(--text-1) 30%, transparent)', display: 'flex', alignItems: 'center',
             justifyContent: 'center', zIndex: 1000,
           }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false); }}
         >
-          <div style={{ background: colors.bg, borderRadius: 12, padding: 24, width: 480, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+          <div style={{ background: colors.bg, borderRadius: 12, padding: 24, width: 480, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 8px 32px color-mix(in srgb, var(--text-1) 12%, transparent)' }}>
             <h2 className="text-xl font-bold tracking-tight text-foreground" style={{ marginBottom: 16 }}>New Notification Channel</h2>
 
             {formError && (

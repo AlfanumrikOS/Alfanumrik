@@ -185,14 +185,20 @@ function AiIssuesContent() {
       {error && (
         <div
           data-testid="grounding-ai-issues-error"
-          className="mb-4 rounded-md bg-danger/10 p-3 text-[13px] text-danger"
+          className="mb-4 rounded-md p-3 text-[13px] text-danger"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
         >
           Error: {error}
         </div>
       )}
 
       {saveMsg && (
-        <div className="mb-4 rounded-md bg-info/10 p-3 text-[13px] text-info">{saveMsg}</div>
+        <div
+          className="mb-4 rounded-md p-3 text-[13px] text-info"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--info) 10%, transparent)' }}
+        >
+          {saveMsg}
+        </div>
       )}
 
       <div className="overflow-hidden rounded-lg border border-surface-3">

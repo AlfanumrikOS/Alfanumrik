@@ -116,10 +116,10 @@ function formatPct(value: number, digits = 1): string {
 
 // ─── Cost monitor band ──────────────────────────────────────────────────────
 
-function costBandClass(percentUsed: number): string {
-  if (percentUsed >= 0.8) return 'border-danger bg-danger/10 text-danger';
-  if (percentUsed >= 0.5) return 'border-warning bg-warning/10 text-warning';
-  return 'border-success bg-success/10 text-success';
+function costBandTone(percentUsed: number): 'danger' | 'warning' | 'success' {
+  if (percentUsed >= 0.8) return 'danger';
+  if (percentUsed >= 0.5) return 'warning';
+  return 'success';
 }
 
 // ─── Sparkline (tiny inline SVG, no recharts dep) ───────────────────────────
@@ -192,7 +192,7 @@ function Donut({ segments, size = 100 }: { segments: DonutSegment[]; size?: numb
           />
         );
       })}
-      <circle cx={cx} cy={cy} r={radius * 0.55} fill="var(--surface-1, #fff)" />
+      <circle cx={cx} cy={cy} r={radius * 0.55} fill="var(--surface-1)" />
     </svg>
   );
 }
@@ -292,10 +292,10 @@ function AlfabotDashboardInner() {
   const audienceSegments = useMemo((): DonutSegment[] => {
     if (!stats) return [];
     return [
-      { label: 'Parent', value: stats.audienceMix.parent, color: '#7C3AED' },
-      { label: 'Student', value: stats.audienceMix.student, color: '#F97316' },
-      { label: 'Teacher', value: stats.audienceMix.teacher, color: '#22C55E' },
-      { label: 'School', value: stats.audienceMix.school, color: '#3B82F6' },
+      { label: 'Parent', value: stats.audienceMix.parent, color: 'var(--secondary)' },
+      { label: 'Student', value: stats.audienceMix.student, color: 'var(--primary)' },
+      { label: 'Teacher', value: stats.audienceMix.teacher, color: 'var(--success)' },
+      { label: 'School', value: stats.audienceMix.school, color: 'var(--info)' },
     ];
   }, [stats]);
 
@@ -338,25 +338,30 @@ function AlfabotDashboardInner() {
 
       {/* ── 1. Today at a glance ──────────────────────────────────────── */}
       <section className="mb-6 grid grid-cols-4 gap-3">
-        <StatCard label="Sessions today" value={stats.today.sessions} accentColor="#7C3AED" />
-        <StatCard label="Messages today" value={stats.today.messages} accentColor="#F97316" />
+        <StatCard label="Sessions today" value={stats.today.sessions} accentColor="var(--secondary)" />
+        <StatCard label="Messages today" value={stats.today.messages} accentColor="var(--primary)" />
         <StatCard
           label="Estimated spend"
           value={formatUsd(stats.today.spendUsd)}
           subtitle={`${formatPct(stats.cap.percentUsed * 100, 1)} of $${stats.cap.dailyUsdCap.toFixed(2)} cap`}
-          accentColor="#22C55E"
+          accentColor="var(--success)"
         />
         <StatCard
           label="Rate-limit hit"
           value={formatPct(stats.today.rateLimitHitPct, 1)}
           subtitle={`${stats.today.degradedMessages} degraded msgs`}
-          accentColor="#3B82F6"
+          accentColor="var(--info)"
         />
       </section>
 
       {/* ── 2. Cost monitor banner ────────────────────────────────────── */}
       <section
-        className={`mb-6 rounded-lg border p-4 text-[13px] ${costBandClass(stats.cap.percentUsed)}`}
+        className="mb-6 rounded-lg border p-4 text-[13px]"
+        style={{
+          backgroundColor: `color-mix(in srgb, var(--${costBandTone(stats.cap.percentUsed)}) 10%, transparent)`,
+          borderColor: `var(--${costBandTone(stats.cap.percentUsed)})`,
+          color: `var(--${costBandTone(stats.cap.percentUsed)})`,
+        }}
       >
         <div className="flex items-center justify-between">
           <div>
@@ -385,7 +390,7 @@ function AlfabotDashboardInner() {
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Sessions / day — last 30d
           </div>
-          <Sparkline values={trendSessions} stroke="#7C3AED" width={260} height={40} />
+          <Sparkline values={trendSessions} stroke="var(--secondary)" width={260} height={40} />
           <div className="mt-1 text-[11px] text-muted-foreground">
             Peak {Math.max(0, ...trendSessions).toLocaleString()} · today {stats.today.sessions.toLocaleString()}
           </div>
@@ -394,7 +399,7 @@ function AlfabotDashboardInner() {
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Messages / day — last 30d
           </div>
-          <Sparkline values={trendMessages} stroke="#F97316" width={260} height={40} />
+          <Sparkline values={trendMessages} stroke="var(--primary)" width={260} height={40} />
           <div className="mt-1 text-[11px] text-muted-foreground">
             Peak {Math.max(0, ...trendMessages).toLocaleString()} · today {stats.today.messages.toLocaleString()}
           </div>
@@ -541,7 +546,7 @@ function AlfabotDashboardInner() {
           <button
             onClick={handleAddDenylist}
             disabled={adding}
-            className="rounded-md border border-surface-3 bg-purple-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-purple-700 disabled:opacity-60"
+            className="rounded-md border border-surface-3 bg-secondary px-3 py-1.5 text-[11px] font-medium text-on-accent hover:opacity-90 disabled:opacity-60"
           >
             {adding ? 'Adding…' : 'Add'}
           </button>
@@ -647,7 +652,7 @@ function AlfabotDashboardInner() {
                     <td className={TD_R}>
                       <Link
                         href={`/super-admin/alfabot/${s.id}`}
-                        className="text-[11px] font-medium text-purple-500 underline-offset-2 hover:underline"
+                        className="text-[11px] font-medium text-secondary underline-offset-2 hover:underline"
                       >
                         Inspect
                       </Link>
@@ -669,7 +674,7 @@ function AlfabotDashboardInner() {
           Coming in v1.1 (requires offline clustering job). For now, see audit log entries via{' '}
           <Link
             href="/super-admin/logs?action=alfabot.respond"
-            className="text-purple-500 underline-offset-2 hover:underline"
+            className="text-secondary underline-offset-2 hover:underline"
           >
             /super-admin/logs?action=alfabot.respond
           </Link>
@@ -682,7 +687,7 @@ function AlfabotDashboardInner() {
         For forensic message review, use the{' '}
         <Link
           href={sessions.length > 0 ? `/super-admin/alfabot/${sessions[0].id}` : '#'}
-          className="text-purple-500"
+          className="text-secondary"
         >
           session detail
         </Link>{' '}

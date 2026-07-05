@@ -82,23 +82,26 @@ function Row({ c, onCurated }: { c: Candidate; onCurated: () => void }) {
   }, [c.question_id, c.distractor_index, code, label, labelHi, onCurated]);
 
   return (
-    <div className="rounded-lg border border-purple-200 bg-white p-4 mb-3">
-      <div className="text-xs text-gray-500 mb-2">
+    <div
+      className="rounded-lg border bg-surface-1 p-4 mb-3"
+      style={{ borderColor: 'color-mix(in srgb, var(--secondary) 30%, transparent)' }}
+    >
+      <div className="text-xs text-muted-foreground mb-2">
         Class {c.grade} {c.subject}
         {c.chapter_number != null ? ` · Ch. ${c.chapter_number}` : ''}
         {' · '}
         {c.times_wrong}/{c.total_responses} wrong ({(c.wrong_rate * 100).toFixed(1)}%)
       </div>
-      <div className="font-medium text-gray-900 mb-2 whitespace-pre-wrap">
+      <div className="font-medium text-foreground mb-2 whitespace-pre-wrap">
         {c.question_text}
       </div>
       <div className="text-sm mb-3 space-y-0.5">
-        <div className="text-red-700">
+        <div className="text-danger">
           <span className="font-mono mr-2">[{c.distractor_index}]</span>
           <span className="line-through">{distractor}</span>
           <span className="ml-2 text-xs">← students pick this</span>
         </div>
-        <div className="text-green-700">
+        <div className="text-success">
           <span className="font-mono mr-2">[{c.correct_answer_index}]</span>
           {correct}
           <span className="ml-2 text-xs">← correct</span>
@@ -106,25 +109,25 @@ function Row({ c, onCurated }: { c: Candidate; onCurated: () => void }) {
       </div>
 
       {done ? (
-        <div className="text-sm text-green-700 font-medium">✓ Curated</div>
+        <div className="text-sm text-success font-medium">✓ Curated</div>
       ) : (
         <div className="space-y-2">
           <input
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm font-mono"
+            className="w-full rounded border border-surface-3 px-2 py-1 text-sm font-mono"
             placeholder="misconception_code (e.g. confuses_mass_with_weight)"
             value={code}
             onChange={(e) => setCode(e.target.value)}
             disabled={submitting}
           />
           <input
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+            className="w-full rounded border border-surface-3 px-2 py-1 text-sm"
             placeholder="Misconception label (English, ≥5 chars)"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             disabled={submitting}
           />
           <input
-            className="w-full rounded border border-gray-300 px-2 py-1 text-sm"
+            className="w-full rounded border border-surface-3 px-2 py-1 text-sm"
             placeholder="Hindi label (optional)"
             value={labelHi}
             onChange={(e) => setLabelHi(e.target.value)}
@@ -135,11 +138,11 @@ function Row({ c, onCurated }: { c: Candidate; onCurated: () => void }) {
               type="button"
               onClick={submit}
               disabled={submitting || !code || !label}
-              className="rounded bg-purple-600 text-white text-sm px-3 py-1 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded bg-secondary text-on-accent text-sm px-3 py-1 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Saving…' : 'Save'}
             </button>
-            {error && <span className="text-xs text-red-600">{error}</span>}
+            {error && <span className="text-xs text-danger">{error}</span>}
           </div>
         </div>
       )}
@@ -187,20 +190,20 @@ export default function MisconceptionsPage() {
   return (
     <main className="max-w-4xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold mb-1">Misconception Curator</h1>
-      <p className="text-sm text-gray-600 mb-6">
+      <p className="text-sm text-muted-foreground mb-6">
         Phase 3 of the Foxy moat plan. Each row is a wrong-answer pattern
         students fall into; tag the misconception so Foxy can name it and
         remediate next time.
       </p>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="flex rounded border border-gray-300 overflow-hidden">
+        <div className="flex rounded border border-surface-3 overflow-hidden">
           {(['pending', 'curated', 'all'] as StatusFilter[]).map((s) => (
             <button
               key={s}
               type="button"
               className={`px-3 py-1 text-sm ${
-                status === s ? 'bg-purple-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'
+                status === s ? 'bg-secondary text-on-accent' : 'bg-surface-1 text-foreground hover:bg-surface-2'
               }`}
               onClick={() => setStatus(s)}
             >
@@ -209,7 +212,7 @@ export default function MisconceptionsPage() {
           ))}
         </div>
         <select
-          className="rounded border border-gray-300 px-2 py-1 text-sm"
+          className="rounded border border-surface-3 px-2 py-1 text-sm"
           value={grade}
           onChange={(e) => setGrade(e.target.value)}
         >
@@ -219,7 +222,7 @@ export default function MisconceptionsPage() {
           ))}
         </select>
         <select
-          className="rounded border border-gray-300 px-2 py-1 text-sm"
+          className="rounded border border-surface-3 px-2 py-1 text-sm"
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
         >
@@ -233,19 +236,25 @@ export default function MisconceptionsPage() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
-        <span className="text-sm text-gray-600 ml-auto">
+        <span className="text-sm text-muted-foreground ml-auto">
           {loading ? 'Loading…' : `${items.length} of ${total} shown`}
         </span>
       </div>
 
       {error && (
-        <div className="mb-3 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+        <div
+          className="mb-3 rounded border p-3 text-sm text-danger"
+          style={{
+            borderColor: 'color-mix(in srgb, var(--danger) 35%, transparent)',
+            backgroundColor: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+          }}
+        >
           Error: {error}
         </div>
       )}
 
       {!loading && items.length === 0 && !error && (
-        <div className="rounded border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-600">
+        <div className="rounded border border-surface-3 bg-surface-2 p-6 text-center text-sm text-muted-foreground">
           No candidates match the current filters.
           {status === 'pending' && ' (Either everything is curated, or no questions have ≥10 responses with ≥3 wrong picks at the 10% threshold yet.)'}
         </div>

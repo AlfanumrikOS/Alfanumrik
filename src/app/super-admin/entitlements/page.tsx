@@ -479,7 +479,13 @@ function EntitlementsContent() {
 
       {/* ---- error ---- */}
       {schoolId && !loading && error && (
-        <div className="rounded-lg border border-danger/40 bg-danger/5 p-4">
+        <div
+          className="rounded-lg border p-4"
+          style={{
+            borderColor: 'color-mix(in srgb, var(--danger) 40%, transparent)',
+            backgroundColor: 'color-mix(in srgb, var(--danger) 5%, transparent)',
+          }}
+        >
           <div className="text-sm text-danger">{error}</div>
           <button
             onClick={() => void loadPanel(schoolId)}
@@ -503,7 +509,13 @@ function EntitlementsContent() {
           />
 
           {/* enforcement banner */}
-          <div className="mb-5 rounded-lg border border-warning/40 bg-warning/5 p-3">
+          <div
+            className="mb-5 rounded-lg border p-3"
+            style={{
+              borderColor: 'color-mix(in srgb, var(--warning) 40%, transparent)',
+              backgroundColor: 'color-mix(in srgb, var(--warning) 5%, transparent)',
+            }}
+          >
             <div className="text-xs font-semibold text-warning">
               {isHi ? 'प्रवर्तन बंद है' : 'Enforcement is OFF'}
             </div>
@@ -568,7 +580,10 @@ function EntitlementsContent() {
 
       {/* ---- sticky save bar ---- */}
       {data && dirtyCount > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-surface-3 bg-surface-1/95 px-6 py-3 backdrop-blur">
+        <div
+          className="fixed bottom-0 left-0 right-0 z-20 border-t border-surface-3 px-6 py-3 backdrop-blur"
+          style={{ backgroundColor: 'color-mix(in srgb, var(--surface-1) 95%, transparent)' }}
+        >
           <div className="mx-auto flex max-w-screen-2xl items-center justify-between gap-4">
             <div className="text-sm font-medium text-foreground">
               {dirtyCount}{' '}
@@ -596,7 +611,7 @@ function EntitlementsContent() {
               <button
                 onClick={() => void save()}
                 disabled={saving}
-                className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-on-accent hover:opacity-90 disabled:opacity-50"
               >
                 {saving ? (isHi ? 'सहेजा जा रहा है…' : 'Saving…') : isHi ? 'सहेजें' : 'Save'}
               </button>
@@ -609,7 +624,7 @@ function EntitlementsContent() {
       {toast && (
         <div
           className={`fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-md px-4 py-2 text-sm font-medium shadow-lg ${
-            toast.kind === 'ok' ? 'bg-success text-white' : 'bg-danger text-white'
+            toast.kind === 'ok' ? 'bg-success text-on-accent' : 'bg-danger text-on-accent'
           }`}
           role="status"
         >
@@ -776,7 +791,7 @@ function EntitlementRow({
             }`}
           >
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              className={`inline-block h-4 w-4 transform rounded-full bg-surface-1 transition-transform ${
                 currentToggle ? 'translate-x-6' : 'translate-x-1'
               }`}
             />

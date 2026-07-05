@@ -3,17 +3,17 @@
 import { useState, useEffect, useCallback, use } from 'react';
 
 const colors = {
-  bg: '#FFFFFF',
-  surface: '#F9FAFB',
-  border: '#E5E7EB',
-  borderLight: '#F3F4F6',
-  text1: '#111827',
-  text2: '#6B7280',
-  text3: '#9CA3AF',
-  success: '#16A34A',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
-  warning: '#D97706',
+  bg: 'var(--surface-1)',
+  surface: 'var(--surface-2)',
+  border: 'var(--surface-3)',
+  borderLight: 'var(--surface-2)',
+  text1: 'var(--text-1)',
+  text2: 'var(--text-2)',
+  text3: 'var(--text-3)',
+  success: 'var(--success)',
+  danger: 'var(--danger)',
+  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+  warning: 'var(--warning)',
 } as const;
 
 const S = {
@@ -307,7 +307,7 @@ export default function ViewAsProgressPage({
                                       m.mastery_probability * 100
                                     )}%`,
                                     height: '100%',
-                                    background: '#7C3AED',
+                                    background: 'var(--purple)',
                                     borderRadius: 3,
                                   }}
                                 />
