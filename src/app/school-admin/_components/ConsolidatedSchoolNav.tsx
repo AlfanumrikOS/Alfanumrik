@@ -205,7 +205,7 @@ export interface ConsolidatedSchoolNavProps {
   brandTitle: string;
   brandSubtitle: string;
   logoUrl?: string | null;
-  /** Hex for active highlight. Default '#7C3AED' (brand-purple). */
+  /** Color for active highlight. Default 'var(--purple)' (brand-purple). */
   primaryColor?: string;
   currentPath: string;
   isHi: boolean;
@@ -246,7 +246,7 @@ export default function ConsolidatedSchoolNav({
   brandTitle,
   brandSubtitle,
   logoUrl,
-  primaryColor = '#7C3AED',
+  primaryColor = 'var(--purple)',
   currentPath,
   isHi,
   moduleEnablement,
@@ -310,7 +310,7 @@ export default function ConsolidatedSchoolNav({
         ) : (
           <div
             aria-hidden="true"
-            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-sm font-bold text-white"
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-sm font-bold text-on-accent"
             style={{ background: primaryColor }}
           >
             {initial}
@@ -359,7 +359,7 @@ export default function ConsolidatedSchoolNav({
             }
 
             const activeStyle = active
-              ? { color: primaryColor, background: `${primaryColor}14`, borderLeftColor: primaryColor }
+              ? { color: primaryColor, background: `color-mix(in srgb, ${primaryColor} 8%, transparent)`, borderLeftColor: primaryColor }
               : { borderLeftColor: 'transparent' };
             return (
               <Link
@@ -369,7 +369,7 @@ export default function ConsolidatedSchoolNav({
                 onClick={onItemClick}
                 className={twMerge(
                   'relative flex items-center gap-2.5 border-l-[3px] px-3 py-2.5 text-[13px] no-underline transition-colors',
-                  active ? 'font-semibold' : 'font-normal text-foreground/80 hover:bg-surface-2',
+                  active ? 'font-semibold' : 'font-normal text-muted-foreground hover:bg-surface-2',
                 )}
                 style={activeStyle}
               >

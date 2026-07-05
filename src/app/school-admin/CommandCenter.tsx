@@ -160,15 +160,15 @@ function SeatGauge({
   // red=over, emerald=within). Otherwise fall back to the Wave A utilization ramp.
   const bar = band
     ? band === 'over'
-      ? 'bg-red-500'
+      ? 'bg-danger'
       : band === 'grace'
-        ? 'bg-amber-500'
-        : 'bg-emerald-500'
+        ? 'bg-warning'
+        : 'bg-success'
     : clamped >= 90
-      ? 'bg-amber-500'
+      ? 'bg-warning'
       : clamped >= 60
-        ? 'bg-[var(--purple,#7C3AED)]'
-        : 'bg-emerald-500';
+        ? 'bg-[var(--purple)]'
+        : 'bg-success';
 
   const bandLabel =
     band === 'grace'
@@ -177,7 +177,7 @@ function SeatGauge({
         ? tt(isHi, 'Over plan', 'योजना से अधिक')
         : null;
 
-  const bandColor = band === 'over' ? '#DC2626' : band === 'grace' ? '#92400E' : undefined;
+  const bandColor = band === 'over' ? 'var(--danger)' : band === 'grace' ? 'var(--warning)' : undefined;
 
   return (
     <div className="flex flex-col gap-1">
@@ -264,13 +264,13 @@ function OverviewStrip({
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-      <Kpi label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} color="#7C3AED" />
-      <Kpi label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} color="#0891B2" />
-      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="#F97316" />
+      <Kpi label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} color="var(--purple)" />
+      <Kpi label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} color="var(--info)" />
+      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="var(--orange)" />
       <Kpi
         label={tt(isHi, 'Active', 'सक्रिय')}
         value={overview.active_students}
-        color="#16A34A"
+        color="var(--success)"
       />
       {/* Seat utilization. Wave A: display-only. Wave B (flag ON): the same
           gauge augmented with the enforcement band (within plan / grace / over),
@@ -288,7 +288,7 @@ function OverviewStrip({
       <Kpi
         label={tt(isHi, 'Avg mastery', 'औसत महारत')}
         value={masteryPct(overview.avg_mastery)}
-        color="#7C3AED"
+        color="var(--purple)"
       />
     </div>
   );
@@ -359,7 +359,7 @@ function SchoolPicker({
             key={id}
             type="button"
             onClick={() => onPick(id)}
-            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px] truncate"
+            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple)] active:scale-[0.99] transition-all min-h-[44px] truncate"
           >
             {id}
           </button>
@@ -388,8 +388,8 @@ function SetupChecklist({ isHi }: { isHi: boolean }) {
   return (
     <section
       aria-label={tt(isHi, 'Get started', 'शुरू करें')}
-      className="rounded-2xl border border-[var(--purple,#7C3AED)] bg-[var(--surface-1)] p-4 sm:p-5"
-      style={{ background: 'color-mix(in srgb, var(--purple,#7C3AED) 6%, var(--surface-1))' }}
+      className="rounded-2xl border border-[var(--purple)] bg-[var(--surface-1)] p-4 sm:p-5"
+      style={{ background: 'color-mix(in srgb, var(--purple) 6%, var(--surface-1))' }}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -418,14 +418,14 @@ function SetupChecklist({ isHi }: { isHi: boolean }) {
           <li key={step.href}>
             <a
               href={step.href}
-              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-3 text-sm font-semibold text-[var(--text-1)] no-underline hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px]"
+              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-3 text-sm font-semibold text-[var(--text-1)] no-underline hover:border-[var(--purple)] active:scale-[0.99] transition-all min-h-[44px]"
             >
               <span
                 aria-hidden="true"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-[var(--purple,#7C3AED)]"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-[var(--purple)]"
               />
               <span className="truncate">{tt(isHi, step.en, step.hi)}</span>
-              <span aria-hidden="true" className="ml-auto text-[var(--purple,#7C3AED)]">→</span>
+              <span aria-hidden="true" className="ml-auto text-[var(--purple)]">→</span>
             </a>
           </li>
         ))}
@@ -585,7 +585,7 @@ export default function CommandCenter() {
                   <button
                     type="button"
                     onClick={() => overviewSWR.mutate()}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[var(--purple,#7C3AED)] active:scale-95 transition-transform min-h-[44px]"
+                    className="px-4 py-2 rounded-xl text-sm font-semibold text-on-accent bg-[var(--purple)] active:scale-95 transition-transform min-h-[44px]"
                   >
                     {tt(isHi, 'Retry', 'दोबारा कोशिश करें')}
                   </button>

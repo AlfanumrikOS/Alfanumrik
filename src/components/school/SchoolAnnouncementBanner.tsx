@@ -61,7 +61,7 @@ async function fetchLatestAnnouncement(): Promise<Announcement | null> {
 
 export default function SchoolAnnouncementBanner({
   isHi,
-  accentColor = '#7C3AED',
+  accentColor = 'var(--purple)',
 }: SchoolAnnouncementBannerProps) {
   const [dismissed, setDismissed] = useState<string | null>(null);
 
@@ -86,7 +86,7 @@ export default function SchoolAnnouncementBanner({
   // Loading skeleton to prevent CLS
   if (isLoading) {
     return (
-      <div className="w-full rounded-2xl animate-pulse" style={{ background: '#f3f4f6', height: 80 }} />
+      <div className="w-full rounded-2xl animate-pulse" style={{ background: 'var(--surface-2)', height: 80 }} />
     );
   }
 
@@ -113,8 +113,8 @@ export default function SchoolAnnouncementBanner({
       role="status"
       aria-label={isHi ? 'स्कूल की घोषणा' : 'School announcement'}
       style={{
-        background: `${accentColor}08`,
-        border: `1.5px solid ${accentColor}25`,
+        background: `color-mix(in srgb, ${accentColor} 3%, transparent)`,
+        border: `1.5px solid color-mix(in srgb, ${accentColor} 15%, transparent)`,
       }}
     >
       {/* Dismiss button */}
@@ -122,7 +122,7 @@ export default function SchoolAnnouncementBanner({
         onClick={handleDismiss}
         className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full transition-colors"
         style={{
-          background: `${accentColor}10`,
+          background: `color-mix(in srgb, ${accentColor} 6%, transparent)`,
           color: accentColor,
           minWidth: 44,
           minHeight: 44,
@@ -139,7 +139,7 @@ export default function SchoolAnnouncementBanner({
         {/* Icon */}
         <div
           className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg"
-          style={{ background: `${accentColor}15`, color: accentColor }}
+          style={{ background: `color-mix(in srgb, ${accentColor} 8%, transparent)`, color: accentColor }}
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path d="M18 3H2a1 1 0 00-1 1v12a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1zm-1 12H3V5h14v10z" />

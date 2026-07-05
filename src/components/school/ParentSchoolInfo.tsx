@@ -22,9 +22,9 @@ export default function ParentSchoolInfo() {
   return (
     <div style={{
       padding: 16,
-      background: '#fff',
+      background: 'var(--surface-1)',
       borderRadius: 12,
-      border: '1px solid #e5e7eb',
+      border: '1px solid var(--surface-3)',
       marginBottom: 16,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -41,21 +41,21 @@ export default function ParentSchoolInfo() {
             height: 36, width: 36, borderRadius: 8,
             background: primaryColor,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontWeight: 700, fontSize: 16,
+            color: 'var(--surface-1)', fontWeight: 700, fontSize: 16,
           }}>
             {(tenant.schoolName || 'S')[0]}
           </div>
         )}
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>
             {tenant.schoolName}
           </div>
           {tenant.branding.tagline && (
-            <div style={{ fontSize: 11, color: '#888' }}>{tenant.branding.tagline}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{tenant.branding.tagline}</div>
           )}
         </div>
       </div>
-      <div style={{ marginTop: 12, fontSize: 11, color: '#aaa' }}>
+      <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-3)' }}>
         {t(isHi, 'Your child is learning at this school via Alfanumrik',
           'आपका बच्चा इस स्कूल में अल्फान्यूमरिक के माध्यम से पढ़ रहा है')}
       </div>

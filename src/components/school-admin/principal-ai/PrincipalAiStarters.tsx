@@ -67,7 +67,7 @@ export default function PrincipalAiStarters({ isHi, disabled, onPick }: Principa
               role="listitem"
               disabled={disabled}
               onClick={() => onPick(isHi ? starter.hi : starter.en)}
-              className="min-h-[48px] rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-4 py-3 text-left text-sm font-medium text-[var(--text-1)] transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple,#7C3AED)] disabled:opacity-50"
+              className="min-h-[48px] rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-4 py-3 text-left text-sm font-medium text-[var(--text-1)] transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] disabled:opacity-50"
             >
               {label}
             </button>

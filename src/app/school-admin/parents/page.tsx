@@ -78,7 +78,7 @@ function formatDate(dateStr: string): string {
 function statusColor(status: ParentLink['status']): string {
   if (status === 'approved') return 'var(--green)';
   if (status === 'pending') return 'var(--orange)';
-  return '#DC2626';
+  return 'var(--danger)';
 }
 
 function statusLabel(isHi: boolean, status: ParentLink['status']): string {
@@ -526,7 +526,7 @@ export default function SchoolAdminParentsPage() {
             style={{
               background: isActive ? 'var(--surface-1)' : 'transparent',
               color: isActive ? 'var(--text-1)' : 'var(--text-3)',
-              boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              boxShadow: isActive ? '0 1px 3px color-mix(in srgb, var(--text-1) 8%, transparent)' : 'none',
             }}
           >
             {tab === 'links'
@@ -1001,11 +1001,11 @@ export default function SchoolAdminParentsPage() {
               <div
                 className="rounded-xl p-4"
                 style={{
-                  background: 'rgba(22,163,74,0.06)',
-                  border: '1px solid rgba(22,163,74,0.2)',
+                  background: 'color-mix(in srgb, var(--success) 6%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)',
                 }}
               >
-                <p className="text-sm font-semibold" style={{ color: '#16A34A' }}>
+                <p className="text-sm font-semibold" style={{ color: 'var(--success)' }}>
                   {t(isHi, 'Message sent!', 'संदेश भेजा गया!')}
                 </p>
                 <p className="text-xs text-[var(--text-2)] mt-1">
@@ -1019,7 +1019,7 @@ export default function SchoolAdminParentsPage() {
             {linksError && activeTab === 'message' && (
               <p
                 className="text-xs font-medium px-1"
-                style={{ color: '#DC2626' }}
+                style={{ color: 'var(--danger)' }}
                 role="alert"
               >
                 {linksError}
@@ -1065,9 +1065,9 @@ export default function SchoolAdminParentsPage() {
       {/* ── Success Toast ── */}
       {successMsg && (
         <div
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-lg pointer-events-none animate-fade-in"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-on-accent shadow-lg pointer-events-none animate-fade-in"
           style={{
-            background: 'rgba(22,163,74,0.92)',
+            background: 'color-mix(in srgb, var(--success) 92%, transparent)',
             backdropFilter: 'blur(8px)',
             whiteSpace: 'nowrap',
           }}

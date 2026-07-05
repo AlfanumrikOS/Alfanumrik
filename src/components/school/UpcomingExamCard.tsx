@@ -56,25 +56,25 @@ function getUrgency(startTime: string): UrgencyTheme {
 
   if (ms < HOURS_24) {
     return {
-      bg: 'rgba(220,38,38,0.04)',
-      border: 'rgba(220,38,38,0.25)',
-      badge: 'rgba(220,38,38,0.1)',
-      badgeText: '#DC2626',
+      bg: 'color-mix(in srgb, var(--danger) 4%, transparent)',
+      border: 'color-mix(in srgb, var(--danger) 25%, transparent)',
+      badge: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+      badgeText: 'var(--danger)',
     };
   }
   if (ms < DAYS_3) {
     return {
-      bg: 'rgba(217,119,6,0.04)',
-      border: 'rgba(217,119,6,0.2)',
-      badge: 'rgba(217,119,6,0.1)',
-      badgeText: '#D97706',
+      bg: 'color-mix(in srgb, var(--warning) 4%, transparent)',
+      border: 'color-mix(in srgb, var(--warning) 20%, transparent)',
+      badge: 'color-mix(in srgb, var(--warning) 10%, transparent)',
+      badgeText: 'var(--orange)',
     };
   }
   return {
-    bg: 'rgba(22,163,74,0.04)',
-    border: 'rgba(22,163,74,0.15)',
-    badge: 'rgba(22,163,74,0.1)',
-    badgeText: '#16A34A',
+    bg: 'color-mix(in srgb, var(--success) 4%, transparent)',
+    border: 'color-mix(in srgb, var(--success) 15%, transparent)',
+    badge: 'color-mix(in srgb, var(--success) 10%, transparent)',
+    badgeText: 'var(--success)',
   };
 }
 
@@ -95,7 +95,7 @@ async function fetchUpcomingExams(): Promise<SchoolExam[]> {
 
 /* ─── Component ─── */
 
-export default function UpcomingExamCard({ isHi, accentColor = '#7C3AED' }: UpcomingExamCardProps) {
+export default function UpcomingExamCard({ isHi, accentColor = 'var(--purple)' }: UpcomingExamCardProps) {
   const { data: exams, isLoading } = useSWR(
     'school-upcoming-exams',
     fetchUpcomingExams,
@@ -108,7 +108,7 @@ export default function UpcomingExamCard({ isHi, accentColor = '#7C3AED' }: Upco
   // Loading skeleton to prevent CLS
   if (isLoading) {
     return (
-      <div className="w-full rounded-2xl animate-pulse" style={{ background: '#f3f4f6', height: 72 }} />
+      <div className="w-full rounded-2xl animate-pulse" style={{ background: 'var(--surface-2)', height: 72 }} />
     );
   }
 

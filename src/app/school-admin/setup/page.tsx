@@ -171,7 +171,7 @@ function Step1Profile({ profile, isHi, onSave, saving }: Step1Props) {
         className="rounded-xl p-4 text-center"
         style={{
           background: primaryColor,
-          color: '#fff',
+          color: 'var(--surface-1)',
           border: `2px solid ${secondaryColor}`,
         }}
       >
@@ -296,7 +296,7 @@ function Step2Classes({ createdClasses, schoolId, isHi, onClassesCreated, onNext
           </p>
           <div className="flex flex-wrap gap-2">
             {createdClasses.map((cls) => (
-              <Badge key={cls.id} color="#16A34A" size="md">
+              <Badge key={cls.id} color="var(--success)" size="md">
                 {cls.name} (Grade {cls.grade})
                 {cls.section ? ` - ${cls.section}` : ''}
               </Badge>
@@ -316,7 +316,7 @@ function Step2Classes({ createdClasses, schoolId, isHi, onClassesCreated, onNext
               {classList.length > 1 && (
                 <button
                   onClick={() => removeRow(idx)}
-                  className="text-xs text-red-500 font-semibold"
+                  className="text-xs text-danger font-semibold"
                   aria-label={t(isHi, 'Remove this class', 'इस कक्षा को हटाएं')}
                 >
                   {t(isHi, 'Remove', 'हटाएं')}
@@ -350,7 +350,7 @@ function Step2Classes({ createdClasses, schoolId, isHi, onClassesCreated, onNext
       ))}
 
       {error && (
-        <p className="text-sm text-red-500 text-center font-medium" role="alert">
+        <p className="text-sm text-danger text-center font-medium" role="alert">
           {error}
         </p>
       )}
@@ -497,7 +497,7 @@ function Step3InviteCodes({
       </div>
 
       {/* Generate form */}
-      <Card accent="#7C3AED">
+      <Card accent="var(--purple)">
         <div className="space-y-3">
           <Select
             label={t(isHi, 'Role / भूमिका', 'Role / भूमिका')}
@@ -519,7 +519,7 @@ function Step3InviteCodes({
           )}
 
           {error && (
-            <p className="text-sm text-red-500 font-medium" role="alert">{error}</p>
+            <p className="text-sm text-danger font-medium" role="alert">{error}</p>
           )}
 
           <Button
@@ -563,7 +563,7 @@ function Step3InviteCodes({
                       {ic.code}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
-                      <Badge color={ic.role === 'teacher' ? '#7C3AED' : '#F97316'}>
+                      <Badge color={ic.role === 'teacher' ? 'var(--purple)' : 'var(--orange)'}>
                         {ic.role === 'teacher'
                           ? t(isHi, 'Teacher', 'शिक्षक')
                           : t(isHi, 'Student', 'छात्र')}
@@ -580,9 +580,9 @@ function Step3InviteCodes({
                     onClick={() => handleCopy(ic.code)}
                     className="px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
                     style={{
-                      background: isCopied ? '#16A34A' : 'var(--surface-2)',
+                      background: isCopied ? 'var(--success)' : 'var(--surface-2)',
                       border: '1px solid var(--border)',
-                      color: isCopied ? '#fff' : 'var(--text-2)',
+                      color: isCopied ? 'var(--surface-1)' : 'var(--text-2)',
                       minHeight: '40px',
                     }}
                     aria-label={t(isHi, 'Copy join link', 'जॉइन लिंक कॉपी करें')}
@@ -656,7 +656,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
         </h3>
         <div
           className="rounded-xl p-4 text-center mb-3"
-          style={{ background: profile.primary_color, color: '#fff' }}
+          style={{ background: profile.primary_color, color: 'var(--surface-1)' }}
         >
           <p className="font-bold">{profile.name}</p>
           {profile.tagline && <p className="text-xs opacity-80 mt-1">{profile.tagline}</p>}
@@ -674,7 +674,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
       </Card>
 
       {/* Classes Summary */}
-      <Card accent="#16A34A">
+      <Card accent="var(--success)">
         <h3 className="text-sm font-bold text-[var(--text-3)] uppercase tracking-wider mb-3">
           {t(isHi, `Classes (${classes.length})`, `कक्षाएं (${classes.length})`)}
         </h3>
@@ -685,7 +685,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
         ) : (
           <div className="flex flex-wrap gap-2">
             {classes.map((cls) => (
-              <Badge key={cls.id} color="#16A34A">
+              <Badge key={cls.id} color="var(--success)">
                 {cls.name} (Gr. {cls.grade})
               </Badge>
             ))}
@@ -694,7 +694,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
       </Card>
 
       {/* Invite Codes Summary */}
-      <Card accent="#F97316">
+      <Card accent="var(--orange)">
         <h3 className="text-sm font-bold text-[var(--text-3)] uppercase tracking-wider mb-3">
           {t(isHi, `Invite Codes (${inviteCodes.length})`, `आमंत्रण कोड (${inviteCodes.length})`)}
         </h3>
@@ -712,7 +712,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
                 >
                   {ic.code}
                 </span>
-                <Badge color={ic.role === 'teacher' ? '#7C3AED' : '#F97316'}>
+                <Badge color={ic.role === 'teacher' ? 'var(--purple)' : 'var(--orange)'}>
                   {ic.role}
                 </Badge>
               </div>
@@ -943,7 +943,7 @@ export default function SchoolAdminSetupPage() {
 
       {/* Step indicator */}
       <div className="flex justify-center pt-4 pb-2">
-        <StepIndicator total={4} current={step} color="#7C3AED" />
+        <StepIndicator total={4} current={step} color="var(--purple)" />
       </div>
 
       {/* Step labels */}
@@ -957,7 +957,7 @@ export default function SchoolAdminSetupPage() {
             }}
             className="text-xs font-medium transition-colors"
             style={{
-              color: idx === step ? '#7C3AED' : idx < step ? 'var(--text-2)' : 'var(--text-3)',
+              color: idx === step ? 'var(--purple)' : idx < step ? 'var(--text-2)' : 'var(--text-3)',
               cursor: idx <= step ? 'pointer' : 'default',
               opacity: idx > step ? 0.5 : 1,
             }}
@@ -970,11 +970,11 @@ export default function SchoolAdminSetupPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="mx-4 mb-3 rounded-xl p-3 text-center" style={{ background: '#FEE2E2', border: '1px solid #FCA5A5' }}>
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="mx-4 mb-3 rounded-xl p-3 text-center" style={{ background: 'color-mix(in srgb, var(--danger) 15%, transparent)', border: '1px solid color-mix(in srgb, var(--danger) 40%, transparent)' }}>
+          <p className="text-sm text-danger">{error}</p>
           <button
             onClick={() => setError(null)}
-            className="text-xs text-red-500 font-semibold mt-1"
+            className="text-xs text-danger font-semibold mt-1"
           >
             {t(isHi, 'Dismiss', 'बंद करें')}
           </button>

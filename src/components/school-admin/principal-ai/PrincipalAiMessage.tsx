@@ -45,8 +45,8 @@ export default function PrincipalAiMessage({ message, isHi }: PrincipalAiMessage
     return (
       <div className="flex justify-end">
         <div
-          className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed text-white shadow-sm"
-          style={{ background: 'var(--purple,#7C3AED)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+          className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed text-on-accent shadow-sm"
+          style={{ background: 'var(--purple)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
         >
           {content}
         </div>

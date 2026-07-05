@@ -125,11 +125,11 @@ function NewCodeDisplay({ code, isHi }: NewCodeDisplayProps) {
     <div
       className="rounded-2xl p-4 text-center mt-4 mb-2"
       style={{
-        background: 'linear-gradient(135deg, #F0FDF4, #DCFCE7)',
-        border: '1.5px solid #16A34A30',
+        background: 'linear-gradient(135deg, color-mix(in srgb, var(--success) 6%, transparent), color-mix(in srgb, var(--success) 12%, transparent))',
+        border: '1.5px solid color-mix(in srgb, var(--success) 19%, transparent)',
       }}
     >
-      <p className="text-xs font-semibold mb-2" style={{ color: '#16A34A' }}>
+      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--success)' }}>
         {t(isHi, '✅ Code generated!', '✅ कोड बन गया!')}
       </p>
       <p
@@ -147,9 +147,9 @@ function NewCodeDisplay({ code, isHi }: NewCodeDisplayProps) {
         onClick={handleCopy}
         className="mt-3 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95"
         style={{
-          background: copied ? '#16A34A' : 'var(--surface-1)',
+          background: copied ? 'var(--success)' : 'var(--surface-1)',
           border: '1px solid var(--border)',
-          color: copied ? '#fff' : 'var(--text-2)',
+          color: copied ? 'var(--surface-1)' : 'var(--text-2)',
           minHeight: '40px',
         }}
       >
@@ -194,10 +194,10 @@ function CodeCard({
       : t(isHi, 'Active', 'सक्रिय');
 
   const statusColor = !code.is_active
-    ? '#7D7264'
+    ? 'var(--text-3)'
     : expired
-      ? '#DC2626'
-      : '#16A34A';
+      ? 'var(--danger)'
+      : 'var(--success)';
 
   const roleColor =
     code.role_type === 'teacher' ? 'var(--purple)' : 'var(--teal)';
@@ -248,7 +248,7 @@ function CodeCard({
             {code.used_count}/{code.max_uses}{' '}
             {t(isHi, 'uses', 'उपयोग')}
           </span>
-          <span style={{ color: expired ? '#DC2626' : 'var(--text-3)' }}>
+          <span style={{ color: expired ? 'var(--danger)' : 'var(--text-3)' }}>
             {expired
               ? t(isHi, 'Expired', 'समाप्त हो गया')
               : `${t(isHi, 'Expires', 'समाप्त')} ${formatDate(code.expires_at)}`}
@@ -258,7 +258,7 @@ function CodeCard({
           value={usePct}
           color={
             usePct >= 100
-              ? '#DC2626'
+              ? 'var(--danger)'
               : usePct >= 80
                 ? 'var(--orange)'
                 : 'var(--teal)'
@@ -274,9 +274,9 @@ function CodeCard({
           onClick={() => onCopy(code.id)}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
           style={{
-            background: isCopied ? '#16A34A' : 'var(--surface-2)',
+            background: isCopied ? 'var(--success)' : 'var(--surface-2)',
             border: '1px solid var(--border)',
-            color: isCopied ? '#fff' : 'var(--text-2)',
+            color: isCopied ? 'var(--surface-1)' : 'var(--text-2)',
             minHeight: '36px',
           }}
           aria-label={t(isHi, 'Copy code', 'कोड कॉपी करें')}
@@ -296,7 +296,7 @@ function CodeCard({
             style={{
               background: 'var(--surface-2)',
               border: '1px solid var(--border)',
-              color: '#DC2626',
+              color: 'var(--danger)',
               minHeight: '36px',
               opacity: isDeactivating ? 0.6 : 1,
               cursor: isDeactivating ? 'not-allowed' : 'pointer',
@@ -489,7 +489,7 @@ function TabSwitcher({ active, onChange, isHi }: TabSwitcherProps) {
             style={{
               background: isSelected ? 'var(--surface-1)' : 'transparent',
               color: isSelected ? 'var(--text-1)' : 'var(--text-3)',
-              boxShadow: isSelected ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
+              boxShadow: isSelected ? '0 1px 4px color-mix(in srgb, var(--text-1) 6%, transparent)' : 'none',
               minHeight: '40px',
             }}
           >
@@ -859,9 +859,9 @@ export default function InviteCodesPage() {
             role="alert"
             className="rounded-xl px-4 py-3 text-xs font-medium"
             style={{
-              background: 'rgba(220,38,38,0.06)',
-              border: '1px solid rgba(220,38,38,0.2)',
-              color: '#DC2626',
+              background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+              color: 'var(--danger)',
             }}
           >
             {t(

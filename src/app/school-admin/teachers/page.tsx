@@ -169,7 +169,7 @@ function InviteModal({ open, onClose, schoolId, isHi }: InviteModalProps) {
         {genError && (
           <p
             className="text-sm font-medium px-3 py-2 rounded-xl"
-            style={{ background: 'rgba(220,38,38,0.07)', color: '#DC2626' }}
+            style={{ background: 'color-mix(in srgb, var(--danger) 7%, transparent)', color: 'var(--danger)' }}
             role="alert"
           >
             {genError}
@@ -180,8 +180,8 @@ function InviteModal({ open, onClose, schoolId, isHi }: InviteModalProps) {
           <div
             className="rounded-2xl p-4 space-y-3"
             style={{
-              background: 'rgba(232,88,28,0.05)',
-              border: '1.5px solid rgba(232,88,28,0.18)',
+              background: 'color-mix(in srgb, var(--orange) 5%, transparent)',
+              border: '1.5px solid color-mix(in srgb, var(--orange) 18%, transparent)',
             }}
           >
             {/* Label */}
@@ -563,8 +563,8 @@ export default function SchoolAdminTeachersPage() {
           <div
             className="rounded-2xl p-4 flex items-center gap-3"
             style={{
-              background: 'linear-gradient(135deg, rgba(232,88,28,0.06), rgba(255,122,61,0.04))',
-              border: '1.5px dashed rgba(232,88,28,0.25)',
+              background: 'linear-gradient(135deg, color-mix(in srgb, var(--orange) 6%, transparent), color-mix(in srgb, var(--orange) 4%, transparent))',
+              border: '1.5px dashed color-mix(in srgb, var(--orange) 25%, transparent)',
             }}
           >
             <span className="text-3xl flex-shrink-0" aria-hidden="true">👩‍🏫</span>

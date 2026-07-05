@@ -63,7 +63,7 @@ export default function TeacherClassSelector({ onClassChange }: Props) {
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ fontSize: 12, color: '#666', marginBottom: 4, display: 'block' }}>
+      <label style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 4, display: 'block' }}>
         {t(isHi, 'Select Class', 'कक्षा चुनें')}
       </label>
       <select
@@ -72,10 +72,10 @@ export default function TeacherClassSelector({ onClassChange }: Props) {
         style={{
           padding: '8px 12px',
           borderRadius: 8,
-          border: '1px solid #e5e7eb',
+          border: '1px solid var(--surface-3)',
           fontSize: 13,
           minWidth: 200,
-          background: '#fff',
+          background: 'var(--surface-1)',
         }}
       >
         <option value="">{t(isHi, 'All Classes', 'सभी कक्षाएँ')}</option>

@@ -97,7 +97,7 @@ export default function ClassesAtRiskRail({
           <button
             type="button"
             onClick={onRetry}
-            className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[var(--purple,#7C3AED)] active:scale-95 transition-transform min-h-[44px]"
+            className="px-4 py-2 rounded-xl text-sm font-semibold text-on-accent bg-[var(--purple)] active:scale-95 transition-transform min-h-[44px]"
           >
             {tt(isHi, 'Retry', 'दोबारा कोशिश करें')}
           </button>
@@ -139,7 +139,7 @@ export default function ClassesAtRiskRail({
                 <div className="shrink-0 text-right">
                   <p
                     className={`text-sm font-bold ${
-                      row.at_risk_count > 0 ? 'text-red-600' : 'text-[var(--text-2)]'
+                      row.at_risk_count > 0 ? 'text-danger' : 'text-[var(--text-2)]'
                     }`}
                   >
                     {row.at_risk_count}{' '}

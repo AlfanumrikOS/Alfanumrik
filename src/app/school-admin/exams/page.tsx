@@ -165,11 +165,11 @@ function formatDateRange(startStr: string, endStr: string): string {
 
 function statusColor(status: ExamStatus): string {
   switch (status) {
-    case 'draft': return '#7D7264';
-    case 'scheduled': return '#3B82F6';
-    case 'active': return '#22C55E';
-    case 'completed': return '#6B7280';
-    case 'cancelled': return '#EF4444';
+    case 'draft': return 'var(--text-3)';
+    case 'scheduled': return 'var(--info)';
+    case 'active': return 'var(--success)';
+    case 'completed': return 'var(--text-3)';
+    case 'cancelled': return 'var(--danger)';
     default: return 'var(--text-3)';
   }
 }
@@ -333,9 +333,9 @@ function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps)
             onClick={() => onStatusChange(exam, 'scheduled')}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
             style={{
-              background: 'rgba(59,130,246,0.06)',
-              border: '1px solid rgba(59,130,246,0.2)',
-              color: '#3B82F6',
+              background: 'color-mix(in srgb, var(--info) 6%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--info) 20%, transparent)',
+              color: 'var(--info)',
               minHeight: 32,
             }}
           >
@@ -348,9 +348,9 @@ function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps)
               onClick={() => onStatusChange(exam, 'active')}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
               style={{
-                background: 'rgba(22,163,74,0.06)',
-                border: '1px solid rgba(22,163,74,0.2)',
-                color: '#16A34A',
+                background: 'color-mix(in srgb, var(--success) 6%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)',
+                color: 'var(--success)',
                 minHeight: 32,
               }}
             >
@@ -360,9 +360,9 @@ function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps)
               onClick={() => onStatusChange(exam, 'cancelled')}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
               style={{
-                background: 'rgba(220,38,38,0.06)',
-                border: '1px solid rgba(220,38,38,0.2)',
-                color: '#DC2626',
+                background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+                color: 'var(--danger)',
                 minHeight: 32,
               }}
             >
@@ -376,9 +376,9 @@ function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps)
               onClick={() => onStatusChange(exam, 'completed')}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
               style={{
-                background: 'rgba(107,114,128,0.06)',
-                border: '1px solid rgba(107,114,128,0.2)',
-                color: '#6B7280',
+                background: 'color-mix(in srgb, var(--text-3) 6%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--text-3) 20%, transparent)',
+                color: 'var(--text-3)',
                 minHeight: 32,
               }}
             >
@@ -388,9 +388,9 @@ function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps)
               onClick={() => onStatusChange(exam, 'cancelled')}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
               style={{
-                background: 'rgba(220,38,38,0.06)',
-                border: '1px solid rgba(220,38,38,0.2)',
-                color: '#DC2626',
+                background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+                color: 'var(--danger)',
                 minHeight: 32,
               }}
             >
@@ -522,7 +522,7 @@ function ExamForm({ isHi, existing, classes, onSave, onClose }: ExamFormProps) {
             options={[{ value: '', label: t(isHi, 'Select...', 'चुनें...') }, ...subjectOpts]}
           />
           {errors.subject && (
-            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.subject}</p>
+            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.subject}</p>
           )}
         </div>
         <div>
@@ -533,7 +533,7 @@ function ExamForm({ isHi, existing, classes, onSave, onClose }: ExamFormProps) {
             options={[{ value: '', label: t(isHi, 'Select...', 'चुनें...') }, ...gradeOpts]}
           />
           {errors.grade && (
-            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: '#DC2626' }} role="alert">{errors.grade}</p>
+            <p className="text-xs mt-1 ml-1 font-medium" style={{ color: 'var(--danger)' }} role="alert">{errors.grade}</p>
           )}
         </div>
       </div>
@@ -634,7 +634,7 @@ function ExamForm({ isHi, existing, classes, onSave, onClose }: ExamFormProps) {
 
       {/* Submit error */}
       {submitError && (
-        <p className="text-xs font-medium px-1" style={{ color: '#DC2626' }} role="alert">{submitError}</p>
+        <p className="text-xs font-medium px-1" style={{ color: 'var(--danger)' }} role="alert">{submitError}</p>
       )}
 
       {/* Buttons */}
@@ -709,7 +709,7 @@ function StatusChangeConfirm({ isHi, examTitle, newStatus, onConfirm, onCancel, 
           disabled={loading}
           style={{
             minHeight: 48,
-            background: newStatus === 'cancelled' ? '#DC2626' : undefined,
+            background: newStatus === 'cancelled' ? 'var(--danger)' : undefined,
           }}
         >
           {loading
@@ -1060,7 +1060,7 @@ export default function SchoolAdminExamsPage() {
                 style={{
                   background: isActive ? 'var(--surface-1)' : 'transparent',
                   color: isActive ? 'var(--text-1)' : 'var(--text-3)',
-                  boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                  boxShadow: isActive ? '0 1px 3px color-mix(in srgb, var(--text-1) 8%, transparent)' : 'none',
                 }}
               >
                 {mode === 'upcoming'
@@ -1230,9 +1230,9 @@ export default function SchoolAdminExamsPage() {
                             onClick={() => requestStatusChange(exam, 'scheduled')}
                             className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
                             style={{
-                              background: 'rgba(59,130,246,0.06)',
-                              border: '1px solid rgba(59,130,246,0.2)',
-                              color: '#3B82F6',
+                              background: 'color-mix(in srgb, var(--info) 6%, transparent)',
+                              border: '1px solid color-mix(in srgb, var(--info) 20%, transparent)',
+                              color: 'var(--info)',
                               minHeight: 30,
                             }}
                           >
@@ -1244,9 +1244,9 @@ export default function SchoolAdminExamsPage() {
                             onClick={() => requestStatusChange(exam, 'cancelled')}
                             className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
                             style={{
-                              background: 'rgba(220,38,38,0.06)',
-                              border: '1px solid rgba(220,38,38,0.2)',
-                              color: '#DC2626',
+                              background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
+                              border: '1px solid color-mix(in srgb, var(--danger) 20%, transparent)',
+                              color: 'var(--danger)',
                               minHeight: 30,
                             }}
                           >
@@ -1391,9 +1391,9 @@ export default function SchoolAdminExamsPage() {
       {/* ── Success Toast ── */}
       {successMsg && (
         <div
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-lg pointer-events-none animate-fade-in"
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[70] px-5 py-3 rounded-2xl text-sm font-semibold text-on-accent shadow-lg pointer-events-none animate-fade-in"
           style={{
-            background: 'rgba(22,163,74,0.92)',
+            background: 'color-mix(in srgb, var(--success) 92%, transparent)',
             backdropFilter: 'blur(8px)',
             whiteSpace: 'nowrap',
           }}

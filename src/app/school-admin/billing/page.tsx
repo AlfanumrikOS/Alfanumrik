@@ -55,10 +55,10 @@ interface SchoolInfo {
 function statusBadgeColor(status: string): string {
   switch (status) {
     case 'paid': return 'var(--green)';
-    case 'overdue': return '#DC2626';
+    case 'overdue': return 'var(--danger)';
     case 'sent': return 'var(--purple)';
     case 'generated': return 'var(--orange)';
-    default: return '#7D7264';
+    default: return 'var(--text-3)';
   }
 }
 
@@ -370,7 +370,7 @@ export default function SchoolBillingPage() {
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
                   {t(isHi, 'Monthly Cost', 'मासिक लागत')}
                 </p>
-                <p className="text-lg font-bold mt-1" style={{ color: '#16A34A', fontFamily: 'var(--font-display)' }}>
+                <p className="text-lg font-bold mt-1" style={{ color: 'var(--success)', fontFamily: 'var(--font-display)' }}>
                   {monthlyCost.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 })}
                 </p>
               </div>
@@ -424,7 +424,7 @@ export default function SchoolBillingPage() {
               {/* Table rows */}
               {seatSnapshots.slice(0, 15).map((snap) => {
                 const utilColor = snap.utilization_pct > 90
-                  ? '#DC2626'
+                  ? 'var(--danger)'
                   : snap.utilization_pct > 70
                   ? 'var(--orange)'
                   : 'var(--green)';
@@ -433,7 +433,7 @@ export default function SchoolBillingPage() {
                   <div
                     key={snap.snapshot_date}
                     className="grid grid-cols-4 gap-2 px-3 py-2.5 text-sm"
-                    style={{ borderBottom: '1px solid var(--border-light, #f3f4f6)' }}
+                    style={{ borderBottom: '1px solid var(--border-light, var(--surface-2))' }}
                   >
                     <span style={{ color: 'var(--text-2)' }}>
                       {new Date(snap.snapshot_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
