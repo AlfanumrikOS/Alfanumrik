@@ -106,6 +106,27 @@ describe('signal (b): multiple summary blocks', () => {
     expect(two.contaminated).toBe(true);
     expect(two.evidence).toContain('multiple summary blocks (2)');
   });
+
+  // Assessment pre-pilot condition 2 (2026-07-04): title-case "Summary"
+  // detection restores signal (b) recall for title-case books (math NCERT),
+  // where a merged second chapter also carries an unnumbered "Summary".
+  it('two title-case "Summary" blocks (different following text) fire signal (b) end-to-end', () => {
+    const chunks = [
+      chunk('c1', 'measured carefully. Summary In this chapter, you have studied points, lines and supplementary angles.'),
+      chunk('c2', 'field lines were drawn. Summary Magnetic field is a quantity that has both direction and magnitude.'),
+    ];
+    const scan = runStructuralScan(chunks, 6);
+    expect(scan.summaryBlockCount).toBe(2);
+    const res = detectContamination({
+      chapterNumber: 6,
+      chapterTitle: 'Lines and Angles',
+      series: scan.series,
+      summaryBlockCount: scan.summaryBlockCount,
+      chunks,
+    });
+    expect(res.contaminated).toBe(true);
+    expect(res.evidence).toContain('multiple summary blocks (2)');
+  });
 });
 
 describe('signal (c): title garble', () => {

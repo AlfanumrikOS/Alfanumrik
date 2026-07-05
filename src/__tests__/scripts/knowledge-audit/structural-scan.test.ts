@@ -45,13 +45,22 @@ function chunk(id: string, text: string, type: string | null = null): AuditChunk
 
 const clean = loadFixture('clean-mini-chapter.json');
 const contaminated = loadFixture('contaminated-mini-chapter.json');
+const newSyllabus = loadFixture('new-syllabus-mini-chapter.json');
+const definitionsFixture = loadFixture('definitions-mini-chapter.json');
 
 describe('dimension partition (v2 split)', () => {
-  it('STRUCTURAL (12) + SEMANTIC (10) exactly partition the 22 chunk-pass dimensions', () => {
-    expect(STRUCTURAL_DIMENSIONS).toHaveLength(12);
-    expect(SEMANTIC_DIMENSIONS).toHaveLength(10);
+  it('STRUCTURAL (13) + SEMANTIC (7) exactly partition the 20 chunk-pass dimensions', () => {
+    // 2026-07-04: topics + concepts moved off the semantic lane onto the
+    // deterministic generated_content_scan SSoT lane (chunk_pass 22→20). Then
+    // `definitions` moved from the semantic lane to the deterministic structural
+    // lane (NCERT "X is called Y" is lexically regular): structural 12→13,
+    // semantic 8→7. chunk_pass stays 20 (definitions was always chunk_pass).
+    expect(STRUCTURAL_DIMENSIONS).toHaveLength(13);
+    expect(SEMANTIC_DIMENSIONS).toHaveLength(7);
+    expect(STRUCTURAL_DIMENSIONS).toContain('definitions');
+    expect(SEMANTIC_DIMENSIONS).not.toContain('definitions');
     const union = new Set([...STRUCTURAL_DIMENSIONS, ...SEMANTIC_DIMENSIONS]);
-    expect(union.size).toBe(22);
+    expect(union.size).toBe(20);
     expect([...union].sort()).toEqual([...CHUNK_PASS_DIMENSIONS].sort());
   });
 });
@@ -227,6 +236,26 @@ describe('examples: bare "Example N" + solution-marker variants', () => {
     );
     expect(scan.findings.solved_examples.found_count).toBe(1);
   });
+
+  // Assessment pre-pilot condition 1 (2026-07-04): the bare form is
+  // case-SENSITIVE on the capital E — NCERT prints "Example" capitalized,
+  // while prose "for example 2 marks" is always lowercase.
+  it('prose "for example 2 marks are awarded" is NOT counted; "Example 3" IS', () => {
+    const prose = runStructuralScan(
+      [chunk('c1', 'In the board exam, for example 2 marks are awarded for each correct step.')],
+      6,
+    );
+    expect(prose.findings.examples.found_count).toBe(0);
+    const real = runStructuralScan([chunk('c1', 'Example 3 : Find the value of x in the figure.')], 6);
+    expect(real.findings.examples.found_count).toBe(1);
+  });
+
+  it('dotted form carries the same guard: prose "for example 2.5 litres" NOT counted; all-caps "EXAMPLE 6.1" still counted', () => {
+    const prose = runStructuralScan([chunk('c1', 'A vessel holds, for example 2.5 litres of water.')], 6);
+    expect(prose.findings.examples.found_count).toBe(0);
+    const caps = runStructuralScan([chunk('c1', 'EXAMPLE 6.1 Find the centre of mass of the rod.')], 6);
+    expect(caps.findings.examples.found_count).toBe(1);
+  });
 });
 
 describe('exercises: found-counter vs continuity expectation (machinery moved from coverage.ts)', () => {
@@ -299,6 +328,36 @@ describe('keywords / summary / pages / TitleCase edge behavior', () => {
     expect(scan.findings.summary.found_count).toBe(1);
   });
 
+  // Assessment pre-pilot condition 2 (2026-07-04): math NCERT prints an
+  // unnumbered title-case "Summary" head — must be detected, but guarded
+  // against prose ("in summary, ...", "the Summary of the chapter").
+  it('title-case standalone "Summary" block is detected (math NCERT unnumbered head)', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', 'the angles were computed in detail. Summary In this chapter, you have studied lines, angles and their properties.')],
+      6,
+    );
+    expect(scan.findings.summary.found_count).toBe(1);
+  });
+
+  it('prose "in summary, we learned" and "the Summary of the chapter" never count as blocks', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', 'And so, in summary, we learned that materials differ. Read the Summary of the chapter before the test.')],
+      6,
+    );
+    expect(scan.findings.summary.found_count).toBe(0);
+  });
+
+  it('OCR-flattened title-case Summary duplicated by overlap still fingerprint-dedupes to 1', () => {
+    const scan = runStructuralScan(
+      [
+        chunk('c1', 'measured carefully. Summary Two distinct points determine a unique line in the plane.'),
+        chunk('c2', 'Summary Two distinct points determine a unique line in the plane.'),
+      ],
+      6,
+    );
+    expect(scan.findings.summary.found_count).toBe(1);
+  });
+
   it('pages: explicit markers only — "[page 12]" and "Page 13" count, distinct-deduped', () => {
     const scan = runStructuralScan([chunk('c1', '[page 12] Some content here. Page 13 More content. [page 12] repeated.')], 4);
     expect(scan.findings.pages.found_count).toBe(2);
@@ -314,6 +373,179 @@ describe('keywords / summary / pages / TitleCase edge behavior', () => {
     ].join('\n');
     const scan = runStructuralScan([chunk('c1', text)], 4);
     expect(scan.findings.headings.found_count).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Wave-1 pilot re-run accuracy fixes (2026-07-04): keyword under-split +
+// new-syllabus (unnumbered) subtopic fallback. Synthetic fixture MIRRORS the
+// real g6-science-ch2 format (boxed Keywords header separated from its term
+// list by an intervening prose sidebar; named TitleCase sub-sections below a
+// numbered heading) without copying any corpus text.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runStructuralScan — new-syllabus mini-chapter (pilot re-run fixes, EXACT counts)', () => {
+  const scan = runStructuralScan(newSyllabus.chunks, newSyllabus.chapter_number);
+  const count = (d: (typeof STRUCTURAL_DIMENSIONS)[number]) => scan.findings[d].found_count;
+
+  it('BUG 1: reaches the ~20-term list PAST the intervening prose sidebar (old 600-char window counted ~3)', () => {
+    expect(count('keywords')).toBe(newSyllabus.truth.keywords); // 20
+  });
+
+  it('BUG 1: prose sidebar between "Keywords" and the list is NOT split into fake terms', () => {
+    // If prose leaked, the count would exceed the authored 20 real terms.
+    expect(count('keywords')).toBeLessThanOrEqual(newSyllabus.truth.keywords as number);
+  });
+
+  it('BUG 2: subtopics = 2 numbered N.M.K + 2 named sub-section fallback = 4', () => {
+    expect(count('subtopics')).toBe(newSyllabus.truth.subtopics); // 4
+    expect(scan.findings.subtopics.notes).toMatch(/named sub-section headings \(fallback/);
+  });
+
+  it('BUG 2: named-subtopic terms from the Keywords box do NOT leak into subtopics', () => {
+    // Keyword terms are single words or "Cap lowercase" pairs → never TitleCase
+    // sub-headings; only the two genuine "Cap Cap" sub-heads are added.
+    expect(count('subtopics')).toBe(4);
+  });
+
+  it('headings still count the 3 numbered N.M sections + 2 named TitleCase heads = 5', () => {
+    expect(count('headings')).toBe(newSyllabus.truth.headings); // 5
+  });
+
+  it('evidence stays chunk-id-only within the input set (P13)', () => {
+    const ids = new Set(newSyllabus.chunks.map((c) => c.chunk_id));
+    for (const id of scan.findings.keywords.evidence_chunk_ids) expect(ids.has(id)).toBe(true);
+    for (const id of scan.findings.subtopics.evidence_chunk_ids) expect(ids.has(id)).toBe(true);
+  });
+});
+
+describe('keyword under-split guards (BUG 1)', () => {
+  it('a prose paragraph with NO keyword header → 0 keywords (no false-split)', () => {
+    const prose =
+      'Materials around us have many properties. Metals, Glass and Plastic behave differently when heated or bent. Scientists study these Properties carefully.';
+    const scan = runStructuralScan([chunk('c1', prose)], 3);
+    expect(scan.findings.keywords.found_count).toBe(0);
+  });
+
+  it('whitespace/newline-separated TitleCase list after a header is fully captured (not just the first line)', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', 'Keywords\nLustre\nDensity\nSolubility\nHardness\nElasticity\nConductor')],
+      3,
+    );
+    expect(scan.findings.keywords.found_count).toBe(6);
+  });
+
+  it('multi-word terms survive (single space preserved); "More to" / "know?" prose lines rejected', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', 'Keywords\nMore to\nknow?\nNatural fibre\nSynthetic fibre\nBiodegradable')],
+      3,
+    );
+    // "Natural fibre" + "Synthetic fibre" + "Biodegradable" = 3; "More to" (trailing stopword) and "know?" (punctuation) rejected.
+    expect(scan.findings.keywords.found_count).toBe(3);
+  });
+});
+
+describe('named-subtopic fallback guards (BUG 2)', () => {
+  it('fallback does NOT trigger when numbered N.M.K subtopics >= numbered N.M sections', () => {
+    const scan = runStructuralScan(
+      [
+        chunk('c1', '4.1 Section One\n4.1.1 Sub One\nText here about the topic.\nAlpha Beta\nSome prose sentence.'),
+      ],
+      4,
+    );
+    // numbered subtopics (1) is NOT < numbered headings (1) → fallback off →
+    // the standalone "Alpha Beta" TitleCase line is NOT counted as a subtopic.
+    expect(scan.findings.subtopics.found_count).toBe(1);
+  });
+
+  it('a running header/footer (same TitleCase line in >2 chunks) is NOT counted as a named subtopic', () => {
+    const runningHeader = 'Materials And Their Properties';
+    const mk = (id: string) =>
+      chunk(id, `3.1 Some Section Heading\nSome introductory prose sentence here.\n${runningHeader}\nMore prose follows.`);
+    const scan = runStructuralScan([mk('c1'), mk('c2'), mk('c3')], 3);
+    // The running header appears below the heading in 3 chunks (freq 3 > 2) →
+    // excluded; no other named sub-heads exist → subtopics stays 0.
+    expect(scan.findings.subtopics.found_count).toBe(0);
+  });
+
+  it('tab-delimited table rows below a heading are NOT counted as named subtopics', () => {
+    const scan = runStructuralScan(
+      [chunk('c1', '3.1 Grouping Materials\nSome prose about grouping.\nMetal \tNon-metal \tAlloy\nEnd of section.')],
+      3,
+    );
+    expect(scan.findings.subtopics.found_count).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Definitions (moved off the semantic LLM lane 2026-07-04). NCERT definitional
+// phrasing ("X is/are called/known as/defined as/termed Y") is lexically
+// regular, so definitions are counted deterministically — dedupe by the defined
+// term's HEAD noun (overlap-safe + sub-type collapse). Removing the
+// temperature-0.3 gpt-4o-mini variance was the last g6-science-ch2 pilot-gate
+// blocker (engine under-counted 5 vs truth 10).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runStructuralScan — definitions synthetic mini-chapter (EXACT count vs authored truth)', () => {
+  const scan = runStructuralScan(definitionsFixture.chunks, definitionsFixture.chapter_number);
+  const definitions = scan.findings.definitions;
+
+  it('counts exactly 10 distinct defined terms across all four cue forms', () => {
+    // is/are called, known as, defined as, termed — see fixture `truth.definitions_kept`.
+    expect(definitions.found_count).toBe(definitionsFixture.truth.definitions); // 10
+  });
+
+  it('OVERLAP dedup: the photosynthesis sentence repeated in def-c1 AND def-c2 counts once', () => {
+    // If overlap leaked, the count would exceed the 10 authored distinct terms.
+    expect(definitions.found_count).toBe(10);
+  });
+
+  it('SUB-TYPE collapse: venation + parallel venation + reticulate venation → one head', () => {
+    // All three share head "venation"; if not collapsed the count would be 12.
+    expect(definitions.found_count).toBe(10);
+  });
+
+  it('rejects the 4 non-definition traps (object-article, pronoun idiom, fragment subject, tautology)', () => {
+    // "is called a meeting" (article), "it is called a day" (pronoun subject +
+    // article), "and are called climbers" (conjunction subject fragment), "Such
+    // roots are called fibrous roots" (subject head == object head). If any
+    // leaked the count would be 11-14.
+    expect(definitions.found_count).toBe(10);
+  });
+
+  it('is on the deterministic structural lane (notes marker, no LLM)', () => {
+    expect(definitions.notes).toMatch(/^deterministic structural scan:/);
+    expect(definitions.notes).toMatch(/distinct defined terms/);
+  });
+
+  it('evidence: chunk ids only, subset of input, capped at 5 (P13)', () => {
+    const ids = new Set(definitionsFixture.chunks.map((c) => c.chunk_id));
+    expect(definitions.evidence_chunk_ids.length).toBeLessThanOrEqual(5);
+    for (const id of definitions.evidence_chunk_ids) expect(ids.has(id)).toBe(true);
+  });
+});
+
+describe('definitions — parser unit behavior (inline OCR-flattened, general not chapter-specific)', () => {
+  it('the four cue forms are each recognized inline', () => {
+    for (const [text, present] of [
+      ['A single point that has no size is called a node.', false], // object article "a" → rejected
+      ['The push or pull on an object is called force.', true],
+      ['The bending of light is known as refraction.', true],
+      ['The unit of current is defined as the ampere.', false], // object article "the" → rejected
+      ['The centre point of a circle is termed centre.', true],
+    ] as const) {
+      const scan = runStructuralScan([chunk('c', text)], 6);
+      expect(scan.findings.definitions.found_count).toBe(present ? 1 : 0);
+    }
+  });
+
+  it('demonstrative subjects ("These are known as X") ARE definitions; bare it/this/that/they are NOT', () => {
+    expect(runStructuralScan([chunk('c', 'Small soft-stemmed plants exist. These are known as herbs.')], 6).findings.definitions.found_count).toBe(1);
+    expect(runStructuralScan([chunk('c', 'When the work is over, it is called a day.')], 6).findings.definitions.found_count).toBe(0);
+  });
+
+  it('a chapter with no definitional sentences scores 0 (never guessed)', () => {
+    expect(runStructuralScan(clean.chunks, clean.chapter_number).findings.definitions.found_count).toBe(0);
   });
 });
 

@@ -39,9 +39,27 @@ describe('dimension model (carried over from v1 unchanged)', () => {
   it('has exactly 31 dimensions with no duplicates across the three lanes', () => {
     expect(ALL_DIMENSIONS).toHaveLength(31);
     expect(new Set(ALL_DIMENSIONS).size).toBe(31);
-    expect(CHUNK_PASS_DIMENSIONS).toHaveLength(22);
+    // Lane partition changed 2026-07-04: `topics` + `concepts` moved OFF the
+    // chunk_pass/semantic lane onto the deterministic generated_content_scan
+    // SSoT lane. chunk_pass 22→20, generated_content_scan 4→6.
+    expect(CHUNK_PASS_DIMENSIONS).toHaveLength(20);
     expect(QUESTION_BANK_SCAN_DIMENSIONS).toHaveLength(5);
-    expect(GENERATED_CONTENT_SCAN_DIMENSIONS).toHaveLength(4);
+    expect(GENERATED_CONTENT_SCAN_DIMENSIONS).toHaveLength(6);
+  });
+
+  it('topics + concepts are deterministic SSoT scan dims, NOT semantic/chunk-pass (2026-07-04 adjudication)', () => {
+    for (const d of ['topics', 'concepts'] as const) {
+      expect(GENERATED_CONTENT_SCAN_DIMENSIONS).toContain(d);
+      expect(SEMANTIC_DIMENSIONS).not.toContain(d);
+      expect(CHUNK_PASS_DIMENSIONS).not.toContain(d);
+      expect(STRUCTURAL_DIMENSIONS).not.toContain(d);
+    }
+    // the semantic lane is now 7 dims (was 10): topics + concepts left first,
+    // then definitions moved to the deterministic structural lane 2026-07-04.
+    expect(SEMANTIC_DIMENSIONS).toHaveLength(7);
+    expect(STRUCTURAL_DIMENSIONS).toHaveLength(13);
+    expect(SEMANTIC_DIMENSIONS).not.toContain('definitions');
+    expect(STRUCTURAL_DIMENSIONS).toContain('definitions');
   });
 
   it('matches the migration CHECK constraint dimension list exactly', () => {
@@ -140,11 +158,16 @@ describe('buildSemanticSystemPrompt', () => {
     expect(prompt).toMatch(/same formula restated is the SAME item/i);
   });
 
-  it('embeds a strict JSON output contract that is valid JSON with exactly the 10 semantic dims', () => {
+  it('embeds a strict JSON output contract that is valid JSON with exactly the 7 semantic dims', () => {
     const contract = buildSemanticOutputContract();
     expect(prompt).toContain(contract);
     const parsed = JSON.parse(contract);
-    expect(Object.keys(parsed.dimensions)).toHaveLength(10);
+    expect(Object.keys(parsed.dimensions)).toHaveLength(7);
+    // topics/concepts are SSoT scan dims now, and definitions is deterministic
+    // structural — none may appear in the LLM contract
+    expect(parsed.dimensions.topics).toBeUndefined();
+    expect(parsed.dimensions.concepts).toBeUndefined();
+    expect(parsed.dimensions.definitions).toBeUndefined();
     for (const d of SEMANTIC_DIMENSIONS) {
       expect(parsed.dimensions[d]).toEqual({ items: [], evidence_chunk_ids: [] });
     }

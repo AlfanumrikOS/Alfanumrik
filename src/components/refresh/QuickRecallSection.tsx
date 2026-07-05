@@ -24,6 +24,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { getReviewCards as getDomainReviewCards } from '@/lib/domains/profile';
 import { Button, Skeleton } from '@/components/ui/primitives';
+import { humaneCardLabel } from '@/lib/srs-card-label';
 
 interface ReviewCard {
   id: string;
@@ -156,7 +157,12 @@ export default function QuickRecallSection({ onLoaded, onGraded }: QuickRecallSe
       </header>
 
       <div className="text-center text-fluid-xs text-muted-foreground">
-        {card.subject} · {card.chapter_title || card.topic}
+        {/* Display hardening: quiz-review cards write `topic` as a machine
+            composite dedupe key (subject:chapter:question_id). humaneCardLabel
+            renders it as "Chapter N" (Hindi: "अध्याय N") and passes
+            human-readable topics (Foxy cards) through untouched. The subject
+            is already rendered here, so includeSubject is false. */}
+        {card.subject} · {humaneCardLabel(card.chapter_title || card.topic, { isHi, includeSubject: false })}
       </div>
 
       {/* Whole card taps to flip (a real <button>, keyboard-native). The hint
