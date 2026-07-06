@@ -56,7 +56,7 @@
     "@opentelemetry/core": "^2.6.1",
     "@opentelemetry/instrumentation": "^0.217.0",
     "@opentelemetry/sdk-trace-base": "^2.7.1",
-    "@sentry/nextjs": "^10.53.1",
+    "@sentry/nextjs": "^10.63.0",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
     "@upstash/ratelimit": "^2.0.8",
