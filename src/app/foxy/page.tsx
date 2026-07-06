@@ -1569,7 +1569,7 @@ export default function FoxyPage() {
           </div>
           {/* Predict-before-reveal for active recall step */}
           {showPredictionInput && !predictionSubmitted && (
-            <div className="mt-2 p-3 rounded-xl" style={{ background: `color-mix(in srgb, ${cfg.color} 6%, var(--surface-1))`, border: `1px solid color-mix(in srgb, ${cfg.color} 22%, transparent)` }}>
+            <div className="mt-2 p-4 rounded-2xl shadow-sm" style={{ background: `color-mix(in srgb, ${cfg.color} 6%, var(--surface-1))`, border: `1px solid color-mix(in srgb, ${cfg.color} 22%, transparent)` }}>
               <Field label={<>🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}</>}>
                 <div className="flex items-end gap-2">
                   <Input
@@ -1794,16 +1794,13 @@ export default function FoxyPage() {
             // newly-added (aria-relevant="additions") message is announced.
             // ONLY the container ARIA changes — the REG-55 structured-render
             // DOM/markup inside MessageList is untouched. Gated by
-            // useFoxyOsHeader so the OFF path / desktop are byte-identical.
-            {...(useFoxyOsHeader
-              ? {
-                  role: 'log' as const,
-                  'aria-live': 'polite' as const,
-                  'aria-relevant': 'additions' as const,
-                  'aria-busy': loading,
-                  'aria-label': isHi ? 'Foxy के साथ बातचीत' : 'Conversation with Foxy',
-                }
-              : {})}
+            // unconditionally applied for screen reader parity on all viewports.
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-busy={loading}
+            aria-label={isHi ? 'Foxy के साथ बातचीत' : 'Conversation with Foxy'}
+
           >
             {/* SEL mood check-in — shown once per day at session start */}
             {showSELCheckIn && student && (
@@ -1834,7 +1831,7 @@ export default function FoxyPage() {
             {/* Empty state with ConversationStarters */}
             {messages.length === 0 && (
               <div className="text-center py-12 md:py-20 animate-slide-up">
-                <div className="foxy-hero-mascot text-6xl md:text-7xl mb-4">{FOXY_FACES.idle}</div>
+                <div className="foxy-hero-mascot text-5xl md:text-6xl mb-2">{FOXY_FACES.idle}</div>
                 <h2 className="text-2xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, var(--accent-warm), ${cfg?.color || 'var(--purple)'})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'var(--accent-warm)' }}>{getEmptyStateHeading()}</h2>
                 <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">
                   {getEmptyStateSubtitle()}
