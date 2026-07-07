@@ -1,2 +1,2 @@
-// auto-generated re-export stub — do not edit manually
-export * from '../../../../../../packages/lib/src/flags/registries/pedagogy.ts';
+// auto-generated re-export stub
+export * from '../../../../../../packages/lib/src/flags/registries/pedagogy';

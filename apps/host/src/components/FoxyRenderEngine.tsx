@@ -1,2 +1,2 @@
-// auto-generated re-export stub — do not edit manually
+// auto-generated re-export stub
 export * from '@alfanumrik/ui/FoxyRenderEngine';

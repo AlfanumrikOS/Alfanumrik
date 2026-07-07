@@ -1,2 +1,2 @@
-// auto-generated re-export stub — do not edit manually
-export * from '../../../../../../packages/lib/src/ai/prompts/tenant-overrides.ts';
+// auto-generated re-export stub
+export * from '../../../../../../packages/lib/src/ai/prompts/tenant-overrides';
