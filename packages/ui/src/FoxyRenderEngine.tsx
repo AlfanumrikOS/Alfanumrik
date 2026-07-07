@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { UIState } from '../hooks/useFoxyOS';
+import { UIState } from '@alfanumrik/lib/hooks/useFoxyOS';
 
 interface FoxyRenderEngineProps {
   uiState: UIState;
@@ -69,7 +69,7 @@ export function FoxyRenderEngine({ uiState }: FoxyRenderEngineProps) {
         <div className="mb-4 p-4 bg-green-900/30 border border-green-800 rounded-lg">
           <p className="font-semibold text-green-400">Dopamine Triggers!</p>
           <ul className="list-disc list-inside">
-            {uiState.dopamine_events.map((evt, idx) => (
+            {uiState.dopamine_events.map((evt: any, idx: number) => (
               <li key={idx} className="text-green-200">{evt.message} ({evt.ui_pattern})</li>
             ))}
           </ul>
