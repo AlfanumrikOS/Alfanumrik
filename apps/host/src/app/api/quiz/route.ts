@@ -154,7 +154,7 @@ async function resolveStudent(
     // Fetch grade for the already-resolved student
     const { data: student, error } = await supabaseAdmin
       .from('students')
-      .select('id, grade')
+      .select('id, grade, account_status')
       .eq('id', studentId)
       .eq('is_active', true)
       .is('deleted_at', null)
@@ -163,12 +163,15 @@ async function resolveStudent(
     if (error || !student) {
       return { ok: false, response: errorResponse(errors.noStudent, 404) };
     }
+    if (student.account_status === 'suspended') {
+      return { ok: false, response: errorResponse(errors.noStudent, 403, { reason: 'account_suspended' }) };
+    }
     studentGrade = String(student.grade);
   } else {
     // Fallback: look up student by auth user id
     const { data: student, error } = await supabaseAdmin
       .from('students')
-      .select('id, grade')
+      .select('id, grade, account_status')
       .eq('auth_user_id', authUserId)
       .eq('is_active', true)
       .is('deleted_at', null)
@@ -176,6 +179,9 @@ async function resolveStudent(
 
     if (error || !student) {
       return { ok: false, response: errorResponse(errors.noStudent, 404) };
+    }
+    if (student.account_status === 'suspended') {
+      return { ok: false, response: errorResponse(errors.noStudent, 403, { reason: 'account_suspended' }) };
     }
     studentId = student.id;
     studentGrade = String(student.grade);

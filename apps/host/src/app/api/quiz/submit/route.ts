@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
   const admin = getSupabaseAdmin();
   const { data: studentRow } = await admin
     .from('students')
-    .select('id')
+    .select('id, account_status')
     .eq('auth_user_id', auth.userId)
     .eq('is_active', true)
     .is('deleted_at', null)
@@ -156,6 +156,12 @@ export async function POST(request: NextRequest) {
   if (!studentRow?.id) {
     return NextResponse.json(
       { success: false, error: 'No student profile linked to this account', code: 'NO_STUDENT_PROFILE' },
+      { status: 403 },
+    );
+  }
+  if (studentRow.account_status === 'suspended') {
+    return NextResponse.json(
+      { success: false, error: 'Account suspended', code: 'ACCOUNT_SUSPENDED' },
       { status: 403 },
     );
   }
