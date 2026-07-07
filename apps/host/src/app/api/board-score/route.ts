@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 
 /**
  * GET  /api/board-score  — Fetch latest BoardScore™ predictions for the
@@ -88,7 +89,15 @@ export async function GET(request: NextRequest) {
   }
 
   // Forward the student's JWT so Edge Function RLS works correctly.
-  const authHeader = request.headers.get('authorization');
+  let authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+  if (!authHeader) {
+    const supabase = await createSupabaseServerClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      authHeader = `Bearer ${session.access_token}`;
+    }
+  }
+
   if (!authHeader) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
