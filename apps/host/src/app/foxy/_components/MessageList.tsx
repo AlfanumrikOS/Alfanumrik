@@ -33,7 +33,7 @@ import type { QuizMeBinding } from '@alfanumrik/ui/foxy/FoxyStructuredRenderer';
 import type { SubmitQuizAnswerInput, SubmitQuizAnswerResult } from '../_hooks/useFoxyChat';
 import { RichContent } from '@alfanumrik/ui/foxy/RichContent';
 import { FoxyStructuredRenderer } from '@alfanumrik/ui/foxy/FoxyStructuredRenderer';
-import DynamicScaffold from '@/app/_components/DynamicScaffold';
+import DynamicScaffold from './DynamicScaffold';
 
 export interface MessageListProps {
   messages: ChatMessage[];
