@@ -216,8 +216,8 @@ BEGIN
   UPDATE public.students SET
     last_active = NOW(),
     streak_days = CASE
-      WHEN last_active::date = CURRENT_DATE     THEN COALESCE(streak_days, 1)
-      WHEN last_active::date = CURRENT_DATE - 1 THEN COALESCE(streak_days, 0) + 1
+      WHEN (last_active AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date     THEN COALESCE(streak_days, 1)
+      WHEN (last_active AT TIME ZONE 'Asia/Kolkata')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date - 1 THEN COALESCE(streak_days, 0) + 1
       ELSE 1
     END
   WHERE id = p_student_id;

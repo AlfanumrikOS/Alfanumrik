@@ -237,13 +237,13 @@ BEGIN
       v_answer_counts[1], v_answer_counts[2],
       v_answer_counts[3], v_answer_counts[4]
     );
-    IF v_max_same_answer = v_total THEN
+    IF v_max_same_answer = (v_answer_counts[1] + v_answer_counts[2] + v_answer_counts[3] + v_answer_counts[4]) AND (v_answer_counts[1] + v_answer_counts[2] + v_answer_counts[3] + v_answer_counts[4]) > 3 THEN
       v_flagged := true;
     END IF;
   END IF;
 
   -- P3 Check 3: response count matches jsonb_array_length.
-  IF jsonb_array_length(p_responses) <> v_total THEN
+  IF jsonb_array_length(p_responses) <> COALESCE((SELECT array_length(question_ids, 1) FROM quiz_sessions WHERE id = p_session_id), v_total) THEN
     v_flagged := true;
   END IF;
 

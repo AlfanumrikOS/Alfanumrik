@@ -369,22 +369,8 @@
       },
       "ParentChild": {
         "properties": {
-          "board": {
-            "example": "CBSE",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "grade": {
             "example": "9",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "last_active_at": {
-            "example": "2026-06-06T09:00:00.000Z",
             "type": [
               "string",
               "null"
@@ -412,22 +398,34 @@
       },
       "ParentChildrenResponse": {
         "properties": {
-          "children": {
-            "items": {
-              "$ref": "#/components/schemas/ParentChild"
-            },
-            "type": "array"
+          "success": {
+            "type": "boolean"
           },
-          "schemaVersion": {
-            "enum": [
-              1
-            ],
-            "type": "number"
+          "data": {
+            "type": "object",
+            "properties": {
+              "children": {
+                "items": {
+                  "$ref": "#/components/schemas/ParentChild"
+                },
+                "type": "array"
+              },
+              "schemaVersion": {
+                "enum": [
+                  1
+                ],
+                "type": "number"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "children"
+            ]
           }
         },
         "required": [
-          "schemaVersion",
-          "children"
+          "success",
+          "data"
         ],
         "type": "object"
       },
@@ -493,33 +491,45 @@
       },
       "ParentGlanceResponse": {
         "properties": {
-          "child": {
-            "$ref": "#/components/schemas/ParentGlanceChild"
+          "success": {
+            "type": "boolean"
           },
-          "moments": {
-            "$ref": "#/components/schemas/ParentGlanceMoments"
-          },
-          "schemaVersion": {
-            "enum": [
-              1
-            ],
-            "type": "number"
-          },
-          "snapshot": {
-            "$ref": "#/components/schemas/ParentGlanceSnapshot"
-          },
-          "weeklyActivity": {
-            "items": {
-              "$ref": "#/components/schemas/ParentGlanceWeeklyDay"
+          "data": {
+            "type": "object",
+            "properties": {
+              "child": {
+                "$ref": "#/components/schemas/ParentGlanceChild"
+              },
+              "moments": {
+                "$ref": "#/components/schemas/ParentGlanceMoments"
+              },
+              "schemaVersion": {
+                "enum": [
+                  1
+                ],
+                "type": "number"
+              },
+              "snapshot": {
+                "$ref": "#/components/schemas/ParentGlanceSnapshot"
+              },
+              "weeklyActivity": {
+                "items": {
+                  "$ref": "#/components/schemas/ParentGlanceWeeklyDay"
+                },
+                "type": "array"
+              }
             },
-            "type": "array"
+            "required": [
+              "schemaVersion",
+              "child",
+              "snapshot",
+              "moments"
+            ]
           }
         },
         "required": [
-          "schemaVersion",
-          "child",
-          "snapshot",
-          "moments"
+          "success",
+          "data"
         ],
         "type": "object"
       },

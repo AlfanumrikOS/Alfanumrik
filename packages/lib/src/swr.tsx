@@ -1,0 +1,338 @@
+'use client';
+
+/**
+ * SWR Data Layer — Alfanumrik's Caching Architecture
+ *
+ * Why SWR over raw fetch:
+ * 1. Indian students on Jio 4G: show cached data instantly, revalidate in background
+ * 2. Deduplication: 5 components requesting same data = 1 API call
+ * 3. Retry on reconnect: auto-retry when student's phone gets signal back
+ * 4. Focus revalidation: refresh data when student comes back to tab
+ *
+ * This is Alfanumrik's equivalent of Khan Academy's data fetching layer.
+ *
+ * Caching strategy:
+ * - Snapshot: revalidate on focus + after mutations, no polling
+ * - Leaderboard: poll every 5 min (same data for all users)
+ * - Dashboard: revalidate on mount only (mutations trigger manual refresh)
+ * - All hooks: 10s deduping interval to prevent request storms
+ */
+
+import useSWR, { SWRConfiguration } from 'swr';
+import { supabase } from './supabase';
+import {
+  getStudentProfiles,
+  getSubjects,
+  getStudentSnapshot,
+  getFeatureFlags,
+  getStudyPlan,
+  getReviewCards,
+  getLeaderboard,
+  getStudentNotifications,
+  getMasteryOverview,
+} from './supabase';
+
+// Default SWR config optimized for Indian mobile networks
+const DEFAULT_CONFIG: SWRConfiguration = {
+  revalidateOnFocus: false,         // Disabled by default; enabled per-hook where needed
+  revalidateOnReconnect: true,      // Refresh when phone gets signal back
+  dedupingInterval: 10000,          // 10s dedup to prevent request storms at scale
+  errorRetryCount: 2,               // Max 2 retries (down from 3) to reduce thundering herd
+  onErrorRetry: (error, _key, _config, revalidate, { retryCount }) => {
+    // Don't retry on 4xx errors (client errors, auth failures)
+    if (error?.status >= 400 && error?.status < 500) return;
+    // Exponential backoff: 2s, 4s (max 2 retries, capped at 8s)
+    const delay = Math.min(2000 * Math.pow(2, retryCount), 8000);
+    setTimeout(() => revalidate({ retryCount }), delay);
+  },
+  keepPreviousData: true,           // Show stale data while loading new
+};
+
+// Longer cache for relatively static data
+const STATIC_CONFIG: SWRConfiguration = {
+  ...DEFAULT_CONFIG,
+  dedupingInterval: 60000,          // Dedupe for 1 min
+  refreshInterval: 5 * 60 * 1000,  // Refresh every 5 min
+};
+
+/* ── Student Learning Profiles ── */
+export function useStudentProfiles(studentId: string | undefined) {
+  return useSWR(
+    studentId ? `profiles/${studentId}` : null,
+    () => getStudentProfiles(studentId!),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Subjects List (rarely changes) ── */
+export function useSubjects() {
+  return useSWR('subjects', getSubjects, STATIC_CONFIG);
+}
+
+/* ── Student Snapshot (XP, streaks, mastery counts) ── */
+export function useStudentSnapshot(studentId: string | undefined) {
+  return useSWR(
+    studentId ? `snapshot/${studentId}` : null,
+    () => getStudentSnapshot(studentId!),
+    { ...DEFAULT_CONFIG, revalidateOnFocus: true } // No polling; refreshed via invalidateSnapshot() after mutations
+  );
+}
+
+/* ── Feature Flags ── */
+export function useFeatureFlags() {
+  return useSWR('flags', getFeatureFlags, STATIC_CONFIG);
+}
+
+/* ── Study Plan ── */
+export function useStudyPlan(studentId: string | undefined) {
+  return useSWR(
+    studentId ? `study-plan/${studentId}` : null,
+    () => getStudyPlan(studentId!),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Review Cards (spaced repetition) ── */
+export function useReviewCards(studentId: string | undefined, limit = 20) {
+  return useSWR(
+    studentId ? `review/${studentId}/${limit}` : null,
+    () => getReviewCards(studentId!, limit),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Leaderboard (via CDN-cached API route, not direct Supabase) ── */
+export function useLeaderboard(period = 'weekly', limit = 50) {
+  return useSWR(
+    `leaderboard/${period}/${limit}`,
+    async () => {
+      // Use server API route with CDN caching (s-maxage=60) instead of direct
+      // Supabase query. At 50K users this reduces DB load from 10K req/min to 1/min.
+      const res = await fetch(`/api/v1/leaderboard?period=${period}&limit=${limit}`);
+      if (!res.ok) {
+        const error = new Error('Leaderboard fetch failed') as Error & { status: number };
+        error.status = res.status;
+        throw error;
+      }
+      const json = await res.json();
+      return json.data ?? [];
+    },
+    { ...DEFAULT_CONFIG, refreshInterval: 300000 } // 5 min client polling + 60s CDN cache
+  );
+}
+
+/* ── Notifications ── */
+export function useNotifications(studentId: string | undefined, limit = 50) {
+  return useSWR(
+    studentId ? `notifications/${studentId}` : null,
+    () => getStudentNotifications(studentId!, limit),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Mastery Overview ── */
+export function useMasteryOverview(studentId: string | undefined, subject?: string) {
+  return useSWR(
+    studentId ? `mastery/${studentId}/${subject || 'all'}` : null,
+    () => getMasteryOverview(studentId!, subject),
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Learner Loop next action (ADR-001 Phase 3a) ──
+ * Returns the single LearnerAction the UI should dispatch right now.
+ * Cheap: server-side resolver, 30s private cache header. When the
+ * underlying endpoint flag (ff_learner_loop_v1) is OFF, the endpoint
+ * 404s → this hook returns { data: null, isLoading: false }. Components
+ * decide whether to render based on their own UI-side flag
+ * (ff_learner_loop_dashboard_v1 for the hero).
+ */
+export interface LearnerNextResponse {
+  schemaVersion: 1;
+  resolvedAt: string;
+  action: {
+    kind:
+      | 'cold_start_diagnostic'
+      | 'review_due_cards'
+      | 'revise_decayed_topic'
+      | 'start_quiz'
+      | 'continue_lesson'
+      | 'weekly_dive'
+      | 'monthly_synthesis'
+      | 'resume_in_progress';
+    url: string;
+    reason: string;
+    [key: string]: unknown;
+  };
+  meta: { branch: string; cached: boolean };
+}
+
+export function useLearnerNext(studentId: string | undefined) {
+  return useSWR<LearnerNextResponse | null>(
+    studentId ? `learner-next/${studentId}` : null,
+    async () => {
+      const res = await fetch('/api/learner/next', { credentials: 'same-origin' });
+      if (res.status === 404) {
+        // Endpoint flag is OFF, or no student profile. Render nothing.
+        return null;
+      }
+      if (!res.ok) {
+        const error = new Error('learner/next fetch failed') as Error & { status: number };
+        error.status = res.status;
+        throw error;
+      }
+      return (await res.json()) as LearnerNextResponse;
+    },
+    DEFAULT_CONFIG,
+  );
+}
+
+/* ── Learner Loop action for today (Phase 3c follow-on) ──
+ *
+ * Prefers /api/learner/scheduled?horizon=daily (the per-day pinned
+ * projection from #739) and falls back to /api/learner/next when the
+ * scheduled endpoint 404s, returns empty slots, or errors. Net effect
+ * for the consumer:
+ *
+ *   - Same shape as useLearnerNext returns (a LearnerAction-shaped row),
+ *     plus a `source: 'scheduled' | 'next'` discriminator so the UI
+ *     can render a "pinned for today" pill when the projection had a
+ *     slot.
+ *   - When both flags are off, both endpoints 404 → hook returns null,
+ *     consumer renders nothing (identical to legacy).
+ *
+ * The cascade-within-the-fetcher means the consumer doesn't have to
+ * coordinate two hooks. SWR still dedupes the cache by studentId.
+ */
+export interface LearnerActionForTodayResponse {
+  action: LearnerNextResponse['action'];
+  source: 'scheduled' | 'next';
+}
+
+interface ScheduledItemShape {
+  rank: number;
+  actionKind: string;
+  action: LearnerNextResponse['action'];
+  source: 'scheduler' | 'manual_pin' | 'teacher_override';
+  generatedAt: string;
+  expiresAt: string;
+  completedAt: string | null;
+}
+interface ScheduledResponseShape {
+  schemaVersion: 1;
+  horizon: 'daily' | 'weekly' | 'monthly';
+  dayBucket: string;
+  slots: ScheduledItemShape[];
+}
+
+/**
+ * Pure: decide what to return from the cascade given each step's
+ * outcome. Exported for testing — pins the precedence rules without
+ * needing fetch mocks.
+ *
+ *   - scheduled returned a non-empty slot list → use slot[0].action,
+ *     source='scheduled'.
+ *   - scheduled returned a 404 / empty / errored → fall through to
+ *     /api/learner/next.
+ *   - /api/learner/next returned data → use action, source='next'.
+ *   - Both 404/errored → null (consumer renders nothing).
+ */
+export function pickActionForToday(
+  scheduled: ScheduledResponseShape | null,
+  next: LearnerNextResponse | null,
+): LearnerActionForTodayResponse | null {
+  if (scheduled && Array.isArray(scheduled.slots) && scheduled.slots.length > 0) {
+    return { action: scheduled.slots[0].action, source: 'scheduled' };
+  }
+  if (next && next.action) {
+    return { action: next.action, source: 'next' };
+  }
+  return null;
+}
+
+export function useLearnerActionForToday(studentId: string | undefined) {
+  return useSWR<LearnerActionForTodayResponse | null>(
+    studentId ? `learner-action-today/${studentId}` : null,
+    async () => {
+      // Step 1 — scheduled (per-day pinned projection).
+      let scheduled: ScheduledResponseShape | null = null;
+      try {
+        const res = await fetch(
+          '/api/learner/scheduled?horizon=daily',
+          { credentials: 'same-origin' },
+        );
+        if (res.ok) {
+          scheduled = (await res.json()) as ScheduledResponseShape;
+        }
+        // 404 / 500 → fall through silently to step 2.
+      } catch {
+        scheduled = null;
+      }
+
+      // Step 2 — /api/learner/next, only when scheduled didn't yield a slot.
+      let next: LearnerNextResponse | null = null;
+      if (!scheduled || scheduled.slots.length === 0) {
+        try {
+          const res = await fetch('/api/learner/next', { credentials: 'same-origin' });
+          if (res.ok) {
+            next = (await res.json()) as LearnerNextResponse;
+          }
+          // 404 → leave next null; pickActionForToday returns null.
+        } catch {
+          next = null;
+        }
+      }
+
+      return pickActionForToday(scheduled, next);
+    },
+    DEFAULT_CONFIG,
+  );
+}
+
+/* ── Dashboard (batched RPC) ── */
+export function useDashboardData(studentId: string | undefined) {
+  return useSWR(
+    studentId ? `dashboard/${studentId}` : null,
+    async () => {
+      const { data, error } = await supabase.rpc('get_dashboard_data', { p_student_id: studentId });
+      if (error) throw error;
+      return data as Record<string, any>;
+    },
+    DEFAULT_CONFIG
+  );
+}
+
+/* ── Cache Invalidation Helpers ── */
+import { mutate } from 'swr';
+
+export function invalidateSnapshot(studentId: string) {
+  mutate(`snapshot/${studentId}`);
+}
+
+export function invalidateProfiles(studentId: string) {
+  mutate(`profiles/${studentId}`);
+}
+
+export function invalidateLeaderboard() {
+  mutate((key: string) => typeof key === 'string' && key.startsWith('leaderboard/'), undefined, { revalidate: true });
+}
+
+export function invalidateNotifications(studentId: string) {
+  mutate(`notifications/${studentId}`);
+}
+
+export function invalidateDashboard(studentId: string) {
+  mutate(`dashboard/${studentId}`);
+}
+
+export function invalidateAll(studentId: string) {
+  invalidateSnapshot(studentId);
+  invalidateProfiles(studentId);
+  invalidateLeaderboard();
+  invalidateNotifications(studentId);
+}
+
+/** Clear ALL SWR cache entries — call on signout to prevent data leakage between accounts */
+export function clearAllCache() {
+  mutate(() => true, undefined, { revalidate: false });
+}
