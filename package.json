@@ -8,6 +8,7 @@
   "scripts": {
     "dev:host": "npm run dev -w apps/host",
     "dev:foxy": "npm run dev -w apps/foxy -- --port 3001",
-    "dev": "npx concurrently \"npm run dev:host\" \"npm run dev:foxy\""
+    "dev": "npx concurrently \"npm run dev:host\" \"npm run dev:foxy\"",
+    "vercel-build": "npm run build -w apps/host"
   }
 }
