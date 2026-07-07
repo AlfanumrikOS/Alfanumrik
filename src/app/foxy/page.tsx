@@ -101,6 +101,7 @@ import { MessageInput } from './_components/MessageInput';
 import { ReportDialog } from './_components/ReportDialog';
 import { LanguagePicker, ModePicker } from './_components/FoxySettings';
 import { IconButton, Chip, Badge, ConfirmDialog, Field, Input, Button, Dialog, DialogTitle, DialogBody, DialogFooter, BottomSheet } from '@/components/ui/primitives';
+import { Card, CardContent } from '@/components/ui/card';
 
 // Foxy chapter-mastery band → canonical Badge tone (presentation-only; the
 // exact MASTERY_COLORS hex values are dropped in favour of semantic tones so
@@ -373,30 +374,17 @@ export default function FoxyPage() {
   // Defaults OFF → byte-identical to today on every viewport. The >=lg
   // experience is never touched (the new surface is mobile-only).
   const foxyOsEnabled = useFoxyOsFlag();
-  const [foxyOsMobile, setFoxyOsMobile] = useState(false);
   const [studySheetOpen, setStudySheetOpen] = useState(false);
   // Phase 3 — Tools sheet (language / voice / progress / history / context).
   const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
-  // Track the <lg breakpoint with matchMedia so the new surface is rendered
-  // ONLY on phones. The OFF path never enters this effect's render branch.
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(max-width: 1023px)'); // < Tailwind lg (1024px)
-    const apply = () => setFoxyOsMobile(mq.matches);
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
-  // The new mobile surface renders only when the flag is ON and we are <lg.
-  const useFoxyOsHeader = foxyOsEnabled && foxyOsMobile;
 
   // Phase 2 — keyboard-aware composer. Publishes the soft-keyboard inset to the
   // `--kb-inset` CSS var so the `.foxy-os` composer rides above the keyboard
-  // and the message thread shrinks. Gated by `useFoxyOsHeader` so the hook is
+  // and the message thread shrinks. Gated by `foxyOsEnabled` so the hook is
   // inert (keeps `--kb-inset` at 0px) on the OFF path and on every >=lg
   // viewport — those render exactly as today. `keyboardOpen` re-fires the
   // existing auto-scroll-to-bottom effect so the latest message stays visible.
-  const keyboardOpen = useKeyboardInset({ enabled: useFoxyOsHeader });
+  const keyboardOpen = useKeyboardInset({ enabled: foxyOsEnabled });
 
   // Error reporting
   const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
@@ -1569,7 +1557,8 @@ export default function FoxyPage() {
           </div>
           {/* Predict-before-reveal for active recall step */}
           {showPredictionInput && !predictionSubmitted && (
-            <div className="mt-2 p-4 rounded-2xl shadow-sm" style={{ background: `color-mix(in srgb, ${cfg.color} 6%, var(--surface-1))`, border: `1px solid color-mix(in srgb, ${cfg.color} 22%, transparent)` }}>
+            <Card className="mt-2 shadow-sm border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+              <CardContent className="p-4">
               <Field label={<>🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}</>}>
                 <div className="flex items-end gap-2">
                   <Input
@@ -1594,7 +1583,8 @@ export default function FoxyPage() {
                   </Button>
                 </div>
               </Field>
-            </div>
+              </CardContent>
+            </Card>
           )}
           {showPredictionInput && predictionSubmitted && (
             <div className="mt-2 text-[10px] font-semibold" style={{ color: 'var(--green)' }}>
@@ -1830,8 +1820,9 @@ export default function FoxyPage() {
 
             {/* Empty state with ConversationStarters */}
             {messages.length === 0 && (
-              <div className="text-center py-12 md:py-20 animate-slide-up">
-                <div className="foxy-hero-mascot text-5xl md:text-6xl mb-2">{FOXY_FACES.idle}</div>
+              <Card className="mx-auto mt-6 md:mt-12 max-w-lg shadow-sm border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+                <CardContent className="text-center pt-8 animate-slide-up">
+                  <div className="foxy-hero-mascot text-5xl md:text-6xl mb-2">{FOXY_FACES.idle}</div>
                 <h2 className="text-2xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, var(--accent-warm), ${cfg?.color || 'var(--purple)'})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'var(--accent-warm)' }}>{getEmptyStateHeading()}</h2>
                 <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">
                   {getEmptyStateSubtitle()}
@@ -1919,7 +1910,8 @@ export default function FoxyPage() {
                     {cfg.icon} {language === 'hi' ? `\u0905\u0928\u094D\u092F ${topics.length} \u0905\u0927\u094D\u092F\u093E\u092F \u0926\u0947\u0916\u094B` : `Browse ${topics.length} Chapters`}
                   </button>
                 )}
-              </div>
+                </CardContent>
+              </Card>
             )}
 
             {/* Messages — with collapsing, dedup, structured-vs-legacy renderer choice,
@@ -2059,9 +2051,10 @@ export default function FoxyPage() {
 
 
       {/* ═══ FOXY OS — Study bottom sheet (ff_foxy_os_v1, <lg only) ═══ */}
-      {/* Rendered ONLY when the flag is ON and viewport is <lg, so the OFF
+      {/* Rendered ONLY when the flag is ON and viewport is <lg via CSS, so the OFF
           path / >=lg are byte-identical. All actions call existing handlers. */}
-      {useFoxyOsHeader && (
+      {foxyOsEnabled && (
+        <div className="lg:hidden contents">
         <FoxyStudySheet
           open={studySheetOpen}
           onClose={() => setStudySheetOpen(false)}
@@ -2122,6 +2115,7 @@ export default function FoxyPage() {
               : null
           }
         />
+        </div>
       )}
 
       {/* ═══ FOXY OS — Tools bottom sheet (ff_foxy_os_v1, <lg only) ═══ */}
@@ -2131,7 +2125,8 @@ export default function FoxyPage() {
           wired when ff_student_os_v1 (osEnabled) is ON, because that is the
           only flag that mounts the ContextPanel surface; otherwise it is
           omitted (the sheet never invents a context surface). */}
-      {useFoxyOsHeader && (
+      {foxyOsEnabled && (
+        <div className="lg:hidden contents">
         <FoxyToolsSheet
           open={toolsSheetOpen}
           onClose={() => setToolsSheetOpen(false)}
@@ -2161,6 +2156,7 @@ export default function FoxyPage() {
               : undefined
           }
         />
+        </div>
       )}
 
       {/* ═══ UPGRADE MODAL (replaces old limit modal) ═══ */}
@@ -2183,9 +2179,18 @@ export default function FoxyPage() {
 
   return (
     <AppShell
-      className={`foxy-shell${useFoxyOsHeader ? ' foxy-os' : ''}`}
+      className={`foxy-shell${foxyOsEnabled ? ' foxy-os' : ''}`}
       variant="mobile"
-      header={useFoxyOsHeader ? foxyOsHeaderContent : foxyHeaderContent}
+      header={
+        foxyOsEnabled ? (
+          <>
+            <div className="lg:hidden contents">{foxyOsHeaderContent}</div>
+            <div className="hidden lg:contents">{foxyHeaderContent}</div>
+          </>
+        ) : (
+          foxyHeaderContent
+        )
+      }
       
       // One-handed mode toggle stays off on Foxy — the chat composer needs
       // the full viewport vertical reach, and pulling content down would
