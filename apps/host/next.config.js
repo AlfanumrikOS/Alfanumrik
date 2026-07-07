@@ -142,14 +142,6 @@ const nextConfig = {
         source: '/ingest/:path*',
         destination: 'https://us.i.posthog.com/:path*',
       },
-      {
-        source: '/foxy',
-        destination: process.env.FOXY_URL ? `${process.env.FOXY_URL}/foxy` : 'http://localhost:3001/foxy',
-      },
-      {
-        source: '/foxy/:path*',
-        destination: process.env.FOXY_URL ? `${process.env.FOXY_URL}/foxy/:path*` : 'http://localhost:3001/foxy/:path*',
-      },
     ];
   },
   async headers() {
