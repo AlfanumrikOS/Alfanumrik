@@ -98,7 +98,7 @@ function checkNpmLs() {
       ['ls', pkg, '--json', '--depth=0'],
       {
         encoding: 'utf8',
-        cwd: path.resolve(__dirname, '..'),
+        cwd: path.resolve(__dirname, '..', 'apps', 'host'),
         shell: isWindows,
       }
     );
@@ -113,7 +113,9 @@ function checkNpmLs() {
       continue;
     }
 
-    const direct = parsed.dependencies && parsed.dependencies[pkg];
+    // In a monorepo, npm ls might nest the dependencies under the workspace
+    const direct = (parsed.dependencies && parsed.dependencies[pkg]) || 
+                   (parsed.dependencies && parsed.dependencies['alfanumrik-host'] && parsed.dependencies['alfanumrik-host'].dependencies && parsed.dependencies['alfanumrik-host'].dependencies[pkg]);
     if (!direct) {
       fail(
         `${pkg} is a peer dep of ${PEER_OF} but is not in dependencies. ` +
@@ -153,7 +155,7 @@ function checkNpmLs() {
 // and the deploy fails. We use a sub-process so any module side-effects
 // (env reads, console output) don't leak into this script's own state.
 function checkNextConfigBoots() {
-  const repoRoot = path.resolve(__dirname, '..');
+  const repoRoot = path.resolve(__dirname, '..', 'apps', 'host');
   const configPath = path.join(repoRoot, 'next.config.js');
 
   const result = spawnSync(
