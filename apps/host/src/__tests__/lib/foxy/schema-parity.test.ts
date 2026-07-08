@@ -36,10 +36,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Repo root is two levels up from this test file:
-//   src/__tests__/lib/foxy/schema-parity.test.ts -> repo root
-const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
+//   src/__tests__/lib/foxy/schema-parity.test.ts -> apps/host -> repo root
+const REPO_ROOT = join(__dirname, '..', '..', '..', '..', '..');
 
-const NODE_PATH = join(REPO_ROOT, 'src', 'lib', 'foxy', 'schema.ts');
+const NODE_PATH = join(REPO_ROOT, 'packages', 'lib', 'src', 'foxy', 'schema.ts');
 const DENO_PATH = join(
   REPO_ROOT,
   'supabase',

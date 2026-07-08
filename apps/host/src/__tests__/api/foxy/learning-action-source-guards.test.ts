@@ -17,7 +17,7 @@ import { resolve } from 'node:path';
  * module-eval side effects.
  */
 
-const ROOT = resolve(__dirname, '../../../..');
+const ROOT = resolve(__dirname, '../../../../..');
 function read(rel: string): string {
   return readFileSync(resolve(ROOT, rel), 'utf8');
 }
@@ -31,12 +31,12 @@ function stripComments(src: string): string {
     .join('\n');
 }
 
-const ROUTE = 'src/app/api/foxy/learning-action/route.ts';
+const ROUTE = 'apps/host/src/app/api/foxy/learning-action/route.ts';
 const NEW_COMPONENT_FILES = [
   ROUTE,
-  'src/components/foxy/FoxyStructuredRenderer.tsx',
-  'src/components/foxy/ChatBubble.tsx',
-  'src/lib/use-foxy-learning-actions-flag.ts',
+  'packages/ui/src/foxy/FoxyStructuredRenderer.tsx',
+  'packages/ui/src/foxy/ChatBubble.tsx',
+  'apps/host/src/lib/use-foxy-learning-actions-flag.ts',
 ];
 
 const FORBIDDEN_MASTERY_TABLES = [
