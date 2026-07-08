@@ -110,7 +110,7 @@ BEGIN
       v_answer_counts[1], v_answer_counts[2],
       v_answer_counts[3], v_answer_counts[4]
     );
-    IF v_max_same_answer = v_total THEN
+    IF v_max_same_answer = (v_answer_counts[1] + v_answer_counts[2] + v_answer_counts[3] + v_answer_counts[4]) AND (v_answer_counts[1] + v_answer_counts[2] + v_answer_counts[3] + v_answer_counts[4]) > 3 THEN
       v_flagged := true;
     END IF;
   END IF;

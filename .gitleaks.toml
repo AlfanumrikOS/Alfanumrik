@@ -13,4 +13,7 @@ paths = [
     'src/__tests__/ai-prompt-pii\.test\.ts',
     'src/__tests__/sentry-pii-redaction\.test\.ts',
     'src/__tests__/sentry/.*\.test\.ts',
+    'apps/host/src/__tests__/audit\.test\.ts',
+    '\.agents/skills/upstash-qstash-js/fundamentals/local-development\.md',
+    '\.agents/skills/upstash/upstash-qstash-js/fundamentals/local-development\.md',
 ]

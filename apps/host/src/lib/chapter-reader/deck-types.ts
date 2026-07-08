@@ -1,0 +1,2 @@
+// auto-generated re-export stub
+export * from '../../../../../packages/lib/src/chapter-reader/deck-types';

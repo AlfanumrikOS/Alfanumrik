@@ -63,3 +63,4 @@ jobs:
       # would still fail the way Vercel does.
       - name: Verify next.config.js boots cold
         run: node -e "require('./next.config.js')"
+        working-directory: apps/host

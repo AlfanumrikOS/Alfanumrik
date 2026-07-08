@@ -1,0 +1,3923 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Alfanumrik Light Theme ──────────────────────────────── */
+:root {
+  --font-display: "Sora", sans-serif;
+  --font-body: "Plus Jakarta Sans", sans-serif;
+
+  /* ─── Editorial Atlas tokens (2026-05-11) ─────────────────
+     Additive token set introduced with ff_editorial_atlas_v1.
+     Maps cleanly onto the existing palette (--orange, --bg, --text-*)
+     while giving the new redesigned surfaces a vocabulary that maps
+     1:1 to the prototype in docs/design/multi-role-redesign-prototype.html.
+     Existing tokens stay untouched so legacy surfaces keep rendering
+     identically. Atlas pages address tokens via these aliases. */
+  --font-serif:    "Fraunces", Georgia, serif;
+  --paper:         #FFFFFF;
+  --cream:         #FBF8F4;     /* alias of --bg */
+  --cream-2:       #F5F0EA;     /* alias of --surface-2 */
+  --cream-3:       #EDE6DC;     /* alias of --surface-3 */
+  --ink:           #1A1207;     /* alias of --text-1 */
+  --ink-2:         #4A3F2E;
+  --ink-3:         #7D7264;
+  --ink-4:         #A89B86;     /* new: editorial 4th tier for whispers */
+  --accent:        #E8581C;     /* alias of --orange */
+  --accent-soft:   #FBE6D9;
+  --accent-quiet:  #F0C9B0;
+  --teal-deep:     #0F2A2E;     /* new: editorial weight, distinct from --teal */
+  --teal-soft:     #E2EDEC;
+  --gold-soft:     #F8ECD2;
+  --green-soft:    #DDEFE3;
+  --red-soft:      #F6DCDC;
+  --line:          rgba(26, 18, 7, 0.08);
+  --line-mid:      rgba(26, 18, 7, 0.14);
+  --line-strong:   rgba(26, 18, 7, 0.22);
+  --shadow-edge:   inset 0 -1px 0 rgba(26, 18, 7, 0.04);
+  --shadow-atlas-1: 0 1px 3px rgba(26, 18, 7, 0.04), 0 0 0 1px rgba(26, 18, 7, 0.04);
+  --shadow-atlas-2: 0 4px 14px rgba(26, 18, 7, 0.06), 0 0 0 1px rgba(26, 18, 7, 0.05);
+  --radius-atlas:    14px;
+  --radius-atlas-lg: 22px;
+  --radius-pill:     999px;
+  --ease-atlas:      cubic-bezier(.22, 1, .36, 1);
+
+  /* Brand */
+  --orange: #E8581C;
+  --orange-rgb: 232, 88, 28;        /* use as rgb(var(--orange-rgb) / <alpha>) for opacity stacks */
+  --orange-light: #FF7A3D;
+  /* STABLE WARM CHANNEL (Alfa Momentum, Wave 2).
+     --orange-rgb is REMAPPED to violet (139,126,255) under the cosmic-LIGHT
+     student surface (see html[data-design="cosmic"] at ~L2862), so
+     rgb(var(--orange-rgb)/α) renders VIOLET there, not warm orange. This token
+     stays burnt-orange (232,88,28) on EVERY surface, giving a stable channel for
+     warm-orange alpha tints on the dashboard. Use rgb(var(--accent-warm-rgb)/α)
+     wherever a warm-orange tint must remain warm regardless of design scope.
+     Re-declared identically inside the cosmic-light block so it is NOT remapped. */
+  --accent-warm-rgb: 232, 88, 28;
+  /* Solid warm-channel stops (Alfa Momentum, Wave 3 — Foxy). These were
+     previously only declared inside the cosmic-LIGHT block; declaring them
+     here in :root too means `var(--accent-warm)` / `var(--accent-warm-strong)`
+     resolve to the SAME burnt-orange on every surface (default-light, dark,
+     cosmic) — so the Foxy mascot/avatar identity stays warm even when --orange
+     is remapped to violet under data-design="cosmic". */
+  --accent-warm: #E8581C;
+  --accent-warm-strong: #C2440F;   /* darker warm stop for CTA / avatar gradients */
+  --gold: #F5A623;
+  --teal: #0891B2;
+  --green: #16A34A;
+  --purple: #7C3AED;
+  --purple-rgb: 124, 58, 237;       /* for rgb(var(--purple-rgb) / <alpha>) */
+  --purple-light: #9333EA;
+  --pink: #DB2777;
+  --red: #DC2626;
+  --marigold-rgb: 245, 166, 35;     /* channel for the --gold/marigold; rgb(var(--marigold-rgb) / <alpha>) */
+
+  /* ─── Base semantic / status tokens (Alfa Momentum, Wave 6) ──────────────
+     These semantic aliases were previously declared ONLY inside the cosmic
+     and/or dark blocks, so on the DEFAULT-LIGHT surface they resolved to
+     nothing — a real latent bug (Foxy ChatBubble reads var(--success)/
+     var(--warning)/var(--danger); DynamicScaffold reads var(--border-base)/
+     var(--surface-sunken); StatRing bands on var(--mastery-*)). Declaring
+     sensible base values here makes those consumers render on light too. The
+     cosmic / cosmic-light / dark blocks still redeclare these under their own
+     selectors, so those scopes keep winning (higher-specificity selectors). */
+  --success: var(--green);          /* positive / verified — green #16A34A */
+  --warning: var(--gold);           /* caution / check-yourself — marigold #F5A623 */
+  --info: var(--teal);              /* informational — teal #0891B2 */
+  --danger: var(--red);             /* destructive / error — red #DC2626 */
+  --primary: var(--orange);         /* brand primary action — burnt-orange (CTA buttons) */
+  --primary-light: var(--orange-light);
+  --primary-hover: var(--accent-warm-strong);
+  --border-base: var(--border);     /* alias of --border for components using the *-base name */
+  --surface-sunken: var(--surface-2); /* slightly recessed surface (inset wells) */
+  /* Mastery banding — matches the cosmic-light student-surface values so
+     StatRing's default low/mid/high bands resolve on non-cosmic surfaces too. */
+  --mastery-low: var(--red);        /* < 40% — at risk */
+  --mastery-mid: var(--gold);       /* 40–69% — developing */
+  --mastery-high: var(--green);     /* >= 70% — strong */
+
+  /* ─── Light-surface fallbacks for tokens previously cosmic-only (Phase 1) ──
+     --secondary / --xp-color / --streak-color / --level-up (and the
+     Tailwind-referenced --danger-light) were declared ONLY inside the cosmic
+     scope, so on the shipping default-light theme they resolved to nothing —
+     any `bg-secondary` / `text-xp` / `bg-streak` / `bg-level-up` / `danger.light`
+     utility was a silent no-op (transparent / inherited). These base values make
+     those consumers render on light too; the cosmic block still redeclares them
+     under its higher-specificity selector, so cosmic surfaces are unchanged.
+     xp/streak/level-up are ACCENT hues (badges, fills, large numerals/icons),
+     not body-text-on-surface pairs — see the design-system contrast table. */
+  --secondary: var(--purple);       /* secondary brand action — violet #7C3AED */
+  --xp-color: var(--gold);          /* XP accent — marigold #F5A623 */
+  --streak-color: var(--orange);    /* streak flame — burnt-orange #E8581C */
+  --level-up: var(--purple);        /* level-up celebration — violet #7C3AED */
+  --danger-light: #FCE4E4;          /* soft red wash behind danger text/badges */
+
+  /* Surfaces — warm cream base */
+  --bg: #FBF8F4;
+  --bg-rgb: 251, 248, 244;          /* for rgba(var(--bg-rgb) / <alpha>) — used by glass + sticky headers */
+  --surface-1: #FFFFFF;
+  --surface-2: #F5F0EA;
+  --surface-3: #EDE6DC;
+
+  /* Borders */
+  --border: rgba(0, 0, 0, 0.08);
+  --border-mid: rgba(0, 0, 0, 0.12);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  /* Text — Contrast-checked against ALL warm surfaces, not just --bg (Phase 1).
+     The old --text-3 #7D7264 passed on --bg (#FBF8F4, 4.5:1) but FAILED AA on
+     the darker recessed surfaces it also lands on — surface-2 #F5F0EA (4.15:1)
+     and surface-3 #EDE6DC (3.80:1) — where it's used as muted-foreground and as
+     input placeholder text. Darkened to #6B6053 so it clears AA on the WORST
+     case (surface-3):
+       text-1 #1A1207 on bg: 15.2:1 (AAA) — primary text
+       text-2 #4A3F2E on bg:  8.9:1 (AAA) — secondary text
+       text-3 #6B6053 on surface-3: 4.95:1 (AA) / on bg: 5.6:1 (AA)
+     Indian students study outdoors & in harsh sunlight — contrast matters more. */
+  --text-1: #1A1207;
+  --text-2: #4A3F2E;
+  --text-3: #6B6053;
+
+  /* Shadows — subtle dark-ink depth on warm cream. tailwind.config.js already
+     references these names (shadow-sm/md/lg/glow); they were undefined until
+     Phase 1.5 (2026-05-11), so `className="shadow-sm"` was silently a no-op.
+     Components using inline-style boxShadow with hardcoded rgba(0,0,0,*) are
+     migrated to var(--shadow-*) so depth scales with theme. */
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 24px rgba(232, 88, 28, 0.15);
+
+  /* ─── Overlay scrim (Phase 2 Batch B2) ───────────────────────────────────
+     The dimming backdrop behind modals / drawers / bottom-sheets. Anchored to
+     the warm brand ink (26,18,7 = --text-1 #1A1207, matching --shadow-edge) so
+     the scrim reads as a warm dark veil rather than a cold pure-black. Declared
+     in the token layer (like --border / --shadow-*, which are also rgba() here)
+     so components reference ONLY var(--scrim) and never a raw literal. */
+  --scrim: rgba(26, 18, 7, 0.45);
+
+  /* ─── Radius scale (Phase 1 — was UNDEFINED, a real bug) ──────────────────
+     tailwind.config.js maps rounded-sm/md/lg/xl/2xl → var(--radius-sm..2xl),
+     but those tokens never existed, so `rounded-xl` (used ~670×) etc. resolved
+     to the guaranteed-invalid value and computed to border-radius:0 — square
+     corners app-wide. These values mirror stock Tailwind's numeric scale, which
+     is exactly what every author typing `rounded-xl` intended, restoring the
+     designed rounding. (Cosmic keeps its own --r-* scale on its own selectors.) */
+  --radius-sm:  0.125rem;   /* 2px  — chips, tags */
+  --radius-md:  0.375rem;   /* 6px  — inputs, small controls */
+  --radius-lg:  0.5rem;     /* 8px  — buttons, list rows */
+  --radius-xl:  0.75rem;    /* 12px — cards */
+  --radius-2xl: 1rem;       /* 16px — panels, sheets, hero cards */
+
+  /* ─── Primary-CTA gradient stops (Phase 1 — WCAG AA fix) ──────────────────
+     .btn-primary used to gradient var(--orange) #E8581C → var(--orange-light)
+     #FF7A3D under WHITE text: 3.59:1 and 2.59:1 — both FAIL AA. --orange is the
+     global brand signal (used in hundreds of places) so it must NOT change;
+     instead the button reads these dedicated stops, both AA-safe with #fff:
+       #CB4710 → white = 4.72:1 (AA)   #C2440F → white = 5.09:1 (AA)
+     Still a warm burnt-orange CTA. The cosmic scope redeclares these to its
+     violet pair so the cosmic button renders exactly as before. */
+  --btn-primary-from: #CB4710;
+  --btn-primary-to:   #C2440F;   /* == --accent-warm-strong */
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --header-height: 60px;
+  --content-max: 720px;
+  --content-max-wide: 1080px;
+
+  /* ─── Z-index tokens ──────────────────────────────────────
+     Canonical z-index ladder so stacking never collides.
+     Components should use these var() references rather than
+     hardcoded integers. */
+  --z-base:    0;
+  --z-raised:  1;
+  --z-sticky:  10;
+  --z-drawer:  40;
+  --z-nav:     50;
+  --z-modal:   60;
+  --z-toast:   70;
+  --z-tooltip: 80;
+  --z-overlay: 90;
+  --z-skip:    9999;
+
+  /* ─── Paired on-surface / on-accent tokens (Phase 2 — legibility invariant) ─
+     WHY: ~468 hardcoded light-text sites (inline color:#fff + text-white) assume
+     a companion dark/gradient background paints. When that decorative background
+     fails, the text renders white-on-cream = invisible (DD-16). These paired
+     tokens make legibility an INVARIANT OF THE SURFACE: a foreground token is
+     defined *with* the surface it must sit on and is AA-verified against it, so a
+     consumer never has to guess whether #fff is safe. Every pair below is
+     computed sRGB WCAG 2.1 (body ≥4.5:1, large/UI ≥3:1) — see design-system.md §8.
+
+     CONTRACT: text on surface X MUST use --on-X. NEVER a bare #fff / text-white
+     on a decorative background. In particular #fff is AA on the darkened CTA
+     stops (--btn-primary-from/to) but only 3.59:1 on the bare brand --orange
+     (#E8581C) — a FAIL — so --on-accent pairs with the CTA gradient, NOT --orange.
+
+     ── Dark inverse chrome (Foxy-style headers, dark panels) ────────────────── */
+  --surface-inverse:            #241A2E;   /* warm-dark chrome; == Foxy header
+                                              gradient darker base (#241a2e→#16263f) */
+  --on-surface-inverse:         #F4ECDB;   /* 14.16:1 on --surface-inverse (AAA);
+                                              12.92:1 across the full Foxy gradient */
+  --on-surface-inverse-muted:   #C9BCA6;   /*  8.89:1 on --surface-inverse (AAA);
+                                              8.12:1 across the full Foxy gradient */
+
+  /* ── Primary-action (CTA) foreground ──────────────────────────────────────
+     PAIRS WITH: --btn-primary-from #CB4710 (4.72:1 AA) / --btn-primary-to
+     #C2440F (5.09:1 AA). Does NOT certify #fff on bare --orange #E8581C (3.59:1
+     FAIL) — use this token only on the action/CTA surface. */
+  --on-accent:                  #FFFFFF;
+
+  /* ── Branded / gradient header surface (optional, AA-safe) ─────────────────
+     The AA-safe warm CTA gradient reused as a decorative header fill so its
+     foreground is guaranteed legible; --on-surface-accent is verified against
+     the LIGHTER (worst-case) stop #CB4710 = 4.72:1 (AA). */
+  --surface-accent:             linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  --on-surface-accent:          #FFFFFF;
+}
+
+/* ─── Alfanumrik Dark Theme (Phase 1 — 2026-05-11) ────────────
+   Activates when AuthContext writes data-theme="dark" to <html>
+   (via src/lib/AuthContext.tsx applyThemeToDOM). The provider
+   resolves theme === 'system' to the OS preference and writes the
+   resolved value, so CSS only needs the explicit dark selector —
+   no @media (prefers-color-scheme: dark) block here.
+
+   Brand colors stay the same in both themes (orange/gold/teal etc).
+   Surfaces invert from warm-cream to dark-ink. Text inverts to a
+   warm-cream pair contrast-checked against the dark bg:
+     text-1 (#F4ECDB) on bg (#0F0D08): 15.1:1 (AAA)
+     text-2 (#C9BCA6) on bg:            7.4:1 (AA)
+     text-3 (#968974) on bg:            4.5:1 (AA)
+   Borders flip to white-alpha so they read on dark surfaces.
+
+   Components that use inline-style hex colors (e.g. background:
+   '#FBF8F4') will NOT theme-switch — those are tracked as Phase 1.5
+   component-sweep work. The synthetic monitor will surface high-
+   value contrast misses (Row 10+ assert dark-theme cohesion). */
+/* Dark-theme block FROZEN 2026-05-11 — DO NOT ACTIVATE WITHOUT CEO APPROVAL.
+   AuthContext (src/lib/AuthContext.tsx ::resolveTheme) writes data-theme="light"
+   universally. This selector is retargeted to a sentinel value the app NEVER
+   writes, so the variables below stay defined but never activate. Keeping them
+   in the file makes a future restore a one-line selector edit.
+   REG-NOTE: Changing this selector to "dark" without a CEO-approved product
+   invariant change constitutes a P13 (dark surfaces + PII display) risk. */
+[data-theme="dark-disabled-pending-cleanup"] {
+  --bg: #0F0D08;
+  --bg-rgb: 15, 13, 8;
+  --surface-1: #1A1610;
+  --surface-2: #2A241B;
+  --surface-3: #3A3328;
+
+  --border: rgba(244, 236, 219, 0.10);
+  --border-mid: rgba(244, 236, 219, 0.16);
+  --border-strong: rgba(244, 236, 219, 0.26);
+
+  --text-1: #F4ECDB;
+  --text-2: #C9BCA6;
+  --text-3: #968974;
+
+  /* Dark shadows: keep pure black but deepen so depth is perceptible against
+     the near-black surface tokens. rgba(0,0,0,0.03) (the old hardcoded light
+     value) was effectively invisible on a dark bg; these scale to ~0.3 alpha. */
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 24px rgba(232, 88, 28, 0.25);
+
+  /* Deeper, near-black scrim on the dark surfaces (Phase 2 Batch B2). */
+  --scrim: rgba(0, 0, 0, 0.62);
+
+  /* ─── Paired on-surface / on-accent tokens (INERT dark-scope values) ───────
+     Declared so a future CEO-approved dark activation resolves these names
+     coherently. This block is FROZEN (sentinel selector the app never writes),
+     so these values are inert today. Dark keeps the inverse chrome DARK (its
+     Foxy-style consumers are dark-by-identity): an even-darker chrome carries
+     the same warm-cream foreground pair, all AAA:
+       --on-surface-inverse #F4ECDB on #0A0812 = 16.91:1 (AAA)
+       --on-surface-inverse-muted #C9BCA6 on #0A0812 = 10.63:1 (AAA)
+     Brand CTA stops don't change in dark, so --on-accent stays #fff (AA). */
+  --surface-inverse:            #0A0812;
+  --on-surface-inverse:         #F4ECDB;
+  --on-surface-inverse-muted:   #C9BCA6;
+  --on-accent:                  #FFFFFF;
+  --surface-accent:             linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  --on-surface-accent:          #FFFFFF;
+}
+
+/* ─── Base ────────────────────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  /* White-label override chain: tenant typography → Alfanumrik default → system.
+     `--tenant-font-body` is set by TenantConfigProvider when a tenant has
+     configured it (PR #561 + #564); absent on B2C and on tenants who
+     haven't set the field, in which case the var fallback resolves to
+     `--font-body` (Plus Jakarta Sans) → sans-serif. */
+  font-family: var(--tenant-font-body, var(--font-body));
+  background: var(--bg);
+  color: var(--text-1);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+  min-height: 100dvh;
+}
+h1, h2, h3, h4, h5 {
+  /* Same override chain as body: tenant heading → display default → system. */
+  font-family: var(--tenant-font-heading, var(--font-display));
+}
+
+/* ─── Responsive Container ────────────────────────────────── */
+.app-container {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 16px;
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .app-container { padding: 0 24px; }
+}
+
+@media (min-width: 1024px) {
+  .app-container {
+    max-width: var(--content-max-wide);
+    padding: 0 32px;
+  }
+}
+
+/* ─── App Shell ───────────────────────────────────────────── */
+.app-shell {
+  width: 100%;
+  min-height: 100dvh;
+}
+
+/* ─── Desktop Sidebar Layout (only when sidebar exists) ───── */
+@media (min-width: 1024px) {
+  /* :has() guard — Safari < 15.4 + Firefox < 121 fallback */
+  @supports selector(:has(*)) {
+    body:has(.sidebar-nav) {
+      display: flex;
+      flex-direction: row;
+    }
+    body:has(.sidebar-nav) .app-shell {
+      margin-left: var(--sidebar-width);
+      width: calc(100% - var(--sidebar-width));
+    }
+  }
+  /* Fallback for browsers without :has() support */
+  body.has-sidebar {
+    display: flex;
+    flex-direction: row;
+  }
+  body.has-sidebar .app-shell {
+    margin-left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
+  }
+
+  .sidebar-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: var(--sidebar-width);
+    z-index: 50;
+  }
+
+  .pb-nav { padding-bottom: 0 !important; }
+}
+
+/* ─── Responsive Typography ───────────────────────────────── */
+@media (min-width: 768px) {
+  body { font-size: 16px; }
+  .input-base { font-size: 16px; padding: 16px 18px; }
+  .btn-primary { padding: 16px 32px; font-size: 16px; }
+  .btn-ghost { padding: 14px 26px; font-size: 15px; }
+}
+
+@media (min-width: 1024px) {
+  body { font-size: 16px; }
+}
+
+/* ─── Responsive Grids ────────────────────────────────────── */
+.grid-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+@media (min-width: 768px) {
+  .grid-actions {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-actions {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 14px;
+  }
+}
+
+.grid-subjects {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+@media (min-width: 768px) {
+  .grid-subjects {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-subjects {
+    grid-template-columns: repeat(8, 1fr);
+    gap: 14px;
+  }
+}
+
+.grid-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+@media (min-width: 768px) {
+  .grid-stats {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+}
+
+.grid-quiz-subjects {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .grid-quiz-subjects {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-quiz-subjects {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+}
+
+/* ─── Responsive Headers ──────────────────────────────────── */
+.page-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--border);
+  /* Use --bg-rgb so the sticky header tints correctly in both themes
+     (light: cream rgba(251,248,244,.88); dark: ink rgba(15,13,8,.88)). */
+  background: rgba(var(--bg-rgb), 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.page-header-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 12px 16px;
+}
+
+@media (min-width: 768px) {
+  .page-header-inner { padding: 16px 24px; }
+}
+
+@media (min-width: 1024px) {
+  .page-header-inner {
+    max-width: var(--content-max-wide);
+    padding: 16px 32px;
+  }
+}
+
+/* ─── Chat Layout (Foxy) — responsive ─────────────────────── */
+.chat-container {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .chat-container {
+    max-width: 680px;
+  }
+}
+
+/* ─── Card Responsive ─────────────────────────────────────── */
+@media (min-width: 768px) {
+  .card-hover:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* ─── Profile Layout ──────────────────────────────────────── */
+@media (min-width: 768px) {
+  .profile-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 24px;
+    align-items: start;
+  }
+}
+
+/* ─── Leaderboard Table ───────────────────────────────────── */
+@media (min-width: 768px) {
+  .leaderboard-entry {
+    display: grid;
+    grid-template-columns: 48px 48px 1fr auto;
+    gap: 16px;
+    align-items: center;
+  }
+}
+
+/* ─── Study Plan — wider tasks on desktop ─────────────────── */
+@media (min-width: 768px) {
+  .task-actions {
+    flex-direction: row;
+    gap: 8px;
+  }
+}
+
+/* ─── Review Card — centered on desktop ───────────────────── */
+@media (min-width: 768px) {
+  .flashcard-area {
+    max-width: 560px;
+    margin: 0 auto;
+  }
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(232, 88, 28, 0.25); border-radius: 4px; }
+
+/* Scrollbar-hide utility — hide scrollbar while keeping scrollability.
+   Used by foxy-mode-bar, subject tabs, and any horizontal scroll surface. */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* ─── Range Input (Touch-Friendly for Simulations) ────────── */
+/* Minimum 44px touch target per Apple HIG, 48px per Material */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--orange, #E8581C);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+  /* Touch target: 44px clickable area via padding */
+  padding: 10px;
+  box-sizing: content-box;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--orange, #E8581C);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+/* Respect accentColor when set inline */
+input[type="range"][style*="accentColor"]::-webkit-slider-thumb {
+  background: currentColor;
+}
+
+/* ─── Glass ──────────────────────────────────────────────────
+   Frosted surface for cards, popovers, and sticky overlays. Light
+   uses translucent white; dark overrides below use translucent
+   surface-1 ink. Borders use the theme-aware --border tokens. */
+.glass {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1px solid var(--border);
+}
+.glass-mid {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-mid);
+}
+/* Dark-theme glass overrides — disabled along with the dark theme above
+   (REVERSED 2026-05-11). Retargeted to an unreachable selector. */
+[data-theme="dark-disabled-pending-cleanup"] .glass {
+  background: rgba(26, 22, 16, 0.75); /* surface-1 with 75% alpha */
+}
+[data-theme="dark-disabled-pending-cleanup"] .glass-mid {
+  background: rgba(26, 22, 16, 0.6);
+}
+
+/* ─── Gradients ───────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, var(--orange), var(--gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent; /* Firefox fallback for background-clip: text */
+}
+.gradient-brand { background: linear-gradient(135deg, var(--orange), var(--gold)); }
+.gradient-cool { background: linear-gradient(135deg, var(--teal), #6C5CE7); }
+.gradient-warm { background: linear-gradient(135deg, var(--pink), var(--orange)); }
+
+/* ─── Glows ───────────────────────────────────────────────── */
+.glow-orange { box-shadow: 0 0 24px rgba(232, 88, 28, 0.2), 0 0 48px rgba(232, 88, 28, 0.08); }
+.glow-teal { box-shadow: 0 0 24px rgba(8, 145, 178, 0.2); }
+.glow-gold { box-shadow: 0 0 24px rgba(245, 166, 35, 0.2); }
+.text-glow-orange { text-shadow: 0 0 12px rgba(232, 88, 28, 0.3); }
+
+/* ─── Keyframes ───────────────────────────────────────────── */
+@keyframes slideUp { 0% { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes slideDown { 0% { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fadeIn { 0% { opacity: 0; } to { opacity: 1; } }
+@keyframes pulse-ring { 0%, to { transform: scale(1); opacity: 0.8; } 50% { transform: scale(1.08); opacity: 0.3; } }
+@keyframes float { 0%, to { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes shimmer { 0% { background-position: -200%; } to { background-position: 200%; } }
+@keyframes typingBounce { 0%, 60%, to { transform: translateY(0); } 30% { transform: translateY(-6px); } }
+@keyframes streak-flame { 0%, to { transform: scaleY(1) rotate(-2deg); } 50% { transform: scaleY(1.08) rotate(2deg); } }
+@keyframes correctPop { 0% { transform: scale(0.9); } 60% { transform: scale(1.04); } to { transform: scale(1); } }
+@keyframes shake { 0%, to { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+@keyframes xpRise { 0% { transform: translateY(0); opacity: 1; } to { transform: translateY(-40px); opacity: 0; } }
+@keyframes spin-slow { 0% { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.3); } 50% { box-shadow: 0 0 0 12px rgba(232, 88, 28, 0); } }
+
+@keyframes bounceOnce { 0% { transform: scale(1); } 40% { transform: scale(1.15); } 70% { transform: scale(0.95); } 100% { transform: scale(1); } }
+
+/* pulse — used by Foxy avatar + mode-bar glows */
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+
+/* ─── Alfa Momentum keyframes (Wave 0) ─────────────────────────
+   Centralized BODIES for the gamification animations that
+   tailwind.config.js declares under theme.extend.animation but whose
+   keyframes were missing globally (previously injected ad-hoc inside
+   challenge/QuizResults/ExperimentCelebration). With these present the
+   `animate-{scale-in,bounce-in,level-up,xp-burst,streak-pulse,
+   mastery-fill,score-reveal}` utilities work app-wide. The ad-hoc inline
+   copies are intentionally left in place (additive; dedup is a later wave).
+   Spring easing lives in the config animation strings, not here. */
+@keyframes scale-in {
+  0%   { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+@keyframes bounce-in {
+  0%   { transform: scale(0.8);  opacity: 0; }
+  60%  { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+/* level-up: a confident lift + settle for level/milestone reveals */
+@keyframes levelUp {
+  0%   { transform: translateY(8px) scale(0.94); opacity: 0; }
+  55%  { transform: translateY(-4px) scale(1.06); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+/* xp-burst: XP value pops then settles (paired with a +XP rise elsewhere) */
+@keyframes xpBurst {
+  0%   { transform: scale(0.6); opacity: 0; }
+  45%  { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+/* streak-pulse: gentle breathing glow for an active streak (infinite) */
+@keyframes streakPulse {
+  0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(245, 166, 35, 0)); }
+  50%      { transform: scale(1.06); filter: drop-shadow(0 0 6px rgba(245, 166, 35, 0.45)); }
+}
+/* mastery-fill: drives a ring/bar fill via CSS var --fill-to (default 100%) */
+@keyframes masteryFill {
+  0%   { stroke-dashoffset: var(--fill-from, 100%); opacity: 0.6; }
+  100% { stroke-dashoffset: var(--fill-to, 0); opacity: 1; }
+}
+/* score-reveal: the headline score number arrives with a spring */
+@keyframes scoreReveal {
+  0%   { transform: scale(0.7) translateY(6px); opacity: 0; }
+  60%  { transform: scale(1.08) translateY(0); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* ─── Animation Classes ───────────────────────────────────── */
+.animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.animate-slide-down { animation: slideDown 0.3s ease both; }
+.animate-fade-in { animation: fadeIn 0.35s ease both; }
+.animate-float { animation: float 3s ease-in-out infinite; }
+.animate-shimmer { background-size: 200% auto; animation: shimmer 2s linear infinite; }
+.animate-spin-slow { animation: spin-slow 8s linear infinite; }
+.typing-dot { animation: typingBounce 1.2s ease-in-out infinite; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+.streak-flame { animation: streak-flame 0.8s ease-in-out infinite; }
+.quiz-correct { animation: correctPop 0.4s ease; }
+.quiz-wrong { animation: shake 0.35s ease; }
+.xp-rise { animation: xpRise 1.2s ease forwards; }
+.animate-bounce-once { animation: bounceOnce 0.5s ease; }
+
+/* ─── Stagger Animations (CSS-only, replaces framer-motion) ── */
+.stagger-hidden .stagger-item {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.stagger-visible .stagger-item {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.4s cubic-bezier(0.25,0.1,0.25,1), transform 0.4s cubic-bezier(0.25,0.1,0.25,1);
+}
+.stagger-visible .stagger-item:nth-child(1) { transition-delay: 0s; }
+.stagger-visible .stagger-item:nth-child(2) { transition-delay: 0.08s; }
+.stagger-visible .stagger-item:nth-child(3) { transition-delay: 0.16s; }
+.stagger-visible .stagger-item:nth-child(4) { transition-delay: 0.24s; }
+.stagger-visible .stagger-item:nth-child(5) { transition-delay: 0.32s; }
+.stagger-visible .stagger-item:nth-child(6) { transition-delay: 0.40s; }
+
+/* ─── Reduced Motion (vestibular disorder accessibility) ──── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-float, .animate-shimmer, .animate-spin-slow,
+  .typing-dot, .streak-flame, .xp-rise,
+  /* Alfa Momentum (Wave 0): kill the looping streak glow; the spring-in
+     reveals (scale/bounce/level/xp/score/mastery) are already collapsed to
+     ~0ms by the * rule above, so they settle instantly without motion. */
+  .animate-streak-pulse {
+    animation: none !important;
+  }
+  .card-hover:hover { transform: none; }
+}
+
+/* ─── Interactive ─────────────────────────────────────────── */
+.card-hover {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  border-color: rgba(232, 88, 28, 0.25);
+}
+.card-hover:active { transform: translateY(0) scale(0.98); }
+.xp-bar { transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ─── Focus Screen (quiz active, Foxy guided session) ────── */
+.focus-screen .bottom-nav-mobile { display: none !important; }
+.focus-screen .sidebar-nav { display: none !important; }
+.focus-screen { padding-bottom: 0 !important; }
+
+/* ─── Spacing Helpers ─────────────────────────────────────── */
+.pb-nav { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }
+
+/* ─── Skip Navigation (keyboard accessibility) ────────────── */
+.skip-nav {
+  position: absolute;
+  top: -100px;
+  left: 0;
+  z-index: 9999;
+  padding: 8px 16px;
+  background: var(--orange, #E8581C);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 0 0 8px 0;
+  text-decoration: none;
+  transition: top 0.2s;
+}
+.skip-nav:focus {
+  top: 0;
+}
+
+/* ─── Focus Visible (keyboard nav accessibility) ──────────── */
+/* Fallback for browsers that don't support :focus-visible (Safari < 15.4) */
+@supports not selector(:focus-visible) {
+  :focus {
+    outline: 2px solid var(--orange);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── Selection Color (brand orange) ─────────────────────── */
+::selection {
+  background: rgba(232, 88, 28, 0.2);
+  color: var(--text-1);
+}
+
+/* ─── Haptic feedback hint on touch ──────────────────────── */
+@media (pointer: coarse) {
+  .card-hover:active, button:active {
+    transition-duration: 0.05s;
+  }
+}
+
+/* ─── Background ──────────────────────────────────────────── */
+.mesh-bg {
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 10%, rgba(232, 88, 28, 0.06) 0, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 80% 80%, rgba(8, 145, 178, 0.05) 0, transparent 55%),
+    radial-gradient(ellipse 40% 60% at 50% 50%, rgba(124, 58, 237, 0.03) 0, transparent 65%),
+    var(--bg);
+}
+
+/* ─── Inputs ──────────────────────────────────────────────── */
+.input-base {
+  width: 100%;
+  background: var(--surface-1);
+  border: 1.5px solid var(--border-mid);
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--text-1);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+.input-base:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(232, 88, 28, 0.1);
+}
+.input-base::placeholder { color: var(--text-3); }
+
+select.input-base {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239C8E78' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  padding-right: 40px;
+}
+select.input-base option { background: var(--surface-1); color: var(--text-1); }
+
+/* ─── Buttons ─────────────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 28px;
+  border-radius: 14px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  border: none;
+  /* AA-safe warm gradient — see --btn-primary-from/to (both ≥4.5:1 with #fff).
+     The old var(--orange)→var(--orange-light) pair failed WCAG AA on white. */
+  background: linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  color: #fff;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 16px rgba(232, 88, 28, 0.25);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(232, 88, 28, 0.35); }
+.btn-primary:active { transform: scale(0.97); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 12px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  background: transparent;
+  border: 1.5px solid var(--border-mid);
+  color: var(--text-2);
+  transition: all 0.2s;
+}
+.btn-ghost:hover { background: var(--surface-2); color: var(--text-1); border-color: var(--border-strong); }
+
+/* ─── Noise Overlay ───────────────────────────────────────── */
+.noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* ─── Desktop-only: Hide bottom nav, show sidebar ─────────── */
+@media (min-width: 1024px) {
+  .bottom-nav-mobile { display: none !important; }
+  .sidebar-nav { display: flex !important; }
+}
+
+@media (max-width: 1023px) {
+  .sidebar-nav { display: none !important; }
+  .bottom-nav-mobile { display: block; }
+  .app-shell { margin-left: 0; width: 100%; }
+}
+
+/* Collapsible sidebar */
+@media (min-width: 1024px) {
+  @supports selector(:has(*)) {
+    body:has(.sidebar-nav.sidebar-collapsed) .app-shell {
+      margin-left: 56px;
+      width: calc(100% - 56px);
+      transition: margin-left 0.25s ease, width 0.25s ease;
+    }
+    body:has(.sidebar-nav:not(.sidebar-collapsed)) .app-shell {
+      transition: margin-left 0.25s ease, width 0.25s ease;
+    }
+  }
+  /* Fallback for browsers without :has() support */
+  body.has-sidebar.sidebar-collapsed .app-shell {
+    margin-left: 56px;
+    width: calc(100% - 56px);
+    transition: margin-left 0.25s ease, width 0.25s ease;
+  }
+  body.has-sidebar:not(.sidebar-collapsed) .app-shell {
+    transition: margin-left 0.25s ease, width 0.25s ease;
+  }
+}
+
+
+/* Foxy mode bar: always scroll horizontally, never wrap & overflow */
+.foxy-mode-bar {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  flex-shrink: 0;
+}
+.foxy-mode-bar::-webkit-scrollbar { display: none; }
+
+/* Foxy toolbar row: wrap on very small screens */
+.foxy-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+}
+@media (min-width: 640px) {
+  .foxy-toolbar { flex-wrap: nowrap; gap: 8px; padding: 8px 12px; }
+}
+
+/* Ensure images/iframes never overflow */
+img, video, iframe, canvas, svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Touch target minimum size (accessibility + Indian budget phones)
+   Research: Google Material Design India recommends 48px min.
+   Budget Android phones (Redmi, Realme) have lower touch accuracy.
+   44px is Apple minimum; we use 48px for Indian market. */
+@media (pointer: coarse) {
+  button, a, [role="button"], select, input[type="checkbox"], input[type="radio"] {
+    min-height: 48px;
+    min-width: 48px;
+  }
+  /* Exception: tiny inline pill buttons and nav labels */
+  .pill-btn, .text-\[10px\] {
+    min-height: 32px;
+    min-width: auto;
+  }
+  /* Ensure form inputs are fat-finger friendly */
+  .input-base {
+    min-height: 52px;
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+}
+
+/* ─── Safe Area (notched phones) ─────────────────────────── */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── Small Phone Optimization (320-375px) ────────────────── */
+@media (max-width: 375px) {
+  .grid-subjects { grid-template-columns: repeat(3, 1fr) !important; }
+  .grid-actions { gap: 10px !important; }
+}
+
+/* ─── Minimum Font Size for Readability (12px floor — Phase 1) ─────────────
+   The design system sets a hard 12px lower bound on the type scale (--text-2xs
+   now clamps to 12px). Sub-12px content is almost always micro-labelling that
+   used Tailwind arbitrary sizes (text-[9px]/[10px]/[11px], ~850 usages) which
+   bypass the scale. Rather than delete the guard (which would let 9–11px text
+   through on budget phones in harsh sunlight), we raise the floor from the old
+   11px pin to the 12px system minimum. Larger, never smaller — no layout breaks,
+   only more legible micro-labels. */
+.text-\[9px\],
+.text-\[10px\],
+.text-\[11px\] { font-size: 12px !important; }
+
+/* ─── Hindi / Devanagari Line-Height ────────────────────────
+   Devanagari script's top matra (vowel diacritic) extends above
+   the Latin cap-height. Without extra leading the matras on one
+   line collide with descenders on the line above — illegible at
+   any font size. 1.75 gives comfortable breathing room and applies
+   globally, not only on small phones. */
+[lang="hi"], .text-hi { line-height: 1.75; }
+
+/* ─── Text Overflow Protection ───────────────────────────── */
+.text-break {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}
+
+/* ─── Content Safety Utilities ────────────────────────────
+   Safe containers that prevent content from escaping their box.
+   Use .content-safe on any scrollable region that must not cause
+   horizontal page scroll. Use .content-safe-y for vertical-only
+   containment (e.g. modals, drawers). */
+.content-safe {
+  overflow: hidden;
+  overflow-x: clip;
+  min-width: 0;
+}
+.content-safe-y {
+  overflow-y: auto;
+  overflow-x: clip;
+  min-width: 0;
+}
+
+/* CSS-native row virtualization — zero bundle cost, zero JS.
+   content-visibility: auto skips paint/layout for off-screen rows.
+   contain-intrinsic-size gives the browser a stable scroll estimate. */
+.data-table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 48px;
+}
+
+/* Prevent horizontal scroll on any stacked layout.
+   overflow-x:clip (not hidden) avoids creating a new BFC/stacking context
+   while still preventing scroll, which matters for sticky/fixed children. */
+.app-shell, main, section, article {
+  max-width: 100vw;
+  overflow-x: clip;
+}
+
+/* ─── Responsive Font Scaling ────────────────────────────── */
+@media (max-width: 374px) {
+  /* Small phones (Redmi 9A, Realme C series, old Androids)
+     Research: 60%+ of Indian students use phones < 6 inches.
+     Hindi text renders wider than English — needs more space.
+     Never go below 13px body / 11px for smallest labels. */
+  body { font-size: 14px; }
+  .input-base { font-size: 16px; padding: 12px 14px; } /* 16px prevents iOS zoom */
+  .btn-primary { padding: 14px 20px; font-size: 14px; }
+  .btn-ghost { padding: 12px 18px; font-size: 13px; }
+  h1 { font-size: clamp(20px, 6vw, 28px) !important; }
+  h2 { font-size: clamp(18px, 5vw, 24px) !important; }
+  /* Hindi line-height is set globally at 1.75 above; no override needed here. */
+}
+
+/* ─── Tablet Layout Improvements (iPad, etc.) ────────────── */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .app-container {
+    max-width: 680px;
+    padding: 0 24px;
+  }
+  /* Center auth/profile cards nicely on tablet */
+  .mesh-bg > .w-full {
+    max-width: 480px;
+  }
+}
+
+/* ─── Desktop Wide (1200px+) ─────────────────────────────── */
+@media (min-width: 1200px) {
+  .landing-container {
+    max-width: 1200px;
+  }
+}
+
+
+/* ─── Low-End Device Fallback ────────────────────────────── */
+/* Budget Indian phones (Snapdragon 400-series, 512MB-2GB RAM)
+   can't handle backdrop-filter:blur() or multi-layer radial gradients
+   without janking at 15fps. Detect via prefers-reduced-motion or
+   low deviceMemory and simplify. */
+@media (prefers-reduced-motion: reduce) {
+  .glass, .glass-mid, .page-header {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--surface-1) !important;
+  }
+  .mesh-bg {
+    background: var(--bg) !important; /* Flat cream, no radial gradients */
+  }
+  .glow-orange, .glow-teal, .glow-gold {
+    box-shadow: none !important;
+  }
+}
+
+/* Duplicate prefers-reduced-motion block removed — see line 347 */
+
+/* ─── Print Safety ───────────────────────────────────────── */
+@media print {
+  .bottom-nav-mobile, .sidebar-nav { display: none !important; }
+  .pb-nav { padding-bottom: 0 !important; }
+  body { background: #fff; }
+}
+
+/* ─── Foxy Chat ────────────────────────────────────────────── */
+
+/* Conversation starters grid */
+.foxy-starters {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 8px;
+  justify-content: flex-start;
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 4px; /* Room for focus rings */
+  /* Hide scrollbar */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.foxy-starters::-webkit-scrollbar {
+  display: none;
+}
+
+.foxy-starter-chip {
+  padding: 8px 14px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.foxy-starter-chip:hover {
+  border-color: var(--border-mid);
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.foxy-starter-chip:active {
+  transform: scale(0.96);
+}
+
+/* Mobile starters */
+@media (max-width: 640px) {
+  .foxy-starters {
+    gap: 6px;
+  }
+
+  .foxy-starter-chip {
+    padding: 7px 12px;
+    font-size: 11px;
+  }
+}
+
+/* ─── Editorial Atlas — utilities ──────────────────────────────────
+   Shipped under ff_editorial_atlas_v1. Classes prefixed `atlas-*`
+   so they cannot collide with legacy chrome. Designed to map 1:1
+   with the design tokens added at the top of this file.
+
+   The Atlas surfaces consume these via the components in
+   src/components/atlas/*. Every utility here is documented in the
+   prototype at docs/design/multi-role-redesign-prototype.html — keep
+   them in lock-step. */
+
+.atlas-canvas {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-body);
+  min-height: 100dvh;
+  position: relative;
+}
+
+/* Soft paper-grain overlay — applied at the canvas level so the noise
+   never overlaps interactive elements (it's pointer-events: none).  */
+.atlas-canvas::before {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+  z-index: 0;
+}
+
+.atlas-stage { position: relative; z-index: 1; }
+
+.atlas-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-atlas-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-atlas-1);
+}
+.atlas-card-tight { padding: 16px; border-radius: var(--radius-atlas); }
+.atlas-card-cream { background: var(--cream-2); }
+.atlas-card-teal  { background: var(--teal-soft); border-color: rgba(15, 42, 46, 0.08); }
+.atlas-card-accent{ background: var(--accent-soft); border-color: var(--accent-quiet); }
+
+.atlas-eyebrow {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0 0 12px;
+}
+.atlas-eyebrow-accent { color: var(--accent); }
+
+.atlas-editorial {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(28px, 3.4vw, 44px);
+  line-height: 1.18;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin: 0;
+}
+.atlas-editorial em {
+  font-style: italic;
+  color: var(--teal-deep);
+}
+.atlas-editorial-highlight {
+  background: linear-gradient(180deg, transparent 62%, var(--accent-soft) 62%);
+  padding: 0 2px;
+}
+
+.atlas-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  background: var(--cream-2);
+  border: 1px solid var(--line);
+}
+.atlas-pill-accent { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-quiet); }
+.atlas-pill-teal   { background: var(--teal-soft);   color: var(--teal-deep); border-color: rgba(15,42,46,0.10); }
+.atlas-pill-gold   { background: var(--gold-soft);   color: #C9831A;          border-color: rgba(201,131,26,0.18); }
+.atlas-pill-green  { background: var(--green-soft);  color: #1F7A4C;          border-color: rgba(31,122,76,0.18); }
+.atlas-pill-red    { background: var(--red-soft);    color: #C32E2E;          border-color: rgba(195,46,46,0.18); }
+
+.atlas-btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 12px 22px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 200ms var(--ease-atlas);
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+.atlas-btn-primary {
+  background: var(--accent); color: white;
+  box-shadow: 0 6px 18px rgba(232, 88, 28, 0.28);
+}
+.atlas-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(232, 88, 28, 0.32); }
+.atlas-btn-primary:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.atlas-btn-ghost {
+  background: transparent; color: var(--ink); border: 1px solid var(--line-mid);
+}
+.atlas-btn-ghost:hover { background: var(--cream-2); border-color: var(--line-strong); }
+.atlas-btn-ink   { background: var(--ink); color: var(--cream); }
+.atlas-btn-ink:hover { background: var(--teal-deep); }
+
+.atlas-tabnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+@keyframes atlas-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.atlas-rise { animation: atlas-rise 420ms var(--ease-atlas); }
+
+@keyframes atlas-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232, 88, 28, 0.4); }
+  50%      { box-shadow: 0 0 0 7px rgba(232, 88, 28, 0); }
+}
+.atlas-pulse { animation: atlas-pulse 1.8s var(--ease-atlas) infinite; }
+
+/* Foxy floating chat affordance — shared by student surface. Pinned
+   bottom-right, above the BottomNav. */
+.atlas-foxy-fab {
+  position: fixed;
+  right: 24px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 88px);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px 12px 14px;
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  box-shadow: 0 12px 32px rgba(26, 18, 7, 0.22);
+  cursor: pointer;
+  border: 0;
+}
+.atlas-foxy-fab:hover { transform: translateY(-1px); }
+.atlas-foxy-fab::before {
+  content: "";
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  animation: atlas-pulse 1.8s var(--ease-atlas) infinite;
+}
+
+@media (min-width: 1024px) {
+  .atlas-foxy-fab { bottom: 24px; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   MOBILE-FIRST RESPONSIVE SYSTEM (2026-05-19)
+
+   Purpose: a unified, fluid-first token vocabulary for the new
+   AppShell + MobileNav + Touchable primitives. Designed around the
+   dominant Alfanumrik user — Indian K-12 students on mid-range
+   Android phones (5.5"-6.7", patchy 4G, often used outdoors in
+   sunlight). Layered on top of the Editorial Atlas tokens above;
+   never replaces them.
+
+   Breakpoint strategy (mobile-first):
+     base:  320-480px  — single column, thumb nav, condensed type
+     phab:  481-767px  — fluid scale, still single column
+     tab:   768-1023px — two-column where appropriate, rail appears
+     desk:  1024-1439px — full editorial layout
+     wide:  1440px+    — capped max-width, generous whitespace
+
+   We prefer container queries (@container) where supported because
+   sub-components (e.g. a quiz card on the dashboard vs. /quiz)
+   should respond to their LAYOUT slot, not the viewport. Fall back
+   to @media queries on browsers without container query support
+   (universal in 2026 on Android 10+/iOS 16+, but kept for safety).
+
+   Why clamp() type? Indian classrooms have wildly varying device
+   pixel densities (Redmi 9A @ 320 DPI vs. iPhone 14 @ 460 DPI vs.
+   Realme Narzo @ 270 DPI). A discrete @media step at 768px causes
+   visible "snap" on rotation. clamp() linearly interpolates between
+   a min (mobile) and max (desktop) bounded value, anchored to vw.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Fluid type scale ─────────────────────────────────────────
+     12 steps from 11px caption to 60px display.
+     Formula: clamp(min, ideal-in-vw + offset-in-rem, max)
+
+     The ideal coefficient is calibrated against a 360-1440px range:
+       coefficient = (max - min) / (1440 - 360) × 100
+     so the value lands at min at 360px and max at 1440px, growing
+     smoothly between. */
+  --text-2xs:    0.75rem;                                        /* 12px floor (Phase 1: was 11→12px; 12px is the hard type-scale minimum) */
+  --text-xs:     clamp(0.75rem, 0.71rem + 0.18vw, 0.8125rem);    /* 12→13px */
+  --text-sm:     clamp(0.8125rem, 0.77rem + 0.22vw, 0.875rem);   /* 13→14px */
+  --text-base:   clamp(0.9375rem, 0.89rem + 0.24vw, 1rem);       /* 15→16px */
+  --text-md:     clamp(1rem, 0.94rem + 0.28vw, 1.125rem);        /* 16→18px */
+  --text-lg:     clamp(1.125rem, 1.05rem + 0.37vw, 1.25rem);     /* 18→20px */
+  --text-xl:     clamp(1.25rem, 1.13rem + 0.6vw, 1.5rem);        /* 20→24px */
+  --text-2xl:    clamp(1.5rem, 1.31rem + 0.93vw, 1.875rem);      /* 24→30px */
+  --text-3xl:    clamp(1.75rem, 1.46rem + 1.39vw, 2.25rem);      /* 28→36px */
+  --text-4xl:    clamp(2rem, 1.6rem + 1.85vw, 2.75rem);          /* 32→44px */
+  --text-5xl:    clamp(2.5rem, 1.93rem + 2.5vw, 3.5rem);         /* 40→56px */
+  --text-display: clamp(2.75rem, 2.07rem + 2.78vw, 3.75rem);     /* 44→60px */
+
+  /* ── Fluid spacing scale ─────────────────────────────────────
+     12 steps. Margins, gaps, paddings. Uses the same clamp() pattern
+     so a "16px" gap on mobile becomes a slightly more generous 20px
+     gap on desktop without a binary breakpoint snap. */
+  --space-fluid-1:  clamp(0.25rem, 0.22rem + 0.09vw, 0.3125rem);  /* 4→5px */
+  --space-fluid-2:  clamp(0.375rem, 0.34rem + 0.18vw, 0.5rem);    /* 6→8px */
+  --space-fluid-3:  clamp(0.5rem, 0.45rem + 0.22vw, 0.625rem);    /* 8→10px */
+  --space-fluid-4:  clamp(0.75rem, 0.68rem + 0.37vw, 1rem);       /* 12→16px */
+  --space-fluid-5:  clamp(1rem, 0.91rem + 0.46vw, 1.25rem);       /* 16→20px */
+  --space-fluid-6:  clamp(1.25rem, 1.13rem + 0.6vw, 1.5rem);      /* 20→24px */
+  --space-fluid-7:  clamp(1.5rem, 1.31rem + 0.93vw, 2rem);        /* 24→32px */
+  --space-fluid-8:  clamp(2rem, 1.74rem + 1.3vw, 2.75rem);        /* 32→44px */
+  --space-fluid-9:  clamp(2.5rem, 2.13rem + 1.85vw, 3.5rem);      /* 40→56px */
+  --space-fluid-10: clamp(3rem, 2.5rem + 2.5vw, 4.5rem);          /* 48→72px */
+  --space-fluid-11: clamp(4rem, 3.32rem + 3.33vw, 6rem);          /* 64→96px */
+  --space-fluid-12: clamp(5rem, 4rem + 5vw, 8rem);                /* 80→128px */
+
+  /* ── Fixed 4px-base spacing scale (Phase 1 — was UNDEFINED) ───────────────
+     tailwind.config.js maps spacing sp-1..16 → var(--space-1..16), but those
+     tokens never existed, so `p-sp-4` / `gap-sp-2` were silent no-ops. (These
+     utilities currently have ZERO usages in src/, so defining them is a pure,
+     risk-free bug fix.) Values follow the 4px base grid — sp-N == N×4px == the
+     stock Tailwind `p-N` number — so the sp-* utilities behave exactly as an
+     author expects. The fluid --space-fluid-* scale above stays the preferred
+     choice for responsive gaps; sp-* exists for fixed, deterministic spacing. */
+  --space-1:  0.25rem;   /* 4px  */
+  --space-2:  0.5rem;    /* 8px  */
+  --space-3:  0.75rem;   /* 12px */
+  --space-4:  1rem;      /* 16px */
+  --space-5:  1.25rem;   /* 20px */
+  --space-6:  1.5rem;    /* 24px */
+  --space-8:  2rem;      /* 32px */
+  --space-12: 3rem;      /* 48px */
+  --space-16: 4rem;      /* 64px */
+
+  /* ── Touch-target minimums ─────────────────────────────────── */
+  --tap-min: 44px;       /* Apple HIG minimum */
+  --tap-comfort: 48px;   /* Material Design — used for India market */
+  --tap-large: 56px;     /* Reachable comfortably with thumb on 6"+ */
+  --tap-hero: 72px;      /* Hero CTA / FAB sizing */
+
+  /* ── Safe-area inset shortcuts ─────────────────────────────── */
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
+
+  /* ── Thumb-reach zones ────────────────────────────────────────
+     Research: on phones > 5.5", 75% of one-handed taps land in the
+     bottom 1/3 of the screen. We reserve --reach-bottom for nav,
+     primary CTAs, and quick actions. */
+  --reach-bottom: 33vh;
+  --reach-comfort: 50vh;
+  --reach-stretch: 75vh;  /* requires two hands or thumb stretch */
+
+  /* ── Mobile-first layout caps ─────────────────────────────────
+     Used by AppShell. Reading width is ~70ch which is the
+     research-backed optimal for prose comprehension. Card-grid
+     surfaces use the wider --layout-max-content. */
+  --reading-max: 70ch;
+  --layout-max-content: min(1240px, 100% - 2 * var(--space-fluid-4));
+  --layout-max-rail: 220px;
+  --layout-max-aside: 320px;
+
+  /* ── Mobile shell heights ──────────────────────────────────── */
+  --shell-header-h: 56px;
+  --shell-header-h-compact: 44px;
+  --shell-nav-h: 60px;
+  --shell-nav-h-notched: calc(60px + var(--safe-bottom));
+}
+
+/* ─── Touchable target utility ──────────────────────────────────
+   Use on any interactive element where the visual is smaller than
+   44px but the tap area must still meet HIG/Material minimums.
+   Padding-based expansion preserves visual styling. */
+.touchable {
+  position: relative;
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Hit area expansion via pseudo-element — visual stays compact,
+     tappable area covers the full minimum. */
+}
+.touchable--comfort { min-width: var(--tap-comfort); min-height: var(--tap-comfort); }
+.touchable--large   { min-width: var(--tap-large);   min-height: var(--tap-large); }
+.touchable--hero    { min-width: var(--tap-hero);    min-height: var(--tap-hero); }
+
+.touchable::before {
+  /* Invisible expand-to-44px hit zone — only activates when the
+     visual element is smaller than the min tap size. */
+  content: '';
+  position: absolute;
+  inset: 50%;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+/* Visual press state — CSS only, no JS. Respects reduced-motion. */
+.touchable {
+  transition: transform 150ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)), background-color 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.touchable:active:not(:disabled) { transform: scale(0.96); }
+/* Hover only on devices that can hover (don't trigger on touch) */
+@media (hover: hover) {
+  .touchable:hover:not(:disabled) { background-color: var(--surface-2); }
+}
+
+/* ─── Mobile-first AppShell ─────────────────────────────────────
+   CSS Grid with named template areas. Default = mobile (single col,
+   bottom nav). Tablet adds a rail. Desktop adds an optional aside. */
+.app-shell-v2 {
+  display: grid;
+  min-height: 100dvh;
+  background: var(--bg);
+  grid-template-areas:
+    "header"
+    "content"
+    "nav";
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr auto;
+}
+
+.app-shell-v2 > .app-shell-header {
+  grid-area: header;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(var(--bg-rgb), 0.92);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border-bottom: 1px solid var(--border);
+  padding-top: var(--safe-top);
+  /* contain:layout creates a new formatting context so that
+     .app-shell-onehand-toggle (position:absolute) is clipped to
+     the header box, not the viewport. Works alongside sticky. */
+  contain: layout;
+  transition: height 200ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+  width: 100%;
+  min-width: 0;
+}
+
+/* Foxy is a focused full-screen chat whose header rows are fully opaque, so
+   the AppShell header blur is invisible there. A position:sticky element with
+   backdrop-filter re-rasterizes every scroll frame on Chromium/Windows, which
+   flickers as the chat scrolls beneath it. Drop the blur + promote the header
+   to its own compositing layer on /foxy to eliminate the flicker. Scoped to
+   /foxy via the .foxy-shell class on AppShell; other routes keep the blur. */
+@supports selector(:has(*)) {
+  html:has(.foxy-shell),
+  body:has(.foxy-shell) {
+    overflow: hidden;
+    height: 100%;
+    position: fixed;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+/* Fallback for browsers without :has() support */
+html.foxy-body-lock,
+body.foxy-body-lock {
+  overflow: hidden;
+  height: 100%;
+  position: fixed;
+  width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-shell-v2.foxy-shell {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.app-shell-v2.foxy-shell > .app-shell-content {
+  min-height: 0;
+  height: 100%;
+  padding-bottom: var(--safe-bottom) !important;
+}
+
+.app-shell-v2.foxy-shell > .app-shell-header {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--bg);
+  transform: translateZ(0);
+}
+
+.foxy-subject-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  width: 100%;
+}
+.foxy-subject-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Foxy — "Alfa Momentum" Wave 3 premium chrome (presentation-only).
+   Additive utility classes used by /foxy/page.tsx + the Foxy components.
+   Every value is tokenized (warm-channel / surface / border / text). No
+   logic, no layout structure change — these only elevate look & feel.
+   Cosmic-safe: the mascot warm tint rides --accent-warm-rgb (NOT --orange),
+   so it stays burnt-orange under data-design="cosmic". Motion is collapsed
+   by the global prefers-reduced-motion rule at the top of this file.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Premium header band — refined dark treatment with a faint warm sheen.
+   Replaces the raw `linear-gradient(135deg,#1a1a2e,#0f3460)` inline hex
+   with a tokenized, cohesive Alfa-Momentum dark that carries a subtle warm
+   glow at the leading edge so it reads as "Foxy" not "generic admin dark". */
+.foxy-header-premium {
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgb(var(--accent-warm-rgb) / 0.20) 0%, transparent 46%),
+    linear-gradient(135deg, #241a2e 0%, #16263f 100%);
+  border-bottom: 1px solid rgb(var(--accent-warm-rgb) / 0.18);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Warm mascot/avatar gradient — stable burnt-orange on every surface. */
+.foxy-avatar-warm {
+  background: linear-gradient(135deg, var(--accent-warm), var(--gold));
+  box-shadow: 0 2px 10px rgb(var(--accent-warm-rgb) / 0.32);
+}
+
+/* Premium subject / mode pill base. The active tint is supplied per-pill via
+   the --pill-tint custom property (set inline from the subject brand color),
+   so we keep the per-subject identity but route it through color-mix for a
+   refined, consistent surface instead of raw `${color}25` hex concatenation. */
+.foxy-pill {
+  transition:
+    background 0.2s var(--ease-atlas),
+    border-color 0.2s var(--ease-atlas),
+    color 0.2s var(--ease-atlas),
+    transform 0.12s var(--ease-atlas),
+    box-shadow 0.2s var(--ease-atlas);
+}
+.foxy-pill:active { transform: scale(0.97); }
+.foxy-pill-active {
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--pill-tint, var(--accent-warm)) 22%, transparent);
+}
+
+/* Premium chat bubble surfaces. Tutor = clean elevated surface; user = a warm
+   tinted surface so the conversation reads as a two-voice premium thread. */
+.foxy-bubble-tutor {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.foxy-bubble-user {
+  background: color-mix(in srgb, var(--bubble-tint, var(--accent-warm)) 7%, var(--surface-1));
+  border: 1.5px solid color-mix(in srgb, var(--bubble-tint, var(--accent-warm)) 22%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Premium typing indicator — replaces the bg-orange-* / animate-bounce dots
+   with warm-channel dots on a soft warm surface (cosmic-safe). */
+.foxy-typing {
+  background: color-mix(in srgb, var(--accent-warm) 8%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--accent-warm) 16%, var(--border));
+}
+.foxy-typing-avatar {
+  background: color-mix(in srgb, var(--accent-warm) 14%, var(--surface-1));
+}
+.foxy-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--accent-warm);
+  animation: foxy-typing-bounce 1.1s var(--ease-atlas) infinite;
+}
+.foxy-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.foxy-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes foxy-typing-bounce {
+  0%, 70%, 100% { transform: translateY(0); opacity: 0.55; }
+  35%           { transform: translateY(-4px); opacity: 1; }
+}
+
+/* Premium empty-state mascot float (gentler, calmer than .animate-float). */
+.foxy-hero-mascot {
+  animation: foxy-hero-float 5.5s var(--ease-atlas) infinite;
+  filter: drop-shadow(0 10px 22px rgb(var(--accent-warm-rgb) / 0.18));
+}
+@keyframes foxy-hero-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+
+/* Lesson-step progress segment — premium fill with a soft glow when active. */
+.foxy-step-seg {
+  transition: background 0.3s var(--ease-atlas), box-shadow 0.3s var(--ease-atlas);
+}
+
+/* prefers-reduced-motion safety for the Wave 3 keyframes (the global block at
+   the top already zeroes animation-duration via the universal selector; this
+   makes the intent explicit for the named Foxy animations). */
+@media (prefers-reduced-motion: reduce) {
+  .foxy-typing-dot,
+  .foxy-hero-mascot {
+    animation: none !important;
+  }
+  .foxy-hero-mascot { filter: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Foxy OS (ff_foxy_os_v1) — mobile-only (<lg) compact bar + Study sheet.
+   Additive + scoped under `.foxy-os` so nothing renders unless the flag is
+   ON and the page adds that class. Does NOT touch the `.foxy-shell`
+   viewport-lock rules above (Phase 2 handles keyboard-inset). Cosmic light
+   tokens only; CSS-only motion; respects reduced-motion at the end.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Compact ~56px sticky top bar. The bar itself lives in AppShell.header
+   (already position:sticky); these rules just size it + its controls. */
+.foxy-os .foxy-os-topbar {
+  min-height: 56px;
+  height: 56px;
+  padding-top: env(safe-area-inset-top, 0px);
+  box-sizing: content-box;
+}
+
+/* >=44x44 touch targets for the back/overflow controls. */
+.foxy-os .foxy-os-tap {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+
+/* Foxy avatar in the bar. */
+.foxy-os .foxy-os-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* Subject · chapter chip keeps a >=44px tap height. */
+.foxy-os .foxy-os-chip {
+  min-height: 44px;
+}
+
+/* Study sheet — section labels. */
+.foxy-os-study-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+
+/* >=44px tap targets for subject chips + mode tiles in the sheet. */
+.foxy-os-study .foxy-os-tap-chip {
+  min-height: 44px;
+  padding: 8px 12px;
+}
+.foxy-os-study .foxy-os-mode {
+  min-height: 56px;
+  padding: 8px 4px;
+}
+.foxy-os-study .foxy-os-chapter {
+  min-height: 48px;
+  padding: 8px 10px;
+}
+
+/* Mastery ring — conic-gradient donut with a numeric center. */
+.foxy-os-study .foxy-os-ring {
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.foxy-os-study .foxy-os-ring-inner {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background: var(--surface-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* ─── Phase 3 — Tools sheet controls (ff_foxy_os_v1, <lg only) ───────────
+   All scoped under `.foxy-os-tools` (the Tools sheet body class) so nothing
+   matches outside the flag-ON mobile path. Cosmic light tokens only. */
+
+/* Language segmented control — >=44px tap targets. */
+.foxy-os-tools .foxy-os-tools-seg {
+  min-height: 44px;
+  padding: 8px 4px;
+}
+
+/* Voice toggle + nav rows — >=48px tall, comfortable tap. */
+.foxy-os-tools .foxy-os-tools-row {
+  min-height: 52px;
+  padding: 10px 12px;
+}
+
+/* iOS-style switch track + knob for the voice toggle. */
+.foxy-os-tools .foxy-os-tools-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 9999px;
+  transition: background 0.18s ease;
+}
+.foxy-os-tools .foxy-os-tools-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.18s ease;
+}
+
+/* Progress stat tiles. */
+.foxy-os-tools .foxy-os-tools-stat {
+  padding: 10px 4px;
+}
+
+/* ─── Phase 3 a11y — visible focus rings on every new Foxy OS control ─────
+   Keyboard users get a clear 2px orange outline. Pointer/touch users do not
+   see it (the :focus-visible heuristic). Scoped under `.foxy-os` so the OFF
+   path / desktop never match. */
+.foxy-os .foxy-os-tap:focus-visible,
+.foxy-os .foxy-os-chip:focus-visible,
+.foxy-os-study .foxy-os-tap-chip:focus-visible,
+.foxy-os-study .foxy-os-mode:focus-visible,
+.foxy-os-study .foxy-os-chapter:focus-visible,
+.foxy-os-tools .foxy-os-tools-seg:focus-visible,
+.foxy-os-tools .foxy-os-tools-row:focus-visible,
+.foxy-os-study [role='tab']:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+
+/* ─── Phase 2 — keyboard-aware composer (ff_foxy_os_v1, <lg only) ─────────
+   `--kb-inset` is published by useKeyboardInset() on :root ONLY while the
+   flag-ON mobile path is mounted (the hook keeps it at 0px otherwise). All
+   rules below are scoped under `.foxy-os`, so the OFF path / desktop never
+   match them and keep ChatInput's inline `paddingBottom` byte-for-byte.
+
+   `--kb-inset` defaults to 0px (var fallback) so even before the hook seeds
+   the property the composer sits exactly where it does today. When the
+   keyboard opens, --kb-inset grows and the composer lifts above it. */
+.foxy-os {
+  --kb-inset: 0px;
+}
+
+/* Composer rides above the soft keyboard. When the keyboard is closed
+   (--kb-inset: 0px) this collapses to the existing safe-area padding, so it is
+   visually identical to ChatInput's inline default. !important is required to
+   win over that inline `paddingBottom`. */
+.foxy-os .foxy-composer-row {
+  padding-bottom: max(env(safe-area-inset-bottom, 8px), var(--kb-inset, 0px)) !important;
+}
+
+/* Let the chat column shrink so the composer stays visible and the thread
+   scrolls (rather than the keyboard overlaying the composer). The viewport is
+   height-locked by `.foxy-shell` (100dvh); `min-height:0` lets the flex
+   children actually shrink. `.foxy-chat-column` is an inert hook class on the
+   chat column — no rule targets it outside `.foxy-os`, so the OFF path keeps
+   today's layout. */
+.foxy-os .foxy-chat-column {
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foxy-os .foxy-os-avatar {
+    animation: none !important;
+  }
+  .foxy-os .foxy-os-tap,
+  .foxy-os .foxy-os-chip,
+  .foxy-os-study .foxy-os-tap-chip,
+  .foxy-os-study .foxy-os-mode,
+  .foxy-os-study .foxy-os-chapter,
+  .foxy-os-tools .foxy-os-tools-seg,
+  .foxy-os-tools .foxy-os-tools-row,
+  .foxy-os-tools .foxy-os-tools-switch,
+  .foxy-os-tools .foxy-os-tools-knob {
+    transition: none !important;
+  }
+}
+
+.app-shell-v2 > .app-shell-header[data-compact="true"] {
+  height: var(--shell-header-h-compact);
+}
+
+.app-shell-v2 > .app-shell-content {
+  grid-area: content;
+  min-width: 0;
+  /* Horizontal padding only — vertical is handled per breakpoint.
+     Using padding-inline avoids the double-padding problem when
+     .app-container (which has its own 0 16px padding) is nested
+     inside this slot. The app-container's padding is nullified
+     below so only one padding source applies at a time. */
+  padding-inline: 0;
+  padding-top: var(--space-fluid-4);
+  /* Bottom clearance = nav height + safe-area + a little breathing
+     room so content isn't hidden behind the fixed BottomNav. The
+     BottomNav is fixed (not grid-placed) at 60px tall. */
+  padding-bottom: calc(var(--shell-nav-h-notched) + var(--space-fluid-4));
+}
+
+.app-shell-v2 > .app-shell-rail {
+  display: none;
+}
+
+.app-shell-v2 > .app-shell-aside {
+  display: none;
+}
+
+/* Pure positioning wrapper — children (BottomNav etc.) own their chrome
+   (background, backdrop-filter, border-top). This prevents double-chrome
+   stacking on mobile and an empty bordered bar bleeding through on
+   desktop when the child uses its own breakpoint to hide itself. */
+.app-shell-v2 > .app-shell-nav {
+  grid-area: nav;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding-bottom: var(--safe-bottom);
+}
+
+/* ── Reading width cap on prose ──────────────────────────────── */
+.app-shell-v2 .prose-cap {
+  max-width: var(--reading-max);
+  margin-inline: auto;
+}
+
+/* ── Tablet: 768px+ ──────────────────────────────────────────── */
+@media (min-width: 768px) {
+  .app-shell-v2 {
+    grid-template-areas:
+      "header header"
+      "rail content"
+      "rail nav";
+    grid-template-columns: var(--layout-max-rail) minmax(0, 1fr);
+  }
+  .app-shell-v2 > .app-shell-rail {
+    display: block;
+    grid-area: rail;
+    border-right: 1px solid var(--border);
+    background: var(--surface-1);
+    padding: var(--space-fluid-5);
+    overflow-y: auto;
+    position: sticky;
+    top: var(--shell-header-h);
+    height: calc(100dvh - var(--shell-header-h));
+  }
+  .app-shell-v2 > .app-shell-content {
+    padding-inline: var(--space-fluid-6);
+    padding-top: var(--space-fluid-6);
+    padding-bottom: calc(var(--shell-nav-h-notched) + var(--space-fluid-6));
+  }
+  /* Bottom nav stays on tablet only when no rail is present.
+     If .app-shell-v2 has a rail child, suppress the bottom nav. */
+  .app-shell-v2[data-variant="rail"] > .app-shell-nav { display: none; }
+  .app-shell-v2[data-variant="rail"] > .app-shell-content {
+    padding-bottom: var(--space-fluid-6);
+  }
+}
+
+/* ── Desktop: 1024px+ ─────────────────────────────────────────── */
+@media (min-width: 1024px) {
+  .app-shell-v2 {
+    grid-template-areas:
+      "header header header"
+      "rail content aside"
+      "rail content aside";
+    grid-template-columns: var(--layout-max-rail) minmax(0, 1fr) var(--layout-max-aside);
+  }
+  .app-shell-v2 > .app-shell-aside {
+    display: block;
+    grid-area: aside;
+    border-left: 1px solid var(--border);
+    background: var(--surface-1);
+    padding: var(--space-fluid-6);
+    overflow-y: auto;
+    position: sticky;
+    top: var(--shell-header-h);
+    height: calc(100dvh - var(--shell-header-h));
+  }
+  .app-shell-v2[data-no-aside="true"] {
+    grid-template-areas:
+      "header header"
+      "rail content"
+      "rail content";
+    grid-template-columns: var(--layout-max-rail) minmax(0, 1fr);
+  }
+  .app-shell-v2[data-no-aside="true"] > .app-shell-aside { display: none; }
+  .app-shell-v2 > .app-shell-content {
+    max-width: var(--layout-max-content);
+    margin-inline: auto;
+    width: 100%;
+    padding-bottom: calc(var(--space-fluid-6) + var(--safe-bottom));
+  }
+  /* Hide the bottom-nav slot at the same breakpoint that hides
+     .bottom-nav-mobile (globals.css line 687). Otherwise the wrapper
+     would paint an empty positioning slot at the bottom of desktop. */
+  .app-shell-v2 > .app-shell-nav { display: none; }
+}
+
+/* ── Wide: 1440px+, cap max-width ───────────────────────────── */
+@media (min-width: 1440px) {
+  .app-shell-v2 > .app-shell-content {
+    padding-inline: var(--space-fluid-8);
+  }
+}
+
+.app-shell-v2[data-bleed="true"] > .app-shell-content {
+  padding-inline: 0;
+}
+
+@media (min-width: 768px) {
+  .app-shell-v2[data-bleed="true"][data-variant="mobile"] {
+    grid-template-areas:
+      "header"
+      "content"
+      "nav";
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-shell-v2[data-bleed="true"] > .app-shell-content {
+    padding-inline: 0;
+  }
+}
+@media (min-width: 1024px) {
+  .app-shell-v2[data-bleed="true"] > .app-shell-content {
+    max-width: none;
+    margin-inline: 0;
+    width: 100%;
+    padding-inline: 0;
+  }
+}
+@media (min-width: 1440px) {
+  .app-shell-v2[data-bleed="true"] > .app-shell-content {
+    padding-inline: 0;
+  }
+}
+
+/* ─── One-handed mode ────────────────────────────────────────────
+   Optional toggle (state stored in localStorage by AppShell). Pulls
+   the entire content area down so the top of the page sits in the
+   thumb-reach zone. Useful for tall (6.5"+) phones held one-handed. */
+.app-shell-v2[data-one-hand="true"] > .app-shell-content {
+  padding-top: var(--reach-bottom);
+}
+@media (min-width: 768px) {
+  /* One-handed mode is a phone-only affordance. */
+  .app-shell-v2[data-one-hand="true"] > .app-shell-content {
+    padding-top: var(--space-fluid-6);
+  }
+}
+
+/* ─── MobileNav v2 — bottom navigation ───────────────────────────
+   5 slots max (research: > 5 reduces usability). Center slot is the
+   prominent Foxy AI tutor entry — raised, larger, brand-orange. */
+.mobile-nav-v2 {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  width: 100%;
+  height: var(--shell-nav-h);
+  min-height: var(--shell-nav-h);
+  padding-inline: var(--space-fluid-2);
+  transition: transform 220ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+}
+.mobile-nav-v2[data-hidden="true"] {
+  /* Slide off-screen when scrolling down. CSS-only, transform-based
+     so it doesn't trigger layout reflow. */
+  transform: translateY(110%);
+}
+
+.mobile-nav-v2__item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  padding-top: 6px;
+  padding-bottom: 4px;
+  min-height: var(--tap-comfort);
+  min-width: var(--tap-comfort);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-3);
+  font-family: var(--font-display, "Sora", sans-serif);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 180ms ease, transform 180ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+}
+.mobile-nav-v2__item:active { transform: scale(0.94); }
+.mobile-nav-v2__item[aria-current="page"] { color: var(--orange); }
+
+.mobile-nav-v2__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-size: 22px;
+  line-height: 1;
+  position: relative;
+  transition: transform 200ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+}
+.mobile-nav-v2__item[aria-current="page"] .mobile-nav-v2__icon {
+  transform: translateY(-2px) scale(1.06);
+  filter: drop-shadow(0 0 6px rgb(var(--orange-rgb) / 0.32));
+}
+
+.mobile-nav-v2__label {
+  font-size: var(--text-2xs);
+  line-height: 1;
+  transform: translateY(0);
+  transition: transform 200ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+  white-space: nowrap;
+}
+.mobile-nav-v2__item[aria-current="page"] .mobile-nav-v2__label {
+  /* Active label "slides up" subtly — pure CSS, no JS. */
+  transform: translateY(-1px);
+  font-weight: 700;
+}
+
+/* Active underline accent — CSS only. */
+.mobile-nav-v2__item::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 0;
+  height: 2px;
+  background: var(--orange);
+  border-radius: 2px;
+  transform: translateX(-50%);
+  transition: width 200ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+}
+.mobile-nav-v2__item[aria-current="page"]::after {
+  width: 22px;
+}
+
+/* ── Center FAB slot (Foxy) ─────────────────────────────────── */
+.mobile-nav-v2__item--fab {
+  position: relative;
+}
+.mobile-nav-v2__item--fab .mobile-nav-v2__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--orange), #D84315);
+  color: white;
+  font-size: 26px;
+  margin-top: -14px; /* lift above the rail */
+  box-shadow: 0 6px 18px rgb(var(--orange-rgb) / 0.34);
+}
+.mobile-nav-v2__item--fab[aria-current="page"] .mobile-nav-v2__icon {
+  background: linear-gradient(135deg, var(--orange), var(--gold));
+  transform: translateY(-3px) scale(1.04);
+}
+
+/* Badge dot (unread / streak count) */
+.mobile-nav-v2__badge {
+  position: absolute;
+  top: 2px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--orange);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--bg);
+  line-height: 1;
+}
+.mobile-nav-v2__badge--danger { background: var(--danger, #DC2626); }
+.mobile-nav-v2__badge--warning { background: #F59E0B; }
+
+/* Suppress hover-only behaviors on touch */
+@media (hover: hover) {
+  .mobile-nav-v2__item:hover:not([aria-current="page"]) {
+    color: var(--text-2);
+  }
+}
+
+/* Reduced motion — neutralize transforms but keep color/underline */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-nav-v2,
+  .mobile-nav-v2__item,
+  .mobile-nav-v2__icon,
+  .mobile-nav-v2__label { transition: none !important; transform: none !important; }
+}
+
+/* ─── Container query support ────────────────────────────────────
+   Cards that adapt to their layout slot, not the viewport. Wrap a
+   parent in .cq-host and child elements in .cq-* utilities. */
+.cq-host { container-type: inline-size; container-name: appshell; }
+
+@container appshell (min-width: 480px) {
+  .cq-2col { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+}
+@container appshell (min-width: 768px) {
+  .cq-3col { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+}
+@container appshell (min-width: 1024px) {
+  .cq-4col { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+}
+
+/* ─── One-handed mode toggle button (phone-only) ─────────────── */
+.app-shell-onehand-toggle {
+  position: absolute;
+  top: calc(var(--safe-top) + 8px);
+  right: var(--space-fluid-4);
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 180ms ease, transform 180ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+}
+.app-shell-onehand-toggle:active { transform: scale(0.94); }
+.app-shell-onehand-toggle[aria-pressed="true"] {
+  background: var(--orange);
+  color: white;
+  border-color: var(--orange);
+}
+@media (min-width: 768px) {
+  .app-shell-onehand-toggle { display: none; }
+}
+
+/* ─── Fluid type utility classes ─────────────────────────────── */
+.text-fluid-2xs    { font-size: var(--text-2xs); }
+.text-fluid-xs     { font-size: var(--text-xs); }
+.text-fluid-sm     { font-size: var(--text-sm); }
+.text-fluid-base   { font-size: var(--text-base); }
+.text-fluid-md     { font-size: var(--text-md); }
+.text-fluid-lg     { font-size: var(--text-lg); }
+.text-fluid-xl     { font-size: var(--text-xl); }
+.text-fluid-2xl    { font-size: var(--text-2xl); }
+.text-fluid-3xl    { font-size: var(--text-3xl); }
+.text-fluid-4xl    { font-size: var(--text-4xl); }
+.text-fluid-5xl    { font-size: var(--text-5xl); }
+.text-fluid-display { font-size: var(--text-display); }
+
+/* ═══════════════════════════════════════════════════════════════
+   VISIBLE MOBILE-FIRST REDESIGN — utility classes (2026-05-19)
+
+   Built on top of the AppShell + MobileNav + Touchable primitives
+   already shipped in PR #867. These utilities give the dashboard
+   and key navigation surfaces a unified editorial visual language
+   without rebuilding the structural primitives.
+
+   Used by:
+     - dashboard/page.tsx (hero, section cards, header)
+     - components/dashboard/sections/*.tsx (cards, tiles, timeline)
+     - components/ui/BottomNavComponent.tsx (refreshed mobile nav)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Editorial card chrome ─────────────────────────────────────
+   Standard surface for every dashboard section card. White paper
+   background, hair-line border, atlas shadow, atlas-radius. Fluid
+   padding so the same card breathes on a 360px Redmi 9A and a
+   1440px MacBook. */
+.editorial-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-atlas);
+  box-shadow: var(--shadow-atlas-1);
+  padding: var(--space-fluid-5);
+  position: relative;
+  /* overflow:clip (not hidden) so internal decorative elements
+     are clipped to the card boundary BUT the card itself can
+     still be transformed (scale/translate) by a parent — `hidden`
+     creates a stacking context that prevents transform inheritance
+     and clips the active:scale(0.99) press animation on touch. */
+  overflow: clip;
+}
+@media (min-width: 768px) {
+  .editorial-card { padding: var(--space-fluid-6); }
+}
+.editorial-card--accent {
+  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--paper) 60%);
+  border-color: var(--accent-quiet);
+}
+.editorial-card--quiet { background: var(--cream-2); }
+.editorial-card--ink   { background: var(--ink); color: var(--cream); border-color: rgba(255,255,255,0.08); }
+
+/* ─── Editorial headings ────────────────────────────────────────
+   Fraunces serif for hero text. Atlas-display in serif takes the
+   product from "school portal" to "editorial product" without any
+   structural changes. */
+.editorial-name {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  /* Floor bumped down to 24px from 28px so long names (>12 chars)
+     don't cause the h1 to overflow at 320px viewport width.
+     Max of 44px stays for desktop. */
+  font-size: clamp(24px, 6.5vw, 44px);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+  /* Prevent single-word student names wider than the container
+     from creating horizontal scroll. */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.editorial-h1 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--text-3xl);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  margin: 0;
+}
+.editorial-display {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(36px, 8vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.editorial-section-title {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--text-xl);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0;
+}
+.editorial-eyebrow {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0;
+}
+.editorial-eyebrow--accent { color: var(--accent); }
+
+/* ─── Hero stat strip (XP / streak / level) ──────────────────────
+   3 equal cells, horizontal on mobile. Number is fluid clamp, label
+   is --text-2xs. Tight gap so all 3 fit on 320px without wrapping.
+
+   Key fix: use minmax(0, 1fr) so cells compress below their natural
+   content size — without this, long XP numbers (e.g. "12,450") cause
+   the third cell to overflow the strip on 320px phones. */
+.dashboard-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-fluid-2);
+  /* Never wrap — 3 cells must always sit on one line. */
+  overflow: hidden;
+}
+.dashboard-stat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* Tighter padding on mobile so all three cells fit at 320px.
+     Tablet+ gets the full fluid-4 horizontal padding. */
+  padding: var(--space-fluid-3) var(--space-fluid-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-atlas);
+  min-width: 0; /* allow flex children to shrink below content size */
+}
+@media (min-width: 480px) {
+  .dashboard-stat-cell {
+    padding: var(--space-fluid-3) var(--space-fluid-4);
+  }
+}
+.dashboard-stat-cell__value {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  /* Tighter clamp floor (17px) so long numbers fit at 320px */
+  font-size: clamp(17px, 3.8vw, 28px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  /* Truncate gracefully rather than overflow the cell */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.dashboard-stat-cell__label {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-top: 4px;
+  /* Prevent label overflow on very small cells */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ─── Dominant hero CTA ─────────────────────────────────────────
+   The ONE button on the page that the eye must land on first.
+   Orange accent fill, fluid padding so it stays a real tap target
+   from 360px to 1440px. */
+.dashboard-hero-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-fluid-4) var(--space-fluid-6);
+  border-radius: var(--radius-atlas);
+  background: var(--accent);
+  color: white;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-md);
+  letter-spacing: 0.005em;
+  border: 0;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgb(var(--orange-rgb) / 0.32);
+  transition: transform 180ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)),
+              box-shadow 180ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+  -webkit-tap-highlight-color: transparent;
+}
+.dashboard-hero-cta:hover {
+  box-shadow: 0 14px 32px rgb(var(--orange-rgb) / 0.42);
+  transform: translateY(-1px);
+}
+.dashboard-hero-cta:active { transform: scale(0.98); }
+.dashboard-hero-cta:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+/* ─── Quick-action tile grid ────────────────────────────────────
+   2×3 on mobile, 3×2 on tablet, 6×1 on desktop. Each tile is a real
+   square (aspect-ratio: 1) — fingers find squares faster than thin
+   pills. min-height enforces 44px target even on landscape phones. */
+.dashboard-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-fluid-3);
+}
+@media (min-width: 480px) {
+  .dashboard-tile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .dashboard-tile-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+.dashboard-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  aspect-ratio: 1 / 1;
+  min-height: var(--tap-comfort);
+  padding: var(--space-fluid-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-atlas);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-xs);
+  text-align: center;
+  line-height: 1.15;
+  transition: transform 200ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)),
+              box-shadow 200ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)),
+              border-color 200ms;
+  -webkit-tap-highlight-color: transparent;
+}
+.dashboard-tile:hover {
+  border-color: var(--line-mid);
+  box-shadow: var(--shadow-atlas-2);
+  transform: translateY(-2px);
+}
+.dashboard-tile:active { transform: scale(0.97); }
+.dashboard-tile__icon {
+  font-size: clamp(22px, 5vw, 28px);
+  line-height: 1;
+}
+.dashboard-tile__label {
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* ─── Rank display (Compete section) ────────────────────────────
+   Huge serif number on mobile so the rank reads as a headline, not
+   a chart datum. Pairs with editorial-card chrome. */
+.dashboard-rank-display {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(36px, 8vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.dashboard-rank-display--hash {
+  color: var(--ink-3);
+  font-size: 0.6em;
+  margin-right: 0.1em;
+}
+
+/* ─── Atlas mission hero ────────────────────────────────────────
+   The dark-ink editorial hero card on the student dashboard. Sits
+   on top of `.editorial-card--ink` and overrides only what the
+   editorial chrome doesn't already give us:
+     • Fluid serif headline (Fraunces) — clamps 28→44px so on a
+       Redmi 9A it never overflows but on a MacBook reads as a
+       magazine cover headline.
+     • Cream text + warm orange dot eyebrow on the dark ground.
+     • One dominant CTA + one quiet ghost — clear visual hierarchy. */
+.atlas-mission-hero {
+  padding: var(--space-fluid-6) var(--space-fluid-5);
+  background-image:
+    radial-gradient(ellipse at top right, rgba(232, 88, 28, 0.16), transparent 55%),
+    var(--ink);
+}
+@media (min-width: 768px) {
+  .atlas-mission-hero { padding: var(--space-fluid-8) var(--space-fluid-7); }
+}
+.atlas-mission-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 var(--space-fluid-3);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+.atlas-mission-eyebrow__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(232, 88, 28, 0.18);
+}
+.atlas-mission-headline {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(28px, 6.4vw, 44px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  color: var(--cream);
+  margin: 0 0 var(--space-fluid-3);
+  max-width: 14ch;
+}
+.atlas-mission-blurb {
+  color: rgba(255, 255, 255, 0.72);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  margin: 0 0 var(--space-fluid-5);
+  max-width: 42ch;
+}
+.atlas-mission-meta-row {
+  display: flex;
+  gap: var(--space-fluid-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-fluid-5);
+}
+.atlas-mission-cta-row {
+  display: flex;
+  gap: var(--space-fluid-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.atlas-mission-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: var(--tap-comfort);
+  padding: var(--space-fluid-4) var(--space-fluid-6);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--cream);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-md);
+  letter-spacing: 0.005em;
+  border: 0;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(232, 88, 28, 0.4);
+  transition: transform 180ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)),
+              box-shadow 180ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+  -webkit-tap-highlight-color: transparent;
+}
+.atlas-mission-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 36px rgba(232, 88, 28, 0.5);
+}
+.atlas-mission-cta:active { transform: scale(0.98); }
+.atlas-mission-cta:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+.atlas-mission-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap-min);
+  padding: var(--space-fluid-3) var(--space-fluid-4);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: background 160ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)),
+              border-color 160ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+  -webkit-tap-highlight-color: transparent;
+}
+.atlas-mission-ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.atlas-mission-ghost:focus-visible { outline: 2px solid var(--cream); outline-offset: 3px; }
+
+/* Small suffix inside a stat cell value (e.g. "5/7") — keeps the
+   secondary number quiet so the eye lands on the primary figure. */
+.atlas-stat-suffix {
+  font-size: 0.55em;
+  color: var(--ink-3);
+  margin-left: 2px;
+  font-weight: 400;
+}
+
+/* Section-level eyebrow + spacing for surfaces that use raw
+   <section> (not .editorial-card). Keeps quick-actions and other
+   plain sections in rhythm with the editorial cards above them. */
+.atlas-section-eyebrow { margin: 0 0 var(--space-fluid-3); }
+.atlas-section-spaced  { margin: 0 0 var(--space-fluid-4); }
+
+/* ─── Timeline-style upcoming list ──────────────────────────────
+   Each row has a 4px colored left-bar showing days-until urgency.
+   Visually distinct from the old flat list — reads as a calendar. */
+.dashboard-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-fluid-3);
+}
+.dashboard-timeline-item {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-fluid-4);
+  padding: var(--space-fluid-3) var(--space-fluid-4);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-atlas);
+  border-left-width: 4px;
+  border-left-style: solid;
+  cursor: pointer;
+  transition: transform 160ms var(--ease-atlas, cubic-bezier(.22,1,.36,1)),
+              box-shadow 160ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+}
+.dashboard-timeline-item:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-atlas-2);
+}
+.dashboard-timeline-item__days {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(22px, 5vw, 28px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  min-width: 48px;
+  text-align: right;
+}
+
+/* ─── Breadcrumb subnav (used on /foxy, /learn, /progress) ──────
+   Renders inside the AppShell content slot just under the header.
+   Use --text-xs and --ink-3 to keep it whisper-quiet. */
+.app-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-fluid-3) 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  color: var(--ink-3);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.app-breadcrumbs__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 10px 6px 6px;
+  border-radius: var(--radius-atlas);
+  background: transparent;
+  border: 0;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-xs);
+}
+.app-breadcrumbs__back:hover { background: var(--cream-2); }
+.app-breadcrumbs__back:active { transform: scale(0.97); }
+.app-breadcrumbs__separator { color: var(--ink-4); }
+.app-breadcrumbs__current {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ─── Refreshed bottom nav for mobile (BottomNavComponent) ──────
+   Replaces the old "background fill on active" with an orange
+   underline that slides between slots. Pairs with the existing
+   structural state in BottomNavComponent.tsx — this rule set is
+   purely visual chrome. */
+.bottom-nav-mobile {
+  /* Fully opaque background. Glass/blur was compositing vivid page
+     content (e.g. the yellow SVG learning-path curve on the student
+     dashboard) into the nav bar, making tab labels hard to read.
+     Use solid background + shadow for depth instead. */
+  background: rgb(var(--bg-rgb));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  transition: transform 260ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+}
+/* Refreshed-nav specific:
+   - safe-area-inset-bottom replaces the 6px fallback (set inline on
+     the nav). When the host device reports 0px (most Android), the
+     bar sits flush.
+   - hide on scroll-down via a data attribute set by the component.
+*/
+.bottom-nav-mobile[data-scroll-hidden="true"] {
+  transform: translateY(110%);
+}
+/* Slide-style active underline. Lives at the bottom of each slot
+   button. Hidden by default (width:0) → expands when aria-current
+   is set. Pure CSS, no JS indicator. */
+.bottom-nav-mobile__slot {
+  position: relative;
+}
+.bottom-nav-mobile__slot::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  height: 3px;
+  width: 0;
+  background: var(--accent);
+  border-radius: 3px;
+  transform: translateX(-50%);
+  transition: width 220ms var(--ease-atlas, cubic-bezier(.22,1,.36,1));
+}
+.bottom-nav-mobile__slot[data-active="true"]::after {
+  width: 22px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav-mobile { transition: none !important; }
+  .bottom-nav-mobile__slot::after { transition: none !important; }
+}
+
+/* ─── Refreshed dashboard header (AppShell header content) ──────
+   Editorial wordmark + 48px compact. The AppShell already gives us
+   the sticky + blur + border + safe-top — these rules just dress
+   the slot. */
+.dashboard-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-fluid-2);
+  padding: var(--space-fluid-3) var(--space-fluid-4);
+  /* overflow:hidden clips the absolute-positioned one-hand toggle
+     button — use clip instead so the button stays visible. */
+  min-height: 56px;
+}
+/* Left column: greeting + wordmark + plan/stream chips.
+   min-width:0 lets it shrink so action icons are never pushed
+   off-screen on 320px phones. overflow:hidden clips long names. */
+.dashboard-header-row > *:first-child {
+  min-width: 0;
+  overflow: hidden;
+}
+@media (min-width: 768px) {
+  .dashboard-header-row { padding: var(--space-fluid-4) var(--space-fluid-6); }
+}
+.dashboard-header-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: var(--text-xl);
+  line-height: 1;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.dashboard-header-wordmark__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-bottom: 2px;
+}
+.dashboard-header-greeting {
+  font-family: var(--font-display);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0;
+}
+.dashboard-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* flex-shrink:0 prevents actions from being compressed when the
+     left wordmark/greeting side is long (e.g. "Good morning" + Hindi). */
+  flex-shrink: 0;
+}
+.dashboard-header-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-atlas);
+  background: var(--cream-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  cursor: pointer;
+  position: relative;
+  transition: background 160ms, transform 160ms;
+  /* Ensure the button doesn't shrink below its icon size
+     on very narrow viewports. */
+  flex-shrink: 0;
+}
+@media (min-width: 400px) {
+  .dashboard-header-iconbtn {
+    width: 40px;
+    height: 40px;
+  }
+}
+.dashboard-header-iconbtn:hover { background: var(--paper); }
+.dashboard-header-iconbtn:active { transform: scale(0.94); }
+.dashboard-header-iconbtn__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--paper);
+}
+.dashboard-header-langpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 160ms, border-color 160ms, transform 160ms;
+  /* Prevent growing and pushing icon buttons off screen */
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+@media (min-width: 400px) {
+  .dashboard-header-langpill {
+    height: 40px;
+    padding: 0 14px;
+    gap: 6px;
+  }
+}
+/* On very narrow phones hide the text label, keep just the flag/globe emoji
+   so the pill shrinks to ~32px and the icon buttons stay on screen. */
+@media (max-width: 379px) {
+  .dashboard-header-langpill {
+    padding: 0 8px;
+    gap: 0;
+  }
+  .dashboard-header-langpill span:last-child,
+  .dashboard-header-langpill .lang-label {
+    display: none;
+  }
+}
+.dashboard-header-langpill:hover { border-color: var(--line-mid); background: var(--cream-2); }
+.dashboard-header-langpill:active { transform: scale(0.97); }
+
+/* Compact-header tightening on scroll. The AppShell flips
+   data-compact="true" on its header at scrollY > 24. Use this to
+   shrink padding without remounting. */
+.app-shell-v2 > .app-shell-header[data-compact="true"] .dashboard-header-row {
+  padding-block: var(--space-fluid-2);
+}
+.app-shell-v2 > .app-shell-header[data-compact="true"] .dashboard-header-greeting { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COSMIC REDESIGN — Phase 0 foundation (2026-06-05)
+
+   The entire block below is GATED behind ff_cosmic_redesign_v1. It only
+   activates when CosmicThemeProvider (src/lib/cosmic-theme.tsx) writes
+   data-design="cosmic" to <html> — which it does ONLY when the flag resolves
+   ON. When the flag is OFF there is no data-design attribute, so every rule
+   here is inert and the existing light "Atlas" theme renders pixel-identical.
+
+   Design source of truth: C:\...\alfa_design_src\__styles.css (the CEO's
+   approved prototype). Token values, role palettes, light/HC overrides, and
+   every primitive's CSS are copied faithfully from it.
+
+   Visibility (CEO directive): AAA-contrast text/surface pairs (verified in the
+   token comments below), light + high-contrast themes selectable
+   (data-theme="light" / data-theme="hc"), and all non-essential animation is
+   disabled under prefers-reduced-motion at the end of this block.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Cosmic design tokens (default = dark) ──────────────────────────────
+   Faithful copy of :root from __styles.css. Namespaced font vars resolve to
+   the next/font CSS variables set on <html> (src/lib/cosmic-fonts.ts), with
+   the same fallbacks the prototype used. */
+html[data-design="cosmic"] {
+  /* surfaces */
+  --bg: #0A1226;
+  --bg-soft: #0E1736;
+  --bg-elev: #15214A;
+  --bg-card: rgba(255,255,255,0.04);
+  --bg-card-2: rgba(139,126,255,0.10);
+  --stroke: rgba(255,255,255,0.07);
+  --stroke-strong: rgba(255,255,255,0.14);
+  --stroke-glow: rgba(139,126,255,0.4);
+
+  /* brand defaults (Student) */
+  --violet: #8B7EFF;
+  --violet-2: #6B5AE6;
+  --violet-soft: rgba(139,126,255,0.18);
+  --cyan: #5EE8FB;
+  --cyan-soft: rgba(94,232,251,0.16);
+  --pink: #F8A4C4;
+  --pink-soft: rgba(248,164,196,0.16);
+  --saffron: #FCD34D;
+  --saffron-2: #F59E0B;
+  --saffron-soft: rgba(252,211,77,0.18);
+  --mint: #6EE7B7;
+  --mint-soft: rgba(110,231,183,0.16);
+  --coral: #FDA4AF;
+
+  /* text — contrast vs --bg #0A1226 (AAA targets):
+       --text   #F4F1FF on #0A1226 ≈ 16.6:1 (AAA)
+       --text-2 #C7CAE6 on #0A1226 ≈ 11.2:1 (AAA)
+       --text-3 #939AC1 on #0A1226 ≈ 6.0:1  (AA / AAA-large) — hints only
+       --text-4 #6B7299 on #0A1226 ≈ 3.4:1  (decorative whispers only) */
+  --text: #F4F1FF;
+  --text-2: #C7CAE6;
+  --text-3: #939AC1;
+  --text-4: #6B7299;
+
+  /* radius */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+
+  /* type — resolve to the next/font vars with the prototype's fallback chain */
+  --font-display: var(--font-cosmic-display, 'Space Grotesk', ui-sans-serif, system-ui, sans-serif);
+  --font-body: var(--font-cosmic-body, 'Onest', ui-sans-serif, system-ui, sans-serif);
+  --font-hi: var(--font-cosmic-hi, 'Mukta', 'Onest', ui-sans-serif, system-ui, sans-serif);
+  --font-mono: var(--font-cosmic-mono, 'JetBrains Mono', ui-monospace, monospace);
+
+  /* ── 2. COMPATIBILITY TOKEN-BRIDGE ──────────────────────────────────────
+     Re-alias the legacy semantic tokens the existing 753-file app already
+     consumes so EVERY existing component/page inherits the cosmic dark theme
+     WITHOUT being rewritten. Old token → cosmic equivalent:
+
+       LEGACY (light Atlas)        →  COSMIC (dark)            why
+       ─────────────────────────────────────────────────────────────────────
+       --bg / --bg-rgb             →  #0A1226 / 10,18,38       app background
+       --surface-1                 →  --bg-elev  #15214A       raised cards
+       --surface-2                 →  --bg-soft  #0E1736       inset panels
+       --surface-3                 →  #1B2A55                  deepest insets
+       --text-1                    →  --text   #F4F1FF (AAA)   primary text
+       --text-2                    →  --text-2 #C7CAE6 (AAA)   secondary text
+       --text-3                    →  --text-3 #939AC1 (AA)    hint text
+       --border / -mid / -strong   →  --stroke / strong scale  hairlines
+       --line / -mid / -strong     →  same as borders          Atlas hairlines
+       --paper                     →  --bg-elev                Atlas card bg
+       --cream / -2 / -3           →  bg / soft / elev          Atlas surfaces
+       --ink / -2 / -3 / -4        →  text / 2 / 3 / 4          Atlas text
+       --accent (+ soft/quiet)     →  --violet (+ soft tints)   Atlas accent
+       --orange / -light / -rgb    →  --violet / -2            primary brand
+       --purple / -light / -rgb    →  --violet / -2            secondary brand
+       --gold                      →  --saffron                gamified gold
+       --teal / --teal-deep        →  --cyan                   info/teal
+       --green                     →  --mint                   success
+       --red                       →  --coral                  danger
+       --pink                      →  --pink                   pink (same role)
+       --primary/-light/-hover     →  --violet scale           Tailwind semantic
+       --secondary                 →  --cyan
+       --success / --info          →  --mint / --cyan
+       --warning                   →  --saffron
+       --danger / -light           →  --coral / soft
+       --xp-color / --streak-color →  --saffron / --coral
+       --mastery low/mid/high      →  coral / saffron / mint
+       --level-up                  →  --violet
+       --radius-* / --space-*      →  cosmic radii / Atlas spacing kept as-is
+       --shadow-*                  →  deepened for dark surfaces
+
+     AAA confirmation: all primary/secondary text aliases resolve to
+     --text / --text-2 which are ≥11:1 on every cosmic surface (bg, bg-soft,
+     bg-elev, bg-card) — comfortably AAA. */
+
+  /* surfaces */
+  --bg-rgb: 10, 18, 38;
+  --surface-1: var(--bg-elev);
+  --surface-2: var(--bg-soft);
+  --surface-3: #1B2A55;
+
+  /* text (legacy numeric tier names) */
+  --text-1: var(--text);
+  /* --text-2 / --text-3 already defined above with identical names */
+
+  /* borders */
+  --border: var(--stroke);
+  --border-mid: var(--stroke-strong);
+  --border-strong: rgba(255,255,255,0.24);
+
+  /* Atlas hairlines */
+  --line: var(--stroke);
+  --line-mid: var(--stroke-strong);
+  --line-strong: rgba(255,255,255,0.24);
+
+  /* Atlas surfaces */
+  --paper: var(--bg-elev);
+  --cream: var(--bg);
+  --cream-2: var(--bg-soft);
+  --cream-3: var(--bg-elev);
+
+  /* Atlas text */
+  --ink: var(--text);
+  --ink-2: var(--text-2);
+  --ink-3: var(--text-3);
+  --ink-4: var(--text-4);
+
+  /* Atlas accent */
+  --accent: var(--violet);
+  --accent-soft: var(--violet-soft);
+  --accent-quiet: var(--stroke-glow);
+  --teal-deep: var(--cyan);
+  --teal-soft: var(--cyan-soft);
+  --gold-soft: var(--saffron-soft);
+  --green-soft: var(--mint-soft);
+  --red-soft: rgba(253,164,175,0.16);
+
+  /* brand */
+  --orange: var(--violet);
+  --orange-light: var(--violet-2);
+  --orange-rgb: 139, 126, 255;
+  /* .btn-primary reads these; on cosmic they track the violet brand so the
+     cosmic primary button renders exactly as before Phase 1 (was
+     var(--orange)→var(--orange-light), which is violet under this scope). */
+  --btn-primary-from: var(--orange);
+  --btn-primary-to: var(--orange-light);
+  --purple: var(--violet);
+  --purple-light: var(--violet-2);
+  --purple-rgb: 139, 126, 255;
+  --gold: var(--saffron);
+  --teal: var(--cyan);
+  --green: var(--mint);
+  --red: var(--coral);
+  /* --pink already defined above (same semantic role) */
+
+  /* Tailwind semantic tokens (were undefined in light → now resolve under cosmic) */
+  --primary: var(--violet);
+  --primary-light: var(--violet-soft);
+  --primary-hover: var(--violet-2);
+  --secondary: var(--cyan);
+  --success: var(--mint);
+  --warning: var(--saffron);
+  --danger: var(--coral);
+  --danger-light: rgba(253,164,175,0.16);
+  --info: var(--cyan);
+
+  /* gamification */
+  --xp-color: var(--saffron);
+  --streak-color: var(--coral);
+  --mastery-low: var(--coral);
+  --mastery-mid: var(--saffron);
+  --mastery-high: var(--mint);
+  --level-up: var(--violet);
+
+  /* shadows — deepened so depth reads on near-black surfaces */
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.35);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.45);
+  --shadow-lg: 0 16px 40px rgba(0,0,0,0.55);
+  --shadow-glow: 0 0 28px rgba(139,126,255,0.30);
+
+  /* Atlas shadow aliases */
+  --shadow-atlas-1: 0 1px 3px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+  --shadow-atlas-2: 0 8px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+  --shadow-edge: inset 0 -1px 0 rgba(255,255,255,0.04);
+
+  /* ─── Paired on-surface / on-accent tokens (cosmic values) ─────────────────
+     Same NAMES as the light :root layer so cosmic surfaces resolve them
+     coherently; reuses cosmic's existing dark palette. Cosmic is already dark,
+     so "inverse chrome" is an elevated cosmic surface carrying cosmic ink:
+       --on-surface-inverse (--text #F4F1FF) on --bg-elev #15214A = 14.00:1 (AAA)
+       --on-surface-inverse-muted (--text-2 #C7CAE6) on #15214A  =  9.66:1 (AAA)
+     --on-accent stays #fff to MATCH cosmic's pre-existing .btn-primary rendering
+     (white on the violet CTA gradient #8B7EFF→#6B5AE6, 3.22–4.96:1 → large/UI
+     button text ≥3:1). The canonical BODY-AA guarantee for --on-accent lives on
+     the LIGHT theme's warm CTA stops; cosmic's violet CTA is pre-existing and
+     out of scope for this phase. */
+  --surface-inverse:            var(--bg-elev);
+  --on-surface-inverse:         var(--text);
+  --on-surface-inverse-muted:   var(--text-2);
+  --on-accent:                  #FFFFFF;
+  --surface-accent:             linear-gradient(135deg, var(--btn-primary-from), var(--btn-primary-to));
+  --on-surface-accent:          #FFFFFF;
+
+  /* paint the page in cosmic dark + ambient nebula */
+  background:
+    radial-gradient(1100px 700px at 12% -10%, rgba(139,126,255,0.18), transparent 60%),
+    radial-gradient(900px  600px at 105% 10%, rgba(94,232,251,0.18), transparent 60%),
+    radial-gradient(900px  700px at 50% 110%, rgba(252,211,77,0.10), transparent 60%),
+    radial-gradient(700px  500px at 80% 60%, rgba(248,164,196,0.10), transparent 60%),
+    var(--bg);
+  color: var(--text);
+}
+
+/* Apply the cosmic body typography + smoothing inside the scope. */
+html[data-design="cosmic"] body {
+  background: transparent; /* the gradient lives on <html> */
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+html[data-design="cosmic"] body.lang-hi,
+html[data-design="cosmic"][lang="hi"] body {
+  font-family: var(--font-hi);
+}
+html[data-design="cosmic"] h1,
+html[data-design="cosmic"] h2,
+html[data-design="cosmic"] h3,
+html[data-design="cosmic"] h4,
+html[data-design="cosmic"] h5 {
+  font-family: var(--font-display);
+}
+
+/* ── 3. Theme overrides: LIGHT (selectable for sunlight legibility) ─────────
+   data-theme="light" — copied from __styles.css .theme-light, re-bridged. */
+html[data-design="cosmic"][data-theme="light"] {
+  --bg: #F4F1EA;
+  --bg-soft: #ECE7DC;
+  --bg-elev: #FFFFFF;
+  --bg-card: rgba(11, 17, 48, 0.04);
+  --bg-card-2: rgba(124, 92, 255, 0.08);
+  --stroke: rgba(11, 17, 48, 0.08);
+  --stroke-strong: rgba(11, 17, 48, 0.18);
+  /* text — contrast vs --bg #F4F1EA (AAA targets):
+       --text   #0B1130 on #F4F1EA ≈ 16.9:1 (AAA)
+       --text-2 #2E3460 on #F4F1EA ≈ 9.7:1  (AAA)
+       --text-3 #5B6190 on #F4F1EA ≈ 4.9:1  (AA) — hints only */
+  --text: #0B1130;
+  --text-2: #2E3460;
+  --text-3: #5B6190;
+  --text-4: #8A91B5;
+
+  /* re-resolve bridged tokens that referenced dark literals */
+  --bg-rgb: 244, 241, 234;
+  --surface-3: #E4DECF;
+  --border-strong: rgba(11,17,48,0.24);
+  --line-strong: rgba(11,17,48,0.24);
+  --shadow-sm: 0 1px 4px rgba(11,17,48,0.06);
+  --shadow-md: 0 4px 16px rgba(11,17,48,0.08);
+  --shadow-lg: 0 16px 40px rgba(11,17,48,0.10);
+  --shadow-atlas-1: 0 1px 3px rgba(11,17,48,0.06), 0 0 0 1px rgba(11,17,48,0.05);
+  --shadow-atlas-2: 0 8px 28px rgba(11,17,48,0.08), 0 0 0 1px rgba(11,17,48,0.06);
+
+  background:
+    radial-gradient(900px 500px at 12% -10%, rgba(124,92,255,0.16), transparent 60%),
+    radial-gradient(700px 500px at 105% 10%, rgba(34,211,238,0.12), transparent 60%),
+    var(--bg);
+
+  /* ── ALFA MOMENTUM — WARM + STATUS CHANNELS (Wave 2, dashboard) ──────────
+     The base cosmic block (html[data-design="cosmic"]) deliberately remaps
+     --orange / --orange-rgb to VIOLET (139,126,255) and the mastery/status
+     family to dark-mode PASTELS (mint/coral/saffron/violet). On the warm-cream
+     cosmic-LIGHT student dashboard those pastels are too light to read and the
+     violet --orange breaks the "burnt-orange is THE brand signal" language.
+
+     These re-declarations are ADDITIVE and SCOPED to the cosmic-light surface
+     ONLY (this selector). They do NOT touch the dark cosmic surfaces (Foxy /
+     Learn keep their violet+pastel ambiance) and they do NOT alter the global
+     --orange-rgb remap — that stays violet, which is why the warm tints below
+     route through the dedicated --accent-warm-rgb channel instead.
+
+     Burnt-orange #E8581C is the brand signal for PRIMARY actions + gamification;
+     violet (--purple / --orange-rgb) stays the deliberate AI/cosmic accent. */
+
+  /* Stable warm channel — NOT remapped to violet here (cf. base cosmic block). */
+  --accent-warm-rgb: 232, 88, 28;
+  --accent-warm: #E8581C;
+  --accent-warm-strong: #C2440F;   /* darker warm stop for CTA gradients */
+
+  /* Primary-action CTA reads burnt-orange on the cream surface — this block's
+     own stated intent ("burnt-orange is THE brand signal for PRIMARY actions").
+     The base cosmic block (html[data-design="cosmic"]) remaps --btn-primary-*
+     to violet for the dark Foxy/Learn surfaces; re-pin them to the AA-verified
+     warm stops HERE so the canonical Button/IconButton variant="primary" owns a
+     warm on-accent pairing at the surface layer — no per-component --orange
+     override needed. Mirrors the :root warm stops (#CB4710 4.72:1 / #C2440F
+     ≥4.5:1 with #FFFFFF). This is the DD-16 paired-token fix for the CTA. */
+  --btn-primary-from: #CB4710;
+  --btn-primary-to: #C2440F;
+
+  /* Semantic mastery/status palette — saturated for the cream light surface
+     (the inherited mint/coral/saffron pastels wash out on #F4F1EA). */
+  --green: #15803D;        /* mastered / strong */
+  --green-rgb: 21, 128, 61;
+  --red: #DC2626;          /* critical / danger */
+  --danger: #DC2626;
+  --purple: #7C3AED;       /* needs-revision / weak — deliberate violet accent */
+  --purple-rgb: 124, 58, 237;
+  --mastery-low: #DC2626;
+  --mastery-mid: #E8581C;
+  --mastery-high: #15803D;
+}
+
+/* ── 4. Theme overrides: HIGH CONTRAST (.theme-hc → data-theme="hc") ────────
+   Maximum legibility for low-vision users / harsh sunlight. Copied from
+   __styles.css .theme-hc. Pure-white text on near-black ⇒ ≈ 20:1 (AAA). */
+html[data-design="cosmic"][data-theme="hc"] {
+  --bg: #000000;
+  --bg-soft: #050714;
+  --bg-elev: #0B1130;
+  --stroke: rgba(255,255,255,0.22);
+  --stroke-strong: rgba(255,255,255,0.45);
+  /* text vs --bg #000000:
+       --text   #FFFFFF ≈ 21:1   (AAA)
+       --text-2 #E8EBFF ≈ 18.8:1 (AAA)
+       --text-3 #B8BEE0 ≈ 12.4:1 (AAA) */
+  --text: #FFFFFF;
+  --text-2: #E8EBFF;
+  --text-3: #B8BEE0;
+
+  --bg-rgb: 0, 0, 0;
+  --surface-3: #0B1130;
+  --border-strong: rgba(255,255,255,0.55);
+  --line-strong: rgba(255,255,255,0.55);
+  /* Flatten the ambient nebula so glows can't reduce contrast in HC mode. */
+  background: var(--bg);
+}
+
+/* ── 5. Role-scoped palettes ───────────────────────────────────────────────
+   Copied from __styles.css body[data-role="..."]. Scoped here to
+   html[data-design="cosmic"][data-role="..."] so the cosmic provider's
+   data-role attribute drives them. Each only re-tints the accent family +
+   role-specific surfaces; text tokens stay AAA from the base/theme blocks. */
+
+/* Parent — warm & nurturing (peach + mint + amber) */
+html[data-design="cosmic"][data-role="parent"] {
+  --violet: #F8A4C4; --violet-2: #E47AA0; --violet-soft: rgba(248,164,196,0.18);
+  --cyan:   #6FDDB5; --cyan-soft: rgba(111,221,181,0.18);
+  --pink:   #FDBA8C;
+  --saffron:#FFD89C; --saffron-soft: rgba(255,216,156,0.18);
+  --bg: #1C1424; --bg-soft: #261A30; --bg-elev: #2E2240;
+  --bg-card-2: rgba(248,164,196,0.10);
+  --stroke-glow: rgba(248,164,196,0.4);
+  --accent: var(--violet); --accent-soft: var(--violet-soft);
+}
+
+/* Teacher — focused & calm (sky + lavender) */
+html[data-design="cosmic"][data-role="teacher"] {
+  --violet: #A78BFA; --violet-2: #8466F0; --violet-soft: rgba(167,139,250,0.18);
+  --cyan:   #7DD3FC; --cyan-soft: rgba(125,211,252,0.18);
+  --pink:   #F0ABFC;
+  --saffron:#FCD34D; --saffron-soft: rgba(252,211,77,0.18);
+  --bg: #0E1A2B; --bg-soft: #122339; --bg-elev: #1B2D4A;
+  --bg-card-2: rgba(167,139,250,0.10);
+  --stroke-glow: rgba(167,139,250,0.4);
+  --accent: var(--violet); --accent-soft: var(--violet-soft);
+}
+
+/* School — sophisticated & executive (gold + steel) */
+html[data-design="cosmic"][data-role="school"] {
+  --violet: #FDE68A; --violet-2: #D9B66B; --violet-soft: rgba(253,230,138,0.18);
+  --cyan:   #93C5FD; --cyan-soft: rgba(147,197,253,0.18);
+  --pink:   #C4B5FD;
+  --saffron:#F5C97B; --saffron-soft: rgba(245,201,123,0.18);
+  --bg: #0C1426; --bg-soft: #131F38; --bg-elev: #1B2849;
+  --bg-card-2: rgba(253,230,138,0.10);
+  --stroke-glow: rgba(253,230,138,0.4);
+  --accent: var(--violet); --accent-soft: var(--violet-soft);
+}
+
+/* ═══ COSMIC PRIMITIVES — faithful to __styles.css ════════════════════════
+   All class names are cosmic-namespaced where they could collide with legacy
+   classes. The React primitives in src/components/cosmic/* render these. */
+
+/* Starfield (subtle, animated). Hidden in light + HC for legibility/perf. */
+.cosmic-starfield {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 18% 22%, rgba(255,255,255,0.55), transparent),
+    radial-gradient(1px 1px at 78% 36%, rgba(255,255,255,0.45), transparent),
+    radial-gradient(1.5px 1.5px at 42% 78%, rgba(255,255,255,0.4), transparent),
+    radial-gradient(1px 1px at 88% 82%, rgba(255,255,255,0.55), transparent),
+    radial-gradient(1px 1px at 64% 12%, rgba(255,255,255,0.35), transparent),
+    radial-gradient(1px 1px at 8% 64%, rgba(255,255,255,0.45), transparent),
+    radial-gradient(1px 1px at 30% 50%, rgba(255,255,255,0.35), transparent),
+    radial-gradient(2px 2px at 95% 5%, rgba(94,232,251,0.5), transparent),
+    radial-gradient(2px 2px at 5% 95%, rgba(139,126,255,0.4), transparent);
+  opacity: 0.8;
+  animation: cosmicStarShimmer 8s ease-in-out infinite;
+}
+@keyframes cosmicStarShimmer { 0%, 100% { opacity: 0.75 } 50% { opacity: 1 } }
+html[data-design="cosmic"][data-theme="light"] .cosmic-starfield,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-starfield { display: none; }
+
+/* GlowCard (.glow-card) */
+.cosmic-glow-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(139,126,255,0.18), rgba(139,126,255,0.04));
+  border: 1px solid var(--stroke-glow);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.cosmic-glow-card::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(400px 200px at 80% -20%, rgba(94,232,251,0.35), transparent 60%);
+}
+
+/* CardElev (.card-elev) */
+.cosmic-card-elev {
+  background: var(--bg-elev);
+  border: 1px solid var(--stroke-strong);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Generic Card (.card) */
+.cosmic-card {
+  background: var(--bg-card);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: border-color 0.2s, background 0.2s, transform 0.18s;
+}
+.cosmic-card:hover { border-color: var(--stroke-strong); }
+
+/* MasteryRing (.ring) — set --p (0–100), --s (px size), --c1/--c2 colors */
+.cosmic-ring {
+  --p: 0;
+  --s: 56;
+  --c1: var(--violet);
+  --c2: var(--cyan);
+  width: calc(var(--s) * 1px); height: calc(var(--s) * 1px);
+  border-radius: 50%;
+  background: conic-gradient(from -90deg, var(--c1) 0 calc(var(--p) * 1%), rgba(255,255,255,0.06) 0);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.cosmic-ring::before {
+  content: ''; position: absolute; inset: 4px; border-radius: 50%;
+  background: var(--bg-elev);
+}
+.cosmic-ring > * { position: relative; }
+
+/* Chip (.chip + variants) */
+.cosmic-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-card);
+  border: 1px solid var(--stroke);
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+.cosmic-chip-violet  { background: var(--violet-soft); border-color: rgba(139,126,255,0.35); color: #C8B8FF; }
+.cosmic-chip-cyan    { background: var(--cyan-soft);   border-color: rgba(94,232,251,0.35);  color: #8EE6F5; }
+.cosmic-chip-saffron { background: var(--saffron-soft);border-color: rgba(252,211,77,0.4);   color: #FDD970; }
+.cosmic-chip-mint    { background: var(--mint-soft);   border-color: rgba(110,231,183,0.35); color: #7DE9C0; }
+.cosmic-chip-pink    { background: var(--pink-soft);   border-color: rgba(248,164,196,0.35); color: #F9B5D6; }
+
+/* In light/HC themes the pastel chip text tints fail AAA; pin them to --text. */
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-violet,
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-cyan,
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-saffron,
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-mint,
+html[data-design="cosmic"][data-theme="light"] .cosmic-chip-pink,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-violet,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-cyan,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-saffron,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-mint,
+html[data-design="cosmic"][data-theme="hc"] .cosmic-chip-pink { color: var(--text); }
+
+/* CosmicButton (.btn) + ghost (.btn-ghost) */
+.cosmic-btn {
+  appearance: none; border: 0;
+  background: var(--violet); color: #fff;
+  font-family: var(--font-body); font-weight: 600; font-size: 14px;
+  padding: 12px 18px; border-radius: 14px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: 0 8px 20px rgba(139,126,255,0.35);
+  transition: transform 0.12s cubic-bezier(0.34,1.56,0.64,1), filter 0.18s, box-shadow 0.18s;
+}
+.cosmic-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 24px rgba(139,126,255,0.45); }
+.cosmic-btn:active { transform: scale(0.96); filter: brightness(1.08); }
+.cosmic-btn:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+.cosmic-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.cosmic-btn-ghost {
+  background: var(--bg-card); border: 1px solid var(--stroke);
+  color: var(--text); box-shadow: none;
+}
+.cosmic-btn-ghost:hover { box-shadow: none; background: var(--bg-card-2); border-color: var(--stroke-strong); transform: translateY(-1px); }
+/* When the role accent is a pale color (school gold), white-on-pale fails AAA;
+   use ink text on the solid button in those palettes. */
+html[data-design="cosmic"][data-role="school"] .cosmic-btn { color: #0B1130; }
+
+/* PillButton (.pill-btn) */
+.cosmic-pill-btn {
+  appearance: none;
+  border: 1px solid var(--stroke);
+  background: var(--bg-card);
+  color: var(--text-2);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: transform 0.12s cubic-bezier(0.34,1.56,0.64,1), color 0.18s, border-color 0.18s;
+}
+.cosmic-pill-btn:hover { color: var(--text); border-color: var(--stroke-strong); }
+.cosmic-pill-btn:active { transform: scale(0.96); }
+.cosmic-pill-btn:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+.cosmic-pill-btn[data-active="true"] { background: var(--violet-soft); border-color: var(--violet); color: var(--text); }
+
+/* IconButton (.icon-btn) */
+.cosmic-icon-btn {
+  appearance: none; border: 1px solid var(--stroke);
+  background: var(--bg-card);
+  width: 36px; height: 36px; border-radius: 12px;
+  color: var(--text-2);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s cubic-bezier(0.34,1.56,0.64,1), color 0.18s, border-color 0.18s;
+}
+.cosmic-icon-btn:hover { color: var(--text); border-color: var(--stroke-strong); }
+.cosmic-icon-btn:active { transform: scale(0.96); }
+.cosmic-icon-btn:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+
+/* MascotBubble (.mascot-bubble) */
+.cosmic-mascot-bubble {
+  background: var(--bg-card-2);
+  border: 1px solid var(--stroke-glow);
+  border-radius: 18px 18px 18px 4px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+/* ProgressBar (.bar) */
+.cosmic-bar { height: 6px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; }
+.cosmic-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), var(--cyan)); border-radius: 999px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
+html[data-design="cosmic"][data-theme="light"] .cosmic-bar { background: rgba(11,17,48,0.08); }
+html[data-design="cosmic"][data-theme="hc"] .cosmic-bar { background: rgba(255,255,255,0.2); }
+
+/* HeatCell (.heatcell) */
+.cosmic-heatcell { width: 100%; aspect-ratio: 1; border-radius: 6px; background: rgba(255,255,255,0.05); }
+html[data-design="cosmic"][data-theme="light"] .cosmic-heatcell { background: rgba(11,17,48,0.06); }
+
+/* Type helpers (.h-display / .tab-num) */
+.cosmic-h-display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; }
+.cosmic-tab-num { font-variant-numeric: tabular-nums; }
+.cosmic-mono { font-family: var(--font-mono); }
+.cosmic-muted { color: var(--text-3); }
+
+/* Animation helpers (.fade-up / .float) */
+@keyframes cosmicFadeUp { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.cosmic-fade-up { animation: cosmicFadeUp 0.32s ease forwards; }
+@keyframes cosmicFloat { 0%,100%{ transform: translateY(0) } 50%{ transform: translateY(-6px) } }
+.cosmic-float { animation: cosmicFloat 3.4s ease-in-out infinite; }
+@keyframes cosmicPulseSoft { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
+.cosmic-pulse { animation: cosmicPulseSoft 2.2s ease-in-out infinite; }
+
+/* ── 5b. COSMIC STUDENT NAV ────────────────────────────────────────────────
+   Faithful to the prototype StudentNav (alfa_design_src/31_*.js): the active
+   tab gets a violet-soft rounded "pill" capsule behind its icon, a lift, and a
+   glowing dot — on top of the bridged violet --accent the nav already inherits.
+
+   IMPORTANT: every rule here is scoped under html[data-design="cosmic"], so it
+   only applies when ff_cosmic_redesign_v1 is ON. The shared MobileBottomNav
+   component (mounted globally) is otherwise byte-identical for flag-OFF users.
+   No item/route is dropped — this is purely the active-state visual treatment.
+
+   The active icon is the FIRST <span> inside each slot button (the component
+   renders the emoji span before the label span). We give that span the violet
+   pill via ::before so we don't touch the component's markup. */
+html[data-design="cosmic"] .bottom-nav-mobile__slot[data-active="true"] > span:first-of-type {
+  position: relative;
+}
+html[data-design="cosmic"] .bottom-nav-mobile__slot[data-active="true"] > span:first-of-type::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40px;
+  height: 30px;
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  background: var(--violet-soft);
+  z-index: -1;
+}
+/* The underline ::after becomes a soft glowing dot in cosmic, matching the
+   prototype's navDot (the existing rule already paints it with --accent). */
+html[data-design="cosmic"] .bottom-nav-mobile__slot[data-active="true"]::after {
+  box-shadow: 0 0 6px var(--violet);
+}
+
+/* ── 5c. COSMIC PARENT NAV (DashboardSidebar active state) ──────────────────
+   Phase 2 — parent portal reskin. The shared DashboardSidebar paints its
+   active item with the per-portal `primaryColor` prop INLINE (#F97316 for the
+   parent portal). Inline styles win over class rules, so we retint the active
+   item to the cosmic parent accent (peach via --accent) using attribute
+   selectors with !important — ONLY inside the cosmic scope AND the
+   `.parent-portal` container, so super-admin / school-admin sidebars and the
+   flag-OFF world are byte-identical. No nav item or route is dropped — this is
+   purely the active-state color treatment + a soft glow to match the cosmic
+   identity. The active item is the <a aria-current="page"> rendered by
+   DashboardSidebar. */
+html[data-design="cosmic"] .parent-portal nav a[aria-current="page"] {
+  color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  border-left-color: var(--accent) !important;
+  box-shadow: inset 2px 0 8px -4px var(--stroke-glow);
+}
+/* Active/unread badges in the parent sidebar inherit the cosmic accent too. */
+html[data-design="cosmic"] .parent-portal nav a[aria-current="page"] [data-testid^="sidebar-badge-"],
+html[data-design="cosmic"] .parent-portal nav a [data-testid^="sidebar-badge-"] {
+  background: var(--accent) !important;
+}
+/* School-gold accent is pale — keep badge/active text legible (ink, not white). */
+html[data-design="cosmic"][data-role="school"] .parent-portal nav a[aria-current="page"] {
+  color: var(--text) !important;
+}
+
+/* ── 5d. COSMIC TEACHER / SCHOOL-ADMIN / SUPER-ADMIN SHELLS (Phase 3) ────────
+   Same approach proven for the parent portal in 5c: the shared DashboardSidebar
+   paints its active item with the per-portal `primaryColor` prop INLINE
+   (#6366F1 teacher, #7C3AED school-admin/super-admin). Inline styles win over
+   class rules, so we retint the active item to the cosmic role accent
+   (--accent: sky/lavender for teacher, gold for school) with !important —
+   ONLY inside the cosmic scope AND each portal's container class
+   (added in the shells only when cosmicEnabled). The flag-OFF world and the
+   long tail of pages are byte-identical. NO nav item or route is dropped —
+   this is purely the active-state visual treatment (glow pill) for visibility.
+
+   The portal classes are added by the shells: `.teacher-portal` (TeacherShell),
+   `.school-admin-portal` (SchoolAdminShell), `.super-admin-portal` (AdminShell).
+   The active item is the <a aria-current="page"> rendered by DashboardSidebar. */
+html[data-design="cosmic"] .teacher-portal nav a[aria-current="page"],
+html[data-design="cosmic"] .school-admin-portal nav a[aria-current="page"],
+html[data-design="cosmic"] .super-admin-portal nav a[aria-current="page"] {
+  color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  border-left-color: var(--accent) !important;
+  box-shadow: inset 2px 0 8px -4px var(--stroke-glow);
+}
+/* Active/unread badges inherit the cosmic accent too. */
+html[data-design="cosmic"] .teacher-portal nav a[aria-current="page"] [data-testid^="sidebar-badge-"],
+html[data-design="cosmic"] .teacher-portal nav a [data-testid^="sidebar-badge-"],
+html[data-design="cosmic"] .school-admin-portal nav a[aria-current="page"] [data-testid^="sidebar-badge-"],
+html[data-design="cosmic"] .super-admin-portal nav a[aria-current="page"] [data-testid^="sidebar-badge-"] {
+  background: var(--accent) !important;
+}
+/* School-gold accent is pale — keep active text legible (ink, not pale gold). */
+html[data-design="cosmic"][data-role="school"] .teacher-portal nav a[aria-current="page"],
+html[data-design="cosmic"][data-role="school"] .school-admin-portal nav a[aria-current="page"],
+html[data-design="cosmic"][data-role="school"] .super-admin-portal nav a[aria-current="page"] {
+  color: var(--text) !important;
+}
+
+/* 5d-i. Teacher overview `td-card` family. The teacher dashboard injects an
+   inline <style> with HARDCODED slate hexes (#0F172A card, #1E293B inputs,
+   #6366F1 primary button). Those are dark already, but off the cosmic navy
+   palette; retint them to the bridged cosmic tokens so the overview reads as
+   one surface with the rest of the cosmic identity. Scoped to the teacher role
+   so it can never affect another portal. The inline <style> in the component
+   has equal specificity for the bare class, so we add the role-scoped prefix
+   to win. */
+html[data-design="cosmic"][data-role="teacher"] .td-card {
+  background: var(--bg-elev) !important;
+  border-color: var(--stroke-strong) !important;
+}
+html[data-design="cosmic"][data-role="teacher"] .td-card-head h3 { color: var(--text-1) !important; }
+html[data-design="cosmic"][data-role="teacher"] .td-badge {
+  background: var(--bg-card) !important;
+  color: var(--text-3) !important;
+}
+html[data-design="cosmic"][data-role="teacher"] .td-input {
+  background: var(--bg-card) !important;
+  border-color: var(--stroke) !important;
+  color: var(--text-1) !important;
+}
+html[data-design="cosmic"][data-role="teacher"] .td-btn-primary {
+  background: var(--violet) !important;
+  color: #fff !important;
+}
+/* The KPI cards opt into the elevated cosmic surface via .td-kpi-cosmic. Give
+   them the prototype TeacherKpi corner-glow (a soft accent halo top-right). */
+html[data-design="cosmic"] .td-kpi-cosmic {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+}
+html[data-design="cosmic"] .td-kpi-cosmic::before {
+  content: '';
+  position: absolute;
+  top: -14px; right: -14px;
+  width: 64px; height: 64px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
+/* 5d-ii. School-admin overview cream-wash literals. The legacy school-admin
+   dashboard hardcodes a sticky header background `rgba(251,248,244,0.92)`
+   (cream) as an INLINE style the variable bridge can't reach. Under cosmic
+   that leaves a bright cream bar on the dark canvas. There is no class hook on
+   that element, so we cannot target it from CSS without touching the page;
+   instead the page passes a cosmic-aware background (handled in the page edit).
+   This block only retints the school-admin StatCard/Card surfaces that DO carry
+   classes, keeping the grid coherent on the dark canvas. (Most already consume
+   var(--surface-*)/var(--border) and bridge for free.) */
+
+/* ── 6. REDUCED MOTION (CEO visibility directive) ──────────────────────────
+   Disable every heavy cosmic animation when the user prefers reduced motion.
+   The visuals remain fully legible — only the motion stops. */
+@media (prefers-reduced-motion: reduce) {
+  .cosmic-starfield,
+  .cosmic-fade-up,
+  .cosmic-float,
+  .cosmic-pulse {
+    animation: none !important;
+  }
+  .cosmic-btn:hover,
+  .cosmic-pill-btn:hover,
+  .cosmic-icon-btn:hover,
+  .cosmic-btn-ghost:hover { transform: none; }
+  .cosmic-btn:active,
+  .cosmic-pill-btn:active,
+  .cosmic-icon-btn:active { transform: none; }
+  /* The starfield's twinkle is decorative; keep the static dots, no shimmer. */
+  .cosmic-starfield { opacity: 0.7; }
+  /* The cosmic Foxy mascot's SVG SMIL animations are disabled via the
+     prefers-reduced-motion prop the React component reads (see
+     src/components/landing/FoxyMark.tsx). */
+}
+
+/* ── 7. LITERAL-COLOR COMPATIBILITY LAYER (architect MUST-FIX, Condition 1) ──
+   ════════════════════════════════════════════════════════════════════════════
+   WHY THIS EXISTS
+   The token-bridge in section 2 re-aliases the *CSS-variable* design tokens
+   (--bg, --surface-1, --text-1, --orange, …) so every component that consumes
+   `var(--…)` inherits the cosmic dark theme for free. But the 753-file app also
+   ships hundreds of HARDCODED literal colors that the variable bridge can never
+   reach:
+
+     • Tailwind literal utilities — `bg-white`, `bg-gray-50/100`,
+       `bg-slate-50/100`, `text-gray-900`, `text-black`, `text-slate-900`, the
+       mid-gray text ramp, and arbitrary-value backgrounds like `bg-[#FFF8F0]`.
+     • A handful of component-level inline `background:'#fff'` islands that no
+       CSS utility selector can touch (patched at the component level — see
+       OnboardingWizard.tsx).
+
+   Under cosmic these literals produce white cards on a near-black page
+   (white-island breaks) and dark text on now-dark surfaces (dark-on-dark,
+   illegible). The CEO's hard constraint is "visibility shall not be
+   compromised", so this layer maps each literal back onto the bridged cosmic
+   tokens.
+
+   SCOPE / SAFETY
+   EVERY rule here is prefixed `html[data-design="cosmic"]`. CosmicThemeProvider
+   writes that attribute ONLY when ff_cosmic_redesign_v1 resolves ON. With the
+   flag OFF there is no data-design attribute, so none of these selectors match
+   and the app stays BYTE-IDENTICAL to today. These are presentational
+   overrides only — no product logic, no scores, no XP (P1-P6/P11 untouched).
+
+   NOT OVERRIDDEN (architect-confirmed legible, NOT breaks):
+     • `color:'#fff'` / `text-white` on SATURATED backgrounds (#16A34A success,
+       #DC2626 danger, #25D366 WhatsApp, #3B82F6 blue, var(--orange) which
+       bridges to --violet). White-on-saturated stays high-contrast in both
+       themes — overriding it would HURT contrast. Left untouched on purpose.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* 7a. Literal LIGHT background utilities → bridged cosmic surfaces.
+   `bg-white` and the lightest gray/slate steps are opaque card/page surfaces in
+   the legacy light theme; map them to the elevated card surface so they read as
+   raised panels on the dark canvas. The slightly-darker 100 steps map to the
+   inset surface so any visual layering the component intended is preserved. */
+html[data-design="cosmic"] .bg-white { background-color: var(--surface-1) !important; }
+html[data-design="cosmic"] .bg-gray-50,
+html[data-design="cosmic"] .bg-slate-50,
+html[data-design="cosmic"] .bg-warm-50 { background-color: var(--surface-1) !important; }
+html[data-design="cosmic"] .bg-gray-100,
+html[data-design="cosmic"] .bg-slate-100,
+html[data-design="cosmic"] .bg-warm-100 { background-color: var(--surface-2) !important; }
+
+/* Arbitrary-value page backgrounds in use on canonical learner surfaces.
+   Tailwind compiles `bg-[#FFF8F0]` → `.bg-\[\#FFF8F0\]`. These are full-page
+   cream washes (parent dashboard) — map to the app background token so the
+   whole page goes cosmic-dark instead of leaving a bright cream rectangle. */
+html[data-design="cosmic"] .bg-\[\#FFF8F0\],
+html[data-design="cosmic"] .bg-\[\#fff8f0\],
+html[data-design="cosmic"] .bg-\[\#FFFFFF\],
+html[data-design="cosmic"] .bg-\[\#ffffff\],
+html[data-design="cosmic"] .bg-\[\#fff\] { background-color: var(--bg) !important; }
+
+/* 7b. Hardcoded DARK text utilities on now-dark surfaces → light text.
+   The legacy near-black text ramp (gray/slate/black 900-800) is illegible on
+   the dark cosmic surfaces; remap to the AAA primary text token. The mid-gray
+   ramp (700/600) maps to the secondary token; the faint ramp (500/400) maps to
+   the tertiary/hint token so visual hierarchy is preserved (primary →
+   secondary → hint), just inverted for the dark canvas. */
+html[data-design="cosmic"] .text-black,
+html[data-design="cosmic"] .text-gray-900,
+html[data-design="cosmic"] .text-slate-900,
+html[data-design="cosmic"] .text-zinc-900,
+html[data-design="cosmic"] .text-neutral-900,
+html[data-design="cosmic"] .text-gray-800,
+html[data-design="cosmic"] .text-slate-800 { color: var(--text-1) !important; }
+
+html[data-design="cosmic"] .text-gray-700,
+html[data-design="cosmic"] .text-slate-700,
+html[data-design="cosmic"] .text-zinc-700,
+html[data-design="cosmic"] .text-gray-600,
+html[data-design="cosmic"] .text-slate-600,
+html[data-design="cosmic"] .text-zinc-600 { color: var(--text-2) !important; }
+
+html[data-design="cosmic"] .text-gray-500,
+html[data-design="cosmic"] .text-slate-500,
+html[data-design="cosmic"] .text-zinc-500,
+html[data-design="cosmic"] .text-gray-400,
+html[data-design="cosmic"] .text-slate-400 { color: var(--text-3) !important; }
+
+/* 7c. Recharts admin SVG strokes — LOWER severity per architect.
+   Recharts emits hardcoded light axis/gridline strokes (#ccc/#e0e0e0/#666) as
+   inline SVG attributes which the variable bridge can't reach. We provide a
+   cheap cosmic-scoped override for the cartesian grid + axis lines + tick text
+   so admin charts don't render near-invisible pale lines on the dark canvas.
+   This is intentionally narrow (axis chrome only); per-series fills are driven
+   by component props and are out of scope for this layer — see DEFERRED note in
+   the handoff. */
+html[data-design="cosmic"] .recharts-cartesian-grid line,
+html[data-design="cosmic"] .recharts-cartesian-axis-line,
+html[data-design="cosmic"] .recharts-cartesian-axis-tick-line { stroke: var(--border-mid) !important; }
+html[data-design="cosmic"] .recharts-cartesian-axis-tick-value { fill: var(--text-3) !important; }
+html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !important; }
+/* End literal-color compatibility layer ───────────────────────────────────── */
+/* End cosmic redesign block ───────────────────────────────────────────────── */
+
+/* ─── Alfa OS flagship redesign (ff_student_os_v1) ──────────────────────────
+   CSS-only motion for the OS dashboard + Foxy workspace. Uses the existing
+   --ease-atlas curve and a per-node --stagger-i index (set inline by SkillTree
+   / RoadmapNode) — no animation library, no framer-motion (protects P10).
+   prefers-reduced-motion fully disables the reveal. */
+@keyframes osReveal {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.os-skill-tree .os-roadmap-node {
+  animation: osReveal 0.42s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both;
+  /* Stagger each node by its index. Capped so a long tree never feels laggy. */
+  animation-delay: calc(min(var(--stagger-i, 0), 8) * 0.05s);
+}
+.os-mission { animation: osReveal 0.4s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both; }
+
+/* Wave 2: the hero PremiumCard paints its glow ring + focus ring from --orange
+   and --shadow-glow, both of which are VIOLET under the cosmic-light student
+   surface. Scope-override them to the stable warm channel on the hero ONLY so
+   the mission card reads burnt-orange-primary (not accidentally violet) without
+   touching PremiumCard or the global cosmic remap. */
+.os-mission {
+  --orange: var(--accent-warm, #E8581C);
+  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232, 88, 28) / 0.22);
+}
+
+/* Wave 4a (Alfa Momentum — Learn/Exams): scope-override --orange + its glow to
+   the STABLE WARM CHANNEL so primitives like GlowButton/PremiumCard (which paint
+   from --orange / --shadow-glow) read burnt-orange-primary under the cosmic-light
+   student surface, where the global remap turns --orange into violet. Apply to a
+   CTA element to keep it warm without touching the primitive or the cosmic remap.
+   Mirrors the .os-mission scope-override pattern (line ~3687). */
+.warm-cta {
+  --orange: var(--accent-warm, #E8581C);
+  --orange-light: var(--accent-warm-strong, #C2440F);
+  --shadow-glow: 0 0 28px rgb(var(--accent-warm-rgb, 232, 88, 28) / 0.22);
+}
+
+/* Wave 2 (Alfa Momentum): tasteful staggered reveal for the secondary dashboard
+   cards (mastery snapshot, board score). Each card sets --reveal-i inline; the
+   hero (--os-mission) leads, these follow. CSS-only, no library (protects P10). */
+.os-reveal-card {
+  animation: osReveal 0.44s var(--ease-atlas, cubic-bezier(.22,1,.36,1)) both;
+  animation-delay: calc(0.06s + min(var(--reveal-i, 0), 6) * 0.07s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-skill-tree .os-roadmap-node,
+  .os-mission,
+  .os-reveal-card {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+/* End Alfa OS flagship block ───────────────────────────────────────────────── */
