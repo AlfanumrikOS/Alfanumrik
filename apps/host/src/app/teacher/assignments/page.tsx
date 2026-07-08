@@ -124,6 +124,16 @@ function AssignmentsPageContent() {
   const [classes, setClasses] = useState<ClassData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+        setError(tt(isHi, "Loading timed out. Please try again.", "लोडिंग टाइम आउट। कृपया पुनः प्रयास करें।"));
+      }
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [loading, isHi]);
+
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');

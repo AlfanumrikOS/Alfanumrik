@@ -110,6 +110,16 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   const [name, setName] = useState(prefillName || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+        setError(t(isHi, "Loading timed out. Please try again.", "लोडिंग टाइम आउट। कृपया पुनः प्रयास करें।"));
+      }
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [loading, isHi]);
+
   // When true, the parent has no Supabase session, so the parent-portal Edge
   // Function (JWT-required since PR 591) will reject the link-code login. We
   // surface an account-creation CTA instead of a dead "Connection error".

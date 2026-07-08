@@ -1208,6 +1208,16 @@ function AssignmentSubmissions({ studentId, isHi }: { studentId: string; isHi: b
   const [submissions, setSubmissions] = useState<AssignmentSubmissionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+        setError(t(isHi, "Loading timed out. Please try again.", "लोडिंग टाइम आउट। कृपया पुनः प्रयास करें।"));
+      }
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [loading, isHi]);
+
   const [expandedFeedback, setExpandedFeedback] = useState<Set<string>>(new Set());
 
   useEffect(() => {

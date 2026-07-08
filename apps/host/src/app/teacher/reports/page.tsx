@@ -306,6 +306,16 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+        setError(tt(isHi, "Loading timed out. Please try again.", "लोडिंग टाइम आउट। कृपया पुनः प्रयास करें।"));
+      }
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [loading, isHi]);
+
 
   const filtered = students.filter((s: StudentListEntry) =>
     (s.name || s.student_name || '').toLowerCase().includes(searchTerm.toLowerCase())

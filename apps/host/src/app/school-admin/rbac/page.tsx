@@ -172,6 +172,7 @@ export default function SchoolAdminRBACPage() {
   const [delegations, setDelegations] = useState<DelegationRecord[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [loadingData, setLoadingData] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   /* ── Message toast ── */
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -251,54 +252,78 @@ export default function SchoolAdminRBACPage() {
   const fetchStats = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
+    setFetchError(null);
     try {
       const res = await apiFetch(`/api/school-admin/rbac?action=dashboard_stats&school_id=${schoolId}`);
       if (res.ok) {
         const d = await res.json();
         setStats(d.data || { activeElevations: 0, activeDelegations: 0, pendingApprovals: 0 });
+      } else {
+        setFetchError(t(isHi, 'Failed to load stats. Tap to retry.', 'आंकड़े लोड करने में विफल। दोबारा कोशिश करें।'));
       }
-    } catch { /* swallow */ }
-    setLoadingData(false);
-  }, [schoolId, apiFetch]);
+    } catch {
+      setFetchError(t(isHi, 'Network error. Tap to retry.', 'नेटवर्क त्रुटि। दोबारा कोशिश करें।'));
+    } finally {
+      setLoadingData(false);
+    }
+  }, [schoolId, apiFetch, isHi]);
 
   const fetchElevations = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
+    setFetchError(null);
     try {
       const res = await apiFetch(`/api/school-admin/rbac?action=elevations&school_id=${schoolId}`);
       if (res.ok) {
         const d = await res.json();
         setElevations(d.data || []);
+      } else {
+        setFetchError(t(isHi, 'Failed to load elevations. Tap to retry.', 'अधिकार लोड करने में विफल। दोबारा कोशिश करें।'));
       }
-    } catch { /* swallow */ }
-    setLoadingData(false);
-  }, [schoolId, apiFetch]);
+    } catch {
+      setFetchError(t(isHi, 'Network error. Tap to retry.', 'नेटवर्क त्रुटि। दोबारा कोशिश करें।'));
+    } finally {
+      setLoadingData(false);
+    }
+  }, [schoolId, apiFetch, isHi]);
 
   const fetchDelegations = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
+    setFetchError(null);
     try {
       const res = await apiFetch(`/api/school-admin/rbac?action=delegations&school_id=${schoolId}`);
       if (res.ok) {
         const d = await res.json();
         setDelegations(d.data || []);
+      } else {
+        setFetchError(t(isHi, 'Failed to load delegations. Tap to retry.', 'प्रतिनिधि लोड करने में विफल। दोबारा कोशिश करें।'));
       }
-    } catch { /* swallow */ }
-    setLoadingData(false);
-  }, [schoolId, apiFetch]);
+    } catch {
+      setFetchError(t(isHi, 'Network error. Tap to retry.', 'नेटवर्क त्रुटि। दोबारा कोशिश करें।'));
+    } finally {
+      setLoadingData(false);
+    }
+  }, [schoolId, apiFetch, isHi]);
 
   const fetchApprovals = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
+    setFetchError(null);
     try {
       const res = await apiFetch(`/api/school-admin/rbac?action=approvals&school_id=${schoolId}`);
       if (res.ok) {
         const d = await res.json();
         setApprovals(d.data || []);
+      } else {
+        setFetchError(t(isHi, 'Failed to load approvals. Tap to retry.', 'अनुमोदन लोड करने में विफल। दोबारा कोशिश करें।'));
       }
-    } catch { /* swallow */ }
-    setLoadingData(false);
-  }, [schoolId, apiFetch]);
+    } catch {
+      setFetchError(t(isHi, 'Network error. Tap to retry.', 'नेटवर्क त्रुटि। दोबारा कोशिश करें।'));
+    } finally {
+      setLoadingData(false);
+    }
+  }, [schoolId, apiFetch, isHi]);
 
   /* ── Actions ── */
   const grantElevation = async () => {
@@ -449,6 +474,16 @@ export default function SchoolAdminRBACPage() {
   }, [authLoading, authUserId, router]);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loadingData) {
+        setLoadingData(false);
+        setFetchError(t(isHi, 'Loading timed out. Tap to retry.', 'लोडिंग टाइम आउट। दोबारा कोशिश करें।'));
+      }
+    }, 10_000);
+    return () => clearTimeout(timer);
+  }, [loadingData, isHi]);
+
+  useEffect(() => {
     if (!authLoading && authUserId) {
       fetchAdminRecord();
     }
@@ -591,6 +626,25 @@ export default function SchoolAdminRBACPage() {
             </button>
           ))}
         </div>
+
+        {fetchError && (
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-6 text-center">
+            <p className="text-sm text-[var(--text-2)] mb-3">{fetchError}</p>
+            <Button
+              variant="primary"
+              onClick={() => {
+                switch (activeTab) {
+                  case 'dashboard': fetchStats(); break;
+                  case 'elevations': fetchElevations(); break;
+                  case 'delegations': fetchDelegations(); break;
+                  case 'approvals': fetchApprovals(); break;
+                }
+              }}
+            >
+              {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
+            </Button>
+          </div>
+        )}
 
         {/* ═══════════════════════════════════════
             TAB: DASHBOARD

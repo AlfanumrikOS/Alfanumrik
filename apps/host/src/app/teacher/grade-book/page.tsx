@@ -531,6 +531,16 @@ export default function TeacherGradeBookPage() {
   const [data, setData] = useState<GradeBookData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+        setError(tt(isHi, "Loading timed out. Please try again.", "लोडिंग टाइम आउट। कृपया पुनः प्रयास करें।"));
+      }
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [loading, isHi]);
+
 
   // Wave C — class mastery + Bloom's summary state.
   const [depth, setDepth] = useState<ClassMasteryBloomSummary | null>(null);

@@ -140,9 +140,11 @@ function StudentCard({
   const [goal, setGoal] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const saveNote = async () => {
     setSaving(true);
+    setSaveError('');
     try {
       const res = await fetch(`/api/teacher/students/${student.id}/notes`, {
         method: 'PUT',
@@ -157,8 +159,7 @@ function StudentCard({
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // Backend errors surface via UI elsewhere; note state already
-      // reflects the latest edit, so we don't roll back the textarea.
+      setSaveError(tt(isHi, 'Failed to save note. Please try again.', 'नोट सहेजने में विफल। कृपया पुनः प्रयास करें।'));
     }
     setSaving(false);
   };
@@ -462,8 +463,13 @@ function StudentCard({
               transition: 'background-color 0.3s ease',
             }}
           >
-            {saving ? tt(isHi, 'Saving...', 'सहेज रहे हैं...') : saved ? tt(isHi, 'Saved!', 'सहेज लिया!') : tt(isHi, 'Save Note & Goal', 'नोट और लक्ष्य सहेजें')}
+            {saving ? tt(isHi, 'Saving...', 'सहेजा जा रहा है...') : saved ? '✓' : tt(isHi, 'Save Note', 'नोट सहेजें')}
           </button>
+          {saveError && (
+            <p style={{ marginTop: 8, fontSize: 13, color: 'var(--danger)', fontWeight: 500 }}>
+              {saveError}
+            </p>
+          )}
 
           {/* Learning Pulse (teacher single-student lens) — gated by
               class.view_analytics (UX only; server enforces teacher↔assigned
@@ -492,6 +498,16 @@ export default function TeacherStudentsPage() {
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+        setError(tt(isHi, "Loading timed out. Please try again.", "लोडिंग टाइम आउट। कृपया पुनः प्रयास करें।"));
+      }
+    }, 10000);
+    return () => clearTimeout(timer);
+  }, [loading, isHi]);
+
   const [search, setSearch] = useState('');
   const [selectedClass, setSelectedClass] = useState('all');
   const [filterStruggling, setFilterStruggling] = useState(false);

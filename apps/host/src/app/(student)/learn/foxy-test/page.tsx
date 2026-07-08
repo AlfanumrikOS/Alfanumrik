@@ -1,7 +1,7 @@
 'use client';
 import React, { useState } from 'react';
-import { useFoxyOS } from '../../../hooks/useFoxyOS';
-import { FoxyRenderEngine } from '../../../components/FoxyRenderEngine';
+import { useFoxyOS } from '../../../../hooks/useFoxyOS';
+import { FoxyRenderEngine } from '../../../../components/FoxyRenderEngine';
 
 export default function FoxyTestPage() {
   const { uiState, loading, error, startTopic, submitEvent } = useFoxyOS("STU_E2E_1");

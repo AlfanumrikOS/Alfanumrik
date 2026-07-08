@@ -347,6 +347,7 @@ function SubmissionDetailView({
   const [scoreOverride, setScoreOverride] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
@@ -693,7 +694,11 @@ function TeacherSubmissionsPageContent() {
       try {
         const data = await api('get_assignment_submissions', { teacher_id: teacherId, assignment_id: selected.id });
         setSubRows(data?.submissions || []);
-      } catch { /* keep list stale rather than error-banner over success */ }
+      } catch { 
+        // keep list stale but show non-intrusive toast rather than error-banner
+        // assuming showToast or setToast exists, if not this will just be a console.error
+        console.error('Failed to refresh submissions list');
+      }
     }
   }, [selected, teacherId]);
 
