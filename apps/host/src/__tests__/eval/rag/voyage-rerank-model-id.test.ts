@@ -27,7 +27,7 @@ import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
 // Repo root: this file is src/__tests__/eval/rag/<file> → 4 up.
-const ROOT = resolve(__dirname, '..', '..', '..', '..', '..');
+const ROOT = resolve(__dirname, '..', '..', '..', '..', '..', '..');
 
 // The complete supported Voyage rerank model set (as returned in the HTTP 400
 // "Supported models are [...]" message). The legacy 'voyage-rerank-2' is

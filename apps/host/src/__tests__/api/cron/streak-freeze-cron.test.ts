@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const FN_PATH = resolve(
   __dirname,
-  '..', '..', '..', '..', '..',
+  '..', '..', '..', '..', '..', '..',
   'supabase/functions/daily-cron/index.ts',
 );
 

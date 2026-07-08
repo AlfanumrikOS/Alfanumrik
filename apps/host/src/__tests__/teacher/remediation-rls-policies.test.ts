@@ -43,6 +43,8 @@ function resolveMigrationPath(): string | null {
     path.resolve(process.cwd(), MIGRATION_FILE),
     // Worktree parent resolution (some CI checkouts run from the outer repo).
     path.resolve(process.cwd(), '..', MIGRATION_FILE),
+    // Workspace root resolution
+    path.resolve(process.cwd(), '..', '..', MIGRATION_FILE),
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;

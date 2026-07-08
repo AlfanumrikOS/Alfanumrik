@@ -17,7 +17,7 @@ import { resolve } from 'node:path';
  * module-eval side effects.
  */
 
-const ROOT = resolve(__dirname, '../../../../..');
+const ROOT = resolve(__dirname, '../../../../../..');
 function read(rel: string): string {
   return readFileSync(resolve(ROOT, rel), 'utf8');
 }
