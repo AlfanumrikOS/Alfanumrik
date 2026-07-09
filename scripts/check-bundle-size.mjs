@@ -104,7 +104,9 @@ const CAP_MIDDLEWARE_KB = 120;
 const SHARED_THRESHOLD_PCT = 95;
 
 const ROOT = process.cwd();
-const NEXT_DIR = join(ROOT, '.next');
+const ROOT_NEXT_DIR = join(ROOT, '.next');
+const HOST_NEXT_DIR = join(ROOT, 'apps', 'host', '.next');
+const NEXT_DIR = existsSync(ROOT_NEXT_DIR) ? ROOT_NEXT_DIR : HOST_NEXT_DIR;
 const STATIC_CHUNKS = join(NEXT_DIR, 'static', 'chunks');
 const SERVER_DIR = join(NEXT_DIR, 'server');
 const SERVER_CHUNKS = join(SERVER_DIR, 'chunks');

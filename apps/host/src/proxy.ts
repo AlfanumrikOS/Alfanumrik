@@ -12,7 +12,6 @@
  * DO NOT: create middleware.ts, add client-side profile inserts, remove role tabs
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
 // Upstash types only — actual modules are dynamic-imported inside ensureUpstash()
 // to keep them out of the middleware's synchronous startup path (P10 budget).
 import type { Ratelimit as RatelimitType } from '@upstash/ratelimit';
@@ -739,7 +738,10 @@ export async function proxy(request: NextRequest) {
   let authUserId: string | null = null;
   let authDegraded = false;
 
-  if (supabaseUrl && supabaseKey) {
+  const hasSupabaseAuthCookie = request.cookies.getAll().some(c => /^sb-.+-auth-token/.test(c.name));
+
+  if (supabaseUrl && supabaseKey && hasSupabaseAuthCookie) {
+    const { createServerClient } = await import('@supabase/ssr');
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         getAll() {
