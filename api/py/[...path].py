@@ -50,6 +50,8 @@ def register_student(req: RegisterRequest):
     try:
         os_engine.register_student(req.student_id, req.grade)
         return {"status": "success", "message": f"Profiles initialized for student {req.student_id}"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -60,6 +62,8 @@ def start_topic(req: StartTopicRequest):
             os_engine.register_student(req.student_id, 10)
         result = os_engine.start_topic(req.student_id, req.topic_id)
         return {"status": "success", "data": result}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -70,6 +74,8 @@ def process_event(req: EventProcessRequest):
             raise HTTPException(status_code=400, detail="Student not registered.")
         result = os_engine.process_event(req.student_id, req.action)
         return {"status": "success", "data": result}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

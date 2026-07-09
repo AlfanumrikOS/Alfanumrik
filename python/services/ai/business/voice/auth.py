@@ -94,7 +94,7 @@ async def verify_student(authorization_header: str | None) -> StudentAuthResult:
 
     # 2. Supabase config check — fail-CLOSED if not configured (503).
     s = get_settings()
-    if not s.supabase_url:
+    if not s.supabase_url or not s.supabase_service_role_key:
         raise AuthFailed("Supabase not configured", status=503)
 
     # 3. Verify the JWT against Supabase Auth.
