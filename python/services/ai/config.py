@@ -12,8 +12,8 @@ set these vars in the new runtime.
 
 from __future__ import annotations
 
-from functools import lru_cache
 import os
+from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field, ValidationInfo, field_validator
