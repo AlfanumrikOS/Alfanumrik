@@ -55,6 +55,131 @@ if (process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.startsWith('sk-tes
 }
 
 import '@testing-library/jest-dom/vitest';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
+import path from 'node:path';
+
+// ── Monorepo static-test path shim ───────────────────────────────────────────
+// `npm test --workspaces` runs the host Vitest process with cwd=apps/host.
+// Most app tests intentionally read `src/...` from that cwd, while the static
+// contract tests read repo-root assets such as `supabase/...` and
+// `eslint-rules/...`. Redirect only missing repo-root asset reads, leaving app
+// source paths untouched.
+(() => {
+  const require = createRequire(import.meta.url);
+  const fs = require('node:fs') as typeof import('node:fs');
+  const hostRoot = path.resolve(process.cwd());
+  const repoRoot = path.resolve(hostRoot, '..', '..');
+  const repoRootDirs = new Set([
+    '.github',
+    'docs',
+    'eslint-rules',
+    'eslint-plugin-alfanumrik',
+    'eval',
+    'mobile',
+    'scripts',
+    'supabase',
+  ]);
+  const repoRootFiles = new Set([
+    'sentry.client.config.ts',
+    'sentry.edge.config.ts',
+    'sentry.server.config.ts',
+    'vercel.json',
+  ]);
+
+  const originalExistsSync = fs.existsSync.bind(fs);
+  const originalReadFileSync = fs.readFileSync.bind(fs);
+  const originalReaddirSync = fs.readdirSync.bind(fs);
+  const originalStatSync = fs.statSync.bind(fs);
+  const originalLstatSync = fs.lstatSync.bind(fs);
+  const originalPromisesReadFile = fs.promises.readFile.bind(fs.promises);
+  const originalPromisesStat = fs.promises.stat.bind(fs.promises);
+
+  function remapRepoAssetPath(input: unknown): unknown {
+    if (typeof input !== 'string') return input;
+    const absolute = path.resolve(input);
+    if (!absolute.startsWith(hostRoot + path.sep)) return input;
+
+    const relative = path.relative(hostRoot, absolute);
+    if (!originalExistsSync(absolute)) {
+      const studentRouteCandidate = relative.startsWith(`src${path.sep}app${path.sep}`)
+        ? path.resolve(hostRoot, 'src/app/(student)', relative.slice(`src${path.sep}app${path.sep}`.length))
+        : null;
+      if (studentRouteCandidate && originalExistsSync(studentRouteCandidate)) {
+        return studentRouteCandidate;
+      }
+
+      const packageUiCandidate = relative.startsWith(`src${path.sep}components${path.sep}`)
+        ? path.resolve(repoRoot, 'packages/ui/src', relative.slice(`src${path.sep}components${path.sep}`.length))
+        : null;
+      if (packageUiCandidate && originalExistsSync(packageUiCandidate)) {
+        return packageUiCandidate;
+      }
+    }
+
+    const [firstSegment] = relative.split(path.sep);
+    if (repoRootFiles.has(relative) && !originalExistsSync(absolute)) {
+      const candidate = path.resolve(repoRoot, relative);
+      return originalExistsSync(candidate) ? candidate : input;
+    }
+    if (!repoRootDirs.has(firstSegment)) return input;
+    if (originalExistsSync(absolute)) return input;
+
+    const candidate = path.resolve(repoRoot, relative);
+    return originalExistsSync(candidate) ? candidate : input;
+  }
+
+  function resolveGeneratedReExportPath(file: unknown): unknown {
+    if (typeof file !== 'string') return file;
+    let current = remapRepoAssetPath(file);
+    if (typeof current !== 'string') return current;
+
+    for (let depth = 0; depth < 5; depth += 1) {
+      if (!originalExistsSync(current)) return current;
+
+      const absolute = path.resolve(current);
+      if (!absolute.startsWith(hostRoot + path.sep)) return current;
+
+      const source = originalReadFileSync(current, 'utf8');
+      const match = /^\/\/ auto-generated re-export stub\s+export \* from ['"]([^'"]+)['"];?\s*$/s.exec(source);
+      if (!match) return current;
+
+      const exportTarget = match[1].replace(/\\/g, '/');
+      const targets = [path.resolve(path.dirname(current), match[1])];
+      const packageSegmentIndex = exportTarget.indexOf('packages/');
+      if (packageSegmentIndex !== -1) {
+        targets.push(path.resolve(repoRoot, exportTarget.slice(packageSegmentIndex)));
+      }
+      const candidates = targets.flatMap((target) => [
+        target,
+        `${target}.ts`,
+        `${target}.tsx`,
+        `${target}.js`,
+        `${target}.jsx`,
+      ]);
+      const next = candidates.find((candidate) => originalExistsSync(candidate));
+      if (!next || next === current) return current;
+      current = next;
+    }
+
+    return current;
+  }
+
+  fs.existsSync = ((file: Parameters<typeof fs.existsSync>[0]) =>
+    originalExistsSync(remapRepoAssetPath(file))) as typeof fs.existsSync;
+  fs.readFileSync = ((file: Parameters<typeof fs.readFileSync>[0], ...args: unknown[]) =>
+    originalReadFileSync(resolveGeneratedReExportPath(file), ...(args as []))) as typeof fs.readFileSync;
+  fs.readdirSync = ((file: Parameters<typeof fs.readdirSync>[0], ...args: unknown[]) =>
+    originalReaddirSync(remapRepoAssetPath(file), ...(args as []))) as typeof fs.readdirSync;
+  fs.statSync = ((file: Parameters<typeof fs.statSync>[0], ...args: unknown[]) =>
+    originalStatSync(remapRepoAssetPath(file), ...(args as []))) as typeof fs.statSync;
+  fs.lstatSync = ((file: Parameters<typeof fs.lstatSync>[0], ...args: unknown[]) =>
+    originalLstatSync(remapRepoAssetPath(file), ...(args as []))) as typeof fs.lstatSync;
+  fs.promises.readFile = ((file: Parameters<typeof fs.promises.readFile>[0], ...args: unknown[]) =>
+    originalPromisesReadFile(resolveGeneratedReExportPath(file), ...(args as []))) as typeof fs.promises.readFile;
+  fs.promises.stat = ((file: Parameters<typeof fs.promises.stat>[0], ...args: unknown[]) =>
+    originalPromisesStat(remapRepoAssetPath(file), ...(args as []))) as typeof fs.promises.stat;
+  syncBuiltinESMExports();
+})();
 
 // ── Blob.prototype.stream polyfill (jsdom + Node-22 CI gap) ───────────────────
 // jsdom's Blob implementation (jsdom 29.x, lib/jsdom/living/file-api/Blob-impl.js)

@@ -11,7 +11,7 @@ import { RuleTester } from 'eslint';
 import path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const rule = require(path.resolve(process.cwd(), 'eslint-rules/no-direct-ai-calls.js'));
+const rule = require(path.resolve(process.cwd(), '..', '..', 'eslint-rules/no-direct-ai-calls.js'));
 
 // ESLint v8 RuleTester constructor accepts `parserOptions` at top level;
 // the v9 types (shipped with @types) are stricter — cast the options object

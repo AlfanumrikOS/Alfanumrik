@@ -51,6 +51,17 @@ function isMissingRelation(err: { code?: string | null } | null): boolean {
   return !!err && err.code === PG_RELATION_DOES_NOT_EXIST;
 }
 
+function isMissingReadModelSchema(err: { code?: string | null; message?: string | null } | null): boolean {
+  if (!err) return false;
+  const message = err.message ?? '';
+  return (
+    err.code === PG_RELATION_DOES_NOT_EXIST ||
+    err.code === '42703' ||
+    /Could not find the table/i.test(message) ||
+    /column .* does not exist/i.test(message)
+  );
+}
+
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
@@ -72,6 +83,9 @@ type SubscriptionPlanRow = {
 const SUBSCRIPTION_PLAN_COLUMNS =
   'id, plan_code, name, price_monthly, price_yearly, ' +
   'razorpay_plan_id_monthly, is_active, created_at, updated_at';
+const LEGACY_SUBSCRIPTION_PLAN_COLUMNS =
+  'id, plan_code, name, price_monthly, price_yearly, ' +
+  'razorpay_plan_id_monthly, is_active, created_at';
 
 function mapSubscriptionPlan(row: SubscriptionPlanRow): SubscriptionPlan {
   return {
@@ -97,16 +111,23 @@ export async function listSubscriptionPlans(
 ): Promise<ServiceResult<SubscriptionPlan[]>> {
   const activeOnly = opts.activeOnly ?? true;
 
-  let query = supabaseAdmin
-    .from('subscription_plans')
-    .select(SUBSCRIPTION_PLAN_COLUMNS)
-    .order('price_monthly', { ascending: true, nullsFirst: true });
+  const buildQuery = (columns: string) => {
+    let query = supabaseAdmin
+      .from('subscription_plans')
+      .select(columns)
+      .order('price_monthly', { ascending: true, nullsFirst: true });
 
-  if (activeOnly) {
-    query = query.eq('is_active', true);
+    if (activeOnly) {
+      query = query.eq('is_active', true);
+    }
+
+    return query;
+  };
+
+  let { data, error } = await buildQuery(SUBSCRIPTION_PLAN_COLUMNS);
+  if (error && isMissingReadModelSchema(error)) {
+    ({ data, error } = await buildQuery(LEGACY_SUBSCRIPTION_PLAN_COLUMNS));
   }
-
-  const { data, error } = await query;
 
   if (error) {
     if (isMissingRelation(error)) {
@@ -138,11 +159,18 @@ export async function getSubscriptionPlanByCode(
 ): Promise<ServiceResult<SubscriptionPlan | null>> {
   if (!planCode) return fail('planCode is required', 'INVALID_INPUT');
 
-  const { data, error } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from('subscription_plans')
     .select(SUBSCRIPTION_PLAN_COLUMNS)
     .eq('plan_code', planCode)
     .maybeSingle();
+  if (error && isMissingReadModelSchema(error)) {
+    ({ data, error } = await supabaseAdmin
+      .from('subscription_plans')
+      .select(LEGACY_SUBSCRIPTION_PLAN_COLUMNS)
+      .eq('plan_code', planCode)
+      .maybeSingle());
+  }
 
   if (error) {
     if (isMissingRelation(error)) {
@@ -316,8 +344,9 @@ export async function getPayment(
     .maybeSingle();
 
   if (error) {
-    if (isMissingRelation(error)) {
-      logger.warn('billing_payments_table_missing', { error: error.message });
+    if (isMissingReadModelSchema(error)) {
+      logger.warn('billing_payments_schema_missing', { error: error.message });
+      return ok(null);
     } else {
       logger.error('billing_get_payment_failed', {
         error: new Error(error.message),
@@ -361,8 +390,9 @@ export async function listPayments(opts: {
   const { data, error } = await query;
 
   if (error) {
-    if (isMissingRelation(error)) {
-      logger.warn('billing_payments_table_missing', { error: error.message });
+    if (isMissingReadModelSchema(error)) {
+      logger.warn('billing_payments_schema_missing', { error: error.message });
+      return ok([]);
     } else {
       logger.error('billing_list_payments_failed', {
         error: new Error(error.message),

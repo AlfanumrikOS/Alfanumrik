@@ -28,7 +28,7 @@ import {
   Caveat,
   CHURN_SIGNAL_CAVEAT,
   useEducationIntelligenceFlag,
-} from '../page';
+} from '../shared';
 
 const TIER_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'neutral'> = {
   elite: 'success',

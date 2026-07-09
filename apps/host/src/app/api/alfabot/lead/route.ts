@@ -26,7 +26,7 @@ import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { logAudit } from '@alfanumrik/lib/rbac';
 import { ANON_ID_COOKIE } from '@alfanumrik/lib/anon-id';
-import { _testing as _routeTesting } from '@/app/api/alfabot/route';
+import { applyLimit } from '@/app/api/alfabot/limits';
 import type {
   AlfabotErrorResponse,
   AlfabotLeadRequest,
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // 6. Rate limit: 3 leads per anon per 24h.
-  const rl = await _routeTesting.applyLimit('lead', anonId);
+  const rl = await applyLimit('lead', anonId);
   if (!rl.allowed) {
     return errorJson(
       {

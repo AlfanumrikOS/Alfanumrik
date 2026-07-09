@@ -94,7 +94,9 @@ describe('teacher surfaces forward authHeader() into fetch (structural pin)', ()
 
   it.each(TEACHER_SURFACES)('%s imports authHeader from the shared helper', (file) => {
     const src = readFileSync(resolve(process.cwd(), file), 'utf8');
-    expect(src).toMatch(/import\s*\{\s*authHeader\s*\}\s*from\s*'@\/lib\/api\/auth-header'/);
+    expect(src).toMatch(
+      /import\s*\{\s*authHeader\s*\}\s*from\s*['"](?:@\/lib|@alfanumrik\/lib)\/api\/auth-header['"]/,
+    );
   });
 
   it.each(TEACHER_SURFACES)('%s actually calls authHeader() (not a dead import)', (file) => {

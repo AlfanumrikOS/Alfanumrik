@@ -53,16 +53,6 @@ import { capture as posthogCapture } from '@alfanumrik/lib/posthog/server';
 import { validateBody } from '@alfanumrik/lib/validation';
 import { runQuizSubmitSideEffects } from '@alfanumrik/lib/quiz/submit-side-effects';
 
-// Re-export the spine-emit pure helpers from their new shared home so existing
-// importers (src/__tests__/state/learner-loop/quiz-submit-spine-emit.test.ts)
-// keep resolving them from this route module. The logic now lives in
-// src/lib/quiz/submit-side-effects.ts so both quiz-submit routes share it.
-export {
-  computeMasteryDeltas,
-  masteryChangedIdempotencyKey,
-  quizCompletedIdempotencyKey,
-} from '@alfanumrik/lib/quiz/submit-side-effects';
-
 // ─── Body schema ────────────────────────────────────────────────────────────
 
 const responseSchema = z.object({

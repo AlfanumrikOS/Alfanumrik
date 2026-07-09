@@ -327,11 +327,53 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
+    alias: [
+      {
+        find: /^(\.\.\/)+scripts\//,
+        replacement: `${path.resolve(__dirname, './scripts')}/`,
+      },
+      {
+        find: /^(\.\.\/)+supabase\//,
+        replacement: `${path.resolve(__dirname, './supabase')}/`,
+      },
+      {
+        find: /^(\.\.\/)+eval\//,
+        replacement: `${path.resolve(__dirname, './eval')}/`,
+      },
+      {
+        find: /^(\.\.\/)+agents\//,
+        replacement: `${path.resolve(__dirname, './agents')}/`,
+      },
+      {
+        find: /^(\.\.\/)+src\/lib\//,
+        replacement: `${path.resolve(__dirname, './packages/lib/src')}/`,
+      },
+      {
+        find: /^(\.\.\/)+components\/navigation\//,
+        replacement: `${path.resolve(__dirname, './packages/ui/src/navigation')}/`,
+      },
+      {
+        find: /^(\.\.\/)+components\/scan\//,
+        replacement: `${path.resolve(__dirname, './packages/ui/src/scan')}/`,
+      },
+      {
+        find: /^@\/\.\.\/agents\//,
+        replacement: `${path.resolve(__dirname, './agents')}/`,
+      },
+      {
+        find: '@/app/learn/[subject]/[chapter]/page',
+        replacement: path.resolve(__dirname, './apps/host/src/app/(student)/learn/[subject]/[chapter]/page.tsx'),
+      },
+      {
+        find: '@/app/exams/mock/[paperId]/results/page',
+        replacement: path.resolve(__dirname, './apps/host/src/app/(student)/exams/mock/[paperId]/results/page.tsx'),
+      },
+      { find: '@', replacement: path.resolve(__dirname, './apps/host/src') },
+      { find: '@alfanumrik/ui', replacement: path.resolve(__dirname, './packages/ui/src') },
+      { find: '@alfanumrik/lib', replacement: path.resolve(__dirname, './packages/lib/src') },
       // MOL Edge Function code imports supabase-js from a Deno URL.
       // Map it to the installed npm package so Vitest can resolve it.
-      'https://esm.sh/@supabase/supabase-js@2': '@supabase/supabase-js',
-    },
+      { find: 'https://esm.sh/@supabase/supabase-js@2', replacement: '@supabase/supabase-js' },
+    ],
   },
 });

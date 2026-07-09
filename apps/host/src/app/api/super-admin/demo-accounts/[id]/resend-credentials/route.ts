@@ -20,7 +20,7 @@ import { generateSecurePassword } from '@alfanumrik/lib/crypto/password';
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   // Phase G.1: rotating a demo account's password — admin level.
   // super_admin not required since the only downstream user is the operator.
@@ -28,7 +28,7 @@ export async function POST(
   if (!auth.authorized) return auth.response;
 
   try {
-    const { id } = await Promise.resolve(params);
+    const { id } = await params;
     if (!id || !isValidUUID(id)) {
       return NextResponse.json(
         { success: false, code: 'invalid_id', message: 'Valid demo account id is required' },

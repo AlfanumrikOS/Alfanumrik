@@ -28,7 +28,13 @@
       "files": [
         "src/__tests__/**",
         "src/**/*.test.{ts,tsx}",
-        "src/**/*.spec.{ts,tsx}"
+        "src/**/*.spec.{ts,tsx}",
+        "apps/*/src/__tests__/**",
+        "apps/*/src/**/*.test.{ts,tsx}",
+        "apps/*/src/**/*.spec.{ts,tsx}",
+        "packages/*/src/__tests__/**",
+        "packages/*/src/**/*.test.{ts,tsx}",
+        "packages/*/src/**/*.spec.{ts,tsx}"
       ],
       "rules": {
         "alfanumrik/no-canonical-write-outside-projector": "off"
@@ -42,7 +48,13 @@
       "excludedFiles": [
         "src/**/*.test.{ts,tsx}",
         "src/**/*.spec.{ts,tsx}",
-        "src/__tests__/**"
+        "src/__tests__/**",
+        "apps/*/src/**/*.test.{ts,tsx}",
+        "apps/*/src/**/*.spec.{ts,tsx}",
+        "apps/*/src/__tests__/**",
+        "packages/*/src/**/*.test.{ts,tsx}",
+        "packages/*/src/**/*.spec.{ts,tsx}",
+        "packages/*/src/__tests__/**"
       ],
       "rules": {
         "no-restricted-syntax": [
@@ -66,7 +78,13 @@
       "excludedFiles": [
         "src/**/*.test.{ts,tsx}",
         "src/**/*.spec.{ts,tsx}",
-        "src/__tests__/**"
+        "src/__tests__/**",
+        "apps/*/src/**/*.test.{ts,tsx}",
+        "apps/*/src/**/*.spec.{ts,tsx}",
+        "apps/*/src/__tests__/**",
+        "packages/*/src/**/*.test.{ts,tsx}",
+        "packages/*/src/**/*.spec.{ts,tsx}",
+        "packages/*/src/__tests__/**"
       ],
       "rules": {
         "no-restricted-syntax": [
@@ -121,7 +139,13 @@
         "src/lib/xp-rules.ts",
         "src/__tests__/**",
         "src/**/*.test.{ts,tsx}",
-        "src/**/*.spec.{ts,tsx}"
+        "src/**/*.spec.{ts,tsx}",
+        "apps/*/src/__tests__/**",
+        "apps/*/src/**/*.test.{ts,tsx}",
+        "apps/*/src/**/*.spec.{ts,tsx}",
+        "packages/*/src/__tests__/**",
+        "packages/*/src/**/*.test.{ts,tsx}",
+        "packages/*/src/**/*.spec.{ts,tsx}"
       ],
       "rules": {
         "no-restricted-imports": [
@@ -151,7 +175,13 @@
       "excludedFiles": [
         "src/__tests__/**",
         "src/**/*.test.{ts,tsx}",
-        "src/**/*.spec.{ts,tsx}"
+        "src/**/*.spec.{ts,tsx}",
+        "apps/*/src/__tests__/**",
+        "apps/*/src/**/*.test.{ts,tsx}",
+        "apps/*/src/**/*.spec.{ts,tsx}",
+        "packages/*/src/__tests__/**",
+        "packages/*/src/**/*.test.{ts,tsx}",
+        "packages/*/src/**/*.spec.{ts,tsx}"
       ],
       "rules": {
         "no-restricted-imports": [

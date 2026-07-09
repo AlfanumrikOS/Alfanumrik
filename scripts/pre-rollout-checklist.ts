@@ -30,6 +30,7 @@ import { join, resolve } from 'path';
 // When invoked via `npx tsx scripts/pre-rollout-checklist.ts` cwd is repo
 // root. When invoked from a worktree, __dirname is .../scripts/.
 const REPO_ROOT = resolve(__dirname, '..');
+const HOST_SRC_ROOT = join(REPO_ROOT, 'apps', 'host', 'src');
 
 // ─── Check result types ──────────────────────────────────────────────
 
@@ -44,6 +45,16 @@ function ok(name: string, detail?: string): CheckResult {
 }
 function fail(name: string, detail: string): CheckResult {
   return { name, pass: false, detail };
+}
+
+function repoFile(...segments: string[]): string {
+  const direct = join(REPO_ROOT, ...segments);
+  if (existsSync(direct)) return direct;
+  if (segments[0] === 'src') {
+    const host = join(HOST_SRC_ROOT, ...segments.slice(1));
+    if (existsSync(host)) return host;
+  }
+  return direct;
 }
 
 // ─── Individual checks (exported for testing) ────────────────────────
@@ -157,7 +168,7 @@ export function checkPromptTemplates(): CheckResult {
 }
 
 export function checkConfigFilesPresent(): CheckResult {
-  const web = join(REPO_ROOT, 'src', 'lib', 'grounding-config.ts');
+  const web = repoFile('src', 'lib', 'grounding-config.ts');
   const deno = join(REPO_ROOT, 'supabase', 'functions', 'grounded-answer', 'config.ts');
   const missing: string[] = [];
   if (!existsSync(web)) missing.push('src/lib/grounding-config.ts');
@@ -169,7 +180,7 @@ export function checkConfigFilesPresent(): CheckResult {
 export function checkConfigParity(): CheckResult {
   // Originally delegated to scripts/check-config-parity.sh, but shelling out to bash
   // is flaky on Windows environments. Re-implemented in pure TS for cross-platform reliability.
-  const webPath = join(REPO_ROOT, 'src', 'lib', 'grounding-config.ts');
+  const webPath = repoFile('src', 'lib', 'grounding-config.ts');
   const denoPath = join(REPO_ROOT, 'supabase', 'functions', 'grounded-answer', 'config.ts');
   
   if (!existsSync(webPath)) return fail('config parity', `missing: ${webPath}`);
@@ -282,11 +293,11 @@ export function checkSuperAdminAccessMigration(): CheckResult {
 export function checkPostHandlers(): CheckResult {
   const targets: Array<{ path: string; label: string }> = [
     {
-      path: join(REPO_ROOT, 'src', 'app', 'api', 'super-admin', 'grounding', 'verification-queue', 'route.ts'),
+      path: repoFile('src', 'app', 'api', 'super-admin', 'grounding', 'verification-queue', 'route.ts'),
       label: 'verification-queue',
     },
     {
-      path: join(REPO_ROOT, 'src', 'app', 'api', 'super-admin', 'grounding', 'ai-issues', 'route.ts'),
+      path: repoFile('src', 'app', 'api', 'super-admin', 'grounding', 'ai-issues', 'route.ts'),
       label: 'ai-issues',
     },
   ];
@@ -306,7 +317,7 @@ export function checkPostHandlers(): CheckResult {
 }
 
 export function checkQuizResponseShuffleMap(): CheckResult {
-  const p = join(REPO_ROOT, 'src', 'lib', 'types.ts');
+  const p = repoFile('src', 'lib', 'types.ts');
   if (!existsSync(p)) return fail('QuizResponse.shuffle_map', `missing: ${p}`);
   const src = readFileSync(p, 'utf8');
   if (!/shuffle_map\s*\?:\s*number\[\]\s*\|\s*null/.test(src)) {
@@ -318,7 +329,7 @@ export function checkQuizResponseShuffleMap(): CheckResult {
 const EXPECTED_SHUFFLE_MAP_PUSH_SITES = 5;
 
 export function checkQuizPushSites(): CheckResult {
-  const p = join(REPO_ROOT, 'src', 'app', 'quiz', 'page.tsx');
+  const p = repoFile('src', 'app', 'quiz', 'page.tsx');
   if (!existsSync(p)) return fail('quiz page shuffle_map pushes', `missing: ${p}`);
   const src = readFileSync(p, 'utf8');
   // Count occurrences of shuffle_map: ... in push payloads. Our spec says 5.

@@ -41,6 +41,11 @@ import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
+import {
+  computeDurationSec,
+  shouldPublishLessonCompleted,
+  type ProgressRowMinimal,
+} from './helpers';
 
 const RequestSchema = z.object({
   subject: z.string().min(1).max(64),
@@ -50,53 +55,6 @@ const RequestSchema = z.object({
    *  fill the durationSec field on the event. Missing → durationSec 0. */
   startedAt: z.string().datetime().optional(),
 });
-
-interface ProgressRowMinimal {
-  id: string;
-  is_completed: boolean | null;
-  completed_at: string | null;
-}
-
-/**
- * Pure: given the before/after chapter_progress rows, decide whether
- * this RPC call caused the false→true transition that should publish
- * a learner.lesson_completed event. Exported for testing.
- *
- *   - Before missing (first-ever quiz on this chapter) AND after is
- *     completed → transition. Publish.
- *   - Before existed AND was not completed AND after is completed →
- *     transition. Publish.
- *   - Before already completed → no transition. Skip.
- *   - After not completed (typical partial-completion path) → no
- *     transition. Skip.
- */
-export function shouldPublishLessonCompleted(
-  before: ProgressRowMinimal | null,
-  after: ProgressRowMinimal | null,
-): boolean {
-  if (!after) return false;
-  if (after.is_completed !== true) return false;
-  if (before === null) return true;
-  return before.is_completed !== true;
-}
-
-/**
- * Pure: compute durationSec from an optional client-provided startedAt.
- * Floors at 0 (no negatives), caps at 6h (defends against pathological
- * clock skew or paused-tab carryovers). Exported for testing.
- */
-export function computeDurationSec(
-  startedAtIso: string | undefined,
-  now: Date,
-): number {
-  if (!startedAtIso) return 0;
-  const parsed = Date.parse(startedAtIso);
-  if (!Number.isFinite(parsed)) return 0;
-  const deltaMs = now.getTime() - parsed;
-  if (deltaMs <= 0) return 0;
-  const sec = Math.round(deltaMs / 1000);
-  return Math.min(sec, 6 * 60 * 60); // 6h cap
-}
 
 export async function POST(request: NextRequest) {
   const supabase = await createSupabaseServerClient();

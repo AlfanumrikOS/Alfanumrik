@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   aggregateMastery,
   buildLeaderboardItems,
-} from '../../app/api/v1/leaderboard/mastery/route';
+} from '../../app/api/v1/leaderboard/mastery/helpers';
 
 const STUDENT_A = {
   id: 'sa', auth_user_id: 'ua', name: 'Aanya', grade: '8',

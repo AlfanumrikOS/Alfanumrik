@@ -114,10 +114,13 @@ export function ReportIssueModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="report-issue-title"
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto px-4 py-4"
       style={{ backgroundColor: 'var(--scrim)' }}
     >
-      <div className="w-full max-w-md rounded-2xl bg-surface-1 p-5 shadow-lg">
+      <div
+        data-testid="report-issue-panel"
+        className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl bg-surface-1 p-5 shadow-lg"
+      >
         {success ? (
           <div className="py-6 text-center" data-testid="report-issue-success">
             <p className="text-fluid-md font-semibold" style={{ color: 'var(--success)' }}>

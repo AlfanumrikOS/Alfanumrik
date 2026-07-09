@@ -359,7 +359,7 @@ export function ChatBubble({
               {isHi ? 'बढ़िया! अगला कदम चाहिए?' : 'Nice! Want the next step?'}
             </Badge>
           ) : (
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex min-w-0 items-center gap-1.5">
               {/* Primary row */}
               <Button
                 size="sm"
@@ -374,38 +374,9 @@ export function ChatBubble({
               >
                 {isHi ? 'समझ गया ✓' : 'Got it ✓'}
               </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onLearningAction?.('explain_simpler')}
-                data-testid="learning-action-simpler"
-              >
-                {isHi ? 'आसान करके बताओ' : 'Explain simpler'}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onLearningAction?.('show_example')}
-                data-testid="learning-action-example"
-              >
-                {isHi ? 'उदाहरण दिखाओ' : 'Show example'}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => onLearningAction?.('quiz_me')}
-                style={{
-                  background: 'color-mix(in srgb, var(--purple) 8%, transparent)',
-                  color: 'var(--purple)',
-                  borderColor: 'color-mix(in srgb, var(--purple) 22%, transparent)',
-                }}
-                data-testid="learning-action-quiz"
-              >
-                {isHi ? 'इस पर क्विज़ लो' : 'Quiz me on this'}
-              </Button>
 
-              {/* Overflow "⋯" menu — Save · Read aloud · Report an issue */}
-              <div className="relative">
+              {/* Overflow "⋯" menu — learning next steps + Save · Read aloud · Report. */}
+              <div className="relative min-w-0">
                 <IconButton
                   label={isHi ? 'और विकल्प' : 'More options'}
                   icon="⋯"
@@ -419,9 +390,42 @@ export function ChatBubble({
                 {overflowOpen && (
                   <div
                     role="menu"
-                    className="absolute left-0 z-20 mt-1 w-52 rounded-xl py-1 shadow-lg"
+                    className="absolute right-0 z-20 mt-1 max-w-[calc(100vw-2rem)] w-56 rounded-xl py-1 shadow-lg sm:left-0 sm:right-auto"
                     style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
                   >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { onLearningAction?.('explain_simpler'); setOverflowOpen(false); }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
+                      style={{ color: 'var(--text-2)' }}
+                      data-testid="learning-action-simpler"
+                    >
+                      <span aria-hidden="true">↘</span>
+                      {isHi ? 'आसान करके बताओ' : 'Explain simpler'}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { onLearningAction?.('show_example'); setOverflowOpen(false); }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
+                      style={{ color: 'var(--text-2)' }}
+                      data-testid="learning-action-example"
+                    >
+                      <span aria-hidden="true">▣</span>
+                      {isHi ? 'उदाहरण दिखाओ' : 'Show example'}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { onLearningAction?.('quiz_me'); setOverflowOpen(false); }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
+                      style={{ color: 'var(--purple)' }}
+                      data-testid="learning-action-quiz"
+                    >
+                      <span aria-hidden="true">▤</span>
+                      {isHi ? 'इस पर क्विज़ लो' : 'Quiz me on this'}
+                    </button>
                     <button
                       type="button"
                       role="menuitem"

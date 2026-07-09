@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto';
 import {
   shouldPublishLessonCompleted,
   computeDurationSec,
-} from '../../../app/api/learner/lesson/progress/route';
+} from '../../../app/api/learner/lesson/progress/helpers';
 import {
   DomainEventSchema,
   LearnerLessonCompletedSchema,

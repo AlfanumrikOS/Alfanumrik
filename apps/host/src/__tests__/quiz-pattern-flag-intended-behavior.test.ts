@@ -153,11 +153,12 @@ describe('SLC-6 server: pattern check flags (xp=0) and the session row is still 
 
   it('P3 Check 2 (all-same when >3) sets v_flagged := true (flag, not RAISE/abort)', () => {
     expect(sql).toMatch(/v_total\s*>\s*3/i);
-    expect(sql).toMatch(/v_max_same_answer\s*=\s*v_total/i);
+    expect(sql).toMatch(/v_max_same_answer\s*:=\s*GREATEST/i);
+    expect(sql).toMatch(/v_max_same_answer\s*=\s*\(\s*v_answer_counts\[1\]\s*\+\s*v_answer_counts\[2\]\s*\+\s*v_answer_counts\[3\]\s*\+\s*v_answer_counts\[4\]\s*\)/i);
     // The pattern branch flags; it must not RAISE EXCEPTION to abort the submit.
-    const idx = sql.search(/IF\s+v_max_same_answer\s*=\s*v_total\s+THEN/i);
+    const idx = sql.search(/IF\s+v_max_same_answer\s*=\s*\(\s*v_answer_counts\[1\]\s*\+\s*v_answer_counts\[2\]\s*\+\s*v_answer_counts\[3\]\s*\+\s*v_answer_counts\[4\]\s*\)/i);
     expect(idx).toBeGreaterThanOrEqual(0);
-    const block = sql.slice(idx, idx + 120);
+    const block = sql.slice(idx, idx + 320);
     expect(block).toMatch(/v_flagged\s*:=\s*true/i);
     expect(block).not.toMatch(/RAISE\s+EXCEPTION/i);
   });

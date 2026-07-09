@@ -14,7 +14,7 @@ import {
   weakTopicsForStudent,
   type WeakTopic,
 } from '../../../lib/state/learner-loop/weak-topics';
-import { buildFlashcardPayload } from '../../../app/api/learner/queue-from-scan/route';
+import { buildFlashcardPayload } from '../../../app/api/learner/queue-from-scan/helpers';
 import type { StudentState } from '../../../lib/state/student-state';
 
 // ─── Fixture ─────────────────────────────────────────────────────────

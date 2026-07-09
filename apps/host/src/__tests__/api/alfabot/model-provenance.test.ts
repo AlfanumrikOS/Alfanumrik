@@ -157,10 +157,11 @@ beforeEach(async () => {
     if (flag === 'ff_alfabot_streaming') return Promise.resolve(false);
     return Promise.resolve(false);
   });
-  const mod = await import('@/app/api/alfabot/route');
-  mod._testing.resetMemoryStore();
-  mod._testing.resetDenylistCache();
-  mod._testing.resetBudgetMemory();
+  const limits = await import('@/app/api/alfabot/limits');
+  const denylist = await import('@/app/api/alfabot/denylist-cache');
+  limits.resetMemoryStore();
+  limits.resetBudgetMemory();
+  denylist.clearDenylistCache();
 });
 
 function makeRequest(opts: { body: Record<string, unknown>; anonCookie?: string }): NextRequest {

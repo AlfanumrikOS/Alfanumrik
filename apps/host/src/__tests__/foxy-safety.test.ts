@@ -313,13 +313,16 @@ describe('Foxy RAG fallback safety', () => {
 // RAG-only-refusal rules without needing to export the constant.
 
 describe('FOXY_SAFETY_RAILS — D3 Step 4 ported rules (P12)', () => {
-  // FOXY_SAFETY_RAILS + buildSystemPrompt were extracted byte-identical into
-  // src/lib/foxy/prompt-sections.ts (H1 REFACTOR M2). Read BOTH files so this
-  // anti-deletion guard follows the content wherever it lives — it still fails
-  // if the rails are deleted from the prompt-sections module.
+  // FOXY_SAFETY_RAILS + buildSystemPrompt now live in the shared package
+  // source that the route imports at runtime. Read the package file directly so
+  // this anti-deletion guard follows the actual implementation instead of the
+  // host-side re-export stub.
   const routeSrc =
     readFileSync(join(process.cwd(), 'src/app/api/foxy/route.ts'), 'utf8') +
-    readFileSync(join(process.cwd(), 'src/lib/foxy/prompt-sections.ts'), 'utf8');
+    readFileSync(
+      join(process.cwd(), '..', '..', 'packages/lib/src/foxy/prompt-sections.ts'),
+      'utf8',
+    );
 
   it('includes the factual-integrity rule (legacy foxy-tutor:209)', () => {
     expect(routeSrc).toContain('Factual integrity');

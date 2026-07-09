@@ -79,7 +79,8 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 }));
 
 // ── Import route AFTER mocks ─────────────────────────────────────────
-import { POST, MAX_ROWS_PER_CSV } from '@/app/api/super-admin/institutions/bulk-onboard/route';
+import { POST } from '@/app/api/super-admin/institutions/bulk-onboard/route';
+import { MAX_ROWS_PER_CSV } from '@/app/api/super-admin/institutions/bulk-onboard/constants';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

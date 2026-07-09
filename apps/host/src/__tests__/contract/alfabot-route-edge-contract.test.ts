@@ -108,7 +108,7 @@ describe('AlfaBot SSE event-name contract', () => {
     // It MUST also import from the canonical module — that's the whole
     // point of the harmonization.
     expect(src).toMatch(
-      /from\s+['"]@\/lib\/alfabot\/sse-events['"]/,
+      /from\s+['"](?:@\/lib|@alfanumrik\/lib)\/alfabot\/sse-events['"]/,
     );
   });
 

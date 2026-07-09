@@ -1,7 +1,6 @@
 import { ImageResponse } from 'next/og';
 
 export const runtime = 'nodejs';
-export const contentType = 'image/png';
 
 const W = 1200;
 const H = 630;

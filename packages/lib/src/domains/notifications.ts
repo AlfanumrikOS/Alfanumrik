@@ -81,6 +81,8 @@ type NotificationRow = {
 
 const NOTIFICATION_COLUMNS =
   'id, recipient_type, recipient_id, notification_type, title, body, body_hi, icon, data, is_read, read_at, created_at';
+const LEGACY_NOTIFICATION_COLUMNS =
+  'id, recipient_type, recipient_id, title, body, is_read, read_at, created_at';
 
 function mapNotification(row: NotificationRow): Notification {
   // is_read column may be null on legacy rows — derive from read_at as a
@@ -92,12 +94,12 @@ function mapNotification(row: NotificationRow): Notification {
     id: row.id,
     recipientType: (row.recipient_type ?? 'student') as NotificationRecipientType,
     recipientId: row.recipient_id,
-    notificationType: row.notification_type,
+    notificationType: row.notification_type ?? null,
     title: row.title,
-    body: row.body,
-    bodyHi: row.body_hi,
-    icon: row.icon,
-    data: row.data,
+    body: row.body ?? null,
+    bodyHi: row.body_hi ?? null,
+    icon: row.icon ?? null,
+    data: row.data ?? null,
     isRead,
     readAt: row.read_at,
     createdAt: row.created_at,
@@ -114,6 +116,10 @@ const VALID_RECIPIENT_TYPES: NotificationRecipientType[] = [
 
 function isValidRecipientType(t: string): t is NotificationRecipientType {
   return (VALID_RECIPIENT_TYPES as string[]).includes(t);
+}
+
+function isMissingColumn(error: { code?: string | null; message?: string | null } | null, column: string): boolean {
+  return !!error && (error.code === '42703' || /column .* does not exist/i.test(error.message ?? '')) && (error.message ?? '').includes(column);
 }
 
 /**
@@ -134,19 +140,26 @@ export async function listForRecipient(
 
   const limit = Math.max(1, Math.min(opts.limit ?? 50, 200));
 
-  let query = supabaseAdmin
-    .from('notifications')
-    .select(NOTIFICATION_COLUMNS)
-    .eq('recipient_id', recipientId)
-    .eq('recipient_type', recipientType)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const buildQuery = (columns: string) => {
+    let query = supabaseAdmin
+      .from('notifications')
+      .select(columns)
+      .eq('recipient_id', recipientId)
+      .eq('recipient_type', recipientType)
+      .order('created_at', { ascending: false })
+      .limit(limit);
 
-  if (opts.unreadOnly) {
-    query = query.eq('is_read', false);
+    if (opts.unreadOnly) {
+      query = query.eq('is_read', false);
+    }
+
+    return query;
+  };
+
+  let { data, error } = await buildQuery(NOTIFICATION_COLUMNS);
+  if (isMissingColumn(error, 'body_hi') || isMissingColumn(error, 'icon')) {
+    ({ data, error } = await buildQuery(LEGACY_NOTIFICATION_COLUMNS));
   }
-
-  const { data, error } = await query;
 
   if (error) {
     logger.error('notifications_list_for_recipient_failed', {
@@ -158,7 +171,7 @@ export async function listForRecipient(
     return fail(`Notifications lookup failed: ${error.message}`, 'DB_ERROR');
   }
 
-  return ok((data ?? []).map((r) => mapNotification(r as NotificationRow)));
+  return ok((data ?? []).map((r) => mapNotification(r as unknown as NotificationRow)));
 }
 
 /**

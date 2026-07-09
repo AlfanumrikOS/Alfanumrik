@@ -263,10 +263,11 @@ beforeEach(async () => {
     return Promise.resolve(false);
   });
   // Reset the in-memory rate-limit / denylist / budget state shared across tests.
-  const mod = await import('@/app/api/alfabot/route');
-  mod._testing.resetMemoryStore();
-  mod._testing.resetDenylistCache();
-  mod._testing.resetBudgetMemory();
+  const limits = await import('@/app/api/alfabot/limits');
+  const denylist = await import('@/app/api/alfabot/denylist-cache');
+  limits.resetMemoryStore();
+  limits.resetBudgetMemory();
+  denylist.clearDenylistCache();
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -405,7 +406,8 @@ describe('/api/alfabot POST', () => {
         // We have proof of burst limit kicking in; the daily limiter has
         // been incremented 6 times. To verify the 31st-daily contract we
         // step the burst window forward by clearing JUST the burst store.
-        mod._testing.resetMemoryStore();
+        const limits = await import('@/app/api/alfabot/limits');
+        limits.resetMemoryStore();
         // After this reset, both burst AND daily are clear in the in-memory
         // fallback, which means we can't truly test "30 daily across burst
         // windows" without a time-travel hook. Bail out of this loop and
@@ -418,7 +420,8 @@ describe('/api/alfabot POST', () => {
     // Directly probe the daily limiter for the 31st-request contract.
     const results: boolean[] = [];
     for (let i = 0; i < 31; i++) {
-      const r = await mod._testing.applyLimit('day', 'anon-daily-direct');
+      const limits = await import('@/app/api/alfabot/limits');
+      const r = await limits.applyLimit('day', 'anon-daily-direct');
       results.push(r.allowed);
     }
     // First 30 allowed, 31st rejected.

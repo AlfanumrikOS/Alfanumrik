@@ -242,7 +242,7 @@ describe('XC-3 Phase 3 — /api/school-admin/contracts RLS migration', () => {
     const path = candidates.find((p) => existsSync(p));
     expect(path).toBeDefined();
     const src = readFileSync(path!, 'utf8');
-    expect(src).toMatch(/from\s+['"]@\/lib\/supabase-server['"]/);
+    expect(src).toMatch(/from\s+['"](?:@\/lib|@alfanumrik\/lib)\/supabase-server['"]/);
     expect(src).not.toMatch(/supabase-admin/);
   });
 });

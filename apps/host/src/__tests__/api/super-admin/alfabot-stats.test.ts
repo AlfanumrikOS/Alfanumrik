@@ -118,8 +118,8 @@ beforeEach(async () => {
   resetTableResults();
   // Ensure the module-level cache doesn't leak across tests.
   delete process.env.ALFABOT_DAILY_USD_CAP;
-  const mod = await import('@/app/api/super-admin/alfabot/stats/route');
-  mod._clearStatsCache();
+  const mod = await import('@/app/api/super-admin/alfabot/stats/cache');
+  mod.clearStatsCache();
 });
 
 // ─── 1. Auth ────────────────────────────────────────────────────────────────
@@ -343,8 +343,9 @@ describe('GET /api/super-admin/alfabot/stats: cost cap', () => {
 describe('GET /api/super-admin/alfabot/stats: cache', () => {
   it('second call within 60s does not re-query Supabase', async () => {
     setAuthorized();
-    const { GET, _clearStatsCache } = await import('@/app/api/super-admin/alfabot/stats/route');
-    _clearStatsCache();
+    const { GET } = await import('@/app/api/super-admin/alfabot/stats/route');
+    const { clearStatsCache } = await import('@/app/api/super-admin/alfabot/stats/cache');
+    clearStatsCache();
 
     const res1 = await GET(buildRequest());
     expect(res1.status).toBe(200);

@@ -184,12 +184,12 @@ const VALID_BODY = {
 beforeEach(async () => {
   vi.clearAllMocks();
   resetState();
-  // Reset the chat route's in-memory rate limit state (shared lead bucket).
-  const chatMod = await import('@/app/api/alfabot/route');
-  chatMod._testing.resetMemoryStore();
+  // Reset the in-memory rate limit state (shared lead bucket).
+  const limits = await import('@/app/api/alfabot/limits');
+  const denylist = await import('@/app/api/alfabot/denylist-cache');
+  limits.resetMemoryStore();
   // Reset the inquiry route's denylist cache.
-  const inquiryMod = await import('@/app/api/alfabot/inquiry/route');
-  inquiryMod._testing.resetDenylistCache();
+  denylist.clearDenylistCache('inquiry');
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "node ../../scripts/auth-guard.js && next build",
+    "build": "node ../../scripts/auth-guard.js && next build --webpack",
     "start": "next start",
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:migrations": "node scripts/lint-migrations.js",

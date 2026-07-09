@@ -79,7 +79,7 @@ describe('Tier-2 PR B — super-admin export message redaction (P13) — REG-202
     it('imports redactPIIInText from the ops-events-redactor barrel', () => {
       // The import must be from the Next.js-side barrel, not the Deno _shared path.
       expect(src).toMatch(
-        /import\s*\{[^}]*\bredactPIIInText\b[^}]*\}\s*from\s*['"]@\/lib\/ops-events-redactor['"]/,
+        /import\s*\{[^}]*\bredactPIIInText\b[^}]*\}\s*from\s*['"](?:@\/lib|@alfanumrik\/lib)\/ops-events-redactor['"]/,
       );
     });
 
