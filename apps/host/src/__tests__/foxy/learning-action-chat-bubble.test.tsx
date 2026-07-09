@@ -70,13 +70,17 @@ describe('GUARD #8 — ChatBubble flag OFF (legacy bar, byte-identical)', () => 
 });
 
 describe('GUARD #8 — ChatBubble flag ON (new learning-action bar)', () => {
-  it('renders the new chips; legacy thumbs/report/link are absent', () => {
+  it('renders compact primary actions; secondary learning actions live in overflow', () => {
     render(<ChatBubble {...baseProps({ learningActionsEnabled: true, onLearningAction: vi.fn() })} />);
     expect(screen.getByTestId('learning-action-gotit')).toBeTruthy();
+    expect(screen.getByTestId('learning-action-overflow')).toBeTruthy();
+    expect(screen.queryByTestId('learning-action-simpler')).toBeNull();
+    expect(screen.queryByTestId('learning-action-example')).toBeNull();
+    expect(screen.queryByTestId('learning-action-quiz')).toBeNull();
+    fireEvent.click(screen.getByTestId('learning-action-overflow'));
     expect(screen.getByTestId('learning-action-simpler')).toBeTruthy();
     expect(screen.getByTestId('learning-action-example')).toBeTruthy();
     expect(screen.getByTestId('learning-action-quiz')).toBeTruthy();
-    expect(screen.getByTestId('learning-action-overflow')).toBeTruthy();
     // Legacy controls gone.
     expect(screen.queryByLabelText('Helpful response')).toBeNull();
     expect(screen.queryByTestId('report-issue-link')).toBeNull();
@@ -92,8 +96,10 @@ describe('GUARD #8 — ChatBubble flag ON (new learning-action bar)', () => {
   it('Explain simpler dispatches "explain_simpler"; Show example dispatches "show_example"', () => {
     const onLearningAction = vi.fn();
     render(<ChatBubble {...baseProps({ learningActionsEnabled: true, onLearningAction })} />);
+    fireEvent.click(screen.getByTestId('learning-action-overflow'));
     fireEvent.click(screen.getByTestId('learning-action-simpler'));
     expect(onLearningAction).toHaveBeenLastCalledWith('explain_simpler');
+    fireEvent.click(screen.getByTestId('learning-action-overflow'));
     fireEvent.click(screen.getByTestId('learning-action-example'));
     expect(onLearningAction).toHaveBeenLastCalledWith('show_example');
   });
@@ -101,6 +107,7 @@ describe('GUARD #8 — ChatBubble flag ON (new learning-action bar)', () => {
   it('Quiz me on this dispatches "quiz_me"', () => {
     const onLearningAction = vi.fn();
     render(<ChatBubble {...baseProps({ learningActionsEnabled: true, onLearningAction })} />);
+    fireEvent.click(screen.getByTestId('learning-action-overflow'));
     fireEvent.click(screen.getByTestId('learning-action-quiz'));
     expect(onLearningAction).toHaveBeenCalledWith('quiz_me');
   });
@@ -123,6 +130,7 @@ describe('GUARD #8 — ChatBubble flag ON (new learning-action bar)', () => {
   it('renders English chip labels under isHi=false', () => {
     render(<ChatBubble {...baseProps({ learningActionsEnabled: true, onLearningAction: vi.fn() })} />);
     expect(screen.getByText(/Got it/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId('learning-action-overflow'));
     expect(screen.getByText('Explain simpler')).toBeTruthy();
     expect(screen.getByText('Show example')).toBeTruthy();
     expect(screen.getByText('Quiz me on this')).toBeTruthy();
@@ -132,6 +140,7 @@ describe('GUARD #8 — ChatBubble flag ON (new learning-action bar)', () => {
     _isHi = true;
     render(<ChatBubble {...baseProps({ learningActionsEnabled: true, onLearningAction: vi.fn() })} />);
     expect(screen.getByText(/समझ गया/)).toBeTruthy();       // Got it
+    fireEvent.click(screen.getByTestId('learning-action-overflow'));
     expect(screen.getByText('आसान करके बताओ')).toBeTruthy();  // Explain simpler
     expect(screen.getByText('उदाहरण दिखाओ')).toBeTruthy();    // Show example
     expect(screen.getByText('इस पर क्विज़ लो')).toBeTruthy();  // Quiz me on this

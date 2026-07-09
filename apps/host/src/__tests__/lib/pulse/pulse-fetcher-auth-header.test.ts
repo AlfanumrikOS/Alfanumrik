@@ -162,7 +162,9 @@ describe('use-pulse.ts forwards authHeader() into pulseFetcher (structural pin)'
   const src = readFileSync(resolve(process.cwd(), 'src/lib/pulse/use-pulse.ts'), 'utf8');
 
   it('imports authHeader from the shared helper', () => {
-    expect(src).toMatch(/import\s*\{\s*authHeader\s*\}\s*from\s*'@\/lib\/api\/auth-header'/);
+    expect(src).toMatch(
+      /import\s*\{\s*authHeader\s*\}\s*from\s*['"](?:@\/lib|@alfanumrik\/lib)\/api\/auth-header['"]/,
+    );
   });
 
   it('spreads/awaits authHeader() into the fetch headers (not a dead import)', () => {
@@ -175,12 +177,14 @@ describe('school-admin surfaces forward Bearer via authedFetch (structural pin)'
   const SCHOOL_ADMIN_SURFACES = [
     'src/app/school-admin/enroll/page.tsx',
     'src/app/school-admin/setup/page.tsx',
-    'src/components/school-admin/principal-ai/PrincipalAiChat.tsx',
+    '../../packages/ui/src/school-admin/principal-ai/PrincipalAiChat.tsx',
   ];
 
   it.each(SCHOOL_ADMIN_SURFACES)('%s imports authedFetch from the shared helper', (file) => {
     const src = readFileSync(resolve(process.cwd(), file), 'utf8');
-    expect(src).toMatch(/import\s*\{\s*authedFetch\s*\}\s*from\s*'@\/lib\/school-admin\/authed-fetch'/);
+    expect(src).toMatch(
+      /import\s*\{\s*authedFetch\s*\}\s*from\s*['"](?:@\/lib|@alfanumrik\/lib)\/school-admin\/authed-fetch['"]/,
+    );
   });
 
   it.each(SCHOOL_ADMIN_SURFACES)('%s actually calls authedFetch( (not a dead import)', (file) => {

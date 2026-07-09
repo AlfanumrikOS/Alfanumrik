@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const ROOT = path.resolve(__dirname, '..', '..', '..');
+const ROOT = path.resolve(process.cwd(), '..', '..');
 const INLINE_TS = path.join(
   ROOT, 'supabase', 'functions', 'grounded-answer', 'prompts', 'inline.ts'
 );

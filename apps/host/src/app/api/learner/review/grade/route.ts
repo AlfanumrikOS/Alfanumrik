@@ -47,12 +47,9 @@ import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
+import { applySm2, coerceSource, parseChapterNumber } from './helpers';
 
 // ─── Constants — mirror the legacy client's caps ────────────────────
-const EASE_FLOOR = 1.3;
-const EASE_CEIL = 3.0;
-const INTERVAL_CAP_DAYS = 365;
-const STREAK_CAP = 100;
 
 // SM-2 quality only accepts the 4 buttons the UI exposes.
 const RequestSchema = z.object({
@@ -72,64 +69,6 @@ interface CardRow {
   total_reviews: number | null;
   correct_reviews: number | null;
   source: string | null;
-}
-
-// ─── SM-2 (pure, exported for testing) ───────────────────────────────
-
-export interface Sm2Input {
-  easeFactor: number;
-  intervalDays: number;
-  streak: number;
-  quality: 0 | 3 | 4 | 5;
-}
-
-export interface Sm2Output {
-  easeFactor: number;
-  intervalDays: number;
-  streak: number;
-}
-
-/**
- * Pure SM-2 step. Identical to the legacy client implementation at
- * src/app/review/page.tsx:163-185 (verified at Phase 2b time). Exported
- * so the route can call it AND tests can pin the math without standing
- * up the route.
- */
-export function applySm2(input: Sm2Input): Sm2Output {
-  // Ease factor — bounded to [EASE_FLOOR, EASE_CEIL]
-  let newEase = input.easeFactor + (0.1 - (5 - input.quality) * (0.08 + (5 - input.quality) * 0.02));
-  if (newEase < EASE_FLOOR) newEase = EASE_FLOOR;
-  if (newEase > EASE_CEIL) newEase = EASE_CEIL;
-
-  let newInterval = input.intervalDays;
-  let newStreak = input.streak;
-
-  if (input.quality < 3) {
-    newInterval = 1;
-    newStreak = 0;
-  } else {
-    if (input.streak === 0) newInterval = 1;
-    else if (input.streak === 1) newInterval = 6;
-    else newInterval = Math.round(input.intervalDays * newEase);
-    newStreak = input.streak + 1;
-  }
-
-  if (newInterval > INTERVAL_CAP_DAYS) newInterval = INTERVAL_CAP_DAYS;
-  if (newStreak > STREAK_CAP) newStreak = STREAK_CAP;
-
-  return { easeFactor: newEase, intervalDays: newInterval, streak: newStreak };
-}
-
-// ─── Source mapping (pure, exported for testing) ─────────────────────
-
-/** Coerce a raw DB source to the event's closed enum. */
-export function coerceSource(
-  raw: string | null,
-): 'quiz_wrong_answer' | 'foxy_chat' | 'study_plan' {
-  if (raw === 'quiz_wrong_answer' || raw === 'foxy_chat' || raw === 'study_plan') {
-    return raw;
-  }
-  return 'study_plan';
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────
@@ -274,17 +213,4 @@ export async function POST(request: NextRequest) {
     },
     { status: 200 },
   );
-}
-
-/**
- * Parse a chapter number off a chapter_title like "Chapter 5: Light" or
- * "5. Light" or just "5". Returns null when no leading positive integer
- * can be extracted. Exported for testing.
- */
-export function parseChapterNumber(title: string | null): number | null {
-  if (!title) return null;
-  const m = title.match(/(?:chapter\s+)?(\d{1,3})\b/i);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
 }

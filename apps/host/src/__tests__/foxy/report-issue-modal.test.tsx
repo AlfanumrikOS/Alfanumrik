@@ -34,6 +34,13 @@ describe('ReportIssueModal', () => {
     expect(dialog).toHaveAttribute('aria-modal', 'true');
   });
 
+  it('uses a viewport-safe scroll container for short mobile screens', () => {
+    render(<ReportIssueModal isOpen={true} onClose={vi.fn()} />);
+    const panel = screen.getByTestId('report-issue-panel');
+    expect(panel.className).toContain('max-h-[calc(100dvh-2rem)]');
+    expect(panel.className).toContain('overflow-y-auto');
+  });
+
   it('renders 5 reason radio options (EN)', () => {
     render(<ReportIssueModal isOpen={true} onClose={vi.fn()} />);
     const radios = screen.getAllByRole('radio');

@@ -28,30 +28,13 @@ import { authorizeAdmin } from '@alfanumrik/lib/admin-auth';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import {
-  estimateCostUsd,
   estimateCostUsdFromTotal,
   getAlfabotDailyUsdCap,
 } from '@alfanumrik/lib/alfabot/pricing';
+import { getStatsCache, setStatsCache } from './cache';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-// ─── Memo cache (60s TTL) ────────────────────────────────────────────────────
-
-interface CachedPayload {
-  body: StatsResponse;
-  expiresAt: number;
-}
-
-let _cached: CachedPayload | null = null;
-
-/**
- * Test hook — clear the in-process memo. Production code paths never call
- * this; tests import it to keep cases independent.
- */
-export function _clearStatsCache(): void {
-  _cached = null;
-}
 
 // ─── Response shape ──────────────────────────────────────────────────────────
 
@@ -103,7 +86,7 @@ interface CostSnapshot {
   percentUsed: number; // 0..1
 }
 
-export interface StatsResponse {
+interface StatsResponse {
   generatedAt: string;
   today: {
     sessions: number;
@@ -158,7 +141,6 @@ function bumpAudience(mix: AudienceMix, audience: string | null | undefined): vo
     mix[audience] += 1;
   }
 }
-
 // ─── Aggregation pipeline ────────────────────────────────────────────────────
 
 interface SessionRow {
@@ -434,12 +416,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const now = Date.now();
-    if (_cached && _cached.expiresAt > now) {
-      return NextResponse.json({ success: true, data: _cached.body, cached: true });
+    const cached = getStatsCache<StatsResponse>(now);
+    if (cached) {
+      return NextResponse.json({ success: true, data: cached, cached: true });
     }
 
     const body = await buildStats();
-    _cached = { body, expiresAt: now + 60_000 };
+    setStatsCache(body, now + 60_000);
     return NextResponse.json({ success: true, data: body, cached: false });
   } catch (err) {
     logger.error('super-admin.alfabot-stats: unhandled error', {
@@ -451,6 +434,3 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 }
-
-// Internal export for tests.
-export { estimateCostUsd as _estimateCostUsd };

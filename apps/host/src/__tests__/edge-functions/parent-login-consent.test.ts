@@ -207,7 +207,7 @@ describe('REG-199 — the approval surface stays WIRED into the live dashboard (
 
   it('StudentOSDashboard IMPORTS PendingLinkApproval', () => {
     expect(DASH).toMatch(
-      /import\s+PendingLinkApproval(?:\s*,\s*\{[^}]*\})?\s+from\s+'@\/components\/dashboard\/PendingLinkApproval'/,
+      /import\s+PendingLinkApproval(?:\s*,\s*\{[^}]*\})?\s+from\s+'(?:@\/components|@alfanumrik\/ui)\/dashboard\/PendingLinkApproval'/,
     );
   });
 

@@ -27,7 +27,7 @@ import {
   computeMasteryDeltas,
   masteryChangedIdempotencyKey,
   quizCompletedIdempotencyKey,
-} from '../../../app/api/quiz/submit/route';
+} from '../../../lib/quiz/submit-side-effects';
 import {
   DomainEventSchema,
   LearnerMasteryChangedSchema,

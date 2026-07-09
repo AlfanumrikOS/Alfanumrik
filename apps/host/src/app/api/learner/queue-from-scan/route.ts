@@ -51,6 +51,7 @@ import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { logger } from '@alfanumrik/lib/logger';
+import { buildFlashcardPayload } from './helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,40 +76,6 @@ interface ScanRow {
 
 interface ExistingCardRow {
   id: string;
-}
-
-/**
- * Pure: derive the card payload from a scan + student snapshot. Exported
- * for testing. Falls back to safe defaults when student fields are
- * sparse (subject 'general', grade '0').
- */
-export function buildFlashcardPayload(args: {
-  scanId: string;
-  studentId: string;
-  extractedText: string;
-  subject: string | null;
-  grade: string | null;
-}): {
-  student_id: string;
-  card_type: string;
-  subject: string;
-  grade: string;
-  front_text: string;
-  back_text: string;
-  source: string;
-  source_id: string;
-} {
-  const front = args.extractedText.trim().slice(0, 1000);
-  return {
-    student_id: args.studentId,
-    card_type: 'scan_question',
-    subject: (args.subject ?? 'general').toLowerCase(),
-    grade: args.grade ?? '0',
-    front_text: front,
-    back_text: '(Solve to reveal the answer)',
-    source: 'scan',
-    source_id: args.scanId,
-  };
 }
 
 export async function POST(request: NextRequest) {

@@ -210,16 +210,25 @@ describe('P2 freeze guard — daily cap + cap math present and unchanged', () =>
     );
   });
 
-  it('P2 BYTE-IDENTITY: the 7-arg executable body equals the prior 20260610000000 body once the ON CONFLICT predicate is normalised', () => {
-    // Prove the ONLY executable change vs the baseline is the added predicate.
-    // Normalise BOTH bodies' ledger conflict clause to the bare form, then assert
-    // the entire (signature + body) strings are byte-identical. If anything else
-    // moved — a literal, the cap, the formula, the upsert — this fails.
+  it('P2 BYTE-IDENTITY: the 7-arg executable body equals the prior 20260610000000 body once known non-P2 fixes are normalised', () => {
+    // Prove the P2-owned executable logic stayed unchanged: the XP cap/formula,
+    // profile upsert, and idempotency machinery must remain byte-identical.
+    // The migration also carries a known IST streak-day correction outside P2's
+    // XP math surface, so normalise that expression along with the 42P10 fix.
     const norm = (s: string) =>
-      s.replace(
-        /ON CONFLICT \(reference_id\)(?: WHERE reference_id IS NOT NULL)? DO NOTHING/i,
-        'ON CONFLICT (reference_id) DO NOTHING',
-      );
+      s
+        .replace(
+          /ON CONFLICT \(reference_id\)(?: WHERE reference_id IS NOT NULL)? DO NOTHING/i,
+          'ON CONFLICT (reference_id) DO NOTHING',
+        )
+        .replace(
+          /\(last_active AT TIME ZONE 'Asia\/Kolkata'\)::date = \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Kolkata'\)::date/g,
+          'last_active::date = CURRENT_DATE',
+        )
+        .replace(
+          /\(last_active AT TIME ZONE 'Asia\/Kolkata'\)::date = \(CURRENT_TIMESTAMP AT TIME ZONE 'Asia\/Kolkata'\)::date - 1/g,
+          'last_active::date = CURRENT_DATE - 1',
+        );
 
     const fixBody = sevenArgBody(FIX);
     const priorBody = sevenArgBody(PRIOR);

@@ -19,7 +19,7 @@ import {
   applySm2,
   coerceSource,
   parseChapterNumber,
-} from '../../../app/api/learner/review/grade/route';
+} from '../../../app/api/learner/review/grade/helpers';
 import {
   DomainEventSchema,
   LearnerReviewGradedSchema,

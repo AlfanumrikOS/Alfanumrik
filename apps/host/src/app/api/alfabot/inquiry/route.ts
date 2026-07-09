@@ -36,7 +36,8 @@ import {
   ANON_ID_MAX_AGE_SECONDS,
   generateAnonId,
 } from '@alfanumrik/lib/anon-id';
-import { _testing as _routeTesting } from '@/app/api/alfabot/route';
+import { applyLimit } from '@/app/api/alfabot/limits';
+import { getDenylistCache, setDenylistCache } from '@/app/api/alfabot/denylist-cache';
 import type {
   AlfabotErrorResponse,
   AlfabotInquirySuccess,
@@ -53,17 +54,11 @@ const MAX_EMAIL_LEN = 254;
 const MIN_QUESTION_LEN = 10;
 const MAX_QUESTION_LEN = 2000;
 
-// We reuse the lead route's denylist cache — same anon_ids are banned.
-interface DenylistEntry {
-  denied: boolean;
-  expiresAt: number;
-}
-const _denylistCache = new Map<string, DenylistEntry>();
 const DENYLIST_TTL_MS = 60_000;
 
 async function isDenylisted(anonId: string): Promise<boolean> {
-  const cached = _denylistCache.get(anonId);
-  if (cached && cached.expiresAt > Date.now()) return cached.denied;
+  const cached = getDenylistCache('inquiry', anonId);
+  if (cached) return cached.denied;
   try {
     const { data, error } = await supabaseAdmin
       .from('alfabot_denylist')
@@ -75,7 +70,7 @@ async function isDenylisted(anonId: string): Promise<boolean> {
       return false; // Fail-open.
     }
     const denied = Boolean(data);
-    _denylistCache.set(anonId, { denied, expiresAt: Date.now() + DENYLIST_TTL_MS });
+    setDenylistCache('inquiry', anonId, denied, DENYLIST_TTL_MS);
     return denied;
   } catch (err) {
     logger.warn('alfabot.inquiry_denylist_lookup_threw', {
@@ -143,7 +138,6 @@ function errorJson(
   }
   return res;
 }
-
 // ─── Edge Function call ─────────────────────────────────────────────────────
 
 interface EdgeFunctionPayload {
@@ -242,7 +236,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // 4. Rate limit: 3 inquiries / anon / 24h (shares the lead bucket).
-  const rl = await _routeTesting.applyLimit('lead', anonId);
+  const rl = await applyLimit('lead', anonId);
   if (!rl.allowed) {
     return errorJson(
       {
@@ -366,9 +360,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   return res;
 }
-
-// ─── Test hooks ─────────────────────────────────────────────────────────────
-
-export const _testing = {
-  resetDenylistCache: () => _denylistCache.clear(),
-};

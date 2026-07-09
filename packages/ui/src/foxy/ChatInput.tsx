@@ -286,7 +286,7 @@ export const ChatInput = memo(function ChatInput({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2 pb-1">
+      <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto px-3 pt-2 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <Chip
           selected={showSymbols}
           onClick={() => setShowSymbols(!showSymbols)}
@@ -325,7 +325,7 @@ export const ChatInput = memo(function ChatInput({
           </Chip>
         )}
 
-        <span className="flex-1" />
+        <span className="min-w-4 flex-1" />
         {text.length > 0 && (
           <span
             className="text-[10px] mr-1"
@@ -387,7 +387,7 @@ export const ChatInput = memo(function ChatInput({
             background: 'var(--surface-2)',
             border: `1.5px solid ${isListening ? 'color-mix(in srgb, var(--accent-warm) 25%, transparent)' : pointMode ? `color-mix(in srgb, ${cfg.color} 25%, transparent)` : 'var(--border)'}`,
             fontFamily: 'var(--font-body)',
-            maxHeight: 200,
+            maxHeight: 'min(200px, 36dvh)',
             minHeight: pointMode ? 80 : 52,
             overflowWrap: 'break-word',
             wordBreak: 'break-word',

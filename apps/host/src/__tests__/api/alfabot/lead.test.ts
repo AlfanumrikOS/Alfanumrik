@@ -188,8 +188,8 @@ beforeEach(async () => {
     audience: 'parent',
   });
   // Reset shared in-memory rate limit state from the route module.
-  const mod = await import('@/app/api/alfabot/route');
-  mod._testing.resetMemoryStore();
+  const limits = await import('@/app/api/alfabot/limits');
+  limits.resetMemoryStore();
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────

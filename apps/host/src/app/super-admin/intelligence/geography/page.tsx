@@ -23,7 +23,7 @@ import {
   Caveat,
   CHURN_SIGNAL_CAVEAT,
   useEducationIntelligenceFlag,
-} from '../page';
+} from '../shared';
 
 const BarChart = dynamic(() => import('@alfanumrik/ui/admin-ui').then((m) => m.BarChart), { ssr: false });
 

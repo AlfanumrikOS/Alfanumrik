@@ -167,14 +167,17 @@ describe('Adaptive Pipeline Integrity', () => {
   });
 
   // ---------------------------------------------------------------
-  // 8. Database: topic_id coverage (skip if no real Supabase connection)
+  // 8. Live data quality: topic_id coverage (explicit opt-in)
   // ---------------------------------------------------------------
   // Use the same placeholder-aware integration helper that the migration
   // suite uses (see helpers/integration.ts). CI sets placeholder env vars
   // to satisfy validateServerEnv at boot, which would previously cause this
   // test to attempt a network call to placeholder.supabase.co and time out.
   // P0-D launch fix: hard-skip when env is placeholders.
-  const itIfIntegration = hasSupabaseIntegrationEnv() ? it : it.skip;
+  const itIfIntegration =
+    hasSupabaseIntegrationEnv() && process.env.RUN_LIVE_DATA_QUALITY === '1'
+      ? it
+      : it.skip;
   itIfIntegration('question_bank topic_id coverage must be >= 95% (requires Supabase)', async () => {
     const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;

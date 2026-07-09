@@ -24,7 +24,7 @@ import {
   NEW_MRR_CAVEAT,
   CHURN_SIGNAL_CAVEAT,
   useEducationIntelligenceFlag,
-} from '../page';
+} from '../shared';
 
 const LineChart = dynamic(() => import('@alfanumrik/ui/admin-ui').then((m) => m.LineChart), { ssr: false });
 const BarChart = dynamic(() => import('@alfanumrik/ui/admin-ui').then((m) => m.BarChart), { ssr: false });

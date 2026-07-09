@@ -50,11 +50,13 @@ import type {
   AlfabotRequest,
   AlfabotResponse,
 } from '@alfanumrik/lib/alfabot/types';
-
-// Upstash modules are dynamic-imported inside ensureUpstash() to keep them
-// off the route's synchronous startup path (P10 budget hygiene).
-import type { Ratelimit as RatelimitType } from '@upstash/ratelimit';
-import type { Redis as RedisType } from '@upstash/redis';
+import {
+  addBudgetSpentUsd,
+  applyLimit,
+  getBudgetSpentUsd,
+  type LimitResult,
+} from './limits';
+import { getDenylistCache, setDenylistCache } from './denylist-cache';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -66,14 +68,6 @@ const DEFAULT_DAILY_USD_CAP = 20;
 const MODEL_ID = 'gpt-4o-mini' as const;
 const VALID_AUDIENCES = ['parent', 'student', 'teacher', 'school'] as const;
 const VALID_LANGS = ['en', 'hi'] as const;
-
-// Rate-limit buckets (must match the test fixtures).
-const BURST_LIMIT = 6;
-const BURST_WINDOW = '60 s' as const;
-const DAILY_LIMIT = 30;
-const DAILY_WINDOW = '24 h' as const;
-const IP_DAILY_LIMIT = 60;
-const IP_DAILY_WINDOW = '24 h' as const;
 
 // Pre-LLM abuse regexes. P12: prevent prompt injection from anonymous
 // visitors hijacking the system prompt or exfiltrating canonical pricing
@@ -107,172 +101,6 @@ const ABSTAIN_COPY: Record<string, Record<AlfabotLang, string>> = {
   },
 };
 
-// ─── Upstash (lazy-loaded; identical pattern to src/proxy.ts) ────────────────
-
-let _redis: RedisType | null = null;
-let _burstLimiter: RatelimitType | null = null;
-let _dailyLimiter: RatelimitType | null = null;
-let _ipDailyLimiter: RatelimitType | null = null;
-let _leadLimiter: RatelimitType | null = null;
-let _upstashInit: Promise<void> | null = null;
-let _upstashReady = false;
-
-async function ensureUpstash(): Promise<void> {
-  if (_upstashReady) return;
-  if (_upstashInit) return _upstashInit;
-  _upstashInit = (async () => {
-    try {
-      if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-        const [{ Redis }, { Ratelimit }] = await Promise.all([
-          import('@upstash/redis'),
-          import('@upstash/ratelimit'),
-        ]);
-        _redis = new Redis({
-          url: process.env.UPSTASH_REDIS_REST_URL,
-          token: process.env.UPSTASH_REDIS_REST_TOKEN,
-        });
-        _burstLimiter = new Ratelimit({
-          redis: _redis,
-          limiter: Ratelimit.slidingWindow(BURST_LIMIT, BURST_WINDOW),
-          prefix: 'alfabot:burst',
-        });
-        _dailyLimiter = new Ratelimit({
-          redis: _redis,
-          limiter: Ratelimit.fixedWindow(DAILY_LIMIT, DAILY_WINDOW),
-          prefix: 'alfabot:day',
-        });
-        _ipDailyLimiter = new Ratelimit({
-          redis: _redis,
-          limiter: Ratelimit.fixedWindow(IP_DAILY_LIMIT, IP_DAILY_WINDOW),
-          prefix: 'alfabot:ipday',
-        });
-        _leadLimiter = new Ratelimit({
-          redis: _redis,
-          limiter: Ratelimit.fixedWindow(3, '24 h'),
-          prefix: 'alfabot:lead',
-        });
-      }
-    } catch (err) {
-      logger.warn('alfabot.upstash_init_failed', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      _redis = null;
-      _burstLimiter = null;
-      _dailyLimiter = null;
-      _ipDailyLimiter = null;
-      _leadLimiter = null;
-    } finally {
-      _upstashReady = true;
-    }
-  })();
-  return _upstashInit;
-}
-
-// In-memory fallback for dev / when Upstash env is missing. Sliding window
-// per (key, bucket). Same map size cap as src/proxy.ts.
-const MAX_FALLBACK_ENTRIES = 10_000;
-
-interface MemoryBucket {
-  /** UNIX-ms timestamps of recent hits (oldest first), trimmed to window. */
-  hits: number[];
-}
-
-const _memoryStore = new Map<string, MemoryBucket>();
-
-function evictIfFull(): void {
-  if (_memoryStore.size < MAX_FALLBACK_ENTRIES) return;
-  const firstKey = _memoryStore.keys().next().value;
-  if (firstKey) _memoryStore.delete(firstKey);
-}
-
-interface LimitResult {
-  allowed: boolean;
-  remaining: number;
-  limit: number;
-  /** UNIX-ms when the bucket refills (oldest hit ages out / window resets). */
-  resetMs: number;
-}
-
-/** Sliding-window check against the in-memory store. */
-function checkMemoryLimit(key: string, limit: number, windowMs: number): LimitResult {
-  const now = Date.now();
-  let bucket = _memoryStore.get(key);
-  if (!bucket) {
-    bucket = { hits: [] };
-    evictIfFull();
-    _memoryStore.set(key, bucket);
-  }
-  // Drop hits outside the window.
-  const cutoff = now - windowMs;
-  while (bucket.hits.length > 0 && bucket.hits[0] < cutoff) bucket.hits.shift();
-  if (bucket.hits.length >= limit) {
-    const oldest = bucket.hits[0];
-    return {
-      allowed: false,
-      remaining: 0,
-      limit,
-      resetMs: oldest + windowMs,
-    };
-  }
-  bucket.hits.push(now);
-  return {
-    allowed: true,
-    remaining: limit - bucket.hits.length,
-    limit,
-    resetMs: now + windowMs,
-  };
-}
-
-/**
- * Apply one of the named limiters. Falls back to the in-memory store when
- * Upstash is not configured.
- */
-async function applyLimit(
-  bucketName: 'burst' | 'day' | 'ip' | 'lead',
-  key: string,
-): Promise<LimitResult> {
-  await ensureUpstash();
-  const upstashLimiter =
-    bucketName === 'burst'
-      ? _burstLimiter
-      : bucketName === 'day'
-        ? _dailyLimiter
-        : bucketName === 'ip'
-          ? _ipDailyLimiter
-          : _leadLimiter;
-  const memoryConfig = (() => {
-    switch (bucketName) {
-      case 'burst':
-        return { limit: BURST_LIMIT, windowMs: 60_000 };
-      case 'day':
-        return { limit: DAILY_LIMIT, windowMs: 24 * 60 * 60_000 };
-      case 'ip':
-        return { limit: IP_DAILY_LIMIT, windowMs: 24 * 60 * 60_000 };
-      case 'lead':
-        return { limit: 3, windowMs: 24 * 60 * 60_000 };
-    }
-  })();
-  const fullKey = `${bucketName}:${key}`;
-  if (upstashLimiter) {
-    try {
-      const result = await upstashLimiter.limit(key);
-      return {
-        allowed: result.success,
-        remaining: result.remaining,
-        limit: memoryConfig.limit,
-        resetMs: result.reset,
-      };
-    } catch (err) {
-      logger.warn('alfabot.rate_limit_upstash_failed', {
-        bucket: bucketName,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      // Fall through to in-memory.
-    }
-  }
-  return checkMemoryLimit(fullKey, memoryConfig.limit, memoryConfig.windowMs);
-}
-
 function toBucket(result: LimitResult): AlfabotRateLimitBucket {
   return {
     remaining: result.remaining,
@@ -280,56 +108,6 @@ function toBucket(result: LimitResult): AlfabotRateLimitBucket {
     resetAt: result.resetMs ? new Date(result.resetMs).toISOString() : null,
   };
 }
-
-// ─── Daily USD budget (Upstash INCRBY; in-memory fallback) ──────────────────
-
-const _budgetMemory = new Map<string, number>();
-
-function budgetKey(): string {
-  const d = new Date();
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  return `alfabot:budget:usd:${yyyy}${mm}${dd}`;
-}
-
-async function getBudgetSpentUsd(): Promise<number> {
-  await ensureUpstash();
-  if (_redis) {
-    try {
-      const v = await _redis.get<number | string | null>(budgetKey());
-      if (v === null || v === undefined) return 0;
-      return typeof v === 'number' ? v : Number(v) || 0;
-    } catch {
-      /* fall through */
-    }
-  }
-  return _budgetMemory.get(budgetKey()) ?? 0;
-}
-
-async function addBudgetSpentUsd(amount: number): Promise<void> {
-  if (amount <= 0) return;
-  await ensureUpstash();
-  if (_redis) {
-    try {
-      // INCRBY only takes integers — store cents instead of dollars.
-      const cents = Math.round(amount * 100);
-      const next = await _redis.incrby(budgetKey() + ':cents', cents);
-      // 24h TTL on the budget key so it self-expires.
-      await _redis.expire(budgetKey() + ':cents', 24 * 60 * 60);
-      // Mirror to the dollar key for cheap reads (we already paid for the
-      // round-trip; this just lets `get(budgetKey)` work uniformly).
-      const dollars = next / 100;
-      await _redis.set(budgetKey(), dollars, { ex: 24 * 60 * 60 });
-      return;
-    } catch {
-      /* fall through */
-    }
-  }
-  const cur = _budgetMemory.get(budgetKey()) ?? 0;
-  _budgetMemory.set(budgetKey(), cur + amount);
-}
-
 function dailyUsdCap(): number {
   const raw = process.env.ALFABOT_DAILY_USD_CAP;
   if (!raw) return DEFAULT_DAILY_USD_CAP;
@@ -359,19 +137,11 @@ function getRawIp(request: NextRequest): string {
   );
 }
 
-// ─── Denylist (60s in-memory cache) ─────────────────────────────────────────
-
-interface DenylistEntry {
-  denied: boolean;
-  expiresAt: number;
-}
-
-const _denylistCache = new Map<string, DenylistEntry>();
 const DENYLIST_TTL_MS = 60_000;
 
 async function isDenylisted(anonId: string): Promise<boolean> {
-  const cached = _denylistCache.get(anonId);
-  if (cached && cached.expiresAt > Date.now()) return cached.denied;
+  const cached = getDenylistCache('chat', anonId);
+  if (cached) return cached.denied;
   try {
     const { data, error } = await supabaseAdmin
       .from('alfabot_denylist')
@@ -384,7 +154,7 @@ async function isDenylisted(anonId: string): Promise<boolean> {
       return false;
     }
     const denied = Boolean(data);
-    _denylistCache.set(anonId, { denied, expiresAt: Date.now() + DENYLIST_TTL_MS });
+    setDenylistCache('chat', anonId, denied, DENYLIST_TTL_MS);
     return denied;
   } catch (err) {
     logger.warn('alfabot.denylist_lookup_threw', {
@@ -464,7 +234,6 @@ function validateBody(body: unknown): ValidatedBody | { error: string } {
     sessionId,
   };
 }
-
 interface AbuseCheckResult {
   blocked: boolean;
   reason?: 'prompt_injection' | 'url_in_message' | 'message_too_long';
@@ -1286,15 +1055,3 @@ function streamingHeaders(): HeadersInit {
     'X-Accel-Buffering': 'no',
   };
 }
-
-// ─── Test hooks ─────────────────────────────────────────────────────────────
-//
-// The lead route + route-test file share the lead limiter. Exported via the
-// lead route module so we can keep this module's exports thin.
-
-export const _testing = {
-  applyLimit,
-  resetMemoryStore: () => _memoryStore.clear(),
-  resetDenylistCache: () => _denylistCache.clear(),
-  resetBudgetMemory: () => _budgetMemory.clear(),
-};

@@ -9,7 +9,7 @@ import { RuleTester } from 'eslint';
 import path from 'path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const rule = require(path.resolve(process.cwd(), 'eslint-rules/no-direct-rag-rpc.js'));
+const rule = require(path.resolve(process.cwd(), '..', '..', 'eslint-rules/no-direct-rag-rpc.js'));
 
 const ruleTester = new RuleTester({
   parserOptions: { ecmaVersion: 2022, sourceType: 'module' },

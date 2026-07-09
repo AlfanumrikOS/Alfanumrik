@@ -45,6 +45,17 @@ function isMissingRelation(err: { code?: string | null } | null): boolean {
   return !!err && err.code === PG_RELATION_DOES_NOT_EXIST;
 }
 
+function isMissingReadModelSchema(err: { code?: string | null; message?: string | null } | null): boolean {
+  if (!err) return false;
+  const message = err.message ?? '';
+  return (
+    err.code === PG_RELATION_DOES_NOT_EXIST ||
+    err.code === '42703' ||
+    /Could not find the table/i.test(message) ||
+    /column .* does not exist/i.test(message)
+  );
+}
+
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
@@ -203,10 +214,11 @@ export async function getTopicMastery(opts: {
   const { data, error } = await query;
 
   if (error) {
-    if (isMissingRelation(error)) {
-      logger.warn('assessment_topic_mastery_table_missing', {
+    if (isMissingReadModelSchema(error)) {
+      logger.warn('assessment_topic_mastery_schema_missing', {
         error: error.message,
       });
+      return ok([]);
     } else {
       logger.error('assessment_topic_mastery_failed', {
         error: new Error(error.message),
@@ -290,10 +302,11 @@ export async function listKnowledgeGaps(opts: {
   const { data, error } = await query;
 
   if (error) {
-    if (isMissingRelation(error)) {
-      logger.warn('assessment_knowledge_gaps_table_missing', {
+    if (isMissingReadModelSchema(error)) {
+      logger.warn('assessment_knowledge_gaps_schema_missing', {
         error: error.message,
       });
+      return ok([]);
     } else {
       logger.error('assessment_knowledge_gaps_failed', {
         error: new Error(error.message),
@@ -376,10 +389,11 @@ export async function getDiagnosticSession(
     .maybeSingle();
 
   if (error) {
-    if (isMissingRelation(error)) {
-      logger.warn('assessment_diagnostic_sessions_table_missing', {
+    if (isMissingReadModelSchema(error)) {
+      logger.warn('assessment_diagnostic_sessions_schema_missing', {
         error: error.message,
       });
+      return ok(null);
     } else {
       logger.error('assessment_diagnostic_session_failed', {
         error: new Error(error.message),
@@ -413,10 +427,11 @@ export async function listDiagnosticSessions(opts: {
     .limit(limit);
 
   if (error) {
-    if (isMissingRelation(error)) {
-      logger.warn('assessment_diagnostic_sessions_table_missing', {
+    if (isMissingReadModelSchema(error)) {
+      logger.warn('assessment_diagnostic_sessions_schema_missing', {
         error: error.message,
       });
+      return ok([]);
     } else {
       logger.error('assessment_diagnostic_sessions_failed', {
         error: new Error(error.message),

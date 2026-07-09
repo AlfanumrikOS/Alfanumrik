@@ -38,10 +38,9 @@ import {
   provisionTrialSchool,
   validateEmail,
 } from '@alfanumrik/lib/school-provisioning';
+import { MAX_ROWS_PER_CSV, type RowStatus } from './constants';
 
 // ─── Constants ────────────────────────────────────────────────────────
-
-export const MAX_ROWS_PER_CSV = 200;
 
 const REQUIRED_COLUMNS = [
   'school_name',
@@ -58,8 +57,6 @@ const OPTIONAL_COLUMNS = [
   'grade_range_max',
   'admin_email',
 ] as const;
-
-export type RowStatus = 'created' | 'skipped' | 'failed';
 
 interface RowOutcome {
   row_index: number;
