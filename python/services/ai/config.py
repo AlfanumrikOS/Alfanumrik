@@ -12,6 +12,7 @@ set these vars in the new runtime.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Literal
 
@@ -116,4 +117,10 @@ def get_settings() -> Settings:
     canonical snapshot per process. Tests that need a fresh read should call
     ``get_settings.cache_clear()``.
     """
+    # Pytest runs inside this repo with a local `.env` checked in for
+    # developer convenience. That file can otherwise mask the "missing key"
+    # branches the test suite intentionally exercises, so we skip dotenv
+    # loading only while pytest is active.
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return Settings(_env_file=None)
     return Settings()

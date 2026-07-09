@@ -96,6 +96,23 @@ async def test_fails_closed_when_no_supabase_configured():
     assert exc.value.status == 503
 
 
+@pytest.mark.asyncio
+async def test_fails_closed_when_supabase_service_role_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Missing service-role key must surface as 503, not a token rejection."""
+    monkeypatch.setenv("SUPABASE_URL", "https://test.supabase.co")
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+
+    from services.ai.config import get_settings
+
+    get_settings.cache_clear()
+
+    with pytest.raises(AuthFailed) as exc:
+        await verify_student("Bearer some-jwt")
+    assert exc.value.status == 503
+
+
 # ── Supabase Auth response handling ─────────────────────────────────────────
 
 
