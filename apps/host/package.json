@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "node ../../scripts/auth-guard.js && next build --webpack",
+    "vercel-build": "npm run build",
     "start": "next start",
     "lint": "eslint src/ --ext .ts,.tsx",
     "lint:migrations": "node scripts/lint-migrations.js",
