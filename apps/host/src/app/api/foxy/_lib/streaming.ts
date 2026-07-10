@@ -138,8 +138,10 @@ export async function handleStreamingFoxyTurn(params: {
   }
 
   // Transform stream that:
-  //  (a) re-emits each frame to the client byte-for-byte (low-latency)
-  //  (b) parses each frame so we can capture full text + done payload
+  //  (a) emits safe non-text frames as they arrive
+  //  (b) buffers text/done frames until the complete answer passes the final
+  //      output screen, preventing a brief unsafe first paint before abstain
+  //  (c) parses each frame so we can capture full text + done payload
   let accumulatedText = '';
   let parseBuffer = '';
   let doneSeen = false;
@@ -175,6 +177,8 @@ export async function handleStreamingFoxyTurn(params: {
   // frame in flush(). Stays null when persistence fails — the client then
   // falls back to the legacy aggregate-only feedback path.
   let assistantMessageId: string | null = null;
+  const bufferedTextFrames: Uint8Array[] = [];
+  let bufferedDoneFrame: Uint8Array | null = null;
 
   // FOX-1 (P12): set when the completed, buffered answer fails the deterministic
   // content screen. Drives the synthesized `abstain` reconciliation frame +
@@ -421,29 +425,33 @@ export async function handleStreamingFoxyTurn(params: {
       controller.enqueue(sessionFrame);
     },
     transform(chunk, controller) {
-      // Re-emit verbatim to client (preserves exact SSE formatting).
-      controller.enqueue(chunk);
-      // Parse for our side-channel tracking.
       parseBuffer += new TextDecoder().decode(chunk);
       let sepIdx: number;
       while ((sepIdx = parseBuffer.indexOf('\n\n')) !== -1) {
         const rawEvent = parseBuffer.slice(0, sepIdx);
         parseBuffer = parseBuffer.slice(sepIdx + 2);
+        const rawFrame = encoder.encode(`${rawEvent}\n\n`);
         const eventLine = rawEvent.split('\n').find((l) => l.startsWith('event: '));
         const dataLine = rawEvent.split('\n').find((l) => l.startsWith('data: '));
-        if (!eventLine || !dataLine) continue;
+        if (!eventLine || !dataLine) {
+          controller.enqueue(rawFrame);
+          continue;
+        }
         const eventName = eventLine.slice(7).trim();
         let payload: any = null;
         try {
           payload = JSON.parse(dataLine.slice(6));
         } catch {
+          controller.enqueue(rawFrame);
           continue;
         }
         if (eventName === 'metadata') {
           if (payload?.traceId) lastTraceId = payload.traceId;
           if (Array.isArray(payload?.citations)) lastCitations = payload.citations;
+          controller.enqueue(rawFrame);
         } else if (eventName === 'text') {
           if (typeof payload?.delta === 'string') accumulatedText += payload.delta;
+          bufferedTextFrames.push(rawFrame);
         } else if (eventName === 'done') {
           doneSeen = true;
           if (typeof payload?.tokensUsed === 'number') lastTokensUsed = payload.tokensUsed;
@@ -459,6 +467,7 @@ export async function handleStreamingFoxyTurn(params: {
           if (payload && typeof payload === 'object' && 'structured' in payload) {
             lastStructuredRaw = (payload as { structured?: unknown }).structured ?? null;
           }
+          bufferedDoneFrame = rawFrame;
         } else if (eventName === 'abstain') {
           // Abstain → refund based on the same policy as the blocking path
           if (
@@ -470,9 +479,15 @@ export async function handleStreamingFoxyTurn(params: {
           }
           errorSeen = true; // treat as terminal (not a `done`)
           if (payload?.traceId) lastTraceId = payload.traceId;
+          bufferedTextFrames.length = 0;
+          controller.enqueue(rawFrame);
         } else if (eventName === 'error') {
           errorSeen = true;
           if (payload?.traceId) lastTraceId = payload.traceId;
+          bufferedTextFrames.length = 0;
+          controller.enqueue(rawFrame);
+        } else {
+          controller.enqueue(rawFrame);
         }
       }
     },
@@ -486,16 +501,9 @@ export async function handleStreamingFoxyTurn(params: {
         // text by this point; we're only delaying the connection close.
         await persistOnDone();
         if (safetyRedacted) {
-          // FOX-1: the buffered answer failed the content screen AFTER the
-          // upstream `text`/`done` frames were already re-emitted verbatim.
-          // Emit a synthesized `abstain` frame so the live client reconciles to
-          // the safe hard-abstain UI (onAbstain clears the streamed `content`),
-          // and refund the quota — the student did not receive a usable answer.
-          // We do NOT emit `persisted` (no feedback wiring to a redacted turn).
-          // Residual: the live browser may have briefly shown the streamed
-          // tokens before this frame lands; the PERSISTED record + every
-          // non-streamed consumer are guaranteed safe (empty). See
-          // 05-implementation.md "streaming residual".
+          // The buffered answer failed the content screen. Since text/done
+          // frames are not released until this point, the browser receives only
+          // the safe hard-abstain reconciliation frame.
           try {
             controller.enqueue(
               encoder.encode(
@@ -511,7 +519,10 @@ export async function handleStreamingFoxyTurn(params: {
             /* controller closed (rare race) — persisted record is still safe */
           }
           await refundQuota(params.studentId, 'foxy_chat');
-        } else if (assistantMessageId) {
+        } else {
+          for (const frame of bufferedTextFrames) controller.enqueue(frame);
+          if (bufferedDoneFrame) controller.enqueue(bufferedDoneFrame);
+          if (!assistantMessageId) return;
           try {
             controller.enqueue(
               encoder.encode(

@@ -2,7 +2,7 @@
 /**
  * OpenAPI generator for the /v2 contract.
  *
- * Reads the Zod OpenAPIRegistry in `src/lib/api/v2/contract.ts`, builds an
+ * Reads the Zod OpenAPIRegistry in `packages/lib/src/api/v2/contract.ts`, builds an
  * OpenAPI 3.1 document, and writes it to `openapi/v2.json` with STABLE key
  * ordering (sorted keys) so the artifact diffs cleanly and the CI drift-check
  * (.github/workflows/openapi-contract.yml) is deterministic.

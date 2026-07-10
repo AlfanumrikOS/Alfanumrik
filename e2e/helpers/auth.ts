@@ -19,12 +19,25 @@ import type { Page } from '@playwright/test';
 const MOCK_USER_ID = 'mock-user-uuid-0000-0000-0000-000000000001';
 const MOCK_STUDENT_ID = 'mock-student-id-0000-0000-0000-000000000001';
 
+function supabaseStorageKey(): string {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  try {
+    const host = new URL(url).hostname;
+    const projectRef = host.split('.')[0] || 'placeholder';
+    return `sb-${projectRef}-auth-token`;
+  } catch {
+    return 'sb-placeholder-auth-token';
+  }
+}
+
 export function buildSupabaseSession(role: 'student' | 'teacher' | 'guardian' = 'student') {
+  const expiresIn = 3600;
   return {
     access_token: 'mock-access-token',
     refresh_token: 'mock-refresh-token',
     token_type: 'bearer',
-    expires_in: 3600,
+    expires_in: expiresIn,
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn,
     user: {
       id: MOCK_USER_ID,
       email: `${role}@test.alfanumrik.com`,
@@ -46,6 +59,26 @@ export async function mockStudentSession(page: Page, opts?: {
   onboardingCompleted?: boolean;
 }): Promise<void> {
   const session = buildSupabaseSession('student');
+  const student = {
+    id: MOCK_STUDENT_ID,
+    auth_user_id: MOCK_USER_ID,
+    name: 'Test student',
+    grade: '9',
+    board: 'CBSE',
+    onboarding_completed: opts?.onboardingCompleted ?? true,
+    xp_total: opts?.xpTotal ?? 0,
+    streak_days: opts?.streakDays ?? 0,
+  };
+  const storageKeys = Array.from(new Set([supabaseStorageKey(), 'sb-placeholder-auth-token']));
+  await page.addInitScript(
+    ({ keys, value }) => {
+      for (const key of keys) {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      }
+      window.localStorage.setItem('alfanumrik_active_role', 'student');
+    },
+    { keys: storageKeys, value: session },
+  );
   await page.route('**/auth/v1/token**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -60,22 +93,30 @@ export async function mockStudentSession(page: Page, opts?: {
       body: JSON.stringify(session.user),
     });
   });
+  await page.route('**/rest/v1/rpc/get_user_role**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        roles: ['student'],
+        primary_role: 'student',
+        student: {
+          id: MOCK_STUDENT_ID,
+          name: student.name,
+          grade: student.grade,
+          board: student.board,
+          onboarding_completed: student.onboarding_completed,
+        },
+      }),
+    });
+  });
   await page.route('**/rest/v1/students**', async (route) => {
     const method = route.request().method();
     if (method === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{
-          id: MOCK_STUDENT_ID,
-          auth_user_id: MOCK_USER_ID,
-          name: 'Test student',
-          grade: '9',
-          board: 'CBSE',
-          onboarding_completed: opts?.onboardingCompleted ?? true,
-          xp_total: opts?.xpTotal ?? 0,
-          streak_days: opts?.streakDays ?? 0,
-        }]),
+        body: JSON.stringify([student]),
       });
     } else {
       await route.fulfill({

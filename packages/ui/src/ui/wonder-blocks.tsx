@@ -1061,7 +1061,7 @@ export function SheetModal({ open, onClose, title, children }: SheetModalProps) 
     <>
       <div className="fixed inset-0 z-50" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={onClose} aria-hidden="true" />
       <div
-        className="fixed bottom-0 left-0 right-0 z-[60] rounded-t-3xl max-h-[80vh] flex flex-col animate-slide-up"
+        className="fixed bottom-0 left-0 right-0 z-[60] isolate pointer-events-auto rounded-t-3xl max-h-[80vh] flex flex-col animate-slide-up"
         style={{
           background: 'var(--surface-1)',
           paddingBottom: 'env(safe-area-inset-bottom, 16px)',
@@ -1079,7 +1079,7 @@ export function SheetModal({ open, onClose, title, children }: SheetModalProps) 
             <h3 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>{title}</h3>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto px-5 pb-4">
+        <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-5 pb-4">
           {children}
         </div>
       </div>

@@ -5,21 +5,22 @@ import { useRouter, usePathname } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import DashboardSidebar, { type SidebarNavItem } from '@alfanumrik/ui/admin-ui/DashboardSidebar';
+import { RoleNavIcon } from '@alfanumrik/ui/navigation/role-nav';
 import { useParentAuth } from './useParentAuth';
 import { supabase } from '@alfanumrik/lib/supabase';
 import ParentMobileNav from './ParentMobileNav';
 
 const NAV_ITEMS: SidebarNavItem[] = [
-  { href: '/parent', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
-  { href: '/parent/children', label: 'Children', labelHi: 'बच्चे', icon: '⊕' },
-  { href: '/parent/calendar', label: 'Calendar', labelHi: 'कैलेंडर', icon: '◐' },
-  { href: '/parent/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
-  { href: '/parent/notifications', label: 'Notifications', labelHi: 'सूचनाएँ', icon: '◉' },
-  { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘' },
-  { href: '/parent/attendance', label: 'Attendance', labelHi: 'उपस्थिति', icon: '✓' },
-  { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '◈' },
-  { href: '/parent/support', label: 'Support', labelHi: 'सहायता', icon: '⊛' },
-  { href: '/parent/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
+  { href: '/parent', label: 'Home', labelHi: 'होम', icon: <RoleNavIcon iconKey="home" /> },
+  { href: '/parent/children', label: 'Children', labelHi: 'बच्चे', icon: <RoleNavIcon iconKey="students" /> },
+  { href: '/parent/calendar', label: 'Calendar', labelHi: 'कैलेंडर', icon: <RoleNavIcon iconKey="calendar" /> },
+  { href: '/parent/messages', label: 'Messages', labelHi: 'संदेश', icon: <RoleNavIcon iconKey="messages" /> },
+  { href: '/parent/notifications', label: 'Notifications', labelHi: 'सूचनाएँ', icon: <RoleNavIcon iconKey="notifications" /> },
+  { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: <RoleNavIcon iconKey="reports" /> },
+  { href: '/parent/attendance', label: 'Attendance', labelHi: 'उपस्थिति', icon: <RoleNavIcon iconKey="attendance" /> },
+  { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: <RoleNavIcon iconKey="billing" /> },
+  { href: '/parent/support', label: 'Support', labelHi: 'सहायता', icon: <RoleNavIcon iconKey="support" /> },
+  { href: '/parent/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: <RoleNavIcon iconKey="profile" /> },
 ];
 
 // Polling interval for the sidebar unread badge. Conservative — the

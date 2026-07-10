@@ -18,55 +18,26 @@
  *      exists for someone else).
  *   5. 404 when the link is not found / not pending (findLinkById null).
  *   6. Happy path: a student approving / rejecting THEIR OWN pending link
- *      flips the status via the admin write and echoes the new status.
+ *      flips the status through the auth.uid()-anchored RPC and echoes the new status.
  *
- * Seams mocked: the cookie session (`createSupabaseServerClient().auth.getUser`),
- * the student-profile lookup (`supabaseAdmin.from('students')`), and the
- * relationship-domain `findLinkById`. The route handler itself is the real code.
+ * Seams mocked: the cookie session (`createSupabaseServerClient().auth.getUser`)
+ * and the RLS/auth-scoped RPC. The route handler itself is the real code.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const holders = vi.hoisted(() => ({
   mockGetUser: vi.fn(),
-  mockFindLinkById: vi.fn(),
-  // student-profile lookup result for supabaseAdmin.from('students')
-  studentLookup: { data: null as { id: string } | null, error: null as { message: string } | null },
-  // capture of the guardian_student_links UPDATE so tests can assert it never
-  // fired across the boundary.
-  updateCalls: [] as Array<{ table: string; values: Record<string, unknown>; id: unknown }>,
-  updateError: null as { message: string } | null,
+  mockRpc: vi.fn(),
 }));
 
 vi.mock('@alfanumrik/lib/supabase-server', () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: { getUser: (...a: unknown[]) => holders.mockGetUser(...a) },
+    rpc: (...a: unknown[]) => holders.mockRpc(...a),
   })),
-}));
-
-vi.mock('@alfanumrik/lib/supabase-admin', () => {
-  // Minimal chainable stub. We only need:
-  //   .from('students').select('id').eq('auth_user_id', x).maybeSingle()
-  //   .from('guardian_student_links').update(values).eq('id', linkId)
-  const from = (table: string) => ({
-    select: (_cols: string) => ({
-      eq: (_col: string, _val: unknown) => ({
-        maybeSingle: () =>
-          Promise.resolve({ data: holders.studentLookup.data, error: holders.studentLookup.error }),
-      }),
-    }),
-    update: (values: Record<string, unknown>) => ({
-      eq: (_col: string, id: unknown) => {
-        holders.updateCalls.push({ table, values, id });
-        return Promise.resolve({ error: holders.updateError });
-      },
-    }),
-  });
-  return { supabaseAdmin: { from } };
-});
-
-vi.mock('@alfanumrik/lib/domains/relationship', () => ({
-  findLinkById: (...a: unknown[]) => holders.mockFindLinkById(...a),
 }));
 
 vi.mock('@alfanumrik/lib/logger', () => ({
@@ -75,10 +46,7 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 
 // RFC4122-v4-shaped fake ids (isValidUUID requires `4` + `[89ab]` slots).
 const AUTH_USER = '11111111-1111-4111-a111-111111111111';
-const STUDENT_ME = '22222222-2222-4222-a222-222222222222';
-const STUDENT_OTHER = '33333333-3333-4333-a333-333333333333';
 const LINK_ID = '44444444-4444-4444-a444-444444444444';
-const GUARDIAN_ID = '55555555-5555-4555-a555-555555555555';
 
 function makeRequest(body: unknown): Request {
   return new Request('http://localhost/api/parent/approve-link', {
@@ -96,33 +64,39 @@ function authedAs(authUserId: string | null) {
   }
 }
 
-function studentProfile(id: string | null) {
-  holders.studentLookup.data = id ? { id } : null;
-  holders.studentLookup.error = null;
-}
-
-function pendingLinkOwnedBy(studentId: string) {
-  holders.mockFindLinkById.mockResolvedValue({
-    ok: true,
-    data: {
-      id: LINK_ID,
-      guardianId: GUARDIAN_ID,
-      studentId,
-      status: 'pending',
-      permissionLevel: null,
-      isVerified: false,
-      linkedAt: null,
-      createdAt: null,
-      updatedAt: null,
-    },
-  });
+function rpcResult(data: Record<string, unknown>, error: { message: string } | null = null) {
+  holders.mockRpc.mockResolvedValue({ data, error });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  holders.studentLookup = { data: null, error: null };
-  holders.updateCalls = [];
-  holders.updateError = null;
+});
+
+describe('POST /api/parent/approve-link — service-role migration guard', () => {
+  it('does not import the service-role admin client or relationship service-role helper', () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/app/api/parent/approve-link/route.ts'),
+      'utf8'
+    );
+
+    expect(source).not.toContain('@alfanumrik/lib/supabase-admin');
+    expect(source).not.toContain('@alfanumrik/lib/domains/relationship');
+    expect(source).toContain("rpc('student_review_guardian_link'");
+  });
+
+  it('ships an auth.uid()-anchored RPC migration for student link review', () => {
+    const migrationPath = join(
+      process.cwd(),
+      '../../supabase/migrations/20260710150000_xc3_student_review_guardian_link_rpc.sql'
+    );
+    expect(existsSync(migrationPath)).toBe(true);
+
+    const sql = readFileSync(migrationPath, 'utf8');
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.student_review_guardian_link/i);
+    expect(sql).toMatch(/auth\.uid\(\)/i);
+    expect(sql).not.toMatch(/p_student_auth_id/i);
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.student_review_guardian_link/i);
+  });
 });
 
 describe('POST /api/parent/approve-link — authentication', () => {
@@ -131,8 +105,7 @@ describe('POST /api/parent/approve-link — authentication', () => {
     authedAs(null);
     const res = await POST(makeRequest({ linkId: LINK_ID, action: 'approve' }) as never);
     expect(res.status).toBe(401);
-    expect(holders.mockFindLinkById).not.toHaveBeenCalled();
-    expect(holders.updateCalls).toHaveLength(0);
+    expect(holders.mockRpc).not.toHaveBeenCalled();
   });
 });
 
@@ -142,7 +115,7 @@ describe('POST /api/parent/approve-link — input validation', () => {
     authedAs(AUTH_USER);
     const res = await POST(makeRequest({ linkId: 'nope', action: 'approve' }) as never);
     expect(res.status).toBe(400);
-    expect(holders.updateCalls).toHaveLength(0);
+    expect(holders.mockRpc).not.toHaveBeenCalled();
   });
 
   it('returns 400 when action is not approve|reject', async () => {
@@ -150,7 +123,7 @@ describe('POST /api/parent/approve-link — input validation', () => {
     authedAs(AUTH_USER);
     const res = await POST(makeRequest({ linkId: LINK_ID, action: 'delete' }) as never);
     expect(res.status).toBe(400);
-    expect(holders.updateCalls).toHaveLength(0);
+    expect(holders.mockRpc).not.toHaveBeenCalled();
   });
 
   it('returns 400 on malformed JSON body (no 500)', async () => {
@@ -165,11 +138,13 @@ describe('POST /api/parent/approve-link — profile resolution', () => {
   it('returns 403 when the session has no student profile', async () => {
     const { POST } = await import('@/app/api/parent/approve-link/route');
     authedAs(AUTH_USER);
-    studentProfile(null);
+    rpcResult({ success: false, error_code: 'no_student' });
     const res = await POST(makeRequest({ linkId: LINK_ID, action: 'approve' }) as never);
     expect(res.status).toBe(403);
-    expect(holders.mockFindLinkById).not.toHaveBeenCalled();
-    expect(holders.updateCalls).toHaveLength(0);
+    expect(holders.mockRpc).toHaveBeenCalledWith('student_review_guardian_link', {
+      p_link_id: LINK_ID,
+      p_action: 'approved',
+    });
   });
 });
 
@@ -177,9 +152,7 @@ describe('POST /api/parent/approve-link — cross-student boundary (P8/P13)', ()
   it("returns 404 and writes nothing when the link belongs to ANOTHER student", async () => {
     const { POST } = await import('@/app/api/parent/approve-link/route');
     authedAs(AUTH_USER);
-    studentProfile(STUDENT_ME);
-    // The pending link is addressed to a DIFFERENT student.
-    pendingLinkOwnedBy(STUDENT_OTHER);
+    rpcResult({ success: false, error_code: 'not_found' });
 
     const res = await POST(makeRequest({ linkId: LINK_ID, action: 'approve' }) as never);
 
@@ -189,19 +162,18 @@ describe('POST /api/parent/approve-link — cross-student boundary (P8/P13)', ()
     expect(body.success).toBe(false);
     // Generic message — must NOT confirm the link exists for another student.
     expect(body.error).not.toMatch(/other|another|different student/i);
-    // The critical assertion: NO status UPDATE crosses the boundary.
-    expect(holders.updateCalls).toHaveLength(0);
+    // The critical assertion lives in the RPC: it resolves ownership from auth.uid().
+    expect(holders.mockRpc).toHaveBeenCalledOnce();
   });
 
   it('returns 404 when the link is not found / not pending', async () => {
     const { POST } = await import('@/app/api/parent/approve-link/route');
     authedAs(AUTH_USER);
-    studentProfile(STUDENT_ME);
-    holders.mockFindLinkById.mockResolvedValue({ ok: true, data: null });
+    rpcResult({ success: false, error_code: 'not_found' });
 
     const res = await POST(makeRequest({ linkId: LINK_ID, action: 'approve' }) as never);
     expect(res.status).toBe(404);
-    expect(holders.updateCalls).toHaveLength(0);
+    expect(holders.mockRpc).toHaveBeenCalledOnce();
   });
 });
 
@@ -209,32 +181,31 @@ describe('POST /api/parent/approve-link — happy path (own link)', () => {
   it('approves the student\'s OWN pending link and flips status to approved', async () => {
     const { POST } = await import('@/app/api/parent/approve-link/route');
     authedAs(AUTH_USER);
-    studentProfile(STUDENT_ME);
-    pendingLinkOwnedBy(STUDENT_ME);
+    rpcResult({ success: true, status: 'approved' });
 
     const res = await POST(makeRequest({ linkId: LINK_ID, action: 'approve' }) as never);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ success: true, status: 'approved' });
 
-    // Exactly one write, against guardian_student_links, keyed by THIS link id,
-    // setting status=approved.
-    expect(holders.updateCalls).toHaveLength(1);
-    expect(holders.updateCalls[0].table).toBe('guardian_student_links');
-    expect(holders.updateCalls[0].id).toBe(LINK_ID);
-    expect(holders.updateCalls[0].values.status).toBe('approved');
+    expect(holders.mockRpc).toHaveBeenCalledWith('student_review_guardian_link', {
+      p_link_id: LINK_ID,
+      p_action: 'approved',
+    });
   });
 
   it('rejects the student\'s OWN pending link and flips status to rejected', async () => {
     const { POST } = await import('@/app/api/parent/approve-link/route');
     authedAs(AUTH_USER);
-    studentProfile(STUDENT_ME);
-    pendingLinkOwnedBy(STUDENT_ME);
+    rpcResult({ success: true, status: 'rejected' });
 
     const res = await POST(makeRequest({ linkId: LINK_ID, action: 'reject' }) as never);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({ success: true, status: 'rejected' });
-    expect(holders.updateCalls[0].values.status).toBe('rejected');
+    expect(holders.mockRpc).toHaveBeenCalledWith('student_review_guardian_link', {
+      p_link_id: LINK_ID,
+      p_action: 'rejected',
+    });
   });
 });

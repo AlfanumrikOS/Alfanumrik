@@ -74,6 +74,26 @@ export const CONSUMER_MINIMALISM_FLAGS = {
 } as const;
 
 /**
+ * Adaptive Tutor flags (ADR-004).
+ *
+ *  ff_tutor_v1
+ *    Master switch for the standalone /tutor experiment. When OFF,
+ *    /api/tutor/next and /api/tutor/answer return 404 and the page falls back
+ *    to the legacy/non-live experience. Seeded OFF by
+ *    20260512075619_ff_tutor_v1.sql.
+ *
+ *  ff_tutor_bkt_v1
+ *    Enables the BKT/projector spine for tutor attempts. It is an additional
+ *    correctness/telemetry switch layered on top of ff_tutor_v1 and remains
+ *    default OFF until the projector rollout is operationally verified.
+ *    Seeded OFF by 20260525100002_ff_tutor_bkt_v1.sql.
+ */
+export const TUTOR_FLAGS = {
+  V1: 'ff_tutor_v1',
+  BKT_V1: 'ff_tutor_bkt_v1',
+} as const;
+
+/**
  * Alfa OS flagship redesign flags (2026-06-11).
  *
  *  ff_student_os_v1

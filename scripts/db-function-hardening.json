@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-07-09",
+  "source": "RCA-18 DB function hardening execution",
+  "functions": [
+    {
+      "id": "RCA-18-001",
+      "functionName": "submit_quiz_results",
+      "definitionMigration": "supabase/migrations/20260707010000_rca_final_fixes.sql",
+      "grantMigration": "supabase/migrations/20260707020000_rca18_db_function_execute_grants.sql",
+      "owner": "backend-learning",
+      "risk": "Legacy v1 quiz RPC is SECURITY DEFINER and writes quiz sessions / XP; direct PostgREST callers must remain owner-scoped and not inherit default PUBLIC execute.",
+      "securityDefiner": true,
+      "searchPathPinned": true,
+      "publicExecute": "revoked",
+      "allowedRoles": ["authenticated", "service_role"],
+      "ownershipCheck": "auth_uid_student_owner",
+      "grantPosture": "PUBLIC execute revoked after the latest RCA function definition; authenticated and service_role are the only explicit execute roles."
+    },
+    {
+      "id": "RCA-18-002",
+      "functionName": "submit_quiz_results_v2",
+      "definitionMigration": "supabase/migrations/20260707010000_rca_final_fixes.sql",
+      "grantMigration": "supabase/migrations/20260707020000_rca18_db_function_execute_grants.sql",
+      "owner": "backend-learning",
+      "risk": "Canonical quiz submit RPC is SECURITY DEFINER and writes quiz state, responses, history, XP, and adaptive learner state; execute privileges need explicit role scoping.",
+      "securityDefiner": true,
+      "searchPathPinned": true,
+      "publicExecute": "revoked",
+      "allowedRoles": ["authenticated", "service_role"],
+      "ownershipCheck": "auth_uid_student_owner",
+      "grantPosture": "PUBLIC execute revoked after the latest RCA function definition; authenticated and service_role are the only explicit execute roles."
+    },
+    {
+      "id": "RCA-18-003",
+      "functionName": "match_rag_chunks_ncert",
+      "definitionMigration": "supabase/migrations/20260707010000_rca_final_fixes.sql",
+      "grantMigration": "supabase/migrations/20260707020000_rca18_db_function_execute_grants.sql",
+      "owner": "backend-ai",
+      "risk": "RAG retrieval RPC is SECURITY DEFINER over NCERT content chunks; execute posture must avoid broad PUBLIC access and remain explicit.",
+      "securityDefiner": true,
+      "searchPathPinned": true,
+      "publicExecute": "revoked",
+      "allowedRoles": ["authenticated", "service_role"],
+      "ownershipCheck": "not_applicable",
+      "grantPosture": "PUBLIC execute revoked after the latest RCA function definition; authenticated and service_role are the only explicit execute roles."
+    }
+  ]
+}

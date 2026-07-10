@@ -38,6 +38,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 import { timingSafeEqual } from 'node:crypto';
 
 export const runtime = 'nodejs';
@@ -164,9 +165,17 @@ async function handle(req: NextRequest) {
   const rows = (dueRows ?? []) as PurgeRow[];
 
   if (rows.length === 0) {
+    const durationMs = Date.now() - startedAt;
     logger.info('cron/account-purge: nothing due', {
       route: '/api/cron/account-purge',
-      duration_ms: Date.now() - startedAt,
+      duration_ms: durationMs,
+    });
+    await recordCronJobHealth({
+      path: '/api/cron/account-purge',
+      metric: 'ops.cron.account_purge.last_success_at',
+      source: 'cron/account-purge',
+      durationMs,
+      context: { processed: 0 },
     });
     return NextResponse.json({
       success: true,
@@ -201,6 +210,17 @@ async function handle(req: NextRequest) {
   // 207-style outcome: if every row failed, surface 502 so Vercel's cron log
   // shows the failure clearly. Partial successes still return 200.
   const allFailed = summary.invoked === 0 && rows.length > 0;
+
+  if (!allFailed) {
+    await recordCronJobHealth({
+      path: '/api/cron/account-purge',
+      metric: 'ops.cron.account_purge.last_success_at',
+      source: 'cron/account-purge',
+      durationMs: Date.now() - startedAt,
+      context: { processed: rows.length, ...summary },
+    });
+  }
+
   return NextResponse.json(
     {
       success: !allFailed,

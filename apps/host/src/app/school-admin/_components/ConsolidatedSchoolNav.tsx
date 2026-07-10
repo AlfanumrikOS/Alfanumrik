@@ -27,6 +27,7 @@ import { useMemo, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
 import type { ModuleKey } from '@alfanumrik/lib/modules/registry';
 import type { SchoolAdminRole } from '@alfanumrik/lib/school-admin-auth';
+import { RoleNavIcon, type RoleIconKey } from '@alfanumrik/ui/navigation/role-nav';
 
 export interface ConsolidatedNavItem {
   href: string;
@@ -91,6 +92,21 @@ const ROLE_NAV_CAPABILITIES: Readonly<Record<SchoolAdminRole, ReadonlySet<School
 function roleAllowsCapability(role: SchoolAdminRole | null, cap: SchoolAdminCapability): boolean {
   if (!role) return true; // fail-open: unknown role shows everything (UI polish only)
   return ROLE_NAV_CAPABILITIES[role]?.has(cap) ?? true;
+}
+
+function iconKeyForSchoolItem(href: string): RoleIconKey {
+  if (href === '/school-admin') return 'health';
+  if (href.includes('/classes')) return 'classes';
+  if (href.includes('/teachers')) return 'teachers';
+  if (href.includes('/students')) return 'students';
+  if (href.includes('/parents')) return 'students';
+  if (href.includes('/reports')) return 'reports';
+  if (href.includes('/billing')) return 'billing';
+  if (href.includes('/announcements') || href.includes('/invite-codes')) return 'notifications';
+  if (href.includes('/staff')) return 'teachers';
+  if (href.includes('/setup') || href.includes('/modules') || href.includes('/branding') || href.includes('/api-keys') || href.includes('/ai-config') || href.includes('/rbac')) return 'settings';
+  if (href.includes('/exams') || href.includes('/content')) return 'learn';
+  return 'more';
 }
 
 export interface ConsolidatedNavSection {
@@ -237,9 +253,11 @@ export interface ConsolidatedSchoolNavProps {
    * (the Principal Assistant entry) are hidden entirely. When true
    * (`ff_principal_ai_v1` ON), the entry appears ONLY for a caller whose
    * `adminRole` is `principal` (mirrors the principal-only capability). UI polish
-   * only — the route 404s/403s server-side regardless (P9).
+  * only — the route 404s/403s server-side regardless (P9).
    */
   principalAiEnabled?: boolean;
+  /** Suppress the mobile drawer/hamburger when the role shell renders bottom nav. */
+  disableMobileHamburger?: boolean;
 }
 
 export default function ConsolidatedSchoolNav({
@@ -255,6 +273,7 @@ export default function ConsolidatedSchoolNav({
   adminRole = null,
   reportsDepthEnabled = false,
   principalAiEnabled = false,
+  disableMobileHamburger = false,
 }: ConsolidatedSchoolNavProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -351,7 +370,9 @@ export default function ConsolidatedSchoolNav({
                   className="relative flex items-center gap-2.5 border-l-[3px] px-3 py-2.5 text-[13px] cursor-not-allowed opacity-60 select-none"
                   style={{ borderLeftColor: 'transparent' }}
                 >
-                  <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
+                  <span className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center leading-none">
+                    <RoleNavIcon iconKey={iconKeyForSchoolItem(item.href)} />
+                  </span>
                   <span className="truncate flex-1">{label}</span>
                   <span className="ml-auto text-xs opacity-60" aria-label="Module not enabled">🔒</span>
                 </div>
@@ -373,7 +394,9 @@ export default function ConsolidatedSchoolNav({
                 )}
                 style={activeStyle}
               >
-                <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
+                <span className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center leading-none">
+                  <RoleNavIcon iconKey={iconKeyForSchoolItem(item.href)} />
+                </span>
                 <span className="truncate flex-1">{label}</span>
               </Link>
             );
@@ -397,7 +420,7 @@ export default function ConsolidatedSchoolNav({
     </aside>
   );
 
-  const mobileHamburger = (
+  const mobileHamburger = disableMobileHamburger ? null : (
     <button
       type="button"
       onClick={() => setMobileOpen(true)}
@@ -409,7 +432,7 @@ export default function ConsolidatedSchoolNav({
     </button>
   );
 
-  const mobileDrawer = mobileOpen ? (
+  const mobileDrawer = !disableMobileHamburger && mobileOpen ? (
     <>
       <div
         data-testid="school-consolidated-nav-backdrop"

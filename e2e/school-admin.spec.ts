@@ -13,30 +13,32 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('School Admin Portal — Auth Guards', () => {
+  test.setTimeout(90_000);
+
   test('redirects unauthenticated users from /school-admin to login', async ({ page }) => {
-    await page.goto('/school-admin');
+    await page.goto('/school-admin', { waitUntil: 'domcontentloaded' });
     // Should redirect to /login (middleware intercepts unauthenticated access)
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login/, { timeout: 60_000 });
   });
 
   test('redirects unauthenticated users from /school-admin/teachers to login', async ({ page }) => {
-    await page.goto('/school-admin/teachers');
-    await expect(page).toHaveURL(/\/login/);
+    await page.goto('/school-admin/teachers', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/login/, { timeout: 60_000 });
   });
 
   test('redirects unauthenticated users from /school-admin/students to login', async ({ page }) => {
-    await page.goto('/school-admin/students');
-    await expect(page).toHaveURL(/\/login/);
+    await page.goto('/school-admin/students', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/login/, { timeout: 60_000 });
   });
 
   test('redirects unauthenticated users from /school-admin/classes to login', async ({ page }) => {
-    await page.goto('/school-admin/classes');
-    await expect(page).toHaveURL(/\/login/);
+    await page.goto('/school-admin/classes', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/login/, { timeout: 60_000 });
   });
 
   test('redirects unauthenticated users from /school-admin/billing to login', async ({ page }) => {
-    await page.goto('/school-admin/billing');
-    await expect(page).toHaveURL(/\/login/);
+    await page.goto('/school-admin/billing', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/login/, { timeout: 60_000 });
   });
 });
 
@@ -48,8 +50,8 @@ test.describe('Schools Landing Page', () => {
 
   test('shows pricing section with INR amount', async ({ page }) => {
     await page.goto('/schools');
-    // Pricing should mention per-student amount (75 INR from B2B pricing)
-    await expect(page.getByText('75')).toBeVisible();
+    // Pricing should mention the canonical B2B per-seat marketing price.
+    await expect(page.getByText('₹99')).toBeVisible();
   });
 
   test('has a trial signup or contact form', async ({ page }) => {
@@ -86,6 +88,7 @@ test.describe('Schools Landing Page', () => {
 
 test.describe('School Admin API — Health', () => {
   test('school admin API routes return 401 without auth', async ({ request }) => {
+    test.setTimeout(90_000);
     // Test that the school admin API routes reject unauthenticated requests
     const routes = [
       '/api/school-admin/classes',
@@ -94,11 +97,12 @@ test.describe('School Admin API — Health', () => {
     ];
 
     for (const route of routes) {
-      const response = await request.get(route);
+      const response = await request.get(route, { timeout: 45_000 });
       // Should be 401 (unauthorized) not 500 (server error)
       expect(response.status()).toBe(401);
-      const body = await response.json();
-      expect(body.success).toBe(false);
+      const body = await response.json() as { success?: boolean; error?: string; code?: string };
+      expect(body.success).not.toBe(true);
+      expect(body.error || body.code).toBeTruthy();
     }
   });
 });

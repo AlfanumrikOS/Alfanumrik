@@ -1,0 +1,102 @@
+{
+  "generated_at": "2026-07-09",
+  "source": "RCA-14 / SAO-1/5 super-admin PII export readiness inventory",
+  "decision": "CEO-approved safest existing tier: PII report exports require super_admin; UUID-only report exports keep the support floor.",
+  "remainingOpsFollowUp": "Notify lower-tier exporters that PII report types now return 403 unless the operator is super_admin, and review export audit logs after deploy.",
+  "artifacts": [
+    {
+      "id": "reports-route-pii-tiering",
+      "rcaItem": "RCA-14",
+      "path": "apps/host/src/app/api/super-admin/reports/route.ts",
+      "owner": "ops",
+      "readinessRole": "Runtime export gate: four PII report types require super_admin, two UUID-only types remain support, and type is validated before auth/data access.",
+      "status": "repo_guarded",
+      "evidence": [
+        "const REPORT_CONFIG",
+        "level: 'super_admin', // PII: minors' name+email",
+        "level: 'super_admin', // PII: name+email+phone",
+        "level: 'support', // UUID-only, non-PII",
+        "const auth = await authorizeAdmin(request, config.level);",
+        "'Invalid report type'"
+      ]
+    },
+    {
+      "id": "reports-pii-tier-regression",
+      "rcaItem": "RCA-14",
+      "path": "apps/host/src/__tests__/api/super-admin/reports-pii-tier.test.ts",
+      "owner": "testing",
+      "readinessRole": "Pins REG-198 so PII report types cannot drift below super_admin or move the gate after data access.",
+      "status": "repo_guarded",
+      "evidence": [
+        "REG-198 — SAO-1/SAO-5: Super-Admin PII-Export Tiering",
+        "gates the 4 PII types (students/teachers/parents/audit) at super_admin",
+        "keeps the 2 UUID-only types (quizzes/chats) at the support floor",
+        "returns the unknown-type 400 BEFORE calling authorizeAdmin"
+      ]
+    },
+    {
+      "id": "observability-export-redaction",
+      "rcaItem": "RCA-14",
+      "path": "apps/host/src/app/api/super-admin/observability/export/route.ts",
+      "owner": "ops",
+      "readinessRole": "CSV egress defense-in-depth: message text and context JSON are redacted before observability export leaves the system.",
+      "status": "repo_guarded",
+      "evidence": [
+        "import { redactPII, redactPIIInText } from '@alfanumrik/lib/ops-events-redactor';",
+        "escapeCSV(row.message ? redactPIIInText(row.message).text : row.message)",
+        "JSON.stringify(redactPII(row.context))"
+      ]
+    },
+    {
+      "id": "observability-export-regression",
+      "rcaItem": "RCA-14",
+      "path": "apps/host/src/__tests__/api/super-admin/observability-export-message-redaction.test.ts",
+      "owner": "testing",
+      "readinessRole": "Pins REG-202 egress redaction for free-form message text, context JSON, and redactor behavior.",
+      "status": "repo_guarded",
+      "evidence": [
+        "Tier-2 PR B — super-admin export message redaction (P13) — REG-202",
+        "wraps row.message in redactPIIInText(...).text before it reaches the CSV",
+        "redacts an email in a free-form message",
+        "redacts an Indian mobile number in a free-form message"
+      ]
+    },
+    {
+      "id": "ops-redactor-barrel",
+      "rcaItem": "RCA-14",
+      "path": "packages/lib/src/ops-events-redactor.ts",
+      "owner": "platform",
+      "readinessRole": "Exports the shared PII redaction utilities to Next.js routes without duplicating the Deno shared implementation.",
+      "status": "repo_guarded",
+      "evidence": [
+        "export { redactPII, redactPIIInText }"
+      ]
+    },
+    {
+      "id": "backlog-ops-notification",
+      "rcaItem": "RCA-14",
+      "path": "engineering-audit/PRIORITY-BACKLOG.md",
+      "owner": "ops",
+      "readinessRole": "Tracks the remaining non-code readiness action: notify lower-tier staff and confirm no legitimate non-super-admin PII export workflow depends on the previous access level.",
+      "status": "ops_follow_up",
+      "evidence": [
+        "SAO-1/SAO-5 — DONE",
+        "Ops follow-up: notify lower-tier exporters",
+        "non-super-admin staff exporting these 4 types get HTTP 403 on deploy"
+      ]
+    },
+    {
+      "id": "lower-tier-exporter-notification-runbook",
+      "rcaItem": "RCA-14",
+      "path": "docs/runbooks/super-admin-pii-export-notification.md",
+      "owner": "ops",
+      "readinessRole": "Turns the remaining RCA-14 ops follow-up into an executable notification and audit-review runbook for lower-tier exporters after PII report tiering.",
+      "status": "ops_follow_up",
+      "evidence": [
+        "lower-tier exporters",
+        "admin_audit_log",
+        "Do not loosen"
+      ]
+    }
+  ]
+}

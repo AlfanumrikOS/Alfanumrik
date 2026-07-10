@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useWelcomeV2 } from './WelcomeV2Context';
 import s from './welcome-v2.module.css';
 
@@ -49,6 +50,16 @@ const COLS: Col[] = [
 
 export default function FooterV2() {
   const { isHi, t } = useWelcomeV2();
+  const [columnsOpen, setColumnsOpen] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 768px)');
+    const sync = () => setColumnsOpen(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
   return (
     <footer className={s.footer} aria-labelledby="footer-v2-title">
       <h2 id="footer-v2-title" className={s.srOnly}>
@@ -74,7 +85,7 @@ export default function FooterV2() {
           {COLS.map((col, i) => (
             // Mobile uses native <details> collapse; tablet+ CSS overrides
             // to force the column open visually. No `open` attribute needed.
-            <details key={i} className={s.footAcc}>
+            <details key={i} className={s.footAcc} open={columnsOpen || undefined}>
               <summary>{t(col.headEn, col.headHi)}</summary>
               <ul>
                 {col.links.map((link, li) => (

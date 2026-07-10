@@ -267,9 +267,9 @@ describe('Middleware session refresh', () => {
     expect(pattern).toContain('_next/image');
   });
 
-  it('middleware function is exported and callable for session refresh', async () => {
+  it('proxy function is exported and callable for session refresh', async () => {
     const mod = await import('@/proxy');
-    expect(typeof mod.middleware).toBe('function');
+    expect(typeof mod.proxy).toBe('function');
   });
 
   it('matcher pattern does not exclude auth routes (ensures session refresh runs)', async () => {

@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -45,6 +46,7 @@ function constantTimeEquals(a: string, b: string): boolean {
 // ════════════════════════════════════════════════════════════════════════════
 
 export async function POST(request: NextRequest): Promise<Response> {
+  const startedAt = Date.now();
   // Fail-closed auth gate — BEFORE any DB I/O (REG-127 posture).
   const secret =
     request.headers.get('x-cron-secret') ??
@@ -83,6 +85,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     const rows = atRisk ?? [];
 
     if (rows.length === 0) {
+      await recordCronJobHealth({
+        path: '/api/cron/streak-guardian',
+        metric: 'ops.cron.streak_guardian.last_success_at',
+        source: 'cron/streak-guardian',
+        durationMs: Date.now() - startedAt,
+        context: { count: 0 },
+      });
       return NextResponse.json({ count: 0 });
     }
 
@@ -108,6 +117,13 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     // P13: response carries count only, no student identifiers.
+    await recordCronJobHealth({
+      path: '/api/cron/streak-guardian',
+      metric: 'ops.cron.streak_guardian.last_success_at',
+      source: 'cron/streak-guardian',
+      durationMs: Date.now() - startedAt,
+      context: { count: notifications.length },
+    });
     return NextResponse.json({ count: notifications.length });
   } catch {
     return NextResponse.json({ error: GENERIC_500_BODY }, { status: 500 });

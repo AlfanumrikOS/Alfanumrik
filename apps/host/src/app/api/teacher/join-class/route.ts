@@ -27,8 +27,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 const BodySchema = z.object({
   class_code: z
@@ -41,6 +42,41 @@ const BodySchema = z.object({
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
+}
+
+interface JoinClassRpcResponse {
+  success: boolean;
+  status?: number;
+  error?: string;
+  data?: {
+    classId: string;
+    alreadyJoined: boolean;
+    teacherId?: string;
+    schoolId?: string | null;
+  };
+}
+
+async function createRlsScopedClient(request: NextRequest) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  const authHeader = request.headers.get('Authorization');
+  const cookieStore = await cookies();
+
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {
+        // API route only needs the caller identity for the RLS-scoped RPC.
+      },
+    },
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -58,129 +94,36 @@ export async function POST(request: NextRequest) {
   }
   const code = parsed.class_code;
 
-  // Resolve the calling teacher.
-  const { data: teacher, error: teacherErr } = await supabaseAdmin
-    .from('teachers')
-    .select('id, school_id')
-    .eq('auth_user_id', auth.userId!)
-    .maybeSingle();
-  if (teacherErr) {
-    logger.error('teacher_join_class_teacher_lookup_failed', {
-      error: new Error(teacherErr.message),
-      route: 'teacher/join-class',
-    });
-    return err('Failed to resolve teacher', 500);
-  }
-  if (!teacher) return err('Teacher account not found', 403);
-
-  // Resolve the class by code (active, non-deleted only).
-  const { data: klass, error: classErr } = await supabaseAdmin
-    .from('classes')
-    .select('id, school_id, is_active, deleted_at')
-    .eq('class_code', code)
-    .is('deleted_at', null)
-    .eq('is_active', true)
-    .maybeSingle();
-  if (classErr) {
-    logger.error('teacher_join_class_lookup_failed', {
-      error: new Error(classErr.message),
-      route: 'teacher/join-class',
-    });
-    return err('Failed to look up class', 500);
-  }
-  if (!klass) {
-    // Generic 404 — never leak whether a code exists for another school.
-    return err('No active class found for this code', 404);
-  }
-
-  // Idempotency: already a member?
-  const { data: existing, error: existingErr } = await supabaseAdmin
-    .from('class_teachers')
-    .select('id')
-    .eq('class_id', klass.id)
-    .eq('teacher_id', teacher.id)
-    .maybeSingle();
-  if (existingErr) {
-    logger.error('teacher_join_class_membership_check_failed', {
-      error: new Error(existingErr.message),
-      route: 'teacher/join-class',
-    });
-    return err('Failed to verify membership', 500);
-  }
-
-  if (existing) {
-    // Already joined — idempotent 200. Still backfill school_id if missing.
-    await adoptClassSchool(teacher, klass);
-    return NextResponse.json({
-      success: true,
-      data: { classId: klass.id, alreadyJoined: true },
-    });
-  }
-
-  // Insert the membership row. Tenant is the class's school — body cannot
-  // influence it. Race-safe against the UNIQUE (class_id, teacher_id) index.
-  const { error: insertErr } = await supabaseAdmin.from('class_teachers').insert({
-    class_id: klass.id,
-    teacher_id: teacher.id,
-    role: 'teacher',
-    is_active: true,
+  const supabase = await createRlsScopedClient(request);
+  const { data, error: rpcErr } = await supabase.rpc('teacher_join_class_by_code', {
+    p_class_code: code,
   });
 
-  if (insertErr) {
-    // Unique-violation = a concurrent join won the race → idempotent success.
-    const isUniqueViolation =
-      (insertErr as { code?: string }).code === '23505' ||
-      /duplicate key|unique/i.test(insertErr.message);
-    if (isUniqueViolation) {
-      await adoptClassSchool(teacher, klass);
-      return NextResponse.json({
-        success: true,
-        data: { classId: klass.id, alreadyJoined: true },
-      });
-    }
-    logger.error('teacher_join_class_insert_failed', {
-      error: new Error(insertErr.message),
+  if (rpcErr) {
+    logger.error('teacher_join_class_rpc_failed', {
+      error: new Error(rpcErr.message),
       route: 'teacher/join-class',
     });
     return err('Failed to join class', 500);
   }
 
-  // Adopt the class's school for a teacher who hasn't got one yet.
-  await adoptClassSchool(teacher, klass);
+  const result = data as JoinClassRpcResponse | null;
+  if (!result?.success) {
+    return err(result?.error ?? 'Failed to join class', result?.status ?? 500);
+  }
 
   logger.info('teacher_joined_class', {
     route: 'teacher/join-class',
-    teacherId: teacher.id,
-    classId: klass.id,
-    schoolId: klass.school_id ?? null,
+    teacherId: result.data?.teacherId ?? auth.userId ?? null,
+    classId: result.data?.classId ?? null,
+    schoolId: result.data?.schoolId ?? null,
   });
 
   return NextResponse.json({
     success: true,
-    data: { classId: klass.id, alreadyJoined: false },
+    data: {
+      classId: result.data!.classId,
+      alreadyJoined: result.data!.alreadyJoined,
+    },
   });
-}
-
-/**
- * Link the teacher's school_id to the class's school IF the teacher has none
- * yet. Tenant-safe: only ever sets the school the joined class belongs to, and
- * never overwrites an existing membership. Best-effort — never blocks the join.
- */
-async function adoptClassSchool(
-  teacher: { id: string; school_id: string | null },
-  klass: { school_id: string | null },
-): Promise<void> {
-  if (teacher.school_id || !klass.school_id) return;
-  try {
-    await supabaseAdmin
-      .from('teachers')
-      .update({ school_id: klass.school_id, updated_at: new Date().toISOString() })
-      .eq('id', teacher.id)
-      .is('school_id', null); // guard: only when still unset (race-safe)
-  } catch (e) {
-    logger.warn('teacher_join_class_school_adopt_failed', {
-      route: 'teacher/join-class',
-      reason: e instanceof Error ? e.message : String(e),
-    });
-  }
 }

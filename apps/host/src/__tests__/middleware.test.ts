@@ -354,9 +354,9 @@ describe('Middleware config', () => {
     expect(pattern).toContain('robots');
   });
 
-  it('middleware function is exported', async () => {
+  it('proxy function is exported', async () => {
     const mod = await import('@/proxy');
-    expect(typeof mod.middleware).toBe('function');
+    expect(typeof mod.proxy).toBe('function');
   });
 });
 

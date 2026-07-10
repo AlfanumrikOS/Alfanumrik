@@ -1,0 +1,165 @@
+{
+  "generated_at": "2026-07-09",
+  "source": "RCA-10 / AO-3 institution-admin lifecycle inventory",
+  "entries": [
+    {
+      "id": "super-admin-school-provision",
+      "surface": "super_admin",
+      "route": "apps/host/src/app/api/super-admin/institutions/provision/route.ts",
+      "owner": "platform-admin",
+      "authGate": "Super-admin session required via authorizeAdmin(request, 'super_admin').",
+      "canonicalHelper": "provision_school RPC creates the school/invite code transactionally; establishPrincipalAdmin creates or repairs the principal admin link.",
+      "writes": [
+        "schools",
+        "school_invite_codes",
+        "school_admins",
+        "school_admin_claim_tokens",
+        "admin_audit_logs"
+      ],
+      "risk": "Primary institution provisioning path can create tenant identity, invite material, and principal admin credentials.",
+      "status": "canonical",
+      "ao3FollowUp": "Keep as the canonical super-admin create path unless AO-3 replaces school-first provisioning with a dedicated institution-admin lifecycle.",
+      "evidence": [
+        "const auth = await authorizeAdmin(request, 'super_admin');",
+        "const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('provision_school', {",
+        "const adminResult = await establishPrincipalAdmin(",
+        "'school.provisioned'"
+      ]
+    },
+    {
+      "id": "super-admin-bulk-onboard",
+      "surface": "super_admin",
+      "route": "apps/host/src/app/api/super-admin/institutions/bulk-onboard/route.ts",
+      "owner": "platform-admin",
+      "authGate": "Super-admin session required via authorizeAdmin(request, 'super_admin').",
+      "canonicalHelper": "Delegates each committed row to provisionTrialSchool with super-admin actor attribution.",
+      "writes": [
+        "schools",
+        "school_invite_codes",
+        "school_admins",
+        "school_admin_claim_tokens",
+        "admin_audit_logs"
+      ],
+      "risk": "Batch path can create many tenants and principal admin links in one request; dry-run and audit metadata must stay intact.",
+      "status": "canonical",
+      "ao3FollowUp": "AO-3 must decide whether this remains a bulk wrapper around school provisioning or moves behind a separate institution onboarding workflow.",
+      "evidence": [
+        "const auth = await authorizeAdmin(request, 'super_admin');",
+        "const result = await provisionTrialSchool({",
+        "Attribute the principal's school_admins link to the super-admin actor.",
+        "'school.bulk_onboarded'"
+      ]
+    },
+    {
+      "id": "super-admin-admin-repair",
+      "surface": "super_admin",
+      "route": "apps/host/src/app/api/super-admin/institutions/[id]/admins/route.ts",
+      "owner": "platform-admin",
+      "authGate": "Super-admin session required via authorizeAdmin(request, 'super_admin').",
+      "canonicalHelper": "establishPrincipalAdmin is reused to repair/create the principal row and mint a fresh claim token.",
+      "writes": [
+        "school_admins",
+        "school_admin_claim_tokens",
+        "school_invite_codes",
+        "admin_audit_logs"
+      ],
+      "risk": "Repair path can grant or reactivate principal access for an existing tenant; raw claim tokens are returned for operator relay.",
+      "status": "repair",
+      "ao3FollowUp": "AO-3 needs a formal lifecycle state for principal repair/reissue so this endpoint is not the only source of truth.",
+      "evidence": [
+        "const auth = await authorizeAdmin(request, 'super_admin');",
+        "const linkResult = await establishPrincipalAdmin(",
+        "await logAdminAudit(auth, 'school_admin.provisioned', 'school', schoolId, {",
+        "claim_url: buildClaimUrl(linkResult.claimToken)"
+      ]
+    },
+    {
+      "id": "public-school-trial",
+      "surface": "public_claim",
+      "route": "apps/host/src/app/api/schools/trial/route.ts",
+      "owner": "growth-onboarding",
+      "authGate": "Public route; caller identity is anti-abuse limited before provisioning.",
+      "canonicalHelper": "provisionTrialSchool handles slug normalization, school creation, invite code, and optional principal admin claim setup.",
+      "writes": [
+        "schools",
+        "school_invite_codes",
+        "school_admins",
+        "school_admin_claim_tokens"
+      ],
+      "risk": "Public signup can create tenants and invite material; effective abuse controls must be validated in live env.",
+      "status": "compat",
+      "ao3FollowUp": "AO-3 must decide whether public trial remains a direct school create path or becomes a pending institution request.",
+      "evidence": [
+        "Thin HTTP wrapper around `provisionTrialSchool()`",
+        "export async function POST(request: NextRequest) {",
+        "const result = await provisionTrialSchool({",
+        "invite_code: result.invite_code"
+      ]
+    },
+    {
+      "id": "public-school-claim-admin",
+      "surface": "public_claim",
+      "route": "apps/host/src/app/api/schools/claim-admin/route.ts",
+      "owner": "growth-onboarding",
+      "authGate": "Public route; raw claim token plus IP rate limiting protects first-login activation.",
+      "canonicalHelper": "claimAdminToken validates the hashed one-time token, stamps school_admins.accepted_at, and optionally sets password.",
+      "writes": [
+        "school_admins",
+        "school_admin_claim_tokens",
+        "auth.users"
+      ],
+      "risk": "Principal first-login path activates admin access from a bearer token; token secrecy and rate-limit behavior are product-readiness critical.",
+      "status": "compat",
+      "ao3FollowUp": "AO-3 should define whether principal activation is claim-token based long term or replaced by invite/session mediated onboarding.",
+      "evidence": [
+        "const rateCheck = await checkApiRateLimit(`claim-admin:${ip}`, 10, 15 * 60 * 1000);",
+        "const result = await claimAdminToken(admin, token, password);",
+        "case 'claimed':",
+        "password_set: result.status === 'claimed' && result.password_set"
+      ]
+    },
+    {
+      "id": "school-admin-staff-invite",
+      "surface": "school_admin",
+      "route": "apps/host/src/app/api/school-admin/staff/route.ts",
+      "owner": "school-admin",
+      "authGate": "School admin permission gate via authorizeSchoolAdmin(request, STAFF_PERMISSION).",
+      "canonicalHelper": "School-scoped staff membership management uses the caller school_admins record as the tenant boundary.",
+      "writes": [
+        "school_admins",
+        "school_audit_logs",
+        "auth.users"
+      ],
+      "risk": "Logged-in school admins can invite, reactivate, change roles, or revoke staff inside their tenant.",
+      "status": "adjacent",
+      "ao3FollowUp": "AO-3 should keep this as post-provision delegated staff management and ensure it does not mint the first principal lifecycle.",
+      "evidence": [
+        "const auth = await authorizeSchoolAdmin(request, STAFF_PERMISSION);",
+        "The caller's school_id is ALWAYS taken from their school_admins record",
+        ".from('school_admins')",
+        "action: 'school_admin.invited'"
+      ]
+    },
+    {
+      "id": "school-admin-invite-codes",
+      "surface": "school_admin",
+      "route": "apps/host/src/app/api/school-admin/invite-codes/route.ts",
+      "owner": "school-admin",
+      "authGate": "School admin manage-students permission required via authorizeSchoolAdmin.",
+      "canonicalHelper": "School-scoped invite code creation and revocation writes school_invite_codes for the caller's school.",
+      "writes": [
+        "school_invite_codes",
+        "school_audit_logs"
+      ],
+      "risk": "Delegated invite-code issuance can expand enrollment access for an already provisioned school.",
+      "status": "adjacent",
+      "ao3FollowUp": "AO-3 should keep invite-code issuance clearly downstream of tenant/principal provisioning and document ownership.",
+      "evidence": [
+        "const auth = await authorizeSchoolAdmin(request, 'institution.manage_students');",
+        ".from('school_invite_codes')",
+        "invite_code: code",
+        "action: 'invite_code.revoked'"
+      ]
+    }
+  ]
+}

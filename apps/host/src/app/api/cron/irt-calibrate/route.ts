@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 import { timingSafeEqual } from 'node:crypto';
 
 export const runtime = 'nodejs';
@@ -66,6 +67,13 @@ export async function GET(req: NextRequest): Promise<Response> {
 
     logger.info('irt_calibrate_complete', {
       result: data,
+      durationMs: Date.now() - startedAt,
+    });
+
+    await recordCronJobHealth({
+      path: '/api/cron/irt-calibrate',
+      metric: 'ops.cron.irt_calibrate.last_success_at',
+      source: 'cron/irt-calibrate',
       durationMs: Date.now() - startedAt,
     });
 

@@ -1,0 +1,118 @@
+{
+  "generated_at": "2026-07-09",
+  "rcaItems": ["RCA-03", "RCA-21"],
+  "source": "TSB-4 canonical class-membership cutover readiness",
+  "canonicalTable": "class_enrollments",
+  "legacyTable": "class_students",
+  "currentBoundaryReader": "packages/lib/src/rbac.ts:canAccessStudent",
+  "targetBoundaryReader": "packages/lib/src/rbac.ts:canAccessStudent + packages/lib/src/domains/tenant.ts:listStudentsInClass",
+  "destructiveStepGate": "CEO-approved irreversible table-retirement decision after live tenant smoke and divergence proof",
+  "stages": [
+    {
+      "id": "soft-delete-sync-landed",
+      "state": "landed",
+      "action": "Keep the bidirectional is_active mirror triggers in place so soft de-enrolls propagate between class_students and class_enrollments before any reader repoint.",
+      "artifacts": [
+        "supabase/migrations/20260702030000_class_membership_softdelete_sync.sql",
+        "apps/host/src/__tests__/tsb4-class-membership-softdelete-sync.test.ts"
+      ],
+      "evidence": [
+        "CANONICAL-BY-INTENT",
+        "NO DROP HERE",
+        "AFTER UPDATE OF is_active"
+      ]
+    },
+    {
+      "id": "teacher-rls-and-fail-closed-backfill-landed",
+      "state": "landed",
+      "action": "Preserve the teacher SELECT policy on class_enrollments and the fail-closed historical reconcile that only removes stale class_students visibility.",
+      "artifacts": [
+        "supabase/migrations/20260702050000_class_enrollments_teacher_select_policy.sql",
+        "supabase/migrations/20260702060000_class_membership_isactive_backfill.sql",
+        "apps/host/src/__tests__/tsb4-enrollments-rls-reconcile.test.ts"
+      ],
+      "evidence": [
+        "class_enrollments_teacher_select",
+        "_tsb4_isactive_backfill_backup",
+        "FAIL-CLOSED"
+      ]
+    },
+    {
+      "id": "dual-table-divergence-quantification",
+      "state": "landed",
+      "action": "Ran the read-only divergence report against the linked target DB before/with the boundary-reader repoint. The export found no direction-A leak rows, no direction-B authorization-widening rows, and no one-sided membership rows.",
+      "artifacts": [
+        "scripts/tsb4-class-membership-divergence-quantification.sql",
+        "engineering-audit/PRODUCT_READINESS_EXECUTION_2026-07-09.md",
+        "supabase/migrations/20260702060000_class_membership_isactive_backfill.sql",
+        "apps/host/src/__tests__/tsb4-enrollments-rls-reconcile.test.ts"
+      ],
+      "evidence": [
+        "direction_b_ce_active_cs_inactive",
+        "authorization_widening",
+        "matched_or_both_inactive"
+      ]
+    },
+    {
+      "id": "boundary-reader-repoint",
+      "state": "landed",
+      "action": "Repointed canAccessStudent teacher reachability away from class_students and onto the canonical class_enrollments policy boundary. The destructive legacy-table retirement remains CEO-gated.",
+      "artifacts": [
+        "packages/lib/src/rbac.ts",
+        "packages/lib/src/domains/tenant.ts",
+        "apps/host/src/__tests__/tsb4-enrollments-rls-reconcile.test.ts"
+      ],
+      "evidence": [
+        ".from('class_enrollments')",
+        ".from('class_enrollments')",
+        "TSB-4 canonical membership table"
+      ]
+    },
+    {
+      "id": "route-helper-repoint",
+      "state": "landed",
+      "action": "Repointed teacher route-local roster checks that read class_students or named class_students as the teacher boundary, while preserving already-canonical class_enrollments routes. School-admin direct class_students writes remain tied to legacy sync/seat flows and are not teacher reachability boundaries.",
+      "artifacts": [
+        "apps/host/src/app/api/teacher/remediation/route.ts",
+        "apps/host/src/app/api/teacher/parent-notify/route.ts",
+        "apps/host/src/app/api/school-admin/students/route.ts",
+        "apps/host/src/app/api/teacher/lab-leaderboard/route.ts"
+      ],
+      "evidence": [
+        ".from('class_enrollments')",
+        "class_enrollments_lookup_failed",
+        "class_enrollments is the Phase-2 canonical join table"
+      ]
+    },
+    {
+      "id": "live-tenant-smoke",
+      "state": "live_gated",
+      "action": "Run the integration lane against staging after reader repoint so an assigned teacher sees canonical enrollments, a de-enrolled student stays hidden, and static tenant isolation is treated only as triage.",
+      "artifacts": [
+        "apps/host/src/__tests__/helpers/integration.ts",
+        "apps/host/src/__tests__/migrations/school-reporting.test.ts",
+        "scripts/audit-tenant-isolation.ts"
+      ],
+      "evidence": [
+        "RUN_INTEGRATION_TESTS=1",
+        "class_enrollments-ONLY student",
+        "Use as a triage queue, not a verdict"
+      ]
+    },
+    {
+      "id": "legacy-table-retirement",
+      "state": "decision_gated",
+      "action": "Only after live proof and a CEO-approved irreversible cleanup may the redundant class_students table or dependent policies/RPCs be dropped or frozen.",
+      "artifacts": [
+        "supabase/migrations/20260702030000_class_membership_softdelete_sync.sql",
+        "engineering-audit/PRIORITY-BACKLOG.md",
+        "engineering-audit/PRODUCT_READINESS_EXECUTION_2026-07-09.md"
+      ],
+      "evidence": [
+        "CEO-gated cleanup",
+        "NO DROP HERE",
+        "DROP/repoint/backfill cutover deferred CEO-gated"
+      ]
+    }
+  ]
+}

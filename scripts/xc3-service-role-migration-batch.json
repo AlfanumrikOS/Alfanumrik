@@ -1,0 +1,164 @@
+{
+  "generated_at": "2026-07-09",
+  "rcaItem": "RCA-01",
+  "source": "XC-3 high-sensitivity service-role migration batch",
+  "totalAdminClientRoutesPinned": 249,
+  "objective": "Prioritize high-sensitivity API routes that still use the service-role/admin client so RCA-01 moves from a flat allowlist toward an executable RLS defense-in-depth migration plan.",
+  "entries": [
+    {
+      "id": "parent-child-export",
+      "route": "/api/parent/children/[student_id]/export",
+      "file": "apps/host/src/app/api/parent/children/[student_id]/export/route.ts",
+      "sensitivity": "critical",
+      "status": "migrated_scoped_rpc",
+      "migrationTarget": "canonical_domain_helper",
+      "owner": "parent-portal-backend",
+      "rationale": "DPDP child-data export aggregation now runs through the scoped authenticated `parent_child_export_data` RPC, and state-event publishing now runs through `parent_publish_child_state_event`, which repeats guardian ownership checks with `auth.uid()`, preserves the event-bus flag gate, and inserts idempotently into `state_events` inside a scoped DB helper. The route no longer imports the service-role client.",
+      "evidence": [
+        "India's Digital Personal Data Protection Act",
+        "cross-guardian access is permitted.",
+        "createRlsScopedClient(request)",
+        "parent_child_export_data",
+        "parent_publish_child_state_event"
+      ]
+    },
+    {
+      "id": "parent-child-erasure",
+      "route": "/api/parent/children/[student_id]/request-erasure",
+      "file": "apps/host/src/app/api/parent/children/[student_id]/request-erasure/route.ts",
+      "sensitivity": "critical",
+      "status": "migrated_scoped_rpc",
+      "migrationTarget": "canonical_domain_helper",
+      "owner": "parent-portal-backend",
+      "rationale": "Guardian erasure request/cancel ownership checks and `data_erasure_requests` mutations now run through scoped authenticated RPCs. The route also publishes `parent.child_erasure_requested` and `parent.child_erasure_cancelled` through `parent_publish_child_state_event`, so event-bus writes are guardian-bound, flag-gated, idempotent, and no longer require route-level service-role access.",
+      "evidence": [
+        "POST /api/parent/children/[student_id]/request-erasure",
+        "Both routes are guardian-ownership-strict",
+        "createServerClient",
+        "parent_request_child_erasure",
+        "parent_cancel_child_erasure",
+        "parent_publish_child_state_event"
+      ]
+    },
+    {
+      "id": "parent-child-erasure-status",
+      "route": "/api/parent/children/[student_id]/erasure-status",
+      "file": "apps/host/src/app/api/parent/children/[student_id]/erasure-status/route.ts",
+      "sensitivity": "critical",
+      "status": "migrated_scoped_rpc",
+      "migrationTarget": "canonical_domain_helper",
+      "owner": "parent-portal-backend",
+      "rationale": "Guardian erasure status ownership checks and `data_erasure_requests` latest-row reads now run through the scoped authenticated `parent_child_erasure_status` RPC. The route keeps the app-layer permission gate, but no longer imports the route-level service-role client for guardian/link/status table reads.",
+      "evidence": [
+        "GET /api/parent/children/[student_id]/erasure-status",
+        "createServerClient",
+        "parent_child_erasure_status",
+        "Child not linked to your account"
+      ]
+    },
+    {
+      "id": "parent-report",
+      "route": "/api/parent/report",
+      "file": "apps/host/src/app/api/parent/report/route.ts",
+      "sensitivity": "high",
+      "status": "migrated_rls_scoped",
+      "migrationTarget": "rls_scoped_client",
+      "owner": "parent-portal-backend",
+      "rationale": "Parent weekly report generation now performs cache reads/upserts through an RLS-scoped request client against `parent_weekly_reports`, whose guardian policies are keyed by `is_guardian_of(student_id)`. The route still performs app-layer guardian resolution and `isGuardianLinkedToStudent` before touching cache or generator paths.",
+      "evidence": [
+        "POST /api/parent/report",
+        "Resource check: parent must be linked to student",
+        "isGuardianLinkedToStudent",
+        "createServerClient",
+        "RLS-scoped cache access"
+      ]
+    },
+    {
+      "id": "parent-invite-link-consent-messages",
+      "route": "/api/parent/messages",
+      "file": "apps/host/src/app/api/parent/messages/route.ts",
+      "sensitivity": "critical",
+      "status": "migrated_scoped_rpc",
+      "migrationTarget": "canonical_domain_helper",
+      "owner": "parent-portal-backend",
+      "rationale": "The remaining parent invite, link-code OTP, consent, and parent-message routes have been moved off route-level service-role access. Invite acceptance, link approval, OTP challenge persistence/redemption, DPDP consent grant/revoke/list, and parent message send/list/read-marking now run through authenticated RPCs that bind ownership to auth.uid(); this representative route sends parent teacher messages through parent_send_teacher_message without importing the admin client.",
+      "evidence": [
+        "POST /api/parent/messages",
+        "authorizeRequest(request, 'child.view_progress')",
+        "createSupabaseServerClient",
+        "parent_send_teacher_message",
+        "Failed to send message"
+      ]
+    },
+    {
+      "id": "school-admin-students",
+      "route": "/api/school-admin/students",
+      "file": "apps/host/src/app/api/school-admin/students/route.ts",
+      "sensitivity": "critical",
+      "status": "migrated_rls_scoped",
+      "migrationTarget": "rls_scoped_client",
+      "owner": "school-admin-backend",
+      "rationale": "School-admin roster GET reads, PATCH active toggles, POST duplicate-email/legacy seat preflight checks, optional class_id preflight checks, and the POST post-auth student/class attachment now run through scoped authenticated RPCs that resolve the caller's school_admins membership from auth.uid(); the toggle helper owns same-school checks and the legacy activation seat-cap guard, the preflight helper owns student-create email dedupe, optional same-school class validation before Auth Admin user creation, and legacy seats_purchased checks, and the attach helper binds the trigger-created student row and optional class roster row to the caller's school. The route no longer imports the broad service-role DB client; Auth Admin user creation is isolated behind the narrow server-only createSchoolAdminStudentAuthUser helper.",
+      "evidence": [
+        "Permission: institution.manage_students",
+        "createSchoolAdminStudentAuthUser",
+        "createRlsScopedClient(request)",
+        "school_admin_list_students",
+        "school_admin_toggle_student_active",
+        "school_admin_student_create_preflight",
+        "p_class_id",
+        "school_admin_attach_created_student",
+        "student_add"
+      ]
+    },
+    {
+      "id": "teacher-join-class",
+      "route": "/api/teacher/join-class",
+      "file": "apps/host/src/app/api/teacher/join-class/route.ts",
+      "sensitivity": "high",
+      "status": "migrated_scoped_rpc",
+      "migrationTarget": "canonical_domain_helper",
+      "owner": "teacher-school-backend",
+      "rationale": "Teacher class membership creation is now behind the scoped authenticated `teacher_join_class_by_code` RPC. The route keeps the `class.manage` app-layer gate, while the DB helper binds the write to `auth.uid()`, active class code lookup, idempotent membership insert, and guarded school adoption without route-level service-role access.",
+      "evidence": [
+        "POST /api/teacher/join-class",
+        "no school_id is accepted from the body",
+        "createServerClient",
+        "teacher_join_class_by_code",
+        "RLS-scoped"
+      ]
+    },
+    {
+      "id": "super-admin-reports",
+      "route": "/api/super-admin/reports",
+      "file": "apps/host/src/app/api/super-admin/reports/route.ts",
+      "sensitivity": "critical",
+      "status": "service_role_exception",
+      "migrationTarget": "service_role_exception",
+      "owner": "super-admin-ops",
+      "rationale": "Super-admin PII exports may remain service-role by design, but RCA-01 still needs this route recorded as a reviewed exception with periodic PII/export audit review rather than blended into the general allowlist.",
+      "evidence": [
+        "Per-type export config",
+        "The four PII types now require",
+        "supabaseAdminHeaders()",
+        "logAdminAudit"
+      ]
+    },
+    {
+      "id": "parent-child-chat-rls-pattern",
+      "route": "/api/parent/children/[student_id]/chat",
+      "file": "apps/host/src/app/api/parent/children/[student_id]/chat/route.ts",
+      "sensitivity": "high",
+      "status": "already_rls_scoped",
+      "migrationTarget": "rls_scoped_client",
+      "owner": "parent-portal-backend",
+      "rationale": "This route demonstrates the desired XC-3 pattern for parent child-data reads: app-layer authorization plus an anon-key request client so DB RLS enforces the same boundary.",
+      "evidence": [
+        "RLS-SCOPED server client",
+        "deliberately NOT supabase-admin",
+        "createServerClient",
+        "canAccessStudent(auth.userId!, studentId)"
+      ]
+    }
+  ]
+}

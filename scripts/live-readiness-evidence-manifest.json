@@ -1,0 +1,130 @@
+{
+  "generatedAt": "2026-07-09",
+  "source": "RCA-20 operator-owned broad-launch evidence contract",
+  "maxEvidenceAgeHours": 168,
+  "gates": [
+    {
+      "id": "certification-e2e-live",
+      "label": "Selected certification E2E live run",
+      "rcaItems": ["RCA-20"],
+      "requiredForBroadLaunch": true,
+      "command": "CERTIFICATION_RUN_ENABLED=true CERTIFICATION_BASE_URL=<target> CERTIFICATION_RUN_ID=<uuid> npx playwright test e2e/certification",
+      "evidence": ["Playwright certification summary with CERTIFICATION_RUN_ID", "payment safety decision for CERT-17", "CERT-FE-01 and CERT-07 decision trail"]
+    },
+    {
+      "id": "edge-secrets-smoke",
+      "label": "Edge deploy and Upstash secret smoke",
+      "rcaItems": ["RCA-08", "RCA-09"],
+      "requiredForBroadLaunch": true,
+      "command": "supabase secrets set UPSTASH_REDIS_REST_URL=<redacted> UPSTASH_REDIS_REST_TOKEN=<redacted> --project-ref <target-project-ref> && smoke parent-portal logs/load",
+      "evidence": ["Supabase Edge deployment reference", "redacted Upstash secret presence proof", "parent-portal durable limiter log/load proof"]
+    },
+    {
+      "id": "tenant-isolation-live",
+      "label": "Live tenant isolation smoke",
+      "rcaItems": ["RCA-19", "RCA-20"],
+      "requiredForBroadLaunch": true,
+      "command": "LIVE_TENANT_SMOKE_BASE_URL=<target> LIVE_TENANT_SMOKE_PARENT_A_TOKEN=<tenant-a-parent-jwt> LIVE_TENANT_SMOKE_TEACHER_A_TOKEN=<tenant-a-teacher-jwt> LIVE_TENANT_SMOKE_SCHOOL_ADMIN_A_TOKEN=<tenant-a-admin-jwt> LIVE_TENANT_SMOKE_STUDENT_B_ID=<tenant-b-student> LIVE_TENANT_SMOKE_CLASS_B_ID=<tenant-b-class> LIVE_TENANT_SMOKE_SCHOOL_B_ID=<tenant-b-school> npx tsx scripts/verify-live-tenant-isolation-smoke.ts",
+      "evidence": ["verify-live-tenant-isolation-smoke.ts pass output", "target environment and seeded tenant fixture IDs"]
+    },
+    {
+      "id": "feature-flags-production",
+      "label": "Production feature flag DB comparison",
+      "rcaItems": ["RCA-24"],
+      "requiredForBroadLaunch": true,
+      "command": "npx tsx scripts/verify-feature-flag-matrix.ts --env=production",
+      "evidence": ["production feature flag matrix JSON output with ok=true"]
+    },
+    {
+      "id": "feature-flags-staging",
+      "label": "Staging feature flag DB comparison",
+      "rcaItems": ["RCA-24"],
+      "requiredForBroadLaunch": true,
+      "command": "npx tsx scripts/verify-feature-flag-matrix.ts --env=staging",
+      "evidence": ["staging feature flag matrix JSON output with ok=true"]
+    },
+    {
+      "id": "grade-format-target-db",
+      "label": "Target DB grade format verification",
+      "rcaItems": ["RCA-11"],
+      "requiredForBroadLaunch": true,
+      "command": "npx tsx scripts/verify-grade-format.ts",
+      "evidence": ["AO-10b target DB grade verifier pass output", "migration application reference"]
+    },
+    {
+      "id": "db-function-grants-live",
+      "label": "Target DB function grant inspection",
+      "rcaItems": ["RCA-18"],
+      "requiredForBroadLaunch": true,
+      "command": "npx tsx scripts/verify-db-function-hardening-live.ts --input=<rows.json>",
+      "evidence": ["pg_catalog export JSON", "verify-db-function-hardening-live.ts pass output"]
+    },
+    {
+      "id": "job-health-live",
+      "label": "Live job health inspection",
+      "rcaItems": ["RCA-17"],
+      "requiredForBroadLaunch": true,
+      "command": "npx tsx scripts/verify-job-health-live.ts --input=<rows.json>",
+      "evidence": ["ops_events job health export JSON", "verify-job-health-live.ts pass output"]
+    },
+    {
+      "id": "pii-notification",
+      "label": "Lower-tier PII exporter notification and audit review",
+      "rcaItems": ["RCA-14"],
+      "requiredForBroadLaunch": true,
+      "command": "docs/runbooks/super-admin-pii-export-notification.md",
+      "evidence": ["staff notification send proof", "post-deploy admin_audit_log review result"]
+    },
+    {
+      "id": "incident-id-live",
+      "label": "Production incident ID observability proof",
+      "rcaItems": ["RCA-23"],
+      "requiredForBroadLaunch": true,
+      "command": "npx tsx scripts/verify-incident-id-live.ts --input=<evidence.json>",
+      "evidence": ["sampled response X-Request-Id", "ops_events export JSON", "verify-incident-id-live.ts pass output"]
+    },
+    {
+      "id": "mobile-legacy-traffic-live",
+      "label": "Mobile legacy quiz/payment traffic validation",
+      "rcaItems": ["RCA-04", "RCA-22", "RCA-25"],
+      "requiredForBroadLaunch": true,
+      "command": "npx tsx scripts/verify-mobile-legacy-traffic-live.ts --input=<rows.json>",
+      "evidence": ["api_request_logs export JSON", "verify-mobile-legacy-traffic-live.ts pass output"]
+    },
+    {
+      "id": "historical-xp-target-db",
+      "label": "Historical XP quantification and product decision",
+      "rcaItems": ["RCA-06"],
+      "requiredForBroadLaunch": true,
+      "command": "run scripts/historical-xp-inflation-quantification.sql on target DB and obtain clamp/backfill decision",
+      "evidence": ["historical XP quantification result", "CEO/product clamp-backfill-comms decision"],
+      "allowAcceptedRisk": true
+    },
+    {
+      "id": "xc3-exception-review",
+      "label": "XC-3 service-role exception review and next narrowing pass",
+      "rcaItems": ["RCA-01"],
+      "requiredForBroadLaunch": true,
+      "command": "perform service-role exception review of scripts/admin-client-allowlist.json and scripts/xc3-service-role-migration-batch.json for remaining cron/webhook/super-admin routes; record approved exceptions or next scoped-RPC narrowing candidates",
+      "evidence": ["approved service-role exception review", "next scoped-RPC narrowing candidate list or accepted exception rationale"]
+    },
+    {
+      "id": "tsb4-live-cutover",
+      "label": "TSB-4 canonical membership live repoint/smoke",
+      "rcaItems": ["RCA-03", "RCA-21"],
+      "requiredForBroadLaunch": true,
+      "command": "execute scripts/tsb4-canonical-membership-cutover.json through live smoke before retirement approval",
+      "evidence": ["class membership divergence quantification", "live tenant smoke proof", "CEO retirement decision when applicable"],
+      "allowAcceptedRisk": true
+    },
+    {
+      "id": "wireframe-expansion-signoff",
+      "label": "Full wireframe/CTA expansion sign-off",
+      "rcaItems": ["RCA-12"],
+      "requiredForBroadLaunch": true,
+      "command": "obtain product sign-off on the expanded scripts/product-surface-matrix.json 13-surface route/page/flag/API matrix and record any remaining surfaced CTA or hidden/dead states",
+      "evidence": ["expanded 13-surface route/page/flag/API matrix", "product sign-off reference"],
+      "allowAcceptedRisk": true
+    }
+  ]
+}

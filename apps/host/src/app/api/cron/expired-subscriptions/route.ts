@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 /**
  * POST /api/cron/expired-subscriptions
@@ -111,6 +112,17 @@ export async function POST(request: NextRequest) {
         },
       });
     }
+
+    await recordCronJobHealth({
+      path: '/api/cron/expired-subscriptions',
+      metric: 'ops.cron.expired_subscriptions.last_success_at',
+      source: 'cron/expired-subscriptions',
+      durationMs,
+      context: {
+        marked_past_due: result.marked_past_due ?? 0,
+        halted: result.halted ?? 0,
+      },
+    });
 
     return NextResponse.json({
       success: true,

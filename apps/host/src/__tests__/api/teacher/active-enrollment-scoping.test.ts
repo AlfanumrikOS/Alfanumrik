@@ -8,12 +8,12 @@ import { resolve } from 'node:path';
  *
  * THE CHANGE UNDER TEST (3 edits)
  * ===============================
- *   1. `src/app/api/teacher/remediation/route.ts` — the `class_students` roster
+ *   1. `src/app/api/teacher/remediation/route.ts` — the `class_enrollments` roster
  *      lookup adds `.eq('is_active', true)`. A soft-de-enrolled student
  *      (is_active=false) is no longer on the caller's roster, so they cannot be
  *      assigned remediation.
  *   2. `src/app/api/teacher/parent-notify/route.ts` — the SAME `.eq('is_active',
- *      true)` is added to its `class_students` roster lookup. A de-enrolled
+ *      true)` is added to its `class_enrollments` roster lookup. A de-enrolled
  *      student no longer triggers a parent-notify.
  *   3. `src/app/api/schools/enroll/route.ts` — the off-path `class_enrollments`
  *      upsert conflict payload adds `is_active: true`, so a re-enroll RESTORES
@@ -51,7 +51,7 @@ function resolveRepo(rel: string): string {
 
 /**
  * Strip TS comments so the assertions inspect EXECUTABLE source only. CRITICAL
- * here: every route's header JSDoc narrates the roster join, "class_students",
+ * here: every route's header JSDoc narrates the roster join, "class_enrollments",
  * "class_teachers", "is_active", etc. as prose. Without stripping, an assertion
  * could pass against a comment even if the live filter were removed (vacuous).
  * Strips `/* block *​/` (incl. JSDoc) first, then `// line` comments.
@@ -98,22 +98,22 @@ const TEACHER_ROUTES: Array<[string, string]> = [
 describe('Tier-2 PR A — teacher/enrollment is_active scoping (P8) — REG-201', () => {
   // ── Assertion 1: both teacher roster lookups filter on is_active ──────────
   describe.each(TEACHER_ROUTES)(
-    'teacher/%s — class_students roster lookup is is_active-scoped',
+    'teacher/%s — class_enrollments roster lookup is is_active-scoped',
     (_name, rel) => {
       const src = readSource(rel);
-      const chain = fromChain(src, 'class_students');
+      const chain = fromChain(src, 'class_enrollments');
 
-      it('queries class_students (non-vacuous: from + select present)', () => {
+      it('queries class_enrollments (non-vacuous: from + select present)', () => {
         expect(chain).not.toBeNull();
         // Confirm this is the real roster read, not a stray reference.
-        expect(chain).toContain(".from('class_students')");
+        expect(chain).toContain(".from('class_enrollments')");
         expect(chain).toContain('.select(');
         // The roster read is scoped to the requested student + the teacher's classes.
         expect(chain).toContain(".eq('student_id'");
         expect(chain).toContain(".in('class_id'");
       });
 
-      it("includes .eq('is_active', true) ON the class_students chain", () => {
+      it("includes .eq('is_active', true) ON the class_enrollments chain", () => {
         expect(chain).toContain(".eq('is_active', true)");
       });
     },
@@ -151,7 +151,7 @@ describe('Tier-2 PR A — teacher/enrollment is_active scoping (P8) — REG-201'
         expect(teacherChain).toContain(".eq('teacher_id'");
       });
 
-      it('did NOT add an is_active filter to the class_teachers lookup (the change is on class_students only)', () => {
+      it('did NOT add an is_active filter to the class_teachers lookup (the change is on class_enrollments only)', () => {
         expect(teacherChain).not.toContain('is_active');
       });
     },

@@ -35,8 +35,9 @@ const holders = vi.hoisted(() => ({
   logAudit: vi.fn(),
   guardianByAuth: vi.fn(),
   isLinked: vi.fn(),
-  // Whether the service-role read of the cached report was reached.
+  // Whether the RLS-scoped read of the cached report was reached.
   reportReadReached: false,
+  reportUpsertReached: false,
   cachedReport: null as Record<string, unknown> | null,
 }));
 
@@ -53,7 +54,11 @@ vi.mock('@alfanumrik/lib/domains/relationship', () => ({
   isGuardianLinkedToStudent: (...a: unknown[]) => holders.isLinked(...a),
 }));
 
-vi.mock('@alfanumrik/lib/supabase-admin', () => {
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ getAll: () => [] })),
+}));
+
+vi.mock('@supabase/ssr', () => {
   const client = {
     from: (_table: string) => {
       const chain: Record<string, unknown> = {
@@ -66,11 +71,15 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
           holders.reportReadReached = true;
           return { data: holders.cachedReport, error: null };
         },
+        upsert: async () => {
+          holders.reportUpsertReached = true;
+          return { data: null, error: null };
+        },
       };
       return chain;
     },
   };
-  return { supabaseAdmin: client, getSupabaseAdmin: () => client };
+  return { createServerClient: vi.fn(() => client) };
 });
 
 vi.mock('@alfanumrik/lib/logger', () => ({
@@ -90,6 +99,7 @@ function makeReportReq(studentId: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   holders.reportReadReached = false;
+  holders.reportUpsertReached = false;
   holders.cachedReport = null;
   // Default: authenticated parent with a guardian profile.
   holders.authorize.mockResolvedValue({ authorized: true, userId: AUTH_USER_ID, roles: ['parent'] });
@@ -150,6 +160,18 @@ describe('PP-5 report route — linked parent succeeds', () => {
   });
 });
 
+describe('PP-5 report route — XC-3 parent report cache runs through RLS-scoped client', () => {
+  it('does not import the route-level service-role client', () => {
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/app/api/parent/report/route.ts'),
+      'utf8',
+    );
+    expect(src).not.toContain('@alfanumrik/lib/supabase-admin');
+    expect(src).toContain('createServerClient');
+    expect(src).toContain('RLS-scoped');
+  });
+});
+
 // ── Part B: source-contract enumeration across every child-data route ──────
 describe('PP-5 enumeration — every parent child-data route references a link boundary', () => {
   const ROUTES = [
@@ -170,6 +192,8 @@ describe('PP-5 enumeration — every parent child-data route references a link b
       /canAccessStudent/.test(src) ||
       /isGuardianLinkedToStudent/.test(src) ||
       /listChildrenForGuardian/.test(src) ||
+      /parent_(request|cancel)_child_erasure/.test(src) ||
+      /parent_child_erasure_status/.test(src) ||
       // Inline guardian_student_links link check that 403s on "not linked".
       (/guardian_student_links/.test(src) && /403/.test(src));
     expect(usesHelper).toBe(true);

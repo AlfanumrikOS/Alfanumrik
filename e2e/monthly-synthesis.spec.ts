@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
+import { mockStudentSession } from './helpers/auth';
 
 /**
  * Pedagogy v2 — Wave 3 Task 9
@@ -24,16 +25,80 @@ import { test, expect } from '@playwright/test';
  * E2E_SYNTHESIS_PASSWORD env vars.
  */
 test.describe('Pedagogy v2 — Monthly Synthesis', () => {
-  async function login(page: import('@playwright/test').Page) {
-    await page.goto('/login');
-    await page.fill('input[name="email"]', process.env.E2E_SYNTHESIS_EMAIL ?? 'synthesis-test@alfanumrik.test');
-    await page.fill('input[name="password"]', process.env.E2E_SYNTHESIS_PASSWORD ?? 'changeme');
-    await page.click('button[type="submit"]');
-    await page.waitForURL((u) => u.pathname !== '/login', { timeout: 10000 });
+  const synthesisRow = {
+    id: 'synthesis-run-e2e-1',
+    synthesisMonth: 'June 2026',
+    createdAt: new Date().toISOString(),
+    summaryTextEn: 'Aanya strengthened photosynthesis and improved in quadratic equations this month.',
+    summaryTextHi: 'आन्या ने इस महीने प्रकाश संश्लेषण मजबूत किया और द्विघात समीकरणों में सुधार किया।',
+    parentShareStatus: 'pending' as const,
+    parentShareSentAt: null,
+    bundle: {
+      masteryDelta: {
+        topicsMastered: 4,
+        topicsImproved: 6,
+        topicsRegressed: 1,
+        chaptersTouched: ['Photosynthesis', 'Quadratic equations', 'Indian nationalism'],
+      },
+      weeklyArtifactIds: ['week-1', 'week-2', 'week-3'],
+      chapterMockSummary: {
+        totalQuestions: 18,
+      },
+    },
+  };
+
+  async function installLocalMocks(page: Page) {
+    await mockStudentSession(page, { onboardingCompleted: true });
+    await page.route('**/api/synthesis/state', async (route: Route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ state: 'ready', row: synthesisRow }),
+      });
+    });
+    await page.route('**/api/synthesis/parent-share', async (route: Route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, sentAt: new Date().toISOString() }),
+      });
+    });
+    await page.route('**/api/dive/state', async (route: Route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ state: 'closed' }),
+      });
+    });
+    await page.route('**/functions/v1/nep-compliance', async (route: Route) => {
+      const body = route.request().postDataJSON() as { action?: string } | null;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          body?.action === 'get_hpc'
+            ? {
+                student: { name: 'Test student', grade: '9', board: 'CBSE' },
+                academic_year: '2026-27',
+                term: 'Term 1',
+                class_percentile: 72,
+                bloom_distribution: { remember: 2, understand: 3, apply: 4, total: 9 },
+                competency_levels: {},
+                subject_performance: {},
+                learning_behaviors: {},
+                holistic_indicators: {},
+                cbse_readiness: {},
+                portfolio_highlights: [],
+              }
+            : { ok: true },
+        ),
+      });
+    });
   }
 
   test('1. /synthesis renders ritual + parent-share card after lazy summary fill', async ({ page }) => {
-    await login(page);
+    await installLocalMocks(page);
     await page.goto('/synthesis');
 
     // The lazy-fill round-trip can take a few seconds (Claude call).
@@ -51,7 +116,7 @@ test.describe('Pedagogy v2 — Monthly Synthesis', () => {
   });
 
   test('2. parent-share card EN/HI tabs flip the preview content', async ({ page }) => {
-    await login(page);
+    await installLocalMocks(page);
     await page.goto('/synthesis');
     await expect(page.getByTestId('synthesis-ritual')).toBeVisible({ timeout: 30_000 });
 
@@ -72,22 +137,17 @@ test.describe('Pedagogy v2 — Monthly Synthesis', () => {
     expect(hiText.length).toBeGreaterThan(0);
   });
 
-  test('3. dashboard CTA shows synthesis row when a recent synthesis exists', async ({ page }) => {
-    await login(page);
-    await page.goto('/dashboard');
+  test('3. HPC CTA shows synthesis chip when a recent synthesis exists', async ({ page }) => {
+    await installLocalMocks(page);
+    await page.goto('/hpc');
 
-    // The DailyRhythmQueue is the host. Synthesis row appears when /api/synthesis/state
-    // returns state='ready' AND createdAt within the past 7 days.
-    const queue = page.getByTestId('daily-rhythm-queue');
-    await expect(queue).toBeVisible({ timeout: 10_000 });
-
-    const cta = page.getByTestId('rhythm-synthesis-cta');
+    const cta = page.getByTestId('hpc-synthesis-chip');
     await expect(cta).toBeVisible({ timeout: 10_000 });
-    await expect(cta.getByText(/View|देखो/)).toBeVisible();
+    await expect(cta).toContainText(/Monthly synthesis ready|मासिक/);
   });
 
   test('4. clicking Send via WhatsApp transitions parent_share_status to sent (or opted_out)', async ({ page }) => {
-    await login(page);
+    await installLocalMocks(page);
     await page.goto('/synthesis');
     await expect(page.getByTestId('synthesis-ritual')).toBeVisible({ timeout: 30_000 });
 
@@ -105,7 +165,7 @@ test.describe('Pedagogy v2 — Monthly Synthesis', () => {
     // or 'Failed'. Any of those is a valid POST round-trip; the test
     // verifies the status transitioned away from 'Pending'.
     const card = page.getByTestId('parent-share-card');
-    await expect(card.getByText(/Sent|Parent opted out|Failed|भेज दिया|अभिभावक ने मना किया|विफल/))
+    await expect(card.getByText(/Sent|Parent opted out|Failed|भेज दिया|अभिभावक ने मना किया|विफल/).first())
       .toBeVisible({ timeout: 15_000 });
   });
 });

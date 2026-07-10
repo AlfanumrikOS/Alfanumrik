@@ -782,7 +782,7 @@ BEGIN
         AND c.subject_code = p_subject_code
         AND c.grade_short  = v_grade
         AND c.source       = 'ncert_2025'
-        AND (c.quality_score IS NULL OR c.quality_score >= p_quality_score_gate
+        AND (c.quality_score IS NULL OR c.quality_score >= p_quality_score_gate)
         AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
         AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
         AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -804,7 +804,7 @@ BEGIN
         AND c.grade_short  = v_grade
         AND c.source       = 'ncert_2025'
         AND c.search_vector @@ v_query
-        AND (c.quality_score IS NULL OR c.quality_score >= p_quality_score_gate
+        AND (c.quality_score IS NULL OR c.quality_score >= p_quality_score_gate)
         AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
         AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
         AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -866,7 +866,7 @@ BEGIN
     AND c.grade_short  = v_grade
     AND c.source       = 'ncert_2025'
     AND c.search_vector @@ v_query
-    AND (c.quality_score IS NULL OR c.quality_score >= p_quality_score_gate
+    AND (c.quality_score IS NULL OR c.quality_score >= p_quality_score_gate)
     AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
     AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
     AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -888,7 +888,7 @@ BEGIN
     AND c.subject_code = p_subject_code
     AND c.grade_short  = v_grade
     AND c.source       = 'ncert_2025'
-    AND (c.quality_score IS NULL OR c.quality_score >= p_quality_score_gate
+    AND (c.quality_score IS NULL OR c.quality_score >= p_quality_score_gate)
     AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
     AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
     AND (

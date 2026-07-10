@@ -876,6 +876,7 @@ export default function CommandCenter() {
   const criticalCount = alerts.filter(
     (a) => a.severity === 'critical' || a.severity === 'high',
   ).length;
+  const topAttentionAlerts = alerts.slice(0, 3);
   const loadingClass = heatmapLoading;
 
   return (
@@ -924,6 +925,70 @@ export default function CommandCenter() {
           </button>
         </div>
       </header>
+
+      <SectionErrorBoundary section="Attention summary">
+        <section
+          className="mb-4 rounded-2xl border p-4"
+          style={{
+            background: 'var(--surface-1)',
+            borderColor: 'var(--border)',
+            boxShadow: 'var(--shadow-md)',
+          }}
+          aria-label={tt(isHi, 'Students needing attention', 'ध्यान चाहने वाले छात्र')}
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: 'var(--primary)' }}>
+                {tt(isHi, 'Who needs my attention?', 'मेरे ध्यान की अभी किसे ज़रूरत है?')}
+              </p>
+              <h2 className="mt-1 text-2xl font-extrabold font-heading" style={{ color: 'var(--text-1)' }}>
+                {alerts.length > 0
+                  ? tt(isHi, `${alerts.length} student${alerts.length === 1 ? '' : 's'} need intervention`, `${alerts.length} छात्रों को हस्तक्षेप चाहिए`)
+                  : tt(isHi, 'No urgent student interventions', 'कोई तत्काल छात्र हस्तक्षेप नहीं')}
+              </h2>
+              <p className="mt-1 text-sm" style={{ color: 'var(--text-3)' }}>
+                {activeClass?.name
+                  ? tt(isHi, `${activeClass.name} is selected`, `${activeClass.name} चुनी गई है`)
+                  : tt(isHi, 'Pick a class to review learning risk.', 'लर्निंग जोखिम देखने के लिए कक्षा चुनें।')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (topAttentionAlerts[0]) assignRemediation(topAttentionAlerts[0]);
+                else router.push('/teacher/assignments');
+              }}
+              className="min-h-[44px] rounded-xl px-4 py-2.5 text-sm font-bold text-on-accent"
+              style={{ background: 'var(--surface-accent)' }}
+            >
+              {alerts.length > 0
+                ? tt(isHi, 'Create intervention', 'हस्तक्षेप बनाएं')
+                : tt(isHi, 'Assign practice', 'अभ्यास दें')}
+            </button>
+          </div>
+
+          {topAttentionAlerts.length > 0 && (
+            <div className="mt-4 grid gap-2 md:grid-cols-3">
+              {topAttentionAlerts.map((alert) => (
+                <button
+                  key={alert.id}
+                  type="button"
+                  onClick={() => goToStudent(alert.student_name)}
+                  className="rounded-xl border px-3 py-2.5 text-left"
+                  style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}
+                >
+                  <span className="block truncate text-sm font-bold" style={{ color: 'var(--text-1)' }}>
+                    {alert.student_name}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs" style={{ color: 'var(--text-3)' }}>
+                    {alert.title || alert.description || tt(isHi, 'Needs practice', 'अभ्यास चाहिए')}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      </SectionErrorBoundary>
 
       {/* Today summary — stat tiles from the existing dashboard counts.
           The "Awaiting grading" tile is Wave B: it appears only when

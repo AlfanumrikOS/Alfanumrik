@@ -76,6 +76,53 @@ vi.mock('@alfanumrik/lib/email-delivery', () => ({
   pickLocaleFromAcceptLanguage: () => 'en',
   truncateInviteCode: (c: string) => c.slice(0, 4),
 }));
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    getAll: () => [],
+  }),
+}));
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: () => ({
+    rpc: async (fn: string, args: { p_student_id?: string; p_is_active?: boolean; p_attempted_count?: number }) => {
+      if (fn === 'school_admin_student_create_preflight') {
+        void args.p_attempted_count;
+        return {
+          data: {
+            success: true,
+            data: {
+              emailExists: false,
+              seatsUsed: 0,
+              seatsPurchased: null,
+              seatCapViolation: false,
+            },
+          },
+          error: null,
+        };
+      }
+      if (fn === 'school_admin_attach_created_student') {
+        return {
+          data: { success: true, data: { studentId: 'student-new' } },
+          error: null,
+        };
+      }
+      if (fn !== 'school_admin_toggle_student_active') throw new Error(`unexpected rpc: ${fn}`);
+      return {
+        data: {
+          success: true,
+          was_active: !args.p_is_active,
+          data: {
+            id: args.p_student_id,
+            name: 'Student',
+            email: 'student@example.test',
+            grade: '8',
+            is_active: args.p_is_active,
+          },
+        },
+        error: null,
+      };
+    },
+  }),
+}));
 
 // ── Controllable supabase-admin chainable stub. ──────────────────────────────
 const dbState = vi.hoisted(() => ({

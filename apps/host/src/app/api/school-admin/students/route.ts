@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@alfanumrik/lib/school-admin-auth';
-import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { capture as posthogCapture } from '@alfanumrik/lib/posthog/server';
 import { logSchoolAudit } from '@alfanumrik/lib/audit';
+import { createSchoolAdminStudentAuthUser } from '@alfanumrik/lib/school-admin/student-auth-admin';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 import {
   isSeatEnforcementEnabled,
   enrollWithSeatCheck,
@@ -19,6 +21,82 @@ const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const MAX_CSV_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 const MAX_BULK_ROWS = 1000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+interface SchoolAdminStudentsListRpcResponse {
+  success: boolean;
+  error?: string;
+  status?: number;
+  data?: unknown[];
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+interface SchoolAdminToggleStudentRpcResponse {
+  success: boolean;
+  status?: number;
+  error?: string;
+  code?: string;
+  seats_used?: number;
+  seats_purchased?: number;
+  was_active?: boolean;
+  data?: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    grade: string | null;
+    is_active: boolean;
+  };
+}
+
+interface SchoolAdminAttachCreatedStudentRpcResponse {
+  success: boolean;
+  status?: number;
+  error?: string;
+  data?: {
+    studentId: string;
+  };
+}
+
+interface SchoolAdminStudentCreatePreflightRpcResponse {
+  success: boolean;
+  status?: number;
+  error?: string;
+  data?: {
+    emailExists: boolean;
+    seatsUsed: number;
+    seatsPurchased: number | null;
+    seatCapViolation: boolean;
+  };
+}
+
+type RlsScopedClient = Awaited<ReturnType<typeof createRlsScopedClient>>;
+
+async function createRlsScopedClient(request: NextRequest) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  const authHeader = request.headers.get('Authorization');
+  const cookieStore = await cookies();
+
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {
+        // RLS-scoped roster reads only; this route does not mutate auth cookies.
+      },
+    },
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
+  });
+}
 
 /**
  * GET /api/school-admin/students?page=1&limit=20&grade=8&search=name
@@ -37,48 +115,27 @@ export async function GET(request: NextRequest) {
     const auth = await authorizeSchoolAdmin(request, 'institution.manage_students');
     if (!auth.authorized) return auth.errorResponse!;
 
-    const schoolId = auth.schoolId!;
-    const supabase = getSupabaseAdmin();
-
     const url = new URL(request.url);
     const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') ?? '20', 10)));
-    const offset = (page - 1) * limit;
     const grade = url.searchParams.get('grade') ?? '';
     const search = url.searchParams.get('search')?.trim() ?? '';
 
     // Validate grade filter if provided (P5: grades are strings "6"-"12")
-    const validGrades = ['6', '7', '8', '9', '10', '11', '12'];
-    if (grade && !validGrades.includes(grade)) {
+    if (grade && !VALID_GRADES.includes(grade)) {
       return NextResponse.json(
         { success: false, error: `Invalid grade filter: "${grade}". Must be "6" through "12"` },
         { status: 400 }
       );
     }
 
-    // Build query — always scoped to schoolId
-    let query = supabase
-      .from('students')
-      .select(
-        'id, name, email, grade, is_active, xp_total, last_active, subscription_plan, created_at',
-        { count: 'exact' }
-      )
-      .eq('school_id', schoolId)
-      .order('created_at', { ascending: false });
-
-    // Apply optional filters
-    if (grade) {
-      query = query.eq('grade', grade);
-    }
-
-    if (search) {
-      query = query.ilike('name', `%${search}%`);
-    }
-
-    // Apply pagination
-    query = query.range(offset, offset + limit - 1);
-
-    const { data, error, count } = await query;
+    const rlsClient = await createRlsScopedClient(request);
+    const { data, error } = await rlsClient.rpc('school_admin_list_students', {
+      p_page: page,
+      p_limit: limit,
+      p_grade: grade || null,
+      p_search: search || null,
+    });
 
     if (error) {
       logger.error('school_admin_students_list_failed', {
@@ -91,14 +148,22 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const payload = data as SchoolAdminStudentsListRpcResponse | null;
+    if (!payload?.success) {
+      return NextResponse.json(
+        { success: false, error: payload?.error ?? 'Failed to fetch students' },
+        { status: payload?.status ?? 500 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      data: data ?? [],
-      pagination: {
+      data: payload.data ?? [],
+      pagination: payload.pagination ?? {
         page,
         limit,
-        total: count ?? 0,
-        totalPages: Math.ceil((count ?? 0) / limit),
+        total: 0,
+        totalPages: 0,
       },
     });
   } catch (err) {
@@ -128,7 +193,6 @@ export async function PATCH(request: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
-    const supabase = getSupabaseAdmin();
 
     const body = await request.json();
 
@@ -146,70 +210,14 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Verify student belongs to this school (tenant isolation)
-    const { data: existingStudent } = await supabase
-      .from('students')
-      .select('id, is_active')
-      .eq('id', body.id)
-      .eq('school_id', schoolId)
-      .maybeSingle();
-
-    if (!existingStudent) {
-      return NextResponse.json(
-        { success: false, error: 'Student not found' },
-        { status: 404 }
-      );
-    }
-
-    // ── Seat-cap enforcement (Phase 3-B) ───────────────────────────────
-    // Activating a previously-inactive student consumes a seat. Refuse if
-    // the school is at or above its purchased cap. Reactivation of an
-    // already-active student is a no-op for seat counting; deactivation
-    // never hits the cap. Trial schools have school_subscriptions.seats_purchased
-    // defaulted to 50 (per the table CHECK), so the gate applies uniformly.
-    const isActivating = body.is_active === true && existingStudent.is_active !== true;
-    if (isActivating) {
-      const [{ count: activeCount }, { data: sub }] = await Promise.all([
-        supabase
-          .from('students')
-          .select('id', { count: 'exact', head: true })
-          .eq('school_id', schoolId)
-          .eq('is_active', true),
-        supabase
-          .from('school_subscriptions')
-          .select('seats_purchased')
-          .eq('school_id', schoolId)
-          .maybeSingle(),
-      ]);
-      const seatsUsed = activeCount ?? 0;
-      const seatsPurchased = (sub?.seats_purchased as number | undefined) ?? null;
-      if (seatsPurchased !== null && seatsUsed + 1 > seatsPurchased) {
-        await posthogCapture('school_seat_cap_hit', auth.userId!, {
-          school_id: schoolId,
-          source: 'student_add',
-          seats_purchased: seatsPurchased,
-          seats_used: seatsUsed,
-        });
-        return NextResponse.json(
-          {
-            success: false,
-            code: 'seat_cap_violation',
-            error: `Cannot activate this student. Your school has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade your subscription to add more.`,
-            seats_used: seatsUsed,
-            seats_purchased: seatsPurchased,
-          },
-          { status: 422 },
-        );
-      }
-    }
-
-    const { data: updated, error: updateError } = await supabase
-      .from('students')
-      .update({ is_active: body.is_active })
-      .eq('id', body.id)
-      .eq('school_id', schoolId) // double-check tenant isolation
-      .select('id, name, email, grade, is_active')
-      .single();
+    const rlsClient = await createRlsScopedClient(request);
+    const { data: toggleData, error: updateError } = await rlsClient.rpc(
+      'school_admin_toggle_student_active',
+      {
+        p_student_id: body.id,
+        p_is_active: body.is_active,
+      },
+    );
 
     if (updateError) {
       logger.error('school_admin_student_toggle_failed', {
@@ -219,6 +227,34 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: 'Failed to update student' },
         { status: 500 }
+      );
+    }
+
+    const toggleResult = toggleData as SchoolAdminToggleStudentRpcResponse | null;
+    if (!toggleResult?.success) {
+      if (toggleResult?.code === 'seat_cap_violation') {
+        await posthogCapture('school_seat_cap_hit', auth.userId!, {
+          school_id: schoolId,
+          source: 'student_add',
+          seats_purchased: toggleResult.seats_purchased ?? 0,
+          seats_used: toggleResult.seats_used ?? 0,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            code: 'seat_cap_violation',
+            error:
+              toggleResult.error ??
+              `Cannot activate this student. Your school has used ${toggleResult.seats_used ?? 0} of ${toggleResult.seats_purchased ?? 0} seats. Upgrade your subscription to add more.`,
+            seats_used: toggleResult.seats_used ?? 0,
+            seats_purchased: toggleResult.seats_purchased ?? 0,
+          },
+          { status: toggleResult.status ?? 422 },
+        );
+      }
+      return NextResponse.json(
+        { success: false, error: toggleResult?.error ?? 'Failed to update student' },
+        { status: toggleResult?.status ?? 500 },
       );
     }
 
@@ -243,7 +279,7 @@ export async function PATCH(request: NextRequest) {
       ipAddress: request.headers.get('x-forwarded-for') ?? undefined,
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({ success: true, data: toggleResult.data });
   } catch (err) {
     logger.error('school_admin_students_patch_failed', {
       error: err instanceof Error ? err : new Error(String(err)),
@@ -257,32 +293,6 @@ export async function PATCH(request: NextRequest) {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
-
-/**
- * Read the school's current active-student count + purchased seats.
- * `seats_purchased = null` means "no subscription row → uncapped".
- */
-async function readSeatStatus(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  schoolId: string,
-): Promise<{ seatsUsed: number; seatsPurchased: number | null }> {
-  const [{ count: activeCount }, { data: sub }] = await Promise.all([
-    supabase
-      .from('students')
-      .select('id', { count: 'exact', head: true })
-      .eq('school_id', schoolId)
-      .eq('is_active', true),
-    supabase
-      .from('school_subscriptions')
-      .select('seats_purchased')
-      .eq('school_id', schoolId)
-      .maybeSingle(),
-  ]);
-  return {
-    seatsUsed: activeCount ?? 0,
-    seatsPurchased: (sub?.seats_purchased as number | undefined) ?? null,
-  };
-}
 
 interface NormalizedRow {
   name: string;
@@ -331,55 +341,39 @@ function validateRow(
  * Returns the new student row's id on success, or an error message string.
  */
 async function createOneStudent(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  schoolId: string,
+  rlsClient: RlsScopedClient,
   row: NormalizedRow,
+  classId: string | null = null,
 ): Promise<{ ok: true; studentId: string } | { ok: false; message: string }> {
-  // Check email is not already in use (matches super-admin bulk-upload).
-  const { data: existing } = await supabase
-    .from('students')
-    .select('id')
-    .eq('email', row.email)
-    .maybeSingle();
-
-  if (existing) {
-    return { ok: false, message: 'Student with this email already exists' };
-  }
-
   const tempPassword = `Alf${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 100)}`;
 
-  const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+  const authUser = await createSchoolAdminStudentAuthUser({
     email: row.email,
     password: tempPassword,
-    email_confirm: true,
-    user_metadata: { name: row.name, role: 'student', grade: row.grade },
+    name: row.name,
+    grade: row.grade,
   });
 
-  if (authError || !authUser?.user?.id) {
-    return { ok: false, message: authError?.message ?? 'Failed to create auth user' };
+  if (!authUser.ok) {
+    return { ok: false, message: authUser.message };
   }
 
-  // TODO(B.5): extract this students-row mutation to a `learner.created`
-  // projector once that event kind is added to EVENT_CATALOG v2. Today
-  // there is no `learner.created` (or equivalent) event kind in the
-  // registry, so we write directly per ADR-005 §"escape hatch when no
-  // event kind exists". The students row itself is created by the
-  // handle_new_user trigger; we only patch school_id (+ optional phone).
-  const updates: Record<string, unknown> = { school_id: schoolId };
-  if (row.phone) updates.phone = row.phone;
+  const { data: attachData, error: attachError } = await rlsClient.rpc('school_admin_attach_created_student', {
+    p_student_auth_user_id: authUser.authUserId,
+    p_phone: row.phone ?? null,
+    p_class_id: classId,
+  });
 
-  const { data: studentRow, error: updateError } = await supabase
-    .from('students')
-    .update(updates)
-    .eq('auth_user_id', authUser.user.id)
-    .select('id')
-    .single();
-
-  if (updateError || !studentRow) {
-    return { ok: false, message: updateError?.message ?? 'Failed to attach student to school' };
+  if (attachError) {
+    return { ok: false, message: attachError.message };
   }
 
-  return { ok: true, studentId: studentRow.id as string };
+  const attachResult = attachData as SchoolAdminAttachCreatedStudentRpcResponse | null;
+  if (!attachResult?.success || !attachResult.data?.studentId) {
+    return { ok: false, message: attachResult?.error ?? 'Failed to attach student to school' };
+  }
+
+  return { ok: true, studentId: attachResult.data.studentId };
 }
 
 /**
@@ -390,12 +384,51 @@ function parseCsv(text: string): {
   headers: string[];
   rows: Record<string, string>[];
 } {
-  const lines = text.split('\n').filter((l) => l.trim());
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const records: string[][] = [];
+  let record: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (ch === '"') {
+      if (inQuotes && next === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (ch === ',' && !inQuotes) {
+      record.push(cleanCsvCell(field));
+      field = '';
+      continue;
+    }
+
+    if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      if (ch === '\r' && next === '\n') i += 1;
+      record.push(cleanCsvCell(field));
+      if (record.some((cell) => cell.trim().length > 0)) records.push(record);
+      record = [];
+      field = '';
+      continue;
+    }
+
+    field += ch;
+  }
+
+  record.push(cleanCsvCell(field));
+  if (record.some((cell) => cell.trim().length > 0)) records.push(record);
+
+  if (records.length < 2) return { headers: [], rows: [] };
+  const headers = records[0].map((h) => h.trim().toLowerCase());
   const rows: Record<string, string>[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map((v) => v.trim().replace(/^["']|["']$/g, ''));
+  for (let i = 1; i < records.length; i++) {
+    const values = records[i];
     const obj: Record<string, string> = {};
     headers.forEach((h, idx) => {
       obj[h] = values[idx] || '';
@@ -403,6 +436,14 @@ function parseCsv(text: string): {
     rows.push(obj);
   }
   return { headers, rows };
+}
+
+function cleanCsvCell(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
 }
 
 // ─── POST ───────────────────────────────────────────────────────
@@ -435,7 +476,6 @@ export async function POST(request: NextRequest) {
     if (!auth.authorized) return auth.errorResponse!;
 
     const schoolId = auth.schoolId!;
-    const supabase = getSupabaseAdmin();
 
     const url = new URL(request.url);
     const bulkParam = url.searchParams.get('bulk') === 'true';
@@ -443,7 +483,7 @@ export async function POST(request: NextRequest) {
 
     // ── Branch 1: multipart CSV upload ──────────────────────────
     if (contentType.includes('multipart/form-data')) {
-      return handleBulkCsv(request, supabase, schoolId, auth.userId!);
+      return handleBulkCsv(request, schoolId, auth.userId!);
     }
 
     // ── Read JSON body once ────────────────────────────────────
@@ -459,11 +499,11 @@ export async function POST(request: NextRequest) {
 
     // ── Branch 2: JSON bulk ────────────────────────────────────
     if (bulkParam || (typeof body === 'object' && body !== null && 'rows' in body)) {
-      return handleBulkJson(body, supabase, schoolId, auth.userId!, request);
+      return handleBulkJson(body, schoolId, auth.userId!, request);
     }
 
     // ── Branch 3: single-student create ────────────────────────
-    return handleSingle(body, supabase, schoolId, auth.userId!, request);
+    return handleSingle(body, schoolId, auth.userId!, request);
   } catch (err) {
     logger.error('school_admin_students_post_failed', {
       error: err instanceof Error ? err : new Error(String(err)),
@@ -476,9 +516,55 @@ export async function POST(request: NextRequest) {
   }
 }
 
+async function runCreatePreflight(
+  rlsClient: RlsScopedClient,
+  email: string,
+  attemptedCount = 1,
+  classId: string | null = null,
+): Promise<
+  | {
+      ok: true;
+      emailExists: boolean;
+      seatsUsed: number;
+      seatsPurchased: number | null;
+      seatCapViolation: boolean;
+    }
+  | { ok: false; message: string; status: number }
+> {
+  const { data, error } = await rlsClient.rpc('school_admin_student_create_preflight', {
+    p_email: email,
+    p_attempted_count: attemptedCount,
+    p_class_id: classId,
+  });
+
+  if (error) {
+    logger.error('school_admin_student_create_preflight_failed', {
+      error: new Error(error.message),
+      route: '/api/school-admin/students',
+    });
+    return { ok: false, message: 'Student preflight check failed. Please retry.', status: 503 };
+  }
+
+  const payload = data as SchoolAdminStudentCreatePreflightRpcResponse | null;
+  if (!payload?.success) {
+    return {
+      ok: false,
+      message: payload?.error ?? 'Student preflight check failed. Please retry.',
+      status: payload?.status ?? 500,
+    };
+  }
+
+  return {
+    ok: true,
+    emailExists: !!payload.data?.emailExists,
+    seatsUsed: payload.data?.seatsUsed ?? 0,
+    seatsPurchased: payload.data?.seatsPurchased ?? null,
+    seatCapViolation: !!payload.data?.seatCapViolation,
+  };
+}
+
 async function handleSingle(
   body: unknown,
-  supabase: ReturnType<typeof getSupabaseAdmin>,
   schoolId: string,
   actorId: string,
   request: NextRequest,
@@ -506,21 +592,6 @@ async function handleSingle(
     );
   }
 
-  // ── Cross-tenant class_id rejection ────────────────────────
-  if (input.class_id) {
-    const { data: cls } = await supabase
-      .from('classes')
-      .select('id, school_id')
-      .eq('id', input.class_id)
-      .maybeSingle();
-    if (!cls || cls.school_id !== schoolId) {
-      return NextResponse.json(
-        { success: false, error: 'class_id does not belong to your school' },
-        { status: 403 },
-      );
-    }
-  }
-
   // ── Seat-policy gate (Phase 3B Wave B) ─────────────────────────────
   // When ff_school_provisioning is ON, the canonical roster-based hybrid
   // policy is the authoritative gate and replaces the legacy seats_purchased
@@ -530,45 +601,55 @@ async function handleSingle(
   // roster row and consumes no seat (documented). Flag OFF → the legacy
   // pre-check runs unchanged (byte-identical to today).
   const seatEnforced = await isSeatEnforcementEnabled();
+  const rlsClient = await createRlsScopedClient(request);
+  const preflight = await runCreatePreflight(
+    rlsClient,
+    validation.row.email,
+    1,
+    input.class_id ?? null,
+  );
+  if (!preflight.ok) {
+    return NextResponse.json(
+      { success: false, error: preflight.message },
+      { status: preflight.status },
+    );
+  }
+  if (preflight.emailExists) {
+    return NextResponse.json(
+      { success: false, error: 'Student with this email already exists' },
+      { status: 400 },
+    );
+  }
 
   if (!seatEnforced) {
     // ── Legacy seat-cap pre-check (unchanged OFF path) ────────────
-    const { seatsUsed, seatsPurchased } = await readSeatStatus(supabase, schoolId);
-    if (seatsPurchased !== null && seatsUsed + 1 > seatsPurchased) {
+    if (preflight.seatCapViolation) {
       await posthogCapture('school_seat_cap_hit', actorId, {
         school_id: schoolId,
         // Reuse the existing 'student_add' source — same as PATCH activation
         // (typed in src/lib/posthog/types.ts: SchoolSeatCapHitPayload).
         source: 'student_add',
-        seats_purchased: seatsPurchased,
-        seats_used: seatsUsed,
+        seats_purchased: preflight.seatsPurchased ?? 0,
+        seats_used: preflight.seatsUsed,
       });
       return NextResponse.json(
         {
           success: false,
           code: 'seat_cap_violation',
-          error: `Cannot add student. School has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade the subscription to add more.`,
-          seats_used: seatsUsed,
-          seats_purchased: seatsPurchased,
+          error: `Cannot add student. School has used ${preflight.seatsUsed} of ${preflight.seatsPurchased} seats. Upgrade the subscription to add more.`,
+          seats_used: preflight.seatsUsed,
+          seats_purchased: preflight.seatsPurchased,
         },
         { status: 409 },
       );
     }
 
-    const result = await createOneStudent(supabase, schoolId, validation.row);
+    const result = await createOneStudent(rlsClient, validation.row, input.class_id ?? null);
     if (!result.ok) {
       return NextResponse.json(
         { success: false, error: result.message },
         { status: 400 },
       );
-    }
-
-    // Attach to class if provided (and it passed the cross-tenant gate above).
-    if (input.class_id) {
-      await supabase.from('class_students').insert({
-        class_id: input.class_id,
-        student_id: result.studentId,
-      });
     }
 
     void logSchoolAudit({
@@ -587,7 +668,9 @@ async function handleSingle(
         data: {
           student_id: result.studentId,
           remaining_seats:
-            seatsPurchased === null ? null : seatsPurchased - (seatsUsed + 1),
+            preflight.seatsPurchased === null
+              ? null
+              : preflight.seatsPurchased - (preflight.seatsUsed + 1),
         },
       },
       { status: 201 },
@@ -601,7 +684,7 @@ async function handleSingle(
   // the seat policy hard-blocks the roster placement, the student row still
   // exists (it consumes no seat without a roster row) and the admin gets a
   // clear 409 to act on (upgrade / deactivate / pick a class later).
-  const result = await createOneStudent(supabase, schoolId, validation.row);
+  const result = await createOneStudent(rlsClient, validation.row);
   if (!result.ok) {
     return NextResponse.json(
       { success: false, error: result.message },
@@ -673,7 +756,6 @@ async function handleSingle(
 
 async function handleBulkJson(
   body: unknown,
-  supabase: ReturnType<typeof getSupabaseAdmin>,
   schoolId: string,
   actorId: string,
   request: NextRequest,
@@ -705,7 +787,6 @@ async function handleBulkJson(
 
   return processBulkRows(
     rows as Record<string, unknown>[],
-    supabase,
     schoolId,
     actorId,
     request,
@@ -714,7 +795,6 @@ async function handleBulkJson(
 
 async function handleBulkCsv(
   request: NextRequest,
-  supabase: ReturnType<typeof getSupabaseAdmin>,
   schoolId: string,
   actorId: string,
 ): Promise<NextResponse> {
@@ -754,12 +834,11 @@ async function handleBulkCsv(
     );
   }
 
-  return processBulkRows(rows, supabase, schoolId, actorId, request);
+  return processBulkRows(rows, schoolId, actorId, request);
 }
 
 async function processBulkRows(
   rows: Record<string, unknown>[],
-  supabase: ReturnType<typeof getSupabaseAdmin>,
   schoolId: string,
   actorId: string,
   request: NextRequest,
@@ -770,24 +849,31 @@ async function processBulkRows(
   // Flag OFF → behaves byte-identically to today: reject the WHOLE batch if it
   // would exceed seats_purchased (no partial accept).
   if (!seatEnforced) {
-    const { seatsUsed, seatsPurchased } = await readSeatStatus(supabase, schoolId);
-    if (seatsPurchased !== null && seatsUsed + rows.length > seatsPurchased) {
+    const rlsClient = await createRlsScopedClient(request);
+    const bulkPreflight = await runCreatePreflight(rlsClient, '', rows.length);
+    if (!bulkPreflight.ok) {
+      return NextResponse.json(
+        { success: false, error: bulkPreflight.message },
+        { status: bulkPreflight.status },
+      );
+    }
+    if (bulkPreflight.seatCapViolation) {
       await posthogCapture('school_seat_cap_hit', actorId, {
         school_id: schoolId,
         // Reuse 'bulk_upload' — same source the super-admin bulk-upload route
         // uses (typed in src/lib/posthog/types.ts).
         source: 'bulk_upload',
-        seats_purchased: seatsPurchased,
-        seats_used: seatsUsed,
+        seats_purchased: bulkPreflight.seatsPurchased ?? 0,
+        seats_used: bulkPreflight.seatsUsed,
         attempted_to_add: rows.length,
       });
       return NextResponse.json(
         {
           success: false,
           code: 'seat_cap_violation',
-          error: `Cannot add ${rows.length} students. School has used ${seatsUsed} of ${seatsPurchased} seats. Upgrade the subscription before uploading.`,
-          seats_used: seatsUsed,
-          seats_purchased: seatsPurchased,
+          error: `Cannot add ${rows.length} students. School has used ${bulkPreflight.seatsUsed} of ${bulkPreflight.seatsPurchased} seats. Upgrade the subscription before uploading.`,
+          seats_used: bulkPreflight.seatsUsed,
+          seats_purchased: bulkPreflight.seatsPurchased,
           attempted_to_add: rows.length,
         },
         { status: 409 },
@@ -817,7 +903,17 @@ async function processBulkRows(
       }
       seenEmails.add(validation.row.email);
 
-      const result = await createOneStudent(supabase, schoolId, validation.row);
+      const rowPreflight = await runCreatePreflight(rlsClient, validation.row.email, 1);
+      if (!rowPreflight.ok) {
+        errors.push({ row: rowNum, message: rowPreflight.message });
+        continue;
+      }
+      if (rowPreflight.emailExists) {
+        errors.push({ row: rowNum, message: 'Student with this email already exists' });
+        continue;
+      }
+
+      const result = await createOneStudent(rlsClient, validation.row);
       if (!result.ok) {
         errors.push({ row: rowNum, message: result.message });
         continue;
@@ -907,6 +1003,7 @@ async function processBulkRows(
 
   const acceptedRowNums: number[] = [];
   let created = 0;
+  const rlsClient = await createRlsScopedClient(request);
 
   for (let idx = 0; idx < validated.length; idx++) {
     const { rowNum, row } = validated[idx];
@@ -918,7 +1015,17 @@ async function processBulkRows(
       continue;
     }
 
-    const result = await createOneStudent(supabase, schoolId, row.row);
+    const rowPreflight = await runCreatePreflight(rlsClient, row.row.email, 1);
+    if (!rowPreflight.ok) {
+      errors.push({ row: rowNum, message: rowPreflight.message });
+      continue;
+    }
+    if (rowPreflight.emailExists) {
+      errors.push({ row: rowNum, message: 'Student with this email already exists' });
+      continue;
+    }
+
+    const result = await createOneStudent(rlsClient, row.row);
     if (!result.ok) {
       errors.push({ row: rowNum, message: result.message });
       continue;

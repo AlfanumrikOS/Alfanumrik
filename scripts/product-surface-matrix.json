@@ -1,0 +1,365 @@
+{
+  "generatedAt": "2026-07-09",
+  "source": "RCA-12 route/page/flag/API/wireframe readiness matrix",
+  "surfaces": [
+    {
+      "id": "student-today-home",
+      "workflow": "Student daily plan and next-best-action queue",
+      "audience": "student",
+      "page": "apps/host/src/app/today/page.tsx",
+      "primaryCta": {
+        "label": "Start next action",
+        "targetApi": "apps/host/src/app/api/v2/today/route.ts",
+        "targetPage": "apps/host/src/app/(student)/quiz/page.tsx"
+      },
+      "apis": [
+        "apps/host/src/app/api/v2/today/route.ts",
+        "apps/host/src/app/api/rhythm/today/route.ts"
+      ],
+      "featureFlags": ["ff_today_home_v1", "ff_pedagogy_v2_daily_rhythm"],
+      "dbWrites": ["daily rhythm/learning state reads; follow-on writes happen through selected action APIs"],
+      "tests": [
+        "apps/host/src/__tests__/api/v2/today/route.test.ts",
+        "apps/host/src/__tests__/state/learner-loop/today-queue.test.ts"
+      ],
+      "docs": [
+        "docs/audit/2026-07-02-discovery/01-frontend-surface.md",
+        "engineering-audit/feature-inventory/cross-cutting.md"
+      ],
+      "readiness": "beta",
+      "owner": "consumer-experience"
+    },
+    {
+      "id": "student-quiz-submit",
+      "workflow": "Student quiz run, submit, XP, mastery and telemetry",
+      "audience": "student",
+      "page": "apps/host/src/app/(student)/quiz/page.tsx",
+      "primaryCta": {
+        "label": "Submit quiz",
+        "targetApi": "apps/host/src/app/api/quiz/submit/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/quiz/submit/route.ts",
+        "apps/host/src/app/api/v2/quiz/submit/route.ts"
+      ],
+      "featureFlags": [
+        "ff_distractor_micro_explainer_v1",
+        "ff_quiz_telemetry_v1"
+      ],
+      "dbWrites": ["quiz_sessions", "quiz_responses", "xp ledger/mastery side effects"],
+      "tests": [
+        "apps/host/src/__tests__/api/v2/quiz-submit.test.ts",
+        "apps/host/src/__tests__/api/quiz-submit-idempotency.test.ts",
+        "apps/host/src/__tests__/state/learner-loop/quiz-submit-spine-emit.test.ts"
+      ],
+      "docs": [
+        "engineering-audit/cycles/2026-06-29-student-learning-core.md",
+        "docs/audit/2026-07-02-discovery/02-api-surface.md"
+      ],
+      "readiness": "beta",
+      "owner": "learning-platform"
+    },
+    {
+      "id": "student-adaptive-tutor",
+      "workflow": "Adaptive tutor concept loop",
+      "audience": "student",
+      "page": "apps/host/src/app/tutor/page.tsx",
+      "primaryCta": {
+        "label": "Answer concept prompt",
+        "targetApi": "apps/host/src/app/api/tutor/answer/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/tutor/next/route.ts",
+        "apps/host/src/app/api/tutor/answer/route.ts"
+      ],
+      "featureFlags": ["ff_tutor_v1", "ff_tutor_bkt_v1"],
+      "dbWrites": ["concept_mastery", "concept_attempts", "learner event/projector spine when enabled"],
+      "tests": [
+        "apps/host/src/app/api/tutor/next/route.test.ts",
+        "apps/host/src/app/api/tutor/answer/route.test.ts"
+      ],
+      "docs": [
+        "docs/architecture/ADR-004-adaptive-tutor.md",
+        "docs/architecture/ADR-005-concept-first-adaptive-learning-spine.md"
+      ],
+      "readiness": "flagged",
+      "owner": "learning-platform"
+    },
+    {
+      "id": "parent-glance",
+      "workflow": "Parent glance dashboard and child encouragement",
+      "audience": "parent",
+      "page": "apps/host/src/app/parent/page.tsx",
+      "primaryCta": {
+        "label": "View child progress",
+        "targetApi": "apps/host/src/app/api/v2/parent/glance/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/v2/parent/glance/route.ts",
+        "apps/host/src/app/api/v2/parent/encourage/route.ts"
+      ],
+      "featureFlags": ["ff_parent_glance_v1", "ff_parent_encourage_v1"],
+      "dbWrites": ["parent engagement events and encouragement side effects when enabled"],
+      "tests": [
+        "apps/host/src/__tests__/api/v2/parent/glance/route.test.ts",
+        "apps/host/src/__tests__/components/parent/parent-glance-home.test.tsx"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/cross-cutting.md",
+        "docs/audit/2026-07-02-discovery/01-frontend-surface.md"
+      ],
+      "readiness": "flagged",
+      "owner": "parent-experience"
+    },
+    {
+      "id": "parent-data-rights",
+      "workflow": "Parent child profile, data export, and erasure request flow",
+      "audience": "parent",
+      "page": "apps/host/src/app/parent/children/page.tsx",
+      "primaryCta": {
+        "label": "Manage child data",
+        "targetApi": "apps/host/src/app/api/parent/children/[student_id]/export/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/v2/parent/children/route.ts",
+        "apps/host/src/app/api/parent/children/[student_id]/export/route.ts",
+        "apps/host/src/app/api/parent/children/[student_id]/request-erasure/route.ts",
+        "apps/host/src/app/api/parent/children/[student_id]/erasure-status/route.ts"
+      ],
+      "featureFlags": ["ff_parent_unified_auth_v1"],
+      "dbWrites": ["parent child link state, export audit rows, erasure request state"],
+      "tests": [
+        "apps/host/src/__tests__/api/v2/parent/children/route.test.ts",
+        "apps/host/src/__tests__/api/parent-child-export.test.ts",
+        "apps/host/src/__tests__/api/parent-child-erasure.test.ts"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/parent.md",
+        "engineering-audit/workflows/parent-portal/07-validation.md"
+      ],
+      "readiness": "beta",
+      "owner": "parent-experience"
+    },
+    {
+      "id": "teacher-command-center",
+      "workflow": "Teacher classroom command center",
+      "audience": "teacher",
+      "page": "apps/host/src/app/teacher/page.tsx",
+      "primaryCta": {
+        "label": "Open class",
+        "targetApi": "apps/host/src/app/api/teacher/classes/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/teacher/classes/route.ts",
+        "apps/host/src/app/api/teacher/remediation/route.ts"
+      ],
+      "featureFlags": [
+        "ff_teacher_command_center",
+        "ff_teacher_assignment_lifecycle",
+        "ff_teacher_parent_comms"
+      ],
+      "dbWrites": ["teacher assignments, remediation, and parent communication side effects behind gated controls"],
+      "tests": [
+        "apps/host/src/__tests__/teacher/command-center.test.tsx",
+        "apps/host/src/__tests__/teacher/command-center-flag-gate.test.tsx"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/teacher.md",
+        "engineering-audit/workflows/teacher-school-b2b/02-gap-analysis.md"
+      ],
+      "readiness": "flagged",
+      "owner": "teacher-backend"
+    },
+    {
+      "id": "teacher-remediation-comms",
+      "workflow": "Teacher class join, remediation assignment, and parent notification loop",
+      "audience": "teacher",
+      "page": "apps/host/src/app/teacher/classes/page.tsx",
+      "primaryCta": {
+        "label": "Act on class needs",
+        "targetApi": "apps/host/src/app/api/teacher/remediation/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/teacher/join-class/route.ts",
+        "apps/host/src/app/api/teacher/remediation/route.ts",
+        "apps/host/src/app/api/teacher/parent-notify/route.ts"
+      ],
+      "featureFlags": [
+        "ff_teacher_command_center",
+        "ff_teacher_assignment_lifecycle",
+        "ff_teacher_parent_comms"
+      ],
+      "dbWrites": ["teacher class joins, remediation plans, parent communication notifications"],
+      "tests": [
+        "apps/host/src/__tests__/api/track-b/teacher-join-class.test.ts",
+        "apps/host/src/__tests__/api/teacher/remediation/route.test.ts",
+        "apps/host/src/__tests__/api/teacher/parent-notify/route.test.ts"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/teacher.md",
+        "engineering-audit/workflows/teacher-school-b2b/07-validation.md"
+      ],
+      "readiness": "flagged",
+      "owner": "teacher-backend"
+    },
+    {
+      "id": "school-admin-roster",
+      "workflow": "School admin roster and bulk student import",
+      "audience": "school_admin",
+      "page": "apps/host/src/app/school-admin/students/page.tsx",
+      "primaryCta": {
+        "label": "Import students",
+        "targetApi": "apps/host/src/app/api/school-admin/students/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/school-admin/students/route.ts",
+        "apps/host/src/app/api/school-admin/students/bulk-import/route.ts"
+      ],
+      "featureFlags": ["ff_school_admin_rbac"],
+      "dbWrites": ["students", "class membership/enrollment rows", "school admin audit log"],
+      "tests": [
+        "apps/host/src/__tests__/api/school-admin-students-post.test.ts",
+        "apps/host/src/__tests__/api/school-admin-students-bulk-import.test.ts"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/school-admin.md",
+        "docs/audit/2026-07-02-discovery/02-api-surface.md"
+      ],
+      "readiness": "beta",
+      "owner": "school-admin-backend"
+    },
+    {
+      "id": "school-admin-billing-subscription",
+      "workflow": "School admin subscription, payment order, and verification path",
+      "audience": "school_admin",
+      "page": "apps/host/src/app/school-admin/billing/page.tsx",
+      "primaryCta": {
+        "label": "Manage subscription",
+        "targetApi": "apps/host/src/app/api/school-admin/subscription/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/school-admin/subscription/route.ts",
+        "apps/host/src/app/api/payments/create-order/route.ts",
+        "apps/host/src/app/api/payments/verify/route.ts"
+      ],
+      "featureFlags": ["ff_gst_invoicing_v1"],
+      "dbWrites": ["subscriptions, payment orders, payment verification events, GST invoice metadata when enabled"],
+      "tests": [
+        "apps/host/src/__tests__/api/school-admin-subscription.test.ts",
+        "apps/host/src/__tests__/payment.test.ts",
+        "apps/host/src/__tests__/payments/gst-tax-inclusive-charge.test.ts"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/school-admin.md",
+        "engineering-audit/workflows/payments-subscriptions/07-validation.md"
+      ],
+      "readiness": "blocked_external",
+      "owner": "payments-backend"
+    },
+    {
+      "id": "school-pulse",
+      "workflow": "School Pulse at-risk analytics panel",
+      "audience": "school_admin",
+      "page": "apps/host/src/app/school-admin/page.tsx",
+      "primaryCta": {
+        "label": "Review at-risk classes",
+        "targetApi": "apps/host/src/app/api/pulse/school/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/pulse/school/route.ts",
+        "apps/host/src/app/api/school-admin/classes-at-risk/route.ts"
+      ],
+      "featureFlags": ["ff_school_pulse_v1"],
+      "dbWrites": ["read-heavy analytics; follow-on remediation actions write through teacher/school-admin action APIs"],
+      "tests": [
+        "apps/host/src/__tests__/school-admin/pulse-flag-gate.test.tsx",
+        "apps/host/src/__tests__/api/school-admin/seat-enforcement-routes.test.ts"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/school-admin.md",
+        "engineering-audit/workflows/teacher-school-b2b/02-gap-analysis.md"
+      ],
+      "readiness": "flagged",
+      "owner": "school-admin-backend"
+    },
+    {
+      "id": "public-api-integrations",
+      "workflow": "Public API discovery and tenant-scoped integration reads",
+      "audience": "school_admin",
+      "page": "apps/host/src/app/school-admin/api-keys/page.tsx",
+      "primaryCta": {
+        "label": "Open API keys",
+        "targetApi": "apps/host/src/app/api/public/v1/openapi/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/public/v1/openapi/route.ts",
+        "apps/host/src/app/api/public/v1/students/route.ts",
+        "apps/host/src/app/api/public/v1/reports/route.ts"
+      ],
+      "featureFlags": [],
+      "dbWrites": ["read-only public API responses; webhook/API-key administration writes through school-admin integration routes"],
+      "tests": [
+        "apps/host/src/__tests__/public-api/openapi-route.test.ts",
+        "apps/host/src/__tests__/public-api/public-v1-endpoints.test.ts"
+      ],
+      "docs": [
+        "docs/public-api/openapi.json",
+        "docs/public-api/webhook-signature-verification.md"
+      ],
+      "readiness": "beta",
+      "owner": "integrations-backend"
+    },
+    {
+      "id": "super-admin-institutions-provisioning",
+      "workflow": "Super-admin institution provisioning and tenant health control plane",
+      "audience": "super_admin",
+      "page": "apps/host/src/app/super-admin/institutions/page.tsx",
+      "primaryCta": {
+        "label": "Provision school",
+        "targetApi": "apps/host/src/app/api/super-admin/institutions/provision/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/super-admin/institutions/route.ts",
+        "apps/host/src/app/api/super-admin/institutions/provision/route.ts",
+        "apps/host/src/app/api/super-admin/institutions/health/route.ts"
+      ],
+      "featureFlags": ["ff_institution_entitlements_v1"],
+      "dbWrites": ["institutions, tenant health records, admin invitations, entitlement state when enabled"],
+      "tests": [
+        "apps/host/src/__tests__/api/super-admin/provision-school.test.ts",
+        "apps/host/src/__tests__/api/super-admin/institutions-tenant-type.test.ts"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/super-admin.md",
+        "docs/audit/2026-07-02-certification/reports/13-production-readiness-scorecard.md"
+      ],
+      "readiness": "beta",
+      "owner": "super-admin-backend"
+    },
+    {
+      "id": "super-admin-pii-reports",
+      "workflow": "Super-admin PII report export and readiness evidence path",
+      "audience": "super_admin",
+      "page": "apps/host/src/app/super-admin/reports/page.tsx",
+      "primaryCta": {
+        "label": "Export report",
+        "targetApi": "apps/host/src/app/api/super-admin/reports/route.ts"
+      },
+      "apis": [
+        "apps/host/src/app/api/super-admin/reports/route.ts"
+      ],
+      "featureFlags": [],
+      "dbWrites": ["PII report access audit trail and export notification evidence"],
+      "tests": [
+        "apps/host/src/__tests__/api/super-admin/reports-pii-tier.test.ts",
+        "apps/host/src/__tests__/super-admin-pii-readiness.test.ts"
+      ],
+      "docs": [
+        "engineering-audit/feature-inventory/super-admin.md",
+        "docs/runbooks/super-admin-pii-export-notification.md"
+      ],
+      "readiness": "blocked_external",
+      "owner": "super-admin-backend"
+    }
+  ]
+}

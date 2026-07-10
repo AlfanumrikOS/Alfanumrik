@@ -22,7 +22,7 @@
  *
  * Auth: `class.assign_remediation` permission (A1 migration seeds it onto the
  *        teacher role) AND a server-side roster check — the student must be on
- *        the caller's roster via `class_students × class_teachers`. RLS already
+ *        the caller's roster via `class_enrollments × class_teachers`. RLS already
  *        enforces this at the DB layer (A1 policies); we re-verify in the route
  *        as defense-in-depth so a forged `student_id` is rejected with a 403
  *        before any insert.
@@ -88,7 +88,7 @@ async function resolveTeacher(authUserId: string): Promise<
 
 /**
  * Roster check (defense-in-depth, mirrors the A1 RLS join). A teacher "owns" a
- * student iff they share a class via class_students × class_teachers. Returns
+ * student iff they share a class via class_enrollments × class_teachers. Returns
  * the class_id of that shared class (used for the assignment row) or null when
  * the student is NOT on the caller's roster.
  *
@@ -116,7 +116,7 @@ async function rosterClassId(teacherId: string, studentId: string): Promise<stri
 
   // 2. Is the student enrolled in any of those classes?
   const { data: enrolment, error: csErr } = await supabaseAdmin
-    .from('class_students')
+    .from('class_enrollments')
     .select('class_id')
     .eq('student_id', studentId)
     .in('class_id', classIds)
@@ -124,7 +124,7 @@ async function rosterClassId(teacherId: string, studentId: string): Promise<stri
     .limit(1)
     .maybeSingle();
   if (csErr) {
-    logger.error('teacher_remediation_class_students_lookup_failed', {
+    logger.error('teacher_remediation_class_enrollments_lookup_failed', {
       error: new Error(csErr.message),
       route: 'teacher/remediation',
     });

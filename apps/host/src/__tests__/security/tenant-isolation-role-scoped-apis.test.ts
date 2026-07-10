@@ -76,11 +76,17 @@ describe('teacher route tenant isolation contracts', () => {
 
   it('central RBAC grants teacher student access only through assigned active classes', () => {
     const rbac = read('src/lib/rbac.ts');
-    expect(rbac).toContain(".from('teachers')");
-    expect(rbac).toContain(".from('class_teachers')");
-    expect(rbac).toContain(".from('class_students')");
-    expect(rbac).toContain(".eq('student_id', studentId)");
-    expect(rbac).toContain(".in('class_id', classIds)");
+    const teacherPath = rbac.slice(
+      rbac.indexOf('// Teacher: can access students in assigned classes'),
+      rbac.indexOf('return false;', rbac.indexOf('// Teacher: can access students in assigned classes')),
+    );
+
+    expect(teacherPath).toContain(".from('teachers')");
+    expect(teacherPath).toContain(".from('class_teachers')");
+    expect(teacherPath).toContain(".from('class_enrollments')");
+    expect(teacherPath).not.toContain(".from('class_students')");
+    expect(teacherPath).toContain(".eq('student_id', studentId)");
+    expect(teacherPath).toContain(".in('class_id', classIds)");
   });
 });
 

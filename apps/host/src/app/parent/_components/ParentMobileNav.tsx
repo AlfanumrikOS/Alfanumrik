@@ -1,47 +1,21 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useMemo } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import RoleBottomNav from '@alfanumrik/ui/navigation/RoleBottomNav';
+import {
+  ROLE_NAV_CONFIGS,
+  visibleRoleNavItems,
+  type RoleNavItem,
+} from '@alfanumrik/ui/navigation/role-nav';
 
 interface ParentMobileNavProps {
-  unreadCount: number;        // notification badge
-  messagesUnread: number;     // messages badge
+  unreadCount: number;
+  messagesUnread: number;
   isHi: boolean;
   mode: 'guardian' | 'link-code';
   onLogout: () => void;
 }
-
-interface PrimaryTab {
-  href: string;
-  label: string;
-  labelHi: string;
-  icon: string;
-  exact?: boolean;
-  isBadge?: boolean;
-}
-
-interface MoreItem {
-  href: string;
-  label: string;
-  labelHi: string;
-  icon: string;
-  isBadge?: boolean;
-}
-
-const PRIMARY_TABS: PrimaryTab[] = [
-  { href: '/parent', label: 'Home', labelHi: 'होम', icon: '🏠', exact: true },
-  { href: '/parent/children', label: 'Children', labelHi: 'बच्चे', icon: '👨‍👧' },
-  { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '📊' },
-  { href: '/parent/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉️', isBadge: true },
-];
-
-const MORE_ITEMS: MoreItem[] = [
-  { href: '/parent/calendar', label: 'Calendar', labelHi: 'कैलेंडर', icon: '📅' },
-  { href: '/parent/notifications', label: 'Notifications', labelHi: 'सूचनाएं', icon: '🔔', isBadge: true },
-  { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '💳' },
-  { href: '/parent/support', label: 'Support', labelHi: 'सहायता', icon: '🤝' },
-  { href: '/parent/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '👤' },
-];
 
 export default function ParentMobileNav({
   unreadCount,
@@ -52,231 +26,26 @@ export default function ParentMobileNav({
 }: ParentMobileNavProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [showMore, setShowMore] = useState(false);
-  const moreSheetRef = useRef<HTMLDivElement>(null);
 
-  // rAF scroll-hide — 8px threshold, hides after 80px scroll-down,
-  // restores on scroll-up or when y < 80.
-  const [navHidden, setNavHidden] = useState(false);
-  const lastScrollYRef = useRef(0);
-  const rafIdRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
-    if (reduced) return;
-    const onScroll = () => {
-      if (rafIdRef.current != null) return;
-      rafIdRef.current = window.requestAnimationFrame(() => {
-        rafIdRef.current = null;
-        const y = window.scrollY;
-        const last = lastScrollYRef.current;
-        const delta = y - last;
-        if (Math.abs(delta) < 8) return;
-        if (y < 80) setNavHidden(false);
-        else if (delta > 0) setNavHidden(true);
-        else setNavHidden(false);
-        lastScrollYRef.current = y;
-      });
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      if (rafIdRef.current != null) window.cancelAnimationFrame(rafIdRef.current);
-    };
-  }, []);
-
-  // ESC closes More sheet; auto-focus first button when More sheet opens.
-  useEffect(() => {
-    if (showMore && moreSheetRef.current) {
-      const firstButton = moreSheetRef.current.querySelector('button');
-      firstButton?.focus();
-    }
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showMore) setShowMore(false);
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showMore]);
-
-  const isActive = (href: string, exact?: boolean) => {
-    if (exact) return pathname === href;
-    return pathname === href || pathname.startsWith(href + '/');
-  };
-
-  // Link-code mode: hide Children and Messages from primary tabs.
-  const visibleTabs = PRIMARY_TABS.filter(tab => {
-    if (mode === 'link-code') {
-      if (tab.href === '/parent/children') return false;
-      if (tab.href === '/parent/messages') return false;
-    }
-    return true;
-  });
-
-  // Check if any More item is active (for the More button highlight).
-  const isMoreActive = MORE_ITEMS.some(item => isActive(item.href));
-
-  const getBadgeCount = (tab: PrimaryTab): number => {
-    if (tab.href === '/parent/messages') return messagesUnread;
-    return 0;
-  };
-
-  const getMoreBadgeCount = (item: MoreItem): number => {
-    if (item.href === '/parent/notifications') return unreadCount;
-    return 0;
-  };
+  const items = useMemo<RoleNavItem[]>(() => {
+    return visibleRoleNavItems(ROLE_NAV_CONFIGS.parent.items, {
+      linkCodeMode: mode === 'link-code',
+    }).map((item) => {
+      if (item.href === '/parent/notifications') return { ...item, badge: unreadCount, badgeVariant: 'warning' };
+      if (item.href === '/parent/messages') return { ...item, badge: messagesUnread, badgeVariant: 'danger' };
+      return item;
+    });
+  }, [messagesUnread, mode, unreadCount]);
 
   return (
-    <>
-      {showMore && (
-        <>
-          <div
-            className="fixed inset-0 z-[60] bg-black/30"
-            onClick={() => setShowMore(false)}
-            role="presentation"
-            aria-hidden="true"
-          />
-          <div
-            ref={moreSheetRef}
-            role="dialog"
-            aria-label={isHi ? 'अधिक नेविगेशन विकल्प' : 'More navigation options'}
-            className="fixed bottom-0 left-0 right-0 z-[70] rounded-t-3xl bg-surface-1 shadow-lg"
-            style={{
-              paddingBottom: 'env(safe-area-inset-bottom, 16px)',
-            }}
-          >
-            {/* Handle bar */}
-            <div className="flex justify-center pt-3 pb-2">
-              <div className="w-10 h-1 rounded-full bg-surface-3" />
-            </div>
-            <div className="px-5 pb-4 space-y-1">
-              {MORE_ITEMS.map(item => {
-                // Link-code mode: hide billing, profile, notifications in More too.
-                if (mode === 'link-code') {
-                  if (item.href === '/parent/billing') return null;
-                  if (item.href === '/parent/profile') return null;
-                  if (item.href === '/parent/notifications') return null;
-                }
-                const active = isActive(item.href);
-                const badgeCount = getMoreBadgeCount(item);
-                return (
-                  <button
-                    key={item.href}
-                    type="button"
-                    onClick={() => { setShowMore(false); router.push(item.href); }}
-                    className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98] ${
-                      active ? 'bg-surface-2 text-primary' : 'bg-transparent text-foreground'
-                    }`}
-                  >
-                    <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
-                    <span className="text-sm font-semibold">{isHi ? item.labelHi : item.label}</span>
-                    {badgeCount > 0 && (
-                      <span className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-2xs font-bold text-on-accent px-1 bg-primary">
-                        {badgeCount > 99 ? '99+' : badgeCount}
-                      </span>
-                    )}
-                    {active && badgeCount === 0 && (
-                      <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
-                    )}
-                  </button>
-                );
-              })}
-              {/* Logout at bottom of More sheet */}
-              <div className="pt-3 mt-2 border-t border-surface-3">
-                <button
-                  type="button"
-                  onClick={() => { setShowMore(false); onLogout(); }}
-                  className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98] text-muted-foreground"
-                >
-                  <span className="text-xl w-7 text-center" aria-hidden="true">🚪</span>
-                  <span className="text-sm font-semibold">{isHi ? 'लॉगआउट' : 'Logout'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      <nav
-        className="bottom-nav-mobile fixed bottom-0 left-0 right-0 z-50"
-        aria-label={isHi ? 'मुख्य नेविगेशन' : 'Main navigation'}
-        role="navigation"
-        data-scroll-hidden={navHidden ? 'true' : 'false'}
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-      >
-        <div className="flex items-end justify-around px-2 pt-2 pb-1">
-          {visibleTabs.map(tab => {
-            const active = isActive(tab.href, tab.exact);
-            const badgeCount = getBadgeCount(tab);
-            return (
-              <button
-                key={tab.href}
-                type="button"
-                onClick={() => router.push(tab.href)}
-                aria-label={isHi ? tab.labelHi : tab.label}
-                aria-current={active ? 'page' : undefined}
-                className={`flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center ${
-                  active ? 'text-primary' : 'text-muted-foreground'
-                }`}
-              >
-                <span
-                  className="relative inline-block"
-                  style={{
-                    fontSize: 22,
-                    lineHeight: 1,
-                    transform: active ? 'translateY(-1px) scale(1.06)' : 'scale(1)',
-                    transition: 'transform 200ms cubic-bezier(.22,1,.36,1)',
-                  }}
-                  aria-hidden="true"
-                >
-                  {tab.icon}
-                  {badgeCount > 0 && (
-                    <span
-                      className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] rounded-full flex items-center justify-center text-2xs font-bold text-on-accent px-0.5 bg-danger"
-                      style={{ border: '1.5px solid var(--bg)' }}
-                    >
-                      {badgeCount > 9 ? '9+' : badgeCount}
-                    </span>
-                  )}
-                </span>
-                <span
-                  className="tracking-wide"
-                  style={{
-                    fontSize: 'var(--text-2xs, 10px)',
-                    fontWeight: active ? 700 : 600,
-                    letterSpacing: '0.02em',
-                  }}
-                >
-                  {isHi ? tab.labelHi : tab.label}
-                </span>
-              </button>
-            );
-          })}
-
-          {/* More button */}
-          <button
-            type="button"
-            onClick={() => setShowMore(!showMore)}
-            aria-label={isHi ? 'अधिक विकल्प' : 'More options'}
-            aria-expanded={showMore}
-            className={`flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center ${
-              isMoreActive ? 'text-primary' : 'text-muted-foreground'
-            }`}
-          >
-            <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>⋯</span>
-            <span
-              className="tracking-wide"
-              style={{
-                fontSize: 'var(--text-2xs, 10px)',
-                fontWeight: isMoreActive ? 700 : 600,
-                letterSpacing: '0.02em',
-              }}
-            >
-              {isHi ? 'अधिक' : 'More'}
-            </span>
-          </button>
-        </div>
-      </nav>
-    </>
+    <RoleBottomNav
+      config={ROLE_NAV_CONFIGS.parent}
+      items={items}
+      isHi={isHi}
+      pathname={pathname}
+      onNavigate={(href) => router.push(href)}
+      onLogout={onLogout}
+      activeColor="var(--primary)"
+    />
   );
 }

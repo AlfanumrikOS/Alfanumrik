@@ -1,0 +1,176 @@
+{
+  "generated_at": "2026-07-09",
+  "source": "RCA-20 certification/launch readiness inventory",
+  "rcaItem": "RCA-20",
+  "liveRunStatus": "gated_by_environment",
+  "command": "CERTIFICATION_RUN_ENABLED=true CERTIFICATION_BASE_URL=<target> CERTIFICATION_RUN_ID=<uuid> npx playwright test e2e/certification",
+  "blockers": [
+    "CERT-17: payment-journey certification remains gated until a human confirms Preview payment credentials are sandbox/test-mode, even after Supabase remediation.",
+    "CERT-FE-01: authenticated teacher can reach /foxy; role-gate versus in-scope access remains a product/assessment/architect decision.",
+    "CERT-07: content_author and support_staff have no dedicated frontend portal and are live-confirmed to route to the student dashboard."
+  ],
+  "roles": [
+    {
+      "role": "student",
+      "spec": "e2e/certification/student.spec.ts",
+      "status": "ready_to_run_when_gated",
+      "evidence": [
+        "Certification journey — Role: Student.",
+        "Registration / Auth / Authz — seeded student account logs in",
+        "AI Tutor — /foxy is reachable",
+        "Certificates — surface not located"
+      ]
+    },
+    {
+      "role": "teacher",
+      "spec": "e2e/certification/teacher.spec.ts",
+      "status": "known_gap_pinned",
+      "evidence": [
+        "Certification journey — Role: Teacher.",
+        "teacher role SHOULD be blocked from Foxy",
+        "CERT-FE-01",
+        "Notifications — PARTIAL"
+      ]
+    },
+    {
+      "role": "parent",
+      "spec": "e2e/certification/parent.spec.ts",
+      "status": "ready_to_run_when_gated",
+      "evidence": [
+        "Certification journey — Role: Parent.",
+        "Registration / Auth / Authz — seeded parent account logs in",
+        "Dashboard / Reports — /parent renders real content",
+        "Payments — live checkout run"
+      ]
+    },
+    {
+      "role": "school_admin",
+      "spec": "e2e/certification/school-admin.spec.ts",
+      "status": "ready_to_run_when_gated",
+      "evidence": [
+        "Certification journey — Role: School Administrator.",
+        "Registration / Auth / Authz — seeded school_admin account logs in",
+        "Dashboard / Reports / Analytics — /school-admin renders real content",
+        "Notifications — /notifications"
+      ]
+    },
+    {
+      "role": "super_admin",
+      "spec": "e2e/certification/super-admin.spec.ts",
+      "status": "ready_to_run_when_gated",
+      "evidence": [
+        "Certification journey — Role: Super Administrator.",
+        "loginAsSuperAdminConsole",
+        "seeded super_admin account logs in via the console",
+        "panel doc is stale"
+      ]
+    },
+    {
+      "role": "content_author",
+      "spec": "e2e/certification/content-author.spec.ts",
+      "status": "known_gap_pinned",
+      "evidence": [
+        "Certification journey — Role: Content Author.",
+        "content_author has no dedicated portal",
+        "CERT-07",
+        "All subsequent steps — BLOCKED"
+      ]
+    },
+    {
+      "role": "support_staff",
+      "spec": "e2e/certification/support-staff.spec.ts",
+      "status": "known_gap_pinned",
+      "evidence": [
+        "Certification journey — Role: Support Staff.",
+        "support_staff has no dedicated portal",
+        "CERT-07",
+        "All subsequent steps — BLOCKED"
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "playwright-certification-gate",
+      "rcaItem": "RCA-20",
+      "path": "playwright.config.ts",
+      "readinessRole": "Prevents certification specs from being collected by default and wires Vercel automation bypass headers only when explicitly configured.",
+      "evidence": [
+        "testIgnore: process.env.CERTIFICATION_RUN_ENABLED",
+        "CERTIFICATION_BYPASS_SECRET",
+        "CERTIFICATION_BASE_URL"
+      ]
+    },
+    {
+      "id": "seed-certification-accounts",
+      "rcaItem": "RCA-20",
+      "path": "scripts/seed-certification-accounts.ts",
+      "readinessRole": "Creates deterministic certification accounts for all seven mission roles with traceability and production-ref fail-closed checks.",
+      "evidence": [
+        "MISSION ROLES (7",
+        "CERTIFICATION_EMAIL_DOMAIN",
+        "PRODUCTION-REFERENCE GUARD",
+        "assertNotProductionProjectRef"
+      ]
+    },
+    {
+      "id": "teardown-certification-tenant",
+      "rcaItem": "RCA-20",
+      "path": "scripts/teardown-certification-tenant.ts",
+      "readinessRole": "Provides operator-facing dry-run and guarded tenant cleanup around purge_certification_tenant.",
+      "evidence": [
+        "purge_certification_tenant",
+        "is_demo IS TRUE",
+        "KNOWN_PROD_PROJECT_REF",
+        "--dry-run"
+      ]
+    },
+    {
+      "id": "payments-certification-gate",
+      "rcaItem": "RCA-20",
+      "path": "e2e/certification/payments.spec.ts",
+      "readinessRole": "Keeps money-moving certification flows under a second explicit safety gate until payment credentials are confirmed safe.",
+      "evidence": [
+        "CERTIFICATION_PAYMENTS_CONFIRMED_SAFE",
+        "CERT-17 IS AN OPEN RELEASE BLOCKER",
+        "stops short of a real charge",
+        "Webhook signature verification and idempotency"
+      ]
+    },
+    {
+      "id": "certification-risk-register",
+      "rcaItem": "RCA-20",
+      "path": "docs/audit/2026-07-02-certification/reports/14-risk-register.md",
+      "readinessRole": "Carries the authoritative certification blocker and known-gap status for CERT-17, CERT-FE-01, and CERT-07.",
+      "evidence": [
+        "CERT-17 is no longer",
+        "27 passed, 8 skipped",
+        "CERT-FE-01",
+        "CERT-07"
+      ]
+    },
+    {
+      "id": "certification-traffic-traceability",
+      "rcaItem": "RCA-20",
+      "path": "docs/runbooks/certification-traffic-traceability.md",
+      "readinessRole": "Defines the four-signal convention for isolating certification traffic from real users and production metrics.",
+      "evidence": [
+        "The convention — four required signals",
+        "@certification.alfanumrik.invalid",
+        "is_demo = true",
+        "demo_accounts"
+      ]
+    },
+    {
+      "id": "certification-rollback-procedure",
+      "rcaItem": "RCA-20",
+      "path": "docs/runbooks/certification-rollback-procedure.md",
+      "readinessRole": "Documents certification rollback, dry-run requirements, failure handling, and zero-residual verification.",
+      "evidence": [
+        "Certification Rollback / Incident-Response Procedure",
+        "Run a dry run first, always",
+        "If in doubt, stop",
+        "Every count in both queries MUST be 0"
+      ]
+    }
+  ]
+}

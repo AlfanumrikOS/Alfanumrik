@@ -70,6 +70,7 @@ vi.mock('@/app/api/foxy/_lib/quota', () => ({
 // The grounded-answer client. Each test sets `nextGroundedAnswer`.
 const groundedCalls: Array<{ request: Record<string, unknown> }> = [];
 let nextGroundedAnswer = 'placeholder';
+let nextLegacyAnswer = 'legacy-unused';
 vi.mock('@alfanumrik/lib/ai/grounded-client', () => ({
   callGroundedAnswer: (request: Record<string, unknown>) => {
     groundedCalls.push({ request });
@@ -89,14 +90,14 @@ vi.mock('@alfanumrik/lib/ai/grounded-client', () => ({
 vi.mock('@alfanumrik/lib/ai', () => ({
   callClaude: vi.fn().mockResolvedValue({ content: 'unused', model: 'mock', tokensUsed: 0 }),
   classifyIntent: vi.fn().mockResolvedValue({ intent: 'explain' }),
-  routeIntent: vi.fn().mockResolvedValue({
-    response: 'legacy-unused',
+  routeIntent: vi.fn().mockImplementation(() => Promise.resolve({
+    response: nextLegacyAnswer,
     sources: [],
-    tokensUsed: 0,
+    tokensUsed: 7,
     model: 'gpt-4o-mini',
-    traceId: 'legacy-unused',
+    traceId: 'legacy-trace',
     intent: 'explain',
-  }),
+  })),
 }));
 
 const insertCalls: { table: string; rows: unknown }[] = [];
@@ -218,6 +219,7 @@ beforeEach(() => {
     return Promise.resolve(false);
   });
   rpcImpl.mockResolvedValue({ data: [{ allowed: true, current_count: 1 }], error: null });
+  nextLegacyAnswer = 'legacy-unused';
 });
 
 describe('/api/foxy — FOX-1 output safety backstop (non-streaming)', () => {
@@ -281,6 +283,42 @@ describe('/api/foxy — FOX-1 output safety backstop (non-streaming)', () => {
       (c: unknown[]) => c[0] === 'foxy.output.safety_blocked',
     );
     expect(blockedWarn).toBeUndefined();
+  });
+
+  it('serves safe-abstain and does not persist unsafe text from the legacy fallback path', async () => {
+    nextLegacyAnswer = 'Legacy tutor says this is fucking nonsense.';
+    _isFeatureEnabled.mockImplementation((flag: string) => {
+      if (flag === 'ai_usage_global') return Promise.resolve(true);
+      if (flag === 'ff_grounded_ai_foxy') return Promise.resolve(false);
+      if (flag === 'ff_foxy_streaming') return Promise.resolve(false);
+      return Promise.resolve(false);
+    });
+
+    const { POST } = await import('@/app/api/foxy/route');
+    const res = await POST(
+      makePostRequest({ message: 'Explain Newton third law', subject: 'science', grade: '10' }),
+    );
+    const body = (await res.json()) as Record<string, unknown>;
+
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.response).toBe('');
+    expect(body.groundingStatus).toBe('hard-abstain');
+    expect(body.tokensUsed).toBe(0);
+    expect(JSON.stringify(body)).not.toContain('fucking');
+    expect(refundQuotaSpy).toHaveBeenCalledWith('student-uuid-1', 'foxy_chat');
+
+    const blockedWarn = loggerWarn.mock.calls.find(
+      (c: unknown[]) => c[0] === 'foxy.output.safety_blocked',
+    );
+    expect(blockedWarn).toBeDefined();
+    const warnPayload = JSON.stringify(blockedWarn?.[1] ?? {});
+    expect(warnPayload).toContain('legacy-intent-router');
+    expect(warnPayload).not.toContain('fucking');
+
+    const allWrites = JSON.stringify([...insertCalls, ...updateCalls]);
+    expect(allWrites).not.toContain('fucking');
+    expect(insertCalls.filter((call) => call.table === 'foxy_chat_messages')).toHaveLength(0);
   });
 });
 

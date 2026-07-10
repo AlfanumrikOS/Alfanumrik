@@ -43,9 +43,8 @@ function resolveSubjectName(
 /**
  * Build the `{subject}`/`{dueCount}`/`{days}`/`{progress}` interpolation vars
  * for a queue item from its `meta` (lifted verbatim from the source action).
- * Absent fields are simply not added — `todayCopy` leaves any unsupplied token
- * untouched, but every subtitle template only references tokens its own type
- * provides, so resolved subtitles are always complete.
+ * The user-facing render layer supplies safe fallbacks for optional tokens so
+ * sparse resolver payloads never leak raw placeholders into cards.
  */
 function varsForItem(
   item: TodayQueueItem,
@@ -55,7 +54,12 @@ function varsForItem(
   const meta = item.meta ?? {};
   const vars: Record<string, string | number> = {
     subject: resolveSubjectName(meta.subjectCode, subjects, isHi),
+    chapterTitle: '',
   };
+  const chapterTitle = isHi ? (item.chapterTitleHi ?? item.chapterTitle) : item.chapterTitle;
+  if (typeof chapterTitle === 'string' && chapterTitle.trim().length > 0) {
+    vars.chapterTitle = ` · ${chapterTitle.trim()}`;
+  }
   if (typeof meta.dueCount === 'number') vars.dueCount = meta.dueCount;
   if (typeof meta.daysSinceLastTouch === 'number') vars.days = meta.daysSinceLastTouch;
   if (typeof meta.progressPct === 'number') vars.progress = Math.round(meta.progressPct);

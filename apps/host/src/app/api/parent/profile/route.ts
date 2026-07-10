@@ -18,10 +18,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { getGuardianByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { logger } from '@alfanumrik/lib/logger';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -29,30 +29,56 @@ function err(message: string, status: number) {
 
 const PHONE_RE = /^[+]?\d{7,15}$/;
 
+interface ParentProfileRpcResponse {
+  success: boolean;
+  status?: number;
+  error?: string;
+}
+
+async function createRlsScopedClient(request: NextRequest) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  const authHeader = request.headers.get('Authorization');
+  const cookieStore = await cookies();
+
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {
+        // RLS-scoped profile RPC only; this route does not mutate auth cookies.
+      },
+    },
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
+  });
+}
+
 export async function PATCH(request: NextRequest) {
   // P9: authenticated session + permission gate (granted to the parent role).
   const auth = await authorizeRequest(request, 'profile.update_own');
   if (!auth.authorized) return auth.errorResponse!;
-
-  // Self-scope: resolve the caller's OWN guardian row from the verified
-  // auth.userId. The update below targets only this id (never a body id).
-  const guardianResult = await getGuardianByAuthUserId(auth.userId!);
-  if (!guardianResult.ok || !guardianResult.data) {
-    return err('Guardian account not found', 404);
-  }
-  const guardianId = guardianResult.data.id;
 
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return err('Invalid request body', 400); }
 
   const { name, phone } = body;
   const updatePayload: Record<string, string | null> = {};
+  const updateMask = {
+    name: false,
+    phone: false,
+  };
 
   if (name !== undefined) {
     if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
       return err('name must be 2–100 characters', 400);
     }
     updatePayload.name = name.trim();
+    updateMask.name = true;
   }
 
   if (phone !== undefined) {
@@ -67,16 +93,28 @@ export async function PATCH(request: NextRequest) {
       }
       updatePayload.phone = phone.trim();
     }
+    updateMask.phone = true;
   }
 
   if (Object.keys(updatePayload).length === 0) {
     return NextResponse.json({ success: true, message: 'No changes' });
   }
 
-  const { error } = await supabaseAdmin.from('guardians').update(updatePayload).eq('id', guardianId);
-  if (error) {
-    logger.error('guardian_profile_update_failed', { error: new Error(error.message), guardianId });
+  const rpcClient = await createRlsScopedClient(request);
+  const { data: rpcData, error: rpcErr } = await rpcClient.rpc('parent_update_own_profile', {
+    p_name: updatePayload.name ?? null,
+    p_phone: updatePayload.phone ?? null,
+    p_update_name: updateMask.name,
+    p_update_phone: updateMask.phone,
+  });
+  if (rpcErr) {
+    logger.error('guardian_profile_update_failed', { error: new Error(rpcErr.message) });
     return err('Failed to update profile', 500);
+  }
+
+  const result = rpcData as ParentProfileRpcResponse | null;
+  if (!result?.success) {
+    return err(result?.error ?? 'Failed to update profile', result?.status ?? 500);
   }
 
   return NextResponse.json({ success: true });

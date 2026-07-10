@@ -22,37 +22,31 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const OWN_GUARDIAN_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_GUARDIAN_ID = '99999999-9999-4999-8999-999999999999';
 const AUTH_USER_ID = '00000000-0000-4000-8000-00000000aaaa';
 
 const holders = vi.hoisted(() => ({
   authorize: vi.fn(),
-  guardianByAuth: vi.fn(),
-  // Records every update issued against `guardians`.
-  updates: [] as Array<{ payload: Record<string, unknown>; targetId: unknown }>,
+  rpcResult: { success: true } as { success: boolean; status?: number; error?: string },
+  rpcCalls: [] as Array<{ name: string; params: Record<string, unknown> }>,
 }));
 
 vi.mock('@alfanumrik/lib/rbac', () => ({
   authorizeRequest: (...a: unknown[]) => holders.authorize(...a),
 }));
 
-vi.mock('@alfanumrik/lib/domains/identity', () => ({
-  getGuardianByAuthUserId: (...a: unknown[]) => holders.guardianByAuth(...a),
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ getAll: () => [] })),
 }));
 
-vi.mock('@alfanumrik/lib/supabase-admin', () => {
+vi.mock('@supabase/ssr', () => {
   const client = {
-    from: (_table: string) => ({
-      update: (payload: Record<string, unknown>) => ({
-        eq: (_col: string, targetId: unknown) => {
-          holders.updates.push({ payload, targetId });
-          return Promise.resolve({ data: null, error: null });
-        },
-      }),
+    rpc: vi.fn(async (name: string, params: Record<string, unknown>) => {
+      holders.rpcCalls.push({ name, params });
+      return { data: holders.rpcResult, error: null };
     }),
   };
-  return { supabaseAdmin: client, getSupabaseAdmin: () => client };
+  return { createServerClient: vi.fn(() => client) };
 });
 
 vi.mock('@alfanumrik/lib/logger', () => ({
@@ -82,12 +76,13 @@ function authDenied(status: number) {
 
 function authAsParent() {
   holders.authorize.mockResolvedValue({ authorized: true, userId: AUTH_USER_ID, roles: ['parent'] });
-  holders.guardianByAuth.mockResolvedValue({ ok: true, data: { id: OWN_GUARDIAN_ID } });
+  holders.rpcResult = { success: true };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  holders.updates = [];
+  holders.rpcResult = { success: true };
+  holders.rpcCalls = [];
 });
 
 describe('PATCH /api/parent/profile — RBAC gate (PP-4 / P9)', () => {
@@ -102,15 +97,14 @@ describe('PATCH /api/parent/profile — RBAC gate (PP-4 / P9)', () => {
     authDenied(401);
     const res = await PATCH(makePatch({ name: 'Asha Kumar' }) as never);
     expect(res.status).toBe(401);
-    expect(holders.guardianByAuth).not.toHaveBeenCalled();
-    expect(holders.updates).toHaveLength(0);
+    expect(holders.rpcCalls).toHaveLength(0);
   });
 
   it('un-permissioned caller → returns the 403 errorResponse, no write', async () => {
     authDenied(403);
     const res = await PATCH(makePatch({ name: 'Asha Kumar' }) as never);
     expect(res.status).toBe(403);
-    expect(holders.updates).toHaveLength(0);
+    expect(holders.rpcCalls).toHaveLength(0);
   });
 });
 
@@ -123,26 +117,28 @@ describe('PATCH /api/parent/profile — self-scope (PP-4 / P13, no IDOR)', () =>
     );
     expect(res.status).toBe(200);
 
-    // Guardian resolved from the verified auth.userId — never from the body.
-    expect(holders.guardianByAuth).toHaveBeenCalledWith(AUTH_USER_ID);
-
-    // Exactly one write, targeting the OWN guardian id.
-    expect(holders.updates).toHaveLength(1);
-    expect(holders.updates[0].targetId).toBe(OWN_GUARDIAN_ID);
-    expect(holders.updates[0].targetId).not.toBe(OTHER_GUARDIAN_ID);
+    // Exactly one scoped RPC call. The DB helper resolves auth.uid(); body ids are ignored.
+    expect(holders.rpcCalls).toHaveLength(1);
+    expect(holders.rpcCalls[0].name).toBe('parent_update_own_profile');
+    expect(holders.rpcCalls[0].params).toMatchObject({
+      p_name: 'Asha Kumar',
+      p_phone: null,
+      p_update_name: true,
+      p_update_phone: false,
+    });
 
     // The body `id`/`guardian_id` are not written into the update payload.
-    expect(holders.updates[0].payload).not.toHaveProperty('id');
-    expect(holders.updates[0].payload).not.toHaveProperty('guardian_id');
-    expect(holders.updates[0].payload).toMatchObject({ name: 'Asha Kumar' });
+    expect(holders.rpcCalls[0].params).not.toHaveProperty('id');
+    expect(holders.rpcCalls[0].params).not.toHaveProperty('guardian_id');
+    expect(JSON.stringify(holders.rpcCalls[0].params)).not.toContain(OTHER_GUARDIAN_ID);
   });
 
   it('404 when the caller has no guardian profile — no write', async () => {
     holders.authorize.mockResolvedValue({ authorized: true, userId: AUTH_USER_ID, roles: ['parent'] });
-    holders.guardianByAuth.mockResolvedValue({ ok: true, data: null });
+    holders.rpcResult = { success: false, status: 404, error: 'Guardian account not found' };
     const res = await PATCH(makePatch({ name: 'Asha Kumar' }) as never);
     expect(res.status).toBe(404);
-    expect(holders.updates).toHaveLength(0);
+    expect(holders.rpcCalls).toHaveLength(1);
   });
 });
 
@@ -155,5 +151,17 @@ describe('PATCH /api/parent/profile — source contract', () => {
     expect(src).toMatch(/authorizeRequest\(\s*request\s*,\s*['"]profile\.update_own['"]\s*\)/);
     // The legacy hand-rolled bearer parse must be gone.
     expect(src).not.toMatch(/auth\.getUser\(token\)/);
+  });
+
+  it('updates through a scoped parent profile RPC instead of route-level service-role writes', () => {
+    const src = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/app/api/parent/profile/route.ts'),
+      'utf8',
+    );
+    expect(src).toContain('createServerClient');
+    expect(src).toContain('parent_update_own_profile');
+    expect(src).not.toContain('@alfanumrik/lib/supabase-admin');
+    expect(src).not.toMatch(/\.from\(['"]guardians['"]\)/);
+    expect(src).not.toContain('getGuardianByAuthUserId');
   });
 });

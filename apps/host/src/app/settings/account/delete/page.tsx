@@ -34,7 +34,7 @@
  * surfaced to the user via UI state only. The server already redacts.
  */
 
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
@@ -116,6 +116,7 @@ function daysUntil(iso: string): number {
 export default function AccountDeletePage() {
   const router = useRouter();
   const { isLoggedIn, isLoading: authLoading, isHi, student, guardian } = useAuth();
+  const [authDeadlineExpired, setAuthDeadlineExpired] = useState(false);
 
   // Email used for the confirmEmail check — prefer the role-specific profile
   // email, fallback to "" (server will reject blank with a clear error).
@@ -140,13 +141,25 @@ export default function AccountDeletePage() {
     },
   );
 
+  useEffect(() => {
+    if (!authLoading) {
+      setAuthDeadlineExpired(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setAuthDeadlineExpired(true), 20_000);
+    return () => window.clearTimeout(timeout);
+  }, [authLoading]);
+
+  useEffect(() => {
+    if ((!authLoading || authDeadlineExpired) && !isLoggedIn) {
+      router.replace('/login?redirect=/settings/account/delete');
+    }
+  }, [authDeadlineExpired, authLoading, isLoggedIn, router]);
+
   // Bounce anonymous users to /login. Intentionally not gated by role —
   // students, parents, and teachers all have the 'account.delete'
   // permission per migration 20260505120000.
-  if (!authLoading && !isLoggedIn) {
-    if (typeof window !== 'undefined') {
-      router.replace('/login?redirect=/settings/account/delete');
-    }
+  if ((!authLoading || authDeadlineExpired) && !isLoggedIn) {
     return <LoadingFoxy />;
   }
 

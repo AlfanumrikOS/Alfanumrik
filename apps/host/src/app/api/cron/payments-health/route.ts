@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 /**
  * GET/POST /api/cron/payments-health
@@ -227,6 +228,16 @@ async function run(request: NextRequest) {
     }
     logger.warn('payments-health: anomalies detected', {
       failed: failed.map(f => f.name), latency_ms: Date.now() - startedAt,
+    });
+  }
+
+  if (allOk) {
+    await recordCronJobHealth({
+      path: '/api/cron/payments-health',
+      metric: 'ops.cron.payments_health.last_success_at',
+      source: 'cron/payments-health',
+      durationMs: Date.now() - startedAt,
+      context: { checks: checks.map((check) => check.name) },
     });
   }
 

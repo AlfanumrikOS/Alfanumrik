@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getGuardianByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { isGuardianLinkedToStudent } from '@alfanumrik/lib/domains/relationship';
 import { logger } from '@alfanumrik/lib/logger';
 import { isValidUUID } from '@alfanumrik/lib/sanitize';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 /**
  * POST /api/parent/report — Generate AI weekly report for a child
@@ -15,6 +16,30 @@ import { isValidUUID } from '@alfanumrik/lib/sanitize';
  *
  * Returns cached report if <24h old, otherwise calls the Edge Function.
  */
+
+async function createRlsScopedClient(request: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  const authHeader = request.headers.get('Authorization');
+  const cookieStore = await cookies();
+
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {
+        // RLS-scoped cache access only; this route does not mutate auth cookies.
+      },
+    },
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const auth = await authorizeRequest(request, 'child.view_progress');
@@ -52,9 +77,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // ── Check for cached report (24h) ──
+    // ── Check for cached report (24h) via RLS-scoped client ──
+    const cacheClient = await createRlsScopedClient(request);
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: cached } = await supabaseAdmin
+    const { data: cached } = await cacheClient
       .from('parent_weekly_reports')
       .select('report, generated_at')
       .eq('student_id', student_id)
@@ -144,7 +170,7 @@ export async function POST(request: Request) {
     // ── Cache the report in DB (fire-and-forget) ──
     if (result.report) {
       Promise.resolve(
-        supabaseAdmin
+        cacheClient
           .from('parent_weekly_reports')
           .upsert(
             {

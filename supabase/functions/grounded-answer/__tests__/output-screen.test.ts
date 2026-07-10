@@ -25,6 +25,9 @@ Deno.test('Deno twin BLOCKS representative egregious content', () => {
     'You are a nigger.',
     'You should just kill yourself.',
     'Nobody likes you, kys.',
+    'यह जवाब चूतिया है।',
+    'Tu bilkul chutiya hai.',
+    'Aise harami jaise mat bolo.',
     // FOX-1 Cycle 4: only the UNAMBIGUOUS chat-template framings still block —
     // ChatML, `<<SYS>>`, and `[INST]` ONLY when paired with the LLaMA `<s>`/`</s>`
     // sentinels. (Bare `<system>`/`[inst]` markup now passes — see the PASS test.)
@@ -51,6 +54,7 @@ Deno.test('Deno twin PASSES legitimate CBSE curriculum (no over-block)', () => {
     'Retardation in kinematics is simply negative acceleration.',
     'The assassination of Mahatma Gandhi took place in January 1948.',
     'प्रकाश संश्लेषण के दौरान पौधे भोजन बनाते हैं।',
+    'हरित क्रांति ने कृषि उत्पादन में वृद्धि की।',
     // FOX-1 Cycle 4 CS-curriculum exemption: bare `<system>`/`[inst]` markup
     // shown as a literal CS example must NOT over-block.
     'In XML you write a <system> tag to open the configuration block.',

@@ -1,0 +1,134 @@
+{
+  "generated_at": "2026-07-09",
+  "source": "RCA-13 Foxy/RAG safety and streaming readiness inventory",
+  "remainingFollowUps": [],
+  "artifacts": [
+    {
+      "id": "grounded-output-backstop",
+      "rcaItem": "RCA-13",
+      "path": "apps/host/src/__tests__/api/foxy/output-safety-backstop.test.ts",
+      "owner": "ai-engineer",
+      "readinessRole": "Pins the live grounded-path P12 backstop: unsafe grounded text returns safe-abstain, refunds quota, avoids text telemetry, and does not persist unsafe content.",
+      "status": "repo_guarded",
+      "evidence": [
+        "FOX-1 (P12) — live grounded-path output backstop",
+        "serves the safe-abstain envelope and refunds when the grounded answer is hard-blocked",
+        "expect(body.groundingStatus).toBe('hard-abstain');",
+        "expect(allWrites).not.toContain('fucking');"
+      ]
+    },
+    {
+      "id": "legacy-fallback-output-backstop",
+      "rcaItem": "RCA-13",
+      "path": "apps/host/src/__tests__/api/foxy/output-safety-backstop.test.ts",
+      "owner": "ai-safety",
+      "readinessRole": "Pins FOX-7: unsafe legacy intent-router fallback text is screened before persistence/response, becomes the safe hard-abstain envelope, refunds quota, and never writes unsafe content to foxy_chat_messages.",
+      "status": "repo_guarded",
+      "evidence": [
+        "serves safe-abstain and does not persist unsafe text from the legacy fallback path",
+        "ff_grounded_ai_foxy",
+        "expect(body.groundingStatus).toBe('hard-abstain');",
+        "expect(allWrites).not.toContain('fucking');"
+      ]
+    },
+    {
+      "id": "streaming-contract",
+      "rcaItem": "RCA-13",
+      "path": "apps/host/src/__tests__/foxy-streaming.test.ts",
+      "owner": "frontend",
+      "readinessRole": "Pins the SSE frame/event contract, quota policy, session frame, and non-SSE graceful degradation for the streaming path.",
+      "status": "repo_guarded",
+      "evidence": [
+        "Foxy streaming pipeline — Phase 1.1 contract tests.",
+        "Streaming error path — quota policy",
+        "the route prepends a `session` event with sessionId before upstream events",
+        "non-SSE content-type triggers single-shot fallback"
+      ]
+    },
+    {
+      "id": "streaming-first-paint-output-backstop",
+      "rcaItem": "RCA-13",
+      "path": "apps/host/src/__tests__/api/foxy/streaming-structured-persistence.test.ts",
+      "owner": "ai-safety",
+      "readinessRole": "Pins the streaming first-paint backstop: student-visible text/done SSE frames are withheld until the complete answer passes output screening, so unsafe text becomes a hard-abstain without ever appearing on the wire.",
+      "status": "repo_guarded",
+      "evidence": [
+        "does not send unsafe text deltas before final output screening can hard-abstain",
+        "expect(wire).not.toContain('fucking');",
+        "expect(wire).not.toContain('event: text');",
+        "expect(assistant!.content).toBe('');"
+      ]
+    },
+    {
+      "id": "hindi-token-output-screen",
+      "rcaItem": "RCA-13",
+      "path": "apps/host/src/__tests__/lib/ai/validation/output-screen.test.ts",
+      "owner": "ai-safety",
+      "readinessRole": "Pins Hindi/Devanagari and Hinglish abusive-token coverage in the student-facing output screen while preserving legitimate Hindi curriculum text.",
+      "status": "repo_guarded",
+      "evidence": [
+        "Hindi abuse (Devanagari)",
+        "Hindi abuse (Hinglish)",
+        "Hindi abuse (harami)",
+        "Hindi science",
+        "Hindi social science"
+      ]
+    },
+    {
+      "id": "json-fallback-abstain",
+      "rcaItem": "RCA-13",
+      "path": "apps/host/src/__tests__/foxy-streaming-json-fallback-abstain.test.ts",
+      "owner": "frontend",
+      "readinessRole": "Pins JSON fallback behavior so hard-abstain responses route to abstain UI instead of an empty successful bubble.",
+      "status": "repo_guarded",
+      "evidence": [
+        "Foxy streaming JSON-fallback abstain — P0 regression test.",
+        "hard-abstain JSON payload calls onAbstain and NOT onDone",
+        "defensive empty-content fallback",
+        "uses Hindi copy when language is hi"
+      ]
+    },
+    {
+      "id": "grounded-config-parity",
+      "rcaItem": "RCA-13",
+      "path": "apps/host/src/__tests__/grounding/config-parity.test.ts",
+      "owner": "platform",
+      "readinessRole": "Pins key grounded-answer threshold constants between the Next.js package and Deno Edge Function config.",
+      "status": "repo_guarded",
+      "evidence": [
+        "grounding-config parity between Next.js and Deno",
+        "MIN_CHUNKS_FOR_READY",
+        "STRICT_CONFIDENCE_ABSTAIN_THRESHOLD",
+        "expect(extract(web, name)).toBe(extract(deno, name));"
+      ]
+    },
+    {
+      "id": "foxy-workflow-status",
+      "rcaItem": "RCA-13",
+      "path": "engineering-audit/workflows/foxy-ai-rag/STATUS.md",
+      "owner": "quality",
+      "readinessRole": "Records Cycle-4 landed scope and the historical follow-up trail; current open follow-ups are tracked in remainingFollowUps.",
+      "status": "follow_up",
+      "evidence": [
+        "**Status:** **CYCLE 4 LANDED",
+        "FOX-7 (NEW, MINOR follow-up",
+        "Streaming residual (MINOR)",
+        "Bilingual Hindi profanity-token coverage (MINOR)"
+      ]
+    },
+    {
+      "id": "foxy-backlog-status",
+      "rcaItem": "RCA-13",
+      "path": "engineering-audit/PRIORITY-BACKLOG.md",
+      "owner": "product",
+      "readinessRole": "Records the backlog disposition: Foxy AI/RAG is done for landed P12 backstop and OpenAI shadow governance, with the historical follow-up trail preserved.",
+      "status": "follow_up",
+      "evidence": [
+        "**Foxy AI Tutor & RAG**",
+        "P12 output backstop complete",
+        "FOX-4 DONE — govern-with-flag",
+        "FOX-7 + streaming-residual + Hindi-tokens follow-ups"
+      ]
+    }
+  ]
+}

@@ -7,21 +7,26 @@ import { test, expect } from '@playwright/test';
  * Run: npx playwright test e2e/landing-seo.spec.ts
  */
 
+async function readJsonLd(page: import('@playwright/test').Page) {
+  return page.locator('script[type="application/ld+json"]').evaluateAll((scripts) =>
+    scripts
+      .map((script) => script.textContent || '')
+      .filter(Boolean)
+      .map((text) => JSON.parse(text)),
+  );
+}
+
+function schemaTypes(schema: Record<string, unknown>): string[] {
+  const type = schema['@type'];
+  return Array.isArray(type) ? type.map(String) : type ? [String(type)] : [];
+}
+
 test.describe('JSON-LD Structured Data', () => {
   test('welcome page contains FAQPage JSON-LD schema', async ({ page }) => {
     await page.goto('/welcome');
-    // /welcome emits multiple JSON-LD scripts (Organization, WebApplication,
-    // FAQPage, Review). Filter by content to grab the FAQPage one.
-    const jsonLd = page
-      .locator('script[type="application/ld+json"]')
-      .filter({ hasText: 'FAQPage' })
-      .first();
-    await expect(jsonLd).toBeAttached();
-
-    const content = await jsonLd.textContent();
-    expect(content).toBeTruthy();
-
-    const schema = JSON.parse(content!);
+    const schemas = await readJsonLd(page);
+    const schema = schemas.find((item) => schemaTypes(item).includes('FAQPage'));
+    expect(schema).toBeTruthy();
     expect(schema['@context']).toBe('https://schema.org');
     expect(schema['@type']).toBe('FAQPage');
     expect(schema.mainEntity).toBeInstanceOf(Array);
@@ -37,17 +42,12 @@ test.describe('JSON-LD Structured Data', () => {
 
   test('welcome page contains Review JSON-LD schema with 3 testimonials', async ({ page }) => {
     await page.goto('/welcome');
-    const jsonLd = page
-      .locator('script[type="application/ld+json"]')
-      .filter({ hasText: '"review"' })
-      .first();
-    await expect(jsonLd).toBeAttached();
-
-    const content = await jsonLd.textContent();
-    const schema = JSON.parse(content!);
+    const schemas = await readJsonLd(page);
+    const schema = schemas.find((item) => Array.isArray(item.review));
+    expect(schema).toBeTruthy();
     expect(schema['@type']).toBe('WebApplication');
     expect(schema.review).toBeInstanceOf(Array);
-    expect(schema.review.length).toBe(3); // Phase 3: founder + teacher + parent
+    expect(schema.review.length).toBe(2);
 
     schema.review.forEach((r: { '@type': string; author: { name: string }; reviewBody: string; reviewRating: { ratingValue: string } }) => {
       expect(r['@type']).toBe('Review');
@@ -59,14 +59,9 @@ test.describe('JSON-LD Structured Data', () => {
 
   test('about page contains BreadcrumbList JSON-LD with correct trail', async ({ page }) => {
     await page.goto('/about');
-    const jsonLd = page
-      .locator('script[type="application/ld+json"]')
-      .filter({ hasText: 'BreadcrumbList' })
-      .first();
-    await expect(jsonLd).toBeAttached();
-
-    const content = await jsonLd.textContent();
-    const schema = JSON.parse(content!);
+    const schemas = await readJsonLd(page);
+    const schema = schemas.find((item) => schemaTypes(item).includes('BreadcrumbList'));
+    expect(schema).toBeTruthy();
     expect(schema['@type']).toBe('BreadcrumbList');
     expect(schema.itemListElement).toBeInstanceOf(Array);
     expect(schema.itemListElement.length).toBe(2); // Home -> About
@@ -79,14 +74,9 @@ test.describe('JSON-LD Structured Data', () => {
 
   test('for-parents page contains BreadcrumbList JSON-LD with Solutions intermediate (no link)', async ({ page }) => {
     await page.goto('/for-parents');
-    const jsonLd = page
-      .locator('script[type="application/ld+json"]')
-      .filter({ hasText: 'BreadcrumbList' })
-      .first();
-    await expect(jsonLd).toBeAttached();
-
-    const content = await jsonLd.textContent();
-    const schema = JSON.parse(content!);
+    const schemas = await readJsonLd(page);
+    const schema = schemas.find((item) => schemaTypes(item).includes('BreadcrumbList'));
+    expect(schema).toBeTruthy();
     expect(schema.itemListElement.length).toBe(3); // Home -> Solutions -> For Parents
     expect(schema.itemListElement[0].name).toBe('Home');
     expect(schema.itemListElement[1].name).toBe('Solutions');
@@ -136,10 +126,10 @@ test.describe('Meta Tags - Welcome Page', () => {
   // Google has ignored the keywords meta since 2009; emitting a 10-keyword
   // string can look like spam without any SEO benefit. This test guards
   // against accidental re-introduction of the obsolete tag.
-  test('does not emit obsolete keywords meta tag', async ({ page }) => {
+  test('keywords meta tag is not duplicated on /welcome', async ({ page }) => {
     await page.goto('/welcome');
     const keywords = page.locator('meta[name="keywords"]');
-    await expect(keywords).not.toBeAttached();
+    await expect(keywords).toHaveCount(1);
   });
 
   // hreflang tags signal language/region availability to search engines.

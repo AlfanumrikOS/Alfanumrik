@@ -112,7 +112,53 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // src/app/api/school-admin/contracts/route.ts migrated admin →
 // createSupabaseServerClient (RLS-scoped cookie client; teacher/school-admin
 // read, tenant upper+lower bound proven via school_admin_can_read_own_contracts).
-const EXPECTED_COUNT = 269;
+// RCA-01/XC-3 RCA execution (2026-07-10): ratcheted 269 → 267 when
+// src/app/api/teacher/join-class/route.ts moved to the scoped authenticated
+// teacher_join_class_by_code RPC and src/app/api/parent/report/route.ts moved
+// parent_weekly_reports cache access to an RLS-scoped request client.
+// RCA-01/XC-3 parent event-bus publisher migration (2026-07-10): ratcheted
+// 267 → 265 when src/app/api/parent/children/[student_id]/export/route.ts and
+// src/app/api/parent/children/[student_id]/request-erasure/route.ts moved
+// state_events publishing to the scoped parent_publish_child_state_event RPC.
+// RCA-01/XC-3 school-admin students Auth Admin narrowing (2026-07-10):
+// ratcheted 265 → 264 when src/app/api/school-admin/students/route.ts stopped
+// importing the broad supabase-admin route client and moved Auth Admin user
+// creation behind a narrow server-only helper.
+// RCA-01/XC-3 parent erasure status migration (2026-07-10): ratcheted 264 → 263
+// when src/app/api/parent/children/[student_id]/erasure-status/route.ts moved
+// guardian/link/status reads to the scoped parent_child_erasure_status RPC.
+// RCA-01/XC-3 parent profile migration (2026-07-10): ratcheted 263 → 262
+// when src/app/api/parent/profile/route.ts moved guardian own-profile updates
+// to the scoped parent_update_own_profile RPC.
+// RCA-01/XC-3 parent notifications migration (2026-07-10): ratcheted 262 → 259
+// when src/app/api/parent/notifications/route.ts,
+// src/app/api/parent/notifications/[id]/read/route.ts, and
+// src/app/api/parent/notifications/mark-all-read/route.ts moved guardian-owned
+// notification list/read writes to scoped authenticated RPCs.
+// RCA-01/XC-3 parent calendar migration (2026-07-10): ratcheted 259 → 258
+// when src/app/api/parent/calendar/route.ts moved child calendar aggregation
+// reads to an RLS-scoped request client after the existing canAccessStudent gate.
+// RCA-01/XC-3 parent billing migration (2026-07-10): ratcheted 258 -> 257
+// when src/app/api/parent/billing/route.ts moved subscription, plan, and payment
+// aggregation reads to an RLS-scoped request client after guardian-child scoping.
+// RCA-01/XC-3 parent approve-link migration (2026-07-10): ratcheted 257 -> 256
+// when src/app/api/parent/approve-link/route.ts moved student-owned guardian
+// link review to the auth.uid()-anchored student_review_guardian_link RPC.
+// RCA-01/XC-3 parent accept-invite migration (2026-07-10): ratcheted 256 -> 255
+// when src/app/api/parent/accept-invite/route.ts moved guardian invite
+// redemption and placeholder cleanup to the auth.uid()-anchored
+// parent_accept_invite_code RPC.
+// RCA-01/XC-3 parent link-code OTP migration (2026-07-10): ratcheted 255 -> 253
+// when src/app/api/parent/link-code/request-otp/route.ts and
+// src/app/api/parent/link-code/redeem/route.ts moved challenge insertion,
+// verification, and linking to auth.uid()-anchored OTP RPCs.
+// RCA-01/XC-3 parent consent migration (2026-07-10): ratcheted 253 -> 252
+// when src/app/api/parent/consent/route.ts moved guardian resolution, consent
+// mutation/listing, state events, and audit writes to auth.uid()-anchored RPCs.
+// RCA-01/XC-3 parent messages migration (2026-07-10): ratcheted 252 -> 249
+// when the three parent messaging routes moved guardian/thread/message reads,
+// state events, read marking, and notifications to auth.uid()-anchored RPCs.
+const EXPECTED_COUNT = 249;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -187,7 +233,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 270 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 249 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);

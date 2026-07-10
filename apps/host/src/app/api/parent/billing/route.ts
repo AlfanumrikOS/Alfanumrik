@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getGuardianByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { listChildrenForGuardian } from '@alfanumrik/lib/domains/relationship';
 import { logger } from '@alfanumrik/lib/logger';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 /**
  * GET /api/parent/billing — billing surface for a parent (Phase C.4).
@@ -34,6 +35,30 @@ import { logger } from '@alfanumrik/lib/logger';
  * grow a `parent_subscription` field alongside `children[]`; the contract
  * here keeps that door open without forcing a migration.
  */
+
+async function createRlsScopedBillingClient(request: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  const authHeader = request.headers.get('Authorization');
+  const cookieStore = await cookies();
+
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {
+        // Parent billing is a read-only aggregation surface.
+      },
+    },
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
+  });
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await authorizeRequest(request, 'child.view_progress');
@@ -86,6 +111,7 @@ export async function GET(request: Request) {
     }
 
     const studentIds = children.map((c) => c.studentId);
+    const billingClient = await createRlsScopedBillingClient(request);
 
     // ── Row shapes (typed locally; Supabase's generic-select inference
     //    is too loose to carry these through the rest of the function). ─
@@ -125,7 +151,7 @@ export async function GET(request: Request) {
     };
 
     // ── Fetch all subscriptions for these students in one round-trip ──
-    const subsResult = await supabaseAdmin
+    const subsResult = await billingClient
       .from('student_subscriptions')
       .select(
         'id, student_id, plan_code, status, billing_cycle, auto_renew, ' +
@@ -153,7 +179,7 @@ export async function GET(request: Request) {
     );
     let plansByCode: Record<string, { name: string; price_monthly: number; price_yearly: number }> = {};
     if (planCodes.length > 0) {
-      const planResult = await supabaseAdmin
+      const planResult = await billingClient
         .from('subscription_plans')
         .select('plan_code, name, price_monthly, price_yearly')
         .in('plan_code', planCodes);
@@ -257,7 +283,7 @@ export async function GET(request: Request) {
     });
 
     // ── Payment history (last 12 invoices across all children) ──
-    const payResult = await supabaseAdmin
+    const payResult = await billingClient
       .from('payment_history')
       .select(
         'id, student_id, amount, currency, status, plan_code, billing_cycle, ' +

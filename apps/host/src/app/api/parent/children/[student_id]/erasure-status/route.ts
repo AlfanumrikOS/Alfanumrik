@@ -20,8 +20,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 const uuidShape = () =>
   z.string().regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/);
@@ -34,6 +35,46 @@ interface RouteCtx {
   params: Promise<{ student_id: string }>;
 }
 
+interface ErasureStatusRpcResponse {
+  success: boolean;
+  status?: number;
+  error?: string;
+  data?: {
+    request: {
+      id: string;
+      status: string;
+      requested_at: string;
+      purge_at: string;
+      processed_at: string | null;
+      reason: string | null;
+      error_message: string | null;
+    } | null;
+  };
+}
+
+async function createRlsScopedClient(request: NextRequest) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  const authHeader = request.headers.get('Authorization');
+  const cookieStore = await cookies();
+
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {
+        // RLS-scoped status RPC only; this route does not mutate auth cookies.
+      },
+    },
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
+  });
+}
+
 export async function GET(request: NextRequest, ctx: RouteCtx) {
   const auth = await authorizeRequest(request, 'child.view_progress');
   if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
@@ -43,53 +84,22 @@ export async function GET(request: NextRequest, ctx: RouteCtx) {
   if (!studentIdParse.success) return err('Invalid student_id', 400);
   const studentId = studentIdParse.data;
 
-  const { data: guardian, error: gErr } = await supabaseAdmin
-    .from('guardians')
-    .select('id')
-    .eq('auth_user_id', auth.userId!)
-    .maybeSingle();
-  if (gErr) {
-    logger.error('erasure_status_guardian_lookup_failed', {
-      error: new Error(gErr.message),
-      route: 'parent/children/erasure-status',
-    });
-    return err('Failed to resolve guardian', 500);
-  }
-  if (!guardian) return err('Guardian account not found', 403);
-
-  // Strict ownership — guardian MUST be linked.
-  const { data: link, error: lErr } = await supabaseAdmin
-    .from('guardian_student_links')
-    .select('id')
-    .eq('guardian_id', guardian.id)
-    .eq('student_id', studentId)
-    .in('status', ['approved', 'active'])
-    .maybeSingle();
-  if (lErr) {
-    logger.error('erasure_status_link_lookup_failed', {
-      error: new Error(lErr.message),
-      route: 'parent/children/erasure-status',
-    });
-    return err('Failed to verify guardian/student link', 500);
-  }
-  if (!link) return err('Child not linked to your account', 403);
-
-  // Return the most recent request (pending takes priority but we sort
-  // by requested_at DESC and return whatever the freshest row says).
-  const { data: rows, error: rErr } = await supabaseAdmin
-    .from('data_erasure_requests')
-    .select('id, status, requested_at, purge_at, processed_at, reason, error_message')
-    .eq('guardian_id', guardian.id)
-    .eq('student_id', studentId)
-    .order('requested_at', { ascending: false })
-    .limit(1);
-  if (rErr) {
+  const rpcClient = await createRlsScopedClient(request);
+  const { data: rpcData, error: rpcErr } = await rpcClient.rpc('parent_child_erasure_status', {
+    p_student_id: studentId,
+  });
+  if (rpcErr) {
     logger.error('erasure_status_lookup_failed', {
-      error: new Error(rErr.message),
+      error: new Error(rpcErr.message),
       route: 'parent/children/erasure-status',
     });
     return err('Failed to look up erasure status', 500);
   }
-  const row = (rows ?? [])[0] ?? null;
-  return NextResponse.json({ success: true, request: row });
+
+  const result = rpcData as ErasureStatusRpcResponse | null;
+  if (!result?.success) {
+    return err(result?.error ?? 'Failed to look up erasure status', result?.status ?? 500);
+  }
+
+  return NextResponse.json({ success: true, request: result.data?.request ?? null });
 }

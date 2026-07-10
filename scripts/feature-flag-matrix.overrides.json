@@ -1,0 +1,935 @@
+{
+  "source": "live Supabase feature_flags evidence captured 2026-07-10",
+  "flags": [
+    {
+      "name": "ff_agent_mesh_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_alfabot_lead_capture_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_alfabot_streaming",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_alfabot_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_atomic_subscription_activation",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_board_score_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_chapter_reader_v2",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_class_leaderboard_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_competitive_exams_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_demo_accounts_v2",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_distractor_micro_explainer_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "learning-platform",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_editorial_atlas_parent",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_editorial_atlas_school",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_editorial_atlas_student",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_editorial_atlas_teacher",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_editorial_atlas_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_event_bus_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "school-admin-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_foxy_context_rich_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_foxy_learning_actions_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "ai-learning-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_foxy_long_memory_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_foxy_native_turns_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_foxy_session_reactivate_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_foxy_streaming",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_goal_admin_profiles",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_goal_aware_foxy",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "learning-platform",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_goal_aware_selection",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "learning-platform",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_goal_profiles",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "learning-platform",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_grounded_ai_concept_engine",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_grounded_ai_enabled",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_grounded_ai_foxy",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_grounded_ai_ncert_solver",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_grounded_ai_quiz_generator",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_grounded_answer_mol_shadow_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_grounded_answer_mol_telemetry_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_institution_entitlements_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_irt_question_selection",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=false, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_learn_read_mode_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": false,
+      "productionEnabled": true,
+      "rolloutPercentage": 10,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\"], rollout=10.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\"], rollout_percentage=10."
+    },
+    {
+      "name": "ff_learner_loop_dashboard_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_learner_loop_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_level_up_celebration_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_mesh_l8_attribution_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_mol_admin_functions_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_mol_cost_cap_inr",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_mol_enabled",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_mol_hybrid_mode_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_mol_openai_default",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_mol_shadow_text_capture_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_offline_payment_reconciliation_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_orchestrator_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_parent_encourage_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_parent_glance_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_pedagogy_v2_monthly_synthesis",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "learning-platform",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_pedagogy_v2_weekly_dive",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "learning-platform",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_personalised_compete_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_productive_failure_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "learning-platform",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_projector_runner_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_python_bulk_non_mcq_gen_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_python_bulk_question_gen_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 10,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=10.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=10."
+    },
+    {
+      "name": "ff_python_extract_ncert_questions_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_python_generate_answers_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 10,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=10.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=10."
+    },
+    {
+      "name": "ff_python_generate_concepts_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 10,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=10.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=10."
+    },
+    {
+      "name": "ff_python_grade_experiment_conclusion_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_python_monthly_synthesis_builder_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_python_nep_compliance_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_python_parent_report_generator_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_python_verify_question_bank_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_python_voice_tts_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"staging\",\"production\"], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"staging\",\"production\"], rollout_percentage=0."
+    },
+    {
+      "name": "ff_quiz_oracle_enabled",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_rag_mmr_diversity",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_realtime_subscriptions_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "platform-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_rule_engine_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_scan_to_queue_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_scheduled_actions_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_school_admin_rbac",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "school-admin-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_school_command_center",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "school-admin-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_school_contracts_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_school_reports_depth",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "school-admin-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_school_self_service_billing_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": false,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_server_only_quiz_submit",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_streak_guardian_cron_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_student_os_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_study_menu_v2",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_teacher_assignment_lifecycle",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "teacher-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_teacher_command_center",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "teacher-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_teacher_gradebook_depth",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "teacher-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_teacher_parent_comms",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "teacher-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_tenant_config_v2",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "school-admin-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_tenant_module_registry_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "school-admin-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_tenant_type_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "school-admin-backend",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    },
+    {
+      "name": "ff_today_home_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": false,
+      "rolloutPercentage": 100,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"development\",\"staging\"], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"development\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_tutor_bkt_v1",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 10,
+      "owner": "consumer-experience",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=10.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=10."
+    },
+    {
+      "name": "ff_v1_quiz_rpc_web_blocked",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "release-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_welcome_v2",
+      "defaultEnabled": true,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "platform-ops",
+      "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=100.",
+      "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
+    }
+  ]
+}

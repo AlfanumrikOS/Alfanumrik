@@ -76,7 +76,7 @@ const mockSupabaseAdmin = {
     if (table === 'class_teachers') {
       return makeClassTeachersChain();
     }
-    if (table === 'class_students') {
+    if (table === 'class_students' || table === 'class_enrollments') {
       return makeClassStudentsChain();
     }
     if (table === 'audit_logs') {
@@ -173,6 +173,8 @@ function makeClassTeachersChain() {
 
 function makeClassStudentsChain() {
   // .select('id').eq('student_id', sid).eq('is_active', true).in('class_id', ids).limit(1)
+  // Canonical production table is class_enrollments; class_students is accepted
+  // above only so older assertions keep exercising the same ownership path.
   const chain: any = {};
   chain.select = vi.fn(() => chain);
   chain.eq = vi.fn(() => chain);

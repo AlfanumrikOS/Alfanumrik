@@ -84,7 +84,7 @@ let notifications: Array<Record<string, unknown>>;
 let teachers: Array<{ id: string; auth_user_id: string; school_id: string | null }>;
 let students: Array<{ id: string; name: string; grade: string | null }>;
 let classTeachers: Array<{ teacher_id: string; class_id: string }>;
-let classStudents: Array<{ class_id: string; student_id: string; is_active: boolean }>;
+let classEnrollments: Array<{ class_id: string; student_id: string; is_active: boolean }>;
 let links: Array<{ guardian_id: string; student_id: string; status: string; created_at: string }>;
 let remediations: Array<{ id: string; teacher_id: string; student_id: string; chapter_id: string | null; status: string }>;
 let topics: Array<{ id: string; title: string }>;
@@ -105,7 +105,7 @@ function resetStore() {
   classTeachers = [{ teacher_id: TEACHER_ID_A, class_id: CLASS_ID }];
   // is_active: true — the roster lookup now filters `.eq('is_active', true)`
   // (Tier-2 PR A). An active enrolment must carry the flag to be reachable.
-  classStudents = [
+  classEnrollments = [
     { class_id: CLASS_ID, student_id: STUDENT_ID_X, is_active: true },
     { class_id: CLASS_ID, student_id: STUDENT_NOLINK, is_active: true },
   ];
@@ -213,7 +213,7 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
         case 'teachers':           return makeBuilder(() => teachers as unknown as Row[]);
         case 'students':           return makeBuilder(() => students as unknown as Row[]);
         case 'class_teachers':     return makeBuilder(() => classTeachers as unknown as Row[]);
-        case 'class_students':     return makeBuilder(() => classStudents as unknown as Row[]);
+        case 'class_enrollments':  return makeBuilder(() => classEnrollments as unknown as Row[]);
         case 'guardian_student_links': return makeBuilder(() => links as unknown as Row[]);
         case 'teacher_remediation_assignments': return makeBuilder(() => remediations as unknown as Row[]);
         case 'curriculum_topics':  return makeBuilder(() => topics as unknown as Row[]);

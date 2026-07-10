@@ -92,6 +92,32 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
     },
   };
 });
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    getAll: () => [],
+  }),
+}));
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: () => ({
+    rpc: async (fn: string, args: { p_student_id?: string }) => {
+      if (fn === 'parent_publish_child_state_event') {
+        holders.mockPublishEvent(args);
+        return { data: { published: true }, error: null };
+      }
+      if (fn === 'parent_child_export_data') {
+        const failedTable = Object.entries(holders.mockState.tableErrors ?? {}).find(([, err]) => err);
+        if (failedTable) {
+          return { data: null, error: { message: failedTable[1]?.message ?? 'table failed' } };
+        }
+        return {
+          data: buildExportRpcResponse(args.p_student_id ?? STUDENT_X),
+          error: null,
+        };
+      }
+      throw new Error(`unexpected rpc: ${fn}`);
+    },
+  }),
+}));
 vi.mock('@alfanumrik/lib/domains/identity', () => ({
   getGuardianByAuthUserId: (...a: unknown[]) => holders.mockGetGuardian(...a),
 }));
@@ -231,6 +257,61 @@ function withDefaultTables(studentId: string = STUDENT_X) {
     ],
   };
   holders.mockState.tableErrors = {};
+}
+
+function rowsFor(table: string, predicate: (row: Record<string, unknown>) => boolean) {
+  return (holders.mockState.tables?.[table] ?? []).filter(predicate);
+}
+
+function buildExportRpcResponse(studentId: string) {
+  const studentRows = rowsFor('students', (row) => row.id === studentId);
+  const subscriptionRows = rowsFor('student_subscriptions', (row) => row.student_id === studentId);
+  const learningRows = rowsFor('student_learning_profiles', (row) => row.student_id === studentId);
+  const quizSessions = rowsFor('quiz_sessions', (row) => row.student_id === studentId);
+  const quizResponses = rowsFor('quiz_responses', (row) => row.student_id === studentId);
+  const foxyMessages = rowsFor('foxy_chat_messages', (row) => row.student_id === studentId);
+  const scoreHistory = rowsFor('score_history', (row) => row.student_id === studentId);
+  const submissions = rowsFor('assignment_submissions', (row) => row.student_id === studentId);
+  const notifications = rowsFor(
+    'notifications',
+    (row) => row.recipient_id === studentId && row.recipient_type === 'student',
+  );
+  const auditLogs = rowsFor(
+    'audit_logs',
+    (row) => row.resource_id === studentId && row.resource_type === 'students',
+  );
+
+  return {
+    success: true,
+    data: {
+      schema_version: 'v1-2026-05',
+      exported_at: new Date().toISOString(),
+      student: studentRows[0] ?? null,
+      subscription: subscriptionRows.length === 1 ? subscriptionRows[0] : subscriptionRows,
+      learning_profile: learningRows.length === 1 ? learningRows[0] : learningRows,
+      quiz_sessions: quizSessions,
+      quiz_attempts: quizResponses,
+      foxy_chat_messages: foxyMessages,
+      score_history: scoreHistory,
+      submissions,
+      notifications,
+      audit_logs: auditLogs,
+      consents: [],
+    },
+    tableCounts: {
+      students: studentRows.length > 0 ? 1 : 0,
+      student_subscriptions: subscriptionRows.length,
+      student_learning_profiles: learningRows.length,
+      quiz_sessions: quizSessions.length,
+      quiz_responses: quizResponses.length,
+      foxy_chat_messages: foxyMessages.length,
+      score_history: scoreHistory.length,
+      assignment_submissions: submissions.length,
+      notifications: notifications.length,
+      audit_logs: auditLogs.length,
+      parental_consent: 0,
+    },
+  };
 }
 
 beforeEach(() => {
@@ -411,9 +492,9 @@ describe('GET /api/parent/children/[id]/export — audit + state event', () => {
     withDefaultTables();
     await GET(makeRequest(STUDENT_X), makeContext(STUDENT_X));
     expect(holders.mockPublishEvent).toHaveBeenCalledTimes(1);
-    const [, event] = holders.mockPublishEvent.mock.calls[0];
-    expect((event as { kind: string }).kind).toBe('parent.child_data_exported');
-    const payload = (event as { payload: Record<string, unknown> }).payload;
+    const [event] = holders.mockPublishEvent.mock.calls[0];
+    expect((event as { p_kind: string }).p_kind).toBe('parent.child_data_exported');
+    const payload = (event as { p_payload: Record<string, unknown> }).p_payload;
     expect(payload.guardianId).toBe(GUARDIAN_ID_X);
     expect(payload.studentId).toBe(STUDENT_X);
     expect(payload.schemaVersion).toBe('v1-2026-05');
@@ -421,7 +502,7 @@ describe('GET /api/parent/children/[id]/export — audit + state event', () => {
     expect(typeof payload.tableCount).toBe('number');
     expect(typeof payload.rowCountTotal).toBe('number');
     // tenantId must carry the child's school_id (per the C.3 pattern).
-    expect((event as { tenantId: string | null }).tenantId).toBe(SCHOOL_ID);
+    expect((event as { p_tenant_id: string | null }).p_tenant_id).toBe(SCHOOL_ID);
   });
 });
 

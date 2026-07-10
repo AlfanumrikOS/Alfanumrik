@@ -1,1 +1,1450 @@
-[]
+[
+  {
+    "routePath": "/api/alfabot",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/alfabot/inquiry",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/alfabot/lead",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/auth/bootstrap",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/auth/onboarding-status",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/auth/repair",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/auth/session",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/billing/coverage",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/billing/tax-config",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/board-score",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/client-error",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/concept-engine",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/account-purge",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/adaptive-remediation",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/board-score",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/build-twin-snapshots",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/daily",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/daily-cron",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/evaluate-alerts",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/expired-subscriptions",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/foxy-quality-sample",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/goal-daily-plan-reminder",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/irt-calibrate",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/payments-health",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/pre-debit-notice",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/reconcile-payments",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/reverify-domains",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/school-operations",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/cron/streak-guardian",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/dashboard/reviews-due",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/diagnostic/complete",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/diagnostic/start",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/dive/artifact",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/dive/history",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/dive/start",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/dive/state",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/embedding",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/error-report",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/exam/chapters",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/exams/papers",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/exams/papers/[id]",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/exams/papers/[id]/submit",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/exams/sync-mastery",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/feature-flags/check",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/feature-flags/voice",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/foxy",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/foxy/feedback",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/foxy/learning-action",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/foxy/quiz-answer",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/foxy/remediation",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/foxy/suggest-prompts",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/health",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/ai-monitor",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/bulk-action",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/command-center",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/content",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/feature-flags",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/logs",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/reports",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/revenue",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/schools",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/stats",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/support",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/users",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/admin/users/[id]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/internal/agents/chapter-explorer",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/internal/cron/fix-failed-questions",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/lab-notebook/list",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/learn/remediation",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/learner/cards/create",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/learner/lesson/progress",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/learner/next",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/learner/queue-from-scan",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/learner/review/grade",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/learner/revise-stack",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/learner/scheduled",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/learner/weak-topics",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/mol/feedback",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/notifications/whatsapp",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/oauth/authorize",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/oauth/token",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/parent/accept-invite",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/approve-link",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/billing",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/calendar",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/parent/children/[student_id]/chat",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/children/[student_id]/erasure-status",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/children/[student_id]/export",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/parent/children/[student_id]/request-erasure",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/parent/consent",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/link-code/redeem",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/link-code/request-otp",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/messages",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/messages/threads",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/messages/threads/[id]/messages",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/notifications",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/notifications/[id]/read",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/notifications/mark-all-read",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/profile",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/parent/report",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/payments/cancel",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/payments/create-order",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/payments/setup-plans",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/payments/status",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/payments/subscribe",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/payments/verify",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/payments/webhook",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/practice/history",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/public/v1/classes",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/public/v1/marketplace/listings",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/public/v1/openapi",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/public/v1/reports",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/public/v1/students",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/pulse/class/[classId]",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/pulse/me",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/pulse/school",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/pulse/student/[id]",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/quiz",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/quiz/ncert-questions",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/quiz/submit",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/revision/overview",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/rhythm/remediation/[id]/resolve",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/rhythm/today",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/scan-solve",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/ai-assistant",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/analytics",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/announcements",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/api-keys",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/audit-log",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/branding",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/classes",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/classes-at-risk",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/classes/[classId]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/classes/bulk-create",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/classes/enrollments",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/content",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/content/bulk",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/contracts",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/data-export",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/exams",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/gst-details",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/integrations/install",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/integrations/uninstall",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/invite-codes",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/invoices",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/modules",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/overview",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/parents",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/rbac",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/reports",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/reports/bloom",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/reports/export",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/reports/mastery",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/roster/validate",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/staff",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/students",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/students/bulk-import",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/subscription",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/teacher-engagement",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/teachers",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/teachers/bulk-import",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/tenant-config",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-admin/webhooks",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-config",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/school-config/manifest",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/schools/claim-admin",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/schools/enroll",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/schools/join",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/schools/setup/classes",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/schools/setup/invite-codes",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/schools/setup/profile",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/schools/trial",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/state/decisions",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/student/chapters",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/student/daily-lab",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/daily-lab/claim",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/daily-plan",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/exam-simulation",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/foxy-interaction",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/grade-conclusion",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/student/preferences",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/profile",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/scan-upload",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/shop/purchase",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/stem-observation",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/study-plan",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/student/subjects",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/students/[id]/invite-guardian",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/ai/[fn]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/ai/oracle-health",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/alerts",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/alfabot/denylist",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/alfabot/sessions",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/alfabot/sessions/[sessionId]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/alfabot/stats",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/analytics",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/analytics-v2",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/analytics-v2/b2b",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/analytics/posthog-summary",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/billing/tax-config",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/bulk-actions/notify",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/bulk-actions/plan-change",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/bulk-actions/resend-invites",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/bulk-actions/suspend-restore",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/bulk-upload",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/cms",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/content",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/content-coverage",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/contracts",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/contracts/[id]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/contracts/[id]/renew",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/db-performance",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/debug/whoami",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/demo-accounts",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/demo-accounts/[id]/resend-credentials",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/deploy",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/entitlements",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/feature-flags",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/foxy-quality",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/goal-profiles",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/grounding/ai-issues",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/grounding/coverage",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/grounding/health",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/grounding/traces",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/grounding/verification-queue",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/health",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/improvement",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/improvement/deploy",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/improvement/learning-monitors",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/improvement/learning-quality",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/improvement/qa-gate",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/improvement/staging",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/[id]/admins",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/[id]/pause",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/[id]/resume",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/attach-vercel-domain",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/billing",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/bulk-onboard",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/health",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/provision",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/institutions/verify-domain",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/intelligence/geography",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/intelligence/overview",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/intelligence/revenue",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/intelligence/school/[id]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/intelligence/schools",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/invoices",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/login",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/logs",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/marking-integrity",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/marking-integrity/[studentId]",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/marking-path-mix",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/misconceptions",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/module-overrides",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/mol-shadow",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/oauth-apps",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/channels",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/channels/[id]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/channels/[id]/test",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/events",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/events/[id]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/export",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/rules",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/rules/[id]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/rules/[id]/test",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/observability/snapshot",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/oracle-health",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/payment-ops/reconcile",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/payment-ops/stats",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/payment-ops/stuck",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/platform-ops",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/projectors/replay",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/rbac",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/readiness-rubric",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/reconciliation",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/reconciliation/[id]/approve",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/reconciliation/[id]/reject",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/reports",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/roles",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/seat-usage",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/sessions",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/sla",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/stats",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/strategic-reports/bloom-by-grade",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/strategic-reports/cohort-retention",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/students/[id]/dashboard",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/students/[id]/foxy-history",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/students/[id]/impersonate",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/students/[id]/notes",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/students/[id]/profile",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/students/[id]/progress",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/students/[id]/quiz-history",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/students/[id]/subjects",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/subjects",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/subjects/[code]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/subjects/grade-map",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/subjects/plan-access",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/subjects/violations",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/super-admin/subscribers",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/subscribers/[name]/dead-letters",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/subscribers/[name]/dead-letters/[event_id]/retry",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/subscribers/[name]/replay",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/support",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/test-accounts",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/super-admin/users",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/support/ai-issue",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/support/ticket",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/support/tickets",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/support/tickets/[id]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/synthesis/parent-share",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/synthesis/state",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/assignments",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/classes",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/classes/[id]",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/classes/[id]/archive",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/classes/available",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/join-class",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/teacher/lab-leaderboard",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/messages",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/messages/threads",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/messages/threads/[id]/messages",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/modules",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/parent-notify",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/profile",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/remediation",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/students/[id]/notes",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/teacher/subjects",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/tenant/config",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/tutor/answer",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/tutor/next",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/account/delete",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/admin/audit-logs",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/admin/roles",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/chapter-readiness",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v1/child/[id]/progress",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/child/[id]/report",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/class/[id]/analytics",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/exam/create",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/health",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v1/leaderboard",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/leaderboard/class/[classId]",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v1/leaderboard/mastery",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v1/performance",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v1/school/reports",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v1/school/students",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v1/study-plan",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v1/subject-readiness",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v1/upload-assignment",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v2/learn/concept",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v2/learn/curriculum",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v2/parent/children",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v2/parent/encourage",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v2/parent/glance",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v2/quiz/questions",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v2/quiz/start",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v2/quiz/submit",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v2/student/leaderboard",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v2/student/profile",
+    "bucket": "REVIEW"
+  },
+  {
+    "routePath": "/api/v2/student/progress",
+    "bucket": "SAFE"
+  },
+  {
+    "routePath": "/api/v2/today",
+    "bucket": "REVIEW"
+  }
+]

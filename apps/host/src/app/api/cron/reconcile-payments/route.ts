@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 /**
  * POST /api/cron/reconcile-payments
@@ -158,6 +159,13 @@ export async function POST(request: NextRequest) {
     const allStuck = await findStuckPayments();
 
     if (allStuck.length === 0) {
+      await recordCronJobHealth({
+        path: '/api/cron/reconcile-payments',
+        metric: 'ops.cron.reconcile_payments.last_success_at',
+        source: 'cron/reconcile-payments',
+        durationMs: Date.now() - startTime,
+        context: { total_stuck: 0, reconciled: 0 },
+      });
       return NextResponse.json({
         success: true,
         data: { reconciled: 0, total_stuck: 0, duration_ms: Date.now() - startTime },
@@ -204,6 +212,14 @@ export async function POST(request: NextRequest) {
       succeeded,
       failed,
       duration_ms: durationMs,
+    });
+
+    await recordCronJobHealth({
+      path: '/api/cron/reconcile-payments',
+      metric: 'ops.cron.reconcile_payments.last_success_at',
+      source: 'cron/reconcile-payments',
+      durationMs,
+      context: { total_stuck: allStuck.length, attempted: batch.length, reconciled: succeeded, failed },
     });
 
     return NextResponse.json({

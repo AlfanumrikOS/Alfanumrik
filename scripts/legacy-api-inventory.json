@@ -1,0 +1,64 @@
+{
+  "_comment": "RCA-22 inventory of legacy/stale API and RPC surfaces that remain for compatibility. Keep entries evidence-backed; src/__tests__/api/legacy-api-inventory.test.ts enforces required quiz surfaces and non-empty deprecation metadata.",
+  "entries": [
+    {
+      "id": "RCA-22-001",
+      "surface": "rpc",
+      "name": "submit_quiz_results",
+      "owner": "assessment-backend",
+      "risk": "Legacy v1 quiz submission path remains callable for mobile/fallback clients; it needed July ownership/cap fixes and is less exercised than the server-only route.",
+      "status": "active_compat",
+      "deprecationCondition": "All web and mobile quiz submitters use /api/quiz/submit or /api/v2/quiz/submit with idempotency keys; direct PostgREST calls are blocked by the web User-Agent flag; no active clients observed in marking-path telemetry for one release window.",
+      "plannedAction": "After cutover evidence, flip ff_reject_web_legacy_submit_quiz_results for web, publish mobile deprecation calendar, then prepare a reviewed migration to revoke/drop the legacy v1 RPC.",
+      "evidence": [
+        "supabase/migrations/20260707010000_rca_final_fixes.sql",
+        "supabase/migrations/20260504100600_v1_quiz_rpc_user_agent_flag.sql",
+        "apps/host/src/app/api/quiz/submit/route.ts"
+      ]
+    },
+    {
+      "id": "RCA-22-002",
+      "surface": "rpc",
+      "name": "submit_quiz_results_rpc",
+      "owner": "assessment-backend",
+      "risk": "Compatibility wrapper can mask missing/changed submit_quiz_results signatures by falling through overload attempts and returning JSON success-shaped payloads.",
+      "status": "active_compat",
+      "deprecationCondition": "No route, client, or mobile caller depends on the wrapper; direct RPC access inventory confirms only canonical server submit routes remain.",
+      "plannedAction": "Keep documented until mobile/web cutover completes; then revoke execute from anon/authenticated or drop in the same reviewed legacy-cleanup migration as v1.",
+      "evidence": [
+        "supabase/migrations/00000000000000_baseline_from_prod.sql",
+        "supabase/migrations/20260707010000_rca_final_fixes.sql"
+      ]
+    },
+    {
+      "id": "RCA-22-003",
+      "surface": "rpc",
+      "name": "submit_quiz_results_safe",
+      "owner": "assessment-backend",
+      "risk": "Safe wrapper preserves a simplified legacy submit path that can hide RPC errors behind { ok: false } instead of the canonical server route contract.",
+      "status": "active_compat",
+      "deprecationCondition": "No current clients or server routes call this wrapper; staging smoke confirms canonical submit route handles retry/error semantics.",
+      "plannedAction": "Revoke or drop with the legacy v1 cleanup migration after direct caller inventory is clean.",
+      "evidence": [
+        "supabase/migrations/00000000000000_baseline_from_prod.sql",
+        "supabase/migrations/20260707010000_rca_final_fixes.sql"
+      ]
+    },
+    {
+      "id": "RCA-22-004",
+      "surface": "client_direct_rpc",
+      "name": "client_direct_submit_quiz_results_v2",
+      "owner": "assessment-frontend-mobile",
+      "risk": "Client-side direct submit_quiz_results_v2 calls bypass the server-only /api/quiz/submit route's uniform request validation, idempotency envelope, and observability surface.",
+      "status": "cutover_pending",
+      "deprecationCondition": "ff_server_only_quiz_submit is enabled for target environments; web and mobile submitters use the server route; SLC-5 rejected/flagged mastery semantics are decided.",
+      "plannedAction": "Repoint remaining clients to /api/quiz/submit or /api/v2/quiz/submit, then update the SLC-8 pin from compatibility to hard server-only enforcement.",
+      "evidence": [
+        "apps/host/src/app/(student)/quiz/page.tsx",
+        "apps/host/src/__tests__/quiz-submit-idempotency-contract-pin.test.ts",
+        "apps/host/src/app/api/quiz/submit/route.ts",
+        "apps/host/src/app/api/v2/quiz/submit/route.ts"
+      ]
+    }
+  ]
+}

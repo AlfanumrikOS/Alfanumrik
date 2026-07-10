@@ -80,6 +80,12 @@ const nextConfig = {
   // from `import { x, y } from 'pkg'` into per-symbol imports so unused symbols
   // are dropped from the client bundle. P10 budget enforcement.
   experimental: {
+    ...(process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER === '1'
+      ? { webpackBuildWorker: false }
+      : {}),
+    ...(process.env.NEXT_WEBPACK_MEMORY_OPTIMIZATIONS === '1'
+      ? { webpackMemoryOptimizations: true }
+      : {}),
     optimizePackageImports: [
       '@sentry/nextjs',
       '@supabase/supabase-js',

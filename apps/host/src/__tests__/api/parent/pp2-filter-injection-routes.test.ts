@@ -4,7 +4,7 @@
  * the two Next.js call sites (engineering-audit Cycle 7):
  *
  *   - request-otp  → enumeration-safe silentSuccess (200), no student lookup,
- *                    no challenge, audited as `link_code_otp_request_invalid_format`.
+ *                    no challenge/RPC for malformed codes.
  *   - accept-invite → generic 409, the redeem RPC is NOT invoked and the
  *                     `.from('students').or(...)` lookup is NEVER reached with
  *                     the raw payload.
@@ -15,9 +15,10 @@
  * security/parent-link-code-injection.test.ts.
  *
  * Mocking follows the established parent-route pattern (api/link-code-otp.test.ts
- * + api/track-b/accept-invite.test.ts): supabase-server controls the session,
- * supabase-admin is a tiny in-memory client that RECORDS every `.from(table)`
- * and `.rpc()` so we can prove the DB was (not) reached. `@alfanumrik/lib/sanitize` is NOT
+ * + api/track-b/accept-invite.test.ts): supabase-server controls the session
+ * and records `.rpc()` calls, while supabase-admin is a tiny in-memory client
+ * that RECORDS legacy `.from(table)` access so we can prove old broad reads
+ * are not reached. `@alfanumrik/lib/sanitize` is NOT
  * mocked — the real validator runs.
  */
 
@@ -43,6 +44,10 @@ vi.mock('@alfanumrik/lib/supabase-server', () => ({
         data: { user: holders.session ? { id: holders.session.id, email: holders.session.email } : null },
         error: holders.session ? null : { message: 'no session' },
       }),
+    },
+    rpc: (name: string, args: Record<string, unknown>) => {
+      holders.rpcCalls.push({ name, args });
+      return Promise.resolve({ data: { success: true, link_id: 'l-1' }, error: null });
     },
   }),
 }));
@@ -148,17 +153,19 @@ describe('PP-2 request-otp — injection code is rejected before the .or() looku
     expect(holders.orFiltersSeen).toHaveLength(0);
     expect(holders.challengesInserted).toBe(0);
 
-    // It IS audited with the dedicated invalid-format event (operators can spot probes).
-    expect(holders.auditEvents).toContain('link_code_otp_request_invalid_format');
+    expect(holders.rpcCalls).toHaveLength(0);
+    expect(holders.auditEvents).toHaveLength(0);
   });
 
-  it('a valid-format code DOES reach the students .or() lookup (guard is not over-broad)', async () => {
+  it('a valid-format code DOES flow through to the scoped request RPC (guard is not over-broad)', async () => {
     const res = await requestOtp(
       makeReq('http://localhost/api/parent/link-code/request-otp', { link_code: 'ABC123' }) as never,
     );
     expect(res.status).toBe(200);
-    expect(holders.tablesTouched).toContain('students');
-    expect(holders.orFiltersSeen[0]).toBe('invite_code.eq.ABC123,link_code.eq.ABC123');
+    expect(holders.rpcCalls.map((c) => c.name)).toContain('parent_request_link_code_otp');
+    expect(holders.rpcCalls[0].args).toMatchObject({ p_link_code: 'ABC123' });
+    expect(holders.tablesTouched).not.toContain('students');
+    expect(holders.orFiltersSeen).toHaveLength(0);
   });
 });
 
@@ -185,7 +192,7 @@ describe('PP-2 accept-invite — injection code is rejected before RPC + student
       makeReq('http://localhost/api/parent/accept-invite', { link_code: 'ABCD1234' }) as never,
     );
     expect(res.status).toBe(200);
-    expect(holders.rpcCalls.map((c) => c.name)).toContain('link_guardian_via_invite_code');
+    expect(holders.rpcCalls.map((c) => c.name)).toContain('parent_accept_invite_code');
     expect(holders.rpcCalls[0].args).toMatchObject({ p_invite_code: 'ABCD1234' });
   });
 });

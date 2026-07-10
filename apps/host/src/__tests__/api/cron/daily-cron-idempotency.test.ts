@@ -36,6 +36,9 @@ const mockLogger = {
 };
 
 vi.mock('@alfanumrik/lib/logger', () => ({ logger: mockLogger }));
+vi.mock('@alfanumrik/lib/cron-job-health', () => ({
+  recordCronJobHealth: vi.fn(async () => undefined),
+}));
 
 function buildProxyRequest(headers: Record<string, string>): Request {
   return new Request('http://localhost/api/cron/daily-cron', {

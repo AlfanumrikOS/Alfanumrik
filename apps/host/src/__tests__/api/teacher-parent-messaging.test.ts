@@ -23,9 +23,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────
-const { mockAuthorize, mockPublishEvent } = vi.hoisted(() => ({
+const { mockAuthorize, mockPublishEvent, authState } = vi.hoisted(() => ({
   mockAuthorize: vi.fn(),
   mockPublishEvent: vi.fn(),
+  authState: { userId: null as string | null },
 }));
 
 vi.mock('@alfanumrik/lib/rbac', () => ({
@@ -349,6 +350,170 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   },
 }));
 
+vi.mock('@alfanumrik/lib/supabase-server', () => ({
+  createSupabaseServerClient: async () => ({
+    rpc: async (name: string, args?: Record<string, unknown>) => {
+      const guardian = guardians.find((g) => g.auth_user_id === authState.userId);
+      if (!guardian) {
+        return { data: { success: false, error_code: 'no_guardian', error: 'Guardian account not found' }, error: null };
+      }
+
+      if (name === 'parent_send_teacher_message') {
+        const body = String(args?.p_body ?? '').trim();
+        let threadId = args?.p_thread_id as string | null;
+        let teacherId = args?.p_teacher_id as string | null;
+        let studentId = args?.p_student_id as string | null;
+        let schoolId: string | null = null;
+        let isNewThread = false;
+
+        if (threadId) {
+          const thread = threads.find((t) => t.id === threadId);
+          if (!thread) return { data: { success: false, error_code: 'thread_not_found', error: 'Thread not found' }, error: null };
+          if (thread.guardian_id !== guardian.id) {
+            return { data: { success: false, error_code: 'thread_not_owned', error: 'Thread not owned by caller' }, error: null };
+          }
+          teacherId = thread.teacher_id;
+          studentId = thread.student_id;
+          schoolId = thread.school_id;
+        } else {
+          const linked = links.some((l) =>
+            l.guardian_id === guardian.id &&
+            l.student_id === studentId &&
+            ['approved', 'active'].includes(l.status),
+          );
+          if (!linked) {
+            return { data: { success: false, error_code: 'not_linked', error: 'Child not linked to your account' }, error: null };
+          }
+          const teacher = teachers.find((t) => t.id === teacherId);
+          if (!teacher) return { data: { success: false, error_code: 'teacher_not_found', error: 'Teacher not found' }, error: null };
+          schoolId = teacher.school_id;
+          const existing = threads.find((t) =>
+            t.teacher_id === teacherId &&
+            t.guardian_id === guardian.id &&
+            t.student_id === studentId,
+          );
+          if (existing) {
+            threadId = existing.id;
+          } else {
+            const now = new Date().toISOString();
+            threadId = newId();
+            threads.push({
+              id: threadId,
+              teacher_id: teacherId!,
+              guardian_id: guardian.id,
+              student_id: studentId!,
+              school_id: schoolId,
+              subject: (args?.p_subject as string | null) ?? null,
+              created_at: now,
+              updated_at: now,
+              last_message_at: now,
+            });
+            isNewThread = true;
+          }
+        }
+
+        const now = new Date(Date.now() + idCounter).toISOString();
+        const messageId = newId();
+        messages.push({
+          id: messageId,
+          thread_id: threadId!,
+          sender_role: 'guardian',
+          sender_auth_user_id: authState.userId!,
+          body,
+          created_at: now,
+          read_at: null,
+        });
+        const thread = threads.find((t) => t.id === threadId);
+        if (thread) {
+          thread.last_message_at = now;
+          thread.updated_at = now;
+        }
+
+        await mockPublishEvent(null, {
+          kind: 'parent.teacher_message_sent',
+          payload: { threadId, messageId, teacherId, guardianId: guardian.id, studentId, bodyLength: body.length, isNewThread },
+        });
+
+        notifications.push({
+          id: newId(),
+          recipient_id: teacherId!,
+          recipient_type: 'teacher',
+          type: 'parent_message',
+          title: `New message from ${guardian.name ?? 'A parent'}`,
+          message: body.length > 200 ? `${body.slice(0, 200)}...` : body,
+          body: body.length > 200 ? `${body.slice(0, 200)}...` : body,
+          data: { thread_id: threadId, message_id: messageId, student_id: studentId },
+          is_read: false,
+          created_at: new Date().toISOString(),
+        });
+
+        return { data: { success: true, thread_id: threadId, message_id: messageId, is_new_thread: isNewThread }, error: null };
+      }
+
+      if (name === 'parent_list_message_threads') {
+        const limit = Math.min(Math.max(Number(args?.p_limit ?? 50), 1), 50);
+        const rows = threads
+          .filter((t) => t.guardian_id === guardian.id)
+          .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at))
+          .slice(0, limit)
+          .map((thread) => {
+            const latest = [...messages]
+              .filter((m) => m.thread_id === thread.id)
+              .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+            const unread_count = messages.filter((m) =>
+              m.thread_id === thread.id &&
+              m.sender_role === 'teacher' &&
+              m.read_at === null,
+            ).length;
+            return {
+              ...thread,
+              teacher_name: teachers.find((t) => t.id === thread.teacher_id)?.name ?? null,
+              student_name: students.find((s) => s.id === thread.student_id)?.name ?? null,
+              last_message_preview: latest ? (latest.body.length > 120 ? `${latest.body.slice(0, 120)}...` : latest.body) : null,
+              last_message_sender_role: latest?.sender_role ?? null,
+              unread_count,
+            };
+          });
+        return {
+          data: { success: true, threads: rows, unreadTotal: rows.reduce((sum, row) => sum + row.unread_count, 0) },
+          error: null,
+        };
+      }
+
+      if (name === 'parent_list_thread_messages') {
+        const threadId = args?.p_thread_id as string;
+        const thread = threads.find((t) => t.id === threadId);
+        if (!thread) return { data: { success: false, error_code: 'thread_not_found', error: 'Thread not found' }, error: null };
+        if (thread.guardian_id !== guardian.id) {
+          return { data: { success: false, error_code: 'thread_not_owned', error: 'Thread not owned by caller' }, error: null };
+        }
+        const cursor = args?.p_cursor ? String(args.p_cursor) : null;
+        const limit = Math.min(Math.max(Number(args?.p_limit ?? 100), 1), 100);
+        const all = messages
+          .filter((m) => m.thread_id === threadId && (!cursor || m.created_at > cursor))
+          .sort((a, b) => a.created_at.localeCompare(b.created_at));
+        const page = all.slice(0, limit);
+        const hasMore = all.length > limit;
+        const readAt = new Date().toISOString();
+        for (const m of page) {
+          if (m.sender_role === 'teacher' && m.read_at === null) m.read_at = readAt;
+        }
+        return {
+          data: {
+            success: true,
+            messages: page,
+            nextCursor: hasMore ? page[page.length - 1]?.created_at ?? null : null,
+            hasMore,
+          },
+          error: null,
+        };
+      }
+
+      return { data: null, error: { message: `unexpected rpc: ${name}` } };
+    },
+  }),
+}));
+
 // Import routes after mocks. Tests reference Web `Request` / `Response`.
 import { POST as TEACHER_POST } from '@/app/api/teacher/messages/route';
 import { GET  as TEACHER_THREADS } from '@/app/api/teacher/messages/threads/route';
@@ -359,6 +524,7 @@ import { GET  as PARENT_MESSAGES } from '@/app/api/parent/messages/threads/[id]/
 
 // ── helpers ──────────────────────────────────────────────────────────
 function authedAs(authUserId: string, permissions: string[]) {
+  authState.userId = authUserId;
   mockAuthorize.mockResolvedValue({
     authorized: true,
     userId: authUserId,

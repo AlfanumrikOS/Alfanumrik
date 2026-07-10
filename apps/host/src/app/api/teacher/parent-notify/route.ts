@@ -13,7 +13,7 @@
  *      messaging surface uses (P9). No new permission is introduced.
  *   2. Resolve caller → internal `teachers.id` (NEVER auth.uid()).
  *   3. Roster check (P8): the student must be on the caller's roster
- *      (class_teachers × class_students), mirroring /api/teacher/remediation.
+ *      (class_teachers × class_enrollments), mirroring /api/teacher/remediation.
  *      403 if not.
  *   4. Resolve the student's guardian via `guardian_student_links`
  *      (approved/active, earliest = primary). NO linked guardian → a CLEAN 409
@@ -82,7 +82,7 @@ async function resolveTeacher(
 
 /**
  * Roster check (P8) — mirrors /api/teacher/remediation. A teacher "owns" a
- * student iff they share a class via class_teachers × class_students. Returns
+ * student iff they share a class via class_teachers × class_enrollments. Returns
  * the shared class_id or null when the student is NOT on the roster.
  */
 async function rosterClassId(teacherId: string, studentId: string): Promise<string | null> {
@@ -103,7 +103,7 @@ async function rosterClassId(teacherId: string, studentId: string): Promise<stri
   if (classIds.length === 0) return null;
 
   const { data: enrolment, error: csErr } = await supabaseAdmin
-    .from('class_students')
+    .from('class_enrollments')
     .select('class_id')
     .eq('student_id', studentId)
     .in('class_id', classIds)
@@ -111,7 +111,7 @@ async function rosterClassId(teacherId: string, studentId: string): Promise<stri
     .limit(1)
     .maybeSingle();
   if (csErr) {
-    logger.error('teacher_parent_notify_class_students_lookup_failed', {
+    logger.error('teacher_parent_notify_class_enrollments_lookup_failed', {
       error: new Error(csErr.message),
       route: 'teacher/parent-notify',
     });

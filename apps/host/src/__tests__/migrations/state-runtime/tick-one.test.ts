@@ -160,14 +160,14 @@ describe('tickOne retry path', () => {
     };
     const e = await insertEvent(sb, { kind: 'learner.mastery_changed', occurredAt: T1, actorAuthUserId: RUN_ACTOR_ID });
 
-    await tickOne(sub, { sb, ctx });  // count=1
-    await tickOne(sub, { sb, ctx });  // count=2
+    await tickOne(sub, { sb, ctx, batchSize: 1 });  // count=1
+    await tickOne(sub, { sb, ctx, batchSize: 1 });  // count=2
     // Cursor still unchanged.
     let { data: off } = await sb.from('subscriber_offsets')
       .select('last_processed_occurred_at, events_dead_lettered').eq('subscriber_name', HAPPY).single();
     expect(off?.last_processed_occurred_at?.startsWith(CURSOR.slice(0, 19))).toBe(true);
 
-    const r3 = await tickOne(sub, { sb, ctx });  // count=3 → dead-letter
+    const r3 = await tickOne(sub, { sb, ctx, batchSize: 1 });  // count=3 → dead-letter
     expect(r3.deadLettered).toBe(1);
 
     const { data: dl } = await sb.from('subscriber_dead_letters')

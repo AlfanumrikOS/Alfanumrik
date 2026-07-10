@@ -41,6 +41,11 @@ describe('proxy.ts — structural integrity', () => {
     expect(content).not.toMatch(/^export\s+function\s+middleware\s*\(/m);
   });
 
+  it('does NOT re-export proxy as middleware (keeps Next.js 16 build trace stable)', () => {
+    const content = readFile('src/proxy.ts');
+    expect(content).not.toMatch(/export\s*\{\s*proxy\s+as\s+middleware\s*\}/);
+  });
+
   it('has STUDENT_PROTECTED routes including /dashboard, /quiz, /foxy, /progress, /learn', () => {
     const content = readFile('src/proxy.ts');
     expect(content).toContain("'/dashboard'");

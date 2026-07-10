@@ -28,6 +28,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'fs';
+import path from 'path';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 // Use string literals inside vi.hoisted() because hoisted code runs BEFORE
@@ -107,6 +109,185 @@ vi.mock('@alfanumrik/lib/audit', () => ({
 
 vi.mock('@alfanumrik/lib/email-delivery', () => ({
   deliverEmail: vi.fn().mockResolvedValue({ sent: true }),
+}));
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ getAll: () => [] })),
+}));
+
+function requestErasureRpc(params: { p_student_id: string; p_reason?: string | null }) {
+  const guardian = holders.state.guardians.find((g) => g.auth_user_id === holders.currentAuthUserId);
+  if (!guardian) {
+    return { success: false, status: 403, error: 'Guardian account not found' };
+  }
+  const link = holders.state.links.find((l) =>
+    l.guardian_id === guardian.id &&
+    l.student_id === params.p_student_id &&
+    ['approved', 'active'].includes(l.status),
+  );
+  if (!link) {
+    return { success: false, status: 403, error: 'Child not linked to your account' };
+  }
+  const student = holders.state.students.find((s) => s.id === params.p_student_id);
+  if (!student) {
+    return { success: false, status: 404, error: 'Child not found' };
+  }
+  const existing = holders.state.erasureRequests.find((r) =>
+    r.guardian_id === guardian.id &&
+    r.student_id === params.p_student_id &&
+    r.status === 'pending',
+  );
+  if (existing) {
+    return {
+      success: true,
+      data: {
+        requestId: existing.id,
+        purgeAt: existing.purge_at,
+        guardianId: guardian.id,
+        guardianEmail: guardian.email,
+        schoolId: student.school_id,
+        studentName: student.name,
+        alreadyPending: true,
+        created: false,
+      },
+    };
+  }
+
+  const requestedAt = new Date();
+  const purgeAt = new Date(requestedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const row: ErasureRow = {
+    id: `req-${holders.state.erasureRequests.length + 1}`,
+    guardian_id: guardian.id,
+    student_id: params.p_student_id,
+    school_id: student.school_id,
+    status: 'pending',
+    reason: params.p_reason ?? null,
+    requested_at: requestedAt.toISOString(),
+    purge_at: purgeAt.toISOString(),
+    processed_at: null,
+    error_message: null,
+  };
+  holders.state.erasureRequests.push(row);
+  return {
+    success: true,
+    data: {
+      requestId: row.id,
+      purgeAt: row.purge_at,
+      guardianId: guardian.id,
+      guardianEmail: guardian.email,
+      schoolId: student.school_id,
+      studentName: student.name,
+      alreadyPending: false,
+      created: true,
+    },
+  };
+}
+
+function cancelErasureRpc(params: { p_student_id: string }) {
+  const guardian = holders.state.guardians.find((g) => g.auth_user_id === holders.currentAuthUserId);
+  if (!guardian) {
+    return { success: false, status: 403, error: 'Guardian account not found' };
+  }
+  const rows = holders.state.erasureRequests
+    .filter((r) =>
+      r.guardian_id === guardian.id &&
+      r.student_id === params.p_student_id &&
+      ['pending', 'purging', 'completed', 'failed'].includes(r.status),
+    )
+    .sort((a, b) => b.requested_at.localeCompare(a.requested_at));
+  const row = rows[0];
+  if (!row) {
+    return { success: false, status: 404, error: 'No erasure request found' };
+  }
+  if (row.status === 'completed' || row.status === 'failed' || row.status === 'purging') {
+    return {
+      success: false,
+      status: 410,
+      error: row.status === 'completed' || row.status === 'purging'
+        ? 'Erasure has already started and can no longer be cancelled'
+        : `Request is already in terminal state: ${row.status}`,
+      data: { status: row.status },
+    };
+  }
+  if (new Date(row.purge_at).getTime() <= Date.now()) {
+    return { success: false, status: 410, error: 'Grace window has elapsed; erasure is in progress' };
+  }
+  row.status = 'cancelled';
+  row.processed_at = new Date().toISOString();
+  return {
+    success: true,
+    data: {
+      requestId: row.id,
+      guardianId: guardian.id,
+      schoolId: row.school_id,
+      requestedAt: row.requested_at,
+      status: 'cancelled',
+    },
+  };
+}
+
+function erasureStatusRpc(params: { p_student_id: string }) {
+  const guardian = holders.state.guardians.find((g) => g.auth_user_id === holders.currentAuthUserId);
+  if (!guardian) {
+    return { success: false, status: 403, error: 'Guardian account not found' };
+  }
+  const link = holders.state.links.find((l) =>
+    l.guardian_id === guardian.id &&
+    l.student_id === params.p_student_id &&
+    ['approved', 'active'].includes(l.status),
+  );
+  if (!link) {
+    return { success: false, status: 403, error: 'Child not linked to your account' };
+  }
+  const row = holders.state.erasureRequests
+    .filter((r) => r.guardian_id === guardian.id && r.student_id === params.p_student_id)
+    .sort((a, b) => b.requested_at.localeCompare(a.requested_at))[0] ?? null;
+  if (!row) {
+    return { success: true, data: { request: null } };
+  }
+  return {
+    success: true,
+    data: {
+      request: {
+        id: row.id,
+        status: row.status,
+        requested_at: row.requested_at,
+        purge_at: row.purge_at,
+        processed_at: row.processed_at,
+        reason: row.reason,
+        error_message: row.error_message,
+      },
+    },
+  };
+}
+
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: vi.fn(() => ({
+    rpc: vi.fn(async (name: string, params: Record<string, unknown>) => {
+      if (name === 'parent_request_child_erasure') {
+        return { data: requestErasureRpc(params as { p_student_id: string; p_reason?: string | null }), error: null };
+      }
+      if (name === 'parent_cancel_child_erasure') {
+        return { data: cancelErasureRpc(params as { p_student_id: string }), error: null };
+      }
+      if (name === 'parent_child_erasure_status') {
+        return { data: erasureStatusRpc(params as { p_student_id: string }), error: null };
+      }
+      if (name === 'parent_publish_child_state_event') {
+        holders.state.stateEvents.push({
+          kind: params.p_kind,
+          eventId: params.p_event_id,
+          occurredAt: params.p_occurred_at,
+          actorAuthUserId: params.p_actor_auth_user_id,
+          tenantId: params.p_tenant_id,
+          idempotencyKey: params.p_idempotency_key,
+          payload: params.p_payload,
+        });
+        return { data: { published: true }, error: null };
+      }
+      return { data: null, error: { message: `unexpected rpc ${name}` } };
+    }),
+  })),
 }));
 
 // Reuse the publish module's contract by mocking it directly.
@@ -317,6 +498,22 @@ beforeEach(() => {
 // ── POST tests ────────────────────────────────────────────────────────────
 
 describe('POST /api/parent/children/[student_id]/request-erasure', () => {
+  it('uses scoped erasure RPCs for DPDP row ownership and mutation', () => {
+    const src = readFileSync(
+      path.resolve(process.cwd(), 'src/app/api/parent/children/[student_id]/request-erasure/route.ts'),
+      'utf8',
+    );
+    expect(src).toContain('createServerClient');
+    expect(src).toContain('parent_request_child_erasure');
+    expect(src).toContain('parent_cancel_child_erasure');
+    expect(src).toContain('parent_publish_child_state_event');
+    expect(src).not.toMatch(/\.from\(['"]guardians['"]\)/);
+    expect(src).not.toMatch(/\.from\(['"]guardian_student_links['"]\)/);
+    expect(src).not.toMatch(/\.from\(['"]data_erasure_requests['"]\)/);
+    expect(src).not.toContain('publishEvent(supabaseAdmin');
+    expect(src).not.toContain('@alfanumrik/lib/supabase-admin');
+  });
+
   it('happy path: creates pending row, audits, emits event', async () => {
     const { POST } = await import('@/app/api/parent/children/[student_id]/request-erasure/route');
     const res = await POST(makeRequest('POST', { reason: 'no longer needed' }), {
@@ -504,6 +701,19 @@ describe('DELETE /api/parent/children/[student_id]/request-erasure', () => {
 // ── GET tests ─────────────────────────────────────────────────────────────
 
 describe('GET /api/parent/children/[student_id]/erasure-status', () => {
+  it('uses a scoped erasure-status RPC instead of route-level service-role table reads', () => {
+    const src = readFileSync(
+      path.resolve(process.cwd(), 'src/app/api/parent/children/[student_id]/erasure-status/route.ts'),
+      'utf8',
+    );
+    expect(src).toContain('createServerClient');
+    expect(src).toContain('parent_child_erasure_status');
+    expect(src).not.toMatch(/\.from\(['"]guardians['"]\)/);
+    expect(src).not.toMatch(/\.from\(['"]guardian_student_links['"]\)/);
+    expect(src).not.toMatch(/\.from\(['"]data_erasure_requests['"]\)/);
+    expect(src).not.toContain('@alfanumrik/lib/supabase-admin');
+  });
+
   it('returns request: null when no row exists', async () => {
     const { GET } = await import('@/app/api/parent/children/[student_id]/erasure-status/route');
     const res = await GET(makeRequest('GET'), {
