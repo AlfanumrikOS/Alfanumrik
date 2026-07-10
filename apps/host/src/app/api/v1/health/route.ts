@@ -34,7 +34,12 @@ const PROCESS_START = Date.now();
 const APP_VERSION = process.env.npm_package_version || '2.0.0';
 const DEPLOY_ENV = process.env.VERCEL_ENV || process.env.NODE_ENV || 'development';
 const DEPLOY_REGION = process.env.VERCEL_REGION || 'unknown';
-const GIT_SHA = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'dev';
+const GIT_SHA = (
+  process.env.VERCEL_GIT_COMMIT_SHA ||
+  process.env.DEPLOY_GIT_SHA ||
+  process.env.GITHUB_SHA ||
+  ''
+).slice(0, 7) || 'dev';
 
 /** Per-dependency probe timeout (ms). */
 const DEP_TIMEOUT_MS = 3_000;
