@@ -11,11 +11,16 @@ function repoPath(rel: string): string {
 describe('AWS Docker standalone runtime layout', () => {
   it('starts the Next standalone server from the copied root layout', () => {
     const dockerfile = readFileSync(repoPath('Dockerfile'), 'utf8');
+    const nextConfig = readFileSync(repoPath('apps/host/next.config.js'), 'utf8');
 
-    expect(dockerfile).toContain('COPY --from=builder /app/apps/host/public ./public');
+    expect(dockerfile).toContain('COPY --from=builder /app/apps/host/public ./apps/host/public');
     expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/apps/host/.next/standalone ./');
-    expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/apps/host/.next/static ./.next/static');
-    expect(dockerfile).toContain('CMD ["node", "server.js"]');
-    expect(dockerfile).not.toContain('CMD ["node", "apps/host/server.js"]');
+    expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/apps/host/.next/static ./apps/host/.next/static');
+    expect(dockerfile).toContain('CMD ["node", "apps/host/server.js"]');
+    expect(dockerfile).not.toContain('CMD ["node", "server.js"]');
+    expect(nextConfig).toContain("const path = require('path')");
+    expect(nextConfig).toContain("const repoRoot = path.join(__dirname, '../..')");
+    expect(nextConfig).toContain('outputFileTracingRoot: repoRoot');
+    expect(nextConfig).toContain('root: repoRoot');
   });
 });
