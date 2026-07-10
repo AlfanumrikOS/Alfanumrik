@@ -129,3 +129,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return NextResponse.json({ error: GENERIC_500_BODY }, { status: 500 });
   }
 }
+
+export async function GET(request: NextRequest): Promise<Response> {
+  return POST(request);
+}

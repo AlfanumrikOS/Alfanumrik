@@ -317,3 +317,7 @@ export async function POST(request: NextRequest) {
     { status: allFailed ? 502 : 200 },
   );
 }
+
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
