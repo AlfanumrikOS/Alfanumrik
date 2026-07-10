@@ -1,3 +1,5 @@
+const path = require('path');
+
 // Validate required env vars for production deployments (not during preview or local dev).
 // Guard against running validation at build time — secrets are only injected at ECS task start.
 // NEXT_PHASE is 'phase-production-build' during `next build`; undefined at runtime.
@@ -37,6 +39,7 @@ if (isProductionRuntime) {
 const withBundleAnalyzer = require('@next/bundle-analyzer')({
   enabled: process.env.ANALYZE === 'true',
 });
+const repoRoot = path.join(__dirname, '../..');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -46,16 +49,18 @@ const nextConfig = {
   // full node_modules install. Public assets and static chunks are copied
   // separately in the Dockerfile.
   output: 'standalone',
+  // The active npm workspace is apps/host, but node_modules is hoisted at the
+  // repository root. Trace from the monorepo root so standalone Docker images
+  // include runtime packages such as next.
+  outputFileTracingRoot: repoRoot,
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
-  // Pin the Turbopack workspace root to this project directory. The repo lives
-  // inside nested git worktrees (.claude/worktrees/**) and a stray
-  // package-lock.json exists in the user's home dir, so Next would otherwise
-  // infer the wrong root and warn "inferred your workspace root, but it may not
-  // be correct". __dirname is this config file's directory = the project root.
+  // Keep Turbopack and output tracing on the same root. The repo lives inside
+  // nested worktrees, so set the root explicitly instead of relying on Next's
+  // inference.
   turbopack: {
-    root: __dirname,
+    root: repoRoot,
   },
   // Expose Vercel's deployment environment to client code as
   // NEXT_PUBLIC_VERCEL_ENV. VERCEL_ENV is a Vercel-injected build var that is
