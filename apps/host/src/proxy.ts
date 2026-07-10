@@ -30,7 +30,7 @@ import {
 import { secureEqual } from '@alfanumrik/lib/secure-compare';
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
- * Next.js 16 proxy — exported as both proxy (primary) and middleware (compat alias)
+ * Next.js 16 proxy — export only the canonical proxy function.
  *
  * Defense in depth. Every layer assumes the layer below might be
  * compromised.
@@ -554,6 +554,54 @@ function isB2CHost(host: string): boolean {
   return B2C_HOSTS.has(h);
 }
 
+function inferApiClient(request: NextRequest): string {
+  const explicit = request.headers.get('x-client-platform')?.trim().toLowerCase();
+  if (explicit) return explicit.slice(0, 40);
+
+  const userAgent = request.headers.get('user-agent')?.toLowerCase() ?? '';
+  if (userAgent.includes('android')) return 'android';
+  if (userAgent.includes('iphone') || userAgent.includes('ipad') || userAgent.includes('ios')) return 'ios';
+  if (userAgent.includes('mobile')) return 'mobile';
+  return 'web';
+}
+
+function rpcFromPath(pathname: string): string | null {
+  const prefix = '/rest/v1/rpc/';
+  if (!pathname.startsWith(prefix)) return null;
+  return pathname.slice(prefix.length).split('/')[0] || null;
+}
+
+async function recordApiRequestLog(request: NextRequest, requestId: string): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return;
+
+  try {
+    const pathname = request.nextUrl.pathname;
+    const userAgent = request.headers.get('user-agent') ?? null;
+    await fetch(`${supabaseUrl}/rest/v1/api_request_logs`, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({
+        path: pathname,
+        rpc: rpcFromPath(pathname),
+        client: inferApiClient(request),
+        method: request.method,
+        request_id: requestId,
+        user_agent: userAgent ? userAgent.slice(0, 256) : null,
+        environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'production',
+      }),
+    });
+  } catch {
+    // Best-effort telemetry; never risk auth, routing, or API latency on it.
+  }
+}
+
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
@@ -706,6 +754,8 @@ export async function proxy(request: NextRequest) {
   // though tenant lookup (above) succeeded. This defeats the entire white-label
   // substrate.
   const requestHeaders = new Headers(request.headers);
+  const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
+  requestHeaders.set('x-request-id', requestId);
   if (schoolConfig) {
     requestHeaders.set('x-school-id', schoolConfig.id);
     requestHeaders.set('x-school-name', encodeURIComponent(schoolConfig.name));
@@ -719,7 +769,7 @@ export async function proxy(request: NextRequest) {
   if (pathname === '/manifest.json') {
     const rewriteUrl = new URL('/api/school-config/manifest', request.url);
     const rewriteRes = NextResponse.rewrite(rewriteUrl, { request: { headers: requestHeaders } });
-    return addSecurityHeaders(rewriteRes, request);
+    return addSecurityHeaders(rewriteRes, request, requestId);
   }
 
   // ── Layer 0: Supabase session refresh ──
@@ -1140,12 +1190,12 @@ export async function proxy(request: NextRequest) {
     }
 
     response.headers.set('X-RateLimit-Remaining', String(remaining));
-    return addSecurityHeaders(response, request);
+    return addSecurityHeaders(response, request, requestId);
   }
 
   // Exempt health endpoint from rate limiting (used by uptime monitors)
   if (pathname === '/api/v1/health') {
-    return addSecurityHeaders(response, request);
+    return addSecurityHeaders(response, request, requestId);
   }
 
   // Exempt provider webhook receivers from the general rate limiter.
@@ -1172,7 +1222,7 @@ export async function proxy(request: NextRequest) {
   // the limit because they're called by Vercel's cron with CRON_SECRET and
   // never need to be open to external IPs.
   if (pathname === '/api/payments/webhook') {
-    return addSecurityHeaders(response, request);
+    return addSecurityHeaders(response, request, requestId);
   }
 
   // General rate limit for all routes
@@ -1198,6 +1248,7 @@ export async function proxy(request: NextRequest) {
   if (pathname.startsWith('/api/v1/') || pathname.startsWith('/api/')) {
     response.headers.set('X-RateLimit-Limit', String(RATE_LIMIT_MAX));
     response.headers.set('X-RateLimit-Remaining', String(generalRemaining));
+    void recordApiRequestLog(request, requestId);
 
     // Prevent CDN/browser from caching API responses (personalized data)
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -1210,14 +1261,18 @@ export async function proxy(request: NextRequest) {
     response.headers.set('Vary', 'Origin');
   }
 
-  return addSecurityHeaders(response, request);
+  return addSecurityHeaders(response, request, requestId);
 }
 
-function addSecurityHeaders(response: NextResponse, request: NextRequest): NextResponse {
+function addSecurityHeaders(
+  response: NextResponse,
+  request: NextRequest,
+  requestId = request.headers.get('x-request-id') ?? crypto.randomUUID()
+): NextResponse {
   // ── Layer 1: Security Headers ──
 
-  // Request ID for tracing
-  const requestId = crypto.randomUUID();
+  // Request ID for incident tracing; preserve caller-supplied IDs so host
+  // routes, Edge Functions, logs, and the browser-visible response agree.
   response.headers.set('X-Request-Id', requestId);
 
   // Prevent clickjacking — no one should iframe Alfanumrik
@@ -1255,6 +1310,3 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|sw.js|icons|robots.txt).*)',
   ],
 };
-
-// Alias for backward-compatibility with test imports (import('@/proxy').middleware)
-export { proxy as middleware };

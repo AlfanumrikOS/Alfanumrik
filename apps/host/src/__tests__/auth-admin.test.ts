@@ -35,9 +35,9 @@ describe('Auth Flow: session_refresh_on_request', () => {
     expect(pattern).toContain('_next/image');
   });
 
-  it('middleware function is exported and callable', async () => {
+  it('proxy function is exported and callable', async () => {
     const middlewareSrc = await import('@/proxy');
-    expect(typeof middlewareSrc.middleware).toBe('function');
+    expect(typeof middlewareSrc.proxy).toBe('function');
   });
 });
 
@@ -56,8 +56,8 @@ describe('Auth Flow: redirect_unauthenticated', () => {
     // Pattern is a negative lookahead that only excludes static assets
     expect(pattern).not.toContain('dashboard');
     expect(pattern).not.toContain('quiz');
-    // This means dashboard, quiz, progress ARE covered by the middleware
-    expect(typeof middlewareSrc.middleware).toBe('function');
+    // This means dashboard, quiz, progress ARE covered by the proxy
+    expect(typeof middlewareSrc.proxy).toBe('function');
   });
 
   it('useRequireAuth redirects to /login when not logged in', async () => {

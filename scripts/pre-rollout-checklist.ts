@@ -57,6 +57,12 @@ function repoFile(...segments: string[]): string {
   return direct;
 }
 
+function sharedLibFile(...segments: string[]): string {
+  const shared = join(REPO_ROOT, 'packages', 'lib', 'src', ...segments);
+  if (existsSync(shared)) return shared;
+  return repoFile('src', 'lib', ...segments);
+}
+
 // ─── Individual checks (exported for testing) ────────────────────────
 
 const PHASE_1_4_MIGRATION_TIMESTAMPS = [
@@ -168,10 +174,10 @@ export function checkPromptTemplates(): CheckResult {
 }
 
 export function checkConfigFilesPresent(): CheckResult {
-  const web = repoFile('src', 'lib', 'grounding-config.ts');
+  const web = sharedLibFile('grounding-config.ts');
   const deno = join(REPO_ROOT, 'supabase', 'functions', 'grounded-answer', 'config.ts');
   const missing: string[] = [];
-  if (!existsSync(web)) missing.push('src/lib/grounding-config.ts');
+  if (!existsSync(web)) missing.push('packages/lib/src/grounding-config.ts');
   if (!existsSync(deno)) missing.push('supabase/functions/grounded-answer/config.ts');
   if (missing.length > 0) return fail('config files', `missing: ${missing.join(', ')}`);
   return ok('config files');
@@ -180,7 +186,7 @@ export function checkConfigFilesPresent(): CheckResult {
 export function checkConfigParity(): CheckResult {
   // Originally delegated to scripts/check-config-parity.sh, but shelling out to bash
   // is flaky on Windows environments. Re-implemented in pure TS for cross-platform reliability.
-  const webPath = repoFile('src', 'lib', 'grounding-config.ts');
+  const webPath = sharedLibFile('grounding-config.ts');
   const denoPath = join(REPO_ROOT, 'supabase', 'functions', 'grounded-answer', 'config.ts');
   
   if (!existsSync(webPath)) return fail('config parity', `missing: ${webPath}`);
@@ -317,7 +323,7 @@ export function checkPostHandlers(): CheckResult {
 }
 
 export function checkQuizResponseShuffleMap(): CheckResult {
-  const p = repoFile('src', 'lib', 'types.ts');
+  const p = sharedLibFile('types.ts');
   if (!existsSync(p)) return fail('QuizResponse.shuffle_map', `missing: ${p}`);
   const src = readFileSync(p, 'utf8');
   if (!/shuffle_map\s*\?:\s*number\[\]\s*\|\s*null/.test(src)) {
@@ -329,7 +335,7 @@ export function checkQuizResponseShuffleMap(): CheckResult {
 const EXPECTED_SHUFFLE_MAP_PUSH_SITES = 5;
 
 export function checkQuizPushSites(): CheckResult {
-  const p = repoFile('src', 'app', 'quiz', 'page.tsx');
+  const p = repoFile('src', 'app', '(student)', 'quiz', 'page.tsx');
   if (!existsSync(p)) return fail('quiz page shuffle_map pushes', `missing: ${p}`);
   const src = readFileSync(p, 'utf8');
   // Count occurrences of shuffle_map: ... in push payloads. Our spec says 5.

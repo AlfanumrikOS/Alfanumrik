@@ -6,7 +6,7 @@
  *      the auth errorResponse verbatim when not authorized (401/403).
  *   2. 403 when the caller has no teacher profile.
  *   3. 403 (no insert) when the requested student is NOT on the caller's roster
- *      (class_students × class_teachers) — even with a well-formed UUID.
+ *      (class_enrollments × class_teachers) — even with a well-formed UUID.
  *   4. Happy path: roster-verified insert returns the created assignment
  *      (status 'assigned', teacher_id = internal teachers.id, class_id from the
  *      roster join). 201.
@@ -99,8 +99,8 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
     return chain;
   }
 
-  // ── class_students: .select().eq().in().limit().maybeSingle() ──
-  function classStudentsChain() {
+  // ── class_enrollments: .select().eq().in().limit().maybeSingle() ──
+  function classEnrollmentsChain() {
     const chain = {
       eq() {
         return chain;
@@ -213,8 +213,8 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
         if (table === 'class_teachers') {
           return { select: () => classTeachersChain() };
         }
-        if (table === 'class_students') {
-          return { select: () => classStudentsChain() };
+        if (table === 'class_enrollments') {
+          return { select: () => classEnrollmentsChain() };
         }
         if (table === 'teacher_remediation_assignments') {
           return {

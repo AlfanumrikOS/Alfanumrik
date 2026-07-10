@@ -304,13 +304,6 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
       ),
     });
   }
-  if ((s.streak || 0) >= 3) {
-    derivedMoments.push({
-      icon: '🔥',
-      iconClass: 'text-streak',
-      text: t(isHi, `On a ${s.streak}-day learning streak.`, `${s.streak}-दिन की सीखने की स्ट्रीक पर।`),
-    });
-  }
   if (bktMastery && (bktMastery.levels?.mastered || 0) > 0) {
     derivedMoments.push({
       icon: '🌟',
@@ -333,13 +326,7 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
       ),
     });
   }
-  if (labStreak !== null && labStreak > 0) {
-    derivedMoments.push({
-      icon: '🔬',
-      iconClass: 'text-info',
-      text: t(isHi, `${labStreak}-day STEM lab streak.`, `${labStreak}-दिन की STEM लैब स्ट्रीक।`),
-    });
-  }
+  void labStreak;
   // Pull in up to one existing insight line as a "note" moment (read-only).
   if (insights && insights.length > 0) {
     derivedMoments.push({ icon: '💡', iconClass: 'text-warning', text: insights[0] });
@@ -352,9 +339,11 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
       <div className="mb-4 flex items-start justify-between border-b border-surface-3 pb-3.5">
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-primary">
-            {t(isHi, "Today's glance", 'आज की झलक')}
+            {childName}
           </p>
-          <h1 className="text-2xl font-bold text-foreground">{childName}</h1>
+          <h1 className="text-2xl font-bold text-foreground">
+            {t(isHi, 'Is my child okay?', 'क्या मेरा बच्चा ठीक है?')}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {t(isHi, 'Grade', 'कक्षा')} {grade}
             {subject ? ` | ${subject}` : ''}
@@ -397,10 +386,6 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
                         `इस सप्ताह ${weekSummary!.quizzes} सत्र`,
                       )
                     : t(isHi, 'No sessions yet this week', 'इस सप्ताह अभी तक कोई सत्र नहीं')}
-                  {' · '}
-                  {(s.streak || 0) > 0
-                    ? t(isHi, `🔥 ${s.streak}-day streak`, `🔥 ${s.streak}-दिन की स्ट्रीक`)
-                    : t(isHi, 'Streak paused', 'स्ट्रीक रुकी हुई')}
                   {(weekSummary?.avgScore || 0) > 0
                     ? ` · ${t(isHi, `${weekSummary!.avgScore}% avg`, `${weekSummary!.avgScore}% औसत`)}`
                     : ''}
@@ -427,10 +412,10 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
 
             {/* Compact snapshot stats — mirrors legacy Stat styling. */}
             <div className="grid grid-cols-2 gap-2.5">
-              <StatPill icon="⭐" label="XP" value={s.xp || 0} valueClass="text-xp" />
               <StatPill icon="🎯" label={t(isHi, 'Accuracy', 'सटीकता')} value={`${s.accuracy || 0}%`} valueClass="text-success" />
               <StatPill icon="📚" label={t(isHi, 'Quizzes', 'क्विज़')} value={s.totalQuizzes || 0} valueClass="text-info" />
               <StatPill icon="⏱" label={t(isHi, 'Study time', 'अध्ययन समय')} value={`${s.minutes || 0}m`} valueClass="text-secondary" />
+              <StatPill icon="💬" label={t(isHi, 'Questions', 'सवाल')} value={s.totalChats || 0} valueClass="text-info" />
             </div>
           </section>
 
@@ -470,7 +455,7 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
           {/* ════════ SECTION 3 — ACTIONS ════════ */}
           <section aria-label={t(isHi, 'Quick actions', 'त्वरित क्रियाएँ')}>
             <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              {t(isHi, 'Actions', 'क्रियाएँ')}
+              {t(isHi, 'Next best step', 'अगला सबसे अच्छा कदम')}
             </h2>
             <div className="flex flex-col gap-2.5">
               {/* Encourage {child} — Wave D (ff_parent_encourage_v1). Rendered

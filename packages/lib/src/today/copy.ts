@@ -38,7 +38,7 @@ interface CopyEntry {
  */
 const COPY: Record<string, CopyEntry> = {
   // ── Shared chrome ──────────────────────────────────────────────
-  'today.heading':      { en: 'Today',            hi: 'आज' },
+  'today.heading':      { en: 'What should I learn now?', hi: 'मुझे अभी क्या सीखना चाहिए?' },
   'today.focus':        { en: "Today's focus",    hi: 'आज का फोकस' },
   'today.minutesBadge': { en: '~{n} min',         hi: '~{n} मिनट' },
   'today.empty':        {

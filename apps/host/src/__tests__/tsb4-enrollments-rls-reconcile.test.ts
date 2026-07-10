@@ -283,13 +283,11 @@ describe('TSB-4: non-destructive — no DROP of the roster tables/columns', () =
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// 5. NO READER REPOINT — this slice is migrations-only. The canAccessStudent /
-//    is_teacher_of boundary reader is NOT repointed onto class_enrollments
-//    (deferred / CEO-gated). Pinned two ways:
-//      (a) neither migration repoints the boundary helpers in executable SQL;
-//      (b) the live reader src/lib/rbac.ts still reads class_students.is_active.
+// 5. READER REPOINT — after the fail-closed reconcile and teacher SELECT policy,
+//    canAccessStudent uses the canonical class_enrollments roster for teacher
+//    reachability. The destructive table retirement remains separately gated.
 // ════════════════════════════════════════════════════════════════════════════
-describe('TSB-4: reader NOT repointed (migrations-only; canAccessStudent deferred)', () => {
+describe('TSB-4: canAccessStudent teacher boundary reads canonical class_enrollments', () => {
   it('neither migration redefines/repoints the boundary helpers in executable SQL', () => {
     for (const exec of [POLICY_EXEC, BACKFILL_EXEC]) {
       expect(exec).not.toMatch(/canAccessStudent/i);
@@ -297,13 +295,15 @@ describe('TSB-4: reader NOT repointed (migrations-only; canAccessStudent deferre
     }
   });
 
-  it('src/lib/rbac.ts still reads class_students (the teacher boundary is NOT repointed to class_enrollments)', () => {
+  it('src/lib/rbac.ts reads class_enrollments, not class_students, for teacher reachability', () => {
     expect(RBAC_RAW.length).toBeGreaterThan(0);
-    // The canAccessStudent teacher path still queries class_students with
-    // .eq('is_active', true) — exactly the reader these migrations are a
-    // prerequisite for, but deliberately do NOT touch in this slice.
-    expect(RBAC_RAW).toMatch(/\.from\(\s*'class_students'\s*\)/);
-    // The reader has NOT been moved onto the canonical enrollments roster yet.
-    expect(RBAC_RAW).not.toMatch(/\.from\(\s*'class_enrollments'\s*\)/);
+    const teacherPath = RBAC_RAW.slice(
+      RBAC_RAW.indexOf('// Teacher: can access students in assigned classes'),
+      RBAC_RAW.indexOf('return false;', RBAC_RAW.indexOf('// Teacher: can access students in assigned classes')),
+    );
+
+    expect(teacherPath).toMatch(/\.from\(\s*'class_enrollments'\s*\)/);
+    expect(teacherPath).not.toMatch(/\.from\(\s*'class_students'\s*\)/);
+    expect(teacherPath).toMatch(/\.eq\(\s*'is_active'\s*,\s*true\s*\)/);
   });
 });

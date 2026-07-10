@@ -1,240 +1,47 @@
 /**
- * /api/parent/link-code/request-otp + /redeem — Phase D.4 contract tests.
+ * /api/parent/link-code/request-otp + /redeem — scoped RPC contract tests.
  *
- * What these tests pin:
- *
- *   request-otp:
- *     1. Returns 200 + otp_sent:true for a valid code (happy path).
- *     2. Returns 200 + otp_sent:true even when the link code matches no
- *        student — no enumeration channel.
- *     3. Returns 429 once the per-IP limit is exceeded.
- *     4. Audits every outcome to auth_audit_log.
- *     5. 401 when the caller has no session.
- *
- *   redeem:
- *     6. Happy path: correct OTP → success:true, deletes the challenge,
- *        invokes link_guardian_to_student_via_code.
- *     7. Wrong OTP increments attempt_count and returns 401 + remaining.
- *     8. 5th wrong OTP locks the row for 1 hour and returns 423 next call.
- *     9. Expired challenge → 401 with an expired-specific event.
- *    10. Locked challenge → 423 even with the correct OTP.
- *    11. No challenge for caller → 401 (NOT 200 — there's nothing to leak
- *        because the user is already authenticated).
- *    12. Audits every attempt regardless of outcome.
- *
- * All Supabase interactions are intercepted. We model the
- * link_code_otp_challenges + auth_audit_log + students + guardians tables
- * as in-memory objects and replay them through a chainable mock client.
+ * These routes must not import the service-role admin client. Request OTP keeps
+ * local OTP generation/email delivery, but code resolution, cooldown,
+ * challenge insertion, and audit writes live in parent_request_link_code_otp.
+ * Redeem lives in parent_redeem_link_code_otp so challenge hashes never leave
+ * the database boundary.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { hashOtp } from '@alfanumrik/lib/link-code-otp';
 
-// ── Mock fixtures ─────────────────────────────────────────────────────────
-const AUTH_USER_ID = '00000000-0000-0000-0000-00000000aaaa';
-const STUDENT_ID = '00000000-0000-0000-0000-00000000bbbb';
-const GUARDIAN_ID = '00000000-0000-0000-0000-00000000cccc';
+const AUTH_USER_ID = '00000000-0000-4000-8000-00000000aaaa';
 const LINK_CODE = 'ABC123';
 
-// Holders for the mocks. vi.mock factories run before any top-level code in
-// this file, so `state` must be created via vi.hoisted() to be in scope.
 const holders = vi.hoisted(() => ({
-  // Mutable DB state.
-  state: {
-    challenges: [] as Array<{
-      id: string;
-      link_code: string;
-      auth_user_id: string;
-      student_id: string | null;
-      otp_hash: string;
-      expires_at: string;
-      attempt_count: number;
-      locked_until: string | null;
-      created_at: string;
-    }>,
-    students: [] as Array<{
-      id: string;
-      name: string;
-      invite_code: string;
-      link_code: string | null;
-      is_active: boolean;
-    }>,
-    guardians: [] as Array<{ id: string; auth_user_id: string }>,
-    auditLog: [] as Array<Record<string, unknown>>,
-    // Auth state.
-    session: null as { id: string; email: string } | null,
-    // RPC behaviour.
-    rpcResult: { data: { success: true, student_name: 'Aanya', student_grade: '8' } as unknown, error: null as { message: string } | null },
-  },
-  // Rate-limit mock state: per key, count of calls.
-  rateLimit: {
-    counts: new Map<string, number>(),
-    // When set, the next call to checkApiRateLimit returns allowed:false
-    // regardless of count. Used to simulate the limit being hit.
-    forceDeny: false,
-  },
-  // Email-delivery spy.
+  session: null as { id: string; email: string } | null,
+  rpc: vi.fn(),
+  rateLimitAllowed: true,
   emailCalls: [] as Array<{ template: string; to: string; params: Record<string, unknown> }>,
 }));
 
-// ── Mock supabase admin ───────────────────────────────────────────────────
-vi.mock('@alfanumrik/lib/supabase-admin', () => {
-  const chain = {
-    from(table: string) {
-      const state = holders.state;
-      if (table === 'students') {
-        return {
-          select: () => ({
-            or: (filter: string) => ({
-              eq: (_col: string, _val: unknown) => ({
-                maybeSingle: () => {
-                  // filter looks like `invite_code.eq.ABC123,link_code.eq.ABC123`
-                  const m = filter.match(/invite_code\.eq\.([^,]+)/);
-                  const codeWanted = m ? m[1] : '';
-                  const found = state.students.find(
-                    (s) =>
-                      (s.invite_code === codeWanted || s.link_code === codeWanted) && s.is_active,
-                  );
-                  return Promise.resolve({ data: found ?? null, error: null });
-                },
-              }),
-            }),
-          }),
-        };
-      }
-      if (table === 'guardians') {
-        return {
-          select: () => ({
-            eq: (_col: string, val: string) => ({
-              maybeSingle: () =>
-                Promise.resolve({
-                  data: state.guardians.find((g) => g.auth_user_id === val) ?? null,
-                  error: null,
-                }),
-            }),
-          }),
-        };
-      }
-      if (table === 'link_code_otp_challenges') {
-        return {
-          insert: (row: Record<string, unknown>) => {
-            const id = `chal-${state.challenges.length + 1}`;
-            const inserted = {
-              id,
-              link_code: row.link_code as string,
-              auth_user_id: row.auth_user_id as string,
-              student_id: (row.student_id as string | null) ?? null,
-              otp_hash: row.otp_hash as string,
-              expires_at: row.expires_at as string,
-              attempt_count: (row.attempt_count as number | undefined) ?? 0,
-              locked_until: (row.locked_until as string | null | undefined) ?? null,
-              created_at: new Date().toISOString(),
-            };
-            state.challenges.push(inserted);
-            return {
-              select: () => ({
-                single: () => Promise.resolve({ data: { id }, error: null }),
-              }),
-            };
-          },
-          select: () => ({
-            eq: (_c1: string, v1: string) => ({
-              eq: (_c2: string, v2: string) => ({
-                gte: (_c3: string, _v3: string) => ({
-                  order: () => ({
-                    limit: () => ({
-                      maybeSingle: () => {
-                        // request-otp cooldown check: link_code + auth_user_id + created_at >= cooldownIso
-                        const found = state.challenges
-                          .filter((c) => c.link_code === v1 && c.auth_user_id === v2)
-                          .slice(-1)[0];
-                        return Promise.resolve({ data: found ?? null, error: null });
-                      },
-                    }),
-                  }),
-                }),
-                order: () => ({
-                  limit: () => ({
-                    maybeSingle: () => {
-                      // redeem lookup: link_code + auth_user_id, most recent
-                      const found = state.challenges
-                        .filter((c) => c.link_code === v1 && c.auth_user_id === v2)
-                        .slice(-1)[0];
-                      return Promise.resolve({ data: found ?? null, error: null });
-                    },
-                  }),
-                }),
-              }),
-            }),
-          }),
-          update: (patch: Record<string, unknown>) => ({
-            eq: (_col: string, id: string) => {
-              const target = state.challenges.find((c) => c.id === id);
-              if (target) Object.assign(target, patch);
-              return Promise.resolve({ data: null, error: null });
-            },
-          }),
-          delete: () => ({
-            eq: (_col: string, id: string) => {
-              state.challenges = state.challenges.filter((c) => c.id !== id);
-              return Promise.resolve({ data: null, error: null });
-            },
-          }),
-        };
-      }
-      if (table === 'auth_audit_log') {
-        return {
-          insert: (row: Record<string, unknown>) => {
-            state.auditLog.push(row);
-            return Promise.resolve({ data: null, error: null });
-          },
-        };
-      }
-      throw new Error(`unmocked table: ${table}`);
-    },
-    rpc: (name: string, _args: Record<string, unknown>) => {
-      if (name === 'link_guardian_to_student_via_code') {
-        return Promise.resolve(holders.state.rpcResult);
-      }
-      throw new Error(`unmocked rpc: ${name}`);
-    },
-  };
-  return { supabaseAdmin: chain, getSupabaseAdmin: () => chain };
-});
-
-// ── Mock supabase server (session) ────────────────────────────────────────
 vi.mock('@alfanumrik/lib/supabase-server', () => ({
-  createSupabaseServerClient: () =>
-    Promise.resolve({
-      auth: {
-        getUser: () => {
-          const s = holders.state.session;
-          return Promise.resolve({
-            data: { user: s ? { id: s.id, email: s.email } : null },
-            error: s ? null : { message: 'no session' },
-          });
-        },
-      },
-    }),
+  createSupabaseServerClient: async () => ({
+    auth: {
+      getUser: async () => ({
+        data: { user: holders.session ? { id: holders.session.id, email: holders.session.email } : null },
+        error: holders.session ? null : { message: 'no session' },
+      }),
+    },
+    rpc: (...a: unknown[]) => holders.rpc(...a),
+  }),
 }));
 
-// ── Mock rate limiter ──────────────────────────────────────────────────────
 vi.mock('@alfanumrik/lib/api-rate-limit', () => ({
-  checkApiRateLimit: (key: string, limit: number, _windowMs: number) => {
-    if (holders.rateLimit.forceDeny) {
-      return Promise.resolve({ allowed: false, remaining: 0, resetAt: Math.floor(Date.now() / 1000) + 60 });
-    }
-    const next = (holders.rateLimit.counts.get(key) ?? 0) + 1;
-    holders.rateLimit.counts.set(key, next);
-    return Promise.resolve({
-      allowed: next <= limit,
-      remaining: Math.max(0, limit - next),
-      resetAt: Math.floor(Date.now() / 1000) + 60,
-    });
-  },
+  checkApiRateLimit: async () => ({
+    allowed: holders.rateLimitAllowed,
+    remaining: holders.rateLimitAllowed ? 1 : 0,
+    resetAt: Math.floor(Date.now() / 1000) + 60,
+  }),
 }));
 
-// ── Mock email delivery ────────────────────────────────────────────────────
 vi.mock('@alfanumrik/lib/email-delivery', () => ({
   deliverEmail: (input: { template: string; to: string; params: Record<string, unknown> }) => {
     holders.emailCalls.push(input);
@@ -243,112 +50,112 @@ vi.mock('@alfanumrik/lib/email-delivery', () => ({
   pickLocaleFromAcceptLanguage: () => 'en',
 }));
 
-// ── Mock logger ────────────────────────────────────────────────────────────
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
 
-// ── Import routes AFTER mocks ──────────────────────────────────────────────
 import { POST as requestOtpRoute } from '@/app/api/parent/link-code/request-otp/route';
 import { POST as redeemRoute } from '@/app/api/parent/link-code/redeem/route';
 import type { NextRequest } from 'next/server';
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 function makeReq(body: unknown): NextRequest {
   return new Request('http://localhost/api/parent/link-code/x', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-forwarded-for': '203.0.113.5',
+      'user-agent': 'vitest',
     },
     body: JSON.stringify(body),
   }) as unknown as NextRequest;
 }
 
-function signIn() {
-  holders.state.session = { id: AUTH_USER_ID, email: 'parent@example.com' };
+function signIn(email = 'parent@example.com') {
+  holders.session = { id: AUTH_USER_ID, email };
 }
 
-function seedStudent() {
-  holders.state.students.push({
-    id: STUDENT_ID,
-    name: 'Aanya',
-    invite_code: LINK_CODE,
-    link_code: null,
-    is_active: true,
-  });
-}
-
-function seedGuardian() {
-  holders.state.guardians.push({ id: GUARDIAN_ID, auth_user_id: AUTH_USER_ID });
-}
-
-function lastAuditEvent(): string {
-  const last = holders.state.auditLog.slice(-1)[0];
-  return (last?.event_type as string) ?? '';
+function rpcResult(data: Record<string, unknown>, error: { message: string } | null = null) {
+  holders.rpc.mockResolvedValue({ data, error });
 }
 
 beforeEach(() => {
-  holders.state.challenges = [];
-  holders.state.students = [];
-  holders.state.guardians = [];
-  holders.state.auditLog = [];
-  holders.state.session = null;
-  holders.state.rpcResult = {
-    data: { success: true, student_name: 'Aanya', student_grade: '8' } as unknown,
-    error: null,
-  };
-  holders.rateLimit.counts.clear();
-  holders.rateLimit.forceDeny = false;
+  vi.clearAllMocks();
+  holders.session = null;
+  holders.rateLimitAllowed = true;
   holders.emailCalls = [];
+  rpcResult({ success: true, should_send_email: true, challenge_id: 'chal-1', student_name: 'Aanya' });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
-//   request-otp
-// ─────────────────────────────────────────────────────────────────────────
+describe('link-code OTP service-role migration guard', () => {
+  it('routes do not import the service-role admin client', () => {
+    for (const rel of [
+      'src/app/api/parent/link-code/request-otp/route.ts',
+      'src/app/api/parent/link-code/redeem/route.ts',
+    ]) {
+      const source = readFileSync(join(process.cwd(), rel), 'utf8');
+      expect(source).not.toContain('@alfanumrik/lib/supabase-admin');
+    }
+  });
+
+  it('ships auth.uid()-anchored request/redeem RPC migrations', () => {
+    const migrationPath = join(
+      process.cwd(),
+      '../../supabase/migrations/20260710170000_xc3_parent_link_code_otp_rpcs.sql'
+    );
+    expect(existsSync(migrationPath)).toBe(true);
+    const sql = readFileSync(migrationPath, 'utf8');
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.parent_request_link_code_otp/i);
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.parent_redeem_link_code_otp/i);
+    expect(sql).toMatch(/auth\.uid\(\)/i);
+    expect(sql).toMatch(/digest\(/i);
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.parent_request_link_code_otp/i);
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.parent_redeem_link_code_otp/i);
+  });
+});
+
 describe('POST /api/parent/link-code/request-otp', () => {
   it('returns 401 when there is no session', async () => {
     const res = await requestOtpRoute(makeReq({ link_code: LINK_CODE }));
     expect(res.status).toBe(401);
+    expect(holders.rpc).not.toHaveBeenCalled();
   });
 
-  it('happy path: returns 200 + otp_sent, creates a challenge, sends an email', async () => {
+  it('happy path: returns 200 + otp_sent, asks the scoped RPC to create the challenge, sends an email', async () => {
     signIn();
-    seedStudent();
     const res = await requestOtpRoute(makeReq({ link_code: LINK_CODE }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.otp_sent).toBe(true);
-    expect(holders.state.challenges).toHaveLength(1);
+    expect(holders.rpc).toHaveBeenCalledWith('parent_request_link_code_otp', expect.objectContaining({
+      p_link_code: LINK_CODE,
+      p_ip_address: '203.0.113.5',
+      p_user_agent: 'vitest',
+    }));
+    expect(holders.rpc.mock.calls[0][1].p_challenge_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
     expect(holders.emailCalls).toHaveLength(1);
     expect(holders.emailCalls[0].template).toBe('parent-link-code-otp');
     expect(holders.emailCalls[0].to).toBe('parent@example.com');
-    expect(lastAuditEvent()).toBe('link_code_otp_request_success');
   });
 
-  it('returns 200 + otp_sent even when the link code matches no student (no enumeration)', async () => {
+  it('returns 200 + otp_sent without email when the scoped RPC reports no match', async () => {
     signIn();
-    // No seedStudent() — code resolves to nothing.
+    rpcResult({ success: true, should_send_email: false, outcome: 'no_match' });
     const res = await requestOtpRoute(makeReq({ link_code: 'ZZZ999' }));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.otp_sent).toBe(true);
-    // No challenge inserted, no email sent.
-    expect(holders.state.challenges).toHaveLength(0);
+    expect(body).toMatchObject({ success: true, otp_sent: true });
     expect(holders.emailCalls).toHaveLength(0);
-    // BUT we still audited the attempt so operators can detect brute-force.
-    expect(lastAuditEvent()).toBe('link_code_otp_request_no_match');
   });
 
-  it('returns 429 when the per-IP rate limit is exceeded', async () => {
+  it('returns 429 when the per-IP rate limit is exceeded before touching auth RPCs', async () => {
     signIn();
-    seedStudent();
-    holders.rateLimit.forceDeny = true;
+    holders.rateLimitAllowed = false;
     const res = await requestOtpRoute(makeReq({ link_code: LINK_CODE }));
     expect(res.status).toBe(429);
-    expect(lastAuditEvent()).toBe('link_code_otp_request_rate_limited');
+    expect(holders.rpc).not.toHaveBeenCalled();
   });
 
   it('returns 400 when the body is missing link_code', async () => {
@@ -358,34 +165,11 @@ describe('POST /api/parent/link-code/request-otp', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────
-//   redeem
-// ─────────────────────────────────────────────────────────────────────────
 describe('POST /api/parent/link-code/redeem', () => {
-  function insertChallenge(opts: {
-    otp: string;
-    attempt_count?: number;
-    expires_at?: string;
-    locked_until?: string | null;
-  }) {
-    const id = `chal-1`;
-    holders.state.challenges.push({
-      id,
-      link_code: LINK_CODE,
-      auth_user_id: AUTH_USER_ID,
-      student_id: STUDENT_ID,
-      otp_hash: hashOtp(opts.otp, id),
-      expires_at: opts.expires_at ?? new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      attempt_count: opts.attempt_count ?? 0,
-      locked_until: opts.locked_until ?? null,
-      created_at: new Date().toISOString(),
-    });
-    return id;
-  }
-
   it('returns 401 when there is no session', async () => {
     const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '123456' }));
     expect(res.status).toBe(401);
+    expect(holders.rpc).not.toHaveBeenCalled();
   });
 
   it('returns 400 when the otp body is malformed', async () => {
@@ -394,146 +178,66 @@ describe('POST /api/parent/link-code/redeem', () => {
     expect(res.status).toBe(400);
   });
 
-  it('happy path: correct OTP -> 200, deletes the challenge, invokes the RPC, audits success', async () => {
+  it('happy path: correct OTP -> 200 and delegates linking to the scoped RPC', async () => {
     signIn();
-    seedGuardian();
-    insertChallenge({ otp: '654321' });
+    rpcResult({ success: true, linked: true, student_name: 'Aanya', student_grade: '8' });
     const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.linked).toBe(true);
-    expect(body.student_name).toBe('Aanya');
-    // Challenge was deleted.
-    expect(holders.state.challenges).toHaveLength(0);
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_success');
+    expect(body).toMatchObject({ success: true, linked: true, student_name: 'Aanya' });
+    expect(holders.rpc).toHaveBeenCalledWith('parent_redeem_link_code_otp', {
+      p_link_code: LINK_CODE,
+      p_otp: '654321',
+      p_ip_address: '203.0.113.5',
+      p_user_agent: 'vitest',
+    });
   });
 
-  it('wrong OTP increments attempt_count and returns 401 with remaining attempts', async () => {
+  it('maps wrong OTP to 401 with remaining attempts', async () => {
     signIn();
-    seedGuardian();
-    insertChallenge({ otp: '654321' });
+    rpcResult({ success: false, error_code: 'wrong_otp', error: 'Incorrect code.', remaining_attempts: 4 });
     const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '111111' }));
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.remaining_attempts).toBe(4);
-    expect(holders.state.challenges[0].attempt_count).toBe(1);
-    expect(holders.state.challenges[0].locked_until).toBeNull();
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_wrong');
   });
 
-  it('5th wrong OTP locks the challenge for 1 hour and returns 423', async () => {
+  it('maps locked challenges to 423 with Retry-After', async () => {
     signIn();
-    seedGuardian();
-    insertChallenge({ otp: '654321', attempt_count: 4 });
-    const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '000000' }));
+    const lockedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    rpcResult({
+      success: false,
+      error_code: 'locked',
+      error: 'Too many incorrect attempts. Try again later.',
+      locked_until: lockedUntil,
+      retry_after_seconds: 3600,
+    });
+    const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
     expect(res.status).toBe(423);
+    expect(res.headers.get('Retry-After')).toBe('3600');
     const body = await res.json();
-    expect(body.locked_until).toBeTruthy();
-    expect(holders.state.challenges[0].attempt_count).toBe(5);
-    expect(holders.state.challenges[0].locked_until).toBeTruthy();
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_locked_now');
+    expect(body.locked_until).toBe(lockedUntil);
   });
 
-  it('subsequent attempts against a locked challenge return 423 without burning an attempt', async () => {
+  it('maps expired and no-challenge outcomes to 401', async () => {
     signIn();
-    seedGuardian();
-    const lockUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    insertChallenge({ otp: '654321', attempt_count: 5, locked_until: lockUntil });
-    const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' })); // even correct
-    expect(res.status).toBe(423);
-    // attempt_count did NOT increment beyond 5.
-    expect(holders.state.challenges[0].attempt_count).toBe(5);
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_locked');
+    rpcResult({ success: false, error_code: 'expired', error: 'OTP has expired. Request a new code.' });
+    const expired = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
+    expect(expired.status).toBe(401);
+
+    rpcResult({ success: false, error_code: 'no_challenge', error: 'No active OTP. Request a new code.' });
+    const missing = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
+    expect(missing.status).toBe(401);
   });
 
-  it('expired challenge returns 401 with the expired event and cleans up', async () => {
+  it('maps no guardian to 403 and domain rejection to 409', async () => {
     signIn();
-    seedGuardian();
-    insertChallenge({
-      otp: '654321',
-      expires_at: new Date(Date.now() - 60_000).toISOString(),
-    });
-    const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
-    expect(res.status).toBe(401);
-    expect(holders.state.challenges).toHaveLength(0); // cleaned up
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_expired');
-  });
+    rpcResult({ success: false, error_code: 'no_guardian', error: 'No guardian profile. Complete signup first.' });
+    const noGuardian = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
+    expect(noGuardian.status).toBe(403);
 
-  it('returns 401 when no challenge exists for the caller', async () => {
-    signIn();
-    seedGuardian();
-    // no insertChallenge()
-    const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
-    expect(res.status).toBe(401);
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_no_challenge');
-  });
-
-  it('returns 429 when the per-IP rate limit is exceeded', async () => {
-    signIn();
-    seedGuardian();
-    insertChallenge({ otp: '654321' });
-    holders.rateLimit.forceDeny = true;
-    const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
-    expect(res.status).toBe(429);
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_rate_limited');
-  });
-
-  it('returns 403 when the caller has no guardian profile', async () => {
-    signIn();
-    // no seedGuardian()
-    insertChallenge({ otp: '654321' });
-    const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
-    expect(res.status).toBe(403);
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_no_guardian_profile');
-  });
-
-  it('surfaces an RPC-rejected error as 409 without deleting the challenge', async () => {
-    signIn();
-    seedGuardian();
-    insertChallenge({ otp: '654321' });
-    holders.state.rpcResult = {
-      data: { error: 'Already linked to Aanya' } as unknown,
-      error: null,
-    };
-    const res = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
-    expect(res.status).toBe(409);
-    // Challenge preserved so a retry without re-issuing OTP is possible.
-    expect(holders.state.challenges).toHaveLength(1);
-    expect(lastAuditEvent()).toBe('link_code_otp_redeem_rpc_rejected');
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────
-//   audit-trail coverage assertion
-// ─────────────────────────────────────────────────────────────────────────
-describe('audit trail', () => {
-  it('writes an auth_audit_log row for every redemption outcome we exercise', async () => {
-    signIn();
-    seedGuardian();
-    // happy path
-    holders.state.challenges.push({
-      id: 'chal-A', link_code: LINK_CODE, auth_user_id: AUTH_USER_ID, student_id: STUDENT_ID,
-      otp_hash: hashOtp('111111', 'chal-A'),
-      expires_at: new Date(Date.now() + 60_000).toISOString(),
-      attempt_count: 0, locked_until: null, created_at: new Date().toISOString(),
-    });
-    await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '111111' }));
-    // wrong-OTP path
-    holders.state.challenges.push({
-      id: 'chal-B', link_code: LINK_CODE, auth_user_id: AUTH_USER_ID, student_id: STUDENT_ID,
-      otp_hash: hashOtp('222222', 'chal-B'),
-      expires_at: new Date(Date.now() + 60_000).toISOString(),
-      attempt_count: 0, locked_until: null, created_at: new Date().toISOString(),
-    });
-    await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '333333' }));
-
-    const events = holders.state.auditLog.map((r) => r.event_type);
-    expect(events).toContain('link_code_otp_redeem_success');
-    expect(events).toContain('link_code_otp_redeem_wrong');
-    // ip_address is always populated
-    for (const row of holders.state.auditLog) {
-      expect(row.ip_address).toBe('203.0.113.5');
-    }
+    rpcResult({ success: false, error_code: 'domain_rejected', error: 'Already linked to Aanya' });
+    const rejected = await redeemRoute(makeReq({ link_code: LINK_CODE, otp: '654321' }));
+    expect(rejected.status).toBe(409);
   });
 });

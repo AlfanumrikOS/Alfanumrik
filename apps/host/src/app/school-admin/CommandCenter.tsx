@@ -212,6 +212,80 @@ function masteryPct(value: number | null): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function deriveSchoolHealthScore(overview: SchoolOverview, atRiskClasses: number): number {
+  if (overview.data_state === 'no_data') return 0;
+  const masteryScore = overview.avg_mastery == null ? 45 : Math.round(overview.avg_mastery * 100);
+  const activityScore = overview.student_count > 0
+    ? Math.min(100, Math.round((overview.active_students / overview.student_count) * 100))
+    : 0;
+  const riskPenalty = Math.min(35, atRiskClasses * 7);
+  return Math.max(0, Math.min(100, Math.round((masteryScore * 0.55) + (activityScore * 0.45) - riskPenalty)));
+}
+
+function HealthDecisionHero({
+  overview,
+  atRiskClasses,
+  isHi,
+}: {
+  overview: SchoolOverview;
+  atRiskClasses: number;
+  isHi: boolean;
+}) {
+  const score = deriveSchoolHealthScore(overview, atRiskClasses);
+  const status =
+    overview.data_state === 'no_data'
+      ? tt(isHi, 'Setup needed', 'सेटअप चाहिए')
+      : score >= 76
+        ? tt(isHi, 'Healthy school day', 'स्कूल की स्थिति अच्छी है')
+        : score >= 55
+          ? tt(isHi, 'Watch a few signals', 'कुछ संकेत देखें')
+          : tt(isHi, 'Needs attention today', 'आज ध्यान चाहिए');
+  const nextStep =
+    overview.data_state === 'no_data'
+      ? tt(isHi, 'Invite students and teachers to unlock live health.', 'लाइव स्वास्थ्य देखने के लिए छात्रों और शिक्षकों को आमंत्रित करें।')
+      : atRiskClasses > 0
+        ? tt(isHi, 'Start with classes showing learning risk.', 'लर्निंग जोखिम वाली कक्षाओं से शुरू करें।')
+        : tt(isHi, 'Review teacher engagement and keep momentum steady.', 'शिक्षक सहभागिता देखें और गति बनाए रखें।');
+
+  return (
+    <section
+      className="rounded-2xl border p-4"
+      style={{
+        background: 'var(--surface-1)',
+        borderColor: 'var(--border)',
+        boxShadow: 'var(--shadow-md)',
+      }}
+      aria-label={tt(isHi, 'School health summary', 'स्कूल स्वास्थ्य सारांश')}
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: 'var(--primary)' }}>
+            {tt(isHi, 'Is my school healthy?', 'क्या मेरा स्कूल स्वस्थ है?')}
+          </p>
+          <h2 className="mt-1 text-2xl font-extrabold text-[var(--text-1)] font-['Sora',system-ui,sans-serif]">
+            {status}
+          </h2>
+          <p className="mt-1 max-w-xl text-sm text-[var(--text-3)]">{nextStep}</p>
+        </div>
+        <div className="rounded-2xl border px-4 py-3 text-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">
+            {tt(isHi, 'Health score', 'स्वास्थ्य स्कोर')}
+          </p>
+          <p className="mt-1 text-4xl font-extrabold tabular-nums" style={{ color: score >= 76 ? 'var(--success)' : score >= 55 ? 'var(--warning)' : 'var(--danger)' }}>
+            {overview.data_state === 'no_data' ? '—' : score}
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Kpi label={tt(isHi, 'Active today', 'आज सक्रिय')} value={overview.active_students.toLocaleString('en-IN')} color="var(--success)" />
+        <Kpi label={tt(isHi, 'Avg mastery', 'औसत मास्टरी')} value={masteryPct(overview.avg_mastery)} color="var(--primary)" />
+        <Kpi label={tt(isHi, 'Alerts', 'अलर्ट')} value={atRiskClasses} color={atRiskClasses > 0 ? 'var(--danger)' : 'var(--success)'} />
+        <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count.toLocaleString('en-IN')} color="var(--text-1)" />
+      </div>
+    </section>
+  );
+}
+
 // ── KPI tile ─────────────────────────────────────────────────────────────────
 function Kpi({ label, value, color }: { label: string; value: React.ReactNode; color: string }) {
   return (
@@ -501,6 +575,7 @@ export default function CommandCenter() {
 
   // ── Render ──
   const overview = overviewSWR.data?.data;
+  const atRiskClassesCount = (classesSWR.data?.data ?? []).filter((row) => row.at_risk_count > 0).length;
   // A 400 with school_ids is NOT a hard error — it's the picker path.
   const overviewHardError = overviewSWR.error && overviewSWR.error.status !== 400;
 
@@ -568,6 +643,14 @@ export default function CommandCenter() {
                 surfaces a fresh admin must reach but can't discover from the
                 empty Command Center. Dismissible; pure navigation. */}
             {overview?.data_state === 'no_data' && <SetupChecklist isHi={isHi} />}
+
+            {overview && (
+              <HealthDecisionHero
+                overview={overview}
+                atRiskClasses={atRiskClassesCount}
+                isHi={isHi}
+              />
+            )}
 
             {/* 1. Overview KPI strip (eager) */}
             <section aria-label={tt(isHi, 'School overview', 'स्कूल अवलोकन')}>

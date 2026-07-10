@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-07-09",
+  "source": "RCA-11 / AO-10b grade normalization readiness inventory",
+  "remainingEnvironmentGate": "Confirm the AO-10b migration is applied in the target DB and run the live grade-format verifier against that target DB before broad rollout.",
+  "artifacts": [
+    {
+      "id": "ao10b-grade-backfill-migration",
+      "rcaItem": "RCA-11",
+      "kind": "migration",
+      "path": "supabase/migrations/20260702070000_ao10b_backfill_student_grade_p5.sql",
+      "owner": "backend",
+      "readinessRole": "Backfills legacy public.students.grade rows to bare P5 grade strings and flips onboarding RPC defaults away from prefixed Grade N literals.",
+      "status": "repo_guarded",
+      "evidence": [
+        "CREATE TABLE IF NOT EXISTS public._ao10b_grade_backfill_backup",
+        "SET grade = (substring(s.grade from '\\d{1,2}'))::int::text",
+        "CREATE OR REPLACE FUNCTION \"public\".\"create_student_profile\"",
+        "\"p_grade\" \"text\" DEFAULT '9'::\"text\"",
+        "CREATE OR REPLACE FUNCTION \"public\".\"get_or_create_student\"",
+        "\"p_grade\" \"text\" DEFAULT '6'::\"text\""
+      ]
+    },
+    {
+      "id": "ao10b-source-shape-test",
+      "rcaItem": "RCA-11",
+      "kind": "source_pin",
+      "path": "apps/host/src/__tests__/ao10b-grade-backfill.test.ts",
+      "owner": "testing",
+      "readinessRole": "Pins the migration shape: safe extraction, backup table RLS, write-path defaults, idempotency, and TypeScript normalizeGrade parity.",
+      "status": "repo_guarded",
+      "evidence": [
+        "AO-10b grade backfill: presence + parse non-vacuity",
+        "AO-10b (Part A): extraction parity with TS normalizeGrade",
+        "AO-10b (Part B): write-path RPC defaults flipped to bare grade",
+        "expect(normalizeGrade(input)).toBe(expected);"
+      ]
+    },
+    {
+      "id": "grade-format-live-verifier",
+      "rcaItem": "RCA-11",
+      "kind": "live_verifier",
+      "path": "scripts/verify-grade-format.ts",
+      "owner": "ops",
+      "readinessRole": "Queries live Supabase tables for P5 grade-format drift before launch; requires target DB credentials.",
+      "status": "requires_environment",
+      "evidence": [
+        "npx tsx scripts/verify-grade-format.ts",
+        "=== question_bank: DISTINCT grade values ===",
+        ".from('question_bank')",
+        "=== curriculum_topics: DISTINCT grade values ===",
+        ".from('curriculum_topics')"
+      ]
+    },
+    {
+      "id": "auth-context-read-normalization",
+      "rcaItem": "RCA-11",
+      "kind": "read_path",
+      "path": "packages/lib/src/AuthContext.tsx",
+      "owner": "frontend-platform",
+      "readinessRole": "Keeps legacy prefixed student rows normalized at read time while the AO-10b target DB migration state is being verified.",
+      "status": "repo_guarded",
+      "evidence": [
+        "P5 read-time coercion: legacy rows may hold \"Grade 9\";",
+        "setStudent({ ...studentData, grade: normalizeGrade(studentData.grade) } as Student);",
+        "setStudent({ ...rd.student, grade: normalizeGrade(rd.student.grade) } as Student);",
+        "const metaGrade = normalizeGrade(user.user_metadata?.grade);"
+      ]
+    }
+  ]
+}

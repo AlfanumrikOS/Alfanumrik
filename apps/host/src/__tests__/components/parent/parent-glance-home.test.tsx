@@ -130,7 +130,7 @@ describe('ParentGlanceHome — Snapshot + Moments + Actions (read-only)', () => 
     // Accuracy >= 70 → "doing well" headline.
     expect(screen.getByText('Asha is doing well this week.')).toBeInTheDocument();
     // Stat pills read straight off the passed stats — no recompute.
-    expect(screen.getByText('120')).toBeInTheDocument(); // xp
+    expect(screen.getByText('6')).toBeInTheDocument(); // questions
     expect(screen.getByText('78%')).toBeInTheDocument(); // accuracy
     expect(screen.getByText('45m')).toBeInTheDocument(); // study time
 
@@ -199,8 +199,8 @@ describe('ParentGlanceHome — Snapshot + Moments + Actions (read-only)', () => 
     render(<ParentGlanceHome {...makeProps({ isHi: true })} />);
     // accuracy 78 ≥ 70 → Hindi "doing well" string.
     expect(screen.getByText('Asha इस सप्ताह अच्छा कर रहा है।')).toBeInTheDocument();
-    // Numbers stay Arabic numerals even in Hindi (XP pill).
-    expect(screen.getByText('120')).toBeInTheDocument();
+    // Numbers stay Arabic numerals even in Hindi (Questions pill).
+    expect(screen.getByText('6')).toBeInTheDocument();
   });
 });
 

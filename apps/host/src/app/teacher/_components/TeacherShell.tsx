@@ -38,6 +38,7 @@ import { useTenant } from '@alfanumrik/lib/tenant-context';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import DashboardSidebar, { type SidebarNavItem } from '@alfanumrik/ui/admin-ui/DashboardSidebar';
+import { RoleNavIcon, type RoleIconKey } from '@alfanumrik/ui/navigation/role-nav';
 import type { ModuleKey } from '@alfanumrik/lib/modules/registry';
 import { useCosmicTheme } from '@alfanumrik/lib/cosmic-theme';
 import { Starfield } from '@alfanumrik/ui/cosmic';
@@ -47,7 +48,8 @@ type TeacherNavItem = {
   href: string;
   label: string;
   labelHi: string;
-  icon: string;
+  icon: React.ReactNode;
+  iconKey: RoleIconKey;
   /** When set: hide this item if the module is disabled for this tenant. */
   moduleKey?: ModuleKey;
 };
@@ -81,21 +83,21 @@ async function messagesBadgeFetcher(url: string): Promise<TeacherThreadsResponse
 // stays reachable — no dead links. The "Command Center" entry is the existing
 // /teacher route (the page swaps to the Command Center under the same flag).
 const TEACHER_PRIMARY_SLIM: ReadonlyArray<TeacherNavItem> = [
-  { href: '/teacher', label: 'Command Center', labelHi: 'कमांड सेंटर', icon: '▦' },
-  { href: '/teacher/grade-book', label: 'Gradebook', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },
-  { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
-  { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
-  { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
+  { href: '/teacher', label: 'Class', labelHi: 'कक्षा', icon: <RoleNavIcon iconKey="class" />, iconKey: 'class' },
+  { href: '/teacher/grade-book', label: 'Gradebook', labelHi: 'ग्रेड बुक', icon: <RoleNavIcon iconKey="gradebook" />, iconKey: 'gradebook', moduleKey: 'assignments' },
+  { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: <RoleNavIcon iconKey="assign" />, iconKey: 'assign', moduleKey: 'assignments' },
+  { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: <RoleNavIcon iconKey="messages" />, iconKey: 'messages' },
+  { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: <RoleNavIcon iconKey="reports" />, iconKey: 'reports', moduleKey: 'analytics' },
 ];
 
 // Overflow / account menu — kept reachable in the footer when the slim nav is on.
 const TEACHER_OVERFLOW_ITEMS: ReadonlyArray<TeacherNavItem> = [
-  { href: '/teacher/classes', label: 'Classes', labelHi: 'कक्षाएं', icon: '⊞' },
-  { href: '/teacher/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
-  { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: '⊞', moduleKey: 'assignments' },
-  { href: '/teacher/worksheets', label: 'Worksheets', labelHi: 'वर्कशीट', icon: '⊡', moduleKey: 'lms' },
-  { href: '/teacher/lab-leaderboard', label: 'Lab Leaderboard', labelHi: 'लैब लीडरबोर्ड', icon: '⊙' },
-  { href: '/teacher/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
+  { href: '/teacher/classes', label: 'Classes', labelHi: 'कक्षाएं', icon: <RoleNavIcon iconKey="classes" />, iconKey: 'classes' },
+  { href: '/teacher/students', label: 'Students', labelHi: 'छात्र', icon: <RoleNavIcon iconKey="students" />, iconKey: 'students' },
+  { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: <RoleNavIcon iconKey="submissions" />, iconKey: 'submissions', moduleKey: 'assignments' },
+  { href: '/teacher/worksheets', label: 'Worksheets', labelHi: 'वर्कशीट', icon: <RoleNavIcon iconKey="worksheets" />, iconKey: 'worksheets', moduleKey: 'lms' },
+  { href: '/teacher/lab-leaderboard', label: 'Lab Leaderboard', labelHi: 'लैब लीडरबोर्ड', icon: <RoleNavIcon iconKey="reports" />, iconKey: 'reports' },
+  { href: '/teacher/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: <RoleNavIcon iconKey="profile" />, iconKey: 'profile' },
 ];
 
 export default function TeacherShell({ children }: { children: React.ReactNode }) {

@@ -59,7 +59,7 @@ const customOut = outIdx >= 0 ? args[outIdx + 1] : null;
 // ─── Roots & patterns ───────────────────────────────────────────────────
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const API_ROOT = path.join(REPO_ROOT, 'src', 'app', 'api');
+const API_ROOT = path.join(REPO_ROOT, 'apps', 'host', 'src', 'app', 'api');
 
 const AUTH_PATTERNS: ReadonlyArray<RegExp> = [
   // Direct auth helper calls
@@ -67,7 +67,9 @@ const AUTH_PATTERNS: ReadonlyArray<RegExp> = [
   /\bauthorizeAdmin\s*\(/,
   /\bauthorizeSchoolAdmin\s*\(/,
   /\bauthorizeSchoolApi\s*\(/,
+  /\bauthorizePublicApiKey\s*\(/,
   /\bauthorizeSuperAdmin\s*\(/,
+  /\bresolveCommandCenterContext\s*\(/,
   /\brequireAuth\s*\(/,
   /\bgetServerSession\s*\(/,
   /\bgetSchoolAdmin\s*\(/,
@@ -116,6 +118,8 @@ const TENANT_SCOPING_PATTERNS: ReadonlyArray<RegExp> = [
   /\bauth\.schoolId\b/,
   /\bauth\.studentId\b/,
   /\bauth\.tenantId\b/,
+  /\bschoolId\b/,
+  /\bresolved\.ctx\b/,
 ];
 
 /**
@@ -133,16 +137,29 @@ const AUTH_VIA_IMPORT: ReadonlyArray<RegExp> = [
   /from\s+['"](?:@\/|(?:\.\.\/)+)lib\/admin-session['"]/,
   /from\s+['"](?:@\/|(?:\.\.\/)+)lib\/oauth-manager['"]/,
   /from\s+['"](?:@\/|(?:\.\.\/)+)lib\/api-key-manager['"]/,
+  /from\s+['"]@alfanumrik\/lib\/public-api\/auth['"]/,
+  /from\s+['"]@alfanumrik\/lib\/school-admin-auth['"]/,
+  /from\s+['"]@alfanumrik\/lib\/school-api-auth['"]/,
+  /from\s+['"]@alfanumrik\/lib\/admin-auth['"]/,
+  /from\s+['"]@alfanumrik\/lib\/admin-session['"]/,
+  /from\s+['"]@alfanumrik\/lib\/oauth-manager['"]/,
+  /from\s+['"]@alfanumrik\/lib\/api-key-manager['"]/,
+  /from\s+['"]@alfanumrik\/lib\/school-admin\/command-center-context['"]/,
 ];
 
 const PUBLIC_BY_DESIGN: ReadonlyArray<string> = [
   // Health probes / public config endpoints. Path is the segment under /api.
   '/api/v1/health',
+  '/api/health',
   '/api/school-config',
   '/api/tenant/config',
   '/api/error-report',
   '/api/client-error',
+  '/api/feature-flags',
+  '/api/public/v1/openapi',
+  '/api/alfabot',
   '/api/oauth',                       // OAuth callback, validated by upstream
+  '/api/schools/claim-admin',         // Public one-time school-admin claim token redemption, rate-limited by IP
   '/api/schools/trial',               // B2B lead-gen signup; rate-limited by IP
 ];
 
@@ -151,7 +168,7 @@ const PUBLIC_BY_DESIGN: ReadonlyArray<string> = [
 // The naive "auth + tenant scoping" heuristic massively over-reports REVIEW
 // for routes that ARE properly scoped — they just don't fit the pattern set:
 //
-//   - Cron routes (/api/cron/*) operate on the WHOLE platform under
+//   - Cron routes (/api/cron/* and /api/internal/cron/*) operate on the WHOLE platform under
 //     CRON_SECRET. There's no per-tenant scope to check.
 //   - Super-admin / internal-admin routes (/api/super-admin/*,
 //     /api/internal/admin/*) are PLATFORM-level by design — they fan out
@@ -188,6 +205,12 @@ const AUTO_CLASSIFIERS: ReadonlyArray<AutoClassifier> = [
     label: 'SYSTEM (cron)',
     requiredAuthSignal: [/\bCRON_SECRET\b/, /\bx-cron-secret\b/, /\bverifyCronSecret\s*\(/],
     reason: 'Cron route gated by CRON_SECRET. Operates platform-wide; no per-tenant scope expected.',
+  },
+  {
+    pathPrefix: '/api/internal/cron/',
+    label: 'SYSTEM (cron)',
+    requiredAuthSignal: [/\bCRON_SECRET\b/, /\bx-cron-secret\b/, /\bverifyCronSecret\s*\(/],
+    reason: 'Internal cron route gated by CRON_SECRET. Operates platform-wide; no per-tenant scope expected.',
   },
   {
     pathPrefix: '/api/internal/admin/',

@@ -42,6 +42,11 @@ const HARD_BLOCK_PATTERNS: ReadonlyArray<RegExp> = [
   /\bdickhead\b/i,
   /\bpussy\b/i,
   /\bbollocks\b/i,
+  // Hindi/Hinglish abuse (unambiguous student-facing insults; not curriculum)
+  /\bch+u+t+i+y+\w*/i,
+  /\bharami\w*/i,
+  /(?:^|[^\u0900-\u097FA-Za-z0-9_])च+ू+त+ि?य+ा+(?:$|[^\u0900-\u097FA-Za-z0-9_])/u,
+  /(?:^|[^\u0900-\u097FA-Za-z0-9_])ह+र+ा+म+ी+(?:$|[^\u0900-\u097FA-Za-z0-9_])/u,
   // Slurs ('retard' deliberately EXCLUDED — collides with physics "retardation")
   /\bn[i1]gger\w*/i,
   /\bfaggot\w*/i,

@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-07-09",
+  "source": "RCA-23 incident ID propagation execution",
+  "surfaces": [
+    {
+      "id": "host-proxy-request-id",
+      "kind": "host_proxy",
+      "file": "apps/host/src/proxy.ts",
+      "propagates": "Preserves incoming x-request-id or generates one, forwards it to downstream handlers, and mirrors it as X-Request-Id on the response.",
+      "evidence": [
+        "const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();",
+        "requestHeaders.set('x-request-id', requestId);",
+        "response.headers.set('X-Request-Id', requestId);"
+      ]
+    },
+    {
+      "id": "board-score-host-route",
+      "kind": "host_route",
+      "file": "apps/host/src/app/api/board-score/route.ts",
+      "propagates": "Uses the request ID from the host request as the board-score correlation ID and forwards it to the Supabase Edge Function.",
+      "evidence": [
+        "const correlationId = request.headers.get('x-request-id') ?? crypto.randomUUID();",
+        "'x-request-id': correlationId",
+        "correlation_id: correlationId"
+      ]
+    },
+    {
+      "id": "board-score-edge-function",
+      "kind": "edge_function",
+      "file": "supabase/functions/board-score/index.ts",
+      "propagates": "Reads x-request-id from the Edge request and includes it in structured board-score logs.",
+      "evidence": [
+        "const correlationId = req.headers.get('x-request-id') ?? crypto.randomUUID()",
+        "[board-score][${correlationId}]"
+      ]
+    },
+    {
+      "id": "edge-audit-log-shared",
+      "kind": "edge_shared",
+      "file": "supabase/functions/_shared/edge-audit-log.ts",
+      "propagates": "Provides the shared Edge request ID helper and writes request_id into structured Edge logs and audit metadata.",
+      "evidence": [
+        "export function getRequestId(req: Request): string",
+        "request_id: context.requestId"
+      ]
+    },
+    {
+      "id": "ops-event-related-lookup",
+      "kind": "ops_console",
+      "file": "apps/host/src/app/api/super-admin/observability/events/[id]/route.ts",
+      "propagates": "Operator event detail lookup fetches related events by the same request_id for incident triage.",
+      "evidence": [
+        "Returns a single event plus up to 20 related events (same request_id).",
+        ".eq('request_id', event.request_id)"
+      ]
+    }
+  ]
+}

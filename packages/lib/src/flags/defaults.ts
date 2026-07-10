@@ -12,6 +12,7 @@ import {
 import {
   EDITORIAL_ATLAS_FLAGS,
   CONSUMER_MINIMALISM_FLAGS,
+  TUTOR_FLAGS,
   STUDENT_OS_FLAGS,
   SUBJECTS_OS_FLAGS,
   REVISION_OS_FLAGS,
@@ -75,6 +76,8 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [CONSUMER_MINIMALISM_FLAGS.PARENT_GLANCE_V1]: false,
   [CONSUMER_MINIMALISM_FLAGS.PARENT_UNIFIED_AUTH_V1]: false,
   [CONSUMER_MINIMALISM_FLAGS.PARENT_ENCOURAGE_V1]: false,
+  [TUTOR_FLAGS.V1]: false, // seeded OFF by 20260512075619_ff_tutor_v1.sql
+  [TUTOR_FLAGS.BKT_V1]: false, // seeded OFF by 20260525100002_ff_tutor_bkt_v1.sql
   [TEACHER_COMMAND_CENTER_FLAGS.V1]: false,
   [TEACHER_ASSIGNMENT_LIFECYCLE_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql
   [TEACHER_GRADEBOOK_DEPTH_FLAGS.V1]: false, // seeded OFF by 20260623010000_seed_unseeded_b2b_flags.sql
@@ -107,6 +110,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [WHITE_LABEL_FLAGS.TENANT_MODULE_REGISTRY_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_CONFIG_V2]: false,
   [WHITE_LABEL_FLAGS.EVENT_BUS_V1]: false,
+  ff_institution_entitlements_v1: false, // seeded OFF by 20260615205753_seed_ff_institution_entitlements_v1.sql
 } as const;
 
 /**

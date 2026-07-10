@@ -11,7 +11,8 @@
   "tags": [
     { "name": "Roster", "description": "Students and classes" },
     { "name": "Reports", "description": "Aggregate performance summaries" },
-    { "name": "Marketplace", "description": "Integration catalog" }
+    { "name": "Marketplace", "description": "Integration catalog" },
+    { "name": "Documentation", "description": "Machine-readable public API documentation" }
   ],
   "paths": {
     "/api/public/v1/students": {
@@ -130,6 +131,21 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/ServerError" }
+        }
+      }
+    },
+    "/api/public/v1/openapi": {
+      "get": {
+        "tags": ["Documentation"],
+        "summary": "Serve the Public API v1 OpenAPI specification",
+        "description": "Unauthenticated machine-readable OpenAPI document for the public v1 integration surface. Contains no secrets or tenant data.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The Public API v1 OpenAPI document.",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
           "500": { "$ref": "#/components/responses/ServerError" }
         }
       }

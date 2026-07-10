@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logAdminAction } from '@alfanumrik/lib/admin-auth';
 import { getDomainState, getVercelEnv } from '@alfanumrik/lib/vercel/domains';
 import { logger } from '@alfanumrik/lib/logger';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 /**
  * POST /api/cron/reverify-domains
@@ -188,10 +189,18 @@ export async function POST(request: NextRequest) {
     summary.schools_scanned = schools.length;
 
     if (schools.length === 0) {
+      const durationMs = Date.now() - startTime;
       logger.info('cron/reverify-domains: no verified schools to check');
+      await recordCronJobHealth({
+        path: '/api/cron/reverify-domains',
+        metric: 'ops.cron.reverify_domains.last_success_at',
+        source: 'cron/reverify-domains',
+        durationMs,
+        context: { schools_scanned: 0 },
+      });
       return NextResponse.json({
         success: true,
-        data: { ...summary, duration_ms: Date.now() - startTime },
+        data: { ...summary, duration_ms: durationMs },
       });
     }
 
@@ -277,6 +286,19 @@ export async function POST(request: NextRequest) {
       vercel_skipped: summary.vercel_skipped,
       errors_count: summary.errors.length,
       duration_ms: durationMs,
+    });
+
+    await recordCronJobHealth({
+      path: '/api/cron/reverify-domains',
+      metric: 'ops.cron.reverify_domains.last_success_at',
+      source: 'cron/reverify-domains',
+      durationMs,
+      context: {
+        schools_scanned: summary.schools_scanned,
+        drift_detected: summary.drift_detected,
+        still_healthy: summary.still_healthy,
+        errors_count: summary.errors.length,
+      },
     });
 
     return NextResponse.json({

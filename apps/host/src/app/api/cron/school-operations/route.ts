@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 /**
  * POST /api/cron/school-operations
@@ -558,8 +559,16 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         // Table may not exist — graceful fallback
+        const durationMs = Date.now() - startTime;
         logger.warn('cron/school-operations: school_subscriptions query failed (table may not exist)', {
           error: new Error(error.message),
+        });
+        await recordCronJobHealth({
+          path: '/api/cron/school-operations',
+          metric: 'ops.cron.school_operations.last_success_at',
+          source: 'cron/school-operations',
+          durationMs,
+          context: { skipped: true, reason: 'school_subscriptions table not available' },
         });
         return NextResponse.json({
           success: true,
@@ -567,15 +576,23 @@ export async function POST(request: NextRequest) {
             ...summary,
             skipped: true,
             reason: 'school_subscriptions table not available',
-            duration_ms: Date.now() - startTime,
+            duration_ms: durationMs,
           },
         });
       }
 
       subscriptions = (data ?? []) as SchoolSubscription[];
     } catch (err) {
+      const durationMs = Date.now() - startTime;
       logger.warn('cron/school-operations: school_subscriptions fetch exception', {
         error: err instanceof Error ? err : new Error(String(err)),
+      });
+      await recordCronJobHealth({
+        path: '/api/cron/school-operations',
+        metric: 'ops.cron.school_operations.last_success_at',
+        source: 'cron/school-operations',
+        durationMs,
+        context: { skipped: true, reason: 'school_subscriptions table exception' },
       });
       return NextResponse.json({
         success: true,
@@ -583,16 +600,24 @@ export async function POST(request: NextRequest) {
           ...summary,
           skipped: true,
           reason: 'school_subscriptions table exception',
-          duration_ms: Date.now() - startTime,
+          duration_ms: durationMs,
         },
       });
     }
 
     if (subscriptions.length === 0) {
+      const durationMs = Date.now() - startTime;
       logger.info('cron/school-operations: no active school subscriptions found');
+      await recordCronJobHealth({
+        path: '/api/cron/school-operations',
+        metric: 'ops.cron.school_operations.last_success_at',
+        source: 'cron/school-operations',
+        durationMs,
+        context: { schools_processed: 0 },
+      });
       return NextResponse.json({
         success: true,
-        data: { ...summary, duration_ms: Date.now() - startTime },
+        data: { ...summary, duration_ms: durationMs },
       });
     }
 
@@ -662,6 +687,22 @@ export async function POST(request: NextRequest) {
       metrics_computed: summary.metrics_computed,
       errors_count: summary.errors.length,
       duration_ms: durationMs,
+    });
+
+    await recordCronJobHealth({
+      path: '/api/cron/school-operations',
+      metric: 'ops.cron.school_operations.last_success_at',
+      source: 'cron/school-operations',
+      durationMs,
+      context: {
+        schools_processed: summary.schools_processed,
+        snapshots_created: summary.snapshots_created,
+        invoices_generated: summary.invoices_generated,
+        reminders_sent: summary.reminders_sent,
+        alerts_created: summary.alerts_created,
+        metrics_computed: summary.metrics_computed,
+        errors_count: summary.errors.length,
+      },
     });
 
     return NextResponse.json({

@@ -17,6 +17,7 @@ import { decideFixBatchSize, isPeakHourIST } from '@alfanumrik/lib/qb-fixer/batc
 import { claimFailedBatch } from '@alfanumrik/lib/qb-fixer/claim';
 import { logSweepComplete } from '@alfanumrik/lib/qb-fixer/ops-event';
 import { runFixFailedQuestions } from '@alfanumrik/lib/ai/agents/agents/fix-failed-questions';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 import type { SweepResult } from '@alfanumrik/lib/qb-fixer/types';
 
 export const runtime = 'nodejs';
@@ -105,6 +106,19 @@ async function handleSweep(request: NextRequest): Promise<NextResponse> {
 
   result.duration_ms = Date.now() - t0;
   await logSweepComplete(result, sweepId);
+  await recordCronJobHealth({
+    path: '/api/internal/cron/fix-failed-questions',
+    metric: 'ops.cron.fix_failed_questions.last_success_at',
+    source: 'cron/fix-failed-questions',
+    durationMs: result.duration_ms,
+    context: {
+      claimed: result.claimed,
+      verified: result.verified,
+      marked_unfixable: result.marked_unfixable,
+      still_failed: result.still_failed,
+      errors: result.errors,
+    },
+  });
 
   return NextResponse.json({ sweep_id: sweepId, ...result });
 }

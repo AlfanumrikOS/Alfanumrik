@@ -40,6 +40,7 @@ import {
   RUBRIC_VERSION,
   type QualityScoreInput,
 } from '@alfanumrik/lib/foxy/quality-eval';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -171,6 +172,14 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
   const candidateRows = (candidates ?? []) as ChatMessageRow[];
   if (candidateRows.length === 0) {
+    const durationMs = Date.now() - startTime;
+    await recordCronJobHealth({
+      path: '/api/cron/foxy-quality-sample',
+      metric: 'ops.cron.foxy_quality_sample.last_success_at',
+      source: 'cron/foxy-quality-sample',
+      durationMs,
+      context: { sampled: 0, scored: 0, failed: 0, skipped: 0 },
+    });
     return NextResponse.json({
       success: true,
       sampled: 0,
@@ -204,6 +213,14 @@ export async function POST(request: NextRequest): Promise<Response> {
   const toScore = candidateRows.filter((m) => !alreadyScored.has(m.id)).slice(0, sampleSize);
 
   if (toScore.length === 0) {
+    const durationMs = Date.now() - startTime;
+    await recordCronJobHealth({
+      path: '/api/cron/foxy-quality-sample',
+      metric: 'ops.cron.foxy_quality_sample.last_success_at',
+      source: 'cron/foxy-quality-sample',
+      durationMs,
+      context: { sampled: candidateRows.length, scored: 0, failed: 0, skipped: candidateRows.length },
+    });
     return NextResponse.json({
       success: true,
       sampled: candidateRows.length,
@@ -319,6 +336,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     failed,
     skipped: alreadyScored.size,
     duration_ms: durationMs,
+  });
+
+  await recordCronJobHealth({
+    path: '/api/cron/foxy-quality-sample',
+    metric: 'ops.cron.foxy_quality_sample.last_success_at',
+    source: 'cron/foxy-quality-sample',
+    durationMs,
+    context: { sampled: candidateRows.length, scored, failed, skipped: alreadyScored.size },
   });
 
   return NextResponse.json({

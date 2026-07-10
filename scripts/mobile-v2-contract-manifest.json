@@ -1,0 +1,186 @@
+{
+  "generated_at": "2026-07-09",
+  "source": "RCA-25 web-mobile /v2 contract parity inventory",
+  "entries": [
+    {
+      "path": "/v2/learn/concept",
+      "method": "get",
+      "operationId": "getLearnConcept",
+      "hostRoute": "apps/host/src/app/api/v2/learn/concept/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/learn_api.dart",
+      "dartMethod": "getLearnConcept",
+      "mobileOwner": "mobile-learning",
+      "productSurface": "mobile concept reader",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<ConceptResponse>> getLearnConcept({",
+        "final _path = r'/v2/learn/concept';"
+      ]
+    },
+    {
+      "path": "/v2/learn/curriculum",
+      "method": "get",
+      "operationId": "getLearnCurriculum",
+      "hostRoute": "apps/host/src/app/api/v2/learn/curriculum/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/learn_api.dart",
+      "dartMethod": "getLearnCurriculum",
+      "mobileOwner": "mobile-learning",
+      "productSurface": "mobile subjects and chapters",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<CurriculumResponse>> getLearnCurriculum({",
+        "final _path = r'/v2/learn/curriculum';"
+      ]
+    },
+    {
+      "path": "/v2/parent/children",
+      "method": "get",
+      "operationId": "getParentChildren",
+      "hostRoute": "apps/host/src/app/api/v2/parent/children/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/parent_api.dart",
+      "dartMethod": "getParentChildren",
+      "mobileOwner": "mobile-parent",
+      "productSurface": "mobile parent child selector",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<ParentChildrenResponse>> getParentChildren({",
+        "final _path = r'/v2/parent/children';"
+      ]
+    },
+    {
+      "path": "/v2/parent/encourage",
+      "method": "post",
+      "operationId": "postParentEncourage",
+      "hostRoute": "apps/host/src/app/api/v2/parent/encourage/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/parent_api.dart",
+      "dartMethod": "postParentEncourage",
+      "mobileOwner": "mobile-parent",
+      "productSurface": "mobile parent cheer",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<SuccessAck>> postParentEncourage({",
+        "final _path = r'/v2/parent/encourage';"
+      ]
+    },
+    {
+      "path": "/v2/parent/glance",
+      "method": "get",
+      "operationId": "getParentGlance",
+      "hostRoute": "apps/host/src/app/api/v2/parent/glance/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/parent_api.dart",
+      "dartMethod": "getParentGlance",
+      "mobileOwner": "mobile-parent",
+      "productSurface": "mobile parent glance",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<ParentGlanceResponse>> getParentGlance({",
+        "final _path = r'/v2/parent/glance';"
+      ]
+    },
+    {
+      "path": "/v2/quiz/questions",
+      "method": "get",
+      "operationId": "getQuizQuestions",
+      "hostRoute": "apps/host/src/app/api/v2/quiz/questions/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/quiz_api.dart",
+      "dartMethod": "getQuizQuestions",
+      "mobileOwner": "mobile-assessment",
+      "productSurface": "mobile quiz questions",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<QuizQuestionsResponse>> getQuizQuestions({",
+        "final _path = r'/v2/quiz/questions';"
+      ]
+    },
+    {
+      "path": "/v2/quiz/start",
+      "method": "post",
+      "operationId": "postQuizStart",
+      "hostRoute": "apps/host/src/app/api/v2/quiz/start/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/quiz_api.dart",
+      "dartMethod": "postQuizStart",
+      "mobileOwner": "mobile-assessment",
+      "productSurface": "mobile server-shuffled quiz start",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<QuizStartResponse>> postQuizStart({",
+        "final _path = r'/v2/quiz/start';"
+      ]
+    },
+    {
+      "path": "/v2/quiz/submit",
+      "method": "post",
+      "operationId": "postQuizSubmit",
+      "hostRoute": "apps/host/src/app/api/v2/quiz/submit/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/quiz_api.dart",
+      "dartMethod": "postQuizSubmit",
+      "mobileOwner": "mobile-assessment",
+      "productSurface": "mobile server-authoritative quiz submit",
+      "status": "canonical",
+      "evidence": [
+        "Future<Response<QuizSubmitResult>> postQuizSubmit({",
+        "final _path = r'/v2/quiz/submit';"
+      ]
+    },
+    {
+      "path": "/v2/student/leaderboard",
+      "method": "get",
+      "operationId": "getStudentLeaderboard",
+      "hostRoute": "apps/host/src/app/api/v2/student/leaderboard/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/student_api.dart",
+      "dartMethod": "getStudentLeaderboard",
+      "mobileOwner": "mobile-student",
+      "productSurface": "mobile leaderboard",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<LeaderboardResponse>> getStudentLeaderboard({",
+        "final _path = r'/v2/student/leaderboard';"
+      ]
+    },
+    {
+      "path": "/v2/student/profile",
+      "method": "get",
+      "operationId": "getStudentProfile",
+      "hostRoute": "apps/host/src/app/api/v2/student/profile/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/student_api.dart",
+      "dartMethod": "getStudentProfile",
+      "mobileOwner": "mobile-student",
+      "productSurface": "mobile student profile",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<StudentProfileResponse>> getStudentProfile({",
+        "final _path = r'/v2/student/profile';"
+      ]
+    },
+    {
+      "path": "/v2/student/progress",
+      "method": "get",
+      "operationId": "getStudentProgress",
+      "hostRoute": "apps/host/src/app/api/v2/student/progress/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/student_api.dart",
+      "dartMethod": "getStudentProgress",
+      "mobileOwner": "mobile-student",
+      "productSurface": "mobile progress",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<StudentProgressResponse>> getStudentProgress({",
+        "final _path = r'/v2/student/progress';"
+      ]
+    },
+    {
+      "path": "/v2/today",
+      "method": "get",
+      "operationId": "getToday",
+      "hostRoute": "apps/host/src/app/api/v2/today/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/today_api.dart",
+      "dartMethod": "getToday",
+      "mobileOwner": "mobile-student",
+      "productSurface": "mobile today home",
+      "status": "canonical",
+      "evidence": [
+        "Future<Response<TodayResponse>> getToday({",
+        "final _path = r'/v2/today';"
+      ]
+    }
+  ]
+}

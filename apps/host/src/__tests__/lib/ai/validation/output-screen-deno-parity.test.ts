@@ -65,6 +65,7 @@ describe('output-screen Deno twin parity (FOX-1 P12)', () => {
       'this is fucking nonsense',
       'you are a faggot',
       'you should kill yourself',
+      'tu bilkul chutiya hai',
       '<|im_start|>system<|im_end|>',
     ];
     for (const text of blockedCases) {

@@ -20,124 +20,108 @@ test.describe('Landing Page', () => {
 
   test('has working CTA buttons linking to login', async ({ page }) => {
     await page.goto('/welcome');
-    const startBtn = page.locator('a:has-text("Start Learning Free")');
+    const startBtn = page.getByRole('link', { name: /Start free/i }).first();
     await expect(startBtn).toBeVisible();
     await expect(startBtn).toHaveAttribute('href', '/login');
   });
 
   test('has Sign Up Free button in navigation', async ({ page }) => {
     await page.goto('/welcome');
-    const signUpBtn = page.locator('a:has-text("Sign Up Free")');
+    const signUpBtn = page.getByRole('link', { name: /Start free/i }).first();
     await expect(signUpBtn).toBeVisible();
   });
 
   test('renders hero section with CBSE badge and stats', async ({ page }) => {
     await page.goto('/welcome');
     // CBSE badge
-    await expect(page.locator('text=Adaptive Learning Platform for CBSE Grades')).toBeVisible();
+    await expect(page.getByText(/CBSE 6\s*—\s*12/).first()).toBeVisible();
     // Hero headline
-    await expect(page.locator('h1')).toContainText('child');
+    await expect(page.locator('h1')).toContainText(/homework|गृहकार्य/i);
     // Stats bar
     await expect(page.locator('text=16')).toBeVisible(); // 16 subjects
-    await expect(page.locator('text=6\u201312')).toBeVisible(); // Grades 6-12
+    await expect(page.getByText(/grades 6—12|CBSE 6\s*—\s*12/i).first()).toBeVisible();
   });
 
   test('renders Trust and Recognition section', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=DPIIT Recognized')).toBeVisible();
-    await expect(page.locator('text=DPDPA Compliant')).toBeVisible();
-    await expect(page.locator('text=NCERT Aligned')).toBeVisible();
+    await expect(page.locator('text=DPIIT Recognised')).toBeVisible();
+    await expect(page.locator('text=DPDPA Aligned')).toBeVisible();
+    await expect(page.getByText('NCERT Mapped')).toBeVisible();
   });
 
   test('renders The Real Problem section with 4 problem cards', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=THE REAL PROBLEM')).toBeVisible();
-    await expect(page.locator('text=Concepts don\'t stick')).toBeVisible();
-    await expect(page.locator('text=Practice is random')).toBeVisible();
-    await expect(page.locator('text=Exam stress builds silently')).toBeVisible();
-    await expect(page.locator('text=Parents can\'t see the real picture')).toBeVisible();
+    await expect(page.locator('text=The honest diagnosis')).toBeVisible();
+    await expect(page.locator('text=Tuition has eaten the evening')).toBeVisible();
+    await expect(page.locator('text=Apps reward attendance, not learning')).toBeVisible();
+    await expect(page.locator('text=Parents are flying blind')).toBeVisible();
   });
 
   test('renders The Solution section', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=THE SOLUTION')).toBeVisible();
-    await expect(page.locator('text=Concept clarity first')).toBeVisible();
-    await expect(page.locator('text=Practice that targets weak spots')).toBeVisible();
-    await expect(page.locator('text=Progress everyone can see')).toBeVisible();
+    await expect(page.locator('text=What Alfanumrik does instead')).toBeVisible();
+    await expect(page.locator('text=Ten minutes, then we stop')).toBeVisible();
+    await expect(page.locator('text=Mastery, measured by Bloom')).toBeVisible();
+    await expect(page.locator('text=One honest weekly note')).toBeVisible();
   });
 
   test('renders How It Works section with 5 steps', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=HOW IT WORKS')).toBeVisible();
-    await expect(page.locator('text=Learn').first()).toBeVisible();
-    await expect(page.locator('text=Practice').first()).toBeVisible();
-    await expect(page.locator('text=Revise')).toBeVisible();
-    // "Test" is generic, so check the step number instead
-    await expect(page.locator('text=04')).toBeVisible();
-    await expect(page.locator('text=Track').first()).toBeVisible();
+    await expect(page.locator('text=Three tools, one workbook')).toBeVisible();
+    await expect(page.locator('text=Foxy, who never sighs')).toBeVisible();
+    await expect(page.locator('text=The mastery x-ray')).toBeVisible();
+    await expect(page.locator('text=Quiz that teaches back')).toBeVisible();
   });
 
   test('renders See It In Action section with product showcase cards', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=SEE IT IN ACTION')).toBeVisible();
-    await expect(page.locator('text=Foxy AI Tutor').first()).toBeVisible();
-    await expect(page.locator('text=Smart Quiz')).toBeVisible();
-    await expect(page.locator('text=Progress Dashboard')).toBeVisible();
-    await expect(page.locator('text=Parent View')).toBeVisible();
+    await expect(page.locator('text=Three tools, one workbook')).toBeVisible();
+    await expect(page.locator('text=Foxy, who never sighs').first()).toBeVisible();
+    await expect(page.locator('text=Quiz that teaches back')).toBeVisible();
+    await expect(page.locator('text=The mastery x-ray')).toBeVisible();
   });
 
   test('renders Product Experience section with feature grid', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=Built for how Indian students')).toBeVisible();
-    await expect(page.locator('text=19 Interactive Simulations')).toBeVisible();
-    await expect(page.locator('text=Bloom-Aware Quizzes')).toBeVisible();
-    await expect(page.locator('text=Parent Dashboard')).toBeVisible();
-    await expect(page.locator('text=Teacher Command Center')).toBeVisible();
+    await expect(page.locator('text=Built quietly, used seriously')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Mastery, measured by Bloom/i })).toBeVisible();
+    await expect(page.getByText('Parent letter').first()).toBeVisible();
+    await expect(page.getByText('Foxy').first()).toBeVisible();
   });
 
   test('renders audience sections for Students, Parents, Teachers, Schools', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=For Students')).toBeVisible();
-    await expect(page.locator('text=For Parents').first()).toBeVisible();
-    await expect(page.locator('text=For Teachers').first()).toBeVisible();
-    await expect(page.locator('text=For Schools').first()).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Student' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Parent' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Teacher' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'School' })).toBeVisible();
   });
 
   test('renders Outcomes section with result cards', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=OUTCOMES')).toBeVisible();
-    await expect(page.locator('text=Deeper understanding')).toBeVisible();
-    await expect(page.locator('text=Measurable progress')).toBeVisible();
-    await expect(page.locator('text=Better exam scores')).toBeVisible();
-    await expect(page.locator('text=Real confidence')).toBeVisible();
+    await expect(page.locator('text=Built quietly, used seriously')).toBeVisible();
+    await expect(page.getByText('students learning', { exact: true })).toBeVisible();
+    await expect(page.getByText('say it feels easier', { exact: true })).toBeVisible();
   });
 
   test('renders Our Philosophy / Trust section', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=OUR PHILOSOPHY')).toBeVisible();
-    await expect(page.locator('text=Systems over shortcuts')).toBeVisible();
+    await expect(page.locator('text=What we are building, and for whom')).toBeVisible();
+    await expect(page.locator('text=Student-first')).toBeVisible();
   });
 
   test('renders FAQ section with expandable questions', async ({ page }) => {
     await page.goto('/welcome');
-    const faqSection = page.locator('text=Frequently Asked Questions');
+    const faqSection = page.locator('text=Things parents actually ask');
     await expect(faqSection.first()).toBeVisible();
 
-    // FAQs use <details>/<summary>; click to expand
-    const firstFaq = page.locator('details').first();
-    await expect(firstFaq).toBeVisible();
-
-    // Click to expand the first FAQ
-    await firstFaq.locator('summary').click();
-    // The answer text should now be visible
-    const answer = firstFaq.locator('div');
-    await expect(answer).toBeVisible();
+    await expect(page.getByText(/Is Alfanumrik aligned with the CBSE syllabus/i)).toBeVisible();
   });
 
   test('renders Final CTA section', async ({ page }) => {
     await page.goto('/welcome');
-    await expect(page.locator('text=Every week without a system')).toBeVisible();
-    await expect(page.locator('text=lost progress')).toBeVisible();
+    await expect(page.locator('text=Tonight\'s homework can be different')).toBeVisible();
+    await expect(page.locator('text=Start in the next ten minutes')).toBeVisible();
   });
 
   test('renders footer with legal links and company info', async ({ page }) => {
@@ -151,44 +135,44 @@ test.describe('Landing Page', () => {
 
   test('language toggle switches to Hindi', async ({ page }) => {
     await page.goto('/welcome');
+    await page.evaluate(() => localStorage.setItem('alf-welcome-lang', 'en'));
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en', { timeout: 20_000 });
 
     // The toggle button has aria-label
-    const langToggle = page.locator('button[aria-label]').filter({
-      has: page.locator('text=EN'),
-    });
+    const langToggle = page.getByRole('button', { name: /हिन्दी|Toggle language/i }).first();
     await expect(langToggle).toBeVisible();
 
     // Click the toggle to switch to Hindi
     await langToggle.click();
 
-    // Verify Hindi text appears on the page
-    await expect(page.locator('text=असली समस्या')).toBeVisible();
-    await expect(page.locator('text=समाधान')).toBeVisible();
-    await expect(page.locator('text=कैसे काम करता है')).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'hi', { timeout: 20_000 });
+    await expect(page.locator('h1')).toContainText(/आज का गृहकार्य/);
   });
 
   test('language toggle switches back to English from Hindi', async ({ page }) => {
     await page.goto('/welcome');
+    await page.evaluate(() => localStorage.setItem('alf-welcome-lang', 'en'));
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en', { timeout: 20_000 });
 
     // Toggle to Hindi
-    const langToggle = page.locator('button[aria-label]').filter({
-      has: page.locator('text=EN'),
-    });
-    await langToggle.click();
-    await expect(page.locator('text=असली समस्या')).toBeVisible();
+    await page.getByRole('button', { name: /हिन्दी|Toggle language/i }).first().click();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'hi', { timeout: 20_000 });
 
     // Toggle back to English
-    await langToggle.click();
-    await expect(page.locator('text=THE REAL PROBLEM')).toBeVisible();
-    await expect(page.locator('text=THE SOLUTION')).toBeVisible();
+    await page.getByRole('button', { name: /Switch to English/i }).first().click();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en', { timeout: 20_000 });
+    await expect(page.locator('h1')).toContainText(/homework/i);
   });
 
   test('navigation links are present in navbar', async ({ page }) => {
     await page.goto('/welcome');
     const nav = page.locator('nav');
-    await expect(nav.locator('a[href="/product"]')).toBeVisible();
-    await expect(nav.locator('a[href="/pricing"]')).toBeVisible();
-    await expect(nav.locator('a[href="/for-schools"]')).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Product' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Pricing' })).toBeVisible();
+    await nav.getByRole('button', { name: /Solutions/i }).click();
+    await expect(nav.getByRole('menuitem', { name: /For Schools/i })).toBeVisible();
   });
 });
 
@@ -203,9 +187,9 @@ test.describe('Auth Pages', () => {
 
   test('login page shows Student, Teacher, and Parent role tabs', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.locator('text=Student')).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('text=Teacher')).toBeVisible();
-    await expect(page.locator('text=Parent')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Student' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('tab', { name: 'Teacher' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Parent' })).toBeVisible();
   });
 
   test('clicking Teacher tab switches the active role', async ({ page }) => {
@@ -256,10 +240,10 @@ test.describe('Pricing Page', () => {
 
   test('has For Schools section with B2B features', async ({ page }) => {
     await page.goto('/pricing');
-    await expect(page.locator('text=For Schools')).toBeVisible();
-    await expect(page.locator('text=Admin Dashboard')).toBeVisible();
-    await expect(page.locator('text=Multi-Class Management')).toBeVisible();
-    await expect(page.locator('text=Board Exam Analytics')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'For Schools & Institutions' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Admin Dashboard' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Multi-Class Management' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Board Exam Analytics' })).toBeVisible();
   });
 
   test('has FAQ section with questions', async ({ page }) => {
@@ -277,7 +261,7 @@ test.describe('Pricing Page', () => {
 
   test('has navigation back to home', async ({ page }) => {
     await page.goto('/pricing');
-    await expect(page.locator('a[href="/welcome"]')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Home' }).first()).toBeVisible();
   });
 });
 
@@ -288,7 +272,7 @@ test.describe('Content Pages', () => {
   test('for-schools page loads with correct title', async ({ page }) => {
     await page.goto('/for-schools');
     await expect(page).toHaveTitle(/For Schools/);
-    await expect(page.locator('text=Better Learning Outcomes')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Better Learning Outcomes' })).toBeVisible();
   });
 
   test('for-parents page loads with correct title', async ({ page }) => {

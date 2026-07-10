@@ -8,9 +8,8 @@
  *
  * Security:
  * - Session is read via the server client (respects RLS, validates JWT)
- * - student ownership of the link is verified before any mutation
- * - The actual status UPDATE uses the admin client to bypass RLS (the
- *   guardian_student_links RLS does not grant students write access)
+ * - student ownership of the link is verified inside an auth.uid()-anchored RPC
+ * - the route never imports the service-role admin client
  *
  * Response: { success: true, status: 'approved' | 'rejected' }
  *           { success: false, error: string }
@@ -18,13 +17,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
-import { findLinkById } from '@alfanumrik/lib/domains/relationship';
 import { logger } from '@alfanumrik/lib/logger';
 import { isValidUUID } from '@alfanumrik/lib/sanitize';
 
 const VALID_ACTIONS = ['approve', 'reject'] as const;
 type LinkAction = typeof VALID_ACTIONS[number];
+
+type ReviewLinkRpcResult = {
+  success?: boolean;
+  status?: string;
+  error_code?: string;
+  error?: string;
+};
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
@@ -65,76 +69,65 @@ export async function POST(request: NextRequest) {
       return err('action must be "approve" or "reject"', 400);
     }
 
-    const safeAction = action as LinkAction;
+    const newStatus = (action as LinkAction) === 'approve' ? 'approved' : 'rejected';
 
-    // ── 3. Resolve the student record for the authenticated user ──────────
-    // Use admin client for this read so we can look up by auth_user_id
-    // without depending on RLS policies that may vary.
-    const { data: student, error: studentError } = await supabaseAdmin
-      .from('students')
-      .select('id')
-      .eq('auth_user_id', user.id)
-      .maybeSingle();
+    // ── 3. Review the link through an auth.uid()-scoped DB boundary ────────
+    const { data, error: rpcError } = await supabase.rpc('student_review_guardian_link', {
+      p_link_id: linkId,
+      p_action: newStatus,
+    });
 
-    if (studentError) {
-      logger.error('approve_link: student lookup failed', {
-        error: new Error(studentError.message),
-      });
-      return err('Internal server error', 500);
-    }
-
-    if (!student) {
-      return err('Student account not found for this session', 403);
-    }
-
-    // ── 4. Fetch the pending link and verify the student owns it ──────────
-    const linkResult = await findLinkById(linkId, 'pending');
-
-    if (!linkResult.ok) {
-      logger.error('approve_link: link fetch failed', {
-        error: new Error(linkResult.error),
-        linkId,
-      });
-      return err('Internal server error', 500);
-    }
-
-    const link = linkResult.data;
-
-    if (!link) {
-      // Either the link does not exist or it is not in 'pending' state
-      return err('Link request not found or already processed', 404);
-    }
-
-    if (link.studentId !== student.id) {
-      // The authenticated student does not own this link — reject silently as 404
-      // to avoid leaking information about other students' links
-      return err('Link request not found or already processed', 404);
-    }
-
-    // ── 5. Apply the status change via admin client ────────────────────────
-    const newStatus = safeAction === 'approve' ? 'approved' : 'rejected';
-
-    const { error: updateError } = await supabaseAdmin
-      .from('guardian_student_links')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', linkId);
-
-    if (updateError) {
-      logger.error('approve_link: status update failed', {
-        error: new Error(updateError.message),
+    if (rpcError) {
+      logger.error('approve_link: rpc failed', {
+        error: new Error(rpcError.message),
         linkId,
         newStatus,
       });
       return err('Failed to update link status', 500);
     }
 
+    const result = (data ?? {}) as ReviewLinkRpcResult;
+
+    if (!result.success) {
+      if (result.error_code === 'unauthorized') {
+        return err('Unauthorized', 401);
+      }
+
+      if (result.error_code === 'invalid_action') {
+        return err('action must be "approve" or "reject"', 400);
+      }
+
+      if (result.error_code === 'no_student') {
+        return err('Student account not found for this session', 403);
+      }
+
+      if (result.error_code === 'not_found') {
+        return err('Link request not found or already processed', 404);
+      }
+
+      logger.error('approve_link: rpc returned failure', {
+        error: new Error(result.error ?? 'Unknown link review failure'),
+        linkId,
+        errorCode: result.error_code,
+      });
+      return err('Failed to update link status', 500);
+    }
+
+    if (result.status !== 'approved' && result.status !== 'rejected') {
+      logger.error('approve_link: rpc returned invalid status', {
+        error: new Error(`Invalid status: ${String(result.status)}`),
+        linkId,
+      });
+      return err('Failed to update link status', 500);
+    }
+
     logger.info('approve_link: link status updated', {
       linkId,
-      newStatus,
-      studentId: student.id,
+      newStatus: result.status,
+      authUserId: user.id,
     });
 
-    return NextResponse.json({ success: true, status: newStatus });
+    return NextResponse.json({ success: true, status: result.status });
   } catch (err_) {
     logger.error('approve_link: unexpected error', {
       error: err_ instanceof Error ? err_ : new Error(String(err_)),

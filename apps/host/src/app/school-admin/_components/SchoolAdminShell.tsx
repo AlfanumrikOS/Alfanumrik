@@ -12,6 +12,8 @@ import { useSchoolAdminRole } from '@alfanumrik/lib/use-school-admin-role';
 import { usePrincipalAi } from '@alfanumrik/lib/use-principal-ai';
 import { useCosmicTheme } from '@alfanumrik/lib/cosmic-theme';
 import { Starfield } from '@alfanumrik/ui/cosmic';
+import RoleBottomNav from '@alfanumrik/ui/navigation/RoleBottomNav';
+import { ROLE_NAV_CONFIGS, visibleRoleNavItems } from '@alfanumrik/ui/navigation/role-nav';
 import ConsolidatedSchoolNav from './ConsolidatedSchoolNav';
 import { SchoolAdminContext } from '@alfanumrik/lib/school-admin/school-admin-context';
 
@@ -69,6 +71,35 @@ function writeModuleCache(authUserId: string | null, data: Record<string, boolea
     );
   } catch { /* quota / disabled — fail silently */ }
 }
+
+function hasSupabaseSessionHint(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key?.startsWith('sb-') && key.endsWith('-auth-token')) {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) continue;
+        let parsed: { access_token?: unknown; currentSession?: { access_token?: unknown } } | null = null;
+        try {
+          parsed = JSON.parse(raw) as { access_token?: unknown; currentSession?: { access_token?: unknown } } | null;
+        } catch {
+          continue;
+        }
+        if (
+          (parsed && typeof parsed.access_token === 'string' && parsed.access_token.length > 0) ||
+          (parsed?.currentSession && typeof parsed.currentSession.access_token === 'string' && parsed.currentSession.access_token.length > 0)
+        ) {
+          return true;
+        }
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 /** Neutral, stable placeholder painted while the name is genuinely unresolved.
  *  An em-dash reads as "loading" and never masquerades as a real school whose
  *  first letter would later change. */
@@ -139,7 +170,7 @@ export function resolveCachedSchoolName(authUserId: string | null, tenantSchoolN
 export default function SchoolAdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { authUserId, isHi, setLanguage } = useAuth();
+  const { authUserId, isHi, isLoading: authLoading, setLanguage } = useAuth();
   const tenant = useTenant();
   // Cosmic Phase 3: flag-gated dark reskin (gold/steel via data-role="school").
   // OFF ⇒ cosmicEnabled false ⇒ byte-identical to before this change.
@@ -203,8 +234,9 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
     tenant.schoolName || schoolName || emailPrefix || SCHOOL_NAME_PLACEHOLDER;
 
   useEffect(() => {
+    if (authLoading && hasSupabaseSessionHint()) return;
     if (!authUserId) {
-      router.push('/login');
+      router.replace('/login');
       return;
     }
     // Tenant context is authoritative when present — mirror it into the cache so
@@ -255,7 +287,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           },
         );
     }
-  }, [authUserId, tenant.schoolName, tenant.branding.logoUrl, tenant.schoolId, router]);
+  }, [authLoading, authUserId, tenant.schoolName, tenant.branding.logoUrl, tenant.schoolId, router]);
 
   // Fetch module enablement once per shell mount. /api/school-admin/modules
   // requires `school.manage_modules` permission; admins without it land
@@ -288,6 +320,15 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
       cancelled = true;
     };
   }, [authUserId]);
+
+  if (!authUserId) {
+    return (
+      <main
+        className="min-h-dvh bg-surface-2 p-6"
+        aria-busy={authLoading ? 'true' : undefined}
+      />
+    );
+  }
 
   // NOTE: this shell intentionally does NOT short-circuit on any Editorial-Atlas
   // flag. The teacher/parent shells dispatch to their own Atlas bodies that carry
@@ -322,6 +363,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
         adminRole={adminRole}
         reportsDepthEnabled={reportsDepthOn}
         principalAiEnabled={principalAiOn}
+        disableMobileHamburger={true}
         footer={
           <div className="flex items-center justify-between gap-2">
             {(tenant.branding.showPoweredBy || tenant.schoolId) ? (
@@ -353,6 +395,14 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
       >
         <main className={`flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
       </SchoolAdminContext.Provider>
+      <RoleBottomNav
+        config={ROLE_NAV_CONFIGS.schoolAdmin}
+        items={visibleRoleNavItems(ROLE_NAV_CONFIGS.schoolAdmin.items, { moduleEnablement })}
+        isHi={isHi}
+        pathname={pathname || ''}
+        onNavigate={(href) => router.push(href)}
+        activeColor={primaryColor}
+      />
     </div>
   );
 }

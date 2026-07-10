@@ -1,0 +1,122 @@
+{
+  "_comment": "RCA-17 operations registry for scheduled backend jobs. Keep this in exact sync with vercel.json crons; src/__tests__/api/cron-job-registry.test.ts enforces coverage, schedule parity, and non-empty owner/idempotency/metric/alert metadata.",
+  "jobs": [
+    {
+      "path": "/api/cron/school-operations",
+      "platform": "vercel",
+      "owner": "school-operations",
+      "schedule": "0 2 * * *",
+      "idempotencyKey": "school-operations:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.school_operations.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/daily-cron",
+      "platform": "vercel",
+      "owner": "learning-platform",
+      "schedule": "30 2 * * *",
+      "idempotencyKey": "daily-cron:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.daily_cron.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/irt-calibrate",
+      "platform": "vercel",
+      "owner": "assessment",
+      "schedule": "50 2 * * *",
+      "idempotencyKey": "irt-calibrate:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.irt_calibrate.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/reconcile-payments",
+      "platform": "vercel",
+      "owner": "payments",
+      "schedule": "*/30 * * * *",
+      "idempotencyKey": "reconcile-payments:yyyy-mm-dd-hh-mi-window",
+      "lastSuccessMetric": "ops.cron.reconcile_payments.last_success_at",
+      "alertThreshold": "no success for 90m"
+    },
+    {
+      "path": "/api/cron/payments-health",
+      "platform": "vercel",
+      "owner": "payments",
+      "schedule": "*/10 * * * *",
+      "idempotencyKey": "payments-health:yyyy-mm-dd-hh-mi-window",
+      "lastSuccessMetric": "ops.cron.payments_health.last_success_at",
+      "alertThreshold": "no success for 30m"
+    },
+    {
+      "path": "/api/cron/expired-subscriptions",
+      "platform": "vercel",
+      "owner": "payments",
+      "schedule": "15 */6 * * *",
+      "idempotencyKey": "expired-subscriptions:yyyy-mm-dd-hh",
+      "lastSuccessMetric": "ops.cron.expired_subscriptions.last_success_at",
+      "alertThreshold": "no success for 14h"
+    },
+    {
+      "path": "/api/cron/account-purge",
+      "platform": "vercel",
+      "owner": "privacy-ops",
+      "schedule": "0 4 * * *",
+      "idempotencyKey": "account-purge:deletion_log_id",
+      "lastSuccessMetric": "ops.cron.account_purge.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/pre-debit-notice",
+      "platform": "vercel",
+      "owner": "payments",
+      "schedule": "0 */6 * * *",
+      "idempotencyKey": "pre-debit-notice:subscription_id:notice_date",
+      "lastSuccessMetric": "ops.cron.pre_debit_notice.last_success_at",
+      "alertThreshold": "no success for 14h"
+    },
+    {
+      "path": "/api/cron/board-score",
+      "platform": "vercel",
+      "owner": "assessment",
+      "schedule": "0 3 * * *",
+      "idempotencyKey": "board-score:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.board_score.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/reverify-domains",
+      "platform": "vercel",
+      "owner": "school-operations",
+      "schedule": "45 3 * * *",
+      "idempotencyKey": "reverify-domains:domain_id:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.reverify_domains.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/foxy-quality-sample",
+      "platform": "vercel",
+      "owner": "ai-quality",
+      "schedule": "40 3 * * *",
+      "idempotencyKey": "foxy-quality-sample:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.foxy_quality_sample.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/internal/cron/fix-failed-questions",
+      "platform": "vercel",
+      "owner": "content-quality",
+      "schedule": "*/15 * * * *",
+      "idempotencyKey": "fix-failed-questions:question_id",
+      "lastSuccessMetric": "ops.cron.fix_failed_questions.last_success_at",
+      "alertThreshold": "no success for 45m"
+    },
+    {
+      "path": "/api/cron/streak-guardian",
+      "platform": "vercel",
+      "owner": "learning-platform",
+      "schedule": "30 16 * * *",
+      "idempotencyKey": "streak-guardian:student_id:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.streak_guardian.last_success_at",
+      "alertThreshold": "no success for 26h"
+    }
+  ]
+}

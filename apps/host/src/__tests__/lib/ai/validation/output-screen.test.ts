@@ -29,6 +29,9 @@ describe('screenStudentFacingText — FOX-1 P12 output backstop', () => {
       ['self-harm incitement', 'You should just kill yourself.'],
       ['self-harm (kys)', 'Nobody likes you, kys.'],
       ['self-harm (go die)', 'Go and die already.'],
+      ['Hindi abuse (Devanagari)', 'यह जवाब चूतिया है।'],
+      ['Hindi abuse (Hinglish)', 'Tu bilkul chutiya hai.'],
+      ['Hindi abuse (harami)', 'Aise harami jaise mat bolo.'],
       // ── Chat/template injection framings (FOX-1 Cycle 4) — these are the
       // UNAMBIGUOUS chat-template markers that can never appear in CBSE/CS prose
       // and must STILL block. (Bare `<system>`/`[inst]` markup is now allowed —
@@ -61,6 +64,7 @@ describe('screenStudentFacingText — FOX-1 P12 output backstop', () => {
       ['assassination (History)', 'The assassination of Mahatma Gandhi took place in January 1948.'],
       ['passage / assess', 'Read the passage carefully and assess the author\'s argument.'],
       ['Hindi science', 'प्रकाश संश्लेषण के दौरान पौधे भोजन बनाते हैं।'],
+      ['Hindi social science', 'हरित क्रांति ने कृषि उत्पादन में वृद्धि की।'],
       // ── FOX-1 Cycle 4 CS-curriculum exemption (assessment-approved) ──
       // A grade 11-12 Computer Science answer can show literal `<system>`/`[inst]`
       // markup as a pedagogical example. Bare (un-paired) markup must now PASS;

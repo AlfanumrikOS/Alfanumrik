@@ -28,8 +28,9 @@ import { logAudit } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { classifyIntent, routeIntent } from '@alfanumrik/lib/ai';
+import { screenStudentFacingText } from '@alfanumrik/lib/ai/validation/output-screen';
 import type { RagSource, DiagramRef, ChatMessage } from './constants';
-import { resolveTenantAiOverrides } from './quota';
+import { refundQuota, resolveTenantAiOverrides } from './quota';
 
 export async function runLegacyFoxyFlow(params: {
   studentId: string;
@@ -113,6 +114,54 @@ export async function persistLegacyFoxyResponse(params: {
   legacy: Awaited<ReturnType<typeof runLegacyFoxyFlow>>;
   logFoxyAsk: (tokens: number | null) => void;
 }): Promise<Response> {
+  const outputScreen = screenStudentFacingText(params.legacy.response, {
+    grade: params.grade,
+    subject: params.subject,
+  });
+  if (!outputScreen.safe) {
+    logger.warn('foxy.output.safety_blocked', {
+      subject: params.subject,
+      grade: params.grade,
+      mode: params.mode,
+      categories: outputScreen.categories,
+      traceId: params.legacy.traceId,
+      flow: 'legacy-intent-router',
+    });
+    logAudit(params.authUserId, {
+      action: 'foxy.chat.safety_blocked',
+      resourceType: 'foxy_sessions',
+      resourceId: params.resolvedSessionId,
+      details: {
+        subject: params.subject,
+        grade: params.grade,
+        mode: params.mode,
+        categories: outputScreen.categories,
+        traceId: params.legacy.traceId,
+        flow: 'legacy-intent-router',
+      },
+    });
+    await refundQuota(params.studentId, 'foxy_chat');
+    try {
+      params.logFoxyAsk(0);
+    } catch (telemetryErr) {
+      logger.warn('foxy_ask_telemetry_failed', {
+        error: telemetryErr instanceof Error ? telemetryErr.message : String(telemetryErr),
+        studentId: params.studentId,
+      });
+    }
+    return NextResponse.json({
+      success: true,
+      response: '',
+      sessionId: params.resolvedSessionId,
+      quotaRemaining: typeof params.remaining === 'number' ? params.remaining + 1 : params.remaining,
+      tokensUsed: 0,
+      groundingStatus: 'hard-abstain' as const,
+      abstainReason: 'upstream_error' as const,
+      suggestedAlternatives: [],
+      traceId: params.legacy.traceId,
+    });
+  }
+
   // Persist turns (non-fatal)
   const now = new Date().toISOString();
   try {

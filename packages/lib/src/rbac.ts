@@ -302,11 +302,11 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
   // mode 'assigned'). Resolved via explicit joins against the prod schema:
   //   teachers(auth_user_id, is_active)
   //     → class_teachers(teacher_id, class_id, is_active)
-  //     → class_students(class_id, student_id, is_active)
+  //     → class_enrollments(class_id, student_id, is_active)
   // Mirrors the ownership pattern in /api/pulse/class/[classId] and the
-  // "Teachers can view students in their classes" RLS policy. No RPC — the
-  // previously called is_teacher_of_student RPC does not exist in the prod
-  // baseline. Fail-closed: any error on any step → no access via this path.
+  // TSB-4 canonical membership table. No RPC — the previously called
+  // is_teacher_of_student RPC does not exist in the prod baseline. Fail-closed:
+  // any error on any step → no access via this path.
   try {
     const { data: teacher, error: teacherErr } = await supabase
       .from('teachers')
@@ -328,7 +328,7 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
 
       if (!classesErr && classIds.length > 0) {
         const { data: assignedRows, error: assignedErr } = await supabase
-          .from('class_students')
+          .from('class_enrollments')
           .select('id')
           .eq('student_id', studentId)
           .eq('is_active', true)

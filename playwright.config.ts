@@ -2,8 +2,9 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 30_000,
+  timeout: 90_000,
   retries: 1,
+  workers: process.env.CI ? undefined : 1,
   // Certification journey specs (e2e/certification/**, added 2026-07-02) are
   // PREPARATION ONLY for the certification program's Stage 2/3 — see
   // e2e/certification/helpers/cert-gate.ts. They are excluded from

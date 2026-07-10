@@ -33,8 +33,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { normalizeIP, isValidLinkCode } from '@alfanumrik/lib/sanitize';
 import { deliverEmail, pickLocaleFromAcceptLanguage } from '@alfanumrik/lib/email-delivery';
@@ -45,36 +45,15 @@ import {
   computeOtpExpiry,
   REQUEST_OTP_IP_LIMIT,
   REQUEST_OTP_IP_WINDOW_MS,
-  RESEND_COOLDOWN_MS,
-  OTP_TTL_MS,
 } from '@alfanumrik/lib/link-code-otp';
 
-/**
- * Helper: write a row to auth_audit_log without ever throwing — audit
- * failures must not block the user-visible response.
- */
-async function audit(
-  authUserId: string | null,
-  event: string,
-  ipAddress: string,
-  userAgent: string | null,
-  metadata: Record<string, unknown>
-): Promise<void> {
-  try {
-    await supabaseAdmin.from('auth_audit_log').insert({
-      auth_user_id: authUserId,
-      event_type: event,
-      ip_address: ipAddress,
-      user_agent: userAgent,
-      metadata,
-    });
-  } catch (err) {
-    logger.warn('link_code_otp_audit_insert_failed', {
-      event,
-      reason: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
+type RequestOtpRpcResult = {
+  success?: boolean;
+  should_send_email?: boolean;
+  challenge_id?: string;
+  student_name?: string | null;
+  error?: string;
+};
 
 /**
  * Constant-shape success response. Used for every code path that surfaces
@@ -98,10 +77,6 @@ export async function POST(request: NextRequest) {
     REQUEST_OTP_IP_WINDOW_MS
   );
   if (!rl.allowed) {
-    await audit(null, 'link_code_otp_request_rate_limited', ip, userAgent, {
-      limit: REQUEST_OTP_IP_LIMIT,
-      windowMs: REQUEST_OTP_IP_WINDOW_MS,
-    });
     return NextResponse.json(
       { success: false, error: 'Too many requests. Try again later.' },
       {
@@ -146,131 +121,40 @@ export async function POST(request: NextRequest) {
   // path — same silent-success shape, so an attacker can't distinguish a
   // rejected-format probe from a valid-but-unknown code (enumeration-safe).
   if (!isValidLinkCode(linkCode)) {
-    await audit(user.id, 'link_code_otp_request_invalid_format', ip, userAgent, {
-      link_code_prefix: linkCode.slice(0, 2),
-      length: linkCode.length,
-    });
     return silentSuccess();
   }
 
-  // ── 4. Resolve link code → student (best-effort, no leakage) ──────────
-  // We accept either students.invite_code OR students.link_code, matching
-  // the production link_guardian_via_invite_code RPC. If neither matches,
-  // we still return success — see route doc comment.
-  let studentId: string | null = null;
-  let studentName: string | null = null;
-  try {
-    const { data: student } = await supabaseAdmin
-      .from('students')
-      .select('id, name, invite_code, link_code, is_active')
-      .or(`invite_code.eq.${linkCode},link_code.eq.${linkCode}`)
-      .eq('is_active', true)
-      .maybeSingle();
-    if (student) {
-      studentId = student.id as string;
-      studentName = (student.name as string | null) ?? null;
-    }
-  } catch (err) {
-    logger.warn('link_code_otp_request_student_lookup_failed', {
-      reason: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  if (!studentId) {
-    // No match. Audit the attempt (so operators can spot brute-force
-    // patterns) but return the same shape as the happy path so the
-    // attacker can't tell the difference.
-    await audit(user.id, 'link_code_otp_request_no_match', ip, userAgent, {
-      link_code_prefix: linkCode.slice(0, 2),
-    });
-    return silentSuccess();
-  }
-
-  // ── 5. Resend cooldown (per (link_code, auth_user_id)) ────────────────
-  // We look up the most recent active challenge for this pair. If one was
-  // created within RESEND_COOLDOWN_MS, we silently no-op — same response
-  // shape as a fresh send.
-  try {
-    const cooldownIso = new Date(Date.now() - RESEND_COOLDOWN_MS).toISOString();
-    const { data: recent } = await supabaseAdmin
-      .from('link_code_otp_challenges')
-      .select('id, created_at')
-      .eq('link_code', linkCode)
-      .eq('auth_user_id', user.id)
-      .gte('created_at', cooldownIso)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (recent) {
-      await audit(user.id, 'link_code_otp_request_cooldown_skip', ip, userAgent, {
-        challenge_id: recent.id,
-      });
-      return silentSuccess();
-    }
-  } catch (err) {
-    logger.warn('link_code_otp_request_cooldown_check_failed', {
-      reason: err instanceof Error ? err.message : String(err),
-    });
-    // Fall through: better to risk a duplicate send than block legitimate users.
-  }
-
-  // ── 6. Create challenge row ───────────────────────────────────────────
-  // We insert FIRST so we have the row id to use as the per-row salt. The
-  // alternative — generate-hash-then-insert — would force a separate salt
-  // column and one more random source. Doing it this way keeps the schema
-  // narrow without weakening the salt (a UUID is 122 bits of entropy).
+  // ── 4. Ask the scoped RPC to resolve code, enforce cooldown, and insert
+  //        the challenge row. The route keeps OTP generation/email only.
   const otp = generateOtp();
+  const challengeId = randomUUID();
   const expiresAt = computeOtpExpiry();
+  const otpHash = hashOtp(otp, challengeId);
 
-  let challengeId: string | null = null;
+  let rpcResult: RequestOtpRpcResult = {};
   try {
-    // Step 6a: pre-allocate the row with a placeholder hash. We use a
-    // sentinel that no real hashOtp() output can collide with so verify()
-    // never accidentally accepts it.
-    const placeholder = 'pending';
-    const { data: inserted, error: insertErr } = await supabaseAdmin
-      .from('link_code_otp_challenges')
-      .insert({
-        link_code: linkCode,
-        auth_user_id: user.id,
-        student_id: studentId,
-        otp_hash: placeholder,
-        expires_at: expiresAt.toISOString(),
-        attempt_count: 0,
-      })
-      .select('id')
-      .single();
-    if (insertErr || !inserted) {
-      throw new Error(insertErr?.message ?? 'no row returned');
-    }
-    challengeId = inserted.id as string;
-
-    // Step 6b: write the real hash now that we have the row id (= salt).
-    const realHash = hashOtp(otp, challengeId);
-    const { error: updateErr } = await supabaseAdmin
-      .from('link_code_otp_challenges')
-      .update({ otp_hash: realHash })
-      .eq('id', challengeId);
-    if (updateErr) {
-      throw new Error(updateErr.message);
-    }
+    const { data, error } = await supabase.rpc('parent_request_link_code_otp', {
+      p_link_code: linkCode,
+      p_challenge_id: challengeId,
+      p_otp_hash: otpHash,
+      p_expires_at: expiresAt.toISOString(),
+      p_ip_address: ip,
+      p_user_agent: userAgent,
+    });
+    if (error) throw error;
+    rpcResult = (data ?? {}) as RequestOtpRpcResult;
   } catch (err) {
-    logger.error('link_code_otp_request_challenge_insert_failed', {
+    logger.error('link_code_otp_request_rpc_failed', {
       error: err instanceof Error ? err : new Error(String(err)),
     });
-    // Best-effort cleanup of the placeholder row if step 6b failed.
-    if (challengeId) {
-      try {
-        await supabaseAdmin.from('link_code_otp_challenges').delete().eq('id', challengeId);
-      } catch { /* ignore — janitor trigger will eventually sweep */ }
-    }
-    // Hard failure here is worth surfacing — the OTP wasn't issued. Use
-    // 200 + sent:false so the UI doesn't expose an error path that leaks
-    // 'code matched but server is broken'. The caller logs it.
     return silentSuccess();
   }
 
-  // ── 7. Send email (fire-and-forget) ───────────────────────────────────
+  if (rpcResult.success !== true || !rpcResult.should_send_email) {
+    return silentSuccess();
+  }
+
+  // ── 5. Send email (fire-and-forget) ───────────────────────────────────
   // The guardian's email comes from their auth session — that's the only
   // address we know they own. NOTE: deliverEmail() never throws.
   const locale = pickLocaleFromAcceptLanguage(request.headers.get('accept-language'));
@@ -283,8 +167,8 @@ export async function POST(request: NextRequest) {
       locale,
       params: {
         otp,
-        idempotency_key: challengeId,
-        recipient_name: studentName ? `parent of ${studentName}` : undefined,
+        idempotency_key: rpcResult.challenge_id ?? challengeId,
+        recipient_name: rpcResult.student_name ? `parent of ${rpcResult.student_name}` : undefined,
       },
     });
   } else {
@@ -292,12 +176,6 @@ export async function POST(request: NextRequest) {
       authUserIdPrefix: user.id.slice(0, 8),
     });
   }
-
-  await audit(user.id, 'link_code_otp_request_success', ip, userAgent, {
-    challenge_id: challengeId,
-    student_id: studentId,
-    ttl_ms: OTP_TTL_MS,
-  });
 
   // Dev escape hatch: surfaces the OTP in the response so e2e tests don't
   // need to scrape mailgun. NEVER active in production.

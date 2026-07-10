@@ -19,10 +19,10 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 const VALID_GRADES = /^(6|7|8|9|10|11|12)$/;
 
-async function main() {
+export async function main(): Promise<number> {
   if (!SUPABASE_URL || !SERVICE_KEY) {
     console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
-    process.exit(1);
+    return 1;
   }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -36,7 +36,7 @@ async function main() {
 
   if (qbError) {
     console.error('Failed to query question_bank:', qbError.message);
-    process.exit(1);
+    return 1;
   }
 
   const distinctGrades = Array.from(new Set((qbGrades || []).map((r: { grade: string }) => r.grade))).sort();
@@ -44,6 +44,7 @@ async function main() {
 
   const invalid = distinctGrades.filter((g: string) => !VALID_GRADES.test(g));
   const valid = distinctGrades.filter((g: string) => VALID_GRADES.test(g));
+  let hasViolation = invalid.length > 0;
 
   console.info('Valid (P5):', valid);
   console.info('Invalid:', invalid);
@@ -83,6 +84,7 @@ async function main() {
     console.info('Found grades:', ctDistinct);
     const ctInvalid = ctDistinct.filter((g: string) => !VALID_GRADES.test(g));
     if (ctInvalid.length > 0) {
+      hasViolation = true;
       console.error(`P5 VIOLATION in curriculum_topics: ${ctInvalid.join(', ')}`);
     } else {
       console.info('All curriculum_topics grades conform to P5.');
@@ -104,10 +106,17 @@ async function main() {
     console.info('NOTE: rag_content_chunks may use "Grade X" format by design (separate from P5 for question_bank).');
   }
 
-  process.exit(invalid.length > 0 ? 1 : 0);
+  return hasViolation ? 1 : 0;
 }
 
-main().catch((err) => {
-  console.error('Unexpected error:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (err) => {
+      console.error('Unexpected error:', err);
+      process.exitCode = 1;
+    },
+  );
+}

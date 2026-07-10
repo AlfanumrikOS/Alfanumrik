@@ -1,0 +1,115 @@
+{
+  "generated_at": "2026-07-09",
+  "source": "RCA-04 / RCA-06 student-learning quiz-submit and XP-economy readiness inventory",
+  "remainingFollowUps": [
+    "SLC-1-backfill: going-forward duplicate XP writes are deduped, and scripts/historical-xp-inflation-quantification.sql now provides the required read-only quantification query. Remaining work is to run it against the target DB after SLC-4/current rollout is stable, then obtain CEO/product-comms approval before any clamp.",
+    "SLC-5: client anti-cheat now always submits and the server is the single authority, but the mastery-inclusion semantics for flagged submissions remain a product/assessment decision.",
+    "SLC-8: server-only quiz-submit cutover/live deployment proof remains environment-owned; keep the route and idempotency pins until all clients are confirmed on canonical submit."
+  ],
+  "artifacts": [
+    {
+      "id": "slc1-single-xp-writer",
+      "rcaItem": "RCA-06",
+      "path": "apps/host/src/__tests__/slc1-quiz-session-trigger-dedupe.test.ts",
+      "status": "repo_guarded",
+      "readinessRole": "Pins the SLC-1 going-forward fix: the legacy quiz-session trigger is streak-only, while atomic_quiz_profile_update remains the sole capped XP writer.",
+      "evidence": [
+        "single-XP-writer / de-dup guard",
+        "fn_quiz_session_sync_profile is neutered to streak-only",
+        "RPC remains the single award authority",
+        "FOLLOW-UP (not faked here): a live-DB behavioral assertion"
+      ]
+    },
+    {
+      "id": "slc1-historical-xp-quantification",
+      "rcaItem": "RCA-06",
+      "path": "scripts/historical-xp-inflation-quantification.sql",
+      "status": "operator_gate",
+      "readinessRole": "Provides the read-only target-DB query required before any CEO/product-comms decision to clamp or backfill historical XP inflation.",
+      "evidence": [
+        "RCA-06",
+        "SLC-1-backfill",
+        "daily_over_cap",
+        "duplicate_reference_ids",
+        "cached_total_vs_ledger_delta",
+        "leaderboard_risk_sample"
+      ]
+    },
+    {
+      "id": "slc4-fallback-cap-alignment",
+      "rcaItem": "RCA-04",
+      "path": "apps/host/src/__tests__/lib/slc4-fallback-cap-alignment.test.ts",
+      "status": "repo_guarded",
+      "readinessRole": "Pins the SLC-4 fallback fix so the client fallback path routes through the canonical 7-param capped ledger writer and cannot award a second 200 XP.",
+      "evidence": [
+        "Fallback Daily-Cap Alignment",
+        "p_session_id: session?.id ?? null",
+        "effectiveXp = ledgerRow.amount",
+        "the pre-SLC-4 uncapped fallback would have allowed up to 400/day"
+      ]
+    },
+    {
+      "id": "slc5-anticheat-advisory-convergence",
+      "rcaItem": "RCA-04",
+      "path": "apps/host/src/__tests__/quiz/slc5-anticheat-advisory-convergence.test.ts",
+      "status": "repo_guarded",
+      "readinessRole": "Pins client/server anti-cheat convergence: the client no longer hard-rejects locally and always submits to the server authority.",
+      "evidence": [
+        "Anti-Cheat Advisory Convergence",
+        "the whole anti-cheat region contains NO early return before submit",
+        "all 3 anti-cheat checks ALWAYS submit",
+        "flagged result renders a gentle bilingual"
+      ]
+    },
+    {
+      "id": "quiz-submit-route-session-id",
+      "rcaItem": "RCA-04",
+      "path": "apps/host/src/app/api/quiz/submit/route.ts",
+      "status": "repo_guarded",
+      "readinessRole": "Ensures the canonical host quiz submit route supplies p_session_id to the atomic quiz writer so idempotency and daily cap accounting bind to the session.",
+      "evidence": [
+        "p_session_id: body.sessionId",
+        "xp_earned: r.xp_earned",
+        "atomic_quiz_profile_update side-effect fields surfaced"
+      ]
+    },
+    {
+      "id": "v2-quiz-submit-route-session-id",
+      "rcaItem": "RCA-04",
+      "path": "apps/host/src/app/api/v2/quiz/submit/route.ts",
+      "status": "repo_guarded",
+      "readinessRole": "Ensures the mobile/public v2 quiz submit route also supplies p_session_id and surfaces the authoritative server XP result.",
+      "evidence": [
+        "p_session_id: body.sessionId",
+        "xp_earned: r.xp_earned",
+        "atomic_quiz_profile_update"
+      ]
+    },
+    {
+      "id": "pre-rollout-shuffle-map-check",
+      "rcaItem": "RCA-04",
+      "path": "scripts/pre-rollout-checklist.ts",
+      "status": "repo_guarded",
+      "readinessRole": "Keeps the quiz page shuffle_map payload contract under the pre-rollout gate so server-side score re-derivation stays aligned with displayed option order.",
+      "evidence": [
+        "QuizResponse.shuffle_map",
+        "quiz page shuffle_map pushes",
+        "Our spec says 5"
+      ]
+    },
+    {
+      "id": "student-learning-workflow-status",
+      "rcaItem": "RCA-04",
+      "path": "engineering-audit/workflows/student-learning-core/STATUS.md",
+      "status": "follow_up",
+      "readinessRole": "Records which student-learning slices are landed and which residual decisions remain outside a safe repo-only patch.",
+      "evidence": [
+        "CYCLE 3 LANDED",
+        "SLC-1 (High, GATED",
+        "SLC-4 (Medium, GATED)",
+        "SLC-5 (Medium, cross-agent)",
+        "SLC-8 cutover"
+      ]
+    }
+  ]
+}

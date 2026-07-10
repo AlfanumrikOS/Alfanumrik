@@ -17,6 +17,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
+import { readFileSync } from 'fs';
+import path from 'path';
 
 const _authorizeImpl = vi.fn();
 vi.mock('@alfanumrik/lib/rbac', () => ({
@@ -27,7 +29,11 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-// ── supabase-admin: teachers / classes / class_teachers ──────────────────────
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ getAll: () => [] })),
+}));
+
+// ── RLS-scoped RPC backing store: teachers / classes / class_teachers ───────
 const TEACHER_AUTH = 'auth-teacher-1';
 const TEACHER_ID = 'teacher-id-1';
 const CLASS_ID = 'class-id-1';
@@ -59,6 +65,7 @@ let classes: ClassRow[];
 let classTeachers: CTRow[];
 let ctSeq: number;
 let insertCount: number;
+let currentAuthUserId: string;
 // When true, the next class_teachers insert simulates a 23505 race loser.
 let forceUniqueViolation: boolean;
 
@@ -83,74 +90,61 @@ function freshStore() {
   classTeachers = [];
   ctSeq = 1;
   insertCount = 0;
+  currentAuthUserId = TEACHER_AUTH;
   forceUniqueViolation = false;
 }
 
-function builder(table: 'teachers' | 'classes' | 'class_teachers') {
-  const preds: Array<(r: Record<string, unknown>) => boolean> = [];
-  let pendingInsert: Record<string, unknown> | null = null;
-  let pendingPatch: Record<string, unknown> | null = null;
-
-  const rows = (): Record<string, unknown>[] => {
-    if (table === 'teachers') return teachers as unknown as Record<string, unknown>[];
-    if (table === 'classes') return classes as unknown as Record<string, unknown>[];
-    return classTeachers as unknown as Record<string, unknown>[];
-  };
-
-  function settle() {
-    if (pendingInsert) {
-      insertCount++;
-      if (table === 'class_teachers' && forceUniqueViolation) {
-        return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
-      }
-      const row = { id: `ct-${ctSeq++}`, ...pendingInsert } as unknown as CTRow;
-      if (table === 'class_teachers') classTeachers.push(row);
-      return { data: { id: row.id }, error: null };
-    }
-    if (pendingPatch) {
-      const matched = rows().filter((r) => preds.every((p) => p(r)));
-      for (const m of matched) Object.assign(m, pendingPatch);
-      return { data: matched[0] ?? null, error: null };
-    }
-    const matched = rows().filter((r) => preds.every((p) => p(r)));
-    return { data: matched, error: null };
+function rpcTeacherJoinClassByCode(params: { p_class_code: string }) {
+  const teacher = teachers.find((row) => row.auth_user_id === currentAuthUserId);
+  if (!teacher) {
+    return { success: false, status: 403, error: 'Teacher account not found' };
   }
 
-  const chain: Record<string, unknown> = {
-    select: () => chain,
-    insert: (v: Record<string, unknown>) => {
-      pendingInsert = v;
-      // Insert without .select()/.maybeSingle() resolves via thenable.
-      return chain;
-    },
-    update: (v: Record<string, unknown>) => {
-      pendingPatch = v;
-      return chain;
-    },
-    eq: (col: string, val: unknown) => {
-      preds.push((r) => r[col] === val);
-      return chain;
-    },
-    is: (col: string, val: unknown) => {
-      preds.push((r) => (val === null ? r[col] === null : r[col] === val));
-      return chain;
-    },
-    maybeSingle: () => {
-      const s = settle();
-      const d = Array.isArray(s.data) ? s.data[0] ?? null : s.data;
-      return Promise.resolve({ data: d, error: s.error });
-    },
-    // The insert/update paths are awaited directly (no maybeSingle) — thenable.
-    then: (onF: (v: { data: unknown; error: unknown }) => unknown, onR?: (e: unknown) => unknown) =>
-      Promise.resolve(settle()).then(onF, onR),
-  };
-  return chain;
+  const klass = classes.find(
+    (row) =>
+      row.class_code === params.p_class_code &&
+      row.is_active === true &&
+      row.deleted_at === null,
+  );
+  if (!klass) {
+    return { success: false, status: 404, error: 'No active class found for this code' };
+  }
+
+  const existing = classTeachers.find(
+    (row) => row.class_id === klass.id && row.teacher_id === teacher.id,
+  );
+  if (existing) {
+    if (!teacher.school_id && klass.school_id) teacher.school_id = klass.school_id;
+    return { success: true, data: { classId: klass.id, alreadyJoined: true } };
+  }
+
+  insertCount++;
+  if (forceUniqueViolation) {
+    if (!teacher.school_id && klass.school_id) teacher.school_id = klass.school_id;
+    return { success: true, data: { classId: klass.id, alreadyJoined: true } };
+  }
+
+  classTeachers.push({
+    id: `ct-${ctSeq++}`,
+    class_id: klass.id,
+    teacher_id: teacher.id,
+    role: 'teacher',
+    is_active: true,
+  });
+  if (!teacher.school_id && klass.school_id) teacher.school_id = klass.school_id;
+  return { success: true, data: { classId: klass.id, alreadyJoined: false } };
 }
 
-vi.mock('@alfanumrik/lib/supabase-admin', () => {
-  const client = { from: (t: string) => builder(t as 'teachers' | 'classes' | 'class_teachers') };
-  return { supabaseAdmin: client, getSupabaseAdmin: () => client };
-});
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: vi.fn(() => ({
+    rpc: vi.fn(async (name: string, params: { p_class_code: string }) => {
+      if (name !== 'teacher_join_class_by_code') {
+        return { data: null, error: { message: `unexpected rpc ${name}` } };
+      }
+      return { data: rpcTeacherJoinClassByCode(params), error: null };
+    }),
+  })),
+}));
 
 import { POST } from '@/app/api/teacher/join-class/route';
 
@@ -162,6 +156,7 @@ function setAuth(opts: { authorized?: boolean; userId?: string } = {}) {
     });
     return;
   }
+  currentAuthUserId = opts.userId ?? TEACHER_AUTH;
   _authorizeImpl.mockResolvedValue({
     authorized: true,
     userId: opts.userId ?? TEACHER_AUTH,
@@ -187,6 +182,17 @@ beforeEach(() => {
 });
 
 describe('POST /api/teacher/join-class', () => {
+  it('uses the authenticated RPC path instead of importing a service-role client', () => {
+    const routeSource = readFileSync(
+      path.resolve(__dirname, '../../../app/api/teacher/join-class/route.ts'),
+      'utf8',
+    );
+    expect(routeSource).not.toContain('@alfanumrik/lib/supabase-admin');
+    expect(routeSource).toContain('createServerClient');
+    expect(routeSource).toContain('teacher_join_class_by_code');
+    expect(routeSource).toContain('RLS-scoped');
+  });
+
   it('joins a class via code and inserts a class_teachers row (role teacher)', async () => {
     const res = await POST(makePost({ class_code: 'JOINME8A' }));
     expect(res.status).toBe(200);

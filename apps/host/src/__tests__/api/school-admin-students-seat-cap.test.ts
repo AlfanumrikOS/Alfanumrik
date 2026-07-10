@@ -4,9 +4,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // when toggling is_active from false to true. Tests focus on the gate
 // itself; the existing route GET path is unchanged.
 
-const { mockAuthorize, mockCapture } = vi.hoisted(() => ({
+const { mockAuthorize, mockCapture, rpcState } = vi.hoisted(() => ({
   mockAuthorize: vi.fn(),
   mockCapture: vi.fn().mockResolvedValue(undefined),
+  rpcState: {
+    scenario: null as SeatScenario | null,
+    updateReached: false,
+    subscriptionFetched: false,
+  },
 }));
 
 vi.mock('@alfanumrik/lib/school-admin-auth', () => ({
@@ -22,6 +27,54 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 const supabaseChain = { from: vi.fn() };
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => supabaseChain,
+}));
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    getAll: () => [],
+  }),
+}));
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: () => ({
+    rpc: async (fn: string, args: { p_student_id?: string; p_is_active?: boolean }) => {
+      if (fn !== 'school_admin_toggle_student_active') {
+        throw new Error(`unexpected rpc: ${fn}`);
+      }
+      const scenario = rpcState.scenario;
+      if (!scenario) throw new Error('missing scenario');
+      const isActivating = args.p_is_active === true && scenario.studentWasActive !== true;
+      if (isActivating) {
+        rpcState.subscriptionFetched = true;
+        if (scenario.seatsPurchased !== null && scenario.activeCount + 1 > scenario.seatsPurchased) {
+          return {
+            data: {
+              success: false,
+              status: 422,
+              code: 'seat_cap_violation',
+              error: `Cannot activate this student. Your school has used ${scenario.activeCount} of ${scenario.seatsPurchased} seats. Upgrade your subscription to add more.`,
+              seats_used: scenario.activeCount,
+              seats_purchased: scenario.seatsPurchased,
+            },
+            error: null,
+          };
+        }
+      }
+      rpcState.updateReached = true;
+      return {
+        data: {
+          success: true,
+          was_active: scenario.studentWasActive,
+          data: {
+            id: args.p_student_id,
+            name: 'X',
+            email: 'x@x',
+            grade: '8',
+            is_active: args.p_is_active,
+          },
+        },
+        error: null,
+      };
+    },
+  }),
 }));
 
 import { PATCH } from '@/app/api/school-admin/students/route';
@@ -45,6 +98,9 @@ interface SeatScenario {
 }
 
 function setupSupabase(scenario: SeatScenario) {
+  rpcState.scenario = scenario;
+  rpcState.updateReached = false;
+  rpcState.subscriptionFetched = false;
   // The PATCH handler issues these chains against `from('students')`:
   //   A) .select('id, is_active').eq().eq().maybeSingle()   — lookup
   //   B) .select('id', { count: 'exact', head: true }).eq().eq()  — count
@@ -122,14 +178,17 @@ function setupSupabase(scenario: SeatScenario) {
   });
 
   return {
-    didFetchSubscription: () => subFetchCalled,
-    didReachUpdate: () => updateChainCalled,
+    didFetchSubscription: () => subFetchCalled || rpcState.subscriptionFetched,
+    didReachUpdate: () => updateChainCalled || rpcState.updateReached,
     didLookup: () => lookupCalled,
   };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  rpcState.scenario = null;
+  rpcState.updateReached = false;
+  rpcState.subscriptionFetched = false;
   mockAuthorize.mockResolvedValue({ authorized: true, schoolId: SCHOOL_ID, userId: ADMIN_USER });
 });
 

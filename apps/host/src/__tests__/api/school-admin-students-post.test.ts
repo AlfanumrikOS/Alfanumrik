@@ -33,6 +33,9 @@ vi.mock('@alfanumrik/lib/audit', () => ({
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
 }));
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({ getAll: () => [] })),
+}));
 
 // ── Supabase chain mock ──────────────────────────────────────────────
 // The route exercises these chains:
@@ -46,7 +49,7 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 //   from('classes')
 //     .select('id, school_id').eq('id', …).maybeSingle()             — cross-tenant gate
 //   from('class_students').insert({…})                               — class link
-//   auth.admin.createUser({…})                                        — auth user
+//   createSchoolAdminStudentAuthUser({…})                             — auth user
 //
 // We dispatch by what the route asks for. State knobs live on `state`.
 
@@ -81,19 +84,12 @@ function freshState(overrides: Partial<SupabaseState> = {}): SupabaseState {
 
 // classInsertCalls captures inserts into class_students for assertions.
 const classInsertCalls: unknown[] = [];
+const attachRpcCalls: unknown[] = [];
+const preflightRpcCalls: unknown[] = [];
+const authCreateCalls: unknown[] = [];
 
 function makeSupabase() {
   return {
-    auth: {
-      admin: {
-        createUser: vi.fn(async () => {
-          if ('error' in state.authCreate) {
-            return { data: null, error: { message: state.authCreate.error } };
-          }
-          return { data: { user: { id: state.authCreate.id } }, error: null };
-        }),
-      },
-    },
     from: (table: string) => {
       if (table === 'students') return studentsBuilder();
       if (table === 'school_subscriptions') return subscriptionBuilder();
@@ -179,6 +175,69 @@ function classesBuilder() {
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => makeSupabase(),
 }));
+vi.mock('@alfanumrik/lib/school-admin/student-auth-admin', () => ({
+  createSchoolAdminStudentAuthUser: vi.fn(async () => {
+    authCreateCalls.push(true);
+    if ('error' in state.authCreate) {
+      return { ok: false, message: state.authCreate.error };
+    }
+    return { ok: true, authUserId: state.authCreate.id };
+  }),
+}));
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: vi.fn(() => ({
+    rpc: vi.fn(async (name: string, params: Record<string, unknown>) => {
+      if (name === 'school_admin_student_create_preflight') {
+        preflightRpcCalls.push(params);
+        const attemptedCount = Number(params.p_attempted_count ?? 1);
+        const seatsPurchased = state.seatsPurchased;
+        if (
+          params.p_class_id &&
+          (!state.classRow || state.classRow.school_id !== SCHOOL_ID)
+        ) {
+          return {
+            data: {
+              success: false,
+              status: 403,
+              error: 'class_id does not belong to your school',
+            },
+            error: null,
+          };
+        }
+        return {
+          data: {
+            success: true,
+            data: {
+              emailExists: state.existingEmail === params.p_email,
+              seatsUsed: state.activeCount,
+              seatsPurchased,
+              seatCapViolation:
+                seatsPurchased !== null && state.activeCount + attemptedCount > seatsPurchased,
+            },
+          },
+          error: null,
+        };
+      }
+      if (name !== 'school_admin_attach_created_student') {
+        return { data: null, error: { message: `unexpected rpc ${name}` } };
+      }
+      attachRpcCalls.push(params);
+      if (!state.studentRowAfterUpdate) {
+        return {
+          data: { success: false, status: 500, error: 'Failed to attach student to school' },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          success: true,
+          data: { studentId: state.studentRowAfterUpdate.id },
+        },
+        error: null,
+      };
+    }),
+  })),
+}));
 
 // ── Route under test ─────────────────────────────────────────────────
 import { POST } from '@/app/api/school-admin/students/route';
@@ -214,9 +273,29 @@ function makeJsonRequest(body: unknown, query = ''): Request {
   });
 }
 
+function makeCsvRequest(csv: string): Request {
+  return {
+    url: 'http://localhost/api/school-admin/students',
+    headers: new Headers({ 'content-type': 'multipart/form-data; boundary=test' }),
+    formData: async () => ({
+      get: (name: string) =>
+        name === 'file'
+          ? {
+              name: 'students.csv',
+              size: new TextEncoder().encode(csv).byteLength,
+              text: async () => csv,
+            }
+          : null,
+    }),
+  } as unknown as Request;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   classInsertCalls.length = 0;
+  attachRpcCalls.length = 0;
+  preflightRpcCalls.length = 0;
+  authCreateCalls.length = 0;
   state = freshState();
 });
 
@@ -241,6 +320,10 @@ describe('POST /api/school-admin/students — single create', () => {
     expect(json.data?.student_id).toBe(NEW_STUDENT_ID);
     // seats: used 10 + 1 new = 11, purchased 50 → 39 remaining
     expect(json.data?.remaining_seats).toBe(39);
+    expect(preflightRpcCalls[0]).toMatchObject({
+      p_email: 'anika@school.edu',
+      p_attempted_count: 1,
+    });
     expect(mockLogSchoolAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         schoolId: SCHOOL_ID,
@@ -248,6 +331,11 @@ describe('POST /api/school-admin/students — single create', () => {
         resourceId: NEW_STUDENT_ID,
       }),
     );
+    expect(attachRpcCalls[0]).toMatchObject({
+      p_student_auth_user_id: NEW_AUTH_USER_ID,
+      p_phone: null,
+      p_class_id: null,
+    });
   });
 
   it('returns 403 when the caller is not a school admin', async () => {
@@ -276,9 +364,18 @@ describe('POST /api/school-admin/students — single create', () => {
     expect(res.status).toBe(403);
     const json = (await res.json()) as { error: string };
     expect(json.error).toMatch(/class_id/i);
-    // No student should have been created.
+    // No Auth user or student attach should happen before the scoped preflight rejects.
     expect(mockLogSchoolAudit).not.toHaveBeenCalled();
+    expect(authCreateCalls).toHaveLength(0);
     expect(classInsertCalls).toHaveLength(0);
+    expect(attachRpcCalls).toHaveLength(0);
+    expect(preflightRpcCalls).toEqual([
+      {
+        p_email: 'anika@school.edu',
+        p_attempted_count: 1,
+        p_class_id: 'class-x',
+      },
+    ]);
   });
 
   it('returns 409 with seat_cap_violation when seat cap is hit', async () => {
@@ -307,6 +404,25 @@ describe('POST /api/school-admin/students — single create', () => {
       expect.objectContaining({ source: 'student_add' }),
     );
     expect(mockLogSchoolAudit).not.toHaveBeenCalled();
+  });
+
+  it('returns duplicate-email validation from scoped preflight before auth creation', async () => {
+    authedAs();
+    state = freshState({ existingEmail: 'anika@school.edu' });
+
+    const res = await POST(
+      makeJsonRequest({
+        name: 'Anika Sharma',
+        email: 'anika@school.edu',
+        grade: '8',
+      }) as never,
+    );
+
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: string };
+    expect(json.error).toMatch(/already exists/i);
+    expect(attachRpcCalls).toHaveLength(0);
+    expect(preflightRpcCalls).toHaveLength(1);
   });
 
   it('rejects an invalid email at the validation gate (400)', async () => {
@@ -379,5 +495,34 @@ describe('POST /api/school-admin/students — bulk JSON', () => {
     expect(json.error).toMatch(/1000/);
     // No Supabase writes attempted.
     expect(mockLogSchoolAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/school-admin/students — bulk CSV', () => {
+  it('parses quoted commas and quoted newlines as one student row', async () => {
+    authedAs();
+    state = freshState({ activeCount: 0, seatsPurchased: 50 });
+
+    const csv = [
+      'name,email,grade,phone',
+      '"Sharma, Asha",asha@school.edu,8,"line one',
+      'line two"',
+    ].join('\n');
+
+    const res = await POST(makeCsvRequest(csv) as never);
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      data?: {
+        created: number;
+        total_rows: number;
+        errors: Array<{ row: number; message: string }>;
+        error_count: number;
+      };
+    };
+    expect(json.data?.created).toBe(1);
+    expect(json.data?.total_rows).toBe(1);
+    expect(json.data?.errors).toEqual([]);
+    expect(json.data?.error_count).toBe(0);
   });
 });

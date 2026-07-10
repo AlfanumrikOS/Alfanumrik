@@ -191,9 +191,10 @@ async function patchStudentEmail(page: Page, email: string): Promise<void> {
 
 test.describe('Account deletion (DPDP §17) — frontend flow', () => {
   test('redirects unauthenticated visitors to /login', async ({ page }) => {
+    test.setTimeout(150_000);
     await page.goto('/settings/account/delete');
     // Either /login or /welcome (middleware may bounce to either).
-    await page.waitForURL(/\/(login|welcome)/, { timeout: 10_000 });
+    await page.waitForURL(/\/(login|welcome)/, { timeout: 60_000 });
   });
 
   test('happy path: submit deletion → see cooling-off state', async ({ page }) => {

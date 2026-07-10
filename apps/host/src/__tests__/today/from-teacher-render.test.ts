@@ -115,4 +115,22 @@ describe('Today "from your teacher" marker (Phase 3A A4)', () => {
     const en = resolveItemCopy(item, SUBJECTS, false);
     expect(en.subtitle).toContain('your subject');
   });
+
+  it('resolveItemCopy never leaks a raw chapterTitle token when chapter data is absent', () => {
+    const item: TodayQueueItem = {
+      type: 'weak_topic_zpd',
+      rank: 1,
+      labelKey: 'today.item.weak_topic_zpd.label',
+      subtitleKey: 'today.item.weak_topic_zpd.subtitle',
+      estMinutes: 7,
+      deepLink: { route: '/quiz', params: { subject: 'science', chapter: 3 } },
+      iconHint: 'target',
+      reason: 'todays_zpd',
+      meta: { subjectCode: 'science', chapterNumber: 3 },
+    };
+
+    const en = resolveItemCopy(item, SUBJECTS, false);
+    expect(en.subtitle).toBe('Practice Science at your level');
+    expect(en.subtitle).not.toContain('{chapterTitle}');
+  });
 });

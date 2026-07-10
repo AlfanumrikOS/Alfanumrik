@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 /**
  * POST /api/cron/board-score
@@ -165,8 +166,17 @@ export async function POST(request: NextRequest) {
 
   const enabled = await isBoardScoreEnabled();
   if (!enabled) {
+    const durationMs = Date.now() - startTime;
     logger.info('cron/board-score: ff_board_score_v1 disabled — skipping run', {
       correlation_id: correlationId,
+    });
+    await recordCronJobHealth({
+      path: '/api/cron/board-score',
+      metric: 'ops.cron.board_score.last_success_at',
+      source: 'cron/board-score',
+      durationMs,
+      requestId: correlationId,
+      context: { skipped: true, reason: 'ff_board_score_v1 disabled' },
     });
     return NextResponse.json(
       { success: true, skipped: true, reason: 'ff_board_score_v1 disabled' },
@@ -275,6 +285,22 @@ export async function POST(request: NextRequest) {
   // Surface a non-200 only if every single computation failed (total outage).
   // Partial failures are normal (student with no CME data) and logged above.
   const allFailed = totalSubjects > 0 && failedCount === totalSubjects;
+
+  if (!allFailed) {
+    await recordCronJobHealth({
+      path: '/api/cron/board-score',
+      metric: 'ops.cron.board_score.last_success_at',
+      source: 'cron/board-score',
+      durationMs,
+      requestId: correlationId,
+      context: {
+        total_students: activeStudents.length,
+        total_subjects: totalSubjects,
+        success_count: successCount,
+        failed_count: failedCount,
+      },
+    });
+  }
 
   return NextResponse.json(
     {

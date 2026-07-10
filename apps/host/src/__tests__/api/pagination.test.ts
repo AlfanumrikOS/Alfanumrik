@@ -34,13 +34,26 @@ const STUDENT_ID = '66666666-6666-6666-6666-666666666666';
 const THREAD_ID = '77777777-7777-7777-7777-777777777777';
 
 // ── Auth mock ───────────────────────────────────────────────────────────
-const { mockAuthorize } = vi.hoisted(() => ({ mockAuthorize: vi.fn() }));
+const { mockAuthorize, mockRpc } = vi.hoisted(() => ({ mockAuthorize: vi.fn(), mockRpc: vi.fn() }));
 vi.mock('@alfanumrik/lib/rbac', () => ({
   authorizeRequest: (...args: unknown[]) => mockAuthorize(...args),
 }));
 
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({
+    getAll: vi.fn(() => []),
+    setAll: vi.fn(),
+  })),
+}));
+
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: vi.fn(() => ({
+    rpc: mockRpc,
+  })),
 }));
 
 // ── Shared in-memory tables ─────────────────────────────────────────────
@@ -298,6 +311,44 @@ function messagesBuilder() {
   };
 }
 
+function handleNotificationsRpc(name: string, args?: Record<string, unknown>) {
+  if (name !== 'parent_list_notifications') {
+    throw new Error(`unexpected rpc: ${name}`);
+  }
+
+  const rawLimit = Number(args?.p_limit ?? 50);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 50) : 50;
+  const cursor = typeof args?.p_cursor === 'string' ? args.p_cursor : null;
+  const filter = args?.p_filter === 'unread' ? 'unread' : 'all';
+  let rows = notifications.filter(
+    row => row.recipient_id === PARENT_ID && row.recipient_type === 'guardian',
+  );
+
+  if (filter === 'unread') rows = rows.filter(row => row.is_read === false);
+  if (cursor) rows = rows.filter(row => row.created_at < cursor);
+  rows = [...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+  const pagePlusOne = rows.slice(0, limit + 1);
+  const hasMore = pagePlusOne.length > limit;
+  const page = hasMore ? pagePlusOne.slice(0, limit) : pagePlusOne;
+  const unreadCount = notifications.filter(
+    row =>
+      row.recipient_id === PARENT_ID &&
+      row.recipient_type === 'guardian' &&
+      row.is_read === false,
+  ).length;
+
+  return {
+    success: true,
+    data: {
+      items: page,
+      nextCursor: hasMore ? page.at(-1)?.created_at ?? null : null,
+      hasMore,
+      unreadCount,
+    },
+  };
+}
+
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   supabaseAdmin: {
     from(table: string) {
@@ -353,6 +404,10 @@ beforeEach(() => {
   // 150 rows so we can exercise the 100-cap.
   notifications = makeNotificationFixture(150);
   messages = makeMessagesFixture(150);
+  mockRpc.mockImplementation(async (name: string, args?: Record<string, unknown>) => ({
+    data: handleNotificationsRpc(name, args),
+    error: null,
+  }));
 });
 
 // ─────────────────────────────────────────────────────────────────────

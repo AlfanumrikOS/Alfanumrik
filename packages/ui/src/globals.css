@@ -3921,3 +3921,300 @@ html[data-design="cosmic"] .recharts-text.recharts-label { fill: var(--text-2) !
   }
 }
 /* End Alfa OS flagship block ───────────────────────────────────────────────── */
+
+/* ─── Shared role bottom navigation ───────────────────────────────────────── */
+.role-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-nav);
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-1) 94%, transparent);
+  box-shadow: 0 -8px 28px rgba(26, 18, 7, 0.08);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  transition: transform 180ms var(--ease-atlas, ease);
+}
+
+.role-bottom-nav[data-scroll-hidden="true"] {
+  transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px)));
+}
+
+.role-bottom-nav__items {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 2px;
+  min-height: 64px;
+  padding: 8px 8px 5px;
+}
+
+.role-bottom-nav__item {
+  min-width: 52px;
+  min-height: 48px;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 5px 6px;
+  border-radius: var(--radius-lg);
+  font: inherit;
+  cursor: pointer;
+  position: relative;
+  transition: color 160ms var(--ease-atlas, ease), transform 160ms var(--ease-atlas, ease), background 160ms var(--ease-atlas, ease);
+}
+
+.role-bottom-nav__item:focus-visible,
+.role-bottom-nav__more-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.role-bottom-nav__item[data-active="true"] {
+  background: rgb(var(--accent-warm-rgb) / 0.08);
+}
+
+.role-bottom-nav__item[data-primary-action="true"] .role-bottom-nav__icon {
+  width: 48px;
+  height: 48px;
+  margin-top: -14px;
+  border-radius: 16px;
+  background: var(--surface-accent);
+  color: var(--on-surface-accent);
+  box-shadow: 0 8px 22px rgb(var(--accent-warm-rgb) / 0.28);
+}
+
+.role-bottom-nav__icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.role-bottom-nav__icon svg,
+.role-bottom-nav__more-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+[data-testid="dashboard-sidebar-desktop"] nav svg,
+[data-testid="dashboard-sidebar-mobile"] nav svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.role-bottom-nav__label {
+  max-width: 62px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-2xs, 10px);
+  line-height: 1.1;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.role-bottom-nav__badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+  color: var(--on-accent);
+  border: 1.5px solid var(--surface-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.role-bottom-nav__badge--danger { background: var(--danger); }
+.role-bottom-nav__badge--warning { background: var(--warning); color: var(--text-1); }
+
+.role-bottom-nav__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--scrim);
+}
+
+.role-bottom-nav__sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-toast);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.role-bottom-nav__handle {
+  width: 42px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  margin: 12px auto 8px;
+  background: var(--border-mid);
+}
+
+.role-bottom-nav__sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 18px 16px;
+}
+
+.role-bottom-nav__more-row {
+  min-height: 48px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: transparent;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.role-bottom-nav__more-row[data-active="true"] {
+  background: rgb(var(--accent-warm-rgb) / 0.08);
+  color: var(--primary);
+}
+
+.role-bottom-nav__more-row[data-disabled="true"] {
+  color: var(--text-3);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.role-bottom-nav__more-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+}
+
+.role-bottom-nav__more-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.role-bottom-nav__sheet-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+@media (min-width: 768px) {
+  .role-bottom-nav,
+  .role-bottom-nav__scrim,
+  .role-bottom-nav__sheet {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .role-bottom-nav,
+  .role-bottom-nav__item {
+    transition: none;
+  }
+}
+
+.role-shell {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+.role-shell__body {
+  min-width: 0;
+}
+
+.role-shell__content {
+  width: 100%;
+  max-width: var(--content-max-wide);
+  margin: 0 auto;
+  padding: 16px 16px calc(88px + env(safe-area-inset-bottom, 0px));
+}
+
+.role-top-bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.role-top-bar__title {
+  margin: 0;
+  color: var(--text-1);
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.role-top-bar__subtitle {
+  margin: 2px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.role-top-bar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.role-more-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+@media (min-width: 768px) {
+  .role-shell {
+    display: flex;
+  }
+
+  .role-shell__rail {
+    flex: 0 0 auto;
+  }
+
+  .role-shell__body {
+    flex: 1 1 auto;
+  }
+
+  .role-shell__content {
+    padding: 24px;
+  }
+}

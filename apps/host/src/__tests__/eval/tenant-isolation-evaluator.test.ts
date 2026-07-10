@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeVerdict } from '../../../eval/tenant-isolation/run';
-import type { RouteFinding, Bucket } from '../../../scripts/audit-tenant-isolation';
+import { audit, type RouteFinding, type Bucket } from '../../../scripts/audit-tenant-isolation';
 
 /**
  * Unit test for the tenant_isolation L5 evaluator's verdict logic.
@@ -34,6 +34,21 @@ const baseline = (entries: Array<[string, Bucket]>): Map<string, Bucket> =>
   new Map(entries);
 
 describe('tenant_isolation evaluator — computeVerdict', () => {
+  it('audits the current host API route surface', async () => {
+    const findings = await audit();
+    expect(findings.length).toBeGreaterThan(300);
+    expect(findings.some((finding) => finding.routePath === '/api/public/v1/students')).toBe(true);
+  });
+
+  it('classifies internal cron routes with CRON_SECRET auth as system-safe', async () => {
+    const findings = await audit();
+    const smoke = findings.find((finding) => finding.routePath === '/api/internal/cron/job-health-smoke');
+    expect(smoke).toMatchObject({
+      bucket: 'SAFE',
+      autoLabel: 'SYSTEM (cron)',
+    });
+  });
+
   it('passes when nothing changed against the baseline', () => {
     const current = [makeFinding('/api/a', 'SAFE'), makeFinding('/api/b', 'REVIEW')];
     const v = computeVerdict(

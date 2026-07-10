@@ -48,10 +48,11 @@
 
 import { NextResponse } from 'next/server';
 import { authorizeRequest, canAccessStudent } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getStudentById } from '@alfanumrik/lib/domains/identity';
 import { logger } from '@alfanumrik/lib/logger';
 import { isValidUUID } from '@alfanumrik/lib/sanitize';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 const DEFAULT_HORIZON_DAYS = 60;
 const MAX_HORIZON_DAYS = 120;
@@ -64,6 +65,29 @@ type CalendarEvent = {
   subtitle?: string;
   id?: string;
 };
+
+async function createRlsScopedCalendarClient(request: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  const authHeader = request.headers.get('Authorization');
+  const cookieStore = await cookies();
+
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {
+        // Calendar aggregation reads do not mutate auth cookies.
+      },
+    },
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
+  });
+}
 
 export async function GET(request: Request) {
   try {
@@ -122,11 +146,12 @@ export async function GET(request: Request) {
     const schoolId = student.schoolId;
 
     const events: CalendarEvent[] = [];
+    const calendarClient = await createRlsScopedCalendarClient(request);
 
     // ── 5a. Assignments due for the child's enrolled classes ─────────
     // Find active class enrollments, then assignments for those classes
     // with a due_date inside the window.
-    const { data: enrollments, error: enrollErr } = await supabaseAdmin
+    const { data: enrollments, error: enrollErr } = await calendarClient
       .from('class_enrollments')
       .select('class_id')
       .eq('student_id', studentId)
@@ -144,7 +169,7 @@ export async function GET(request: Request) {
       .filter((c): c is string => Boolean(c));
 
     if (classIds.length > 0) {
-      const { data: assignments, error: asgErr } = await supabaseAdmin
+      const { data: assignments, error: asgErr } = await calendarClient
         .from('assignments')
         .select('id, title, subject, due_date, status')
         .in('class_id', classIds)
@@ -176,7 +201,7 @@ export async function GET(request: Request) {
 
     // ── 5b. School exams for the child's school + grade ──────────────
     if (schoolId && grade) {
-      const { data: exams, error: examErr } = await supabaseAdmin
+      const { data: exams, error: examErr } = await calendarClient
         .from('school_exams')
         .select('id, title, subject, grade, start_time, status')
         .eq('school_id', schoolId)
@@ -207,7 +232,7 @@ export async function GET(request: Request) {
     }
 
     // ── 5c. Recent quiz activity (engagement history) ────────────────
-    const { data: quizzes, error: quizErr } = await supabaseAdmin
+    const { data: quizzes, error: quizErr } = await calendarClient
       .from('quiz_sessions')
       .select('subject, score_percent, created_at, is_completed')
       .eq('student_id', studentId)

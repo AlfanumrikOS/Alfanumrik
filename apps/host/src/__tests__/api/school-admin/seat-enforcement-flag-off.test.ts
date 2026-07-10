@@ -61,6 +61,62 @@ vi.mock('@alfanumrik/lib/email-delivery', () => ({
   pickLocaleFromAcceptLanguage: () => 'en',
   truncateInviteCode: (c: string) => c.slice(0, 4),
 }));
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    getAll: () => [],
+  }),
+}));
+
+const preflightState = vi.hoisted(() => ({
+  emailExists: false,
+  seatsUsed: 0,
+  seatsPurchased: null as number | null,
+}));
+
+vi.mock('@supabase/ssr', () => ({
+  createServerClient: () => ({
+    rpc: async (fn: string, args: { p_student_id?: string; p_is_active?: boolean; p_attempted_count?: number }) => {
+      if (fn === 'school_admin_student_create_preflight') {
+        const attemptedCount = args.p_attempted_count ?? 1;
+        return {
+          data: {
+            success: true,
+            data: {
+              emailExists: preflightState.emailExists,
+              seatsUsed: preflightState.seatsUsed,
+              seatsPurchased: preflightState.seatsPurchased,
+              seatCapViolation:
+                preflightState.seatsPurchased !== null &&
+                preflightState.seatsUsed + attemptedCount > preflightState.seatsPurchased,
+            },
+          },
+          error: null,
+        };
+      }
+      if (fn === 'school_admin_attach_created_student') {
+        return {
+          data: { success: true, data: { studentId: 'stu-1' } },
+          error: null,
+        };
+      }
+      if (fn !== 'school_admin_toggle_student_active') throw new Error(`unexpected rpc: ${fn}`);
+      return {
+        data: {
+          success: true,
+          was_active: !args.p_is_active,
+          data: {
+            id: args.p_student_id,
+            name: 'Student',
+            email: 'student@example.test',
+            grade: '8',
+            is_active: args.p_is_active,
+          },
+        },
+        error: null,
+      };
+    },
+  }),
+}));
 
 const dbState = vi.hoisted(() => ({
   handlers: {} as Record<string, () => Promise<{ data: unknown; error: unknown; count?: number }>>,
@@ -127,6 +183,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   dbState.handlers = {};
   dbState.authCreateUser.mockReset();
+  preflightState.emailExists = false;
+  preflightState.seatsUsed = 0;
+  preflightState.seatsPurchased = null;
   // ── FLAG OFF for every test in this file. ──
   seat.isSeatEnforcementEnabled.mockResolvedValue(false);
 });
@@ -153,6 +212,8 @@ describe('FLAG OFF — POST /api/school-admin/students single (legacy path)', ()
     // legacy: active count = 50, seats_purchased = 50 ⇒ +1 > 50 ⇒ 409 with code field.
     dbState.handlers['students:select'] = () => Promise.resolve({ data: null, error: null, count: 50 });
     dbState.handlers['school_subscriptions'] = () => Promise.resolve({ data: { seats_purchased: 50 }, error: null });
+    preflightState.seatsUsed = 50;
+    preflightState.seatsPurchased = 50;
 
     const res = await STUDENTS_POST(
       jsonReq('/api/school-admin/students', { name: 'Asha', email: 'asha@x.test', grade: '8' }) as never,

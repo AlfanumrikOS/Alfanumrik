@@ -35,6 +35,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -128,10 +129,18 @@ export async function POST(request: NextRequest) {
 
   const subs = (dueSubs ?? []) as DueSubscription[];
   if (subs.length === 0) {
+    const durationMs = Date.now() - startedMs;
     logger.info('cron.pre-debit-notice.no_due', { window_lower: lowerBound, window_upper: upperBound });
+    await recordCronJobHealth({
+      path: '/api/cron/pre-debit-notice',
+      metric: 'ops.cron.pre_debit_notice.last_success_at',
+      source: 'cron/pre-debit-notice',
+      durationMs,
+      context: { total: 0, sent: 0, failed: 0 },
+    });
     return NextResponse.json({
       success: true,
-      data: { sent: 0, skipped: 0, failed: 0, total: 0, duration_ms: Date.now() - startedMs },
+      data: { sent: 0, skipped: 0, failed: 0, total: 0, duration_ms: durationMs },
     });
   }
 
@@ -232,6 +241,16 @@ export async function POST(request: NextRequest) {
 
   if (subs.length >= MAX_PER_RUN) {
     logger.warn('cron.pre-debit-notice.batch_cap_hit', { cap: MAX_PER_RUN, window_lower: lowerBound, window_upper: upperBound });
+  }
+
+  if (failed === 0) {
+    await recordCronJobHealth({
+      path: '/api/cron/pre-debit-notice',
+      metric: 'ops.cron.pre_debit_notice.last_success_at',
+      source: 'cron/pre-debit-notice',
+      durationMs,
+      context: { total: subs.length, sent, skipped, failed },
+    });
   }
 
   return NextResponse.json({

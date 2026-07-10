@@ -70,6 +70,14 @@ vi.mock('@alfanumrik/lib/rbac', () => ({
   authorizeRequest: (...a: unknown[]) => holders.mockAuthorize(...a),
   logAudit: vi.fn(),
 }));
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({
+    getAll: vi.fn(() => []),
+    setAll: vi.fn(),
+  })),
+}));
+
 vi.mock('@alfanumrik/lib/supabase-admin', () => {
   const chain = {
     from(table: string) {
@@ -123,6 +131,61 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
     },
   };
   return { supabaseAdmin: chain };
+});
+
+vi.mock('@supabase/ssr', () => {
+  const chain = {
+    from(table: string) {
+      if (table === 'student_subscriptions') {
+        return {
+          select: () => ({
+            in: (_col: string, ids: string[]) => {
+              if (holders.mockState.subscriptionsError) {
+                return Promise.resolve({ data: null, error: holders.mockState.subscriptionsError });
+              }
+              const rows = (holders.mockState.subscriptions ?? []).filter((r) =>
+                ids.includes(r.student_id as string)
+              );
+              return Promise.resolve({ data: rows, error: null });
+            },
+          }),
+        };
+      }
+      if (table === 'subscription_plans') {
+        return {
+          select: () => ({
+            in: (_col: string, codes: string[]) => {
+              const rows = (holders.mockState.plans ?? []).filter((r) =>
+                codes.includes(r.plan_code as string)
+              );
+              return Promise.resolve({ data: rows, error: null });
+            },
+          }),
+        };
+      }
+      if (table === 'payment_history') {
+        return {
+          select: () => ({
+            in: (_col: string, ids: string[]) => ({
+              order: () => ({
+                limit: () => {
+                  if (holders.mockState.paymentsError) {
+                    return Promise.resolve({ data: null, error: holders.mockState.paymentsError });
+                  }
+                  const rows = (holders.mockState.payments ?? []).filter((r) =>
+                    ids.includes(r.student_id as string)
+                  );
+                  return Promise.resolve({ data: rows, error: null });
+                },
+              }),
+            }),
+          }),
+        };
+      }
+      throw new Error(`unmocked table: ${table}`);
+    },
+  };
+  return { createServerClient: vi.fn(() => chain) };
 });
 vi.mock('@alfanumrik/lib/domains/identity', () => ({
   getGuardianByAuthUserId: (...a: unknown[]) => holders.mockGetGuardian(...a),
@@ -504,6 +567,17 @@ describe('GET /api/parent/billing — source-level contract', () => {
     expect(src).not.toMatch(/createRazorpaySubscription/);
     expect(src).not.toMatch(/cancelRazorpaySubscription/);
     expect(src).not.toMatch(/createRazorpayOrder/);
+  });
+
+  it('runs billing aggregation reads through an RLS-scoped request client', async () => {
+    const src = await fs.readFile(
+      path.resolve(process.cwd(), 'src/app/api/parent/billing/route.ts'),
+      'utf8'
+    );
+    expect(src).not.toContain('@alfanumrik/lib/supabase-admin');
+    expect(src).toContain('@supabase/ssr');
+    expect(src).toContain('createServerClient');
+    expect(src).toContain('Authorization');
   });
 
   it('exports only GET — no POST/PATCH/DELETE writes from this route', async () => {

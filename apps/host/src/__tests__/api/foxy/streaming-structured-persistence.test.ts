@@ -263,6 +263,60 @@ beforeEach(() => {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('/api/foxy streaming structured persistence', () => {
+  it('does not send unsafe text deltas before final output screening can hard-abstain', async () => {
+    setStreamEvents([
+      {
+        event: 'metadata',
+        data: {
+          groundingStatus: 'grounded',
+          citations: [],
+          traceId: 'trace-stream-unsafe',
+          confidence: 0.92,
+        },
+      },
+      { event: 'text', data: { delta: 'This streamed answer is fucking unsafe.' } },
+      {
+        event: 'done',
+        data: {
+          tokensUsed: 64,
+          latencyMs: 320,
+          groundedFromChunks: true,
+          claudeModel: 'claude-haiku-4-5',
+          answerLength: 40,
+        },
+      },
+    ]);
+
+    const { POST } = await import('@/app/api/foxy/route');
+    const res = await POST(
+      makePostRequest({ message: 'Explain safely', subject: 'science', grade: '10', stream: true }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/event-stream');
+    const wire = await drainStream(res);
+
+    expect(wire).toContain('event: session');
+    expect(wire).toContain('event: metadata');
+    expect(wire).toContain('event: abstain');
+    expect(wire).not.toContain('fucking');
+    expect(wire).not.toContain('event: text');
+    expect(wire).not.toContain('event: done');
+
+    const assistant = findAssistantInsert();
+    expect(assistant).toBeTruthy();
+    expect(assistant!.content).toBe('');
+    expect(assistant!.structured).toBeNull();
+    expect(JSON.stringify(insertCalls)).not.toContain('fucking');
+
+    const blockedWarn = loggerWarn.mock.calls.find(
+      (c: unknown[]) => c[0] === 'foxy.output.safety_blocked',
+    );
+    expect(blockedWarn).toBeDefined();
+    const warnPayload = JSON.stringify(blockedWarn?.[1] ?? {});
+    expect(warnPayload).toContain('grounded-answer-stream');
+    expect(warnPayload).not.toContain('fucking');
+  });
+
   it('persists structured payload AND denormalized content when SSE done emits valid structured', async () => {
     // Synthesize an SSE stream with the same shape pipeline-stream.ts emits:
     // metadata → text deltas → done(with structured).

@@ -62,7 +62,7 @@ describe('ParentShell — guardian mode', () => {
     // to resolve. Guardian mode short-circuits before linkCodeChecked but
     // we still wait a tick to let any concurrent state settle.
     const sidebar = await screen.findByTestId('dashboard-sidebar-desktop');
-    ['Dashboard', 'Children', 'Calendar', 'Reports', 'Support', 'Profile'].forEach(label => {
+    ['Home', 'Children', 'Calendar', 'Reports', 'Support', 'Profile'].forEach(label => {
       expect(within(sidebar).getByText(label)).toBeInTheDocument();
     });
   });
@@ -70,7 +70,7 @@ describe('ParentShell — guardian mode', () => {
 
 // ────────────────────────────────────────────────────────────────────────
 // Suite 2: link-code mode — sessionStorage HMAC payload, no Supabase user.
-// Children + Profile must be hidden; Dashboard/Calendar/Reports/Support visible.
+// Children + Profile must be hidden; Home/Calendar/Reports/Support visible.
 // ────────────────────────────────────────────────────────────────────────
 describe('ParentShell — link-code mode', () => {
   beforeEach(async () => {
@@ -87,7 +87,7 @@ describe('ParentShell — link-code mode', () => {
     );
   });
 
-  it('shows Dashboard/Calendar/Reports/Support and hides Children + Profile', async () => {
+  it('shows Home/Calendar/Reports/Support and hides Children + Profile', async () => {
     const { default: ParentShell } = await import('@/app/parent/_components/ParentShell');
     render(
       <ParentShell>
@@ -97,7 +97,7 @@ describe('ParentShell — link-code mode', () => {
     // useParentAuth's useEffect runs loadParentSession asynchronously — wait
     // a tick (and a re-render) for the link-code session to be detected.
     const sidebar = await screen.findByTestId('dashboard-sidebar-desktop');
-    expect(within(sidebar).getByText('Dashboard')).toBeInTheDocument();
+    expect(within(sidebar).getByText('Home')).toBeInTheDocument();
     expect(within(sidebar).getByText('Calendar')).toBeInTheDocument();
     expect(within(sidebar).getByText('Reports')).toBeInTheDocument();
     expect(within(sidebar).getByText('Support')).toBeInTheDocument();

@@ -39,12 +39,12 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { authorizeRequest, logAudit } from '@alfanumrik/lib/rbac';
-import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getGuardianByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { listChildrenForGuardian } from '@alfanumrik/lib/domains/relationship';
 import { logger } from '@alfanumrik/lib/logger';
 import { isValidUUID } from '@alfanumrik/lib/sanitize';
-import { publishEvent } from '@alfanumrik/lib/state/events/publish';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 // 10MB cap on the in-app export. Anything larger requires the ops
 // pipeline documented in per-school-backup-restore.md §2 — keyed by
@@ -55,42 +55,36 @@ const MAX_EXPORT_BYTES = 10 * 1024 * 1024;
 // breaks; consumers that re-import the JSON read this to branch.
 const EXPORT_SCHEMA_VERSION = 'v1-2026-05';
 
-interface TableSpec {
-  /** Key on the response JSON. */
-  key: string;
-  /** Postgres table name. */
-  table: string;
-  /** Column holding the student id; null means single-row by id. */
-  studentIdColumn: string | null;
-  /** When studentIdColumn is null, the column the student id matches. */
-  singleColumn?: string;
+interface ParentChildExportRpcResponse {
+  success: boolean;
+  status?: number;
+  error?: string;
+  data?: Record<string, unknown>;
+  tableCounts?: Record<string, number>;
 }
 
-// School-scoped student data — sourced from per-school-backup-restore.md §1
-// (the canonical inventory). Tables not keyed by student_id are excluded
-// — guardian_student_links, school_audit_log, school subscriptions, etc.,
-// are about the parent or the school, not the child. The reverse-FK lookup
-// for parental_consent / guardian_consents tables is omitted because no
-// such table exists yet in the schema (see RBAC v1 oauth_consents only).
-const TABLE_SPECS: ReadonlyArray<TableSpec> = [
-  // Core profile — single row.
-  { key: 'student',             table: 'students',                  studentIdColumn: null, singleColumn: 'id' },
-  // Subscription — at most one active row per student.
-  { key: 'subscription',        table: 'student_subscriptions',     studentIdColumn: 'student_id' },
-  // BKT / mastery profile — typically 1 row.
-  { key: 'learning_profile',    table: 'student_learning_profiles', studentIdColumn: 'student_id' },
-  // Quiz history.
-  { key: 'quiz_sessions',       table: 'quiz_sessions',             studentIdColumn: 'student_id' },
-  { key: 'quiz_attempts',       table: 'quiz_responses',            studentIdColumn: 'student_id' },
-  // Foxy AI conversations.
-  { key: 'foxy_chat_messages',  table: 'foxy_chat_messages',        studentIdColumn: 'student_id' },
-  // Report-card scores.
-  { key: 'score_history',       table: 'score_history',             studentIdColumn: 'student_id' },
-  // Assignment submissions.
-  { key: 'submissions',         table: 'assignment_submissions',    studentIdColumn: 'student_id' },
-  // Notifications addressed to this child.
-  { key: 'notifications',       table: 'notifications',             studentIdColumn: 'recipient_id' },
-];
+async function createRlsScopedClient(request: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  }
+
+  const authHeader = request.headers.get('Authorization');
+  const cookieStore = await cookies();
+
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll() {
+        // RLS-scoped export data reads only; this route does not mutate auth cookies.
+      },
+    },
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
+  });
+}
 
 function shortId(uuid: string): string {
   return uuid.replace(/-/g, '').slice(0, 8);
@@ -169,158 +163,35 @@ export async function GET(
       );
     }
 
-    // ── 5. Aggregate the tables ──────────────────────────────────────
-    // We run reads in parallel — each table is independent. Errors on
-    // any single table fail the whole export (better to refuse a partial
-    // download than ship a misleading "complete" file). Notifications
-    // for guardians (recipient_type='guardian') aren't included here —
-    // they belong to the guardian, not the child.
-    const tableCounts: Record<string, number> = {};
-    const exportBody: Record<string, unknown> = {
-      schema_version: EXPORT_SCHEMA_VERSION,
-      exported_at: new Date().toISOString(),
-    };
+    // ── 5. Aggregate the tables through a scoped DB helper ─────────────
+    // The helper repeats the guardian ownership check using auth.uid() and
+    // returns the same DPDP export shape this route has historically served.
+    const rlsClient = await createRlsScopedClient(request);
+    const { data: rpcData, error: rpcError } = await rlsClient.rpc('parent_child_export_data', {
+      p_student_id: studentId,
+    });
 
-    for (const spec of TABLE_SPECS) {
-      try {
-        if (spec.studentIdColumn === null && spec.singleColumn) {
-          // Single-row read keyed by id.
-          const { data, error } = await supabaseAdmin
-            .from(spec.table)
-            .select('*')
-            .eq(spec.singleColumn, studentId)
-            .maybeSingle();
-          if (error) {
-            logger.error('parent_child_export_table_fetch_failed', {
-              route: 'parent/children/export',
-              table: spec.table,
-              error: new Error(error.message),
-            });
-            return NextResponse.json(
-              { success: false, error: `Failed to load ${spec.key}` },
-              { status: 500 },
-            );
-          }
-          exportBody[spec.key] = data;
-          tableCounts[spec.table] = data ? 1 : 0;
-        } else if (spec.table === 'notifications') {
-          // Notifications need a compound filter so a guardian can't
-          // exfiltrate notifications addressed to a guardian by passing
-          // the guardian's id as a student_id (the columns share UUID
-          // shape but the row is owned by a different role).
-          const { data, error } = await supabaseAdmin
-            .from(spec.table)
-            .select('*')
-            .eq('recipient_id', studentId)
-            .eq('recipient_type', 'student');
-          if (error) {
-            logger.error('parent_child_export_table_fetch_failed', {
-              route: 'parent/children/export',
-              table: spec.table,
-              error: new Error(error.message),
-            });
-            return NextResponse.json(
-              { success: false, error: `Failed to load ${spec.key}` },
-              { status: 500 },
-            );
-          }
-          exportBody[spec.key] = data ?? [];
-          tableCounts[spec.table] = (data ?? []).length;
-        } else if (spec.table === 'student_subscriptions' || spec.table === 'student_learning_profiles') {
-          // These are typically single-row-per-student but we treat as
-          // a list defensively — the test suite for student_subscriptions
-          // shows multiple rows are possible during plan transitions.
-          const { data, error } = await supabaseAdmin
-            .from(spec.table)
-            .select('*')
-            .eq(spec.studentIdColumn!, studentId);
-          if (error) {
-            logger.error('parent_child_export_table_fetch_failed', {
-              route: 'parent/children/export',
-              table: spec.table,
-              error: new Error(error.message),
-            });
-            return NextResponse.json(
-              { success: false, error: `Failed to load ${spec.key}` },
-              { status: 500 },
-            );
-          }
-          // Preserve the "subscription" / "learning_profile" naming as a
-          // single object when there's exactly one row to keep the
-          // payload spec stable; emit array when there are 0 or 2+.
-          if (Array.isArray(data) && data.length === 1) {
-            exportBody[spec.key] = data[0];
-          } else {
-            exportBody[spec.key] = data ?? [];
-          }
-          tableCounts[spec.table] = (data ?? []).length;
-        } else {
-          // Multi-row list read.
-          const { data, error } = await supabaseAdmin
-            .from(spec.table)
-            .select('*')
-            .eq(spec.studentIdColumn!, studentId);
-          if (error) {
-            logger.error('parent_child_export_table_fetch_failed', {
-              route: 'parent/children/export',
-              table: spec.table,
-              error: new Error(error.message),
-            });
-            return NextResponse.json(
-              { success: false, error: `Failed to load ${spec.key}` },
-              { status: 500 },
-            );
-          }
-          exportBody[spec.key] = data ?? [];
-          tableCounts[spec.table] = (data ?? []).length;
-        }
-      } catch (e) {
-        logger.error('parent_child_export_table_exception', {
-          route: 'parent/children/export',
-          table: spec.table,
-          error: e instanceof Error ? e : new Error(String(e)),
-        });
-        return NextResponse.json(
-          { success: false, error: `Failed to load ${spec.key}` },
-          { status: 500 },
-        );
-      }
-    }
-
-    // Audit logs row where the child is the resource. Filtered by
-    // resource_type so we don't pick up audit rows about an admin who
-    // happens to share a UUID with the student (the columns share UUID
-    // shape across resource_type domains).
-    try {
-      const { data: auditRows, error: auditErr } = await supabaseAdmin
-        .from('audit_logs')
-        .select('id, auth_user_id, action, resource_type, resource_id, details, status, created_at')
-        .eq('resource_id', studentId)
-        .eq('resource_type', 'students');
-      if (auditErr) {
-        logger.warn('parent_child_export_audit_fetch_failed', {
-          route: 'parent/children/export',
-          error: auditErr.message,
-        });
-      }
-      // Key is `audit_logs` (matches the Phase D.2 brief's response
-      // shape). The table-counts map keeps the same key so the audit
-      // row metadata stays addressable by table name.
-      exportBody['audit_logs'] = auditRows ?? [];
-      tableCounts['audit_logs'] = (auditRows ?? []).length;
-    } catch (e) {
-      logger.warn('parent_child_export_audit_exception', {
+    if (rpcError) {
+      logger.error('parent_child_export_rpc_failed', {
         route: 'parent/children/export',
-        error: e instanceof Error ? e.message : String(e),
+        error: new Error(rpcError.message),
       });
-      exportBody['audit_logs'] = [];
-      tableCounts['audit_logs'] = 0;
+      return NextResponse.json(
+        { success: false, error: 'Failed to load export data' },
+        { status: 500 },
+      );
     }
 
-    // No `parental_consent` table exists in the schema today; emit an
-    // empty array so the field shape is stable for future migrations.
-    exportBody['consents'] = [];
-    tableCounts['parental_consent'] = 0;
+    const exportResult = rpcData as ParentChildExportRpcResponse | null;
+    if (!exportResult?.success || !exportResult.data || !exportResult.tableCounts) {
+      return NextResponse.json(
+        { success: false, error: exportResult?.error ?? 'Failed to load export data' },
+        { status: exportResult?.status ?? 500 },
+      );
+    }
+
+    const exportBody = exportResult.data;
+    const tableCounts = exportResult.tableCounts;
 
     // ── 6. Serialise + enforce 10MB cap ──────────────────────────────
     const serialized = JSON.stringify(exportBody);
@@ -372,14 +243,15 @@ export async function GET(
     // dashboard). Best-effort: a publish failure does NOT block the
     // download — the audit_logs row is the canonical record.
     try {
-      await publishEvent(supabaseAdmin, {
-        kind: 'parent.child_data_exported',
-        eventId: randomUUID(),
-        occurredAt: new Date().toISOString(),
-        actorAuthUserId: auth.userId!,
-        tenantId: linkedChild.schoolId ?? null,
-        idempotencyKey: `parent_child_data_exported:${guardian.id}:${studentId}:${Date.now()}`,
-        payload: {
+      const { error: eventError } = await rlsClient.rpc('parent_publish_child_state_event', {
+        p_kind: 'parent.child_data_exported',
+        p_student_id: studentId,
+        p_event_id: randomUUID(),
+        p_occurred_at: new Date().toISOString(),
+        p_actor_auth_user_id: auth.userId!,
+        p_tenant_id: linkedChild.schoolId ?? null,
+        p_idempotency_key: `parent_child_data_exported:${guardian.id}:${studentId}:${Date.now()}`,
+        p_payload: {
           guardianId: guardian.id,
           studentId,
           schemaVersion: EXPORT_SCHEMA_VERSION,
@@ -388,6 +260,7 @@ export async function GET(
           rowCountTotal,
         },
       });
+      if (eventError) throw new Error(eventError.message);
     } catch (e) {
       logger.warn('parent_child_data_exported_publish_failed', {
         route: 'parent/children/export',

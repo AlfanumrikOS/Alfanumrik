@@ -15,6 +15,8 @@
  * (getStudentById), and a table-aware in-memory @alfanumrik/lib/supabase-admin.
  */
 
+import { readFileSync } from 'fs';
+import path from 'path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const holders = vi.hoisted(() => ({
@@ -46,6 +48,13 @@ vi.mock('@alfanumrik/lib/logger', () => ({
   },
 }));
 
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(async () => ({
+    getAll: vi.fn(() => []),
+    setAll: vi.fn(),
+  })),
+}));
+
 vi.mock('@alfanumrik/lib/supabase-admin', () => {
   // Lazy chain: any terminal await resolves to the table's seeded rows.
   function chainFor(table: string) {
@@ -69,10 +78,38 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
   return { supabaseAdmin: { from: (t: string) => chainFor(t) } };
 });
 
+vi.mock('@supabase/ssr', () => {
+  function chainFor(table: string) {
+    if (table !== 'students') holders.anySourceQueried = true;
+    const exec = () => Promise.resolve({ data: holders.tables[table] ?? [], error: null });
+    const chain: Record<string, unknown> = {
+      select() { return chain; },
+      eq() { return chain; },
+      in() { return chain; },
+      is() { return chain; },
+      not() { return chain; },
+      gte() { return chain; },
+      lte() { return chain; },
+      order() { return chain; },
+      limit() { return exec(); },
+      maybeSingle() { return Promise.resolve({ data: (holders.tables[table] ?? [])[0] ?? null, error: null }); },
+      then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) { return exec().then(onF, onR); },
+    };
+    return chain;
+  }
+
+  return {
+    createServerClient: vi.fn(() => ({
+      from: (table: string) => chainFor(table),
+    })),
+  };
+});
+
 const GUARDIAN_AUTH = '11111111-1111-4111-a111-111111111111';
 const CHILD_OWN = '33333333-3333-4333-a333-333333333333';
 const CHILD_OTHER = '44444444-4444-4444-a444-444444444444';
 const SCHOOL_ID = '55555555-5555-4555-a555-555555555555';
+const routeSourcePath = path.resolve(process.cwd(), 'src/app/api/parent/calendar/route.ts');
 
 function req(studentId: string, query = ''): Request {
   return new Request(
@@ -148,6 +185,16 @@ describe('GET /api/parent/calendar — boundary (P13)', () => {
     expect(body.success).toBe(false);
     expect(body.data).toBeUndefined();
     expect(body).not.toHaveProperty('events');
+  });
+});
+
+describe('GET /api/parent/calendar — XC-3 route source contract', () => {
+  it('runs aggregation reads through an RLS-scoped request client, not route-level service-role access', () => {
+    const source = readFileSync(routeSourcePath, 'utf8');
+    expect(source).not.toContain('@alfanumrik/lib/supabase-admin');
+    expect(source).toContain('@supabase/ssr');
+    expect(source).toContain('createServerClient');
+    expect(source).toContain('Authorization');
   });
 });
 

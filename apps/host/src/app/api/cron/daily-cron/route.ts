@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@alfanumrik/lib/logger';
+import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 
 /**
  * POST /api/cron/daily-cron
@@ -98,6 +99,15 @@ export async function POST(request: NextRequest) {
       status: response.status,
       duration_ms: durationMs,
     });
+
+    if (response.ok) {
+      await recordCronJobHealth({
+        path: '/api/cron/daily-cron',
+        metric: 'ops.cron.daily_cron.last_success_at',
+        source: 'cron/daily-cron',
+        durationMs,
+      });
+    }
 
     // Surface Edge Function status. 207 = partial success (some steps failed,
     // some succeeded) — we propagate that through unchanged so the Vercel Cron

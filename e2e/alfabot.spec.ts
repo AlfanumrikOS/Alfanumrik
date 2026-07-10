@@ -189,15 +189,16 @@ test.describe('AlfaBot — audience switching', () => {
     await page.goto('/welcome?v=2');
     await page.getByTestId('alfabot-launcher').click();
     const panel = page.getByTestId('alfabot-panel');
+    await expect(panel).toBeVisible();
     // Open the role selector.
     await panel.getByRole('button', { name: /Switch role/i }).click();
     // Pick School.
-    await panel.getByRole('radio', { name: /School/i }).click();
+    await panel.getByRole('radiogroup', { name: /Audience/i }).getByRole('radio', { name: /School/i }).click();
     // The agreed chip copy from PR 3:
     // "What's pricing for 30–3,000 seats?"  (note the en-dash, NOT a hyphen)
-    await expect(
-      panel.getByRole('listitem', { name: /What's pricing for 30.{1,2}3,000 seats\?/i }),
-    ).toBeVisible();
+    await expect(panel.getByText(/What's pricing for 30.{1,2}3,000 seats\?/i)).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });
 
@@ -295,6 +296,7 @@ test.describe('AlfaBot — FAQ deep link', () => {
   test('clicking "Ask AlfaBot →" prefills the question in the input', async ({ page }) => {
     await installBaseMocks(page);
     await page.goto('/welcome?v=2');
+    await expect(page.getByTestId('alfabot-launcher')).toBeVisible({ timeout: 10_000 });
     // Open one of the FAQ accordions — the pricing one, index 3 in the
     // FAQV2 array (zero-based 2). Use the visible question text instead of
     // a positional locator.
@@ -310,9 +312,9 @@ test.describe('AlfaBot — FAQ deep link', () => {
     await faqItem.getByRole('button', { name: /Ask AlfaBot/i }).click();
     // Panel opens with the input prefilled.
     const panel = page.getByTestId('alfabot-panel');
-    await expect(panel).toBeVisible();
+    await expect(panel).toBeVisible({ timeout: 10_000 });
     const textarea = panel.getByRole('textbox', { name: /AlfaBot input/i });
-    await expect(textarea).toHaveValue(/₹699/);
+    await expect(textarea).toHaveValue(/What plans are available\? Are there hidden fees\?/i);
     // Suppress unused locator warning.
     void summary;
   });
