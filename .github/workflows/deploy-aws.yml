@@ -13,6 +13,7 @@ name: Deploy AWS ECS — Alfanumrik
 #   NEXT_PUBLIC_POSTHOG_KEY        - phc_... (optional, baked at build time)
 #   NEXT_PUBLIC_POSTHOG_HOST       - https://eu.posthog.com (optional, baked at build time)
 #   NEXT_PUBLIC_POSTHOG_ENABLED    - true / false (optional, baked at build time)
+#   DEPLOY_GIT_SHA                 - derived automatically from GITHUB_SHA
 #
 # Required GitHub Actions VARIABLES (Settings → Secrets and variables → Actions → Variables):
 #   ENABLE_AWS_DEPLOY   - Must be 'true' to run (phased cutover guard)
@@ -123,6 +124,7 @@ jobs:
             --build-arg NEXT_PUBLIC_POSTHOG_KEY="${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}" \
             --build-arg NEXT_PUBLIC_POSTHOG_HOST="${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}" \
             --build-arg NEXT_PUBLIC_POSTHOG_ENABLED="${{ secrets.NEXT_PUBLIC_POSTHOG_ENABLED }}" \
+            --build-arg DEPLOY_GIT_SHA="${GITHUB_SHA}" \
             --build-arg NODE_OPTIONS="--max-old-space-size=6144" \
             --tag "${{ steps.meta.outputs.image_sha }}" \
             --file Dockerfile \
@@ -247,11 +249,19 @@ jobs:
             LAST_STATUS="$STATUS"
             echo "Attempt $i/5 — HTTP $STATUS"
             if [ "$STATUS" = "200" ]; then
-              echo "Smoke test passed (attempt $i)"
+              BODY_OK=$(echo "$BODY" | jq -r '.ok // false' 2>/dev/null || echo false)
+              BODY_STATUS=$(echo "$BODY" | jq -r '.status // "unknown"' 2>/dev/null || echo unknown)
+              BODY_SHA=$(echo "$BODY" | jq -r '.version.git_sha // "unknown"' 2>/dev/null || echo unknown)
+              echo "Health body: ok=${BODY_OK}, status=${BODY_STATUS}, git_sha=${BODY_SHA}"
+              if [ "$BODY_OK" = "true" ] && [ "$BODY_STATUS" = "healthy" ]; then
+                echo "Smoke test passed (attempt $i)"
+                echo "$BODY" | head -c 500
+                echo "passed=true" >> "$GITHUB_OUTPUT"
+                ALL_FAIL=0
+                break
+              fi
+              echo "Health endpoint returned HTTP 200 but is not healthy; retrying."
               echo "$BODY" | head -c 500
-              echo "passed=true" >> "$GITHUB_OUTPUT"
-              ALL_FAIL=0
-              break
             fi
             if [ $i -lt 5 ]; then
               echo "Waiting 30s before retry..."
