@@ -64,9 +64,9 @@ RUN addgroup --system --gid 1001 nodejs \
  && adduser --system --uid 1001 nextjs
 
 # Copy the standalone output — self-contained Node server
-COPY --from=builder /app/apps/host/public ./apps/host/public
+COPY --from=builder /app/apps/host/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/host/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/host/.next/static ./apps/host/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/host/.next/static ./.next/static
 
 USER nextjs
 
@@ -78,4 +78,4 @@ EXPOSE 3000
 # container health visibility (e.g. in ECS service events, docker ps).
 HEALTHCHECK --interval=60s --timeout=5s --start-period=60s --retries=3 CMD node -e "require('http').get('http://localhost:3000/api/v1/health', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
-CMD ["node", "apps/host/server.js"]
+CMD ["node", "server.js"]
