@@ -34,7 +34,7 @@ permissions:
 env:
   NODE_VERSION: '22'
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-  TARGET_URL: ${{ vars.PRODUCTION_CRON_TARGET_URL || 'https://alfanumrik.com' }}
+  TARGET_URL: ${{ vars.PRODUCTION_CRON_TARGET_URL || vars.PRODUCTION_DOMAIN || 'https://alfanumrik.com' }}
   CRON_SECRET_AWS_SECRET_ID: ${{ vars.CRON_SECRET_AWS_SECRET_ID || 'alfa-prod/app' }}
 
 jobs:
