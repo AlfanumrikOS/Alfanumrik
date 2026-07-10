@@ -208,10 +208,6 @@ jobs:
         with:
           fetch-depth: 2
 
-      - uses: supabase/setup-cli@v2
-        with:
-          version: latest
-
       - name: Detect changed Edge Functions
         id: changed
         run: |
@@ -229,6 +225,11 @@ jobs:
             echo "$CHANGED"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
+
+      - uses: supabase/setup-cli@v2
+        if: steps.changed.outputs.functions != ''
+        with:
+          version: latest
 
       - name: Deploy each changed function
         if: steps.changed.outputs.functions != ''
