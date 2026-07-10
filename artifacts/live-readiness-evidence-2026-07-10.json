@@ -1,0 +1,136 @@
+{
+  "releaseCandidate": "RC-2026-07-10-devops-operational",
+  "targetEnvironment": "production",
+  "collectedAt": "2026-07-10T08:10:00.000+05:30",
+  "gates": [
+    {
+      "id": "certification-e2e-live",
+      "status": "not_run",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "CERTIFICATION_RUN_ENABLED=true CERTIFICATION_BASE_URL=<target> CERTIFICATION_RUN_ID=<uuid> npx playwright test e2e/certification",
+      "evidence": [],
+      "notes": "Blocked: certification env and run id are unset."
+    },
+    {
+      "id": "edge-secrets-smoke",
+      "status": "not_run",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "supabase secrets set UPSTASH_REDIS_REST_URL=<redacted> UPSTASH_REDIS_REST_TOKEN=<redacted> --project-ref <target-project-ref> && smoke parent-portal logs/load",
+      "evidence": [],
+      "notes": "Blocked: Upstash Edge secrets are unset; mutating Supabase secrets requires operator credentials/approval."
+    },
+    {
+      "id": "tenant-isolation-live",
+      "status": "not_run",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "LIVE_TENANT_SMOKE_BASE_URL=<target> LIVE_TENANT_SMOKE_PARENT_A_TOKEN=<tenant-a-parent-jwt> LIVE_TENANT_SMOKE_TEACHER_A_TOKEN=<tenant-a-teacher-jwt> LIVE_TENANT_SMOKE_SCHOOL_ADMIN_A_TOKEN=<tenant-a-admin-jwt> LIVE_TENANT_SMOKE_STUDENT_B_ID=<tenant-b-student> LIVE_TENANT_SMOKE_CLASS_B_ID=<tenant-b-class> LIVE_TENANT_SMOKE_SCHOOL_B_ID=<tenant-b-school> npx tsx scripts/verify-live-tenant-isolation-smoke.ts",
+      "evidence": [],
+      "notes": "Blocked: live tenant fixture env is unset."
+    },
+    {
+      "id": "feature-flags-production",
+      "status": "pass",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "npx tsx scripts/verify-feature-flag-matrix.ts --env=production",
+      "evidence": ["artifacts/devops-operational-execution-2026-07-10.md"],
+      "notes": "checked=120; no missing, mismatched, or unexpected flags."
+    },
+    {
+      "id": "feature-flags-staging",
+      "status": "pass",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "npx tsx scripts/verify-feature-flag-matrix.ts --env=staging",
+      "evidence": ["artifacts/devops-operational-execution-2026-07-10.md"],
+      "notes": "checked=120; no missing, mismatched, or unexpected flags."
+    },
+    {
+      "id": "grade-format-target-db",
+      "status": "pass",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "npx tsx scripts/verify-grade-format.ts",
+      "evidence": ["artifacts/devops-operational-execution-2026-07-10.md"],
+      "notes": "question_bank and curriculum_topics grades conform to P5."
+    },
+    {
+      "id": "db-function-grants-live",
+      "status": "pass",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "npx tsx scripts/verify-db-function-hardening-live.ts --input=artifacts/rca18-db-function-grants.json",
+      "evidence": [
+        "artifacts/rca18-db-function-grants.json",
+        "artifacts/devops-operational-execution-2026-07-10.md"
+      ],
+      "notes": "3/3 functions match manifest posture."
+    },
+    {
+      "id": "job-health-live",
+      "status": "fail",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "npx tsx scripts/verify-job-health-live.ts --input=artifacts/rca17-job-health.json",
+      "evidence": [
+        "artifacts/rca17-job-health.json",
+        "artifacts/devops-operational-execution-2026-07-10.md"
+      ],
+      "notes": "0/13 jobs passed; every registered job is missing a live last-success metric."
+    },
+    {
+      "id": "pii-notification",
+      "status": "not_run",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "docs/runbooks/super-admin-pii-export-notification.md",
+      "evidence": [],
+      "notes": "Blocked: staff notification and post-deploy audit review require operator/business action."
+    },
+    {
+      "id": "incident-id-live",
+      "status": "not_run",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "npx tsx scripts/verify-incident-id-live.ts --input=<evidence.json>",
+      "evidence": [],
+      "notes": "Blocked: production health probe returned HTTP 429 and VERCEL_AUTOMATION_BYPASS_SECRET is unset."
+    },
+    {
+      "id": "mobile-legacy-traffic-live",
+      "status": "pass",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "npx tsx scripts/verify-mobile-legacy-traffic-live.ts --input=artifacts/rca04-mobile-legacy-traffic.json",
+      "evidence": [
+        "artifacts/rca04-mobile-legacy-traffic.json",
+        "artifacts/devops-operational-execution-2026-07-10.md"
+      ],
+      "notes": "No legacy mobile quiz/payment traffic found in captured telemetry export."
+    },
+    {
+      "id": "historical-xp-target-db",
+      "status": "fail",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "run scripts/historical-xp-inflation-quantification.sql on target DB and obtain clamp/backfill decision",
+      "evidence": ["artifacts/devops-operational-execution-2026-07-10.md"],
+      "notes": "Read-only quantification ran: 14 impacted students and 23565 suspected inflated XP. Product/CEO clamp-backfill-comms decision is still missing."
+    },
+    {
+      "id": "xc3-migration-execution",
+      "status": "not_run",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "execute scripts/xc3-service-role-migration-batch.json against prioritized routes",
+      "evidence": [],
+      "notes": "Blocked: full first-batch RLS migration execution/sign-off is not complete in this operational run."
+    },
+    {
+      "id": "tsb4-live-cutover",
+      "status": "fail",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "execute scripts/tsb4-canonical-membership-cutover.json through live smoke before retirement approval",
+      "evidence": ["artifacts/devops-operational-execution-2026-07-10.md"],
+      "notes": "Read-only divergence quantification ran and found only 18 matched_or_both_inactive pairs. Full live smoke/repoint/retirement approval remains incomplete."
+    },
+    {
+      "id": "wireframe-expansion-signoff",
+      "status": "not_run",
+      "executedAt": "2026-07-10T08:10:00.000+05:30",
+      "command": "obtain product sign-off on the expanded scripts/product-surface-matrix.json 13-surface route/page/flag/API matrix and record any remaining surfaced CTA or hidden/dead states",
+      "evidence": [],
+      "notes": "Blocked: product sign-off is an external approval step."
+    }
+  ]
+}
