@@ -5,6 +5,10 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY apps/host/package.json ./apps/host/package.json
+COPY packages/lib/package.json ./packages/lib/package.json
+COPY packages/ui/package.json ./packages/ui/package.json
+COPY eslint-plugin-alfanumrik/package.json ./eslint-plugin-alfanumrik/package.json
 # Install ALL deps (devDeps needed for build)
 RUN npm ci
 
