@@ -122,7 +122,7 @@ export default function MasteryAwareness({
         >
           <MasteryRing value={masteryPercent(weak)} size={40} strokeWidth={4} />
           <span className="flex-1 min-w-0">
-            <span className="block text-xs font-bold" style={{ color: 'var(--accent-warm)' }}>
+            <span className="block text-xs font-bold" style={{ color: 'var(--orange, #E8581C)' }}>
               {weak.due_for_review
                 ? isHi ? 'दोहराने का समय' : 'Time to revise'
                 : isHi ? 'कमज़ोर विषय' : 'Weak spot'}

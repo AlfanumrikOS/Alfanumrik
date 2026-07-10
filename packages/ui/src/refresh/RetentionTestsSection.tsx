@@ -9,9 +9,6 @@
  *
  * Extracted from src/app/review/page.tsx (2026-05-20).
  *
- * Phase 8 rebuild: Card container + Button CTA + token-only colour. The
- * Supabase query, filters, routing target and data-testid are UNCHANGED.
- *
  * Auto-hides (renders null) when no tests are pending.
  */
 
@@ -19,7 +16,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
-import { Card, Button } from '@alfanumrik/ui/ui/primitives';
 
 interface RetentionTest {
   id: string;
@@ -60,54 +56,36 @@ export default function RetentionTestsSection() {
   return (
     <section data-testid="refresh-section-c" className="space-y-3">
       <header>
-        <h2 className="text-fluid-base font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
+        <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
           {isHi ? '🧠 याददाश्त परीक्षा' : '🧠 Retention Tests'}
         </h2>
       </header>
 
-      <Card
-        variant="flat"
-        className="p-4"
-        style={{
-          background: 'color-mix(in srgb, var(--purple) 6%, var(--surface-1))',
-          borderColor: 'color-mix(in srgb, var(--purple) 15%, transparent)',
-        }}
-      >
+      <div className="rounded-2xl p-4" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)' }}>
         <div className="space-y-1.5">
-          {tests.map(test => {
-            const low = test.predicted_retention < 0.5;
-            return (
-              <div key={test.id} className="flex items-center gap-2 text-fluid-xs">
-                <span
-                  className="h-2 w-2 flex-shrink-0 rounded-full"
-                  style={{ background: low ? 'var(--danger)' : 'var(--warning)' }}
-                  aria-hidden="true"
-                />
-                <span className="flex-1 truncate font-medium" style={{ color: 'var(--text-2)' }}>
-                  {test.topic_title}
-                </span>
-                <span className="flex-shrink-0 tabular-nums text-muted-foreground">
-                  {Math.round((test.predicted_retention ?? 0) * 100)}% {isHi ? 'याददाश्त' : 'retention'}
-                </span>
-              </div>
-            );
-          })}
+          {tests.map(test => (
+            <div key={test.id} className="flex items-center gap-2 text-xs">
+              <span
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ background: test.predicted_retention < 0.5 ? '#EF4444' : '#F59E0B' }}
+              />
+              <span className="flex-1 truncate font-medium" style={{ color: 'var(--text-2)' }}>
+                {test.topic_title}
+              </span>
+              <span className="text-[var(--text-3)] flex-shrink-0">
+                {Math.round((test.predicted_retention ?? 0) * 100)}% {isHi ? 'याददाश्त' : 'retention'}
+              </span>
+            </div>
+          ))}
         </div>
-        <Button
-          variant="secondary"
-          fullWidth
+        <button
           onClick={() => router.push('/quiz?mode=cognitive')}
-          leadingIcon={<span>🧠</span>}
-          className="mt-3"
-          style={{
-            backgroundColor: 'color-mix(in srgb, var(--purple) 12%, var(--surface-1))',
-            borderColor: 'color-mix(in srgb, var(--purple) 34%, transparent)',
-            color: 'var(--text-1)',
-          }}
+          className="mt-3 w-full py-2 rounded-xl text-xs font-bold"
+          style={{ background: 'rgba(124,58,237,0.1)', color: '#7C3AED', border: '1px solid rgba(124,58,237,0.2)' }}
         >
-          {isHi ? 'रिटेंशन टेस्ट लो' : 'Take Retention Test'}
-        </Button>
-      </Card>
+          🧠 {isHi ? 'रिटेंशन टेस्ट लो' : 'Take Retention Test'}
+        </button>
+      </div>
     </section>
   );
 }

@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase, getFeatureFlags } from '@alfanumrik/lib/supabase';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
-import { useRealtimeRevalidator } from '@/hooks/useRealtimeRevalidator';
+import { useRealtimeRevalidator } from '@alfanumrik/lib/hooks/useRealtimeRevalidator';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { REALTIME_FLAGS, CONSUMER_MINIMALISM_FLAGS } from '@alfanumrik/lib/feature-flags';
 import {
@@ -24,7 +24,6 @@ import {
 // Lazy-loaded to keep the first-paint bundle tight.
 const ParentGlanceHome = dynamic(() => import('@alfanumrik/ui/parent/ParentGlanceHome'), { ssr: false });
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
-import { Button, Input, Alert, Avatar } from '@alfanumrik/ui/ui/primitives';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -110,18 +109,8 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   const [name, setName] = useState(prefillName || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (loading) {
-        setLoading(false);
-        setError(t(isHi, "Loading timed out. Please try again.", "लोडिंग टाइम आउट। कृपया पुनः प्रयास करें।"));
-      }
-    }, 10000);
-    return () => clearTimeout(timer);
-  }, [loading, isHi]);
-
   // When true, the parent has no Supabase session, so the parent-portal Edge
-  // Function (JWT-required since PR 591) will reject the link-code login. We
+  // Function (JWT-required since PR #591) will reject the link-code login. We
   // surface an account-creation CTA instead of a dead "Connection error".
   const [needsSignIn, setNeedsSignIn] = useState(false);
   // Consent gate (PP-1/3 Option B): when parent_login creates a fresh/pending
@@ -138,7 +127,7 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
     if (lockout.locked) { setError(lockout.message); return; }
 
     // P15: the parent-portal Edge Function requires a Supabase Bearer JWT on
-    // EVERY action (PR 591 P13 hardening) — including parent_login. A parent
+    // EVERY action (PR #591 P13 hardening) — including parent_login. A parent
     // with no Supabase session (authUserId is null) cannot complete a link-code
     // login and, even if they could, every dashboard fetch would 401. Route
     // them to create/sign into an account up-front (which mints the JWT) rather
@@ -193,20 +182,20 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   if (pendingApproval) {
     const childName = pendingApproval.childName || t(isHi, 'your child', 'आपके बच्चे');
     return (
-      <div className="max-w-[600px] mx-auto px-4 py-5 text-foreground bg-surface-2 min-h-dvh flex items-center justify-center">
+      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh flex items-center justify-center">
         <div className="max-w-[400px] w-full text-center">
           <div className="text-5xl mb-3">&#x23F3;</div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">
+          <h1 className="text-[22px] font-bold text-gray-900 mb-2">
             {t(isHi, `Request sent to ${childName}`, `${childName} को अनुरोध भेजा गया`)}
           </h1>
-          <p className="text-sm text-muted-foreground mb-1 leading-relaxed">
+          <p className="text-sm text-gray-600 mb-1 leading-relaxed">
             {t(
               isHi,
               'Ask your child to open Alfanumrik and approve your request. Once they approve, your dashboard unlocks automatically.',
               'अपने बच्चे से Alfanumrik खोलकर आपके अनुरोध को स्वीकार करने को कहें। स्वीकार करते ही आपका डैशबोर्ड अपने आप खुल जाएगा।',
             )}
           </p>
-          <p className="text-xs text-muted-foreground mb-6 leading-relaxed">
+          <p className="text-xs text-gray-400 mb-6 leading-relaxed">
             {t(
               isHi,
               'They will see your request on their dashboard and in their notifications.',
@@ -216,13 +205,13 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
           <button
             onClick={submit}
             disabled={loading}
-            className={`w-full px-5 py-3 bg-primary text-on-accent border-none rounded-lg text-base font-semibold cursor-pointer mb-3 ${loading ? 'opacity-50' : 'opacity-100'}`}
+            className={`w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3 ${loading ? 'opacity-50' : 'opacity-100'}`}
           >
             {loading ? t(isHi, 'Checking...', 'जाँच हो रही है...') : t(isHi, 'Check again', 'फिर से जाँचें')}
           </button>
           <button
             onClick={() => { setPendingApproval(null); }}
-            className="text-xs text-muted-foreground hover:text-muted-foreground underline bg-transparent border-none cursor-pointer"
+            className="text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
           >
             {t(isHi, 'Back', 'वापस')}
           </button>
@@ -236,20 +225,20 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   // finish linking after authenticating.
   if (needsSignIn) {
     return (
-      <div className="max-w-[600px] mx-auto px-4 py-5 text-foreground bg-surface-2 min-h-dvh flex items-center justify-center">
+      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh flex items-center justify-center">
         <div className="max-w-[400px] w-full text-center">
           <div className="text-5xl mb-3">&#x1F510;</div>
-          <h1 className="text-2xl font-bold text-foreground mb-2">
+          <h1 className="text-[22px] font-bold text-gray-900 mb-2">
             {t(isHi, 'Create a parent account', 'अभिभावक अकाउंट बनाएँ')}
           </h1>
-          <p className="text-sm text-muted-foreground mb-1 leading-relaxed">
+          <p className="text-sm text-gray-600 mb-1 leading-relaxed">
             {t(
               isHi,
               "To view your child's progress securely, create a free parent account or sign in. It only takes a minute.",
               'अपने बच्चे की प्रगति सुरक्षित रूप से देखने के लिए एक मुफ़्त अभिभावक अकाउंट बनाएँ या साइन इन करें। इसमें बस एक मिनट लगता है।',
             )}
           </p>
-          <p className="text-xs text-muted-foreground mb-6 leading-relaxed">
+          <p className="text-xs text-gray-400 mb-6 leading-relaxed">
             {t(
               isHi,
               'After signing in, enter your link code once to connect to your child.',
@@ -258,13 +247,13 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
           </p>
           <button
             onClick={() => { window.location.href = '/login?role=parent&redirectTo=/parent'; }}
-            className="w-full px-5 py-3 bg-primary text-on-accent border-none rounded-lg text-base font-semibold cursor-pointer mb-3"
+            className="w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3"
           >
             {t(isHi, 'Create / sign in to account', 'अकाउंट बनाएँ / साइन इन करें')}
           </button>
           <button
             onClick={() => { setNeedsSignIn(false); }}
-            className="text-xs text-muted-foreground hover:text-muted-foreground underline bg-transparent border-none cursor-pointer"
+            className="text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
           >
             {t(isHi, 'Back', 'वापस')}
           </button>
@@ -274,33 +263,29 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
   }
 
   return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 text-foreground bg-surface-2 min-h-dvh flex items-center justify-center">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh flex items-center justify-center">
       <div className="max-w-[380px] w-full text-center">
         <div className="text-5xl mb-3">&#x1F9D1;&#x200D;&#x1F393;</div>
-        <h1 className="text-2xl font-bold text-foreground mb-1">{t(isHi, 'Parent Dashboard', 'अभिभावक डैशबोर्ड')}</h1>
-        <p className="text-sm text-muted-foreground mb-6">{t(isHi, "Enter your child's link code to view their progress", 'अपने बच्चे की प्रगति देखने के लिए लिंक कोड दर्ज करें')}</p>
+        <h1 className="text-[22px] font-bold text-gray-900 mb-1">{t(isHi, 'Parent Dashboard', 'अभिभावक डैशबोर्ड')}</h1>
+        <p className="text-sm text-gray-500 mb-6">{t(isHi, "Enter your child's link code to view their progress", 'अपने बच्चे की प्रगति देखने के लिए लिंक कोड दर्ज करें')}</p>
         {prefillName ? (
-          <p className="text-sm text-foreground mb-3 font-medium">
+          <p className="text-sm text-gray-700 mb-3 font-medium">
             {t(isHi, `Welcome, ${prefillName}!`, `स्वागत है, ${prefillName}!`)} {t(isHi, "Enter your child's link code to continue.", 'जारी रखने के लिए अपने बच्चे का लिंक कोड दर्ज करें।')}
           </p>
         ) : (
-          <div className="mb-2.5">
-            <Input placeholder={t(isHi, 'Your name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} aria-label={t(isHi, 'Your name', 'आपका नाम')} autoComplete="name" />
-          </div>
+          <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-[15px] outline-none mb-2.5 box-border" placeholder={t(isHi, 'Your name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} aria-label={t(isHi, 'Your name', 'आपका नाम')} autoComplete="name" />
         )}
-        <div className="mb-2.5">
-          <Input className="text-center uppercase tracking-[4px]" placeholder={t(isHi, 'LINK CODE', 'लिंक कोड')} value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label={t(isHi, 'Child link code', 'बच्चे का लिंक कोड')} />
-        </div>
-        {error && <div className="my-2"><Alert tone="danger">{error}</Alert></div>}
-        <Button fullWidth onClick={submit} loading={loading} disabled={loading} className="mt-2">
+        <input className="w-full px-3.5 py-3 bg-orange-50 border border-orange-200 rounded-[10px] text-gray-900 text-xl outline-none mb-2.5 box-border tracking-[4px] text-center uppercase" placeholder={t(isHi, 'LINK CODE', 'लिंक कोड')} value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={8} onKeyDown={e => e.key === 'Enter' && submit()} aria-label={t(isHi, 'Child link code', 'बच्चे का लिंक कोड')} />
+        {error && <p className="text-red-500 text-[13px] my-2">{error}</p>}
+        <button onClick={submit} disabled={loading} className={`w-full mt-2 px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer ${loading ? 'opacity-50' : 'opacity-100'}`}>
           {loading ? t(isHi, 'Connecting...', 'कनेक्ट हो रहा है...') : t(isHi, 'View Dashboard', 'डैशबोर्ड देखें')}
-        </Button>
-        <p className="text-xs text-muted-foreground mt-4">
+        </button>
+        <p className="text-xs text-gray-500 mt-4">
           {t(isHi, "Ask your child for the link code from their Alfanumrik profile.", 'अपने बच्चे से उनकी Alfanumrik प्रोफ़ाइल से लिंक कोड मांगें।')}
         </p>
-        <p className="text-xs text-muted-foreground mt-3">
+        <p className="text-xs text-gray-400 mt-3">
           {t(isHi, 'Student or Teacher?', 'छात्र या शिक्षक?')}{' '}
-          <a href="/login?switch=true" className="text-primary font-medium hover:underline">
+          <a href="/login?switch=true" className="text-orange-500 font-medium hover:underline">
             {t(isHi, 'Login here \u2192', 'यहाँ लॉगिन करें \u2192')}
           </a>
         </p>
@@ -309,7 +294,7 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
             await supabase.auth.signOut();
             window.location.href = '/login';
           }}
-          className="text-xs text-muted-foreground mt-2 hover:text-muted-foreground underline bg-transparent border-none cursor-pointer"
+          className="text-xs text-gray-400 mt-2 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
         >
           {t(isHi, 'Sign out & switch account', 'साइन आउट करें और अकाउंट बदलें')}
         </button>
@@ -323,7 +308,7 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
 // ============================================================
 // Shown when a parent is in link-code mode (HMAC sessionStorage session, NO
 // Supabase JWT). The parent-portal Edge Function requires a Bearer JWT on every
-// action since the PR 591 P13 hardening, so a link-code parent's dashboard
+// action since the PR #591 P13 hardening, so a link-code parent's dashboard
 // would 401 on every fetch. Instead of a broken/erroring dashboard, we surface a
 // clear bilingual path to create or sign into a real account — which mints a
 // JWT, makes them a guardian-mode parent, and unlocks the dashboard with the
@@ -332,20 +317,20 @@ function LinkCodeSignInGate({ isHi, childName }: { isHi: boolean; childName: str
   const goSignIn = () => { window.location.href = '/login?role=parent&redirectTo=/parent'; };
   const switchAccount = () => { clearParentSession(); window.location.reload(); };
   return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 text-foreground bg-surface-2 min-h-dvh flex items-center justify-center">
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh flex items-center justify-center">
       <div className="max-w-[400px] w-full text-center">
         <div className="text-5xl mb-3">&#x1F510;</div>
-        <h1 className="text-2xl font-bold text-foreground mb-2">
+        <h1 className="text-[22px] font-bold text-gray-900 mb-2">
           {t(isHi, 'Sign in to view progress', 'प्रगति देखने के लिए साइन इन करें')}
         </h1>
-        <p className="text-sm text-muted-foreground mb-1 leading-relaxed">
+        <p className="text-sm text-gray-600 mb-1 leading-relaxed">
           {t(
             isHi,
             `Create a free parent account to see ${childName}'s full dashboard, reports and weekly progress.`,
             `${childName} का पूरा डैशबोर्ड, रिपोर्ट और साप्ताहिक प्रगति देखने के लिए एक मुफ़्त अभिभावक अकाउंट बनाएँ।`,
           )}
         </p>
-        <p className="text-xs text-muted-foreground mb-6 leading-relaxed">
+        <p className="text-xs text-gray-400 mb-6 leading-relaxed">
           {t(
             isHi,
             'Your child link is already saved — sign in once and it stays connected.',
@@ -354,13 +339,13 @@ function LinkCodeSignInGate({ isHi, childName }: { isHi: boolean; childName: str
         </p>
         <button
           onClick={goSignIn}
-          className="w-full px-5 py-3 bg-primary text-on-accent border-none rounded-lg text-base font-semibold cursor-pointer mb-3"
+          className="w-full px-5 py-3 bg-orange-500 text-white border-none rounded-[10px] text-[15px] font-semibold cursor-pointer mb-3"
         >
           {t(isHi, 'Create / sign in to account', 'अकाउंट बनाएँ / साइन इन करें')}
         </button>
         <button
           onClick={switchAccount}
-          className="text-xs text-muted-foreground hover:text-muted-foreground underline bg-transparent border-none cursor-pointer"
+          className="text-xs text-gray-400 hover:text-gray-600 underline bg-transparent border-none cursor-pointer"
         >
           {t(isHi, 'Use a different link code', 'दूसरा लिंक कोड इस्तेमाल करें')}
         </button>
@@ -370,8 +355,18 @@ function LinkCodeSignInGate({ isHi, childName }: { isHi: boolean; childName: str
 }
 
 // ============================================================
-// CHILD SELECTOR PILLS
+// STAT CARD
 // ============================================================
+// Avatar gradient pairs for the multi-child pill selector
+const avatarGradientsDash = [
+  ['#F59E0B', '#D97706'],
+  ['#EC4899', '#DB2777'],
+  ['#8B5CF6', '#7C3AED'],
+  ['#06B6D4', '#0891B2'],
+  ['#F97316', '#EA580C'],
+  ['#10B981', '#059669'],
+];
+
 function ChildSelectorPills({
   studentList,
   selectedIdx,
@@ -383,29 +378,68 @@ function ChildSelectorPills({
 }) {
   if (studentList.length <= 1) return null;
   return (
-    <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div style={{
+      display: 'flex',
+      gap: 8,
+      overflowX: 'auto',
+      paddingBottom: 4,
+      marginBottom: 16,
+      scrollbarWidth: 'none',
+      WebkitOverflowScrolling: 'touch',
+    } as React.CSSProperties}>
+      <style>{`.child-pills::-webkit-scrollbar{display:none}`}</style>
       {studentList.map((child, idx) => {
         const selected = idx === selectedIdx;
+        const [from, to] = avatarGradientsDash[child.name.charCodeAt(0) % avatarGradientsDash.length];
         return (
           <button
             key={child.id}
             onClick={() => onSelect(idx)}
-            aria-pressed={selected}
-            className={`flex min-h-[44px] flex-shrink-0 items-center gap-2 whitespace-nowrap rounded-pill py-2 pl-2 pr-3.5 text-sm transition-colors ${
-              selected
-                ? 'bg-primary font-bold text-on-accent shadow-md'
-                : 'border border-surface-3 bg-surface-1 font-medium text-foreground'
-            }`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px 8px 8px',
+              borderRadius: 24,
+              border: selected ? 'none' : '1px solid #FDBA7444',
+              backgroundColor: selected ? '#F97316' : '#FFFFFF',
+              color: selected ? '#FFFFFF' : '#475569',
+              fontSize: 13,
+              fontWeight: selected ? 700 : 500,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              boxShadow: selected ? '0 2px 8px #F9731640' : 'none',
+              transition: 'all 0.2s',
+            }}
           >
-            <Avatar size="xs" name={child.name} alt={child.name} decorative />
-            <span>{child.name.split(' ')[0]}</span>
-            <span
-              className={`rounded-md px-1.5 py-px text-2xs font-bold ${
-                selected ? 'bg-surface-2 text-primary' : 'bg-surface-2 text-primary'
-              }`}
-            >
-              {t(false, 'G', 'क')}
-              {child.grade}
+            {/* Avatar circle */}
+            <div style={{
+              width: 26,
+              height: 26,
+              borderRadius: '50%',
+              background: `linear-gradient(135deg, ${from}, ${to})`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#fff',
+              flexShrink: 0,
+            }}>
+              {child.name.charAt(0).toUpperCase()}
+            </div>
+            {child.name.split(' ')[0]}
+            {/* Grade badge */}
+            <span style={{
+              fontSize: 10,
+              fontWeight: 700,
+              backgroundColor: selected ? 'rgba(255,255,255,0.25)' : '#FDBA7433',
+              color: selected ? '#fff' : '#F97316',
+              borderRadius: 8,
+              padding: '1px 6px',
+            }}>
+              {t(false, 'G', 'क')}{child.grade}
             </span>
           </button>
         );
@@ -534,17 +568,17 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   const logout = () => { clearParentSession(); window.location.reload(); };
 
   if (loading) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 text-foreground bg-surface-2 min-h-dvh">
-      <div className="text-center py-20 text-muted-foreground">
-        <div className="w-10 h-10 border-[3px] border-surface-3 border-t-primary rounded-full mx-auto mb-4 animate-spin" />
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
+      <div className="text-center py-20 text-gray-500">
+        <div className="w-10 h-10 border-[3px] border-orange-200 border-t-orange-500 rounded-full mx-auto mb-4 animate-spin" />
         {t(isHi, `Loading ${student.name}'s progress...`, `${student.name} की प्रगति लोड हो रही है...`)}
       </div>
     </div>
   );
 
   if (!dash || dash.error) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 text-foreground bg-surface-2 min-h-dvh">
-      <div className="text-center py-[60px] text-danger">{dash?.error || t(isHi, 'Failed to load dashboard', 'डैशबोर्ड लोड करने में विफल')}</div>
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
+      <div className="text-center py-[60px] text-red-500">{dash?.error || t(isHi, 'Failed to load dashboard', 'डैशबोर्ड लोड करने में विफल')}</div>
     </div>
   );
 
@@ -552,7 +586,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
   const childName = dash.student?.name || student.name;
 
     return (
-      <div className="bg-surface-2 min-h-dvh">
+      <div className="bg-[#FFF8F0] min-h-dvh">
         {children.length > 1 && (
           <div className="max-w-[600px] mx-auto px-4 pt-2">
             <ChildSelectorPills
@@ -712,8 +746,8 @@ export default function ParentPage() {
   }, [auth.isLoading, auth.guardian, fetchAllChildren, unifiedAuth, resolveGuardianFromJwt]);
 
   if (checking || auth.isLoading) return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 text-foreground bg-surface-2 min-h-dvh">
-      <div className="text-center py-20 text-muted-foreground">Loading...</div>
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
+      <div className="text-center py-20 text-gray-500">Loading...</div>
     </div>
   );
 
@@ -727,7 +761,7 @@ export default function ParentPage() {
 
   // ── Link-code-mode hard gate (P15 dead-end fix) ─────────────────────────
   // The parent home (AtlasParent / Dashboard) fetches all of its data through
-  // the `parent-portal` Edge Function, which — since the PR 591 P13 hardening
+  // the `parent-portal` Edge Function, which — since the PR #591 P13 hardening
   // — REQUIRES a Supabase Bearer JWT on every action (get_child_dashboard,
   // get_children, get_monthly_report, even parent_login). guardian-mode
   // parents have that JWT (supabase.functions.invoke auto-attaches it).

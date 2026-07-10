@@ -24,7 +24,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { LoadingFoxy } from '@alfanumrik/ui/ui';
-import { Button, IconButton, EmptyState } from '@alfanumrik/ui/ui/primitives';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import QuickRecallSection from '@alfanumrik/ui/refresh/QuickRecallSection';
 import ChapterRefreshSection from '@alfanumrik/ui/refresh/ChapterRefreshSection';
@@ -64,25 +63,15 @@ export default function RefreshPage() {
     <div className="mesh-bg min-h-dvh pb-nav">
       <header
         className="page-header"
-        style={{
-          background: 'color-mix(in srgb, var(--bg) 88%, transparent)',
-          backdropFilter: 'blur(20px)',
-          borderColor: 'var(--border)',
-        }}
+        style={{ background: 'rgba(251,248,244,0.88)', backdropFilter: 'blur(20px)', borderColor: 'var(--border)' }}
       >
         <div className="app-container py-3 flex items-center gap-3">
-          <IconButton
-            variant="ghost"
-            size="sm"
-            label={isHi ? 'वापस डैशबोर्ड' : 'Back to dashboard'}
-            icon={<span aria-hidden="true">←</span>}
-            onClick={() => router.push('/dashboard')}
-          />
+          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">←</button>
           <div>
-            <h1 className="text-fluid-lg font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
+            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               🔁 {isHi ? 'ताज़ा करो' : 'Refresh'}
             </h1>
-            <p className="mt-0.5 text-fluid-xs text-muted-foreground">
+            <p className="text-xs text-[var(--text-3)] mt-0.5">
               {isHi ? 'जो सीखा है उसे फिर से ताज़ा करो' : "Keep what you've learned fresh"}
             </p>
           </div>
@@ -120,27 +109,25 @@ export default function RefreshPage() {
 
           {/* All-empty nudge — only renders when Section A has loaded and
               reports 0 cards. (B + C auto-hide so we don't need their
-              counts.) Supportive "all caught up" framing, no harsh copy. */}
+              counts.) Once Section D ships this falls back to D's tip. */}
           {sectionACount === 0 && (
-            <div data-testid="refresh-empty-state">
-              <EmptyState
-                icon={<span>✨</span>}
-                title={isHi ? 'अभी सब कुछ ताज़ा है — शाबाश!' : "You're all caught up — nice work!"}
-                description={
-                  isHi
-                    ? 'अभी दोहराने को कुछ नहीं। क्विज़ खेलो — या नीचे अपना कार्ड जोड़ो।'
-                    : 'Nothing to refresh right now. Take a quiz — or add your own card below.'
-                }
-                action={
-                  <Button
-                    variant="primary"
-                    onClick={() => router.push('/quiz')}
-                    leadingIcon={<span>⚡</span>}
-                  >
-                    {isHi ? 'क्विज़ खेलो' : 'Take a Quiz'}
-                  </Button>
-                }
-              />
+            <div className="text-center py-10" data-testid="refresh-empty-state">
+              <div className="text-5xl mb-3">✨</div>
+              <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
+                {isHi ? 'अभी कुछ ताज़ा करने को नहीं' : 'Nothing to refresh right now'}
+              </p>
+              <p className="text-xs text-[var(--text-3)] mb-5">
+                {isHi
+                  ? 'क्विज़ खेलो — या नीचे अपना कार्ड जोड़ो।'
+                  : 'Take a quiz — or add your own card below.'}
+              </p>
+              <button
+                onClick={() => router.push('/quiz')}
+                className="px-5 py-2.5 rounded-xl text-sm font-bold text-white"
+                style={{ background: 'var(--orange, #E8581C)' }}
+              >
+                ⚡ {isHi ? 'क्विज़ खेलो' : 'Take a Quiz'}
+              </button>
             </div>
           )}
         </SectionErrorBoundary>

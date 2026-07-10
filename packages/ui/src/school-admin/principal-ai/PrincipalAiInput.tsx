@@ -80,13 +80,13 @@ export default function PrincipalAiInput({ isHi, sending, quotaExhausted, onSend
           autoCapitalize="off"
           autoCorrect="on"
           spellCheck
-          className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 pr-14 text-sm text-[var(--text-1)] placeholder:text-[var(--text-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] disabled:opacity-60"
+          className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5 pr-14 text-sm text-[var(--text-1)] placeholder:text-[var(--text-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple,#7C3AED)] disabled:opacity-60"
         />
         {charCount > 0 && (
           <span
             aria-hidden="true"
             className={`pointer-events-none absolute bottom-1.5 right-3 text-[10px] ${
-              overWarn ? 'text-danger' : 'text-[var(--text-3)]'
+              overWarn ? 'text-red-500' : 'text-[var(--text-3)]'
             }`}
           >
             {charCount}/{MAX_CHARS}
@@ -97,8 +97,8 @@ export default function PrincipalAiInput({ isHi, sending, quotaExhausted, onSend
         type="submit"
         disabled={disabled || value.trim().length === 0}
         aria-label={tt(isHi, 'Send', 'भेजें')}
-        className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl text-on-accent transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--purple)] disabled:opacity-40"
-        style={{ background: 'var(--purple)' }}
+        className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl text-white transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--purple,#7C3AED)] disabled:opacity-40"
+        style={{ background: 'var(--purple,#7C3AED)' }}
       >
         {sending ? (
           <span

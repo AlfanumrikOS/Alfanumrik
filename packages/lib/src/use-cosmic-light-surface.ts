@@ -27,27 +27,8 @@ export function useCosmicLightSurface(active: boolean = true): void {
     if (typeof document === 'undefined') return;
     const html = document.documentElement;
 
-    const prev = {
-      design: html.getAttribute('data-design'),
-      theme: html.getAttribute('data-theme'),
-      role: html.getAttribute('data-role'),
-    };
-
-    html.setAttribute('data-design', 'cosmic');
-    html.setAttribute('data-theme', 'light'); // never 'dark' — dark mode is killed here
-    html.setAttribute('data-role', 'student');
-
-    return () => {
-      // Restore the prior attribute state so leaving the OS surface returns the
-      // app to whatever the global providers (AuthContext / CosmicThemeProvider)
-      // had set. Removing when there was no prior value keeps the OFF world clean.
-      const restore = (name: string, value: string | null) => {
-        if (value === null) html.removeAttribute(name);
-        else html.setAttribute(name, value);
-      };
-      restore('data-design', prev.design);
-      restore('data-theme', prev.theme);
-      restore('data-role', prev.role);
-    };
+    html.removeAttribute('data-design');
+    html.removeAttribute('data-role');
+    html.setAttribute('data-theme', 'light');
   }, [active]);
 }

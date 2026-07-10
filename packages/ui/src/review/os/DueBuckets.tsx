@@ -12,14 +12,11 @@
  * alongside the glyph/label. No scoring/XP — masteryProbability is shown as a
  * qualitative impact chip, never a number.
  *
- * Phase 8 rebuild: Card containers, Badge counts, Alert error state; every
- * severity hue is a semantic token (danger/primary/neutral) — zero raw hex/rgb.
- *
  * States: loading (skeleton), error (distinct from empty), empty (per bucket).
  */
 
 import { useState } from 'react';
-import { Card, Badge, Alert, Skeleton, type Tone } from '@alfanumrik/ui/ui/primitives';
+import { Skeleton } from '@alfanumrik/ui/ui';
 import type { RevisionItem } from './useRevisionOverview';
 import { formatSubject, masteryImpact, impactMeta } from './revision-labels';
 
@@ -42,12 +39,11 @@ interface DueBucketsProps {
 
 const META: Record<
   BucketKind,
-  { glyph: string; color: string; tone: Tone; titleEn: string; titleHi: string; emptyEn: string; emptyHi: string }
+  { glyph: string; color: string; titleEn: string; titleHi: string; emptyEn: string; emptyHi: string }
 > = {
   overdue: {
     glyph: '▲',
-    color: 'var(--danger)',
-    tone: 'danger',
+    color: 'var(--red, #DC2626)',
     titleEn: 'Overdue',
     titleHi: 'समय बीत चुका',
     emptyEn: 'Nothing overdue — great.',
@@ -55,8 +51,7 @@ const META: Record<
   },
   dueToday: {
     glyph: '●',
-    color: 'var(--primary)',
-    tone: 'brand',
+    color: 'var(--orange, #E8581C)',
     titleEn: 'Due today',
     titleHi: 'आज दोहराने हैं',
     emptyEn: 'Nothing due today.',
@@ -65,7 +60,6 @@ const META: Record<
   upcoming: {
     glyph: '○',
     color: 'var(--text-3)',
-    tone: 'neutral',
     titleEn: 'Upcoming (7 days)',
     titleHi: 'अगले 7 दिन',
     emptyEn: 'Nothing scheduled this week.',
@@ -79,21 +73,34 @@ function ItemRow({ item, kind, isHi }: { item: RevisionItem; kind: BucketKind; i
 
   return (
     <li
-      className="flex items-center justify-between gap-3 border-t border-surface-3 px-1 py-2.5"
+      className="flex items-center justify-between gap-3 py-2.5 px-1"
+      style={{ borderTop: '1px solid var(--border)' }}
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-fluid-sm font-medium text-foreground">{title}</p>
-        <p className="mt-0.5 flex items-center gap-1.5 text-fluid-xs text-muted-foreground">
+        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-1)' }}>
+          {title}
+        </p>
+        <p className="text-xs mt-0.5 flex items-center gap-1.5" style={{ color: 'var(--text-3)' }}>
           <span className="truncate">{formatSubject(item.subject)}</span>
           {kind === 'overdue' && item.daysOverdue > 0 && (
-            <Badge tone="danger" variant="soft" icon={<span>▲</span>} className="tabular-nums">
-              {isHi ? `${item.daysOverdue} दिन देर` : `${item.daysOverdue}d late`}
-            </Badge>
+            <span
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full font-semibold"
+              style={{
+                background: 'rgba(220,38,38,0.1)',
+                color: 'var(--red, #DC2626)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <span aria-hidden="true">▲</span>
+              {isHi
+                ? `${item.daysOverdue} दिन देर`
+                : `${item.daysOverdue}d late`}
+            </span>
           )}
         </p>
       </div>
       <span
-        className="inline-flex shrink-0 items-center gap-1 text-fluid-xs font-medium"
+        className="shrink-0 inline-flex items-center gap-1 text-xs font-medium"
         style={{ color: impact.color }}
         title={impact.label}
       >
@@ -111,37 +118,46 @@ function Bucket({ spec, isHi }: { spec: BucketSpec; isHi: boolean }) {
   const panelId = `revision-bucket-${spec.kind}`;
 
   return (
-    <Card variant="flat">
+    <section
+      className="rounded-2xl"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+    >
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={spec.count === 0}
         aria-expanded={open && spec.count > 0}
         aria-controls={panelId}
-        className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-default"
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl focus-visible:outline-none focus-visible:ring-2 disabled:cursor-default"
         style={{ minHeight: 48 }}
       >
         <span className="flex items-center gap-2">
           <span aria-hidden="true" style={{ color: meta.color }}>
             {meta.glyph}
           </span>
-          <span className="text-fluid-sm font-bold text-foreground">
+          <span className="text-sm font-bold" style={{ color: 'var(--text-1)' }}>
             {isHi ? meta.titleHi : meta.titleEn}
           </span>
-          <Badge
-            tone={spec.count > 0 ? meta.tone : 'neutral'}
-            variant="soft"
-            className="tabular-nums"
+          <span
+            className="text-xs font-bold px-2 py-0.5 rounded-full"
+            style={{
+              background: 'var(--surface-2)',
+              color: spec.count > 0 ? meta.color : 'var(--text-3)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
             aria-label={isHi ? `${spec.count} विषय` : `${spec.count} topics`}
           >
             {spec.count}
-          </Badge>
+          </span>
         </span>
         {spec.count > 0 && (
           <span
             aria-hidden="true"
-            className="text-fluid-xs text-muted-foreground transition-transform duration-150 motion-reduce:transition-none"
-            style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+            className="text-xs transition-transform duration-150"
+            style={{
+              color: 'var(--text-3)',
+              transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+            }}
           >
             ▾
           </span>
@@ -158,7 +174,7 @@ function Bucket({ spec, isHi }: { spec: BucketSpec; isHi: boolean }) {
             </ul>
           ) : (
             // count>0 but items capped/missing — still show a count-only note.
-            <p className="py-2 text-fluid-xs text-muted-foreground">
+            <p className="text-xs py-2" style={{ color: 'var(--text-3)' }}>
               {isHi
                 ? `${spec.count} विषय — सूची दोहराव में दिखेगी।`
                 : `${spec.count} topic${spec.count === 1 ? '' : 's'} — they'll appear in your session.`}
@@ -168,11 +184,11 @@ function Bucket({ spec, isHi }: { spec: BucketSpec; isHi: boolean }) {
       )}
 
       {spec.count === 0 && (
-        <p className="px-4 pb-3 text-fluid-xs text-muted-foreground">
+        <p className="text-xs px-4 pb-3" style={{ color: 'var(--text-3)' }}>
           {isHi ? meta.emptyHi : meta.emptyEn}
         </p>
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -187,20 +203,32 @@ export default function DueBuckets({
   if (isLoading) {
     return (
       <div className="flex flex-col gap-3" aria-busy="true">
-        <Skeleton radius="lg" className="h-14 w-full" />
-        <Skeleton radius="lg" className="h-14 w-full" />
-        <Skeleton radius="lg" className="h-14 w-full" />
+        <Skeleton height={56} rounded="rounded-2xl" />
+        <Skeleton height={56} rounded="rounded-2xl" />
+        <Skeleton height={56} rounded="rounded-2xl" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <Alert tone="danger">
-        {isHi
-          ? 'दोहराव की सूची लोड नहीं हो पाई — थोड़ी देर बाद फिर देखो।'
-          : "Couldn't load your buckets — try again in a moment."}
-      </Alert>
+      <section
+        className="rounded-2xl p-4 flex items-start gap-3"
+        style={{
+          background: 'rgba(220,38,38,0.06)',
+          border: '1px solid var(--red, #DC2626)',
+        }}
+        role="status"
+      >
+        <span aria-hidden="true" style={{ color: 'var(--red, #DC2626)' }}>
+          ⚠
+        </span>
+        <p className="text-sm" style={{ color: 'var(--text-1)' }}>
+          {isHi
+            ? 'दोहराव की सूची लोड नहीं हो पाई — थोड़ी देर बाद फिर देखो।'
+            : "Couldn't load your buckets — try again in a moment."}
+        </p>
+      </section>
     );
   }
 

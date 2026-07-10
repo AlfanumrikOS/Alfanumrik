@@ -181,9 +181,9 @@ function SubjectsContent() {
 
   // ── Columns ──
   const columns: Column<Subject>[] = [
-    { key: 'code', label: 'Code', width: 160, render: (r) => <code style={{ fontSize: 12, color: 'var(--text-1)' }}>{r.code}</code> },
+    { key: 'code', label: 'Code', width: 160, render: (r) => <code style={{ fontSize: 12, color: '#111827' }}>{r.code}</code> },
     { key: 'name', label: 'Name (EN)' },
-    { key: 'name_hi', label: 'Name (HI)', render: (r) => r.name_hi || <span style={{ color: 'var(--text-3)' }}>—</span> },
+    { key: 'name_hi', label: 'Name (HI)', render: (r) => r.name_hi || <span style={{ color: '#9CA3AF' }}>—</span> },
     {
       key: 'icon',
       label: 'Icon',
@@ -201,13 +201,13 @@ function SubjectsContent() {
               aria-hidden
               style={{
                 display: 'inline-block', width: 14, height: 14, borderRadius: 4,
-                background: r.color, border: '1px solid var(--surface-3)',
+                background: r.color, border: '1px solid #E5E7EB',
               }}
             />
-            <code style={{ fontSize: 11, color: 'var(--text-2)' }}>{r.color}</code>
+            <code style={{ fontSize: 11, color: '#6B7280' }}>{r.color}</code>
           </span>
         ) : (
-          <span style={{ color: 'var(--text-3)' }}>—</span>
+          <span style={{ color: '#9CA3AF' }}>—</span>
         ),
     },
     {
@@ -231,7 +231,7 @@ function SubjectsContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Subjects</h1>
-          <div style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 20 }}>
+          <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 20 }}>
             Master catalog of all subjects. Changes are logged to <code style={{ fontSize: 12 }}>admin_audit_log</code>.
           </div>
         </div>
@@ -251,15 +251,15 @@ function SubjectsContent() {
           role="alert"
           style={{
             padding: 12, marginBottom: 16, borderRadius: 8,
-            border: '1px solid var(--danger)', background: 'color-mix(in srgb, var(--danger) 10%, transparent)',
-            color: 'var(--danger)', fontSize: 13,
+            border: '1px solid #DC2626', background: '#FEF2F2',
+            color: '#DC2626', fontSize: 13,
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}
         >
           <span>Error loading subjects: {error}</span>
           <button
             className="rounded-md border bg-transparent px-2.5 py-1 text-xs font-medium hover:bg-surface-2"
-            style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+            style={{ color: '#DC2626', borderColor: '#DC2626' }}
             onClick={() => load()}
           >
             Retry
@@ -331,7 +331,7 @@ function SubjectsContent() {
               className={inputCls} style={{ width: 220 }}
               value={form.color}
               onChange={(e) => setForm({ ...form, color: e.target.value })}
-              placeholder="#RRGGBB"
+              placeholder="#F97316"
               aria-label="Subject color hex"
             />
           </Field>
@@ -360,7 +360,7 @@ function SubjectsContent() {
             />
           </Field>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-1)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#111827' }}>
             <input
               type="checkbox"
               checked={form.is_active}
@@ -371,8 +371,8 @@ function SubjectsContent() {
 
           {saveError && (
             <div role="alert" style={{
-              padding: 10, borderRadius: 6, border: '1px solid var(--danger)',
-              background: 'color-mix(in srgb, var(--danger) 10%, transparent)', color: 'var(--danger)', fontSize: 12,
+              padding: 10, borderRadius: 6, border: '1px solid #DC2626',
+              background: '#FEF2F2', color: '#DC2626', fontSize: 12,
             }}>
               {saveError}
             </div>
@@ -382,7 +382,7 @@ function SubjectsContent() {
             {!creating && editing && (
               <button
                 className={dangerBtnCls}
-                style={{ borderColor: 'var(--danger)', background: 'color-mix(in srgb, var(--danger) 10%, transparent)', color: 'var(--danger)' }}
+                style={{ borderColor: '#DC2626', background: '#FEF2F2', color: '#DC2626' }}
                 onClick={softDelete}
                 disabled={saving}
               >
@@ -413,11 +413,11 @@ function Field({
 }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>
-        {label}{required && <span style={{ color: 'var(--danger)' }}> *</span>}
+      <span style={{ fontSize: 12, fontWeight: 600, color: '#6B7280' }}>
+        {label}{required && <span style={{ color: '#DC2626' }}> *</span>}
       </span>
       {children}
-      {hint && <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{hint}</span>}
+      {hint && <span style={{ fontSize: 11, color: '#9CA3AF' }}>{hint}</span>}
     </label>
   );
 }

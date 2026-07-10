@@ -1,6 +1,6 @@
 # admin-ui — Shared Dashboard Primitives
 
-Used by `/super-admin`, `/school-admin`, and (after Plans 1-2 in `docs/superpowers/plans/`) `/teacher` and `/parent` shells. Consume from `@/components/admin-ui`.
+Used by `/super-admin`, `/school-admin`, and (after Plans 1-2 in `docs/superpowers/plans/`) `/teacher` and `/parent` shells. Consume from `@alfanumrik/ui/admin-ui`.
 
 ## Components
 

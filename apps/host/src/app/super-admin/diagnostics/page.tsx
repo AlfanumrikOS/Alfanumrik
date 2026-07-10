@@ -5,21 +5,21 @@ import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { StatCard, StatusBadge } from '@alfanumrik/ui/admin-ui';
 
 const colors = {
-  bg: 'var(--surface-1)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  border: 'var(--border)',
-  borderLight: 'var(--border)',
-  surface: 'var(--surface-2)',
-  accent: 'var(--info)',
-  accentLight: 'color-mix(in srgb, var(--info) 10%, transparent)',
-  success: 'var(--success)',
-  successLight: 'color-mix(in srgb, var(--success) 10%, transparent)',
-  warning: 'var(--warning)',
-  warningLight: 'color-mix(in srgb, var(--warning) 12%, transparent)',
-  danger: 'var(--danger)',
-  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  surface: '#F9FAFB',
+  accent: '#2563EB',
+  accentLight: '#EFF6FF',
+  success: '#16A34A',
+  successLight: '#F0FDF4',
+  warning: '#D97706',
+  warningLight: '#FFFBEB',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
 } as const;
 
 const S = {
@@ -170,7 +170,7 @@ function DiagnosticsContent() {
         <div style={{
           display: 'flex', gap: 16, alignItems: 'center', padding: '12px 16px',
           background: obsData.health.status === 'healthy' ? colors.successLight : colors.dangerLight,
-          border: `1px solid ${obsData.health.status === 'healthy' ? 'color-mix(in srgb, var(--success) 35%, transparent)' : 'color-mix(in srgb, var(--danger) 35%, transparent)'}`,
+          border: `1px solid ${obsData.health.status === 'healthy' ? '#BBF7D0' : '#FECACA'}`,
           borderRadius: 8, marginBottom: 20,
         }}>
           <StatusBadge label={obsData.health.status === 'healthy' ? 'All Systems Operational' : 'Degraded Performance'} variant={obsData.health.status === 'healthy' ? 'success' : 'danger'} />

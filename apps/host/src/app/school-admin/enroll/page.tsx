@@ -369,12 +369,12 @@ export default function SchoolAdminEnrollPage() {
         {error && (
           <div
             className="rounded-xl p-3 text-center"
-            style={{ background: 'color-mix(in srgb, var(--danger) 15%, transparent)', border: '1px solid color-mix(in srgb, var(--danger) 40%, transparent)' }}
+            style={{ background: '#FEE2E2', border: '1px solid #FCA5A5' }}
           >
-            <p className="text-sm text-danger">{error}</p>
+            <p className="text-sm text-red-700">{error}</p>
             <button
               onClick={() => setError(null)}
-              className="text-xs text-danger font-semibold mt-1"
+              className="text-xs text-red-500 font-semibold mt-1"
             >
               {t(isHi, 'Dismiss', 'बंद करें')}
             </button>
@@ -385,7 +385,7 @@ export default function SchoolAdminEnrollPage() {
         {step === 'upload' && (
           <div className="space-y-4">
             {/* CSV format guide */}
-            <Card accent="var(--purple)">
+            <Card accent="#7C3AED">
               <h3 className="text-sm font-bold text-[var(--text-1)] mb-2">
                 {t(isHi, 'CSV Format', 'CSV प्रारूप')}
               </h3>
@@ -407,11 +407,11 @@ export default function SchoolAdminEnrollPage() {
                 Priya Singh,priya@email.com,10,B,
               </div>
               <div className="flex flex-wrap gap-2 mt-3">
-                <Badge color="var(--success)">name *</Badge>
-                <Badge color="var(--success)">email *</Badge>
-                <Badge color="var(--success)">grade *</Badge>
-                <Badge color="var(--purple)">section</Badge>
-                <Badge color="var(--purple)">parent_email</Badge>
+                <Badge color="#16A34A">name *</Badge>
+                <Badge color="#16A34A">email *</Badge>
+                <Badge color="#16A34A">grade *</Badge>
+                <Badge color="#7C3AED">section</Badge>
+                <Badge color="#7C3AED">parent_email</Badge>
               </div>
               <p className="text-xs text-[var(--text-3)] mt-2">
                 * = {t(isHi, 'required', 'आवश्यक')}
@@ -423,7 +423,7 @@ export default function SchoolAdminEnrollPage() {
               className="rounded-2xl p-8 text-center cursor-pointer transition-all"
               style={{
                 border: `2px dashed ${dragOver ? 'var(--purple)' : 'var(--border)'}`,
-                background: dragOver ? 'color-mix(in srgb, var(--purple) 5%, transparent)' : 'var(--surface-1)',
+                background: dragOver ? 'rgba(124,58,237,0.05)' : 'var(--surface-1)',
               }}
               onClick={() => fileInputRef.current?.click()}
               onDragOver={(e) => {
@@ -484,13 +484,13 @@ export default function SchoolAdminEnrollPage() {
                 </div>
               </div>
               <div className="rounded-xl py-2.5 px-3 text-center" style={{ background: 'var(--surface-2)' }}>
-                <div className="text-xl font-bold" style={{ color: 'var(--success)' }}>{validCount}</div>
+                <div className="text-xl font-bold" style={{ color: '#16A34A' }}>{validCount}</div>
                 <div className="text-xs text-[var(--text-3)] font-medium">
                   {t(isHi, 'Valid', 'मान्य')}
                 </div>
               </div>
               <div className="rounded-xl py-2.5 px-3 text-center" style={{ background: 'var(--surface-2)' }}>
-                <div className="text-xl font-bold" style={{ color: invalidCount > 0 ? 'var(--danger)' : 'var(--text-3)' }}>
+                <div className="text-xl font-bold" style={{ color: invalidCount > 0 ? '#DC2626' : 'var(--text-3)' }}>
                   {invalidCount}
                 </div>
                 <div className="text-xs text-[var(--text-3)] font-medium">
@@ -522,7 +522,7 @@ export default function SchoolAdminEnrollPage() {
                       <tr
                         key={idx}
                         style={{
-                          background: validation?.valid === false ? 'color-mix(in srgb, var(--danger) 8%, transparent)' : 'transparent',
+                          background: validation?.valid === false ? '#FEF2F2' : 'transparent',
                           borderBottom: '1px solid var(--border)',
                         }}
                       >
@@ -534,9 +534,9 @@ export default function SchoolAdminEnrollPage() {
                         ))}
                         <td className="px-3 py-2">
                           {validation?.valid ? (
-                            <Badge color="var(--success)">OK</Badge>
+                            <Badge color="#16A34A">OK</Badge>
                           ) : (
-                            <span className="text-xs text-danger">
+                            <span className="text-xs text-red-500">
                               {validation?.errors[0]}
                             </span>
                           )}
@@ -595,7 +595,7 @@ export default function SchoolAdminEnrollPage() {
           <div className="space-y-4">
             {/* Results summary */}
             <Card
-              accent={importResult.success_count > 0 ? 'var(--success)' : 'var(--danger)'}
+              accent={importResult.success_count > 0 ? '#16A34A' : '#DC2626'}
               className="text-center"
             >
               <div className="py-4 space-y-3">
@@ -643,7 +643,7 @@ export default function SchoolAdminEnrollPage() {
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {seatRejected!.map((r) => (
-                              <Badge key={r.row} color="var(--danger)">
+                              <Badge key={r.row} color="#DC2626">
                                 {t(isHi, `Row ${r.row}`, `पंक्ति ${r.row}`)}
                               </Badge>
                             ))}
@@ -671,16 +671,16 @@ export default function SchoolAdminEnrollPage() {
                 </div>
                 <div className="text-xs text-[var(--text-3)] font-medium">{t(isHi, 'Total', 'कुल')}</div>
               </div>
-              <div className="rounded-xl py-3 px-3 text-center" style={{ background: 'color-mix(in srgb, var(--success) 6%, transparent)' }}>
-                <div className="text-2xl font-bold" style={{ color: 'var(--success)' }}>
+              <div className="rounded-xl py-3 px-3 text-center" style={{ background: '#F0FDF4' }}>
+                <div className="text-2xl font-bold" style={{ color: '#16A34A' }}>
                   {importResult.success_count}
                 </div>
                 <div className="text-xs text-[var(--text-3)] font-medium">{t(isHi, 'Success', 'सफल')}</div>
               </div>
-              <div className="rounded-xl py-3 px-3 text-center" style={{ background: importResult.error_count > 0 ? 'color-mix(in srgb, var(--danger) 8%, transparent)' : 'var(--surface-2)' }}>
+              <div className="rounded-xl py-3 px-3 text-center" style={{ background: importResult.error_count > 0 ? '#FEF2F2' : 'var(--surface-2)' }}>
                 <div
                   className="text-2xl font-bold"
-                  style={{ color: importResult.error_count > 0 ? 'var(--danger)' : 'var(--text-3)' }}
+                  style={{ color: importResult.error_count > 0 ? '#DC2626' : 'var(--text-3)' }}
                 >
                   {importResult.error_count}
                 </div>
@@ -699,7 +699,7 @@ export default function SchoolAdminEnrollPage() {
                     <div
                       key={idx}
                       className="flex gap-2 text-xs"
-                      style={{ color: 'var(--danger)' }}
+                      style={{ color: '#DC2626' }}
                     >
                       <span className="font-semibold flex-shrink-0">
                         {t(isHi, `Row ${err.row}:`, `पंक्ति ${err.row}:`)}

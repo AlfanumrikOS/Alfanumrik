@@ -70,17 +70,16 @@ describe('GUARD #8 — ChatBubble flag OFF (legacy bar, byte-identical)', () => 
 });
 
 describe('GUARD #8 — ChatBubble flag ON (new learning-action bar)', () => {
-  it('renders compact primary actions; secondary learning actions live in overflow', () => {
+  it('renders the restored full learning-action row plus overflow utilities', () => {
     render(<ChatBubble {...baseProps({ learningActionsEnabled: true, onLearningAction: vi.fn() })} />);
     expect(screen.getByTestId('learning-action-gotit')).toBeTruthy();
-    expect(screen.getByTestId('learning-action-overflow')).toBeTruthy();
-    expect(screen.queryByTestId('learning-action-simpler')).toBeNull();
-    expect(screen.queryByTestId('learning-action-example')).toBeNull();
-    expect(screen.queryByTestId('learning-action-quiz')).toBeNull();
-    fireEvent.click(screen.getByTestId('learning-action-overflow'));
     expect(screen.getByTestId('learning-action-simpler')).toBeTruthy();
     expect(screen.getByTestId('learning-action-example')).toBeTruthy();
     expect(screen.getByTestId('learning-action-quiz')).toBeTruthy();
+    expect(screen.getByTestId('learning-action-overflow')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('learning-action-overflow'));
+    expect(screen.getByTestId('learning-action-save')).toBeTruthy();
+    expect(screen.getByTestId('learning-action-report')).toBeTruthy();
     // Legacy controls gone.
     expect(screen.queryByLabelText('Helpful response')).toBeNull();
     expect(screen.queryByTestId('report-issue-link')).toBeNull();

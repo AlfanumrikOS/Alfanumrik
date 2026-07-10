@@ -31,7 +31,7 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
         <div className="flex gap-3 justify-center">
           <button
             onClick={reset}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-on-accent"
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
             style={{ background: 'var(--orange)' }}
           >
             {isHi ? 'फिर से कोशिश करो' : 'Retry'}

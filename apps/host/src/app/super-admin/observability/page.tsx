@@ -8,11 +8,11 @@ import EventRow, { type TimelineEvent } from './_components/EventRow';
 import EventDetailDrawer from './_components/EventDetailDrawer';
 
 const colors = {
-  text3: 'var(--text-3)',
-  border: 'var(--surface-3)',
-  borderLight: 'var(--surface-2)',
-  danger: 'var(--danger)',
-  dangerLight: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
 } as const;
 
 /**

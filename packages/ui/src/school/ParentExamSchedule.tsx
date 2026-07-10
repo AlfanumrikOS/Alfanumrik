@@ -66,24 +66,24 @@ export default function ParentExamSchedule() {
     })();
   }, [authUserId]);
 
-  if (loading) return <div style={{ padding: 16, background: 'var(--surface-2)', borderRadius: 12, height: 80 }} />;
+  if (loading) return <div style={{ padding: 16, background: '#f9fafb', borderRadius: 12, height: 80 }} />;
   if (exams.length === 0) return null;
 
   return (
     <div style={{
       padding: 16,
-      background: 'var(--surface-1)',
+      background: '#fff',
       borderRadius: 12,
-      border: '1px solid var(--surface-3)',
+      border: '1px solid #e5e7eb',
       marginBottom: 16,
     }}>
-      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: 'var(--text-1)' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: '#111' }}>
         {t(isHi, `Upcoming Exams for ${childName}`, `${childName} की आगामी परीक्षाएँ`)}
       </div>
       {exams.map(exam => {
         const date = new Date(exam.start_time);
         const daysUntil = Math.ceil((date.getTime() - Date.now()) / 86400000);
-        const urgencyColor = daysUntil <= 1 ? 'var(--danger)' : daysUntil <= 3 ? 'var(--warning)' : 'var(--success)';
+        const urgencyColor = daysUntil <= 1 ? '#EF4444' : daysUntil <= 3 ? '#EAB308' : '#22C55E';
 
         return (
           <div key={exam.id} style={{
@@ -91,11 +91,11 @@ export default function ParentExamSchedule() {
             justifyContent: 'space-between',
             alignItems: 'center',
             padding: '8px 0',
-            borderBottom: '1px solid var(--surface-2)',
+            borderBottom: '1px solid #f3f4f6',
           }}>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{exam.title}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+              <div style={{ fontSize: 11, color: '#888' }}>
                 {exam.subject} • {exam.duration_minutes} {t(isHi, 'min', 'मिनट')}
               </div>
             </div>
@@ -107,7 +107,7 @@ export default function ParentExamSchedule() {
                     ? t(isHi, 'Tomorrow', 'कल')
                     : t(isHi, `In ${daysUntil} days`, `${daysUntil} दिन में`)}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+              <div style={{ fontSize: 10, color: '#aaa' }}>
                 {date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
               </div>
             </div>

@@ -100,19 +100,6 @@ const SELCheckIn = dynamic(() => import('@alfanumrik/ui/SELCheckIn'), { ssr: fal
 import { MessageInput } from './_components/MessageInput';
 import { ReportDialog } from './_components/ReportDialog';
 import { LanguagePicker, ModePicker } from './_components/FoxySettings';
-import { IconButton, Chip, Badge, ConfirmDialog, Field, Input, Button, Dialog, DialogTitle, DialogBody, DialogFooter, BottomSheet } from '@alfanumrik/ui/ui/primitives';
-import { Card, CardContent } from '@alfanumrik/ui/ui/card';
-
-// Foxy chapter-mastery band → canonical Badge tone (presentation-only; the
-// exact MASTERY_COLORS hex values are dropped in favour of semantic tones so
-// the pill stays AA and token-driven).
-const MASTERY_TONE: Record<string, 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'brand'> = {
-  not_started: 'neutral',
-  beginner: 'warning',
-  developing: 'info',
-  proficient: 'brand',
-  mastered: 'success',
-};
 
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
@@ -350,9 +337,6 @@ export default function FoxyPage() {
   // UI state
   const [showSubjectDD, setShowSubjectDD] = useState(false);
   const [showChapterDD, setShowChapterDD] = useState(false);
-  // Chapter pending confirmation before it clears the active conversation
-  // (replaces the native window.confirm with a canonical ConfirmDialog).
-  const [pendingChapter, setPendingChapter] = useState<any>(null);
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
   const [showTopicSheet, setShowTopicSheet] = useState(false);
@@ -374,17 +358,30 @@ export default function FoxyPage() {
   // Defaults OFF → byte-identical to today on every viewport. The >=lg
   // experience is never touched (the new surface is mobile-only).
   const foxyOsEnabled = useFoxyOsFlag();
+  const [foxyOsMobile, setFoxyOsMobile] = useState(false);
   const [studySheetOpen, setStudySheetOpen] = useState(false);
   // Phase 3 — Tools sheet (language / voice / progress / history / context).
   const [toolsSheetOpen, setToolsSheetOpen] = useState(false);
+  // Track the <lg breakpoint with matchMedia so the new surface is rendered
+  // ONLY on phones. The OFF path never enters this effect's render branch.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(max-width: 1023px)'); // < Tailwind lg (1024px)
+    const apply = () => setFoxyOsMobile(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+  // The new mobile surface renders only when the flag is ON and we are <lg.
+  const useFoxyOsHeader = foxyOsEnabled && foxyOsMobile;
 
   // Phase 2 — keyboard-aware composer. Publishes the soft-keyboard inset to the
   // `--kb-inset` CSS var so the `.foxy-os` composer rides above the keyboard
-  // and the message thread shrinks. Gated by `foxyOsEnabled` so the hook is
+  // and the message thread shrinks. Gated by `useFoxyOsHeader` so the hook is
   // inert (keeps `--kb-inset` at 0px) on the OFF path and on every >=lg
   // viewport — those render exactly as today. `keyboardOpen` re-fires the
   // existing auto-scroll-to-bottom effect so the latest message stays visible.
-  const keyboardOpen = useKeyboardInset({ enabled: foxyOsEnabled });
+  const keyboardOpen = useKeyboardInset({ enabled: useFoxyOsHeader });
 
   // Error reporting
   const [reportModal, setReportModal] = useState<{ msgId: number; studentMsg: string; foxyMsg: string } | null>(null);
@@ -1274,201 +1271,192 @@ export default function FoxyPage() {
   // and each row keeps an opaque inline background so the AppShell scrim
   // never bleeds through. Behavior is verbatim: no copy, mode, or logic
   // changes.
-  // Apply a chapter selection — clears the active conversation and pins the
-  // topic. Extracted so both the direct path and the ConfirmDialog path run
-  // the exact same side-effects (behaviour preserved verbatim).
-  const applyChapter = (topic: any) => {
-    setActiveTopic(topic);
-    setSelectedChapters([topic.id]);
-    setMessages([]);
-    setChatSessionId(null);
-    setCollapsedAbove(null);
-    setShowChapterDD(false);
-  };
-
   const foxyHeaderContent = (
     <>
       {/* ═══ HEADER ═══ */}
       {/* `sticky top-0` is dropped — AppShell.header is itself position:sticky. */}
-      {/* Paired-token INVERSE surface — bg-surface-inverse + text-on-inverse is
-          AAA-verified (globals.css), so the header text is legible in every
-          theme/scope. This replaces the class-driven dark gradient + a bare
-          inline white colour that decoupled and rendered white-on-cream. */}
-      <div className="bg-surface-inverse text-on-inverse px-3 py-2.5 flex items-center gap-3">
-        <IconButton
-          label={isHi ? 'वापस जाएं' : 'Go back'}
-          variant="secondary"
-          size="sm"
-          onClick={() => router.push('/dashboard')}
-          icon={<span aria-hidden="true" className="text-base leading-none">←</span>}
-        />
+      <div className="foxy-header-premium px-3 py-2.5 flex items-center gap-3" style={{ color: '#fff' }}>
+        <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>←</button>
         {/* Mobile: open conversation history sidebar */}
-        <IconButton
-          label={isHi ? 'चैट हिस्ट्री' : 'Chat history'}
-          variant="secondary"
-          size="sm"
+        <button
           onClick={() => setConversationSidebarOpen(true)}
-          className="lg:hidden"
-          icon={
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          }
-        />
+          className="lg:hidden w-10 h-10 rounded-lg flex items-center justify-center transition-all active:scale-95"
+          style={{ background: 'rgba(255,255,255,0.1)' }}
+          aria-label={isHi ? 'चैट हिस्ट्री' : 'Chat history'}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
         <div className="foxy-avatar-warm w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{ animation: foxyState === 'thinking' ? 'pulse 1s infinite' : 'none' }}>
           {FOXY_FACES[foxyState]}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold text-on-inverse-muted">{isHi ? 'AI ट्यूटर' : 'AI Tutor'}</span></div>
-          <div className="text-xs text-on-inverse-muted flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{isHi ? `${streakDays} दिन` : `${streakDays}d streak`}</span><span>{isHi ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span></div>
+          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">{isHi ? 'AI ट्यूटर' : 'AI Tutor'}</span></div>
+          <div className="text-xs opacity-70 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{isHi ? `${streakDays} दिन` : `${streakDays}d streak`}</span><span>{isHi ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span></div>
         </div>
         <div className="flex items-center gap-1.5">
           {/* Language pills — extracted to ./_components/FoxySettings.tsx */}
           <LanguagePicker language={language} isLocked={isLangLocked} onLanguageChange={setLanguage} />
-          {chatUsage && <span className="hidden sm:inline text-[8px] text-on-inverse-muted ml-1" title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}>💬{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}>💬{chatUsage.remaining}/{chatUsage.limit}</span>}
           {/* Alfa OS — open the mobile ContextPanel bottom sheet. Mobile-only
               (lg:hidden), and rendered only when ff_student_os_v1 is ON so the
               OFF header is byte-identical. */}
           {osEnabled && (
-            <IconButton
-              label={isHi ? 'संदर्भ पैनल खोलें' : 'Open context panel'}
-              title={isHi ? 'तुम्हारा संदर्भ' : 'Your context'}
-              variant="secondary"
-              size="sm"
+            <button
               onClick={() => setContextSheetOpen(true)}
-              className="lg:hidden"
-              icon={<span aria-hidden="true">🧭</span>}
-            />
+              className="lg:hidden w-10 h-10 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.1)' }}
+              aria-label={isHi ? 'संदर्भ पैनल खोलें' : 'Open context panel'}
+              title={isHi ? 'तुम्हारा संदर्भ' : 'Your context'}
+            >
+              🧭
+            </button>
           )}
-          {/* Voice mode toggle — hidden on browsers without TTS. Primary
-              (warm CTA gradient) signals ON; secondary signals OFF; the pulse
-              signals active speech. */}
+          {/* Voice mode toggle — hidden on browsers without TTS */}
           {ttsSupported && (
-            <IconButton
-              label={language === 'hi'
+            <button
+              onClick={toggleVoiceMode}
+              title={language === 'hi'
+                ? (voiceMode ? 'वॉइस मोड चालू — म्यूट करने के लिए क्लिक करें' : 'वॉइस मोड बंद — ऑटो-स्पीक चालू करने के लिए क्लिक करें')
+                : (voiceMode ? 'Voice mode ON — click to mute' : 'Voice mode OFF — click to enable auto-speak')}
+              aria-label={language === 'hi'
                 ? (voiceMode ? 'वॉइस मोड बंद करें' : 'वॉइस मोड चालू करें')
                 : (voiceMode ? 'Disable voice mode' : 'Enable voice mode')}
-              variant={voiceMode ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={toggleVoiceMode}
-              className={isSpeaking ? 'animate-pulse motion-reduce:animate-none' : undefined}
-              icon={<span aria-hidden="true">{voiceMode ? '🔊' : '🔇'}</span>}
-            />
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-sm transition-all active:scale-90"
+              style={{
+                background: voiceMode ? 'rgb(var(--accent-warm-rgb) / 0.25)' : 'rgba(255,255,255,0.08)',
+                border: voiceMode ? '1.5px solid rgb(var(--accent-warm-rgb) / 0.5)' : '1.5px solid rgba(255,255,255,0.1)',
+                animation: isSpeaking ? 'pulse 1s infinite' : 'none',
+              }}
+            >
+              {voiceMode ? '🔊' : '🔇'}
+            </button>
           )}
         </div>
       </div>
 
-        {/* ═══ SUBJECT TAB BAR — horizontal scrollable pills ═══ */}
-        <div
-          className="foxy-subject-tabs flex items-center gap-1.5 px-3 py-2"
-          style={{
-            background: 'var(--surface-1)',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          {(() => {
-            // Build the visible tab list.
-            //  - If the student curated `selected_subjects`, honour that list.
-            //  - Otherwise show the full stream lineup (locked + unlocked).
-            //
-            // Each entry resolves to a Subject (with isLocked) via the full
-            // lookup so locked subjects stay visible — they render with a
-            // lock badge and tapping them opens the upgrade modal instead
-            // of switching subject (server would 422 anyway).
-            const visible = (studentSubs.length > 0 ? studentSubs : allowedSubjects.map((s) => s.code))
-              .map((code) => ALL_SUBJECTS_BY_CODE[code])
-              .filter(Boolean);
+      {/* ═══ SUBJECT TAB BAR — horizontal scrollable pills ═══ */}
+      <div
+        className="foxy-subject-tabs flex items-center gap-1.5 px-3 py-2"
+        style={{
+          background: 'var(--surface-1)',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        {(() => {
+          // Build the visible tab list.
+          //  - If the student curated `selected_subjects`, honour that list.
+          //  - Otherwise show the full stream lineup (locked + unlocked).
+          //
+          // Each entry resolves to a Subject (with isLocked) via the full
+          // lookup so locked subjects stay visible — they render with a
+          // lock badge and tapping them opens the upgrade modal instead
+          // of switching subject (server would 422 anyway).
+          const visible = (studentSubs.length > 0 ? studentSubs : allowedSubjects.map((s) => s.code))
+            .map((code) => ALL_SUBJECTS_BY_CODE[code])
+            .filter(Boolean);
 
-            return visible.map((sub) => {
-              const isActive = activeSubject === sub.code;
-              const handleClick = () => {
-                if (sub.isLocked) {
-                  setLockedTapped(sub);
-                  return;
-                }
-                if (sub.code !== activeSubject) {
-                  switchSubject(sub.code);
-                  setShowChapterDD(true);
-                }
-              };
-              return (
-                <Chip
-                  key={sub.code}
-                  selected={isActive}
-                  tone="brand"
-                  onClick={handleClick}
-                  aria-label={sub.isLocked ? `${sub.name} (locked — tap to upgrade)` : sub.name}
-                  title={sub.isLocked ? (isHi ? 'अपग्रेड करें' : 'Upgrade to unlock') : sub.name}
-                  className={`shrink-0${sub.isLocked ? ' opacity-60' : ''}`}
-                  icon={<span className="text-sm">{sub.icon}</span>}
-                >
-                  {/* Full subject name — the tab bar is overflow-x-auto so names
-                      scroll naturally; CSS truncation at max-w keeps long names
-                      tidy. Lock state is exposed via the aria-label + Badge. */}
-                  <span className="whitespace-nowrap max-w-[96px] truncate">{sub.name}</span>
-                  {sub.isLocked && (
-                    <Badge tone="warning" aria-hidden="true">🔒</Badge>
-                  )}
-                </Chip>
-              );
-            });
-          })()}
-        </div>
+          return visible.map((sub) => {
+            const isActive = activeSubject === sub.code;
+            const handleClick = () => {
+              if (sub.isLocked) {
+                setLockedTapped(sub);
+                return;
+              }
+              if (sub.code !== activeSubject) {
+                switchSubject(sub.code);
+                setShowChapterDD(true);
+              }
+            };
+            return (
+              <button
+                key={sub.code}
+                onClick={handleClick}
+                aria-label={sub.isLocked ? `${sub.name} (locked — tap to upgrade)` : sub.name}
+                title={sub.isLocked ? (isHi ? 'अपग्रेड करें' : 'Upgrade to unlock') : sub.name}
+                className={`foxy-pill shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold ${isActive ? 'foxy-pill-active' : ''}`}
+                style={{
+                  ['--pill-tint' as string]: sub.color,
+                  background: isActive ? `color-mix(in srgb, ${sub.color} 16%, var(--surface-1))` : 'var(--surface-2)',
+                  border: isActive ? `2px solid color-mix(in srgb, ${sub.color} 55%, transparent)` : '1.5px solid var(--border)',
+                  color: isActive ? sub.color : 'var(--text-2)',
+                  fontWeight: isActive ? 700 : 600,
+                  opacity: sub.isLocked ? 0.55 : 1,
+                }}
+              >
+                <span className="text-sm">{sub.icon}</span>
+                {/* Show the full subject name — the tab bar is overflow-x-auto so
+                    names scroll naturally. CSS truncation at max-w keeps very long
+                    names tidy without the JS substring hack that made "Mathematics"
+                    appear as "Mathema." */}
+                <span className="whitespace-nowrap max-w-[96px] truncate">{sub.name}</span>
+                {sub.isLocked && (
+                  <span aria-hidden="true" className="text-[10px] leading-none">🔒</span>
+                )}
+              </button>
+            );
+          });
+        })()}
+      </div>
 
-        {/* ═══ CHAPTER SELECTOR + MODE BAR ═══ */}
-        <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
-          {/* Chapter dropdown */}
-          <div className="relative">
-            <Chip
-              selected={showChapterDD}
-              tone="brand"
-              onClick={() => { setShowChapterDD(!showChapterDD); setShowSubjectDD(false); }}
-              aria-haspopup="listbox"
-              aria-expanded={showChapterDD}
-              icon={<span className="text-sm">{cfg.icon}</span>}
-            >
-              <span>
-                {activeTopic
-                  ? `${language === 'hi' ? 'अध्याय' : 'Ch'} ${activeTopic.chapter_number}: ${activeTopic.title?.length > 15 ? activeTopic.title.substring(0, 14) + '...' : activeTopic.title}`
-                  : selectedChapters.length > 0
-                    ? `${selectedChapters.length} ${language === 'hi' ? 'अध्याय' : 'Ch'}`
-                    : (language === 'hi' ? 'अध्याय चुनो' : 'Select Chapter')}
-              </span>
-              <span className="text-[10px] ml-0.5 opacity-60" aria-hidden="true">{showChapterDD ? '▲' : '▼'}</span>
-            </Chip>
-            {showChapterDD && (
-              <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-                <div className="p-2 px-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} {language === 'hi' ? 'अध्याय' : 'Chapters'}</span>
-                  {(selectedChapters.length > 0 || activeTopic) && (
-                    <button onClick={() => { setSelectedChapters([]); setActiveTopic(null); }} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>{language === 'hi' ? 'सब हटाओ' : 'Clear All'}</button>
-                  )}
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  {topics.map((topic: any) => {
-                    const sel = selectedChapters.includes(topic.id) || activeTopic?.id === topic.id;
-                    const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
-                    const lvl = mastery?.mastery_level || 'not_started';
-                    return (
-                      <button
+      {/* ═══ CHAPTER SELECTOR + MODE BAR ═══ */}
+      <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+        {/* Chapter dropdown */}
+        <div className="relative">
+          <button onClick={() => { setShowChapterDD(!showChapterDD); setShowSubjectDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-2)' }}>
+            <span className="text-sm">{cfg.icon}</span>
+            <span>
+              {activeTopic
+                ? `${language === 'hi' ? 'अध्याय' : 'Ch'} ${activeTopic.chapter_number}: ${activeTopic.title?.length > 15 ? activeTopic.title.substring(0, 14) + '...' : activeTopic.title}`
+                : selectedChapters.length > 0
+                  ? `${selectedChapters.length} ${language === 'hi' ? 'अध्याय' : 'Ch'}`
+                  : (language === 'hi' ? 'अध्याय चुनो' : 'Select Chapter')}
+            </span>
+            <span className="text-[10px] ml-0.5 opacity-60">{showChapterDD ? '▲' : '▼'}</span>
+          </button>
+          {showChapterDD && (
+            <div className="absolute top-full left-0 mt-1 z-50 w-[calc(100vw-24px)] sm:w-72 max-h-[50vh] rounded-2xl overflow-hidden shadow-lg flex flex-col" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+              <div className="p-2 px-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-3)]">{cfg.icon} {cfg.name} {language === 'hi' ? 'अध्याय' : 'Chapters'}</span>
+                {(selectedChapters.length > 0 || activeTopic) && (
+                  <button onClick={() => { setSelectedChapters([]); setActiveTopic(null); }} className="text-[10px] font-semibold" style={{ color: 'var(--orange)' }}>{language === 'hi' ? 'सब हटाओ' : 'Clear All'}</button>
+                )}
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {topics.map((topic: any) => {
+                  const sel = selectedChapters.includes(topic.id) || activeTopic?.id === topic.id;
+                  const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+                  const lvl = mastery?.mastery_level || 'not_started';
+                  const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
+                  return (
+                    <button
                       key={topic.id}
                       onClick={() => {
-                        // Confirm before clearing the active conversation. Routes
-                        // through a canonical ConfirmDialog (mobile-friendly,
-                        // back-gesture dismissable) instead of native confirm;
-                        // the direct path stays verbatim via applyChapter().
+                        // RCA-FIX CRITICAL-UX-3: Confirm before clearing active conversation
                         if (messages.length > 0) {
-                          setPendingChapter(topic);
-                          return;
+                          // TODO(ux-debt): Replace window.confirm with native Dialog component for
+                          // mobile-friendly confirmation (back gesture dismissal). Tracked by quality review 2026-06-26.
+                          const confirmed = window.confirm(
+                            isHi
+                              ? 'नया chapter शुरू करने से यह conversation साफ हो जाएगी। क्या आप sure हैं?'
+                              : 'Switching chapter will clear your current conversation. Continue?'
+                          );
+                          if (!confirmed) return;
                         }
-                        applyChapter(topic);
+                        setActiveTopic(topic);
+                        setSelectedChapters([topic.id]);
+                        setMessages([]);
+                        setChatSessionId(null);
+                        setCollapsedAbove(null);
+                        setShowChapterDD(false);
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-all"
-                      style={{ background: sel ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'transparent', borderBottom: '1px solid var(--border)' }}
+                      style={{ background: sel ? `${cfg.color}06` : 'transparent', borderBottom: '1px solid var(--border)' }}
                     >
-                      <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? 'var(--surface-accent)' : 'var(--surface-2)', color: sel ? 'var(--on-surface-accent)' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '✓' : ''}</div>
+                      <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 text-[10px]" style={{ background: sel ? cfg.color : 'var(--surface-2)', color: sel ? '#fff' : 'var(--text-3)', border: sel ? 'none' : '1.5px solid var(--border)' }}>{sel ? '✓' : ''}</div>
                       <div className="flex-1 min-w-0"><div className="text-xs font-semibold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div></div>
-                      <Badge tone={MASTERY_TONE[lvl] || 'neutral'} className="capitalize">{lvl.replace('_', ' ')}</Badge>
+                      <span className="text-[9px] font-bold capitalize px-1.5 py-0.5 rounded" style={{ background: `${lc}15`, color: lc }}>{lvl.replace('_', ' ')}</span>
                     </button>
                   );
                 })}
@@ -1480,20 +1468,6 @@ export default function FoxyPage() {
         {/* Simplified mode pills — extracted to ./_components/FoxySettings.tsx */}
         <ModePicker sessionMode={sessionMode} color={cfg.color} isHi={isHi} onSwitchMode={switchMode} />
       </div>
-
-      {/* Chapter-switch confirmation — clears the active conversation. Replaces
-          the native window.confirm; bilingual copy preserved verbatim (P7). */}
-      <ConfirmDialog
-        open={!!pendingChapter}
-        onClose={() => setPendingChapter(null)}
-        onConfirm={() => { if (pendingChapter) applyChapter(pendingChapter); setPendingChapter(null); }}
-        title={isHi ? 'नया अध्याय शुरू करें?' : 'Start a new chapter?'}
-        description={isHi
-          ? 'नया chapter शुरू करने से यह conversation साफ हो जाएगी। क्या आप sure हैं?'
-          : 'Switching chapter will clear your current conversation. Continue?'}
-        confirmLabel={isHi ? 'हाँ, जारी रखें' : 'Yes, continue'}
-        cancelLabel={isHi ? 'रद्द करें' : 'Cancel'}
-      />
 
       {/* ═══ CONTEXT BAR — shows active conversation header ═══ */}
       {messages.length > 0 && (
@@ -1557,34 +1531,35 @@ export default function FoxyPage() {
           </div>
           {/* Predict-before-reveal for active recall step */}
           {showPredictionInput && !predictionSubmitted && (
-            <Card className="mt-2 shadow-sm border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-              <CardContent className="p-4">
-              <Field label={<>🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}</>}>
-                <div className="flex items-end gap-2">
-                  <Input
-                    type="text"
-                    value={lessonPrediction}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLessonPrediction(e.target.value)}
-                    placeholder={language === 'hi' ? 'तुम्हारा अनुमान...' : 'Your prediction...'}
-                    className="flex-1"
-                  />
-                  <Button
-                    size="md"
-                    onClick={() => {
-                      if (lessonPrediction.trim()) {
-                        setPredictionSubmitted(true);
-                        sendMessage(`My prediction: ${lessonPrediction.trim()}`);
-                        setLessonPrediction('');
-                      }
-                    }}
-                    disabled={!lessonPrediction.trim()}
-                  >
-                    {language === 'hi' ? 'भेजो' : 'Submit'}
-                  </Button>
-                </div>
-              </Field>
-              </CardContent>
-            </Card>
+            <div className="mt-2 p-3 rounded-xl" style={{ background: `color-mix(in srgb, ${cfg.color} 6%, var(--surface-1))`, border: `1px solid color-mix(in srgb, ${cfg.color} 22%, transparent)` }}>
+              <p className="text-xs font-semibold mb-1.5" style={{ color: cfg.color }}>
+                🧠 {language === 'hi' ? 'पहले अपना अनुमान लिखो:' : 'Write your prediction first:'}
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={lessonPrediction}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLessonPrediction(e.target.value)}
+                  placeholder={language === 'hi' ? 'तुम्हारा अनुमान...' : 'Your prediction...'}
+                  className="flex-1 text-sm rounded-lg px-3 py-2 outline-none"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                />
+                <button
+                  onClick={() => {
+                    if (lessonPrediction.trim()) {
+                      setPredictionSubmitted(true);
+                      sendMessage(`My prediction: ${lessonPrediction.trim()}`);
+                      setLessonPrediction('');
+                    }
+                  }}
+                  disabled={!lessonPrediction.trim()}
+                  className="px-3 py-2 rounded-lg text-xs font-bold text-white disabled:opacity-40"
+                  style={{ background: cfg.color }}
+                >
+                  {language === 'hi' ? 'भेजो' : 'Submit'}
+                </button>
+              </div>
+            </div>
           )}
           {showPredictionInput && predictionSubmitted && (
             <div className="mt-2 text-[10px] font-semibold" style={{ color: 'var(--green)' }}>
@@ -1669,34 +1644,52 @@ export default function FoxyPage() {
           Server still 422s on writes for locked subjects, this just makes
           the gate friendlier and points at /pricing. */}
       {lockedTapped && (
-        <Dialog open onClose={() => setLockedTapped(null)} size="sm">
-          <DialogTitle className="text-center">
-            <span className="mb-2 block text-4xl" aria-hidden="true">{lockedTapped.icon}</span>
-            {isHi
-              ? `${lockedTapped.nameHi} अनलॉक करें`
-              : `Unlock ${lockedTapped.name}`}
-          </DialogTitle>
-          <DialogBody className="text-center">
-            {isHi
-              ? `${lockedTapped.nameHi} एक पेड प्लान में उपलब्ध है। अभी मुफ्त प्लान में मैथ्स, अंग्रेज़ी और हिंदी मिलते हैं।`
-              : `${lockedTapped.name} is part of our paid plans. Your free plan includes Math, English and Hindi.`}
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="ghost" fullWidth onClick={() => setLockedTapped(null)}>
-              {isHi ? 'बाद में' : 'Maybe later'}
-            </Button>
-            <Button
-              variant="primary"
-              fullWidth
-              onClick={() => {
-                setLockedTapped(null);
-                router.push('/pricing');
-              }}
-            >
-              {isHi ? 'प्लान देखें' : 'View plans'}
-            </Button>
-          </DialogFooter>
-        </Dialog>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upgrade-modal-title"
+          className="fixed inset-0 z-[95] flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setLockedTapped(null); }}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
+            style={{ background: 'var(--warm-cream, #FFF9F0)', border: '1px solid var(--border)' }}
+          >
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-2" aria-hidden="true">{lockedTapped.icon}</div>
+              <h2 id="upgrade-modal-title" className="font-bold text-xl" style={{ color: 'var(--text-1)' }}>
+                {isHi
+                  ? `${lockedTapped.nameHi} अनलॉक करें`
+                  : `Unlock ${lockedTapped.name}`}
+              </h2>
+              <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>
+                {isHi
+                  ? `${lockedTapped.nameHi} एक पेड प्लान में उपलब्ध है। अभी मुफ्त प्लान में मैथ्स, अंग्रेज़ी और हिंदी मिलते हैं।`
+                  : `${lockedTapped.name} is part of our paid plans. Your free plan includes Math, English and Hindi.`}
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 mt-5">
+              <button
+                onClick={() => {
+                  setLockedTapped(null);
+                  router.push('/pricing');
+                }}
+                className="w-full px-4 py-3 rounded-2xl font-bold text-sm text-white"
+                style={{ background: lockedTapped.color }}
+              >
+                {isHi ? 'प्लान देखें' : 'View plans'}
+              </button>
+              <button
+                onClick={() => setLockedTapped(null)}
+                className="w-full px-4 py-2 rounded-2xl font-semibold text-xs"
+                style={{ background: 'transparent', color: 'var(--text-3)' }}
+              >
+                {isHi ? 'बाद में' : 'Maybe later'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
 
@@ -1747,7 +1740,7 @@ export default function FoxyPage() {
                       if (!confirmed) return;
                     }
                     setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50);
-                  }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid color-mix(in srgb, ${lc} 15%, transparent)`, background: activeTopic?.id === topic.id ? `color-mix(in srgb, ${lc} 6%, transparent)` : 'var(--surface-1)' }}>
+                  }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
                     <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
                     <div className="flex items-center gap-2 mt-1">
                       <div className="w-14 h-1.5 rounded-full" style={{ background: 'var(--surface-2)' }}><div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: lc }} /></div>
@@ -1784,13 +1777,16 @@ export default function FoxyPage() {
             // newly-added (aria-relevant="additions") message is announced.
             // ONLY the container ARIA changes — the REG-55 structured-render
             // DOM/markup inside MessageList is untouched. Gated by
-            // unconditionally applied for screen reader parity on all viewports.
-            role="log"
-            aria-live="polite"
-            aria-relevant="additions"
-            aria-busy={loading}
-            aria-label={isHi ? 'Foxy के साथ बातचीत' : 'Conversation with Foxy'}
-
+            // useFoxyOsHeader so the OFF path / desktop are byte-identical.
+            {...(useFoxyOsHeader
+              ? {
+                  role: 'log' as const,
+                  'aria-live': 'polite' as const,
+                  'aria-relevant': 'additions' as const,
+                  'aria-busy': loading,
+                  'aria-label': isHi ? 'Foxy के साथ बातचीत' : 'Conversation with Foxy',
+                }
+              : {})}
           >
             {/* SEL mood check-in — shown once per day at session start */}
             {showSELCheckIn && student && (
@@ -1820,9 +1816,8 @@ export default function FoxyPage() {
 
             {/* Empty state with ConversationStarters */}
             {messages.length === 0 && (
-              <Card className="mx-auto mt-6 md:mt-12 max-w-lg shadow-sm border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-                <CardContent className="text-center pt-8 animate-slide-up">
-                  <div className="foxy-hero-mascot text-5xl md:text-6xl mb-2">{FOXY_FACES.idle}</div>
+              <div className="text-center py-12 md:py-20 animate-slide-up">
+                <div className="foxy-hero-mascot text-6xl md:text-7xl mb-4">{FOXY_FACES.idle}</div>
                 <h2 className="text-2xl md:text-2xl font-extrabold mb-2" style={{ fontFamily: 'var(--font-display)', background: `linear-gradient(135deg, var(--accent-warm), ${cfg?.color || 'var(--purple)'})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'var(--accent-warm)' }}>{getEmptyStateHeading()}</h2>
                 <p className="text-sm text-[var(--text-3)] max-w-sm mx-auto mb-4 leading-relaxed">
                   {getEmptyStateSubtitle()}
@@ -1879,7 +1874,7 @@ export default function FoxyPage() {
                           if (prompt) sendMessage(prompt);
                           else sendMessage(language === 'hi' ? `${cfg.name} के बारे में मुझे सिखाओ` : `Teach me about ${cfg.name}`);
                         }}
-                        className="px-4 py-2 rounded-xl text-xs font-bold text-on-accent transition-all active:scale-95"
+                        className="px-4 py-2 rounded-xl text-xs font-bold text-white transition-all active:scale-95"
                         style={{ background: cfg.color }}
                       >
                         {MODES.find(m => m.id === (urlContext.mode || 'learn'))?.emoji}{' '}
@@ -1910,8 +1905,7 @@ export default function FoxyPage() {
                     {cfg.icon} {language === 'hi' ? `\u0905\u0928\u094D\u092F ${topics.length} \u0905\u0927\u094D\u092F\u093E\u092F \u0926\u0947\u0916\u094B` : `Browse ${topics.length} Chapters`}
                   </button>
                 )}
-                </CardContent>
-              </Card>
+              </div>
             )}
 
             {/* Messages — with collapsing, dedup, structured-vs-legacy renderer choice,
@@ -1968,7 +1962,7 @@ export default function FoxyPage() {
               students retain prompt guidance after the empty state disappears.
               Uses compact=true: 3 chips only, no "More" toggle, smaller styling. */}
           {messages.length > 0 && (
-            <div className="px-4 py-2 flex gap-2 flex-nowrap overflow-x-auto items-center border-t [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
+            <div className="px-4 py-2 flex gap-2 flex-wrap border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
               <ConversationStarters
                 subject={activeSubject}
                 language={language}
@@ -2019,42 +2013,43 @@ export default function FoxyPage() {
 
       {/* Mobile topics sheet */}
       {showTopicSheet && (
-        <BottomSheet
-          open
-          onClose={() => setShowTopicSheet(false)}
-          title={<span style={{ color: cfg.color }}>{cfg.icon} {cfg.name} · {language === 'hi' ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span>}
-          handleLabel={language === 'hi' ? 'अध्याय सूची बंद करो' : 'Close chapters'}
-          className="lg:hidden"
-        >
-          <div className="space-y-2">
-            {topics.map((topic: any) => {
-              const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
-              const pct = mastery?.mastery_percent || 0;
-              const lvl = mastery?.mastery_level || 'not_started';
-              const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
-              return (
-                <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid color-mix(in srgb, ${lc} 12%, transparent)` }}>
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `color-mix(in srgb, ${lc} 8%, transparent)` }}>{cfg.icon}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: lc }} /></div>
-                      <span className="text-[10px] font-bold capitalize shrink-0" style={{ color: lc }}>{pct}%</span>
+        <>
+          <div className="fixed inset-0 z-40 lg:hidden" style={{ background: 'rgba(0,0,0,0.3)' }} onClick={() => setShowTopicSheet(false)} />
+          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl max-h-[75vh] flex flex-col lg:hidden" style={{ background: 'var(--surface-1)', boxShadow: '0 -8px 40px rgba(0,0,0,0.1)' }}>
+            <div className="flex justify-center pt-3 pb-1"><div className="w-10 h-1 rounded-full" style={{ background: 'var(--border)' }} /></div>
+            <div className="px-4 pb-2 flex items-center justify-between">
+              <span className="text-sm font-bold" style={{ color: cfg.color }}>{cfg.icon} {cfg.name} · {language === 'hi' ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span>
+              <button onClick={() => setShowTopicSheet(false)} className="text-xs text-[var(--text-3)] font-semibold">{language === 'hi' ? 'बंद करो' : 'Close'}</button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-2">
+              {topics.map((topic: any) => {
+                const mastery = masteryData.find((m: any) => m.topic_tag === topic.title || m.chapter_number === topic.chapter_number);
+                const pct = mastery?.mastery_percent || 0;
+                const lvl = mastery?.mastery_level || 'not_started';
+                const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
+                return (
+                  <button key={topic.id} onClick={() => { setActiveTopic(topic); setShowTopicSheet(false); sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`); }} className="w-full text-left p-3.5 rounded-xl flex items-center gap-3 active:scale-[0.98] transition-all" style={{ background: 'var(--surface-2)', border: `1px solid ${lc}20` }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: `${lc}15` }}>{cfg.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 rounded-full" style={{ background: 'var(--border)' }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: lc }} /></div>
+                        <span className="text-[10px] font-bold capitalize shrink-0" style={{ color: lc }}>{pct}%</span>
+                      </div>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </BottomSheet>
+        </>
       )}
 
 
       {/* ═══ FOXY OS — Study bottom sheet (ff_foxy_os_v1, <lg only) ═══ */}
-      {/* Rendered ONLY when the flag is ON and viewport is <lg via CSS, so the OFF
+      {/* Rendered ONLY when the flag is ON and viewport is <lg, so the OFF
           path / >=lg are byte-identical. All actions call existing handlers. */}
-      {foxyOsEnabled && (
-        <div className="lg:hidden contents">
+      {useFoxyOsHeader && (
         <FoxyStudySheet
           open={studySheetOpen}
           onClose={() => setStudySheetOpen(false)}
@@ -2115,7 +2110,6 @@ export default function FoxyPage() {
               : null
           }
         />
-        </div>
       )}
 
       {/* ═══ FOXY OS — Tools bottom sheet (ff_foxy_os_v1, <lg only) ═══ */}
@@ -2125,8 +2119,7 @@ export default function FoxyPage() {
           wired when ff_student_os_v1 (osEnabled) is ON, because that is the
           only flag that mounts the ContextPanel surface; otherwise it is
           omitted (the sheet never invents a context surface). */}
-      {foxyOsEnabled && (
-        <div className="lg:hidden contents">
+      {useFoxyOsHeader && (
         <FoxyToolsSheet
           open={toolsSheetOpen}
           onClose={() => setToolsSheetOpen(false)}
@@ -2156,7 +2149,6 @@ export default function FoxyPage() {
               : undefined
           }
         />
-        </div>
       )}
 
       {/* ═══ UPGRADE MODAL (replaces old limit modal) ═══ */}
@@ -2179,18 +2171,9 @@ export default function FoxyPage() {
 
   return (
     <AppShell
-      className={`foxy-shell${foxyOsEnabled ? ' foxy-os' : ''}`}
+      className={`foxy-shell${useFoxyOsHeader ? ' foxy-os' : ''}`}
       variant="mobile"
-      header={
-        foxyOsEnabled ? (
-          <>
-            <div className="lg:hidden contents">{foxyOsHeaderContent}</div>
-            <div className="hidden lg:contents">{foxyHeaderContent}</div>
-          </>
-        ) : (
-          foxyHeaderContent
-        )
-      }
+      header={useFoxyOsHeader ? foxyOsHeaderContent : foxyHeaderContent}
       
       // One-handed mode toggle stays off on Foxy — the chat composer needs
       // the full viewport vertical reach, and pulling content down would

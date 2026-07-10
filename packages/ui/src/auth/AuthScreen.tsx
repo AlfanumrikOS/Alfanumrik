@@ -12,15 +12,6 @@
  * 4. Verify on Chrome: /login renders, /dashboard redirects to /login when unauthenticated
  *
  * DO NOT: create middleware.ts, add client-side profile inserts, remove role tabs
- *
- * PRESENTATION NOTE (Phase 4a — premium UI rebuild):
- * This screen was re-skinned onto the canonical design-system primitives
- * (Card / Tabs / Field / Input / Select / Checkbox / Chip / Button /
- * IconButton / Alert / EmptyState / Badge). Zero behaviour changed: every
- * supabase.auth call, the signup metadata object, the session/check-email
- * branch, all storage keys, and every control's id/name/type/required/
- * autoComplete/value/onChange are byte-for-byte identical to the pre-rebuild
- * version. Only the markup + tokens changed (P15 is presentation-safe).
  */
 import { useState, useEffect } from 'react';
 import { supabase } from '@alfanumrik/lib/supabase';
@@ -28,23 +19,6 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@alfanumrik/lib/constants';
 // eslint-disable-next-line alfanumrik/no-raw-subject-imports -- AuthScreen is pre-login: no session yet, so neither useAllowedSubjects (student) nor useTeacherAllowedSubjects can run. Static SUBJECT_META is the correct data source for signup subject selection.
 import { SUBJECT_META } from '@alfanumrik/lib/constants';
 import { validatePassword } from '@alfanumrik/lib/sanitize';
-import { cn } from '@alfanumrik/lib/utils';
-import {
-  Card,
-  Tabs,
-  TabList,
-  Tab,
-  Field,
-  Input,
-  Select,
-  Checkbox,
-  Chip,
-  Button,
-  IconButton,
-  Alert,
-  EmptyState,
-  Badge,
-} from '@alfanumrik/ui/ui/primitives';
 
 const AUTH_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const AUTH_BOARDS = ['CBSE', 'ICSE', 'State Board', 'IB', 'Other'];
@@ -136,11 +110,33 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
   };
 
   const ROLE_TABS = [
-    { key: 'student' as const, label: t('Student', 'विद्यार्थी'), emoji: '🎓' },
-    { key: 'teacher' as const, label: t('Teacher', 'शिक्षक'), emoji: '👩‍🏫' },
-    { key: 'parent' as const, label: t('Parent', 'अभिभावक'), emoji: '👨‍👩‍👧' },
-    { key: 'institution_admin' as const, label: t('School', 'स्कूल'), emoji: '🏫' },
+    { key: 'student' as const, label: t('Student', 'विद्यार्थी'), emoji: '🎓', color: '#E8590C' },
+    { key: 'teacher' as const, label: t('Teacher', 'शिक्षक'), emoji: '👩‍🏫', color: '#2563EB' },
+    { key: 'parent' as const, label: t('Parent', 'अभिभावक'), emoji: '👨‍👩‍👧', color: '#16A34A' },
+    { key: 'institution_admin' as const, label: t('School', 'स्कूल'), emoji: '🏫', color: '#7C3AED' },
   ];
+
+  const activeRoleColor = ROLE_TABS.find(r => r.key === roleTab)?.color ?? '#E8590C';
+
+  // Accessibility: roving-tabindex arrow-key navigation for the role tablist
+  // (WCAG 4.1.2). Moves keyboard FOCUS between tabs only — selection still
+  // happens via the native button activation (Enter/Space → existing onClick),
+  // so no app state/logic changes. Manual-activation pattern.
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const current = e.currentTarget;
+    const tabs = Array.from(
+      current.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []
+    );
+    const idx = tabs.indexOf(current);
+    let next = idx;
+    if (e.key === 'ArrowRight') next = (idx + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') next = (idx - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    tabs[next]?.focus();
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -311,6 +307,21 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
     } catch { setError(t('Connection error.', 'कनेक्शन में समस्या।')); setLoading(false); }
   };
 
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '12px 16px', borderRadius: 12,
+    border: '1.5px solid var(--border)', background: 'var(--surface-2)',
+    fontSize: 14, outline: 'none', fontFamily: 'var(--font-body)',
+    color: 'var(--text-1)',
+  };
+
+  const chipStyle = (selected: boolean, color: string): React.CSSProperties => ({
+    padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+    border: `1.5px solid ${selected ? color : 'var(--border)'}`,
+    background: selected ? `${color}18` : 'var(--surface-2)',
+    color: selected ? color : 'var(--text-3)',
+    cursor: 'pointer', transition: 'all 0.15s ease',
+  });
+
   const subtitle = roleTab === 'teacher'
     ? t('Empower your classroom with AI', 'AI के साथ अपनी कक्षा को सशक्त बनाएं')
     : roleTab === 'parent'
@@ -327,27 +338,27 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
         ? t('Register Your School', 'अपने स्कूल को पंजीकृत करें')
         : t('Start Learning Now', 'अभी सीखना शुरू करें');
 
-  const optionalText = t('(optional)', '(वैकल्पिक)');
+  const buttonGradient = roleTab === 'teacher'
+    ? 'linear-gradient(135deg, #2563EB, #3B82F6)'
+    : roleTab === 'parent'
+      ? 'linear-gradient(135deg, #16A34A, #22C55E)'
+      : roleTab === 'institution_admin'
+        ? 'linear-gradient(135deg, #7C3AED, #A855F7)'
+        : 'linear-gradient(135deg, #E8590C, #F59E0B)';
 
   return (
     <div className="mesh-bg min-h-dvh flex flex-col items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm">
         {/* Language toggle (pre-login). Persists to localStorage key
-            'alfanumrik_language' so the choice carries into AuthContext post-login.
-            Active option uses the AA-verified --on-accent on --surface-accent pair
-            (design-system §8.1) — the old white-on-bare-orange 3.59:1 pair is gone. */}
+            'alfanumrik_language' so the choice carries into AuthContext post-login. */}
         <div className="flex justify-end mb-2">
-          <div className="inline-flex gap-1 rounded-full border border-surface-3 bg-surface-1 p-1" role="group" aria-label={t('Language', 'भाषा')}>
+          <div className="inline-flex rounded-full p-0.5" role="group" aria-label={t('Language', 'भाषा')} style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
             <button
               type="button"
               onClick={() => toggleLanguage(false)}
               aria-pressed={!isHi}
-              className={cn(
-                'inline-flex h-11 items-center justify-center rounded-full px-4 text-fluid-xs font-bold',
-                'transition-colors duration-150 ease-out motion-reduce:transition-none',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
-                !isHi ? 'bg-surface-accent text-on-accent' : 'text-muted-foreground hover:text-foreground',
-              )}
+              className="px-3 py-1 rounded-full text-xs font-bold transition-all"
+              style={{ background: !isHi ? 'var(--orange)' : 'transparent', color: !isHi ? '#fff' : 'var(--text-3)' }}
             >
               EN
             </button>
@@ -355,302 +366,259 @@ export function AuthScreen({ onSuccess, initialRole = 'student' }: AuthScreenPro
               type="button"
               onClick={() => toggleLanguage(true)}
               aria-pressed={isHi}
-              className={cn(
-                'inline-flex h-11 items-center justify-center rounded-full px-4 text-fluid-xs font-bold',
-                'transition-colors duration-150 ease-out motion-reduce:transition-none',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
-                isHi ? 'bg-surface-accent text-on-accent' : 'text-muted-foreground hover:text-foreground',
-              )}
+              className="px-3 py-1 rounded-full text-xs font-bold transition-all"
+              style={{ background: isHi ? 'var(--orange)' : 'transparent', color: isHi ? '#fff' : 'var(--text-3)' }}
             >
               हिंदी
             </button>
           </div>
         </div>
-
         {/* Hero */}
         <div className="text-center mb-5">
-          <div className="text-6xl mb-2 animate-float" aria-hidden="true">🦊</div>
-          <h1 className="text-2xl font-extrabold bg-surface-accent bg-clip-text text-transparent" style={{ fontFamily: 'var(--font-display)' }}>
+          <div className="text-6xl mb-2 animate-float">🦊</div>
+          <h1 className="text-2xl font-extrabold" style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, #E8590C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Alfanumrik
           </h1>
-          <p className="text-fluid-sm font-medium mt-1 text-muted-foreground">{subtitle}</p>
-          <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
-            <Badge tone="brand" variant="soft">{t('CBSE Grades 6-12', 'CBSE कक्षा 6-12')}</Badge>
-            <Badge tone="success" variant="soft">{t('Hindi & English', 'हिंदी और अंग्रेज़ी')}</Badge>
-            <Badge tone="info" variant="soft">{t('AI-Powered Adaptive', 'AI-संचालित अनुकूली')}</Badge>
+          <p className="text-sm font-medium mt-1" style={{ color: 'var(--text-2)' }}>{subtitle}</p>
+          <div className="flex items-center justify-center gap-3 mt-3 flex-wrap">
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(232,88,28,0.08)', color: 'var(--orange)' }}>{t('CBSE Grades 6-12', 'CBSE कक्षा 6-12')}</span>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(22,163,74,0.08)', color: '#16A34A' }}>{t('Hindi & English', 'हिंदी और अंग्रेज़ी')}</span>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}>{t('AI-Powered Adaptive', 'AI-संचालित अनुकूली')}</span>
           </div>
         </div>
 
-        {/* Form Card */}
-        <Card variant="elevated" className="p-6">
-          {/* Role selector (canonical Tabs: roving-tabindex + arrow keys + aria built in) */}
-          {mode !== 'check-email' && (
-            <div className="mb-4">
-              <Tabs
-                value={roleTab}
-                onValueChange={(v) => { setRoleTab(v as typeof roleTab); setError(''); setSuccess(''); }}
-              >
-                <TabList aria-label={t('Account type', 'खाता प्रकार')}>
-                  {ROLE_TABS.map(tab => (
-                    <Tab key={tab.key} value={tab.key} className="flex-1 px-2">
-                      <span className="mr-1" aria-hidden="true">{tab.emoji}</span>
-                      {tab.label}
-                    </Tab>
-                  ))}
-                </TabList>
-              </Tabs>
-            </div>
-          )}
+        {/* Role Tabs */}
+        {mode !== 'check-email' && (
+          <div className="flex gap-1 mb-4 p-1 rounded-2xl" role="tablist" aria-label="Account type" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+            {ROLE_TABS.map(tab => {
+              const isActive = roleTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  id={`auth-role-tab-${tab.key}`}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-controls="auth-form-panel"
+                  tabIndex={isActive ? 0 : -1}
+                  onKeyDown={handleTabKeyDown}
+                  onClick={() => { setRoleTab(tab.key); setError(''); setSuccess(''); }}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all"
+                  style={{
+                    background: isActive ? `${tab.color}15` : 'transparent',
+                    color: isActive ? tab.color : 'var(--text-3)',
+                    borderBottom: isActive ? `2.5px solid ${tab.color}` : '2.5px solid transparent',
+                  }}
+                >
+                  <span className="mr-1" aria-hidden="true">{tab.emoji}</span>
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-          <h2 className="text-fluid-lg font-bold mb-4 text-center text-foreground">
+        {/* Form Card */}
+        <div
+          id="auth-form-panel"
+          role={mode !== 'check-email' ? 'tabpanel' : undefined}
+          aria-labelledby={mode !== 'check-email' ? `auth-role-tab-${roleTab}` : undefined}
+          className="rounded-2xl p-6"
+          style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}
+        >
+          <h2 className="text-lg font-bold mb-4 text-center" style={{ color: 'var(--text-1)' }}>
             {mode === 'login' ? t('Welcome Back!', 'फिर से स्वागत है!') : mode === 'signup' ? signupTitle : mode === 'check-email' ? t('Check Your Email', 'अपना ईमेल जाँचें') : t('Reset Password', 'पासवर्ड रीसेट करें')}
           </h2>
 
           {error && (
-            <Alert id="auth-error" tone="danger" className="mb-3">
+            <div id="auth-error" role="alert" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: 'var(--danger-light)', color: 'var(--danger)', border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)' }}>
               {error}
-            </Alert>
+            </div>
           )}
           {success && (
-            <Alert tone="success" className="mb-3">
+            <div role="status" className="mb-3 px-3 py-2 rounded-xl text-xs font-semibold" style={{ background: '#D1FAE5', color: '#059669', border: '1px solid #A7F3D0' }}>
               {success}
-            </Alert>
+            </div>
           )}
 
-          {mode === 'check-email' ? (
-            <EmptyState
-              icon="📧"
-              title={t('Check Your Email', 'अपना ईमेल जाँचें')}
-              description={
-                <>
-                  {t('We sent a verification link to', 'हमने एक सत्यापन लिंक भेजा है')}{' '}
-                  <strong className="text-foreground">{pendingEmail}</strong>.{' '}
+          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3" aria-describedby={error ? 'auth-error' : undefined}>
+            {mode === 'check-email' && (
+              <div className="text-center space-y-4 py-2">
+                <div className="text-4xl" aria-hidden="true">📧</div>
+                <p className="text-sm" style={{ color: 'var(--text-2)', lineHeight: 1.6 }}>
+                  {t('We sent a verification link to', 'हमने एक सत्यापन लिंक भेजा है')}<br/><strong style={{ color: 'var(--text-1)' }}>{pendingEmail}</strong>
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-3)', lineHeight: 1.5 }}>
                   {t('Click the link in your email to verify your account and start learning. Check your spam folder if you don\'t see it.', 'अपना खाता सत्यापित करने और सीखना शुरू करने के लिए अपने ईमेल में दिए गए लिंक पर क्लिक करें। अगर यह न दिखे तो अपना स्पैम फ़ोल्डर जाँचें।')}
-                </>
-              }
-              action={
-                <Button variant="ghost" fullWidth onClick={handleResendVerification} loading={loading}>
-                  {t("Didn't receive it? Resend Email", 'नहीं मिला? ईमेल फिर से भेजें')}
-                </Button>
-              }
-            />
-          ) : (
-            <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-3" aria-describedby={error ? 'auth-error' : undefined}>
-              {mode === 'signup' && (
-                <Field label={t('Your Name', 'आपका नाम')} htmlFor="auth-name" required requiredText={t('required', 'आवश्यक')}>
-                  <Input id="auth-name" name="name" type="text" placeholder={t('Your Name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} required autoComplete="name" />
-                </Field>
-              )}
+                </p>
+                <button type="button" onClick={handleResendVerification} disabled={loading} className="w-full text-center text-xs font-semibold py-2" style={{ color: activeRoleColor }}>
+                  {loading ? '...' : t("Didn't receive it? Resend Email", 'नहीं मिला? ईमेल फिर से भेजें')}
+                </button>
+              </div>
+            )}
 
-              <Field label={t('Email address', 'ईमेल पता')} htmlFor="auth-email">
-                <Input id="auth-email" name="email" type="email" placeholder={t('Email address', 'ईमेल पता')} value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" inputMode="email" />
-              </Field>
+            {mode === 'signup' && (
+              <input id="auth-name" name="name" type="text" placeholder={t('Your Name', 'आपका नाम')} value={name} onChange={e => setName(e.target.value)} style={inputStyle} required aria-label={t('Your name', 'आपका नाम')} autoComplete="name" />
+            )}
 
-              {mode !== 'forgot' && (
-                <Field label={t('Password', 'पासवर्ड')} htmlFor="auth-password">
-                  <div className="relative">
-                    <Input
-                      id="auth-password"
-                      name="password"
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder={t('Password (min 8 chars, A-z, 0-9)', 'पासवर्ड (कम से कम 8 अक्षर, A-z, 0-9)')}
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      required
-                      minLength={8}
-                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                      className="pr-14"
-                    />
-                    <div className="absolute inset-y-0 right-1 flex items-center">
-                      <IconButton
-                        variant="ghost"
-                        size="sm"
-                        label={showPassword ? t('Hide password', 'पासवर्ड छिपाएं') : t('Show password', 'पासवर्ड दिखाएं')}
-                        icon={<span aria-hidden="true">{showPassword ? '🙈' : '👁️'}</span>}
-                        onClick={() => setShowPassword(!showPassword)}
-                      />
-                    </div>
-                  </div>
-                </Field>
-              )}
+            {mode !== 'check-email' && (
+              <input id="auth-email" name="email" type="email" placeholder={t('Email address', 'ईमेल पता')} value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} required aria-label={t('Email address', 'ईमेल पता')} autoComplete="email" />
+            )}
 
-              {/* Student signup fields */}
-              {mode === 'signup' && roleTab === 'student' && (
-                <>
-                  <div className="flex gap-2">
-                    <Field label={t('Grade', 'कक्षा')} htmlFor="auth-grade" className="flex-1">
-                      <Select id="auth-grade" name="grade" value={grade} onChange={e => setGrade(e.target.value)}>
-                        {AUTH_GRADES.map(g => <option key={g} value={g}>{t('Grade', 'कक्षा')} {g}</option>)}
-                      </Select>
-                    </Field>
-                    <Field label={t('Board', 'बोर्ड')} htmlFor="auth-board" className="flex-1">
-                      <Select id="auth-board" name="board" value={board} onChange={e => setBoard(e.target.value)}>
-                        {AUTH_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
-                      </Select>
-                    </Field>
-                  </div>
+            {mode !== 'forgot' && mode !== 'check-email' && (
+              <div className="relative">
+                <input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} placeholder={t('Password (min 8 chars, A-z, 0-9)', 'पासवर्ड (कम से कम 8 अक्षर, A-z, 0-9)')} value={password} onChange={e => setPassword(e.target.value)} style={{ ...inputStyle, paddingRight: 44 }} required minLength={8} aria-label={t('Password', 'पासवर्ड')} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: 'var(--text-3)' }} aria-label={showPassword ? t('Hide password', 'पासवर्ड छिपाएं') : t('Show password', 'पासवर्ड दिखाएं')}>
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
+            )}
 
-                  <Field label={t('Age Range', 'आयु सीमा')} htmlFor="age-range">
-                    <Select id="age-range" name="age-range" value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }}>
-                      <option value="13-18">{t('13 – 18 years', '13 – 18 वर्ष')}</option>
-                      <option value="10-12">{t('10 – 12 years', '10 – 12 वर्ष')}</option>
-                    </Select>
-                  </Field>
-
-                  {studentAgeRange === '10-12' && (
-                    <Alert tone="warning" title={t('Parental consent required for students under 13', '13 वर्ष से कम उम्र के विद्यार्थियों के लिए अभिभावक की सहमति आवश्यक है')}>
-                      <div className="space-y-3 mt-1">
-                        <Field label={t('Parent/Guardian Email', 'अभिभावक का ईमेल')} htmlFor="auth-parent-email" required requiredText={t('required', 'आवश्यक')}>
-                          <Input id="auth-parent-email" name="parent-email" type="email" placeholder={t('Parent/Guardian Email', 'अभिभावक का ईमेल')} value={parentEmail} onChange={e => setParentEmail(e.target.value)} required autoComplete="email" />
-                        </Field>
-                        <Checkbox
-                          id="auth-parent-consent"
-                          name="parent-consent"
-                          checked={parentConsent}
-                          onChange={e => setParentConsent(e.target.checked)}
-                          label={t('I confirm that my parent/guardian has given consent for me to use this platform', 'मैं पुष्टि करता/करती हूँ कि मेरे अभिभावक ने मुझे इस प्लेटफ़ॉर्म का उपयोग करने की सहमति दी है')}
-                        />
-                      </div>
-                    </Alert>
-                  )}
-                </>
-              )}
-
-              {/* Teacher signup fields */}
-              {mode === 'signup' && roleTab === 'teacher' && (
-                <>
-                  <Field label={t('School Name', 'स्कूल का नाम')} htmlFor="auth-school-name" required requiredText={t('required', 'आवश्यक')}>
-                    <Input id="auth-school-name" name="school-name" type="text" placeholder={t('School Name', 'स्कूल का नाम')} value={schoolName} onChange={e => setSchoolName(e.target.value)} required autoComplete="organization" />
-                  </Field>
-                  <fieldset>
-                    <legend className="mb-1.5 text-fluid-sm font-semibold text-foreground">{t('Subjects You Teach', 'आप कौन से विषय पढ़ाते हैं')}</legend>
-                    <div className="flex flex-wrap gap-1.5" role="group">
-                      {TEACHER_SUBJECTS.map(s => (
-                        <Chip key={s.code} selected={subjectsTaught.includes(s.code)} onClick={() => toggleSubject(s.code)} icon={<span aria-hidden="true">{s.icon}</span>}>
-                          {s.name}
-                        </Chip>
-                      ))}
-                    </div>
-                  </fieldset>
-                  <fieldset>
-                    <legend className="mb-1.5 text-fluid-sm font-semibold text-foreground">{t('Grades You Teach', 'आप कौन सी कक्षाएँ पढ़ाते हैं')}</legend>
-                    <div className="flex flex-wrap gap-1.5" role="group">
-                      {TEACHER_GRADES.map(g => (
-                        <Chip key={g} selected={gradesTaught.includes(g)} onClick={() => toggleGradeTaught(g)}>
-                          {g}
-                        </Chip>
-                      ))}
-                    </div>
-                  </fieldset>
-                </>
-              )}
-
-              {/* Parent signup fields */}
-              {mode === 'signup' && roleTab === 'parent' && (
-                <>
-                  <Field label={t('Phone Number', 'फ़ोन नंबर')} htmlFor="auth-phone" optional optionalText={optionalText}>
-                    <Input id="auth-phone" name="phone" type="tel" placeholder={t('Phone Number (optional)', 'फ़ोन नंबर (वैकल्पिक)')} value={phone} onChange={e => setPhone(e.target.value)} autoComplete="tel" />
-                  </Field>
-                  <Field
-                    label={t('Child Link Code', 'बच्चे का लिंक कोड')}
-                    htmlFor="auth-link-code"
-                    optional
-                    optionalText={optionalText}
-                    hint={t("Have a link code from your child's school? Enter it to connect!", 'अपने बच्चे के स्कूल से लिंक कोड मिला है? जुड़ने के लिए इसे दर्ज करें!')}
-                  >
-                    <Input id="auth-link-code" name="link-code" type="text" placeholder={t('Child Link Code (optional)', 'बच्चे का लिंक कोड (वैकल्पिक)')} value={linkCode} onChange={e => setLinkCode(e.target.value)} maxLength={8} />
-                  </Field>
-                </>
-              )}
-
-              {/* Institution admin signup fields */}
-              {mode === 'signup' && roleTab === 'institution_admin' && (
-                <>
-                  <Field label={t('School Name', 'स्कूल का नाम')} htmlFor="auth-inst-school" required requiredText={t('required', 'आवश्यक')}>
-                    <Input id="auth-inst-school" name="school-name" type="text" placeholder={t('School Name', 'स्कूल का नाम')} value={instSchoolName} onChange={e => setInstSchoolName(e.target.value)} required autoComplete="organization" />
-                  </Field>
-                  <div className="flex gap-2">
-                    <Field label={t('City', 'शहर')} htmlFor="auth-inst-city" required requiredText={t('required', 'आवश्यक')} className="flex-1">
-                      <Input id="auth-inst-city" name="city" type="text" placeholder={t('City', 'शहर')} value={instCity} onChange={e => setInstCity(e.target.value)} required autoComplete="address-level2" />
-                    </Field>
-                    <Field label={t('State', 'राज्य')} htmlFor="auth-inst-state" required requiredText={t('required', 'आवश्यक')} className="flex-1">
-                      <Select id="auth-inst-state" name="state" value={instState} onChange={e => setInstState(e.target.value)} required placeholder={t('State', 'राज्य')}>
-                        {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </Select>
-                    </Field>
-                  </div>
-                  <Field label={t('Board Affiliation', 'बोर्ड संबद्धता')} htmlFor="auth-inst-board">
-                    <Select id="auth-inst-board" name="board-affiliation" value={instBoard} onChange={e => setInstBoard(e.target.value)}>
-                      {SCHOOL_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </Select>
-                  </Field>
-                  <Field label={t('Principal Name', 'प्रधानाचार्य का नाम')} htmlFor="auth-principal-name" optional optionalText={optionalText}>
-                    <Input id="auth-principal-name" name="principal-name" type="text" placeholder={t('Principal Name (optional)', 'प्रधानाचार्य का नाम (वैकल्पिक)')} value={principalName} onChange={e => setPrincipalName(e.target.value)} autoComplete="name" />
-                  </Field>
-                  <Field label={t('School Phone', 'स्कूल फ़ोन')} htmlFor="auth-school-phone" optional optionalText={optionalText}>
-                    <Input id="auth-school-phone" name="school-phone" type="tel" placeholder={t('School Phone (optional)', 'स्कूल फ़ोन (वैकल्पिक)')} value={instPhone} onChange={e => setInstPhone(e.target.value)} autoComplete="tel" />
-                  </Field>
-                </>
-              )}
-
-              {/* DPDPA Consent Checkboxes */}
-              {mode === 'signup' && (
-                <div className="space-y-2">
-                  <Checkbox
-                    id="auth-consent-data"
-                    name="consent-data"
-                    checked={consentData}
-                    onChange={e => setConsentData(e.target.checked)}
-                    label={
-                      <span>
-                        {t('I consent to the collection and processing of my data as described in the', 'मैं इसमें वर्णित अनुसार अपने डेटा के संग्रह और प्रोसेसिंग की सहमति देता/देती हूँ:')}{' '}
-                        <a href="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold text-primary underline">{t('Privacy Policy', 'गोपनीयता नीति')}</a>
-                        <span className="text-danger"> *</span>
-                      </span>
-                    }
-                  />
-                  <Checkbox
-                    id="auth-consent-analytics"
-                    name="consent-analytics"
-                    checked={consentAnalytics}
-                    onChange={e => setConsentAnalytics(e.target.checked)}
-                    label={t('I consent to analytics tracking to improve the platform', 'मैं प्लेटफ़ॉर्म को बेहतर बनाने के लिए एनालिटिक्स ट्रैकिंग की सहमति देता/देती हूँ')}
-                  />
+            {/* Student signup fields */}
+            {mode === 'signup' && roleTab === 'student' && (
+              <>
+                <div className="flex gap-2">
+                  <select id="auth-grade" name="grade" value={grade} onChange={e => setGrade(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label={t('Select your grade', 'अपनी कक्षा चुनें')}>
+                    {AUTH_GRADES.map(g => <option key={g} value={g}>{t('Grade', 'कक्षा')} {g}</option>)}
+                  </select>
+                  <select id="auth-board" name="board" value={board} onChange={e => setBoard(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label={t('Select your board', 'अपना बोर्ड चुनें')}>
+                    {AUTH_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
                 </div>
-              )}
 
-              <Button type="submit" variant="primary" size="lg" fullWidth loading={loading} disabled={loading}>
-                {mode === 'login' ? t('Log In', 'लॉग इन करें') : mode === 'signup' ? t('Create Account', 'खाता बनाएं') : t('Send Reset Link', 'रीसेट लिंक भेजें')}
-              </Button>
-            </form>
-          )}
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" htmlFor="age-range" style={{ color: 'var(--text-2)' }}>{t('Age Range', 'आयु सीमा')}</label>
+                  <select id="age-range" name="age-range" value={studentAgeRange} onChange={e => { setStudentAgeRange(e.target.value as '13-18' | '10-12'); if (e.target.value === '13-18') { setParentEmail(''); setParentConsent(false); } }} style={{ ...inputStyle, cursor: 'pointer' }}>
+                    <option value="13-18">{t('13 – 18 years', '13 – 18 वर्ष')}</option>
+                    <option value="10-12">{t('10 – 12 years', '10 – 12 वर्ष')}</option>
+                  </select>
+                </div>
+
+                {studentAgeRange === '10-12' && (
+                  <div className="space-y-2 p-3 rounded-xl" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)' }}>
+                    <p className="text-xs font-semibold" style={{ color: '#F59E0B' }}>{t('Parental consent required for students under 13', '13 वर्ष से कम उम्र के विद्यार्थियों के लिए अभिभावक की सहमति आवश्यक है')}</p>
+                    <input id="auth-parent-email" name="parent-email" type="email" placeholder={t('Parent/Guardian Email', 'अभिभावक का ईमेल')} value={parentEmail} onChange={e => setParentEmail(e.target.value)} style={inputStyle} required aria-label={t('Parent or guardian email', 'अभिभावक का ईमेल')} autoComplete="email" />
+                    <label className="flex items-start gap-2 cursor-pointer">
+                      <input id="auth-parent-consent" name="parent-consent" type="checkbox" checked={parentConsent} onChange={e => setParentConsent(e.target.checked)} className="mt-0.5" style={{ accentColor: '#E8590C' }} />
+                      <span className="text-xs" style={{ color: 'var(--text-2)' }}>
+                        {t('I confirm that my parent/guardian has given consent for me to use this platform', 'मैं पुष्टि करता/करती हूँ कि मेरे अभिभावक ने मुझे इस प्लेटफ़ॉर्म का उपयोग करने की सहमति दी है')}
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Teacher signup fields */}
+            {mode === 'signup' && roleTab === 'teacher' && (
+              <>
+                <input id="auth-school-name" name="school-name" type="text" placeholder={t('School Name', 'स्कूल का नाम')} value={schoolName} onChange={e => setSchoolName(e.target.value)} style={inputStyle} required aria-label={t('School name', 'स्कूल का नाम')} autoComplete="organization" />
+                <fieldset>
+                  <legend className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>{t('Subjects You Teach', 'आप कौन से विषय पढ़ाते हैं')}</legend>
+                  <div className="flex flex-wrap gap-1.5" role="group">
+                    {TEACHER_SUBJECTS.map(s => (
+                      <button key={s.code} type="button" onClick={() => toggleSubject(s.code)} aria-pressed={subjectsTaught.includes(s.code)} style={chipStyle(subjectsTaught.includes(s.code), '#2563EB')}>
+                        {s.icon} {s.name}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-2)' }}>{t('Grades You Teach', 'आप कौन सी कक्षाएँ पढ़ाते हैं')}</legend>
+                  <div className="flex flex-wrap gap-1.5" role="group">
+                    {TEACHER_GRADES.map(g => (
+                      <button key={g} type="button" onClick={() => toggleGradeTaught(g)} aria-pressed={gradesTaught.includes(g)} style={chipStyle(gradesTaught.includes(g), '#2563EB')}>
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              </>
+            )}
+
+            {/* Parent signup fields */}
+            {mode === 'signup' && roleTab === 'parent' && (
+              <>
+                <input id="auth-phone" name="phone" type="tel" placeholder={t('Phone Number (optional)', 'फ़ोन नंबर (वैकल्पिक)')} value={phone} onChange={e => setPhone(e.target.value)} style={inputStyle} aria-label={t('Phone number', 'फ़ोन नंबर')} autoComplete="tel" />
+                <div>
+                  <input id="auth-link-code" name="link-code" type="text" placeholder={t('Child Link Code (optional)', 'बच्चे का लिंक कोड (वैकल्पिक)')} value={linkCode} onChange={e => setLinkCode(e.target.value)} style={inputStyle} maxLength={8} aria-label={t('Child link code', 'बच्चे का लिंक कोड')} />
+                  <p className="text-[10px] mt-1 px-1" style={{ color: 'var(--text-3)' }}>
+                    {t("Have a link code from your child's school? Enter it to connect!", 'अपने बच्चे के स्कूल से लिंक कोड मिला है? जुड़ने के लिए इसे दर्ज करें!')}
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Institution admin signup fields */}
+            {mode === 'signup' && roleTab === 'institution_admin' && (
+              <>
+                <input id="auth-inst-school" name="school-name" type="text" placeholder={t('School Name *', 'स्कूल का नाम *')} value={instSchoolName} onChange={e => setInstSchoolName(e.target.value)} style={inputStyle} required aria-label={t('School name', 'स्कूल का नाम')} autoComplete="organization" />
+                <div className="flex gap-2">
+                  <input id="auth-inst-city" name="city" type="text" placeholder={t('City *', 'शहर *')} value={instCity} onChange={e => setInstCity(e.target.value)} style={{ ...inputStyle, flex: 1 }} required aria-label={t('City', 'शहर')} autoComplete="address-level2" />
+                  <select id="auth-inst-state" name="state" value={instState} onChange={e => setInstState(e.target.value)} style={{ ...inputStyle, flex: 1, cursor: 'pointer' }} aria-label={t('State', 'राज्य')} required>
+                    <option value="">{t('State *', 'राज्य *')}</option>
+                    {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <select id="auth-inst-board" name="board-affiliation" value={instBoard} onChange={e => setInstBoard(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }} aria-label={t('Board affiliation', 'बोर्ड संबद्धता')}>
+                  {SCHOOL_BOARDS.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+                <input id="auth-principal-name" name="principal-name" type="text" placeholder={t('Principal Name (optional)', 'प्रधानाचार्य का नाम (वैकल्पिक)')} value={principalName} onChange={e => setPrincipalName(e.target.value)} style={inputStyle} aria-label={t('Principal name', 'प्रधानाचार्य का नाम')} autoComplete="name" />
+                <input id="auth-school-phone" name="school-phone" type="tel" placeholder={t('School Phone (optional)', 'स्कूल फ़ोन (वैकल्पिक)')} value={instPhone} onChange={e => setInstPhone(e.target.value)} style={inputStyle} aria-label={t('School phone', 'स्कूल फ़ोन')} autoComplete="tel" />
+              </>
+            )}
+
+            {/* DPDPA Consent Checkboxes */}
+            {mode === 'signup' && (
+              <div className="space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                  <input id="auth-consent-data" name="consent-data" type="checkbox" checked={consentData} onChange={e => setConsentData(e.target.checked)} className="mt-0.5 shrink-0" style={{ accentColor: activeRoleColor, width: 16, height: 16 }} />
+                  <span>
+                    {t('I consent to the collection and processing of my data as described in the', 'मैं इसमें वर्णित अनुसार अपने डेटा के संग्रह और प्रोसेसिंग की सहमति देता/देती हूँ:')}{' '}
+                    <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline font-semibold" style={{ color: activeRoleColor }}>{t('Privacy Policy', 'गोपनीयता नीति')}</a>
+                    <span style={{ color: 'var(--danger)' }}> *</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer" style={{ fontSize: 12, color: 'var(--text-2)' }}>
+                  <input id="auth-consent-analytics" name="consent-analytics" type="checkbox" checked={consentAnalytics} onChange={e => setConsentAnalytics(e.target.checked)} className="mt-0.5 shrink-0" style={{ accentColor: activeRoleColor, width: 16, height: 16 }} />
+                  <span>{t('I consent to analytics tracking to improve the platform', 'मैं प्लेटफ़ॉर्म को बेहतर बनाने के लिए एनालिटिक्स ट्रैकिंग की सहमति देता/देती हूँ')}</span>
+                </label>
+              </div>
+            )}
+
+            {mode !== 'check-email' && (
+              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98] disabled:opacity-50" style={{ background: buttonGradient }}>
+                {loading ? '...' : mode === 'login' ? t('Log In', 'लॉग इन करें') : mode === 'signup' ? t('Create Account', 'खाता बनाएं') : t('Send Reset Link', 'रीसेट लिंक भेजें')}
+              </button>
+            )}
+          </form>
 
           {mode === 'login' && (
-            <Button variant="ghost" size="sm" fullWidth className="mt-2" onClick={() => { setMode('forgot'); setError(''); setSuccess(''); }}>
+            <button onClick={() => { setMode('forgot'); setError(''); setSuccess(''); }} className="w-full text-center text-xs mt-3 font-semibold" style={{ color: 'var(--text-3)' }}>
               {t('Forgot password?', 'पासवर्ड भूल गए?')}
-            </Button>
+            </button>
           )}
 
-          <div className="mt-4 pt-4 text-center text-fluid-xs border-t border-surface-3">
+          <div className="mt-4 pt-4 text-center text-xs" style={{ borderTop: '1px solid var(--border)' }}>
             {mode === 'login' ? (
-              <span className="text-muted-foreground">{t('New here?', 'यहाँ नए हैं?')} <button type="button" onClick={() => { setMode('signup'); setError(''); setSuccess(''); }} className="font-bold text-primary underline underline-offset-2">{t('Create Account', 'खाता बनाएं')}</button></span>
+              <span style={{ color: 'var(--text-3)' }}>{t('New here?', 'यहाँ नए हैं?')} <button onClick={() => { setMode('signup'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>{t('Create Account', 'खाता बनाएं')}</button></span>
             ) : (
-              <span className="text-muted-foreground">{t('Already have an account?', 'पहले से खाता है?')} <button type="button" onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold text-primary underline underline-offset-2">{t('Log In', 'लॉग इन करें')}</button></span>
+              <span style={{ color: 'var(--text-3)' }}>{t('Already have an account?', 'पहले से खाता है?')} <button onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="font-bold" style={{ color: activeRoleColor }}>{t('Log In', 'लॉग इन करें')}</button></span>
             )}
           </div>
-        </Card>
+        </div>
 
         {/* Trust signals */}
         <div className="mt-5 text-center space-y-2">
-          <div className="flex items-center justify-center gap-4 text-fluid-xs font-medium text-muted-foreground">
+          <div className="flex items-center justify-center gap-4 text-[11px] font-medium" style={{ color: 'var(--text-3)' }}>
             <span>🛡️ {t('Safe & Secure', 'सुरक्षित')}</span>
             <span>🇮🇳 {t('Made in India', 'भारत में निर्मित')}</span>
             <span>🔒 {t('No Ads', 'कोई विज्ञापन नहीं')}</span>
           </div>
-          <p className="text-fluid-xs text-muted-foreground">
+          <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
             {t('By signing up, you agree to our', 'साइन अप करके, आप हमारी इन शर्तों से सहमत होते हैं:')} <a href="/terms" className="underline">{t('Terms', 'शर्तें')}</a> & <a href="/privacy" className="underline">{t('Privacy Policy', 'गोपनीयता नीति')}</a>
           </p>
-          <p className="text-fluid-xs text-muted-foreground">
+          <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>
             © {new Date().getFullYear()} Cusiosense Learning India Pvt. Ltd.
           </p>
         </div>

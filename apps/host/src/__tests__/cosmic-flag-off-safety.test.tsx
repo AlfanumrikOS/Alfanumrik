@@ -140,8 +140,8 @@ describe('REG-78 — CosmicThemeProvider flag-OFF / production DOM safety', () =
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
-  it('writes data-design="cosmic" when the flag is ON (switch is live)', async () => {
-    // Proves flag-OFF safety isn't a false positive from a no-op provider.
+  it('stays warm/light even when the old cosmic flag is ON', async () => {
+    // The restored frontend intentionally disables the old cosmic/blue-violet identity.
     getFeatureFlagsMock.mockResolvedValue({ ff_cosmic_redesign_v1: true });
 
     const { getByTestId } = render(
@@ -150,13 +150,10 @@ describe('REG-78 — CosmicThemeProvider flag-OFF / production DOM safety', () =
       </CosmicThemeProvider>,
     );
 
-    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('true'));
-    await waitFor(() => {
-      expect(document.documentElement.getAttribute('data-design')).toBe('cosmic');
-    });
-    // Role + theme attributes also land when ON.
-    expect(document.documentElement.getAttribute('data-role')).toBe('student');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('false'));
+    expect(document.documentElement.getAttribute('data-design')).toBeNull();
+    expect(document.documentElement.getAttribute('data-role')).toBeNull();
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
   // ── NEW: production env safety ───────────────────────────────────────────
@@ -177,7 +174,7 @@ describe('REG-78 — CosmicThemeProvider flag-OFF / production DOM safety', () =
   });
 
   // ── NEW: preview env auto-enables cosmic ─────────────────────────────────
-  it('auto-enables cosmic on a PREVIEW deploy even with the flag OFF', async () => {
+  it('stays warm/light on a PREVIEW deploy even with the old flag OFF', async () => {
     vi.stubEnv('NEXT_PUBLIC_VERCEL_ENV', 'preview');
     getFeatureFlagsMock.mockResolvedValue({ ff_cosmic_redesign_v1: false });
 
@@ -187,16 +184,14 @@ describe('REG-78 — CosmicThemeProvider flag-OFF / production DOM safety', () =
       </CosmicThemeProvider>,
     );
 
-    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('true'));
-    await waitFor(() => {
-      expect(document.documentElement.getAttribute('data-design')).toBe('cosmic');
-    });
-    expect(document.documentElement.getAttribute('data-role')).toBe('student');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('false'));
+    expect(document.documentElement.getAttribute('data-design')).toBeNull();
+    expect(document.documentElement.getAttribute('data-role')).toBeNull();
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
   // ── NEW: ?cosmic=1 manual override enables in any env ────────────────────
-  it('enables cosmic via ?cosmic=1 even in production with the flag OFF', async () => {
+  it('persists ?cosmic=1 but does not re-enable the old cosmic theme', async () => {
     vi.stubEnv('NEXT_PUBLIC_VERCEL_ENV', 'production');
     setSearch('?cosmic=1');
     getFeatureFlagsMock.mockResolvedValue({ ff_cosmic_redesign_v1: false });
@@ -207,13 +202,13 @@ describe('REG-78 — CosmicThemeProvider flag-OFF / production DOM safety', () =
       </CosmicThemeProvider>,
     );
 
-    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('true'));
-    expect(document.documentElement.getAttribute('data-design')).toBe('cosmic');
+    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('false'));
+    expect(document.documentElement.getAttribute('data-design')).toBeNull();
     // ?cosmic=1 is persisted so it survives client navigation.
     expect(window.localStorage.getItem('alfanumrik_cosmic_force')).toBe('1');
   });
 
-  it('enables cosmic via persisted localStorage force "1" (no URL param)', async () => {
+  it('ignores persisted localStorage force "1" for the removed cosmic theme', async () => {
     window.localStorage.setItem('alfanumrik_cosmic_force', '1');
     getFeatureFlagsMock.mockResolvedValue({ ff_cosmic_redesign_v1: false });
 
@@ -223,11 +218,11 @@ describe('REG-78 — CosmicThemeProvider flag-OFF / production DOM safety', () =
       </CosmicThemeProvider>,
     );
 
-    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('true'));
-    expect(document.documentElement.getAttribute('data-design')).toBe('cosmic');
+    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('false'));
+    expect(document.documentElement.getAttribute('data-design')).toBeNull();
   });
 
-  it('treats ?cosmic=preview (case-insensitive) as an enable override', async () => {
+  it('persists ?cosmic=preview but still keeps the restored warm theme', async () => {
     setSearch('?cosmic=PREVIEW');
     getFeatureFlagsMock.mockResolvedValue({ ff_cosmic_redesign_v1: false });
 
@@ -237,7 +232,8 @@ describe('REG-78 — CosmicThemeProvider flag-OFF / production DOM safety', () =
       </CosmicThemeProvider>,
     );
 
-    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('true'));
+    await waitFor(() => expect(getByTestId('enabled').textContent).toBe('false'));
+    expect(document.documentElement.getAttribute('data-design')).toBeNull();
     expect(window.localStorage.getItem('alfanumrik_cosmic_force')).toBe('1');
   });
 

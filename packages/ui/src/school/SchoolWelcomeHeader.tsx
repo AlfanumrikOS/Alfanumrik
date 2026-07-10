@@ -40,7 +40,7 @@ export default function SchoolWelcomeHeader({
 }: SchoolWelcomeHeaderProps) {
   const firstName = studentName?.split(' ')[0] || '';
   const greeting = getGreeting(isHi);
-  const primaryColor = branding?.primaryColor || 'var(--purple)';
+  const primaryColor = branding?.primaryColor || '#7C3AED';
 
   // B2C fallback: simple greeting
   if (!isB2B || !schoolName) {
@@ -68,7 +68,7 @@ export default function SchoolWelcomeHeader({
           <div
             className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0"
             style={{
-              border: `1.5px solid color-mix(in srgb, ${primaryColor} 12%, transparent)`,
+              border: `1.5px solid ${primaryColor}20`,
               background: 'var(--surface-1)',
             }}
           >
@@ -85,9 +85,9 @@ export default function SchoolWelcomeHeader({
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold"
             style={{
-              background: `color-mix(in srgb, ${primaryColor} 7%, transparent)`,
+              background: `${primaryColor}12`,
               color: primaryColor,
-              border: `1.5px solid color-mix(in srgb, ${primaryColor} 12%, transparent)`,
+              border: `1.5px solid ${primaryColor}20`,
             }}
           >
             {schoolName.charAt(0).toUpperCase()}

@@ -9,14 +9,11 @@
  * The label is shaped by the due-now count + estimated minutes the overview
  * already computed; no scoring/XP here.
  *
- * Phase 8 rebuild: presentation now rides the canonical Button primitive
- * (primary = AA warm-gradient CTA when there's work, secondary when caught up).
- * The routing target, click handler, loading gate and copy are unchanged.
- * A11y: Button gives a >= 48px target + focus-visible ring + reduced-motion.
+ * A11y: 48px+ target, focus-visible ring, CSS-only hover/press motion gated by
+ * prefers-reduced-motion.
  */
 
 import { useRouter } from 'next/navigation';
-import { Button } from '@alfanumrik/ui/ui/primitives';
 
 interface StartRevisionCTAProps {
   dueNow: number;
@@ -59,24 +56,46 @@ export default function StartRevisionCTA({
         : 'Nothing due — practise if you like';
 
   return (
-    <Button
-      variant={hasWork ? 'primary' : 'secondary'}
-      size="lg"
-      fullWidth
-      loading={isLoading}
+    <button
+      type="button"
       onClick={() => router.push(FLASHCARD_SESSION)}
-      trailingIcon={<span className="text-fluid-lg">→</span>}
+      disabled={isLoading}
+      className="group w-full rounded-2xl px-5 py-4 text-left transition-transform duration-150 motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60 disabled:cursor-default"
+      style={{
+        minHeight: 48,
+        background: hasWork
+          ? 'linear-gradient(135deg, var(--orange, #E8581C), var(--purple, #7C3AED))'
+          : 'var(--surface-2)',
+        color: hasWork ? '#fff' : 'var(--text-1)',
+        boxShadow: hasWork ? 'var(--shadow-md)' : 'none',
+        border: hasWork ? 'none' : '1px solid var(--border)',
+      }}
       aria-label={`${primaryLabel}${subLabel ? ` — ${subLabel}` : ''}`}
-      className="justify-between"
     >
-      <span className="flex flex-col items-start text-start">
-        <span className="font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-          {primaryLabel}
+      <span className="flex items-center justify-between gap-3">
+        <span className="flex flex-col">
+          <span
+            className="text-base font-bold"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            {primaryLabel}
+          </span>
+          {subLabel && (
+            <span
+              className="text-xs mt-0.5"
+              style={{ opacity: 0.85, fontVariantNumeric: 'tabular-nums' }}
+            >
+              {subLabel}
+            </span>
+          )}
         </span>
-        {subLabel && (
-          <span className="text-fluid-xs font-medium tabular-nums opacity-90">{subLabel}</span>
-        )}
+        <span
+          aria-hidden="true"
+          className="text-xl transition-transform duration-150 motion-safe:group-hover:translate-x-0.5"
+        >
+          →
+        </span>
       </span>
-    </Button>
+    </button>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { captureException } from '@sentry/nextjs';
-import { Button } from '@alfanumrik/ui/ui/primitives';
 
 export default function TeacherError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
@@ -26,12 +25,20 @@ export default function TeacherError({ error, reset }: { error: Error & { digest
             : 'Something went wrong. Your class data is safe — please try again.'}
         </p>
         <div className="flex gap-3 justify-center">
-          <Button variant="primary" onClick={reset}>
+          <button
+            onClick={reset}
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
+            style={{ background: 'var(--orange)' }}
+          >
             {isHi ? 'फिर से कोशिश करो' : 'Retry'}
-          </Button>
-          <Button variant="secondary" onClick={() => { window.location.href = '/teacher'; }}>
+          </button>
+          <button
+            onClick={() => { window.location.href = '/teacher'; }}
+            className="px-6 py-2.5 rounded-xl text-sm font-semibold"
+            style={{ color: 'var(--text-2)', border: '1.5px solid var(--border)' }}
+          >
             {isHi ? 'होम' : 'Home'}
-          </Button>
+          </button>
         </div>
       </div>
     </div>

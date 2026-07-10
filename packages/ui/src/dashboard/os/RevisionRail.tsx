@@ -1,20 +1,23 @@
 'use client';
 
 /**
- * RevisionRail — the glanceable spaced-repetition status of the Alfa OS
+ * RevisionRail — the SECONDARY spaced-repetition surface of the Alfa OS
  * dashboard (ff_student_os_v1).
  *
- * Phase 3b rebuild: this is now a READ-ONLY glance — a Card with a due-count
- * Badge and a one-line status. The full review CTA (<ReviewsDueCard>) has been
- * DEMOTED behind the "More ways to study" disclosure in StudentOSDashboard, so
- * the above-the-fold surface keeps a single primary action.
- *
- * No new data contracts — the glance still reads `useReviewCards` only for a
- * count. Bilingual via isHi (P7). Presentation only.
+ * Reuses the existing <ReviewsDueCard> (which fetches /api/dashboard/reviews-due
+ * and self-suppresses to null when nothing is due) plus a lightweight count of
+ * topics flagged due_for_review from useReviewCards. No new data contracts —
+ * this is a quieter, decision-secondary framing of work the engine already
+ * scheduled. Bilingual via isHi.
  */
 
+import dynamic from 'next/dynamic';
 import { useReviewCards } from '@alfanumrik/lib/swr';
-import { Card, Badge, Skeleton } from '@alfanumrik/ui/ui/primitives';
+
+const ReviewsDueCard = dynamic(() => import('@alfanumrik/ui/dashboard/ReviewsDueCard'), {
+  ssr: false,
+  loading: () => null,
+});
 
 interface RevisionRailProps {
   isHi: boolean;
@@ -22,48 +25,59 @@ interface RevisionRailProps {
 }
 
 export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
+  // useReviewCards is the existing spaced-repetition reader; we use only its
+  // length for a glanceable count. ReviewsDueCard owns the primary CTA.
   const { data: reviewCards, isLoading, error } = useReviewCards(studentId, 20);
   const dueCount = Array.isArray(reviewCards) ? reviewCards.length : 0;
 
   return (
-    <Card
-      variant="flat"
-      className="os-reveal-card px-5 py-4"
-      style={{ ['--reveal-i' as string]: '3' }}
+    <section
+      className="rounded-3xl p-4"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
       aria-label={isHi ? 'दोहराव' : 'Revision'}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="text-fluid-xs font-bold uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center justify-between mb-3">
+        <h2
+          className="text-sm font-bold uppercase tracking-wider"
+          style={{ color: 'var(--text-3)' }}
+        >
           {isHi ? 'दोहराव' : 'Revision'}
         </h2>
         {dueCount > 0 && (
-          <Badge tone="info" variant="soft" icon={<span>↻</span>} className="tabular-nums">
+          <span
+            className="text-xs font-bold px-2 py-0.5 rounded-full"
+            style={{
+              // Warm tint via the stable channel (--orange-rgb is violet here).
+              background: 'rgb(var(--accent-warm-rgb) / 0.10)',
+              color: 'var(--accent-warm, #E8581C)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
             {dueCount}
-          </Badge>
+          </span>
         )}
       </div>
 
-      {isLoading && !reviewCards ? (
-        <Skeleton className="h-3 w-3/4" />
-      ) : error ? (
-        <p className="text-fluid-sm text-muted-foreground" role="status">
+      {error && !isLoading ? (
+        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }} role="status">
           {isHi
             ? 'अभी लोड नहीं हो पाया — रीफ़्रेश करके फिर देखो।'
             : "Couldn't load right now — pull to refresh."}
         </p>
-      ) : dueCount > 0 ? (
-        <p className="text-fluid-sm text-muted-foreground">
-          {isHi
-            ? `${dueCount} विषय दोहराने को तैयार — नीचे "पढ़ाई के और तरीके" में शुरू करो।`
-            : `${dueCount} topics ready to review — start from "More ways to study" below.`}
-        </p>
       ) : (
-        <p className="text-fluid-sm text-muted-foreground">
-          {isHi
-            ? 'अभी कोई दोहराव बाकी नहीं — बढ़िया! नए पाठ पर ध्यान दो।'
-            : 'Nothing due right now — nice work. Focus on a fresh lesson.'}
-        </p>
+        <>
+          {/* ReviewsDueCard renders the CTA or null (when 0 due). */}
+          <ReviewsDueCard />
+
+          {dueCount === 0 && (
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+              {isHi
+                ? 'अभी कोई दोहराव बाकी नहीं — बढ़िया! नए पाठ पर ध्यान दो।'
+                : 'Nothing due right now — nice work. Focus on a fresh lesson.'}
+            </p>
+          )}
+        </>
       )}
-    </Card>
+    </section>
   );
 }

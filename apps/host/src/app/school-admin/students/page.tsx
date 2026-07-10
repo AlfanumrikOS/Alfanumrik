@@ -46,7 +46,7 @@ interface SchoolStudent {
    MASTERY COLOR HELPER
 ───────────────────────────────────────────────────────────── */
 function masteryColor(value: number): string {
-  if (value < 40) return 'var(--danger)';
+  if (value < 40) return '#DC2626';
   if (value <= 70) return 'var(--orange)';
   return 'var(--green)';
 }
@@ -57,7 +57,7 @@ function masteryColor(value: number): string {
 function planBadgeColor(plan: SchoolStudent['subscription_plan']): string {
   if (plan === 'premium') return 'var(--orange)';
   if (plan === 'basic') return 'var(--teal)';
-  return 'var(--text-3)'; // free — gray
+  return '#7D7264'; // free — gray
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ function StudentCard({ student, isHi }: StudentCardProps) {
 
             {/* Streak */}
             <div className="text-center">
-              <p className="text-base font-bold" style={{ color: 'var(--orange)' }}>
+              <p className="text-base font-bold" style={{ color: '#EA580C' }}>
                 🔥 {student.streak_days}
               </p>
               <p className="text-xs text-[var(--text-3)] mt-0.5">

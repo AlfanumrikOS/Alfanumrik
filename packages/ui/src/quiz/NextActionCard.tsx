@@ -1,8 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Card, Button } from '@alfanumrik/ui/ui/primitives';
-import { TONE_VAR, type Tone } from '@alfanumrik/ui/ui/primitives/tokens';
+import { Card, Button } from '@alfanumrik/ui/ui';
 
 type ActionType = 'teach' | 'practice' | 'challenge' | 'revise' | 'remediate' | 'exam_prep';
 
@@ -28,56 +27,55 @@ const ACTION_CONFIG: Record<ActionType, {
   labelHi: string;
   ctaEn: string;
   ctaHi: string;
-  /** Canonical semantic tone — the accent hue, never a raw hex (DD-16). */
-  tone: Tone;
+  color: string;
 }> = {
   teach: {
     icon: '\u{1F4D6}',
     labelEn: 'Learn this concept',
-    labelHi: 'यह concept सीखो',
+    labelHi: '\u092F\u0939 concept \u0938\u0940\u0916\u094B',
     ctaEn: 'Learn with Foxy',
-    ctaHi: 'Foxy से सीखो',
-    tone: 'brand',
+    ctaHi: 'Foxy \u0938\u0947 \u0938\u0940\u0916\u094B',
+    color: '#7C3AED',
   },
   practice: {
-    icon: '✏️',
+    icon: '\u270F\uFE0F',
     labelEn: 'Practice more',
-    labelHi: 'और अभ्यास करो',
+    labelHi: '\u0914\u0930 \u0905\u092D\u094D\u092F\u093E\u0938 \u0915\u0930\u094B',
     ctaEn: 'Start Practice',
-    ctaHi: 'अभ्यास शुरू करो',
-    tone: 'info',
+    ctaHi: '\u0905\u092D\u094D\u092F\u093E\u0938 \u0936\u0941\u0930\u0942 \u0915\u0930\u094B',
+    color: '#2563EB',
   },
   challenge: {
-    icon: '⚡',
+    icon: '\u26A1',
     labelEn: 'Ready for a challenge',
-    labelHi: 'Challenge के लिए तैयार',
+    labelHi: 'Challenge \u0915\u0947 \u0932\u093F\u090F \u0924\u0948\u092F\u093E\u0930',
     ctaEn: 'Take Challenge',
-    ctaHi: 'Challenge लो',
-    tone: 'warning',
+    ctaHi: 'Challenge \u0932\u094B',
+    color: '#E8581C',
   },
   revise: {
     icon: '\u{1F504}',
     labelEn: 'Time to revise',
-    labelHi: 'Revision का समय',
+    labelHi: 'Revision \u0915\u093E \u0938\u092E\u092F',
     ctaEn: 'Start Revision',
-    ctaHi: 'Revision शुरू करो',
-    tone: 'warning',
+    ctaHi: 'Revision \u0936\u0941\u0930\u0942 \u0915\u0930\u094B',
+    color: '#D97706',
   },
   remediate: {
     icon: '\u{1FA7A}',
     labelEn: 'Needs focused review',
-    labelHi: 'ध्यान से पढ़ो',
+    labelHi: '\u0927\u094D\u092F\u093E\u0928 \u0938\u0947 \u092A\u0922\u093C\u094B',
     ctaEn: 'Review with Foxy',
-    ctaHi: 'Foxy से समझो',
-    tone: 'danger',
+    ctaHi: 'Foxy \u0938\u0947 \u0938\u092E\u091D\u094B',
+    color: '#DC2626',
   },
   exam_prep: {
     icon: '\u{1F3AF}',
     labelEn: 'Exam ready!',
-    labelHi: 'Exam के लिए तैयार!',
+    labelHi: 'Exam \u0915\u0947 \u0932\u093F\u090F \u0924\u0948\u092F\u093E\u0930!',
     ctaEn: 'Take Exam Quiz',
-    ctaHi: 'Exam Quiz लो',
-    tone: 'success',
+    ctaHi: 'Exam Quiz \u0932\u094B',
+    color: '#16A34A',
   },
 };
 
@@ -101,28 +99,23 @@ export default function NextActionCard({
 }: NextActionCardProps) {
   const router = useRouter();
   const config = ACTION_CONFIG[action] || ACTION_CONFIG.practice;
-  const toneVar = TONE_VAR[config.tone];
 
   return (
     <div>
-      <p className="text-fluid-sm font-semibold text-muted-foreground mb-3">
-        {isHi ? '\u{1F9CA} Foxy का सुझाव' : '\u{1F9CA} Foxy recommends'}
+      <p className="text-sm font-semibold text-[var(--text-2)] mb-3">
+        {isHi ? '\u{1F9CA} Foxy \u0915\u093E \u0938\u0941\u091D\u093E\u0935' : '\u{1F9CA} Foxy recommends'}
       </p>
       <Card
-        variant="flat"
-        className="p-4"
-        // Tone-accent left border keeps the recommendation legible without
-        // painting body text in a low-contrast hue (design-system.md §2/§8).
-        style={{ borderInlineStartWidth: 4, borderInlineStartColor: toneVar }}
+        accent={config.color}
+        className="!p-4"
       >
         <div className="flex items-start gap-3">
-          {/* Icon chip — tone tint, decorative */}
+          {/* Icon */}
           <div
-            aria-hidden="true"
             className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-xl"
             style={{
-              background: `color-mix(in srgb, ${toneVar} 12%, transparent)`,
-              border: `1.5px solid color-mix(in srgb, ${toneVar} 30%, transparent)`,
+              background: `${config.color}12`,
+              border: `1.5px solid ${config.color}30`,
             }}
           >
             {config.icon}
@@ -130,46 +123,53 @@ export default function NextActionCard({
 
           {/* Content */}
           <div className="flex-1 min-w-0">
-            <p className="text-fluid-sm font-bold text-foreground">
+            <p
+              className="text-sm font-bold"
+              style={{ color: config.color, fontFamily: 'var(--font-display)' }}
+            >
               {isHi ? config.labelHi : config.labelEn}
             </p>
 
             {/* Reason from CME — displayed as-is (assessment owns this text) */}
             {reason && (
-              <p className="text-fluid-xs text-muted-foreground mt-1 leading-relaxed">
+              <p className="text-xs text-[var(--text-3)] mt-1 leading-relaxed">
                 {reason}
               </p>
             )}
 
-            {/* CTA button — the primary next action */}
+            {/* CTA button */}
             <Button
-              variant="primary"
+              variant="soft"
               size="sm"
+              color={config.color}
               className="mt-3"
-              leadingIcon={<span>{config.icon}</span>}
               onClick={() => onAction(action, conceptId)}
             >
-              {isHi ? config.ctaHi : config.ctaEn}
+              {config.icon} {isHi ? config.ctaHi : config.ctaEn}
             </Button>
           </div>
         </div>
 
         {/* Secondary contextual actions */}
         {(wrongAnswerCount > 0 || onRetry) && (
-          <div className="mt-3 pt-3 flex flex-wrap gap-2 border-t border-surface-3">
+          <div className="mt-3 pt-3 flex flex-wrap gap-2" style={{ borderTop: '1px solid var(--border)' }}>
             {wrongAnswerCount > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
                 onClick={() => router.push('/review?filter=quiz_wrong_answer')}
+                className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                style={{ background: 'rgba(124,58,237,0.08)', color: '#7C3AED' }}
               >
                 📝 {isHi ? 'गलतियाँ रिव्यू करो' : 'Review Mistakes'}
-              </Button>
+              </button>
             )}
             {onRetry && (
-              <Button variant="ghost" size="sm" onClick={onRetry}>
+              <button
+                onClick={onRetry}
+                className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all active:scale-95"
+                style={{ background: 'rgba(37,99,235,0.08)', color: '#2563EB' }}
+              >
                 🔄 {isHi ? 'फिर से खेलो' : 'Try Again'}
-              </Button>
+              </button>
             )}
           </div>
         )}

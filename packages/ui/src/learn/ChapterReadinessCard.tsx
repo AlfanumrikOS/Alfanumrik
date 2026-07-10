@@ -3,7 +3,7 @@
 /**
  * ChapterReadinessCard — Phase 2 of "Exam-Ready 360°".
  *
- * Renders the per-chapter READINESS signal as a bilingual, token-coded card
+ * Renders the per-chapter readiness signal as a bilingual, color-coded card
  * above the chapter learn flow. Tells the student in plain language whether
  * they're exam-ready and what to do next.
  *
@@ -12,23 +12,11 @@
  * skeleton — the chapter page already has progress + concept indicators, so
  * an extra empty card would just add visual noise.
  *
- * IMPORTANT (assessment condition): this card shows a READINESS composite on
- * its OWN 4-level scale (not_yet / building / almost / ready) — NOT an
- * accuracy %. It is deliberately rendered in its native scale: a Badge for the
- * level + a linear composite meter. It is NEVER fed into a MasteryRing with
- * the accuracy band labels, which would conflate readiness with accuracy.
- * The honest gap display (concepts mastered / total, recent quiz avg) and the
- * `rag_ready` "Foxy still learning" caveat are preserved verbatim.
- *
  * P7 (bilingual): every label resolves through `useAuth().isHi`. The
  * server-emitted `message_en`/`message_hi` strings are rendered as-is — the
  * RPC owns voice and tone there.
  *
- * Phase 5b re-skin: presentation-only migration onto the canonical primitive
- * layer + semantic status tokens (aligned to the sibling ChapterReadinessBadge
- * / SubjectReadinessSummary pattern). Zero raw hex / rgb().
- *
- * Next-action routing (unchanged):
+ * Next-action routing:
  *   mock_exam        → /exams (chapter-scoped mock)
  *   spaced_review    → /review (spaced repetition queue)
  *   take_quiz        → /quiz?subject=&chapter=
@@ -45,13 +33,11 @@ import {
   type ChapterReadinessLevel,
 } from '@alfanumrik/lib/useChapterReadiness';
 import { reviewRoute } from '@alfanumrik/lib/routes/study-menu-routes';
-import { Card, Badge, Button, ProgressBar } from '@alfanumrik/ui/ui/primitives';
-import type { Tone } from '@alfanumrik/ui/ui/primitives';
 
 export interface ChapterReadinessCardProps {
   subjectCode: string;
   chapterNumber: number;
-  /** Subject brand color from the subjects service — used for the composite meter fill. */
+  /** Subject brand color from the subjects service — used for the score bar. */
   subjectColor?: string;
   /**
    * Optional callback when the student taps a "review weak concept" CTA.
@@ -62,44 +48,43 @@ export interface ChapterReadinessCardProps {
 }
 
 interface LevelStyle {
-  /** Canonical Badge / ProgressBar tone (semantic status token). */
-  tone: Tone;
-  /** CSS var used as the composite-meter fill when no subjectColor is given. */
-  fill: string;
+  bg: string;
+  border: string;
+  fg: string;
   icon: string;
   labelEn: string;
   labelHi: string;
 }
 
-// Status palette maps to cosmic-aware semantic status tones (no hardcoded
-// status hex) — mirrors the sibling ChapterReadinessBadge / SubjectReadiness-
-// Summary. `not_yet` takes the calm neutral tone (growth-mindset framing: the
-// student is at the start, not "failing").
 const LEVEL_STYLES: Record<ChapterReadinessLevel, LevelStyle> = {
   not_yet: {
-    tone: 'neutral',
-    fill: 'var(--text-3)',
+    bg: '#FEF3F2',
+    border: '#FECDCA',
+    fg: '#B42318',
     icon: '🌱',
     labelEn: 'Not Yet Ready',
     labelHi: 'अभी तैयार नहीं',
   },
   building: {
-    tone: 'warning',
-    fill: 'var(--warning)',
+    bg: '#FFFAEB',
+    border: '#FEDF89',
+    fg: '#B54708',
     icon: '🛠',
     labelEn: 'Building',
     labelHi: 'बन रहा है',
   },
   almost: {
-    tone: 'info',
-    fill: 'var(--info)',
+    bg: '#EFF8FF',
+    border: '#B2DDFF',
+    fg: '#175CD3',
     icon: '⚡',
     labelEn: 'Almost Ready',
     labelHi: 'लगभग तैयार',
   },
   ready: {
-    tone: 'success',
-    fill: 'var(--success)',
+    bg: '#ECFDF3',
+    border: '#A6F4C5',
+    fg: '#027A48',
     icon: '✅',
     labelEn: 'Exam Ready',
     labelHi: 'परीक्षा-तैयार',
@@ -173,114 +158,102 @@ function ChapterReadinessCardInner({
     }
   }
 
-  // Composite READINESS meter fill — subject brand colour when provided,
-  // else the level's semantic status token. This is the readiness composite
-  // in its native 0..100 scale (NOT an accuracy ring).
-  const meterColor = subjectColor ?? style.fill;
-  const meterPct = Math.max(2, Math.min(100, readiness.score));
-
-  // Honest concept-gap fraction (a completion count, not an accuracy %).
-  const conceptPct =
-    readiness.concepts_total > 0
-      ? Math.round((readiness.concepts_mastered / readiness.concepts_total) * 100)
-      : 0;
+  const scoreBarColor = subjectColor ?? style.fg;
 
   return (
-    <Card variant="flat" data-testid="chapter-readiness-card" className="p-4">
-      {/* Level + score + Foxy caveat + server message */}
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            tone={style.tone}
-            variant="soft"
-            icon={<span aria-hidden="true">{style.icon}</span>}
-          >
-            {isHi ? style.labelHi : style.labelEn}
-          </Badge>
-          <span
-            className="text-fluid-xs font-semibold tabular-nums text-muted-foreground"
-            aria-label={
-              isHi
-                ? `तैयारी स्कोर ${readiness.score} में 100`
-                : `Readiness score ${readiness.score} of 100`
-            }
-          >
-            {readiness.score}/100
-          </span>
-          {!readiness.rag_ready && (
-            <Badge
-              tone="neutral"
-              variant="soft"
-              className="ml-auto"
-              title={
-                isHi
-                  ? 'Foxy इस अध्याय पर अभी सीख रहा है'
-                  : 'Foxy is still learning this chapter'
-              }
+    <div
+      data-testid="chapter-readiness-card"
+      className="rounded-2xl px-4 py-3"
+      style={{
+        background: style.bg,
+        border: `1px solid ${style.border}`,
+      }}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-lg"
+          style={{ background: 'rgba(255,255,255,0.6)' }}
+        >
+          {style.icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span
+              className="text-sm font-bold"
+              style={{ color: style.fg }}
             >
-              {isHi ? 'Foxy सीख रहा' : 'Foxy learning'}
-            </Badge>
-          )}
+              {isHi ? style.labelHi : style.labelEn}
+            </span>
+            <span
+              className="text-[11px] font-semibold tabular-nums"
+              style={{ color: style.fg }}
+              aria-label={isHi ? `तैयारी स्कोर ${readiness.score} में 100` : `Readiness score ${readiness.score} of 100`}
+            >
+              {readiness.score}/100
+            </span>
+            {!readiness.rag_ready && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-auto"
+                style={{ background: 'rgba(0,0,0,0.06)', color: 'var(--text-3)' }}
+                title={isHi ? 'Foxy इस अध्याय पर अभी सीख रहा है' : 'Foxy is still learning this chapter'}
+              >
+                {isHi ? 'Foxy सीख रहा' : 'Foxy learning'}
+              </span>
+            )}
+          </div>
+          <p className="text-[12px] leading-snug mt-0.5" style={{ color: style.fg }}>
+            {message}
+          </p>
         </div>
-        <p className="text-fluid-sm leading-snug text-foreground">{message}</p>
       </div>
 
-      {/* Composite READINESS meter — native 0..100 scale, NOT a mastery ring. */}
-      <div className="mt-3" aria-hidden="true">
-        <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2">
+      {/* Composite score bar */}
+      <div className="mt-3">
+        <div
+          className="w-full rounded-full overflow-hidden"
+          style={{ background: 'rgba(0,0,0,0.06)', height: 4 }}
+        >
           <div
-            className="h-full rounded-full transition-all duration-500 motion-reduce:transition-none"
-            style={{ width: `${meterPct}%`, background: meterColor }}
+            className="h-full rounded-full transition-all duration-500"
+            style={{
+              width: `${Math.max(2, Math.min(100, readiness.score))}%`,
+              background: scoreBarColor,
+            }}
           />
         </div>
       </div>
 
-      {/* Honest concept-gap progress + secondary signals + next-action CTA. */}
-      <div className="mt-3 flex flex-col gap-2.5">
-        <ProgressBar
-          value={conceptPct}
-          tone={style.tone}
-          size="sm"
-          label={
-            <span>
-              🎯 {isHi ? 'Concepts पूर्ण' : 'Concepts mastered'}{' '}
-              {readiness.concepts_mastered}/{readiness.concepts_total}
+      {/* Stats row + CTA */}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-3 text-[11px] text-[var(--text-3)]">
+          <span title={isHi ? 'Concepts पूर्ण' : 'Concepts mastered'}>
+            🎯 {readiness.concepts_mastered}/{readiness.concepts_total}
+          </span>
+          {readiness.recent_quiz_count > 0 && (
+            <span title={isHi ? 'हाल के Quiz औसत' : 'Recent quiz avg'}>
+              ✍️ {Math.round(readiness.recent_quiz_avg)}%
             </span>
-          }
-          ariaLabel={
-            isHi
-              ? `Concepts पूर्ण ${readiness.concepts_mastered} में ${readiness.concepts_total}`
-              : `Concepts mastered ${readiness.concepts_mastered} of ${readiness.concepts_total}`
-          }
-        />
-
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3 text-fluid-xs text-muted-foreground">
-            {readiness.recent_quiz_count > 0 && (
-              <span title={isHi ? 'हाल के Quiz औसत' : 'Recent quiz avg'}>
-                ✍️ {Math.round(readiness.recent_quiz_avg)}%
-              </span>
-            )}
-            {readiness.spaced_reviews > 0 && (
-              <span title={isHi ? 'Revisions पूर्ण' : 'Spaced reviews'}>
-                🔁 {readiness.spaced_reviews}
-              </span>
-            )}
-          </div>
-          {showAction && (
-            <Button
-              size="sm"
-              onClick={handleAction}
-              data-testid="chapter-readiness-cta"
-              className="shrink-0"
-              trailingIcon={<span aria-hidden="true">→</span>}
-            >
-              {isHi ? actionLabel.hi : actionLabel.en}
-            </Button>
+          )}
+          {readiness.spaced_reviews > 0 && (
+            <span title={isHi ? 'Revisions पूर्ण' : 'Spaced reviews'}>
+              🔁 {readiness.spaced_reviews}
+            </span>
           )}
         </div>
+        {showAction && (
+          <button
+            type="button"
+            onClick={handleAction}
+            data-testid="chapter-readiness-cta"
+            className="text-[11px] font-bold px-3 py-1.5 rounded-full transition-all active:scale-95 text-white"
+            style={{ background: style.fg }}
+          >
+            {isHi ? actionLabel.hi : actionLabel.en} →
+          </button>
+        )}
       </div>
-    </Card>
+    </div>
   );
 }
 

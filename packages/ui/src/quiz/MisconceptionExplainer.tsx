@@ -14,7 +14,6 @@
  */
 import { useEffect, useState } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { Alert } from '@alfanumrik/ui/ui/primitives';
 
 interface Remediation {
   questionId: string;
@@ -66,20 +65,25 @@ export default function MisconceptionExplainer({ questionId, distractorIndex }: 
   if (!text) return null;
 
   return (
-    <Alert
-      tone="warning"
-      icon={<span>🎯</span>}
-      title={isHi ? 'यहाँ अक्सर गलती होती है' : 'A common slip-up here'}
-      className="mt-3"
+    <div
+      className="rounded-2xl p-4 mt-3 border"
+      style={{ background: 'rgba(245,166,35,0.06)', borderColor: 'rgba(245,166,35,0.25)' }}
       data-testid="misconception-explainer"
     >
-      <p className="text-fluid-sm leading-relaxed text-foreground">{text}</p>
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-base">🎯</span>
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: '#B45309' }}>
+          {isHi ? 'यहाँ अक्सर गलती होती है' : 'A common slip-up here'}
+        </span>
+      </div>
+      <p className="text-sm leading-relaxed text-[var(--text-2)] mb-3">{text}</p>
       <a
         href={`/foxy?mode=doubt&q=${encodeURIComponent(remediation.questionId)}`}
-        className="mt-2 inline-block text-fluid-xs font-semibold text-primary underline"
+        className="inline-block text-xs font-semibold underline"
+        style={{ color: '#7C3AED' }}
       >
         {isHi ? 'फॉक्सी से और समझो →' : 'Ask Foxy to explain more →'}
       </a>
-    </Alert>
+    </div>
   );
 }

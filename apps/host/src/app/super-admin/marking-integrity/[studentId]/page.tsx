@@ -29,23 +29,23 @@ import { StatusBadge } from '@alfanumrik/ui/admin-ui';
 /* ── Design tokens (mirror the parent page) ─────────────────────────── */
 
 const colors = {
-  bg: 'var(--surface-1)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  border: 'var(--surface-3)',
-  borderStrong: 'var(--surface-3)',
-  borderLight: 'var(--surface-2)',
-  surface: 'var(--surface-2)',
-  surfaceHover: 'var(--surface-2)',
-  accent: 'var(--info)',
-  accentLight: 'color-mix(in srgb, var(--info) 10%, transparent)',
-  success: 'var(--success)',
-  successLight: 'color-mix(in srgb, var(--success) 10%, transparent)',
-  warning: 'var(--warning)',
-  warningLight: 'color-mix(in srgb, var(--warning) 10%, transparent)',
-  danger: 'var(--danger)',
-  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  borderStrong: '#D1D5DB',
+  borderLight: '#F3F4F6',
+  surface: '#F9FAFB',
+  surfaceHover: '#F3F4F6',
+  accent: '#2563EB',
+  accentLight: '#EFF6FF',
+  success: '#16A34A',
+  successLight: '#F0FDF4',
+  warning: '#D97706',
+  warningLight: '#FFFBEB',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
 } as const;
 
 const S = {
@@ -500,9 +500,9 @@ function SessionDetailContent() {
                     key={`${row.session_id}-${row.question_id}-${idx}`}
                     style={
                       klass === 'drift'
-                        ? { background: 'color-mix(in srgb, var(--danger) 6%, transparent)' }
+                        ? { background: '#FFF5F5' }
                         : klass === 'missing_snapshot'
-                        ? { background: 'color-mix(in srgb, var(--warning) 10%, transparent)' }
+                        ? { background: '#FFFBEB' }
                         : {}
                     }
                   >

@@ -16,8 +16,6 @@
  * chunks (P10).
  */
 
-import { Button, IconButton } from '@alfanumrik/ui/ui/primitives';
-
 interface FoxyTopBarProps {
   isHi: boolean;
   /** Foxy face emoji for the current state (idle/thinking/happy). */
@@ -26,12 +24,8 @@ interface FoxyTopBarProps {
   thinking?: boolean;
   /** Already-localized active subject name. */
   subjectName: string;
-  /**
-   * Active subject brand color (hex). Retained for caller API stability; the
-   * chip accent is now token-driven (secondary Button on tokenized surface),
-   * so this value is no longer consumed for styling.
-   */
-  subjectColor?: string;
+  /** Active subject brand color (hex) for the chip accent. */
+  subjectColor: string;
   /** Active subject icon (emoji). */
   subjectIcon: string;
   /** Already-localized chapter label, or null when no chapter is selected. */
@@ -49,6 +43,7 @@ export function FoxyTopBar({
   foxyFace,
   thinking = false,
   subjectName,
+  subjectColor,
   subjectIcon,
   chapterLabel,
   onBack,
@@ -69,25 +64,25 @@ export function FoxyTopBar({
       }}
     >
       {/* Back chevron — >=44x44 touch target */}
-      <IconButton
-        label={isHi ? 'वापस' : 'Back'}
-        variant="ghost"
-        size="sm"
+      <button
+        type="button"
         onClick={onBack}
-        icon={
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path d="M12.5 4L7 10l5.5 6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        }
-      />
+        className="foxy-os-tap flex items-center justify-center rounded-xl transition-all active:scale-90"
+        style={{ color: 'var(--text-2)' }}
+        aria-label={isHi ? 'वापस' : 'Back'}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M12.5 4L7 10l5.5 6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
 
       {/* Foxy avatar */}
       <div
         className="foxy-os-avatar flex items-center justify-center shrink-0"
         style={{
           // Warm-channel Foxy avatar (stays burnt-orange under cosmic, where
-          // --orange remaps to violet). Fully tokenized — no raw colour literal.
-          background: 'linear-gradient(135deg, var(--accent-warm), var(--gold))',
+          // --orange remaps to violet). Wave 6 tokenization.
+          background: 'linear-gradient(135deg, var(--accent-warm), rgb(var(--marigold-rgb)))',
           animation: thinking ? 'pulse 1s infinite' : 'none',
         }}
         aria-hidden="true"
@@ -96,38 +91,45 @@ export function FoxyTopBar({
       </div>
 
       {/* Subject · chapter chip — opens the Study sheet */}
-      <Button
-        variant="secondary"
-        size="sm"
-        fullWidth
+      <button
+        type="button"
         onClick={onOpenStudy}
-        className="min-w-0 flex-1 justify-start"
+        className="foxy-os-chip flex items-center gap-1.5 min-w-0 flex-1 rounded-xl px-2.5 transition-all active:scale-[0.98]"
+        style={{
+          background: 'var(--surface-2)',
+          border: `1.5px solid ${subjectColor}33`,
+        }}
         aria-label={
           isHi
             ? `अध्ययन मेनू खोलें — ${chipText}`
             : `Open study menu — ${chipText}`
         }
-        leadingIcon={<span className="text-sm" aria-hidden="true">{subjectIcon}</span>}
-        trailingIcon={<span className="text-[10px] ml-auto" aria-hidden="true">▾</span>}
       >
-        <span className="truncate">{chipText}</span>
-      </Button>
+        <span className="text-sm shrink-0" aria-hidden="true">{subjectIcon}</span>
+        <span
+          className="text-xs font-bold truncate"
+          style={{ color: 'var(--text-1)' }}
+        >
+          {chipText}
+        </span>
+        <span className="text-[10px] shrink-0 ml-auto" style={{ color: 'var(--text-3)' }} aria-hidden="true">▾</span>
+      </button>
 
       {/* Overflow — Phase 3 opens the Tools sheet (language / voice / progress
           / history / context). The chip above keeps opening the Study sheet. */}
-      <IconButton
-        label={isHi ? 'अधिक विकल्प' : 'More options'}
-        variant="ghost"
-        size="sm"
+      <button
+        type="button"
         onClick={onOpenTools}
-        icon={
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <circle cx="4" cy="10" r="1.6" />
-            <circle cx="10" cy="10" r="1.6" />
-            <circle cx="16" cy="10" r="1.6" />
-          </svg>
-        }
-      />
+        className="foxy-os-tap flex items-center justify-center rounded-xl transition-all active:scale-90"
+        style={{ color: 'var(--text-2)' }}
+        aria-label={isHi ? 'अधिक विकल्प' : 'More options'}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <circle cx="4" cy="10" r="1.6" />
+          <circle cx="10" cy="10" r="1.6" />
+          <circle cx="16" cy="10" r="1.6" />
+        </svg>
+      </button>
     </div>
   );
 }

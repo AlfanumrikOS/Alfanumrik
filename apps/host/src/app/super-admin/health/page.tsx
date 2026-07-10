@@ -293,8 +293,7 @@ function HealthDashboardContent() {
       {error && (
         <div
           role="alert"
-          className="mb-4 flex items-center justify-between rounded-md px-4 py-2.5 text-sm text-danger"
-          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
+          className="mb-4 flex items-center justify-between rounded-md bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-4 py-2.5 text-sm text-danger"
         >
           <span>{error}</span>
           <button
@@ -309,13 +308,7 @@ function HealthDashboardContent() {
       {/* Synthetic-monitor degraded banner — appears only when E.5 is missing.
           Stays sticky-at-top of the table so ops knows the dot is incomplete. */}
       {degraded && (
-        <div
-          className="mb-3 rounded-md border px-3 py-2 text-xs text-warning"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--warning) 30%, transparent)',
-            backgroundColor: 'color-mix(in srgb, var(--warning) 12%, transparent)',
-          }}
-        >
+        <div className="mb-3 rounded-md border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] px-3 py-2 text-xs text-warning">
           White-label health is partial — synthetic-monitor table not yet
           present (Phase E.5). Configured domains show <em>n/a</em>.
         </div>
@@ -326,13 +319,7 @@ function HealthDashboardContent() {
           reason text disambiguates "we never asked" (no_token) from "we
           asked and it failed" (http_error / timeout / parse_error). */}
       {errorsDegraded && (
-        <div
-          className="mb-3 rounded-md border px-3 py-2 text-xs text-warning"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--warning) 30%, transparent)',
-            backgroundColor: 'color-mix(in srgb, var(--warning) 12%, transparent)',
-          }}
-        >
+        <div className="mb-3 rounded-md border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] px-3 py-2 text-xs text-warning">
           {errorsReason === 'no_token' ? (
             <>
               Errors (24h) showing <em>—</em> because Sentry API isn&apos;t

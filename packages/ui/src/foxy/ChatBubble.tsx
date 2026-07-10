@@ -4,8 +4,6 @@ import { useState, type ReactNode, memo } from 'react';
 import { UnverifiedBanner } from '@alfanumrik/ui/foxy/UnverifiedBanner';
 import { HardAbstainCard } from '@alfanumrik/ui/grounding/HardAbstainCard';
 import { ReportIssueModal } from '@alfanumrik/ui/foxy/ReportIssueModal';
-import { IconButton, Badge, Button } from '@alfanumrik/ui/ui/primitives';
-import { Card, CardContent } from '@alfanumrik/ui/ui/card';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -159,8 +157,8 @@ export function ChatBubble({
           </div>
         ) : (
           <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
-            style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)`, color: 'white' }}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] text-white font-bold shrink-0"
+            style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)` }}
           >
             {studentName?.[0]?.toUpperCase() || 'S'}
           </div>
@@ -171,14 +169,13 @@ export function ChatBubble({
         <span className="text-[10px] text-[var(--text-3)]">{time}</span>
 
         {isTutor && (
-          <Badge
-            tone="neutral"
-            variant="soft"
-            className="ml-auto"
+          <span
+            className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold"
+            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
             title={traceId ? `trace: ${traceId}` : undefined}
           >
             🤖 AI
-          </Badge>
+          </span>
         )}
 
       </div>
@@ -194,8 +191,8 @@ export function ChatBubble({
 
       {/* Message body — suppressed on hard-abstain since content is empty */}
       {!showHardAbstainCard && (
-        <Card
-          className={`w-full overflow-hidden min-w-0 ${isTutor ? 'foxy-bubble-tutor border-none bg-transparent shadow-none' : 'foxy-bubble-user'}`}
+        <div
+          className={`w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0 ${isTutor ? 'foxy-bubble-tutor' : 'foxy-bubble-user'}`}
           style={{
             // User bubble routes its subject-brand tint through the premium
             // surface class via --bubble-tint (color-mix in CSS). Tutor bubble
@@ -207,19 +204,9 @@ export function ChatBubble({
               : {}),
           }}
         >
-          <CardContent className="px-4 py-3 text-sm leading-relaxed p-0 pt-0">
           {showBadge && (
-            <Badge
-              tone={
-                badgeState === 'verified'
-                  ? 'success'
-                  : badgeState === 'out_of_scope'
-                    ? 'neutral'
-                    : 'warning'
-              }
-              variant="soft"
+            <div
               role="status"
-              className="mb-2"
               aria-label={
                 badgeState === 'verified'
                   ? (isHi ? 'जांचा गया' : 'Verified')
@@ -234,17 +221,39 @@ export function ChatBubble({
                       : 'This question does not belong to the selected class/chapter.')
                   : undefined
               }
+              className="inline-flex items-center gap-1 mb-2 px-2 py-0.5 rounded-full text-[10px] font-bold"
+              style={
+                badgeState === 'verified'
+                  ? {
+                      background: 'color-mix(in srgb, var(--success) 12%, transparent)',
+                      color: 'var(--success)',
+                      border: '1px solid color-mix(in srgb, var(--success) 26%, transparent)',
+                    }
+                  : badgeState === 'out_of_scope'
+                    ? {
+                        // Neutral/info pill — reuses the same muted token set as
+                        // the "🤖 AI" provenance pill and "Verify with textbook"
+                        // hint in this component. Deliberately NOT success/warning.
+                        background: 'var(--surface-2)',
+                        color: 'var(--text-2)',
+                        border: '1px solid var(--border)',
+                      }
+                    : {
+                        background: 'color-mix(in srgb, var(--warning) 14%, transparent)',
+                        color: 'var(--warning)',
+                        border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)',
+                      }
+              }
             >
               {badgeState === 'verified'
                 ? (isHi ? '✓ जांचा गया' : '✓ Verified')
                 : badgeState === 'out_of_scope'
                   ? (isHi ? '📚 अध्याय से बाहर' : '📚 Outside Current Chapter')
                   : (isHi ? '⚠ खुद जांचें' : '⚠ Check this yourself')}
-            </Badge>
+            </div>
           )}
           {content}
-          </CardContent>
-        </Card>
+        </div>
       )}
 
       {/* ── Legacy action bar (flag OFF — byte-identical to today) ──────────
@@ -252,77 +261,78 @@ export function ChatBubble({
       {!learningActionsEnabled && isTutor && rawContent !== 'Oops! Please try again.' && (
         <div className="flex items-center gap-1 mt-1.5 pl-1">
           {/* Thumbs up */}
-          <IconButton
-            label="Helpful response"
-            icon="👍"
-            variant="ghost"
-            size="sm"
-            aria-pressed={feedback === 'up'}
+          <button
             onClick={() => onFeedback(true)}
-            style={
-              feedback === 'up'
-                ? { background: 'color-mix(in srgb, var(--success) 10%, transparent)', color: 'var(--success)' }
-                : { color: 'var(--text-3)' }
-            }
-          />
+            aria-label="Helpful response"
+            aria-pressed={feedback === 'up'}
+            className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
+            style={{
+              background: feedback === 'up' ? 'color-mix(in srgb, var(--success) 10%, transparent)' : 'transparent',
+              color: feedback === 'up' ? 'var(--success)' : 'var(--text-3)',
+              border: feedback === 'up' ? '1px solid color-mix(in srgb, var(--success) 20%, transparent)' : '1px solid transparent',
+            }}
+          >
+            👍
+          </button>
 
           {/* Thumbs down */}
-          <IconButton
-            label="Not helpful response"
-            icon="👎"
-            variant="ghost"
-            size="sm"
-            aria-pressed={feedback === 'down'}
+          <button
             onClick={() => onFeedback(false)}
-            style={
-              feedback === 'down'
-                ? { background: 'color-mix(in srgb, var(--danger) 10%, transparent)', color: 'var(--danger)' }
-                : { color: 'var(--text-3)' }
-            }
-          />
+            aria-label="Not helpful response"
+            aria-pressed={feedback === 'down'}
+            className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90"
+            style={{
+              background: feedback === 'down' ? 'color-mix(in srgb, var(--danger) 10%, transparent)' : 'transparent',
+              color: feedback === 'down' ? 'var(--danger)' : 'var(--text-3)',
+              border: feedback === 'down' ? '1px solid color-mix(in srgb, var(--danger) 20%, transparent)' : '1px solid transparent',
+            }}
+          >
+            👎
+          </button>
 
           {/* Report */}
           {!reported ? (
-            <IconButton
-              label="Report incorrect response"
-              icon="⚠️"
-              variant="ghost"
-              size="sm"
-              className="ml-1"
+            <button
               onClick={onReport}
+              aria-label="Report incorrect response"
+              className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all active:scale-95 ml-1"
               style={{ color: 'var(--text-3)' }}
-            />
+            >
+              ⚠️ Report
+            </button>
           ) : (
-            <Badge tone="danger" variant="soft" className="ml-1">
+            <span className="px-2 py-1 text-[10px] font-semibold" style={{ color: 'var(--danger)' }}>
               ✓ Reported
-            </Badge>
+            </span>
           )}
 
           {/* Replay via TTS */}
           {onSpeak && (
-            <IconButton
-              label="Read aloud"
-              icon="🔊"
-              variant="ghost"
-              size="sm"
-              className="ml-auto"
+            <button
               onClick={onSpeak}
-              style={{ color: 'var(--text-3)' }}
-            />
+              aria-label="Read aloud"
+              title="Read aloud"
+              className="px-2 py-1 rounded-lg text-[11px] transition-all active:scale-90 ml-auto"
+              style={{ color: 'var(--text-3)', background: 'transparent' }}
+            >
+              🔊
+            </button>
           )}
 
           {/* Verify with textbook hint */}
           {!onSpeak && ['math', 'science', 'physics', 'chemistry'].includes(activeSubject) &&
             (rawContent.includes('=') || rawContent.includes('formula') || rawContent.includes('²') || rawContent.includes('√')) && (
-              <Badge tone="neutral" variant="soft" className="ml-auto">
-                {isHi ? 'किताब से जांचें' : 'Verify with textbook'}
-              </Badge>
+              <span className="ml-auto text-[9px] px-2 py-0.5 rounded"
+                style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>
+                Verify with textbook
+              </span>
             )}
           {onSpeak && ['math', 'science', 'physics', 'chemistry'].includes(activeSubject) &&
             (rawContent.includes('=') || rawContent.includes('formula') || rawContent.includes('²') || rawContent.includes('√')) && (
-              <Badge tone="neutral" variant="soft">
-                {isHi ? 'किताब से जांचें' : 'Verify with textbook'}
-              </Badge>
+              <span className="text-[9px] px-2 py-0.5 rounded"
+                style={{ color: 'var(--text-3)', background: 'var(--surface-2)' }}>
+                Verify with textbook
+              </span>
             )}
         </div>
       )}
@@ -348,84 +358,88 @@ export function ChatBubble({
           {gotIt ? (
             // Got it ✓ collapses the row into a lightweight micro-CTA — no
             // extra network call. Re-engages without re-teaching.
-            <Badge
-              tone="success"
-              variant="soft"
-              icon="✓"
+            <div
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold"
+              style={{
+                background: 'color-mix(in srgb, var(--success) 10%, transparent)',
+                color: 'var(--success)',
+                border: '1px solid color-mix(in srgb, var(--success) 22%, transparent)',
+              }}
               role="status"
               aria-live="polite"
               data-testid="learning-action-gotit-confirm"
             >
+              <span aria-hidden="true">✓</span>
               {isHi ? 'बढ़िया! अगला कदम चाहिए?' : 'Nice! Want the next step?'}
-            </Badge>
+            </div>
           ) : (
-            <div className="flex min-w-0 items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               {/* Primary row */}
-              <Button
-                size="sm"
-                variant="secondary"
+              <button
+                type="button"
                 onClick={() => onLearningAction?.('got_it')}
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
                 style={{
                   background: 'color-mix(in srgb, var(--success) 8%, transparent)',
                   color: 'var(--success)',
-                  borderColor: 'color-mix(in srgb, var(--success) 20%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)',
                 }}
                 data-testid="learning-action-gotit"
               >
                 {isHi ? 'समझ गया ✓' : 'Got it ✓'}
-              </Button>
+              </button>
+              <button
+                type="button"
+                onClick={() => onLearningAction?.('explain_simpler')}
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
+                style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                data-testid="learning-action-simpler"
+              >
+                {isHi ? 'आसान करके बताओ' : 'Explain simpler'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onLearningAction?.('show_example')}
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
+                style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                data-testid="learning-action-example"
+              >
+                {isHi ? 'उदाहरण दिखाओ' : 'Show example'}
+              </button>
+              <button
+                type="button"
+                onClick={() => onLearningAction?.('quiz_me')}
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
+                style={{
+                  background: 'color-mix(in srgb, var(--purple) 8%, transparent)',
+                  color: 'var(--purple)',
+                  border: '1px solid color-mix(in srgb, var(--purple) 22%, transparent)',
+                }}
+                data-testid="learning-action-quiz"
+              >
+                {isHi ? 'इस पर क्विज़ लो' : 'Quiz me on this'}
+              </button>
 
-              {/* Overflow "⋯" menu — learning next steps + Save · Read aloud · Report. */}
-              <div className="relative min-w-0">
-                <IconButton
-                  label={isHi ? 'और विकल्प' : 'More options'}
-                  icon="⋯"
-                  variant="secondary"
-                  size="sm"
+              {/* Overflow "⋯" menu — Save · Read aloud · Report an issue */}
+              <div className="relative">
+                <button
+                  type="button"
                   onClick={() => setOverflowOpen((o) => !o)}
                   aria-haspopup="menu"
                   aria-expanded={overflowOpen}
+                  aria-label={isHi ? 'और विकल्प' : 'More options'}
+                  className="px-2.5 py-1.5 rounded-xl text-[14px] font-bold leading-none transition-all active:scale-95 min-h-[36px] min-w-[36px]"
+                  style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
                   data-testid="learning-action-overflow"
-                />
+                >
+                  ⋯
+                </button>
                 {overflowOpen && (
                   <div
                     role="menu"
-                    className="absolute right-0 z-20 mt-1 max-w-[calc(100vw-2rem)] w-56 rounded-xl py-1 shadow-lg sm:left-0 sm:right-auto"
+                    className="absolute left-0 z-20 mt-1 w-52 rounded-xl py-1 shadow-lg"
                     style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
                   >
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => { onLearningAction?.('explain_simpler'); setOverflowOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
-                      style={{ color: 'var(--text-2)' }}
-                      data-testid="learning-action-simpler"
-                    >
-                      <span aria-hidden="true">↘</span>
-                      {isHi ? 'आसान करके बताओ' : 'Explain simpler'}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => { onLearningAction?.('show_example'); setOverflowOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
-                      style={{ color: 'var(--text-2)' }}
-                      data-testid="learning-action-example"
-                    >
-                      <span aria-hidden="true">▣</span>
-                      {isHi ? 'उदाहरण दिखाओ' : 'Show example'}
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => { onLearningAction?.('quiz_me'); setOverflowOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
-                      style={{ color: 'var(--purple)' }}
-                      data-testid="learning-action-quiz"
-                    >
-                      <span aria-hidden="true">▤</span>
-                      {isHi ? 'इस पर क्विज़ लो' : 'Quiz me on this'}
-                    </button>
                     <button
                       type="button"
                       role="menuitem"

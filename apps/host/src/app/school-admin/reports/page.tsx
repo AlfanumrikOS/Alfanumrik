@@ -127,9 +127,9 @@ const GRADE_VALUES = ['6', '7', '8', '9', '10', '11', '12'] as const;
 /* ─────────────────────────────────────────────────────────────
    STYLE HELPERS
 ───────────────────────────────────────────────────────────── */
-const SUCCESS_COLOR = 'var(--success)';
-const WARNING_COLOR = 'var(--warning)';
-const DANGER_COLOR = 'var(--danger)';
+const SUCCESS_COLOR = '#22C55E';
+const WARNING_COLOR = '#EAB308';
+const DANGER_COLOR = '#EF4444';
 
 function scoreColor(score: number): string {
   if (score >= 80) return SUCCESS_COLOR;
@@ -180,8 +180,8 @@ function ReportStatCard({ value, label, color }: { value: string | number; label
   return (
     <div
       style={{
-        background: 'var(--surface-1)',
-        border: '1px solid var(--surface-3)',
+        background: '#fff',
+        border: '1px solid #e5e7eb',
         borderRadius: 12,
         padding: '16px 14px',
         display: 'flex',
@@ -192,7 +192,7 @@ function ReportStatCard({ value, label, color }: { value: string | number; label
       <span style={{ fontSize: 24, fontWeight: 700, color, fontFamily: 'Sora, system-ui, sans-serif' }}>
         {value}
       </span>
-      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-3)' }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280' }}>{label}</span>
     </div>
   );
 }
@@ -246,10 +246,10 @@ function SortableTable<T>({ columns, data, defaultSort, defaultDir = 'desc' }: {
   };
 
   return (
-    <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--surface-3)' }}>
+    <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid #e5e7eb' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
-          <tr style={{ background: 'var(--surface-2)' }}>
+          <tr style={{ background: '#f9fafb' }}>
             {columns.map((col) => (
               <th
                 key={col.key}
@@ -258,11 +258,11 @@ function SortableTable<T>({ columns, data, defaultSort, defaultDir = 'desc' }: {
                   padding: '10px 12px',
                   textAlign: col.align || 'left',
                   fontWeight: 600,
-                  color: 'var(--text-2)',
+                  color: '#374151',
                   cursor: col.sortValue ? 'pointer' : 'default',
                   userSelect: 'none',
                   whiteSpace: 'nowrap',
-                  borderBottom: '1px solid var(--surface-3)',
+                  borderBottom: '1px solid #e5e7eb',
                 }}
               >
                 {col.label}
@@ -280,8 +280,8 @@ function SortableTable<T>({ columns, data, defaultSort, defaultDir = 'desc' }: {
             <tr
               key={idx}
               style={{
-                background: idx % 2 === 0 ? 'var(--surface-1)' : 'var(--surface-2)',
-                borderBottom: idx < sorted.length - 1 ? '1px solid var(--surface-2)' : undefined,
+                background: idx % 2 === 0 ? '#fff' : '#f9fafb',
+                borderBottom: idx < sorted.length - 1 ? '1px solid #f3f4f6' : undefined,
               }}
             >
               {columns.map((col) => (
@@ -290,7 +290,7 @@ function SortableTable<T>({ columns, data, defaultSort, defaultDir = 'desc' }: {
                   style={{
                     padding: '10px 12px',
                     textAlign: col.align || 'left',
-                    color: 'var(--text-2)',
+                    color: '#374151',
                     whiteSpace: 'nowrap',
                   }}
                 >
@@ -312,10 +312,10 @@ function ScoreBar({ score, label }: { score: number; label: string }) {
   const color = scoreColor(score);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-2)', minWidth: 100, textAlign: 'right' }}>
+      <span style={{ fontSize: 12, fontWeight: 500, color: '#374151', minWidth: 100, textAlign: 'right' }}>
         {label}
       </span>
-      <div style={{ flex: 1, background: 'var(--surface-2)', borderRadius: 6, height: 18, overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flex: 1, background: '#f3f4f6', borderRadius: 6, height: 18, overflow: 'hidden', position: 'relative' }}>
         <div
           style={{
             width: `${Math.min(100, Math.max(0, score))}%`,
@@ -333,7 +333,7 @@ function ScoreBar({ score, label }: { score: number; label: string }) {
             transform: 'translateY(-50%)',
             fontSize: 10,
             fontWeight: 700,
-            color: score > 30 ? 'var(--surface-1)' : 'var(--text-2)',
+            color: score > 30 ? '#fff' : '#374151',
           }}
         >
           {Math.round(score)}%
@@ -762,7 +762,7 @@ export default function SchoolAdminReportsPage() {
         key: 'grade',
         label: t(isHi, 'Grade', 'कक्षा'),
         render: (r) => (
-          <Badge color="var(--color-brand-primary, var(--purple))" size="sm">
+          <Badge color="var(--color-brand-primary, #7C3AED)" size="sm">
             {t(isHi, `Grade ${r.grade}`, `कक्षा ${r.grade}`)}
           </Badge>
         ),
@@ -802,7 +802,7 @@ export default function SchoolAdminReportsPage() {
           <ReportStatCard
             value={total_quizzes.toLocaleString('en-IN')}
             label={t(isHi, 'Total Quizzes', 'कुल क्विज़')}
-            color="var(--color-brand-primary, var(--purple))"
+            color="var(--color-brand-primary, #7C3AED)"
           />
           <ReportStatCard
             value={`${Math.round(avg_score)}%`}
@@ -812,7 +812,7 @@ export default function SchoolAdminReportsPage() {
           <ReportStatCard
             value={active_students.toLocaleString('en-IN')}
             label={t(isHi, 'Active Students', 'सक्रिय छात्र')}
-            color="var(--color-brand-secondary, var(--orange))"
+            color="var(--color-brand-secondary, #F97316)"
           />
           <ReportStatCard
             value={`${Math.round(completion_rate)}%`}
@@ -823,7 +823,7 @@ export default function SchoolAdminReportsPage() {
 
         {/* Subject performance table */}
         <div style={{ marginTop: 24 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 10 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111', marginBottom: 10 }}>
             {t(isHi, 'Subject Performance', 'विषय प्रदर्शन')}
           </h3>
           {subject_performance.length > 0 ? (
@@ -839,7 +839,7 @@ export default function SchoolAdminReportsPage() {
 
         {/* Grade performance table */}
         <div style={{ marginTop: 24 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)', marginBottom: 10 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111', marginBottom: 10 }}>
             {t(isHi, 'Grade Performance', 'कक्षा प्रदर्शन')}
           </h3>
           {grade_performance.length > 0 ? (
@@ -916,7 +916,7 @@ export default function SchoolAdminReportsPage() {
             !classOptionsLoading &&
             classOptionsLoaded &&
             classOptions.length === 0 && (
-              <p style={{ marginTop: 8, fontSize: 12, color: 'var(--text-3)' }}>
+              <p style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
                 {t(isHi, 'No classes found for this school yet.', 'इस स्कूल के लिए अभी कोई कक्षा नहीं मिली।')}
               </p>
             )}
@@ -978,7 +978,7 @@ export default function SchoolAdminReportsPage() {
             {/* Top 5 */}
             {classData.top_students.length > 0 && (
               <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>
+                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 8 }}>
                   {t(isHi, 'Top 5 Students', 'शीर्ष 5 छात्र')}
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -990,12 +990,12 @@ export default function SchoolAdminReportsPage() {
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         padding: '8px 12px',
-                        background: 'var(--surface-1)',
-                        border: '1px solid var(--surface-3)',
+                        background: '#fff',
+                        border: '1px solid #e5e7eb',
                         borderRadius: 8,
                       }}
                     >
-                      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-2)' }}>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
                         {i + 1}. {s.name}
                       </span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor(s.avg_score) }}>
@@ -1010,7 +1010,7 @@ export default function SchoolAdminReportsPage() {
             {/* Bottom 5 */}
             {classData.bottom_students.length > 0 && (
               <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>
+                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 8 }}>
                   {t(isHi, 'Bottom 5 Students', 'निचले 5 छात्र')}
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1022,12 +1022,12 @@ export default function SchoolAdminReportsPage() {
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         padding: '8px 12px',
-                        background: 'var(--surface-1)',
-                        border: '1px solid var(--surface-3)',
+                        background: '#fff',
+                        border: '1px solid #e5e7eb',
                         borderRadius: 8,
                       }}
                     >
-                      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-2)' }}>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
                         {i + 1}. {s.name}
                       </span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor(s.avg_score) }}>
@@ -1042,7 +1042,7 @@ export default function SchoolAdminReportsPage() {
             {/* Subject breakdown */}
             {classData.subject_breakdown.length > 0 && (
               <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 8 }}>
+                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 8 }}>
                   {t(isHi, 'Subject Breakdown', 'विषय वार विश्लेषण')}
                 </h4>
                 <SortableTable
@@ -1106,8 +1106,8 @@ export default function SchoolAdminReportsPage() {
         {studentSearchQuery.trim().length >= 2 && studentSearchResults.length > 0 && !selectedStudentId && (
           <div
             style={{
-              background: 'var(--surface-1)',
-              border: '1px solid var(--surface-3)',
+              background: '#fff',
+              border: '1px solid #e5e7eb',
               borderRadius: 8,
               marginTop: 4,
               maxWidth: 400,
@@ -1130,15 +1130,15 @@ export default function SchoolAdminReportsPage() {
                   width: '100%',
                   padding: '10px 12px',
                   border: 'none',
-                  borderBottom: '1px solid var(--surface-2)',
+                  borderBottom: '1px solid #f3f4f6',
                   background: 'transparent',
                   cursor: 'pointer',
                   textAlign: 'left',
                   fontSize: 13,
                 }}
               >
-                <span style={{ fontWeight: 500, color: 'var(--text-1)' }}>{s.name}</span>
-                <Badge color="var(--color-brand-primary, var(--purple))" size="sm">
+                <span style={{ fontWeight: 500, color: '#111' }}>{s.name}</span>
+                <Badge color="var(--color-brand-primary, #7C3AED)" size="sm">
                   {t(isHi, `Grade ${s.grade}`, `कक्षा ${s.grade}`)}
                 </Badge>
               </button>
@@ -1158,7 +1158,7 @@ export default function SchoolAdminReportsPage() {
           !studentSearchLoading &&
           studentSearchResults.length === 0 &&
           !selectedStudentId && (
-            <p style={{ marginTop: 8, fontSize: 13, color: 'var(--text-3)' }}>
+            <p style={{ marginTop: 8, fontSize: 13, color: '#6b7280' }}>
               {t(isHi, 'No students found.', 'कोई छात्र नहीं मिला।')}
             </p>
           )}
@@ -1193,8 +1193,8 @@ export default function SchoolAdminReportsPage() {
             {/* Student profile card */}
             <div
               style={{
-                background: 'var(--surface-1)',
-                border: '1px solid var(--surface-3)',
+                background: '#fff',
+                border: '1px solid #e5e7eb',
                 borderRadius: 12,
                 padding: 20,
                 display: 'flex',
@@ -1205,19 +1205,19 @@ export default function SchoolAdminReportsPage() {
               }}
             >
               <div>
-                <h4 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>
+                <h4 style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 4 }}>
                   {studentData.student.name}
                 </h4>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Badge color="var(--color-brand-primary, var(--purple))" size="sm">
+                  <Badge color="var(--color-brand-primary, #7C3AED)" size="sm">
                     {t(isHi, `Grade ${studentData.student.grade}`, `कक्षा ${studentData.student.grade}`)}
                   </Badge>
-                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>
                     {studentData.student.xp_total.toLocaleString('en-IN')} XP
                   </span>
                 </div>
                 {studentData.student.last_active && (
-                  <p style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 6 }}>
+                  <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
                     {t(isHi, 'Last active:', 'अंतिम सक्रिय:')}{' '}
                     {new Date(studentData.student.last_active).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN')}
                   </p>
@@ -1225,16 +1225,16 @@ export default function SchoolAdminReportsPage() {
               </div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 <div style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-brand-secondary, var(--orange))' }}>
+                  <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-brand-secondary, #F97316)' }}>
                     {studentData.total_quizzes}
                   </span>
-                  <p style={{ fontSize: 12, color: 'var(--text-3)' }}>{t(isHi, 'Quizzes', 'क्विज़')}</p>
+                  <p style={{ fontSize: 11, color: '#6b7280' }}>{t(isHi, 'Quizzes', 'क्विज़')}</p>
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <span style={{ fontSize: 22, fontWeight: 700, color: scoreColor(studentData.avg_score) }}>
                     {Math.round(studentData.avg_score)}%
                   </span>
-                  <p style={{ fontSize: 12, color: 'var(--text-3)' }}>{t(isHi, 'Avg Score', 'औसत स्कोर')}</p>
+                  <p style={{ fontSize: 11, color: '#6b7280' }}>{t(isHi, 'Avg Score', 'औसत स्कोर')}</p>
                 </div>
               </div>
             </div>
@@ -1254,7 +1254,7 @@ export default function SchoolAdminReportsPage() {
                     <p style={{ fontSize: 11, fontWeight: 600, color: SUCCESS_COLOR, marginBottom: 4 }}>
                       {t(isHi, 'Best Subject', 'सबसे अच्छा विषय')}
                     </p>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{studentData.best_subject}</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{studentData.best_subject}</p>
                   </div>
                 )}
                 {studentData.weakest_subject && (
@@ -1269,7 +1269,7 @@ export default function SchoolAdminReportsPage() {
                     <p style={{ fontSize: 11, fontWeight: 600, color: DANGER_COLOR, marginBottom: 4 }}>
                       {t(isHi, 'Weakest Subject', 'सबसे कमज़ोर विषय')}
                     </p>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{studentData.weakest_subject}</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{studentData.weakest_subject}</p>
                   </div>
                 )}
               </div>
@@ -1278,7 +1278,7 @@ export default function SchoolAdminReportsPage() {
             {/* Subject score bars */}
             {studentData.subject_scores.length > 0 && (
               <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 10 }}>
+                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 10 }}>
                   {t(isHi, 'Subject Scores', 'विषय अंक')}
                 </h4>
                 {studentData.subject_scores.map((ss) => (
@@ -1419,7 +1419,7 @@ export default function SchoolAdminReportsPage() {
         style={{
           display: 'flex',
           gap: 4,
-          borderBottom: '2px solid var(--surface-3)',
+          borderBottom: '2px solid #e5e7eb',
           marginBottom: 24,
           overflowX: 'auto',
         }}
@@ -1436,10 +1436,10 @@ export default function SchoolAdminReportsPage() {
                 padding: '10px 16px',
                 fontSize: 13,
                 fontWeight: isActive ? 700 : 500,
-                color: isActive ? 'var(--color-brand-primary, var(--purple))' : 'var(--text-3)',
+                color: isActive ? 'var(--color-brand-primary, #7C3AED)' : '#6b7280',
                 background: 'transparent',
                 border: 'none',
-                borderBottom: isActive ? '2px solid var(--color-brand-primary, var(--purple))' : '2px solid transparent',
+                borderBottom: isActive ? '2px solid var(--color-brand-primary, #7C3AED)' : '2px solid transparent',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 marginBottom: -2,

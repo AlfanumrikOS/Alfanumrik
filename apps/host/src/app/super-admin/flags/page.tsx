@@ -76,9 +76,9 @@ function FlagsContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground">Feature Flags</h1>
-          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Toggle features, emergency disables, and beta access controls</p>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Toggle features, emergency disables, and beta access controls</p>
         </div>
-        <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+        <div style={{ fontSize: 13, color: '#6B7280' }}>
           {flags.filter(f => f.enabled).length} of {flags.length} enabled
         </div>
       </div>
@@ -97,9 +97,9 @@ function FlagsContent() {
 
       {/* Flag List */}
       <div style={{ display: 'grid', gap: 8, marginBottom: 24 }}>
-        {loading && flags.length === 0 && <div style={{ color: 'var(--text-3)', padding: 20, textAlign: 'center' }}>Loading...</div>}
+        {loading && flags.length === 0 && <div style={{ color: '#9CA3AF', padding: 20, textAlign: 'center' }}>Loading...</div>}
         {!loading && flags.length === 0 && (
-          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ textAlign: 'center', color: 'var(--text-3)', padding: 24 }}>
+          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ textAlign: 'center', color: '#9CA3AF', padding: 24 }}>
             No feature flags configured. Add one above.
           </div>
         )}
@@ -107,12 +107,12 @@ function FlagsContent() {
           <div
             key={flag.id}
             className="rounded-lg border border-surface-3 bg-surface-1 p-4"
-            style={{ borderLeft: `3px solid ${flag.enabled ? 'var(--success)' : 'var(--border)'}` }}
+            style={{ borderLeft: `3px solid ${flag.enabled ? '#16A34A' : '#E5E7EB'}` }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <code style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{flag.name}</code>
-                {flag.description && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{flag.description}</div>}
+                <code style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{flag.name}</code>
+                {flag.description && <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{flag.description}</div>}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button
@@ -131,8 +131,8 @@ function FlagsContent() {
                     padding: '6px 18px', borderRadius: 20, border: 'none',
                     cursor: togglingId === flag.id ? 'not-allowed' : 'pointer',
                     fontSize: 12, fontWeight: 700,
-                    background: flag.enabled ? 'var(--success)' : 'var(--border)',
-                    color: flag.enabled ? 'var(--on-accent)' : 'var(--text-3)',
+                    background: flag.enabled ? '#16A34A' : '#E5E7EB',
+                    color: flag.enabled ? '#fff' : '#9CA3AF',
                     opacity: togglingId === flag.id ? 0.5 : 1,
                     transition: 'opacity 0.15s',
                   }}
@@ -142,7 +142,7 @@ function FlagsContent() {
                 <button
                   onClick={() => deleteFlag(flag)}
                   className="rounded-md border bg-transparent px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2"
-                  style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+                  style={{ color: '#DC2626', borderColor: '#DC2626' }}
                 >
                   Del
                 </button>
@@ -152,22 +152,22 @@ function FlagsContent() {
             {/* Scope tags */}
             <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
               {flag.target_roles?.length > 0 && flag.target_roles.map(r => (
-                <span key={r} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'color-mix(in srgb, var(--info) 10%, transparent)', color: 'var(--info)' }}>role:{r}</span>
+                <span key={r} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#EFF6FF', color: '#2563EB' }}>role:{r}</span>
               ))}
               {flag.target_environments?.length > 0 && flag.target_environments.map(e => (
-                <span key={e} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'color-mix(in srgb, var(--warning) 12%, transparent)', color: 'var(--warning)' }}>env:{e}</span>
+                <span key={e} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#FFFBEB', color: '#D97706' }}>env:{e}</span>
               ))}
               {(!flag.target_roles?.length) && (!flag.target_environments?.length) && (
-                <span style={{ fontSize: 10, color: 'var(--text-3)' }}>Global (all roles, all environments)</span>
+                <span style={{ fontSize: 10, color: '#9CA3AF' }}>Global (all roles, all environments)</span>
               )}
             </div>
 
             {/* Scope editor */}
             {editingFlagId === flag.id && (
-              <div style={{ marginTop: 12, padding: 12, background: 'var(--surface-2)', borderRadius: 8 }}>
+              <div style={{ marginTop: 12, padding: 12, background: '#F9FAFB', borderRadius: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Target Roles</label>
+                    <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Target Roles</label>
                     <input
                       value={flagScopeRoles}
                       onChange={e => setFlagScopeRoles(e.target.value)}
@@ -176,7 +176,7 @@ function FlagsContent() {
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Target Environments</label>
+                    <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Target Environments</label>
                     <input
                       value={flagScopeEnvs}
                       onChange={e => setFlagScopeEnvs(e.target.value)}
@@ -208,12 +208,12 @@ function FlagsContent() {
               className="rounded-lg border border-surface-3 bg-surface-1"
               style={{ opacity: exists ? 0.5 : 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12 }}
             >
-              <code style={{ fontSize: 12, color: 'var(--text-2)' }}>{name}</code>
+              <code style={{ fontSize: 12, color: '#6B7280' }}>{name}</code>
               {!exists ? (
                 <button
                   onClick={() => { setNewFlagName(name); }}
                   className="rounded-md border bg-transparent px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2"
-                  style={{ color: 'var(--info)', borderColor: 'var(--info)' }}
+                  style={{ color: '#2563EB', borderColor: '#2563EB' }}
                 >
                   Add
                 </button>

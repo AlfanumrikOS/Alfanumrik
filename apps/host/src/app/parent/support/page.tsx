@@ -99,12 +99,12 @@ function statusColor(status: string): string {
   switch (status) {
     case 'resolved':
     case 'closed':
-      return 'var(--success)';
+      return '#16A34A';
     case 'in_progress':
     case 'in-progress':
-      return 'var(--info)';
+      return '#2563EB';
     default:
-      return 'var(--primary)';
+      return '#F97316';
   }
 }
 
@@ -254,33 +254,33 @@ const pageStyle: React.CSSProperties = {
   margin: '0 auto',
   padding: '20px 16px 40px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  color: 'var(--text-1)',
-  backgroundColor: 'var(--surface-2)',
+  color: '#1E293B',
+  backgroundColor: '#FFF8F0',
   minHeight: '100dvh',
 };
 
 const cardStyle: React.CSSProperties = {
-  backgroundColor: 'var(--surface-1)',
+  backgroundColor: '#FFFFFF',
   borderRadius: 14,
   padding: '16px 18px',
-  border: '1px solid var(--surface-2)',
+  border: '1px solid #FDBA7433',
   marginBottom: 14,
 };
 
 const sectionTitle: React.CSSProperties = {
   fontSize: 17,
   fontWeight: 700,
-  color: 'var(--text-1)',
+  color: '#1E293B',
   margin: '28px 0 14px',
 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '12px 14px',
-  backgroundColor: 'var(--surface-2)',
-  border: '1px solid var(--surface-2)',
+  backgroundColor: '#FFF8F0',
+  border: '1px solid #FDBA7444',
   borderRadius: 10,
-  color: 'var(--text-1)',
+  color: '#1E293B',
   fontSize: 14,
   outline: 'none',
   marginBottom: 10,
@@ -289,8 +289,8 @@ const inputStyle: React.CSSProperties = {
 
 const btnPrimary: React.CSSProperties = {
   padding: '12px 20px',
-  background: 'linear-gradient(135deg, var(--primary), var(--primary))',
-  color: 'var(--surface-1)',
+  background: 'linear-gradient(135deg, #F97316, #EA580C)',
+  color: '#fff',
   border: 'none',
   borderRadius: 10,
   fontSize: 15,
@@ -311,7 +311,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
       style={{
         ...cardStyle,
         transition: 'border-color 0.2s',
-        borderColor: open ? 'var(--primary)' : 'var(--surface-2)',
+        borderColor: open ? '#F97316' : '#FDBA7433',
       }}
     >
       <button
@@ -332,17 +332,17 @@ function FaqItem({ q, a }: { q: string; a: string }) {
           minHeight: 44,
         }}
       >
-        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', flex: 1 }}>{q}</span>
+        <span style={{ fontSize: 14, fontWeight: 600, color: '#1E293B', flex: 1 }}>{q}</span>
         <span
           style={{
             fontSize: 18,
-            color: 'var(--primary)',
+            color: '#F97316',
             transition: 'transform 0.3s ease',
             transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
             flexShrink: 0,
           }}
         >
-          &#x25BC;
+          &#9660;
         </span>
       </button>
       <div
@@ -353,7 +353,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
           opacity: open ? 1 : 0,
         }}
       >
-        <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, margin: '12px 0 0' }}>{a}</p>
+        <p style={{ fontSize: 13, color: '#64748B', lineHeight: 1.6, margin: '12px 0 0' }}>{a}</p>
       </div>
     </div>
   );
@@ -376,14 +376,14 @@ function Toast({ message, kind, onDone }: { message: string; kind: 'success' | '
         bottom: 24,
         left: '50%',
         transform: 'translateX(-50%)',
-        backgroundColor: kind === 'success' ? 'var(--success)' : 'var(--danger)',
-        color: 'var(--surface-1)',
+        backgroundColor: kind === 'success' ? '#16A34A' : '#DC2626',
+        color: '#fff',
         padding: '12px 24px',
         borderRadius: 12,
         fontSize: 14,
         fontWeight: 600,
         zIndex: 2000,
-        boxShadow: '0 4px 20px color-mix(in srgb, var(--text-1) 25%, transparent)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
         animation: 'fadeInUp 0.3s ease',
         maxWidth: '90vw',
         textAlign: 'center' as const,
@@ -418,14 +418,14 @@ function MyTickets({
           style={{
             width: 28,
             height: 28,
-            border: '3px solid var(--surface-2)',
-            borderTopColor: 'var(--primary)',
+            border: '3px solid #FDBA7444',
+            borderTopColor: '#F97316',
             borderRadius: '50%',
             margin: '0 auto 10px',
             animation: 'spin 0.8s linear infinite',
           }}
         />
-        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+        <p style={{ fontSize: 13, color: '#94A3B8', margin: 0 }}>
           {t(isHi, 'Loading your tickets...', 'आपके टिकट लोड हो रहे हैं...')}
         </p>
       </div>
@@ -437,14 +437,14 @@ function MyTickets({
     return (
       <div style={{ ...cardStyle, textAlign: 'center', padding: '24px 18px' }}>
         <div style={{ fontSize: 28, marginBottom: 8 }}>&#x26A0;&#xFE0F;</div>
-        <p style={{ fontSize: 13, color: 'var(--danger)', margin: '0 0 12px' }}>{error}</p>
+        <p style={{ fontSize: 13, color: '#DC2626', margin: '0 0 12px' }}>{error}</p>
         <button
           onClick={onRetry}
           style={{
             padding: '8px 18px',
             backgroundColor: 'transparent',
-            color: 'var(--primary)',
-            border: '1px solid var(--surface-3)',
+            color: '#F97316',
+            border: '1px solid #FDBA74',
             borderRadius: 8,
             fontSize: 13,
             fontWeight: 600,
@@ -463,10 +463,10 @@ function MyTickets({
     return (
       <div style={{ ...cardStyle, textAlign: 'center', padding: '28px 18px' }}>
         <div style={{ fontSize: 32, marginBottom: 8 }}>&#x1F4ED;</div>
-        <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', margin: '0 0 4px' }}>
+        <p style={{ fontSize: 14, fontWeight: 600, color: '#1E293B', margin: '0 0 4px' }}>
           {t(isHi, 'No tickets yet', 'अभी तक कोई टिकट नहीं')}
         </p>
-        <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>
+        <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, lineHeight: 1.5 }}>
           {t(
             isHi,
             'When you contact support, your requests will appear here so you can track their status.',
@@ -485,15 +485,15 @@ function MyTickets({
           key={ticket.id}
           style={{
             padding: '12px 0',
-            borderBottom: i < tickets.length - 1 ? '1px solid var(--surface-2)' : 'none',
+            borderBottom: i < tickets.length - 1 ? '1px solid #FDBA7433' : 'none',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)', margin: 0, lineHeight: 1.4 }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#1E293B', margin: 0, lineHeight: 1.4 }}>
                 {ticket.subject}
               </p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>
+              <p style={{ fontSize: 11, color: '#94A3B8', margin: '4px 0 0' }}>
                 {categoryLabel(isHi, ticket.category)}
                 {' · '}
                 {priorityLabel(isHi, ticket.priority)}
@@ -701,7 +701,7 @@ export default function ParentSupportPage() {
     return (
       <div style={{ ...pageStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <p style={{ color: 'var(--text-3)', fontSize: 14 }}>{t(isHi, 'Loading...', 'लोड हो रहा है...')}</p>
+        <p style={{ color: '#94A3B8', fontSize: 14 }}>{t(isHi, 'Loading...', 'लोड हो रहा है...')}</p>
       </div>
     );
   }
@@ -720,7 +720,7 @@ export default function ParentSupportPage() {
       {/* Header */}
       <div
         style={{
-          background: 'linear-gradient(135deg, var(--primary), var(--primary))',
+          background: 'linear-gradient(135deg, #F97316, #EA580C)',
           borderRadius: 16,
           padding: '28px 22px',
           marginBottom: 24,
@@ -734,11 +734,11 @@ export default function ParentSupportPage() {
             position: 'absolute',
             top: 16,
             left: 16,
-            background: 'color-mix(in srgb, var(--surface-1) 20%, transparent)',
+            background: 'rgba(255,255,255,0.2)',
             border: 'none',
             borderRadius: 8,
             padding: '6px 12px',
-            color: 'var(--surface-1)',
+            color: '#fff',
             fontSize: 13,
             fontWeight: 600,
             cursor: 'pointer',
@@ -748,10 +748,10 @@ export default function ParentSupportPage() {
           &larr; {t(isHi, 'Dashboard', 'डैशबोर्ड')}
         </button>
         <div style={{ fontSize: 36, marginBottom: 8 }}>&#x1F4AC;</div>
-        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--surface-1)', margin: '0 0 6px' }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: '#fff', margin: '0 0 6px' }}>
           {t(isHi, 'Help & Support', 'सहायता और समर्थन')}
         </h1>
-        <p style={{ fontSize: 14, color: 'var(--surface-1)', margin: 0 }}>
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', margin: 0 }}>
           {t(isHi, "We're here to help you and your child succeed", 'हम आपकी और आपके बच्चे की सफलता में मदद के लिए यहाँ हैं')}
         </p>
       </div>
@@ -766,7 +766,7 @@ export default function ParentSupportPage() {
       <h2 style={sectionTitle}>&#x1F4E9; {t(isHi, 'Contact Support', 'सहायता से संपर्क करें')}</h2>
       <div style={cardStyle}>
         {/* Subject */}
-        <label htmlFor="support-subject" style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>
+        <label htmlFor="support-subject" style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>
           {t(isHi, 'Subject', 'विषय')} *
         </label>
         <input
@@ -779,7 +779,7 @@ export default function ParentSupportPage() {
         />
 
         {/* Category */}
-        <label htmlFor="support-category" style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>
+        <label htmlFor="support-category" style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>
           {t(isHi, 'Category', 'श्रेणी')}
         </label>
         <select
@@ -805,7 +805,7 @@ export default function ParentSupportPage() {
         </select>
 
         {/* Priority */}
-        <label htmlFor="support-priority" style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>
+        <label htmlFor="support-priority" style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>
           {t(isHi, 'Priority', 'प्राथमिकता')}
         </label>
         <select
@@ -831,9 +831,9 @@ export default function ParentSupportPage() {
         </select>
 
         {/* Description */}
-        <label htmlFor="support-message" style={{ fontSize: 12, color: 'var(--text-3)', display: 'block', marginBottom: 4 }}>
+        <label htmlFor="support-message" style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>
           {t(isHi, 'Message', 'संदेश')}{' '}
-          <span style={{ color: 'var(--text-3)' }}>{t(isHi, '(min 20 characters)', '(कम से कम 20 अक्षर)')}</span>
+          <span style={{ color: '#94A3B8' }}>{t(isHi, '(min 20 characters)', '(कम से कम 20 अक्षर)')}</span>
         </label>
         <textarea
           id="support-message"
@@ -879,10 +879,10 @@ export default function ParentSupportPage() {
         {/* Email Support Note */}
         <div style={{ ...cardStyle, textAlign: 'center' as const, marginBottom: 0 }}>
           <div style={{ fontSize: 24, marginBottom: 6 }}>&#x1F4E7;</div>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>
             {t(isHi, 'Need Help?', 'मदद चाहिए?')}
           </span>
-          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0', lineHeight: 1.4 }}>
+          <p style={{ fontSize: 11, color: '#64748B', margin: '8px 0 0', lineHeight: 1.4 }}>
             {t(
               isHi,
               'For urgent queries, use the form above. We typically respond within 24 hours.',
@@ -895,10 +895,10 @@ export default function ParentSupportPage() {
         <a href="mailto:support@alfanumrik.com" style={{ textDecoration: 'none' }}>
           <div style={{ ...cardStyle, textAlign: 'center' as const, cursor: 'pointer', marginBottom: 0 }}>
             <div style={{ fontSize: 24, marginBottom: 6 }}>&#x1F4E7;</div>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>
               {t(isHi, 'Email Us', 'हमें ईमेल करें')}
             </span>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>support@alfanumrik.com</p>
+            <p style={{ fontSize: 11, color: '#64748B', margin: '4px 0 0' }}>support@alfanumrik.com</p>
           </div>
         </a>
 
@@ -906,7 +906,7 @@ export default function ParentSupportPage() {
         <a href="/help" style={{ textDecoration: 'none' }}>
           <div style={{ ...cardStyle, textAlign: 'center' as const, cursor: 'pointer', marginBottom: 0 }}>
             <div style={{ fontSize: 24, marginBottom: 6 }}>&#x1F9ED;</div>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>
               {t(isHi, 'Help Centre', 'सहायता केंद्र')}
             </span>
           </div>
@@ -916,7 +916,7 @@ export default function ParentSupportPage() {
         <a href="/privacy" style={{ textDecoration: 'none' }}>
           <div style={{ ...cardStyle, textAlign: 'center' as const, cursor: 'pointer', marginBottom: 0 }}>
             <div style={{ fontSize: 24, marginBottom: 6 }}>&#x1F512;</div>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1E293B' }}>
               {t(isHi, 'Privacy Policy', 'गोपनीयता नीति')}
             </span>
           </div>
@@ -934,13 +934,13 @@ export default function ParentSupportPage() {
               alignItems: 'flex-start',
               gap: 10,
               padding: '10px 0',
-              borderBottom: i < tips.length - 1 ? '1px solid var(--surface-2)' : 'none',
+              borderBottom: i < tips.length - 1 ? '1px solid #FDBA7433' : 'none',
             }}
           >
             <span
               style={{
-                backgroundColor: 'var(--surface-2)',
-                color: 'var(--primary)',
+                backgroundColor: '#F9731620',
+                color: '#F97316',
                 width: 24,
                 height: 24,
                 borderRadius: '50%',
@@ -955,13 +955,13 @@ export default function ParentSupportPage() {
             >
               {i + 1}
             </span>
-            <span style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.5 }}>{t(isHi, tip.en, tip.hi)}</span>
+            <span style={{ fontSize: 13, color: '#64748B', lineHeight: 1.5 }}>{t(isHi, tip.en, tip.hi)}</span>
           </div>
         ))}
       </div>
 
       {/* Footer */}
-      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-3)', margin: '20px 0 12px' }}>
+      <p style={{ textAlign: 'center', fontSize: 11, color: '#94A3B8', margin: '20px 0 12px' }}>
         Alfanumrik Learning OS | {t(isHi, 'Parent Portal', 'अभिभावक पोर्टल')}
       </p>
 

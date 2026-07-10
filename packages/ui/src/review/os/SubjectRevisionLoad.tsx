@@ -11,14 +11,11 @@
  *
  * Counts are encoded number + glyph (not colour alone, WCAG 1.4.1).
  *
- * Phase 8 rebuild: Card container + Badge counts + Alert error state; impact
- * hues come from the tokenised revision-labels helper — zero raw hex/rgb.
- *
  * States: loading (skeleton), error (distinct from empty), empty (nothing due).
  */
 
 import { useMemo } from 'react';
-import { Card, Badge, Alert, Skeleton } from '@alfanumrik/ui/ui/primitives';
+import { Skeleton } from '@alfanumrik/ui/ui';
 import type { RevisionItem, RevisionSubjectLoad } from './useRevisionOverview';
 import { formatSubject, averageImpact, impactMeta } from './revision-labels';
 
@@ -50,41 +47,55 @@ export default function SubjectRevisionLoad({
   }, [dueItems]);
 
   const heading = (
-    <h2 className="mb-3 text-fluid-xs font-bold uppercase tracking-wider text-muted-foreground">
+    <h2
+      className="text-sm font-bold uppercase tracking-wider mb-3"
+      style={{ color: 'var(--text-3)' }}
+    >
       {isHi ? 'विषयवार दोहराव' : 'By subject'}
     </h2>
   );
 
   if (isLoading) {
     return (
-      <Card variant="flat" className="p-4">
+      <section
+        className="rounded-2xl p-4"
+        style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      >
         {heading}
         <div className="flex flex-col gap-2">
-          <Skeleton radius="lg" className="h-10 w-full" />
-          <Skeleton radius="lg" className="h-10 w-full" />
+          <Skeleton height={40} rounded="rounded-xl" />
+          <Skeleton height={40} rounded="rounded-xl" />
         </div>
-      </Card>
+      </section>
     );
   }
 
   if (error) {
     return (
-      <Alert tone="danger" title={isHi ? 'विषयवार दोहराव' : 'By subject'}>
-        {isHi ? 'विषयवार सूची लोड नहीं हो पाई।' : "Couldn't load the per-subject view."}
-      </Alert>
+      <section
+        className="rounded-2xl p-4"
+        style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid var(--red, #DC2626)' }}
+        role="status"
+      >
+        {heading}
+        <p className="text-sm flex items-center gap-2" style={{ color: 'var(--text-1)' }}>
+          <span aria-hidden="true" style={{ color: 'var(--red, #DC2626)' }}>⚠</span>
+          {isHi ? 'विषयवार सूची लोड नहीं हो पाई।' : "Couldn't load the per-subject view."}
+        </p>
+      </section>
     );
   }
 
   return (
-    <Card
-      variant="flat"
-      className="p-4"
+    <section
+      className="rounded-2xl p-4"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
       aria-label={isHi ? 'विषयवार दोहराव भार' : 'Revision load by subject'}
     >
       {heading}
 
       {subjects.length === 0 ? (
-        <p className="text-fluid-xs text-muted-foreground">
+        <p className="text-xs" style={{ color: 'var(--text-3)' }}>
           {isHi
             ? 'अभी किसी विषय में दोहराव बाकी नहीं।'
             : 'No subject has revision due right now.'}
@@ -96,24 +107,27 @@ export default function SubjectRevisionLoad({
             return (
               <li
                 key={s.subject}
-                className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2.5"
-                style={{ minHeight: 48 }}
+                className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5"
+                style={{ background: 'var(--surface-2)', minHeight: 48 }}
               >
-                <span className="flex min-w-0 items-center gap-2">
-                  <Badge
-                    tone="neutral"
-                    variant="soft"
-                    className="shrink-0 tabular-nums"
+                <span className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
+                    style={{
+                      background: 'var(--surface-1)',
+                      color: 'var(--text-1)',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
                     aria-label={isHi ? `${s.dueCount} विषय` : `${s.dueCount} due`}
                   >
                     {s.dueCount}
-                  </Badge>
-                  <span className="truncate text-fluid-sm font-medium text-foreground">
+                  </span>
+                  <span className="text-sm font-medium truncate" style={{ color: 'var(--text-1)' }}>
                     {formatSubject(s.subject)}
                   </span>
                 </span>
                 <span
-                  className="inline-flex shrink-0 items-center gap-1 text-fluid-xs font-semibold"
+                  className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold"
                   style={{ color: impact.color }}
                 >
                   <span aria-hidden="true">{impact.glyph}</span>
@@ -124,6 +138,6 @@ export default function SubjectRevisionLoad({
           })}
         </ul>
       )}
-    </Card>
+    </section>
   );
 }

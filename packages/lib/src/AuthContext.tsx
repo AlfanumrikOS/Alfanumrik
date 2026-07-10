@@ -138,25 +138,6 @@ function resolveTheme(_pref: ThemePreference): 'light' | 'dark' {
   return 'light';
 }
 
-/** Synchronously read whether the cosmic redesign flag resolved ON for this
- *  browser, from the 1-hour localStorage cache that CosmicThemeProvider writes.
- *  Absent/unknown ⇒ false (production truth). This lets applyThemeToDOM avoid
- *  clobbering the cosmic data-theme when the redesign is live, WITHOUT importing
- *  the cosmic module (keeps the auth-critical path dependency-free). */
-function cosmicFlagOnSync(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const raw = window.localStorage.getItem('alfanumrik_cosmic_flag_v1');
-    if (!raw) return false;
-    const parsed = JSON.parse(raw) as { on?: boolean; ts?: number };
-    if (!parsed || typeof parsed.ts !== 'number') return false;
-    if (Date.now() - parsed.ts > 60 * 60 * 1000) return false;
-    return Boolean(parsed.on);
-  } catch {
-    return false;
-  }
-}
-
 /** Apply theme preference to document.documentElement via data-theme attribute.
  *
  *  Cosmic redesign (2026-06-05): the behavior now forks on
@@ -174,21 +155,10 @@ function cosmicFlagOnSync(): boolean {
  *  Kept as a function (not inlined) so the fork stays in one place. */
 function applyThemeToDOM(pref: ThemePreference) {
   if (typeof document === 'undefined') return;
-  if (cosmicFlagOnSync()) {
-    // Cosmic is live — CosmicThemeProvider is the authority over data-theme.
-    // If a cosmic theme is already set, leave it; otherwise seed a sane
-    // default so there's never an unstyled flash before the provider mounts.
-    const html = document.documentElement;
-    if (html.getAttribute('data-design') !== 'cosmic') {
-      html.setAttribute('data-design', 'cosmic');
-    }
-    if (!html.getAttribute('data-theme')) {
-      html.setAttribute('data-theme', 'dark');
-    }
-    return;
-  }
-  // Legacy force-light path (see resolveTheme rationale above).
-  document.documentElement.setAttribute('data-theme', 'light');
+  const html = document.documentElement;
+  html.removeAttribute('data-design');
+  html.removeAttribute('data-role');
+  html.setAttribute('data-theme', 'light');
   void pref;
 }
 

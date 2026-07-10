@@ -207,22 +207,22 @@ function TeacherMessagesContent() {
   ]);
 
   return (
-    <div className="flex h-dvh w-full flex-col bg-[var(--surface-2)] text-[var(--text-1)] md:flex-row">
+    <div className="flex h-dvh w-full flex-col bg-[#FBF8F4] text-[#1A1207] md:flex-row">
       {/* Thread list */}
       <aside
-        className={`flex w-full flex-col border-r border-[var(--surface-3)] md:w-80 md:flex-shrink-0 ${
+        className={`flex w-full flex-col border-r border-[#EDE6DC] md:w-80 md:flex-shrink-0 ${
           selectedThreadId || inComposeMode ? 'hidden md:flex' : 'flex'
         }`}
       >
-        <header className="border-b border-[var(--surface-3)] p-4">
+        <header className="border-b border-[#EDE6DC] p-4">
           <h1 className="text-base font-semibold">{tt(isHi, 'Messages', 'संदेश')}</h1>
-          <p className="mt-0.5 text-xs text-[var(--text-3)]">
+          <p className="mt-0.5 text-xs text-[#7D7264]">
             {tt(isHi, 'Conversations with parents', 'अभिभावकों से बातचीत')}
           </p>
         </header>
-        <ul className="flex-1 divide-y divide-[var(--surface-3)] overflow-y-auto">
+        <ul className="flex-1 divide-y divide-[#EDE6DC] overflow-y-auto">
           {threads.length === 0 ? (
-            <li className="p-6 text-center text-sm text-[var(--text-3)]">
+            <li className="p-6 text-center text-sm text-[#7D7264]">
               {tt(isHi, 'No conversations yet. Visit a student page to start one.', 'अभी तक कोई बातचीत नहीं। शुरू करने के लिए छात्र पृष्ठ पर जाएँ।')}
             </li>
           ) : (
@@ -233,30 +233,30 @@ function TeacherMessagesContent() {
                   <button
                     type="button"
                     onClick={() => selectThread(t.id)}
-                    className={`flex w-full flex-col gap-1 p-4 text-left transition-colors hover:bg-[var(--surface-2)] ${
-                      isActive ? 'bg-[var(--surface-2)]' : ''
+                    className={`flex w-full flex-col gap-1 p-4 text-left transition-colors hover:bg-[#F5F0EA] ${
+                      isActive ? 'bg-[#F0E9DF]' : ''
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-medium">
                         {t.guardian_name || tt(isHi, 'Parent', 'अभिभावक')}
                       </span>
-                      <span className="shrink-0 text-[12px] text-[var(--text-3)]">
+                      <span className="shrink-0 text-[10px] text-[#7D7264]">
                         {relativeTime(t.last_message_at, isHi)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs text-[var(--text-3)]">
+                      <span className="truncate text-xs text-[#7D7264]">
                         {t.student_name ? `→ ${t.student_name}` : ''}
                       </span>
                       {t.unread_count > 0 && (
-                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-[12px] font-semibold text-on-accent">
+                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#E8581C] px-1.5 text-[10px] font-semibold text-white">
                           {t.unread_count > 99 ? '99+' : t.unread_count}
                         </span>
                       )}
                     </div>
                     {t.last_message_preview && (
-                      <p className="line-clamp-2 text-xs text-[var(--text-3)]">{t.last_message_preview}</p>
+                      <p className="line-clamp-2 text-xs text-[#A89B86]">{t.last_message_preview}</p>
                     )}
                   </button>
                 </li>
@@ -272,28 +272,28 @@ function TeacherMessagesContent() {
       >
         {inComposeMode && !selectedThread ? (
           <>
-            <header className="border-b border-[var(--surface-3)] p-4">
+            <header className="border-b border-[#EDE6DC] p-4">
               <h2 className="text-base font-semibold">
                 {tt(isHi, 'New message to parent', 'अभिभावक को नया संदेश')}
               </h2>
-              <p className="text-xs text-[var(--text-3)]">
+              <p className="text-xs text-[#7D7264]">
                 {tt(isHi, 'Your first message will create the conversation.', 'आपका पहला संदेश बातचीत शुरू कर देगा।')}
               </p>
             </header>
             <div className="flex-1" />
             <form
-              className="border-t border-[var(--surface-3)] p-3"
+              className="border-t border-[#EDE6DC] p-3"
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleSend();
               }}
             >
               {errorMsg && (
-                <p className="mb-2 rounded-md bg-[var(--red-soft)] px-2 py-1 text-xs text-[var(--danger)]">{errorMsg}</p>
+                <p className="mb-2 rounded-md bg-[#FCEEEE] px-2 py-1 text-xs text-[#B91C1C]">{errorMsg}</p>
               )}
               <div className="flex items-end gap-2">
                 <textarea
-                  className="min-h-[44px] flex-1 resize-none rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-1)] placeholder-[var(--text-3)] focus:border-[var(--orange)] focus:outline-none"
+                  className="min-h-[44px] flex-1 resize-none rounded-md border border-[#EDE6DC] bg-[#FFFFFF] px-3 py-2 text-sm text-[#1A1207] placeholder-[#A89B86] focus:border-[#E8581C] focus:outline-none"
                   rows={3}
                   maxLength={4000}
                   value={draftBody}
@@ -305,7 +305,7 @@ function TeacherMessagesContent() {
                 <button
                   type="submit"
                   disabled={sending || draftBody.trim().length === 0}
-                  className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-on-accent transition-opacity hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md bg-[#E8581C] px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
                 </button>
@@ -314,7 +314,7 @@ function TeacherMessagesContent() {
           </>
         ) : selectedThread ? (
           <>
-            <header className="flex items-center justify-between border-b border-[var(--surface-3)] p-4">
+            <header className="flex items-center justify-between border-b border-[#EDE6DC] p-4">
               <div>
                 <button
                   type="button"
@@ -324,7 +324,7 @@ function TeacherMessagesContent() {
                     params.delete('thread');
                     router.replace(`/teacher/messages${params.toString() ? `?${params}` : ''}`);
                   }}
-                  className="mr-2 text-xs text-[var(--text-3)] hover:text-[var(--text-1)] md:hidden"
+                  className="mr-2 text-xs text-[#7D7264] hover:text-[#1A1207] md:hidden"
                 >
                   ← {tt(isHi, 'Back', 'वापस')}
                 </button>
@@ -332,7 +332,7 @@ function TeacherMessagesContent() {
                   {selectedThread.guardian_name || tt(isHi, 'Parent', 'अभिभावक')}
                 </h2>
                 {selectedThread.student_name && (
-                  <p className="text-xs text-[var(--text-3)]">
+                  <p className="text-xs text-[#7D7264]">
                     {tt(isHi, 'Re:', 'विषय:')} {selectedThread.student_name}
                   </p>
                 )}
@@ -341,7 +341,7 @@ function TeacherMessagesContent() {
 
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               {messages.length === 0 ? (
-                <p className="py-8 text-center text-sm text-[var(--text-3)]">
+                <p className="py-8 text-center text-sm text-[#7D7264]">
                   {tt(isHi, 'No messages yet — say hello.', 'अभी तक कोई संदेश नहीं — नमस्ते कहें।')}
                 </p>
               ) : (
@@ -352,12 +352,12 @@ function TeacherMessagesContent() {
                       <div
                         className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                           mine
-                            ? 'rounded-br-md bg-primary text-on-accent'
-                            : 'rounded-bl-md bg-[var(--surface-2)] text-[var(--text-1)]'
+                            ? 'rounded-br-md bg-[#E8581C] text-white'
+                            : 'rounded-bl-md bg-[#F5F0EA] text-[#1A1207]'
                         }`}
                       >
                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                        <div className={`mt-1 text-[12px] ${mine ? 'text-[var(--surface-2)]' : 'text-[var(--text-3)]'}`}>
+                        <div className={`mt-1 text-[10px] ${mine ? 'text-[#FBE6D9]' : 'text-[#7D7264]'}`}>
                           {relativeTime(m.created_at, isHi)}
                         </div>
                       </div>
@@ -368,18 +368,18 @@ function TeacherMessagesContent() {
             </div>
 
             <form
-              className="border-t border-[var(--surface-3)] p-3"
+              className="border-t border-[#EDE6DC] p-3"
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleSend();
               }}
             >
               {errorMsg && (
-                <p className="mb-2 rounded-md bg-[var(--red-soft)] px-2 py-1 text-xs text-[var(--danger)]">{errorMsg}</p>
+                <p className="mb-2 rounded-md bg-[#FCEEEE] px-2 py-1 text-xs text-[#B91C1C]">{errorMsg}</p>
               )}
               <div className="flex items-end gap-2">
                 <textarea
-                  className="min-h-[44px] flex-1 resize-none rounded-md border border-[var(--surface-3)] bg-[var(--surface-1)] px-3 py-2 text-sm text-[var(--text-1)] placeholder-[var(--text-3)] focus:border-[var(--orange)] focus:outline-none"
+                  className="min-h-[44px] flex-1 resize-none rounded-md border border-[#EDE6DC] bg-[#FFFFFF] px-3 py-2 text-sm text-[#1A1207] placeholder-[#A89B86] focus:border-[#E8581C] focus:outline-none"
                   rows={2}
                   maxLength={4000}
                   value={draftBody}
@@ -390,7 +390,7 @@ function TeacherMessagesContent() {
                 <button
                   type="submit"
                   disabled={sending || draftBody.trim().length === 0}
-                  className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-on-accent transition-opacity hover:bg-primary disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md bg-[#E8581C] px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
                 </button>
@@ -398,7 +398,7 @@ function TeacherMessagesContent() {
             </form>
           </>
         ) : (
-          <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-[var(--text-3)]">
+          <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-[#7D7264]">
             {tt(isHi, 'Select a conversation from the left.', 'बाईं ओर से एक बातचीत चुनें।')}
           </div>
         )}

@@ -17,17 +17,17 @@ interface AnalyticsData {
   retention: { period: string; count: number }[];
 }
 
-// Token palette (mapped to CSS custom properties).
+// Hex literal palette (matches deprecated admin-styles.ts colors).
 const C = {
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  surface: 'var(--surface-2)',
-  border: 'var(--border)',
-  borderLight: 'var(--border)',
-  accent: 'var(--info)',
-  success: 'var(--success)',
-  warning: 'var(--warning)',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  accent: '#2563EB',
+  success: '#16A34A',
+  warning: '#D97706',
 };
 
 function SubscriptionsContent() {
@@ -181,9 +181,9 @@ function SubscriptionsContent() {
               const maxCount = Math.max(...analytics.revenue.map(x => x.count), 1);
               const pctOfTotal = totalSubs > 0 ? ((r.count / totalSubs) * 100).toFixed(1) : '0';
               const planColor: Record<string, string> = {
-                free: C.text3, starter_monthly: C.warning, starter_yearly: 'color-mix(in srgb, var(--warning) 65%, var(--text-1))',
-                pro_monthly: C.accent, pro_yearly: 'color-mix(in srgb, var(--info) 65%, var(--text-1))',
-                ultimate_monthly: C.success, ultimate_yearly: 'color-mix(in srgb, var(--success) 65%, var(--text-1))',
+                free: C.text3, starter_monthly: C.warning, starter_yearly: '#B45309',
+                pro_monthly: C.accent, pro_yearly: '#1D4ED8',
+                ultimate_monthly: C.success, ultimate_yearly: '#15803D',
               };
               return (
                 <div key={r.plan} className="mb-2.5 flex items-center gap-3">
@@ -243,14 +243,7 @@ function SubscriptionsContent() {
                 )}
               </div>
               {overrideMsg && (
-                <div
-                  className="mt-2 rounded-md px-3 py-1.5 text-xs font-semibold"
-                  style={{
-                    backgroundColor: `color-mix(in srgb, var(--${overrideMsg.ok ? 'success' : 'danger'}) 10%, transparent)`,
-                    color: `var(--${overrideMsg.ok ? 'success' : 'danger'})`,
-                    border: `1px solid color-mix(in srgb, var(--${overrideMsg.ok ? 'success' : 'danger'}) 30%, transparent)`,
-                  }}
-                >
+                <div className={`mt-2 rounded-md px-3 py-1.5 text-xs font-semibold ${overrideMsg.ok ? 'bg-[color-mix(in_srgb,var(--success)_10%,transparent)] text-success' : 'bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-danger'}`} style={{ border: `1px solid ${overrideMsg.ok ? '#16a34a' : '#dc2626'}30` }}>
                   {overrideMsg.ok ? '✓ ' : '✗ '}{overrideMsg.text}
                 </div>
               )}

@@ -26,15 +26,17 @@
  * text-[8px]/[10px] at opacity-40/50 on a dark gradient — muted-on-muted). Here
  * the readout renders at >=12px on `--surface-2` with AA-passing `--text-*`.
  *
- * Accessibility: BottomSheet provides role="dialog" aria-modal, Escape, scroll
- * lock, a >=44px drag handle, focus trap, and focus-return-to-trigger. The
- * language control is a role="radiogroup" of role="radio" buttons.
+ * Accessibility: SheetModal provides role="dialog" aria-modal + Escape. This
+ * component fills the remaining gaps — it traps Tab focus within the sheet and
+ * returns focus to the element that opened it on close (mirrors FoxyStudySheet).
+ * The language control is a role="radiogroup" of role="radio" buttons.
  *
  * Lazy-loaded via dynamic() at the call site so the OFF path fetches zero new
  * chunks (P10).
  */
 
-import { BottomSheet } from '@alfanumrik/ui/ui/primitives';
+import { useEffect, useRef } from 'react';
+import { SheetModal } from '@alfanumrik/ui/ui';
 
 export interface ToolsSheetLanguage {
   /** Language code passed straight back to onSelectLanguage: 'en' | 'hi' | 'hinglish'. */
@@ -97,15 +99,59 @@ export function FoxyToolsSheet({
   onOpenHistory,
   onOpenContext,
 }: FoxyToolsSheetProps) {
-  // Focus trap + focus-return are provided by the BottomSheet primitive.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  // Remember the element that had focus when the sheet opened so we can return
+  // focus to it on close (SheetModal does not do this for us). Mirrors the
+  // focus-trap added to FoxyStudySheet in Phase 1.
+  const triggerRef = useRef<HTMLElement | null>(null);
+  // Cached focusable list, computed once per open (Phase 4 optimization — the
+  // Tab handler no longer re-queries the DOM on every keydown). Mirrors
+  // FoxyStudySheet.
+  const focusablesRef = useRef<HTMLElement[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    triggerRef.current = (document.activeElement as HTMLElement) ?? null;
+    const FOCUSABLE_SELECTOR =
+      'button:not([disabled]), [href], input, [tabindex]:not([tabindex="-1"])';
+    // Compute the focusable list once per open and cache it.
+    const refreshFocusables = () => {
+      focusablesRef.current = sheetRef.current
+        ? Array.from(sheetRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+        : [];
+    };
+    const id = window.requestAnimationFrame(() => {
+      refreshFocusables();
+      focusablesRef.current[0]?.focus();
+    });
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const focusables = focusablesRef.current;
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(id);
+      document.removeEventListener('keydown', onKeyDown);
+      focusablesRef.current = [];
+      triggerRef.current?.focus?.();
+    };
+  }, [open]);
+
   return (
-    <BottomSheet
-      open={open}
-      onClose={onClose}
-      title={isHi ? 'टूल्स' : 'Tools'}
-      handleLabel={isHi ? 'टूल्स शीट बंद करें' : 'Close tools sheet'}
-    >
-      <div className="foxy-os-tools space-y-5">
+    <SheetModal open={open} onClose={onClose} title={isHi ? 'टूल्स' : 'Tools'}>
+      <div ref={sheetRef} className="foxy-os-tools space-y-5">
         {/* ── Language selector ──────────────────────────────── */}
         <section>
           <h4 className="foxy-os-study-label" id="foxy-os-lang-label">
@@ -132,7 +178,7 @@ export function FoxyToolsSheet({
                   style={{
                     background: isActive ? 'var(--orange)' : 'var(--surface-2)',
                     border: isActive ? '1.5px solid var(--orange)' : '1.5px solid var(--border)',
-                    color: isActive ? 'var(--on-accent)' : 'var(--text-2)',
+                    color: isActive ? '#fff' : 'var(--text-2)',
                     opacity: languageLocked && !isActive ? 0.4 : 1,
                   }}
                   aria-label={l.label}
@@ -162,8 +208,8 @@ export function FoxyToolsSheet({
               aria-checked={voiceOn}
               className="foxy-os-tools-row w-full flex items-center gap-3 rounded-xl text-left transition-all active:scale-[0.99]"
               style={{
-                background: voiceOn ? 'color-mix(in srgb, var(--accent-warm) 10%, transparent)' : 'var(--surface-2)',
-                border: voiceOn ? '1.5px solid color-mix(in srgb, var(--accent-warm) 40%, transparent)' : '1.5px solid var(--border)',
+                background: voiceOn ? 'rgba(232,88,28,0.10)' : 'var(--surface-2)',
+                border: voiceOn ? '1.5px solid rgba(232,88,28,0.4)' : '1.5px solid var(--border)',
               }}
               aria-label={
                 isHi
@@ -279,7 +325,7 @@ export function FoxyToolsSheet({
           </div>
         </section>
       </div>
-    </BottomSheet>
+    </SheetModal>
   );
 }
 

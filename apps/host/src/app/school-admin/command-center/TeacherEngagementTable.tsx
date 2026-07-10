@@ -84,7 +84,7 @@ export default function TeacherEngagementTable({
           <button
             type="button"
             onClick={onRetry}
-            className="px-4 py-2 rounded-xl text-sm font-semibold text-on-accent bg-[var(--purple)] active:scale-95 transition-transform min-h-[44px]"
+            className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[var(--purple,#7C3AED)] active:scale-95 transition-transform min-h-[44px]"
           >
             {tt(isHi, 'Retry', 'दोबारा कोशिश करें')}
           </button>
@@ -137,7 +137,7 @@ export default function TeacherEngagementTable({
               header: tt(isHi, 'Resolved', 'हल'),
               align: 'center',
               render: (row) => (
-                <span className="font-semibold tabular-nums text-success">{row.remediation_resolved_count}</span>
+                <span className="font-semibold tabular-nums text-emerald-600">{row.remediation_resolved_count}</span>
               ),
             },
           ] satisfies ResponsiveColumn<TeacherEngagementRow>[]}

@@ -273,7 +273,7 @@ export default function CosmicAboveFoldHero({
               action: 'cosmic_foxy_bubble',
               destination: '/foxy',
             });
-            window.location.href = '/foxy';
+            router.push('/foxy');
           }}
           aria-label={isHi ? 'Foxy से पूछें' : 'Ask Foxy'}
           style={{ flexShrink: 0, marginTop: 2, background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}

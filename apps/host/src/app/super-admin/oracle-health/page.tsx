@@ -211,8 +211,7 @@ function OracleHealthContent() {
       {/* Alert banner */}
       {data?.alert && (
         <div
-          className="mb-5 flex items-center gap-3 rounded-lg border border-danger px-4 py-3 text-[13px] text-danger"
-          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
+          className="mb-5 flex items-center gap-3 rounded-lg border border-danger bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-4 py-3 text-[13px] text-danger"
           role="alert"
         >
           <span className="text-lg leading-none">⚠</span>
@@ -234,7 +233,7 @@ function OracleHealthContent() {
 
       {/* Error state */}
       {error && !isLoading && (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-danger p-5 text-[13px] text-danger" style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-danger bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] p-5 text-[13px] text-danger">
           <div>
             <strong>{isHi ? 'Oracle health load नहीं हुआ।' : 'Failed to load Oracle health data.'}</strong>
             <div className="mt-1 text-xs opacity-85">

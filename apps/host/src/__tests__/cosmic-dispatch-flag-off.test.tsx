@@ -108,9 +108,8 @@ describe('REG-79 — cosmic dispatch flag-OFF stays legacy', () => {
     expect(queryByTestId('branch-cosmic')).toBeNull();
   });
 
-  it('renders the COSMIC branch when the flag is ON (switch is live, not dead)', async () => {
-    // Proves the flag-OFF legacy result is a real decision, not a switch that
-    // can never flip — otherwise the OFF assertions above would be vacuous.
+  it('keeps the LEGACY branch even when the old cosmic flag is ON', async () => {
+    // The restored frontend hard-disables the old cosmic/blue-violet branch.
     getFeatureFlagsMock.mockResolvedValue({ ff_cosmic_redesign_v1: true });
 
     const { queryByTestId } = render(
@@ -119,7 +118,8 @@ describe('REG-79 — cosmic dispatch flag-OFF stays legacy', () => {
       </CosmicThemeProvider>,
     );
 
-    await waitFor(() => expect(queryByTestId('branch-cosmic')).not.toBeNull());
-    expect(queryByTestId('branch-legacy')).toBeNull();
+    await waitFor(() => expect(getFeatureFlagsMock).toHaveBeenCalled());
+    await waitFor(() => expect(queryByTestId('branch-legacy')).not.toBeNull());
+    expect(queryByTestId('branch-cosmic')).toBeNull();
   });
 });

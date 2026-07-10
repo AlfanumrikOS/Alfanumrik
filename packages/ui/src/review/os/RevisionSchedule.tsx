@@ -8,13 +8,10 @@
  * Each day shows weekday + date + a due count. Counts are encoded number +
  * bar height (not colour alone, WCAG 1.4.1). No scoring/XP.
  *
- * Phase 8 rebuild: Card container + Alert error state; bar fills and text use
- * semantic tokens only (primary / surface-2 / foreground) — zero raw hex/rgb.
- *
  * States: loading (skeleton), error (distinct from empty), empty (no upcoming).
  */
 
-import { Card, Alert, Skeleton } from '@alfanumrik/ui/ui/primitives';
+import { Skeleton } from '@alfanumrik/ui/ui';
 import { formatShortDay } from './revision-labels';
 
 interface RevisionScheduleProps {
@@ -31,25 +28,39 @@ export default function RevisionSchedule({
   isHi,
 }: RevisionScheduleProps) {
   const heading = (
-    <h2 className="mb-3 text-fluid-xs font-bold uppercase tracking-wider text-muted-foreground">
+    <h2
+      className="text-sm font-bold uppercase tracking-wider mb-3"
+      style={{ color: 'var(--text-3)' }}
+    >
       {isHi ? 'अगले 7 दिन' : 'Next 7 days'}
     </h2>
   );
 
   if (isLoading) {
     return (
-      <Card variant="flat" className="p-4">
+      <section
+        className="rounded-2xl p-4"
+        style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      >
         {heading}
-        <Skeleton radius="lg" className="h-[72px] w-full" />
-      </Card>
+        <Skeleton height={72} rounded="rounded-xl" />
+      </section>
     );
   }
 
   if (error) {
     return (
-      <Alert tone="danger" title={isHi ? 'अगले 7 दिन' : 'Next 7 days'}>
-        {isHi ? 'शेड्यूल लोड नहीं हो पाया।' : "Couldn't load your schedule."}
-      </Alert>
+      <section
+        className="rounded-2xl p-4"
+        style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid var(--red, #DC2626)' }}
+        role="status"
+      >
+        {heading}
+        <p className="text-sm flex items-center gap-2" style={{ color: 'var(--text-1)' }}>
+          <span aria-hidden="true" style={{ color: 'var(--red, #DC2626)' }}>⚠</span>
+          {isHi ? 'शेड्यूल लोड नहीं हो पाया।' : "Couldn't load your schedule."}
+        </p>
+      </section>
     );
   }
 
@@ -57,15 +68,15 @@ export default function RevisionSchedule({
   const max = Math.max(1, ...byDay.map((d) => d.count));
 
   return (
-    <Card
-      variant="flat"
-      className="p-4"
+    <section
+      className="rounded-2xl p-4"
+      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
       aria-label={isHi ? 'अगले 7 दिन का दोहराव शेड्यूल' : 'Next 7 days revision schedule'}
     >
       {heading}
 
       {total === 0 ? (
-        <p className="text-fluid-xs text-muted-foreground">
+        <p className="text-xs" style={{ color: 'var(--text-3)' }}>
           {isHi
             ? 'इस हफ़्ते कोई दोहराव तय नहीं — आगे बढ़ते रहो।'
             : 'Nothing scheduled this week — keep going.'}
@@ -78,26 +89,38 @@ export default function RevisionSchedule({
             return (
               <li
                 key={d.date}
-                className="flex flex-1 flex-col items-center gap-1"
+                className="flex-1 flex flex-col items-center gap-1"
                 title={`${isoLabel}: ${d.count}`}
               >
                 <span
-                  className="text-fluid-xs font-bold tabular-nums"
-                  style={{ color: d.count > 0 ? 'var(--text-1)' : 'var(--text-3)' }}
+                  className="text-xs font-bold"
+                  style={{
+                    color: d.count > 0 ? 'var(--text-1)' : 'var(--text-3)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
                   aria-hidden="true"
                 >
                   {d.count}
                 </span>
                 <span
-                  className="w-full rounded-md transition-[height] duration-300 motion-reduce:transition-none"
+                  className="w-full rounded-md transition-[height] duration-300"
                   style={{
                     height: Math.max(4, Math.round((barPct / 100) * 40)),
-                    background: d.count > 0 ? 'var(--primary)' : 'var(--surface-2)',
+                    background:
+                      d.count > 0 ? 'var(--orange, #E8581C)' : 'var(--surface-2)',
+                    opacity: d.count > 0 ? 0.85 : 1,
                   }}
                   aria-hidden="true"
                 />
-                <span className="text-fluid-2xs text-muted-foreground">{weekday}</span>
-                <span className="text-fluid-2xs tabular-nums text-muted-foreground">{day}</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                  {weekday}
+                </span>
+                <span
+                  className="text-[10px]"
+                  style={{ color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {day}
+                </span>
                 <span className="sr-only">
                   {isHi
                     ? `${isoLabel}: ${d.count} विषय`
@@ -108,6 +131,6 @@ export default function RevisionSchedule({
           })}
         </ul>
       )}
-    </Card>
+    </section>
   );
 }

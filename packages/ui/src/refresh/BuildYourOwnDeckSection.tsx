@@ -18,7 +18,6 @@ import { useState } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { toast } from '@alfanumrik/ui/ui/toast';
-import { Button } from '@alfanumrik/ui/ui/primitives';
 
 export interface BuildYourOwnDeckSectionProps {
   onCardCreated?: () => void;
@@ -88,12 +87,8 @@ export default function BuildYourOwnDeckSection({ onCardCreated }: BuildYourOwnD
         <button
           onClick={() => setOpen(true)}
           data-testid="refresh-byod-open"
-          className="w-full rounded-xl border border-dashed p-4 text-left text-fluid-sm transition-all duration-150 active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-          style={{
-            background: 'color-mix(in srgb, var(--primary) 5%, var(--surface-1))',
-            borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
-            color: 'var(--text-2)',
-          }}
+          className="w-full rounded-2xl p-4 text-left text-sm transition-all active:scale-[0.98]"
+          style={{ background: 'rgba(232,88,28,0.05)', border: '1px dashed rgba(232,88,28,0.3)', color: 'var(--text-2)' }}
         >
           + {isHi ? 'टिप: जो याद रखना है उसे जोड़ो' : 'Tip: tap to add a concept you want to remember'}
         </button>
@@ -124,7 +119,7 @@ export default function BuildYourOwnDeckSection({ onCardCreated }: BuildYourOwnD
             className="w-full p-2.5 rounded-xl text-sm"
             style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
           />
-          <div className="text-fluid-2xs text-muted-foreground text-right">{front.length}/200</div>
+          <div className="text-[10px] text-[var(--text-3)] text-right">{front.length}/200</div>
 
           <textarea
             value={back}
@@ -136,7 +131,7 @@ export default function BuildYourOwnDeckSection({ onCardCreated }: BuildYourOwnD
             className="w-full p-2.5 rounded-xl text-sm"
             style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
           />
-          <div className="text-fluid-2xs text-muted-foreground text-right">{back.length}/200</div>
+          <div className="text-[10px] text-[var(--text-3)] text-right">{back.length}/200</div>
 
           <input
             value={hint}
@@ -149,23 +144,22 @@ export default function BuildYourOwnDeckSection({ onCardCreated }: BuildYourOwnD
           />
 
           <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              fullWidth
+            <button
               onClick={() => { setOpen(false); setFront(''); setBack(''); setHint(''); }}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
             >
               {isHi ? 'रद्द' : 'Cancel'}
-            </Button>
-            <Button
-              variant="primary"
-              fullWidth
+            </button>
+            <button
               onClick={handleSubmit}
               disabled={!canSubmit}
-              loading={submitting}
               data-testid="refresh-byod-submit"
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-40"
+              style={{ background: 'var(--orange, #E8581C)' }}
             >
               {submitting ? (isHi ? 'जोड़ रहा है...' : 'Adding...') : (isHi ? 'मेरे डेक में जोड़ो' : 'Add to my deck')}
-            </Button>
+            </button>
           </div>
         </div>
       )}

@@ -24,13 +24,13 @@ import AdminShell from '../_components/AdminShell';
 import { adminHeaders, getAdminSecretFromSession } from '@alfanumrik/lib/admin-session';
 
 const colors = {
-  bg: 'var(--surface-1)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  border: 'var(--border)',
-  success: 'var(--success)',
-  danger: 'var(--danger)',
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  success: '#16A34A',
+  danger: '#DC2626',
 } as const;
 
 const S: Record<string, React.CSSProperties> = {
@@ -202,7 +202,7 @@ export default function ModuleOverridesPage() {
                     style={{
                       ...S.button,
                       background: m.isForceDisabled ? colors.success : colors.danger,
-                      color: 'var(--on-accent)',
+                      color: '#fff',
                       minWidth: 140,
                     }}
                   >

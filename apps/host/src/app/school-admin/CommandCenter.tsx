@@ -160,15 +160,15 @@ function SeatGauge({
   // red=over, emerald=within). Otherwise fall back to the Wave A utilization ramp.
   const bar = band
     ? band === 'over'
-      ? 'bg-danger'
+      ? 'bg-red-500'
       : band === 'grace'
-        ? 'bg-warning'
-        : 'bg-success'
+        ? 'bg-amber-500'
+        : 'bg-emerald-500'
     : clamped >= 90
-      ? 'bg-warning'
+      ? 'bg-amber-500'
       : clamped >= 60
-        ? 'bg-[var(--purple)]'
-        : 'bg-success';
+        ? 'bg-[var(--purple,#7C3AED)]'
+        : 'bg-emerald-500';
 
   const bandLabel =
     band === 'grace'
@@ -177,7 +177,7 @@ function SeatGauge({
         ? tt(isHi, 'Over plan', 'योजना से अधिक')
         : null;
 
-  const bandColor = band === 'over' ? 'var(--danger)' : band === 'grace' ? 'var(--warning)' : undefined;
+  const bandColor = band === 'over' ? '#DC2626' : band === 'grace' ? '#92400E' : undefined;
 
   return (
     <div className="flex flex-col gap-1">
@@ -210,80 +210,6 @@ function SeatGauge({
 function masteryPct(value: number | null): string {
   if (value == null || Number.isNaN(value)) return '—';
   return `${Math.round(value * 100)}%`;
-}
-
-function deriveSchoolHealthScore(overview: SchoolOverview, atRiskClasses: number): number {
-  if (overview.data_state === 'no_data') return 0;
-  const masteryScore = overview.avg_mastery == null ? 45 : Math.round(overview.avg_mastery * 100);
-  const activityScore = overview.student_count > 0
-    ? Math.min(100, Math.round((overview.active_students / overview.student_count) * 100))
-    : 0;
-  const riskPenalty = Math.min(35, atRiskClasses * 7);
-  return Math.max(0, Math.min(100, Math.round((masteryScore * 0.55) + (activityScore * 0.45) - riskPenalty)));
-}
-
-function HealthDecisionHero({
-  overview,
-  atRiskClasses,
-  isHi,
-}: {
-  overview: SchoolOverview;
-  atRiskClasses: number;
-  isHi: boolean;
-}) {
-  const score = deriveSchoolHealthScore(overview, atRiskClasses);
-  const status =
-    overview.data_state === 'no_data'
-      ? tt(isHi, 'Setup needed', 'सेटअप चाहिए')
-      : score >= 76
-        ? tt(isHi, 'Healthy school day', 'स्कूल की स्थिति अच्छी है')
-        : score >= 55
-          ? tt(isHi, 'Watch a few signals', 'कुछ संकेत देखें')
-          : tt(isHi, 'Needs attention today', 'आज ध्यान चाहिए');
-  const nextStep =
-    overview.data_state === 'no_data'
-      ? tt(isHi, 'Invite students and teachers to unlock live health.', 'लाइव स्वास्थ्य देखने के लिए छात्रों और शिक्षकों को आमंत्रित करें।')
-      : atRiskClasses > 0
-        ? tt(isHi, 'Start with classes showing learning risk.', 'लर्निंग जोखिम वाली कक्षाओं से शुरू करें।')
-        : tt(isHi, 'Review teacher engagement and keep momentum steady.', 'शिक्षक सहभागिता देखें और गति बनाए रखें।');
-
-  return (
-    <section
-      className="rounded-2xl border p-4"
-      style={{
-        background: 'var(--surface-1)',
-        borderColor: 'var(--border)',
-        boxShadow: 'var(--shadow-md)',
-      }}
-      aria-label={tt(isHi, 'School health summary', 'स्कूल स्वास्थ्य सारांश')}
-    >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: 'var(--primary)' }}>
-            {tt(isHi, 'Is my school healthy?', 'क्या मेरा स्कूल स्वस्थ है?')}
-          </p>
-          <h2 className="mt-1 text-2xl font-extrabold text-[var(--text-1)] font-['Sora',system-ui,sans-serif]">
-            {status}
-          </h2>
-          <p className="mt-1 max-w-xl text-sm text-[var(--text-3)]">{nextStep}</p>
-        </div>
-        <div className="rounded-2xl border px-4 py-3 text-center" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">
-            {tt(isHi, 'Health score', 'स्वास्थ्य स्कोर')}
-          </p>
-          <p className="mt-1 text-4xl font-extrabold tabular-nums" style={{ color: score >= 76 ? 'var(--success)' : score >= 55 ? 'var(--warning)' : 'var(--danger)' }}>
-            {overview.data_state === 'no_data' ? '—' : score}
-          </p>
-        </div>
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Kpi label={tt(isHi, 'Active today', 'आज सक्रिय')} value={overview.active_students.toLocaleString('en-IN')} color="var(--success)" />
-        <Kpi label={tt(isHi, 'Avg mastery', 'औसत मास्टरी')} value={masteryPct(overview.avg_mastery)} color="var(--primary)" />
-        <Kpi label={tt(isHi, 'Alerts', 'अलर्ट')} value={atRiskClasses} color={atRiskClasses > 0 ? 'var(--danger)' : 'var(--success)'} />
-        <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count.toLocaleString('en-IN')} color="var(--text-1)" />
-      </div>
-    </section>
-  );
 }
 
 // ── KPI tile ─────────────────────────────────────────────────────────────────
@@ -338,13 +264,13 @@ function OverviewStrip({
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-      <Kpi label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} color="var(--purple)" />
-      <Kpi label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} color="var(--info)" />
-      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="var(--orange)" />
+      <Kpi label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} color="#7C3AED" />
+      <Kpi label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} color="#0891B2" />
+      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="#F97316" />
       <Kpi
         label={tt(isHi, 'Active', 'सक्रिय')}
         value={overview.active_students}
-        color="var(--success)"
+        color="#16A34A"
       />
       {/* Seat utilization. Wave A: display-only. Wave B (flag ON): the same
           gauge augmented with the enforcement band (within plan / grace / over),
@@ -362,7 +288,7 @@ function OverviewStrip({
       <Kpi
         label={tt(isHi, 'Avg mastery', 'औसत महारत')}
         value={masteryPct(overview.avg_mastery)}
-        color="var(--purple)"
+        color="#7C3AED"
       />
     </div>
   );
@@ -433,7 +359,7 @@ function SchoolPicker({
             key={id}
             type="button"
             onClick={() => onPick(id)}
-            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple)] active:scale-[0.99] transition-all min-h-[44px] truncate"
+            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px] truncate"
           >
             {id}
           </button>
@@ -462,8 +388,8 @@ function SetupChecklist({ isHi }: { isHi: boolean }) {
   return (
     <section
       aria-label={tt(isHi, 'Get started', 'शुरू करें')}
-      className="rounded-2xl border border-[var(--purple)] bg-[var(--surface-1)] p-4 sm:p-5"
-      style={{ background: 'color-mix(in srgb, var(--purple) 6%, var(--surface-1))' }}
+      className="rounded-2xl border border-[var(--purple,#7C3AED)] bg-[var(--surface-1)] p-4 sm:p-5"
+      style={{ background: 'color-mix(in srgb, var(--purple,#7C3AED) 6%, var(--surface-1))' }}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -492,14 +418,14 @@ function SetupChecklist({ isHi }: { isHi: boolean }) {
           <li key={step.href}>
             <a
               href={step.href}
-              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-3 text-sm font-semibold text-[var(--text-1)] no-underline hover:border-[var(--purple)] active:scale-[0.99] transition-all min-h-[44px]"
+              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-3 text-sm font-semibold text-[var(--text-1)] no-underline hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px]"
             >
               <span
                 aria-hidden="true"
-                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-[var(--purple)]"
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-[var(--purple,#7C3AED)]"
               />
               <span className="truncate">{tt(isHi, step.en, step.hi)}</span>
-              <span aria-hidden="true" className="ml-auto text-[var(--purple)]">→</span>
+              <span aria-hidden="true" className="ml-auto text-[var(--purple,#7C3AED)]">→</span>
             </a>
           </li>
         ))}
@@ -575,7 +501,6 @@ export default function CommandCenter() {
 
   // ── Render ──
   const overview = overviewSWR.data?.data;
-  const atRiskClassesCount = (classesSWR.data?.data ?? []).filter((row) => row.at_risk_count > 0).length;
   // A 400 with school_ids is NOT a hard error — it's the picker path.
   const overviewHardError = overviewSWR.error && overviewSWR.error.status !== 400;
 
@@ -644,14 +569,6 @@ export default function CommandCenter() {
                 empty Command Center. Dismissible; pure navigation. */}
             {overview?.data_state === 'no_data' && <SetupChecklist isHi={isHi} />}
 
-            {overview && (
-              <HealthDecisionHero
-                overview={overview}
-                atRiskClasses={atRiskClassesCount}
-                isHi={isHi}
-              />
-            )}
-
             {/* 1. Overview KPI strip (eager) */}
             <section aria-label={tt(isHi, 'School overview', 'स्कूल अवलोकन')}>
               {overviewSWR.isLoading && !overview ? (
@@ -668,7 +585,7 @@ export default function CommandCenter() {
                   <button
                     type="button"
                     onClick={() => overviewSWR.mutate()}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold text-on-accent bg-[var(--purple)] active:scale-95 transition-transform min-h-[44px]"
+                    className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[var(--purple,#7C3AED)] active:scale-95 transition-transform min-h-[44px]"
                   >
                     {tt(isHi, 'Retry', 'दोबारा कोशिश करें')}
                   </button>

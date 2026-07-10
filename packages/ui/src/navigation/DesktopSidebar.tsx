@@ -5,20 +5,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@alfanumrik/lib/AuthContext';
 import { useDashboardData, useFeatureFlags } from '@alfanumrik/lib/swr';
 import { getSidebarSections, getItemLockForGrade, isItemVisibleForFlags, type NavFlagGatedItem } from './nav-config';
-import { RoleNavIcon, type RoleIconKey } from './role-nav';
-
-function iconKeyForHref(href: string): RoleIconKey {
-  if (href === '/today') return 'today';
-  if (href === '/dashboard') return 'home';
-  if (href === '/learn' || href.includes('/library')) return 'learn';
-  if (href === '/practice' || href === '/quiz' || href.includes('/mock-exam') || href.includes('/pyq')) return 'practice';
-  if (href === '/foxy') return 'foxy';
-  if (href === '/profile' || href === '/progress') return 'profile';
-  if (href.includes('/reports') || href.includes('/leaderboard')) return 'reports';
-  if (href.includes('/support') || href.includes('/help')) return 'support';
-  if (href.includes('/notifications') || href.includes('/settings')) return 'notifications';
-  return 'more';
-}
 
 export function DesktopSidebar() {
   const pathname = usePathname();
@@ -101,9 +87,7 @@ export function DesktopSidebar() {
           aria-label={isHi ? 'डैशबोर्ड पर जाएं' : 'Go to Dashboard'}
           className="flex items-center gap-2.5 px-3 mb-6 transition-opacity hover:opacity-80"
         >
-          <span className="flex h-7 w-7 items-center justify-center" style={{ color: 'var(--primary)' }}>
-            <RoleNavIcon iconKey="foxy" />
-          </span>
+          <span className="text-2xl">🦊</span>
           {!collapsed && <div>
             <div className="text-base font-bold gradient-text" style={{ fontFamily: 'var(--font-display)' }}>
               Alfanumrik
@@ -151,10 +135,7 @@ export function DesktopSidebar() {
                       <button
                         key={item.href}
                         type="button"
-                        onClick={lock.locked ? undefined : () => {
-                          if (item.href === '/foxy') window.location.href = '/foxy';
-                          else router.push(item.href);
-                        }}
+                        onClick={lock.locked ? undefined : () => router.push(item.href)}
                         aria-disabled={lock.locked || undefined}
                         aria-label={lock.locked
                           ? `${isHi ? item.labelHi : item.label} — ${isHi ? 'अभी उपलब्ध नहीं' : 'locked'} · ${gradeChipLabel}`
@@ -174,9 +155,7 @@ export function DesktopSidebar() {
                           cursor: lock.locked ? 'not-allowed' : 'pointer',
                         }}
                       >
-                        <span className="flex h-5 w-6 items-center justify-center" aria-hidden="true">
-                          <RoleNavIcon iconKey={iconKeyForHref(item.href)} />
-                        </span>
+                        <span className="text-lg w-6 text-center" aria-hidden="true">{item.icon}</span>
                         {!collapsed && <span>{isHi ? item.labelHi : item.label}</span>}
                         {lock.locked && !collapsed ? (
                           <span
@@ -187,7 +166,7 @@ export function DesktopSidebar() {
                               border: '1px solid var(--border)',
                             }}
                           >
-                            <span className="h-3 w-3" aria-hidden="true"><RoleNavIcon iconKey="lock" /></span>
+                            <span aria-hidden="true">🔒</span>
                             {gradeChipLabel}
                           </span>
                         ) : showReviewBadge && !collapsed ? (
@@ -209,7 +188,7 @@ export function DesktopSidebar() {
       </div>
 
       <div className="px-3 pt-4 mt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-        {collapsed ? <div className="mx-auto h-5 w-5" style={{ color: 'var(--primary)' }}><RoleNavIcon iconKey="foxy" /></div> : <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
+        {collapsed ? <div className="text-center text-lg">🦊</div> : <div className="text-[11px] text-[var(--text-3)] leading-relaxed">
           <div>Alfanumrik Adaptive Learning OS</div>
           <div className="mt-0.5">Cusiosense Learning India Pvt Ltd</div>
         </div>}

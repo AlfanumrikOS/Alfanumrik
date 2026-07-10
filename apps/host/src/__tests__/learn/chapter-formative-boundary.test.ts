@@ -1,7 +1,7 @@
 /**
  * Boundary lock — chapter-page quiz is a FORMATIVE self-check, not the scored path.
  *
- * The learn chapter page (`src/app/learn/[subject]/[chapter]/page.tsx`) renders an
+ * The learn chapter page (`src/app/(student)/learn/[subject]/[chapter]/page.tsx`) renders an
  * in-chapter quiz + performance report + completion surface. This is a *formative*
  * self-check: it must NEVER award XP, write a quiz_session, or otherwise flow
  * through the scored submission pipeline. The single authoritative scored path
@@ -30,7 +30,7 @@ import { resolve } from 'path';
 const PAGE_PATH = resolve(
   __dirname,
   '../../..',
-  'src/app/learn/[subject]/[chapter]/page.tsx',
+  'src/app/(student)/learn/[subject]/[chapter]/page.tsx',
 );
 const source = readFileSync(PAGE_PATH, 'utf-8');
 
@@ -56,8 +56,8 @@ describe('report score display is the canonical calculateScorePercent value (P1 
   });
 
   it('feeds that derived pct straight into MasteryRing (no recomputed value at the ring)', () => {
-    // The ring must be fed the already-derived `pct`, not an inline Math.round.
-    expect(/<MasteryRing[\s\S]{0,200}?value=\{pct\}/.test(source)).toBe(true);
-    expect(/<MasteryRing[\s\S]{0,200}?value=\{\s*Math\.round/.test(source)).toBe(false);
+    // The restored report surface feeds the already-derived `pct` into ProgressBar.
+    expect(/<ProgressBar[\s\S]{0,200}?value=\{pct\}/.test(source)).toBe(true);
+    expect(/<ProgressBar[\s\S]{0,200}?value=\{\s*Math\.round/.test(source)).toBe(false);
   });
 });

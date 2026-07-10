@@ -2,7 +2,7 @@
  * ParentShell tests — covers the three auth states the shell must handle:
  *
  *   1. guardian mode    — Supabase auth user with activeRole='guardian'.
- *                         All 6 nav items visible.
+ *                         All restored parent nav items visible.
  *   2. link-code mode   — anonymous link-code login, HMAC payload in
  *                         sessionStorage. Children + Profile are hidden.
  *   3. unauthenticated  — neither auth applies. Shell renders children
@@ -51,7 +51,7 @@ describe('ParentShell — guardian mode', () => {
     }));
   });
 
-  it('renders all 6 nav items in the desktop sidebar', async () => {
+  it('renders the restored guardian nav items in the desktop sidebar', async () => {
     const { default: ParentShell } = await import('@/app/parent/_components/ParentShell');
     render(
       <ParentShell>
@@ -62,7 +62,18 @@ describe('ParentShell — guardian mode', () => {
     // to resolve. Guardian mode short-circuits before linkCodeChecked but
     // we still wait a tick to let any concurrent state settle.
     const sidebar = await screen.findByTestId('dashboard-sidebar-desktop');
-    ['Home', 'Children', 'Calendar', 'Reports', 'Support', 'Profile'].forEach(label => {
+    [
+      'Dashboard',
+      'Children',
+      'Calendar',
+      'Messages',
+      'Notifications',
+      'Reports',
+      'Attendance',
+      'Billing',
+      'Support',
+      'Profile',
+    ].forEach(label => {
       expect(within(sidebar).getByText(label)).toBeInTheDocument();
     });
   });
@@ -97,11 +108,15 @@ describe('ParentShell — link-code mode', () => {
     // useParentAuth's useEffect runs loadParentSession asynchronously — wait
     // a tick (and a re-render) for the link-code session to be detected.
     const sidebar = await screen.findByTestId('dashboard-sidebar-desktop');
-    expect(within(sidebar).getByText('Home')).toBeInTheDocument();
+    expect(within(sidebar).getByText('Dashboard')).toBeInTheDocument();
     expect(within(sidebar).getByText('Calendar')).toBeInTheDocument();
     expect(within(sidebar).getByText('Reports')).toBeInTheDocument();
+    expect(within(sidebar).getByText('Attendance')).toBeInTheDocument();
     expect(within(sidebar).getByText('Support')).toBeInTheDocument();
     expect(within(sidebar).queryByText('Children')).not.toBeInTheDocument();
+    expect(within(sidebar).queryByText('Messages')).not.toBeInTheDocument();
+    expect(within(sidebar).queryByText('Notifications')).not.toBeInTheDocument();
+    expect(within(sidebar).queryByText('Billing')).not.toBeInTheDocument();
     expect(within(sidebar).queryByText('Profile')).not.toBeInTheDocument();
   });
 });

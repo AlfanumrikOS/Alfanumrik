@@ -88,8 +88,8 @@ function todayISO(): string {
 // ── Style tokens ──────────────────────────────────────────────
 const pageStyle: React.CSSProperties = {
   minHeight: '100dvh',
-  backgroundColor: 'var(--surface-2)',
-  color: 'var(--text-1)',
+  backgroundColor: '#FBF8F4',
+  color: '#1A1207',
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
   padding: '24px 20px 80px',
   maxWidth: 900,
@@ -97,18 +97,18 @@ const pageStyle: React.CSSProperties = {
 };
 
 const cardStyle: React.CSSProperties = {
-  background: 'var(--surface-1)',
+  background: '#FFFFFF',
   borderRadius: 14,
   padding: '18px 20px',
-  border: '1px solid var(--surface-3)',
+  border: '1px solid #EDE6DC',
   marginBottom: 16,
 };
 
 const spinnerStyle: React.CSSProperties = {
   width: 36,
   height: 36,
-  border: '3px solid var(--surface-3)',
-  borderTopColor: 'var(--orange)',
+  border: '3px solid #EDE6DC',
+  borderTopColor: '#E8581C',
   borderRadius: '50%',
   margin: '0 auto 14px',
   animation: 'spin 0.8s linear infinite',
@@ -131,36 +131,36 @@ const STATUS_CONFIGS: StatusConfig[] = [
     labelEn: 'Present',
     labelHi: 'उपस्थित',
     abbrev: 'P',
-    activeBg: 'var(--green-soft)',
-    activeBorder: 'var(--success)',
-    activeText: 'var(--success)',
+    activeBg: '#DCFCE7',
+    activeBorder: '#22C55E',
+    activeText: '#15803D',
   },
   {
     status: 'absent',
     labelEn: 'Absent',
     labelHi: 'अनुपस्थित',
     abbrev: 'A',
-    activeBg: 'var(--red-soft)',
-    activeBorder: 'var(--danger)',
-    activeText: 'var(--danger)',
+    activeBg: '#FEE2E2',
+    activeBorder: '#EF4444',
+    activeText: '#B91C1C',
   },
   {
     status: 'late',
     labelEn: 'Late',
     labelHi: 'देर से',
     abbrev: 'L',
-    activeBg: 'var(--gold-soft)',
-    activeBorder: 'var(--warning)',
-    activeText: 'var(--warning)',
+    activeBg: '#FEF9C3',
+    activeBorder: '#EAB308',
+    activeText: '#854D0E',
   },
   {
     status: 'excused',
     labelEn: 'Excused',
     labelHi: 'माफी',
     abbrev: 'E',
-    activeBg: 'var(--surface-3)',
-    activeBorder: 'var(--text-3)',
-    activeText: 'var(--text-2)',
+    activeBg: '#F3F4F6',
+    activeBorder: '#9CA3AF',
+    activeText: '#4B5563',
   },
 ];
 
@@ -196,9 +196,9 @@ function StatusToggle({
               height: 36,
               minWidth: 36,
               borderRadius: 8,
-              border: `2px solid ${active ? cfg.activeBorder : 'var(--surface-3)'}`,
-              backgroundColor: active ? cfg.activeBg : 'var(--surface-2)',
-              color: active ? cfg.activeText : 'var(--text-3)',
+              border: `2px solid ${active ? cfg.activeBorder : '#EDE6DC'}`,
+              backgroundColor: active ? cfg.activeBg : '#FAFAF8',
+              color: active ? cfg.activeText : '#A89B86',
               fontWeight: 700,
               fontSize: 13,
               cursor: 'pointer',
@@ -236,7 +236,7 @@ function StatsBar({
       gap: 10,
       flexWrap: 'wrap',
       padding: '12px 16px',
-      backgroundColor: 'var(--surface-2)',
+      backgroundColor: '#F5F0EA',
       borderRadius: 10,
       marginBottom: 16,
     }}>
@@ -278,7 +278,7 @@ function SkeletonRows() {
         <div key={i} style={{
           height: 52,
           borderRadius: 10,
-          backgroundColor: 'var(--surface-2)',
+          backgroundColor: '#F5F0EA',
           animation: 'pulse 1.5s ease-in-out infinite',
         }} />
       ))}
@@ -424,7 +424,7 @@ export default function TeacherAttendancePage() {
         <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>
         <div style={{ textAlign: 'center', padding: 80 }}>
           <div style={spinnerStyle} />
-          <p style={{ color: 'var(--text-3)', fontSize: 13 }}>
+          <p style={{ color: '#7D7264', fontSize: 13 }}>
             {tt(isHi, 'Loading attendance...', 'उपस्थिति लोड हो रही है...')}
           </p>
         </div>
@@ -437,26 +437,26 @@ export default function TeacherAttendancePage() {
     return (
       <div style={pageStyle}>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <header style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)' }}>
+        <header style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #F5F0EA' }}>
           <button
             onClick={() => router.push('/teacher')}
             style={{
-              background: 'var(--surface-2)', border: 'none', borderRadius: 6,
-              padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600,
+              background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6,
+              padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600,
               cursor: 'pointer', marginBottom: 8,
             }}
           >
             &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
           </button>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1A1207', margin: 0 }}>
             {tt(isHi, 'Attendance', 'उपस्थिति')}
           </h1>
         </header>
         <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
-          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '0 0 6px' }}>
+          <p style={{ fontSize: 15, fontWeight: 600, color: '#4A3F2E', margin: '0 0 6px' }}>
             {tt(isHi, 'No classes assigned yet', 'अभी कोई कक्षा नहीं दी गई है')}
           </p>
-          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+          <p style={{ fontSize: 13, color: '#7D7264', margin: 0 }}>
             {tt(isHi, 'Contact your admin to be assigned to a class.', 'एक कक्षा में असाइन होने के लिए अपने व्यवस्थापक से संपर्क करें।')}
           </p>
         </div>
@@ -473,23 +473,23 @@ export default function TeacherAttendancePage() {
       {/* ── Header ── */}
       <header style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-        marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)', flexWrap: 'wrap', gap: 12,
+        marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #F5F0EA', flexWrap: 'wrap', gap: 12,
       }}>
         <div>
           <button
             onClick={() => router.push('/teacher')}
             style={{
-              background: 'var(--surface-2)', border: 'none', borderRadius: 6,
-              padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600,
+              background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6,
+              padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600,
               cursor: 'pointer', marginBottom: 8,
             }}
           >
             &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
           </button>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1A1207', margin: 0 }}>
             {tt(isHi, 'Attendance', 'उपस्थिति')}
           </h1>
-          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '4px 0 0' }}>
+          <p style={{ fontSize: 13, color: '#7D7264', margin: '4px 0 0' }}>
             {selectedClass?.name && `${selectedClass.name} · `}
             {tt(isHi, 'Daily roll call', 'दैनिक हाज़िरी')}
           </p>
@@ -500,15 +500,15 @@ export default function TeacherAttendancePage() {
       <div style={{ ...cardStyle, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         {/* Class selector */}
         <div style={{ flex: '1 1 200px' }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#7D7264', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.4 }}>
             {tt(isHi, 'Select Class', 'कक्षा चुनें')}
           </label>
           <select
             value={selectedClassId}
             onChange={e => { setSelectedClassId(e.target.value); setSaved(false); }}
             style={{
-              width: '100%', padding: '8px 10px', backgroundColor: 'var(--surface-2)',
-              color: 'var(--text-1)', border: '1px solid var(--surface-3)', borderRadius: 8,
+              width: '100%', padding: '8px 10px', backgroundColor: '#F5F0EA',
+              color: '#1A1207', border: '1px solid #EDE6DC', borderRadius: 8,
               fontSize: 13, outline: 'none', cursor: 'pointer',
             }}
           >
@@ -522,7 +522,7 @@ export default function TeacherAttendancePage() {
 
         {/* Date picker */}
         <div style={{ flex: '1 1 180px' }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-3)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#7D7264', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.4 }}>
             {tt(isHi, 'Date', 'तारीख')}
           </label>
           <input
@@ -531,8 +531,8 @@ export default function TeacherAttendancePage() {
             max={today}
             onChange={e => { setSelectedDate(e.target.value); setSaved(false); }}
             style={{
-              width: '100%', padding: '8px 10px', backgroundColor: 'var(--surface-2)',
-              color: 'var(--text-1)', border: '1px solid var(--surface-3)', borderRadius: 8,
+              width: '100%', padding: '8px 10px', backgroundColor: '#F5F0EA',
+              color: '#1A1207', border: '1px solid #EDE6DC', borderRadius: 8,
               fontSize: 13, outline: 'none', cursor: 'pointer',
               boxSizing: 'border-box',
             }}
@@ -548,16 +548,16 @@ export default function TeacherAttendancePage() {
       {/* ── Save success / error banners ── */}
       {saved && (
         <div style={{
-          backgroundColor: 'var(--green-soft)', border: '1px solid var(--success)', borderRadius: 10,
-          padding: '10px 14px', marginBottom: 14, fontSize: 13, fontWeight: 600, color: 'var(--success)',
+          backgroundColor: '#DCFCE7', border: '1px solid #22C55E', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 14, fontSize: 13, fontWeight: 600, color: '#15803D',
         }}>
           {tt(isHi, 'Attendance saved', 'उपस्थिति सेव हो गई')}
         </div>
       )}
       {saveError && (
         <div style={{
-          backgroundColor: 'var(--red-soft)', border: '1px solid var(--danger)', borderRadius: 10,
-          padding: '10px 14px', marginBottom: 14, fontSize: 13, color: 'var(--danger)',
+          backgroundColor: '#FEE2E2', border: '1px solid #EF4444', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#B91C1C',
         }}>
           {saveError}
         </div>
@@ -569,10 +569,10 @@ export default function TeacherAttendancePage() {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           marginBottom: 14, flexWrap: 'wrap', gap: 8,
         }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', margin: 0 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1A1207', margin: 0 }}>
             {tt(isHi, 'Students', 'विद्यार्थी')}
             {!rosterLoading && roster.length > 0 && (
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-3)', marginLeft: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 500, color: '#7D7264', marginLeft: 8 }}>
                 ({roster.length})
               </span>
             )}
@@ -598,14 +598,14 @@ export default function TeacherAttendancePage() {
         {/* Error */}
         {!rosterLoading && rosterError && (
           <div style={{
-            backgroundColor: 'var(--red-soft)', border: '1px solid var(--red-soft)', borderRadius: 10,
+            backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10,
             padding: '14px 16px', textAlign: 'center',
           }}>
-            <p style={{ fontSize: 13, color: 'var(--danger)', margin: '0 0 10px' }}>{rosterError}</p>
+            <p style={{ fontSize: 13, color: '#B91C1C', margin: '0 0 10px' }}>{rosterError}</p>
             <button
               onClick={loadAttendance}
               style={{
-                padding: '6px 14px', backgroundColor: 'var(--danger)', color: 'white',
+                padding: '6px 14px', backgroundColor: '#EF4444', color: '#fff',
                 border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
               }}
             >
@@ -617,7 +617,7 @@ export default function TeacherAttendancePage() {
         {/* Empty */}
         {!rosterLoading && !rosterError && roster.length === 0 && (
           <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-            <p style={{ fontSize: 14, color: 'var(--text-3)', margin: 0 }}>
+            <p style={{ fontSize: 14, color: '#7D7264', margin: 0 }}>
               {tt(isHi, 'No students enrolled in this class', 'इस कक्षा में कोई विद्यार्थी नहीं है')}
             </p>
           </div>
@@ -637,14 +637,14 @@ export default function TeacherAttendancePage() {
                     gap: 12,
                     padding: '10px 12px',
                     borderRadius: 10,
-                    backgroundColor: idx % 2 === 0 ? 'var(--surface-2)' : 'var(--surface-1)',
-                    border: `1px solid ${entry.status !== 'present' ? cfg.activeBorder + '60' : 'var(--surface-2)'}`,
+                    backgroundColor: idx % 2 === 0 ? '#FAFAF8' : '#FFFFFF',
+                    border: `1px solid ${entry.status !== 'present' ? cfg.activeBorder + '60' : '#F5F0EA'}`,
                     flexWrap: 'wrap',
                   }}
                 >
                   {/* Student name */}
                   <div style={{ flex: 1, minWidth: 120 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-1)' }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1207' }}>
                       {entry.student.name}
                     </span>
                     {entry.status !== 'present' && (
@@ -680,8 +680,8 @@ export default function TeacherAttendancePage() {
             disabled={saving}
             style={{
               padding: '12px 28px',
-              backgroundColor: saving ? 'var(--orange)' : 'var(--orange)',
-              color: 'white',
+              backgroundColor: saving ? '#C2410C' : '#E8581C',
+              color: '#fff',
               border: 'none',
               borderRadius: 10,
               fontSize: 14,

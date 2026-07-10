@@ -105,10 +105,10 @@ const SEV_VARIANT: Record<string, StatusBadgeVariant> = {
   low: 'info',
 };
 const SEV_ACCENT: Record<string, string> = {
-  critical: 'var(--danger, var(--danger))',
-  high: 'var(--orange)',
-  medium: 'var(--warning, var(--warning))',
-  low: 'var(--info, var(--info))',
+  critical: 'var(--danger, #DC2626)',
+  high: '#E8581C',
+  medium: 'var(--warning, #D97706)',
+  low: 'var(--info, #2563EB)',
 };
 
 // The Edge heatmap row carries `student_name`; some deploys additionally stamp
@@ -145,7 +145,7 @@ function RosterHeatmap({
         <thead>
           <tr>
             <th
-              className="px-2 py-1.5 font-semibold text-[12px] text-left min-w-[120px] sticky left-0"
+              className="px-2 py-1.5 font-semibold text-[10px] text-left min-w-[120px] sticky left-0"
               style={{
                 color: 'var(--text-3)',
                 borderBottom: '1px solid var(--border)',
@@ -155,7 +155,7 @@ function RosterHeatmap({
               {tt(isHi, 'Student', 'छात्र')}
             </th>
             <th
-              className="px-1 py-1.5 font-semibold text-[12px] text-center"
+              className="px-1 py-1.5 font-semibold text-[10px] text-center"
               style={{ color: 'var(--text-3)', borderBottom: '1px solid var(--border)' }}
             >
               {tt(isHi, 'Avg', 'औसत')}
@@ -163,7 +163,7 @@ function RosterHeatmap({
             {concepts.map((c: HeatmapConcept, i: number) => (
               <th
                 key={i}
-                className="px-1 py-1.5 font-semibold text-[12px] text-center"
+                className="px-1 py-1.5 font-semibold text-[10px] text-center"
                 style={{ color: 'var(--text-3)', borderBottom: '1px solid var(--border)' }}
                 title={c.title || `Ch. ${c.chapter}`}
               >
@@ -203,7 +203,7 @@ function RosterHeatmap({
                     title={`${row.student_name} · ${concepts[ci]?.title ?? ''}: ${
                       cell.attempts > 0 ? Math.round(cell.p_know * 100) + '%' : '—'
                     }`}
-                    className={`inline-block min-w-[32px] py-1 px-0.5 rounded text-[12px] font-semibold text-on-accent border-none cursor-pointer ${heatColorClass(
+                    className={`inline-block min-w-[32px] py-1 px-0.5 rounded text-[10px] font-semibold text-white border-none cursor-pointer ${heatColorClass(
                       cell.p_know,
                     )} ${cell.attempts > 0 ? 'opacity-100' : 'opacity-30'}`}
                   >
@@ -273,7 +273,7 @@ function AlertRow({
               onClick={() => onAssign(alert)}
               disabled={busy}
               data-testid="assign-remediation-btn"
-              className="py-1 px-2.5 bg-brand-purple text-on-accent border-none rounded-md text-[12px] font-semibold cursor-pointer disabled:opacity-50"
+              className="py-1 px-2.5 bg-[var(--purple)] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
             >
               {busy
                 ? tt(isHi, 'Assigning…', 'सौंपा जा रहा है…')
@@ -311,7 +311,7 @@ function AlertRow({
                 onClick={() => onTellParent(alert)}
                 disabled={parentNotifyBusy}
                 data-testid="tell-parent-btn"
-                className="py-1 px-2.5 bg-primary text-on-accent border-none rounded-md text-[12px] font-semibold cursor-pointer disabled:opacity-50"
+                className="py-1 px-2.5 bg-[#E8581C] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
               >
                 {parentNotifyBusy
                   ? tt(isHi, 'Sending…', 'भेजा जा रहा है…')
@@ -408,14 +408,14 @@ export function ActionBar({
         >
           {tt(isHi, a.label, a.labelHi)}
           {a.disabled && (
-            <span className="ml-1.5 text-[12px]" style={{ color: 'var(--text-3)' }}>
+            <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-3)' }}>
               {tt(isHi, 'soon', 'जल्द')}
             </span>
           )}
           {a.badge != null && (
             <span
               data-testid="grading-queue-action-badge"
-              className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-brand-purple text-on-accent text-[12px] font-bold align-middle"
+              className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--purple)] text-white text-[10px] font-bold align-middle"
             >
               {a.badge}
             </span>
@@ -433,7 +433,7 @@ function KpiTile({ label, value, accent }: { label: string; value: string | numb
       className="rounded-xl py-3.5 px-4"
       style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
     >
-      <p className="text-[12px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
+      <p className="text-[11px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
         {label}
       </p>
       <p className="text-[26px] font-extrabold mt-1" style={{ color: accent }}>
@@ -817,7 +817,7 @@ export default function CommandCenter() {
           </h2>
           <button
             onClick={() => window.location.reload()}
-            className="py-2.5 px-6 bg-primary text-on-accent border-none rounded-lg text-sm font-semibold cursor-pointer"
+            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Refresh', 'रिफ्रेश')}
           </button>
@@ -837,7 +837,7 @@ export default function CommandCenter() {
           </h2>
           <button
             onClick={() => mutateDashboard()}
-            className="py-2.5 px-6 bg-primary text-on-accent border-none rounded-lg text-sm font-semibold cursor-pointer"
+            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
           </button>
@@ -864,7 +864,7 @@ export default function CommandCenter() {
           </p>
           <button
             onClick={() => router.push('/teacher/classes')}
-            className="py-2.5 px-6 bg-primary text-on-accent border-none rounded-lg text-sm font-semibold cursor-pointer"
+            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Create a Class', 'कक्षा बनाएं')}
           </button>
@@ -876,7 +876,6 @@ export default function CommandCenter() {
   const criticalCount = alerts.filter(
     (a) => a.severity === 'critical' || a.severity === 'high',
   ).length;
-  const topAttentionAlerts = alerts.slice(0, 3);
   const loadingClass = heatmapLoading;
 
   return (
@@ -893,7 +892,7 @@ export default function CommandCenter() {
           <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>{dash?.teacher?.name}</p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-[12px] uppercase tracking-wide font-bold" style={{ color: 'var(--text-3)' }}>
+          <label className="text-[11px] uppercase tracking-wide font-bold" style={{ color: 'var(--text-3)' }}>
             {tt(isHi, 'Class', 'कक्षा')}
           </label>
           <select
@@ -926,70 +925,6 @@ export default function CommandCenter() {
         </div>
       </header>
 
-      <SectionErrorBoundary section="Attention summary">
-        <section
-          className="mb-4 rounded-2xl border p-4"
-          style={{
-            background: 'var(--surface-1)',
-            borderColor: 'var(--border)',
-            boxShadow: 'var(--shadow-md)',
-          }}
-          aria-label={tt(isHi, 'Students needing attention', 'ध्यान चाहने वाले छात्र')}
-        >
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-[12px] font-bold uppercase tracking-wide" style={{ color: 'var(--primary)' }}>
-                {tt(isHi, 'Who needs my attention?', 'मेरे ध्यान की अभी किसे ज़रूरत है?')}
-              </p>
-              <h2 className="mt-1 text-2xl font-extrabold font-heading" style={{ color: 'var(--text-1)' }}>
-                {alerts.length > 0
-                  ? tt(isHi, `${alerts.length} student${alerts.length === 1 ? '' : 's'} need intervention`, `${alerts.length} छात्रों को हस्तक्षेप चाहिए`)
-                  : tt(isHi, 'No urgent student interventions', 'कोई तत्काल छात्र हस्तक्षेप नहीं')}
-              </h2>
-              <p className="mt-1 text-sm" style={{ color: 'var(--text-3)' }}>
-                {activeClass?.name
-                  ? tt(isHi, `${activeClass.name} is selected`, `${activeClass.name} चुनी गई है`)
-                  : tt(isHi, 'Pick a class to review learning risk.', 'लर्निंग जोखिम देखने के लिए कक्षा चुनें।')}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (topAttentionAlerts[0]) assignRemediation(topAttentionAlerts[0]);
-                else router.push('/teacher/assignments');
-              }}
-              className="min-h-[44px] rounded-xl px-4 py-2.5 text-sm font-bold text-on-accent"
-              style={{ background: 'var(--surface-accent)' }}
-            >
-              {alerts.length > 0
-                ? tt(isHi, 'Create intervention', 'हस्तक्षेप बनाएं')
-                : tt(isHi, 'Assign practice', 'अभ्यास दें')}
-            </button>
-          </div>
-
-          {topAttentionAlerts.length > 0 && (
-            <div className="mt-4 grid gap-2 md:grid-cols-3">
-              {topAttentionAlerts.map((alert) => (
-                <button
-                  key={alert.id}
-                  type="button"
-                  onClick={() => goToStudent(alert.student_name)}
-                  className="rounded-xl border px-3 py-2.5 text-left"
-                  style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}
-                >
-                  <span className="block truncate text-sm font-bold" style={{ color: 'var(--text-1)' }}>
-                    {alert.student_name}
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs" style={{ color: 'var(--text-3)' }}>
-                    {alert.title || alert.description || tt(isHi, 'Needs practice', 'अभ्यास चाहिए')}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-      </SectionErrorBoundary>
-
       {/* Today summary — stat tiles from the existing dashboard counts.
           The "Awaiting grading" tile is Wave B: it appears only when
           ff_teacher_assignment_lifecycle is ON (otherwise the grid is the
@@ -1009,12 +944,12 @@ export default function CommandCenter() {
         <KpiTile
           label={tt(isHi, 'At-risk', 'जोखिम में')}
           value={alerts.length}
-          accent={criticalCount > 0 ? 'var(--danger, var(--danger))' : 'var(--warning, var(--warning))'}
+          accent={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #D97706)'}
         />
         <KpiTile
           label={tt(isHi, 'Assignments', 'असाइनमेंट')}
           value={stats?.active_assignments ?? 0}
-          accent="var(--success, var(--success))"
+          accent="var(--success, #059669)"
         />
 
         {gradingQueueEnabled && (
@@ -1025,15 +960,15 @@ export default function CommandCenter() {
             className="text-left rounded-xl py-3.5 px-4 cursor-pointer transition-colors hover:border-[var(--purple)]"
             style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
           >
-            <p className="text-[12px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
+            <p className="text-[11px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
               {tt(isHi, 'Awaiting grading', 'ग्रेडिंग लंबित')}
             </p>
-            <p className="text-[26px] font-extrabold mt-1 flex items-center gap-2" style={{ color: 'var(--info, var(--info))' }}>
+            <p className="text-[26px] font-extrabold mt-1 flex items-center gap-2" style={{ color: 'var(--info, #2563EB)' }}>
               {queueLoading ? '…' : queueCount}
               {!queueLoading && queueCount > 0 && (
                 <span
                   data-testid="awaiting-grading-badge"
-                  className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-info text-on-accent text-[12px] font-bold"
+                  className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#2563EB] text-white text-[12px] font-bold"
                 >
                   {queueCount}
                 </span>
@@ -1117,7 +1052,7 @@ export default function CommandCenter() {
               }
             />
             <div className="flex items-center gap-1.5 shrink-0">
-              <label className="text-[12px] uppercase tracking-wide font-bold" style={{ color: 'var(--text-3)' }}>
+              <label className="text-[10px] uppercase tracking-wide font-bold" style={{ color: 'var(--text-3)' }}>
                 {tt(isHi, 'Subject', 'विषय')}
               </label>
               <select
@@ -1184,7 +1119,7 @@ export default function CommandCenter() {
               />
             ) : alerts.length === 0 ? (
               <div className="py-8 text-center" style={{ color: 'var(--text-3)' }}>
-                <span className="text-2xl block mb-2" style={{ color: 'var(--success, var(--success))' }}>
+                <span className="text-2xl block mb-2" style={{ color: 'var(--success, #059669)' }}>
                   &#x2713;
                 </span>
                 <p className="text-[13px] m-0" style={{ color: 'var(--text-2)' }}>
@@ -1228,10 +1163,10 @@ export default function CommandCenter() {
       {toast && (
         <div
           role="status"
-          className="fixed bottom-5 right-5 z-50 rounded-lg px-4 py-2.5 text-sm font-semibold text-on-accent shadow-lg"
+          className="fixed bottom-5 right-5 z-50 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-lg"
           style={{
             background:
-              toast.type === 'success' ? 'var(--success, var(--success))' : 'var(--danger, var(--danger))',
+              toast.type === 'success' ? 'var(--success, #059669)' : 'var(--danger, #DC2626)',
           }}
         >
           {toast.msg}
@@ -1248,12 +1183,12 @@ function ClassRankingsWidget({ classId, isHi }: { classId: string; isHi: boolean
   const { data, isLoading } = useClassLeaderboard(classId, true);
   const [open, setOpen] = useState(true);
   const rankColor = (r: number) =>
-    r === 1 ? 'var(--warning)' : r === 2 ? 'var(--text-3)' : r === 3 ? 'var(--orange)' : 'var(--surface-2)';
+    r === 1 ? '#FFD700' : r === 2 ? '#C0C0C0' : r === 3 ? '#CD7F32' : 'var(--surface-2)';
   return (
     <Panel>
       <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between">
         <PanelHead title={isHi ? '🏆 कक्षा रैंकिंग' : '🏆 Class Rankings'} />
-        <span className="text-[12px] ml-2" style={{ color: 'var(--text-3)' }}>
+        <span className="text-[11px] ml-2" style={{ color: 'var(--text-3)' }}>
           {isHi ? 'इस सप्ताह शीर्ष 5' : 'Top 5 this week'}{' '}{open ? '▲' : '▼'}
         </span>
       </button>
@@ -1270,13 +1205,13 @@ function ClassRankingsWidget({ classId, isHi }: { classId: string; isHi: boolean
           {data?.items?.map((row) => (
             <div key={row.student_id} className="flex items-center gap-2.5 text-[13px]">
               <span
-                className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[12px] font-bold"
-                style={{ background: rankColor(row.rank), color: row.rank <= 3 ? 'var(--text-1)' : 'var(--text-2)' }}
+                className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                style={{ background: rankColor(row.rank), color: row.rank <= 3 ? '#000' : 'var(--text-2)' }}
               >
                 {row.rank}
               </span>
               <span className="flex-1 truncate" style={{ color: 'var(--text-1)' }}>{row.name}</span>
-              <span className="font-semibold tabular-nums" style={{ color: 'var(--orange, var(--orange))' }}>
+              <span className="font-semibold tabular-nums" style={{ color: 'var(--orange, #E8581C)' }}>
                 {row.xp_this_period} XP
               </span>
             </div>
