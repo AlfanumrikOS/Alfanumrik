@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-const registryPath = resolve(process.cwd(), 'scripts/job-registry.json');
-const summaryPath = resolve(process.cwd(), 'artifacts/production-cron-runner-summary.json');
+const registryPath = repoPath('scripts/job-registry.json');
+const summaryPath = resolve(
+  process.env.CRON_RUNNER_SUMMARY_PATH || repoPath('artifacts/production-cron-runner-summary.json'),
+);
 const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
 
 const jobs = Array.isArray(registry.jobs) ? registry.jobs : [];
@@ -43,7 +45,7 @@ const results = [];
 
 for (const [index, job] of selectedJobs.entries()) {
   const requestId = `github-cron-${runId}-${index + 1}-${slugify(job.path)}`;
-  const result = await runJob(job, { index, requestId });
+  const result = await runJob(job, { requestId });
   results.push(result);
 
   const status = result.ok ? 'PASS' : 'FAIL';
@@ -75,7 +77,7 @@ if (failed.length > 0) {
   process.exitCode = 1;
 }
 
-async function runJob(job, { index, requestId }) {
+async function runJob(job, { requestId }) {
   if (dryRun) {
     return {
       path: job.path,
@@ -265,6 +267,12 @@ function writeStepSummary(summary) {
   ].join('\n');
 
   writeFileSync(path, body, { flag: 'a' });
+}
+
+function repoPath(rel) {
+  const fromCwd = resolve(process.cwd(), rel);
+  if (existsSync(fromCwd)) return fromCwd;
+  return resolve(process.cwd(), '..', '..', rel);
 }
 
 function trimTrailingSlash(value) {
