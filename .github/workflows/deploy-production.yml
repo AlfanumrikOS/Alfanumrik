@@ -136,12 +136,13 @@ jobs:
           echo "| Region | bom1 (Mumbai) |" >> $GITHUB_STEP_SUMMARY
 
   # ── Step 1c: Apply Database Migrations ──
-  # Pushes any pending SQL migrations in `supabase/migrations/` to the
-  # production database BEFORE the Vercel deploy goes live, so the new web
-  # build never hits a DB without the schema/seed it expects. Migrations are
-  # required to be idempotent (per CLAUDE.md), so re-running on every deploy
-  # is safe — `supabase db push` only applies what's missing in
-  # `supabase_migrations.schema_migrations`.
+  # Pushes changed SQL migrations in `supabase/migrations/` to the production
+  # database BEFORE the Vercel deploy goes live, so the new web build never hits
+  # a DB without the schema/seed it expects. Non-migration deploys intentionally
+  # skip `supabase db push`: production can contain operator-applied emergency
+  # migration versions that are not in this repo yet, and `db push --include-all`
+  # fails on that remote-ledger drift even when the current release has no schema
+  # changes.
   migrations:
     name: Apply Database Migrations
     runs-on: ubuntu-latest
@@ -149,12 +150,31 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Detect migration changes
+        id: migration-diff
+        run: |
+          MIGRATION_FILES=$(git diff --name-only HEAD~1 HEAD -- 'supabase/migrations/' || true)
+          if [ -n "$MIGRATION_FILES" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "### Production migrations detected" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "$MIGRATION_FILES" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "| Production migrations | None in this push; skipped db push |" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - uses: supabase/setup-cli@v2
+        if: steps.migration-diff.outputs.changed == 'true'
         with:
           version: latest
 
       - name: Push migrations to production
+        if: steps.migration-diff.outputs.changed == 'true'
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
