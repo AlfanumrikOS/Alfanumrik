@@ -188,11 +188,9 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           service: ${{ env.ECS_SERVICE }}
           wait-for-service-stability: true
-          # ECS deployment circuit breaker: if the new tasks fail health checks,
-          # ECS will automatically roll back to the previous task definition
-          # revision without manual intervention. This is a second safety net
-          # independent of our smoke-test job below.
-          deployment-controller-type: ECS
+          # ECS deployment circuit breaker is configured on the service. If the
+          # new tasks fail health checks, ECS automatically rolls back to the
+          # previous task definition revision without manual intervention.
 
       - name: Scale up service on first deploy
         # The service was pre-created with desired-count=0 to satisfy ECS's
