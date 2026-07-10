@@ -16,6 +16,9 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
+  # Pin Supabase CLI in CI so production deploys do not depend on unauthenticated
+  # GitHub release lookups for "latest", which can rate-limit before deploy.
+  SUPABASE_CLI_VERSION: '2.109.1'
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   # Canonical production domain — already aliased to the latest deployment after
@@ -171,7 +174,7 @@ jobs:
       - uses: supabase/setup-cli@v2
         if: steps.migration-diff.outputs.changed == 'true'
         with:
-          version: latest
+          version: ${{ env.SUPABASE_CLI_VERSION }}
 
       - name: Push migrations to production
         if: steps.migration-diff.outputs.changed == 'true'
@@ -446,7 +449,7 @@ jobs:
       - uses: supabase/setup-cli@v2
         if: steps.changed.outputs.functions != ''
         with:
-          version: latest
+          version: ${{ env.SUPABASE_CLI_VERSION }}
 
       - name: Deploy each changed function
         if: steps.changed.outputs.functions != ''

@@ -121,6 +121,17 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
       failure: 'Production workflow must support Vercel automation bypass health checks.',
     },
     {
+      id: 'production-workflow-pinned-supabase-cli',
+      label: 'production workflow pins the Supabase CLI version',
+      file: '.github/workflows/deploy-production.yml',
+      pass: (text) => (
+        text.includes("SUPABASE_CLI_VERSION: '2.109.1'")
+        && text.includes('version: ${{ env.SUPABASE_CLI_VERSION }}')
+        && !text.includes('version: latest')
+      ),
+      failure: 'Production workflow must pin Supabase CLI instead of resolving latest during deploy.',
+    },
+    {
       id: 'live-evidence-manifest-required-gates',
       label: 'live evidence manifest keeps all broad-launch gates required',
       file: 'scripts/live-readiness-evidence-manifest.json',
