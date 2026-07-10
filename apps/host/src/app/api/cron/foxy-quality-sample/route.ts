@@ -356,3 +356,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     rubric_version: RUBRIC_VERSION,
   });
 }
+
+export async function GET(request: NextRequest): Promise<Response> {
+  return POST(request);
+}

@@ -50,4 +50,21 @@ describe('Vercel cron job registry (RCA-17)', () => {
       expect(job?.alertThreshold).toMatch(/\S/);
     }
   });
+
+  it('exposes GET for every scheduled Vercel cron path', () => {
+    const registry = readJson<{ jobs: JobRegistryEntry[] }>('scripts/job-registry.json');
+
+    for (const job of registry.jobs) {
+      const routePath = repoPath(`apps/host/src/app${job.path}/route.ts`);
+      expect(existsSync(routePath), `${job.path} route should exist`).toBe(true);
+      const source = readFileSync(routePath, 'utf8');
+
+      const hasGetFunction = /export\s+async\s+function\s+GET\b/.test(source);
+      const hasGetAlias = /export\s+const\s+GET\s*=/.test(source);
+      expect(
+        hasGetFunction || hasGetAlias,
+        `${job.path} must export GET because Vercel Cron invokes scheduled paths with GET`,
+      ).toBe(true);
+    }
+  });
 });
