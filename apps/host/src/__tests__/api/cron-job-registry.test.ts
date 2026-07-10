@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 function repoPath(rel: string): string {
   const fromHost = resolve(process.cwd(), '..', '..', rel);
@@ -11,6 +13,15 @@ function repoPath(rel: string): string {
 interface VercelCron {
   path: string;
   schedule: string;
+}
+
+interface VercelConfig {
+  framework?: string;
+  regions?: string[];
+  functions?: Record<string, unknown>;
+  crons: VercelCron[];
+  cleanUrls?: boolean;
+  trailingSlash?: boolean;
 }
 
 interface JobRegistryEntry {
@@ -28,10 +39,20 @@ function readJson<T>(rel: string): T {
 }
 
 describe('Vercel cron job registry (RCA-17)', () => {
+  it('keeps root and host Vercel config in sync', () => {
+    expect(existsSync(repoPath('vercel.json'))).toBe(true);
+    expect(existsSync(repoPath('apps/host/vercel.json'))).toBe(true);
+
+    const rootVercel = readJson<VercelConfig>('vercel.json');
+    const hostVercel = readJson<VercelConfig>('apps/host/vercel.json');
+
+    expect(hostVercel).toEqual(rootVercel);
+  });
+
   it('has an operations registry for every scheduled Vercel cron path', () => {
     expect(existsSync(repoPath('scripts/job-registry.json'))).toBe(true);
 
-    const vercel = readJson<{ crons: VercelCron[] }>('vercel.json');
+    const vercel = readJson<VercelConfig>('apps/host/vercel.json');
     const registry = readJson<{ jobs: JobRegistryEntry[] }>('scripts/job-registry.json');
 
     const vercelByPath = new Map(vercel.crons.map((cron) => [cron.path, cron.schedule]));
@@ -49,6 +70,45 @@ describe('Vercel cron job registry (RCA-17)', () => {
       expect(job?.lastSuccessMetric).toMatch(/\S/);
       expect(job?.alertThreshold).toMatch(/\S/);
     }
+  });
+
+  it('dry-runs the GitHub production cron runner for a registered path', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'alfanumrik-cron-runner-'));
+    const summaryPath = join(tempDir, 'summary.json');
+    const output = execFileSync(process.execPath, [repoPath('scripts/run-production-crons.mjs')], {
+      cwd: repoPath('apps/host'),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CRON_RUNNER_SUMMARY_PATH: summaryPath,
+        DRY_RUN: '1',
+        JOB_PATH: '/api/cron/payments-health',
+        TARGET_URL: 'https://example.invalid',
+      },
+    });
+
+    expect(output).toContain('Production cron runner selector: path:/api/cron/payments-health');
+    expect(output).toContain('[PASS] /api/cron/payments-health');
+
+    const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as {
+      ok: boolean;
+      dry_run: boolean;
+      total_jobs: number;
+      failed_jobs: number;
+      results: Array<{ path: string; dry_run: boolean; ok: boolean }>;
+    };
+
+    expect(summary).toMatchObject({
+      ok: true,
+      dry_run: true,
+      total_jobs: 1,
+      failed_jobs: 0,
+    });
+    expect(summary.results[0]).toMatchObject({
+      path: '/api/cron/payments-health',
+      dry_run: true,
+      ok: true,
+    });
   });
 
   it('exposes GET for every scheduled Vercel cron path', () => {

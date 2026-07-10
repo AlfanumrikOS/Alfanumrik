@@ -1,0 +1,88 @@
+{
+  "framework": "nextjs",
+  "regions": [
+    "bom1"
+  ],
+  "functions": {
+    "src/app/api/cron/daily-cron/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/irt-calibrate/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/board-score/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/internal/cron/fix-failed-questions/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/**/*.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/**/*.ts": {
+      "maxDuration": 30
+    },
+    "src/app/auth/**/*.ts": {
+      "maxDuration": 30
+    },
+    "src/app/**/*.tsx": {
+      "maxDuration": 15
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/school-operations",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/daily-cron",
+      "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/irt-calibrate",
+      "schedule": "50 2 * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-payments",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/payments-health",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/expired-subscriptions",
+      "schedule": "15 */6 * * *"
+    },
+    {
+      "path": "/api/cron/account-purge",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/pre-debit-notice",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/board-score",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/reverify-domains",
+      "schedule": "45 3 * * *"
+    },
+    {
+      "path": "/api/cron/foxy-quality-sample",
+      "schedule": "40 3 * * *"
+    },
+    {
+      "path": "/api/internal/cron/fix-failed-questions",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/streak-guardian",
+      "schedule": "30 16 * * *"
+    }
+  ],
+  "cleanUrls": true,
+  "trailingSlash": false
+}
