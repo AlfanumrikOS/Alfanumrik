@@ -39,6 +39,13 @@ const GIT_SHA = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'dev';
 /** Per-dependency probe timeout (ms). */
 const DEP_TIMEOUT_MS = 3_000;
 
+/**
+ * Supabase Edge Function gateways can cross 3s during cold starts or regional
+ * handoff. Keep the generic dependency timeout tight, but give the Edge gateway
+ * probe enough room to prove reachability before marking production degraded.
+ */
+const EDGE_FUNCTION_TIMEOUT_MS = 8_000;
+
 /** Run a promise with a timeout. Rejects if the promise doesn't resolve in time. */
 function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -118,7 +125,7 @@ async function checkEdgeFunctions(): Promise<DependencyResult> {
 
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DEP_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), EDGE_FUNCTION_TIMEOUT_MS);
     let res: Response;
     try {
       res = await fetch(target, {
