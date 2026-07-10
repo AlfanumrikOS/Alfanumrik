@@ -5,21 +5,21 @@ import AdminShell, { useAdmin } from '../_components/AdminShell';
 import { DataTable, StatCard, StatusBadge, NoDataState, type Column, type NoDataStateReason } from '@alfanumrik/ui/admin-ui';
 
 const colors = {
-  bg: 'var(--surface-1)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  border: 'var(--border)',
-  surface: 'var(--surface-2)',
-  accent: 'var(--info)',
-  success: 'var(--success)',
-  warning: 'var(--warning)',
-  danger: 'var(--danger)',
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  surface: '#F9FAFB',
+  accent: '#2563EB',
+  success: '#16A34A',
+  warning: '#D97706',
+  danger: '#DC2626',
 } as const;
 
 const tdStyle: React.CSSProperties = {
   padding: '10px 14px',
-  borderBottom: '1px solid var(--border)',
+  borderBottom: '1px solid #F3F4F6',
   color: colors.text1,
   fontSize: 13,
 };

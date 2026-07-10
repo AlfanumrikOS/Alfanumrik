@@ -117,7 +117,7 @@ export default function DiveHistoryPage() {
         </p>
         <Link
           href="/dive"
-          className="inline-block rounded-lg bg-secondary text-on-accent px-4 py-2 text-sm font-semibold"
+          className="inline-block rounded-lg bg-purple-700 text-white px-4 py-2 text-sm font-semibold"
         >
           {isHi ? 'डाइव खोलो →' : 'Open dive →'}
         </Link>

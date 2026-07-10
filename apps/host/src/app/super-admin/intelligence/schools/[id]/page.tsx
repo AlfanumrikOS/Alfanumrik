@@ -35,11 +35,11 @@ const CHURN_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'neutral'
 };
 
 function pillarAccent(score: number | null): string {
-  if (score == null) return 'var(--text-2)';
-  if (score >= 80) return 'var(--success)';
-  if (score >= 60) return 'var(--info)';
-  if (score >= 40) return 'var(--warning)';
-  return 'var(--danger)';
+  if (score == null) return '#6B7280';
+  if (score >= 80) return '#16A34A';
+  if (score >= 60) return '#2563EB';
+  if (score >= 40) return '#D97706';
+  return '#DC2626';
 }
 
 interface HealthPoint {
@@ -153,13 +153,7 @@ function SchoolDetailContent({ id }: { id: string }) {
 
       {/* Red alert banner */}
       {showAlert && (
-        <div
-          className="mb-6 rounded-lg border p-4"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--danger) 40%, transparent)',
-            backgroundColor: 'color-mix(in srgb, var(--danger) 5%, transparent)',
-          }}
-        >
+        <div className="mb-6 rounded-lg border border-[color-mix(in_srgb,var(--danger)_40%,transparent)] bg-[color-mix(in_srgb,var(--danger)_5%,transparent)] p-4">
           <div className="flex items-center gap-2 text-sm font-bold text-danger">
             <span aria-hidden>⚠</span>
             Churn alert — {band} risk

@@ -24,7 +24,6 @@
 
 import { useMemo } from 'react';
 import { StatusBadge } from '@alfanumrik/ui/admin-ui/StatusBadge';
-import { Button } from '@alfanumrik/ui/ui/primitives';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -122,7 +121,7 @@ export default function GradingQueue({
           <button
             type="button"
             onClick={onClose}
-            className="py-1 px-2.5 bg-transparent rounded-md text-[12px] font-semibold cursor-pointer hover:border-primary"
+            className="py-1 px-2.5 bg-transparent rounded-md text-[11px] font-semibold cursor-pointer hover:border-[#7C3AED]"
             style={{ color: 'var(--text-3)', border: '1px solid var(--border)' }}
           >
             {tt(isHi, 'Close', 'बंद करें')}
@@ -145,14 +144,18 @@ export default function GradingQueue({
             <p className="text-[14px] font-semibold mb-3" style={{ color: 'var(--text-2)' }}>
               {tt(isHi, "Couldn't load the grading queue", 'ग्रेडिंग कतार लोड नहीं हो सकी')}
             </p>
-            <Button type="button" variant="primary" size="sm" onClick={onRetry}>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="py-2 px-5 bg-[#E8581C] text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
+            >
               {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
-            </Button>
+            </button>
           </div>
         ) : ordered.length === 0 ? (
           // Empty
           <div className="text-center py-8" style={{ color: 'var(--text-3)' }} data-testid="grading-queue-empty">
-            <span className="text-2xl block mb-2" style={{ color: 'var(--success)' }}>&#x2713;</span>
+            <span className="text-2xl block mb-2" style={{ color: 'var(--success, #059669)' }}>&#x2713;</span>
             <p className="text-[14px] font-semibold mb-1" style={{ color: 'var(--text-2)' }}>
               {tt(isHi, 'Nothing to grade', 'ग्रेड करने के लिए कुछ नहीं')}
             </p>
@@ -173,10 +176,10 @@ export default function GradingQueue({
                 type="button"
                 onClick={() => onOpenRow(item)}
                 data-testid="grading-queue-row"
-                className="text-left w-full rounded-lg py-2.5 px-3 cursor-pointer transition-colors hover:border-primary"
+                className="text-left w-full rounded-lg py-2.5 px-3 cursor-pointer transition-colors hover:border-[#7C3AED]"
                 style={{
                   background: 'var(--surface-2)',
-                  border: `1px solid ${item.needs_review_reason ? 'var(--warning)' : 'var(--border)'}`,
+                  border: `1px solid ${item.needs_review_reason ? 'var(--warning, #D97706)' : 'var(--border)'}`,
                 }}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -203,7 +206,7 @@ export default function GradingQueue({
                     <div className="text-[18px] font-extrabold" style={{ color: 'var(--text-1)' }}>
                       {item.auto_score != null ? `${item.auto_score}%` : '—'}
                     </div>
-                    <div className="text-[12px] uppercase tracking-wide" style={{ color: 'var(--text-3)' }}>
+                    <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-3)' }}>
                       {tt(isHi, 'auto', 'स्वतः')}
                     </div>
                   </div>

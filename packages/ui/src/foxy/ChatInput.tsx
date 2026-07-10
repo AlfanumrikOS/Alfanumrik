@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, memo, useEffect, useCallback } from 'react';
-import { Chip, IconButton } from '@alfanumrik/ui/ui/primitives';
 import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
 import { startListening, isVoiceSupported } from '@alfanumrik/lib/voice';
 import { usePythonVoiceEnabled } from '@alfanumrik/lib/voice-feature-flag';
@@ -26,10 +25,8 @@ export const MATH_SYMBOL_TABS = [
   { id: 'sub', label: 'Sub', emoji: 'x₂', symbols: ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'] },
 ];
 
-// Fallback used only until the subjects service hook resolves. Token-only:
-// the emerald default now rides the semantic --success surface var so the
-// composer carries no raw hex before the subjects lookup hydrates.
-const DEFAULT_CONFIG = { icon: '⚛', color: 'var(--success)' };
+// Fallback used only until the subjects service hook resolves.
+const DEFAULT_CONFIG = { icon: '⚛', color: '#10B981' };
 
 export interface ChatInputProps {
   onSubmit: (t: string, image?: File | null) => void;
@@ -249,91 +246,103 @@ export const ChatInput = memo(function ChatInput({
       {/* Pulse animation for mic button */}
       <style>{`
         @keyframes mic-pulse {
-          0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-warm) 40%, transparent); }
-          50%       { box-shadow: 0 0 0 10px transparent; }
+          0%, 100% { box-shadow: 0 0 0 0 rgb(var(--accent-warm-rgb) / 0.4); }
+          50%       { box-shadow: 0 0 0 10px rgb(var(--accent-warm-rgb) / 0); }
         }
         .mic-pulsing { animation: mic-pulse 1.2s ease-in-out infinite; }
       `}</style>
 
       {showSymbols && (
         <div className="px-3 pt-2 pb-1">
-          <div className="flex gap-1.5 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
+          <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
             {MATH_SYMBOL_TABS.map(tab => (
-              <Chip
-                key={tab.id}
-                selected={symTab === tab.id}
-                icon={tab.emoji}
-                onClick={() => setSymTab(tab.id)}
-                className="shrink-0 whitespace-nowrap"
-              >
-                {tab.label}
-              </Chip>
+              <button key={tab.id} onClick={() => setSymTab(tab.id)}
+                className="shrink-0 px-2 py-1 rounded-lg text-[10px] font-bold transition-all"
+                style={{
+                  background: symTab === tab.id ? `${cfg.color}15` : 'transparent',
+                  color: symTab === tab.id ? cfg.color : 'var(--text-3)',
+                  border: symTab === tab.id ? `1px solid ${cfg.color}30` : '1px solid transparent',
+                }}>
+                <span className="text-sm mr-0.5">{tab.emoji}</span> {tab.label}
+              </button>
             ))}
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {syms.map((s, i) => (
-              <IconButton
-                key={i}
-                label={s}
-                icon={s}
-                variant="secondary"
-                size="sm"
-                onClick={() => insertAt(s)}
-                className="font-mono"
-              />
+              <button key={i} onClick={() => insertAt(s)}
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-semibold transition-all active:scale-90"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', fontFamily: 'monospace' }}>
+                {s}
+              </button>
             ))}
           </div>
         </div>
       )}
 
-      <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto px-3 pt-2 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        <Chip
-          selected={showSymbols}
-          onClick={() => setShowSymbols(!showSymbols)}
-          className="shrink-0 whitespace-nowrap"
-        >
-          {showSymbols ? (language === 'hi' ? '× बंद करें' : '× Close') : (language === 'hi' ? 'fx गणित' : 'fx Math')}
-        </Chip>
-        <Chip
-          selected={pointMode}
-          onClick={togglePoints}
-          className="shrink-0 whitespace-nowrap"
-        >
-          {pointMode ? (language === 'hi' ? '1. चालू' : '1. ON') : (language === 'hi' ? '1. बिंदु' : '1. Points')}
-        </Chip>
+      <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
+        <button onClick={() => setShowSymbols(!showSymbols)}
+          className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{
+            background: showSymbols ? `${cfg.color}15` : 'var(--surface-2)',
+            color: showSymbols ? cfg.color : 'var(--text-3)',
+            border: `1px solid ${showSymbols ? `${cfg.color}30` : 'var(--border)'}`,
+          }}>
+          {showSymbols ? '× Close' : 'fx Math'}
+        </button>
+        <button onClick={togglePoints}
+          className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{
+            background: pointMode ? `${cfg.color}15` : 'var(--surface-2)',
+            color: pointMode ? cfg.color : 'var(--text-3)',
+            border: `1px solid ${pointMode ? `${cfg.color}30` : 'var(--border)'}`,
+          }}>
+          {pointMode ? '1. ON' : '1. Points'}
+        </button>
         <input type="file" ref={fileRef} accept="image/*" capture="environment" onChange={handleImage} className="hidden" />
-        <Chip
-          selected={!!image}
-          onClick={() => fileRef.current?.click()}
-          className="shrink-0 whitespace-nowrap"
-        >
-          {image ? (language === 'hi' ? '1 फ़ोटो' : '1 image') : (language === 'hi' ? 'फ़ोटो' : 'Photo')}
-        </Chip>
+        <button onClick={() => fileRef.current?.click()}
+          className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
+          style={{
+            background: image ? `${cfg.color}15` : 'var(--surface-2)',
+            color: image ? cfg.color : 'var(--text-3)',
+            border: `1px solid ${image ? `${cfg.color}30` : 'var(--border)'}`,
+          }}>
+          {image ? '1 image' : 'Photo'}
+        </button>
 
         {/* Voice button — hidden entirely if browser doesn't support STT */}
         {sttSupported && (
-          <Chip
-            selected={isListening}
+          <button
             onClick={toggleVoice}
-            aria-label={isListening ? (language === 'hi' ? 'सुनना बंद करें' : 'Stop listening') : (language === 'hi' ? 'आवाज़ इनपुट शुरू करें' : 'Start voice input')}
-            title={isListening ? (language === 'hi' ? 'रोकें' : 'Stop') : (language === 'hi' ? 'आवाज़ इनपुट' : 'Voice input')}
-            className={`shrink-0 whitespace-nowrap${isListening ? ' mic-pulsing' : ''}`}
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95 flex items-center gap-1${isListening ? ' mic-pulsing' : ''}`}
+            style={{
+              // Warm channel (stays burnt-orange under cosmic, where --orange
+              // remaps to violet) for the active mic state. Wave 6 tokenization.
+              background: isListening
+                ? 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.13), rgb(var(--marigold-rgb) / 0.13))'
+                : 'var(--surface-2)',
+              color: isListening ? 'var(--accent-warm)' : 'var(--text-3)',
+              border: `1px solid ${isListening ? 'rgb(var(--accent-warm-rgb) / 0.25)' : 'var(--border)'}`,
+            }}
+            aria-label={isListening ? 'Stop listening' : 'Start voice input'}
+            title={isListening ? 'Stop' : 'Voice input'}
           >
-            {isListening
-              ? (language === 'hi' ? '● सुन रहा हूँ…' : '● Listening…')
-              : (language === 'hi' ? '🎤 आवाज़' : '🎤 Voice')}
-          </Chip>
+            {isListening ? (
+              <>
+                <span style={{ fontSize: 10 }}>●</span>
+                <span>Listening…</span>
+              </>
+            ) : (
+              <>
+                <span>🎤</span>
+                <span>Voice</span>
+              </>
+            )}
+          </button>
         )}
 
-        <span className="min-w-4 flex-1" />
+        <span className="flex-1" />
         {text.length > 0 && (
-          <span
-            className="text-[10px] mr-1"
-            style={{
-              color: text.length > 900 ? 'var(--danger)' : text.length > 800 ? 'var(--warning)' : 'var(--text-3)',
-              fontWeight: text.length > 900 ? 700 : text.length > 800 ? 600 : 400,
-            }}
-          >
+          <span className={`text-[10px] mr-1 ${text.length > 900 ? 'text-red-500 font-bold' : text.length > 800 ? 'text-orange-500 font-semibold' : 'text-[var(--text-3)]'}`}>
             {text.length}/1000
           </span>
         )}
@@ -350,11 +359,8 @@ export const ChatInput = memo(function ChatInput({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={imagePreview} alt="Attached" width={48} height={48} loading="lazy" className="w-12 h-12 rounded-lg object-cover border" style={{ borderColor: 'var(--border)' }} />
             <button
-              type="button"
-              aria-label={language === 'hi' ? 'फ़ोटो हटाएं' : 'Remove image'}
               onClick={() => { setImage(null); setImagePreview(null); if (fileRef.current) fileRef.current.value = ''; }}
-              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
-              style={{ background: 'var(--danger)', color: 'white' }}>
+              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold bg-red-500 text-white">
               x
             </button>
           </div>
@@ -385,9 +391,9 @@ export const ChatInput = memo(function ChatInput({
           className="flex-1 min-w-0 text-sm rounded-2xl px-4 py-2.5 resize-none outline-none leading-relaxed"
           style={{
             background: 'var(--surface-2)',
-            border: `1.5px solid ${isListening ? 'color-mix(in srgb, var(--accent-warm) 25%, transparent)' : pointMode ? `color-mix(in srgb, ${cfg.color} 25%, transparent)` : 'var(--border)'}`,
+            border: `1.5px solid ${isListening ? 'rgb(var(--accent-warm-rgb) / 0.25)' : pointMode ? `${cfg.color}40` : 'var(--border)'}`,
             fontFamily: 'var(--font-body)',
-            maxHeight: 'min(200px, 36dvh)',
+            maxHeight: 200,
             minHeight: pointMode ? 80 : 52,
             overflowWrap: 'break-word',
             wordBreak: 'break-word',
@@ -396,15 +402,18 @@ export const ChatInput = memo(function ChatInput({
             fontStyle: isInterim ? 'italic' : 'normal',
           }}
         />
-        <IconButton
-          label={language === 'hi' ? 'भेजें' : 'Send'}
-          icon={disabled ? '…' : '↑'}
-          variant="primary"
-          size="sm"
-          className="shrink-0"
+        <button
           onClick={send}
           disabled={disabled || (!text.trim() && !image)}
-        />
+          className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-90 disabled:opacity-40"
+          style={{
+            background: (text.trim() || image)
+              ? `linear-gradient(135deg, ${cfg.color}, ${cfg.color}dd)`
+              : 'var(--surface-2)',
+            color: (text.trim() || image) ? '#fff' : 'var(--text-3)',
+          }}>
+          {disabled ? '…' : '↑'}
+        </button>
       </div>
     </div>
   );

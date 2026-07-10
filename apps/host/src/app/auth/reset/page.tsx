@@ -4,16 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { validatePassword, PASSWORD_MIN_LENGTH } from '@alfanumrik/lib/sanitize';
-import { LoadingFoxy } from '@alfanumrik/ui/ui';
-import {
-  Button,
-  Input,
-  Field,
-  Card,
-  Alert,
-  EmptyState,
-  IconButton,
-} from '@alfanumrik/ui/ui/primitives';
+import { Button, Input, Card, LoadingFoxy } from '@alfanumrik/ui/ui';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 
 export default function ResetPasswordPage() {
@@ -120,149 +111,123 @@ export default function ResetPasswordPage() {
   if (checking) return <LoadingFoxy />;
 
   return (
-    <div className="mesh-bg flex min-h-dvh items-center justify-center p-5">
-      <Card variant="elevated" className="w-full max-w-sm animate-slide-up">
-        <div className="p-8">
-          {!hasSession && !success ? (
-            <EmptyState
-              icon="🔗"
-              title={isHi ? 'अमान्य या समाप्त लिंक' : 'Invalid or Expired Link'}
-              description={isHi
+    <div className="mesh-bg min-h-dvh flex items-center justify-center p-5">
+      <Card className="w-full max-w-sm animate-slide-up !p-8">
+        {!hasSession && !success ? (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }} aria-hidden="true">🔗</div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 22, marginBottom: 8 }}>
+              {isHi ? 'अमान्य या समाप्त लिंक' : 'Invalid or Expired Link'}
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 20 }}>
+              {isHi
                 ? 'यह पासवर्ड रीसेट लिंक समाप्त हो चुका है या अमान्य है। कृपया नया अनुरोध करें।'
                 : 'This password reset link has expired or is invalid. Please request a new one.'}
-              action={
-                <Button variant="primary" fullWidth onClick={() => router.replace('/login')}>
-                  {isHi ? 'लॉगिन पर जाएँ' : 'Go to Login'} &rarr;
-                </Button>
-              }
-            />
-          ) : success ? (
-            <EmptyState
-              icon="✅"
-              title={isHi ? 'पासवर्ड अपडेट हो गया!' : 'Password Updated!'}
-              description={isHi
+            </p>
+            <Button fullWidth onClick={() => router.replace('/login')}>
+              {isHi ? 'लॉगिन पर जाएँ' : 'Go to Login'} &rarr;
+            </Button>
+          </div>
+        ) : success ? (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }} aria-hidden="true">✅</div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 22, marginBottom: 8 }}>
+              {isHi ? 'पासवर्ड अपडेट हो गया!' : 'Password Updated!'}
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 20 }}>
+              {isHi
                 ? 'आपका पासवर्ड सफलतापूर्वक बदल दिया गया है। अब आप नए पासवर्ड से लॉगिन कर सकते हैं।'
                 : 'Your password has been changed successfully. You can now log in with your new password.'}
-              action={
-                <Button variant="primary" fullWidth onClick={() => router.replace('/login')}>
-                  {isHi ? 'लॉगिन करें' : 'Log In'} &rarr;
-                </Button>
-              }
-            />
-          ) : (
-            <>
-              <div className="mb-6 text-center">
-                <div className="mb-2 text-5xl" aria-hidden="true">🔐</div>
-                <h2
-                  className="text-fluid-2xl font-extrabold text-foreground"
-                  style={{ fontFamily: 'var(--font-display)' }}
+            </p>
+            <Button fullWidth onClick={() => router.replace('/login')}>
+              {isHi ? 'लॉगिन करें' : 'Log In'} &rarr;
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+              <div style={{ fontSize: 48, marginBottom: 8 }} aria-hidden="true">🔐</div>
+              <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 22 }}>
+                {isHi ? 'नया पासवर्ड सेट करें' : 'Set New Password'}
+              </h2>
+              <p style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 4 }}>
+                {isHi
+                  ? 'अपने खाते के लिए एक मज़बूत पासवर्ड चुनें'
+                  : 'Choose a strong password for your account'}
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ position: 'relative' }}>
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder={isHi
+                    ? `नया पासवर्ड (कम से कम ${PASSWORD_MIN_LENGTH} अक्षर, A-z, 0-9)`
+                    : `New password (min ${PASSWORD_MIN_LENGTH} chars, A-z, 0-9)`}
+                  aria-label={isHi ? 'नया पासवर्ड' : 'New password'}
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                />
+                <button
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword
+                    ? (isHi ? 'पासवर्ड छिपाएँ' : 'Hide password')
+                    : (isHi ? 'पासवर्ड दिखाएँ' : 'Show password')}
+                  style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--text-3)' }}
                 >
-                  {isHi ? 'नया पासवर्ड सेट करें' : 'Set New Password'}
-                </h2>
-                <p className="mt-1 text-fluid-xs text-muted-foreground">
-                  {isHi
-                    ? 'अपने खाते के लिए एक मज़बूत पासवर्ड चुनें'
-                    : 'Choose a strong password for your account'}
-                </p>
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
               </div>
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                placeholder={isHi ? 'नया पासवर्ड पुष्टि करें' : 'Confirm new password'}
+                aria-label={isHi ? 'नया पासवर्ड पुष्टि करें' : 'Confirm new password'}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && resetPassword()}
+              />
 
-              <div className="flex flex-col gap-3">
-                {/* New password */}
-                <Field
-                  htmlFor="reset-new-password"
-                  label={isHi ? 'नया पासवर्ड' : 'New password'}
-                  required
-                  requiredText={isHi ? 'आवश्यक' : 'required'}
-                >
-                  <div className="relative">
-                    <Input
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder={isHi
-                        ? `कम से कम ${PASSWORD_MIN_LENGTH} अक्षर, A-z, 0-9`
-                        : `Min ${PASSWORD_MIN_LENGTH} chars, A-z, 0-9`}
-                      autoComplete="new-password"
-                      minLength={PASSWORD_MIN_LENGTH}
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      className="pr-12"
-                    />
-                    <IconButton
-                      variant="ghost"
-                      size="sm"
-                      label={showPassword
-                        ? (isHi ? 'पासवर्ड छिपाएँ' : 'Hide password')
-                        : (isHi ? 'पासवर्ड दिखाएँ' : 'Show password')}
-                      icon={<span aria-hidden="true">{showPassword ? '🙈' : '👁️'}</span>}
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-1 top-1/2 -translate-y-1/2"
-                    />
-                  </div>
-                </Field>
+              {/* Password strength indicator */}
+              {password && (
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[1, 2, 3, 4].map(i => {
+                    const hasLower = /[a-z]/.test(password);
+                    const hasUpper = /[A-Z]/.test(password);
+                    const hasDigit = /\d/.test(password);
+                    const score = (password.length >= PASSWORD_MIN_LENGTH ? 1 : 0) + (hasLower ? 1 : 0) + (hasUpper ? 1 : 0) + (hasDigit ? 1 : 0);
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          flex: 1, height: 4, borderRadius: 2,
+                          background: i <= score
+                            ? score === 4 ? '#16A34A' : score >= 3 ? '#F5A623' : '#DC2626'
+                            : 'var(--surface-2)',
+                          transition: 'background 0.3s',
+                        }}
+                      />
+                    );
+                  })}
+                  <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 4, whiteSpace: 'nowrap' }}>
+                    {password.length < PASSWORD_MIN_LENGTH
+                      ? (isHi ? 'बहुत छोटा' : 'Too short')
+                      : validatePassword(password).valid
+                        ? (isHi ? 'मज़बूत' : 'Strong')
+                        : (isHi ? 'अधिक विविधता चाहिए' : 'Needs more variety')}
+                  </span>
+                </div>
+              )}
 
-                {/* Confirm password */}
-                <Field
-                  htmlFor="reset-confirm-password"
-                  label={isHi ? 'नया पासवर्ड पुष्टि करें' : 'Confirm new password'}
-                  required
-                  requiredText={isHi ? 'आवश्यक' : 'required'}
-                >
-                  <Input
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder={isHi ? 'नया पासवर्ड पुष्टि करें' : 'Confirm new password'}
-                    autoComplete="new-password"
-                    minLength={PASSWORD_MIN_LENGTH}
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && resetPassword()}
-                  />
-                </Field>
-
-                {/* Password strength indicator */}
-                {password && (
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4].map(i => {
-                      const hasLower = /[a-z]/.test(password);
-                      const hasUpper = /[A-Z]/.test(password);
-                      const hasDigit = /\d/.test(password);
-                      const score = (password.length >= PASSWORD_MIN_LENGTH ? 1 : 0) + (hasLower ? 1 : 0) + (hasUpper ? 1 : 0) + (hasDigit ? 1 : 0);
-                      return (
-                        <div
-                          key={i}
-                          className="h-1 flex-1 rounded-full"
-                          style={{
-                            background: i <= score
-                              ? score === 4 ? 'var(--success)' : score >= 3 ? 'var(--warning)' : 'var(--danger)'
-                              : 'var(--surface-2)',
-                            transition: 'background 0.3s',
-                          }}
-                        />
-                      );
-                    })}
-                    <span className="ml-1 whitespace-nowrap text-fluid-xs text-muted-foreground">
-                      {password.length < PASSWORD_MIN_LENGTH
-                        ? (isHi ? 'बहुत छोटा' : 'Too short')
-                        : validatePassword(password).valid
-                          ? (isHi ? 'मज़बूत' : 'Strong')
-                          : (isHi ? 'अधिक विविधता चाहिए' : 'Needs more variety')}
-                    </span>
-                  </div>
-                )}
-
-                {error && <Alert tone="danger">{error}</Alert>}
-
-                <Button
-                  variant="primary"
-                  fullWidth
-                  onClick={resetPassword}
-                  loading={loading}
-                  disabled={loading || !password || !confirmPassword}
-                >
-                  {isHi ? 'पासवर्ड अपडेट करें →' : 'Update Password →'}
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
+              {error && <p style={{ color: 'var(--red)', fontSize: 13 }} role="alert">{error}</p>}
+              <Button fullWidth onClick={resetPassword} disabled={loading || !password || !confirmPassword}>
+                {loading
+                  ? (isHi ? 'अपडेट हो रहा है…' : 'Updating…')
+                  : (isHi ? 'पासवर्ड अपडेट करें →' : 'Update Password →')}
+              </Button>
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );

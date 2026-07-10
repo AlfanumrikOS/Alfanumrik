@@ -29,16 +29,16 @@ import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 
 const colors = {
-  bg: 'var(--surface-1)',
-  surface2: 'var(--surface-2)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  border: 'var(--border)',
-  primary: 'var(--info)',
-  success: 'var(--success)',
-  warning: 'var(--warning)',
-  danger: 'var(--danger)',
+  bg: '#FFFFFF',
+  surface2: '#F9FAFB',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  primary: '#2563EB',
+  success: '#16A34A',
+  warning: '#D97706',
+  danger: '#DC2626',
 } as const;
 
 interface SubscriberRow {
@@ -315,7 +315,7 @@ const btnPrimary: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   background: colors.primary,
-  color: 'var(--on-accent)',
+  color: '#fff',
   border: 'none',
   borderRadius: 4,
   cursor: 'pointer',
@@ -326,7 +326,7 @@ const btnDanger: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   background: colors.danger,
-  color: 'var(--on-accent)',
+  color: '#fff',
   border: 'none',
   borderRadius: 4,
   cursor: 'pointer',
@@ -740,7 +740,7 @@ function ModalShell({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'var(--scrim)',
+        background: 'rgba(0,0,0,0.4)',
         zIndex: 50,
         display: 'flex',
         alignItems: 'center',
@@ -813,7 +813,7 @@ function DrawerShell({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'var(--scrim)',
+        background: 'rgba(0,0,0,0.3)',
         zIndex: 40,
         display: 'flex',
         justifyContent: 'flex-end',
@@ -829,7 +829,7 @@ function DrawerShell({
           height: '100%',
           padding: 20,
           overflow: 'auto',
-          boxShadow: 'var(--shadow-lg)',
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.1)',
         }}
       >
         <div

@@ -78,15 +78,15 @@ export function GraceWarningBanner({ graceExpiresAt, graceCeiling, isHi }: Grace
     <div
       role="status"
       className="rounded-2xl p-4"
-      style={{ background: 'color-mix(in srgb, var(--warning) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)' }}
+      style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}
     >
       <div className="flex items-start gap-3">
         <span className="text-xl flex-shrink-0" aria-hidden="true">⚠️</span>
         <div className="min-w-0">
-          <p className="text-sm font-bold" style={{ color: 'var(--warning)' }}>
+          <p className="text-sm font-bold" style={{ color: '#92400E' }}>
             {t(isHi, "You're over your plan seats", 'आप अपनी योजना की सीटों से अधिक हैं')}
           </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--warning)' }}>
+          <p className="text-xs mt-1" style={{ color: '#92400E' }}>
             {t(
               isHi,
               `${daysPhraseEn}${ceilingEn}. Upgrade your plan or remove students before ${when}, or new enrolments will be blocked.`,
@@ -118,15 +118,15 @@ export function SeatCapBlockBanner({ status, isHi, onDismiss }: SeatCapBlockBann
     <div
       role="alert"
       className="rounded-2xl p-4"
-      style={{ background: 'color-mix(in srgb, var(--danger) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--danger) 40%, transparent)' }}
+      style={{ background: '#FEF2F2', border: '1px solid #FCA5A5' }}
     >
       <div className="flex items-start gap-3">
         <span className="text-xl flex-shrink-0" aria-hidden="true">🚫</span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold" style={{ color: 'var(--danger)' }}>
+          <p className="text-sm font-bold" style={{ color: '#991B1B' }}>
             {t(isHi, 'Seat limit reached', 'सीट सीमा पूरी हो गई')}
           </p>
-          <p className="text-xs mt-1" style={{ color: 'var(--danger)' }}>
+          <p className="text-xs mt-1" style={{ color: '#991B1B' }}>
             {status === 'grace_expired'
               ? t(
                   isHi,
@@ -144,7 +144,7 @@ export function SeatCapBlockBanner({ status, isHi, onDismiss }: SeatCapBlockBann
               type="button"
               onClick={onDismiss}
               className="text-xs font-semibold mt-2"
-              style={{ color: 'var(--danger)' }}
+              style={{ color: '#DC2626' }}
             >
               {t(isHi, 'Dismiss', 'बंद करें')}
             </button>
@@ -170,9 +170,9 @@ export function InviteCapNotice({ remainingSeats, isHi }: InviteCapNoticeProps) 
     <div
       role="status"
       className="rounded-xl p-3"
-      style={{ background: 'color-mix(in srgb, var(--info) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--info) 30%, transparent)' }}
+      style={{ background: '#EFF6FF', border: '1px solid #BFDBFE' }}
     >
-      <p className="text-xs" style={{ color: 'var(--info)' }}>
+      <p className="text-xs" style={{ color: '#1E40AF' }}>
         {t(
           isHi,
           `This code's uses were capped to your ${remainingSeats} remaining seat${remainingSeats === 1 ? '' : 's'}. Upgrade your plan to invite more students.`,

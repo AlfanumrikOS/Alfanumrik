@@ -193,12 +193,12 @@ describe('Wave 4a — /learn locked subject → /pricing via LockedCard', () => 
   // upgrade CTA), so the legacy <LockedCard> is gone but the /pricing route and
   // the growth-mindset "Unlock" behavior are preserved.
   it('SOURCE: /learn routes plan-locked subjects to /pricing (canonical Card + Button)', () => {
-    const src = readSrc('app/learn/page.tsx');
+    const src = readSrc('app/(student)/learn/page.tsx');
     expect(src).toContain("router.push('/pricing')");
     // The locked subject stays VISIBLE — the page must not hide it behind the flag.
     expect(src).toContain('lockedSubjects.map');
-    // Legacy primitive fully retired on this surface.
-    expect(src).not.toContain('<LockedCard');
+    // Restored stable surface uses the LockedCard primitive directly.
+    expect(src).toContain('<LockedCard');
   });
 });
 

@@ -88,12 +88,12 @@ function relativeTime(dateStr: string): string {
 
 function statusColor(status: string): string {
   switch (status) {
-    case 'active': return 'var(--success)';
-    case 'pending': return 'var(--orange)';
-    case 'expired': case 'ended': return 'var(--text-3)';
-    case 'revoked': case 'rejected': return 'var(--danger)';
-    case 'approved': return 'var(--success)';
-    default: return 'var(--text-3)';
+    case 'active': return '#16A34A';
+    case 'pending': return '#F97316';
+    case 'expired': case 'ended': return '#6B7280';
+    case 'revoked': case 'rejected': return '#DC2626';
+    case 'approved': return '#16A34A';
+    default: return '#6B7280';
   }
 }
 
@@ -172,7 +172,6 @@ export default function SchoolAdminRBACPage() {
   const [delegations, setDelegations] = useState<DelegationRecord[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
   const [loadingData, setLoadingData] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
 
   /* ── Message toast ── */
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -252,78 +251,54 @@ export default function SchoolAdminRBACPage() {
   const fetchStats = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
-    setFetchError(null);
     try {
       const res = await apiFetch(`/api/school-admin/rbac?action=dashboard_stats&school_id=${schoolId}`);
       if (res.ok) {
         const d = await res.json();
         setStats(d.data || { activeElevations: 0, activeDelegations: 0, pendingApprovals: 0 });
-      } else {
-        setFetchError(t(isHi, 'Failed to load stats. Tap to retry.', 'आंकड़े लोड करने में विफल। दोबारा कोशिश करें।'));
       }
-    } catch {
-      setFetchError(t(isHi, 'Network error. Tap to retry.', 'नेटवर्क त्रुटि। दोबारा कोशिश करें।'));
-    } finally {
-      setLoadingData(false);
-    }
-  }, [schoolId, apiFetch, isHi]);
+    } catch { /* swallow */ }
+    setLoadingData(false);
+  }, [schoolId, apiFetch]);
 
   const fetchElevations = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
-    setFetchError(null);
     try {
       const res = await apiFetch(`/api/school-admin/rbac?action=elevations&school_id=${schoolId}`);
       if (res.ok) {
         const d = await res.json();
         setElevations(d.data || []);
-      } else {
-        setFetchError(t(isHi, 'Failed to load elevations. Tap to retry.', 'अधिकार लोड करने में विफल। दोबारा कोशिश करें।'));
       }
-    } catch {
-      setFetchError(t(isHi, 'Network error. Tap to retry.', 'नेटवर्क त्रुटि। दोबारा कोशिश करें।'));
-    } finally {
-      setLoadingData(false);
-    }
-  }, [schoolId, apiFetch, isHi]);
+    } catch { /* swallow */ }
+    setLoadingData(false);
+  }, [schoolId, apiFetch]);
 
   const fetchDelegations = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
-    setFetchError(null);
     try {
       const res = await apiFetch(`/api/school-admin/rbac?action=delegations&school_id=${schoolId}`);
       if (res.ok) {
         const d = await res.json();
         setDelegations(d.data || []);
-      } else {
-        setFetchError(t(isHi, 'Failed to load delegations. Tap to retry.', 'प्रतिनिधि लोड करने में विफल। दोबारा कोशिश करें।'));
       }
-    } catch {
-      setFetchError(t(isHi, 'Network error. Tap to retry.', 'नेटवर्क त्रुटि। दोबारा कोशिश करें।'));
-    } finally {
-      setLoadingData(false);
-    }
-  }, [schoolId, apiFetch, isHi]);
+    } catch { /* swallow */ }
+    setLoadingData(false);
+  }, [schoolId, apiFetch]);
 
   const fetchApprovals = useCallback(async () => {
     if (!schoolId) return;
     setLoadingData(true);
-    setFetchError(null);
     try {
       const res = await apiFetch(`/api/school-admin/rbac?action=approvals&school_id=${schoolId}`);
       if (res.ok) {
         const d = await res.json();
         setApprovals(d.data || []);
-      } else {
-        setFetchError(t(isHi, 'Failed to load approvals. Tap to retry.', 'अनुमोदन लोड करने में विफल। दोबारा कोशिश करें।'));
       }
-    } catch {
-      setFetchError(t(isHi, 'Network error. Tap to retry.', 'नेटवर्क त्रुटि। दोबारा कोशिश करें।'));
-    } finally {
-      setLoadingData(false);
-    }
-  }, [schoolId, apiFetch, isHi]);
+    } catch { /* swallow */ }
+    setLoadingData(false);
+  }, [schoolId, apiFetch]);
 
   /* ── Actions ── */
   const grantElevation = async () => {
@@ -474,16 +449,6 @@ export default function SchoolAdminRBACPage() {
   }, [authLoading, authUserId, router]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (loadingData) {
-        setLoadingData(false);
-        setFetchError(t(isHi, 'Loading timed out. Tap to retry.', 'लोडिंग टाइम आउट। दोबारा कोशिश करें।'));
-      }
-    }, 10_000);
-    return () => clearTimeout(timer);
-  }, [loadingData, isHi]);
-
-  useEffect(() => {
     if (!authLoading && authUserId) {
       fetchAdminRecord();
     }
@@ -550,9 +515,9 @@ export default function SchoolAdminRBACPage() {
           <div
             className="rounded-xl px-4 py-3 text-sm font-medium"
             style={{
-              background: message.type === 'success' ? 'color-mix(in srgb, var(--success) 8%, transparent)' : 'color-mix(in srgb, var(--danger) 8%, transparent)',
-              border: `1px solid ${message.type === 'success' ? 'color-mix(in srgb, var(--success) 20%, transparent)' : 'color-mix(in srgb, var(--danger) 20%, transparent)'}`,
-              color: message.type === 'success' ? 'var(--success)' : 'var(--danger)',
+              background: message.type === 'success' ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.08)',
+              border: `1px solid ${message.type === 'success' ? 'rgba(22,163,74,0.2)' : 'rgba(220,38,38,0.2)'}`,
+              color: message.type === 'success' ? '#16A34A' : '#DC2626',
             }}
             role="alert"
           >
@@ -562,7 +527,7 @@ export default function SchoolAdminRBACPage() {
 
         {/* New token display banner */}
         {newTokenDisplay && (
-          <Card accent="var(--orange)">
+          <Card accent="#F97316">
             <div className="space-y-3">
               <div className="flex items-start gap-2">
                 <span className="text-lg" aria-hidden="true">&#x26A0;&#xFE0F;</span>
@@ -617,34 +582,15 @@ export default function SchoolAdminRBACPage() {
               onClick={() => setActiveTab(tab.key)}
               className="px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all active:scale-95 flex-shrink-0"
               style={{
-                background: activeTab === tab.key ? 'color-mix(in srgb, var(--orange) 10%, transparent)' : 'transparent',
-                border: activeTab === tab.key ? '1.5px solid color-mix(in srgb, var(--orange) 30%, transparent)' : '1.5px solid transparent',
-                color: activeTab === tab.key ? 'var(--orange)' : 'var(--text-3)',
+                background: activeTab === tab.key ? 'rgba(249,115,22,0.1)' : 'transparent',
+                border: activeTab === tab.key ? '1.5px solid rgba(249,115,22,0.3)' : '1.5px solid transparent',
+                color: activeTab === tab.key ? '#F97316' : 'var(--text-3)',
               }}
             >
               {t(isHi, tab.labelEn, tab.labelHi)}
             </button>
           ))}
         </div>
-
-        {fetchError && (
-          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-6 text-center">
-            <p className="text-sm text-[var(--text-2)] mb-3">{fetchError}</p>
-            <Button
-              variant="primary"
-              onClick={() => {
-                switch (activeTab) {
-                  case 'dashboard': fetchStats(); break;
-                  case 'elevations': fetchElevations(); break;
-                  case 'delegations': fetchDelegations(); break;
-                  case 'approvals': fetchApprovals(); break;
-                }
-              }}
-            >
-              {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
-            </Button>
-          </div>
-        )}
 
         {/* ═══════════════════════════════════════
             TAB: DASHBOARD
@@ -653,11 +599,11 @@ export default function SchoolAdminRBACPage() {
           <section aria-label={t(isHi, 'RBAC Overview', 'RBAC अवलोकन')}>
             <div className="grid grid-cols-3 gap-3">
               {/* Active Elevations */}
-              <Card accent="var(--orange)">
+              <Card accent="#F97316">
                 <div className="text-center py-2">
                   <div
                     className="text-2xl font-bold font-['Sora',system-ui,sans-serif]"
-                    style={{ color: 'var(--orange)' }}
+                    style={{ color: '#F97316' }}
                   >
                     {loadingData ? '\u2014' : stats.activeElevations}
                   </div>
@@ -668,11 +614,11 @@ export default function SchoolAdminRBACPage() {
               </Card>
 
               {/* Active Delegations */}
-              <Card accent="var(--purple)">
+              <Card accent="#7C3AED">
                 <div className="text-center py-2">
                   <div
                     className="text-2xl font-bold font-['Sora',system-ui,sans-serif]"
-                    style={{ color: 'var(--purple)' }}
+                    style={{ color: '#7C3AED' }}
                   >
                     {loadingData ? '\u2014' : stats.activeDelegations}
                   </div>
@@ -683,11 +629,11 @@ export default function SchoolAdminRBACPage() {
               </Card>
 
               {/* Pending Approvals */}
-              <Card accent="var(--info)">
+              <Card accent="#0891B2">
                 <div className="text-center py-2">
                   <div
                     className="text-2xl font-bold font-['Sora',system-ui,sans-serif]"
-                    style={{ color: 'var(--info)' }}
+                    style={{ color: '#0891B2' }}
                   >
                     {loadingData ? '\u2014' : stats.pendingApprovals}
                   </div>
@@ -720,7 +666,7 @@ export default function SchoolAdminRBACPage() {
 
             {/* Grant Elevation form */}
             {showElevationForm && (
-              <Card accent="var(--orange)" className="mb-4">
+              <Card accent="#F97316" className="mb-4">
                 <h3 className="text-sm font-bold text-[var(--text-1)] mb-3">
                   {t(isHi, 'Grant Elevation', 'अधिकार दें')}
                 </h3>
@@ -848,9 +794,9 @@ export default function SchoolAdminRBACPage() {
                               onClick={() => revokeElevation(elev.id)}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
                               style={{
-                                color: 'var(--danger)',
-                                background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
-                                border: '1px solid color-mix(in srgb, var(--danger) 15%, transparent)',
+                                color: '#DC2626',
+                                background: 'rgba(220,38,38,0.06)',
+                                border: '1px solid rgba(220,38,38,0.15)',
                               }}
                             >
                               {t(isHi, 'Revoke', 'रद्द करें')}
@@ -888,7 +834,7 @@ export default function SchoolAdminRBACPage() {
 
             {/* Create Delegation Token form */}
             {showDelegationForm && (
-              <Card accent="var(--purple)" className="mb-4">
+              <Card accent="#7C3AED" className="mb-4">
                 <h3 className="text-sm font-bold text-[var(--text-1)] mb-3">
                   {t(isHi, 'Create Delegation Token', 'प्रतिनिधि टोकन बनाएं')}
                 </h3>
@@ -985,7 +931,7 @@ export default function SchoolAdminRBACPage() {
                           <div className="flex flex-wrap gap-1">
                             {Array.isArray(del.permissions) && del.permissions.length > 0 ? (
                               del.permissions.map((p) => (
-                                <Badge key={p} color="var(--purple)" size="sm">{p}</Badge>
+                                <Badge key={p} color="#7C3AED" size="sm">{p}</Badge>
                               ))
                             ) : (
                               <span className="text-xs text-[var(--text-3)]">\u2014</span>
@@ -1013,9 +959,9 @@ export default function SchoolAdminRBACPage() {
                               onClick={() => revokeDelegation(del.id)}
                               className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
                               style={{
-                                color: 'var(--danger)',
-                                background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
-                                border: '1px solid color-mix(in srgb, var(--danger) 15%, transparent)',
+                                color: '#DC2626',
+                                background: 'rgba(220,38,38,0.06)',
+                                border: '1px solid rgba(220,38,38,0.15)',
                               }}
                             >
                               {t(isHi, 'Revoke', 'रद्द करें')}
@@ -1080,9 +1026,9 @@ export default function SchoolAdminRBACPage() {
                             onClick={() => handleApproval(appr.id, 'approve')}
                             className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
                             style={{
-                              color: 'var(--success)',
-                              background: 'color-mix(in srgb, var(--success) 6%, transparent)',
-                              border: '1px solid color-mix(in srgb, var(--success) 15%, transparent)',
+                              color: '#16A34A',
+                              background: 'rgba(22,163,74,0.06)',
+                              border: '1px solid rgba(22,163,74,0.15)',
                             }}
                           >
                             {t(isHi, 'Approve', 'स्वीकृत')}
@@ -1091,9 +1037,9 @@ export default function SchoolAdminRBACPage() {
                             onClick={() => handleApproval(appr.id, 'reject')}
                             className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
                             style={{
-                              color: 'var(--danger)',
-                              background: 'color-mix(in srgb, var(--danger) 6%, transparent)',
-                              border: '1px solid color-mix(in srgb, var(--danger) 15%, transparent)',
+                              color: '#DC2626',
+                              background: 'rgba(220,38,38,0.06)',
+                              border: '1px solid rgba(220,38,38,0.15)',
                             }}
                           >
                             {t(isHi, 'Reject', 'अस्वीकृत')}

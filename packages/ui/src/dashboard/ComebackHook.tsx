@@ -70,7 +70,7 @@ export default function ComebackHook({ isHi, lastTopic, almostMastered, dueRevie
   // Priority 3: Unfinished topic (continue where you left off)
   if (lastTopic && lastTopic.progress > 0 && lastTopic.progress < 100) {
     return (
-      <button onClick={() => window.location.href = '/foxy'} className="w-full text-left rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
+      <button onClick={() => router.push('/foxy')} className="w-full text-left rounded-xl p-3 flex items-center gap-3 transition-all active:scale-[0.98]"
         style={{ background: 'rgba(8,145,178,0.06)', border: '1px solid rgba(8,145,178,0.15)' }}>
         <span className="text-xl">▶️</span>
         <div className="flex-1">

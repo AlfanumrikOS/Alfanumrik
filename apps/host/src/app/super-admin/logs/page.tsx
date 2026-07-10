@@ -4,13 +4,13 @@ import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 
 const colors = {
-  bg: 'var(--surface-1)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  border: 'var(--border-mid)',
-  borderLight: 'var(--border)',
-  surface: 'var(--surface-2)',
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  surface: '#F9FAFB',
 } as const;
 
 const tdStyle: React.CSSProperties = {
@@ -24,7 +24,7 @@ const thStyle: React.CSSProperties = {
   padding: '10px 14px',
   borderBottom: `2px solid ${colors.border}`,
   color: colors.text2,
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: 1,
@@ -164,11 +164,11 @@ function LogsContent() {
                 </td>
                 <td style={tdStyle}>
                   <span style={{ color: colors.text2 }}>{l.entity_type}</span>
-                  {l.entity_id && <code style={{ color: colors.text3, marginLeft: 4, fontSize: 12 }}>:{l.entity_id.slice(0, 8)}</code>}
+                  {l.entity_id && <code style={{ color: colors.text3, marginLeft: 4, fontSize: 10 }}>:{l.entity_id.slice(0, 8)}</code>}
                 </td>
-                <td style={{ ...tdStyle, fontSize: 12, color: colors.text3 }}>{l.ip_address || '—'}</td>
-                <td style={{ ...tdStyle, fontSize: 12 }}><code style={{ color: colors.text3 }}>{l.admin_id?.slice(0, 12) || '—'}</code></td>
-                <td style={{ ...tdStyle, fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', color: colors.text3 }}>
+                <td style={{ ...tdStyle, fontSize: 11, color: colors.text3 }}>{l.ip_address || '—'}</td>
+                <td style={{ ...tdStyle, fontSize: 11 }}><code style={{ color: colors.text3 }}>{l.admin_id?.slice(0, 12) || '—'}</code></td>
+                <td style={{ ...tdStyle, fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', color: colors.text3 }}>
                   {l.details ? JSON.stringify(l.details).slice(0, 60) : '—'}
                 </td>
               </tr>

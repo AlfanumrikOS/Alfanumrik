@@ -208,27 +208,27 @@ function B2BAnalyticsContent() {
           label="MRR"
           value={`INR ${formatINR(data.revenue.mrr)}`}
           icon="$"
-          accentColor="var(--success)"
+          accentColor="#16A34A"
           subtitle="Monthly Recurring Revenue"
         />
         <StatCard
           label="ARR"
           value={`INR ${formatINR(data.revenue.arr)}`}
           icon="$"
-          accentColor="var(--info)"
+          accentColor="#2563EB"
           subtitle="Annual Run Rate"
         />
         <StatCard
           label="Avg Rev / Student"
           value={`INR ${data.revenue.avg_revenue_per_student}`}
           icon="@"
-          accentColor="var(--warning)"
+          accentColor="#D97706"
         />
         <StatCard
           label="Total Seats"
           value={data.revenue.total_seats}
           icon="#"
-          accentColor="var(--text-2)"
+          accentColor="#6B7280"
           subtitle={`${data.revenue.total_enrolled} enrolled`}
         />
       </div>
@@ -239,24 +239,24 @@ function B2BAnalyticsContent() {
         <StatCard
           label="Schools This Month"
           value={data.growth.schools_this_month}
-          accentColor="var(--info)"
+          accentColor="#2563EB"
           trend={{ value: data.growth.school_growth_rate, label: '% vs last month' }}
         />
         <StatCard
           label="Schools Last Month"
           value={data.growth.schools_last_month}
-          accentColor="var(--text-3)"
+          accentColor="#9CA3AF"
         />
         <StatCard
           label="Students This Month"
           value={data.growth.students_this_month}
-          accentColor="var(--success)"
+          accentColor="#16A34A"
           trend={{ value: data.growth.student_growth_rate, label: '% vs last month' }}
         />
         <StatCard
           label="Students Last Month"
           value={data.growth.students_last_month}
-          accentColor="var(--text-3)"
+          accentColor="#9CA3AF"
         />
       </div>
 
@@ -280,7 +280,7 @@ function B2BAnalyticsContent() {
                       className="h-full rounded transition-[width] duration-300"
                       style={{
                         width: `${(d.count / maxCount) * 100}%`,
-                        background: 'var(--info)',
+                        background: '#2563EB',
                         opacity: 0.7,
                         minWidth: d.count > 0 ? 4 : 0,
                       }}

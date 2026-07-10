@@ -175,21 +175,21 @@ function FlagStatusTile({
   textCapture: TextCaptureFlag;
 }) {
   const status = flag.kill_switch
-    ? { label: 'KILL SWITCH', cls: 'text-danger', bg: 'color-mix(in srgb, var(--danger) 10%, transparent)', border: 'border-danger' }
+    ? { label: 'KILL SWITCH', cls: 'bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] text-danger', border: 'border-danger' }
     : flag.enabled
-      ? { label: 'ENABLED', cls: 'text-success', bg: 'color-mix(in srgb, var(--success) 10%, transparent)', border: 'border-success' }
-      : { label: 'DISABLED', cls: 'text-muted-foreground', bg: 'var(--surface-2)', border: 'border-surface-3' };
+      ? { label: 'ENABLED', cls: 'bg-[color-mix(in_srgb,var(--success)_10%,transparent)] text-success', border: 'border-success' }
+      : { label: 'DISABLED', cls: 'bg-surface-2 text-muted-foreground', border: 'border-surface-3' };
 
   const textStatus = textCapture.enabled
-    ? { label: 'ENABLED', cls: 'text-success', bg: 'color-mix(in srgb, var(--success) 10%, transparent)' }
-    : { label: 'DISABLED', cls: 'text-muted-foreground', bg: 'var(--surface-2)' };
+    ? { label: 'ENABLED', cls: 'bg-[color-mix(in_srgb,var(--success)_10%,transparent)] text-success' }
+    : { label: 'DISABLED', cls: 'bg-surface-2 text-muted-foreground' };
 
   return (
     <div className={`${CARD} ${status.border}`} data-testid="flag-status-tile">
       <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         Shadow flag
       </div>
-      <div className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-bold ${status.cls}`} style={{ backgroundColor: status.bg }}>
+      <div className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-bold ${status.cls}`}>
         {status.label}
       </div>
       <div className="mt-2 text-[11px] text-muted-foreground">
@@ -202,7 +202,7 @@ function FlagStatusTile({
         <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Text capture
         </div>
-        <div className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-bold ${textStatus.cls}`} style={{ backgroundColor: textStatus.bg }}>
+        <div className={`mt-1 inline-block rounded px-2 py-0.5 text-xs font-bold ${textStatus.cls}`}>
           {textStatus.label}
         </div>
       </div>
@@ -304,7 +304,7 @@ function MolShadowPageInner() {
   }
   if (error && !data) {
     return (
-      <div data-testid="mol-shadow-error" className="rounded-md p-3 text-[13px] text-danger" style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}>
+      <div data-testid="mol-shadow-error" className="rounded-md bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] p-3 text-[13px] text-danger">
         Error loading dashboard: {error}
       </div>
     );
@@ -346,7 +346,7 @@ function MolShadowPageInner() {
       </div>
 
       {error && (
-        <div className="mb-4 rounded-md p-3 text-[13px] text-warning" style={{ backgroundColor: 'color-mix(in srgb, var(--warning) 10%, transparent)' }}>
+        <div className="mb-4 rounded-md bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] p-3 text-[13px] text-warning">
           Refresh error: {error} (showing last successful data)
         </div>
       )}
@@ -491,9 +491,9 @@ function MolShadowPageInner() {
             <div className="mt-3 space-y-2">
               {(
                 [
-                  ['baseline', data.quality.winner_distribution.baseline, 'var(--info)'],
-                  ['shadow', data.quality.winner_distribution.shadow, 'var(--success)'],
-                  ['tie', data.quality.winner_distribution.tie, 'var(--text-3)'],
+                  ['baseline', data.quality.winner_distribution.baseline, '#2563EB'],
+                  ['shadow', data.quality.winner_distribution.shadow, '#16A34A'],
+                  ['tie', data.quality.winner_distribution.tie, '#9CA3AF'],
                 ] as const
               ).map(([label, count, color]) => {
                 const total =
@@ -686,21 +686,13 @@ function MolShadowPageInner() {
                     <td className={TD}>
                       {r.winner ? (
                         <span
-                          className={`rounded px-1.5 py-0.5 text-xs${r.winner === 'tie' ? '' : ' font-semibold'}`}
-                          style={{
-                            backgroundColor:
-                              r.winner === 'shadow'
-                                ? 'color-mix(in srgb, var(--success) 10%, transparent)'
-                                : r.winner === 'baseline'
-                                  ? 'color-mix(in srgb, var(--info) 10%, transparent)'
-                                  : 'var(--surface-2)',
-                            color:
-                              r.winner === 'shadow'
-                                ? 'var(--success)'
-                                : r.winner === 'baseline'
-                                  ? 'var(--text-1)'
-                                  : 'var(--text-3)',
-                          }}
+                          className={
+                            r.winner === 'shadow'
+                              ? 'rounded bg-[color-mix(in_srgb,var(--success)_10%,transparent)] px-1.5 py-0.5 text-xs font-semibold text-success'
+                              : r.winner === 'baseline'
+                                ? 'rounded bg-[color-mix(in_srgb,var(--info)_10%,transparent)] px-1.5 py-0.5 text-xs font-semibold text-foreground'
+                                : 'rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted-foreground'
+                          }
                         >
                           {r.winner}
                         </span>

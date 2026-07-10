@@ -6,14 +6,14 @@ import { DataTable, StatusBadge, type Column } from '@alfanumrik/ui/admin-ui';
 import { toast } from '@alfanumrik/ui/ui/toast';
 
 const colors = {
-  bg: 'var(--surface-1)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  border: 'var(--border)',
-  success: 'var(--success)',
-  warning: 'var(--warning)',
-  danger: 'var(--danger)',
+  bg: '#FFFFFF',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  border: '#E5E7EB',
+  success: '#16A34A',
+  warning: '#D97706',
+  danger: '#DC2626',
 } as const;
 
 const S = {
@@ -365,12 +365,12 @@ function AlertsContent() {
         <>
           <div
             onClick={() => setShowModal(false)}
-            style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 999 }}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.2)', zIndex: 999 }}
           />
           <div style={{
             position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
             background: colors.bg, borderRadius: 12, padding: 28, width: 440,
-            boxShadow: 'var(--shadow-lg)', zIndex: 1000,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)', zIndex: 1000,
             border: `1px solid ${colors.border}`,
           }}>
             <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, color: colors.text1 }}>Add Alert Rule</h3>

@@ -282,7 +282,7 @@ export default function PrincipalAiChat() {
               id="principal-ai-session"
               value={sessionId ?? ''}
               onChange={(e) => void resumeSession(e.target.value)}
-              className="max-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1.5 text-xs text-[var(--text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)]"
+              className="max-w-[180px] rounded-lg border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1.5 text-xs text-[var(--text-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple,#7C3AED)]"
             >
               {sessions.map((s, i) => (
                 <option key={s.id} value={s.id}>
@@ -299,11 +299,7 @@ export default function PrincipalAiChat() {
       {degraded && (
         <div
           role="status"
-          className="mx-4 mb-2 rounded-xl border px-3 py-2 text-xs text-[var(--text-1)]"
-          style={{
-            background: 'color-mix(in srgb, var(--warning) 12%, transparent)',
-            borderColor: 'color-mix(in srgb, var(--warning) 45%, transparent)',
-          }}
+          className="mx-4 mb-2 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800"
         >
           {tt(
             isHi,
@@ -334,7 +330,7 @@ export default function PrincipalAiChat() {
             <button
               type="button"
               onClick={() => void loadHistory()}
-              className="min-h-[44px] rounded-xl bg-[var(--purple)] px-4 py-2 text-sm font-semibold text-on-accent transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--purple)]"
+              className="min-h-[44px] rounded-xl bg-[var(--purple,#7C3AED)] px-4 py-2 text-sm font-semibold text-white transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--purple,#7C3AED)]"
             >
               {tt(isHi, 'Retry', 'दोबारा कोशिश करें')}
             </button>

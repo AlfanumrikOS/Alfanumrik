@@ -21,14 +21,10 @@
  *     server enforces the parent↔child ownership boundary (canAccessStudent)
  *     plus an RLS-scoped read. A 403 shows a neutral "not linked" notice with
  *     no payload.
- *
- * Presentation rebuilt on canonical primitives (Phase 10) — token-only. All
- * fetch/pagination/boundary logic is byte-intact.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@alfanumrik/lib/supabase';
-import { Button, Alert, EmptyState } from '@alfanumrik/ui/ui/primitives';
 
 const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -173,78 +169,144 @@ export default function ParentChildChat({
   }, [enabled, loadFirst]);
 
   return (
-    <div className="mt-4 border-t border-surface-3 pt-3.5">
-      <h4 className="mb-1 text-sm font-semibold text-foreground">
-        💬 {t(isHi, 'Foxy Conversations', 'Foxy बातचीत')}
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid #FDBA7433' }}>
+      <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1E293B', margin: '0 0 4px' }}>
+        &#x1F4AC; {t(isHi, 'Foxy Conversations', 'Foxy बातचीत')}
       </h4>
-      <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+      <p style={{ fontSize: 11, color: '#94A3B8', margin: '0 0 12px', lineHeight: 1.5 }}>
         {t(
           isHi,
           `${childName}'s conversations with Foxy. View only — you cannot send messages here.`,
-          `${childName} की Foxy के साथ बातचीत। केवल देखने के लिए — आप यहाँ संदेश नहीं भेज सकते।`,
+          `${childName} की Foxy के साथ बातचीत। केवल देखने के लिए — आप यहाँ संदेश नहीं भेज सकते।`
         )}
       </p>
 
       {/* Loading state */}
       {loading && (
-        <div className="px-2 py-5 text-center text-muted-foreground">
+        <div style={{ textAlign: 'center', padding: '20px 8px', color: '#94A3B8' }}>
           <div
-            className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-[3px] border-surface-3 border-t-primary"
-            aria-hidden="true"
+            style={{
+              width: 26,
+              height: 26,
+              border: '3px solid #FDBA7444',
+              borderTopColor: '#F97316',
+              borderRadius: '50%',
+              margin: '0 auto 8px',
+              animation: 'spin 0.8s linear infinite',
+            }}
           />
-          <span className="text-xs">{t(isHi, 'Loading conversation...', 'बातचीत लोड हो रही है...')}</span>
+          <span style={{ fontSize: 12 }}>{t(isHi, 'Loading conversation...', 'बातचीत लोड हो रही है...')}</span>
         </div>
       )}
 
       {/* Not-linked (403) */}
       {!loading && notLinked && (
-        <Alert tone="danger" title={t(isHi, 'Not available', 'उपलब्ध नहीं')}>
-          {t(
-            isHi,
-            'You need an approved link to view this conversation.',
-            'इस बातचीत को देखने के लिए आपको एक स्वीकृत लिंक चाहिए।',
-          )}
-        </Alert>
+        <div
+          style={{
+            backgroundColor: '#FEF2F2',
+            border: '1px solid #FECACA',
+            borderRadius: 10,
+            padding: '14px',
+            textAlign: 'center',
+          }}
+        >
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#991B1B', margin: '0 0 2px' }}>
+            {t(isHi, 'Not available', 'उपलब्ध नहीं')}
+          </p>
+          <p style={{ fontSize: 11, color: '#B91C1C', margin: 0, lineHeight: 1.4 }}>
+            {t(
+              isHi,
+              'You need an approved link to view this conversation.',
+              'इस बातचीत को देखने के लिए आपको एक स्वीकृत लिंक चाहिए।'
+            )}
+          </p>
+        </div>
       )}
 
       {/* Error */}
       {!loading && !notLinked && error && messages.length === 0 && (
-        <div className="px-2 py-3.5 text-center">
-          <Alert tone="danger" className="mb-2.5">
-            {error}
-          </Alert>
-          <Button size="sm" variant="secondary" onClick={loadFirst}>
+        <div style={{ textAlign: 'center', padding: '14px 8px' }}>
+          <p style={{ fontSize: 12, color: '#DC2626', margin: '0 0 10px' }}>{error}</p>
+          <button
+            onClick={loadFirst}
+            style={{
+              padding: '7px 16px',
+              backgroundColor: 'transparent',
+              color: '#F97316',
+              border: '1px solid #FDBA74',
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              minHeight: 44,
+            }}
+          >
             {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
-          </Button>
+          </button>
         </div>
       )}
 
       {/* Empty */}
       {!loading && !notLinked && !error && messages.length === 0 && (
-        <EmptyState
-          compact
-          icon={<span aria-hidden="true">🦊</span>}
-          title={t(isHi, 'No conversations yet', 'अभी तक कोई बातचीत नहीं')}
-          description={t(
-            isHi,
-            `When ${childName} chats with Foxy, the conversation will appear here.`,
-            `जब ${childName} Foxy से बात करेगा, तो बातचीत यहाँ दिखाई देगी।`,
-          )}
-        />
+        <div
+          style={{
+            borderRadius: 10,
+            border: '1px dashed #FDBA7488',
+            backgroundColor: '#FFF8F0',
+            padding: '18px 14px',
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: 26, marginBottom: 6 }}>&#x1F98A;</div>
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#9A3412', margin: '0 0 2px' }}>
+            {t(isHi, 'No conversations yet', 'अभी तक कोई बातचीत नहीं')}
+          </p>
+          <p style={{ fontSize: 11, color: '#B45309', margin: 0, lineHeight: 1.4 }}>
+            {t(
+              isHi,
+              `When ${childName} chats with Foxy, the conversation will appear here.`,
+              `जब ${childName} Foxy से बात करेगा, तो बातचीत यहाँ दिखाई देगी।`
+            )}
+          </p>
+        </div>
       )}
 
       {/* Messages — rendered oldest→newest (the API is newest-first, so reverse) */}
       {!loading && messages.length > 0 && (
-        <div className="flex max-h-[340px] flex-col gap-2 overflow-y-auto px-0.5 py-1">
+        <div
+          style={{
+            maxHeight: 340,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            padding: '4px 2px',
+          }}
+        >
           {/* Load-older control sits at the top (older messages are above). */}
           {hasMore && (
-            <div className="mb-1 self-center">
-              <Button size="sm" variant="secondary" onClick={loadOlder} loading={loadingMore} disabled={loadingMore}>
-                {loadingMore
-                  ? t(isHi, 'Loading...', 'लोड हो रहा है...')
-                  : t(isHi, 'Load older messages', 'पुराने संदेश लोड करें')}
-              </Button>
-            </div>
+            <button
+              onClick={loadOlder}
+              disabled={loadingMore}
+              style={{
+                alignSelf: 'center',
+                padding: '6px 14px',
+                marginBottom: 4,
+                backgroundColor: 'transparent',
+                color: '#F97316',
+                border: '1px solid #FDBA74',
+                borderRadius: 14,
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: loadingMore ? 'default' : 'pointer',
+                opacity: loadingMore ? 0.6 : 1,
+                minHeight: 32,
+              }}
+            >
+              {loadingMore
+                ? t(isHi, 'Loading...', 'लोड हो रहा है...')
+                : t(isHi, 'Load older messages', 'पुराने संदेश लोड करें')}
+            </button>
           )}
 
           {[...messages].reverse().map((m) => {
@@ -252,25 +314,48 @@ export default function ParentChildChat({
             return (
               <div
                 key={m.id}
-                className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: isAssistant ? 'flex-start' : 'flex-end',
+                }}
               >
                 <div
-                  className={`max-w-[82%] rounded-xl border border-surface-3 bg-surface-2 px-3 py-2 ${
-                    isAssistant ? 'rounded-tl-sm' : 'rounded-tr-sm'
-                  }`}
+                  style={{
+                    maxWidth: '82%',
+                    backgroundColor: isAssistant ? '#FFF3E0' : '#EFF6FF',
+                    border: `1px solid ${isAssistant ? '#FDBA7455' : '#BFDBFE'}`,
+                    borderRadius: 12,
+                    borderTopLeftRadius: isAssistant ? 2 : 12,
+                    borderTopRightRadius: isAssistant ? 12 : 2,
+                    padding: '8px 12px',
+                  }}
                 >
                   <span
-                    className={`mb-0.5 block text-2xs font-bold ${
-                      isAssistant ? 'text-primary' : 'text-info'
-                    }`}
+                    style={{
+                      display: 'block',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: isAssistant ? '#EA580C' : '#2563EB',
+                      marginBottom: 2,
+                    }}
                   >
                     {isAssistant ? 'Foxy' : childName}
                   </span>
-                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: '#1E293B',
+                      margin: 0,
+                      lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                    }}
+                  >
                     {m.text}
                   </p>
                 </div>
-                <span className="mx-1 mt-0.5 text-2xs text-muted-foreground">
+                <span style={{ fontSize: 9, color: '#94A3B8', margin: '2px 4px 0' }}>
                   {formatTime(m.created_at)}
                 </span>
               </div>
@@ -281,7 +366,7 @@ export default function ParentChildChat({
 
       {/* Non-fatal error while messages already shown (e.g. load-older failure) */}
       {!loading && messages.length > 0 && error && (
-        <p className="mt-2 text-center text-xs text-danger">{error}</p>
+        <p style={{ fontSize: 11, color: '#DC2626', textAlign: 'center', margin: '8px 0 0' }}>{error}</p>
       )}
     </div>
   );

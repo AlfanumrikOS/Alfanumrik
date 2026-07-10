@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useCheckout } from '@/hooks/useCheckout';
+import { useCheckout } from '@alfanumrik/lib/hooks/useCheckout';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { SubscriptionConfirm } from '@alfanumrik/ui/SubscriptionConfirm';
 import { useLang } from '@alfanumrik/ui/landing/LangToggle';

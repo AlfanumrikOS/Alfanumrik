@@ -70,7 +70,7 @@ export default function FoxyBannerCard({
       <FoxyBanner
         message={isHi ? `"${gap.topic_title || 'एक टॉपिक'}" में कमज़ोरी है — ठीक करें` : `Let's fix your gap in "${gap.topic_title || 'a topic'}"`}
         actionLabel={isHi ? 'Foxy से ठीक करो' : 'Fix with Foxy'}
-        onAction={() => window.location.href = '/foxy'}
+        onAction={() => router.push('/foxy')}
         accent="var(--purple)"
       />
     );
@@ -82,7 +82,7 @@ export default function FoxyBannerCard({
       <FoxyBanner
         message={isHi ? `आगे सीखो: ${nextTopic.title}` : `Continue: ${nextTopic.title}`}
         actionLabel={isHi ? 'सीखो' : 'Learn Now'}
-        onAction={() => window.location.href = '/foxy'}
+        onAction={() => router.push('/foxy')}
         accent={subjectMeta?.color}
       />
     );
@@ -93,7 +93,7 @@ export default function FoxyBannerCard({
     <FoxyBanner
       message={isHi ? 'आज कुछ नया सीखो! Foxy तैयार है' : 'Ready to learn something new? Foxy is waiting!'}
       actionLabel={isHi ? 'शुरू करो' : 'Start Learning'}
-      onAction={() => window.location.href = '/foxy'}
+      onAction={() => router.push('/foxy')}
     />
   );
 }

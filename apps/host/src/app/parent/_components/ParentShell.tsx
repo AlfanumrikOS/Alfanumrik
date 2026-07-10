@@ -5,22 +5,21 @@ import { useRouter, usePathname } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import DashboardSidebar, { type SidebarNavItem } from '@alfanumrik/ui/admin-ui/DashboardSidebar';
-import { RoleNavIcon } from '@alfanumrik/ui/navigation/role-nav';
 import { useParentAuth } from './useParentAuth';
 import { supabase } from '@alfanumrik/lib/supabase';
 import ParentMobileNav from './ParentMobileNav';
 
 const NAV_ITEMS: SidebarNavItem[] = [
-  { href: '/parent', label: 'Home', labelHi: 'होम', icon: <RoleNavIcon iconKey="home" /> },
-  { href: '/parent/children', label: 'Children', labelHi: 'बच्चे', icon: <RoleNavIcon iconKey="students" /> },
-  { href: '/parent/calendar', label: 'Calendar', labelHi: 'कैलेंडर', icon: <RoleNavIcon iconKey="calendar" /> },
-  { href: '/parent/messages', label: 'Messages', labelHi: 'संदेश', icon: <RoleNavIcon iconKey="messages" /> },
-  { href: '/parent/notifications', label: 'Notifications', labelHi: 'सूचनाएँ', icon: <RoleNavIcon iconKey="notifications" /> },
-  { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: <RoleNavIcon iconKey="reports" /> },
-  { href: '/parent/attendance', label: 'Attendance', labelHi: 'उपस्थिति', icon: <RoleNavIcon iconKey="attendance" /> },
-  { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: <RoleNavIcon iconKey="billing" /> },
-  { href: '/parent/support', label: 'Support', labelHi: 'सहायता', icon: <RoleNavIcon iconKey="support" /> },
-  { href: '/parent/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: <RoleNavIcon iconKey="profile" /> },
+  { href: '/parent', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
+  { href: '/parent/children', label: 'Children', labelHi: 'बच्चे', icon: '⊕' },
+  { href: '/parent/calendar', label: 'Calendar', labelHi: 'कैलेंडर', icon: '◐' },
+  { href: '/parent/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
+  { href: '/parent/notifications', label: 'Notifications', labelHi: 'सूचनाएँ', icon: '◉' },
+  { href: '/parent/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘' },
+  { href: '/parent/attendance', label: 'Attendance', labelHi: 'उपस्थिति', icon: '✓' },
+  { href: '/parent/billing', label: 'Billing', labelHi: 'बिलिंग', icon: '◈' },
+  { href: '/parent/support', label: 'Support', labelHi: 'सहायता', icon: '⊛' },
+  { href: '/parent/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
 ];
 
 // Polling interval for the sidebar unread badge. Conservative — the
@@ -220,11 +219,11 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="flex min-h-dvh bg-surface-2">
+    <div className="flex min-h-dvh bg-orange-50/30">
       <DashboardSidebar
         brandTitle="Alfanumrik"
         brandSubtitle={isHi ? 'अभिभावक' : 'Parent'}
-        primaryColor="var(--primary)" /* brand accent — token-driven, no raw hex */
+        primaryColor="#F97316" /* brand orange — parent portal accent */
         items={visibleItems}
         currentPath={pathname || ''}
         isHi={isHi}
@@ -232,11 +231,11 @@ export default function ParentShell({ children }: { children: React.ReactNode })
         footer={
           <div>
             {parentName && (
-              <div className="mb-2 truncate text-2xs text-muted-foreground">{parentName}</div>
+              <div className="mb-2 truncate text-[11px] text-muted-foreground">{parentName}</div>
             )}
             <button
               onClick={handleLogout}
-              className="w-full rounded-md border border-surface-3 bg-surface-1 py-1.5 text-2xs font-medium text-muted-foreground hover:bg-surface-2"
+              className="w-full rounded-md border border-surface-3 bg-surface-1 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
             >
               {isHi ? 'लॉगआउट' : 'Logout'}
             </button>

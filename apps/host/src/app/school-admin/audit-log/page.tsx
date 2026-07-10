@@ -74,11 +74,11 @@ function formatDateTime(dateStr: string): string {
 }
 
 function actionColor(action: string): string {
-  if (action.includes('invited')) return 'var(--success)';
-  if (action.includes('deactivated') || action.includes('revoked')) return 'var(--danger)';
-  if (action.includes('published') || action.includes('approved')) return 'var(--info)';
-  if (action.includes('exported')) return 'var(--purple)';
-  if (action.includes('generated')) return 'var(--orange)';
+  if (action.includes('invited')) return '#16A34A';
+  if (action.includes('deactivated') || action.includes('revoked')) return '#DC2626';
+  if (action.includes('published') || action.includes('approved')) return '#0891B2';
+  if (action.includes('exported')) return '#7C3AED';
+  if (action.includes('generated')) return '#F97316';
   return 'var(--text-2)';
 }
 

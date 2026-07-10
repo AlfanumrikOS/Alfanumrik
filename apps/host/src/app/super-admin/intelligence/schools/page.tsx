@@ -220,10 +220,10 @@ function SchoolsContent() {
       {!hasData && <div className="mb-6"><EICEmpty /></div>}
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Total Schools" value={summary.total} accentColor="var(--info)" />
-        <StatCard label="Elite" value={summary.elite} accentColor="var(--success)" />
-        <StatCard label="Needs Attention" value={summary.needs_attention} accentColor="var(--warning)" />
-        <StatCard label="Critical" value={summary.critical} accentColor="var(--danger)" />
+        <StatCard label="Total Schools" value={summary.total} accentColor="#2563EB" />
+        <StatCard label="Elite" value={summary.elite} accentColor="#16A34A" />
+        <StatCard label="Needs Attention" value={summary.needs_attention} accentColor="#D97706" />
+        <StatCard label="Critical" value={summary.critical} accentColor="#DC2626" />
       </div>
 
       {/* Filters */}

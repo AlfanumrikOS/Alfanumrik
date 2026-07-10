@@ -10,17 +10,12 @@
  * Extracted from src/app/revise/page.tsx (2026-05-20). The fetch shape,
  * URL handling, and modality labels are copied verbatim.
  *
- * Phase 8 rebuild: presentation rides Card + Button primitives and
- * token-only colour. The fetch, deep-link parsing, routing targets and
- * every data-testid are UNCHANGED — presentation only.
- *
  * Auto-hides (renders null) when the stack is empty.
  */
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { Card, Button } from '@alfanumrik/ui/ui/primitives';
 
 interface ReviseStackItem {
   subjectCode: string;
@@ -33,11 +28,11 @@ interface ReviseStackItem {
 
 const MODALITY_LABELS: Record<
   ReviseStackItem['recommendedModality'],
-  { en: string; hi: string; icon: string; toneVar: string }
+  { en: string; hi: string; icon: string; tint: string }
 > = {
-  'read':            { en: 'Read the chapter',                 hi: 'अध्याय पढ़ो',            icon: '📖', toneVar: 'var(--info)' },
-  'explainer':       { en: 'See an explainer',                 hi: 'समझाओ',                 icon: '💡', toneVar: 'var(--warning)' },
-  'worked-example':  { en: 'Walk through a worked example',    hi: 'हल किया उदाहरण देखो',  icon: '✏️', toneVar: 'var(--success)' },
+  'read':            { en: 'Read the chapter',                 hi: 'अध्याय पढ़ो',            icon: '📖', tint: '#6366F1' },
+  'explainer':       { en: 'See an explainer',                 hi: 'समझाओ',                 icon: '💡', tint: '#D97706' },
+  'worked-example':  { en: 'Walk through a worked example',    hi: 'हल किया उदाहरण देखो',  icon: '✏️', tint: '#16A34A' },
 };
 
 const SUBJECT_HI: Record<string, string> = {
@@ -96,86 +91,68 @@ export default function ChapterRefreshSection() {
   return (
     <section data-testid="refresh-section-b" className="space-y-3">
       <header>
-        <h2 className="text-fluid-base font-bold text-foreground" style={{ fontFamily: 'var(--font-display)' }}>
+        <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
           {isHi ? '🔁 अध्याय दोहराओ' : '🔁 Chapter Refresh'}
         </h2>
       </header>
 
       {hasDeepLink && (
-        <Card
+        <div
           data-testid="refresh-from-quiz-card"
-          variant="flat"
-          className="p-4"
-          style={{
-            background: 'color-mix(in srgb, var(--primary) 6%, var(--surface-1))',
-            borderColor: 'color-mix(in srgb, var(--primary) 15%, transparent)',
-          }}
+          className="rounded-2xl p-4"
+          style={{ background: 'rgba(232,88,28,0.06)', border: '1px solid rgba(232,88,28,0.15)' }}
         >
-          <p className="mb-2 text-fluid-2xs font-bold uppercase tracking-widest text-muted-foreground">
+          <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-3)' }}>
             {isHi ? 'क्विज़ से' : 'From your quiz'}
           </p>
-          <p className="text-fluid-sm font-semibold text-foreground">
+          <p className="font-semibold text-sm">
             {subjectLabel(fromQuizSubject as string, isHi)} · {isHi ? `अध्याय ${fromQuizChapter}` : `Chapter ${fromQuizChapter}`}
           </p>
-          <Button
-            variant="primary"
-            fullWidth
+          <button
             onClick={() => router.push(`/learn/${encodeURIComponent(fromQuizSubject as string)}/${fromQuizChapter}?mode=read&from=refresh`)}
-            leadingIcon={<span>📖</span>}
-            trailingIcon={<span>→</span>}
-            className="mt-3"
+            className="mt-3 w-full py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ background: 'var(--orange, #E8581C)' }}
           >
-            {isHi ? 'अध्याय दोबारा पढ़ो' : 'Re-read this chapter'}
-          </Button>
-        </Card>
+            📖 {isHi ? 'अध्याय दोबारा पढ़ो' : 'Re-read this chapter'} →
+          </button>
+        </div>
       )}
 
       {items.map((item) => {
         const m = MODALITY_LABELS[item.recommendedModality];
         return (
-          <Card
+          <div
             key={`${item.subjectCode}-${item.chapterNumber}`}
             data-testid="refresh-stack-card"
-            variant="flat"
-            className="p-4"
+            className="rounded-2xl p-4"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
           >
-            <div className="mb-3 flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-3">
               <div
-                className="flex h-11 w-11 items-center justify-center rounded-xl text-fluid-lg"
-                style={{
-                  background: `color-mix(in srgb, ${m.toneVar} 15%, var(--surface-1))`,
-                  color: m.toneVar,
-                }}
-                aria-hidden="true"
+                className="w-11 h-11 rounded-xl flex items-center justify-center text-xl"
+                style={{ background: `${m.tint}15`, color: m.tint }}
               >
                 {m.icon}
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-fluid-sm font-semibold text-foreground">
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm truncate">
                   {subjectLabel(item.subjectCode, isHi)} · {isHi ? `अध्याय ${item.chapterNumber}` : `Chapter ${item.chapterNumber}`}
                 </p>
-                <p className="mt-0.5 text-fluid-xs text-muted-foreground">
+                <p className="text-xs text-[var(--text-3)] mt-0.5">
                   {isHi
                     ? `${item.daysSinceLastTouch} दिन — पिछली मास्ट्री ${Math.round(item.mastery * 100)}%`
                     : `${item.daysSinceLastTouch} days · was at ${Math.round(item.mastery * 100)}% mastery`}
                 </p>
               </div>
             </div>
-            <Button
-              variant="secondary"
-              fullWidth
+            <button
               onClick={() => router.push(item.url)}
-              leadingIcon={<span>{m.icon}</span>}
-              trailingIcon={<span>→</span>}
-              style={{
-                backgroundColor: `color-mix(in srgb, ${m.toneVar} 12%, var(--surface-1))`,
-                borderColor: `color-mix(in srgb, ${m.toneVar} 34%, transparent)`,
-                color: 'var(--text-1)',
-              }}
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-white"
+              style={{ background: m.tint }}
             >
-              {isHi ? m.hi : m.en}
-            </Button>
-          </Card>
+              {m.icon} {isHi ? m.hi : m.en} →
+            </button>
+          </div>
         );
       })}
     </section>

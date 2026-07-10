@@ -26,13 +26,13 @@ function BulkActionsContent() {
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <h1 className="text-xl font-bold text-foreground">Bulk Actions</h1>
-        <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+        <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
           Select students and perform batch operations
         </p>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #E5E7EB', paddingBottom: 0 }}>
         {TABS.map(tab => (
           <button
             key={tab.key}
@@ -42,10 +42,10 @@ function BulkActionsContent() {
               padding: '10px 18px',
               fontSize: 13,
               fontWeight: activeTab === tab.key ? 600 : 400,
-              color: activeTab === tab.key ? 'var(--text-1)' : 'var(--text-2)',
+              color: activeTab === tab.key ? '#111827' : '#6B7280',
               background: 'none',
               border: 'none',
-              borderBottom: activeTab === tab.key ? '2px solid var(--text-1)' : '2px solid transparent',
+              borderBottom: activeTab === tab.key ? '2px solid #111827' : '2px solid transparent',
               cursor: 'pointer',
               marginBottom: -1,
               transition: 'color 0.1s',

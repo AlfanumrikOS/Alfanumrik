@@ -61,20 +61,20 @@ export function impactMeta(level: ImpactLevel, isHi: boolean): ImpactMeta {
       return {
         glyph: '▲',
         label: isHi ? 'ज़्यादा असर' : 'High impact',
-        color: 'var(--danger)',
+        color: 'var(--red, #DC2626)',
       };
     case 'medium':
       return {
         glyph: '◆',
         label: isHi ? 'मध्यम असर' : 'Medium impact',
-        color: 'var(--warning)',
+        color: 'var(--orange, #E8581C)',
       };
     case 'low':
     default:
       return {
         glyph: '○',
         label: isHi ? 'कम असर' : 'Low impact',
-        color: 'var(--success)',
+        color: 'var(--green, #16A34A)',
       };
   }
 }

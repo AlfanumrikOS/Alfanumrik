@@ -73,38 +73,38 @@ export default function TeacherClassReport({ classId }: Props) {
   }, [classId]);
 
   if (loading) {
-    return <div style={{ padding: 16, background: 'var(--surface-2)', borderRadius: 12, height: 100 }} />;
+    return <div style={{ padding: 16, background: '#f9fafb', borderRadius: 12, height: 100 }} />;
   }
 
   if (!stats) return null;
 
-  const scoreColor = stats.avgScore >= 70 ? 'var(--success)' : stats.avgScore >= 40 ? 'var(--warning)' : 'var(--danger)';
+  const scoreColor = stats.avgScore >= 70 ? '#22C55E' : stats.avgScore >= 40 ? '#EAB308' : '#EF4444';
 
   return (
     <div style={{
       padding: 16,
-      background: 'var(--surface-1)',
+      background: '#fff',
       borderRadius: 12,
-      border: '1px solid var(--surface-3)',
+      border: '1px solid #e5e7eb',
       display: 'flex',
       gap: 20,
       alignItems: 'center',
       flexWrap: 'wrap',
     }}>
       <div>
-        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{t(isHi, 'Class', 'कक्षा')}</div>
+        <div style={{ fontSize: 11, color: '#888' }}>{t(isHi, 'Class', 'कक्षा')}</div>
         <div style={{ fontSize: 16, fontWeight: 700 }}>{stats.className}</div>
       </div>
       <div>
-        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{t(isHi, 'Students', 'छात्र')}</div>
+        <div style={{ fontSize: 11, color: '#888' }}>{t(isHi, 'Students', 'छात्र')}</div>
         <div style={{ fontSize: 16, fontWeight: 700 }}>{stats.studentCount}</div>
       </div>
       <div>
-        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{t(isHi, 'Avg Score', 'औसत अंक')}</div>
+        <div style={{ fontSize: 11, color: '#888' }}>{t(isHi, 'Avg Score', 'औसत अंक')}</div>
         <div style={{ fontSize: 16, fontWeight: 700, color: scoreColor }}>{stats.avgScore}%</div>
       </div>
       <div>
-        <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{t(isHi, 'Quiz Completion', 'क्विज़ पूर्ण')}</div>
+        <div style={{ fontSize: 11, color: '#888' }}>{t(isHi, 'Quiz Completion', 'क्विज़ पूर्ण')}</div>
         <div style={{ fontSize: 16, fontWeight: 700 }}>{stats.completionRate}%</div>
       </div>
     </div>

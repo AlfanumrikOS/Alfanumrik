@@ -271,14 +271,14 @@ export default function ManageSubscriptionSection({
         <Card className="mb-3">
           <div
             className="px-4 py-4 rounded-2xl"
-            style={{ background: 'color-mix(in srgb, var(--success) 6%, transparent)', border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)' }}
+            style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.2)' }}
             role="status"
             data-testid="school-billing-comp-banner"
           >
             <div className="flex items-start gap-3">
               <span className="text-2xl" aria-hidden="true">🎁</span>
               <div className="min-w-0">
-                <p className="text-sm font-bold" style={{ color: 'var(--success)', fontFamily: 'var(--font-display)' }}>
+                <p className="text-sm font-bold" style={{ color: '#16A34A', fontFamily: 'var(--font-display)' }}>
                   {t(isHi, 'Complimentary (demo account)', 'निःशुल्क (डेमो खाता)')}
                 </p>
                 <p className="text-sm mt-1" style={{ color: 'var(--text-2)', lineHeight: 1.5 }}>
@@ -295,7 +295,7 @@ export default function ManageSubscriptionSection({
                     : t(isHi, 'Monthly', 'मासिक')}{' '}
                   · {compResult.seats} {t(isHi, 'seats', 'सीट')}
                   {' · '}
-                  <span style={{ color: 'var(--success)', fontWeight: 600 }}>
+                  <span style={{ color: '#16A34A', fontWeight: 600 }}>
                     {t(isHi, 'Active', 'सक्रिय')}
                   </span>
                   {compResult.current_period_end && (
@@ -433,7 +433,7 @@ export default function ManageSubscriptionSection({
                         className="text-left rounded-xl px-3 py-2.5 transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)]"
                         style={{
                           border: `1.5px solid ${active ? 'var(--purple)' : 'var(--border)'}`,
-                          background: active ? 'color-mix(in srgb, var(--purple) 6%, transparent)' : 'var(--surface-2)',
+                          background: active ? 'rgba(124,58,237,0.06)' : 'var(--surface-2)',
                           minHeight: 44,
                         }}
                         data-testid={`school-billing-cycle-${opt.value}`}
@@ -471,7 +471,7 @@ export default function ManageSubscriptionSection({
             </label>
 
             {errorMsg && (
-              <p className="text-xs font-semibold" style={{ color: 'var(--danger)' }}>{errorMsg}</p>
+              <p className="text-xs font-semibold" style={{ color: '#DC2626' }}>{errorMsg}</p>
             )}
 
             <div className="flex justify-end gap-2">
@@ -533,7 +533,7 @@ export default function ManageSubscriptionSection({
             </label>
 
             {errorMsg && (
-              <p className="text-xs font-semibold" style={{ color: 'var(--danger)' }}>{errorMsg}</p>
+              <p className="text-xs font-semibold" style={{ color: '#DC2626' }}>{errorMsg}</p>
             )}
 
             <div className="flex justify-end gap-2">

@@ -11,12 +11,12 @@ const cardCls = 'rounded-lg border border-surface-3 bg-surface-1';
 const cardSurfaceCls = 'rounded-lg border border-surface-3 bg-surface-2';
 const tableCls: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const thCls: React.CSSProperties = {
-  textAlign: 'left', padding: '10px 14px', borderBottom: '2px solid var(--surface-3)',
-  color: 'var(--text-2)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
-  letterSpacing: 1, background: 'var(--surface-2)', position: 'sticky', top: 0, zIndex: 1,
+  textAlign: 'left', padding: '10px 14px', borderBottom: '2px solid #E5E7EB',
+  color: '#6B7280', fontSize: 11, fontWeight: 600, textTransform: 'uppercase',
+  letterSpacing: 1, background: '#F9FAFB', position: 'sticky', top: 0, zIndex: 1,
 };
 const tdCls: React.CSSProperties = {
-  padding: '10px 14px', borderBottom: '1px solid var(--surface-2)', color: 'var(--text-1)', fontSize: 13,
+  padding: '10px 14px', borderBottom: '1px solid #F3F4F6', color: '#111827', fontSize: 13,
 };
 
 // File-local color + S const replacements (formerly imported from admin-styles).
@@ -24,15 +24,15 @@ const tdCls: React.CSSProperties = {
 // hand-rolled table + dialog markup. Tailwind className-based call sites use
 // the *Cls consts above instead.
 const colors = {
-  bg: 'var(--surface-1)',
-  surface: 'var(--surface-2)',
-  border: 'var(--surface-3)',
-  borderLight: 'var(--surface-2)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  danger: 'var(--danger)',
-  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  borderLight: '#F3F4F6',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
 } as const;
 
 const S = {
@@ -405,31 +405,24 @@ function ConfirmModal({
   }, [onCancel]);
   return (
     <>
-      <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--text-1) 35%, transparent)', zIndex: 999 }} />
+      <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 999 }} />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-title"
         style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-          background: 'var(--surface-1)', borderRadius: 10, padding: 24, width: 460,
-          boxShadow: '0 12px 48px color-mix(in srgb, var(--text-1) 18%, transparent)', zIndex: 1000,
+          background: '#FFFFFF', borderRadius: 10, padding: 24, width: 460,
+          boxShadow: '0 12px 48px rgba(0,0,0,0.18)', zIndex: 1000,
         }}
       >
-        <h3 id="confirm-title" style={{ margin: 0, fontSize: 16, color: 'var(--text-1)', fontWeight: 700 }}>{title}</h3>
-        <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 12, lineHeight: 1.5 }}>
+        <h3 id="confirm-title" style={{ margin: 0, fontSize: 16, color: '#111827', fontWeight: 700 }}>{title}</h3>
+        <div style={{ fontSize: 13, color: '#6B7280', marginTop: 12, lineHeight: 1.5 }}>
           {loading ? 'Checking affected students…' : warning}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
           <button className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2" onClick={onCancel} autoFocus>Cancel</button>
-          <button
-            className="rounded-md border border-danger px-4 py-2 text-sm font-semibold text-danger hover:bg-surface-2 disabled:opacity-50"
-            style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
-            onClick={onConfirm}
-            disabled={loading}
-          >
-            Disable anyway
-          </button>
+          <button className="rounded-md border border-danger bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-4 py-2 text-sm font-semibold text-danger hover:bg-[color-mix(in_srgb,var(--danger)_20%,transparent)] disabled:opacity-50" onClick={onConfirm} disabled={loading}>Disable anyway</button>
         </div>
       </div>
     </>

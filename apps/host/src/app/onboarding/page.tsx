@@ -19,7 +19,6 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { GRADES, BOARDS } from '@alfanumrik/lib/constants';
 import { LoadingFoxy } from '@alfanumrik/ui/ui';
-import { Field, Select, Chip, Button, Alert } from '@alfanumrik/ui/ui/primitives';
 import { track } from '@alfanumrik/lib/analytics';
 
 export default function OnboardingPage() {
@@ -78,9 +77,19 @@ export default function OnboardingPage() {
   // Non-student roles: show a brief redirect indicator while useEffect fires
   if (activeRole === 'teacher' || activeRole === 'guardian') {
     return (
-      <div className="mesh-bg flex min-h-dvh flex-col items-center justify-center px-4 py-6">
-        <div className="animate-float mb-4 text-5xl" aria-hidden="true">🦊</div>
-        <p className="text-fluid-sm font-semibold" style={{ color: 'var(--text-2)' }}>
+      <div
+        className="mesh-bg"
+        style={{
+          minHeight: '100dvh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px 16px',
+        }}
+      >
+        <div className="animate-float" style={{ fontSize: 48, marginBottom: 16 }}>🦊</div>
+        <p style={{ fontSize: 15, color: 'var(--text-2)', fontWeight: 600 }}>
           {isHi ? 'आपको रीडायरेक्ट किया जा रहा है…' : 'Redirecting you…'}
         </p>
       </div>
@@ -149,19 +158,39 @@ export default function OnboardingPage() {
     }
   };
 
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '12px 16px', borderRadius: 12,
+    border: '1.5px solid var(--border)', background: 'var(--surface-2)',
+    fontSize: 15, color: 'var(--text-1)', outline: 'none',
+    fontFamily: 'var(--font-body)', appearance: 'none',
+    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+  };
+
   return (
-    <div className="mesh-bg flex min-h-dvh flex-col items-center justify-center px-4 py-6">
-      <div className="w-full max-w-sm" style={{ animation: 'slideUp 0.5s ease-out' }}>
+    <div
+      className="mesh-bg"
+      style={{
+        minHeight: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px 16px',
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: 400, animation: 'slideUp 0.5s ease-out' }}>
         {/* Header */}
-        <div className="mb-8 text-center">
-          <div className="animate-float mb-3 text-5xl" aria-hidden="true">🦊</div>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div className="animate-float" style={{ fontSize: 48, marginBottom: 12 }}>🦊</div>
           <h1
-            className="mb-2 text-fluid-2xl font-bold text-foreground"
-            style={{ fontFamily: 'var(--font-display)' }}
+            style={{
+              fontSize: 22, fontWeight: 700, color: 'var(--text-1)',
+              marginBottom: 8, fontFamily: 'var(--font-display)',
+            }}
           >
             {isHi ? 'Alfanumrik में आपका स्वागत है!' : 'Welcome to Alfanumrik!'}
           </h1>
-          <p className="text-fluid-sm leading-relaxed text-muted-foreground">
+          <p style={{ fontSize: 14, color: 'var(--text-3)', lineHeight: 1.5 }}>
             {isHi
               ? 'हमें अपनी कक्षा और बोर्ड बताएं ताकि हम आपको सही विषय और अध्याय दिखा सकें।'
               : 'Tell us your grade and board so we can show you the right subjects and chapters.'}
@@ -169,88 +198,136 @@ export default function OnboardingPage() {
         </div>
 
         {/* Form */}
-        <div className="rounded-2xl border border-surface-3 bg-surface-1 p-6 shadow-md">
+        <div style={{
+          borderRadius: 16, padding: 24,
+          background: 'var(--surface-1)', border: '1px solid var(--border)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
+        }}>
           <form onSubmit={handleSubmit} aria-describedby={error ? 'onboarding-error' : undefined}>
-            <div className="flex flex-col gap-4">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {/* Grade */}
-              <Field
-                htmlFor="onboarding-grade"
-                label={isHi ? 'आपकी कक्षा' : 'Your Grade'}
-                required
-                requiredText={isHi ? 'आवश्यक' : 'required'}
-              >
-                <Select
+              <div style={{ animation: 'slideUp 0.4s ease-out 0.1s both' }}>
+                <label
+                  htmlFor="onboarding-grade"
+                  style={{
+                    display: 'block', fontSize: 13, fontWeight: 600,
+                    color: 'var(--text-2)', marginBottom: 6,
+                  }}
+                >
+                  {isHi ? 'आपकी कक्षा' : 'Your Grade'}
+                </label>
+                <select
                   id="onboarding-grade"
                   value={grade}
                   onChange={e => setGrade(e.target.value)}
-                  placeholder={isHi ? 'कक्षा चुनें...' : 'Select grade...'}
+                  style={inputStyle}
                   required
                 >
+                  <option value="" disabled>{isHi ? 'कक्षा चुनें...' : 'Select grade...'}</option>
                   {GRADES.map(g => (
                     <option key={g} value={g}>{isHi ? 'कक्षा' : 'Grade'} {g}</option>
                   ))}
-                </Select>
-              </Field>
+                </select>
+              </div>
 
               {/* Board */}
-              <Field
-                htmlFor="onboarding-board"
-                label={isHi ? 'आपका बोर्ड' : 'Your Board'}
-              >
-                <Select
+              <div style={{ animation: 'slideUp 0.4s ease-out 0.2s both' }}>
+                <label
+                  htmlFor="onboarding-board"
+                  style={{
+                    display: 'block', fontSize: 13, fontWeight: 600,
+                    color: 'var(--text-2)', marginBottom: 6,
+                  }}
+                >
+                  {isHi ? 'आपका बोर्ड' : 'Your Board'}
+                </label>
+                <select
                   id="onboarding-board"
                   value={board}
                   onChange={e => setBoard(e.target.value)}
+                  style={inputStyle}
                 >
                   {BOARDS.map(b => (
                     <option key={b} value={b}>{b}</option>
                   ))}
-                </Select>
-              </Field>
+                </select>
+              </div>
 
               {/* Academic Goal (optional) */}
-              <Field
-                label={isHi ? 'आपका लक्ष्य क्या है?' : "What's your goal?"}
-                optional
-                optionalText={isHi ? '(वैकल्पिक)' : '(optional)'}
-              >
+              <div style={{ animation: 'slideUp 0.4s ease-out 0.3s both' }}>
+                <label
+                  id="onboarding-goal-label"
+                  style={{
+                    display: 'block', fontSize: 13, fontWeight: 600,
+                    color: 'var(--text-2)', marginBottom: 6,
+                  }}
+                >
+                  {isHi ? 'आपका लक्ष्य क्या है? (वैकल्पिक)' : "What's your goal? (optional)"}
+                </label>
                 <div
                   role="group"
-                  aria-label={isHi ? 'आपका लक्ष्य' : 'Your goal'}
-                  className="grid grid-cols-2 gap-2"
+                  aria-labelledby="onboarding-goal-label"
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
+                  }}
                 >
                   {GOAL_OPTIONS.map(opt => (
-                    <Chip
+                    <button
                       key={opt.value}
-                      selected={academicGoal === opt.value}
-                      icon={opt.icon}
+                      type="button"
+                      aria-pressed={academicGoal === opt.value}
                       onClick={() => setAcademicGoal(prev => prev === opt.value ? '' : opt.value)}
-                      className="w-full justify-center"
+                      style={{
+                        padding: '10px 8px', borderRadius: 10, textAlign: 'center',
+                        border: `2px solid ${academicGoal === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                        background: academicGoal === opt.value ? 'rgba(232,88,28,0.06)' : 'var(--surface-2)',
+                        cursor: 'pointer', transition: 'border-color 0.15s ease, background 0.15s ease',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                      }}
                     >
-                      {isHi ? opt.labelHi : opt.label}
-                    </Chip>
+                      <span style={{ fontSize: 20 }}>{opt.icon}</span>
+                      <span
+                        style={{
+                          fontSize: 11, fontWeight: 600, lineHeight: 1.3,
+                          color: academicGoal === opt.value ? 'var(--accent)' : 'var(--text-2)',
+                        }}
+                      >
+                        {isHi ? opt.labelHi : opt.label}
+                      </span>
+                    </button>
                   ))}
                 </div>
-              </Field>
+              </div>
 
               {/* Error */}
               {error && (
-                <Alert id="onboarding-error" tone="danger">
+                <div id="onboarding-error" role="alert" style={{
+                  fontSize: 13, color: 'var(--danger)', margin: 0,
+                  padding: '8px 12px', borderRadius: 12,
+                  background: 'var(--danger-light)',
+                  border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
+                  fontWeight: 600,
+                }}>
                   {error}
-                </Alert>
+                </div>
               )}
 
               {/* Submit */}
-              <Button
+              <button
                 type="submit"
-                variant="primary"
-                size="lg"
-                fullWidth
-                loading={saving}
                 disabled={saving || !grade}
+                style={{
+                  width: '100%', padding: '14px 0', borderRadius: 12,
+                  background: grade ? 'linear-gradient(135deg, #E8590C, #F59E0B)' : 'var(--surface-3)',
+                  color: grade ? '#fff' : 'var(--text-3)',
+                  border: 'none', fontSize: 15, fontWeight: 700,
+                  cursor: grade && !saving ? 'pointer' : 'not-allowed',
+                  transition: 'all 0.2s ease',
+                  animation: 'slideUp 0.4s ease-out 0.4s both',
+                }}
               >
                 {saving ? (isHi ? 'सहेज रहे हैं...' : 'Saving...') : (isHi ? 'सीखना शुरू करें' : 'Start Learning')}
-              </Button>
+              </button>
             </div>
           </form>
         </div>

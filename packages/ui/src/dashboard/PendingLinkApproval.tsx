@@ -1,30 +1,9 @@
 'use client';
 
-/**
- * PendingLinkApproval — the child-side consent surface for a parent's link
- * request. Rebuilt on canonical primitives (Phase 3a, DD-16): the whole block
- * is an Alert(tone="info") shell; each request is a Card with an Avatar, a
- * Badge for the request age, and Button primary(approve) / ghost(reject)
- * actions. Outcome banners reuse Alert (success / info). Every legibility
- * concern (colour, on-accent text, 44px targets, focus ring) is owned by the
- * primitives — this file carries ZERO hardcoded colours or raw <button>s.
- *
- * The supabase fetch + approve/reject logic and the 1.5s auto-refresh handoff
- * are unchanged. Bilingual via `isHi` (P7). Self-hides when nothing is pending.
- */
-
 import { useState } from 'react';
-import {
-  Alert,
-  Avatar,
-  Badge,
-  Button,
-  Card,
-  CardBody,
-} from '@alfanumrik/ui/ui/primitives';
 
 // P7: bilingual helper
-const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
+const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
 
 export interface PendingLink {
   id: string;
@@ -47,16 +26,6 @@ function daysSince(dateStr: string): number {
   }
 }
 
-function requestedCopy(dateStr: string, isHi: boolean): string {
-  const days = daysSince(dateStr);
-  if (days === 0) return t(isHi, 'Requested today', 'आज अनुरोध किया');
-  return t(
-    isHi,
-    `Requested ${days} day${days > 1 ? 's' : ''} ago`,
-    `${days} दिन पहले अनुरोध किया`,
-  );
-}
-
 function LinkRow({
   link,
   onApproved,
@@ -69,6 +38,7 @@ function LinkRow({
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<'idle' | 'approved' | 'rejected'>('idle');
   const [error, setError] = useState('');
+  const days = daysSince(link.requestedAt);
 
   const handleAction = async (action: 'approve' | 'reject') => {
     setLoading(true);
@@ -81,14 +51,7 @@ function LinkRow({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data?.error) {
-        setError(
-          data?.error ||
-            t(
-              isHi,
-              'Something went wrong. Please try again.',
-              'कुछ गलत हुआ। कृपया फिर से कोशिश करें।',
-            ),
-        );
+        setError(data?.error || t(isHi, 'Something went wrong. Please try again.', 'कुछ गलत हुआ। कृपया फिर से कोशिश करें।'));
         setLoading(false);
         return;
       }
@@ -97,101 +60,114 @@ function LinkRow({
         onApproved();
       }, 1500);
     } catch {
-      setError(
-        t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया फिर से कोशिश करें।'),
-      );
+      setError(t(isHi, 'Network error. Please try again.', 'नेटवर्क त्रुटि। कृपया फिर से कोशिश करें।'));
       setLoading(false);
     }
   };
 
   if (status === 'approved') {
     return (
-      <Alert tone="success">
-        {t(
-          isHi,
-          `${link.parentName} approved as parent!`,
-          `${link.parentName} को अभिभावक के रूप में स्वीकार किया!`,
-        )}
-      </Alert>
+      <div className="flex items-center gap-2 px-4 py-3 bg-green-50 rounded-xl border border-green-200">
+        <span className="text-green-600 text-lg">✓</span>
+        <span className="text-sm font-semibold text-green-700">
+          {t(isHi, `${link.parentName} approved as parent!`, `${link.parentName} को अभिभावक के रूप में स्वीकार किया!`)}
+        </span>
+      </div>
     );
   }
 
   if (status === 'rejected') {
     return (
-      <Alert tone="info" icon={<span aria-hidden="true">✕</span>}>
-        {t(
-          isHi,
-          `Request from ${link.parentName} declined.`,
-          `${link.parentName} का अनुरोध अस्वीकार किया गया।`,
-        )}
-      </Alert>
+      <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 rounded-xl border border-gray-200">
+        <span className="text-gray-400 text-lg">✕</span>
+        <span className="text-sm text-gray-500">
+          {t(isHi, `Request from ${link.parentName} declined.`, `${link.parentName} का अनुरोध अस्वीकार किया गया।`)}
+        </span>
+      </div>
     );
   }
 
   return (
-    <Card variant="flat">
-      <CardBody className="flex items-center gap-3 py-3">
-        <Avatar name={link.parentName} alt={link.parentName} size="md" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-fluid-sm font-semibold text-foreground">
+    <div className="px-4 py-3 bg-amber-50 rounded-xl border border-amber-200">
+      <div className="flex items-start gap-3">
+        {/* Parent avatar */}
+        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+          {link.parentName.charAt(0).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900 m-0 truncate">
             {link.parentName}
           </p>
-          <Badge tone="neutral" variant="soft" className="mt-1">
-            {requestedCopy(link.requestedAt, isHi)}
-          </Badge>
+          <p className="text-xs text-amber-600 m-0">
+            {days === 0
+              ? t(isHi, 'Requested today', 'आज अनुरोध किया')
+              : t(isHi, `Requested ${days} day${days > 1 ? 's' : ''} ago`, `${days} दिन पहले अनुरोध किया`)}
+          </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            variant="primary"
-            size="sm"
-            loading={loading}
+        {/* Action buttons */}
+        <div className="flex gap-2 flex-shrink-0">
+          <button
             onClick={() => handleAction('approve')}
-          >
-            {t(isHi, 'Approve', 'स्वीकार करें')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
             disabled={loading}
+            aria-label={t(isHi, 'Approve', 'स्वीकार करें')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border-none text-white transition-opacity ${loading ? 'opacity-50 cursor-default' : 'cursor-pointer'}`}
+            style={{ backgroundColor: '#16A34A' }}
+          >
+            {loading ? (
+              <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            ) : (
+              t(isHi, 'Approve', 'स्वीकार करें')
+            )}
+          </button>
+          <button
             onClick={() => handleAction('reject')}
+            disabled={loading}
+            aria-label={t(isHi, 'Reject', 'अस्वीकार करें')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold bg-transparent transition-opacity ${loading ? 'opacity-50 cursor-default' : 'cursor-pointer'}`}
+            style={{ border: '1px solid #EF4444', color: '#EF4444' }}
           >
             {t(isHi, 'Reject', 'अस्वीकार करें')}
-          </Button>
+          </button>
         </div>
-      </CardBody>
+      </div>
       {error && (
-        <div className="px-4 pb-3">
-          <Alert tone="danger">{error}</Alert>
-        </div>
+        <p className="text-xs text-red-500 mt-2 m-0">{error}</p>
       )}
-    </Card>
+    </div>
   );
 }
 
-export default function PendingLinkApproval({
-  links,
-  onApproved,
-  isHi,
-}: PendingLinkApprovalProps) {
+export default function PendingLinkApproval({ links, onApproved, isHi }: PendingLinkApprovalProps) {
   if (!links || links.length === 0) return null;
 
-  const countLine =
-    links.length === 1
-      ? t(isHi, '1 pending request', '1 लंबित अनुरोध')
-      : t(isHi, `${links.length} pending requests`, `${links.length} लंबित अनुरोध`);
-
   return (
-    <Alert
-      tone="info"
-      icon={<span aria-hidden="true">🔔</span>}
-      title={t(isHi, 'Parent Link Request', 'अभिभावक लिंक अनुरोध')}
-    >
-      <p className="text-fluid-xs text-muted-foreground">{countLine}</p>
-      <div className="mt-3 flex flex-col gap-2.5">
+    <div className="rounded-2xl border border-amber-300 overflow-hidden mb-4" style={{ backgroundColor: '#FFFBEB' }}>
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-3 bg-amber-100 border-b border-amber-200">
+        <span className="text-xl" aria-hidden>🔔</span>
+        <div className="flex-1">
+          <h3 className="text-sm font-bold text-amber-900 m-0">
+            {t(isHi, 'Parent Link Request', 'अभिभावक लिंक अनुरोध')}
+          </h3>
+          <p className="text-xs text-amber-600 m-0">
+            {links.length === 1
+              ? t(isHi, '1 pending request', '1 लंबित अनुरोध')
+              : t(isHi, `${links.length} pending requests`, `${links.length} लंबित अनुरोध`)}
+          </p>
+        </div>
+      </div>
+
+      {/* Link rows */}
+      <div className="p-3 flex flex-col gap-2.5">
         {links.map((link) => (
-          <LinkRow key={link.id} link={link} onApproved={onApproved} isHi={isHi} />
+          <LinkRow
+            key={link.id}
+            link={link}
+            onApproved={onApproved}
+            isHi={isHi}
+          />
         ))}
       </div>
-    </Alert>
+    </div>
   );
 }

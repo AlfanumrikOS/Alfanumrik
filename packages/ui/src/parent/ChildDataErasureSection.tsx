@@ -13,24 +13,9 @@
  * The component fetches its own status on mount and on every successful
  * mutation. Parent pages just need to pass `studentId`, `studentName`,
  * and an `onChange` callback if they want to refresh siblings.
- *
- * Presentation rebuilt on canonical primitives (Phase 10). The destructive
- * confirm gating (typed-name match + disabled submit) is byte-for-byte
- * preserved — P13.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Dialog,
-  DialogTitle,
-  DialogBody,
-  DialogFooter,
-  Button,
-  Field,
-  Input,
-  Textarea,
-  Alert,
-} from '@alfanumrik/ui/ui/primitives';
 
 interface ErasureStatus {
   id: string;
@@ -163,27 +148,50 @@ export default function ChildDataErasureSection({
   const renderPendingBanner = () => {
     if (!status || status.status !== 'pending') return null;
     return (
-      <div className="mt-3">
-        <Alert
-          tone="danger"
-          title={t(
+      <div
+        style={{
+          padding: '12px 14px',
+          marginTop: 12,
+          backgroundColor: '#FEF2F2',
+          border: '1px solid #FECACA',
+          borderRadius: 10,
+        }}
+      >
+        <p style={{ fontSize: 13, fontWeight: 600, color: '#B91C1C', margin: 0 }}>
+          {t(
             isHi,
             `Erasure scheduled for ${formatDate(status.purge_at, isHi)}`,
             `${formatDate(status.purge_at, isHi)} के लिए मिटाना निर्धारित है`,
           )}
+        </p>
+        <p style={{ fontSize: 12, color: '#7F1D1D', margin: '4px 0 8px' }}>
+          {t(
+            isHi,
+            "All of your child's learning data will be deleted on this date. You can cancel until then.",
+            'इस तिथि को आपके बच्चे का सारा डेटा हटा दिया जाएगा। आप तब तक रद्द कर सकते हैं।',
+          )}
+        </p>
+        <button
+          onClick={cancelErasure}
+          disabled={loading}
+          style={{
+            padding: '6px 14px',
+            backgroundColor: '#FFFFFF',
+            color: '#B91C1C',
+            border: '1px solid #B91C1C',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: loading ? 'wait' : 'pointer',
+          }}
         >
-          <p className="mb-2">
-            {t(
-              isHi,
-              "All of your child's learning data will be deleted on this date. You can cancel until then.",
-              'इस तिथि को आपके बच्चे का सारा डेटा हटा दिया जाएगा। आप तब तक रद्द कर सकते हैं।',
-            )}
-          </p>
-          <Button size="sm" variant="secondary" onClick={cancelErasure} loading={loading} disabled={loading}>
-            {loading ? t(isHi, 'Cancelling…', 'रद्द हो रहा है…') : t(isHi, 'Cancel erasure', 'मिटाना रद्द करें')}
-          </Button>
-          {error && <p className="mt-1.5 text-xs text-danger">{error}</p>}
-        </Alert>
+          {loading
+            ? t(isHi, 'Cancelling…', 'रद्द हो रहा है…')
+            : t(isHi, 'Cancel erasure', 'मिटाना रद्द करें')}
+        </button>
+        {error && (
+          <p style={{ fontSize: 11, color: '#B91C1C', margin: '6px 0 0' }}>{error}</p>
+        )}
       </div>
     );
   };
@@ -191,7 +199,17 @@ export default function ChildDataErasureSection({
   const renderCompletedNote = () => {
     if (!status || status.status !== 'completed') return null;
     return (
-      <div className="mt-3 rounded-lg border border-surface-3 bg-surface-2 px-3 py-2.5 text-xs text-muted-foreground">
+      <div
+        style={{
+          padding: '10px 12px',
+          marginTop: 12,
+          backgroundColor: '#F3F4F6',
+          border: '1px solid #D1D5DB',
+          borderRadius: 10,
+          fontSize: 12,
+          color: '#374151',
+        }}
+      >
         {t(
           isHi,
           `Erasure completed on ${formatDate(status.processed_at ?? status.purge_at, isHi)}.`,
@@ -206,96 +224,161 @@ export default function ChildDataErasureSection({
   // guardian re-request.
   const showDeleteCta = !status || ['cancelled', 'failed'].includes(status.status);
 
-  const nameMismatch = confirmName.trim() !== studentName.trim();
-
   return (
-    <div className="mt-3">
+    <div style={{ marginTop: 12 }}>
       {renderPendingBanner()}
       {renderCompletedNote()}
       {showDeleteCta && (
-        <div className={status ? 'mt-3' : ''}>
-          <Button variant="danger" size="sm" onClick={() => setShowDialog(true)}>
-            {t(isHi, "Delete my child's data", 'मेरे बच्चे का डेटा हटाएं')}
-          </Button>
-        </div>
+        <button
+          onClick={() => setShowDialog(true)}
+          style={{
+            padding: '7px 16px',
+            marginTop: status ? 12 : 0,
+            backgroundColor: 'transparent',
+            color: '#B91C1C',
+            border: '1px solid #B91C1C',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          {t(isHi, "Delete my child's data", 'मेरे बच्चे का डेटा हटाएं')}
+        </button>
       )}
 
-      <Dialog
-        open={showDialog}
-        onClose={() => {
-          if (loading) return;
-          setShowDialog(false);
-          setConfirmName('');
-          setReason('');
-          setError(null);
-        }}
-        size="md"
-        disableEscapeClose
-        disableScrimClose
-      >
-        <DialogTitle>
-          {t(isHi, 'Permanently delete child data?', 'बच्चे का डेटा स्थायी रूप से हटाएं?')}
-        </DialogTitle>
-        <DialogBody className="space-y-3">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {t(
-              isHi,
-              "Under DPDP §15 you can request erasure of your child's data. We schedule the deletion 7 days from now so you can change your mind. Once the grace period ends, all learning history, quiz attempts, AI tutor chats, and the account itself are deleted permanently. This cannot be undone.",
-              'DPDP §15 के तहत आप अपने बच्चे के डेटा को मिटाने का अनुरोध कर सकते हैं। हम आज से 7 दिन बाद मिटाना निर्धारित करते हैं ताकि आप अपना मन बदल सकें। ग्रेस अवधि समाप्त होने के बाद, सभी सीखने का इतिहास, क्विज़ प्रयास, AI ट्यूटर चैट और स्वयं खाता स्थायी रूप से हटा दिया जाता है। यह वापस नहीं किया जा सकता।',
-            )}
-          </p>
-          <Field
-            label={t(
-              isHi,
-              `Type your child's full name to confirm: ${studentName}`,
-              `पुष्टि के लिए अपने बच्चे का पूरा नाम टाइप करें: ${studentName}`,
-            )}
-            htmlFor="erasure-confirm-name"
+      {showDialog && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="erasure-dialog-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 12,
+              maxWidth: 520,
+              width: '100%',
+              padding: 24,
+            }}
           >
-            <Input
+            <h3 id="erasure-dialog-title" style={{ fontSize: 18, fontWeight: 700, color: '#1E293B', margin: '0 0 8px' }}>
+              {t(isHi, 'Permanently delete child data?', 'बच्चे का डेटा स्थायी रूप से हटाएं?')}
+            </h3>
+            <p style={{ fontSize: 13, color: '#475569', margin: '0 0 12px', lineHeight: 1.5 }}>
+              {t(
+                isHi,
+                "Under DPDP §15 you can request erasure of your child's data. We schedule the deletion 7 days from now so you can change your mind. Once the grace period ends, all learning history, quiz attempts, AI tutor chats, and the account itself are deleted permanently. This cannot be undone.",
+                'DPDP §15 के तहत आप अपने बच्चे के डेटा को मिटाने का अनुरोध कर सकते हैं। हम आज से 7 दिन बाद मिटाना निर्धारित करते हैं ताकि आप अपना मन बदल सकें। ग्रेस अवधि समाप्त होने के बाद, सभी सीखने का इतिहास, क्विज़ प्रयास, AI ट्यूटर चैट और स्वयं खाता स्थायी रूप से हटा दिया जाता है। यह वापस नहीं किया जा सकता।',
+              )}
+            </p>
+            <label
+              htmlFor="erasure-confirm-name"
+              style={{ fontSize: 12, fontWeight: 600, color: '#1E293B', display: 'block', marginBottom: 4 }}
+            >
+              {t(
+                isHi,
+                `Type your child's full name to confirm: ${studentName}`,
+                `पुष्टि के लिए अपने बच्चे का पूरा नाम टाइप करें: ${studentName}`,
+              )}
+            </label>
+            <input
               id="erasure-confirm-name"
               value={confirmName}
               onChange={(e) => setConfirmName(e.target.value)}
               autoComplete="off"
               spellCheck={false}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                border: '1px solid #CBD5E1',
+                borderRadius: 8,
+                fontSize: 14,
+                marginBottom: 12,
+              }}
             />
-          </Field>
-          <Field label={t(isHi, 'Reason (optional)', 'कारण (वैकल्पिक)')} htmlFor="erasure-reason" optional>
-            <Textarea
+            <label
+              htmlFor="erasure-reason"
+              style={{ fontSize: 12, fontWeight: 600, color: '#1E293B', display: 'block', marginBottom: 4 }}
+            >
+              {t(isHi, 'Reason (optional)', 'कारण (वैकल्पिक)')}
+            </label>
+            <textarea
               id="erasure-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               maxLength={2000}
               rows={3}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                border: '1px solid #CBD5E1',
+                borderRadius: 8,
+                fontSize: 13,
+                resize: 'vertical',
+              }}
             />
-          </Field>
-          {error && <Alert tone="danger">{error}</Alert>}
-        </DialogBody>
-        <DialogFooter>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setShowDialog(false);
-              setConfirmName('');
-              setReason('');
-              setError(null);
-            }}
-            disabled={loading}
-          >
-            {t(isHi, 'Cancel', 'रद्द करें')}
-          </Button>
-          <Button
-            variant="danger"
-            onClick={requestErasure}
-            loading={loading}
-            disabled={loading || nameMismatch}
-          >
-            {loading
-              ? t(isHi, 'Submitting…', 'सबमिट हो रहा है…')
-              : t(isHi, 'Schedule deletion in 7 days', '7 दिनों में मिटाना निर्धारित करें')}
-          </Button>
-        </DialogFooter>
-      </Dialog>
+            {error && (
+              <p style={{ fontSize: 12, color: '#B91C1C', margin: '8px 0 0' }}>{error}</p>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button
+                onClick={() => {
+                  setShowDialog(false);
+                  setConfirmName('');
+                  setReason('');
+                  setError(null);
+                }}
+                disabled={loading}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#FFFFFF',
+                  color: '#475569',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: loading ? 'wait' : 'pointer',
+                }}
+              >
+                {t(isHi, 'Cancel', 'रद्द करें')}
+              </button>
+              <button
+                onClick={requestErasure}
+                disabled={loading || confirmName.trim() !== studentName.trim()}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#B91C1C',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor:
+                    loading || confirmName.trim() !== studentName.trim()
+                      ? 'not-allowed'
+                      : 'pointer',
+                  opacity: confirmName.trim() !== studentName.trim() ? 0.5 : 1,
+                }}
+              >
+                {loading
+                  ? t(isHi, 'Submitting…', 'सबमिट हो रहा है…')
+                  : t(isHi, 'Schedule deletion in 7 days', '7 दिनों में मिटाना निर्धारित करें')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

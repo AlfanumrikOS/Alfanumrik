@@ -286,8 +286,7 @@ function TracesContent() {
       {error && (
         <div
           data-testid="grounding-traces-error"
-          className="mb-4 rounded-md p-3 text-[13px] text-danger"
-          style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)' }}
+          className="mb-4 rounded-md bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] p-3 text-[13px] text-danger"
         >
           Error: {error}
         </div>

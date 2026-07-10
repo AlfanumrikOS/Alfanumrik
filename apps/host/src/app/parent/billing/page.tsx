@@ -199,9 +199,9 @@ export default function ParentBillingPage() {
     return (
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="animate-pulse">
-          <div className="mb-4 h-8 w-48 rounded bg-surface-2" />
-          <div className="mb-2 h-4 w-64 rounded bg-surface-2" />
-          <div className="mt-6 h-32 rounded-2xl bg-surface-2" />
+          <div className="mb-4 h-8 w-48 rounded bg-orange-100" />
+          <div className="mb-2 h-4 w-64 rounded bg-orange-50" />
+          <div className="mt-6 h-32 rounded-2xl bg-orange-50" />
         </div>
       </main>
     );
@@ -210,12 +210,12 @@ export default function ParentBillingPage() {
   if (error) {
     return (
       <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        <h1 className="mb-2 text-2xl font-bold text-foreground">{t(isHi, 'Billing', 'बिलिंग')}</h1>
-        <div className="mt-4 rounded-2xl border border-danger bg-surface-2 p-6 text-danger">
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">{t(isHi, 'Billing', 'बिलिंग')}</h1>
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-6 text-red-900">
           <p className="text-sm">{error}</p>
           <button
             onClick={load}
-            className="mt-3 rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-on-accent hover:bg-danger"
+            className="mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
           >
             {t(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
@@ -234,21 +234,21 @@ export default function ParentBillingPage() {
     {
       key: 'date',
       header: t(isHi, 'Date', 'तारीख'),
-      render: (p) => <span className="text-foreground">{formatDate(p.created_at, isHi)}</span>,
+      render: (p) => <span className="text-slate-700">{formatDate(p.created_at, isHi)}</span>,
     },
     {
       key: 'child',
       header: t(isHi, 'Child', 'बच्चा'),
-      render: (p) => <span className="text-foreground">{p.student_name || t(isHi, '—', '—')}</span>,
+      render: (p) => <span className="text-slate-700">{p.student_name || t(isHi, '—', '—')}</span>,
     },
     {
       key: 'plan',
       header: t(isHi, 'Plan', 'योजना'),
       render: (p) => (
-        <span className="text-foreground">
+        <span className="text-slate-700">
           {p.plan_code || t(isHi, '—', '—')}
           {p.billing_cycle && (
-            <span className="ml-1 text-xs text-muted-foreground">({p.billing_cycle})</span>
+            <span className="ml-1 text-xs text-slate-400">({p.billing_cycle})</span>
           )}
         </span>
       ),
@@ -256,7 +256,7 @@ export default function ParentBillingPage() {
     {
       key: 'amount',
       header: t(isHi, 'Amount', 'राशि'),
-      render: (p) => <span className="font-medium text-foreground">{formatInr(p.amount_inr)}</span>,
+      render: (p) => <span className="font-medium text-slate-900">{formatInr(p.amount_inr)}</span>,
       align: 'right',
     },
     {
@@ -266,10 +266,10 @@ export default function ParentBillingPage() {
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${
             p.status === 'captured' || p.status === 'paid' || p.status === 'success'
-              ? 'bg-surface-2 text-success'
+              ? 'bg-emerald-100 text-emerald-800'
               : p.status === 'failed'
-                ? 'bg-surface-2 text-danger'
-                : 'bg-surface-2 text-foreground'
+                ? 'bg-red-100 text-red-800'
+                : 'bg-slate-100 text-slate-700'
           }`}
         >
           {p.status}
@@ -282,10 +282,10 @@ export default function ParentBillingPage() {
     <>
     <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8" data-testid="parent-billing-page">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground sm:text-3xl">
+        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
           {t(isHi, 'Billing', 'बिलिंग')}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-slate-500">
           {t(
             isHi,
             'Manage your subscription, see what each child is on, and review past invoices.',
@@ -297,46 +297,46 @@ export default function ParentBillingPage() {
       {/* ─── Summary banner ────────────────────────────────────────────── */}
       <section
         data-testid="billing-summary"
-        className="mb-6 rounded-2xl border border-surface-3 bg-gradient-to-br from-surface-2 to-surface-2 p-5 sm:p-6"
+        className="mb-6 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-5 sm:p-6"
       >
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            <p className="text-xs uppercase tracking-wide text-slate-500">
               {t(isHi, 'Active Subscriptions', 'सक्रिय सदस्यताएँ')}
             </p>
-            <p className="mt-1 text-2xl font-bold text-foreground">
+            <p className="mt-1 text-2xl font-bold text-slate-900">
               {summary.total_active_subscriptions}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">
+              <span className="ml-1 text-sm font-normal text-slate-500">
                 / {children.length} {t(isHi, 'children', 'बच्चे')}
               </span>
             </p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            <p className="text-xs uppercase tracking-wide text-slate-500">
               {t(isHi, 'Monthly Spend', 'मासिक खर्च')}
             </p>
-            <p className="mt-1 text-2xl font-bold text-foreground">
+            <p className="mt-1 text-2xl font-bold text-slate-900">
               {formatInr(summary.total_monthly_spend_inr)}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">
+              <span className="ml-1 text-sm font-normal text-slate-500">
                 / {t(isHi, 'month', 'महीना')}
               </span>
             </p>
           </div>
           <div className="flex items-center">
             {summary.any_in_grace ? (
-              <span className="rounded-full bg-surface-2 px-3 py-1 text-xs font-medium text-warning">
+              <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-800">
                 {t(isHi, 'Payment past due', 'भुगतान बकाया')}
               </span>
             ) : summary.any_cancel_scheduled ? (
-              <span className="rounded-full bg-surface-2 px-3 py-1 text-xs font-medium text-primary">
+              <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-medium text-orange-800">
                 {t(isHi, 'Cancellation scheduled', 'रद्दीकरण अनुसूचित')}
               </span>
             ) : summary.total_active_subscriptions > 0 ? (
-              <span className="rounded-full bg-surface-2 px-3 py-1 text-xs font-medium text-success">
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800">
                 {t(isHi, 'All plans active', 'सभी योजनाएँ सक्रिय')}
               </span>
             ) : (
-              <span className="rounded-full bg-surface-2 px-3 py-1 text-xs font-medium text-foreground">
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                 {t(isHi, 'Free tier', 'फ्री टियर')}
               </span>
             )}
@@ -346,16 +346,16 @@ export default function ParentBillingPage() {
 
       {/* ─── Per-child plan cards ──────────────────────────────────────── */}
       <section className="mb-8" data-testid="children-covered">
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
+        <h2 className="mb-3 text-lg font-semibold text-slate-900">
           {t(isHi, 'Children Covered', 'कवर किए गए बच्चे')}
         </h2>
 
         {children.length === 0 ? (
           <div
             data-testid="no-children-state"
-            className="rounded-2xl border border-dashed border-surface-3 bg-surface-1 p-8 text-center"
+            className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center"
           >
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-slate-500">
               {t(
                 isHi,
                 'No children linked yet. Link a child first to manage their subscription.',
@@ -364,7 +364,7 @@ export default function ParentBillingPage() {
             </p>
             <button
               onClick={() => router.push('/parent/children')}
-              className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-accent hover:bg-primary"
+              className="mt-4 rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700"
             >
               {t(isHi, 'Link a Child', 'बच्चा जोड़ें')}
             </button>
@@ -381,16 +381,16 @@ export default function ParentBillingPage() {
                 <li
                   key={child.student_id}
                   data-testid={`child-billing-${child.student_id}`}
-                  className="rounded-2xl border border-surface-3 bg-surface-1 p-4 sm:p-5"
+                  className="rounded-2xl border border-orange-100 bg-white p-4 sm:p-5"
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h3 className="truncate text-base font-semibold text-foreground">
+                        <h3 className="truncate text-base font-semibold text-slate-900">
                           {child.student_name || t(isHi, 'Unnamed Child', 'अनाम बच्चा')}
                         </h3>
                         {child.grade && (
-                          <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                             {t(isHi, `Grade ${child.grade}`, `कक्षा ${child.grade}`)}
                           </span>
                         )}
@@ -400,14 +400,14 @@ export default function ParentBillingPage() {
                         <span
                           className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
                             isFree
-                              ? 'bg-surface-2 text-foreground'
-                              : 'bg-surface-2 text-primary'
+                              ? 'bg-slate-100 text-slate-700'
+                              : 'bg-orange-100 text-orange-800'
                           }`}
                         >
                           {child.plan_name}
                         </span>
                         {child.billing_cycle && !isFree && (
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-slate-500">
                             {child.billing_cycle === 'yearly'
                               ? t(isHi, 'Annual', 'वार्षिक')
                               : t(isHi, 'Monthly', 'मासिक')}
@@ -418,7 +418,7 @@ export default function ParentBillingPage() {
                       </div>
 
                       {!isFree && child.current_period_end && (
-                        <p className="mt-2 text-xs text-muted-foreground">
+                        <p className="mt-2 text-xs text-slate-500">
                           {child.is_cancel_scheduled
                             ? t(
                                 isHi,
@@ -436,7 +436,7 @@ export default function ParentBillingPage() {
                       {child.is_in_grace && (
                         <p
                           data-testid={`grace-warning-${child.student_id}`}
-                          className="mt-2 rounded-md bg-surface-2 px-3 py-1.5 text-xs font-medium text-warning"
+                          className="mt-2 rounded-md bg-yellow-50 px-3 py-1.5 text-xs font-medium text-yellow-800"
                         >
                           {t(
                             isHi,
@@ -449,7 +449,7 @@ export default function ParentBillingPage() {
                       {endingSoon && (
                         <p
                           data-testid={`ending-warning-${child.student_id}`}
-                          className="mt-2 rounded-md bg-surface-2 px-3 py-1.5 text-xs font-medium text-primary"
+                          className="mt-2 rounded-md bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-800"
                         >
                           {t(
                             isHi,
@@ -465,7 +465,7 @@ export default function ParentBillingPage() {
                         onClick={() =>
                           router.push(`/parent?child=${encodeURIComponent(child.student_id)}`)
                         }
-                        className="rounded-lg border border-surface-3 bg-surface-1 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-2"
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                       >
                         {t(isHi, 'View progress', 'प्रगति देखें')}
                       </button>
@@ -473,7 +473,7 @@ export default function ParentBillingPage() {
                         <button
                           onClick={handleUpgrade}
                           data-testid={`upgrade-${child.student_id}`}
-                          className="rounded-lg bg-success px-3 py-1.5 text-xs font-semibold text-on-accent hover:bg-success"
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
                         >
                           {t(isHi, 'Upgrade', 'अपग्रेड')}
                         </button>
@@ -483,7 +483,7 @@ export default function ParentBillingPage() {
                             onClick={() => handleCancel(child)}
                             disabled={cancellingId === child.student_id}
                             data-testid={`cancel-${child.student_id}`}
-                            className="rounded-lg border border-danger bg-surface-1 px-3 py-1.5 text-xs font-medium text-danger hover:bg-surface-2 disabled:opacity-50"
+                            className="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                           >
                             {cancellingId === child.student_id
                               ? t(isHi, 'Cancelling…', 'रद्द हो रहा है…')
@@ -502,7 +502,7 @@ export default function ParentBillingPage() {
 
       {/* ─── Payment History ───────────────────────────────────────────── */}
       <section data-testid="payment-history">
-        <h2 className="mb-3 text-lg font-semibold text-foreground">
+        <h2 className="mb-3 text-lg font-semibold text-slate-900">
           {t(isHi, 'Payment History', 'भुगतान इतिहास')}
         </h2>
 
@@ -529,21 +529,21 @@ export default function ParentBillingPage() {
         data-testid="cancel-confirm-modal"
         className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
       >
-        <div className="w-full max-w-sm rounded-2xl border border-surface-3 bg-surface-1 p-6 shadow-xl">
+        <div className="w-full max-w-sm rounded-2xl border border-orange-100 bg-white p-6 shadow-xl">
           <h2
             id="cancel-modal-title"
-            className="mb-2 text-lg font-bold text-foreground"
+            className="mb-2 text-lg font-bold text-slate-900"
           >
             {t(isHi, 'Cancel subscription?', 'सदस्यता रद्द करें?')}
           </h2>
-          <p className="mb-1 text-sm text-foreground">
+          <p className="mb-1 text-sm text-slate-700">
             {t(
               isHi,
               `Cancel ${cancelConfirmChild.student_name ?? 'child'}'s ${cancelConfirmChild.plan_name} plan?`,
               `${cancelConfirmChild.student_name ?? 'बच्चे'} की ${cancelConfirmChild.plan_name} योजना रद्द करें?`
             )}
           </p>
-          <p className="mb-5 text-sm text-muted-foreground">
+          <p className="mb-5 text-sm text-slate-500">
             {t(
               isHi,
               `Access continues until ${formatDate(cancelConfirmChild.current_period_end, isHi)}.`,
@@ -553,14 +553,14 @@ export default function ParentBillingPage() {
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button
               onClick={() => setCancelConfirmChild(null)}
-              className="rounded-lg border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               {t(isHi, 'Keep subscription', 'सदस्यता रखें')}
             </button>
             <button
               onClick={() => executeCancelSubscription(cancelConfirmChild)}
               data-testid="cancel-confirm-btn"
-              className="rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-on-accent hover:bg-danger"
+              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
             >
               {t(isHi, 'Cancel subscription', 'सदस्यता रद्द करें')}
             </button>

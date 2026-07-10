@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
-import { Button, IconButton } from '@alfanumrik/ui/ui/primitives';
 
 /* ═══════════════════════════════════════════════════════════════
    ConversationManager — Sidebar with organized chat sessions
@@ -157,19 +156,22 @@ export function ConversationManager({
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
-      {/* New Chat button \u2014 canonical warm CTA gradient via Button primary. */}
+      {/* New Chat button */}
       <div className="p-3 pb-2">
-        <Button
-          variant="primary"
-          fullWidth
+        <button
           onClick={() => {
             onNewChat();
             if (window.innerWidth < 1024) onClose();
           }}
-          leadingIcon={<span aria-hidden="true">+</span>}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97]"
+          style={{
+            // Warm-channel Foxy chrome (stays burnt-orange under cosmic). Wave 6.
+            background: 'linear-gradient(135deg, var(--accent-warm), rgb(var(--marigold-rgb)))',
+          }}
         >
-          {isHi ? '\u0928\u0908 \u091A\u0948\u091F' : 'New Chat'}
-        </Button>
+          <span>+</span>
+          <span>{isHi ? '\u0928\u0908 \u091A\u0948\u091F' : 'New Chat'}</span>
+        </button>
       </div>
 
       {/* Search */}
@@ -346,7 +348,7 @@ export function ConversationManager({
                                   <span
                                     className="text-[8px] font-medium shrink-0 px-1 py-0.5 rounded"
                                     style={{
-                                      background: `color-mix(in srgb, ${subAccent} 10%, transparent)`,
+                                      background: `${subCfg?.color || '#999'}08`,
                                       color: subCfg?.color || 'var(--text-3)',
                                     }}
                                   >
@@ -388,7 +390,7 @@ export function ConversationManager({
         <>
           <div
             className="fixed inset-0 z-40 lg:hidden"
-            style={{ background: 'var(--scrim)' }}
+            style={{ background: 'rgba(0,0,0,0.4)' }}
             onClick={onClose}
           />
           <div
@@ -406,13 +408,13 @@ export function ConversationManager({
                   {isHi ? '\u091A\u0948\u091F \u0939\u093F\u0938\u094D\u091F\u094D\u0930\u0940' : 'Chat History'}
                 </span>
               </div>
-              <IconButton
-                variant="ghost"
-                size="sm"
+              <button
                 onClick={onClose}
-                label={isHi ? '\u092c\u0902\u0926 \u0915\u0930\u0947\u0902' : 'Close'}
-                icon={<span aria-hidden="true">{'\u2715'}</span>}
-              />
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-3)' }}
+              >
+                {'\u2715'}
+              </button>
             </div>
             {sidebarContent}
           </div>

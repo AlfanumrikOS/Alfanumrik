@@ -219,8 +219,11 @@ function computeCosmicEnabled(args: {
   preview: boolean;
   force: 'on' | 'off' | null;
 }): boolean {
-  if (args.force === 'off') return false;
-  return args.dbFlag || args.preview || args.force === 'on';
+  // CoSchool-style restore: the cosmic/blue-violet identity is fully disabled.
+  // Keep the public context contract stable for existing callers, but do not
+  // allow DB flags, preview deploys, URL params, or localStorage to re-enable it.
+  void args;
+  return false;
 }
 
 /*
@@ -258,37 +261,16 @@ function writeStoredTheme(pref: CosmicThemePreference): void {
 
 /* ── DOM application ─────────────────────────────────────────────────────── */
 
-/** Map an AuthContext role to a cosmic palette role attribute. */
-function roleToCosmicRole(activeRole: string): 'student' | 'parent' | 'teacher' | 'school' {
-  switch (activeRole) {
-    case 'guardian':
-      return 'parent';
-    case 'teacher':
-      return 'teacher';
-    case 'institution_admin':
-      return 'school';
-    default:
-      return 'student';
-  }
-}
-
 /** Write or clear the cosmic attributes on <html>. */
 function applyCosmicToDOM(enabled: boolean, theme: CosmicThemePreference, role: string): void {
   if (typeof document === 'undefined') return;
   const html = document.documentElement;
-  if (!enabled) {
-    // Flag OFF — remove the cosmic-only hooks (data-design / data-role) so the
-    // cosmic token scope never activates. We deliberately DO NOT touch
-    // data-theme: AuthContext owns it in the flag-OFF world (it force-writes
-    // "light"). Leaving it alone prevents the two providers from fighting.
-    html.removeAttribute('data-design');
-    html.removeAttribute('data-role');
-    return;
-  }
-  // Flag ON — cosmic is the authority over all three attributes.
-  html.setAttribute('data-design', 'cosmic');
-  html.setAttribute('data-theme', theme);
-  html.setAttribute('data-role', roleToCosmicRole(role));
+  html.removeAttribute('data-design');
+  html.removeAttribute('data-role');
+  html.setAttribute('data-theme', 'light');
+  void enabled;
+  void theme;
+  void role;
 }
 
 /* ── context ─────────────────────────────────────────────────────────────── */

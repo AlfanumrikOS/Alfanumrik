@@ -147,9 +147,9 @@ function GeographyContent() {
       {!hasData && <div className="mb-6"><EICEmpty /></div>}
 
       <div className="mb-6 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <StatCard label={level === 'state' ? 'States Covered' : 'Cities Covered'} value={rows.length} accentColor="var(--info)" />
-        <StatCard label="Total Students" value={totalStudents} accentColor="var(--purple)" />
-        <StatCard label="Active Rate" value={`${activeRate}%`} accentColor={activeRate >= 50 ? 'var(--success)' : activeRate >= 25 ? 'var(--warning)' : 'var(--danger)'} />
+        <StatCard label={level === 'state' ? 'States Covered' : 'Cities Covered'} value={rows.length} accentColor="#2563EB" />
+        <StatCard label="Total Students" value={totalStudents} accentColor="#7C3AED" />
+        <StatCard label="Active Rate" value={`${activeRate}%`} accentColor={activeRate >= 50 ? '#16A34A' : activeRate >= 25 ? '#D97706' : '#DC2626'} />
       </div>
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">

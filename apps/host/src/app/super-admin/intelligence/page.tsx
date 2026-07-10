@@ -21,23 +21,38 @@ import {
   StatCard,
   StatusBadge,
   DataTable,
+  NoDataState,
+  StalenessTag,
   type Column,
 } from '@alfanumrik/ui/admin-ui';
-import {
-  Caveat,
-  CHURN_SIGNAL_CAVEAT,
-  EICEmpty,
-  EICHeader,
-  NEW_MRR_CAVEAT,
-  bandVariant,
-  formatINR,
-  useEducationIntelligenceFlag,
-} from './shared';
+import { getFeatureFlags } from '@alfanumrik/lib/supabase';
+import { EDUCATION_INTELLIGENCE_FLAGS } from '@alfanumrik/lib/feature-flags';
 
 // Charts are code-split off the initial page bundle (P10).
 const LineChart = dynamic(() => import('@alfanumrik/ui/admin-ui').then((m) => m.LineChart), { ssr: false });
 const BarChart = dynamic(() => import('@alfanumrik/ui/admin-ui').then((m) => m.BarChart), { ssr: false });
 const DonutChart = dynamic(() => import('@alfanumrik/ui/admin-ui').then((m) => m.DonutChart), { ssr: false });
+
+// ── Shared EIC helpers (English-only; internal tooling) ──
+
+function formatINR(amount: number): string {
+  if (!Number.isFinite(amount)) return '—';
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
+  if (abs >= 10000000) return `${sign}₹${(abs / 10000000).toFixed(2)}Cr`;
+  if (abs >= 100000) return `${sign}₹${(abs / 100000).toFixed(2)}L`;
+  if (abs >= 1000) return `${sign}₹${(abs / 1000).toFixed(1)}K`;
+  return `${sign}₹${abs.toLocaleString('en-IN')}`;
+}
+
+/** 0-100 score band → admin-ui StatusBadge variant. */
+function bandVariant(score: number | null | undefined): 'success' | 'info' | 'warning' | 'danger' | 'neutral' {
+  if (score == null || !Number.isFinite(score)) return 'neutral';
+  if (score >= 80) return 'success';
+  if (score >= 60) return 'info';
+  if (score >= 40) return 'warning';
+  return 'danger';
+}
 
 const TIER_VARIANT: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'neutral'> = {
   elite: 'success',
@@ -52,6 +67,98 @@ const CHURN_VARIANT: Record<string, 'success' | 'warning' | 'danger' | 'neutral'
   high: 'danger',
   critical: 'danger',
 };
+
+/** Honesty caption shared across New/Net-New MRR surfaces. */
+const NEW_MRR_CAVEAT =
+  'v1 approximation — expansion revenue is folded into New MRR. Not yet separated from net-new logos.';
+const CHURN_SIGNAL_CAVEAT =
+  'Payment-failure churn signal covers B2C subscriptions only. B2B/institutional churn is inferred from engagement, not billing.';
+
+/** Inline ⓘ tooltip caption used next to a label that carries a caveat. */
+function Caveat({ text }: { text: string }) {
+  return (
+    <span
+      title={text}
+      aria-label={text}
+      className="ml-1 inline-flex h-[14px] w-[14px] cursor-help items-center justify-center rounded-full border border-surface-3 text-[9px] font-bold text-muted-foreground align-middle"
+    >
+      ⓘ
+    </span>
+  );
+}
+
+/** Latest-rollup-date tag rendered next to a page title. */
+function RollupDate({ date }: { date: string | null }) {
+  if (!date) return null;
+  return (
+    <span className="ml-3 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+      <span className="uppercase tracking-wider">Latest rollup</span>
+      <span className="font-semibold text-foreground">{date}</span>
+    </span>
+  );
+}
+
+/** Shared page header with refresh + staleness. */
+function EICHeader({
+  title,
+  subtitle,
+  rollupDate,
+  generatedAt,
+  onRefresh,
+}: {
+  title: string;
+  subtitle: string;
+  rollupDate: string | null;
+  generatedAt: string | null;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="mb-6 flex items-start justify-between">
+      <div>
+        <div className="flex flex-wrap items-center">
+          <h1 className="m-0 text-xl font-bold tracking-tight text-foreground">{title}</h1>
+          <RollupDate date={rollupDate} />
+          {generatedAt && (
+            <span className="ml-2">
+              <StalenessTag lastUpdated={new Date(generatedAt)} />
+            </span>
+          )}
+        </div>
+        <p className="m-0 mt-1 text-[13px] text-muted-foreground">{subtitle}</p>
+      </div>
+      <button
+        onClick={onRefresh}
+        className="shrink-0 rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2"
+      >
+        ↻ Refresh
+      </button>
+    </div>
+  );
+}
+
+/** Standard EIC empty state (tables empty until migrations + nightly job run). */
+function EICEmpty() {
+  return (
+    <NoDataState
+      reason="no_data"
+      title="No intelligence data yet"
+      message="The nightly rollup tables have not been populated. Data appears after the first nightly job runs post-migration."
+    />
+  );
+}
+
+/** Hook: resolve ff_education_intelligence client-side. null = still loading. */
+function useEducationIntelligenceFlag(): boolean | null {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getFeatureFlags()
+      .then((flags) => { if (!cancelled) setEnabled(Boolean(flags[EDUCATION_INTELLIGENCE_FLAGS.V1])); })
+      .catch(() => { if (!cancelled) setEnabled(false); });
+    return () => { cancelled = true; };
+  }, []);
+  return enabled;
+}
 
 // ── API shapes (mirror /api/super-admin/intelligence/overview) ──
 
@@ -183,41 +290,41 @@ function OverviewContent() {
         <StatCard
           label="Platform MRR"
           value={mrr ? formatINR(mrr.total) : '—'}
-          accentColor="var(--success)"
+          accentColor="#16A34A"
           subtitle={mrr ? `ARR ${formatINR(mrr.arr)}` : 'No snapshot'}
         />
         <div>
           <StatCard
             label="Net New MRR"
             value={mrr ? formatINR(netNew) : '—'}
-            accentColor={netNew >= 0 ? 'var(--success)' : 'var(--danger)'}
+            accentColor={netNew >= 0 ? '#16A34A' : '#DC2626'}
             subtitle={mrr ? `New ${formatINR(mrr.new)} · Churn ${formatINR(mrr.churn)}` : '—'}
           />
           <div className="mt-1 px-[18px] text-[10px] leading-tight text-muted-foreground">
             <Caveat text={NEW_MRR_CAVEAT} /> {NEW_MRR_CAVEAT}
           </div>
         </div>
-        <StatCard label="Active Schools" value={activeSchools} accentColor="var(--info)" subtitle="Scored in latest rollup" />
+        <StatCard label="Active Schools" value={activeSchools} accentColor="#2563EB" subtitle="Scored in latest rollup" />
         <StatCard
           label="At-Risk Schools"
           value={atRisk}
-          accentColor={atRisk > 0 ? 'var(--danger)' : 'var(--text-2)'}
+          accentColor={atRisk > 0 ? '#DC2626' : '#6B7280'}
           subtitle="High + critical churn band"
         />
         <StatCard
           label="Avg Composite Health"
           value={health.avg_composite}
           accentColor={
-            health.avg_composite >= 80 ? 'var(--success)'
-              : health.avg_composite >= 60 ? 'var(--info)'
-              : health.avg_composite >= 40 ? 'var(--warning)' : 'var(--danger)'
+            health.avg_composite >= 80 ? '#16A34A'
+              : health.avg_composite >= 60 ? '#2563EB'
+              : health.avg_composite >= 40 ? '#D97706' : '#DC2626'
           }
           subtitle="0-100, latest per school"
         />
         <StatCard
           label="Churn Rate"
           value={`${churnRate}%`}
-          accentColor={churnRate >= 15 ? 'var(--danger)' : churnRate >= 5 ? 'var(--warning)' : 'var(--success)'}
+          accentColor={churnRate >= 15 ? '#DC2626' : churnRate >= 5 ? '#D97706' : '#16A34A'}
           subtitle="High/critical share of scored schools"
         />
       </div>

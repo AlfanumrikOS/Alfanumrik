@@ -67,15 +67,15 @@ const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
 const GRADES = [...VALID_GRADES];
 
 function statusBadge(dueDate: string | null): { label: string; labelHi: string; bg: string; color: string } {
-  if (!dueDate) return { label: 'No due date', labelHi: 'कोई अंतिम तिथि नहीं', bg: 'var(--surface-2)', color: 'var(--text-3)' };
+  if (!dueDate) return { label: 'No due date', labelHi: 'कोई अंतिम तिथि नहीं', bg: '#F5F0EA', color: '#7D7264' };
   const now = new Date();
   const due = new Date(dueDate);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
   const diff = dueDay.getTime() - today.getTime();
-  if (diff < 0) return { label: 'Overdue', labelHi: 'देरी हो चुकी', bg: 'var(--red-soft)', color: 'var(--danger)' };
-  if (diff === 0) return { label: 'Due Today', labelHi: 'आज देय', bg: 'var(--gold-soft)', color: 'var(--warning)' };
-  return { label: 'Upcoming', labelHi: 'आगामी', bg: 'var(--surface-2)', color: 'var(--orange)' };
+  if (diff < 0) return { label: 'Overdue', labelHi: 'देरी हो चुकी', bg: '#FEF2F2', color: '#DC2626' };
+  if (diff === 0) return { label: 'Due Today', labelHi: 'आज देय', bg: '#FFFBEB', color: '#D97706' };
+  return { label: 'Upcoming', labelHi: 'आगामी', bg: '#FBE6D9', color: '#C2410C' };
 }
 
 function completionPct(submissions: { count: number }[], studentCount: number): number {
@@ -89,18 +89,18 @@ const pageStyle: React.CSSProperties = {
   margin: '0 auto',
   padding: '0 16px 100px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
-  color: 'var(--text-1)',
-  backgroundColor: 'var(--surface-2)',
+  color: '#1A1207',
+  backgroundColor: '#FBF8F4',
   minHeight: '100dvh',
 };
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
-  backgroundColor: 'var(--surface-2)',
-  border: '1px solid var(--surface-3)',
+  backgroundColor: '#F5F0EA',
+  border: '1px solid #EDE6DC',
   borderRadius: 8,
-  color: 'var(--text-1)',
+  color: '#1A1207',
   fontSize: 14,
   outline: 'none',
   boxSizing: 'border-box',
@@ -108,7 +108,7 @@ const inputStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   fontSize: 13,
-  color: 'var(--text-3)',
+  color: '#7D7264',
   display: 'block',
   marginBottom: 4,
 };
@@ -124,16 +124,6 @@ function AssignmentsPageContent() {
   const [classes, setClasses] = useState<ClassData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (loading) {
-        setLoading(false);
-        setError(tt(isHi, "Loading timed out. Please try again.", "लोडिंग टाइम आउट। कृपया पुनः प्रयास करें।"));
-      }
-    }, 10000);
-    return () => clearTimeout(timer);
-  }, [loading, isHi]);
-
   const [showModal, setShowModal] = useState(false);
   const [toast, setToast] = useState('');
   const [toastType, setToastType] = useState<'success' | 'error'>('success');
@@ -249,8 +239,8 @@ function AssignmentsPageContent() {
   if (loading) {
     return (
       <div style={pageStyle}>
-        <div style={{ textAlign: 'center', padding: 80, color: 'var(--text-3)' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid var(--surface-2)', borderTopColor: 'var(--orange)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
+          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: '#E8581C', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
           {tt(isHi, 'Loading assignments...', 'असाइनमेंट लोड हो रहे हैं...')}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -267,7 +257,7 @@ function AssignmentsPageContent() {
 
       {/* Header */}
       <div style={{
-        background: 'linear-gradient(135deg, var(--orange), var(--orange))',
+        background: 'linear-gradient(135deg, #E8581C, #C2410C)',
         borderRadius: 16,
         padding: '28px 28px 24px',
         marginBottom: 24,
@@ -277,26 +267,24 @@ function AssignmentsPageContent() {
           <div>
             <button
               onClick={() => router.push('/teacher')}
-              className="transition-colors"
-              style={{ background: 'color-mix(in srgb, var(--surface-1) 18%, transparent)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'var(--on-surface-accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
             >
               &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
             </button>
-            <h1 style={{ fontSize: 26, fontWeight: 700, color: 'white', margin: 0 }}>
+            <h1 style={{ fontSize: 26, fontWeight: 700, color: '#fff', margin: 0 }}>
               <span role="img" aria-label="clipboard">📋</span> {tt(isHi, 'My Assignments', 'मेरे असाइनमेंट')}
             </h1>
-            <p style={{ fontSize: 14, color: 'var(--on-surface-accent)', margin: '6px 0 0' }}>
+            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.75)', margin: '6px 0 0' }}>
               {tt(isHi, 'Create and manage assignments for your classes', 'अपनी कक्षाओं के लिए असाइनमेंट बनाएं और प्रबंधित करें')}
             </p>
           </div>
           <button
             onClick={() => { resetForm(); setShowModal(true); }}
-            className="transition-colors"
             style={{
               padding: '10px 18px',
-              background: 'color-mix(in srgb, var(--surface-1) 18%, transparent)',
-              color: 'white',
-              border: '1px solid color-mix(in srgb, var(--surface-1) 30%, transparent)',
+              background: 'rgba(255,255,255,0.15)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.3)',
               borderRadius: 8,
               fontSize: 13,
               fontWeight: 600,
@@ -311,9 +299,9 @@ function AssignmentsPageContent() {
 
       {/* Error */}
       {error && (
-        <div style={{ backgroundColor: 'var(--red-soft)', border: '1px solid var(--danger)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: 'var(--danger)', fontSize: 14 }}>
+        <div style={{ backgroundColor: 'rgba(220,38,38,0.1)', border: '1px solid #DC2626', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#B91C1C', fontSize: 14 }}>
           {error}
-          <button onClick={loadData} style={{ marginLeft: 12, color: 'var(--orange)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+          <button onClick={loadData} style={{ marginLeft: 12, color: '#E8581C', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
             {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
         </div>
@@ -321,17 +309,17 @@ function AssignmentsPageContent() {
 
       {/* Empty state */}
       {assignments.length === 0 && !error && (
-        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: 'var(--surface-1)', borderRadius: 16, border: '1px solid var(--surface-2)' }}>
+        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #F5F0EA' }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>📋</div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 8px' }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 8px' }}>
             {tt(isHi, 'No assignments yet', 'अभी तक कोई असाइनमेंट नहीं')}
           </h2>
-          <p style={{ fontSize: 14, color: 'var(--text-3)', margin: '0 0 24px', maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
+          <p style={{ fontSize: 14, color: '#7D7264', margin: '0 0 24px', maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
             {tt(isHi, 'Create your first assignment to get started.', 'शुरू करने के लिए अपना पहला असाइनमेंट बनाएं।')}
           </p>
           <button
             onClick={() => { resetForm(); setShowModal(true); }}
-            style={{ padding: '12px 28px', background: 'linear-gradient(135deg, var(--orange), var(--orange))', color: 'white', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '12px 28px', background: 'linear-gradient(135deg, #E8581C, #C2410C)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
           >
             {tt(isHi, 'Create First Assignment', 'पहला असाइनमेंट बनाएं')}
           </button>
@@ -351,19 +339,19 @@ function AssignmentsPageContent() {
               <div
                 key={asgn.id}
                 style={{
-                  backgroundColor: 'var(--surface-1)',
+                  backgroundColor: '#FFFFFF',
                   borderRadius: 14,
-                  border: '1px solid var(--surface-2)',
+                  border: '1px solid #F5F0EA',
                   padding: '18px 20px',
                   animation: `fadeIn 0.3s ease ${idx * 0.05}s both`,
                   transition: 'border-color 0.2s, box-shadow 0.2s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--orange)'; e.currentTarget.style.boxShadow = 'var(--shadow-lg)'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--surface-2)'; e.currentTarget.style.boxShadow = 'none'; }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#E8581C'; e.currentTarget.style.boxShadow = '0 4px 24px rgba(232,88,28,0.1)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = '#F5F0EA'; e.currentTarget.style.boxShadow = 'none'; }}
               >
                 {/* Top row */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                  <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-1)', margin: 0, flex: 1, marginRight: 8 }}>{asgn.title}</h3>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1A1207', margin: 0, flex: 1, marginRight: 8 }}>{asgn.title}</h3>
                   <span style={{
                     fontSize: 11,
                     fontWeight: 600,
@@ -381,7 +369,7 @@ function AssignmentsPageContent() {
                 {/* Class + Subject */}
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                   {cls && (
-                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--surface-2)', color: 'var(--text-3)' }}>
+                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264' }}>
                       {cls.name}
                     </span>
                   )}
@@ -390,10 +378,10 @@ function AssignmentsPageContent() {
                       {subj.icon} {subj.name}
                     </span>
                   )}
-                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--surface-2)', color: 'var(--text-3)', textTransform: 'capitalize' }}>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264', textTransform: 'capitalize' }}>
                     {asgn.difficulty}
                   </span>
-                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--surface-2)', color: 'var(--text-3)' }}>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264' }}>
                     {asgn.question_count} {tt(isHi, 'Qs', 'प्रश्न')}
                   </span>
                 </div>
@@ -402,17 +390,17 @@ function AssignmentsPageContent() {
                 {cls && cls.student_count > 0 && (
                   <div style={{ marginBottom: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{tt(isHi, 'Completion', 'पूर्णता')}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: pct >= 70 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--text-3)' }}>
+                      <span style={{ fontSize: 12, color: '#7D7264' }}>{tt(isHi, 'Completion', 'पूर्णता')}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: pct >= 70 ? '#059669' : pct >= 40 ? '#D97706' : '#7D7264' }}>
                         {pct}%
                       </span>
                     </div>
-                    <div style={{ height: 5, backgroundColor: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: 5, backgroundColor: '#F5F0EA', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
                         width: `${pct}%`,
                         borderRadius: 3,
-                        background: pct >= 70 ? 'linear-gradient(90deg,var(--success),var(--success))' : pct >= 40 ? 'linear-gradient(90deg,var(--warning),var(--warning))' : 'linear-gradient(90deg,var(--text-3),var(--text-3))',
+                        background: pct >= 70 ? 'linear-gradient(90deg,#059669,#10B981)' : pct >= 40 ? 'linear-gradient(90deg,#D97706,#F59E0B)' : 'linear-gradient(90deg,#A89B86,#7D7264)',
                         transition: 'width 0.6s ease',
                       }} />
                     </div>
@@ -421,7 +409,7 @@ function AssignmentsPageContent() {
 
                 {/* Due date */}
                 {asgn.due_date && (
-                  <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
+                  <p style={{ fontSize: 12, color: '#7D7264', margin: 0 }}>
                     {tt(isHi, 'Due', 'देय')}: {new Date(asgn.due_date).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </p>
                 )}
@@ -437,14 +425,14 @@ function AssignmentsPageContent() {
         style={{
           position: 'fixed', bottom: 28, right: 28,
           width: 56, height: 56, borderRadius: '50%',
-          background: 'linear-gradient(135deg, var(--orange), var(--orange))',
-          color: 'white', border: 'none', fontSize: 28, fontWeight: 300,
-          cursor: 'pointer', boxShadow: 'var(--shadow-lg)',
+          background: 'linear-gradient(135deg, #E8581C, #C2410C)',
+          color: '#fff', border: 'none', fontSize: 28, fontWeight: 300,
+          cursor: 'pointer', boxShadow: '0 4px 20px rgba(232,88,28,0.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 50, transition: 'transform 0.2s, box-shadow 0.2s',
         }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = 'var(--shadow-lg)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = 'var(--shadow-lg)'; }}
+        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 6px 28px rgba(232,88,28,0.5)'; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(232,88,28,0.4)'; }}
         title={tt(isHi, 'New Assignment', 'नया असाइनमेंट')}
       >
         +
@@ -453,11 +441,11 @@ function AssignmentsPageContent() {
       {/* Create Assignment Modal */}
       {showModal && (
         <div
-          style={{ position: 'fixed', inset: 0, backgroundColor: 'var(--scrim)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.2s ease' }}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.2s ease' }}
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}
         >
-          <div style={{ backgroundColor: 'var(--surface-1)', borderRadius: 16, border: '1px solid var(--surface-2)', padding: '28px 24px', width: '100%', maxWidth: 480, margin: '0 16px', maxHeight: '90vh', overflowY: 'auto', animation: 'fadeIn 0.25s ease' }}>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-1)', margin: '0 0 20px' }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #F5F0EA', padding: '28px 24px', width: '100%', maxWidth: 480, margin: '0 16px', maxHeight: '90vh', overflowY: 'auto', animation: 'fadeIn 0.25s ease' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 20px' }}>
               {tt(isHi, 'New Assignment', 'नया असाइनमेंट')}
             </h2>
 
@@ -530,9 +518,9 @@ function AssignmentsPageContent() {
                       padding: '9px 0',
                       borderRadius: 8,
                       border: '1px solid',
-                      borderColor: formDifficulty === d ? 'var(--orange)' : 'var(--surface-3)',
-                      backgroundColor: formDifficulty === d ? 'var(--surface-2)' : 'transparent',
-                      color: formDifficulty === d ? 'var(--orange)' : 'var(--text-3)',
+                      borderColor: formDifficulty === d ? '#E8581C' : '#EDE6DC',
+                      backgroundColor: formDifficulty === d ? '#FBE6D9' : 'transparent',
+                      color: formDifficulty === d ? '#C2410C' : '#7D7264',
                       fontSize: 13,
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -554,9 +542,9 @@ function AssignmentsPageContent() {
                 step={1}
                 value={formCount}
                 onChange={e => setFormCount(Number(e.target.value))}
-                style={{ width: '100%', accentColor: 'var(--orange)' }}
+                style={{ width: '100%', accentColor: '#E8581C' }}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#7D7264', marginTop: 2 }}>
                 <span>5</span><span>20</span>
               </div>
             </label>
@@ -577,7 +565,7 @@ function AssignmentsPageContent() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={() => setShowModal(false)}
-                style={{ flex: 1, padding: '11px 16px', backgroundColor: 'transparent', color: 'var(--text-3)', border: '1px solid var(--surface-3)', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '11px 16px', backgroundColor: 'transparent', color: '#7D7264', border: '1px solid #EDE6DC', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer' }}
               >
                 {tt(isHi, 'Cancel', 'रद्द करें')}
               </button>
@@ -586,8 +574,8 @@ function AssignmentsPageContent() {
                 disabled={submitting || !formTitle.trim() || !formClass}
                 style={{
                   flex: 1, padding: '11px 16px',
-                  background: submitting || !formTitle.trim() || !formClass ? 'var(--surface-3)' : 'linear-gradient(135deg, var(--orange), var(--orange))',
-                  color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
+                  background: submitting || !formTitle.trim() || !formClass ? '#EDE6DC' : 'linear-gradient(135deg, #E8581C, #C2410C)',
+                  color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
                   cursor: submitting || !formTitle.trim() || !formClass ? 'default' : 'pointer',
                   opacity: submitting || !formTitle.trim() || !formClass ? 0.5 : 1,
                 }}
@@ -603,9 +591,9 @@ function AssignmentsPageContent() {
       {toast && (
         <div style={{
           position: 'fixed', bottom: 96, left: '50%', transform: 'translateX(-50%)',
-          backgroundColor: toastType === 'error' ? 'var(--danger)' : 'var(--success)',
-          color: 'white', padding: '10px 24px', borderRadius: 10, fontSize: 14, fontWeight: 500,
-          zIndex: 200, boxShadow: 'var(--shadow-lg)', animation: 'fadeIn 0.2s ease', whiteSpace: 'nowrap',
+          backgroundColor: toastType === 'error' ? '#DC2626' : '#059669',
+          color: '#fff', padding: '10px 24px', borderRadius: 10, fontSize: 14, fontWeight: 500,
+          zIndex: 200, boxShadow: '0 4px 20px rgba(0,0,0,0.3)', animation: 'fadeIn 0.2s ease', whiteSpace: 'nowrap',
         }}>
           {toast}
         </div>

@@ -23,7 +23,6 @@
 
 import Image from 'next/image';
 import ChatBubble, { type LearningActionType } from '@alfanumrik/ui/foxy/ChatBubble';
-import { Button } from '@alfanumrik/ui/ui/primitives';
 import { StructuredRenderBoundary } from '@alfanumrik/ui/foxy/StructuredRenderBoundary';
 import { isFoxyResponse } from '@alfanumrik/lib/foxy/is-foxy-response';
 import { recoverFoxyResponseFromText } from '@alfanumrik/lib/foxy/recover-from-text';
@@ -33,7 +32,7 @@ import type { QuizMeBinding } from '@alfanumrik/ui/foxy/FoxyStructuredRenderer';
 import type { SubmitQuizAnswerInput, SubmitQuizAnswerResult } from '../_hooks/useFoxyChat';
 import { RichContent } from '@alfanumrik/ui/foxy/RichContent';
 import { FoxyStructuredRenderer } from '@alfanumrik/ui/foxy/FoxyStructuredRenderer';
-import DynamicScaffold from './DynamicScaffold';
+import DynamicScaffold from '@/app/foxy/_components/DynamicScaffold';
 
 export interface MessageListProps {
   messages: ChatMessage[];
@@ -98,36 +97,27 @@ export function MessageList({
     <>
       {/* Messages — with collapsing for long threads */}
       {messages.length > 10 && collapsedAbove === null && (
-        <Button
-          variant="secondary"
-          size="sm"
-          fullWidth
-          className="mb-3"
+        <button
           onClick={() => onSetCollapsedAbove(messages.length - 6)}
+          className="w-full text-center py-2 mb-3 rounded-xl text-[11px] font-semibold transition-all active:scale-[0.98]"
+          style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
         >
           {isHi
             ? `↑ केवल हाल के संदेश दिखाओ (कुल ${messages.length})`
             : `↑ Show only recent messages (${messages.length} total)`}
-        </Button>
+        </button>
       )}
 
       {collapsedAbove !== null && (
-        <Button
-          variant="secondary"
-          size="sm"
-          fullWidth
-          className="mb-3"
-          style={{
-            background: `color-mix(in srgb, ${cfgColor} 8%, transparent)`,
-            color: cfgColor,
-            borderColor: `color-mix(in srgb, ${cfgColor} 20%, transparent)`,
-          }}
+        <button
           onClick={() => onSetCollapsedAbove(null)}
+          className="w-full text-center py-2 mb-3 rounded-xl text-[11px] font-semibold transition-all active:scale-[0.98]"
+          style={{ background: `${cfgColor}08`, color: cfgColor, border: `1px solid ${cfgColor}20` }}
         >
           {isHi
             ? `↓ सभी ${messages.length} संदेश दिखाओ`
             : `↓ Show all ${messages.length} messages`}
-        </Button>
+        </button>
       )}
 
       {/* P0 (2026-04-28) defensive dedup — guards against the duplicate-render

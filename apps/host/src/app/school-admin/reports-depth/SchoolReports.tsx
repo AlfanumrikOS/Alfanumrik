@@ -119,7 +119,7 @@ function GroupByToggle({
             onClick={() => onChange(opt.key)}
             className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors min-h-[40px] ${
               active
-                ? 'bg-[var(--surface-1)] text-[var(--purple)] shadow-sm'
+                ? 'bg-[var(--surface-1)] text-[var(--purple,#7C3AED)] shadow-sm'
                 : 'text-[var(--text-3)] hover:text-[var(--text-2)]'
             }`}
           >
@@ -135,7 +135,7 @@ function GroupByToggle({
 function MasteryBar({ value, isHi }: { value: number | null; isHi: boolean }) {
   const label = pct(value);
   const width = barWidth(value);
-  const color = width >= 80 ? 'var(--success)' : width >= 40 ? 'var(--purple)' : width > 0 ? 'var(--warning)' : 'var(--text-3)';
+  const color = width >= 80 ? '#16A34A' : width >= 40 ? '#7C3AED' : width > 0 ? '#F59E0B' : '#9CA3AF';
   return (
     <div className="flex items-center gap-2 min-w-[120px]">
       <div
@@ -196,7 +196,7 @@ function ErrorBlock({ onRetry, isHi }: { onRetry: () => void; isHi: boolean }) {
       <button
         type="button"
         onClick={onRetry}
-        className="px-4 py-2 rounded-xl text-sm font-semibold text-on-accent bg-[var(--purple)] active:scale-95 transition-transform min-h-[44px] no-print"
+        className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[var(--purple,#7C3AED)] active:scale-95 transition-transform min-h-[44px] no-print"
       >
         {tt(isHi, 'Retry', 'दोबारा कोशिश करें')}
       </button>
@@ -233,7 +233,7 @@ function SchoolPicker({
             key={id}
             type="button"
             onClick={() => onPick(id)}
-            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple)] active:scale-[0.99] transition-all min-h-[44px] truncate"
+            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px] truncate"
           >
             {id}
           </button>
@@ -246,9 +246,9 @@ function SchoolPicker({
 // ── Print stylesheet (no heavy PDF library — window.print() → Save as PDF) ───────
 const PRINT_STYLES = `
 @media print {
-  body { background: var(--surface-1) !important; }
+  body { background: #fff !important; }
   .no-print { display: none !important; }
-  .print-card { border: 1px solid var(--surface-3) !important; box-shadow: none !important; break-inside: avoid; }
+  .print-card { border: 1px solid #E5E7EB !important; box-shadow: none !important; break-inside: avoid; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
 `;
@@ -364,7 +364,7 @@ export default function SchoolReports() {
               type="button"
               onClick={handleDownloadCsv}
               disabled={exporting}
-              className="px-3.5 py-2 rounded-xl text-xs font-semibold text-[var(--text-1)] bg-[var(--surface-1)] border border-[var(--border)] hover:border-[var(--purple)] active:scale-95 transition-all min-h-[44px] disabled:opacity-50"
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold text-[var(--text-1)] bg-[var(--surface-1)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-95 transition-all min-h-[44px] disabled:opacity-50"
             >
               {exporting
                 ? tt(isHi, 'Downloading…', 'डाउनलोड हो रहा…')
@@ -373,7 +373,7 @@ export default function SchoolReports() {
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3.5 py-2 rounded-xl text-xs font-semibold text-on-accent bg-[var(--purple)] active:scale-95 transition-all min-h-[44px]"
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold text-white bg-[var(--purple,#7C3AED)] active:scale-95 transition-all min-h-[44px]"
             >
               {tt(isHi, 'Print / Save as PDF', 'प्रिंट / PDF सहेजें')}
             </button>
@@ -382,7 +382,7 @@ export default function SchoolReports() {
       </header>
 
       {exportError && (
-        <p className="text-xs text-danger mb-4 no-print" role="alert">
+        <p className="text-xs text-red-600 mb-4 no-print" role="alert">
           {exportError}
         </p>
       )}
@@ -445,7 +445,7 @@ export default function SchoolReports() {
                     {masteryRows.map((row, idx) => (
                       <tr
                         key={row.group_key}
-                        style={{ background: idx % 2 === 0 ? 'var(--surface-1)' : 'color-mix(in srgb, var(--surface-2) 40%, transparent)' }}
+                        className={idx % 2 === 0 ? 'bg-[var(--surface-1)]' : 'bg-[var(--surface-2)]/40'}
                       >
                         <td className="px-3 py-2.5 font-medium text-[var(--text-1)]">
                           {row.group_label}
@@ -457,7 +457,7 @@ export default function SchoolReports() {
                           <MasteryBar value={row.avg_mastery} isHi={isHi} />
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums">
-                          <span className={row.at_risk_count > 0 ? 'font-bold text-danger' : 'text-[var(--text-3)]'}>
+                          <span className={row.at_risk_count > 0 ? 'font-bold text-red-600' : 'text-[var(--text-3)]'}>
                             {row.at_risk_count}
                           </span>
                         </td>
@@ -513,7 +513,7 @@ export default function SchoolReports() {
                     {bloomRows.map((row, idx) => (
                       <tr
                         key={row.bloom_level}
-                        style={{ background: idx % 2 === 0 ? 'var(--surface-1)' : 'color-mix(in srgb, var(--surface-2) 40%, transparent)' }}
+                        className={idx % 2 === 0 ? 'bg-[var(--surface-1)]' : 'bg-[var(--surface-2)]/40'}
                       >
                         {/* Raw bloom_level value emitted verbatim — technical term, not translated. */}
                         <td className="px-3 py-2.5 font-medium text-[var(--text-1)] capitalize">

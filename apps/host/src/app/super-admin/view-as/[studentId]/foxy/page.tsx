@@ -3,15 +3,15 @@
 import { useState, useEffect, useCallback, use } from 'react';
 
 const colors = {
-  bg: 'var(--surface-1)',
-  surface: 'var(--surface-2)',
-  border: 'var(--surface-3)',
-  text1: 'var(--text-1)',
-  text3: 'var(--text-3)',
-  accent: 'var(--info)',
-  accentLight: 'color-mix(in srgb, var(--info) 10%, transparent)',
-  danger: 'var(--danger)',
-  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  text1: '#111827',
+  text3: '#9CA3AF',
+  accent: '#2563EB',
+  accentLight: '#EFF6FF',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
 } as const;
 
 const S = {
@@ -282,8 +282,8 @@ export default function ViewAsFoxyPage({
                             maxWidth: '75%',
                             padding: '10px 14px',
                             borderRadius: 12,
-                            background: isUser ? 'var(--purple)' : colors.bg,
-                            color: isUser ? 'var(--on-accent)' : colors.text1,
+                            background: isUser ? '#7C3AED' : colors.bg,
+                            color: isUser ? '#fff' : colors.text1,
                             fontSize: 13,
                             lineHeight: 1.5,
                             border: isUser

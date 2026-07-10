@@ -1,23 +1,15 @@
 'use client';
 
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { Alert, Button } from '@alfanumrik/ui/ui/primitives';
 
 /* ═══════════════════════════════════════════════════════════════
    UnverifiedBanner — shown above tutor bubbles when the grounded
    answer service returned groundingStatus="unverified" (low
-   confidence). Per spec §9.1.
+   confidence). Per spec §9.1. Replaces the Task 3.3 placeholder.
 
-   Presentation: re-skinned onto the canonical `Alert` primitive
-   (tone="warning" → tokenised amber tint + hairline + ⚠ glyph,
-   AA on every theme). The TRIGGER (groundingStatus) and WHEN it
-   renders are owned by the parent and are unchanged here (P12).
-
-   The a11y/regression contract from Batch 3A — role="status", the
-   data-testid, and the trace-id `title` tooltip — lives on the
-   outer wrapper (Alert cannot carry an HTML `title` attribute as it
-   consumes `title` as a heading prop). The Alert's own tone role is
-   stripped so there is exactly one live region.
+   Visual: amber caution strip with a ⚠ icon, bilingual copy, and
+   an optional secondary action that surfaces NCERT chapters ready
+   for grounded answers.
    ═══════════════════════════════════════════════════════════════ */
 
 export interface UnverifiedBannerProps {
@@ -31,8 +23,8 @@ export function UnverifiedBanner({ traceId, onShowChapters }: UnverifiedBannerPr
   const { isHi } = useAuth();
 
   const message = isHi
-    ? 'यह उत्तर आपके सत्यापित पाठ्यक्रम से नहीं है — अपनी किताब से जाँच करें, या किसी विशिष्ट विषय पर प्रश्न पूछें।'
-    : 'This answer isn’t from your verified curriculum — please verify with your book, or ask a specific question for a grounded answer.';
+    ? '⚠ यह उत्तर आपके सत्यापित पाठ्यक्रम से नहीं है — अपनी किताब से जाँच करें, या किसी विशिष्ट विषय पर प्रश्न पूछें।'
+    : '⚠ This answer isn\u2019t from your verified curriculum — please verify with your book, or ask a specific question for a grounded answer.';
 
   const actionLabel = isHi
     ? 'मुझे दिखाइए कौन से सत्यापित पाठ्यक्रम विषय उपलब्ध हैं'
@@ -43,22 +35,19 @@ export function UnverifiedBanner({ traceId, onShowChapters }: UnverifiedBannerPr
       data-testid="unverified-banner"
       role="status"
       title={traceId ? `trace: ${traceId}` : undefined}
-      className="mb-2"
+      className="mb-2 rounded-lg border border-amber-400 bg-amber-50 p-4 text-amber-900"
     >
-      <Alert
-        tone="warning"
-        role={undefined}
-        action={
-          onShowChapters ? (
-            <Button variant="secondary" size="sm" onClick={onShowChapters}>
-              {actionLabel}
-              <span aria-hidden className="ms-1">→</span>
-            </Button>
-          ) : undefined
-        }
-      >
-        <p className="leading-relaxed">{message}</p>
-      </Alert>
+      <p className="text-xs leading-relaxed">{message}</p>
+      {onShowChapters && (
+        <button
+          type="button"
+          onClick={onShowChapters}
+          className="mt-3 inline-flex items-center gap-1 rounded-lg border border-amber-500 bg-white px-3 py-1.5 text-[11px] font-semibold text-amber-800 transition active:scale-95 hover:bg-amber-100"
+        >
+          {actionLabel}
+          <span aria-hidden>→</span>
+        </button>
+      )}
     </div>
   );
 }

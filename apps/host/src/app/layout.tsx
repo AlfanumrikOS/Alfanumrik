@@ -83,13 +83,6 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Server-side read of the Vercel env (architect maps this in next.config.js).
-  // 'preview' on every PR deploy, 'production' on prod, undefined in local/dev.
-  // Baked into the pre-hydration script below as a literal boolean so previews
-  // paint cosmic before first paint, while production bakes `false` and stays
-  // byte-identical. typeof-guarded so an unmapped env var is undefined-safe.
-  const isPreview = process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview';
-
   return (
     // cosmicFontVars only DEFINES the --font-cosmic-* CSS variables on <html>.
     // They are consumed exclusively inside the html[data-design="cosmic"] scope
@@ -156,42 +149,10 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html:
               "(function(){try{" +
-              "var PREVIEW=" + (isPreview ? "true" : "false") + ";" + // server-baked NEXT_PUBLIC_VERCEL_ENV==='preview'
-              "var FK='alfanumrik_cosmic_force';" +
-              // ── manual override (URL is authoritative this navigation, then persisted) ──
-              "var force=null;" +
-              "try{var q=new URLSearchParams(location.search).get('cosmic');" +
-              "if(q!==null){q=q.toLowerCase();" +
-              "if(q==='1'||q==='preview'||q==='true'||q==='on'){force='on';localStorage.setItem(FK,'1');}" +
-              "else if(q==='0'||q==='false'||q==='off'){force='off';localStorage.setItem(FK,'0');}}}catch(e){}" +
-              "if(force===null){try{var s=localStorage.getItem(FK);if(s==='1')force='on';else if(s==='0')force='off';}catch(e){}}" +
-              // ── force-off beats everything (incl. preview + cached ON flag) ──
-              "if(force==='off')return;" +
-              // ── cached DB flag (same shape/TTL as getCosmicFlagSync) ──
-              "var flagOn=false;" +
-              "try{var raw=localStorage.getItem('alfanumrik_cosmic_flag_v1');" +
-              "if(raw){var c=JSON.parse(raw);if(c&&typeof c.ts==='number'&&Date.now()-c.ts<=36e5&&c.on)flagOn=true;}}catch(e){}" +
-              // ── enable = preview || forceOn || cached flag || LOGGED-IN student (OS is cosmic-light) ──
-              //    NOTE: a stored role of exactly 'student' means a signed-in learner. An
-              //    ANONYMOUS visitor (no role key at all) must NOT auto-enable cosmic — the
-              //    public marketing/auth surfaces (/welcome, /login, /pricing) carry the
-              //    default burnt-orange brand identity, and CosmicThemeProvider's
-              //    computeCosmicEnabled() (dbFlag||preview||force) never enables cosmic for
-              //    them either. Treating no-role as student caused a first-paint cosmic FLASH
-              //    on every public page (violet --orange), which React then reverted — a
-              //    nondeterministic race pinned by the REG-237 token-contract probe. Requiring
-              //    an explicit 'student' role keeps signed-in students on cosmic-light with no
-              //    behavior change while removing the anonymous leak.
-              "var r=localStorage.getItem('alfanumrik_active_role');" +
-              "var isStudent=(r==='student');" +
-              "if(!(PREVIEW||force==='on'||flagOn||isStudent))return;" +
               "var h=document.documentElement;" +
-              "h.setAttribute('data-design','cosmic');" +
-              "var t;if(isStudent&&!(flagOn||PREVIEW||force==='on')){t='light';}" +
-              "else{var V={dark:1,light:1,hc:1};t=localStorage.getItem('alfanumrik_cosmic_theme');if(!V[t])t='dark';}" +
-              "h.setAttribute('data-theme',t);" +
-              "var role=r==='guardian'?'parent':r==='teacher'?'teacher':r==='institution_admin'?'school':'student';" +
-              "h.setAttribute('data-role',role);" +
+              "h.removeAttribute('data-design');" +
+              "h.removeAttribute('data-role');" +
+              "h.setAttribute('data-theme','light');" +
               "}catch(e){}})();",
           }}
         />

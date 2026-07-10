@@ -224,7 +224,7 @@ export default function ProgressSection({
                     action: 'knowledge_gaps_fix_with_foxy',
                     destination: '/foxy',
                   });
-                  window.location.href = '/foxy';
+                  router.push('/foxy');
                 }}
                 className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl transition-all active:scale-95"
                 style={{

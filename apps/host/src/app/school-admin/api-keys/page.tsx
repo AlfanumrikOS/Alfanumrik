@@ -117,11 +117,11 @@ function NewKeyDisplay({ fullKey, isHi }: NewKeyDisplayProps) {
     <div
       className="rounded-2xl p-4 text-center mt-2 mb-3"
       style={{
-        background: 'linear-gradient(135deg, color-mix(in srgb, var(--success) 6%, transparent), color-mix(in srgb, var(--success) 12%, transparent))',
-        border: '1.5px solid color-mix(in srgb, var(--success) 19%, transparent)',
+        background: 'linear-gradient(135deg, #F0FDF4, #DCFCE7)',
+        border: '1.5px solid #16A34A30',
       }}
     >
-      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--success)' }}>
+      <p className="text-xs font-semibold mb-2" style={{ color: '#16A34A' }}>
         {t(isHi, 'Key generated successfully!', 'कुंजी सफलतापूर्वक बनाई गई!')}
       </p>
 
@@ -129,11 +129,11 @@ function NewKeyDisplay({ fullKey, isHi }: NewKeyDisplayProps) {
       <div
         className="rounded-xl px-3 py-2 mb-3"
         style={{
-          background: 'color-mix(in srgb, var(--warning) 4%, transparent)',
-          border: '1px solid color-mix(in srgb, var(--warning) 25%, transparent)',
+          background: '#FEF3C730',
+          border: '1px solid #F59E0B40',
         }}
       >
-        <p className="text-xs font-semibold" style={{ color: 'var(--orange)' }}>
+        <p className="text-xs font-semibold" style={{ color: '#B45309' }}>
           {t(
             isHi,
             'This key will not be shown again. Copy it now!',
@@ -150,7 +150,7 @@ function NewKeyDisplay({ fullKey, isHi }: NewKeyDisplayProps) {
           color: 'var(--text-1)',
           lineHeight: 1.5,
           padding: '8px',
-          background: 'color-mix(in srgb, var(--surface-1) 70%, transparent)',
+          background: 'rgba(255,255,255,0.7)',
           borderRadius: '12px',
           border: '1px solid var(--border)',
         }}
@@ -162,9 +162,9 @@ function NewKeyDisplay({ fullKey, isHi }: NewKeyDisplayProps) {
         onClick={handleCopy}
         className="mt-3 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
         style={{
-          background: copied ? 'var(--success)' : 'var(--surface-1)',
+          background: copied ? '#16A34A' : 'var(--surface-1)',
           border: '1px solid var(--border)',
-          color: copied ? 'var(--surface-1)' : 'var(--text-2)',
+          color: copied ? '#fff' : 'var(--text-2)',
           minHeight: '42px',
         }}
       >
@@ -197,10 +197,10 @@ function KeyCard({ apiKey, isHi, onRevoke, revokingId }: KeyCardProps) {
       : t(isHi, 'Active', 'सक्रिय');
 
   const statusColor = !apiKey.is_active
-    ? 'var(--text-3)'
+    ? '#7D7264'
     : expired
-      ? 'var(--danger)'
-      : 'var(--success)';
+      ? '#DC2626'
+      : '#16A34A';
 
   const permissionLabelMap: Record<string, string> = {
     'students.read': t(isHi, 'Students', 'छात्र'),
@@ -247,7 +247,7 @@ function KeyCard({ apiKey, isHi, onRevoke, revokingId }: KeyCardProps) {
           {formatDate(apiKey.created_at)}
         </p>
         {apiKey.expires_at && (
-          <p className="text-xs" style={{ color: expired ? 'var(--danger)' : 'var(--text-3)' }}>
+          <p className="text-xs" style={{ color: expired ? '#DC2626' : 'var(--text-3)' }}>
             {t(isHi, 'Expires:', 'समाप्ति:')}{' '}
             {formatDate(apiKey.expires_at)}
           </p>
@@ -275,7 +275,7 @@ function KeyCard({ apiKey, isHi, onRevoke, revokingId }: KeyCardProps) {
             style={{
               background: 'var(--surface-2)',
               border: '1px solid var(--border)',
-              color: 'var(--danger)',
+              color: '#DC2626',
               minHeight: '36px',
               opacity: isRevoking ? 0.6 : 1,
               cursor: isRevoking ? 'not-allowed' : 'pointer',
@@ -364,7 +364,7 @@ function GenerateForm({ isHi, onSubmit, submitting, newKey }: GenerateFormProps)
                 onClick={() => togglePermission(perm.value)}
                 className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all active:scale-[0.98]"
                 style={{
-                  background: checked ? 'color-mix(in srgb, var(--purple) 8%, transparent)' : 'var(--surface-2)',
+                  background: checked ? 'rgba(124, 58, 237, 0.08)' : 'var(--surface-2)',
                   border: checked ? '1.5px solid var(--purple)' : '1px solid var(--border)',
                   minHeight: '44px',
                 }}
@@ -380,7 +380,7 @@ function GenerateForm({ isHi, onSubmit, submitting, newKey }: GenerateFormProps)
                     height: '20px',
                     background: checked ? 'var(--purple)' : 'transparent',
                     border: checked ? 'none' : '2px solid var(--border)',
-                    color: 'var(--surface-1)',
+                    color: '#fff',
                     fontSize: '12px',
                     fontWeight: 700,
                     flexShrink: 0,
@@ -426,7 +426,7 @@ function GenerateForm({ isHi, onSubmit, submitting, newKey }: GenerateFormProps)
                 style={{
                   background: selected ? 'var(--purple)' : 'var(--surface-2)',
                   border: selected ? 'none' : '1px solid var(--border)',
-                  color: selected ? 'var(--surface-1)' : 'var(--text-2)',
+                  color: selected ? '#fff' : 'var(--text-2)',
                   minHeight: '36px',
                 }}
               >

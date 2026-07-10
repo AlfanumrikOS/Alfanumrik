@@ -2,22 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Card,
-  Badge,
-  Button,
-  MasteryRing,
-  ProgressBar,
-  type Tone,
-} from '@alfanumrik/ui/ui/primitives';
+import { Card, MasteryRing, ProgressBar, Button } from '@alfanumrik/ui/ui';
 import { BLOOM_LEVELS, BLOOM_CONFIG } from '@alfanumrik/lib/cognitive-engine';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
-import {
-  bandForValue,
-  bandLabelForValue,
-  MASTERY_BAND_LABELS,
-  type MasteryBand,
-} from '@alfanumrik/lib/dashboard/mastery-band-labels';
 import type { BloomLevel } from '@alfanumrik/lib/types';
 import type { StudentLearningProfile, Subject, LearningVelocity } from '@alfanumrik/lib/types';
 
@@ -30,65 +17,58 @@ interface SubjectMasteryCardProps {
   isHi: boolean;
 }
 
-/* Mastery band → primitive Tone + non-colour backup glyph (deuteranopia-safe:
-   the number + Bloom label + this glyph carry the meaning; colour only
-   accelerates). */
-const BAND_TONE: Record<MasteryBand, Tone> = { high: 'success', mid: 'warning', low: 'danger' };
-const BAND_GLYPH: Record<MasteryBand, string> = { high: '●', mid: '◐', low: '▲' };
-const BAND_VAR: Record<MasteryBand, string> = {
-  high: 'var(--mastery-high)',
-  mid: 'var(--mastery-mid)',
-  low: 'var(--mastery-low)',
-};
-
-/* ── Bloom Mastery grid (Phase 0 fix) ──
-   Mastery is shown as an ALWAYS-VISIBLE number + Bloom label + non-colour band
-   glyph + a determinate bar — never opacity-encoded and never hover-only. Fully
-   touch-accessible and glanceable (WCAG 1.4.1). The underlying per-level data is
-   unchanged. */
-function BloomMasteryGrid({ data, isHi }: { data: Array<{ bloom_level: BloomLevel; mastery: number }>; isHi: boolean }) {
+/* ── Inline Bloom Heatmap (kept for advanced view) ── */
+function BloomHeatmap({ data, isHi }: { data: Array<{ bloom_level: BloomLevel; mastery: number }>; isHi: boolean }) {
   const masteryByLevel: Record<BloomLevel, number[]> = {
     remember: [], understand: [], apply: [], analyze: [], evaluate: [], create: [],
   };
   for (const row of data) {
-    if (masteryByLevel[row.bloom_level]) masteryByLevel[row.bloom_level].push(row.mastery ?? 0);
+    if (masteryByLevel[row.bloom_level]) {
+      masteryByLevel[row.bloom_level].push(row.mastery ?? 0);
+    }
   }
 
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {BLOOM_LEVELS.map((level) => {
-        const values = masteryByLevel[level];
-        const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
-        const pct = Math.round(avg * 100);
-        const band = bandForValue(pct);
-        const cfg = BLOOM_CONFIG[level];
-        const label = isHi ? cfg.labelHi : cfg.label;
-        return (
-          <div key={level} className="min-w-0 rounded-lg border border-surface-3 bg-surface-1 p-2">
-            <div className="truncate text-fluid-2xs font-semibold text-muted-foreground">{label}</div>
-            <div className="mt-0.5 flex items-baseline gap-1">
-              <span className="text-fluid-base font-bold tabular-nums text-foreground">{pct}%</span>
-              <span aria-hidden="true" className="text-fluid-2xs" style={{ color: BAND_VAR[band] }}>
-                {BAND_GLYPH[band]}
-              </span>
+    <div className="space-y-2">
+      <div className="flex gap-1 items-center w-full">
+        {BLOOM_LEVELS.map((level) => {
+          const values = masteryByLevel[level];
+          const avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+          const cfg = BLOOM_CONFIG[level];
+          const opacity = Math.max(0.1, avg);
+          return (
+            <div
+              key={level}
+              className="flex-1 rounded-sm relative group"
+              style={{ height: 24, background: cfg.color, opacity, minWidth: 0 }}
+              title={`${isHi ? cfg.labelHi : cfg.label}: ${Math.round(avg * 100)}%`}
+            >
+              <div className="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                {Math.round(avg * 100)}%
+              </div>
             </div>
-            <ProgressBar
-              value={pct}
-              tone={BAND_TONE[band]}
-              size="sm"
-              ariaLabel={`${label}: ${pct}%`}
-              className="mt-1.5"
-            />
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {BLOOM_LEVELS.map((level) => {
+          const cfg = BLOOM_CONFIG[level];
+          return (
+            <div key={level} className="flex items-center gap-1">
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ background: cfg.color }} />
+              <span className="text-[10px] text-[var(--text-3)]">{isHi ? cfg.labelHi : cfg.label}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-/* ── Velocity sparkline (kept for advanced view; token stroke) ── */
+/* ── Velocity Sparkline (kept for advanced view) ── */
 function VelocitySparkline({ datapoints }: { datapoints: Array<{ date: string; mastery: number }> }) {
-  if (!datapoints || datapoints.length < 2) return <span className="text-fluid-2xs text-muted-foreground">—</span>;
+  if (!datapoints || datapoints.length < 2) return <span className="text-[10px] text-[var(--text-3)]">---</span>;
 
   const sorted = [...datapoints].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const maxM = Math.max(...sorted.map((d) => d.mastery), 0.01);
@@ -98,17 +78,42 @@ function VelocitySparkline({ datapoints }: { datapoints: Array<{ date: string; m
   const points = sorted.map((d, i) => `${i * step},${height - (d.mastery / maxM) * height}`).join(' ');
 
   return (
-    <svg width={width} height={height} className="inline-block" aria-hidden="true">
+    <svg width={width} height={height} className="inline-block">
       <polyline
         points={points}
         fill="none"
-        stroke="var(--info)"
+        stroke="var(--teal)"
         strokeWidth={2}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
   );
+}
+
+/* ── Mastery level classifier ── */
+function classifyMastery(pct: number): 'mastered' | 'developing' | 'beginner' {
+  if (pct >= 75) return 'mastered';
+  if (pct >= 40) return 'developing';
+  return 'beginner';
+}
+
+function getMasteryLabel(level: 'mastered' | 'developing' | 'beginner', isHi: boolean): string {
+  const labels = {
+    mastered: isHi ? 'मास्टर किया' : 'Mastered',
+    developing: isHi ? 'अभी सीख रहे' : 'Developing',
+    beginner: isHi ? 'मेहनत चाहिए' : 'Beginner',
+  };
+  return labels[level];
+}
+
+function getMasteryColor(level: 'mastered' | 'developing' | 'beginner'): string {
+  const colors = {
+    mastered: 'var(--mastery-high)',
+    developing: 'var(--mastery-mid)',
+    beginner: 'var(--mastery-low)',
+  };
+  return colors[level];
 }
 
 /* ── Component ── */
@@ -122,137 +127,133 @@ export default function SubjectMasteryCard({
   const router = useRouter();
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // P1: accuracy % is read straight from server counts via calculateScorePercent
-  // — no client recompute of any score/mastery number.
   const correctPct = calculateScorePercent(profile.total_questions_answered_correctly, profile.total_questions_asked);
 
-  // Growth-mindset band label — routed through the shared mastery-band-labels
-  // source of truth (no harsh "Beginner" / "मेहनत चाहिए").
-  const band = bandForValue(correctPct);
-  const bandText = bandLabelForValue(correctPct, isHi);
-
+  const masteryLevel = classifyMastery(correctPct);
   const subjectCode = profile.subject;
   const icon = subjectMeta?.icon ?? '📚';
   const name = subjectMeta?.name ?? profile.subject;
+  const color = subjectMeta?.color ?? 'var(--orange)';
 
-  // Derive Bloom-level insights from bloom data (presentation grouping only).
+  // Derive topic-level insights from bloom data
+  // Group bloom data: high mastery topics are "strong", low are "needs work"
   const bloomByLevel = BLOOM_LEVELS.reduce((acc, level) => {
-    const items = bloomData.filter((b) => b.bloom_level === level);
+    const items = bloomData.filter(b => b.bloom_level === level);
     const avg = items.length > 0 ? items.reduce((s, i) => s + i.mastery, 0) / items.length : 0;
     acc[level] = avg;
     return acc;
   }, {} as Record<string, number>);
 
-  const strongLevels = BLOOM_LEVELS.filter((l) => bloomByLevel[l] >= 0.7);
-  const focusLevels = BLOOM_LEVELS.filter((l) => bloomByLevel[l] > 0 && bloomByLevel[l] < 0.4);
+  const strongLevels = BLOOM_LEVELS.filter(l => bloomByLevel[l] >= 0.7);
+  const weakLevels = BLOOM_LEVELS.filter(l => bloomByLevel[l] > 0 && bloomByLevel[l] < 0.4);
 
+  // Velocity data for sparkline
   const velocityHistory = velocity?.velocity_history as Record<string, number> | null;
   const sparklineData = velocityHistory
     ? Object.entries(velocityHistory).map(([date, mastery]) => ({ date, mastery: Number(mastery) }))
     : [];
 
   return (
-    <Card className="p-4">
-      {/* Header row: accuracy MasteryRing (band-labelled) + subject + band badge */}
+    <Card className="!p-4">
+      {/* Header row */}
       <div className="flex items-center gap-3">
-        <MasteryRing
-          value={correctPct}
-          size={56}
-          strokeWidth={5}
-          showLabel={false}
-          bandLabel={(k) => (isHi ? MASTERY_BAND_LABELS[k].hi : MASTERY_BAND_LABELS[k].en)}
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span aria-hidden="true" className="text-fluid-lg">{icon}</span>
-            <h3 className="min-w-0 truncate text-fluid-sm font-bold text-foreground">{name}</h3>
-            <span className="text-fluid-sm font-bold tabular-nums text-foreground">{correctPct}%</span>
-            <Badge tone={BAND_TONE[band]} icon={<span>{BAND_GLYPH[band]}</span>}>{bandText}</Badge>
+        <MasteryRing value={correctPct} size={52} strokeWidth={4} color={color}>
+          <span className="text-lg">{icon}</span>
+        </MasteryRing>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold truncate">{name}</h3>
+            <span
+              className="text-xs font-semibold"
+              style={{ color }}
+            >
+              {correctPct}%
+            </span>
           </div>
-          <ProgressBar
-            value={correctPct}
-            tone={BAND_TONE[band]}
-            size="sm"
-            ariaLabel={`${name}: ${correctPct}%`}
-            className="mt-1.5"
-          />
+          <ProgressBar value={correctPct} color={color} height={5} />
         </div>
       </div>
 
-      {/* Bloom summary (growth-mindset framing; no harsh terms) */}
+      {/* Mastery summary */}
       <div className="mt-3 space-y-1.5">
         {strongLevels.length > 0 && (
-          <div className="flex items-start gap-2 text-fluid-sm">
-            <span className="shrink-0 font-semibold" style={{ color: BAND_VAR.high }}>
-              {isHi ? MASTERY_BAND_LABELS.high.hi : MASTERY_BAND_LABELS.high.en}:
+          <div className="flex items-start gap-2 text-xs">
+            <span className="shrink-0 font-semibold" style={{ color: 'var(--mastery-high)' }}>
+              {isHi ? 'मज़बूत:' : 'Strong:'}
             </span>
-            <span className="text-foreground">
-              {strongLevels.map((l) => (isHi ? BLOOM_CONFIG[l].labelHi : BLOOM_CONFIG[l].label)).join(', ')}
-            </span>
-          </div>
-        )}
-        {focusLevels.length > 0 && (
-          <div className="flex items-start gap-2 text-fluid-sm">
-            <span className="shrink-0 font-semibold" style={{ color: BAND_VAR.mid }}>
-              {isHi ? 'अगला फोकस' : 'Focus next'}:
-            </span>
-            <span className="text-foreground">
-              {focusLevels.map((l) => (isHi ? BLOOM_CONFIG[l].labelHi : BLOOM_CONFIG[l].label)).join(', ')}
+            <span className="text-[var(--text-2)]">
+              {strongLevels.map(l => isHi ? BLOOM_CONFIG[l].labelHi : BLOOM_CONFIG[l].label).join(', ')}
             </span>
           </div>
         )}
-        {strongLevels.length === 0 && focusLevels.length === 0 && (
-          <p className="text-fluid-xs text-muted-foreground">
+        {weakLevels.length > 0 && (
+          <div className="flex items-start gap-2 text-xs">
+            <span className="shrink-0 font-semibold" style={{ color: 'var(--mastery-low)' }}>
+              {isHi ? 'मेहनत चाहिए:' : 'Needs work:'}
+            </span>
+            <span className="text-[var(--text-2)]">
+              {weakLevels.map(l => isHi ? BLOOM_CONFIG[l].labelHi : BLOOM_CONFIG[l].label).join(', ')}
+            </span>
+          </div>
+        )}
+        {strongLevels.length === 0 && weakLevels.length === 0 && (
+          <p className="text-xs text-[var(--text-3)]">
             Lv{profile.level} · {profile.xp} XP · {profile.total_sessions} {isHi ? 'सत्र' : 'sessions'}
           </p>
         )}
       </div>
 
-      {/* Actions */}
+      {/* CTA */}
       <div className="mt-3 flex gap-2">
         <Button
-          variant="secondary"
+          variant="soft"
           size="sm"
+          color={color}
           onClick={() => router.push(`/quiz?subject=${encodeURIComponent(subjectCode)}`)}
           className="flex-1"
         >
           {isHi ? 'कमज़ोर क्षेत्रों का अभ्यास करो' : 'Practice Weak Areas'}
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-expanded={showAdvanced}
-          onClick={() => setShowAdvanced((v) => !v)}
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-colors"
+          style={{
+            background: showAdvanced ? 'var(--surface-3, var(--surface-2))' : 'var(--surface-2)',
+            color: 'var(--text-3)',
+          }}
         >
-          {showAdvanced ? (isHi ? 'सरल' : 'Simple') : (isHi ? 'विस्तार' : 'Advanced')}
-        </Button>
+          {showAdvanced
+            ? (isHi ? 'सरल' : 'Simple')
+            : (isHi ? 'विस्तार' : 'Advanced')
+          }
+        </button>
       </div>
 
-      {/* Advanced: Bloom grid + velocity */}
+      {/* Advanced: Bloom Heatmap + Velocity Sparkline */}
       {showAdvanced && (
-        <div className="mt-3 space-y-3 border-t border-surface-3 pt-3">
+        <div className="mt-3 pt-3 space-y-3" style={{ borderTop: '1px solid var(--border)' }}>
           {bloomData.length > 0 && (
             <div>
-              <p className="mb-1.5 text-fluid-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider mb-1.5">
                 {isHi ? "Bloom's विश्लेषण" : "Bloom's Analysis"}
               </p>
-              <BloomMasteryGrid data={bloomData} isHi={isHi} />
+              <BloomHeatmap data={bloomData} isHi={isHi} />
             </div>
           )}
           {sparklineData.length >= 2 && (
             <div className="flex items-center gap-3">
-              <p className="text-fluid-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">
                 {isHi ? 'सीखने की गति' : 'Velocity'}
               </p>
               <VelocitySparkline datapoints={sparklineData} />
               {velocity?.weekly_mastery_rate != null && (
-                <span className="text-fluid-2xs font-bold" style={{ color: 'var(--info)' }}>
+                <span className="text-[10px] font-bold" style={{ color: 'var(--teal)' }}>
                   {Math.round((velocity.weekly_mastery_rate ?? 0) * 100)}%/wk
                 </span>
               )}
             </div>
           )}
-          <p className="text-fluid-2xs text-muted-foreground">
+          <p className="text-[10px] text-[var(--text-3)]">
             {profile.total_sessions} {isHi ? 'सत्र' : 'sessions'} · {profile.total_time_minutes}m {isHi ? 'पढ़ाई' : 'study time'} · Lv{profile.level}
           </p>
         </div>

@@ -14,13 +14,6 @@
  *
  * Locked subjects are shown greyed out with an upgrade CTA — they are never
  * hidden, which helps students understand what upgrading unlocks.
- *
- * Phase 5a (premium-ui rebuild): the Subject grid + Chapter list are recomposed
- * on the canonical primitive layer (@alfanumrik/ui/ui/primitives). Presentation
- * only — every data hook, route, gate, localStorage read, and the celebration
- * trigger are byte-for-byte unchanged. Coverage % is derived through
- * calculateScorePercent (P1) and labelled as COVERAGE ("Chapters done"), kept
- * semantically distinct from exam-readiness (assessment C1/C2).
  */
 
 import { useState, useEffect, useMemo } from 'react';
@@ -33,18 +26,7 @@ const CelebrationOverlay = dynamic(
   { ssr: false },
 );
 import { getChaptersForSubject, supabase } from '@alfanumrik/lib/supabase';
-import { LoadingFoxy } from '@alfanumrik/ui/ui';
-import {
-  Card,
-  Button,
-  IconButton,
-  Badge,
-  ProgressBar,
-  Alert,
-  EmptyState,
-  Skeleton,
-} from '@alfanumrik/ui/ui/primitives';
-import { calculateScorePercent } from '@alfanumrik/lib/scoring';
+import {  LoadingFoxy, PremiumCard, GlowButton, LockedCard } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { getPlanConfig } from '@alfanumrik/lib/plans';
@@ -196,10 +178,6 @@ export default function LearnPage() {
   // service hook above — plan + grade + stream gating lives on the server.
   const plan = getPlanConfig(student.subscription_plan);
   const selectedMeta = allSubjects.find(s => s.code === selectedSubject);
-  const upgradeLabel = plan.nextPlanLabel?.replace(' →', '') || (isHi ? 'अपग्रेड करो' : 'Upgrade');
-
-  // NCERT ordering: always present chapters in curriculum order.
-  const orderedChapters = [...chapters].sort((a, b) => a.chapter_number - b.chapter_number);
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
@@ -214,15 +192,15 @@ export default function LearnPage() {
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
           {selectedSubject ? (
-            <IconButton
-              variant="ghost"
-              size="md"
-              label={isHi ? 'वापस जाएं' : 'Go back'}
-              icon={<span aria-hidden="true">←</span>}
+            <button
               onClick={() => { setSelectedSubject(null); setChapters([]); }}
-            />
+              className="text-[var(--text-3)] text-lg p-2 rounded-lg"
+              aria-label={isHi ? 'वापस जाएं' : 'Go back'}
+            >
+              ←
+            </button>
           ) : null}
-          <h1 className="text-fluid-lg font-bold text-foreground" style={{ fontFamily: 'var(--font-serif)' }}>
+          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
             {selectedSubject
               ? `${selectedMeta?.icon} ${selectedMeta?.name}`
               : (isHi ? '📚 विषय' : '📚 Subjects')}
@@ -236,110 +214,115 @@ export default function LearnPage() {
           {!selectedSubject ? (
             /* ── Subject Grid ── */
             <div>
-              <p className="mb-4 text-fluid-sm font-medium text-muted-foreground">
+              <p className="text-sm text-[var(--text-3)] mb-4 font-medium">
                 {isHi
                   ? `कक्षा ${student.grade} · कौन सा विषय पढ़ना है?`
                   : `Grade ${student.grade} · Choose a subject to study`}
               </p>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
 
                 {/* ── Unlocked subjects ── */}
                 {allowedSubjects.map(s => {
                   const isCurrent = student.preferred_subject === s.code;
-                  const total = subjectTotalChapters[s.code] || 0;
-                  const completed = progressRows.filter(row => row.subject === s.code && row.is_completed).length;
-                  // Coverage % (P1 formula via calculateScorePercent) — a COVERAGE
-                  // signal (chapters done), NOT mastery/exam-readiness (C1/C2).
-                  const coveragePct = calculateScorePercent(completed, total);
                   return (
-                    <Card
+                    <button
                       key={s.code}
-                      variant="interactive"
                       onClick={() => setSelectedSubject(s.code)}
-                      aria-label={`${s.name}${isCurrent ? (isHi ? ' · अभी पढ़ रहे हो' : ' · current subject') : ''}`}
-                      className="p-4"
+                      className="card-hover rounded-2xl p-4 text-left transition-all active:scale-[0.97] cursor-pointer relative overflow-hidden"
+                      style={{
+                        background: isCurrent
+                          ? `color-mix(in srgb, ${s.color} 8%, var(--surface-1))`
+                          : 'var(--surface-1)',
+                        border: `1px solid ${isCurrent ? s.color : 'var(--border)'}`,
+                        boxShadow: isCurrent
+                          ? `var(--shadow-md), 0 0 0 1px color-mix(in srgb, ${s.color} 20%, transparent)`
+                          : 'var(--shadow-md)',
+                      }}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <span aria-hidden="true" className="text-fluid-3xl">{s.icon}</span>
-                        {isCurrent && (
-                          <Badge tone="brand" variant="soft">
-                            {isHi ? '⭐ अभी' : '⭐ Current'}
-                          </Badge>
-                        )}
-                      </div>
-                      <h2 className="mt-2 text-fluid-base font-bold text-foreground">{s.name}</h2>
-                      <p className="text-fluid-xs text-muted-foreground">
-                        {isCurrent
-                          ? (isHi ? 'अभी पढ़ रहे हो' : 'Current subject')
-                          : (isHi ? 'अध्याय देखो →' : 'View chapters →')}
-                      </p>
-                      <div className="mt-3">
-                        <ProgressBar
-                          value={coveragePct}
-                          tone="brand"
-                          size="sm"
-                          showValue
-                          label={isHi ? 'अध्याय पूरे' : 'Chapters done'}
+                      {isCurrent && (
+                        <div
+                          className="absolute top-0 left-0 right-0 h-1"
+                          style={{ background: s.color || 'var(--orange)' }}
                         />
-                        <p className="mt-1 text-fluid-xs tabular-nums text-muted-foreground">
-                          {completed}/{total} {isHi ? 'अध्याय' : 'chapters'}
-                        </p>
+                      )}
+                      <div className="text-3xl mb-2">{s.icon}</div>
+                      <div
+                        className="text-sm font-bold"
+                        style={{ color: isCurrent ? s.color : 'var(--text-1)' }}
+                      >
+                        {s.name}
                       </div>
-                    </Card>
+                      <div className="text-[10px] text-[var(--text-3)] mt-1">
+                        {isCurrent
+                          ? (isHi ? '⭐ अभी पढ़ रहे हो' : '⭐ Current subject')
+                          : (isHi ? 'अध्याय देखो →' : 'View chapters →')}
+                      </div>
+                      {(() => {
+                        const total = subjectTotalChapters[s.code] || 0;
+                        const completed = progressRows.filter(row => row.subject === s.code && row.is_completed).length;
+                        const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+                        return (
+                          <div className="mt-3">
+                            <div className="w-full rounded-full h-1.5 mt-1 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                              <div
+                                  className="h-1.5 rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `${pct}%`,
+                                    backgroundColor: s.color || 'var(--orange)',
+                                  }}
+                              />
+                            </div>
+                            <div className="text-[11px] text-[var(--text-3)] mt-1 flex justify-between">
+                              <span><span className="font-bold">{pct}%</span> {isHi ? 'पूरा' : 'Done'}</span>
+                              <span>{completed}/{total} {isHi ? 'अध्याय' : 'Ch'}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </button>
                   );
                 })}
 
-                {/* ── Locked subjects ── (canonical Card + Button; never hidden,
-                    always shows a growth-mindset reason + a supportive upgrade
-                    Button → /pricing — assessment C5). */}
+                {/* ── Locked subjects ── (uses the LockedCard primitive; tap → /pricing) */}
                 {lockedSubjects.map(s => (
-                  <Card key={s.code} variant="flat" className="flex flex-col p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <span aria-hidden="true" className="text-fluid-3xl opacity-60 grayscale">{s.icon}</span>
-                      <span aria-hidden="true" className="text-muted-foreground">🔒</span>
-                      <span className="sr-only">{isHi ? `लॉक: ${s.name}` : `Locked: ${s.name}`}</span>
-                    </div>
-                    <h2 className="mt-2 text-fluid-base font-bold text-foreground">{s.name}</h2>
-                    <p className="text-fluid-xs text-muted-foreground">
-                      {isHi ? `${upgradeLabel} पर अनलॉक करो` : 'Unlock with an upgrade'}
-                    </p>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      fullWidth
-                      className="mt-3"
-                      onClick={() => router.push('/pricing')}
-                    >
-                      {isHi ? 'अनलॉक करो' : 'Unlock'}
-                    </Button>
-                  </Card>
+                  <LockedCard
+                    key={s.code}
+                    variant="plan"
+                    icon={s.icon}
+                    title={s.name}
+                    reason={isHi
+                      ? `${plan.nextPlanLabel?.replace(' →', '') || 'अपग्रेड'} पर अनलॉक करो`
+                      : 'Unlock with an upgrade'}
+                    actionLabel={isHi
+                      ? `${plan.nextPlanLabel?.replace(' →', '') || 'अपग्रेड करो'}`
+                      : 'Upgrade to unlock'}
+                    onAction={() => router.push('/pricing')}
+                    className="p-4"
+                  />
                 ))}
 
               </div>
 
-              {/* Upgrade prompt — single Alert, only when locked subjects exist. */}
+              {/* Upgrade prompt strip — only shown when there are locked subjects */}
               {lockedSubjects.length > 0 && (
-                <Alert
-                  tone="info"
-                  icon={<span aria-hidden="true">🔓</span>}
-                  className="mt-4"
-                  title={isHi
-                    ? `${lockedSubjects.length} और विषय अनलॉक करो`
-                    : `Unlock ${lockedSubjects.length} more subject${lockedSubjects.length > 1 ? 's' : ''}`}
-                  action={
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => router.push('/pricing')}
-                    >
-                      {plan.nextPlanLabel || (isHi ? 'अपग्रेड करो' : 'Upgrade')}
-                    </Button>
-                  }
+                <button
+                  onClick={() => router.push('/pricing')}
+                  className="w-full mt-4 py-3 px-4 rounded-2xl text-sm font-bold flex items-center justify-between transition-all active:scale-[0.98]"
+                  style={{
+                    background: 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.08), rgb(var(--accent-warm-rgb) / 0.04))',
+                    border: '1px solid rgb(var(--accent-warm-rgb) / 0.2)',
+                    color: 'var(--accent-warm)',
+                  }}
                 >
-                  {isHi
-                    ? 'अपने प्लान को अपग्रेड करके और विषय खोलो।'
-                    : 'Upgrade your plan to open more subjects.'}
-                </Alert>
+                  <span>
+                    🔓 {isHi
+                      ? `${lockedSubjects.length} और विषय अनलॉक करो`
+                      : `Unlock ${lockedSubjects.length} more subject${lockedSubjects.length > 1 ? 's' : ''}`}
+                  </span>
+                  <span style={{ opacity: 0.7 }}>
+                    {plan.nextPlanLabel || (isHi ? 'अपग्रेड करो →' : 'Upgrade →')}
+                  </span>
+                </button>
               )}
             </div>
 
@@ -358,7 +341,7 @@ export default function LearnPage() {
           ) : (
             /* ── Chapter List ── */
             <div>
-              <p className="mb-4 text-fluid-sm font-medium text-muted-foreground">
+              <p className="text-sm text-[var(--text-3)] mb-4 font-medium">
                 {isHi ? 'कौन सा अध्याय पढ़ना है?' : 'Choose a chapter to study'}
               </p>
 
@@ -375,133 +358,165 @@ export default function LearnPage() {
 
               {/* ═══ CONTINUE WHERE YOU LEFT OFF ═══ */}
               {lastStudied && lastStudied.subject === selectedSubject && (
-                <Card
-                  variant="interactive"
+                <button
                   onClick={() => router.push(`/learn/${lastStudied.subject}/${lastStudied.chapter}`)}
-                  className="mb-4 p-4"
-                  aria-label={isHi ? 'जहां छोड़ा था वहीं से शुरू करो' : 'Continue where you left off'}
+                  className="w-full rounded-xl p-4 mb-4 flex items-center gap-3 transition-all active:scale-[0.98]"
+                  style={{
+                    background: 'linear-gradient(135deg, rgb(var(--accent-warm-rgb) / 0.06), rgb(var(--accent-warm-rgb) / 0.03))',
+                    border: '1px solid rgb(var(--accent-warm-rgb) / 0.15)',
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    <span aria-hidden="true" className="text-fluid-2xl">📖</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-fluid-xs font-bold text-primary">
-                        {isHi ? 'जहां छोड़ा था वहीं से शुरू करो' : 'Continue where you left off'}
-                      </p>
-                      <p className="mt-0.5 truncate text-fluid-sm font-semibold text-foreground">
-                        {lastStudied.chapterTitle}
-                      </p>
-                      <p className="text-fluid-xs text-muted-foreground">
-                        {isHi ? `अवधारणा ${lastStudied.concept + 1}` : `Concept ${lastStudied.concept + 1}`}
-                      </p>
+                  <span className="text-xl">📖</span>
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="text-xs font-semibold" style={{ color: 'var(--accent-warm)' }}>
+                      {isHi ? 'जहां छोड़ा था वहीं से शुरू करो' : 'Continue where you left off'}
                     </div>
-                    <span aria-hidden="true" className="text-muted-foreground">→</span>
+                    <div className="text-sm font-medium truncate mt-0.5" style={{ color: 'var(--text-1)' }}>
+                      {lastStudied.chapterTitle}
+                    </div>
+                    <div className="text-[10px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                      {isHi ? `अवधारणा ${lastStudied.concept + 1}` : `Concept ${lastStudied.concept + 1}`}
+                    </div>
                   </div>
-                </Card>
+                  <span style={{ color: 'var(--text-3)' }}>→</span>
+                </button>
               )}
 
               {chaptersLoading ? (
-                <div className="space-y-3" role="status" aria-label={isHi ? 'अध्याय लोड हो रहे हैं' : 'Loading chapters'}>
+                <div className="space-y-3">
                   {[...Array(5)].map((_, i) => (
-                    <Skeleton key={i} radius="lg" className="h-20 w-full" />
+                    <div key={i} className="h-16 bg-[var(--surface-2)] rounded-xl animate-pulse" />
                   ))}
                 </div>
 
-              ) : orderedChapters.length === 0 ? (
-                <EmptyState
-                  icon="📚"
-                  title={isHi ? 'अभी कोई अध्याय नहीं मिला' : 'No chapters available yet'}
-                  description={isHi
-                    ? 'Foxy से इस विषय के बारे में पूछो'
-                    : 'Ask Foxy to teach you this subject'}
-                  action={
-                    <Button
-                      variant="primary"
-                      leadingIcon={<span aria-hidden="true">🦊</span>}
-                      onClick={() => router.push(`/foxy?subject=${selectedSubject}&mode=learn`)}
-                    >
-                      {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
-                    </Button>
-                  }
-                />
+              ) : chapters.length === 0 ? (
+                <div className="text-center py-10">
+                  <div className="text-5xl mb-3">📚</div>
+                  <p className="text-sm font-semibold text-[var(--text-2)] mb-1">
+                    {isHi ? 'अभी कोई अध्याय नहीं मिला' : 'No chapters available yet'}
+                  </p>
+                  <p className="text-xs text-[var(--text-3)] mb-6">
+                    {isHi
+                      ? 'Foxy से इस विषय के बारे में पूछो'
+                      : 'Ask Foxy to teach you this subject'}
+                  </p>
+                  <GlowButton
+                    className="warm-cta"
+                    icon="🦊"
+                    onClick={() => router.push(`/foxy?subject=${selectedSubject}&mode=learn`)}
+                  >
+                    {isHi ? 'Foxy से सीखो' : 'Learn with Foxy'}
+                  </GlowButton>
+                </div>
 
               ) : (
                 <div className="space-y-3">
-                  {orderedChapters.map((ch) => {
-                    const isCompleted = progressRows.some(
-                      row => row.subject === selectedSubject && row.chapter_number === ch.chapter_number && row.is_completed,
-                    );
-                    const verifiedCount = ch.verified_question_count ?? 0;
-                    return (
-                      <Card key={ch.chapter_number} variant="flat" className="p-4">
-                        <div className="flex items-start gap-3">
-                          {/* Chapter number chip — 44px touch-scale, token-driven */}
-                          <div
-                            aria-hidden="true"
-                            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-fluid-base font-bold text-foreground"
-                          >
-                            {ch.chapter_number}
-                          </div>
+                  {chapters.map((ch) => (
+                    <div
+                      key={ch.chapter_number}
+                      className="rounded-xl overflow-hidden"
+                      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+                    >
+                      <button
+                        onClick={() => router.push(`/learn/${selectedSubject}/${ch.chapter_number}`)}
+                        className="w-full p-4 flex items-center gap-4 text-left transition-all active:scale-[0.98]"
+                      >
+                        {/* Chapter number badge */}
+                        <div
+                          className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
+                          style={{
+                            background: `${selectedMeta?.color || 'var(--orange)'}20`,
+                            color: selectedMeta?.color || 'var(--orange)',
+                          }}
+                        >
+                          {ch.chapter_number}
+                        </div>
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <h2 className="text-fluid-base font-semibold text-foreground">
-                                {ch.title}
-                              </h2>
-                              {/* Exam-readiness signal (distinct from "Completed" — C2). */}
-                              <ChapterReadinessBadge
-                                level={readinessByChapter.get(ch.chapter_number)?.level ?? null}
-                              />
-                              {/* Coverage/effort signal — success tone, semantically
-                                  separate from readiness (assessment C2). */}
-                              {isCompleted && (
-                                <Badge tone="success" variant="soft" icon={<span aria-hidden="true">✓</span>}>
-                                  {isHi ? 'पूरा हुआ' : 'Completed'}
-                                </Badge>
-                              )}
-                              {verifiedCount > 0 && (
-                                <Badge tone="info" variant="soft" icon={<span aria-hidden="true">📝</span>}>
-                                  {verifiedCount} {isHi ? 'प्रश्न' : 'questions'}
-                                </Badge>
-                              )}
+                        {/* Title */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="text-base font-semibold" style={{ color: 'var(--text-1)' }}>
+                              {ch.title}
                             </div>
-                            <p className="mt-0.5 text-fluid-xs text-muted-foreground">
+                            {/* Phase 3 of Exam-Ready 360°: per-chapter badge.
+                                Falls back to null when the subject-readiness
+                                map hasn't loaded — never blocks the row. */}
+                            <ChapterReadinessBadge
+                              level={readinessByChapter.get(ch.chapter_number)?.level ?? null}
+                            />
+                            {(() => {
+                              const isCompleted = progressRows.some(row => row.subject === selectedSubject && row.chapter_number === ch.chapter_number && row.is_completed);
+                              if (isCompleted) {
+                                return (
+                                  <span
+                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                                    style={{
+                                      background: 'color-mix(in srgb, var(--green) 12%, var(--surface-1))',
+                                      color: 'var(--green)',
+                                      border: '1px solid color-mix(in srgb, var(--green) 25%, transparent)',
+                                    }}
+                                  >
+                                    {isHi ? '✓ पूरा हुआ' : '✓ Completed'}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
+                          <div className="text-[11px] text-[var(--text-3)] mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>
                               {isHi
                                 ? `अध्याय ${ch.chapter_number} · पढ़ो और समझो`
                                 : `Chapter ${ch.chapter_number} · Read & understand`}
-                            </p>
+                            </span>
+                            {(ch.verified_question_count ?? 0) > 0 && (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                                style={{
+                                  background: `${selectedMeta?.color || 'var(--orange)'}12`,
+                                  color: selectedMeta?.color || 'var(--orange)',
+                                }}
+                              >
+                                📝 {ch.verified_question_count} {isHi ? 'प्रश्न' : 'questions'}
+                              </span>
+                            )}
                           </div>
                         </div>
 
-                        {/* Read → Practice → Test action row (all ≥44px). */}
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            leadingIcon={<span aria-hidden="true">📖</span>}
-                            onClick={() => router.push(`/learn/${selectedSubject}/${ch.chapter_number}`)}
-                          >
-                            {isHi ? 'पढ़ो' : 'Study'}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            leadingIcon={<span aria-hidden="true">⚡</span>}
-                            onClick={() => router.push(`/quiz?subject=${selectedSubject}&chapter=${ch.chapter_number}`)}
-                          >
-                            {isHi ? 'क्विज़' : 'Quiz'}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            leadingIcon={<span aria-hidden="true">🦊</span>}
-                            onClick={() => router.push(`/foxy?subject=${selectedSubject}&chapter=${ch.chapter_number}&mode=doubt`)}
-                          >
-                            {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
-                          </Button>
-                        </div>
-                      </Card>
-                    );
-                  })}
+                        {/* Arrow */}
+                        <span className="text-[var(--text-3)] flex-shrink-0">→</span>
+                      </button>
+
+                      {/* Quick-quiz pill — inline, no re-setup needed */}
+                      <div
+                        className="px-4 pb-3 flex gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={() => router.push(`/quiz?subject=${selectedSubject}&chapter=${ch.chapter_number}`)}
+                          className="text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95"
+                          style={{
+                            background: `${selectedMeta?.color || 'var(--orange)'}10`,
+                            color: selectedMeta?.color || 'var(--orange)',
+                            border: `1px solid ${selectedMeta?.color || 'var(--orange)'}25`,
+                          }}
+                        >
+                          ⚡ {isHi ? 'क्विज़' : 'Quiz'}
+                        </button>
+                        <button
+                          onClick={() => router.push(`/foxy?subject=${selectedSubject}&chapter=${ch.chapter_number}&mode=doubt`)}
+                          className="text-xs font-bold px-3 py-2 rounded-lg transition-all active:scale-95"
+                          style={{
+                            background: 'rgb(var(--accent-warm-rgb) / 0.06)',
+                            color: 'var(--accent-warm)',
+                            border: '1px solid rgb(var(--accent-warm-rgb) / 0.15)',
+                          }}
+                        >
+                          🦊 {isHi ? 'Foxy से पूछो' : 'Ask Foxy'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

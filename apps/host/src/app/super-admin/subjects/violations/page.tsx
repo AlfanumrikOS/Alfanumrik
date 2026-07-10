@@ -9,16 +9,16 @@ import StatusBadge from '../../_components/StatusBadge';
 // Kept as inline-style spreads to preserve exact visual parity of the legacy
 // hand-rolled markup (filters, error banner, action buttons).
 const colors = {
-  bg: 'var(--surface-1)',
-  surface: 'var(--surface-2)',
-  border: 'var(--surface-3)',
-  text1: 'var(--text-1)',
-  text2: 'var(--text-2)',
-  text3: 'var(--text-3)',
-  accent: 'var(--info)',
-  success: 'var(--success)',
-  danger: 'var(--danger)',
-  dangerLight: 'color-mix(in srgb, var(--danger) 10%, transparent)',
+  bg: '#FFFFFF',
+  surface: '#F9FAFB',
+  border: '#E5E7EB',
+  text1: '#111827',
+  text2: '#6B7280',
+  text3: '#9CA3AF',
+  accent: '#2563EB',
+  success: '#16A34A',
+  danger: '#DC2626',
+  dangerLight: '#FEF2F2',
 } as const;
 
 const S = {
@@ -408,7 +408,7 @@ function Modal({
   return (
     <>
       <div onClick={hideCancel ? undefined : onCancel} style={{
-        position: 'fixed', inset: 0, background: 'color-mix(in srgb, var(--text-1) 35%, transparent)', zIndex: 999,
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 999,
       }} />
       <div
         role="dialog"
@@ -417,7 +417,7 @@ function Modal({
         style={{
           position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
           background: colors.bg, borderRadius: 10, padding: 24, width: 480,
-          boxShadow: '0 12px 48px color-mix(in srgb, var(--text-1) 18%, transparent)', zIndex: 1000,
+          boxShadow: '0 12px 48px rgba(0,0,0,0.18)', zIndex: 1000,
         }}
       >
         <h3 id="bulk-title" style={{ margin: 0, fontSize: 16, color: colors.text1, fontWeight: 700 }}>{title}</h3>

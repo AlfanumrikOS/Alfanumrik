@@ -20,15 +20,15 @@ const S: Record<string, React.CSSProperties> = {
   card: {
     padding: 16,
     borderRadius: 8,
-    border: '1px solid var(--border)',
-    background: 'var(--surface-1)',
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
   },
   primaryBtn: {
     padding: '8px 16px',
     borderRadius: 6,
     border: 'none',
-    background: 'var(--text-1)',
-    color: 'var(--surface-1)',
+    background: '#111827',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 600,
     cursor: 'pointer',
@@ -37,9 +37,9 @@ const S: Record<string, React.CSSProperties> = {
   secondaryBtn: {
     padding: '8px 16px',
     borderRadius: 6,
-    border: '1px solid var(--border)',
-    background: 'var(--surface-1)',
-    color: 'var(--text-1)',
+    border: '1px solid #E5E7EB',
+    background: '#FFFFFF',
+    color: '#111827',
     fontSize: 13,
     fontWeight: 500,
     cursor: 'pointer',
@@ -79,7 +79,7 @@ interface FieldDef {
 const TIER_FIELDS: { tier: 'Ready' | 'Almost' | 'Building'; color: string; fields: FieldDef[] }[] = [
   {
     tier: 'Ready',
-    color: 'var(--success)',
+    color: '#027A48',
     fields: [
       { key: 'ready_mastered_ratio', label: 'Mastered ratio ≥', hint: '0.5–1.0 (e.g. 0.85 = 85%)', min: 0.5, max: 1.0, step: 0.01 },
       { key: 'ready_quiz_avg', label: 'Recent quiz avg ≥', hint: '50–100 (%)', min: 50, max: 100, step: 1 },
@@ -88,7 +88,7 @@ const TIER_FIELDS: { tier: 'Ready' | 'Almost' | 'Building'; color: string; field
   },
   {
     tier: 'Almost',
-    color: 'var(--info)',
+    color: '#175CD3',
     fields: [
       { key: 'almost_mastered_ratio', label: 'Mastered ratio ≥', hint: '0.3–1.0', min: 0.3, max: 1.0, step: 0.01 },
       { key: 'almost_quiz_avg', label: 'Recent quiz avg ≥', hint: '30–100 (%)', min: 30, max: 100, step: 1 },
@@ -97,7 +97,7 @@ const TIER_FIELDS: { tier: 'Ready' | 'Almost' | 'Building'; color: string; field
   },
   {
     tier: 'Building',
-    color: 'var(--warning)',
+    color: '#B54708',
     fields: [
       { key: 'building_mastered_ratio', label: 'Mastered ratio ≥', hint: '0.1–1.0', min: 0.1, max: 1.0, step: 0.01 },
       { key: 'building_quiz_count', label: 'Recent quiz count ≥', hint: '0–20', min: 0, max: 20, step: 1 },
@@ -189,10 +189,10 @@ function ReadinessRubricContent() {
   };
 
   if (loading && !data) {
-    return <p style={{ color: 'var(--text-3)' }}>Loading rubric…</p>;
+    return <p style={{ color: '#9CA3AF' }}>Loading rubric…</p>;
   }
   if (!merged || !data) {
-    return <p style={{ color: 'var(--danger)' }}>{error ?? 'No data'}</p>;
+    return <p style={{ color: '#DC2626' }}>{error ?? 'No data'}</p>;
   }
 
   return (
@@ -200,12 +200,12 @@ function ReadinessRubricContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground">Exam-Ready Rubric</h1>
-          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>
             Tune the thresholds that decide when a student is &quot;ready&quot; vs &quot;almost&quot; vs &quot;building&quot; on a chapter.
             Changes apply immediately (next readiness query reads the new row).
           </p>
           {data.config.updated_at && (
-            <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 6 }}>
+            <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>
               Last updated {new Date(data.config.updated_at).toLocaleString()}
             </p>
           )}
@@ -213,12 +213,12 @@ function ReadinessRubricContent() {
       </div>
 
       {error && (
-        <div style={{ ...S.card, background: 'color-mix(in srgb, var(--danger) 8%, transparent)', borderColor: 'color-mix(in srgb, var(--danger) 30%, transparent)', color: 'var(--danger)', marginBottom: 16, fontSize: 13 }}>
+        <div style={{ ...S.card, background: '#FEF3F2', borderColor: '#FECDCA', color: '#B42318', marginBottom: 16, fontSize: 13 }}>
           {error}
         </div>
       )}
       {success && (
-        <div style={{ ...S.card, background: 'color-mix(in srgb, var(--success) 8%, transparent)', borderColor: 'color-mix(in srgb, var(--success) 30%, transparent)', color: 'var(--success)', marginBottom: 16, fontSize: 13 }}>
+        <div style={{ ...S.card, background: '#ECFDF3', borderColor: '#A6F4C5', color: '#027A48', marginBottom: 16, fontSize: 13 }}>
           {success}
         </div>
       )}
@@ -232,7 +232,7 @@ function ReadinessRubricContent() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
             {fields.map((f) => (
               <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
-                <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{f.label}</span>
+                <span style={{ color: '#6B7280', fontWeight: 600 }}>{f.label}</span>
                 <input
                   type="number"
                   min={f.min}
@@ -241,13 +241,13 @@ function ReadinessRubricContent() {
                   value={merged[f.key] as number}
                   onChange={(e) => handleChange(f.key, e.target.value)}
                   style={{
-                    border: '1px solid var(--border)',
+                    border: '1px solid #E5E7EB',
                     borderRadius: 6,
                     padding: '6px 8px',
                     fontSize: 13,
                   }}
                 />
-                <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{f.hint}</span>
+                <span style={{ fontSize: 11, color: '#9CA3AF' }}>{f.hint}</span>
               </label>
             ))}
           </div>
@@ -259,7 +259,7 @@ function ReadinessRubricContent() {
         <h2 style={{ fontSize: 14, fontWeight: 700, marginTop: 0, marginBottom: 4 }}>
           Composite score weights
         </h2>
-        <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 12px' }}>
+        <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 12px' }}>
           The 0–100 score on the readiness card is{' '}
           <code>w_mastery × mastery_avg + w_quiz × recent_quiz_avg + w_spaced × min(100, spaced_reviews × 10)</code>.
           The three weights must sum to 1.0.
@@ -267,7 +267,7 @@ function ReadinessRubricContent() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
           {WEIGHT_FIELDS.map((f) => (
             <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
-              <span style={{ color: 'var(--text-2)', fontWeight: 600 }}>{f.label}</span>
+              <span style={{ color: '#6B7280', fontWeight: 600 }}>{f.label}</span>
               <input
                 type="number"
                 min={f.min}
@@ -276,13 +276,13 @@ function ReadinessRubricContent() {
                 value={merged[f.key] as number}
                 onChange={(e) => handleChange(f.key, e.target.value)}
                 style={{
-                  border: '1px solid var(--border)',
+                  border: '1px solid #E5E7EB',
                   borderRadius: 6,
                   padding: '6px 8px',
                   fontSize: 13,
                 }}
               />
-              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{f.hint}</span>
+              <span style={{ fontSize: 11, color: '#9CA3AF' }}>{f.hint}</span>
             </label>
           ))}
         </div>
@@ -290,7 +290,7 @@ function ReadinessRubricContent() {
           style={{
             fontSize: 12,
             marginTop: 12,
-            color: weightSumOk ? 'var(--success)' : 'var(--danger)',
+            color: weightSumOk ? '#027A48' : '#B42318',
             fontWeight: 600,
           }}
           data-testid="weight-sum-indicator"
