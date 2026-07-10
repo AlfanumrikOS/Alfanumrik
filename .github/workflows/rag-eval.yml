@@ -52,7 +52,12 @@ jobs:
           # Default to advisory threshold (0.80) to avoid false alarms while
           # the gold set stabilises. Tighten via repo variable RAG_EVAL_THRESHOLD.
           RAG_EVAL_THRESHOLD: ${{ vars.RAG_EVAL_THRESHOLD || '0.80' }}
-        run: npx tsx scripts/rag-eval.mjs
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "RAG eval skipped: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not available to this workflow run."
+            exit 0
+          fi
+          npx tsx scripts/rag-eval.mjs
 
       - name: Upload report
         if: always()

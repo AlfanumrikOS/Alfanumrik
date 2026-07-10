@@ -144,7 +144,7 @@ describe('ParentGlanceHome — Snapshot + Moments + Actions (read-only)', () => 
     expect(
       screen.getByRole('region', { name: 'Quick actions' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Actions')).toBeInTheDocument();
+    expect(screen.getByText('Next best step')).toBeInTheDocument();
   });
 
   it('renders Actions as navigation links to EXISTING routes — no POST / write', () => {

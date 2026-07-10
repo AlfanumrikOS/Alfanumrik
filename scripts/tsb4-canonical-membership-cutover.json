@@ -43,7 +43,7 @@
       "action": "Ran the read-only divergence report against the linked target DB before/with the boundary-reader repoint. The export found no direction-A leak rows, no direction-B authorization-widening rows, and no one-sided membership rows.",
       "artifacts": [
         "scripts/tsb4-class-membership-divergence-quantification.sql",
-        "artifacts/tsb4-class-membership-divergence.json",
+        "engineering-audit/PRODUCT_READINESS_EXECUTION_2026-07-09.md",
         "supabase/migrations/20260702060000_class_membership_isactive_backfill.sql",
         "apps/host/src/__tests__/tsb4-enrollments-rls-reconcile.test.ts"
       ],
