@@ -1,0 +1,112 @@
+name: Production Cron Runner - Alfanumrik
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_path:
+        description: 'Cron route path to run, or all'
+        type: string
+        required: false
+        default: 'all'
+  schedule:
+    - cron: '*/10 * * * *'
+    - cron: '*/15 * * * *'
+    - cron: '*/30 * * * *'
+    - cron: '0 */6 * * *'
+    - cron: '15 */6 * * *'
+    - cron: '0 2 * * *'
+    - cron: '30 2 * * *'
+    - cron: '50 2 * * *'
+    - cron: '0 3 * * *'
+    - cron: '40 3 * * *'
+    - cron: '45 3 * * *'
+    - cron: '0 4 * * *'
+    - cron: '30 16 * * *'
+
+concurrency:
+  group: production-cron-runner
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  NODE_VERSION: '22'
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  TARGET_URL: ${{ vars.PRODUCTION_CRON_TARGET_URL || 'https://alfanumrik.com' }}
+  CRON_SECRET_AWS_SECRET_ID: ${{ vars.CRON_SECRET_AWS_SECRET_ID || 'alfa-prod/app' }}
+
+jobs:
+  run:
+    name: Run Production Cron Jobs
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: alfa-github-cron-${{ github.run_id }}
+
+      - name: Load CRON_SECRET from AWS Secrets Manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          SECRET_ID="${CRON_SECRET_AWS_SECRET_ID:-alfa-prod/app}"
+          SECRET_JSON="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text)"
+          CRON_SECRET="$(SECRET_JSON="$SECRET_JSON" node - <<'NODE'
+          const raw = process.env.SECRET_JSON || '';
+          let parsed = raw;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            parsed = raw;
+          }
+
+          let value = '';
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            value = parsed.CRON_SECRET || parsed.cron_secret || '';
+          } else if (typeof parsed === 'string') {
+            value = parsed;
+          }
+
+          process.stdout.write(String(value || '').trim());
+          NODE
+          )"
+
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET was not found in AWS Secrets Manager secret $SECRET_ID"
+            exit 1
+          fi
+
+          echo "::add-mask::$CRON_SECRET"
+          {
+            echo 'CRON_SECRET<<__CRON_SECRET__'
+            printf '%s\n' "$CRON_SECRET"
+            echo '__CRON_SECRET__'
+          } >> "$GITHUB_ENV"
+          echo "Loaded CRON_SECRET from AWS Secrets Manager secret: $SECRET_ID"
+
+      - name: Run selected production crons
+        env:
+          JOB_PATH: ${{ github.event.inputs.job_path || '' }}
+          EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/run-production-crons.mjs
+
+      - name: Upload cron run summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-cron-runner-summary
+          path: artifacts/production-cron-runner-summary.json
+          if-no-files-found: ignore
+          retention-days: 14
