@@ -13,6 +13,15 @@ interface VercelCron {
   schedule: string;
 }
 
+interface VercelConfig {
+  framework?: string;
+  regions?: string[];
+  functions?: Record<string, unknown>;
+  crons: VercelCron[];
+  cleanUrls?: boolean;
+  trailingSlash?: boolean;
+}
+
 interface JobRegistryEntry {
   path: string;
   platform: 'vercel';
@@ -28,10 +37,20 @@ function readJson<T>(rel: string): T {
 }
 
 describe('Vercel cron job registry (RCA-17)', () => {
+  it('keeps root and host Vercel config in sync', () => {
+    expect(existsSync(repoPath('vercel.json'))).toBe(true);
+    expect(existsSync(repoPath('apps/host/vercel.json'))).toBe(true);
+
+    const rootVercel = readJson<VercelConfig>('vercel.json');
+    const hostVercel = readJson<VercelConfig>('apps/host/vercel.json');
+
+    expect(hostVercel).toEqual(rootVercel);
+  });
+
   it('has an operations registry for every scheduled Vercel cron path', () => {
     expect(existsSync(repoPath('scripts/job-registry.json'))).toBe(true);
 
-    const vercel = readJson<{ crons: VercelCron[] }>('vercel.json');
+    const vercel = readJson<VercelConfig>('apps/host/vercel.json');
     const registry = readJson<{ jobs: JobRegistryEntry[] }>('scripts/job-registry.json');
 
     const vercelByPath = new Map(vercel.crons.map((cron) => [cron.path, cron.schedule]));
