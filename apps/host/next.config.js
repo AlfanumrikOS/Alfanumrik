@@ -180,18 +180,10 @@ const nextConfig = {
               //    /ingest/* covers the primary path; these hosts are listed
               //    so the SDK's direct-host fallback (used when the proxy is
               //    unreachable, e.g. dev) still works without a CSP block.
-              //  - fonts.googleapis.com (CSS) + fonts.gstatic.com (the actual
-              //    .woff2 files) + cdn.jsdelivr.net for the service worker
-              //    (public/sw.js) static-asset cache-first handler.
-              //    The main thread fetches fonts via <link> (governed by
-              //    style-src/font-src), but the SW's fetch() call is a separate
-              //    request that connect-src — NOT font-src — gates. gstatic in
-              //    particular must be listed here even though font-src already
-              //    allows it, because the SW fetch()ing the woff2 is a
-              //    connect-src request; without it the SW's font fetch is
-              //    blocked (net::ERR_ABORTED 503) and the SW logs CSP errors
-              //    per page load on every navigation (gstatic added 2026-05-24;
-              //    googleapis/jsdelivr from 2026-05-20 CEO testing-noise fix).
+              //  - fonts.googleapis.com (CSS), fonts.gstatic.com (font files),
+              //    and cdn.jsdelivr.net remain for current main-thread runtime
+              //    consumers. public/sw.js is now a no-fetch retirement
+              //    tombstone and does not require connect-src access.
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://us.i.posthog.com https://us-assets.i.posthog.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net",
               "media-src 'self' blob:",
               "worker-src 'self'",
