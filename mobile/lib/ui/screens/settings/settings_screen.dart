@@ -169,7 +169,7 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsGroup(
             title: 'App',
             children: [
-              _SettingsTile(
+              const _SettingsTile(
                 icon: Icons.notifications_outlined,
                 title: 'Notifications',
                 subtitle: 'Study reminders are managed by your device',
@@ -181,7 +181,7 @@ class SettingsScreen extends ConsumerWidget {
                     ? 'हिन्दी · डिवाइस भाषा'
                     : 'English · Device language',
               ),
-              _SettingsTile(
+              const _SettingsTile(
                 icon: Icons.info_outline_rounded,
                 title: 'About Alfanumrik',
                 subtitle: 'Version 1.1.0',
