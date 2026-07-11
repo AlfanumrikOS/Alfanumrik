@@ -3,7 +3,7 @@
 **Date filed:** 2026-06-27
 **Owner:** ops
 **Severity:** HIGH (release integrity)
-**Status:** PARTIALLY APPLIED, live-verified 2026-07-11. `main` now requires one independent approval, dismisses stale approvals, requires approval after the last push, resolves conversations, enforces administrators, and forbids force-push/deletion. Required status checks are currently unset; add the aggregate `CI Gate` only after this PR lands and the check is observed successfully.
+**Status:** APPLIED, live-verified 2026-07-12. `main` requires the strict, GitHub-Actions-app-bound aggregate `CI Gate`, one independent approval, stale-review dismissal, approval after the last push, conversation resolution, administrator enforcement, and no force-push/deletion.
 
 This runbook captures a verified architect finding from the 2026-06-27 release-integrity
 audit so it is durably actionable. It documents why `main` is currently unprotected, the
