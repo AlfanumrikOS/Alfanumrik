@@ -33,18 +33,12 @@
  *     + reason only.
  */
 
-// The Cloud Run service URL is injected via NEXT_PUBLIC_PYTHON_AI_BASE_URL.
-// This client runs SERVER-SIDE (called from /api/foxy/route.ts), so we read
-// both the public and a non-public PYTHON_AI_BASE_URL, falling back to the
-// shared prod default used by voice-python-client.ts.
-const PROD_DEFAULT_BASE_URL = 'https://ai-services-518404877846.asia-south1.run.app';
-
-/** Resolved Cloud Run base URL. Server-side: prefer PYTHON_AI_BASE_URL, then the public var, then prod. */
+// This client runs server-side. The private PYTHON_AI_BASE_URL must point to a
+// trusted proxy that can mint Google caller identity; public variables and a
+// hardcoded run.app fallback are intentionally not accepted.
 export const PYTHON_AI_BASE_URL: string =
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  (typeof process !== 'undefined' &&
-    (process.env?.PYTHON_AI_BASE_URL || process.env?.NEXT_PUBLIC_PYTHON_AI_BASE_URL)) ||
-  PROD_DEFAULT_BASE_URL;
+  (typeof process !== 'undefined' && process.env?.PYTHON_AI_BASE_URL?.trim()) || '';
 
 /** Verify timeout — server work is ~10-100ms; 8s covers a cold start. */
 const VERIFY_TIMEOUT_MS = 8_000;
@@ -112,7 +106,12 @@ export async function verifyMath(
   // Empty inputs can't be verified; don't even spend the round-trip.
   if (!problem || !claimed) return UNVERIFIABLE;
 
-  const url = `${PYTHON_AI_BASE_URL.replace(/\/$/, '')}/v1/math/verify`;
+  const baseUrl =
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    (typeof process !== 'undefined' && process.env?.PYTHON_AI_BASE_URL?.trim()) || '';
+  if (!baseUrl) return UNVERIFIABLE;
+
+  const url = `${baseUrl.replace(/\/$/, '')}/v1/math/verify`;
   const body = JSON.stringify({
     problem_expression: problem,
     claimed_answer: claimed,

@@ -17,7 +17,6 @@ from typing import Any
 
 import structlog
 
-from .auth import AuthFailed, verify_apikey
 from .mapping import (
     CBSE_EXAM_SECTIONS,
     CONSISTENCY_BENCHMARK_DAYS,
@@ -62,10 +61,6 @@ class HandlerError(Exception):
         self.status = status
 
 
-class UnauthorizedError(HandlerError):
-    pass
-
-
 class StudentNotFoundError(HandlerError):
     pass
 
@@ -78,23 +73,22 @@ VALID_BLOOM_LEVELS = {"remember", "understand", "apply", "analyze", "evaluate", 
 async def handle_nep_compliance(
     payload: NepComplianceRequest,
     *,
-    apikey_header: str | None,
+    authenticated_student_id: str,
     request_id: str | None = None,
 ) -> NepComplianceResponse:
+    """Run the HPC pipeline for the route-authorized student only.
+
+    ``payload.student_id`` is retained for wire compatibility with the legacy
+    Edge Function contract, but is never used as an authority boundary.
+    """
     rid = request_id or str(uuid.uuid4())
     structlog.contextvars.bind_contextvars(
-        request_id=rid, student_id=payload.student_id, action=payload.action
+        request_id=rid, student_id=authenticated_student_id, action=payload.action
     )
     try:
-        try:
-            verify_apikey(apikey_header)
-        except AuthFailed as err:
-            label = "unauthorized" if err.status == 401 else "anon_key_not_configured"
-            raise UnauthorizedError(label, status=err.status) from err
-
         if payload.action == "get_hpc":
-            return await _get_hpc(payload.student_id)
-        return await _generate_hpc(payload.student_id)
+            return await _get_hpc(authenticated_student_id)
+        return await _generate_hpc(authenticated_student_id)
     finally:
         structlog.contextvars.clear_contextvars()
 

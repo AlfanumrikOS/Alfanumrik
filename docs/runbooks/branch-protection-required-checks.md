@@ -3,12 +3,16 @@
 **Date filed:** 2026-06-27
 **Owner:** ops
 **Severity:** HIGH (release integrity)
-**Status:** APPLIED 2026-06-30 — `AlfanumrikOS` upgraded to GitHub Pro, branch protection on `main` enabled with the 5 required status checks below + `enforce_admins:true` + `strict:true`. Verified live (`.protected = true`, contexts match, enforce_admins enabled).
+**Status:** PARTIALLY APPLIED, live-verified 2026-07-11. `main` now requires one independent approval, dismisses stale approvals, requires approval after the last push, resolves conversations, enforces administrators, and forbids force-push/deletion. Required status checks are currently unset; add the aggregate `CI Gate` only after this PR lands and the check is observed successfully.
 
 This runbook captures a verified architect finding from the 2026-06-27 release-integrity
 audit so it is durably actionable. It documents why `main` is currently unprotected, the
 one-time (paid) prerequisite the user must action, and the exact remediation + verification
 commands to run afterward.
+
+The June findings and commands below are retained as history. They are
+superseded by the live state above: the earlier claim that five required checks
+were active had drifted and was false when re-audited on 2026-07-11.
 
 ---
 

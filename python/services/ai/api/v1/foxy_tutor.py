@@ -5,10 +5,11 @@ POST /v1/foxy-tutor
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from ...business.foxy.models import FoxyRequest, FoxyResponse
 from ...shared.budget_guard import BudgetExceeded, check_daily_budget
+from ..auth import require_active_student
 
 router = APIRouter(prefix="/v1", tags=["foxy"])
 
@@ -16,14 +17,20 @@ router = APIRouter(prefix="/v1", tags=["foxy"])
 @router.post(
     "/foxy-tutor",
     response_model=FoxyResponse,
-    summary="Generate a CBSE‑style answer for a single question (admin‑only).",
+    summary="Generate a CBSE-style answer for an authenticated active student.",
     responses={
         400: {"description": "Bad request – invalid body shape."},
+        401: {"description": "Missing or invalid Supabase user JWT."},
+        403: {"description": "Caller is not an active student."},
         429: {"description": "Daily AI INR budget cap exceeded."},
         500: {"description": "Internal error – unexpected exception."},
+        503: {"description": "Authentication or database service unavailable."},
     },
 )
-async def post_foxy_tutor(request: FoxyRequest) -> FoxyResponse:
+async def post_foxy_tutor(
+    request: FoxyRequest,
+    _student: dict[str, object] = Depends(require_active_student),
+) -> FoxyResponse:
     """Validate budget, generate CBSE answer, and return it.
 
     The endpoint is deliberately simple: it expects a single ``question`` string.

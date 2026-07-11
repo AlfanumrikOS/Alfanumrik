@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # ── Supabase (telemetry writes) ──
     supabase_url: str = Field(default="", description="https://<project>.supabase.co")
     supabase_service_role_key: str = Field(default="", description="Service-role JWT.")
+    supabase_jwt_audience: str = Field(
+        default="authenticated",
+        description="Required audience on Supabase user access tokens.",
+    )
 
     # ── Provider API keys ──
     anthropic_api_key: str = Field(default="", description="Claude API key (sk-ant-...).")
@@ -107,6 +111,10 @@ class Settings(BaseSettings):
 
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    def supabase_jwt_issuer(self) -> str:
+        """Canonical issuer for access tokens minted by this Supabase project."""
+        return f"{self.supabase_url.rstrip('/')}/auth/v1"
 
 
 @lru_cache(maxsize=1)

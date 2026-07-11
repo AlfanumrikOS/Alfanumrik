@@ -6,12 +6,15 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from services.ai.api.auth import require_active_student
 from services.ai.api.main import create_app
 
 
 @pytest.fixture()
-def client() -> TestClient:
-    return TestClient(create_app())
+def client(matching_student_dependency) -> TestClient:
+    app = create_app()
+    app.dependency_overrides[require_active_student] = matching_student_dependency
+    return TestClient(app)
 
 
 @pytest.fixture()

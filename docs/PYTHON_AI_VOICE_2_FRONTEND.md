@@ -3,6 +3,18 @@
 **Owner:** ai-engineer. **Reviewers:** assessment (curriculum scope), ops (rollout control), architect (CORS / auth boundary).
 **Status:** Shipped 2026-05-24. Default OFF (rollout_pct=0) on staging + production.
 
+> **Phase 0 containment update:** the private Cloud Run target requires Google
+> caller identity in addition to the Supabase student JWT. Deployment remains
+> disabled until IAM and GitHub protections are verified. A browser cannot
+> safely mint that identity, so direct browser-to-Cloud-Run voice is disabled:
+> `NEXT_PUBLIC_PYTHON_AI_BASE_URL` must be empty and
+> `ff_python_voice_tts_v1` must remain OFF. The Web Speech fallback remains the
+> active student path. Do not expose a service-account JSON key, static Google
+> token, or other server credential to the client. A future trusted server
+> proxy may re-enable Python voice after it can mint short-lived Google ID
+> tokens for `X-Serverless-Authorization` and forward the student's Supabase
+> JWT separately in `Authorization`.
+
 ## What this is
 
 Voice 2 is the LAST piece of the original "Indian-accent voice" ask:
@@ -70,7 +82,7 @@ React component (e.g. ChatInput.tsx)
 | File | Purpose |
 |---|---|
 | `src/lib/voice.ts` | Public `startListening` + `speak` entry points. Same signatures as pre-Voice-2; new optional `pythonEnabled` + `getJwt` fields on the option object. When set, branches to the Python path with Web Speech as the safety-net fallback. |
-| `src/lib/voice-python-client.ts` | Pure fetch wrappers around `/v1/voice/transcribe` + `/v1/voice/synthesize`. Throws `PythonVoiceError` on any non-2xx, network error, timeout, or abort. No retries — the wrapper short-circuits to the safety net at the first failure. |
+| `src/lib/voice-python-client.ts` | Pure fetch wrappers around `/v1/voice/transcribe` + `/v1/voice/synthesize`. Empty base URL fails immediately with `SERVICE_DISABLED` and never contacts Cloud Run; there is no hardcoded production fallback. Other failures throw `PythonVoiceError` and short-circuit to the safety net. |
 | `src/lib/voice-feature-flag.ts` | SWR-backed `usePythonVoiceEnabled(studentId)` hook + `decidePythonVoice` pure function + `hashStudentBucket` (byte-for-byte port of `python-ai-proxy.ts:hashBucket`). |
 | `src/app/api/feature-flags/voice/route.ts` | GET endpoint returning the full `{ enabled, killSwitch, rolloutPct }` envelope. 1-min edge cache. Safe-default `{false, false, 0}` on any read failure. |
 | `supabase/migrations/20260603190000_python_voice_tts_flag.sql` | Seeds `ff_python_voice_tts_v1` (default OFF, rollout_pct=0). |
@@ -146,10 +158,9 @@ regardless of rollout_pct, until the kill switch is flipped back. Cache
 TTL is the same 60-120s. The Web Speech fallback path takes over.
 
 For a SECONDS-level escape hatch (faster than cache TTL), set the
-`NEXT_PUBLIC_PYTHON_AI_BASE_URL` env var to an empty string in Vercel —
-the client falls back at the first fetch attempt because the URL is
-empty. This requires a re-deploy on Vercel but is faster than waiting
-for the cache to clear during a Cloud Run outage.
+`NEXT_PUBLIC_PYTHON_AI_BASE_URL` env var to an empty string in Vercel.
+After the Vercel redeploy, the client returns `SERVICE_DISABLED` before any
+network call and the Web Speech fallback takes over.
 
 ## Voice catalog
 
@@ -220,8 +231,8 @@ net. Any change that breaks one of the following is a release blocker:
 
 | Variable | Where | Default | Notes |
 |---|---|---|---|
-| `NEXT_PUBLIC_PYTHON_AI_BASE_URL` | Vercel (client bundle) | `https://ai-services-518404877846.asia-south1.run.app` | Base URL for the Python AI service. Inlined into the client bundle at build time. |
-| `PYTHON_AI_BASE_URL` | Supabase Edge Function secret | unset (proxy disabled until set) | Server-side proxy URL for the Edge Function path. NOT used by Voice 2 (which calls Cloud Run from the browser), but referenced for symmetry with the Phase 1+ admin proxies. |
+| `NEXT_PUBLIC_PYTHON_AI_BASE_URL` | Vercel (client bundle) | empty | Direct browser invocation is disabled while Cloud Run is private. Do not place a service URL or caller credential in the public bundle. |
+| `PYTHON_AI_BASE_URL` | Trusted server proxy secret | unset | Set only after that proxy can mint a short-lived Google ID token for the Cloud Run audience and send it in `X-Serverless-Authorization`; keep unset during Phase 0. |
 
 ## See also
 

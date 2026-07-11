@@ -1,103 +1,252 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
-export default function RegisterSW() {
-  const [updateAvailable, setUpdateAvailable] = useState(false);
+const ALFANUMRIK_CACHE_PREFIX = 'alfanumrik-';
+const RETIRED_WORKER_PATH = '/sw.js';
+const RETIREMENT_RELOAD_GUARD = 'alfanumrik-sw-retirement-reloaded-v1';
+const RELOAD_STATE_FALLBACK = 'fallback';
+const RELOAD_STATE_REMOVED = 'removed';
 
-  useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
+type WorkerReference = Pick<ServiceWorker, 'scriptURL'>;
 
-    // DEV ANTI-PATTERN GUARD:
-    // Registering the PWA service worker during `next dev` lets it cache the JS
-    // bundle and serve STALE code, so source changes "do nothing" across restarts.
-    // In development we never register; instead we best-effort UNREGISTER any
-    // previously-installed SW and purge its precaches so a developer who already
-    // has a stale one gets unstuck on the next fresh load. Never throws; no-ops
-    // when serviceWorker / caches are unavailable.
-    if (process.env.NODE_ENV !== 'production') {
-      (async () => {
-        try {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(registrations.map((r) => r.unregister()));
-        } catch {
-          /* best-effort cleanup; ignore */
-        }
-        try {
-          if (typeof window !== 'undefined' && 'caches' in window) {
-            const keys = await window.caches.keys();
-            await Promise.all(keys.map((k) => window.caches.delete(k)));
+export interface LegacyWorkerRegistration {
+  active: WorkerReference | null;
+  installing: WorkerReference | null;
+  waiting: WorkerReference | null;
+  unregister(): Promise<boolean>;
+}
+
+export interface LegacyWorkerContainer {
+  controller?: WorkerReference | null;
+  getRegistrations(): Promise<readonly LegacyWorkerRegistration[]>;
+}
+
+export interface LegacyCacheStorage {
+  keys(): Promise<readonly string[]>;
+  delete(cacheName: string): Promise<boolean>;
+}
+
+export interface LegacyReloadGuardStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+export interface LegacyServiceWorkerCleanupEnvironment {
+  serviceWorkerContainer?: LegacyWorkerContainer | null;
+  cacheStorage?: LegacyCacheStorage | null;
+  origin?: string;
+  reload?: (() => void) | null;
+  reloadGuardStorage?: LegacyReloadGuardStorage | null;
+}
+
+export interface LegacyServiceWorkerCleanupResult {
+  registrationsFound: number;
+  unregisterAttempts: number;
+  registrationsRemoved: number;
+  cachesRemoved: number;
+  reloadsTriggered: number;
+  failures: number;
+}
+
+function defaultServiceWorkerContainer(): LegacyWorkerContainer | null {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
+  return navigator.serviceWorker;
+}
+
+function defaultCacheStorage(): LegacyCacheStorage | null {
+  if (typeof window === 'undefined' || !('caches' in window)) return null;
+  return window.caches;
+}
+
+function currentOrigin(): string {
+  return typeof window === 'undefined' ? '' : window.location.origin;
+}
+
+function defaultReloadGuardStorage(): LegacyReloadGuardStorage | null {
+  if (typeof window === 'undefined' || !('sessionStorage' in window)) return null;
+
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function reloadCurrentPage(): void {
+  if (typeof window !== 'undefined') window.location.reload();
+}
+
+function isRetiredAlfanumrikWorker(
+  worker: WorkerReference | null | undefined,
+  origin: string,
+): boolean {
+  if (!worker) return false;
+
+  let expectedOrigin: string;
+  try {
+    expectedOrigin = new URL(origin).origin;
+  } catch {
+    return false;
+  }
+
+  try {
+    const scriptUrl = new URL(worker.scriptURL, expectedOrigin);
+    return scriptUrl.origin === expectedOrigin && scriptUrl.pathname === RETIRED_WORKER_PATH;
+  } catch {
+    return false;
+  }
+}
+
+function isRetiredAlfanumrikRegistration(
+  registration: LegacyWorkerRegistration,
+  origin: string,
+): boolean {
+  return [registration.active, registration.waiting, registration.installing].some((worker) =>
+    isRetiredAlfanumrikWorker(worker, origin),
+  );
+}
+
+/**
+ * Remove only the retired Alfanumrik root worker and the CacheStorage entries
+ * it created. This deliberately does not clear unrelated application/browser
+ * caches and never registers a replacement worker.
+ */
+export async function cleanupLegacyServiceWorker(
+  environment: LegacyServiceWorkerCleanupEnvironment = {},
+): Promise<LegacyServiceWorkerCleanupResult> {
+  const serviceWorkerContainer =
+    environment.serviceWorkerContainer === undefined
+      ? defaultServiceWorkerContainer()
+      : environment.serviceWorkerContainer;
+  const cacheStorage =
+    environment.cacheStorage === undefined ? defaultCacheStorage() : environment.cacheStorage;
+  const origin = environment.origin ?? currentOrigin();
+  const reload = environment.reload === undefined ? reloadCurrentPage : environment.reload;
+  const reloadGuardStorage =
+    environment.reloadGuardStorage === undefined
+      ? defaultReloadGuardStorage()
+      : environment.reloadGuardStorage;
+  const result: LegacyServiceWorkerCleanupResult = {
+    registrationsFound: 0,
+    unregisterAttempts: 0,
+    registrationsRemoved: 0,
+    cachesRemoved: 0,
+    reloadsTriggered: 0,
+    failures: 0,
+  };
+  let ownedControllerFound = false;
+
+  if (serviceWorkerContainer) {
+    ownedControllerFound = isRetiredAlfanumrikWorker(serviceWorkerContainer.controller, origin);
+    try {
+      const registrations = await serviceWorkerContainer.getRegistrations();
+      const ownedRegistrations = registrations.filter((registration) =>
+        isRetiredAlfanumrikRegistration(registration, origin),
+      );
+      result.registrationsFound = ownedRegistrations.length;
+
+      await Promise.all(
+        ownedRegistrations.map(async (registration) => {
+          result.unregisterAttempts += 1;
+          try {
+            if (await registration.unregister()) result.registrationsRemoved += 1;
+          } catch {
+            result.failures += 1;
           }
-        } catch {
-          /* best-effort cleanup; ignore */
-        }
-      })();
-      return;
+        }),
+      );
+    } catch {
+      result.failures += 1;
     }
+  }
 
-    navigator.serviceWorker.register('/sw.js').then((registration) => {
-      // Check for updates periodically (every 60 min)
-      const interval = setInterval(() => {
-        registration.update().catch((err: unknown) => {
-          console.warn('[sw] service worker update check failed:', err instanceof Error ? err.message : String(err));
-        });
-      }, 60 * 60 * 1000);
+  if (cacheStorage) {
+    try {
+      const cacheNames = await cacheStorage.keys();
+      const ownedCacheNames = cacheNames.filter((cacheName) =>
+        cacheName.startsWith(ALFANUMRIK_CACHE_PREFIX),
+      );
 
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        if (!newWorker) return;
-
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            setUpdateAvailable(true);
+      await Promise.all(
+        ownedCacheNames.map(async (cacheName) => {
+          try {
+            if (await cacheStorage.delete(cacheName)) result.cachesRemoved += 1;
+          } catch {
+            result.failures += 1;
           }
-        });
-      });
+        }),
+      );
+    } catch {
+      result.failures += 1;
+    }
+  }
 
-      return () => clearInterval(interval);
-    }).catch(console.error);
+  // When no owned registration remains, clear a stale loop guard and leave the
+  // page untouched. This is the normal path after the final retirement reload.
+  if (result.registrationsFound === 0 && !ownedControllerFound) {
+    if (reloadGuardStorage) {
+      try {
+        reloadGuardStorage.removeItem(RETIREMENT_RELOAD_GUARD);
+      } catch {
+        result.failures += 1;
+      }
+    }
+    return result;
+  }
+
+  // unregister() does not release the incumbent controller from the current
+  // document, so unload it after CacheStorage cleanup. The guard has two
+  // bounded states: one fallback reload when unregister cannot be confirmed,
+  // then one final reload if a later retry confirms removal. Persistent
+  // failures never advance past the fallback state and therefore cannot loop.
+  let shouldReload = false;
+  if (reload && reloadGuardStorage) {
+    try {
+      const reloadState = reloadGuardStorage.getItem(RETIREMENT_RELOAD_GUARD);
+      if (result.registrationsRemoved > 0 && reloadState !== RELOAD_STATE_REMOVED) {
+        reloadGuardStorage.setItem(RETIREMENT_RELOAD_GUARD, RELOAD_STATE_REMOVED);
+        shouldReload = true;
+      } else if (result.registrationsRemoved === 0 && reloadState === null) {
+        reloadGuardStorage.setItem(RETIREMENT_RELOAD_GUARD, RELOAD_STATE_FALLBACK);
+        shouldReload = true;
+      }
+    } catch {
+      result.failures += 1;
+      // Without a durable loop guard, reload only after confirmed removal.
+      shouldReload = result.registrationsRemoved > 0;
+    }
+  } else if (reload) {
+    // Without sessionStorage, reload only after confirmed removal so a browser
+    // that repeatedly rejects unregister() cannot loop forever.
+    shouldReload = result.registrationsRemoved > 0;
+  }
+
+  if (shouldReload && reload) {
+    try {
+      reload();
+      result.reloadsTriggered = 1;
+    } catch {
+      result.failures += 1;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Phase 0 containment mount. Kept in the shared layout so every role and
+ * white-label tenant retries best-effort cleanup after hydration.
+ */
+export default function ServiceWorkerCleanup() {
+  useEffect(() => {
+    void cleanupLegacyServiceWorker().then((result) => {
+      if (result.failures > 0) {
+        console.warn('[sw] Legacy service-worker cleanup was incomplete and will be retried.');
+      }
+    });
   }, []);
 
-  if (!updateAvailable) return null;
-
-  return (
-    <div
-      role="alert"
-      style={{
-        position: 'fixed',
-        bottom: 80,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 9999 /* var(--z-skip) */,
-        background: 'var(--text-1, #1a1a1a)',
-        color: '#fff',
-        padding: '10px 20px',
-        borderRadius: 12,
-        fontSize: 13,
-        fontWeight: 600,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
-      }}
-    >
-      <span>New version available</span>
-      <button
-        onClick={() => window.location.reload()}
-        style={{
-          background: 'var(--orange, #E8581C)',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 8,
-          padding: '6px 14px',
-          fontSize: 12,
-          fontWeight: 700,
-          cursor: 'pointer',
-        }}
-      >
-        Update
-      </button>
-    </div>
-  );
+  return null;
 }

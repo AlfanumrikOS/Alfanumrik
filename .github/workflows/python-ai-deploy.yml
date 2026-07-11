@@ -7,12 +7,16 @@ name: Python AI Services — CI/CD
 # Triggers:
 #   - pull_request  → test job only (no build, no deploy)
 #   - push to main  → test + build + push image + deploy production + smoke
-#   - workflow_dispatch → manual staging deploy (image built from current sha)
+#   - manual deploys are intentionally disabled until staging has independent,
+#     ref-scoped identity and environment protection
 #
 # Authentication: Workload Identity Federation (NO JSON keys). See
 # docs/PYTHON_AI_DEPLOY.md for the one-time GCP project setup ops must run.
+# Production jobs use the GitHub Production environment. They stay disabled
+# until its protections/WIF are configured and the explicit enable variable is
+# true. The WIF provider independently restricts repo, main ref, and environment.
 #
-# Secrets expected in repo:
+# Secrets expected in the Production environment:
 #   GCP_PROJECT_ID                 — e.g. alfanumrik-ai-services-prod
 #   GCP_WORKLOAD_IDENTITY_PROVIDER — projects/<num>/locations/global/workloadIdentityPools/github/providers/github-actions
 #   GCP_SERVICE_ACCOUNT            — ai-services-deployer@<project>.iam.gserviceaccount.com
@@ -30,15 +34,6 @@ on:
     paths:
       - 'python/**'
       - '.github/workflows/python-ai-deploy.yml'
-  workflow_dispatch:
-    inputs:
-      target:
-        description: 'Manual deploy target'
-        type: choice
-        options:
-          - staging
-          - production
-        default: staging
 
 concurrency:
   group: python-ai-deploy-${{ github.ref }}
@@ -49,10 +44,9 @@ env:
   GCP_REGION: asia-south1
   ARTIFACT_REPO: ai-services
   CLOUD_RUN_SERVICE_PROD: ai-services
-  CLOUD_RUN_SERVICE_STAGING: ai-services-staging
 
 jobs:
-  # ── Job 1: lint + typecheck + tests (runs on PR + push + dispatch) ────────
+  # ── Job 1: lint + typecheck + tests (runs on PR + main push) ──────────
   test:
     name: Lint / Typecheck / Test
     runs-on: ubuntu-latest
@@ -104,12 +98,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # ── Job 2: build + push image (only on main push or workflow_dispatch) ────
+  # ── Job 2: build + push image (only on a main-branch push) ──────────
   build-and-push:
     name: Build + Push to Artifact Registry
     needs: test
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
     runs-on: ubuntu-latest
+    environment: Production
     permissions:
       contents: read
       # OIDC token required for Workload Identity Federation. This is the
@@ -173,14 +168,15 @@ jobs:
   deploy:
     name: Deploy to Cloud Run
     needs: build-and-push
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
     runs-on: ubuntu-latest
+    environment: Production
     permissions:
       contents: read
       id-token: write
     outputs:
       service_url: ${{ steps.deploy.outputs.url }}
-      service_name: ${{ steps.target.outputs.service }}
+      service_name: ${{ steps.deploy.outputs.service }}
       # Forward the non-secret short SHA so the smoke job's summary can show
       # which image shipped. We deliberately do NOT forward the full image URL
       # (it embeds secrets.GCP_PROJECT_ID and would be blanked as a cross-job
@@ -188,20 +184,6 @@ jobs:
       image_sha: ${{ needs.build-and-push.outputs.image_sha }}
     steps:
       - uses: actions/checkout@v6
-
-      - name: Pick target service
-        id: target
-        run: |
-          # workflow_dispatch can target either staging or production.
-          # A push to main always goes to production.
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] \
-             && [[ "${{ github.event.inputs.target }}" == "staging" ]]; then
-            echo "service=${{ env.CLOUD_RUN_SERVICE_STAGING }}" >> "$GITHUB_OUTPUT"
-            echo "environment=staging" >> "$GITHUB_OUTPUT"
-          else
-            echo "service=${{ env.CLOUD_RUN_SERVICE_PROD }}" >> "$GITHUB_OUTPUT"
-            echo "environment=production" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Authenticate to GCP (Workload Identity Federation)
         uses: google-github-actions/auth@v2
@@ -219,9 +201,7 @@ jobs:
       # us a version-controlled audit trail of runtime posture.
       #
       # envsubst replaces $IMAGE_TAG, $RUNTIME_SERVICE_ACCOUNT, $ENVIRONMENT,
-      # and $ALLOWED_ORIGINS in the manifest. We rename the manifest to
-      # match the target service so a single file works for both staging
-      # and production Cloud Run services.
+      # and $ALLOWED_ORIGINS in the production manifest.
       - name: Render Cloud Run manifest
         id: render
         run: |
@@ -237,8 +217,8 @@ jobs:
           IMAGE_SHA="${{ needs.build-and-push.outputs.image_sha }}"
           export IMAGE_TAG="${REGISTRY}/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/api:${IMAGE_SHA}"
           export RUNTIME_SERVICE_ACCOUNT="${{ secrets.GCP_RUNTIME_SERVICE_ACCOUNT }}"
-          export ENVIRONMENT="${{ steps.target.outputs.environment }}"
-          export ALLOWED_ORIGINS="https://alfanumrik.com,https://staging.alfanumrik.com"
+          export ENVIRONMENT="production"
+          export ALLOWED_ORIGINS="https://alfanumrik.com"
 
           # envsubst is available on ubuntu-latest by default (gettext-base).
           # The whitelist form keeps any unexpected ${...} tokens in the YAML
@@ -247,12 +227,6 @@ jobs:
           envsubst '${IMAGE_TAG} ${RUNTIME_SERVICE_ACCOUNT} ${ENVIRONMENT} ${ALLOWED_ORIGINS}' \
             < python/deploy/service.yaml \
             > /tmp/rendered-service.yaml
-
-          # Rename `metadata.name` to the target service. We don't templatize
-          # it in the YAML because `gcloud run services replace` errors if the
-          # manifest name disagrees with the URL service name.
-          sed -i 's/^  name: ai-services$/  name: ${{ steps.target.outputs.service }}/' \
-            /tmp/rendered-service.yaml
 
           echo "── Rendered manifest preview ──"
           head -30 /tmp/rendered-service.yaml
@@ -266,38 +240,121 @@ jobs:
         id: deploy
         run: |
           set -euo pipefail
+          SERVICE="${{ env.CLOUD_RUN_SERVICE_PROD }}"
+          REGION="${{ env.GCP_REGION }}"
+          PROJECT="${{ secrets.GCP_PROJECT_ID }}"
+
+          harden_invocation() {
+            gcloud run services update "${SERVICE}" \
+              --region "${REGION}" \
+              --project "${PROJECT}" \
+              --invoker-iam-check \
+              --quiet
+
+            for MEMBER in allUsers allAuthenticatedUsers; do
+              gcloud run services remove-iam-policy-binding "${SERVICE}" \
+                --region "${REGION}" \
+                --project "${PROJECT}" \
+                --member="${MEMBER}" \
+                --role="roles/run.invoker" \
+                --all \
+                --quiet 2>/dev/null || true
+            done
+
+            gcloud run services add-iam-policy-binding "${SERVICE}" \
+              --region "${REGION}" \
+              --project "${PROJECT}" \
+              --member="serviceAccount:${{ secrets.GCP_SERVICE_ACCOUNT }}" \
+              --role="roles/run.invoker" \
+              --quiet
+
+            POLICY=$(gcloud run services get-iam-policy "${SERVICE}" \
+              --region "${REGION}" \
+              --project "${PROJECT}" \
+              --format=json)
+            python -c 'import json,sys; p=json.load(sys.stdin); broad={"allUsers","allAuthenticatedUsers"}; found={m for b in p.get("bindings",[]) if b.get("role")=="roles/run.invoker" for m in b.get("members",[])} & broad; sys.exit(f"broad Cloud Run invokers remain: {sorted(found)}" if found else 0)' <<< "${POLICY}"
+
+            INVOKER_DISABLED=$(gcloud run services describe "${SERVICE}" \
+              --region "${REGION}" \
+              --project "${PROJECT}" \
+              --format='value(metadata.annotations.run.googleapis.com/invoker-iam-disabled)')
+            if [[ "${INVOKER_DISABLED}" == "true" ]]; then
+              echo "::error::Cloud Run invoker IAM check is disabled"
+              exit 1
+            fi
+          }
+
+          assert_project_iam_private() {
+            PROJECT_POLICY=$(gcloud projects get-iam-policy "${PROJECT}" --format=json)
+            python -c 'import json,sys; p=json.load(sys.stdin); broad={"allUsers","allAuthenticatedUsers"}; found={m for b in p.get("bindings",[]) if b.get("role")=="roles/run.invoker" for m in b.get("members",[])} & broad; sys.exit(f"broad project Cloud Run invokers remain: {sorted(found)}" if found else 0)' <<< "${PROJECT_POLICY}"
+          }
+
+          # A project-level broad grant would be inherited by a new service.
+          # Fail before creating or updating any Cloud Run revision.
+          assert_project_iam_private
+
+          # Contain an existing service before a manifest error can abort the
+          # run. Only an explicit not-found result may skip pre-hardening;
+          # permission, identity, API, and network failures stop the deploy.
+          set +e
+          DESCRIBE_OUTPUT=$(gcloud run services describe "${SERVICE}" \
+            --region "${REGION}" \
+            --project "${PROJECT}" \
+            --format='value(metadata.name)' 2>&1)
+          DESCRIBE_STATUS=$?
+          set -e
+          if [[ ${DESCRIBE_STATUS} -eq 0 ]]; then
+            harden_invocation
+          elif grep -Eiq '(NOT_FOUND|not found|could not be found|404)' \
+            <<< "${DESCRIBE_OUTPUT}"; then
+            echo "Cloud Run service does not exist yet; pre-hardening is not applicable."
+          else
+            echo "::error::Unable to establish existing Cloud Run IAM posture"
+            exit "${DESCRIBE_STATUS}"
+          fi
+
           # `gcloud run services replace` is the declarative apply — it
           # creates the service if absent OR updates it in place. Probe
           # config, scaling, env vars, secrets all come from the manifest.
           gcloud run services replace "${{ steps.render.outputs.rendered }}" \
-            --region "${{ env.GCP_REGION }}" \
-            --project "${{ secrets.GCP_PROJECT_ID }}" \
+            --region "${REGION}" \
+            --project "${PROJECT}" \
             --quiet
 
-          # Public access (allUsers=run.invoker) is not expressible in the
-          # current Knative-on-Cloud-Run schema, so we apply it separately.
-          gcloud run services add-iam-policy-binding "${{ steps.target.outputs.service }}" \
-            --region "${{ env.GCP_REGION }}" \
-            --project "${{ secrets.GCP_PROJECT_ID }}" \
-            --member="allUsers" \
-            --role="roles/run.invoker" \
-            --quiet || echo "::warning::run.invoker binding may already exist"
+          # Reassert after replace in case service metadata or IAM behavior
+          # changes, and harden a service created by this run before smoke.
+          harden_invocation
+          assert_project_iam_private
 
           # Capture the service URL for the post-deploy smoke job.
-          URL=$(gcloud run services describe "${{ steps.target.outputs.service }}" \
-            --region "${{ env.GCP_REGION }}" \
-            --project "${{ secrets.GCP_PROJECT_ID }}" \
+          URL=$(gcloud run services describe "${SERVICE}" \
+            --region "${REGION}" \
+            --project "${PROJECT}" \
             --format='value(status.url)')
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "service=${SERVICE}" >> "$GITHUB_OUTPUT"
           echo "Service URL: ${URL}"
 
   # ── Job 4: post-deploy smoke test ─────────────────────────────────────────
   post-deploy-smoke:
     name: Post-deploy smoke test
     needs: deploy
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
     runs-on: ubuntu-latest
+    environment: Production
+    permissions:
+      contents: read
+      id-token: write
     steps:
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Wait for revision rollout
         # Cloud Run sometimes returns the URL before the revision is fully
         # serving traffic. A short fixed wait is cheaper than a busy loop.
@@ -310,7 +367,9 @@ jobs:
           # intercepts /healthz before it reaches the container
           # (returns Google's 404 HTML page). Confirmed 2026-05-24.
           echo "Probing ${URL}/live"
+          ID_TOKEN=$(gcloud auth print-identity-token --audiences="${URL}")
           STATUS=$(curl --silent --output /dev/stderr --write-out '%{http_code}' \
+            --header "X-Serverless-Authorization: Bearer ${ID_TOKEN}" \
             --max-time 10 --retry 3 --retry-delay 5 "${URL}/live")
           if [[ "${STATUS}" != "200" ]]; then
             echo "::error::/live returned ${STATUS} (expected 200)"
@@ -322,19 +381,15 @@ jobs:
         run: |
           URL="${{ needs.deploy.outputs.service_url }}"
           echo "Probing ${URL}/readyz"
+          ID_TOKEN=$(gcloud auth print-identity-token --audiences="${URL}")
           STATUS=$(curl --silent --output /dev/stderr --write-out '%{http_code}' \
+            --header "X-Serverless-Authorization: Bearer ${ID_TOKEN}" \
             --max-time 10 --retry 3 --retry-delay 5 "${URL}/readyz")
-          # /readyz may legitimately return 503 if any provider key is missing
-          # at first boot. Fail only on 4xx (client error) or 5xx other than 503.
           if [[ "${STATUS}" != "200" ]]; then
-            echo "::warning::/readyz returned ${STATUS} — check Secret Manager bindings"
-            if [[ "${STATUS}" =~ ^4 ]]; then
-              echo "::error::4xx from /readyz is a configuration bug"
-              exit 1
-            fi
-          else
-            echo "/readyz OK (200)"
+            echo "::error::/readyz returned ${STATUS} (expected 200)"
+            exit 1
           fi
+          echo "/readyz OK (200)"
 
       - name: Summary
         run: |

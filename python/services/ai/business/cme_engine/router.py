@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from ...api.auth import require_active_student
 from ...db.supabase import get_service_client
 from .handler import (
     computeExamReadiness,
@@ -28,36 +28,11 @@ from .models import (
 router = APIRouter(prefix="/cme", tags=["cme"])
 
 
-async def get_current_student(authorization: str = Header(None)) -> dict[str, Any]:
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization required")
-
-    token = authorization.replace("Bearer ", "")
-    try:
-        # Decode without verification assuming API Gateway handles signature verification
-        # Or this service role client allows us to look up the student directly.
-        decoded = jwt.decode(token, options={"verify_signature": False})
-        user_id = decoded.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token structure")
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token") from None
-
-    client = get_service_client()
-    if not client:
-        raise HTTPException(status_code=500, detail="Database client not configured")
-
-    res = (
-        await client.table("students")
-        .select("id, grade, preferred_subject")
-        .eq("auth_user_id", user_id)
-        .eq("is_active", True)
-        .execute()
-    )
-    if not res.data:
-        raise HTTPException(status_code=404, detail="Student not found")
-
-    return res.data[0]
+async def get_current_student(
+    student: dict[str, Any] = Depends(require_active_student),
+) -> dict[str, Any]:
+    """Compatibility dependency for CME handlers, backed by verified JWT auth."""
+    return student
 
 
 @router.post("/next_action", response_model=NextActionResponse)

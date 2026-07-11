@@ -191,7 +191,7 @@ Categorized by **NOW** (this PR or already-shipped), **PHASE 2** (next 1-2 weeks
 | Auth | Workload Identity Federation (no JSON keys); Secret Manager runtime injection | per-request signing for service-to-service calls (HMAC with rotating shared secret) | Secret Manager version pinning + automated rotation | — |
 | Authorization | Service-account least-privilege (runtime SA has ONLY `secretmanager.secretAccessor`) | — | OWASP API Top 10 audit | SOC 2 readiness assessment |
 | Data | PII redaction in logs + Sentry; CBSE-scope + age-appropriateness filters in prompts | audit log of every flag flip + admin action (Python service writes to `audit_logs` table) | per-tenant data isolation verification across services | SOC 2 readiness (if enterprise customers demand) |
-| Network | Cloud Run egress to public internet (Supabase, Anthropic, OpenAI); ingress allow-unauthenticated (gated by Supabase Edge proxy auth) | egress restriction to known hosts via Cloud Armor | mutual-TLS to Supabase via private VPC peering (if Supabase supports it) | — |
+| Network | Cloud Run egress to public internet (Supabase, Anthropic, OpenAI); internet-routable ingress protected by Cloud Run Invoker IAM plus Supabase user auth | egress restriction to known hosts via Cloud Armor | mutual-TLS to Supabase via private VPC peering (if Supabase supports it) | — |
 | Secrets | Secret Manager `:latest` pull on revision start | — | version pinning + 90-day rotation schedule | quarterly key rotation; HSM-backed for compliance |
 
 ---

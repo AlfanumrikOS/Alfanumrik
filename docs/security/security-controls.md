@@ -108,6 +108,7 @@ Defined in `next.config.js`:
 | Rate limit headers | `X-RateLimit-Limit`, `X-RateLimit-Remaining` on API responses | Client-side rate awareness | Exists |
 | Payment webhook verification | Razorpay signature verification before processing (P11) | Webhook spoofing | Exists |
 | Service role isolation | `supabase-admin.ts` server-only, never imported in client (P8) | Service role key exposure | Exists |
+| Legacy service-worker containment | Root layout unregisters every same-origin `/sw.js`, detects controller-only tabs, purges only `alfanumrik-*` CacheStorage, then permits one fallback reload plus one final confirmed-removal reload; `public/sw.js` remains a no-fetch tombstone that claims clients and unregisters itself | Cross-user replay of cached personalized data; false success responses for failed writes | Containment active |
 
 ### 10. Data Privacy (P13)
 
@@ -150,4 +151,3 @@ Defined in `next.config.js`:
 | No automated alert thresholds | Sentry alerts not configured for error rate spikes | Medium |
 | Permission cache not distributed | In-memory cache means different Vercel instances may have stale permissions | Low (5-minute TTL limits impact) |
 | No IP-based admin lockdown | Admin panel accessible from any IP with valid session | Low |
-| Service worker scope | `sw.js` cached with no-cache headers but scope is `/` | Low |

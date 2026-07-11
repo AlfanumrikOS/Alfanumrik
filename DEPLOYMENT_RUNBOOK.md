@@ -1,6 +1,6 @@
 # Alfanumrik Production Deployment Runbook
 
-**Last updated:** 2026-07-10
+**Last updated:** 2026-07-11
 **Owner:** DevOps / Platform Engineering
 **Production domain:** `https://alfanumrik.com`
 **Production Supabase project:** `shktyoxqhundlvkiwguu`
@@ -25,13 +25,44 @@ Alfanumrik currently uses a multi-plane deployment model:
 
 | Plane | Primary mechanism | Source of truth | Notes |
 |---|---|---|---|
-| Web app | Vercel GitHub App and optional Vercel CLI workflow | `.github/workflows/deploy-production.yml`, `vercel.json` | Production deploys from `main`. Health checks must use the canonical domain and automation bypass where configured. |
+| Web app | Vercel GitHub App and optional Vercel CLI workflow | `.github/workflows/deploy-production.yml`, `vercel.json` | Production mutations are push-to-`main` only; release identity is proved on the canonical domain. |
 | Database | Supabase CLI through GitHub Actions or controlled operator command | `supabase/migrations/`, `scripts/deploy/deploy_database.sh` | Migrations are forward-only and must be idempotent. |
 | Edge Functions | Supabase CLI deploy of changed functions | `supabase/functions/`, `scripts/edge-function-manifest.json` | Functions require deploy freshness and secret activation proof. |
-| Jobs / cron | Vercel crons plus Supabase/DB-backed job history | `vercel.json`, `scripts/job-registry.json` | Each job must expose a last-success metric and alert threshold. |
+| Jobs / cron | Vercel crons plus Supabase/DB-backed job history | `vercel.json`, `scripts/job-registry.json` | Vercel is the sole schedule authority; GitHub runner is disabled break-glass only. |
 | Release evidence | Repo and operator gate manifests | `scripts/product-readiness-release-gate.ts`, `scripts/live-readiness-evidence-manifest.json` | Broad launch requires a fresh evidence bundle. |
 
 The older CI-independent model is retired. If GitHub Actions, Vercel, or Supabase automation is unavailable, use the manual fallback steps in this runbook and record the reason in the release evidence.
+
+### Phase 0 Delivery Containment
+
+- The production deploy workflow is push-to-`main` only. Manual force redeploy is suspended until a protected break-glass environment exists.
+- The pre-mutation bypass probe accepts semantic app health JSON with a known status, timestamp, and non-empty version SHA; it does not require dependencies to be healthy during a repair.
+- Canonical production is polled for approximately ten minutes. Both health stages must prove `ok===true`, `status==='healthy'`, and `version.git_sha===GITHUB_SHA[:7]` before any release/tag.
+- Automatic web rollback requires `CURRENT_SHA_SEEN=1`, unhealthy exact-SHA evidence, and immediate canonical revalidation. Before any release mutation, the workflow must also have captured the same fresh, semantically healthy canonical deployment identity on both sides of the preflight probe. Missing or raced deployment metadata, a database migration, an Edge Function change, previous/newer/missing SHA, healthy state, network failure, timeout, and protection responses all suppress automatic rollback.
+- Rollback targets are immutable Vercel deployment IDs resolved through the JSON API, never row positions parsed from human `vercel list` output. A rollback is successful only after a bounded canonical poll proves both the captured deployment ID and its healthy exact Git SHA.
+- Keep `ENABLE_PRODUCTION_CRON_BREAK_GLASS` absent/false until `production-break-glass` has required reviewers. A dispatch requires one allowlisted route, reason, and exact `RUN_ONE_PRODUCTION_CRON` confirmation; `all` is forbidden.
+- Mesh and credentialed content-quality execution are hard-suspended in code;
+  neither retains an executable manual secret-bearing path. AWS production
+  delivery is also hard-suspended, and `ENABLE_AWS_DEPLOY` was set to `false`
+  on 2026-07-11.
+  Re-enabling it requires a reviewed workflow change, a protected
+  `production-break-glass` environment, main-ref-scoped AWS OIDC trust, and a
+  separately verified ECS rollback path. A repository variable alone is never
+  sufficient authority.
+- Live containment applied 2026-07-11: GitHub workflows `deploy-aws.yml`,
+  `mesh-cron.yml`, `content-quality-nightly.yml`, `python-ai-deploy.yml`, and
+  `production-cron-runner.yml` are disabled. The unsafe manual/ref paths in
+  `mobile-release.yml`, `schema-reproducibility-fix.yml`, `deploy-staging.yml`,
+  `seed-staging-test-student.yml`, `staging-adaptive-drill.yml`,
+  `staging-flag-set.yml`, `sync-staging-functions.yml`,
+  `sync-staging-migrations.yml`, `rag-eval.yml`, `synthetic-monitor.yml`, and
+  `branch-stale-sweep.yml` are also disabled live; their source is not yet safe
+  to re-enable. Vercel Git delivery and Vercel cron remain active.
+- Live `main` protection now enforces administrators, one approving review,
+  stale-review dismissal, last-push approval, conversation resolution, and no
+  force-push/deletion. Required status checks remain unset until this PR lands;
+  then require the new aggregate `CI Gate` after one successful observed run.
+- Do not set `git.deploymentEnabled.main=false` until the CLI deploy is mandatory and health directly depends on it; PR previews must remain enabled.
 
 ---
 
@@ -44,7 +75,8 @@ The older CI-independent model is retired. If GitHub Actions, Vercel, or Supabas
 - Do not broaden rollout if any repo-owned gate fails.
 - Do not broaden rollout if any required live evidence gate is missing, stale, or failed.
 - Do not bypass migrations, Edge Function deploys, tenant-isolation smoke, or feature-flag verification for convenience.
-- Treat Vercel protection-challenge soft-passes as "not verified", not as proof of production health.
+- Protection challenges are verification failures, not rollback evidence.
+- Never create a release/tag without healthy exact-SHA proof from both canonical verification jobs.
 - Service-role/admin-client route count must never increase without a reviewed ledger entry and owner.
 
 ### Release Types
@@ -86,7 +118,7 @@ Never commit secrets. Store production values in GitHub Actions environments, Ve
 |---|---|---|
 | `VERCEL_ORG_ID` | GitHub Actions | Vercel CLI deployment. |
 | `VERCEL_PROJECT_ID` | GitHub Actions | Vercel CLI deployment. |
-| `VERCEL_TOKEN` | GitHub Actions | Optional Vercel CLI deployment and rollback. |
+| `VERCEL_TOKEN` | GitHub Actions | Optional Vercel CLI deployment plus machine-readable rollback baseline capture and guarded rollback. Without it, automatic rollback is suppressed. |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | GitHub Actions + Vercel | Real CI health checks through Vercel deployment protection. |
 | `SUPABASE_ACCESS_TOKEN` | GitHub Actions / local ops | Production Supabase CLI operations. |
 | `SUPABASE_PROJECT_REF` | GitHub Actions / local ops | Production project ref, `shktyoxqhundlvkiwguu`. |
@@ -297,16 +329,20 @@ Use when the web build or routing layer regressed and the database/Edge planes a
 Preferred:
 
 1. Open Vercel Deployments.
-2. Promote the last known-good production deployment.
-3. Verify `https://alfanumrik.com/api/v1/health`.
-4. Record the rollback SHA and reason.
+2. Confirm the immutable deployment ID and Git SHA of a deployment that previously served the production domain.
+3. Use **Instant Rollback** for that known-good production deployment.
+4. Verify that `https://alfanumrik.com/api/v1/health` reports `ok=true`, `status=healthy`, and the expected rollback SHA, and verify the canonical alias resolves to the captured deployment ID.
+5. Record the rollback deployment ID, SHA, reason, and verification evidence.
 
 CLI fallback:
 
 ```bash
-vercel ls --prod
-vercel promote <previous-deployment-url> --yes
+vercel inspect alfanumrik.com --format=json
+vercel rollback <known-good-deployment-id> --yes --timeout=3m
+vercel rollback status --timeout=3m
 ```
+
+Do not select a rollback target by parsing or taking the second row of human-readable `vercel list` output. If the immutable ID, Git SHA, production eligibility, or canonical health proof is unavailable, stop and use the Vercel Dashboard with an incident reviewer. An Instant Rollback disables automatic production-domain assignment; after the incident is fixed and verified, explicitly undo the rollback or promote the repaired deployment so normal Git production assignment resumes.
 
 ### Edge Function Rollback - Supabase
 

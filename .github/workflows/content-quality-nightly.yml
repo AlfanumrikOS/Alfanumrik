@@ -1,5 +1,10 @@
 name: Content Quality — Nightly
 
+# HARD-SUSPENDED IN PHASE 0. The previous manual path could execute scripts
+# from an arbitrary dispatch ref while holding the production Supabase
+# service-role secret. Restore only behind a protected, main-only ops
+# environment with a read-only reporting credential.
+#
 # Phase 3.3: Truthful content-readiness measurement.
 # Runs the two ops scripts (check-content-gaps + audit-question-quality)
 # against the live database every night and uploads the results as build
@@ -15,22 +20,39 @@ name: Content Quality — Nightly
 #     monitored but not gated until pass rate is stable.
 
 on:
+  # Phase 0: recurring execution is suspended while the failing production
+  # credential/runtime path is repaired. Manual dispatch is retained only to
+  # report the explicit suspension; it cannot reach a secret-bearing job.
   workflow_dispatch:
-  schedule:
-    # 04:00 UTC = 09:30 IST nightly (right after the pg_cron 03:30 UTC
-    # readiness recompute, so the script reads fresh values).
-    - cron: '0 4 * * *'
+
+permissions:
+  contents: read
 
 concurrency:
   group: content-quality-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Phase 0 Content Quality Suspension Gate
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      enabled: ${{ steps.suspend.outputs.enabled }}
+    steps:
+      - name: Refuse credentialed content scan
+        id: suspend
+        run: |
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::error::Credentialed content-quality execution is suspended in Phase 0; a reviewed workflow change is required to restore it."
+          exit 1
+
   content-quality:
     name: Content quality scan
     runs-on: ubuntu-latest
-    # Forks have no service-role secret. Skip rather than fail.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
+    environment: production-ops
     steps:
       - uses: actions/checkout@v6
 

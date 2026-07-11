@@ -33,17 +33,13 @@
  *   - Per-utterance retry / backoff
  */
 
-// The Cloud Run service URL is injected at build time via NEXT_PUBLIC_PYTHON_AI_BASE_URL.
-// Next.js inlines NEXT_PUBLIC_* env vars into the client bundle; if the var is
-// unset at build time we fall through to the prod default so dev/preview never
-// silently routes voice to the wrong origin.
-const PROD_DEFAULT_BASE_URL = 'https://ai-services-518404877846.asia-south1.run.app';
-
-/** Resolved Cloud Run base URL — `process.env.NEXT_PUBLIC_PYTHON_AI_BASE_URL` with prod fallback. */
+// Direct browser invocation is disabled by default. Cloud Run now requires a
+// Google caller identity that must never be embedded in the public bundle.
+// A future trusted proxy may provide a URL explicitly after it implements the
+// two-token contract; there is deliberately no hardcoded production fallback.
 export const PYTHON_AI_BASE_URL: string =
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_PYTHON_AI_BASE_URL) ||
-  PROD_DEFAULT_BASE_URL;
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_PYTHON_AI_BASE_URL?.trim()) || '';
 
 /** STT timeout — Whisper typically returns in 2-8s for ≤60s audio; 30s leaves headroom. */
 const STT_TIMEOUT_MS = 30_000;
@@ -124,6 +120,22 @@ export class PythonVoiceError extends Error {
     this.code = args.code;
     this.requestId = args.requestId ?? null;
   }
+}
+
+function requirePythonAiBaseUrl(): string {
+  // Keep the property access explicit so Next.js can inline NEXT_PUBLIC_* at
+  // build time. Reading at call time also lets tests exercise disabled mode.
+  const baseUrl =
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_PYTHON_AI_BASE_URL?.trim()) || '';
+  if (!baseUrl) {
+    throw new PythonVoiceError({
+      status: 503,
+      code: 'SERVICE_DISABLED',
+      message: 'Python voice is disabled until a trusted identity proxy is configured',
+    });
+  }
+  return baseUrl.replace(/\/$/, '');
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -251,7 +263,7 @@ export async function transcribePython(
     formData.append('language_hint', options.languageHint);
   }
 
-  const url = `${PYTHON_AI_BASE_URL.replace(/\/$/, '')}/v1/voice/transcribe`;
+  const url = `${requirePythonAiBaseUrl()}/v1/voice/transcribe`;
 
   return withTimeout(
     async (signal) => {
@@ -358,7 +370,7 @@ export async function synthesizePython(
     });
   }
 
-  const url = `${PYTHON_AI_BASE_URL.replace(/\/$/, '')}/v1/voice/synthesize`;
+  const url = `${requirePythonAiBaseUrl()}/v1/voice/synthesize`;
   const body = JSON.stringify({
     text: trimmedText,
     language: opts.language,

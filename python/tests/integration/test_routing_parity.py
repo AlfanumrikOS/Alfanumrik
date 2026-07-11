@@ -33,6 +33,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from services.ai.api.auth import require_active_student
 from services.ai.api.main import create_app
 from services.ai.mol.router import (
     GPT_FULL,
@@ -43,9 +44,10 @@ from services.ai.mol.router import (
 
 
 @pytest.fixture()
-def client() -> TestClient:
+def client(matching_student_dependency) -> TestClient:
     """Fresh app + TestClient per test (clean lifespan state)."""
     app = create_app()
+    app.dependency_overrides[require_active_student] = matching_student_dependency
     return TestClient(app)
 
 

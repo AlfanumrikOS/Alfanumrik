@@ -10,7 +10,7 @@ import { momentumFontClass, momentumFontVars } from '@alfanumrik/lib/momentum-fo
 import { SchoolProvider } from '@alfanumrik/lib/SchoolContext';
 import { TenantConfigProvider } from '@alfanumrik/lib/tenant-domain/client';
 import { ErrorBoundary } from '@alfanumrik/ui/ErrorBoundary';
-import RegisterSW from '@alfanumrik/lib/RegisterSW';
+import ServiceWorkerCleanup from '@alfanumrik/lib/RegisterSW';
 import JsonLd from '@alfanumrik/ui/JsonLd';
 import LayoutDeferredChrome from '@alfanumrik/ui/LayoutDeferredChrome';
 import { Toaster } from '@alfanumrik/ui/ui/toast';
@@ -197,7 +197,7 @@ export default function RootLayout({
                     <GlobalAppLayout>{children}</GlobalAppLayout>
                   </div>
                 </ErrorBoundary>
-                <RegisterSW />
+                <ServiceWorkerCleanup />
                 {/* In-app toast mount (Phase A.4). Replaces native alert() for
                     error UI so cheap school tablets don't see blocking dialogs. */}
                 <Toaster />
