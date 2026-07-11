@@ -45,17 +45,14 @@ Future<void> main() async {
     appRunner: () async {
       WidgetsFlutterBinding.ensureInitialized();
 
-      // Lock portrait orientation for consistent UX
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
-
       // Optimize status bar
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-        systemNavigationBarColor: Colors.white,
-      ));
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          systemNavigationBarColor: Colors.white,
+        ),
+      );
 
       // Initialize Hive for local caching
       await Hive.initFlutter();
@@ -86,11 +83,7 @@ Future<void> main() async {
         };
       }
 
-      runApp(
-        const ProviderScope(
-          child: AlfanumrikApp(),
-        ),
-      );
+      runApp(const ProviderScope(child: AlfanumrikApp()));
     },
   );
 }

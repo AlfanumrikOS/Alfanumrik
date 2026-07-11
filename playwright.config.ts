@@ -17,6 +17,11 @@ export default defineConfig({
   //   CERTIFICATION_RUN_ENABLED=true npx playwright test e2e/certification --list
   testIgnore: process.env.CERTIFICATION_RUN_ENABLED === 'true' ? undefined : ['**/certification/**'],
   use: {
+    // CI uses Playwright's pinned browser. Constrained review environments may
+    // provide a compatible audited Chromium binary without changing test code.
+    launchOptions: process.env.PLAYWRIGHT_EXECUTABLE_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
+      : undefined,
     // Normal/local/CI runs keep BASE_URL (default localhost). During a
     // certification run (CERTIFICATION_RUN_ENABLED=true) fall back to
     // CERTIFICATION_BASE_URL so the cert specs' relative `page.goto('/...')`

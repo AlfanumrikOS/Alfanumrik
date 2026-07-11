@@ -50,6 +50,8 @@ import { useKeyboardInset } from '@alfanumrik/lib/foxy/use-keyboard-inset';
 import { useCosmicLightSurface } from '@alfanumrik/lib/use-cosmic-light-surface';
 import type { MasterySuggestion } from '@alfanumrik/ui/foxy/MasteryAwareness';
 import { SIMPLIFIED_MODES } from '@alfanumrik/ui/foxy/ConversationManager';
+import StudentV3Gate from '../(student)/_components/StudentV3Gate';
+import { useExperiencePresence } from '@alfanumrik/ui/v3/foundations/ExperiencePresence';
 
 // Alfa OS flagship redesign — the Foxy ContextPanel third pane (ff_student_os_v1).
 // Lazy-loaded so it is fetched ONLY when the flag resolves ON; when OFF the
@@ -252,7 +254,8 @@ async function fetchConversationById(sessionId: string) {
    MAIN FOXY PAGE
    ══════════════════════════════════════════════════════════════ */
 
-export default function FoxyPage() {
+function FoxyExperience() {
+  const { active: experienceV3 } = useExperiencePresence();
   const { student: authStudent, isLoggedIn, isLoading: authLoading } = useAuth();
   const router = useRouter();
   // 2026-05-18: render BOTH unlocked and locked subjects in the tab bar so
@@ -2171,6 +2174,7 @@ export default function FoxyPage() {
 
   return (
     <AppShell
+      contentAs={experienceV3 ? 'div' : 'main'}
       className={`foxy-shell${useFoxyOsHeader ? ' foxy-os' : ''}`}
       variant="mobile"
       header={useFoxyOsHeader ? foxyOsHeaderContent : foxyHeaderContent}
@@ -2192,4 +2196,8 @@ export default function FoxyPage() {
       {foxyMainContent}
     </AppShell>
   );
+}
+
+export default function FoxyPage() {
+  return <StudentV3Gate legacy={<FoxyExperience />} v3={<FoxyExperience />} withShell />;
 }

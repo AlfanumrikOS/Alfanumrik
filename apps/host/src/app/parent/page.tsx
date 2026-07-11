@@ -24,6 +24,8 @@ import {
 // Lazy-loaded to keep the first-paint bundle tight.
 const ParentGlanceHome = dynamic(() => import('@alfanumrik/ui/parent/ParentGlanceHome'), { ssr: false });
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import ParentV3PageGate from './_components/ParentV3PageGate';
+import { ParentV3Home } from './_components/ParentV3Views';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -633,7 +635,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
 // ============================================================
 // MAIN PAGE COMPONENT
 // ============================================================
-export default function ParentPage() {
+function LegacyParentPage() {
   const auth = useAuth();
   const [guardian, setGuardian] = useState<ParentSession | null>(null);
   const [student, setStudent] = useState<StudentSession | null>(null);
@@ -794,4 +796,8 @@ export default function ParentPage() {
       canFetchMessages={canFetchMessages}
     />
   );
+}
+
+export default function ParentPage() {
+  return <ParentV3PageGate legacy={<LegacyParentPage />} v3={<ParentV3Home />} />;
 }

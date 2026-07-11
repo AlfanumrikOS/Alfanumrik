@@ -14,11 +14,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// student tree. The router treats anything that is not `guardian` as the
 /// existing student flow (the historical, only mobile experience), preserving
 /// the current behaviour for every non-guardian login.
-enum UserRole {
-  student,
-  guardian,
-  unknown,
-}
+enum UserRole { student, guardian, unknown }
 
 /// Resolves the authenticated user's primary role via the `get_user_role` RPC.
 ///
@@ -29,10 +25,9 @@ enum UserRole {
 /// `student` → [UserRole.student], everything else → [UserRole.unknown].
 ///
 /// Failure handling: if the user is unauthenticated, the RPC errors, or the
-/// shape is unexpected, we return [UserRole.unknown]. The router treats
-/// `unknown` exactly like `student` (the existing default flow), so a transient
-/// RPC failure can never strand a real student — it just means a guardian on a
-/// flaky network briefly sees the student tree until the provider re-resolves.
+/// shape is unexpected, we return [UserRole.unknown]. The router fails closed
+/// to a recoverable access screen, so a guardian, teacher or operator can never
+/// flash or enter the student tree while role resolution is unavailable.
 ///
 /// FutureProvider (not autoDispose) so the single role lookup is cached for the
 /// session; `ref.invalidate(roleProvider)` after a re-login forces a refresh.
@@ -84,11 +79,13 @@ UserRole mapPrimaryRole(dynamic data) {
   }
 }
 
-/// True when the resolved role is a guardian. Convenience for the router and
-/// shells. Defaults to `false` while loading / on error, so the student flow is
-/// the safe default and the router never blocks on the role lookup.
+/// True when the resolved role is a guardian. Convenience for surfaces that
+/// need guardian-specific presentation. Routing reads [roleProvider] directly
+/// so loading and unknown values remain fail-closed.
 final isGuardianProvider = Provider<bool>((ref) {
-  return ref.watch(roleProvider).maybeWhen(
+  return ref
+      .watch(roleProvider)
+      .maybeWhen(
         data: (role) => role == UserRole.guardian,
         orElse: () => false,
       );

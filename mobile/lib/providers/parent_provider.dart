@@ -3,6 +3,72 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/network/v2_api_client.dart';
+import '../core/network/api_client.dart';
+
+/// Session-persistent active child shared by every guardian destination.
+final selectedParentChildProvider = StateProvider<String?>((ref) => null);
+
+/// Existing governed parent calendar endpoint, keyed by linked child.
+final parentPlanProvider = FutureProvider.family<Map<String, dynamic>, String>((
+  ref,
+  studentId,
+) async {
+  final response = await ApiClient().get<Map<String, dynamic>>(
+    '/parent/calendar',
+    queryParameters: {'student_id': studentId, 'horizon_days': 60},
+  );
+  final body = response.data;
+  if (response.statusCode != 200 || body?['success'] != true) {
+    throw StateError('Parent plan response was unavailable');
+  }
+  return body!;
+});
+
+/// Existing governed teacher-parent thread endpoint.
+final parentThreadsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final response = await ApiClient().get<Map<String, dynamic>>(
+    '/parent/messages/threads',
+    queryParameters: {'limit': 50},
+  );
+  final body = response.data;
+  if (response.statusCode != 200 || body?['success'] != true) {
+    throw StateError('Parent messages response was unavailable');
+  }
+  return body!;
+});
+
+final parentThreadMessagesProvider =
+    FutureProvider.family<Map<String, dynamic>, String>((ref, threadId) async {
+      final response = await ApiClient().get<Map<String, dynamic>>(
+        '/parent/messages/threads/$threadId/messages',
+        queryParameters: {'limit': 100},
+      );
+      final body = response.data;
+      if (response.statusCode != 200 || body?['success'] != true) {
+        throw StateError('Parent conversation response was unavailable');
+      }
+      return body!;
+    });
+
+final parentMessageServiceProvider = Provider<ParentMessageService>(
+  (ref) => ParentMessageService(ApiClient()),
+);
+
+class ParentMessageService {
+  const ParentMessageService(this._client);
+
+  final ApiClient _client;
+
+  Future<void> send({required String threadId, required String body}) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/parent/messages',
+      data: {'thread_id': threadId, 'body': body.trim()},
+    );
+    if (response.statusCode != 200 || response.data?['success'] != true) {
+      throw StateError('Message could not be sent');
+    }
+  }
+}
 
 /// Parent surface state (Wave 2.4 mobile-parity) — fetched from the `/v2`
 /// `ParentApi` via the GENERATED dart-dio client.
@@ -26,7 +92,8 @@ import '../core/network/v2_api_client.dart';
 /// The authenticated guardian's linked children.
 final parentChildrenProvider =
     AsyncNotifierProvider<ParentChildrenNotifier, ParentChildrenResponse>(
-        ParentChildrenNotifier.new);
+      ParentChildrenNotifier.new,
+    );
 
 class ParentChildrenNotifier extends AsyncNotifier<ParentChildrenResponse> {
   @override
@@ -52,8 +119,12 @@ class ParentChildrenNotifier extends AsyncNotifier<ParentChildrenResponse> {
 /// The at-a-glance view for ONE linked child. Family provider keyed by
 /// `student_id` so switching the selected child re-resolves independently and
 /// keeps each child's glance cached.
-final parentGlanceProvider = AsyncNotifierProvider.family<ParentGlanceNotifier,
-    ParentGlanceResponse, String>(ParentGlanceNotifier.new);
+final parentGlanceProvider =
+    AsyncNotifierProvider.family<
+      ParentGlanceNotifier,
+      ParentGlanceResponse,
+      String
+    >(ParentGlanceNotifier.new);
 
 class ParentGlanceNotifier
     extends FamilyAsyncNotifier<ParentGlanceResponse, String> {
@@ -69,8 +140,9 @@ class ParentGlanceNotifier
 
   Future<ParentGlanceResponse> _fetch(String studentId) async {
     final client = ref.read(v2ApiClientProvider);
-    final response =
-        await client.parentApi.getParentGlance(studentId: studentId);
+    final response = await client.parentApi.getParentGlance(
+      studentId: studentId,
+    );
     final data = response.data;
     if (data == null) {
       throw StateError('Glance response had no body');
@@ -153,9 +225,11 @@ class EncourageService {
     required String messageKey,
   }) async {
     try {
-      final request = EncourageRequest((b) => b
-        ..studentId = studentId
-        ..messageKey = messageKey);
+      final request = EncourageRequest(
+        (b) => b
+          ..studentId = studentId
+          ..messageKey = messageKey,
+      );
 
       // `validateStatus: (_) => true` so 4xx/429 don't throw — we read the
       // status and map it ourselves rather than catching a DioException for the

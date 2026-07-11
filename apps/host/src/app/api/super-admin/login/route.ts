@@ -29,6 +29,7 @@ import { validateBody } from '@alfanumrik/lib/validation';
 import { logAdminAuditByUserId } from '@alfanumrik/lib/admin-auth';
 import { checkLockout, recordLoginAttempt, LOCKOUT_CONSTANTS } from '@alfanumrik/lib/admin-login-throttle';
 import { logger } from '@alfanumrik/lib/logger';
+import { createServerClient } from '@supabase/ssr';
 
 const loginSchema = z.object({
   email: z.string().email().max(254),
@@ -291,15 +292,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 6. Success path: record + audit, return session
-  await recordLoginAttempt({ email, ipAddress: ip, userAgent, succeeded: true });
-  await logAdminAuditByUserId(
-    userId, 'admin_login_succeeded', 'admin_users', userId,
-    { admin_level: admins[0].admin_level }, ip,
-    { userAgent, adminLevel: admins[0].admin_level },
-  );
-
-  return NextResponse.json({
+  // ── 6. Establish the standard Supabase SSR cookie. The admin login page
+  // also hydrates its local supabase-js client, but localStorage is invisible
+  // to server component gates. The proxy refreshes this cookie on subsequent
+  // requests, so server authorization and client API calls share one session.
+  const response = NextResponse.json({
     success: true,
     session: {
       access_token: session.access_token,
@@ -307,10 +304,35 @@ export async function POST(request: NextRequest) {
       expires_at: session.expires_at,
       expires_in: session.expires_in,
       token_type: session.token_type,
-      user: {
-        id: userId,
-        email: session.user?.email,
-      },
+      user: { id: userId, email: session.user?.email },
     },
   });
+  try {
+    const ssr = createServerClient(url, anonKey, {
+      cookies: {
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookiesToSet) => {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            const safeOptions = { ...options, httpOnly: true, sameSite: 'lax' as const, secure: process.env.NODE_ENV === 'production', path: '/' };
+            response.cookies.set(name, value, safeOptions);
+          });
+        },
+      },
+    });
+    const { error: sessionError } = await ssr.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
+    if (sessionError) throw sessionError;
+  } catch (error) {
+    logger.error('admin_login_ssr_session_failed', { error: error instanceof Error ? error : new Error(String(error)) });
+    return NextResponse.json({ error: 'Secure session could not be established. Please retry.', code: 'SESSION_COOKIE_FAILED' }, { status: 500 });
+  }
+
+  // ── 7. Success path: record + audit, return the cookie-bearing response
+  await recordLoginAttempt({ email, ipAddress: ip, userAgent, succeeded: true });
+  await logAdminAuditByUserId(
+    userId, 'admin_login_succeeded', 'admin_users', userId,
+    { admin_level: admins[0].admin_level }, ip,
+    { userAgent, adminLevel: admins[0].admin_level },
+  );
+
+  return response;
 }

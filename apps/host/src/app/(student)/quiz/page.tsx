@@ -16,6 +16,7 @@ import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import QuizSetup from '@alfanumrik/ui/quiz/QuizSetup';
 import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
 import WrittenAnswerInput from '@alfanumrik/ui/quiz/ncert/WrittenAnswerInput';
+import { useExperiencePresence } from '@alfanumrik/ui/v3/foundations/ExperiencePresence';
 
 // Lazy-load QuizResults — only shown after quiz completion (results screen)
 const QuizResults = dynamic(() => import('@alfanumrik/ui/quiz/QuizResults'), {
@@ -191,6 +192,7 @@ function originalToShuffled(origIdx: number, _shuffleMap: number[]|null) {
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function QuizPage() {
+  const { active: experienceV3 } = useExperiencePresence();
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
@@ -1406,7 +1408,7 @@ export default function QuizPage() {
         loading={loading}
         studentGrade={student?.grade ?? ''}
         onStart={startQuiz}
-        onGoBack={() => router.push('/dashboard')}
+        onGoBack={() => router.push(experienceV3 ? '/today' : '/dashboard')}
       />
     );
   }
@@ -1948,7 +1950,7 @@ export default function QuizPage() {
           timer={timer}
           isFirstQuiz={false}
           onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
-          onGoHome={() => router.push('/dashboard')}
+          onGoHome={() => router.push(experienceV3 ? '/today' : '/dashboard')}
         />
         {/* SLC-5: gentle, NON-accusatory note when the server flagged the attempt.
             The real score_percent is still shown by QuizResults above; this only
@@ -1998,7 +2000,7 @@ export default function QuizPage() {
             <Button onClick={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); }}>
               {isHi ? 'फिर से क्विज़ लो' : 'Try Again'}
             </Button>
-            <Button variant="ghost" onClick={() => router.push('/dashboard')}>
+            <Button variant="ghost" onClick={() => router.push(experienceV3 ? '/today' : '/dashboard')}>
               {isHi ? 'होम' : 'Home'}
             </Button>
           </div>

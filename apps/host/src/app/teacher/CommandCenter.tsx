@@ -933,7 +933,7 @@ export default function CommandCenter() {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 mb-4">
         <KpiTile
           label={tt(isHi, 'Students', 'छात्र')}
-          value={activeClass?.student_count ?? stats?.total_students ?? 0}
+          value={activeClass?.student_count ?? stats?.total_students ?? '—'}
           accent="var(--purple)"
         />
         <KpiTile
@@ -943,12 +943,12 @@ export default function CommandCenter() {
         />
         <KpiTile
           label={tt(isHi, 'At-risk', 'जोखिम में')}
-          value={alerts.length}
+          value={alertsRes ? alerts.length : '—'}
           accent={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #D97706)'}
         />
         <KpiTile
           label={tt(isHi, 'Assignments', 'असाइनमेंट')}
-          value={stats?.active_assignments ?? 0}
+          value={stats?.active_assignments ?? '—'}
           accent="var(--success, #059669)"
         />
 

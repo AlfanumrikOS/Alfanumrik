@@ -18,6 +18,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import ParentV3PageGate from '../_components/ParentV3PageGate';
+import { ParentV3Messages } from '../_components/ParentV3Views';
 
 const LIST_POLL_MS = 30_000;
 const PANEL_POLL_MS = 15_000;
@@ -314,10 +316,14 @@ function ParentMessagesContent() {
   );
 }
 
-export default function ParentMessagesPage() {
+function LegacyParentMessagesPage() {
   return (
     <Suspense>
       <ParentMessagesContent />
     </Suspense>
   );
+}
+
+export default function ParentMessagesPage() {
+  return <ParentV3PageGate legacy={<LegacyParentMessagesPage />} v3={<ParentV3Messages />} />;
 }

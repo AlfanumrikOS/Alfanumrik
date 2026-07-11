@@ -211,7 +211,11 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
                 <div className="mb-2 truncate text-[11px] text-muted-foreground">{adminName}</div>
               )}
               <button
-                onClick={async () => { await supabase.auth.signOut(); window.location.href = '/super-admin/login'; }}
+                onClick={async () => {
+                  await fetch('/api/super-admin/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => undefined);
+                  await supabase.auth.signOut({ scope: 'local' });
+                  window.location.replace('/super-admin/login');
+                }}
                 className="w-full rounded-md border border-surface-3 bg-surface-1 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
               >
                 {isHi ? 'लॉगआउट' : 'Logout'}

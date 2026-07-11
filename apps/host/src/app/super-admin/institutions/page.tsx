@@ -10,6 +10,8 @@ import {
   DetailDrawer,
   type Column,
 } from '@alfanumrik/ui/admin-ui';
+import SuperAdminV3ClientGate from '../_components/SuperAdminV3ClientGate';
+import { SuperV3Institutions } from '../_components/SuperAdminV3Views';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -1785,5 +1787,5 @@ function InstitutionsContent() {
 /* ------------------------------------------------------------------ */
 
 export default function InstitutionsPage() {
-  return <AdminShell><InstitutionsContent /></AdminShell>;
+  return <SuperAdminV3ClientGate legacy={<AdminShell><InstitutionsContent /></AdminShell>}><SuperV3Institutions /></SuperAdminV3ClientGate>;
 }

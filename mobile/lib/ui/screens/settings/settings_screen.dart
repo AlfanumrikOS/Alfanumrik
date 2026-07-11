@@ -94,6 +94,14 @@ class SettingsScreen extends ConsumerWidget {
               title: isHi ? 'मेरी सीख' : 'My Learning',
               children: [
                 _SettingsTile(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  title: isHi ? 'फॉक्सी से पूछें' : 'Ask Foxy',
+                  subtitle: isHi
+                      ? 'अपने सीखने के संदर्भ में सहायता पाएँ'
+                      : 'Get help in your learning context',
+                  onTap: () => context.go('/chat'),
+                ),
+                _SettingsTile(
                   icon: Icons.insights_rounded,
                   title: isHi ? 'प्रगति' : 'Progress',
                   subtitle: isHi
@@ -106,6 +114,14 @@ class SettingsScreen extends ConsumerWidget {
                   title: isHi ? 'लीडरबोर्ड' : 'Leaderboard',
                   subtitle: isHi ? 'देखें आप कहाँ हैं' : 'See where you rank',
                   onTap: () => context.go('/leaderboard'),
+                ),
+                _SettingsTile(
+                  icon: Icons.science_outlined,
+                  title: isHi ? 'STEM लैब' : 'STEM Lab',
+                  subtitle: isHi
+                      ? 'इंटरैक्टिव प्रयोग और सिमुलेशन'
+                      : 'Interactive experiments and simulations',
+                  onTap: () => context.push('/stem-lab'),
                 ),
               ],
             ),
@@ -125,7 +141,9 @@ class SettingsScreen extends ConsumerWidget {
                 trailing: subscription?.isFree == true
                     ? Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.primary,
                           borderRadius: BorderRadius.circular(8),
@@ -154,20 +172,19 @@ class SettingsScreen extends ConsumerWidget {
               _SettingsTile(
                 icon: Icons.notifications_outlined,
                 title: 'Notifications',
-                subtitle: 'Study reminders',
-                onTap: () {},
+                subtitle: 'Study reminders are managed by your device',
               ),
               _SettingsTile(
                 icon: Icons.language_outlined,
                 title: 'Language',
-                subtitle: 'English',
-                onTap: () {},
+                subtitle: isHi
+                    ? 'हिन्दी · डिवाइस भाषा'
+                    : 'English · Device language',
               ),
               _SettingsTile(
                 icon: Icons.info_outline_rounded,
                 title: 'About Alfanumrik',
-                subtitle: 'Version 1.0.0',
-                onTap: () {},
+                subtitle: 'Version 1.1.0',
               ),
             ],
           ),
@@ -194,8 +211,10 @@ class SettingsScreen extends ConsumerWidget {
                         ),
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('Logout',
-                              style: TextStyle(color: AppColors.error)),
+                          child: const Text(
+                            'Logout',
+                            style: TextStyle(color: AppColors.error),
+                          ),
                         ),
                       ],
                     ),
@@ -249,13 +268,15 @@ class _SettingsGroup extends StatelessWidget {
             children: children
                 .asMap()
                 .entries
-                .map((e) => Column(
-                      children: [
-                        e.value,
-                        if (e.key < children.length - 1)
-                          const Divider(indent: 52),
-                      ],
-                    ))
+                .map(
+                  (e) => Column(
+                    children: [
+                      e.value,
+                      if (e.key < children.length - 1)
+                        const Divider(indent: 52),
+                    ],
+                  ),
+                )
                 .toList(),
           ),
         ),
@@ -283,44 +304,53 @@ class _SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: titleColor ?? AppColors.textSecondary),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: titleColor ?? AppColors.textPrimary,
-                    ),
-                  ),
-                  if (subtitle != null)
+    return Semantics(
+      button: onTap != null,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: titleColor ?? AppColors.textSecondary,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      subtitle!,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textTertiary,
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: titleColor ?? AppColors.textPrimary,
                       ),
                     ),
-                ],
+                    if (subtitle != null)
+                      Text(
+                        subtitle!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textTertiary,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            if (trailing != null)
-              trailing!
-            else
-              const Icon(Icons.arrow_forward_ios_rounded,
-                  size: 12, color: AppColors.textTertiary),
-          ],
+              if (trailing != null)
+                trailing!
+              else if (onTap != null)
+                const Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 12,
+                  color: AppColors.textTertiary,
+                ),
+            ],
+          ),
         ),
       ),
     );

@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import { usePermissions } from '@alfanumrik/lib/usePermissions';
 import { usePulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulse } from '@alfanumrik/ui/pulse';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { TeacherPageGate, TeacherStudentsV3 } from '../_components/TeacherV3Pages';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -48,10 +49,12 @@ interface StudentData {
   id: string;
   name: string;
   grade: string;
-  xp: number;
-  streak: number;
-  mastery: number;
-  accuracy: number;
+  /** Server-validated classes this learner belongs to in the teacher roster. */
+  classIds?: string[];
+  xp: number | null;
+  streak: number | null;
+  mastery: number | null;
+  accuracy: number | null;
   subjects?: SubjectBreakdown[];
   recent_scores?: number[];
   strengths?: string[];
@@ -80,7 +83,8 @@ function avatarColor(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-function accuracyColor(pct: number): string {
+function accuracyColor(pct: number | null): string {
+  if (pct === null) return '#7D7264';
   if (pct > 80) return '#059669';
   if (pct >= 50) return '#D97706';
   return '#DC2626';
@@ -170,8 +174,13 @@ function StudentCard({
   const improvements = student.improvements || [];
 
   // Determine if student is struggling
-  const isStruggling = student.mastery < 30 || student.accuracy < 30;
-  const needsAttention = !isStruggling && (student.mastery < 50 || student.accuracy < 50);
+  const isStruggling =
+    (student.mastery !== null && student.mastery < 30) ||
+    (student.accuracy !== null && student.accuracy < 30);
+  const needsAttention = !isStruggling && (
+    (student.mastery !== null && student.mastery < 50) ||
+    (student.accuracy !== null && student.accuracy < 50)
+  );
 
   return (
     <div
@@ -246,29 +255,29 @@ function StudentCard({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
           <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>XP</p>
-            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#7C3AED' }}>{student.xp.toLocaleString()}</p>
+            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#7C3AED' }}>{student.xp?.toLocaleString() ?? '—'}</p>
           </div>
           <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Streak', 'स्ट्रीक')}</p>
-            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#F59E0B' }}>{student.streak}d</p>
+            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#F59E0B' }}>{student.streak === null ? '—' : `${student.streak}d`}</p>
           </div>
           <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Mastery', 'मास्टरी')}</p>
-            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#E8581C' }}>{student.mastery}%</p>
+            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#E8581C' }}>{student.mastery === null ? '—' : `${student.mastery}%`}</p>
           </div>
         </div>
 
         {/* Accuracy */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <span style={{ fontSize: 12, color: '#7D7264' }}>{tt(isHi, 'Accuracy', 'सटीकता')}:</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: accuracyColor(student.accuracy) }}>{student.accuracy}%</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: accuracyColor(student.accuracy) }}>{student.accuracy === null ? '—' : `${student.accuracy}%`}</span>
         </div>
 
         {/* Mastery Progress Bar */}
         <div style={{ backgroundColor: '#F5F0EA', borderRadius: 6, height: 6, overflow: 'hidden' }}>
           <div
             style={{
-              width: `${Math.min(student.mastery, 100)}%`,
+              width: `${Math.min(student.mastery ?? 0, 100)}%`,
               height: '100%',
               backgroundColor: '#E8581C',
               borderRadius: 6,
@@ -483,10 +492,12 @@ function StudentCard({
 }
 
 /* ─── Main Page ─── */
-export default function TeacherStudentsPage() {
+function LegacyTeacherStudentsPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const { can } = usePermissions();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const [classes, setClasses] = useState<ClassData[]>([]);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
@@ -528,8 +539,17 @@ export default function TeacherStudentsPage() {
 
           if (heatData?.matrix) {
             for (const row of heatData.matrix) {
-              if (seenIds.has(row.student_id || row.student_name)) continue;
-              seenIds.add(row.student_id || row.student_name);
+              const rosterKey = row.student_id || row.student_name;
+              if (seenIds.has(rosterKey)) {
+                const existing = students.find((student) =>
+                  row.student_id ? student.id === row.student_id : student.name === row.student_name
+                );
+                if (existing && !existing.classIds?.includes(cls.id)) {
+                  existing.classIds = [...(existing.classIds ?? []), cls.id];
+                }
+                continue;
+              }
+              seenIds.add(rosterKey);
 
               const cells = row.cells || [];
               const totalAttempts = cells.reduce((a: number, c: { attempts?: number }) => a + (c.attempts || 0), 0);
@@ -541,10 +561,11 @@ export default function TeacherStudentsPage() {
                 id: row.student_id || `s-${students.length}`,
                 name: row.student_name || 'Unknown',
                 grade: row.grade || cls.name?.match(/\d+/)?.[0] || '–',
-                xp: row.xp || row.total_xp || Math.round(totalAttempts * 12),
-                streak: row.streak ?? row.streak_days ?? 0,
-                mastery: row.avg_mastery ?? avgMastery,
-                accuracy: row.accuracy ?? (totalAttempts > 0 ? Math.round(avgMastery * 0.95) : 0),
+                classIds: [cls.id],
+                xp: row.xp ?? row.total_xp ?? null,
+                streak: row.streak ?? row.streak_days ?? null,
+                mastery: row.avg_mastery ?? (cells.length > 0 ? avgMastery : null),
+                accuracy: row.accuracy ?? null,
                 subjects: row.subjects,
                 recent_scores: row.recent_scores,
                 strengths: row.strengths,
@@ -556,9 +577,15 @@ export default function TeacherStudentsPage() {
           // Also pull from class students list if available
           if (cls.students) {
             for (const s of cls.students) {
-              if (seenIds.has(s.id)) continue;
+              if (seenIds.has(s.id)) {
+                const existing = students.find((student) => student.id === s.id);
+                if (existing && !existing.classIds?.includes(cls.id)) {
+                  existing.classIds = [...(existing.classIds ?? []), cls.id];
+                }
+                continue;
+              }
               seenIds.add(s.id);
-              students.push(s);
+              students.push({ ...s, classIds: [cls.id] });
             }
           }
         } catch {
@@ -578,22 +605,32 @@ export default function TeacherStudentsPage() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const requested = searchParams?.get('class');
+    if (requested && classes.some((item) => item.id === requested)) setSelectedClass(requested);
+  }, [classes, searchParams]);
+
   // Filter and sort students — struggling students first when filter is active
   const filtered = allStudents
     .filter((s) => {
       const matchesSearch = !search || s.name.toLowerCase().includes(search.toLowerCase());
-      const matchesClass = selectedClass === 'all' || true; // Filter by class — no class_id on StudentData yet; treat all selections as pass-through until class_id is added to StudentData (TODO: wire class_id field)
-      const matchesStruggling = !filterStruggling || s.mastery < 50 || s.accuracy < 50;
+      const matchesClass = selectedClass === 'all' || Boolean(s.classIds?.includes(selectedClass));
+      const matchesStruggling = !filterStruggling ||
+        (s.mastery !== null && s.mastery < 50) ||
+        (s.accuracy !== null && s.accuracy < 50);
       return matchesSearch && matchesClass && matchesStruggling;
     })
     .sort((a, b) => {
       // Always sort struggling students to top
-      const aStruggling = a.mastery < 30 || a.accuracy < 30 ? 2 : (a.mastery < 50 || a.accuracy < 50 ? 1 : 0);
-      const bStruggling = b.mastery < 30 || b.accuracy < 30 ? 2 : (b.mastery < 50 || b.accuracy < 50 ? 1 : 0);
+      const aStruggling = (a.mastery !== null && a.mastery < 30) || (a.accuracy !== null && a.accuracy < 30) ? 2 : ((a.mastery !== null && a.mastery < 50) || (a.accuracy !== null && a.accuracy < 50) ? 1 : 0);
+      const bStruggling = (b.mastery !== null && b.mastery < 30) || (b.accuracy !== null && b.accuracy < 30) ? 2 : ((b.mastery !== null && b.mastery < 50) || (b.accuracy !== null && b.accuracy < 50) ? 1 : 0);
       return bStruggling - aStruggling;
     });
 
-  const strugglingCount = allStudents.filter(s => s.mastery < 50 || s.accuracy < 50).length;
+  const strugglingCount = allStudents.filter(s =>
+    (s.mastery !== null && s.mastery < 50) ||
+    (s.accuracy !== null && s.accuracy < 50)
+  ).length;
 
   // Loading state
   if (authLoading || (loading && !error)) {
@@ -719,7 +756,16 @@ export default function TeacherStudentsPage() {
           {/* Class Filter */}
           <select
             value={selectedClass}
-            onChange={(e) => setSelectedClass(e.target.value)}
+            onChange={(e) => {
+              const nextClass = e.target.value;
+              if (nextClass !== 'all' && !classes.some((item) => item.id === nextClass)) return;
+              setSelectedClass(nextClass);
+              const params = new URLSearchParams(searchParams?.toString() ?? '');
+              if (nextClass === 'all') params.delete('class');
+              else params.set('class', nextClass);
+              const query = params.toString();
+              router.replace(`${pathname ?? '/teacher/students'}${query ? `?${query}` : ''}`);
+            }}
             style={{
               padding: '11px 14px',
               backgroundColor: '#FFFFFF',
@@ -898,6 +944,10 @@ export default function TeacherStudentsPage() {
       
     </div>
   );
+}
+
+export default function TeacherStudentsPage() {
+  return <TeacherPageGate legacy={<LegacyTeacherStudentsPage />} v3={<TeacherStudentsV3 />} />;
 }
 
 const pageStyle: React.CSSProperties = {

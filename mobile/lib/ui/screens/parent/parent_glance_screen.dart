@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../providers/experience_provider.dart';
 import '../../../providers/parent_provider.dart';
 import '../../widgets/error_widget.dart';
 import '../../widgets/loading_widget.dart';
@@ -31,37 +32,40 @@ class ParentGlanceScreen extends ConsumerStatefulWidget {
 }
 
 class _ParentGlanceScreenState extends ConsumerState<ParentGlanceScreen> {
-  /// The currently-selected child's student_id. Null until children load; then
-  /// defaults to the first child.
-  String? _selectedStudentId;
-
   @override
   Widget build(BuildContext context) {
     final isHi = _isHindi(context);
     final childrenAsync = ref.watch(parentChildrenProvider);
+    final oneExperience = ref.watch(oneExperienceProvider).valueOrNull ?? false;
+    final selectedStudentId = ref.watch(selectedParentChildProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        elevation: 0,
-        title: Text(
-          isHi ? 'अभिभावक' : 'Parent',
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: isHi ? 'लॉग आउट' : 'Log out',
-            icon: const Icon(Icons.logout_rounded,
-                color: AppColors.textTertiary, size: 20),
-            onPressed: () => _confirmLogout(context, ref, isHi),
-          ),
-        ],
-      ),
+      appBar: oneExperience
+          ? null
+          : AppBar(
+              backgroundColor: AppColors.surface,
+              elevation: 0,
+              title: Text(
+                isHi ? 'अभिभावक' : 'Parent',
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              actions: [
+                IconButton(
+                  tooltip: isHi ? 'लॉग आउट' : 'Log out',
+                  icon: const Icon(
+                    Icons.logout_rounded,
+                    color: AppColors.textTertiary,
+                    size: 20,
+                  ),
+                  onPressed: () => _confirmLogout(context, ref, isHi),
+                ),
+              ],
+            ),
       body: SafeArea(
         top: false,
         child: childrenAsync.when(
@@ -78,13 +82,14 @@ class _ParentGlanceScreenState extends ConsumerState<ParentGlanceScreen> {
 
             // Default the selection to the first child; keep the prior choice if
             // it still exists in the (possibly refreshed) list.
-            final selectedId = _resolveSelected(children);
+            final selectedId = _resolveSelected(children, selectedStudentId);
 
             return _ParentBody(
               children: children,
               selectedStudentId: selectedId,
               isHi: isHi,
-              onSelect: (id) => setState(() => _selectedStudentId = id),
+              onSelect: (id) =>
+                  ref.read(selectedParentChildProvider.notifier).state = id,
             );
           },
         ),
@@ -92,8 +97,7 @@ class _ParentGlanceScreenState extends ConsumerState<ParentGlanceScreen> {
     );
   }
 
-  String _resolveSelected(List<ParentChild> children) {
-    final current = _selectedStudentId;
+  String _resolveSelected(List<ParentChild> children, String? current) {
     if (current != null && children.any((c) => c.studentId == current)) {
       return current;
     }
@@ -101,14 +105,19 @@ class _ParentGlanceScreenState extends ConsumerState<ParentGlanceScreen> {
   }
 
   Future<void> _confirmLogout(
-      BuildContext context, WidgetRef ref, bool isHi) async {
+    BuildContext context,
+    WidgetRef ref,
+    bool isHi,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(isHi ? 'लॉग आउट करें?' : 'Log out?'),
-        content: Text(isHi
-            ? 'आपको दोबारा साइन इन करना होगा।'
-            : 'You will need to sign in again.'),
+        content: Text(
+          isHi
+              ? 'आपको दोबारा साइन इन करना होगा।'
+              : 'You will need to sign in again.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -149,9 +158,8 @@ class _ParentBody extends ConsumerWidget {
 
     return RefreshIndicator(
       color: AppColors.primary,
-      onRefresh: () => ref
-          .read(parentGlanceProvider(selectedStudentId).notifier)
-          .refresh(),
+      onRefresh: () =>
+          ref.read(parentGlanceProvider(selectedStudentId).notifier).refresh(),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -177,10 +185,7 @@ class _ParentBody extends ConsumerWidget {
                     .refresh(),
               ),
             ),
-            data: (glance) => _GlanceContent(
-              glance: glance,
-              isHi: isHi,
-            ),
+            data: (glance) => _GlanceContent(glance: glance, isHi: isHi),
           ),
         ],
       ),
@@ -327,41 +332,49 @@ class _SnapshotCard extends StatelessWidget {
     final rows = <Widget>[];
 
     // Sessions this week (always present).
-    rows.add(_StatRow(
-      icon: '📚',
-      text: isHi
-          ? '${snapshot.sessionsThisWeek} सेशन इस सप्ताह'
-          : '${snapshot.sessionsThisWeek} ${snapshot.sessionsThisWeek == 1 ? 'session' : 'sessions'} this week',
-    ));
+    rows.add(
+      _StatRow(
+        icon: '📚',
+        text: isHi
+            ? '${snapshot.sessionsThisWeek} सेशन इस सप्ताह'
+            : '${snapshot.sessionsThisWeek} ${snapshot.sessionsThisWeek == 1 ? 'session' : 'sessions'} this week',
+      ),
+    );
 
     // Streak (always present).
-    rows.add(_StatRow(
-      icon: '🔥',
-      text: isHi
-          ? '${snapshot.streakDays}-दिन की स्ट्रीक'
-          : '${snapshot.streakDays}-day streak',
-    ));
+    rows.add(
+      _StatRow(
+        icon: '🔥',
+        text: isHi
+            ? '${snapshot.streakDays}-दिन की स्ट्रीक'
+            : '${snapshot.streakDays}-day streak',
+      ),
+    );
 
     // Accuracy (optional).
     final accuracy = snapshot.accuracy;
     if (accuracy != null) {
-      rows.add(_StatRow(
-        icon: '🎯',
-        text: isHi
-            ? '${accuracy.round()}% सटीकता'
-            : '${accuracy.round()}% accuracy',
-      ));
+      rows.add(
+        _StatRow(
+          icon: '🎯',
+          text: isHi
+              ? '${accuracy.round()}% सटीकता'
+              : '${accuracy.round()}% accuracy',
+        ),
+      );
     }
 
     // Average score (optional).
     final avg = snapshot.avgScore;
     if (avg != null) {
-      rows.add(_StatRow(
-        icon: '📊',
-        text: isHi
-            ? 'औसत स्कोर ${avg.round()}%'
-            : 'Average score ${avg.round()}%',
-      ));
+      rows.add(
+        _StatRow(
+          icon: '📊',
+          text: isHi
+              ? 'औसत स्कोर ${avg.round()}%'
+              : 'Average score ${avg.round()}%',
+        ),
+      );
     }
 
     return Container(
@@ -565,10 +578,9 @@ class _EncourageButton extends ConsumerWidget {
     if (selected == null || !context.mounted) return;
 
     // P13: send ONLY { student_id, message_key }. Do not log either value.
-    final outcome = await ref.read(encourageProvider).send(
-          studentId: studentId,
-          messageKey: selected.messageKey,
-        );
+    final outcome = await ref
+        .read(encourageProvider)
+        .send(studentId: studentId, messageKey: selected.messageKey);
     if (!context.mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -577,8 +589,8 @@ class _EncourageButton extends ConsumerWidget {
         backgroundColor: outcome == EncourageOutcome.success
             ? AppColors.success
             : (outcome == EncourageOutcome.rateLimited
-                ? AppColors.warning
-                : AppColors.error),
+                  ? AppColors.warning
+                  : AppColors.error),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -624,7 +636,10 @@ class _CheerPickerSheet extends StatelessWidget {
             ...kCheerPresets.map(
               (preset) => ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Text(preset.icon, style: const TextStyle(fontSize: 24)),
+                leading: Text(
+                  preset.icon,
+                  style: const TextStyle(fontSize: 24),
+                ),
                 title: Text(
                   preset.title(isHi),
                   style: const TextStyle(

@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,10 +15,13 @@ import '../../ui/screens/quiz/quiz_screen.dart';
 import '../../ui/screens/progress/progress_screen.dart';
 import '../../ui/screens/leaderboard/leaderboard_screen.dart';
 import '../../ui/screens/parent/parent_glance_screen.dart';
+import '../../ui/screens/parent/parent_v3_sections.dart';
 import '../../ui/screens/stem/stem_lab_screen.dart';
 import '../../ui/screens/subscription/plans_screen.dart';
 import '../../ui/screens/settings/settings_screen.dart';
 import '../../ui/widgets/app_shell.dart';
+import '../../ui/widgets/parent_app_shell.dart';
+import '../../providers/experience_provider.dart';
 import '../../providers/role_provider.dart';
 import '../constants/api_constants.dart';
 
@@ -33,12 +36,12 @@ final routerProvider = Provider<GoRouter>((ref) {
     // `ApiConstants.useV2` is ON. When OFF it is null, so the [roleProvider] is
     // NEVER initialized — no `get_user_role` RPC is ever issued on the auth
     // path of a flag-OFF build, and the router behaves exactly as it does today.
-    refreshListenable:
-        ApiConstants.useV2 ? _RoleRefreshNotifier(ref) : null,
+    refreshListenable: ApiConstants.useV2 ? _RoleRefreshNotifier(ref) : null,
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
       final isAuth = session != null;
-      final isLoginRoute = state.matchedLocation == '/login' ||
+      final isLoginRoute =
+          state.matchedLocation == '/login' ||
           state.matchedLocation == '/signup';
 
       if (!isAuth && !isLoginRoute) return '/login';
@@ -50,17 +53,34 @@ final routerProvider = Provider<GoRouter>((ref) {
         return null;
       }
 
-      // ── /v2 flag ON: role-aware fork. ──
-      // A guardian lands on the parent tree (`/parent`); everyone else (student
-      // or not-yet-resolved role) lands on the existing student flow (`/today`).
-      // `isGuardianProvider` defaults to false while the role lookup is loading
-      // or on error, so a student is NEVER blocked on the async lookup and a
-      // guardian on a slow network briefly sees `/today` until the role
-      // resolves and the refreshListenable re-runs this redirect.
-      final isGuardian = ref.read(isGuardianProvider);
+      // ── /v2 flag ON: role-aware, fail-closed fork. ──
+      // Restricted role destinations never flash while the authoritative RPC
+      // is loading. Unknown/unsupported roles get a recoverable access screen
+      // instead of being silently treated as students.
+      final roleAsync = ref.read(roleProvider);
+      if (roleAsync.isLoading) {
+        return state.matchedLocation == '/role-check' ? null : '/role-check';
+      }
+      final role = roleAsync.valueOrNull ?? UserRole.unknown;
+      if (role == UserRole.unknown) {
+        return state.matchedLocation == '/unsupported-role'
+            ? null
+            : '/unsupported-role';
+      }
+      final isGuardian = role == UserRole.guardian;
+      final experienceAsync = ref.read(oneExperienceProvider);
+      if (experienceAsync.isLoading) {
+        return state.matchedLocation == '/role-check' ? null : '/role-check';
+      }
+      final oneExperience = experienceAsync.valueOrNull ?? false;
 
       if (isAuth && isLoginRoute) {
-        return isGuardian ? '/parent' : '/today';
+        return isGuardian ? '/parent' : (oneExperience ? '/today' : '/');
+      }
+
+      if (state.matchedLocation == '/role-check' ||
+          state.matchedLocation == '/unsupported-role') {
+        return isGuardian ? '/parent' : (oneExperience ? '/today' : '/');
       }
 
       if (isAuth && isGuardian) {
@@ -70,29 +90,43 @@ final routerProvider = Provider<GoRouter>((ref) {
             !state.matchedLocation.startsWith('/parent')) {
           return '/parent';
         }
+        if (!oneExperience && state.matchedLocation != '/parent') {
+          return '/parent';
+        }
         return null;
+      }
+
+      const oneExperienceOnlyRoutes = {'/today', '/progress', '/leaderboard'};
+      if (!oneExperience &&
+          oneExperienceOnlyRoutes.contains(state.matchedLocation)) {
+        return '/';
       }
 
       // Student (or unresolved role) under the flag: the adaptive Today home is
       // the default authed landing. Redirect the legacy Dashboard root to it.
       if (isAuth && state.matchedLocation == '/') {
-        return '/today';
+        return oneExperience ? '/today' : null;
       }
       // A non-guardian must never sit on the parent tree.
       if (isAuth && state.matchedLocation.startsWith('/parent')) {
-        return '/today';
+        return oneExperience ? '/today' : '/';
       }
       return null;
     },
     routes: [
       // Auth routes (no shell)
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(
         path: '/signup',
         builder: (context, state) => const SignupScreen(),
+      ),
+      GoRoute(
+        path: '/role-check',
+        builder: (context, state) => const _RoleCheckScreen(),
+      ),
+      GoRoute(
+        path: '/unsupported-role',
+        builder: (context, state) => const _UnsupportedRoleScreen(),
       ),
 
       // Main app with bottom nav shell
@@ -101,9 +135,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: DashboardScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: DashboardScreen()),
           ),
           // /v2 adaptive Today home. Only reachable when ApiConstants.useV2 is
           // ON (the redirect above sends '/' → '/today' and the 4-tab nav
@@ -111,15 +144,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           // resolves; flag-OFF builds simply never navigate to it.
           GoRoute(
             path: '/today',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: TodayScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: TodayScreen()),
           ),
           GoRoute(
             path: '/learn',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: SubjectsScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: SubjectsScreen()),
             routes: [
               GoRoute(
                 path: ':subjectCode',
@@ -140,15 +171,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/chat',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ChatScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: ChatScreen()),
           ),
           GoRoute(
             path: '/quiz',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: QuizScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: QuizScreen()),
           ),
           // /v2 student-parity surfaces (Wave 2.3b). Registered
           // unconditionally so the routes always resolve; flag-OFF builds
@@ -156,30 +185,24 @@ final routerProvider = Provider<GoRouter>((ref) {
           // the shell so they keep the bottom nav.
           GoRoute(
             path: '/progress',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: ProgressScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: ProgressScreen()),
           ),
           GoRoute(
             path: '/leaderboard',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: LeaderboardScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: LeaderboardScreen()),
           ),
           GoRoute(
             path: '/settings',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: SettingsScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: SettingsScreen()),
           ),
         ],
       ),
 
       // Full-screen routes (no bottom nav)
-      GoRoute(
-        path: '/plans',
-        builder: (context, state) => const PlansScreen(),
-      ),
+      GoRoute(path: '/plans', builder: (context, state) => const PlansScreen()),
       // STEM Lab — Tier 3 R12 Phase 1: WebView wrap of /stem-centre.
       // Full-screen (no bottom nav) so simulations get max screen real estate.
       GoRoute(
@@ -187,15 +210,42 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const StemLabScreen(),
       ),
 
-      // ── Parent tree (Wave 2.4) ──────────────────────────────────────────
-      // The guardian's glance-first home. Registered unconditionally so the
-      // route always resolves, but only REACHABLE when `ApiConstants.useV2` is
-      // ON AND the authenticated user is a guardian (the redirect above forks
-      // guardians here and keeps non-guardians out). Full-screen (no bottom nav
-      // shell) — the parent mobile is intentionally minimal: glance + logout.
-      GoRoute(
-        path: '/parent',
-        builder: (context, state) => const ParentGlanceScreen(),
+      // Guardian One Experience. ParentAppShell returns the legacy glance
+      // unchanged when the server cohort is OFF.
+      ShellRoute(
+        builder: (context, state, child) => ParentAppShell(child: child),
+        routes: [
+          GoRoute(
+            path: '/parent',
+            builder: (context, state) => const ParentGlanceScreen(),
+          ),
+          GoRoute(
+            path: '/parent/progress',
+            builder: (context, state) =>
+                const ParentV3SectionScreen(section: ParentSection.progress),
+          ),
+          GoRoute(
+            path: '/parent/plan',
+            builder: (context, state) =>
+                const ParentV3SectionScreen(section: ParentSection.plan),
+          ),
+          GoRoute(
+            path: '/parent/messages',
+            builder: (context, state) =>
+                const ParentV3SectionScreen(section: ParentSection.messages),
+          ),
+          GoRoute(
+            path: '/parent/messages/:threadId',
+            builder: (context, state) => ParentConversationScreen(
+              threadId: state.pathParameters['threadId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/parent/more',
+            builder: (context, state) =>
+                const ParentV3SectionScreen(section: ParentSection.more),
+          ),
+        ],
       ),
     ],
   );
@@ -214,13 +264,97 @@ class _RoleRefreshNotifier extends ChangeNotifier {
       roleProvider,
       (_, __) => notifyListeners(),
     );
+    _experienceSub = ref.listen<AsyncValue<bool>>(
+      oneExperienceProvider,
+      (_, __) => notifyListeners(),
+    );
   }
 
   late final ProviderSubscription<AsyncValue<UserRole>> _sub;
+  late final ProviderSubscription<AsyncValue<bool>> _experienceSub;
 
   @override
   void dispose() {
     _sub.close();
+    _experienceSub.close();
     super.dispose();
+  }
+}
+
+class _RoleCheckScreen extends StatelessWidget {
+  const _RoleCheckScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Semantics(
+            liveRegion: true,
+            label: 'Checking account access',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Checking your account…'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UnsupportedRoleScreen extends ConsumerWidget {
+  const _UnsupportedRoleScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.lock_person_outlined, size: 40),
+                  const SizedBox(height: 16),
+                  Text(
+                    'This account is not available in the mobile app.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Student and guardian accounts are supported. You can retry the role check or sign in with another account.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () => ref.invalidate(roleProvider),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () async {
+                      await Supabase.instance.client.auth.signOut();
+                      ref.invalidate(roleProvider);
+                      if (context.mounted) context.go('/login');
+                    },
+                    child: const Text('Use another account'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

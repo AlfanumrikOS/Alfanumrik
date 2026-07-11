@@ -8,17 +8,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // change.
 import '../../core/network/api_result.dart';
 import '../../core/cache/cache_manager.dart';
+import '../../core/constants/api_constants.dart';
 import '../models/student.dart';
 
 class AuthRepository {
   final SupabaseClient _client;
   final CacheManager _cache;
 
-  AuthRepository({
-    SupabaseClient? client,
-    CacheManager? cache,
-  })  : _client = client ?? Supabase.instance.client,
-        _cache = cache ?? CacheManager();
+  AuthRepository({SupabaseClient? client, CacheManager? cache})
+    : _client = client ?? Supabase.instance.client,
+      _cache = cache ?? CacheManager();
 
   /// Current auth user
   User? get currentUser => _client.auth.currentUser;
@@ -64,7 +63,8 @@ class AuthRepository {
         'role': 'student',
         'plan_code': 'free',
         'xp_total': 0, // Legacy; Performance Score is computed server-side
-        'level': 1,   // Legacy; level derived from Performance Score via score-config
+        'level':
+            1, // Legacy; level derived from Performance Score via score-config
       };
 
       final res = await _client
@@ -94,7 +94,7 @@ class AuthRepository {
   }
 
   /// Sign in with email + password
-  Future<ApiResult<Student>> signIn({
+  Future<ApiResult<Student?>> signIn({
     required String email,
     required String password,
   }) async {
@@ -116,6 +116,11 @@ class AuthRepository {
           .maybeSingle();
 
       if (res == null) {
+        // One Experience supports guardian authentication as well as student
+        // authentication. The authoritative role RPC and server cohort check
+        // run immediately after this call; do not invent a Student model for a
+        // guardian. Legacy builds retain the historical student-only failure.
+        if (ApiConstants.useV2) return const ApiSuccess(null);
         return const ApiFailure('Student profile not found.');
       }
 

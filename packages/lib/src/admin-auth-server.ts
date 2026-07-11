@@ -12,9 +12,9 @@
  * mid-session) rather than the only barrier.
  */
 
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { ADMIN_LEVELS, type AdminLevel, hasMinimumLevel } from './admin-auth';
+import { createSupabaseServerClient } from './supabase-server';
 
 export interface ServerAdminAuth {
   authorized: true;
@@ -34,42 +34,6 @@ export interface ServerAdminAuthFailure {
 
 export type ServerAdminAuthResult = ServerAdminAuth | ServerAdminAuthFailure;
 
-function parseSupabaseAuthCookieValue(raw: string): string | null {
-  try {
-    const decoded = decodeURIComponent(raw);
-    const parsed = JSON.parse(decoded);
-    return parsed?.access_token || parsed?.[0]?.access_token || null;
-  } catch {
-    return null;
-  }
-}
-
-async function extractAccessToken(): Promise<string | null> {
-  const cookieStore = await cookies();
-  // Supabase auth cookie name: sb-<project-ref>-auth-token (sometimes chunked
-  // as .0/.1/.2 if the JWT is long).
-  const all = cookieStore.getAll();
-  const single = all.find((c) => /^sb-.+-auth-token$/.test(c.name));
-  if (single) {
-    const token = parseSupabaseAuthCookieValue(single.value);
-    if (token) return token;
-  }
-  // Chunked variant: sb-<ref>-auth-token.0, .1, ...
-  const chunks = all
-    .filter((c) => /^sb-.+-auth-token\.\d+$/.test(c.name))
-    .sort((a, b) => {
-      const idxA = parseInt(a.name.split('.').pop() || '0', 10);
-      const idxB = parseInt(b.name.split('.').pop() || '0', 10);
-      return idxA - idxB;
-    });
-  if (chunks.length > 0) {
-    const combined = chunks.map((c) => c.value).join('');
-    const token = parseSupabaseAuthCookieValue(combined);
-    if (token) return token;
-  }
-  return null;
-}
-
 /**
  * Server-side admin authorization. Reads cookies, verifies session, looks up
  * admin_users, and checks `requiredLevel`. Returns a typed result; the caller
@@ -82,19 +46,19 @@ export async function authorizeAdminServer(
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return { authorized: false, reason: 'config_missing' };
 
-  const accessToken = await extractAccessToken();
-  if (!accessToken) return { authorized: false, reason: 'no_session' };
-
-  // Verify the token with GoTrue.
-  const userRes = await fetch(`${url}/auth/v1/user`, {
-    headers: { apikey: key, Authorization: `Bearer ${accessToken}` },
-    cache: 'no-store',
-  });
-  if (!userRes.ok) return { authorized: false, reason: 'session_invalid' };
-
-  const userData = await userRes.json();
-  const userId = userData?.id;
-  if (!userId) return { authorized: false, reason: 'session_invalid' };
+  // Let @supabase/ssr decode the official cookie format (including base64 and
+  // chunked variants) and verify the JWT with GoTrue. Manual JSON parsing of
+  // the cookie diverged from current @supabase/ssr serialization.
+  let userData: { id: string; email?: string };
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) return { authorized: false, reason: error ? 'session_invalid' : 'no_session' };
+    userData = { id: user.id, email: user.email };
+  } catch {
+    return { authorized: false, reason: 'session_invalid' };
+  }
+  const userId = userData.id;
 
   // Service-role lookup against admin_users.
   const adminRes = await fetch(

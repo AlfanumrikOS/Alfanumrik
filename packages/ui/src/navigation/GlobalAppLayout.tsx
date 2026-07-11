@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { ExperiencePresenceProvider, useExperiencePresence } from '../v3/foundations/ExperiencePresence';
 
 // Lazy-load the student navigation chrome off the always-on shared layout
 // chunk (P10 shared-JS budget). These two components only render for a
@@ -24,8 +25,13 @@ const MobileBottomNav = dynamic(
 );
 
 export function GlobalAppLayout({ children }: { children: React.ReactNode }) {
+  return <ExperiencePresenceProvider><GlobalAppLayoutContent>{children}</GlobalAppLayoutContent></ExperiencePresenceProvider>;
+}
+
+function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isLoggedIn, activeRole } = useAuth();
+  const { active: experienceV3Active } = useExperiencePresence();
   
   // Foxy requires edge-to-edge true full screen and has its own back navigation
   const isFocusedFoxy = pathname === '/foxy' || pathname?.startsWith('/foxy');
@@ -60,7 +66,7 @@ export function GlobalAppLayout({ children }: { children: React.ReactNode }) {
                      pathname?.startsWith('/demo') ||
                      pathname?.startsWith('/settings');
 
-  const showNav = isLoggedIn && activeRole === 'student' && !isFocusedFoxy && !isExcluded;
+  const showNav = isLoggedIn && activeRole === 'student' && !isFocusedFoxy && !isExcluded && !experienceV3Active;
 
   return (
     <>
@@ -71,7 +77,7 @@ export function GlobalAppLayout({ children }: { children: React.ReactNode }) {
       */}
       {showNav && <DesktopSidebar />}
       {showNav && <MobileBottomNav />}
-      {children}
+      {experienceV3Active ? children : <div id="main-content" tabIndex={-1}>{children}</div>}
     </>
   );
 }
