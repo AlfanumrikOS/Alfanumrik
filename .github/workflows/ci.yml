@@ -56,7 +56,7 @@ jobs:
       # must fail CI. If a finding is a known false positive, allowlist it via
       # .gitleaks.toml (preferred) rather than re-disabling this gate.
       - name: Gitleaks scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
