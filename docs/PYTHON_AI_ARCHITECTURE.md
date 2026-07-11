@@ -87,7 +87,7 @@ Alternatives considered and rejected:
 Routing summary:
 - **Web/mobile clients** keep calling Next.js + Supabase. No SDK change.
 - **Supabase Edge Functions** stay live as the public AI endpoint URL. During cutover, each function body becomes a thin proxy that forwards to Cloud Run. After cutover, we may flatten the proxy by pointing clients at Cloud Run directly — that decision lives in Phase 6.
-- **Cloud Run is internet-facing** with `--allow-unauthenticated` because the Edge proxy already validates the caller's Supabase JWT and forwards it; we re-validate inside FastAPI before doing any work.
+- **Cloud Run has internet-routable ingress but requires Invoker IAM.** A trusted Edge or server proxy must present a short-lived Google identity token in `X-Serverless-Authorization` while forwarding the user's Supabase JWT in `Authorization`; FastAPI then re-validates the user before doing work. Broad `allUsers` and `allAuthenticatedUsers` invokers are forbidden.
 
 > **Why `/live` instead of `/healthz`** (Cloud Run frontend interception, confirmed 2026-05-24). Cloud Run's frontend intercepts the path `/healthz` before it reaches the container — Google's frontend returns its own 404 HTML page for that exact URL. Verified by: an unknown path like `/foo` returns FastAPI's JSON 404, `/docs` works, `/openapi.json` shows `/healthz` IS registered on the FastAPI router, but external `curl /healthz` returns Google's HTML 404 instead of `{"status":"ok"}`. `/readyz` is not reserved by Cloud Run and works fine. We renamed the liveness endpoint to `/live` (Cloud Run does NOT reserve that path). The response shape and probe semantics are unchanged — only the URL string differs.
 
