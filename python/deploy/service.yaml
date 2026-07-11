@@ -61,8 +61,12 @@ metadata:
     # Default to ALL traffic on the new revision. Phase 3 swaps this for
     # split-traffic blue/green via `gcloud run services update-traffic`.
     run.googleapis.com/launch-stage: GA
-    # Ingress: all means publicly reachable. Phase 5 may flip this to
-    # internal-and-cloud-load-balancing once the API gateway lands.
+    # Ingress remains internet-routable for authenticated external callers,
+    # but Cloud Run's Invoker IAM check is mandatory and the deploy workflow
+    # removes broad invokers. Do not use --no-invoker-iam-check or add
+    # allUsers/allAuthenticatedUsers.
+    # Phase 5 may flip this to internal-and-cloud-load-balancing once an
+    # authenticated API gateway is the sole caller.
     run.googleapis.com/ingress: all
 spec:
   template:
@@ -122,6 +126,8 @@ spec:
               value: "83"
             - name: ALLOWED_ORIGINS
               value: ${ALLOWED_ORIGINS}
+            - name: SUPABASE_JWT_AUDIENCE
+              value: authenticated
             # ── Secret-Manager-backed env vars ────────────────────────────
             # Cloud Run pulls these on every revision start. Rotation =
             # `gcloud secrets versions add` + redeploy (or `gcloud run

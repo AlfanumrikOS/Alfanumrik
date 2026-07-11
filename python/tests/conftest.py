@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
+from fastapi import Request
 
 # ─── Environment + settings ──────────────────────────────────────────────────
 
@@ -52,11 +53,13 @@ def _env_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LOG_LEVEL", "WARNING")
 
     # Force the cached Settings + Supabase client to rebuild against the new env.
+    from services.ai.api.auth import _reset_auth_cache
     from services.ai.config import get_settings
     from services.ai.db.supabase import reset_service_client
     from services.ai.mol.feature_flag import _reset_flag_cache
 
     get_settings.cache_clear()
+    _reset_auth_cache()
     reset_service_client()
     _reset_flag_cache()
 
@@ -118,6 +121,20 @@ def mock_supabase_client(monkeypatch: pytest.MonkeyPatch) -> _FakeSupabase:
     # lazy import (`from ..db.supabase import get_service_client`), so
     # patching the source module is enough.
     return fake
+
+
+@pytest.fixture()
+def matching_student_dependency():
+    """Authorize the student identifier carried by a MoL behavior test body."""
+
+    async def _resolve(request: Request) -> dict[str, object]:
+        body = await request.json()
+        context = body.get("student_context")
+        student_id = context.get("student_id", "") if isinstance(context, dict) else ""
+        grade = context.get("grade", "") if isinstance(context, dict) else ""
+        return {"id": student_id, "grade": grade, "preferred_subject": None}
+
+    return _resolve
 
 
 # ─── HTTP mocks ──────────────────────────────────────────────────────────────

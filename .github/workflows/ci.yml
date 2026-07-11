@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -387,11 +390,10 @@ jobs:
         id: check-secrets
         run: |
           if [ -z "${{ secrets.STAGING_SUPABASE_URL }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}" ]; then
-            echo "::warning::Integration test secrets not configured. Skipping integration test run."
-            echo "secrets_present=false" >> $GITHUB_OUTPUT
-          else
-            echo "secrets_present=true" >> $GITHUB_OUTPUT
+            echo "::error::Trusted integration job requires STAGING_SUPABASE_URL and STAGING_SUPABASE_SERVICE_ROLE_KEY."
+            exit 1
           fi
+          echo "secrets_present=true" >> "$GITHUB_OUTPUT"
 
       - name: Run integration tests
         if: steps.check-secrets.outputs.secrets_present == 'true'
@@ -710,71 +712,84 @@ jobs:
           retention-days: 14
 
   # ── Step 3: Post-deploy health check (main branch only) ──
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - secret-scan
+      - quality
+      - edge-function-tests
+      - integration-tests
+      - build
+      - e2e
+      - e2e-critical-paths
+    steps:
+      - name: Enforce required CI outcomes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SAME_REPOSITORY_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          node <<'NODE'
+          const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
+          const required = ['secret-scan','quality','edge-function-tests','integration-tests','build'];
+          const forkSkips = [];
+          if (process.env.EVENT_NAME === 'pull_request') {
+            required.push('e2e');
+            if (process.env.SAME_REPOSITORY_PR === 'true') {
+              required.push('e2e-critical-paths');
+            } else {
+              required.splice(required.indexOf('integration-tests'), 1);
+              forkSkips.push('integration-tests', 'e2e-critical-paths');
+            }
+          }
+          const failures = required.filter((job) => needs[job]?.result !== 'success');
+          failures.push(...forkSkips.filter((job) => needs[job]?.result !== 'skipped'));
+          if (failures.length) {
+            console.error('CI Gate failed: ' + failures.map((job) => job + '=' + (needs[job]?.result || 'missing')).join(', '));
+            process.exit(1);
+          }
+          console.log('CI Gate passed.');
+          NODE
+
   health-check:
     name: Post-Deploy Health Check
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: [build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - name: Wait for Vercel deployment
-        run: sleep 60
-
-      - name: Health check
+      - name: Poll canonical production for healthy exact SHA
         # Production is served from the canonical alfanumrik.com domain.
         # The .vercel.app subdomain is not aliased to this project and 404s —
         # was a past source of false health-check failures in CI.
         #
-        # Vercel deployment protection (and the Security Checkpoint) blocks
-        # anonymous requests from datacenter IPs (GitHub Actions runners) with
-        # a protection challenge — typically HTTP 401/403, sometimes 429. Real
-        # browser users pass automatically; CI cannot. Two tiers of handling,
-        # mirroring deploy-production.yml's health-check job:
-        #
-        #   1. PROPER FIX — Protection Bypass for Automation. If the repo secret
-        #      VERCEL_AUTOMATION_BYPASS_SECRET is set (and the matching value is
-        #      configured in Vercel → Settings → Deployment Protection →
-        #      Protection Bypass for Automation), we send the
-        #      `x-vercel-protection-bypass` header so the probe reaches the real
-        #      app and does TRUE verification (hard-fail on non-200).
-        #      Docs: https://vercel.com/docs/security/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation
-        #
-        #   2. SOFT-PASS — only for the deployment-protection case. If the secret
-        #      is NOT set, OR every attempt comes back as a clear protection
-        #      challenge (401/403/429 from the protection layer), we can't verify
-        #      health but that does NOT mean prod is down (Vercel deploys
-        #      independently of this job; real users are unaffected). We emit a
-        #      ::warning:: pointing at the bypass secret as the real fix and
-        #      exit 0 so CI stays green.
-        #
-        # GENUINE OUTAGES STILL HARD-FAIL: HTTP 5xx from the app, connection
-        # refused, DNS failure, or curl timeout after all retries → exit 1.
+        # Fail closed unless canonical production reports healthy exact SHA.
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           TARGET_URL="https://alfanumrik.com/api/v1/health"
-          echo "Checking: $TARGET_URL"
-
-          BYPASS_HEADER=()
-          if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
-            BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
-            echo "Using Vercel automation bypass secret — performing TRUE verification."
-          else
-            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — health check will soft-pass on deployment-protection challenges (401/403/429). Configure the bypass secret in Vercel + GitHub repo secrets to get real health verification."
-          fi
-
-          # ALL_PROTECTION starts true; cleared the moment we see ANY response
-          # that is not a deployment-protection challenge (i.e. a real signal).
-          ALL_PROTECTION=1
-          REAL_FAIL=0
+          EXPECTED_SHA="${GITHUB_SHA:0:7}"
+          POLL_WINDOW_SECONDS=600
+          DEADLINE=$((SECONDS + POLL_WINDOW_SECONDS))
+          ATTEMPT=0
           LAST_STATUS=""
-          for i in 1 2 3 4 5; do
+          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            echo "::error::Bypass secret is required for CI production verification."
+            exit 1
+          fi
+          BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
+          set +e
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
             # Capture body and status WITHOUT piping into head/tail. Writing into
             # a `head` that exits early closes the pipe and produces the
             # "echo: write error: Broken pipe" seen in the old loop. Use a
             # plain temp file + curl's own %{http_code} instead.
             HEADERS_FILE=$(mktemp)
             BODY_FILE=$(mktemp)
-            BODY=$(curl -sS -m 20 -D "$HEADERS_FILE" -o "$BODY_FILE" -w "%{http_code}" \
+            BODY=$(curl -sS -m 10 -D "$HEADERS_FILE" -o "$BODY_FILE" -w "%{http_code}" \
               -A "Alfanumrik-CI-HealthCheck/1.0 (+https://alfanumrik.com; vercel-monitoring)" \
               -H "Accept: application/json" \
               -H "x-health-probe: github-actions" \
@@ -784,73 +799,35 @@ jobs:
             STATUS="$BODY"
             LAST_STATUS="$STATUS"
 
-            # curl-level failure: connection refused / DNS failure / timeout.
-            # This is a genuine outage signal — never soft-pass it.
             if [ "$CURL_EXIT" != "0" ]; then
-              if [ "$STATUS" = "000" ] && grep -qiE 'Vercel Security Checkpoint|x-vercel-mitigated: challenge|x-vercel-challenge-token' "$HEADERS_FILE" "$BODY_FILE" 2>/dev/null; then
-                echo "Attempt $i/5 hit Vercel security checkpoint (curl exit $CURL_EXIT) — treating as protection challenge"
-                ALL_PROTECTION=1
-                REAL_FAIL=0
-                LAST_STATUS="429"
-                rm -f "$HEADERS_FILE" "$BODY_FILE"
-                sleep 30
-                continue
-              fi
-              echo "Attempt $i/5: curl failed (exit $CURL_EXIT) — connection/DNS/timeout"
-              ALL_PROTECTION=0
-              REAL_FAIL=1
+              echo "Attempt $ATTEMPT: curl failed (exit $CURL_EXIT)"
               LAST_STATUS="curl-exit-$CURL_EXIT"
               rm -f "$HEADERS_FILE" "$BODY_FILE"
-              sleep 15
+              REMAINING=$((DEADLINE - SECONDS))
+              if [ "$REMAINING" -le 0 ]; then break; fi
+              SLEEP_SECONDS=20
+              if [ "$REMAINING" -lt "$SLEEP_SECONDS" ]; then SLEEP_SECONDS="$REMAINING"; fi
+              sleep "$SLEEP_SECONDS"
               continue
             fi
 
             if [ "$STATUS" = "200" ]; then
-              echo "Health check passed (attempt $i)"
-              head -c 500 "$BODY_FILE" || true
-              echo ""
-              rm -f "$HEADERS_FILE" "$BODY_FILE"
-              exit 0
+              HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$BODY_FILE")
+              DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$BODY_FILE")
+              if [ "$HEALTHY" = "true" ] && [ "$DEPLOYED_SHA" = "$EXPECTED_SHA" ]; then
+                rm -f "$HEADERS_FILE" "$BODY_FILE"
+                exit 0
+              fi
             fi
 
-            # Deployment-protection challenge: 401/403 from the protection layer,
-            # or 429 from the Security Checkpoint. These are the ONLY statuses
-            # eligible for soft-pass.
-            case "$STATUS" in
-              401|403|429)
-                echo "Attempt $i/5 returned HTTP $STATUS (deployment-protection challenge)"
-                ;;
-              5*)
-                # App-level 5xx — a genuine outage. Hard-fail signal.
-                echo "Attempt $i/5 returned HTTP $STATUS (app error — real failure)"
-                ALL_PROTECTION=0
-                REAL_FAIL=1
-                ;;
-              *)
-                # Any other non-200 (e.g. 404, 400) is also a real signal,
-                # not a protection challenge — do not blanket soft-pass.
-                echo "Attempt $i/5 returned HTTP $STATUS (unexpected — real failure)"
-                ALL_PROTECTION=0
-                REAL_FAIL=1
-                ;;
-            esac
-
-            # Longer backoff on 429 so the checkpoint can clear; quick otherwise.
-            if [ "$STATUS" = "429" ]; then
-              sleep 30
-            else
-              sleep 15
-            fi
+            echo "Attempt $ATTEMPT did not prove healthy exact SHA (http=$STATUS)."
             rm -f "$HEADERS_FILE" "$BODY_FILE"
+            REMAINING=$((DEADLINE - SECONDS))
+            if [ "$REMAINING" -le 0 ]; then break; fi
+            SLEEP_SECONDS=20
+            if [ "$REMAINING" -lt "$SLEEP_SECONDS" ]; then SLEEP_SECONDS="$REMAINING"; fi
+            sleep "$SLEEP_SECONDS"
           done
 
-          # Soft-pass ONLY when every attempt was a deployment-protection
-          # challenge and no real-failure signal was ever seen. The proper fix
-          # is to configure VERCEL_AUTOMATION_BYPASS_SECRET (see header comment).
-          if [ "$ALL_PROTECTION" = "1" ] && [ "$REAL_FAIL" = "0" ]; then
-            echo "::warning::All 5 attempts were blocked by Vercel deployment protection (last status: $LAST_STATUS). Could not verify health from the CI runner IP, but production is reachable by real users (Vercel deploys independently). Soft-passing. Configure VERCEL_AUTOMATION_BYPASS_SECRET in Vercel + GitHub repo secrets for real verification."
-            exit 0
-          fi
-
-          echo "Health check failed after 5 attempts (last status: $LAST_STATUS)"
+          echo "::error::Healthy exact SHA $EXPECTED_SHA was not observed within the bounded polling window (last=$LAST_STATUS)."
           exit 1

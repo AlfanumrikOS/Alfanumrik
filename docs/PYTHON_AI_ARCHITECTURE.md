@@ -245,7 +245,7 @@ Trace propagation: every request carries `X-Request-Id`. The Edge proxy generate
             └─────────────────────────────────────┘
 ```
 
-Manual staging deploy: `workflow_dispatch` with `target=staging` skips production and ships to `ai-services-staging` in the staging GCP project.
+Manual staging deploys are suspended in Phase 0. Restore them only after staging has a separate GCP project, service accounts, protected GitHub environment, and ref/environment-scoped WIF provider; the production workflow cannot select staging or be manually dispatched.
 
 ---
 

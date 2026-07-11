@@ -3,22 +3,18 @@ name: Deploy Production — Alfanumrik
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      force_deploy_all_functions:
-        description: 'Force-redeploy ALL active Edge Functions regardless of git diff (use when a previous deploy was cancelled and Edge Function code is stale)'
-        type: boolean
-        default: false
 
 concurrency:
   group: deploy-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   NODE_VERSION: '22'
   # Pin Supabase CLI in CI so production deploys do not depend on unauthenticated
   # GitHub release lookups for "latest", which can rate-limit before deploy.
   SUPABASE_CLI_VERSION: '2.109.1'
+  # Rollback syntax and JSON inspection are policy-checked against this version.
+  VERCEL_CLI_VERSION: '55.0.0'
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   # Canonical production domain — already aliased to the latest deployment after
@@ -27,6 +23,199 @@ env:
   PRODUCTION_DOMAIN: 'https://alfanumrik.com'
 
 jobs:
+  production-verification-gate:
+    name: Prove Vercel Bypass Reaches App
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions: {}
+    outputs:
+      rollback_baseline_valid: ${{ steps.baseline.outputs.rollback_baseline_valid }}
+      rollback_baseline_deployment_id: ${{ steps.baseline.outputs.rollback_baseline_deployment_id }}
+      rollback_baseline_git_sha: ${{ steps.baseline.outputs.rollback_baseline_git_sha }}
+      rollback_baseline_project_id: ${{ steps.baseline.outputs.rollback_baseline_project_id }}
+      rollback_baseline_owner_id: ${{ steps.baseline.outputs.rollback_baseline_owner_id }}
+    steps:
+      - name: Resolve canonical deployment before preflight
+        id: baseline-before
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          echo "identity_valid=false" >> "$GITHUB_OUTPUT"
+          echo "deployment_id=" >> "$GITHUB_OUTPUT"
+          echo "git_sha=" >> "$GITHUB_OUTPUT"
+          echo "project_id=" >> "$GITHUB_OUTPUT"
+          echo "owner_id=" >> "$GITHUB_OUTPUT"
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::warning::VERCEL_TOKEN is unavailable; automatic rollback baseline capture is disabled."
+            exit 0
+          fi
+          CANONICAL_HOST="${PRODUCTION_DOMAIN#https://}"
+          if [ "$CANONICAL_HOST" != "alfanumrik.com" ]; then
+            echo "::warning::Canonical host is not the pinned production host; rollback baseline capture is disabled."
+            exit 0
+          fi
+          DEPLOYMENT_FILE=$(mktemp)
+          trap 'rm -f "$DEPLOYMENT_FILE"' EXIT
+          if ! curl --fail --silent --show-error --max-time 15 \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Accept: application/json" \
+            "https://api.vercel.com/v13/deployments/${CANONICAL_HOST}" \
+            -o "$DEPLOYMENT_FILE"; then
+            echo "::warning::Could not resolve the canonical Vercel deployment; automatic rollback is disabled."
+            exit 0
+          fi
+          mapfile -t IDENTITY < <(node - "$DEPLOYMENT_FILE" "$GITHUB_REPOSITORY" <<'NODE'
+          const fs = require('fs');
+          try {
+            const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+            const [org, repo] = process.argv[3].split('/');
+            const sha = d.gitSource?.sha || d.meta?.githubCommitSha || '';
+            const valid = /^dpl_[A-Za-z0-9]+$/.test(d.id || '')
+              && /^prj_[A-Za-z0-9]+$/.test(d.projectId || '')
+              && /^(team|user)_[A-Za-z0-9]+$/.test(d.ownerId || '')
+              && /^[0-9a-f]{40}$/.test(sha)
+              && d.target === 'production'
+              && d.readyState === 'READY'
+              && d.gitSource?.type === 'github'
+              && d.gitSource?.ref === 'main'
+              && d.meta?.githubCommitOrg === org
+              && d.meta?.githubCommitRepo === repo;
+            console.log(valid ? 'true' : 'false');
+            console.log(valid ? d.id : '');
+            console.log(valid ? sha : '');
+            console.log(valid ? d.projectId : '');
+            console.log(valid ? d.ownerId : '');
+          } catch {
+            console.log('false\n\n\n\n');
+          }
+          NODE
+          )
+          if [ "${IDENTITY[0]:-false}" != "true" ]; then
+            echo "::warning::Canonical deployment metadata is incomplete or unexpected; automatic rollback is disabled."
+            exit 0
+          fi
+          echo "identity_valid=true" >> "$GITHUB_OUTPUT"
+          echo "deployment_id=${IDENTITY[1]}" >> "$GITHUB_OUTPUT"
+          echo "git_sha=${IDENTITY[2]}" >> "$GITHUB_OUTPUT"
+          echo "project_id=${IDENTITY[3]}" >> "$GITHUB_OUTPUT"
+          echo "owner_id=${IDENTITY[4]}" >> "$GITHUB_OUTPUT"
+
+      - name: Prove semantic application health JSON
+        id: preflight
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          echo "app_healthy=false" >> "$GITHUB_OUTPUT"
+          echo "app_sha=" >> "$GITHUB_OUTPUT"
+          echo "app_timestamp_fresh=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            echo "::error::VERCEL_AUTOMATION_BYPASS_SECRET is required."
+            exit 1
+          fi
+          TARGET_URL="${PRODUCTION_DOMAIN}/api/v1/health"
+          set +e
+          for attempt in 1 2 3; do
+            BODY_FILE=$(mktemp)
+            STATUS=$(curl -sS --max-time 10 -o "$BODY_FILE" -w "%{http_code}" \
+              -H "Accept: application/json" \
+              -H "x-health-probe: github-actions-pre-deploy" \
+              -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+              "$TARGET_URL" 2>/dev/null)
+            CURL_EXIT=$?
+            APP_RESPONSE=false
+            if [ "$CURL_EXIT" = "0" ] && [ "$STATUS" = "200" ]; then
+              APP_RESPONSE=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const known=['healthy','degraded','unhealthy'].includes(b.status);const valid=typeof b.ok==='boolean'&&known&&typeof b.timestamp==='string'&&b.timestamp.length>0&&typeof b.version?.git_sha==='string'&&b.version.git_sha.length>0;process.stdout.write(String(valid))}catch{process.stdout.write('false')}" "$BODY_FILE")
+            fi
+            if [ "$APP_RESPONSE" = "true" ]; then
+              mapfile -t APP_IDENTITY < <(node - "$BODY_FILE" <<'NODE'
+          const fs = require('fs');
+          const b = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const sha = b.version.git_sha;
+          const timestamp = Date.parse(b.timestamp);
+          console.log(b.ok === true && b.status === 'healthy' ? 'true' : 'false');
+          console.log(/^[0-9a-f]{7,40}$/.test(sha) ? sha : '');
+          console.log(Number.isFinite(timestamp) && Math.abs(Date.now() - timestamp) <= 300000 ? 'true' : 'false');
+          NODE
+              )
+              rm -f "$BODY_FILE"
+              echo "app_healthy=${APP_IDENTITY[0]:-false}" >> "$GITHUB_OUTPUT"
+              echo "app_sha=${APP_IDENTITY[1]:-}" >> "$GITHUB_OUTPUT"
+              echo "app_timestamp_fresh=${APP_IDENTITY[2]:-false}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            rm -f "$BODY_FILE"
+            if [ "$attempt" -lt 3 ]; then sleep 10; fi
+          done
+          echo "::error::Refusing production mutations: bypass did not reach semantic app health JSON."
+          exit 1
+
+      - name: Bind a known-good rollback baseline
+        id: baseline
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          BEFORE_VALID: ${{ steps.baseline-before.outputs.identity_valid }}
+          BEFORE_DEPLOYMENT_ID: ${{ steps.baseline-before.outputs.deployment_id }}
+          BEFORE_GIT_SHA: ${{ steps.baseline-before.outputs.git_sha }}
+          BEFORE_PROJECT_ID: ${{ steps.baseline-before.outputs.project_id }}
+          BEFORE_OWNER_ID: ${{ steps.baseline-before.outputs.owner_id }}
+          APP_HEALTHY: ${{ steps.preflight.outputs.app_healthy }}
+          APP_SHA: ${{ steps.preflight.outputs.app_sha }}
+          APP_TIMESTAMP_FRESH: ${{ steps.preflight.outputs.app_timestamp_fresh }}
+        run: |
+          echo "rollback_baseline_valid=false" >> "$GITHUB_OUTPUT"
+          echo "rollback_baseline_deployment_id=" >> "$GITHUB_OUTPUT"
+          echo "rollback_baseline_git_sha=" >> "$GITHUB_OUTPUT"
+          echo "rollback_baseline_project_id=" >> "$GITHUB_OUTPUT"
+          echo "rollback_baseline_owner_id=" >> "$GITHUB_OUTPUT"
+          if [ "$BEFORE_VALID" != "true" ] || [ "$APP_HEALTHY" != "true" ] || [ "$APP_TIMESTAMP_FRESH" != "true" ] \
+            || ! [[ "$APP_SHA" =~ ^[0-9a-f]{7,40}$ ]]; then
+            echo "::warning::No fresh, semantically healthy pre-deploy identity was captured; automatic rollback is disabled."
+            exit 0
+          fi
+          if [ "$BEFORE_GIT_SHA" = "$GITHUB_SHA" ] || [ "${BEFORE_GIT_SHA:0:${#APP_SHA}}" != "$APP_SHA" ]; then
+            echo "::warning::Preflight app SHA is raced or is already the incoming release; automatic rollback is disabled."
+            exit 0
+          fi
+          CANONICAL_HOST="${PRODUCTION_DOMAIN#https://}"
+          DEPLOYMENT_FILE=$(mktemp)
+          trap 'rm -f "$DEPLOYMENT_FILE"' EXIT
+          if ! curl --fail --silent --show-error --max-time 15 \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Accept: application/json" \
+            "https://api.vercel.com/v13/deployments/${CANONICAL_HOST}" \
+            -o "$DEPLOYMENT_FILE"; then
+            echo "::warning::Canonical deployment changed or became unreadable; automatic rollback is disabled."
+            exit 0
+          fi
+          BOUND=$(node - "$DEPLOYMENT_FILE" "$GITHUB_REPOSITORY" "$BEFORE_DEPLOYMENT_ID" "$BEFORE_GIT_SHA" "$BEFORE_PROJECT_ID" "$BEFORE_OWNER_ID" <<'NODE'
+          const fs = require('fs');
+          try {
+            const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+            const [org, repo] = process.argv[3].split('/');
+            const valid = d.id === process.argv[4]
+              && (d.gitSource?.sha || d.meta?.githubCommitSha) === process.argv[5]
+              && d.projectId === process.argv[6]
+              && d.ownerId === process.argv[7]
+              && d.target === 'production'
+              && d.readyState === 'READY'
+              && d.gitSource?.type === 'github'
+              && d.gitSource?.ref === 'main'
+              && d.meta?.githubCommitOrg === org
+              && d.meta?.githubCommitRepo === repo;
+            process.stdout.write(String(valid));
+          } catch { process.stdout.write('false'); }
+          NODE
+          )
+          if [ "$BOUND" != "true" ]; then
+            echo "::warning::Canonical deployment identity changed during preflight; automatic rollback is disabled."
+            exit 0
+          fi
+          echo "rollback_baseline_valid=true" >> "$GITHUB_OUTPUT"
+          echo "rollback_baseline_deployment_id=$BEFORE_DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "rollback_baseline_git_sha=$BEFORE_GIT_SHA" >> "$GITHUB_OUTPUT"
+          echo "rollback_baseline_project_id=$BEFORE_PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "rollback_baseline_owner_id=$BEFORE_OWNER_ID" >> "$GITHUB_OUTPUT"
+
   # ── Step 1: Full Quality Pipeline ──
   quality:
     name: Lint, Type-check & Test
@@ -149,8 +338,10 @@ jobs:
   migrations:
     name: Apply Database Migrations
     runs-on: ubuntu-latest
-    needs: [quality, pre-deploy-checklist]
+    needs: [production-verification-gate, quality, pre-deploy-checklist]
     environment: production
+    outputs:
+      production_migrations_changed: ${{ steps.migration-diff.outputs.changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -224,7 +415,7 @@ jobs:
           echo "Package version: $VERSION"
 
       - name: Install Vercel CLI
-        run: npm install -g vercel@latest
+        run: npm install --global --no-audit --no-fund "vercel@${VERCEL_CLI_VERSION}"
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
@@ -287,117 +478,236 @@ jobs:
   health-check:
     name: Post-Deploy Health Check
     runs-on: ubuntu-latest
-    # Depends on migrations + deploy-functions so we don't probe before the
-    # backing infra is in place. `deploy` (CLI path) is intentionally NOT in
-    # `needs` because the Vercel GitHub App typically handles the web deploy
-    # and the CLI `deploy` job is skipped — we still want to validate the
-    # canonical domain.
-    needs: [migrations, deploy-functions]
+    timeout-minutes: 22
+    needs: [production-verification-gate, migrations, deploy-functions, deploy]
+    if: >-
+      ${{ always()
+      && needs.production-verification-gate.result == 'success'
+      && needs.migrations.result == 'success'
+      && needs.deploy-functions.result == 'success'
+      && ((vars.USE_CLI_DEPLOY == 'true' && needs.deploy.result == 'success')
+      || (vars.USE_CLI_DEPLOY != 'true' && needs.deploy.result == 'skipped')) }}
+    outputs:
+      exact_sha_verified: ${{ steps.health.outputs.exact_sha_verified }}
+      verified_github_sha: ${{ steps.health.outputs.verified_github_sha }}
     steps:
-      - name: Wait for deployment to stabilize
-        run: sleep 90
-
-      - name: Health check
+      - name: Poll canonical production for healthy exact SHA
         id: health
-        # Vercel's Security Checkpoint JS-challenges anonymous requests from
-        # datacenter IPs (GitHub Actions runners) with HTTP 429. Real browser
-        # users pass the JS challenge automatically; CI cannot. Two layers of
-        # mitigation:
-        #
-        #   1. Vercel Protection Bypass for Automation. If the repo secret
-        #      VERCEL_AUTOMATION_BYPASS_SECRET is set (and the matching value
-        #      configured in Vercel Project Settings → Deployment Protection →
-        #      Protection Bypass for Automation), every health request sends
-        #      the `x-vercel-protection-bypass` header and the checkpoint is
-        #      skipped. This is the canonical fix.
-        #      Docs: https://vercel.com/docs/security/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation
-        #
-        #   2. Graceful fallback when the secret is not configured. A run of
-        #      all-429 means we couldn't verify health, but it does NOT mean
-        #      production is down — real users would solve the challenge. So
-        #      we emit a warning, set all_429=true (auto-rollback step skips
-        #      rollback in that case), and exit 0 so the deploy chain shows
-        #      green. Real failures (5xx, timeouts, non-429 4xx) still exit 1
-        #      and trigger rollback.
+        # Fail closed unless canonical production reports healthy exact SHA.
+        # Protection/network/stale-SHA evidence never authorizes rollback.
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          TARGET_URL="${PRODUCTION_DOMAIN}"
-          echo "Checking: $TARGET_URL/api/v1/health"
-
-          BYPASS_HEADER=()
-          if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
-            BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
-            echo "Using Vercel automation bypass secret"
-          else
-            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — health check will fall back to soft-success on Security Checkpoint 429s. Configure the bypass secret in Vercel + GitHub repo secrets to get real health verification."
-          fi
-
+          TARGET_URL="${PRODUCTION_DOMAIN}/api/v1/health"
+          EXPECTED_SHA="${GITHUB_SHA:0:7}"
+          POLL_WINDOW_SECONDS=600
+          DEADLINE=$((SECONDS + POLL_WINDOW_SECONDS))
+          ATTEMPT=0
           LAST_STATUS=""
-          ALL_429=1
-          for i in 1 2 3 4 5; do
-            RESPONSE=$(curl -s -w "\n%{http_code}" \
-              -A "Alfanumrik-CI-HealthCheck/1.0 (+https://alfanumrik.com; vercel-monitoring)" \
+          ALL_PROTECTION=1
+          CURRENT_SHA_SEEN=0
+          CURRENT_SHA_UNHEALTHY=0
+          echo "exact_sha_verified=false" >> "$GITHUB_OUTPUT"
+          echo "verified_github_sha=" >> "$GITHUB_OUTPUT"
+          echo "rollback_authorized=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            echo "::error::Bypass secret is unavailable; release is unverified."
+            exit 1
+          fi
+          BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
+          set +e
+          while [ "$SECONDS" -lt "$DEADLINE" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            BODY_FILE=$(mktemp)
+            STATUS=$(curl -sS --max-time 10 -o "$BODY_FILE" -w "%{http_code}" \
               -H "Accept: application/json" \
               -H "x-health-probe: github-actions" \
-              "${BYPASS_HEADER[@]}" \
-              "${TARGET_URL}/api/v1/health" 2>/dev/null)
-            STATUS=$(echo "$RESPONSE" | tail -1)
-            BODY=$(echo "$RESPONSE" | head -1)
-            LAST_STATUS="$STATUS"
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed (attempt $i)"
-              echo "$BODY" | head -c 500
-              echo "all_429=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            if [ "$STATUS" != "429" ]; then
-              ALL_429=0
-            fi
-            echo "Attempt $i/5 returned HTTP $STATUS"
-            # Longer backoff on 429 so the checkpoint can clear; quick retry otherwise.
-            if [ "$STATUS" = "429" ]; then
-              sleep 30
+              "${BYPASS_HEADER[@]}" "$TARGET_URL" 2>/dev/null)
+            CURL_EXIT=$?
+            if [ "$CURL_EXIT" = "0" ]; then
+              LAST_STATUS="$STATUS"
+              case "$STATUS" in 401|403|429) ;; *) ALL_PROTECTION=0 ;; esac
+              if [ "$STATUS" = "200" ]; then
+                HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$BODY_FILE")
+                SEMANTIC_UNHEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===false&&['degraded','unhealthy'].includes(b.status)))}catch{process.stdout.write('false')}" "$BODY_FILE")
+                DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$BODY_FILE")
+                if [ "$DEPLOYED_SHA" = "$EXPECTED_SHA" ]; then
+                  CURRENT_SHA_SEEN=1
+                  if [ "$SEMANTIC_UNHEALTHY" = "true" ]; then CURRENT_SHA_UNHEALTHY=1; fi
+                fi
+                if [ "$HEALTHY" = "true" ] && [ "$DEPLOYED_SHA" = "$EXPECTED_SHA" ]; then
+                  rm -f "$BODY_FILE"
+                  echo "exact_sha_verified=true" >> "$GITHUB_OUTPUT"
+                  echo "verified_github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+              fi
             else
-              sleep 15
+              LAST_STATUS="curl-exit-$CURL_EXIT"
+              ALL_PROTECTION=0
             fi
+            rm -f "$BODY_FILE"
+            REMAINING=$((DEADLINE - SECONDS))
+            if [ "$REMAINING" -le 0 ]; then break; fi
+            SLEEP_SECONDS=20
+            if [ "$REMAINING" -lt "$SLEEP_SECONDS" ]; then SLEEP_SECONDS="$REMAINING"; fi
+            sleep "$SLEEP_SECONDS"
           done
-
-          if [ "$ALL_429" = "1" ]; then
-            # Every attempt was rate-limited by Vercel's Security Checkpoint.
-            # CI-side artifact, not a production outage. Soft-success: emit a
-            # warning, mark all_429=true so auto-rollback skips, exit 0 so the
-            # workflow shows green (the deploy itself succeeded — it's just
-            # the post-deploy verification that couldn't run from this IP).
-            echo "::warning::All 5 attempts returned HTTP 429 — Vercel Security Checkpoint engaged for CI runner. Real users are unaffected. Soft-passing this step. Configure VERCEL_AUTOMATION_BYPASS_SECRET to get real verification."
-            echo "all_429=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [ "$ALL_PROTECTION" = "1" ] && [ "$ATTEMPT" -gt 0 ]; then
+            echo "::error::All probes were blocked by Vercel protection; rollback suppressed."
+            exit 1
           fi
-
-          echo "all_429=false" >> "$GITHUB_OUTPUT"
-          echo "Health check failed after 5 attempts (last status: $LAST_STATUS)"
+          if [ "$CURRENT_SHA_SEEN" = "1" ] && [ "$CURRENT_SHA_UNHEALTHY" = "1" ]; then
+            echo "rollback_authorized=true" >> "$GITHUB_OUTPUT"
+            echo "::error::Expected SHA reached production but reported unhealthy."
+            exit 1
+          fi
+          echo "::error::Exact healthy SHA was not observed (current_sha_seen=$CURRENT_SHA_SEEN, last=$LAST_STATUS); rollback suppressed."
           exit 1
 
       - name: Auto-rollback on health check failure
-        # Refuse to rollback when the only failure signal was a 429 from
-        # Vercel's Security Checkpoint — that's a CI artifact, not a real
-        # outage. A 5xx, connection error, or non-429 status is still treated
-        # as a real failure and triggers rollback.
-        if: failure() && steps.health.outputs.all_429 != 'true'
+        if: failure() && steps.health.outputs.rollback_authorized == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          ROLLBACK_BASELINE_VALID: ${{ needs.production-verification-gate.outputs.rollback_baseline_valid }}
+          ROLLBACK_BASELINE_DEPLOYMENT_ID: ${{ needs.production-verification-gate.outputs.rollback_baseline_deployment_id }}
+          ROLLBACK_BASELINE_GIT_SHA: ${{ needs.production-verification-gate.outputs.rollback_baseline_git_sha }}
+          ROLLBACK_BASELINE_PROJECT_ID: ${{ needs.production-verification-gate.outputs.rollback_baseline_project_id }}
+          ROLLBACK_BASELINE_OWNER_ID: ${{ needs.production-verification-gate.outputs.rollback_baseline_owner_id }}
+          PRODUCTION_MIGRATIONS_CHANGED: ${{ needs.migrations.outputs.production_migrations_changed }}
+          EDGE_FUNCTIONS_CHANGED: ${{ needs.deploy-functions.outputs.edge_functions_changed }}
         run: |
-          echo "Health check failed — rolling back to previous deployment"
-          npm install -g vercel@latest
-          PREV_URL=$(vercel ls --prod --token="$VERCEL_TOKEN" 2>/dev/null \
-            | grep "Ready" | head -2 | tail -1 | awk '{print $2}')
-          if [ -n "$PREV_URL" ]; then
-            vercel promote "$PREV_URL" --token="$VERCEL_TOKEN" --yes
-            echo "Rolled back to: $PREV_URL"
-          else
-            echo "WARNING: Could not find previous deployment to rollback to"
-            echo "Manual rollback required via Vercel Dashboard > Deployments"
+          EXPECTED_SHA="${GITHUB_SHA:0:7}"
+          ROLLBACK_EXPECTED_SHA="${ROLLBACK_BASELINE_GIT_SHA:0:7}"
+          if [ "$ROLLBACK_BASELINE_VALID" != "true" ]; then
+            echo "::warning::No verified pre-deploy baseline is available; automatic rollback suppressed."
+            exit 0
           fi
+          if [ "$PRODUCTION_MIGRATIONS_CHANGED" = "true" ] || [ "$EDGE_FUNCTIONS_CHANGED" = "true" ]; then
+            echo "::warning::This release changed another deployment plane; automatic web-only rollback suppressed."
+            exit 0
+          fi
+          if ! [[ "$ROLLBACK_BASELINE_DEPLOYMENT_ID" =~ ^dpl_[A-Za-z0-9]+$ ]] \
+            || ! [[ "$ROLLBACK_BASELINE_GIT_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || ! [[ "$ROLLBACK_BASELINE_PROJECT_ID" =~ ^prj_[A-Za-z0-9]+$ ]] \
+            || ! [[ "$ROLLBACK_BASELINE_OWNER_ID" =~ ^(team|user)_[A-Za-z0-9]+$ ]] \
+            || [ -z "$VERCEL_TOKEN" ]; then
+            echo "::warning::Rollback identity or Vercel credential is invalid; automatic rollback suppressed."
+            exit 0
+          fi
+          CANONICAL_HOST="${PRODUCTION_DOMAIN#https://}"
+          if [ "$CANONICAL_HOST" != "alfanumrik.com" ]; then
+            echo "::warning::Canonical host is not pinned; automatic rollback suppressed."
+            exit 0
+          fi
+
+          CANDIDATE_FILE=$(mktemp)
+          CURRENT_BEFORE_FILE=$(mktemp)
+          CURRENT_AFTER_FILE=$(mktemp)
+          BODY_FILE=$(mktemp)
+          trap 'rm -f "$CANDIDATE_FILE" "$CURRENT_BEFORE_FILE" "$CURRENT_AFTER_FILE" "$BODY_FILE"' EXIT
+          fetch_deployment() {
+            local identity="$1"
+            local output="$2"
+            curl --fail --silent --show-error --max-time 15 \
+              -H "Authorization: Bearer $VERCEL_TOKEN" \
+              -H "Accept: application/json" \
+              "https://api.vercel.com/v13/deployments/${identity}" \
+              -o "$output"
+          }
+
+          if ! fetch_deployment "$ROLLBACK_BASELINE_DEPLOYMENT_ID" "$CANDIDATE_FILE"; then
+            echo "::warning::Known-good rollback deployment is no longer readable; automatic rollback suppressed."
+            exit 0
+          fi
+          CANDIDATE_VALID=$(node -e "const fs=require('fs');try{const d=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const [org,repo]=process.argv[6].split('/');const valid=d.id===process.argv[2]&&(d.gitSource?.sha||d.meta?.githubCommitSha)===process.argv[3]&&d.projectId===process.argv[4]&&d.ownerId===process.argv[5]&&d.target==='production'&&d.readyState==='READY'&&d.gitSource?.type==='github'&&d.gitSource?.ref==='main'&&d.meta?.githubCommitOrg===org&&d.meta?.githubCommitRepo===repo;process.stdout.write(String(valid))}catch{process.stdout.write('false')}" "$CANDIDATE_FILE" "$ROLLBACK_BASELINE_DEPLOYMENT_ID" "$ROLLBACK_BASELINE_GIT_SHA" "$ROLLBACK_BASELINE_PROJECT_ID" "$ROLLBACK_BASELINE_OWNER_ID" "$GITHUB_REPOSITORY")
+          if [ "$CANDIDATE_VALID" != "true" ]; then
+            echo "::warning::Known-good rollback metadata no longer matches the captured identity; automatic rollback suppressed."
+            exit 0
+          fi
+
+          # Immediate rollback revalidation binds the canonical alias and its
+          # semantic response to the exact failing GitHub SHA on both sides.
+          if ! fetch_deployment "$CANONICAL_HOST" "$CURRENT_BEFORE_FILE"; then
+            echo "::warning::Immediate rollback revalidation was inconclusive; automatic rollback suppressed."
+            exit 0
+          fi
+          mapfile -t CURRENT_BEFORE < <(node -e "const fs=require('fs');try{const d=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const [org,repo]=process.argv[5].split('/');const sha=d.gitSource?.sha||d.meta?.githubCommitSha||'';const valid=/^dpl_[A-Za-z0-9]+$/.test(d.id||'')&&sha===process.argv[2]&&d.projectId===process.argv[3]&&d.ownerId===process.argv[4]&&d.target==='production'&&d.readyState==='READY'&&d.gitSource?.ref==='main'&&d.meta?.githubCommitOrg===org&&d.meta?.githubCommitRepo===repo;console.log(valid?'true':'false');console.log(valid?d.id:'');console.log(valid?sha:'')}catch{console.log('false\n\n')}" "$CURRENT_BEFORE_FILE" "$GITHUB_SHA" "$ROLLBACK_BASELINE_PROJECT_ID" "$ROLLBACK_BASELINE_OWNER_ID" "$GITHUB_REPOSITORY")
+          if [ "${CURRENT_BEFORE[0]:-false}" != "true" ] || [ "${CURRENT_BEFORE[1]:-}" = "$ROLLBACK_BASELINE_DEPLOYMENT_ID" ]; then
+            echo "::warning::Canonical deployment identity is raced or already equals the baseline; automatic rollback suppressed."
+            exit 0
+          fi
+
+          set +e
+          STATUS=$(curl -sS --max-time 15 -o "$BODY_FILE" -w "%{http_code}" \
+            -H "Accept: application/json" \
+            -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+            "${PRODUCTION_DOMAIN}/api/v1/health" 2>/dev/null)
+          CURL_EXIT=$?
+          set -e
+          if [ "$CURL_EXIT" != "0" ] || [ "$STATUS" != "200" ]; then
+            rm -f "$BODY_FILE"
+            echo "::warning::Immediate rollback revalidation was inconclusive; automatic rollback suppressed."
+            exit 0
+          fi
+          SEMANTIC_UNHEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===false&&['degraded','unhealthy'].includes(b.status)))}catch{process.stdout.write('false')}" "$BODY_FILE")
+          DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$BODY_FILE")
+          rm -f "$BODY_FILE"
+          if [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ] || [ "$SEMANTIC_UNHEALTHY" != "true" ]; then
+            echo "::warning::Canonical state changed or lacks semantic unhealthy evidence (sha=$DEPLOYED_SHA semantic_unhealthy=$SEMANTIC_UNHEALTHY); automatic rollback suppressed."
+            exit 0
+          fi
+          if ! fetch_deployment "$CANONICAL_HOST" "$CURRENT_AFTER_FILE"; then
+            echo "::warning::Canonical identity could not be re-read; automatic rollback suppressed."
+            exit 0
+          fi
+          mapfile -t CURRENT_AFTER < <(node -e "const fs=require('fs');try{const d=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const sha=d.gitSource?.sha||d.meta?.githubCommitSha||'';console.log(d.id===process.argv[2]&&sha===process.argv[3]?'true':'false');console.log(d.id||'');console.log(sha)}catch{console.log('false\n\n')}" "$CURRENT_AFTER_FILE" "${CURRENT_BEFORE[1]}" "$GITHUB_SHA")
+          if [ "${CURRENT_AFTER[0]:-false}" != "true" ]; then
+            echo "::warning::Canonical identity changed during immediate revalidation; automatic rollback suppressed."
+            exit 0
+          fi
+          echo "Health check failed; rolling back to captured known-good deployment."
+          npm install --global --no-audit --no-fund "vercel@${VERCEL_CLI_VERSION}"
+          vercel rollback "$ROLLBACK_BASELINE_DEPLOYMENT_ID" \
+            --token="$VERCEL_TOKEN" --yes --timeout=3m
+
+          ROLLBACK_VERIFY_WINDOW_SECONDS=300
+          ROLLBACK_DEADLINE=$((SECONDS + ROLLBACK_VERIFY_WINDOW_SECONDS))
+          while [ "$SECONDS" -lt "$ROLLBACK_DEADLINE" ]; do
+            if fetch_deployment "$CANONICAL_HOST" "$CURRENT_BEFORE_FILE"; then
+              mapfile -t ROLLBACK_ALIAS_BEFORE < <(node -e "const fs=require('fs');try{const d=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const sha=d.gitSource?.sha||d.meta?.githubCommitSha||'';console.log(d.id===process.argv[2]&&sha===process.argv[3]&&d.projectId===process.argv[4]&&d.ownerId===process.argv[5]&&d.target==='production'&&d.readyState==='READY'?'true':'false');console.log(d.id||'');console.log(sha)}catch{console.log('false\n\n')}" "$CURRENT_BEFORE_FILE" "$ROLLBACK_BASELINE_DEPLOYMENT_ID" "$ROLLBACK_BASELINE_GIT_SHA" "$ROLLBACK_BASELINE_PROJECT_ID" "$ROLLBACK_BASELINE_OWNER_ID")
+              ROLLBACK_ALIAS_BEFORE_ID="${ROLLBACK_ALIAS_BEFORE[1]:-}"
+              if [ "${ROLLBACK_ALIAS_BEFORE[0]:-false}" = "true" ]; then
+                set +e
+                STATUS=$(curl -sS --max-time 15 -o "$BODY_FILE" -w "%{http_code}" \
+                  -H "Accept: application/json" \
+                  -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+                  "${PRODUCTION_DOMAIN}/api/v1/health" 2>/dev/null)
+                CURL_EXIT=$?
+                set -e
+                if [ "$CURL_EXIT" = "0" ] && [ "$STATUS" = "200" ] \
+                  && fetch_deployment "$CANONICAL_HOST" "$CURRENT_AFTER_FILE"; then
+                  HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$BODY_FILE")
+                  DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$BODY_FILE")
+                  mapfile -t ROLLBACK_ALIAS_AFTER < <(node -e "const fs=require('fs');try{const d=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const sha=d.gitSource?.sha||d.meta?.githubCommitSha||'';console.log(d.id===process.argv[2]&&sha===process.argv[3]?'true':'false');console.log(d.id||'')}catch{console.log('false\n')}" "$CURRENT_AFTER_FILE" "$ROLLBACK_BASELINE_DEPLOYMENT_ID" "$ROLLBACK_BASELINE_GIT_SHA")
+                  if [ "$HEALTHY" = "true" ] && [ "$DEPLOYED_SHA" = "$ROLLBACK_EXPECTED_SHA" ] \
+                    && [ "${ROLLBACK_ALIAS_AFTER[0]:-false}" = "true" ] \
+                    && [ "${ROLLBACK_ALIAS_AFTER[1]:-}" = "$ROLLBACK_ALIAS_BEFORE_ID" ]; then
+                    echo "::notice::Rollback verified: canonical production is healthy at exact SHA $ROLLBACK_EXPECTED_SHA."
+                    exit 0
+                  fi
+                fi
+              fi
+            fi
+            REMAINING=$((ROLLBACK_DEADLINE - SECONDS))
+            if [ "$REMAINING" -le 0 ]; then break; fi
+            SLEEP_SECONDS=15
+            if [ "$REMAINING" -lt "$SLEEP_SECONDS" ]; then SLEEP_SECONDS="$REMAINING"; fi
+            sleep "$SLEEP_SECONDS"
+          done
+          echo "::error::Rollback command completed, but canonical identity and healthy exact-SHA proof were not observed within ${ROLLBACK_VERIFY_WINDOW_SECONDS}s."
+          exit 1
 
   # ── Step 3a: Deploy Changed Edge Functions ──
   # Detects which Supabase Edge Functions changed in the merged commit and
@@ -415,6 +725,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [quality, pre-deploy-checklist, migrations]
     environment: production
+    outputs:
+      edge_functions_changed: ${{ steps.changed.outputs.changed }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -431,13 +743,6 @@ jobs:
             CHANGED=$(ls -d supabase/functions/*/ | grep -vE '(_archive|_shared)' | xargs -n1 basename | sort -u)
             echo "_shared changed → deploying ALL active functions"
           fi
-          # Manual force-redeploy override (workflow_dispatch input). Use when a
-          # previous deploy was cancelled by a superseding merge and Edge Function
-          # code on `main` is ahead of what's running in production.
-          if [ "${{ inputs.force_deploy_all_functions }}" = "true" ]; then
-            CHANGED=$(ls -d supabase/functions/*/ | grep -vE '(_archive|_shared)' | xargs -n1 basename | sort -u)
-            echo "force_deploy_all_functions=true → deploying ALL active functions"
-          fi
           echo "Changed functions:"
           echo "$CHANGED"
           {
@@ -445,6 +750,11 @@ jobs:
             echo "$CHANGED"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
+          if [ -n "$CHANGED" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: supabase/setup-cli@v2
         if: steps.changed.outputs.functions != ''
@@ -467,31 +777,28 @@ jobs:
   # reasons as the Health Check job above (deployment-protection auth wall).
   # The deploy URL is still captured in the summary for traceability.
   #
-  # Mirrors the two-tier defense the Health Check job already has against
-  # Vercel's Security Checkpoint (HTTP 429 challenge served to datacenter
-  # IPs like GitHub Actions runners):
-  #
-  #   1. If VERCEL_AUTOMATION_BYPASS_SECRET is configured, send the
-  #      `x-vercel-protection-bypass` header on every probe — the
-  #      checkpoint is skipped and we get real verification.
-  #   2. If the secret isn't set and EVERY probe came back 429, soft-pass
-  #      with a warning. Real failures (5xx, non-429 4xx) still fail loud.
-  #
-  # Before this two-tier was added, the step blanket-failed on every
-  # deploy from a fresh runner IP because Vercel's challenge served 429
-  # to all three probes — masking real future regressions of the same
-  # endpoints. (Tracked as the recurring "Post-Deploy Verification
-  # failure" noted in PR #755 / #757 / #758 deploy notes.)
+  # Independently re-proves semantic health and exact release identity.
   post-deploy-verify:
     name: Post-Deploy Verification
     runs-on: ubuntu-latest
     needs: [health-check]
+    if: >-
+      ${{ needs.health-check.result == 'success'
+      && needs.health-check.outputs.exact_sha_verified == 'true'
+      && needs.health-check.outputs.verified_github_sha == github.sha }}
+    outputs:
+      exact_sha_verified: ${{ steps.verify.outputs.exact_sha_verified }}
+      verified_github_sha: ${{ steps.verify.outputs.verified_github_sha }}
     steps:
       - name: Verify critical endpoints
+        id: verify
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           TARGET_URL="${PRODUCTION_DOMAIN}"
+          EXPECTED_SHA="${GITHUB_SHA:0:7}"
+          echo "exact_sha_verified=false" >> "$GITHUB_OUTPUT"
+          echo "verified_github_sha=" >> "$GITHUB_OUTPUT"
           echo "## Post-Deploy Verification" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Probed domain: \`$TARGET_URL\`" >> $GITHUB_STEP_SUMMARY
@@ -500,17 +807,26 @@ jobs:
           echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
 
           BYPASS_HEADER=()
-          if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
-            BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
-            echo "Using Vercel automation bypass secret"
-          else
-            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — verification will fall back to soft-success if Vercel's Security Checkpoint blocks the runner IP. Configure the bypass secret in Vercel + GitHub repo secrets to get real verification."
+          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            echo "::error::Bypass secret is required for post-deploy verification."
+            exit 1
+          fi
+          BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
+
+          HEALTH_BODY=$(mktemp)
+          HEALTH_STATUS=$(curl -sS --max-time 15 -o "$HEALTH_BODY" -w "%{http_code}" \
+            "${BYPASS_HEADER[@]}" "${TARGET_URL}/api/v1/health" 2>/dev/null || true)
+          HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$HEALTH_BODY")
+          DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$HEALTH_BODY")
+          rm -f "$HEALTH_BODY"
+          if [ "$HEALTH_STATUS" != "200" ] || [ "$HEALTHY" != "true" ] || [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::Post-deploy health did not prove healthy exact SHA (http=$HEALTH_STATUS healthy=$HEALTHY sha=$DEPLOYED_SHA expected=$EXPECTED_SHA)."
+            exit 1
           fi
 
-          # Track real failures separately from checkpoint-only 429s. A
-          # real_fail is "this endpoint responded with something unexpected
-          # that isn't the Vercel challenge"; bypass_blocked is "every
-          # check we tried came back 429 from the security checkpoint."
+          # Track application failures separately from checkpoint responses.
+          # Every required endpoint must be verified through the bypass; even
+          # one checkpoint response leaves the release unverified.
           REAL_FAIL=0
           BYPASS_BLOCKED=0
           PROBES=0
@@ -562,6 +878,9 @@ jobs:
             return 1
           }
 
+          # Aggregate all endpoint failures instead of letting the runner's
+          # default `bash -e` stop after the first failed check.
+          set +e
           check "/api/v1/health" "/api/v1/health" "200"
           # Homepage: 200 (Next.js render) or 307/308 (redirect to /welcome marketing route).
           check "/ (homepage)"   "/"              "200" "307" "308"
@@ -591,11 +910,13 @@ jobs:
             exit 1
           fi
 
-          if [ "$BYPASS_BLOCKED" -gt 0 ] && [ "$BYPASS_BLOCKED" = "$PROBES" ]; then
-            echo "::warning::All $PROBES probes returned HTTP 429 (Vercel Security Checkpoint engaged for runner IP). Real users are unaffected. Soft-passing. Configure VERCEL_AUTOMATION_BYPASS_SECRET for real verification."
-            exit 0
+          if [ "$BYPASS_BLOCKED" -gt 0 ]; then
+            echo "::error::At least one required probe was blocked by Vercel protection; production is unverified."
+            exit 1
           fi
 
+          echo "exact_sha_verified=true" >> "$GITHUB_OUTPUT"
+          echo "verified_github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           echo "All post-deploy verifications passed."
 
   # ── Step 4: Release Tag & Summary ──
@@ -610,7 +931,15 @@ jobs:
     # created on normal production deploys. Gate on the two jobs that always run
     # (health-check + post-deploy-verify) instead, and only tag on a real push to
     # main where both passed.
-    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.health-check.result == 'success' && needs.post-deploy-verify.result == 'success' }}
+    if: >-
+      ${{ github.ref == 'refs/heads/main'
+      && github.event_name == 'push'
+      && needs.health-check.result == 'success'
+      && needs.health-check.outputs.exact_sha_verified == 'true'
+      && needs.health-check.outputs.verified_github_sha == github.sha
+      && needs.post-deploy-verify.result == 'success'
+      && needs.post-deploy-verify.outputs.exact_sha_verified == 'true'
+      && needs.post-deploy-verify.outputs.verified_github_sha == github.sha }}
     permissions:
       contents: write
     steps:

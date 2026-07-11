@@ -1,27 +1,36 @@
 name: Production Cron Runner - Alfanumrik
 
+# Phase 0: Vercel is the sole scheduler. This manual break-glass path remains
+# disabled until its protected environment has required reviewers.
 on:
   workflow_dispatch:
     inputs:
       job_path:
-        description: 'Cron route path to run, or all'
+        description: 'Exactly one allowlisted production cron route'
+        type: choice
+        required: true
+        options:
+          - /api/cron/school-operations
+          - /api/cron/daily-cron
+          - /api/cron/irt-calibrate
+          - /api/cron/reconcile-payments
+          - /api/cron/payments-health
+          - /api/cron/expired-subscriptions
+          - /api/cron/account-purge
+          - /api/cron/pre-debit-notice
+          - /api/cron/board-score
+          - /api/cron/reverify-domains
+          - /api/cron/foxy-quality-sample
+          - /api/internal/cron/fix-failed-questions
+          - /api/cron/streak-guardian
+      reason:
+        description: 'Incident/change reference and reason'
         type: string
-        required: false
-        default: 'all'
-  schedule:
-    - cron: '*/10 * * * *'
-    - cron: '*/15 * * * *'
-    - cron: '*/30 * * * *'
-    - cron: '0 */6 * * *'
-    - cron: '15 */6 * * *'
-    - cron: '0 2 * * *'
-    - cron: '30 2 * * *'
-    - cron: '50 2 * * *'
-    - cron: '0 3 * * *'
-    - cron: '40 3 * * *'
-    - cron: '45 3 * * *'
-    - cron: '0 4 * * *'
-    - cron: '30 16 * * *'
+        required: true
+      confirmation:
+        description: 'Type RUN_ONE_PRODUCTION_CRON exactly'
+        type: string
+        required: true
 
 concurrency:
   group: production-cron-runner
@@ -29,19 +38,57 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   NODE_VERSION: '22'
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-  TARGET_URL: ${{ vars.PRODUCTION_CRON_TARGET_URL || vars.PRODUCTION_DOMAIN || 'https://alfanumrik.com' }}
+  # Security boundary: never send CRON_SECRET to a mutable repository variable.
+  TARGET_URL: 'https://alfanumrik.com'
   CRON_SECRET_AWS_SECRET_ID: ${{ vars.CRON_SECRET_AWS_SECRET_ID || 'alfa-prod/app' }}
 
 jobs:
-  run:
-    name: Run Production Cron Jobs
+  gate:
+    name: Authorize Production Cron Break-Glass
     runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Fail closed unless controls are active
+        env:
+          ENABLED: ${{ vars.ENABLE_PRODUCTION_CRON_BREAK_GLASS }}
+          JOB_PATH: ${{ inputs.job_path }}
+          REASON: ${{ inputs.reason }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$ENABLED" != "true" ]; then
+            echo "::error::Break-glass is disabled until production-break-glass has required reviewers."
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Break-glass may run only from main."
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != "RUN_ONE_PRODUCTION_CRON" ]; then
+            echo "::error::Confirmation must exactly match RUN_ONE_PRODUCTION_CRON."
+            exit 1
+          fi
+          if [ -z "${REASON//[[:space:]]/}" ]; then
+            echo "::error::A non-empty incident/change reason is required."
+            exit 1
+          fi
+          case "$JOB_PATH" in
+            /api/cron/school-operations|/api/cron/daily-cron|/api/cron/irt-calibrate|/api/cron/reconcile-payments|/api/cron/payments-health|/api/cron/expired-subscriptions|/api/cron/account-purge|/api/cron/pre-debit-notice|/api/cron/board-score|/api/cron/reverify-domains|/api/cron/foxy-quality-sample|/api/internal/cron/fix-failed-questions|/api/cron/streak-guardian) ;;
+            *) echo "::error::JOB_PATH is not one allowlisted production cron route."; exit 1 ;;
+          esac
+  run:
+    name: Run One Production Cron
+    runs-on: ubuntu-latest
+    needs: gate
+    environment: production-break-glass
     timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
 
@@ -97,8 +144,8 @@ jobs:
 
       - name: Run selected production crons
         env:
-          JOB_PATH: ${{ github.event.inputs.job_path || '' }}
-          EVENT_SCHEDULE: ${{ github.event.schedule || '' }}
+          JOB_PATH: ${{ inputs.job_path }}
+          BREAK_GLASS_REASON: ${{ inputs.reason }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: node scripts/run-production-crons.mjs
 

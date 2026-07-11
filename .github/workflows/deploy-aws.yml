@@ -1,8 +1,9 @@
 name: Deploy AWS ECS — Alfanumrik
 
-# DORMANT BY DEFAULT. This workflow is gated behind `vars.ENABLE_AWS_DEPLOY`.
-# Set ENABLE_AWS_DEPLOY = 'true' in GitHub Actions variables only during the
-# Route 53 weighted-routing cutover. Until then, pushes to main are a no-op.
+# HARD-SUSPENDED IN PHASE 0. Vercel is the production web authority; this
+# workflow cannot deploy even when manually dispatched. Restoring AWS delivery
+# requires a reviewed workflow change after production-break-glass has required
+# reviewers/branch restrictions and the AWS OIDC trust is proven main-ref scoped.
 #
 # Required GitHub Actions SECRETS (Settings → Secrets and variables → Actions):
 #   AWS_DEPLOY_ROLE_ARN            - arn:aws:iam::032064442164:role/alfa-github-deploy
@@ -16,7 +17,7 @@ name: Deploy AWS ECS — Alfanumrik
 #   DEPLOY_GIT_SHA                 - derived automatically from GITHUB_SHA
 #
 # Required GitHub Actions VARIABLES (Settings → Secrets and variables → Actions → Variables):
-#   ENABLE_AWS_DEPLOY   - Must be 'true' to run (phased cutover guard)
+#   ENABLE_AWS_DEPLOY   - Must remain 'false' while Phase 0 suspension is active
 #   AWS_REGION          - ap-south-1
 #   ECR_REPOSITORY      - alfa-web
 #   ECS_CLUSTER         - alfa-prod
@@ -29,15 +30,19 @@ name: Deploy AWS ECS — Alfanumrik
 # Manager key: alfa/prod/app. See aws/task-definition.json for the full list.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       reason:
         description: 'Reason for manual deploy (e.g. hotfix, cutover test)'
         type: string
-        required: false
-        default: 'manual trigger'
+        required: true
+      confirmation:
+        description: 'Type DEPLOY_AWS_PRODUCTION exactly (workflow remains suspended)'
+        type: string
+        required: true
+
+permissions:
+  contents: read
 
 concurrency:
   group: deploy-aws-${{ github.ref }}
@@ -56,23 +61,39 @@ env:
   CONTAINER_NAME: web
 
 jobs:
-  # ── Guard: skip everything unless ENABLE_AWS_DEPLOY == 'true' ──
+  # ── Guard: hard suspension; no repository variable can authorize deploy ──
   gate:
-    name: Cutover Gate
+    name: Phase 0 AWS Suspension Gate
     runs-on: ubuntu-latest
+    permissions: {}
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
     steps:
-      - name: Check ENABLE_AWS_DEPLOY variable
+      - name: Refuse AWS production delivery during Phase 0
         id: check
+        env:
+          ENABLED: ${{ vars.ENABLE_AWS_DEPLOY }}
+          REASON: ${{ inputs.reason }}
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
-          if [ "${{ vars.ENABLE_AWS_DEPLOY }}" = "true" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            echo "AWS deploy is ENABLED — proceeding."
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "AWS deploy is DISABLED (vars.ENABLE_AWS_DEPLOY != 'true'). Set it to 'true' in GitHub Actions variables during Route 53 cutover to activate this pipeline."
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::AWS production recovery may be requested only from main."
+            exit 1
           fi
+          if [ -z "${REASON//[[:space:]]/}" ]; then
+            echo "::error::A non-empty incident/change reason is required."
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != "DEPLOY_AWS_PRODUCTION" ]; then
+            echo "::error::Confirmation must exactly match DEPLOY_AWS_PRODUCTION."
+            exit 1
+          fi
+          if [ "$ENABLED" = "true" ]; then
+            echo "::error::ENABLE_AWS_DEPLOY must remain false during Phase 0."
+          fi
+          echo "::error::AWS production delivery is suspended in Phase 0; a reviewed workflow change is required to restore it."
+          exit 1
 
   # ── Step 1: Build Docker image and push to ECR ──
   build-and-push:
@@ -80,6 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: gate
     if: needs.gate.outputs.enabled == 'true'
+    environment: production-break-glass
     permissions:
       id-token: write   # Required for OIDC token exchange
       contents: read
@@ -148,6 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [gate, build-and-push]
     if: needs.gate.outputs.enabled == 'true'
+    environment: production-break-glass
     permissions:
       id-token: write
       contents: read
@@ -225,6 +248,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [gate, deploy]
     if: needs.gate.outputs.enabled == 'true'
+    environment: production-break-glass
     permissions:
       id-token: write
       contents: read

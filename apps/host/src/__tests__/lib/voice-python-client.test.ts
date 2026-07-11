@@ -14,10 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   mimeToExtension,
   PythonVoiceError,
-  PYTHON_AI_BASE_URL,
   synthesizePython,
   transcribePython,
 } from '@alfanumrik/lib/voice-python-client';
+
+const TEST_BASE_URL = 'https://python-ai.test.invalid';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -49,10 +50,12 @@ function makeBlob(bytes = new Uint8Array([1, 2, 3, 4])): Blob {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.stubEnv('NEXT_PUBLIC_PYTHON_AI_BASE_URL', TEST_BASE_URL);
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
 });
 
 // ── transcribePython ───────────────────────────────────────────────────────
@@ -85,7 +88,7 @@ describe('transcribePython', () => {
     // Confirm we POSTed multipart with the JWT Authorization header.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url, init] = fetchSpy.mock.calls[0];
-    expect(String(url)).toBe(`${PYTHON_AI_BASE_URL}/v1/voice/transcribe`);
+    expect(String(url)).toBe(`${TEST_BASE_URL}/v1/voice/transcribe`);
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer student-jwt');
     // Body is FormData — we don't assert internals; just confirm presence.
@@ -192,6 +195,18 @@ describe('transcribePython', () => {
       code: 'AUTH_FAILED',
     });
     // No fetch should have happened — fail-fast guard.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not fetch when the public Python URL is empty', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PYTHON_AI_BASE_URL', '');
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await expect(transcribePython(makeBlob(), { jwt: 'jwt' })).rejects.toMatchObject({
+      status: 503,
+      code: 'SERVICE_DISABLED',
+    });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

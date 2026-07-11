@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -109,6 +109,36 @@ describe('Vercel cron job registry (RCA-17)', () => {
       dry_run: true,
       ok: true,
     });
+  });
+
+  it('rejects manual all-job break-glass execution', () => {
+    const result = spawnSync(process.execPath, [repoPath('scripts/run-production-crons.mjs')], {
+      cwd: repoPath('apps/host'),
+      encoding: 'utf8',
+      env: { ...process.env, DRY_RUN: '1', GITHUB_EVENT_NAME: 'workflow_dispatch', JOB_PATH: 'all' },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('all is forbidden');
+  });
+
+  it('rejects a non-canonical live target before sending the cron secret', () => {
+    const secret = 'must-not-leave-canonical-origin';
+    const result = spawnSync(process.execPath, [repoPath('scripts/run-production-crons.mjs')], {
+      cwd: repoPath('apps/host'),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        DRY_RUN: '0',
+        GITHUB_EVENT_NAME: 'workflow_dispatch',
+        JOB_PATH: '/api/cron/payments-health',
+        TARGET_URL: 'https://attacker.invalid',
+        CRON_SECRET: secret,
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('canonical https://alfanumrik.com origin');
+    expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
   });
 
   it('exposes GET for every scheduled Vercel cron path', () => {

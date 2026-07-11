@@ -13,6 +13,7 @@ const dryRun = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
 const eventName = process.env.GITHUB_EVENT_NAME || 'local';
 const eventSchedule = process.env.EVENT_SCHEDULE || '';
 const requestedJobPath = process.env.JOB_PATH || '';
+const breakGlassReason = process.env.BREAK_GLASS_REASON || '';
 const targetUrl = trimTrailingSlash(process.env.TARGET_URL || 'https://alfanumrik.com');
 const cronSecret = process.env.CRON_SECRET || '';
 const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET || '';
@@ -20,6 +21,7 @@ const timeoutMs = Number(process.env.CRON_TIMEOUT_MS || 360_000);
 const runId = process.env.GITHUB_RUN_ID || `local-${Date.now()}`;
 
 validateRegistry(jobs);
+if (!dryRun) validateProductionTarget(targetUrl);
 
 const { selector, selectedJobs } = selectJobs(jobs, {
   eventName,
@@ -62,6 +64,7 @@ const summary = {
   event_name: eventName,
   event_schedule: eventSchedule || null,
   requested_job_path: requestedJobPath || null,
+  break_glass_reason: breakGlassReason || null,
   started_at: startedAt,
   finished_at: new Date().toISOString(),
   total_jobs: results.length,
@@ -114,6 +117,7 @@ async function runJob(job, { requestId }) {
       method: 'GET',
       headers,
       signal: controller.signal,
+      redirect: 'error',
     });
     const body = await response.text();
     const parsed = parseJson(body);
@@ -155,14 +159,17 @@ async function runJob(job, { requestId }) {
   }
 }
 
-function selectJobs(allJobs, { eventName, eventSchedule, requestedJobPath }) {
+function selectJobs(allJobs, { eventName, requestedJobPath }) {
   if (eventName === 'schedule') {
-    if (!eventSchedule) {
-      fail('EVENT_SCHEDULE is required when GITHUB_EVENT_NAME=schedule.');
+    fail('Scheduled GitHub production cron execution is disabled; Vercel is the schedule authority.');
+  }
+  if (eventName === 'workflow_dispatch') {
+    if (!requestedJobPath || requestedJobPath === 'all') {
+      fail('Manual production break-glass requires exactly one registered JOB_PATH; all is forbidden.');
     }
     return {
-      selector: `schedule:${eventSchedule}`,
-      selectedJobs: allJobs.filter((job) => job.schedule === eventSchedule),
+      selector: `path:${requestedJobPath}`,
+      selectedJobs: allJobs.filter((job) => job.path === requestedJobPath),
     };
   }
 
@@ -173,10 +180,7 @@ function selectJobs(allJobs, { eventName, eventSchedule, requestedJobPath }) {
     };
   }
 
-  return {
-    selector: 'all',
-    selectedJobs: allJobs,
-  };
+  fail('A single registered JOB_PATH is required; all is forbidden.');
 }
 
 function validateRegistry(allJobs) {
@@ -194,6 +198,26 @@ function validateRegistry(allJobs) {
     if (!job.path.startsWith('/')) {
       fail(`Job path must be absolute: ${job.path}`);
     }
+  }
+}
+
+function validateProductionTarget(value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    fail('Live production cron target must be the canonical https://alfanumrik.com origin.');
+  }
+
+  if (
+    parsed.origin !== 'https://alfanumrik.com' ||
+    parsed.pathname !== '/' ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.username ||
+    parsed.password
+  ) {
+    fail('Live production cron target must be the canonical https://alfanumrik.com origin.');
   }
 }
 

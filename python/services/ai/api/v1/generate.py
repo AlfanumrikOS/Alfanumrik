@@ -14,11 +14,12 @@ import json
 import uuid
 
 import structlog
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from starlette.responses import StreamingResponse
 
 from ...mol import GenerateRequest, MolResult, generate_response
 from ...mol.errors import MolError
+from ..auth import enforce_student_grade_scope, require_active_student
 
 router = APIRouter(prefix="/v1", tags=["mol"])
 logger = structlog.get_logger(__name__)
@@ -34,6 +35,19 @@ _ERROR_STATUS: dict[str, int] = {
 }
 
 
+def _enforce_student_scope(req: GenerateRequest, student: dict[str, object]) -> None:
+    """Prevent a verified student from charging or logging work to another student."""
+    if req.student_context.student_id != student["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "STUDENT_SCOPE_MISMATCH"},
+        )
+    req.student_context.grade = enforce_student_grade_scope(
+        req.student_context.grade,
+        student,
+    )
+
+
 @router.post(
     "/generate",
     response_model=MolResult,
@@ -46,8 +60,13 @@ _ERROR_STATUS: dict[str, int] = {
         504: {"description": "TIMEOUT — provider took too long to respond."},
     },
 )
-async def post_generate(req: GenerateRequest, request: Request) -> MolResult:
+async def post_generate(
+    req: GenerateRequest,
+    request: Request,
+    student: dict[str, object] = Depends(require_active_student),
+) -> MolResult:
     """Run a single MoL call and return the response envelope."""
+    _enforce_student_scope(req, student)
     request_id = (
         (req.config and req.config.request_id)
         or request.headers.get("x-request-id")
@@ -98,7 +117,11 @@ def _sse(event: str, data: dict) -> str:
     "/generate/stream",
     summary="Run a MOL call and stream the answer as Server-Sent Events",
 )
-async def post_generate_stream(req: GenerateRequest, request: Request) -> StreamingResponse:
+async def post_generate_stream(
+    req: GenerateRequest,
+    request: Request,
+    student: dict[str, object] = Depends(require_active_student),
+) -> StreamingResponse:
     """Stream a MOL answer. Emits ``event: token`` frames followed by a final
     ``event: done`` frame; ``event: error`` on a MolError (never a 5xx into
     the stream). Cooperatively cancels emission if the client disconnects.
@@ -106,6 +129,7 @@ async def post_generate_stream(req: GenerateRequest, request: Request) -> Stream
     The endpoint is always mounted; the ``ff_mol_stream_v1`` flag gating is a
     caller-layer concern, not enforced here.
     """
+    _enforce_student_scope(req, student)
     request_id = (
         (req.config and req.config.request_id)
         or request.headers.get("x-request-id")

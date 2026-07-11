@@ -1,10 +1,9 @@
 name: Mesh Autonomous Cron
 
-# This workflow runs the agent mesh on a schedule. It points at the
-# STAGING Supabase, not production, and is gated by both a feature flag
-# (ff_agent_mesh_v1 must be ON on the target Supabase) and a repo file
-# (mesh-automation.enabled must exist in the repo root). Deleting either
-# is the kill switch.
+# HARD-SUSPENDED IN PHASE 0. The prior manual path combined write permission,
+# staging service-role/Anthropic secrets, and shell-evaluated operator input.
+# Restoring it requires a protected environment, main-only source enforcement,
+# least-privilege token scope, and a reviewed non-eval argument contract.
 #
 # Required GitHub secrets (Settings → Secrets and variables → Actions):
 #   ANTHROPIC_API_KEY                 — your Anthropic API key
@@ -17,33 +16,45 @@ name: Mesh Autonomous Cron
 # file to disable.
 
 on:
-  schedule:
-    # 02:00 UTC daily = 07:30 IST. Tweak in the cron expression below.
-    - cron: '0 2 * * *'
+  # Phase 0: scheduled execution is suspended because the root workspace no
+  # longer exposes the mesh:tick command used below.
   workflow_dispatch:
-    inputs:
-      goal_override:
-        description: 'Optional --goal override (skips L1 inbox pick)'
-        required: false
-        default: ''
 
 permissions:
-  contents: write       # push the auto/<cycle>/code_agent/<task> branch
-  pull-requests: write  # open the cycle's PR via gh
+  contents: read
 
 concurrency:
   group: mesh-cron
   cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Phase 0 Mesh Suspension Gate
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      enabled: ${{ steps.suspend.outputs.enabled }}
+    steps:
+      - name: Refuse autonomous mesh execution
+        id: suspend
+        run: |
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::error::Agent mesh execution is suspended in Phase 0; a reviewed workflow change is required to restore it."
+          exit 1
+
   tick:
     runs-on: ubuntu-latest
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
+    permissions:
+      contents: write
+      pull-requests: write
     # ANTHROPIC_API_KEY is stored as an environment-scoped secret in a
     # GitHub Environment named "ANTHROPIC_API_KEY" (narrower scope than a
     # plain repo secret). Declaring the environment here is what makes
     # `${{ secrets.ANTHROPIC_API_KEY }}` resolve in the env block below.
     # The Supabase repo-secrets are picked up automatically regardless.
-    environment: ANTHROPIC_API_KEY
+    environment: agent-mesh-break-glass
     timeout-minutes: 30
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -92,13 +103,7 @@ jobs:
           # actions/checkout step already configured the local git remote
           # with this token, so `git push` from the worktree also works.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          GOAL_FLAG=""
-          if [ -n "${{ inputs.goal_override }}" ]; then
-            GOAL_FLAG='--goal "${{ inputs.goal_override }}"'
-          fi
-          # shellcheck disable=SC2086
-          eval npm run mesh:tick -- --commit --real-l1 --real-l2 --real-l4 --real-l6 --real-l7 $GOAL_FLAG
+        run: npm run mesh:tick -- --commit --real-l1 --real-l2 --real-l4 --real-l6 --real-l7
 
       - name: Upload run logs as artifact
         if: always()

@@ -64,7 +64,7 @@ gcloud artifacts repositories create ai-services \
 
 ### 1.4 Runtime service account
 
-This account is what the Cloud Run container runs **as**. It needs to read secrets and (optionally) call sibling services.
+This account is what the Cloud Run container runs **as**. It needs to read secrets. Invocation permission is granted only to specific callers on the specific Cloud Run service, never project-wide.
 
 ```bash
 RUNTIME_SA="ai-services-runtime"
@@ -77,10 +77,6 @@ RUNTIME_SA_EMAIL="${RUNTIME_SA}@${PROJECT_ID}.iam.gserviceaccount.com"
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:${RUNTIME_SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
-
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${RUNTIME_SA_EMAIL}" \
-  --role="roles/run.invoker"
 ```
 
 ### 1.5 Deploy service account
@@ -105,6 +101,11 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:${DEPLOY_SA_EMAIL}" \
   --role="roles/run.admin"
 
+# Read project IAM so CI can fail if a project-level broad invoker is inherited.
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${DEPLOY_SA_EMAIL}" \
+  --role="roles/browser"
+
 # Permission to "act as" the runtime SA when deploying — without this,
 # `gcloud run deploy --service-account=<runtime>` returns
 # "PERMISSION_DENIED: iam.serviceAccounts.actAs".
@@ -112,6 +113,16 @@ gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA_EMAIL" \
   --member="serviceAccount:${DEPLOY_SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser"
 ```
+
+The deploy workflow grants the deployer `roles/run.invoker` on `ai-services` so its authenticated smoke tests can run. On every deploy it also re-enables the Cloud Run invoker IAM check, removes service-level `allUsers` and `allAuthenticatedUsers`, and fails if either the service or project IAM policy contains a broad `roles/run.invoker` grant. Do not add project-wide `roles/run.invoker` bindings.
+
+Project IAM inspection does not prove that a folder or organization ancestor lacks an inherited broad grant. An administrator with the required Resource Manager visibility must inspect every parent folder and organization policy and record evidence that neither broad principal has `roles/run.invoker`. Keep `ENABLE_PYTHON_AI_PRODUCTION_DEPLOY` absent/false until that ancestor audit is complete; CI cannot claim full private containment from the service policy alone.
+
+### 1.5a Private invocation contract
+
+The intended private contract requires a trusted server caller to have `roles/run.invoker` on the `ai-services` service, mint a short-lived Google ID token whose audience is the exact Cloud Run service URL, and send it in `X-Serverless-Authorization`. The end user's verified Supabase access token remains in `Authorization`; Cloud Run consumes the former header and leaves the latter for FastAPI authorization. Do not enable deployment or user traffic until the ancestor-IAM audit above confirms there is no inherited broad invoker.
+
+The current browser voice client and Supabase Edge proxy cannot mint this Google identity token with the repository's present credentials. Until a trusted server-side proxy implements this contract, keep `NEXT_PUBLIC_PYTHON_AI_BASE_URL` empty, keep `PYTHON_AI_BASE_URL` unset, and leave the Python-routing feature flags OFF. Browser voice continues to use its Web Speech fallback. Never embed a service-account key or static Google identity token in browser code, Vercel public environment variables, Supabase source, or repository secrets.
 
 ### 1.6 Workload Identity Federation for GitHub Actions
 
@@ -132,8 +143,8 @@ gcloud iam workload-identity-pools providers create-oidc github-actions \
   --workload-identity-pool=github \
   --display-name="GitHub Actions OIDC" \
   --issuer-uri="https://token.actions.githubusercontent.com" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
-  --attribute-condition="assertion.repository == '${GITHUB_REPO}'"
+  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.ref=assertion.ref,attribute.environment=assertion.environment" \
+  --attribute-condition="assertion.repository == '${GITHUB_REPO}' && assertion.ref == 'refs/heads/main' && assertion.environment == 'Production'"
 
 # 3. Let the GitHub repo impersonate the deploy SA
 gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA_EMAIL" \
@@ -145,7 +156,7 @@ echo "WORKLOAD_IDENTITY_PROVIDER value to copy into GitHub secret:"
 echo "projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/providers/github-actions"
 ```
 
-The `attribute-condition` is what stops a malicious fork from impersonating our SA. Do not loosen it.
+The `attribute-condition` blocks forks, non-main refs, and jobs outside the protected `Production` environment from impersonating the deploy SA. The capitalization matches the canonical live GitHub Environment name and therefore the OIDC claim exactly. Do not loosen it. If the provider already exists, update it to include the `ref` and `environment` mappings and this condition before enabling deployment.
 
 ### 1.7 Secret Manager entries
 
@@ -178,13 +189,15 @@ To rotate a secret later:
 printf '%s' '<new value>' | gcloud secrets versions add anthropic-api-key --data-file=-
 ```
 
-Cloud Run pulls `:latest` on every revision start; redeploy (or `gcloud run services update ai-services --region=asia-south1`) for the rotation to take effect.
+The workflow keeps the container image SHA-pinned. A new Cloud Run revision resolves each Secret Manager binding's `latest` version, so redeploy (or run `gcloud run services update ai-services --region=asia-south1`) for a secret rotation to take effect.
 
 ---
 
-## 2. GitHub repository secrets
+## 2. GitHub Production environment and secrets
 
-Paste these into the canonical repo (`Settings → Secrets and variables → Actions → New repository secret`):
+The canonical GitHub Environment is named `Production`, but a read-only audit on 2026-07-11 found **zero protection rules and no deployment-branch policy**. Production delivery must remain disabled. Add an independent required reviewer, enable "prevent self-review" where the plan supports it, and restrict deployment branches to `main`. The build, deploy, and smoke jobs all enter this environment, so the configured approval boundary will cover every job that receives a GCP credential.
+
+The same audit found the GCP identity inputs at repository scope. Move these four values to **environment secrets** under `Production`, verify the workflow can resolve them only after environment approval, then remove the repository-scoped copies:
 
 | Name | Value source | Example |
 | --- | --- | --- |
@@ -193,7 +206,9 @@ Paste these into the canonical repo (`Settings → Secrets and variables → Act
 | `GCP_SERVICE_ACCOUNT` | from step 1.5 | `ai-services-deployer@alfanumrik-ai-prod.iam.gserviceaccount.com` |
 | `GCP_RUNTIME_SERVICE_ACCOUNT` | from step 1.4 | `ai-services-runtime@alfanumrik-ai-prod.iam.gserviceaccount.com` |
 
-For staging deploys via `workflow_dispatch`, repeat steps 1.1–1.7 with `alfanumrik-ai-staging` and add a **GitHub Environment** named `staging` that overrides the secrets above. The workflow currently does not branch on environment; expand it later if staging needs distinct secrets.
+After environment protections, environment-scoped secrets, the WIF claim condition in step 1.6, and the parent-IAM audit have all been independently verified, set the repository Actions variable `ENABLE_PYTHON_AI_PRODUCTION_DEPLOY=true`. It is absent/false by default, so credentialed build, deploy, and smoke jobs remain skipped while the normal PR/main Python test job still runs. Remove or set the variable to `false` for an immediate deployment freeze; this gate does not replace environment approval, WIF restrictions, or IAM review.
+
+Manual staging delivery is suspended. Do not add `workflow_dispatch` back until staging has a separate GCP project, deploy/runtime service accounts, secrets, GitHub `staging` environment with reviewers and branch restrictions, and a WIF provider conditioned on its exact staging ref and environment. A staging path must be unable to select production credentials or the production service. The current workflow can deploy production only from an explicitly enabled push to `main`.
 
 ---
 
@@ -232,8 +247,8 @@ The workflow substitutes these tokens before applying:
 | --- | --- | --- |
 | `${IMAGE_TAG}` | reconstructed in the `deploy` job from `build-and-push.outputs.image_sha` + secret `GCP_PROJECT_ID` + the `GCP_REGION`/`ARTIFACT_REPO` constants | `asia-south1-docker.pkg.dev/<project>/ai-services/api:<sha>` |
 | `${RUNTIME_SERVICE_ACCOUNT}` | secret `GCP_RUNTIME_SERVICE_ACCOUNT` | `ai-services-runtime@<project>.iam.gserviceaccount.com` |
-| `${ENVIRONMENT}` | computed (`staging` or `production`) | `production` |
-| `${ALLOWED_ORIGINS}` | workflow constant | `https://alfanumrik.com,https://staging.alfanumrik.com` |
+| `${ENVIRONMENT}` | fixed workflow constant | `production` |
+| `${ALLOWED_ORIGINS}` | fixed workflow constant | `https://alfanumrik.com` |
 
 The token whitelist is explicit in `envsubst '...'` so any unintended `${...}` literal in the YAML survives unmodified.
 
@@ -247,12 +262,17 @@ The `build-and-push` job exposes **only** the non-secret short SHA as its cross-
 
 1. Make a trivial change inside `python/` on a feature branch.
 2. Open a PR. CI runs only the `test` job (ruff + mypy + pytest). Verify it goes green.
-3. Merge to `main`. The `python-ai-deploy.yml` workflow runs `test` → `build-and-push` → `deploy` → `post-deploy-smoke`.
+3. Confirm the `Production` environment, WIF restrictions, parent-IAM evidence, and explicit enable variable from section 2 are active, then merge to `main`. The workflow runs `test` → `build-and-push` → `deploy` → `post-deploy-smoke`.
 4. Confirm the workflow summary shows:
    - Image pushed to `asia-south1-docker.pkg.dev/<PROJECT_ID>/ai-services/api:<sha>`
    - `/live` returned 200
-   - `/readyz` returned 200 (or 503 with a clear cause if a secret is missing)
-5. Hit the printed Cloud Run URL by hand: `curl https://ai-services-XXXXXX-as.a.run.app/live`
+   - `/readyz` returned 200; every non-200 status fails the deployment
+5. From an identity with service-scoped `roles/run.invoker`, test the printed URL with a short-lived Google ID token:
+   ```bash
+   URL="https://ai-services-XXXXXX-as.a.run.app"
+   ID_TOKEN="$(gcloud auth print-identity-token --audiences="${URL}")"
+   curl --header "X-Serverless-Authorization: Bearer ${ID_TOKEN}" "${URL}/live"
+   ```
 
 If the first deploy fails on `iam.serviceAccounts.actAs`, re-check step 1.5 — the deploy SA needs `roles/iam.serviceAccountUser` on the **runtime SA**, not on the project.
 
@@ -341,7 +361,7 @@ Do not deploy to `us-central1` "for cheaper egress" — that would add 200+ ms p
 | `gcloud run deploy` fails with `iam.serviceAccounts.actAs` | Deploy SA lacks `serviceAccountUser` on runtime SA | Re-run step 1.5 last command |
 | Image push fails with `denied: permission "artifactregistry.repositories.uploadArtifacts" denied` | Deploy SA missing `roles/artifactregistry.writer` | Re-run the binding in step 1.5 |
 | `/readyz` returns 503 with "provider key missing" | Secret Manager binding missing or runtime SA lacks accessor | Check step 1.4 + 1.7; redeploy |
-| Workflow stuck on `Authenticate to GCP` | Wrong `GCP_WORKLOAD_IDENTITY_PROVIDER` or `attribute-condition` mismatch | Re-print provider from step 1.6; ensure GitHub repo string matches exactly |
+| Workflow stuck on `Authenticate to GCP` | Wrong provider or repository/ref/environment claim mismatch | Re-check step 1.6 mappings and condition; the job must be a `main` push in the canonical `Production` environment |
 | Container OOMs (memory > 512 MiB) | Heavy concurrent vector requests | Bump `--memory=1Gi` in `python-ai-deploy.yml` |
 | Cold start > 5 s | Heavy imports at module load | Audit `services/ai/api/main.py` for top-level work; or set `--min-instances=1` (costs ~₹600/mo) |
 
@@ -351,6 +371,6 @@ Do not deploy to `us-central1` "for cheaper egress" — that would add 200+ ms p
 
 - [ ] Confirm GCP project naming with CEO before running step 1.1.
 - [ ] Decide whether to create a separate billing account for AI services or share with the existing Vercel/Supabase billing.
-- [ ] Add a `staging` GitHub Environment with its own secrets once Phase 1A traffic starts.
+- [ ] Design a separately credentialed and ref-scoped staging delivery path before restoring manual staging deploys.
 - [ ] Add Cloud Run uptime check + PagerDuty/Slack alerting before any production traffic is routed.
 - [ ] Pin the Python base image to a SHA digest once we cut a release tag.

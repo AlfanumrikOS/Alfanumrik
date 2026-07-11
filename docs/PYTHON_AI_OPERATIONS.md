@@ -69,7 +69,14 @@ TypeScript Edge Functions to Python. Each port is a separate canary cycle.
 - Python implementation deployed to Cloud Run with traffic at 0%.
 - Supabase Edge proxy code merged but `ff_python_ai_services_v1` flag is OFF
   (or set to `rollout_percentage: 0`).
-- Staging green: smoke tests pass against the Python service URL directly.
+- Staging green: smoke tests pass from an authorized server identity with
+  service-scoped `roles/run.invoker`, using a short-lived Google ID token in
+  `X-Serverless-Authorization`.
+
+**Phase 0 containment gate:** do not begin a canary until the Edge or Vercel
+server proxy can mint the Google identity token described above while
+forwarding the end user's Supabase JWT in `Authorization`. Until then,
+`PYTHON_AI_BASE_URL` remains unset and all Python-routing flags remain OFF.
 
 **Initial canary** (ops driver):
 1. Flip the proxy flag to route 10% of traffic for ONE function (e.g.
@@ -223,12 +230,18 @@ shows the entire Python-cutover fleet at a glance.
 
 Apply this checklist verbatim for each subsequent function port.
 
-- [ ] `PYTHON_AI_BASE_URL` env var set on the Edge Function (architect).
+- [ ] Trusted proxy caller has service-scoped `roles/run.invoker`, can mint a
+      Google ID token for the exact service URL, and sends it in
+      `X-Serverless-Authorization` while preserving the user's Supabase JWT in
+      `Authorization`.
+- [ ] `PYTHON_AI_BASE_URL` is set on the trusted proxy only after the preceding
+      identity path is verified (architect).
 - [ ] Cloud Run service health: `/live` returns 200, `/readyz` returns
       200 (no upstream issues).
-- [ ] Staging smoke test: hit the Python service URL directly with a
-      valid admin JWT and a known-good `bulk-question-gen` request body.
-      Compare response shape to the TS function's output.
+- [ ] Staging smoke test: call the private service with both the Google caller
+      token and a valid Supabase user JWT, plus a known-good
+      `bulk-question-gen` request body. Compare the response shape to the TS
+      function's output.
 - [ ] Flag exists and is in default state:
       `select * from public.feature_flags where flag_name = 'ff_python_bulk_question_gen_v1';`
       should show `is_enabled=false`, `rollout_pct=0`.
@@ -411,8 +424,10 @@ deliberate.
 3. **Service health from outside** (don't trust internal probes during an
    incident):
    ```bash
-   curl -i https://<SERVICE_URL>/live
-   curl -i https://<SERVICE_URL>/readyz
+   SERVICE_URL="https://<SERVICE_URL>"
+   ID_TOKEN="$(gcloud auth print-identity-token --audiences="${SERVICE_URL}")"
+   curl -i -H "X-Serverless-Authorization: Bearer ${ID_TOKEN}" "${SERVICE_URL}/live"
+   curl -i -H "X-Serverless-Authorization: Bearer ${ID_TOKEN}" "${SERVICE_URL}/readyz"
    ```
    The Cloud Run service URL pattern is
    `https://ai-services-<HASH>-asia-south1.run.app`. `/live` should

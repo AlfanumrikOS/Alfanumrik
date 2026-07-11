@@ -10,7 +10,6 @@ Public entrypoint: handle_nep_compliance
 from .handler import (
     HandlerError,
     StudentNotFoundError,
-    UnauthorizedError,
     handle_nep_compliance,
 )
 from .models import (
@@ -25,6 +24,5 @@ __all__ = [
     "NepComplianceRequest",
     "NepComplianceResponse",
     "StudentNotFoundError",
-    "UnauthorizedError",
     "handle_nep_compliance",
 ]
