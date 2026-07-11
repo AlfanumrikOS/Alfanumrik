@@ -6,9 +6,9 @@ import ParentShell from './ParentShell';
 import ParentV3Shell from './ParentV3Shell';
 
 export default function ParentV3LayoutGate({ children }: { children: React.ReactNode }) {
-  const { enabled, loading, manifest, routeAllowed } = useExperienceV3('parent');
+  const { enabled, loading, manifest, routeAllowed, scope, legacyAllowed, denied } = useExperienceV3('parent');
   if (loading) return <div className="flex min-h-dvh items-center justify-center" role="status">Loading parent portal…</div>;
-  if (!enabled) return <ParentShell>{children}</ParentShell>;
-  if (!manifest || !routeAllowed) return <DataState state="permission" title="This parent destination is unavailable" />;
-  return <ParentV3Shell manifest={manifest}>{children}</ParentV3Shell>;
+  if (legacyAllowed) return <ParentShell>{children}</ParentShell>;
+  if (denied || !enabled || !manifest || !routeAllowed) return <DataState state="permission" title="This parent destination is unavailable" />;
+  return <ParentV3Shell manifest={manifest} authoritativeChildId={scope?.childId ?? null}>{children}</ParentV3Shell>;
 }

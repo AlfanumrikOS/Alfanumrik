@@ -7,18 +7,18 @@ export const ROLE_NAVIGATION: Readonly<Record<ExperienceRole, RoleManifest>> = {
     role: 'student',
     homeHref: '/today',
     primary: [
-      entry('Today', '/today', 'student.today', { exact: true }),
-      entry('Learn', '/learn', 'student.learn'),
-      entry('Practice', '/practice', 'student.practice'),
-      entry('Progress', '/progress', 'student.progress'),
+      entry('Today', '/today', 'student.today', { exact: true, requiredPermission: 'study_plan.view' }),
+      entry('Learn', '/learn', 'student.learn', { requiredPermission: 'study_plan.view' }),
+      entry('Practice', '/practice', 'student.practice', { requiredPermission: 'quiz.attempt' }),
+      entry('Progress', '/progress', 'student.progress', { requiredPermission: 'progress.view_own' }),
     ],
     more: [
-      entry('Foxy history', '/foxy', 'student.foxy'),
-      entry('Rewards', '/rewards', 'student.rewards'),
-      entry('Notebook', '/notebook', 'student.notebook'),
-      entry('Exam plan', '/practice/exam', 'student.exam-plan'),
-      entry('Downloads', '/downloads', 'student.downloads'),
-      entry('Settings', '/settings', 'shared.settings'),
+      entry('Foxy history', '/foxy', 'student.foxy', { requiredPermission: 'foxy.chat' }),
+      entry('Rewards', '/rewards', 'student.rewards', { requiredPermission: 'leaderboard.view' }),
+      entry('Notebook', '/notebook', 'student.notebook', { requiredPermission: 'image.view_own' }),
+      entry('Exam plan', '/practice/exam', 'student.exam-plan', { requiredPermission: 'exam.view' }),
+      entry('Downloads', '/downloads', 'student.downloads', { requiredPermission: 'report.download_own' }),
+      entry('Settings', '/settings', 'shared.settings', { requiredPermission: 'profile.update_own' }),
       entry('Help', '/help', 'shared.help'),
       entry('Switch role', '/role-switch', 'shared.role-switch'),
     ],
@@ -28,17 +28,17 @@ export const ROLE_NAVIGATION: Readonly<Record<ExperienceRole, RoleManifest>> = {
     role: 'teacher',
     homeHref: '/teacher/today',
     primary: [
-      entry('Today', '/teacher/today', 'teacher.today', { exact: true }),
-      entry('Students', '/teacher/students', 'teacher.students'),
-      entry('Assign', '/teacher/assign', 'teacher.assign'),
-      entry('Inbox', '/teacher/messages', 'teacher.messages'),
+      entry('Today', '/teacher/today', 'teacher.today', { exact: true, requiredPermission: 'class.view_analytics' }),
+      entry('Students', '/teacher/students', 'teacher.students', { requiredPermission: 'class.manage' }),
+      entry('Assign', '/teacher/assign', 'teacher.assign', { requiredPermissions: ['class.manage', 'class.assign_remediation'] }),
+      entry('Inbox', '/teacher/messages', 'teacher.messages', { requiredPermission: 'class.manage' }),
     ],
     more: [
-      entry('Classes', '/teacher/classes', 'teacher.classes'),
-      entry('Grade', '/teacher/grade', 'teacher.grade'),
-      entry('Insights', '/teacher/insights', 'teacher.insights'),
-      entry('Resources', '/teacher/resources', 'teacher.resources'),
-      entry('Settings', '/teacher/settings', 'shared.settings'),
+      entry('Classes', '/teacher/classes', 'teacher.classes', { requiredPermission: 'class.manage' }),
+      entry('Grade', '/teacher/grade', 'teacher.grade', { requiredPermission: 'student.provide_feedback' }),
+      entry('Insights', '/teacher/insights', 'teacher.insights', { requiredPermission: 'class.view_analytics' }),
+      entry('Resources', '/teacher/resources', 'teacher.resources', { requiredPermission: 'worksheet.create' }),
+      entry('Settings', '/teacher/settings', 'shared.settings', { requiredPermission: 'profile.update_own' }),
     ],
     desktop: [],
   },
@@ -46,15 +46,15 @@ export const ROLE_NAVIGATION: Readonly<Record<ExperienceRole, RoleManifest>> = {
     role: 'parent',
     homeHref: '/parent/home',
     primary: [
-      entry('Home', '/parent/home', 'parent.home', { exact: true }),
-      entry('Progress', '/parent/progress', 'parent.progress'),
-      entry('Plan', '/parent/plan', 'parent.plan'),
-      entry('Messages', '/parent/messages', 'parent.messages'),
+      entry('Home', '/parent/home', 'parent.home', { exact: true, requiredPermission: 'child.view_progress' }),
+      entry('Progress', '/parent/progress', 'parent.progress', { requiredPermission: 'child.view_progress' }),
+      entry('Plan', '/parent/plan', 'parent.plan', { requiredPermission: 'child.view_exams' }),
+      entry('Messages', '/parent/messages', 'parent.messages', { requiredPermission: 'child.view_progress' }),
     ],
     more: [
-      entry('Calendar', '/parent/calendar', 'parent.calendar'),
-      entry('Reports', '/parent/reports', 'parent.reports'),
-      entry('Settings', '/parent/settings', 'shared.settings'),
+      entry('Calendar', '/parent/calendar', 'parent.calendar', { requiredPermission: 'child.view_exams' }),
+      entry('Reports', '/parent/reports', 'parent.reports', { requiredPermission: 'child.download_report' }),
+      entry('Settings', '/parent/settings', 'shared.settings', { requiredPermission: 'profile.update_own' }),
       entry('Help', '/help', 'shared.help'),
       entry('Switch role', '/role-switch', 'shared.role-switch'),
     ],
@@ -64,16 +64,16 @@ export const ROLE_NAVIGATION: Readonly<Record<ExperienceRole, RoleManifest>> = {
     role: 'school-admin',
     homeHref: '/school-admin/overview',
     primary: [
-      entry('Overview', '/school-admin/overview', 'school.overview', { exact: true }),
-      entry('People', '/school-admin/people', 'school.people'),
-      entry('Academics', '/school-admin/academics', 'school.academics'),
-      entry('Insights', '/school-admin/insights', 'school.insights'),
+      entry('Overview', '/school-admin/overview', 'school.overview', { exact: true, requiredPermission: 'institution.view_analytics' }),
+      entry('People', '/school-admin/people', 'school.people', { requiredPermissions: ['institution.manage_students', 'institution.manage_teachers', 'institution.manage_staff', 'school.manage_settings'] }),
+      entry('Academics', '/school-admin/academics', 'school.academics', { requiredPermissions: ['class.manage', 'school.manage_exams', 'school.manage_content'] }),
+      entry('Insights', '/school-admin/insights', 'school.insights', { requiredPermission: 'institution.view_analytics' }),
     ],
     more: [
-      entry('Announcements', '/school-admin/announcements', 'school.announcements'),
-      entry('Reports', '/school-admin/reports', 'school.reports'),
-      entry('Governance', '/school-admin/governance', 'school.governance', { requiredPermission: 'institution.manage' }),
-      entry('Settings', '/school-admin/settings', 'shared.settings', { requiredPermission: 'institution.manage' }),
+      entry('Announcements', '/school-admin/announcements', 'school.announcements', { requiredPermission: 'institution.manage' }),
+      entry('Reports', '/school-admin/reports', 'school.reports', { requiredPermission: 'report.view_class' }),
+      entry('Governance', '/school-admin/governance', 'school.governance', { requiredPermissions: ['institution.manage', 'school.manage_settings'] }),
+      entry('Settings', '/school-admin/settings', 'shared.settings', { requiredPermissions: ['institution.manage', 'school.manage_settings', 'school.manage_branding', 'school.manage_modules', 'school.manage_api_keys'] }),
     ],
     desktop: [],
   },
@@ -81,10 +81,10 @@ export const ROLE_NAVIGATION: Readonly<Record<ExperienceRole, RoleManifest>> = {
     role: 'super-admin',
     homeHref: '/super-admin/command',
     primary: [
-      entry('Command', '/super-admin/command', 'super.command', { exact: true }),
-      entry('Institutions', '/super-admin/institutions', 'super.institutions'),
-      entry('Operations', '/super-admin/operations', 'super.operations'),
-      entry('Revenue', '/super-admin/revenue', 'super.revenue'),
+      entry('Command', '/super-admin/command', 'super.command', { exact: true, requiredPermission: 'system.audit' }),
+      entry('Institutions', '/super-admin/institutions', 'super.institutions', { requiredPermission: 'role.manage' }),
+      entry('Operations', '/super-admin/operations', 'super.operations', { requiredPermission: 'system.audit' }),
+      entry('Revenue', '/super-admin/revenue', 'super.revenue', { requiredPermission: 'finance.view_revenue' }),
     ],
     more: [
       entry('Governance', '/super-admin/governance', 'super.governance', { requiredPermission: 'role.manage' }),
@@ -107,13 +107,23 @@ export function getRoleManifest(role: ExperienceRole, capabilities?: Readonly<Re
     // for design/route ownership. Runtime callers use resolveCapabilities(),
     // which always passes an explicit permission list and therefore fails
     // closed for protected destinations.
-    return !item.requiredPermission || permissions === undefined || permissions.includes(item.requiredPermission);
+    if (permissions === undefined) return true;
+    const required = item.requiredPermissions ?? (item.requiredPermission ? [item.requiredPermission] : []);
+    return required.length === 0 || required.some((permission) => permissions.includes(permission));
   };
-  return {
+  const manifest = {
     role,
     homeHref: source.homeHref,
     primary: source.primary.filter(permitted),
     more: source.more.filter(permitted),
     desktop: source.desktop.filter(permitted),
   };
+  manifestPermissionContext.set(manifest, permissions === undefined ? undefined : new Set(permissions));
+  return manifest;
+}
+
+const manifestPermissionContext = new WeakMap<RoleManifest, ReadonlySet<string> | undefined>();
+
+export function getManifestPermissionContext(manifest: RoleManifest): ReadonlySet<string> | undefined {
+  return manifestPermissionContext.get(manifest);
 }

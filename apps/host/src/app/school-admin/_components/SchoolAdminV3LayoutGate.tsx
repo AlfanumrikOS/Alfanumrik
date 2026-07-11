@@ -6,9 +6,9 @@ import SchoolAdminShell from './SchoolAdminShell';
 import SchoolAdminV3Shell from './SchoolAdminV3Shell';
 
 export default function SchoolAdminV3LayoutGate({ children }: { children: React.ReactNode }) {
-  const { enabled, loading, manifest, routeAllowed } = useExperienceV3('school-admin');
+  const { enabled, loading, manifest, routeAllowed, scope, legacyAllowed, denied } = useExperienceV3('school-admin');
   if (loading) return <div className="flex min-h-dvh items-center justify-center" role="status">Loading school portal…</div>;
-  if (!enabled) return <SchoolAdminShell>{children}</SchoolAdminShell>;
-  if (!manifest || !routeAllowed) return <DataState state="permission" title="This school destination is unavailable" />;
-  return <SchoolAdminV3Shell manifest={manifest}>{children}</SchoolAdminV3Shell>;
+  if (legacyAllowed) return <SchoolAdminShell>{children}</SchoolAdminShell>;
+  if (denied || !enabled || !manifest || !routeAllowed) return <DataState state="permission" title="This school destination is unavailable" />;
+  return <SchoolAdminV3Shell manifest={manifest} authoritativeScope={scope}>{children}</SchoolAdminV3Shell>;
 }

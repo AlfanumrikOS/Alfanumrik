@@ -218,6 +218,16 @@
   [data-experience="v3"] .v3-recommendation__meta { margin: var(--v3-space-3) 0; }
   [data-experience="v3"] .v3-recommendation__actions { display: flex; flex-wrap: wrap; gap: var(--v3-space-2); align-items: end; }
 
+  [data-experience="v3"] .v3-metric-trust { min-width: 0; max-width: 100%; margin-top: var(--v3-space-3); color: var(--v3-ink-secondary); font-size: 0.75rem; overflow-wrap: anywhere; }
+  [data-experience="v3"] .v3-metric-trust summary { display: inline-flex; min-width: 0; min-height: 2.75rem; max-width: 100%; flex-wrap: wrap; align-items: center; gap: var(--v3-space-2); color: var(--v3-action); font-weight: 800; cursor: pointer; }
+  [data-experience="v3"] .v3-metric-trust__estimate { padding: 0.15rem 0.45rem; border-radius: 999px; color: var(--v3-warning); background: var(--v3-warning-soft); font-size: 0.68rem; text-transform: uppercase; }
+  [data-experience="v3"] .v3-metric-trust dl { display: grid; gap: var(--v3-space-1); margin: 0 0 var(--v3-space-2); }
+  [data-experience="v3"] .v3-metric-trust dl > div { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  [data-experience="v3"] .v3-metric-trust dt { font-weight: 800; }
+  [data-experience="v3"] .v3-metric-trust dd { margin: 0; min-width: 0; }
+  [data-experience="v3"] .v3-metric-trust a { display: inline-flex; min-height: 2.75rem; align-items: center; color: var(--v3-action); font-weight: 800; }
+  [data-experience="v3"] .v3-metric-trust p { margin: 0; }
+
   [data-experience="v3"] .v3-action-queue > h2 { margin-bottom: var(--v3-space-4); }
   [data-experience="v3"] .v3-action-queue ol { display: grid; gap: var(--v3-space-2); margin: 0; padding: 0; list-style: none; }
   [data-experience="v3"] .v3-action-queue li { display: flex; align-items: center; gap: var(--v3-space-4); min-height: 4.75rem; padding: var(--v3-space-3) var(--v3-space-4); border: 1px solid var(--v3-border); border-radius: var(--v3-radius-card); background: var(--v3-surface); }
@@ -282,6 +292,7 @@
   @media (min-width: 480px) {
     [data-experience="v3"] .v3-main { padding-inline: var(--v3-space-5); }
     [data-experience="v3"] .v3-pad--md { padding: var(--v3-space-5); }
+    [data-experience="v3"] .v3-metric-trust dl > div { grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr); gap: var(--v3-space-2); }
   }
 
   @media (min-width: 768px) {

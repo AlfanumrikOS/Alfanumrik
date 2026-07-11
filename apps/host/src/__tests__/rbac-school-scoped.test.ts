@@ -133,6 +133,36 @@ describe('RBAC School-Scoped Permissions', () => {
       expect(result.roles[0].name).toBe('teacher');
       expect(result.schoolId).toBe('school-xyz');
     });
+
+    it('falls back to the baseline one-argument RPC only when the scoped overload is absent', async () => {
+      mockRpc
+        .mockResolvedValueOnce({
+          data: null,
+          error: {
+            code: 'PGRST202',
+            message: 'Could not find public.get_user_permissions(p_auth_user_id, p_school_id) in the schema cache',
+          },
+        })
+        .mockResolvedValueOnce({
+          data: {
+            roles: [{ name: 'institution_admin', display_name: 'Institution Admin', hierarchy_level: 70 }],
+            permissions: ['institution.manage_students'],
+          },
+          error: null,
+        });
+
+      const result = await getUserPermissions('user-baseline-1', 'school-baseline');
+
+      expect(mockRpc).toHaveBeenNthCalledWith(1, 'get_user_permissions', {
+        p_auth_user_id: 'user-baseline-1',
+        p_school_id: 'school-baseline',
+      });
+      expect(mockRpc).toHaveBeenNthCalledWith(2, 'get_user_permissions', {
+        p_auth_user_id: 'user-baseline-1',
+      });
+      expect(result.permissions).toContain('institution.manage_students');
+      expect(result.schoolId).toBe('school-baseline');
+    });
   });
 
   // ─── Test 3: Different cache keys for platform vs school ────

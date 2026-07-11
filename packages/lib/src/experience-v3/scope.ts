@@ -1,5 +1,30 @@
 import type { ExperienceRole, RoleScope } from './types';
 
+const ROLE_SCOPE_PARAMS: Readonly<Record<ExperienceRole, readonly string[]>> = {
+  student: ['learnerId', 'curriculum', 'subjectId', 'planId'],
+  teacher: ['schoolId', 'classId', 'termId', 'subjectId'],
+  parent: ['childId'],
+  'school-admin': ['schoolId'],
+  'super-admin': ['institutionId', 'environment', 'range'],
+};
+
+/** Return a stable, role-specific subset of URL scope for request/cache keys. */
+export function experienceV3ScopeQuery(role: ExperienceRole, rawSearch: string): string {
+  const source = new URLSearchParams(rawSearch);
+  const scoped = new URLSearchParams();
+  for (const key of ROLE_SCOPE_PARAMS[role]) {
+    // Teacher routes predate the typed V3 scope contract and use `class` in
+    // their shareable URLs. Canonicalise that alias into `classId` so class
+    // changes still invalidate the resolver/cache without creating two scope
+    // dialects downstream.
+    const value = role === 'teacher' && key === 'classId'
+      ? (source.get('classId')?.trim() || source.get('class')?.trim())
+      : source.get(key)?.trim();
+    if (value) scoped.set(key, value);
+  }
+  return scoped.toString();
+}
+
 export function scopeSearchParams(scope: RoleScope): URLSearchParams {
   const params = new URLSearchParams();
   switch (scope.kind) {

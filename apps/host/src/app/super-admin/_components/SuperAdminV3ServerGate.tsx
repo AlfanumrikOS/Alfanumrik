@@ -1,6 +1,6 @@
 import { requireAdminOrRedirect } from '@/lib/admin-auth-server';
 import { resolveCapabilities, resolveExperienceV3, resolveRouteCapability } from '@alfanumrik/lib/experience-v3';
-import type { AdminLevel } from '@alfanumrik/lib/admin-auth';
+import { adminExperiencePermissions, type AdminLevel } from '@alfanumrik/lib/admin-auth';
 import { redirect } from 'next/navigation';
 import SuperAdminV3Workspace from './SuperAdminV3Workspace';
 
@@ -12,7 +12,7 @@ export default async function SuperAdminV3ServerGate({ children, legacyHref, req
     environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
   });
   if (!enabled) redirect(legacyHref);
-  const permissions = admin.adminLevel === 'super_admin' ? ['role.manage', 'system.audit', 'system.config'] : [];
+  const permissions = adminExperiencePermissions(admin.adminLevel);
   const manifest = resolveCapabilities({ role: 'super-admin', permissions }).manifest;
   if (!resolveRouteCapability(manifest, routePath)?.allowed) redirect(legacyHref);
   return <SuperAdminV3Workspace adminName={admin.name || admin.email} adminLevel={admin.adminLevel} manifest={manifest}>{children}</SuperAdminV3Workspace>;

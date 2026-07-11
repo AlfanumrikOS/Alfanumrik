@@ -30,6 +30,7 @@ export interface UserPermissions {
   roles: RoleInfo[];
   permissions: string[];
   schoolId?: string | null;
+  permissionScope?: 'platform' | 'school' | 'baseline-global';
 }
 
 export interface ResolutionContext {
@@ -61,6 +62,7 @@ export interface AuthorizationResult {
   roles: RoleName[];
   permissions: string[];
   schoolId?: string | null;
+  permissionScope?: 'platform' | 'school' | 'baseline-global';
   trace?: ResolutionTrace;
   errorResponse?: Response;
   reason?: string;

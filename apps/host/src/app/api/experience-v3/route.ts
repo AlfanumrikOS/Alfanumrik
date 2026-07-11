@@ -2,15 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getUserPermissions } from '@alfanumrik/lib/rbac';
+import { adminExperiencePermissions } from '@alfanumrik/lib/admin-auth';
+import { schoolAdminRoleAllows, schoolAdminRolePermissionIsGoverned, type SchoolAdminRole } from '@alfanumrik/lib/school-admin-auth';
 import { ENTITLEMENTS_FLAG, getResolvedEntitlements } from '@alfanumrik/lib/entitlements/resolver';
-import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
+import { isFeatureEnabled, SCHOOL_ADMIN_RBAC_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { getRoleManifest, resolveCapabilities, resolveExperienceV3, resolveRouteCapability, type ExperienceRole } from '@alfanumrik/lib/experience-v3';
 
 const ROLES = new Set<ExperienceRole>(['student', 'teacher', 'parent', 'school-admin', 'super-admin']);
 
-interface Membership { allowed: boolean; institutionId?: string; }
+interface SchoolScopeOption { id: string; name: string; }
+interface Membership {
+  allowed: boolean;
+  institutionId?: string;
+  childId?: string;
+  schoolAdminRole?: SchoolAdminRole;
+  adminLevel?: string;
+  schools?: SchoolScopeOption[];
+}
 
-async function getRoleMembership(userId: string, role: ExperienceRole): Promise<Membership> {
+async function getRoleMembership(
+  userId: string,
+  role: ExperienceRole,
+  requestedScope: { childId?: string; schoolId?: string },
+): Promise<Membership> {
   const admin = getSupabaseAdmin();
   switch (role) {
     case 'student': {
@@ -24,18 +38,58 @@ async function getRoleMembership(userId: string, role: ExperienceRole): Promise<
     case 'parent': {
       const { data: guardian, error } = await admin.from('guardians').select('id').eq('auth_user_id', userId).is('deleted_at', null).limit(1).maybeSingle();
       if (error || !guardian) return { allowed: false };
-      const { data: link } = await admin.from('guardian_student_links').select('student_id').eq('guardian_id', guardian.id).limit(1).maybeSingle();
+      let linksQuery = admin
+        .from('guardian_student_links')
+        .select('student_id, created_at')
+        .eq('guardian_id', guardian.id)
+        .in('status', ['active', 'approved']);
+      if (requestedScope.childId) linksQuery = linksQuery.eq('student_id', requestedScope.childId);
+      const { data: links, error: linksError } = await linksQuery.order('created_at', { ascending: true }).limit(1);
+      const link = links?.[0];
+      // A caller-supplied child is an authorization boundary. Never silently
+      // replace an invalid child with the guardian's first linked learner.
+      if (linksError || (requestedScope.childId && !link)) return { allowed: false };
       if (!link?.student_id) return { allowed: true };
-      const { data: student } = await admin.from('students').select('school_id').eq('id', link.student_id).is('deleted_at', null).maybeSingle();
-      return { allowed: true, institutionId: student?.school_id || undefined };
+      const { data: student, error: studentError } = await admin
+        .from('students')
+        .select('school_id')
+        .eq('id', link.student_id)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (studentError || !student) return { allowed: false };
+      return { allowed: true, childId: link.student_id, institutionId: student.school_id || undefined };
     }
     case 'school-admin': {
-      const { data, error } = await admin.from('school_admins').select('id,school_id').eq('auth_user_id', userId).eq('is_active', true).limit(1).maybeSingle();
-      return { allowed: !error && Boolean(data), institutionId: data?.school_id || undefined };
+      const { data, error } = await admin
+        .from('school_admins')
+        .select('id,school_id,role,schools!inner(id,name,is_active)')
+        .eq('auth_user_id', userId)
+        .eq('is_active', true)
+        .eq('schools.is_active', true);
+      if (error) return { allowed: false };
+      type Row = { school_id: string; role: SchoolAdminRole; schools: { id: string; name: string } | Array<{ id: string; name: string }> | null };
+      const rows = ((data ?? []) as Row[]).slice().sort((left, right) => left.school_id.localeCompare(right.school_id));
+      const selected = requestedScope.schoolId
+        ? rows.find((item) => item.school_id === requestedScope.schoolId)
+        : rows[0];
+      // URL scope is untrusted. An inactive/foreign school selection never
+      // falls back to another membership.
+      if (!selected) return { allowed: false };
+      const schools = rows.map((item) => {
+        const school = Array.isArray(item.schools) ? item.schools[0] : item.schools;
+        return { id: item.school_id, name: school?.name || 'School' };
+      });
+      return {
+        allowed: true,
+        institutionId: selected.school_id,
+        schoolAdminRole: selected.role,
+        schools,
+      };
     }
     case 'super-admin': {
-      const { data, error } = await admin.from('admin_users').select('id').eq('auth_user_id', userId).eq('is_active', true).limit(1).maybeSingle();
-      return { allowed: !error && Boolean(data) };
+      const { data, error } = await admin.from('admin_users').select('id,admin_level').eq('auth_user_id', userId).eq('is_active', true).limit(1).maybeSingle();
+      return { allowed: !error && Boolean(data), adminLevel: data?.admin_level || undefined };
     }
   }
 }
@@ -104,7 +158,9 @@ export async function GET(request: NextRequest) {
   // endpoint to reveal a teacher or operator shell. Multi-role users pass for
   // every profile they genuinely own.
   const role = requestedRole as ExperienceRole;
-  const membership = await getRoleMembership(user.id, role);
+  const requestedChildId = request.nextUrl.searchParams.get('childId')?.trim() || undefined;
+  const requestedSchoolId = request.nextUrl.searchParams.get('schoolId')?.trim() || undefined;
+  const membership = await getRoleMembership(user.id, role, { childId: requestedChildId, schoolId: requestedSchoolId });
   if (!membership.allowed) {
     return NextResponse.json({ enabled: false }, { status: 403, headers: { 'Cache-Control': 'private, no-store' } });
   }
@@ -121,11 +177,27 @@ export async function GET(request: NextRequest) {
   });
   if (!enabled) return NextResponse.json({ enabled: false, capabilities: {}, manifest: null, routeAllowed: false }, { headers: { 'Cache-Control': 'private, no-store' } });
 
-  let permissions: string[] = [];
+  let permissions: string[] = role === 'super-admin'
+    ? [...adminExperiencePermissions(membership.adminLevel)]
+    : [];
   try {
     const resolved = await getUserPermissions(user.id, institutionId);
-    permissions = resolved.permissions;
-    if (resolved.roles.some((item) => item.name === 'super_admin')) permissions = ['role.manage', 'system.audit', 'system.config', ...permissions];
+    permissions = [...new Set([...permissions, ...resolved.permissions])];
+    // The institution_admin RBAC role is a superset. When the existing
+    // school-admin role matrix is enabled, narrow the visible manifest to the
+    // selected membership's actual role as well; this can only remove access.
+    const selectedSchoolAdminRole = membership.schoolAdminRole;
+    if (role === 'school-admin' && selectedSchoolAdminRole) {
+      const multiSchool = (membership.schools?.length ?? 0) > 1;
+      const roleMatrixOn = multiSchool
+        || await isFeatureEnabled(SCHOOL_ADMIN_RBAC_FLAGS.V1, { institutionId });
+      if (roleMatrixOn) {
+        permissions = permissions.filter((permission) => (
+          (!multiSchool || resolved.permissionScope !== 'baseline-global' || schoolAdminRolePermissionIsGoverned(permission))
+          && schoolAdminRoleAllows(selectedSchoolAdminRole, permission)
+        ));
+      }
+    }
   } catch { /* protected navigation fails closed through an empty list */ }
 
   const databaseOverrides = await databaseCapabilityOverrides(role, institutionId);
@@ -140,5 +212,10 @@ export async function GET(request: NextRequest) {
     capabilities: resolved.capabilities,
     manifest: resolved.manifest,
     routeAllowed: requestedPath ? routeResolution?.allowed === true : true,
+    scope: role === 'parent'
+      ? { childId: membership.childId }
+      : role === 'school-admin'
+        ? { schoolId: institutionId, schools: membership.schools ?? [] }
+        : null,
   }, { headers: { 'Cache-Control': 'private, no-store' } });
 }

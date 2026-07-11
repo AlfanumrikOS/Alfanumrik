@@ -8,6 +8,8 @@ export interface NavigationEntry {
   capability: string;
   exact?: boolean;
   requiredPermission?: string;
+  /** Any one permission may expose a grouped navigation destination. */
+  requiredPermissions?: readonly string[];
 }
 
 export interface RoleManifest {

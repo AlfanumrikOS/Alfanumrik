@@ -10,7 +10,7 @@ describe('One Experience V3 — Parent', () => {
     const source = read('parent/_components/ParentV3LayoutGate.tsx');
     expect(source).toContain("useExperienceV3('parent')");
     expect(source).toContain('<ParentShell>');
-    expect(source).toContain('<ParentV3Shell manifest={manifest}>');
+    expect(source).toContain('authoritativeChildId={scope?.childId ?? null}');
     expect(source).toContain('manifest={manifest}');
     expect(source).toContain('!manifest || !routeAllowed');
   });
@@ -18,7 +18,8 @@ describe('One Experience V3 — Parent', () => {
   it('keeps child scope in every navigation destination and rejects unknown children', () => {
     const source = read('parent/_components/ParentV3Shell.tsx');
     expect(source).toContain("searchParams?.get('childId')");
-    expect(source).toContain('childrenList.some((child) => child.studentId === requestedChildId)');
+    expect(source).toContain('const childId = authoritativeChildId');
+    expect(source).toContain('childrenList.some((child) => child.studentId === value)');
     expect(source).toContain('encodeURIComponent(childId)');
     expect(source).toContain('/api/v2/parent/children');
   });
@@ -45,14 +46,18 @@ describe('One Experience V3 — School Admin', () => {
     expect(read('school-admin/_components/SchoolAdminV3LayoutGate.tsx')).toContain('manifest={manifest}');
   });
 
-  it('locks the school to the authenticated tenant and does not pretend unscoped APIs support academic year', () => {
+  it('uses the server-authoritative, URL-backed school scope and does not pretend unscoped APIs support academic year', () => {
     const source = read('school-admin/_components/SchoolAdminV3Shell.tsx');
-    expect(source).toContain(".from('school_admins')");
-    expect(source).toContain(".eq('auth_user_id', authUserId)");
+    expect(source).toContain('authoritativeScope?.schoolId');
+    expect(source).toContain("searchParams?.get('schoolId')");
+    expect(source).toContain("next.set('schoolId', value)");
+    expect(source).toContain('schools.length > 1');
+    expect(source).not.toContain('.single()');
     expect(source).toContain('All available years');
     expect(source).toContain('disabled');
     expect(source).not.toContain("next.set('academicYear'");
     expect(source).not.toContain('?academicYear=');
+    expect(read('school-admin/_components/SchoolAdminV3Views.tsx')).not.toContain('?academicYear=');
   });
 
   it('provides all canonical school workspaces with governed read models', () => {
@@ -77,9 +82,19 @@ describe('One Experience V3 — Super Admin', () => {
     expect(gate).toContain('requireAdminOrRedirect(requiredLevel)');
     expect(gate).toContain('resolveExperienceV3');
     expect(gate).toContain('resolveRouteCapability');
+    expect(gate).toContain('adminExperiencePermissions(admin.adminLevel)');
     for (const route of ['command', 'operations', 'revenue', 'governance', 'settings']) {
       expect(read(`super-admin/${route}/page.tsx`)).toContain('<SuperAdminV3ServerGate legacyHref=');
     }
+  });
+
+  it('keeps legacy operator drill-down content inside the persistent V3 shell', () => {
+    const source = read('super-admin/_components/AdminShell.tsx');
+    expect(source).toContain("useExperienceV3('super-admin')");
+    expect(source).toContain('<SuperAdminV3Workspace');
+    expect(source).toContain('v3.legacyAllowed ? legacyContent');
+    expect(source).toContain('v3.routeAllowed && v3.manifest');
+    expect(source).toContain('This operator destination is unavailable');
   });
 
   it('labels platform-wide scope honestly and does not expose a false institution filter', () => {

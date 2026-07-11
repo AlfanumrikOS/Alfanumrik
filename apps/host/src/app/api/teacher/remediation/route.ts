@@ -170,6 +170,30 @@ export async function POST(request: NextRequest) {
   }
   if (!classId) return err('Student is not on your roster', 403);
 
+  // A source alert is evidence, not caller-controlled metadata. When present,
+  // bind it to the same learner, roster-derived class and internal teacher
+  // before storing the foreign key. This prevents a forged URL/body from
+  // attaching another teacher's or learner's alert to the remediation.
+  if (sourceAlertId) {
+    const { data: sourceAlert, error: sourceAlertError } = await supabaseAdmin
+      .from('at_risk_alerts')
+      .select('id')
+      .eq('id', sourceAlertId)
+      .eq('student_id', studentId)
+      .eq('class_id', classId)
+      .eq('teacher_id', teacher.id)
+      .limit(1)
+      .maybeSingle();
+    if (sourceAlertError) {
+      logger.error('teacher_remediation_source_alert_lookup_failed', {
+        error: new Error(sourceAlertError.message),
+        route: 'teacher/remediation',
+      });
+      return err('Failed to verify source alert', 500);
+    }
+    if (!sourceAlert) return err('Source alert is not available for this learner', 403);
+  }
+
   // Idempotency: an OPEN row for (teacher, student, chapter) already covers
   // this assignment — return it instead of duplicating. chapter_id is matched
   // including the NULL case (general remediation), so re-assigning general

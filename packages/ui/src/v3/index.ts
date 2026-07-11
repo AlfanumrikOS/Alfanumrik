@@ -8,6 +8,7 @@ export * from './feedback/DataState';
 export * from './overlays/Overlay';
 export * from './patterns/PageHeader';
 export * from './patterns/RecommendationCard';
+export * from './patterns/MetricTrust';
 export * from './patterns/ActionQueue';
 export * from './patterns/ResponsiveDataList';
 export * from './navigation/ContextSelector';

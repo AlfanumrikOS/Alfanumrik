@@ -17,9 +17,31 @@ interface OverlayProps {
 }
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+const BACKGROUND_REGIONS = '[data-v3-shell-background], #main-content, [data-v3-shell-navigation]';
+
+let openOverlayCount = 0;
+let applicationFocus: HTMLElement | null = null;
+const inertLeases = new WeakMap<HTMLElement, { count: number; wasInert: boolean }>();
+
+function acquireInert(element: HTMLElement) {
+  const lease = inertLeases.get(element);
+  if (lease) lease.count += 1;
+  else inertLeases.set(element, { count: 1, wasInert: element.hasAttribute('inert') });
+  element.setAttribute('inert', '');
+}
+
+function releaseInert(element: HTMLElement) {
+  const lease = inertLeases.get(element);
+  if (!lease) return;
+  lease.count -= 1;
+  if (lease.count > 0) return;
+  if (!lease.wasInert) element.removeAttribute('inert');
+  inertLeases.delete(element);
+}
 
 function Overlay({ open, onClose, title, description, children, footer, closeLabel = 'Close', kind }: OverlayProps) {
   const [mounted, setMounted] = useState(false);
+  const portalRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -29,10 +51,15 @@ function Overlay({ open, onClose, title, description, children, footer, closeLab
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const main = document.getElementById('main-content');
-    const shellNav = document.querySelector<HTMLElement>('[data-v3-shell-navigation]');
-    main?.setAttribute('inert', '');
-    shellNav?.setAttribute('inert', '');
+    if (openOverlayCount === 0) applicationFocus = previous;
+    const bodyBackground = Array.from(document.body.children)
+      .filter((element): element is HTMLElement => element instanceof HTMLElement && !element.hasAttribute('data-v3-overlay-root'));
+    const backgroundRegions = Array.from(new Set([
+      ...bodyBackground,
+      ...document.querySelectorAll<HTMLElement>(BACKGROUND_REGIONS),
+    ])).filter((element) => element !== portalRef.current);
+    backgroundRegions.forEach(acquireInert);
+    openOverlayCount += 1;
     document.body.classList.add('v3-overlay-open');
 
     const frame = requestAnimationFrame(() => {
@@ -67,16 +94,21 @@ function Overlay({ open, onClose, title, description, children, footer, closeLab
     return () => {
       cancelAnimationFrame(frame);
       document.removeEventListener('keydown', handleKeyDown);
-      main?.removeAttribute('inert');
-      shellNav?.removeAttribute('inert');
-      document.body.classList.remove('v3-overlay-open');
-      previous?.focus();
+      backgroundRegions.forEach(releaseInert);
+      openOverlayCount = Math.max(0, openOverlayCount - 1);
+      if (openOverlayCount === 0) {
+        document.body.classList.remove('v3-overlay-open');
+        if (applicationFocus?.isConnected) applicationFocus.focus({ preventScroll: true });
+        applicationFocus = null;
+      } else if (previous?.isConnected && !previous.closest('[inert]')) {
+        previous.focus({ preventScroll: true });
+      }
     };
   }, [onClose, open]);
 
   if (!mounted || !open) return null;
   return createPortal(
-    <div data-experience="v3" className={`v3-overlay v3-overlay--${kind}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div ref={portalRef} data-experience="v3" data-v3-overlay-root className={`v3-overlay v3-overlay--${kind}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div
         ref={panelRef}
         className="v3-overlay__panel"

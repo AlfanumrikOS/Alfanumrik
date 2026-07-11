@@ -331,23 +331,29 @@ class _SnapshotCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = <Widget>[];
 
-    // Sessions this week (always present).
+    // Sessions this week. Missing source evidence is shown as —, never zero.
+    final sessionsThisWeek = snapshot.sessionsThisWeek;
     rows.add(
       _StatRow(
         icon: '📚',
-        text: isHi
-            ? '${snapshot.sessionsThisWeek} सेशन इस सप्ताह'
-            : '${snapshot.sessionsThisWeek} ${snapshot.sessionsThisWeek == 1 ? 'session' : 'sessions'} this week',
+        text: sessionsThisWeek == null
+            ? (isHi ? 'इस सप्ताह सेशन —' : 'Sessions this week —')
+            : isHi
+            ? '$sessionsThisWeek सेशन इस सप्ताह'
+            : '$sessionsThisWeek ${sessionsThisWeek == 1 ? 'session' : 'sessions'} this week',
       ),
     );
 
-    // Streak (always present).
+    // Streak. Missing source evidence is shown as —, never zero.
+    final streakDays = snapshot.streakDays;
     rows.add(
       _StatRow(
         icon: '🔥',
-        text: isHi
-            ? '${snapshot.streakDays}-दिन की स्ट्रीक'
-            : '${snapshot.streakDays}-day streak',
+        text: streakDays == null
+            ? (isHi ? 'सीखने की स्ट्रीक —' : 'Learning streak —')
+            : isHi
+            ? '$streakDays-दिन की स्ट्रीक'
+            : '$streakDays-day streak',
       ),
     );
 

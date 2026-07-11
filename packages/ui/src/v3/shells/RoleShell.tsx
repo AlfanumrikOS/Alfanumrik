@@ -43,7 +43,7 @@ export function RoleShell({ role, navigation, activeHref, brand, context, header
 
   return (
     <div className={`v3-role-shell ${className}`.trim()} style={accentStyle}>
-      <header className="v3-mobile-topbar">
+      <header className="v3-mobile-topbar" data-v3-shell-background>
         <Link href={navigation[0]?.href || '/'} className="v3-brand" aria-label={`${brand?.name || 'Alfanumrik'} ${ROLE_LABELS[role]} home`}>
           {brand?.logoUrl ? <Image src={brand.logoUrl} width={32} height={32} alt="" className="v3-brand__logo" /> : <span className="v3-brand__mark" aria-hidden="true">A</span>}
           <span><strong>{brand?.name || 'Alfanumrik'}</strong><small>{ROLE_LABELS[role]}</small></span>
@@ -54,7 +54,7 @@ export function RoleShell({ role, navigation, activeHref, brand, context, header
         </div>
       </header>
 
-      <aside className="v3-sidebar" aria-label={`${ROLE_LABELS[role]} navigation`} data-v3-shell-navigation>
+      <aside className="v3-sidebar" aria-label={`${ROLE_LABELS[role]} navigation`} data-v3-shell-navigation data-v3-shell-background>
         <Link href={navigation[0]?.href || '/'} className="v3-brand v3-brand--sidebar" aria-label={`${brand?.name || 'Alfanumrik'} home`}>
           {brand?.logoUrl ? <Image src={brand.logoUrl} width={36} height={36} alt="" className="v3-brand__logo" /> : <span className="v3-brand__mark" aria-hidden="true">A</span>}
           <span className="v3-brand__copy"><strong>{brand?.name || 'Alfanumrik'}</strong><small>{ROLE_LABELS[role]}</small></span>
@@ -63,12 +63,12 @@ export function RoleShell({ role, navigation, activeHref, brand, context, header
         {context ? <div className="v3-sidebar__context">{context}</div> : null}
       </aside>
 
-      <div className="v3-shell-workspace">
+      <div className="v3-shell-workspace" data-v3-shell-background>
         {(context || headerActions) ? <div className="v3-workspace-bar"><div>{context}</div><div className="v3-workspace-bar__actions">{headerActions}</div></div> : null}
         <main id="main-content" tabIndex={-1} className="v3-main" data-v3-shell-content>{children}</main>
       </div>
 
-      <nav className="v3-bottom-nav" aria-label={`${ROLE_LABELS[role]} primary navigation`} data-v3-shell-navigation>
+      <nav className="v3-bottom-nav" aria-label={`${ROLE_LABELS[role]} primary navigation`} data-v3-shell-navigation data-v3-shell-background>
         {primaryMobile.map((item) => <NavLink key={item.href} item={item} activeHref={currentHref} compact />)}
         <button type="button" className={`v3-nav-link ${overflow.some((item) => isActive(item, currentHref)) ? 'is-active' : ''}`} onClick={() => setMoreOpen(true)} aria-haspopup="dialog" aria-expanded={moreOpen}>
           <span className="v3-nav-link__icon" aria-hidden="true">•••</span><span className="v3-nav-link__label">More</span>

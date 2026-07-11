@@ -12,3 +12,11 @@ export function resolveTeacherClassScope(
 export function metricOrUnavailable(value: string | number | null | undefined, suffix = ''): string {
   return value == null ? '—' : `${value}${suffix}`;
 }
+
+export function targetedRemediationPayload(studentId: string, conceptId?: string | null, alertId?: string | null) {
+  return {
+    student_id: studentId,
+    chapter_id: conceptId || null,
+    source_alert_id: alertId || null,
+  };
+}

@@ -248,9 +248,32 @@ describe('GET /api/v2/parent/glance — happy path', () => {
     });
     const res = await GET(makeRequest() as never);
     const body = await res.json();
+    expect(body.data.snapshot.sessions_this_week).toBe(0);
+    expect(body.data.snapshot.streak_days).toBe(0);
     const concerns = body.data.moments.concerns.join(' ');
     expect(concerns).toMatch(/streak/i);
     expect(concerns).toMatch(/38%/);
+  });
+
+  it('keeps absent snapshot evidence null and does not turn it into zero-value concerns', async () => {
+    const { GET } = await import('@/app/api/v2/parent/glance/route');
+    authAsParent();
+    asGuardian();
+    linked(true);
+    stubFetch(true, 200, {
+      ...DASH_PAYLOAD,
+      stats: {},
+      weekSummary: {},
+      insights: [],
+    });
+
+    const res = await GET(makeRequest() as never);
+    const body = await res.json();
+    expect(body.data.snapshot.sessions_this_week).toBeNull();
+    expect(body.data.snapshot.streak_days).toBeNull();
+    expect(body.data.snapshot.accuracy).toBeNull();
+    expect(body.data.snapshot.avg_score).toBeNull();
+    expect(body.data.moments.concerns).toEqual([]);
   });
 
   it('response data round-trips through the registered Zod schema', async () => {

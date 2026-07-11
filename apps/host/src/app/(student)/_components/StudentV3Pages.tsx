@@ -10,7 +10,7 @@ import { useTodayQueue } from '@alfanumrik/lib/today/use-today-queue';
 import { todayCopy } from '@alfanumrik/lib/today/copy';
 import type { TodayQueueItem } from '@alfanumrik/lib/today/types';
 import { safeTodayHref, studentRecommendationReason } from './student-v3-contract';
-import { Button as V3Button, RecommendationCard, StatusBadge } from '@alfanumrik/ui/v3';
+import { Button as V3Button, MetricTrust, RecommendationCard, StatusBadge, type MetricTrustProps } from '@alfanumrik/ui/v3';
 
 type Chapter = { chapter_number: number; title: string; verified_question_count?: number };
 
@@ -51,9 +51,9 @@ export function StudentTodayV3() {
         </header>
 
         <div className="v3-metrics" aria-label={copy(isHi, 'Learning summary', 'सीखने का सारांश')}>
-          <Metric label={copy(isHi, 'Mastered', 'मास्टर्ड')} value={snapshot?.topics_mastered} suffix="" />
-          <Metric label={copy(isHi, 'In progress', 'जारी')} value={snapshot?.topics_in_progress} suffix="" />
-          <Metric label={copy(isHi, 'Current streak', 'वर्तमान स्ट्रीक')} value={snapshot?.current_streak} suffix={copy(isHi, ' दिन', ' days')} />
+          <Metric isHi={isHi} label={copy(isHi, 'Mastered', 'मास्टर्ड')} value={snapshot?.topics_mastered} suffix="" trust={{ source: 'Student learning snapshot', definition: 'Concepts with mastery probability at or above the mastered threshold.', freshness: null, evidenceHref: '/progress' }} />
+          <Metric isHi={isHi} label={copy(isHi, 'In progress', 'जारी')} value={snapshot?.topics_in_progress} suffix="" trust={{ source: 'Student learning snapshot', definition: 'Concepts with recorded learning evidence below the mastered threshold.', freshness: null, evidenceHref: '/progress' }} />
+          <Metric isHi={isHi} label={copy(isHi, 'Current streak', 'वर्तमान स्ट्रीक')} value={snapshot?.current_streak} suffix={copy(isHi, ' दिन', ' days')} trust={{ source: 'Student learning snapshot', definition: 'Current consecutive learning-day streak reported by the student profile.', freshness: null, evidenceHref: '/progress' }} />
         </div>
 
         {isLoading ? <State title={copy(isHi, 'Building today’s plan…', 'आज की योजना बन रही है…')} /> : null}
@@ -68,7 +68,7 @@ export function StudentTodayV3() {
             description={data.primary.chapterTitleHi && isHi ? data.primary.chapterTitleHi : data.primary.chapterTitle ?? copy(isHi, 'Selected from your latest learning evidence.', 'आपके नवीनतम सीखने के प्रमाण से चुना गया।')}
             reason={reasonFor(data.primary, isHi)}
             reasonLabel={copy(isHi, 'Why this is next:', 'यह अगला क्यों है:')}
-            meta={<><StatusBadge tone="role">{data.primary.estMinutes} {copy(isHi, 'minutes', 'मिनट')}</StatusBadge><span>{copy(isHi, 'Updated', 'अपडेट')} {new Date(data.resolvedAt).toLocaleTimeString(isHi ? 'hi-IN' : 'en-IN', { hour: 'numeric', minute: '2-digit' })}</span></>}
+            meta={<><StatusBadge tone="role">{copy(isHi, `Estimated ${data.primary.estMinutes} minutes`, `अनुमानित ${data.primary.estMinutes} मिनट`)}</StatusBadge><span>{copy(isHi, 'Updated', 'अपडेट')} {new Date(data.resolvedAt).toLocaleTimeString(isHi ? 'hi-IN' : 'en-IN', { hour: 'numeric', minute: '2-digit' })}</span></>}
             primaryAction={{ label: copy(isHi, 'Start now', 'अभी शुरू करें'), href: safeTodayHref(data.primary) }}
           />
         ) : null}
@@ -150,12 +150,12 @@ export function StudentPracticeV3() {
 export function StudentProgressV3() {
   const { snapshot, isHi } = useAuth();
   const rows = [
-    [copy(isHi, 'Topics mastered', 'मास्टर्ड विषय'), snapshot?.topics_mastered],
-    [copy(isHi, 'Topics in progress', 'जारी विषय'), snapshot?.topics_in_progress],
-    [copy(isHi, 'Average quiz score', 'औसत क्विज़ स्कोर'), snapshot?.avg_score, '%'],
-    [copy(isHi, 'Quizzes completed', 'पूरे क्विज़'), snapshot?.quizzes_taken],
-  ] as const;
-  return <StudentAuthBoundary><section className="v3-page" data-testid="student-v3-progress"><header className="v3-page-header"><div><p className="v3-eyebrow">{copy(isHi, 'Evidence, not estimates', 'अनुमान नहीं, प्रमाण')}</p><h1>{copy(isHi, 'Progress', 'प्रगति')}</h1><p>{copy(isHi, 'Mastery, effort and the next useful action in one place.', 'मास्टरी, प्रयास और अगला उपयोगी कदम एक ही जगह।')}</p></div></header><div className="v3-metrics">{rows.map(([label, value, suffix]) => <Metric key={label} label={label} value={value} suffix={suffix ?? ''} />)}</div><RecommendationCard accent="student" eyebrow={copy(isHi, 'Next action', 'अगला कदम')} title={copy(isHi, 'Continue from Today', 'Today से आगे बढ़ें')} description={copy(isHi, 'Open the single ranked recommendation for your current learning state.', 'अपनी वर्तमान सीखने की स्थिति के लिए एक प्राथमिक सुझाव खोलें।')} reason={copy(isHi, 'Today uses the latest available learning evidence.', 'Today नवीनतम उपलब्ध सीखने के प्रमाण का उपयोग करता है।')} reasonLabel={copy(isHi, 'Why this is next:', 'यह अगला क्यों है:')} primaryAction={{ label: copy(isHi, 'View today’s plan', 'आज की योजना देखें'), href: '/today' }} /></section></StudentAuthBoundary>;
+    { label: copy(isHi, 'Topics mastered', 'मास्टर्ड विषय'), value: snapshot?.topics_mastered, definition: 'Concepts with mastery probability at or above the mastered threshold.' },
+    { label: copy(isHi, 'Topics in progress', 'जारी विषय'), value: snapshot?.topics_in_progress, definition: 'Concepts with recorded learning evidence below the mastered threshold.' },
+    { label: copy(isHi, 'Average quiz score', 'औसत क्विज़ स्कोर'), value: snapshot?.avg_score, suffix: '%', definition: 'Correct answers divided by questions answered in the student learning snapshot.' },
+    { label: copy(isHi, 'Quizzes completed', 'पूरे क्विज़'), value: snapshot?.quizzes_taken, definition: 'Recorded quiz sessions for this learner.' },
+  ];
+  return <StudentAuthBoundary><section className="v3-page" data-testid="student-v3-progress"><header className="v3-page-header"><div><p className="v3-eyebrow">{copy(isHi, 'Evidence, not estimates', 'अनुमान नहीं, प्रमाण')}</p><h1>{copy(isHi, 'Progress', 'प्रगति')}</h1><p>{copy(isHi, 'Mastery, effort and the next useful action in one place.', 'मास्टरी, प्रयास और अगला उपयोगी कदम एक ही जगह।')}</p></div></header><div className="v3-metrics">{rows.map(({ label, value, suffix, definition }) => <Metric isHi={isHi} key={label} label={label} value={value} suffix={suffix ?? ''} trust={{ source: 'Student learning snapshot', definition, freshness: null }} />)}</div><RecommendationCard accent="student" eyebrow={copy(isHi, 'Next action', 'अगला कदम')} title={copy(isHi, 'Continue from Today', 'Today से आगे बढ़ें')} description={copy(isHi, 'Open the single ranked recommendation for your current learning state.', 'अपनी वर्तमान सीखने की स्थिति के लिए एक प्राथमिक सुझाव खोलें।')} reason={copy(isHi, 'Today uses the latest available learning evidence.', 'Today नवीनतम उपलब्ध सीखने के प्रमाण का उपयोग करता है।')} reasonLabel={copy(isHi, 'Why this is next:', 'यह अगला क्यों है:')} primaryAction={{ label: copy(isHi, 'View today’s plan', 'आज की योजना देखें'), href: '/today' }} /></section></StudentAuthBoundary>;
 }
 
 export function StudentExamV3() {
@@ -176,8 +176,8 @@ export function StudentExamV3() {
   );
 }
 
-function Metric({ label, value, suffix }: { label: string; value: number | null | undefined; suffix: string }) {
-  return <article className="v3-metric"><small>{label}</small><strong>{value == null ? '—' : `${value.toLocaleString('en-IN')}${suffix}`}</strong></article>;
+function Metric({ label, value, suffix, trust, isHi }: { label: string; value: number | null | undefined; suffix: string; trust: MetricTrustProps; isHi: boolean }) {
+  return <article className="v3-metric"><small>{label}</small><strong>{value == null ? '—' : `${value.toLocaleString('en-IN')}${suffix}`}</strong><MetricTrust {...trust} locale={isHi ? 'hi' : 'en'} /></article>;
 }
 
 function State({ title, detail, action }: { title: string; detail?: string; action?: React.ReactNode }) {

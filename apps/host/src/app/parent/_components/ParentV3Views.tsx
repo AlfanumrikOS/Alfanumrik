@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
-import { Button, DataState, PageHeader, ProgressBar, StatusBadge, Surface } from '@alfanumrik/ui/v3';
+import { Button, DataState, MetricTrust, PageHeader, ProgressBar, StatusBadge, Surface, type MetricTrustProps } from '@alfanumrik/ui/v3';
 import { useParentV3Scope } from './ParentV3Shell';
 
 async function authedJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -24,6 +24,7 @@ async function authedJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 function useResource<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
+  const [retrievedAt, setRetrievedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(path));
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -33,20 +34,20 @@ function useResource<T>(path: string | null) {
     setLoading(true);
     setError(null);
     authedJson<T>(path)
-      .then((value) => { if (active) setData(value); })
+      .then((value) => { if (active) { setData(value); setRetrievedAt(new Date().toISOString()); } })
       .catch(() => { if (active) setError('unavailable'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [attempt, path]);
-  return { data, loading, error, retry: () => setAttempt((value) => value + 1) };
+  return { data, loading, error, retrievedAt, retry: () => setAttempt((value) => value + 1) };
 }
 
 interface GlanceResponse {
   data?: {
     child?: { name: string | null; grade: string | null };
     snapshot?: {
-      sessions_this_week: number;
-      streak_days: number;
+      sessions_this_week: number | null;
+      streak_days: number | null;
       accuracy: number | null;
       avg_score: number | null;
       time_minutes: number | null;
@@ -55,16 +56,17 @@ interface GlanceResponse {
   };
 }
 
-function Metric({ label, value, suffix }: { label: string; value: number | null | undefined; suffix?: string }) {
+function Metric({ label, value, suffix, trust }: { label: string; value: number | null | undefined; suffix?: string; trust: MetricTrustProps }) {
   return (
     <Surface className="min-w-0 p-4">
       <p className="text-sm text-secondary-ink">{label}</p>
       <p className="mt-1 text-2xl font-bold text-deep-ink">{value == null ? '—' : `${value}${suffix ?? ''}`}</p>
+      <MetricTrust {...trust} />
     </Surface>
   );
 }
 
-function ParentDataBoundary({ children }: { children: (data: GlanceResponse['data']) => React.ReactNode }) {
+function ParentDataBoundary({ children }: { children: (data: GlanceResponse['data'], retrievedAt: string | null) => React.ReactNode }) {
   const { childId, loading: scopeLoading, error: scopeError, retry: retryScope } = useParentV3Scope();
   const resource = useResource<GlanceResponse>(childId ? `/api/v2/parent/glance?student_id=${encodeURIComponent(childId)}` : null);
   if (scopeLoading || resource.loading) return <DataState state="loading" title="Loading your child's learning status" />;
@@ -73,7 +75,7 @@ function ParentDataBoundary({ children }: { children: (data: GlanceResponse['dat
   if (resource.error || !resource.data?.data) {
     return <DataState state="error" title="Learning status is temporarily unavailable" description="Your child's selection has been preserved." action={<Button onClick={resource.retry}>Try again</Button>} />;
   }
-  return <>{children(resource.data.data)}</>;
+  return <>{children(resource.data.data, resource.retrievedAt)}</>;
 }
 
 export function ParentV3Home() {
@@ -82,28 +84,30 @@ export function ParentV3Home() {
   return (
     <div className="space-y-5">
       <PageHeader title={isHi ? 'आज की स्थिति' : 'Is your child on track?'} description={isHi ? 'प्रगति समझें और अगला सही कदम चुनें।' : 'Understand progress and choose one useful next step.'} />
-      <ParentDataBoundary>{(data) => {
+      <ParentDataBoundary>{(data, retrievedAt) => {
         const snapshot = data?.snapshot;
         const concern = data?.moments?.concerns?.[0] ?? null;
         const highlight = data?.moments?.highlights?.[0] ?? null;
-        const isOnTrack = !concern && Boolean(highlight);
+        const evidenceHref = childId ? `/parent/progress?childId=${encodeURIComponent(childId)}` : '/parent/progress';
+        const trustBase = { source: 'Parent glance read model', freshness: null, retrievedAt: retrievedAt ? new Date(retrievedAt).toLocaleString('en-IN') : null, evidenceHref, locale: isHi ? 'hi' as const : 'en' as const };
         return (
           <>
             <Surface className="p-5 md:p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <StatusBadge tone={concern ? 'warning' : isOnTrack ? 'success' : 'neutral'}>{concern ? 'Needs attention' : isOnTrack ? 'On track' : 'Waiting for learning evidence'}</StatusBadge>
+                  <StatusBadge tone={concern ? 'warning' : highlight ? 'success' : 'neutral'}>{concern ? 'Needs attention' : highlight ? 'No current concern' : 'Waiting for learning evidence'}</StatusBadge>
                   <h2 className="mt-3 text-xl font-bold text-deep-ink">{data?.child?.name ?? 'Your child'}</h2>
                   <p className="mt-1 max-w-2xl text-secondary-ink">{concern ?? highlight ?? 'Complete a learning session to establish the current status.'}</p>
+                  <MetricTrust {...trustBase} definition="Needs attention when the governed parent glance returns a current concern; otherwise the latest highlight is shown without inferring a composite score." />
                 </div>
                 <Link className="v3-button v3-button--primary" href={childId ? `/parent/plan?childId=${childId}` : '/parent/plan'}>Review the plan</Link>
               </div>
             </Surface>
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <Metric label="Sessions this week" value={snapshot?.sessions_this_week} />
-              <Metric label="Learning streak" value={snapshot?.streak_days} suffix=" days" />
-              <Metric label="Accuracy" value={snapshot?.accuracy} suffix="%" />
-              <Metric label="Time learned" value={snapshot?.time_minutes} suffix=" min" />
+              <Metric label="Quiz sessions this week" value={snapshot?.sessions_this_week} trust={{ ...trustBase, definition: 'Quiz sessions recorded in the current weekly activity summary.' }} />
+              <Metric label="Learning streak" value={snapshot?.streak_days} suffix=" days" trust={{ ...trustBase, definition: 'Current consecutive learning-day streak reported for the selected child.' }} />
+              <Metric label="Accuracy" value={snapshot?.accuracy} suffix="%" trust={{ ...trustBase, definition: 'Accuracy returned by the selected child’s governed dashboard aggregation.' }} />
+              <Metric label="Time learned" value={snapshot?.time_minutes} suffix=" min" trust={{ ...trustBase, definition: 'Recorded learning minutes returned by the selected child’s dashboard aggregation.' }} />
             </div>
             <Surface className="p-5">
               <h2 className="text-base font-bold text-deep-ink">What you can do</h2>
@@ -121,19 +125,21 @@ export function ParentV3Home() {
 }
 
 export function ParentV3Progress() {
+  const { isHi } = useAuth();
   return (
     <div className="space-y-5">
       <PageHeader title="Progress" description="Mastery, effort and the next action—in plain language." />
-      <ParentDataBoundary>{(data) => {
+      <ParentDataBoundary>{(data, retrievedAt) => {
         const accuracy = data?.snapshot?.accuracy;
         return (
           <>
             <Surface className="p-5">
               <div className="flex items-end justify-between gap-4">
-                <div><p className="text-sm text-secondary-ink">Recent accuracy</p><p className="mt-1 text-3xl font-bold">{accuracy == null ? '—' : `${accuracy}%`}</p></div>
+                <div><p className="text-sm text-secondary-ink">Accuracy</p><p className="mt-1 text-3xl font-bold">{accuracy == null ? '—' : `${accuracy}%`}</p></div>
                 <StatusBadge tone={accuracy == null ? 'neutral' : accuracy >= 70 ? 'success' : 'warning'}>{accuracy == null ? 'No evidence yet' : accuracy >= 70 ? 'Building securely' : 'Practice recommended'}</StatusBadge>
               </div>
-              <div className="mt-4">{accuracy == null ? <p className="text-secondary-ink" aria-label="Recent accuracy unavailable">—</p> : <ProgressBar value={accuracy} label="Recent accuracy" showValue />}</div>
+              <div className="mt-4">{accuracy == null ? <p className="text-secondary-ink" aria-label="Accuracy unavailable">—</p> : <ProgressBar value={accuracy} label="Accuracy" showValue />}</div>
+              <MetricTrust locale={isHi ? 'hi' : 'en'} source="Parent glance read model" definition="Accuracy returned by the selected child’s governed dashboard aggregation." freshness={null} retrievedAt={retrievedAt ? new Date(retrievedAt).toLocaleString('en-IN') : null} />
             </Surface>
             <div className="grid gap-3 md:grid-cols-2">
               <Surface className="p-5"><h2 className="font-bold">Going well</h2><ul className="mt-3 space-y-2 text-secondary-ink">{data?.moments?.highlights?.length ? data.moments.highlights.map((item) => <li key={item}>• {item}</li>) : <li>—</li>}</ul></Surface>

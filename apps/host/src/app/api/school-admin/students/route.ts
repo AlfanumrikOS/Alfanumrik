@@ -114,6 +114,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await authorizeSchoolAdmin(request, 'institution.manage_students');
     if (!auth.authorized) return auth.errorResponse!;
+    const schoolId = auth.schoolId!;
 
     const url = new URL(request.url);
     const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10));
@@ -131,6 +132,7 @@ export async function GET(request: NextRequest) {
 
     const rlsClient = await createRlsScopedClient(request);
     const { data, error } = await rlsClient.rpc('school_admin_list_students', {
+      p_school_id: schoolId,
       p_page: page,
       p_limit: limit,
       p_grade: grade || null,
@@ -214,6 +216,7 @@ export async function PATCH(request: NextRequest) {
     const { data: toggleData, error: updateError } = await rlsClient.rpc(
       'school_admin_toggle_student_active',
       {
+        p_school_id: schoolId,
         p_student_id: body.id,
         p_is_active: body.is_active,
       },
@@ -342,6 +345,7 @@ function validateRow(
  */
 async function createOneStudent(
   rlsClient: RlsScopedClient,
+  schoolId: string,
   row: NormalizedRow,
   classId: string | null = null,
 ): Promise<{ ok: true; studentId: string } | { ok: false; message: string }> {
@@ -359,6 +363,7 @@ async function createOneStudent(
   }
 
   const { data: attachData, error: attachError } = await rlsClient.rpc('school_admin_attach_created_student', {
+    p_school_id: schoolId,
     p_student_auth_user_id: authUser.authUserId,
     p_phone: row.phone ?? null,
     p_class_id: classId,
@@ -518,6 +523,7 @@ export async function POST(request: NextRequest) {
 
 async function runCreatePreflight(
   rlsClient: RlsScopedClient,
+  schoolId: string,
   email: string,
   attemptedCount = 1,
   classId: string | null = null,
@@ -532,6 +538,7 @@ async function runCreatePreflight(
   | { ok: false; message: string; status: number }
 > {
   const { data, error } = await rlsClient.rpc('school_admin_student_create_preflight', {
+    p_school_id: schoolId,
     p_email: email,
     p_attempted_count: attemptedCount,
     p_class_id: classId,
@@ -604,6 +611,7 @@ async function handleSingle(
   const rlsClient = await createRlsScopedClient(request);
   const preflight = await runCreatePreflight(
     rlsClient,
+    schoolId,
     validation.row.email,
     1,
     input.class_id ?? null,
@@ -644,7 +652,7 @@ async function handleSingle(
       );
     }
 
-    const result = await createOneStudent(rlsClient, validation.row, input.class_id ?? null);
+    const result = await createOneStudent(rlsClient, schoolId, validation.row, input.class_id ?? null);
     if (!result.ok) {
       return NextResponse.json(
         { success: false, error: result.message },
@@ -684,7 +692,7 @@ async function handleSingle(
   // the seat policy hard-blocks the roster placement, the student row still
   // exists (it consumes no seat without a roster row) and the admin gets a
   // clear 409 to act on (upgrade / deactivate / pick a class later).
-  const result = await createOneStudent(rlsClient, validation.row);
+  const result = await createOneStudent(rlsClient, schoolId, validation.row);
   if (!result.ok) {
     return NextResponse.json(
       { success: false, error: result.message },
@@ -850,7 +858,7 @@ async function processBulkRows(
   // would exceed seats_purchased (no partial accept).
   if (!seatEnforced) {
     const rlsClient = await createRlsScopedClient(request);
-    const bulkPreflight = await runCreatePreflight(rlsClient, '', rows.length);
+    const bulkPreflight = await runCreatePreflight(rlsClient, schoolId, '', rows.length);
     if (!bulkPreflight.ok) {
       return NextResponse.json(
         { success: false, error: bulkPreflight.message },
@@ -903,7 +911,7 @@ async function processBulkRows(
       }
       seenEmails.add(validation.row.email);
 
-      const rowPreflight = await runCreatePreflight(rlsClient, validation.row.email, 1);
+      const rowPreflight = await runCreatePreflight(rlsClient, schoolId, validation.row.email, 1);
       if (!rowPreflight.ok) {
         errors.push({ row: rowNum, message: rowPreflight.message });
         continue;
@@ -913,7 +921,7 @@ async function processBulkRows(
         continue;
       }
 
-      const result = await createOneStudent(rlsClient, validation.row);
+      const result = await createOneStudent(rlsClient, schoolId, validation.row);
       if (!result.ok) {
         errors.push({ row: rowNum, message: result.message });
         continue;
@@ -1015,7 +1023,7 @@ async function processBulkRows(
       continue;
     }
 
-    const rowPreflight = await runCreatePreflight(rlsClient, row.row.email, 1);
+    const rowPreflight = await runCreatePreflight(rlsClient, schoolId, row.row.email, 1);
     if (!rowPreflight.ok) {
       errors.push({ row: rowNum, message: rowPreflight.message });
       continue;
@@ -1025,7 +1033,7 @@ async function processBulkRows(
       continue;
     }
 
-    const result = await createOneStudent(rlsClient, row.row);
+    const result = await createOneStudent(rlsClient, schoolId, row.row);
     if (!result.ok) {
       errors.push({ row: rowNum, message: result.message });
       continue;

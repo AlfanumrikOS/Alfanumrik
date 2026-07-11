@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   EXPERIENCE_V3_FLAGS,
+  experienceV3ScopeQuery,
   getRoleManifest,
   resolveCapabilities,
   resolveRouteCapability,
@@ -10,6 +11,7 @@ import {
   type ExperienceRole,
 } from '@alfanumrik/lib/experience-v3';
 import { FLAG_DEFAULTS } from '@alfanumrik/lib/feature-flags';
+import { adminExperiencePermissions } from '@alfanumrik/lib/admin-auth';
 
 const roles: ExperienceRole[] = ['student', 'teacher', 'parent', 'school-admin', 'super-admin'];
 
@@ -32,12 +34,36 @@ describe('One Experience V3 contracts', () => {
     expect(result.manifest.desktop.some((item) => item.capability === 'teacher.grade')).toBe(false);
   });
 
+  it('resolves Teacher Assign navigation and actions from the permissions enforced by each POST route', () => {
+    const generic = resolveCapabilities({ role: 'teacher', permissions: ['class.manage'] });
+    expect(generic.manifest.desktop.some((item) => item.capability === 'teacher.assign')).toBe(true);
+    expect(generic.canAccess('teacher.assign.generic')).toBe(true);
+    expect(generic.canAccess('teacher.assign.remediation')).toBe(false);
+    expect(resolveRouteCapability(generic.manifest, '/teacher/assign')).toEqual({ capability: 'teacher.assign', allowed: true });
+    expect(resolveRouteCapability(generic.manifest, '/teacher/assignments')).toEqual({ capability: 'teacher.assign', allowed: true });
+
+    const remediation = resolveCapabilities({ role: 'teacher', permissions: ['class.assign_remediation'] });
+    expect(remediation.manifest.desktop.some((item) => item.capability === 'teacher.assign')).toBe(true);
+    expect(remediation.canAccess('teacher.assign.generic')).toBe(false);
+    expect(remediation.canAccess('teacher.assign.remediation')).toBe(true);
+    expect(resolveRouteCapability(remediation.manifest, '/teacher/assign')).toEqual({ capability: 'teacher.assign', allowed: true });
+    expect(resolveRouteCapability(remediation.manifest, '/teacher/assignments')).toEqual({ capability: 'teacher.assign', allowed: false });
+
+    const examOnly = resolveCapabilities({ role: 'teacher', permissions: ['exam.assign'] });
+    expect(examOnly.manifest.desktop.some((item) => item.capability === 'teacher.assign')).toBe(false);
+    expect(examOnly.canAccess('teacher.assign.generic')).toBe(false);
+    expect(examOnly.canAccess('teacher.assign.remediation')).toBe(false);
+    expect(resolveRouteCapability(examOnly.manifest, '/teacher/assign')).toEqual({ capability: 'teacher.assign', allowed: false });
+
+    expect(getRoleManifest('teacher').desktop.some((item) => item.capability === 'teacher.assign')).toBe(true);
+  });
+
   it('makes every visible protected route accessible and every unavailable capability absent', () => {
     const denied = resolveCapabilities({ role: 'super-admin', permissions: [] });
     expect(denied.manifest.desktop.some((item) => item.href === '/super-admin/governance')).toBe(false);
-    expect(resolveRouteCapability(denied.manifest, '/super-admin/governance')).toBeNull();
+    expect(resolveRouteCapability(denied.manifest, '/super-admin/governance')).toEqual({ capability: 'super.governance', allowed: false });
 
-    const allowed = resolveCapabilities({ role: 'super-admin', permissions: ['role.manage', 'system.audit', 'system.config'] });
+    const allowed = resolveCapabilities({ role: 'super-admin', permissions: ['role.manage', 'system.audit', 'system.config', 'finance.view_revenue'] });
     for (const item of allowed.manifest.desktop) {
       expect(allowed.canAccess(item.capability)).toBe(true);
       expect(resolveRouteCapability(allowed.manifest, item.href)).toEqual({ capability: item.capability, allowed: true });
@@ -48,15 +74,108 @@ describe('One Experience V3 contracts', () => {
     const student = resolveCapabilities({ role: 'student', databaseOverrides: { 'student.exam-plan': false } });
     expect(resolveRouteCapability(student.manifest, '/quiz/session-1')?.capability).toBe('student.practice');
     expect(resolveRouteCapability(student.manifest, '/reports')).toEqual({ capability: 'student.progress', allowed: true });
-    expect(resolveRouteCapability(student.manifest, '/exam-prep')).toBeNull();
+    expect(resolveRouteCapability(student.manifest, '/exam-prep')).toEqual({ capability: 'student.exam-plan', allowed: false });
+    expect(resolveRouteCapability(student.manifest, '/practice/exam/mock')).toEqual({ capability: 'student.exam-plan', allowed: false });
     const parent = resolveCapabilities({ role: 'parent' });
     expect(resolveRouteCapability(parent.manifest, '/parent')?.capability).toBe('parent.home');
+  });
+
+  it('keeps School Admin deep links inside their canonical capability and shell', () => {
+    const allowed = resolveCapabilities({
+      role: 'school-admin',
+      permissions: ['institution.manage', 'institution.manage_students', 'institution.manage_teachers', 'institution.manage_staff', 'school.manage_settings', 'class.manage', 'school.manage_exams', 'school.manage_content'],
+    });
+    expect(resolveRouteCapability(allowed.manifest, '/school-admin/students/learner-1')).toEqual({ capability: 'school.people', allowed: true });
+    expect(resolveRouteCapability(allowed.manifest, '/school-admin/classes/class-1')).toEqual({ capability: 'school.academics', allowed: true });
+    expect(resolveRouteCapability(allowed.manifest, '/school-admin/branding')).toEqual({ capability: 'shared.settings', allowed: true });
+    expect(resolveRouteCapability(allowed.manifest, '/school-admin/audit-log')).toEqual({ capability: 'school.governance', allowed: true });
+
+    const denied = resolveCapabilities({
+      role: 'school-admin',
+      databaseOverrides: { 'school.people': false, 'school.academics': false },
+      permissions: [],
+    });
+    expect(resolveRouteCapability(denied.manifest, '/school-admin/students')).toEqual({ capability: 'school.people', allowed: false });
+    expect(resolveRouteCapability(denied.manifest, '/school-admin/classes')).toEqual({ capability: 'school.academics', allowed: false });
+    expect(resolveRouteCapability(denied.manifest, '/school-admin/branding')).toEqual({ capability: 'shared.settings', allowed: false });
+    expect(resolveRouteCapability(denied.manifest, '/school-admin/audit-log')).toEqual({ capability: 'school.governance', allowed: false });
+  });
+
+  it('keeps School Admin group navigation visible without granting sibling actions', () => {
+    const studentsOnly = resolveCapabilities({ role: 'school-admin', permissions: ['institution.manage_students'] });
+    expect(studentsOnly.manifest.desktop.some((item) => item.capability === 'school.people')).toBe(true);
+    expect(resolveRouteCapability(studentsOnly.manifest, '/school-admin/students/learner-1')).toEqual({ capability: 'school.people', allowed: true });
+    expect(resolveRouteCapability(studentsOnly.manifest, '/school-admin/teachers')).toEqual({ capability: 'school.people', allowed: false });
+    expect(resolveRouteCapability(studentsOnly.manifest, '/school-admin/staff')).toEqual({ capability: 'school.people', allowed: false });
+
+    const classOnly = resolveCapabilities({ role: 'school-admin', permissions: ['class.manage'] });
+    expect(classOnly.manifest.desktop.some((item) => item.capability === 'school.academics')).toBe(true);
+    expect(resolveRouteCapability(classOnly.manifest, '/school-admin/classes/class-1')).toEqual({ capability: 'school.academics', allowed: true });
+    expect(resolveRouteCapability(classOnly.manifest, '/school-admin/exams')).toEqual({ capability: 'school.academics', allowed: false });
+    expect(resolveRouteCapability(classOnly.manifest, '/school-admin/content')).toEqual({ capability: 'school.academics', allowed: false });
+  });
+
+  it.each([
+    ['/school-admin/teachers/teacher-1', 'school.people', 'institution.manage_teachers'],
+    ['/school-admin/staff', 'school.people', 'institution.manage_staff'],
+    ['/school-admin/parents', 'school.people', 'school.manage_settings'],
+    ['/school-admin/exams/exam-1', 'school.academics', 'school.manage_exams'],
+    ['/school-admin/content', 'school.academics', 'school.manage_content'],
+    ['/school-admin/branding', 'shared.settings', 'school.manage_branding'],
+    ['/school-admin/modules', 'shared.settings', 'school.manage_modules'],
+    ['/school-admin/api-keys', 'shared.settings', 'school.manage_api_keys'],
+    ['/school-admin/rbac', 'school.governance', 'institution.manage'],
+    ['/school-admin/audit-log', 'school.governance', 'school.manage_settings'],
+  ])('enforces the API permission for School deep link %s', (path, capability, permission) => {
+    const allowed = resolveCapabilities({ role: 'school-admin', permissions: [permission] });
+    expect(resolveRouteCapability(allowed.manifest, path)).toEqual({ capability, allowed: true });
+
+    const denied = resolveCapabilities({ role: 'school-admin', permissions: [] });
+    expect(resolveRouteCapability(denied.manifest, path)).toEqual({ capability, allowed: false });
+  });
+
+  it('keeps Super Admin drill-downs inside their canonical capability and shell', () => {
+    const allowed = resolveCapabilities({ role: 'super-admin', permissions: ['role.manage', 'system.audit', 'system.config', 'finance.view_revenue'] });
+    expect(resolveRouteCapability(allowed.manifest, '/super-admin/alerts/alert-1')).toEqual({ capability: 'super.operations', allowed: true });
+    expect(resolveRouteCapability(allowed.manifest, '/super-admin/invoices')).toEqual({ capability: 'super.revenue', allowed: true });
+    expect(resolveRouteCapability(allowed.manifest, '/super-admin/rbac')).toEqual({ capability: 'super.governance', allowed: true });
+
+    const denied = resolveCapabilities({
+      role: 'super-admin',
+      databaseOverrides: { 'super.operations': false, 'super.revenue': false },
+      permissions: [],
+    });
+    expect(resolveRouteCapability(denied.manifest, '/super-admin/alerts')).toEqual({ capability: 'super.operations', allowed: false });
+    expect(resolveRouteCapability(denied.manifest, '/super-admin/invoices')).toEqual({ capability: 'super.revenue', allowed: false });
+    expect(resolveRouteCapability(denied.manifest, '/super-admin/rbac')).toEqual({ capability: 'super.governance', allowed: false });
+  });
+
+  it('projects exact operator navigation permissions from the verified admin level', () => {
+    expect(adminExperiencePermissions('support')).toEqual(['system.audit']);
+    expect(adminExperiencePermissions('finance')).toEqual(['system.audit', 'finance.view_revenue']);
+    expect(adminExperiencePermissions('admin')).toEqual(['system.audit', 'finance.view_revenue', 'role.manage']);
+    expect(adminExperiencePermissions('super_admin')).toEqual(['system.audit', 'finance.view_revenue', 'role.manage', 'system.config']);
+    expect(adminExperiencePermissions('unknown')).toEqual([]);
   });
 
   it('preserves role scope in URLs and cache keys', () => {
     const scope = { kind: 'parent' as const, childId: 'child-2' };
     expect(withScope('/parent/progress?view=mastery', scope)).toBe('/parent/progress?view=mastery&childId=child-2');
     expect(scopeCacheKey('parent', scope)).toEqual(['experience-v3', 'parent', 'childId=child-2']);
+    expect(experienceV3ScopeQuery('parent', 'tab=week&childId=child-2')).toBe('childId=child-2');
+    expect(experienceV3ScopeQuery('teacher', 'view=heatmap&class=class-b')).toBe('classId=class-b');
+    expect(experienceV3ScopeQuery('teacher', 'class=legacy&classId=canonical')).toBe('classId=canonical');
+    expect(experienceV3ScopeQuery('school-admin', 'schoolId=school-b&childId=ignored')).toBe('schoolId=school-b');
+  });
+
+  it('fails protected navigation closed when runtime permissions are absent', () => {
+    const school = resolveCapabilities({ role: 'school-admin', permissions: [] });
+    expect(school.manifest.desktop).toHaveLength(0);
+    expect(resolveRouteCapability(school.manifest, '/school-admin/overview')).toEqual({ capability: 'school.overview', allowed: false });
+
+    const parent = resolveCapabilities({ role: 'parent', permissions: [] });
+    expect(parent.manifest.desktop.some((item) => item.href === '/parent/progress')).toBe(false);
+    expect(resolveRouteCapability(parent.manifest, '/parent/progress')).toEqual({ capability: 'parent.progress', allowed: false });
   });
 
   it('only accepts controlled six-digit hex tenant accents', () => {
@@ -65,14 +184,48 @@ describe('One Experience V3 contracts', () => {
   });
 
   it('pins the rollout endpoint to authoritative role membership checks', async () => {
-    const source = await import('node:fs/promises').then((fs) => fs.readFile('src/app/api/experience-v3/route.ts', 'utf8'));
+    const fs = await import('node:fs/promises');
+    const source = await fs.readFile('src/app/api/experience-v3/route.ts', 'utf8');
     expect(source).toContain('getRoleMembership');
     expect(source).toContain("from('students')");
     expect(source).toContain("from('teachers')");
     expect(source).toContain("from('guardians')");
     expect(source).toContain("from('school_admins')");
     expect(source).toContain("from('admin_users')");
+    expect(source).toContain("select('id,admin_level')");
+    expect(source).toContain('adminExperiencePermissions(membership.adminLevel)');
+    expect(source).toContain(".in('status', ['active', 'approved'])");
+    expect(source).toContain("linksQuery.eq('student_id', requestedScope.childId)");
+    expect(source).toContain("rows.find((item) => item.school_id === requestedScope.schoolId)");
+    expect(source).toContain("schools!inner(id,name,is_active)");
+    expect(source).not.toContain("from('school_admins').select('id,school_id').eq('auth_user_id', userId).eq('is_active', true).limit(1).maybeSingle()");
     expect(source).toContain('status: 403');
+
+    const client = await fs.readFile('../../packages/lib/src/use-experience-v3.ts', 'utf8');
+    expect(client).toContain('experienceV3ScopeQuery(role');
+    expect(client).toContain("response.status === 403");
+    expect(client).toContain("response.status === 401");
+    expect(client).toContain('const FLAG_OFF');
+    expect(client).toContain('legacyAllowed: true');
+    expect(client).toContain('const DENIED');
+  });
+
+  it('allows legacy auth handling for flag-off and unauthenticated states while keeping permission denial closed', async () => {
+    const fs = await import('node:fs/promises');
+    const gates = [
+      'src/app/(student)/_components/StudentV3Gate.tsx',
+      'src/app/(student)/layout.tsx',
+      'src/app/teacher/_components/TeacherV3LayoutGate.tsx',
+      'src/app/teacher/_components/TeacherV3Pages.tsx',
+      'src/app/parent/_components/ParentV3LayoutGate.tsx',
+      'src/app/school-admin/_components/SchoolAdminV3LayoutGate.tsx',
+      'src/app/super-admin/_components/SuperAdminV3ClientGate.tsx',
+    ];
+    for (const file of gates) {
+      const source = await fs.readFile(file, 'utf8');
+      expect(source, file).toContain('legacyAllowed');
+      expect(source, file).toContain('state="permission"');
+    }
   });
 
   it('bridges super-admin login into the verified SSR session gate', async () => {

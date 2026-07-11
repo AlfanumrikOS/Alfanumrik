@@ -27,12 +27,20 @@
  *   Gate B  `authorizeRequest(request, 'code')`  — RBAC permission check
  *   Gate C  `requireAdminSecret(request)`        — constant-time x-admin-secret
  *
- * SELF-AUTHENTICATING EXCEPTION
+ * SESSION-BOUNDARY EXCEPTIONS
  *   `super-admin/login/route.ts` is the credential-establishing endpoint. It
  *   CANNOT gate on being-already-an-admin (chicken-and-egg). It performs its own
  *   verification: per-IP rate limit + per-email lockout → GoTrue password grant
  *   → `admin_users` membership confirm (01-map.md "Login"). It is allowlisted
  *   below WITH that justification — not a P9 hole.
+ *
+ *   `super-admin/logout/route.ts` is the credential-destroying endpoint. It
+ *   must remain callable when a session is expired or otherwise no longer
+ *   authorizable so its HttpOnly SSR cookies can still be removed. It rejects
+ *   cross-origin POSTs, only calls GoTrue local sign-out, and only expires the
+ *   caller's own auth-cookie names; it performs no privileged application-data
+ *   read or mutation. Requiring authorizeAdmin here would strand stale
+ *   HttpOnly cookies, so this narrow session-termination route is allowlisted.
  *
  * THREE ASSERTIONS
  *   1. PRESENCE (hard fail): every non-allowlisted route file contains at least
@@ -73,10 +81,12 @@ const ADMIN_ROUTE_ROOTS = [
   'src/app/api/internal/admin',
 ].map((p) => path.join(REPO_ROOT, p));
 
-// Self-authenticating endpoints: they ESTABLISH the admin session and therefore
-// cannot be gated on an existing one. Paths are repo-relative, POSIX-normalized.
-const SELF_AUTH_ALLOWLIST = new Set<string>([
+// Session-boundary endpoints either establish or destroy the caller's own
+// admin session and therefore cannot require an already-valid admin session.
+// Paths are repo-relative, POSIX-normalized.
+const SESSION_BOUNDARY_ALLOWLIST = new Set<string>([
   'src/app/api/super-admin/login/route.ts', // GoTrue password grant + admin_users confirm + rate-limit/lockout
+  'src/app/api/super-admin/logout/route.ts', // same-origin caller-cookie expiry; no application-data access
 ]);
 
 // Handlers that gate via an out-of-body helper (gate token NOT in the handler's
@@ -167,7 +177,7 @@ describe('SAO-7 — admin-route auth-gate sweep (P9)', () => {
   it('every admin route file has a canonical authorization gate token (presence)', () => {
     const missingGate: string[] = [];
     for (const rel of ALL_ROUTE_FILES) {
-      if (SELF_AUTH_ALLOWLIST.has(rel)) continue;
+      if (SESSION_BOUNDARY_ALLOWLIST.has(rel)) continue;
       const src = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
       if (!GATE_TOKEN.test(src)) missingGate.push(rel);
     }
@@ -179,7 +189,7 @@ describe('SAO-7 — admin-route auth-gate sweep (P9)', () => {
   it('no handler performs DB I/O before its authorization gate (ordering)', () => {
     const gateAfterDb: string[] = []; // gate token present in body but AFTER first DB marker
     for (const rel of ALL_ROUTE_FILES) {
-      if (SELF_AUTH_ALLOWLIST.has(rel)) continue;
+      if (SESSION_BOUNDARY_ALLOWLIST.has(rel)) continue;
       const src = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
       for (const { method, body } of extractHandlerBodies(src)) {
         GATE_TOKEN_G.lastIndex = 0;
@@ -200,7 +210,7 @@ describe('SAO-7 — admin-route auth-gate sweep (P9)', () => {
   it('every DB-touching handler proves gate-before-DB LOCALLY (strengthened ordering)', () => {
     const unverified: string[] = []; // DB marker present, but NO gate token in this handler body
     for (const rel of ALL_ROUTE_FILES) {
-      if (SELF_AUTH_ALLOWLIST.has(rel)) continue;
+      if (SESSION_BOUNDARY_ALLOWLIST.has(rel)) continue;
       const src = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
       for (const { method, body } of extractHandlerBodies(src)) {
         GATE_TOKEN_G.lastIndex = 0;

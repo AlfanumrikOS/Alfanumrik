@@ -37,7 +37,7 @@ async function parentFetch(path: string): Promise<Response> {
   });
 }
 
-export default function ParentV3Shell({ children, manifest }: { children: React.ReactNode; manifest: RoleManifest }) {
+export default function ParentV3Shell({ children, manifest, authoritativeChildId }: { children: React.ReactNode; manifest: RoleManifest; authoritativeChildId: string | null }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -77,22 +77,24 @@ export default function ParentV3Shell({ children, manifest }: { children: React.
   }, [attempt, isHi, mode]);
 
   const requestedChildId = searchParams?.get('childId') ?? null;
-  const childId = childrenList.some((child) => child.studentId === requestedChildId)
-    ? requestedChildId
-    : childrenList[0]?.studentId ?? requestedChildId;
+  // The rollout resolver already validated the guardian-child relationship and
+  // selected the institution used for cohort assignment. Never independently
+  // choose a different first child from a second endpoint.
+  const childId = authoritativeChildId;
 
   useEffect(() => {
-    if (!childId || requestedChildId === childId || pathname === '/parent') return;
+    if (!childId || requestedChildId === childId) return;
     const next = new URLSearchParams(searchParams?.toString() ?? '');
     next.set('childId', childId);
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   }, [childId, pathname, requestedChildId, router, searchParams]);
 
   const selectChild = useCallback((value: string) => {
+    if (!childrenList.some((child) => child.studentId === value)) return;
     const next = new URLSearchParams(searchParams?.toString() ?? '');
     next.set('childId', value);
     router.push(`${pathname}?${next.toString()}`, { scroll: false });
-  }, [pathname, router, searchParams]);
+  }, [childrenList, pathname, router, searchParams]);
 
   const navigation = useMemo(() => manifest.desktop.map((item) => ({
     ...item,

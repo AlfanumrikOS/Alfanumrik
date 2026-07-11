@@ -131,12 +131,12 @@ export interface ChatMessage {
 }
 
 export interface StudentSnapshot {
-  total_xp: number;
-  current_streak: number;
-  topics_mastered: number;
-  topics_in_progress: number;
-  quizzes_taken: number;
-  avg_score: number;
+  total_xp: number | null;
+  current_streak: number | null;
+  topics_mastered: number | null;
+  topics_in_progress: number | null;
+  quizzes_taken: number | null;
+  avg_score: number | null;
 }
 
 export interface QuizSession {

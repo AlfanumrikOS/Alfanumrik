@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { forwardRef, useId, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 
 interface FieldShellProps {
   id?: string;
@@ -36,17 +36,21 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   { label, hint, error, id, required, className = '', ...props },
   ref,
 ) {
-  const fieldId = id || props.name;
+  const generatedId = useId();
+  const fieldId = id || props.name || generatedId;
+  const describedBy = [props['aria-describedby'], hint && `${fieldId}-hint`, error && `${fieldId}-error`]
+    .filter(Boolean)
+    .join(' ') || undefined;
   return (
     <FieldShell id={fieldId} label={label} hint={hint} error={error} required={required}>
       <input
+        {...props}
         ref={ref}
         id={fieldId}
         required={required}
-        aria-invalid={Boolean(error) || undefined}
-        aria-describedby={[hint && `${fieldId}-hint`, error && `${fieldId}-error`].filter(Boolean).join(' ') || undefined}
+        aria-invalid={error ? true : props['aria-invalid']}
+        aria-describedby={describedBy}
         className={`v3-input ${className}`.trim()}
-        {...props}
       />
     </FieldShell>
   );
@@ -62,10 +66,22 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   { label, hint, error, id, required, className = '', ...props },
   ref,
 ) {
-  const fieldId = id || props.name;
+  const generatedId = useId();
+  const fieldId = id || props.name || generatedId;
+  const describedBy = [props['aria-describedby'], hint && `${fieldId}-hint`, error && `${fieldId}-error`]
+    .filter(Boolean)
+    .join(' ') || undefined;
   return (
     <FieldShell id={fieldId} label={label} hint={hint} error={error} required={required}>
-      <textarea ref={ref} id={fieldId} required={required} aria-invalid={Boolean(error) || undefined} className={`v3-input v3-textarea ${className}`.trim()} {...props} />
+      <textarea
+        {...props}
+        ref={ref}
+        id={fieldId}
+        required={required}
+        aria-invalid={error ? true : props['aria-invalid']}
+        aria-describedby={describedBy}
+        className={`v3-input v3-textarea ${className}`.trim()}
+      />
     </FieldShell>
   );
 });
@@ -80,10 +96,22 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   { label, hint, error, id, required, className = '', children, ...props },
   ref,
 ) {
-  const fieldId = id || props.name;
+  const generatedId = useId();
+  const fieldId = id || props.name || generatedId;
+  const describedBy = [props['aria-describedby'], hint && `${fieldId}-hint`, error && `${fieldId}-error`]
+    .filter(Boolean)
+    .join(' ') || undefined;
   return (
     <FieldShell id={fieldId} label={label} hint={hint} error={error} required={required}>
-      <select ref={ref} id={fieldId} required={required} aria-invalid={Boolean(error) || undefined} className={`v3-input v3-select ${className}`.trim()} {...props}>
+      <select
+        {...props}
+        ref={ref}
+        id={fieldId}
+        required={required}
+        aria-invalid={error ? true : props['aria-invalid']}
+        aria-describedby={describedBy}
+        className={`v3-input v3-select ${className}`.trim()}
+      >
         {children}
       </select>
     </FieldShell>

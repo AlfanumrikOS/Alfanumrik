@@ -36,6 +36,8 @@ const holders = vi.hoisted(() => ({
     teacherClassesError?: { message: string } | null;
     enrolment?: { class_id: string } | null;
     enrolmentError?: { message: string } | null;
+    sourceAlert?: { id: string } | null;
+    sourceAlertError?: { message: string } | null;
     existingOpen?: Record<string, unknown> | null;
     existingOpenError?: { message: string } | null;
     insertResult?: {
@@ -115,6 +117,21 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
         return Promise.resolve({
           data: holders.mockState.enrolment ?? null,
           error: holders.mockState.enrolmentError ?? null,
+        });
+      },
+    };
+    return chain;
+  }
+
+  // ── at_risk_alerts: evidence ownership verification ──
+  function sourceAlertChain() {
+    const chain = {
+      eq() { return chain; },
+      limit() { return chain; },
+      maybeSingle() {
+        return Promise.resolve({
+          data: holders.mockState.sourceAlert ?? null,
+          error: holders.mockState.sourceAlertError ?? null,
         });
       },
     };
@@ -215,6 +232,9 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
         }
         if (table === 'class_enrollments') {
           return { select: () => classEnrollmentsChain() };
+        }
+        if (table === 'at_risk_alerts') {
+          return { select: () => sourceAlertChain() };
         }
         if (table === 'teacher_remediation_assignments') {
           return {
@@ -412,6 +432,7 @@ describe('POST /api/teacher/remediation — happy path', () => {
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
+    holders.mockState.sourceAlert = { id: ALERT_ID };
     const res = await POST(
       makePost({ student_id: STUDENT_ID, source_alert_id: ALERT_ID }) as never,
     );
@@ -432,6 +453,25 @@ describe('POST /api/teacher/remediation — happy path', () => {
     expect(payload.status).toBe('assigned');
     expect(payload.source_alert_id).toBe(ALERT_ID);
     expect(payload.chapter_id).toBeNull();
+  });
+
+  it('rejects a source alert that is not owned by the roster learner and teacher', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.sourceAlert = null;
+
+    const res = await POST(
+      makePost({ student_id: STUDENT_ID, source_alert_id: ALERT_ID }) as never,
+    );
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({
+      success: false,
+      error: expect.stringMatching(/source alert/i),
+    });
+    expect(holders.mockInsert).not.toHaveBeenCalled();
   });
 
   it('uses an eq chapter_id filter for the idempotency check when chapter_id is provided', async () => {

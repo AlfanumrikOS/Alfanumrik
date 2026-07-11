@@ -5,8 +5,11 @@ import {
   DataState,
   Dialog,
   ExperienceV3Root,
+  Input,
   ProgressBar,
   RoleShell,
+  Select,
+  Textarea,
   type NavItem,
 } from '@alfanumrik/ui/v3';
 
@@ -66,5 +69,129 @@ describe('One Experience V3 UI foundation', () => {
       </>,
     );
     await waitFor(() => expect(document.getElementById('main-content')).not.toHaveAttribute('inert'));
+  });
+
+  it('inerts all shell chrome while a sheet is open and restores trigger focus', async () => {
+    render(
+      <ExperienceV3Root role="parent">
+        <RoleShell role="parent" navigation={navigation} mobileMoreItems={navigation.slice(4)}>
+          <h1>Progress</h1>
+        </RoleShell>
+      </ExperienceV3Root>,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'More' });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'More' })).toBeInTheDocument());
+    const regions = Array.from(document.querySelectorAll<HTMLElement>('[data-v3-shell-background]'));
+    expect(regions).toHaveLength(4);
+    regions.forEach((region) => expect(region).toHaveAttribute('inert'));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'More' })).not.toBeInTheDocument());
+    regions.forEach((region) => expect(region).not.toHaveAttribute('inert'));
+    expect(trigger).toHaveFocus();
+  });
+
+  it('associates textarea and select hints and errors with their controls', () => {
+    render(
+      <>
+        <span id="external-help">External help</span>
+        <Input label="Assignment title" hint="Use a clear title" error="Title is required" aria-describedby="external-help" />
+        <Textarea
+          name="teacher-note"
+          label="Teacher note"
+          hint="Keep it concise"
+          error="A note is required"
+          aria-describedby="external-help"
+        />
+        <Select label="Intervention" hint="Choose one" error="Select an intervention">
+          <option value="">Choose</option>
+        </Select>
+      </>,
+    );
+
+    const input = screen.getByRole('textbox', { name: /Assignment title/i });
+    expect(input.id).not.toBe('');
+    expect(input).toHaveAttribute('aria-describedby', `external-help ${input.id}-hint ${input.id}-error`);
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+
+    const textarea = screen.getByRole('textbox', { name: /Teacher note/i });
+    expect(textarea).toHaveAttribute(
+      'aria-describedby',
+      'external-help teacher-note-hint teacher-note-error',
+    );
+    expect(textarea).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById('teacher-note-hint')).toHaveTextContent('Keep it concise');
+    expect(document.getElementById('teacher-note-error')).toHaveTextContent('A note is required');
+
+    const select = screen.getByRole('combobox', { name: /Intervention/i });
+    expect(select.id).not.toBe('');
+    expect(select).toHaveAttribute(
+      'aria-describedby',
+      `${select.id}-hint ${select.id}-error`,
+    );
+    expect(select).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById(`${select.id}-hint`)).toHaveTextContent('Choose one');
+    expect(document.getElementById(`${select.id}-error`)).toHaveTextContent('Select an intervention');
+  });
+
+  it('keeps the full application inert until nested overlays close out of order', async () => {
+    const firstClose = vi.fn();
+    const secondClose = vi.fn();
+    const { container, rerender } = render(
+      <>
+        <button type="button">Application trigger</button>
+        <header>Application header</header>
+        <main id="main-content">Application content</main>
+        <footer>Application footer</footer>
+        <Dialog open={false} onClose={firstClose} title="First overlay"><Button>First action</Button></Dialog>
+        <Dialog open={false} onClose={secondClose} title="Second overlay"><Button>Second action</Button></Dialog>
+      </>,
+    );
+    const trigger = screen.getByRole('button', { name: 'Application trigger' });
+    trigger.focus();
+    rerender(
+      <>
+        <button type="button">Application trigger</button>
+        <header>Application header</header>
+        <main id="main-content">Application content</main>
+        <footer>Application footer</footer>
+        <Dialog open onClose={firstClose} title="First overlay"><Button>First action</Button></Dialog>
+        <Dialog open onClose={secondClose} title="Second overlay"><Button>Second action</Button></Dialog>
+      </>,
+    );
+    await waitFor(() => expect(container).toHaveAttribute('inert'));
+    expect(document.body).toHaveClass('v3-overlay-open');
+
+    rerender(
+      <>
+        <button type="button">Application trigger</button>
+        <header>Application header</header>
+        <main id="main-content">Application content</main>
+        <footer>Application footer</footer>
+        <Dialog open={false} onClose={firstClose} title="First overlay"><Button>First action</Button></Dialog>
+        <Dialog open onClose={secondClose} title="Second overlay"><Button>Second action</Button></Dialog>
+      </>,
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'First overlay' })).not.toBeInTheDocument());
+    expect(container).toHaveAttribute('inert');
+    expect(document.body).toHaveClass('v3-overlay-open');
+
+    rerender(
+      <>
+        <button type="button">Application trigger</button>
+        <header>Application header</header>
+        <main id="main-content">Application content</main>
+        <footer>Application footer</footer>
+        <Dialog open={false} onClose={firstClose} title="First overlay"><Button>First action</Button></Dialog>
+        <Dialog open={false} onClose={secondClose} title="Second overlay"><Button>Second action</Button></Dialog>
+      </>,
+    );
+    await waitFor(() => expect(container).not.toHaveAttribute('inert'));
+    expect(document.body).not.toHaveClass('v3-overlay-open');
+    expect(trigger).toHaveFocus();
   });
 });
