@@ -132,6 +132,13 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
       failure: 'Production workflow must pin Supabase CLI instead of resolving latest during deploy.',
     },
     {
+      id: 'production-cron-runner-domain-fallback',
+      label: 'production cron runner targets the configured production domain',
+      file: '.github/workflows/production-cron-runner.yml',
+      pass: includesAll("TARGET_URL: ${{ vars.PRODUCTION_CRON_TARGET_URL || vars.PRODUCTION_DOMAIN || 'https://alfanumrik.com' }}"),
+      failure: 'Production cron runner must fall back to vars.PRODUCTION_DOMAIN so its AWS-loaded CRON_SECRET matches the targeted runtime.',
+    },
+    {
       id: 'live-evidence-manifest-required-gates',
       label: 'live evidence manifest keeps all broad-launch gates required',
       file: 'scripts/live-readiness-evidence-manifest.json',
