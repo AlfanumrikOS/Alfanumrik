@@ -241,6 +241,7 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
         const health = mappingEntryBlock(text, 'health-check', 2);
         const post = mappingEntryBlock(text, 'post-deploy-verify', 2);
         const release = mappingEntryBlock(text, 'release', 2);
+        const completion = mappingEntryBlock(text, 'production-release-completion-gate', 2);
         const semanticUnhealthy = "b.ok===false&&['degraded','unhealthy'].includes(b.status)";
         return workflowPushMainOnly(text)
           && concurrency.includes('cancel-in-progress: false')
@@ -277,8 +278,48 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
             'ROLLBACK_ALIAS_BEFORE_ID',
             'Rollback verified: canonical production is healthy at exact SHA',
           )(health)
+          && includesAll(
+            '!cancelled()',
+            "needs.health-check.result == 'success'",
+            "needs.health-check.outputs.exact_sha_verified == 'true'",
+            'needs.health-check.outputs.verified_github_sha == github.sha',
+          )(post)
           && includesAll('EXPECTED_SHA=', "b.ok===true&&b.status==='healthy'", "b.version?.git_sha||''", 'if [ "$BYPASS_BLOCKED" -gt 0 ]; then', 'exact_sha_verified=true', 'verified_github_sha=$GITHUB_SHA')(post)
-          && includesAll("needs.health-check.outputs.exact_sha_verified == 'true'", 'needs.health-check.outputs.verified_github_sha == github.sha', "needs.post-deploy-verify.outputs.exact_sha_verified == 'true'", 'needs.post-deploy-verify.outputs.verified_github_sha == github.sha')(release)
+          && includesAll(
+            '!cancelled()',
+            "github.ref == 'refs/heads/main'",
+            "github.event_name == 'push'",
+            "needs.health-check.result == 'success'",
+            "needs.health-check.outputs.exact_sha_verified == 'true'",
+            'needs.health-check.outputs.verified_github_sha == github.sha',
+            "needs.post-deploy-verify.result == 'success'",
+            "needs.post-deploy-verify.outputs.exact_sha_verified == 'true'",
+            'needs.post-deploy-verify.outputs.verified_github_sha == github.sha',
+          )(release)
+          && jobDependencies(completion).includes('health-check')
+          && jobDependencies(completion).includes('post-deploy-verify')
+          && jobDependencies(completion).includes('release')
+          && includesAll(
+            'if: ${{ always() }}',
+            'EXPECTED_SHA: ${{ github.sha }}',
+            'HEALTH_CHECK_RESULT: ${{ needs.health-check.result }}',
+            'HEALTH_EXACT_SHA_VERIFIED: ${{ needs.health-check.outputs.exact_sha_verified }}',
+            'HEALTH_VERIFIED_GITHUB_SHA: ${{ needs.health-check.outputs.verified_github_sha }}',
+            'POST_DEPLOY_VERIFY_RESULT: ${{ needs.post-deploy-verify.result }}',
+            'POST_EXACT_SHA_VERIFIED: ${{ needs.post-deploy-verify.outputs.exact_sha_verified }}',
+            'POST_VERIFIED_GITHUB_SHA: ${{ needs.post-deploy-verify.outputs.verified_github_sha }}',
+            'RELEASE_RESULT: ${{ needs.release.result }}',
+            'require_equal "Health check result" "$HEALTH_CHECK_RESULT" "success"',
+            'require_equal "Health exact-SHA proof" "$HEALTH_EXACT_SHA_VERIFIED" "true"',
+            'require_equal "Health verified SHA" "$HEALTH_VERIFIED_GITHUB_SHA" "$EXPECTED_SHA"',
+            'require_equal "Post-deploy verification result" "$POST_DEPLOY_VERIFY_RESULT" "success"',
+            'require_equal "Post-deploy exact-SHA proof" "$POST_EXACT_SHA_VERIFIED" "true"',
+            'require_equal "Post-deploy verified SHA" "$POST_VERIFIED_GITHUB_SHA" "$EXPECTED_SHA"',
+            'require_equal "Release result" "$RELEASE_RESULT" "success"',
+            'if [ "$FAILED" -ne 0 ]; then',
+            'Production release completion evidence is incomplete.',
+            'exit 1',
+          )(completion)
           && text.includes("VERCEL_CLI_VERSION: '55.0.0'")
           && !text.includes('vercel ls --prod')
           && !text.includes('vercel@latest')
