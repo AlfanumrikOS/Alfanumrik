@@ -178,6 +178,10 @@ test.describe('One Experience V3 coarse-pointer preview', () => {
 
 test('production build denies the preview route', async ({ page }) => {
   test.skip(!expectProductionDenial, 'Run against next start with V3_EXPECT_PREVIEW_404=true.');
-  const response = await page.goto('/dev/experience-v3?role=student&code=invalid');
+  // Use the same non-secret code that opens the local development preview.
+  // This proves production mode wins over a valid code instead of merely
+  // proving that an invalid credential is rejected.
+  const code = previewCode || 'ci-preview-code-not-configured';
+  const response = await page.goto(`/dev/experience-v3?role=student&code=${encodeURIComponent(code)}`);
   expect(response?.status()).toBe(404);
 });

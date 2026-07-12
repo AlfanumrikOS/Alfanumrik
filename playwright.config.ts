@@ -6,6 +6,15 @@ const certificationBaseURL =
     : undefined;
 const configuredBaseURL = process.env.BASE_URL || certificationBaseURL;
 const localBaseURL = 'http://localhost:3000';
+const expectV3ProductionDenial = process.env.V3_EXPECT_PREVIEW_404 === 'true';
+const v3PreviewCode = process.env.EXPERIENCE_V3_PREVIEW_CODE;
+const localWebServerProbe = expectV3ProductionDenial
+  ? { port: 3000 }
+  : v3PreviewCode
+    ? {
+        url: `${localBaseURL}/dev/experience-v3?role=student&code=${encodeURIComponent(v3PreviewCode)}`,
+      }
+    : { url: localBaseURL };
 
 export default defineConfig({
   testDir: './e2e',
@@ -67,9 +76,19 @@ export default defineConfig({
   // External certification/critical-path runs set a base URL and never start
   // or mutate a local/remote service through this config.
   webServer: configuredBaseURL ? undefined : {
-    command: 'npm run dev',
-    url: localBaseURL,
+    // The V3 denial gate must exercise the artifact produced by `next build`,
+    // not a development server whose NODE_ENV would make the preview route
+    // available. Normal local/advisory E2E keeps the existing dev-server path.
+    command: expectV3ProductionDenial
+      ? 'node apps/host/.next/standalone/apps/host/server.js'
+      : 'npm run dev',
+    // Warm the exact dev preview before starting its 60 assertions. The
+    // production denial route intentionally returns 404, so its built server
+    // uses a TCP readiness probe instead of treating that denial as not-ready.
+    ...localWebServerProbe,
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    // The first webpack compile of the five-role preview is materially larger
+    // than the generic landing-page probe on a cold CI runner.
+    timeout: v3PreviewCode ? 300_000 : 180_000,
   },
 });

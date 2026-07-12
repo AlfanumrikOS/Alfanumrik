@@ -454,6 +454,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The generic E2E job remains advisory while its legacy flakes are being
+      # retired. These V3 checks are intentionally part of the blocking build
+      # job so the preview suite cannot silently pass by skipping when its
+      # local-only code is absent.
+      - name: Install Chromium for V3 browser gate
+        if: github.event_name == 'pull_request'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run V3 local development preview assertions
+        if: github.event_name == 'pull_request'
+        run: >-
+          npx playwright test e2e/one-experience-v3-preview.spec.ts
+          --project=chromium
+          --grep-invert "production build denies the preview route"
+        env:
+          # Deliberately non-secret and useful only on this ephemeral local
+          # development server. Production denies the route regardless of code.
+          EXPERIENCE_V3_PREVIEW_CODE: 'ci-v3-local-preview-only'
+
       # Bump Node heap to 6 GB. Default is ~2 GB which the project's bundle
       # has outgrown — surfaced on PR #817 as a deterministic
       # `FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap
@@ -465,6 +484,16 @@ jobs:
         run: npm run build
         env:
           NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Prove the production build denies the V3 preview route
+        if: github.event_name == 'pull_request'
+        run: >-
+          npx playwright test e2e/one-experience-v3-preview.spec.ts
+          --project=chromium
+          --grep "production build denies the preview route"
+        env:
+          EXPERIENCE_V3_PREVIEW_CODE: 'ci-v3-local-preview-only'
+          V3_EXPECT_PREVIEW_404: 'true'
 
       - name: Bundle size report
         run: |
