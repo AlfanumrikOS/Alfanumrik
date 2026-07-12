@@ -24,6 +24,7 @@ export type FeatureFlagMatrixEntry = {
   name: string;
   stagingEnabled: boolean;
   productionEnabled: boolean;
+  rolloutPercentage?: number;
 };
 
 export type FeatureFlagMatrix = {
@@ -41,6 +42,8 @@ export type FeatureFlagMismatch = {
   name: string;
   expectedEnabled: boolean;
   actualEnabled: boolean;
+  expectedRolloutPercentage?: number;
+  actualRolloutPercentage?: number | null;
   reason: string;
 };
 
@@ -67,6 +70,47 @@ type FlagsDB = {
 };
 
 const MATRIX_PATH = resolve(process.cwd(), 'scripts', 'feature-flag-matrix.json');
+
+function validateFeatureFlagMatrixEntry(entry: FeatureFlagMatrixEntry): void {
+  const rolloutPercentage = entry.rolloutPercentage;
+  if (rolloutPercentage === undefined) return;
+
+  if (
+    typeof rolloutPercentage !== 'number'
+    || !Number.isInteger(rolloutPercentage)
+    || rolloutPercentage < 0
+    || rolloutPercentage > 100
+  ) {
+    throw new Error(
+      `Invalid rolloutPercentage for ${entry.name}: expected an integer between 0 and 100, received ${String(rolloutPercentage)}.`,
+    );
+  }
+
+  const enabledSomewhere = entry.stagingEnabled || entry.productionEnabled;
+  if (enabledSomewhere && rolloutPercentage === 0) {
+    throw new Error(
+      `Invalid rolloutPercentage for ${entry.name}: an enabled environment requires a value between 1 and 100.`,
+    );
+  }
+  if (!enabledSomewhere && rolloutPercentage !== 0) {
+    throw new Error(
+      `Invalid rolloutPercentage for ${entry.name}: a flag disabled in every environment must declare 0.`,
+    );
+  }
+}
+
+export function validateFeatureFlagMatrix(matrix: FeatureFlagMatrix): void {
+  if (!matrix || !Array.isArray(matrix.flags)) {
+    throw new Error('Invalid feature flag matrix: flags must be an array.');
+  }
+  for (const entry of matrix.flags) validateFeatureFlagMatrixEntry(entry);
+}
+
+export function resolveMatrixRolloutPercentage(entry: FeatureFlagMatrixEntry): number {
+  validateFeatureFlagMatrixEntry(entry);
+  if (entry.rolloutPercentage !== undefined) return entry.rolloutPercentage;
+  return entry.stagingEnabled || entry.productionEnabled ? 100 : 0;
+}
 
 function expectedEnabled(entry: FeatureFlagMatrixEntry, environment: TargetEnvironment): boolean {
   return environment === 'production' ? entry.productionEnabled : entry.stagingEnabled;
@@ -96,6 +140,7 @@ export function compareFeatureFlagRows(
   rows: LiveFeatureFlagRow[],
   environment: TargetEnvironment,
 ): FeatureFlagComparisonResult {
+  validateFeatureFlagMatrix(matrix);
   const matrixByName = new Map(matrix.flags.map((entry) => [entry.name, entry]));
   const rowByName = new Map(rows.map((row) => [row.flag_name, row]));
   const missing: string[] = [];
@@ -116,6 +161,24 @@ export function compareFeatureFlagRows(
         expectedEnabled: expected,
         actualEnabled: actual.enabled,
         reason: actual.reason,
+      });
+      continue;
+    }
+
+    if (
+      expected
+      && entry.rolloutPercentage !== undefined
+      && row.rollout_percentage !== entry.rolloutPercentage
+    ) {
+      mismatched.push({
+        name: entry.name,
+        expectedEnabled: expected,
+        actualEnabled: actual.enabled,
+        expectedRolloutPercentage: entry.rolloutPercentage,
+        actualRolloutPercentage: row.rollout_percentage,
+        reason:
+          `row rollout_percentage is ${String(row.rollout_percentage)} `
+          + `but matrix explicitly expects ${entry.rolloutPercentage}`,
       });
     }
   }
@@ -140,7 +203,9 @@ export function compareFeatureFlagRows(
 }
 
 function loadMatrix(): FeatureFlagMatrix {
-  return JSON.parse(readFileSync(MATRIX_PATH, 'utf8')) as FeatureFlagMatrix;
+  const matrix = JSON.parse(readFileSync(MATRIX_PATH, 'utf8')) as FeatureFlagMatrix;
+  validateFeatureFlagMatrix(matrix);
+  return matrix;
 }
 
 function parseEnvironment(argv: string[]): TargetEnvironment {

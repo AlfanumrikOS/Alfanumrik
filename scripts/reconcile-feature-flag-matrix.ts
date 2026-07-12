@@ -9,7 +9,14 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
-import type { FeatureFlagMatrix, LiveFeatureFlagRow, TargetEnvironment } from './verify-feature-flag-matrix';
+import {
+  resolveMatrixRolloutPercentage,
+  validateFeatureFlagMatrix,
+  type FeatureFlagMatrix,
+  type FeatureFlagMatrixEntry,
+  type LiveFeatureFlagRow,
+  type TargetEnvironment,
+} from './verify-feature-flag-matrix';
 
 export type { FeatureFlagMatrix, LiveFeatureFlagRow, TargetEnvironment };
 
@@ -73,30 +80,30 @@ function rowEnabledFor(row: LiveFeatureFlagRow, environment: TargetEnvironment):
   return Boolean(row.is_enabled && rowApplies(row, environment) && row.rollout_percentage !== 0);
 }
 
-function patchFor(flagName: string, environment: TargetEnvironment, enabled: boolean): FeatureFlagPatch {
+function patchFor(
+  entry: Pick<FeatureFlagMatrixEntry, 'name' | 'stagingEnabled' | 'productionEnabled' | 'rolloutPercentage'>,
+  environment: TargetEnvironment,
+  enabled: boolean,
+): FeatureFlagPatch {
   return {
-    flag_name: flagName,
+    flag_name: entry.name,
     is_enabled: enabled,
     target_environments: [environment],
-    rollout_percentage: enabled ? 100 : 0,
+    rollout_percentage: enabled ? resolveMatrixRolloutPercentage(entry) : 0,
   };
 }
 
-function patchForFullPosture(
-  flagName: string,
-  stagingEnabled: boolean,
-  productionEnabled: boolean,
-): FeatureFlagPatch {
+function patchForFullPosture(entry: FeatureFlagMatrixEntry): FeatureFlagPatch {
   const enabledTargets = [
-    ...(stagingEnabled ? ['staging'] : []),
-    ...(productionEnabled ? ['production'] : []),
+    ...(entry.stagingEnabled ? ['staging'] : []),
+    ...(entry.productionEnabled ? ['production'] : []),
   ];
   const isEnabled = enabledTargets.length > 0;
   return {
-    flag_name: flagName,
+    flag_name: entry.name,
     is_enabled: isEnabled,
     target_environments: isEnabled ? enabledTargets : ['staging', 'production'],
-    rollout_percentage: isEnabled ? 100 : 0,
+    rollout_percentage: isEnabled ? resolveMatrixRolloutPercentage(entry) : 0,
   };
 }
 
@@ -114,6 +121,7 @@ export function buildFeatureFlagReconciliationPlan(
   rows: LiveFeatureFlagRow[],
   environment: TargetEnvironment,
 ): FeatureFlagReconciliationPlan {
+  validateFeatureFlagMatrix(matrix);
   const matrixByName = new Map(matrix.flags.map((entry) => [entry.name, entry]));
   const rowsByName = new Map(rows.map((row) => [row.flag_name, row]));
   const actions: FeatureFlagReconciliationAction[] = [];
@@ -127,22 +135,33 @@ export function buildFeatureFlagReconciliationPlan(
         flagName: entry.name,
         environment,
         expectedEnabled: expected,
-        patch: patchFor(entry.name, environment, expected),
+        patch: patchFor(entry, environment, expected),
       });
       continue;
     }
 
     const actual = rowEnabledFor(row, environment);
-    if (actual !== expected) {
+    const explicitRolloutDrift = expected
+      && entry.rolloutPercentage !== undefined
+      && row.rollout_percentage !== entry.rolloutPercentage;
+    if (actual !== expected || explicitRolloutDrift) {
+      // Percentage-only reconciliation must preserve the complete matrix
+      // environment posture. Narrowing this patch to the selected environment
+      // would silently disable another environment that is also intended ON.
+      const patch = actual === expected && explicitRolloutDrift
+        ? patchForFullPosture(entry)
+        : patchFor(entry, environment, expected);
       actions.push({
         type: 'update_drift',
         flagName: entry.name,
         environment,
         expectedEnabled: expected,
-        reason: actual
-          ? 'live row is enabled but matrix expects disabled'
-          : 'live row is disabled or scoped out but matrix expects enabled',
-        patch: patchFor(entry.name, environment, expected),
+        reason: actual !== expected
+          ? actual
+            ? 'live row is enabled but matrix expects disabled'
+            : 'live row is disabled or scoped out but matrix expects enabled'
+          : `live rollout_percentage is ${String(row.rollout_percentage)} but matrix explicitly expects ${entry.rolloutPercentage}`,
+        patch,
       });
     }
   }
@@ -155,7 +174,11 @@ export function buildFeatureFlagReconciliationPlan(
       flagName: row.flag_name,
       environment,
       reason: 'live flag is enabled for the target environment but is not classified in feature-flag-matrix.json',
-      patch: patchFor(row.flag_name, environment, false),
+      patch: patchFor({
+        name: row.flag_name,
+        stagingEnabled: false,
+        productionEnabled: false,
+      }, environment, false),
     });
   }
 
@@ -167,12 +190,13 @@ export function buildFeatureFlagFullReconciliationPlan(
   matrix: FeatureFlagMatrix,
   rows: LiveFeatureFlagRow[],
 ): FeatureFlagReconciliationPlan {
+  validateFeatureFlagMatrix(matrix);
   const matrixByName = new Map(matrix.flags.map((entry) => [entry.name, entry]));
   const rowsByName = new Map(rows.map((row) => [row.flag_name, row]));
   const actions: FeatureFlagReconciliationAction[] = [];
 
   for (const entry of matrix.flags) {
-    const patch = patchForFullPosture(entry.name, entry.stagingEnabled, entry.productionEnabled);
+    const patch = patchForFullPosture(entry);
     const row = rowsByName.get(entry.name);
     const livePatch = row
       ? {
@@ -203,7 +227,11 @@ export function buildFeatureFlagFullReconciliationPlan(
       environment: 'all',
       expectedEnabled: false,
       reason: 'live flag is enabled but is not classified in feature-flag-matrix.json',
-      patch: patchForFullPosture(row.flag_name, false, false),
+      patch: patchForFullPosture({
+        name: row.flag_name,
+        stagingEnabled: false,
+        productionEnabled: false,
+      }),
     });
   }
 
@@ -220,7 +248,11 @@ function parseEnvironment(argv: string[]): ReconciliationEnvironment {
 }
 
 function loadMatrix(): FeatureFlagMatrix {
-  return JSON.parse(readFileSync(resolve(process.cwd(), 'scripts', 'feature-flag-matrix.json'), 'utf8')) as FeatureFlagMatrix;
+  const matrix = JSON.parse(
+    readFileSync(resolve(process.cwd(), 'scripts', 'feature-flag-matrix.json'), 'utf8'),
+  ) as FeatureFlagMatrix;
+  validateFeatureFlagMatrix(matrix);
+  return matrix;
 }
 
 async function fetchLiveRows(): Promise<LiveFeatureFlagRow[]> {

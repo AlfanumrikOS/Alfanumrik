@@ -13,6 +13,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..');
 const REGISTRY_ROOT = join(REPO_ROOT, 'packages', 'lib', 'src', 'flags', 'registries');
@@ -79,12 +80,39 @@ function parseDefaults(registryConstants) {
   return entries.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function parseOverrides(entries) {
-  if (!existsSync(OVERRIDES_PATH)) return entries;
-  const overrides = JSON.parse(readFileSync(OVERRIDES_PATH, 'utf8'));
+function validateOverrideRolloutPercentage(override) {
+  if (!Object.hasOwn(override, 'rolloutPercentage')) return undefined;
+  const rolloutPercentage = override.rolloutPercentage;
+  if (
+    typeof rolloutPercentage !== 'number'
+    || !Number.isInteger(rolloutPercentage)
+    || rolloutPercentage < 0
+    || rolloutPercentage > 100
+  ) {
+    throw new Error(
+      `Invalid rolloutPercentage for ${override.name ?? '<unnamed flag>'}: expected an integer between 0 and 100, received ${String(rolloutPercentage)}.`,
+    );
+  }
+
+  const enabledSomewhere = Boolean(override.stagingEnabled) || Boolean(override.productionEnabled);
+  if (enabledSomewhere && rolloutPercentage === 0) {
+    throw new Error(
+      `Invalid rolloutPercentage for ${override.name ?? '<unnamed flag>'}: an enabled environment requires a value between 1 and 100.`,
+    );
+  }
+  if (!enabledSomewhere && rolloutPercentage !== 0) {
+    throw new Error(
+      `Invalid rolloutPercentage for ${override.name ?? '<unnamed flag>'}: a flag disabled in every environment must declare 0.`,
+    );
+  }
+  return rolloutPercentage;
+}
+
+export function mergeFeatureFlagMatrixOverrides(entries, overrides) {
   const byName = new Map(entries.map((entry) => [entry.name, entry]));
 
   for (const override of overrides.flags ?? []) {
+    const rolloutPercentage = validateOverrideRolloutPercentage(override);
     const current = byName.get(override.name);
     const merged = {
       ...(current ?? {
@@ -99,14 +127,20 @@ function parseOverrides(entries) {
       ...(override.productionEnabled || override.stagingEnabled
         ? { enablementEvidence: override.enablementEvidence }
         : {}),
-      ...(typeof override.rolloutPercentage === 'number'
-        ? { rolloutPercentage: override.rolloutPercentage }
+      ...(rolloutPercentage !== undefined
+        ? { rolloutPercentage }
         : {}),
     };
     byName.set(override.name, merged);
   }
 
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function parseOverrides(entries) {
+  if (!existsSync(OVERRIDES_PATH)) return entries;
+  const overrides = JSON.parse(readFileSync(OVERRIDES_PATH, 'utf8'));
+  return mergeFeatureFlagMatrixOverrides(entries, overrides);
 }
 
 function ownerFor(registry) {
@@ -153,4 +187,4 @@ function main() {
   process.stdout.write(`feature flag matrix generated with ${flags.length} flags -> ${relative(REPO_ROOT, OUT_PATH)}\n`);
 }
 
-main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) main();
