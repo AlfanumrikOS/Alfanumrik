@@ -19,6 +19,20 @@ const legacyMigrations = [
   '20260710100000_xc3_school_admin_student_create_preflight_rpc.sql',
   '20260710110000_xc3_school_admin_student_create_class_preflight_rpc.sql',
 ].map((file) => readFileSync(resolve(migrationsRoot, file), 'utf8')).join('\n');
+const ciWorkflow = readFileSync(resolve(REPO_ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+const currentSchemaFixture = readFileSync(
+  resolve(REPO_ROOT, '.github', 'fixtures', 'selected-school-rpc-current-schema.sql'),
+  'utf8',
+);
+
+function textBetween(source: string, startMarker: string, endMarker: string): string {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  if (start < 0 || end < 0) {
+    throw new Error(`Missing source markers: ${startMarker} -> ${endMarker}`);
+  }
+  return source.slice(start, end);
+}
 
 function sqlBetween(startMarker: string, endMarker: string): string {
   const start = additiveMigration.indexOf(startMarker);
@@ -37,6 +51,12 @@ const scopedPreflightSql = sqlBetween(
   'CREATE OR REPLACE FUNCTION public.school_admin_student_create_preflight(',
   'REVOKE ALL ON FUNCTION public.school_admin_list_students(',
 );
+const selectedSchoolIntegrationJob = textBetween(
+  ciWorkflow,
+  '  selected-school-rpc-integration:',
+  '\n  quality:',
+);
+const ciGateJob = textBetween(ciWorkflow, '  ci-gate:', '\n  health-check:');
 
 describe('One Experience V3 selected-school RPC predeploy migration', () => {
   it('applies the additive function DDL and grants in one transaction', () => {
@@ -133,5 +153,122 @@ describe('One Experience V3 selected-school RPC predeploy migration', () => {
 
     expect(executableAdditiveSql).not.toContain('Explicit school scope required');
     expect(executableAdditiveSql).not.toContain('v_school_ids');
+  });
+
+  it('applies only the exact selected-school migration to the PG17 fixture', () => {
+    const fixtureApply = selectedSchoolIntegrationJob.indexOf(
+      'psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$fixture"',
+    );
+    const migrationApply = selectedSchoolIntegrationJob.indexOf(
+      'psql "$db_url" -X -v ON_ERROR_STOP=1 -f "$migration"',
+    );
+
+    expect(selectedSchoolIntegrationJob).toContain(
+      'name: Selected-School RPC Migration Integration (local PG17)',
+    );
+    expect(selectedSchoolIntegrationJob).toContain(
+      'migration="$GITHUB_WORKSPACE/supabase/migrations/20260711230713_v3_school_admin_students_selected_scope.sql"',
+    );
+    expect(selectedSchoolIntegrationJob).toContain(
+      'fixture="$GITHUB_WORKSPACE/.github/fixtures/selected-school-rpc-current-schema.sql"',
+    );
+    expect(fixtureApply).toBeGreaterThan(-1);
+    expect(migrationApply).toBeGreaterThan(fixtureApply);
+    expect(
+      selectedSchoolIntegrationJob.match(
+        /psql "\$db_url" -X -v ON_ERROR_STOP=1 -f "\$migration"/g,
+      ),
+    ).toHaveLength(1);
+    expect(selectedSchoolIntegrationJob).toContain("SHOW server_version_num");
+    expect(selectedSchoolIntegrationJob).toContain('^17[0-9]{4}$');
+    expect(selectedSchoolIntegrationJob).not.toContain('supabase db reset');
+    expect(selectedSchoolIntegrationJob).not.toContain('00000000000000_baseline_from_prod.sql');
+    expect(selectedSchoolIntegrationJob).not.toContain('cp "$source_dir"/*.sql');
+  });
+
+  it('keeps the targeted integration local, credential-free, and always cleaned up', () => {
+    for (const emptyCredential of [
+      "NEXT_PUBLIC_SUPABASE_URL: ''",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY: ''",
+      "SUPABASE_SERVICE_ROLE_KEY: ''",
+      "SUPABASE_ACCESS_TOKEN: ''",
+      "SUPABASE_DB_PASSWORD: ''",
+    ]) {
+      expect(selectedSchoolIntegrationJob).toContain(emptyCredential);
+    }
+
+    expect(selectedSchoolIntegrationJob).toContain(
+      '@(127\\.0\\.0\\.1|localhost)',
+    );
+    expect(selectedSchoolIntegrationJob).toContain(
+      "if: ${{ always() && steps.selected_rpc_changes.outputs.changed == 'true' }}",
+    );
+    expect(selectedSchoolIntegrationJob).not.toContain('supabase link');
+    expect(selectedSchoolIntegrationJob).not.toContain('supabase db push');
+  });
+
+  it('builds only the current-schema dependencies and legacy RPC contracts', () => {
+    expect(currentSchemaFixture).toContain("to_regclass('auth.users')");
+    expect(currentSchemaFixture).toContain("to_regprocedure('auth.uid()')");
+
+    for (const table of [
+      'schools',
+      'school_admins',
+      'students',
+      'classes',
+      'class_students',
+      'school_subscriptions',
+      'roles',
+      'permissions',
+      'role_permissions',
+      'user_roles',
+    ]) {
+      expect(currentSchemaFixture).toContain(`CREATE TABLE public.${table} (`);
+      expect(currentSchemaFixture).toContain(
+        `ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;`,
+      );
+    }
+
+    expect(currentSchemaFixture).toContain(
+      'CREATE OR REPLACE FUNCTION public.get_user_permissions(',
+    );
+    expect(currentSchemaFixture).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.get_user_permissions\(\s+p_user_id uuid\s+\)/,
+    );
+    expect(currentSchemaFixture).toContain(
+      'REVOKE ALL ON FUNCTION public.get_user_permissions(uuid)',
+    );
+    expect(currentSchemaFixture).not.toContain('get_user_permissions(uuid, uuid)');
+    expect(currentSchemaFixture).not.toMatch(
+      /get_user_permissions\(\s+p_user_id uuid,\s+p_school_id uuid/,
+    );
+    for (const legacySignature of [
+      'school_admin_list_students(integer, integer, text, text)',
+      'school_admin_toggle_student_active(uuid, boolean)',
+      'school_admin_attach_created_student(uuid, text, uuid)',
+      'school_admin_student_create_preflight(text, integer, uuid)',
+      'school_admin_student_create_preflight(text, integer)',
+    ]) {
+      expect(currentSchemaFixture).toContain(
+        `GRANT EXECUTE ON FUNCTION public.${legacySignature}`,
+      );
+    }
+  });
+
+  it('keeps catalog, authorization, isolation, and no-mutation checks required', () => {
+    for (const assertion of [
+      'Catalog and privilege contract.',
+      'selected-school roster leaked or omitted rows',
+      'non-member school selection did not fail closed',
+      'cross-school toggle mutated the student',
+      'cross-school attach created a class membership',
+      'membership without permission did not fail closed',
+    ]) {
+      expect(selectedSchoolIntegrationJob).toContain(assertion);
+    }
+
+    expect(ciGateJob).toContain('- selected-school-rpc-integration');
+    expect(ciGateJob).toContain("'selected-school-rpc-integration'");
+    expect(ciGateJob).not.toContain('migration-reproducibility');
   });
 });
