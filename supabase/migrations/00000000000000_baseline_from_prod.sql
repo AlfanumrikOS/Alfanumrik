@@ -5636,9 +5636,8 @@ BEGIN
   WHERE id = p_id;
 END;
 $$;
--- REPLAY-ONLY PARSER CORRECTION (003ff05d): production already contains this
--- function version. Restore only the p_min_quality closing parentheses that the
--- historical snapshot rewrite removed so fresh-schema replay can parse it.
+
+
 CREATE OR REPLACE FUNCTION "public"."match_rag_chunks"("query_text" "text", "p_subject" "text", "p_grade" "text", "match_count" integer DEFAULT 5, "p_chapter" "text" DEFAULT NULL::"text", "query_embedding" "public"."vector" DEFAULT NULL::"public"."vector", "p_board" "text" DEFAULT NULL::"text", "p_min_quality" double precision DEFAULT 0.5, "p_syllabus_version" "text" DEFAULT NULL::"text") RETURNS TABLE("id" "uuid", "content" "text", "chapter_title" "text", "topic" "text", "concept" "text", "similarity" double precision, "media_url" "text", "page_number" integer, "media_description" "text")
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5723,7 +5722,7 @@ BEGIN
       AND c.subject = ANY(v_subjects)
       AND c.grade   = v_db_grade
       AND (v_db_board IS NULL OR c.board IS NULL OR upper(c.board) = v_db_board)
-      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
+      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
       AND (p_chapter IS NULL OR c.chapter_title ILIKE '%' || p_chapter || '%')
       AND (p_syllabus_version IS NULL OR c.syllabus_version = p_syllabus_version)
     ORDER BY c.embedding <=> query_embedding
@@ -5758,7 +5757,7 @@ BEGIN
       AND c.subject = ANY(v_subjects)
       AND c.grade   = v_db_grade
       AND (v_db_board IS NULL OR c.board IS NULL OR upper(c.board) = v_db_board)
-      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
+      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
       AND (p_chapter IS NULL OR c.chapter_title ILIKE '%' || p_chapter || '%')
       AND c.search_vector @@ v_query
     ORDER BY ts_rank(c.search_vector, v_query) DESC
@@ -5767,9 +5766,10 @@ BEGIN
 END;
 $_$;
 COMMENT ON FUNCTION "public"."match_rag_chunks"("query_text" "text", "p_subject" "text", "p_grade" "text", "match_count" integer, "p_chapter" "text", "query_embedding" "public"."vector", "p_board" "text", "p_min_quality" double precision, "p_syllabus_version" "text") IS 'RAG retrieval with grade-aware subject expansion. Grade 11-12: Science->Physics/Chemistry/Biology, Social Studies->History/Geography/PolSci/Economics.';
--- REPLAY-ONLY PARSER CORRECTION (003ff05d): production already contains this
--- function version. Restore only the p_min_quality closing parentheses that the
--- historical snapshot rewrite removed so fresh-schema replay can parse it.
+
+
+
+
 CREATE OR REPLACE FUNCTION "public"."match_rag_chunks_ncert"("query_text" "text", "p_subject_code" "text", "p_grade" "text", "match_count" integer DEFAULT 10, "p_chapter_number" integer DEFAULT NULL::integer, "p_chapter_title" "text" DEFAULT NULL::"text", "p_concept" "text" DEFAULT NULL::"text", "p_content_type" "text" DEFAULT NULL::"text", "p_min_quality" double precision DEFAULT 0.4, "query_embedding" "public"."vector" DEFAULT NULL::"public"."vector") RETURNS TABLE("id" "uuid", "content" "text", "chapter_title" "text", "topic" "text", "concept" "text", "similarity" double precision, "content_type" "text", "media_url" "text", "media_type" "text", "media_description" "text", "question_text" "text", "answer_text" "text", "question_type" "text", "marks_expected" integer, "bloom_level" "text", "ncert_exercise" "text", "page_number" integer, "chapter_number" integer, "source" "text")
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -5806,7 +5806,7 @@ BEGIN
         AND c.subject_code = p_subject_code
         AND c.grade_short  = v_grade
         AND c.source       = 'ncert_2025'
-        AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
+        AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
         AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
         AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
         AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -5827,7 +5827,7 @@ BEGIN
         AND c.grade_short  = v_grade
         AND c.source       = 'ncert_2025'
         AND c.search_vector @@ v_query
-        AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
+        AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
         AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
         AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
         AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -5889,7 +5889,7 @@ BEGIN
     AND c.grade_short  = v_grade
     AND c.source       = 'ncert_2025'
     AND c.search_vector @@ v_query
-    AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
+    AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
     AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
     AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
     AND (p_concept        IS NULL OR c.concept = p_concept)
@@ -5911,7 +5911,7 @@ BEGIN
     AND c.subject_code = p_subject_code
     AND c.grade_short  = v_grade
     AND c.source       = 'ncert_2025'
-    AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
+    AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
     AND (p_chapter_number IS NULL OR c.chapter_number = p_chapter_number)
     AND (p_chapter_title  IS NULL OR c.chapter_title ILIKE '%' || p_chapter_title || '%')
     AND (

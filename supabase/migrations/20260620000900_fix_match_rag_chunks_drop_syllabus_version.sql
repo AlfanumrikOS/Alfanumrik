@@ -31,10 +31,6 @@
 --   SELECT pg_get_functiondef(oid) FROM pg_proc
 --   WHERE pronamespace='public'::regnamespace AND proname='match_rag_chunks';
 -- EXCEPT for the single removed predicate line described above.
---
--- REPLAY-ONLY PARSER CORRECTION (003ff05d): this migration timestamp is already
--- recorded as applied in production. Restore only the two p_min_quality closing
--- parentheses removed later from this file so fresh-schema replay can parse it.
 -- =====================================================================
 
 CREATE OR REPLACE FUNCTION public.match_rag_chunks(query_text text, p_subject text, p_grade text, match_count integer DEFAULT 5, p_chapter text DEFAULT NULL::text, query_embedding vector DEFAULT NULL::vector, p_board text DEFAULT NULL::text, p_min_quality double precision DEFAULT 0.5, p_syllabus_version text DEFAULT NULL::text)
@@ -123,7 +119,7 @@ BEGIN
       AND c.subject = ANY(v_subjects)
       AND c.grade   = v_db_grade
       AND (v_db_board IS NULL OR c.board IS NULL OR upper(c.board) = v_db_board)
-      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
+      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
       AND (p_chapter IS NULL OR c.chapter_title ILIKE '%' || p_chapter || '%')
     ORDER BY c.embedding <=> query_embedding
     LIMIT match_count;
@@ -157,7 +153,7 @@ BEGIN
       AND c.subject = ANY(v_subjects)
       AND c.grade   = v_db_grade
       AND (v_db_board IS NULL OR c.board IS NULL OR upper(c.board) = v_db_board)
-      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality)
+      AND (c.quality_score IS NULL OR c.quality_score >= p_min_quality
       AND (p_chapter IS NULL OR c.chapter_title ILIKE '%' || p_chapter || '%')
       AND c.search_vector @@ v_query
     ORDER BY ts_rank(c.search_vector, v_query) DESC
