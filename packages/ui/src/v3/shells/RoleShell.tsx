@@ -3,9 +3,16 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, type CSSProperties } from 'react';
+import { createContext, useContext, useState, type CSSProperties } from 'react';
 import { BottomSheet } from '../overlays/Overlay';
 import type { NavItem, RoleId, RoleShellProps } from '../foundations/types';
+
+const RoleShellMainContext = createContext(false);
+
+/** True for content rendered synchronously inside RoleShell's main landmark. */
+export function useIsInsideRoleShellMain() {
+  return useContext(RoleShellMainContext);
+}
 
 const ROLE_LABELS: Record<RoleId, string> = {
   student: 'Student',
@@ -65,7 +72,9 @@ export function RoleShell({ role, navigation, activeHref, brand, context, header
 
       <div className="v3-shell-workspace" data-v3-shell-background>
         {(context || headerActions) ? <div className="v3-workspace-bar"><div>{context}</div><div className="v3-workspace-bar__actions">{headerActions}</div></div> : null}
-        <main id="main-content" tabIndex={-1} className="v3-main" data-v3-shell-content>{children}</main>
+        <main tabIndex={-1} className="v3-main" data-v3-shell-content>
+          <RoleShellMainContext.Provider value={true}>{children}</RoleShellMainContext.Provider>
+        </main>
       </div>
 
       <nav className="v3-bottom-nav" aria-label={`${ROLE_LABELS[role]} primary navigation`} data-v3-shell-navigation data-v3-shell-background>

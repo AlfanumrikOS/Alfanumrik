@@ -25,6 +25,11 @@ describe('Student V3 recommendation contract', () => {
     expect(safeTodayHref(item('https://untrusted.example/path'))).toBe('/today');
   });
 
+  it('rejects protocol-relative routes instead of handing Next.js an external URL', () => {
+    expect(safeTodayHref(item('//untrusted.example/path', { student: 'student-1' })))
+      .toBe('/today');
+  });
+
   it('explains why the adaptive activity is next in English and Hindi', () => {
     expect(studentRecommendationReason('srs_due', false)).toContain('due');
     expect(studentRecommendationReason('srs_due', true)).toContain('दोहराना');

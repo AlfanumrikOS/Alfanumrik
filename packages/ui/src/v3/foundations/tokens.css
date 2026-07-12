@@ -4,9 +4,17 @@
  * reinterpreted here. The named cascade layer is duplicated unlayered by the
  * host compatibility plugin for Safari 14, which predates cascade layers.
  */
+
+/* Safari 14 has no :has(). ExperiencePresenceProvider maintains this
+   pre-paint attribute so legacy student chrome cannot overlap a V3 shell. */
+html[data-experience-v3-active] .app-shell > .sidebar-nav,
+html[data-experience-v3-active] .app-shell > .bottom-nav-mobile {
+  display: none !important;
+}
+
 @layer alfanumrik-v3 {
   /* Modern browsers suppress legacy student chrome on the first style pass;
-     the React presence registration provides the pre-paint Safari 14 fallback. */
+     the attribute selector above provides the pre-paint Safari 14 fallback. */
   .app-shell:has([data-experience="v3"]) > :where(.sidebar-nav, .bottom-nav-mobile) { display: none !important; }
   [data-experience="v3"] {
     --v3-canvas: #fbf7f1;

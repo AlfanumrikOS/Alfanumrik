@@ -266,8 +266,17 @@ describe('One Experience V3 contracts', () => {
   it('keeps root and V3 main-content ownership unambiguous', async () => {
     const fs = await import('node:fs/promises');
     const root = await fs.readFile('src/app/layout.tsx', 'utf8');
+    const globalLayout = await fs.readFile('../../packages/ui/src/navigation/GlobalAppLayout.tsx', 'utf8');
     const roleShell = await fs.readFile('../../packages/ui/src/v3/shells/RoleShell.tsx', 'utf8');
-    expect(root).not.toContain('<div id="main-content"');
-    expect(roleShell).toContain('<main id="main-content" tabIndex={-1}');
+    const leaderboard = await fs.readFile('src/app/(student)/leaderboard/page.tsx', 'utf8');
+    const rewards = await fs.readFile('src/app/(student)/rewards/page.tsx', 'utf8');
+    expect(root).toContain('<a href="#main-content"');
+    expect(globalLayout).toContain('<div id="main-content" tabIndex={-1} data-global-main-content>');
+    expect(globalLayout).not.toContain('experienceV3Active ? children');
+    expect(roleShell).toContain('<main tabIndex={-1}');
+    expect(roleShell).not.toContain('<main id="main-content"');
+    expect(leaderboard).toContain('useIsInsideRoleShellMain()');
+    expect(leaderboard).toContain("const ContentElement = isInsideRoleShellMain ? 'div' : 'main';");
+    expect(rewards).toContain("export { default } from '../leaderboard/page';");
   });
 });

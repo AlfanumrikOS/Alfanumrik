@@ -16,6 +16,14 @@ export function ExperiencePresenceProvider({ children }: { children: ReactNode }
     return () => setMounts((count) => Math.max(0, count - 1));
   }, []);
   const value = useMemo(() => ({ active: mounts > 0, register }), [mounts, register]);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (mounts > 0) root.setAttribute('data-experience-v3-active', 'true');
+    else root.removeAttribute('data-experience-v3-active');
+    return () => root.removeAttribute('data-experience-v3-active');
+  }, [mounts]);
+
   return <PresenceContext.Provider value={value}>{children}</PresenceContext.Provider>;
 }
 

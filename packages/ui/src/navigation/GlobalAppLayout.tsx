@@ -77,7 +77,12 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
       */}
       {showNav && <DesktopSidebar />}
       {showNav && <MobileBottomNav />}
-      {experienceV3Active ? children : <div id="main-content" tabIndex={-1}>{children}</div>}
+      {/*
+        The skip-link target has one persistent owner. V3 RoleShell owns the
+        semantic <main>, but must not race this id while its presence
+        registration settles during hydration.
+      */}
+      <div id="main-content" tabIndex={-1} data-global-main-content>{children}</div>
     </>
   );
 }

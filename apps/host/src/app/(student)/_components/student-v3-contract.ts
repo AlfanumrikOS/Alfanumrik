@@ -1,7 +1,9 @@
 import type { TodayQueueItem } from '@alfanumrik/lib/today/types';
 
 export function safeTodayHref(item: TodayQueueItem): string {
-  const route = item.deepLink.route.startsWith('/') ? item.deepLink.route : '/today';
+  const candidate = item.deepLink.route;
+  if (!candidate.startsWith('/') || candidate.startsWith('//')) return '/today';
+  const route = candidate;
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(item.deepLink.params ?? {})) {
     params.set(key, String(value));

@@ -10,6 +10,7 @@ import {
   RoleShell,
   Select,
   Textarea,
+  useIsInsideRoleShellMain,
   type NavItem,
 } from '@alfanumrik/ui/v3';
 
@@ -23,6 +24,12 @@ const navigation: NavItem[] = [
   { label: 'Settings', href: '/parent/settings', capability: 'shared.settings' },
 ];
 
+function LegacyMainFixture() {
+  const isInsideRoleShellMain = useIsInsideRoleShellMain();
+  const Element = isInsideRoleShellMain ? 'div' : 'main';
+  return <Element data-testid="legacy-main-fixture">Legacy rewards content</Element>;
+}
+
 afterEach(() => document.body.classList.remove('v3-overlay-open'));
 
 describe('One Experience V3 UI foundation', () => {
@@ -35,13 +42,32 @@ describe('One Experience V3 UI foundation', () => {
       </ExperienceV3Root>,
     );
     const main = screen.getByRole('main');
-    expect(main).toHaveAttribute('id', 'main-content');
+    expect(main).not.toHaveAttribute('id');
     expect(main).toHaveAttribute('tabindex', '-1');
     expect(screen.getAllByRole('link', { name: /Progress/i }).some((link) => link.getAttribute('aria-current') === 'page')).toBe(true);
     const contextButton = screen.getByRole('button', { name: 'Context' });
     expect(contextButton).toHaveAttribute('aria-haspopup', 'dialog');
     fireEvent.click(contextButton);
     expect(screen.getByRole('dialog', { name: 'Current context' })).toBeInTheDocument();
+  });
+
+  it('gives reused legacy content a synchronous nested-main signal', () => {
+    render(
+      <ExperienceV3Root role="student">
+        <RoleShell role="student" navigation={navigation}>
+          <LegacyMainFixture />
+        </RoleShell>
+      </ExperienceV3Root>,
+    );
+
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(screen.getByTestId('legacy-main-fixture').tagName).toBe('DIV');
+  });
+
+  it('preserves the page main landmark when reused content is outside RoleShell', () => {
+    render(<LegacyMainFixture />);
+    expect(screen.getByTestId('legacy-main-fixture').tagName).toBe('MAIN');
+    expect(screen.getAllByRole('main')).toHaveLength(1);
   });
 
   it('exposes honest async and progress semantics', () => {
