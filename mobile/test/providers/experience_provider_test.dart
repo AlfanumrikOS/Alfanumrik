@@ -10,52 +10,53 @@ void main() {
   });
 
   test('includes the active child in parent assignment resolution only', () {
-    expect(
-      experienceV3QueryParameters('parent', childId: 'child-2'),
-      {'role': 'parent', 'childId': 'child-2'},
-    );
-    expect(
-      experienceV3QueryParameters('student', childId: 'child-2'),
-      {'role': 'student'},
-    );
+    expect(experienceV3QueryParameters('parent', childId: 'child-2'), {
+      'role': 'parent',
+      'childId': 'child-2',
+    });
+    expect(experienceV3QueryParameters('student', childId: 'child-2'), {
+      'role': 'student',
+    });
   });
 
-  group('server assignment response fails closed', () {
-    test('accepts only an explicit enabled 200 response', () {
+  group('server assignment response is tri-state and fail-closed', () {
+    test('accepts only explicit boolean assignments on a 200 response', () {
       expect(
-        isOneExperienceResponseEnabled(
+        resolveOneExperienceAssignment(
           statusCode: 200,
           data: {'enabled': true},
         ),
-        isTrue,
+        OneExperienceAssignment.enabled,
       );
-    });
-
-    test('rejects disabled, malformed and non-success responses', () {
       expect(
-        isOneExperienceResponseEnabled(
+        resolveOneExperienceAssignment(
           statusCode: 200,
           data: {'enabled': false},
         ),
-        isFalse,
+        OneExperienceAssignment.legacy,
       );
+    });
+
+    test('denies malformed, authorization and server-error responses', () {
       expect(
-        isOneExperienceResponseEnabled(
+        resolveOneExperienceAssignment(
           statusCode: 200,
           data: {'enabled': 'true'},
         ),
-        isFalse,
+        OneExperienceAssignment.denied,
       );
+      for (final status in [401, 403, 500, 503]) {
+        expect(
+          resolveOneExperienceAssignment(
+            statusCode: status,
+            data: {'enabled': status == 401 ? false : true},
+          ),
+          OneExperienceAssignment.denied,
+        );
+      }
       expect(
-        isOneExperienceResponseEnabled(
-          statusCode: 503,
-          data: {'enabled': true},
-        ),
-        isFalse,
-      );
-      expect(
-        isOneExperienceResponseEnabled(statusCode: 200, data: null),
-        isFalse,
+        resolveOneExperienceAssignment(statusCode: 200, data: null),
+        OneExperienceAssignment.denied,
       );
     });
   });

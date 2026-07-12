@@ -41,8 +41,18 @@ class ParentAppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final enabled = ref.watch(oneExperienceProvider).valueOrNull ?? false;
-    if (!enabled) return child;
+    final assignmentAsync = ref.watch(oneExperienceProvider);
+    if (assignmentAsync.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final assignment =
+        assignmentAsync.valueOrNull ?? OneExperienceAssignment.denied;
+    if (assignment == OneExperienceAssignment.denied) {
+      return const Scaffold(
+        body: Center(child: Text('Parent workspace unavailable.')),
+      );
+    }
+    if (assignment == OneExperienceAssignment.legacy) return child;
 
     final location = GoRouterState.of(context).matchedLocation;
     final selectedIndex = parentDestinationIndexForLocation(location);

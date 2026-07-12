@@ -36,7 +36,18 @@ class _ParentGlanceScreenState extends ConsumerState<ParentGlanceScreen> {
   Widget build(BuildContext context) {
     final isHi = _isHindi(context);
     final childrenAsync = ref.watch(parentChildrenProvider);
-    final oneExperience = ref.watch(oneExperienceProvider).valueOrNull ?? false;
+    final assignmentAsync = ref.watch(oneExperienceProvider);
+    if (assignmentAsync.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final assignment =
+        assignmentAsync.valueOrNull ?? OneExperienceAssignment.denied;
+    if (assignment == OneExperienceAssignment.denied) {
+      return const Scaffold(
+        body: Center(child: Text('Parent workspace unavailable.')),
+      );
+    }
+    final oneExperience = assignment == OneExperienceAssignment.enabled;
     final selectedStudentId = ref.watch(selectedParentChildProvider);
 
     return Scaffold(

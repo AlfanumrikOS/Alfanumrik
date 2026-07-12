@@ -61,9 +61,19 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final assignmentAsync = ref.watch(oneExperienceProvider);
+    if (ApiConstants.useV2 && assignmentAsync.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final assignment =
+        assignmentAsync.valueOrNull ?? OneExperienceAssignment.denied;
+    if (ApiConstants.useV2 && assignment == OneExperienceAssignment.denied) {
+      return const Scaffold(
+        body: Center(child: Text('Learning workspace unavailable.')),
+      );
+    }
     final oneExperience =
-        ApiConstants.useV2 &&
-        (ref.watch(oneExperienceProvider).valueOrNull ?? false);
+        ApiConstants.useV2 && assignment == OneExperienceAssignment.enabled;
     final tabs = _tabs(oneExperience);
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _currentIndex(location, tabs);

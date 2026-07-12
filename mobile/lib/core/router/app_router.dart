@@ -72,14 +72,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (experienceAsync.isLoading) {
         return state.matchedLocation == '/role-check' ? null : '/role-check';
       }
-      final oneExperience = experienceAsync.valueOrNull ?? false;
+      final assignment =
+          experienceAsync.valueOrNull ?? OneExperienceAssignment.denied;
+      if (assignment == OneExperienceAssignment.denied) {
+        return state.matchedLocation == '/experience-unavailable'
+            ? null
+            : '/experience-unavailable';
+      }
+      final oneExperience = assignment == OneExperienceAssignment.enabled;
 
       if (isAuth && isLoginRoute) {
         return isGuardian ? '/parent' : (oneExperience ? '/today' : '/');
       }
 
       if (state.matchedLocation == '/role-check' ||
-          state.matchedLocation == '/unsupported-role') {
+          state.matchedLocation == '/unsupported-role' ||
+          state.matchedLocation == '/experience-unavailable') {
         return isGuardian ? '/parent' : (oneExperience ? '/today' : '/');
       }
 
@@ -127,6 +135,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/unsupported-role',
         builder: (context, state) => const _UnsupportedRoleScreen(),
+      ),
+      GoRoute(
+        path: '/experience-unavailable',
+        builder: (context, state) => const _ExperienceUnavailableScreen(),
       ),
 
       // Main app with bottom nav shell
@@ -264,14 +276,15 @@ class _RoleRefreshNotifier extends ChangeNotifier {
       roleProvider,
       (_, __) => notifyListeners(),
     );
-    _experienceSub = ref.listen<AsyncValue<bool>>(
+    _experienceSub = ref.listen<AsyncValue<OneExperienceAssignment>>(
       oneExperienceProvider,
       (_, __) => notifyListeners(),
     );
   }
 
   late final ProviderSubscription<AsyncValue<UserRole>> _sub;
-  late final ProviderSubscription<AsyncValue<bool>> _experienceSub;
+  late final ProviderSubscription<AsyncValue<OneExperienceAssignment>>
+  _experienceSub;
 
   @override
   void dispose() {
@@ -345,6 +358,59 @@ class _UnsupportedRoleScreen extends ConsumerWidget {
                     onPressed: () async {
                       await Supabase.instance.client.auth.signOut();
                       ref.invalidate(roleProvider);
+                      if (context.mounted) context.go('/login');
+                    },
+                    child: const Text('Use another account'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExperienceUnavailableScreen extends ConsumerWidget {
+  const _ExperienceUnavailableScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.shield_outlined, size: 40),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Your learning workspace is unavailable.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'We could not verify access securely. Retry the check or sign in with another account.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () => ref.invalidate(oneExperienceProvider),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () async {
+                      await Supabase.instance.client.auth.signOut();
+                      ref.invalidate(roleProvider);
+                      ref.invalidate(oneExperienceProvider);
                       if (context.mounted) context.go('/login');
                     },
                     child: const Text('Use another account'),
