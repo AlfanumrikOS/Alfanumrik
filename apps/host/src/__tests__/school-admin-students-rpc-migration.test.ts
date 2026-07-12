@@ -29,6 +29,15 @@ const selectedScopeMigrationPath = path.join(
   'supabase/migrations/20260711230713_v3_school_admin_students_selected_scope.sql',
 );
 
+function sqlBetween(source: string, startMarker: string, endMarker: string): string {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  if (start < 0 || end < 0) {
+    throw new Error(`Missing migration markers: ${startMarker} -> ${endMarker}`);
+  }
+  return source.slice(start, end);
+}
+
 describe('XC-3 school-admin students roster read migration', () => {
   it('does not import the broad service-role DB client directly in the route', () => {
     const source = readFileSync(routePath, 'utf8');
@@ -147,7 +156,7 @@ describe('XC-3 school-admin students roster read migration', () => {
     expect(sql).toContain("to_regprocedure('public.get_user_permissions(uuid,uuid)')");
     expect(sql).toContain("to_regprocedure('public.get_user_permissions(uuid)')");
     expect(sql).toContain("sa.role IN ('principal', 'vice_principal', 'academic_coordinator', 'institution_admin')");
-    expect(sql).toContain('REVOKE ALL ON FUNCTION public.school_admin_has_selected_permission(uuid, text) FROM PUBLIC, anon, authenticated');
+    expect(sql).toContain('REVOKE ALL ON FUNCTION public.school_admin_has_selected_permission(uuid, text) FROM PUBLIC, anon, authenticated, service_role');
     expect(sql).toContain('school_admin_list_students(uuid, integer, integer, text, text)');
     expect(sql).toContain('school_admin_toggle_student_active(uuid, uuid, boolean)');
     expect(sql).toContain('school_admin_attach_created_student(uuid, uuid, text, uuid)');
@@ -178,6 +187,49 @@ describe('XC-3 school-admin students roster read migration', () => {
       /BEGIN;\s*CREATE OR REPLACE FUNCTION public\.school_admin_has_selected_permission/i,
     );
     expect(sql.trimEnd()).toMatch(/COMMIT;$/i);
+  });
+
+  it('serializes selected-school activation before row lock, seat count, and update', () => {
+    const sql = readFileSync(selectedScopeMigrationPath, 'utf8');
+    const toggleSql = sqlBetween(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.school_admin_toggle_student_active(',
+      'CREATE OR REPLACE FUNCTION public.school_admin_attach_created_student(',
+    );
+    const advisoryLock = toggleSql.indexOf(
+      "hashtextextended('school_seat:' || p_school_id::text, 0)",
+    );
+    const studentRowLock = toggleSql.indexOf('SELECT s.id, s.is_active');
+    const seatCount = toggleSql.indexOf('SELECT COUNT(*) INTO v_active_count');
+    const studentUpdate = toggleSql.indexOf('UPDATE public.students');
+
+    expect(advisoryLock).toBeGreaterThan(-1);
+    expect(studentRowLock).toBeGreaterThan(advisoryLock);
+    expect(toggleSql.slice(studentRowLock, seatCount)).toContain('FOR UPDATE');
+    expect(seatCount).toBeGreaterThan(studentRowLock);
+    expect(studentUpdate).toBeGreaterThan(seatCount);
+    expect(
+      toggleSql.match(/hashtextextended\('school_seat:' \|\| p_school_id::text, 0\)/g),
+    ).toHaveLength(1);
+  });
+
+  it('uses the same deterministic subscription precedence in selected toggle and preflight', () => {
+    const sql = readFileSync(selectedScopeMigrationPath, 'utf8');
+    const toggleSql = sqlBetween(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.school_admin_toggle_student_active(',
+      'CREATE OR REPLACE FUNCTION public.school_admin_attach_created_student(',
+    );
+    const preflightSql = sqlBetween(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.school_admin_student_create_preflight(',
+      'REVOKE ALL ON FUNCTION public.school_admin_list_students(',
+    );
+    const subscriptionOrder =
+      /FROM public\.school_subscriptions ss\s+WHERE ss\.school_id = p_school_id\s+ORDER BY CASE WHEN ss\.status IN \('active', 'trial'\) THEN 0 ELSE 1 END,\s+ss\.created_at DESC NULLS LAST\s+LIMIT 1;/;
+
+    expect(toggleSql).toMatch(subscriptionOrder);
+    expect(preflightSql).toMatch(subscriptionOrder);
   });
 
   it('does not perform route-level service-role class ownership prechecks during single create', () => {
