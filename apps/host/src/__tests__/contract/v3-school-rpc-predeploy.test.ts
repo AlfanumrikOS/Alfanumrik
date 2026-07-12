@@ -20,6 +20,24 @@ const legacyMigrations = [
   '20260710110000_xc3_school_admin_student_create_class_preflight_rpc.sql',
 ].map((file) => readFileSync(resolve(migrationsRoot, file), 'utf8')).join('\n');
 
+function sqlBetween(startMarker: string, endMarker: string): string {
+  const start = additiveMigration.indexOf(startMarker);
+  const end = additiveMigration.indexOf(endMarker, start + startMarker.length);
+  if (start < 0 || end < 0) {
+    throw new Error(`Missing migration markers: ${startMarker} -> ${endMarker}`);
+  }
+  return additiveMigration.slice(start, end);
+}
+
+const scopedToggleSql = sqlBetween(
+  'CREATE OR REPLACE FUNCTION public.school_admin_toggle_student_active(',
+  'CREATE OR REPLACE FUNCTION public.school_admin_attach_created_student(',
+);
+const scopedPreflightSql = sqlBetween(
+  'CREATE OR REPLACE FUNCTION public.school_admin_student_create_preflight(',
+  'REVOKE ALL ON FUNCTION public.school_admin_list_students(',
+);
+
 describe('One Experience V3 selected-school RPC predeploy migration', () => {
   it('applies the additive function DDL and grants in one transaction', () => {
     expect(executableAdditiveSql).toMatch(
@@ -50,7 +68,7 @@ describe('One Experience V3 selected-school RPC predeploy migration', () => {
       "sa.role IN ('principal', 'vice_principal', 'academic_coordinator', 'institution_admin')",
     );
     expect(additiveMigration).toContain(
-      'REVOKE ALL ON FUNCTION public.school_admin_has_selected_permission(uuid, text) FROM PUBLIC, anon, authenticated',
+      'REVOKE ALL ON FUNCTION public.school_admin_has_selected_permission(uuid, text) FROM PUBLIC, anon, authenticated, service_role',
     );
   });
 
@@ -68,6 +86,34 @@ describe('One Experience V3 selected-school RPC predeploy migration', () => {
         `GRANT EXECUTE ON FUNCTION public.${signature} TO authenticated`,
       );
     }
+  });
+
+  it('takes the shared seat lock before any student row lock, count, or update', () => {
+    const advisoryLock = scopedToggleSql.indexOf(
+      "hashtextextended('school_seat:' || p_school_id::text, 0)",
+    );
+    const studentRowLock = scopedToggleSql.indexOf('SELECT s.id, s.is_active');
+    const seatCount = scopedToggleSql.indexOf('SELECT COUNT(*) INTO v_active_count');
+    const studentUpdate = scopedToggleSql.indexOf('UPDATE public.students');
+
+    expect(advisoryLock).toBeGreaterThan(-1);
+    expect(studentRowLock).toBeGreaterThan(advisoryLock);
+    expect(scopedToggleSql.slice(studentRowLock, seatCount)).toContain('FOR UPDATE');
+    expect(seatCount).toBeGreaterThan(studentRowLock);
+    expect(studentUpdate).toBeGreaterThan(seatCount);
+    expect(
+      scopedToggleSql.match(
+        /hashtextextended\('school_seat:' \|\| p_school_id::text, 0\)/g,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('selects the same deterministic subscription row in toggle and preflight', () => {
+    const subscriptionOrder =
+      /FROM public\.school_subscriptions ss\s+WHERE ss\.school_id = p_school_id\s+ORDER BY CASE WHEN ss\.status IN \('active', 'trial'\) THEN 0 ELSE 1 END,\s+ss\.created_at DESC NULLS LAST\s+LIMIT 1;/;
+
+    expect(scopedToggleSql).toMatch(subscriptionOrder);
+    expect(scopedPreflightSql).toMatch(subscriptionOrder);
   });
 
   it('does not replace, revoke, grant or comment any legacy signature', () => {

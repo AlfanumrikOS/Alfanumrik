@@ -75,7 +75,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.school_admin_has_selected_permission(uuid, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.school_admin_has_selected_permission(uuid, text) FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.school_admin_list_students(
   p_school_id uuid,
@@ -206,6 +206,13 @@ BEGIN
   IF NOT public.school_admin_has_selected_permission(p_school_id, 'institution.manage_students') THEN
     RETURN jsonb_build_object('success', false, 'status', 403, 'error', 'Missing permission for the selected school');
   END IF;
+
+  -- Join the established per-school seat lock before taking a student row lock.
+  -- Every seat-mutating path must use advisory lock -> row/count/update ordering
+  -- so concurrent activation and enrollment cannot over-allocate or deadlock.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended('school_seat:' || p_school_id::text, 0)
+  );
 
   SELECT s.id, s.is_active
   INTO v_existing
@@ -393,6 +400,8 @@ BEGIN
   SELECT ss.seats_purchased INTO v_seats_purchased
   FROM public.school_subscriptions ss
   WHERE ss.school_id = p_school_id
+  ORDER BY CASE WHEN ss.status IN ('active', 'trial') THEN 0 ELSE 1 END,
+           ss.created_at DESC NULLS LAST
   LIMIT 1;
 
   v_seat_cap_violation := v_seats_purchased IS NOT NULL
