@@ -18,7 +18,10 @@ for (const file of required) if (!existsSync(resolve(root, file))) failures.push
 const css = readFileSync(resolve(root, 'packages/ui/src/v3/foundations/tokens.css'), 'utf8');
 if (!css.includes('@layer alfanumrik-v3')) failures.push('V3 cascade layer is missing');
 if (!css.includes('[data-experience="v3"]')) failures.push('V3 root scope is missing');
-if (/(^|\n)\s*(:root|html|body\s*\{)/m.test(css)) failures.push('V3 stylesheet contains an unscoped root selector');
+// Reject only bare document-root rules. Qualified ownership selectors such as
+// `html[data-experience-v3-active]` are intentionally scoped and provide the
+// Safari 14 fallback for suppressing legacy chrome around an active V3 shell.
+if (/(^|\n)\s*(?::root|html|body)\s*\{/m.test(css)) failures.push('V3 stylesheet contains an unscoped root selector');
 if (!/\.v3-button\s*\{[^}]*min-height:\s*3rem/s.test(css)) failures.push('base V3 button does not guarantee a 48px touch target');
 for (const utility of ['text-secondary-ink', 'text-deep-ink', 'text-action-orange', 'border-border']) {
   if (!css.includes(`.${utility}`)) failures.push(`missing scoped semantic utility ${utility}`);
