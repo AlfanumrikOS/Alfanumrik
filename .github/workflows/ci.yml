@@ -167,6 +167,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect canonical migration inputs
         id: migration_changes
@@ -248,7 +249,7 @@ jobs:
           # Start an empty local PG17 stack first. The next step copies the
           # migrations and performs the one authoritative replay.
           supabase start --workdir "$workdir" \
-            --exclude=studio,inbucket,imgproxy,storage-api,realtime,edge-runtime,functions
+            --exclude=studio,inbucket,imgproxy,storage-api,realtime,edge-runtime
 
       - name: Replay baseline and canonical migrations
         if: steps.migration_changes.outputs.changed == 'true'
@@ -290,8 +291,12 @@ jobs:
           rm -rf -- "$workdir"
 
   # ── Step 1: Type Check + Lint + Test ──
-  # Type checking, lint and tests run independently of secret scanning so an
-  # infrastructure failure in gitleaks cannot silently disable verification.
+  # Runs independently of secret-scan so an infra failure in gitleaks
+  # (e.g. the v2 action's 403 on individual-account PR commits) can't
+  # silently disable test verification. Previously: `needs: secret-scan`
+  # caused this job to SKIP on every PR where gitleaks failed, which
+  # masked two broken test files (#788 B.2, #798 D.1) until they only
+  # surfaced on main when CI finally had time to complete.
   quality:
     name: Lint, Type-check & Test
     runs-on: ubuntu-latest
