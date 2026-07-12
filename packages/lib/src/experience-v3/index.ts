@@ -4,3 +4,4 @@ export * from './capabilities';
 export * from './flags';
 export * from './scope';
 export * from './tenant';
+export * from './landing';
