@@ -279,6 +279,661 @@ jobs:
           supabase db reset --workdir "$workdir" --no-seed
           echo "Baseline and canonical migration replay succeeded." >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify selected-school RPC behavior and catalog
+        if: steps.migration_changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$RUNNER_TEMP/migration-repro"
+
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends postgresql-client
+          fi
+
+          db_url="$(
+            supabase status --workdir "$workdir" --output env 2>/dev/null |
+              sed -nE 's/^DB_URL="?([^"]+)"?$/\1/p' |
+              head -1
+          )"
+
+          if [[ ! "$db_url" =~ ^postgresql://postgres(:[^@]*)?@(127\.0\.0\.1|localhost):[0-9]+/postgres$ ]]; then
+            echo "::error::Refusing non-local migration assertion database."
+            exit 1
+          fi
+
+          psql "$db_url" -X -v ON_ERROR_STOP=1 <<'SQL'
+          \set ON_ERROR_STOP on
+
+          BEGIN;
+
+          -- Catalog and privilege contract.
+          DO $catalog$
+          DECLARE
+            v_sig text;
+            v_role text;
+            v_helper constant text :=
+              'public.school_admin_has_selected_permission(uuid,text)';
+            v_new text[] := ARRAY[
+              'public.school_admin_list_students(uuid,integer,integer,text,text)',
+              'public.school_admin_toggle_student_active(uuid,uuid,boolean)',
+              'public.school_admin_attach_created_student(uuid,uuid,text,uuid)',
+              'public.school_admin_student_create_preflight(uuid,text,integer,uuid)'
+            ];
+            v_legacy text[] := ARRAY[
+              'public.school_admin_list_students(integer,integer,text,text)',
+              'public.school_admin_toggle_student_active(uuid,boolean)',
+              'public.school_admin_attach_created_student(uuid,text,uuid)',
+              'public.school_admin_student_create_preflight(text,integer,uuid)',
+              'public.school_admin_student_create_preflight(text,integer)'
+            ];
+          BEGIN
+            IF to_regprocedure(v_helper) IS NULL THEN
+              RAISE EXCEPTION 'missing internal selected-school permission helper';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_proc p
+              WHERE p.oid = to_regprocedure(v_helper)
+                AND p.prosecdef
+                AND 'search_path=public' =
+                    ANY(COALESCE(p.proconfig, ARRAY[]::text[]))
+            ) THEN
+              RAISE EXCEPTION
+                'permission helper must be SECURITY DEFINER with search_path=public';
+            END IF;
+
+            -- “Internal only” includes service_role because the baseline grants
+            -- service_role EXECUTE on newly-created functions by default.
+            FOREACH v_role IN ARRAY ARRAY[
+              'anon',
+              'authenticated',
+              'service_role'
+            ] LOOP
+              IF has_function_privilege(v_role, v_helper, 'EXECUTE') THEN
+                RAISE EXCEPTION
+                  'role % can execute internal permission helper', v_role;
+              END IF;
+            END LOOP;
+
+            FOREACH v_sig IN ARRAY v_new LOOP
+              IF to_regprocedure(v_sig) IS NULL THEN
+                RAISE EXCEPTION 'missing new overload: %', v_sig;
+              END IF;
+
+              IF NOT has_function_privilege(
+                'authenticated',
+                v_sig,
+                'EXECUTE'
+              ) THEN
+                RAISE EXCEPTION
+                  'authenticated lacks EXECUTE on %', v_sig;
+              END IF;
+
+              IF has_function_privilege('anon', v_sig, 'EXECUTE') THEN
+                RAISE EXCEPTION 'anon can execute %', v_sig;
+              END IF;
+
+              IF NOT EXISTS (
+                SELECT 1
+                FROM pg_proc p
+                WHERE p.oid = to_regprocedure(v_sig)
+                  AND p.prosecdef
+                  AND 'search_path=public' =
+                      ANY(COALESCE(p.proconfig, ARRAY[]::text[]))
+              ) THEN
+                RAISE EXCEPTION
+                  '% must be SECURITY DEFINER with search_path=public', v_sig;
+              END IF;
+            END LOOP;
+
+            FOREACH v_sig IN ARRAY v_legacy LOOP
+              IF to_regprocedure(v_sig) IS NULL THEN
+                RAISE EXCEPTION
+                  'legacy overload was removed: %', v_sig;
+              END IF;
+
+              IF NOT has_function_privilege(
+                'authenticated',
+                v_sig,
+                'EXECUTE'
+              ) THEN
+                RAISE EXCEPTION
+                  'legacy authenticated grant was removed: %', v_sig;
+              END IF;
+            END LOOP;
+
+            -- Pin the concurrency repair in the mutating toggle overload.
+            IF position(
+              'pg_advisory_xact_lock' IN pg_get_functiondef(
+                to_regprocedure(
+                  'public.school_admin_toggle_student_active(uuid,uuid,boolean)'
+                )
+              )
+            ) = 0 OR position(
+              'school_seat:' IN pg_get_functiondef(
+                to_regprocedure(
+                  'public.school_admin_toggle_student_active(uuid,uuid,boolean)'
+                )
+              )
+            ) = 0 THEN
+              RAISE EXCEPTION
+                'toggle overload lacks the canonical school_seat advisory lock';
+            END IF;
+          END;
+          $catalog$;
+
+          -- The committed RBAC chain must already provide this mapping.
+          DO $rbac$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM public.roles r
+              JOIN public.role_permissions rp ON rp.role_id = r.id
+              JOIN public.permissions p ON p.id = rp.permission_id
+              WHERE r.name = 'institution_admin'
+                AND r.is_active = true
+                AND p.code = 'institution.manage_students'
+                AND p.is_active = true
+            ) THEN
+              RAISE EXCEPTION
+                'institution_admin lacks institution.manage_students';
+            END IF;
+          END;
+          $rbac$;
+
+          -- Auth fixtures. role=ci_fixture avoids profile-trigger side effects.
+          INSERT INTO auth.users (
+            id,
+            aud,
+            role,
+            email,
+            email_confirmed_at,
+            raw_app_meta_data,
+            raw_user_meta_data,
+            created_at,
+            updated_at
+          )
+          VALUES
+            (
+              '20000000-0000-0000-0000-000000000001',
+              'authenticated',
+              'authenticated',
+              'ci-admin-a@example.invalid',
+              now(),
+              '{"provider":"email","providers":["email"]}'::jsonb,
+              '{"role":"ci_fixture"}'::jsonb,
+              now(),
+              now()
+            ),
+            (
+              '20000000-0000-0000-0000-000000000002',
+              'authenticated',
+              'authenticated',
+              'ci-admin-denied@example.invalid',
+              now(),
+              '{"provider":"email","providers":["email"]}'::jsonb,
+              '{"role":"ci_fixture"}'::jsonb,
+              now(),
+              now()
+            ),
+            (
+              '20000000-0000-0000-0000-000000000003',
+              'authenticated',
+              'authenticated',
+              'ci-student-attach-ok@example.invalid',
+              now(),
+              '{"provider":"email","providers":["email"]}'::jsonb,
+              '{"role":"ci_fixture"}'::jsonb,
+              now(),
+              now()
+            ),
+            (
+              '20000000-0000-0000-0000-000000000004',
+              'authenticated',
+              'authenticated',
+              'ci-student-attach-denied@example.invalid',
+              now(),
+              '{"provider":"email","providers":["email"]}'::jsonb,
+              '{"role":"ci_fixture"}'::jsonb,
+              now(),
+              now()
+            );
+
+          INSERT INTO public.schools (
+            id,
+            name,
+            code,
+            is_active,
+            max_students
+          )
+          VALUES
+            (
+              '10000000-0000-0000-0000-000000000001',
+              'CI Selected School A',
+              'CI-RPC-A',
+              true,
+              100
+            ),
+            (
+              '10000000-0000-0000-0000-000000000002',
+              'CI Other School B',
+              'CI-RPC-B',
+              true,
+              100
+            );
+
+          INSERT INTO public.school_admins (
+            id,
+            auth_user_id,
+            school_id,
+            role,
+            name,
+            email,
+            is_active
+          )
+          VALUES
+            (
+              '21000000-0000-0000-0000-000000000001',
+              '20000000-0000-0000-0000-000000000001',
+              '10000000-0000-0000-0000-000000000001',
+              'institution_admin',
+              'CI Authorized Admin',
+              'ci-admin-a@example.invalid',
+              true
+            ),
+            (
+              '21000000-0000-0000-0000-000000000002',
+              '20000000-0000-0000-0000-000000000002',
+              '10000000-0000-0000-0000-000000000001',
+              'principal',
+              'CI Permission-Denied Admin',
+              'ci-admin-denied@example.invalid',
+              true
+            );
+
+          -- Make the authorized fixture deterministic even if trigger behavior
+          -- changes; remove all role authority from the denied fixture.
+          INSERT INTO public.user_roles (
+            auth_user_id,
+            role_id,
+            is_active
+          )
+          SELECT
+            '20000000-0000-0000-0000-000000000001'::uuid,
+            r.id,
+            true
+          FROM public.roles r
+          WHERE r.name = 'institution_admin'
+            AND r.is_active = true
+          ON CONFLICT (auth_user_id, role_id)
+          DO UPDATE SET
+            is_active = true,
+            expires_at = NULL;
+
+          DELETE FROM public.user_roles
+          WHERE auth_user_id =
+            '20000000-0000-0000-0000-000000000002'::uuid;
+
+          INSERT INTO public.classes (
+            id,
+            school_id,
+            name,
+            grade,
+            section,
+            is_active
+          )
+          VALUES
+            (
+              '40000000-0000-0000-0000-000000000001',
+              '10000000-0000-0000-0000-000000000001',
+              'CI Class A',
+              '6',
+              'A',
+              true
+            ),
+            (
+              '40000000-0000-0000-0000-000000000002',
+              '10000000-0000-0000-0000-000000000002',
+              'CI Class B',
+              '6',
+              'B',
+              true
+            );
+
+          INSERT INTO public.students (
+            id,
+            auth_user_id,
+            name,
+            email,
+            grade,
+            school_id,
+            is_active
+          )
+          VALUES
+            (
+              '30000000-0000-0000-0000-000000000001',
+              NULL,
+              'CI Student A',
+              'ci-student-a@example.invalid',
+              '6',
+              '10000000-0000-0000-0000-000000000001',
+              false
+            ),
+            (
+              '30000000-0000-0000-0000-000000000002',
+              NULL,
+              'CI Student B',
+              'ci-student-b@example.invalid',
+              '6',
+              '10000000-0000-0000-0000-000000000002',
+              true
+            ),
+            (
+              '30000000-0000-0000-0000-000000000003',
+              '20000000-0000-0000-0000-000000000003',
+              'CI Attach Success',
+              'ci-student-attach-ok@example.invalid',
+              '6',
+              NULL,
+              false
+            ),
+            (
+              '30000000-0000-0000-0000-000000000004',
+              '20000000-0000-0000-0000-000000000004',
+              'CI Attach Denied',
+              'ci-student-attach-denied@example.invalid',
+              '6',
+              NULL,
+              false
+            );
+
+          -- Two records deliberately verify deterministic active/newest
+          -- subscription selection; school_id has no UNIQUE constraint.
+          INSERT INTO public.school_subscriptions (
+            id,
+            school_id,
+            plan,
+            billing_cycle,
+            seats_purchased,
+            status,
+            created_at
+          )
+          VALUES
+            (
+              '50000000-0000-0000-0000-000000000001',
+              '10000000-0000-0000-0000-000000000001',
+              'trial',
+              'monthly',
+              1,
+              'expired',
+              now() - interval '2 days'
+            ),
+            (
+              '50000000-0000-0000-0000-000000000002',
+              '10000000-0000-0000-0000-000000000001',
+              'trial',
+              'monthly',
+              5,
+              'active',
+              now()
+            );
+
+          -- Authorized selected-school success under the real authenticated role.
+          SELECT set_config(
+            'request.jwt.claim.sub',
+            '20000000-0000-0000-0000-000000000001',
+            true
+          );
+          SELECT set_config(
+            'request.jwt.claims',
+            '{"sub":"20000000-0000-0000-0000-000000000001","role":"authenticated"}',
+            true
+          );
+          SET LOCAL ROLE authenticated;
+
+          DO $authorized$
+          DECLARE
+            v_result jsonb;
+          BEGIN
+            IF auth.uid() IS DISTINCT FROM
+              '20000000-0000-0000-0000-000000000001'::uuid
+            THEN
+              RAISE EXCEPTION 'auth.uid fixture setup failed';
+            END IF;
+
+            v_result := public.school_admin_list_students(
+              '10000000-0000-0000-0000-000000000001',
+              1,
+              20,
+              NULL,
+              NULL
+            );
+
+            IF v_result->>'success' IS DISTINCT FROM 'true'
+              OR jsonb_array_length(v_result->'data') <> 1
+              OR v_result#>>'{data,0,id}' IS DISTINCT FROM
+                '30000000-0000-0000-0000-000000000001'
+            THEN
+              RAISE EXCEPTION
+                'selected-school roster leaked or omitted rows: %', v_result;
+            END IF;
+
+            v_result := public.school_admin_student_create_preflight(
+              '10000000-0000-0000-0000-000000000001',
+              'new-student@example.invalid',
+              1,
+              '40000000-0000-0000-0000-000000000001'
+            );
+
+            IF v_result->>'success' IS DISTINCT FROM 'true'
+              OR (v_result#>>'{data,seatsPurchased}')::integer
+                   IS DISTINCT FROM 5
+              OR (v_result#>>'{data,seatCapViolation}')::boolean
+                   IS DISTINCT FROM false
+            THEN
+              RAISE EXCEPTION
+                'selected-school preflight failed or chose stale subscription: %',
+                v_result;
+            END IF;
+
+            v_result := public.school_admin_toggle_student_active(
+              '10000000-0000-0000-0000-000000000001',
+              '30000000-0000-0000-0000-000000000001',
+              true
+            );
+
+            IF v_result->>'success' IS DISTINCT FROM 'true' THEN
+              RAISE EXCEPTION
+                'authorized toggle failed: %', v_result;
+            END IF;
+
+            v_result := public.school_admin_attach_created_student(
+              '10000000-0000-0000-0000-000000000001',
+              '20000000-0000-0000-0000-000000000003',
+              '+910000000001',
+              '40000000-0000-0000-0000-000000000001'
+            );
+
+            IF v_result->>'success' IS DISTINCT FROM 'true' THEN
+              RAISE EXCEPTION
+                'authorized attach failed: %', v_result;
+            END IF;
+          END;
+          $authorized$;
+
+          RESET ROLE;
+
+          DO $authorized_mutations$
+          BEGIN
+            IF (
+              SELECT s.is_active
+              FROM public.students s
+              WHERE s.id =
+                '30000000-0000-0000-0000-000000000001'::uuid
+            ) IS DISTINCT FROM true THEN
+              RAISE EXCEPTION 'authorized toggle did not persist';
+            END IF;
+
+            IF (
+              SELECT s.school_id
+              FROM public.students s
+              WHERE s.id =
+                '30000000-0000-0000-0000-000000000003'::uuid
+            ) IS DISTINCT FROM
+              '10000000-0000-0000-0000-000000000001'::uuid
+            THEN
+              RAISE EXCEPTION 'authorized attach did not bind selected school';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM public.class_students cs
+              WHERE cs.class_id =
+                '40000000-0000-0000-0000-000000000001'::uuid
+                AND cs.student_id =
+                  '30000000-0000-0000-0000-000000000003'::uuid
+            ) THEN
+              RAISE EXCEPTION 'authorized attach omitted class membership';
+            END IF;
+          END;
+          $authorized_mutations$;
+
+          -- Non-member and cross-school denial.
+          SET LOCAL ROLE authenticated;
+
+          DO $cross_school$
+          DECLARE
+            v_result jsonb;
+          BEGIN
+            v_result := public.school_admin_list_students(
+              '10000000-0000-0000-0000-000000000002',
+              1,
+              20,
+              NULL,
+              NULL
+            );
+
+            IF v_result->>'status' IS DISTINCT FROM '403' THEN
+              RAISE EXCEPTION
+                'non-member school selection did not fail closed: %', v_result;
+            END IF;
+
+            v_result := public.school_admin_toggle_student_active(
+              '10000000-0000-0000-0000-000000000001',
+              '30000000-0000-0000-0000-000000000002',
+              false
+            );
+
+            IF v_result->>'status' IS DISTINCT FROM '404' THEN
+              RAISE EXCEPTION
+                'cross-school student toggle did not fail closed: %', v_result;
+            END IF;
+
+            v_result := public.school_admin_attach_created_student(
+              '10000000-0000-0000-0000-000000000001',
+              '20000000-0000-0000-0000-000000000004',
+              NULL,
+              '40000000-0000-0000-0000-000000000002'
+            );
+
+            IF v_result->>'status' IS DISTINCT FROM '403' THEN
+              RAISE EXCEPTION
+                'cross-school class attach did not fail closed: %', v_result;
+            END IF;
+
+            v_result := public.school_admin_student_create_preflight(
+              '10000000-0000-0000-0000-000000000001',
+              'cross-class@example.invalid',
+              1,
+              '40000000-0000-0000-0000-000000000002'
+            );
+
+            IF v_result->>'status' IS DISTINCT FROM '403' THEN
+              RAISE EXCEPTION
+                'cross-school class preflight did not fail closed: %', v_result;
+            END IF;
+          END;
+          $cross_school$;
+
+          RESET ROLE;
+
+          DO $negative_mutations$
+          BEGIN
+            IF (
+              SELECT s.is_active
+              FROM public.students s
+              WHERE s.id =
+                '30000000-0000-0000-0000-000000000002'::uuid
+            ) IS DISTINCT FROM true THEN
+              RAISE EXCEPTION 'cross-school toggle mutated the student';
+            END IF;
+
+            IF (
+              SELECT s.school_id
+              FROM public.students s
+              WHERE s.id =
+                '30000000-0000-0000-0000-000000000004'::uuid
+            ) IS NOT NULL THEN
+              RAISE EXCEPTION 'cross-school attach claimed the student';
+            END IF;
+
+            IF EXISTS (
+              SELECT 1
+              FROM public.class_students cs
+              WHERE cs.student_id =
+                '30000000-0000-0000-0000-000000000004'::uuid
+            ) THEN
+              RAISE EXCEPTION
+                'cross-school attach created a class membership';
+            END IF;
+          END;
+          $negative_mutations$;
+
+          -- Active membership without RBAC permission must still be denied.
+          SELECT set_config(
+            'request.jwt.claim.sub',
+            '20000000-0000-0000-0000-000000000002',
+            true
+          );
+          SELECT set_config(
+            'request.jwt.claims',
+            '{"sub":"20000000-0000-0000-0000-000000000002","role":"authenticated"}',
+            true
+          );
+          SET LOCAL ROLE authenticated;
+
+          DO $permission_denied$
+          DECLARE
+            v_result jsonb;
+          BEGIN
+            v_result := public.school_admin_list_students(
+              '10000000-0000-0000-0000-000000000001',
+              1,
+              20,
+              NULL,
+              NULL
+            );
+
+            IF v_result->>'status' IS DISTINCT FROM '403'
+              OR v_result->>'error'
+                   IS DISTINCT FROM 'Missing permission for the selected school'
+            THEN
+              RAISE EXCEPTION
+                'membership without permission did not fail closed: %',
+                v_result;
+            END IF;
+          END;
+          $permission_denied$;
+
+          RESET ROLE;
+          ROLLBACK;
+          SQL
+
+          echo "Selected-school RPC catalog and behavioral assertions passed." \
+            >> "$GITHUB_STEP_SUMMARY"
+
       - name: Stop isolated local Supabase
         if: ${{ always() && steps.migration_changes.outputs.changed == 'true' }}
         shell: bash
