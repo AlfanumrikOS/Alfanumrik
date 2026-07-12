@@ -135,7 +135,7 @@ export function buildFeatureFlagReconciliationPlan(
         flagName: entry.name,
         environment,
         expectedEnabled: expected,
-        patch: patchFor(entry, environment, expected),
+        patch: patchForFullPosture(entry),
       });
       continue;
     }
@@ -145,12 +145,12 @@ export function buildFeatureFlagReconciliationPlan(
       && entry.rolloutPercentage !== undefined
       && row.rollout_percentage !== entry.rolloutPercentage;
     if (actual !== expected || explicitRolloutDrift) {
-      // Percentage-only reconciliation must preserve the complete matrix
-      // environment posture. Narrowing this patch to the selected environment
-      // would silently disable another environment that is also intended ON.
-      const patch = actual === expected && explicitRolloutDrift
-        ? patchForFullPosture(entry)
-        : patchFor(entry, environment, expected);
+      // A feature flag is one database row shared by every environment. Every
+      // classified repair must therefore write the complete matrix posture:
+      // narrowing it to the selected environment would silently drop another
+      // intended target, while retaining live targets could broaden rollout to
+      // environments the matrix does not approve.
+      const patch = patchForFullPosture(entry);
       actions.push({
         type: 'update_drift',
         flagName: entry.name,
