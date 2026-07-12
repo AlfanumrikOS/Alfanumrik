@@ -23,9 +23,8 @@ preflight and the staged rollout gates remain mandatory.
 - Production preview-route denial: HTTP 404 with an empty body.
 - Bundle budget: shared JS 283.1/288 kB; middleware 87.1/120 kB;
   205 page bundles measured with zero above the 260 kB page cap.
-- Flutter analyzer, tests and debug APK build passed in protected Mobile CI for
-  the preceding mobile implementation commit; the final nullable-model update
-  is Dart-formatted and must pass the fresh PR CI cycle before merge.
+- Flutter analyzer, tests and debug APK build passed in protected Mobile CI on
+  PR head `91e422cf`, including the final nullable-model update.
 
 ## Responsive preview evidence
 

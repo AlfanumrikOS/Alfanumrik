@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 364,
+  "routeCount": 366,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -331,6 +331,14 @@
     {
       "path": "/api/exams/sync-mastery",
       "file": "apps/host/src/app/api/exams/sync-mastery/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/experience-v3",
+      "file": "apps/host/src/app/api/experience-v3/route.ts",
       "access": "auth",
       "owner": "core-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
@@ -1914,6 +1922,13 @@
     {
       "path": "/api/super-admin/login",
       "file": "apps/host/src/app/api/super-admin/login/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret."
+    },
+    {
+      "path": "/api/super-admin/logout",
+      "file": "apps/host/src/app/api/super-admin/logout/route.ts",
       "access": "super_admin",
       "owner": "admin-platform",
       "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret."

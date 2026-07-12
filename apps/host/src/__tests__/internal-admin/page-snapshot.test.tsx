@@ -19,6 +19,27 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
+// The legacy internal-admin console is intentionally exercised with the V3
+// cohort flag off. Mock both new dispatcher dependencies so this regression
+// net remains focused on the legacy shell and does not require Next's app
+// router context.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+}));
+
+vi.mock('@alfanumrik/lib/use-experience-v3', () => ({
+  useExperienceV3: () => ({
+    enabled: false,
+    loading: false,
+    capabilities: {},
+    manifest: null,
+    routeAllowed: false,
+    scope: null,
+    legacyAllowed: true,
+    denied: false,
+  }),
+}));
+
 // Default fetch payload — shaped to keep every tab from crashing on first render.
 // The Command tab dereferences command.totals.{students,...}, command.activity.{dau,...},
 // command.ai.{calls_last_1h,...}, command.revenue.{today_inr,...}, command.support.open_tickets,
