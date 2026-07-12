@@ -1,12 +1,19 @@
-# Alfanumrik One Experience V3 — production-candidate evidence
+# Alfanumrik One Experience V3 - historical pre-integration evidence
 
-Evidence date: 12 July 2026 (IST)
+Evidence date: 12 July 2026 (IST)<br>
+Evidence source head: `91e422cf`
 
-Status: production candidate with all five role flags OFF. This evidence does
-not authorize a cohort rollout. Protected CI, independent approval, database
-preflight and the staged rollout gates remain mandatory.
+Status: **superseded and non-certifying**. The implementation branch now
+contains additional safety, authorization, mobile fail-closed, accessibility
+and CI commits. Under the evidence contract in this directory, the results and
+screenshots below cannot certify the current source head. They are retained as
+historical review input only and must be replaced by final-head evidence.
 
-## Implementation evidence
+This document does not authorize a merge, deployment or cohort rollout.
+Protected CI, independent approval, database preflight, authenticated journey
+checks and the staged rollout gates remain mandatory.
+
+## Historical implementation evidence
 
 - Exact lockfile dependencies installed with Node 22.23.1 (1,141 packages).
 - Host TypeScript: pass.
@@ -26,7 +33,7 @@ preflight and the staged rollout gates remain mandatory.
 - Flutter analyzer, tests and debug APK build passed in protected Mobile CI on
   PR head `91e422cf`, including the final nullable-model update.
 
-## Responsive preview evidence
+## Historical responsive preview evidence
 
 - 50/50 Chromium role-by-viewport cases passed: five roles at all ten approved
   viewport sizes from 320×568 through 1920×1080.
@@ -45,7 +52,7 @@ does not substitute for seeded authenticated journeys, VoiceOver/NVDA review,
 manual Firefox/WebKit/Safari certification, Windows scaling or physical-device
 certification.
 
-## Security and data-trust evidence
+## Historical security and data-trust evidence
 
 - V3 cohort and route resolution is server authoritative and fail closed.
 - Legacy rendering occurs only for an explicit flag-off/unauthenticated auth

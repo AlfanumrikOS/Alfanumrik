@@ -1,116 +1,146 @@
-# Alfanumrik One Experience: Current-State Assessment
+# Alfanumrik One Experience V3: current-state assessment
 
-**Assessment date:** 12 July 2026
-**Branch assessed:** `agent/phase0-release-gate`
-**Programme contract:** *Alfanumrik Frontend Replacement — Full Execution and Implementation Plan* (11 July 2026)
+**Assessment date:** 12 July 2026<br>
+**Assessed branch:** `agent/one-experience-v3-production-rebuild`<br>
+**Programme contract:** *Alfanumrik Frontend Replacement - Full Execution and Implementation Plan*
 
 ## Executive finding
 
-The repository does not yet contain the planned V3 frontend replacement. The
-programme is approximately **5–10% complete** when measured against the attached
-definition of complete replacement.
+The branch now contains a real, integrated One Experience V3 foundation and
+five role-specific vertical slices. It is no longer accurate to describe V3 as
+"not started". The work includes scoped tokens and components, a shared shell,
+server-authoritative capability resolution, role route gates, default-off
+feature flags, focused runtime tests, a Flutter alignment slice, and an
+unauthenticated review route.
 
-Useful prerequisites exist: a warm light theme, a sizeable component library,
-responsive shell primitives, grouped School Admin navigation, role-specific
-shells, existing feature-flag infrastructure, route inventories, and an older
-four-role interactive prototype. These are inputs to the programme; they are not
-evidence that V3 is connected or released.
+It is also not accurate to call the programme complete or production ready.
+The branch has not yet passed fresh protected CI at its final head, the new
+database migration has not been exercised against an isolated database, the
+five flag rows are in a separate unmerged pull request, authenticated journeys
+have not been certified across the required browser/device matrix, and no V3
+cohort has been enabled. Legacy deletion and the post-rollout observation
+period have not started.
 
-The immediate Days 1–5 safety patch was only partially complete at the start of
-this assessment. This change set implements the outstanding repository-level
-safety items before any V3 role migration is attempted. Authenticated staging
-and production verification remain explicit release gates.
+The implementation therefore represents a substantial production-candidate
+integration branch with explicit release gates, not a completed 20-22 week
+replacement programme compressed into one session.
 
 ## Programme status
 
-| Programme area | Current status | Evidence-based assessment |
+| Programme area | Current status | Evidence and remaining gate |
 | --- | --- | --- |
-| Immediate safety patch | Partial at assessment start | Student navigation/theme fixes existed, but Parent scope, Teacher data trust, School Admin mobile navigation, AppShell tablet layout, stale Study Plan links, and expired countdowns remained. |
-| Phase 0: baseline and governance | Partial | A 177-route inventory and historical audits exist, but there is no approved V3 source-of-truth manifest, complete role journey baseline, or V3 analytics baseline. |
-| Phase 1: experience blueprint | Partial / superseded | `docs/design/multi-role-redesign-prototype.html` covers an older four-role Editorial Atlas direction. It omits Super Admin and does not implement the attached Calm Intelligence contract. |
-| Phase 2: V3 foundation | Not started | No `packages/ui/src/v3/`, scoped V3 cascade layer, V3 tokens, five role flags, unified capability resolver, or certified V3 shell exists. |
-| Student vertical slice | Not started as V3 | Current Student pages remain on the legacy/global shell and route families. |
-| Teacher and Parent migration | Not started as V3 | Each role retains independent client shells, local navigation and page-local scope. |
-| School Admin migration | Not started as V3 | A grouped legacy shell exists, but not the target V3 shell/capability contract. |
-| Super Admin migration | Not started | `/super-admin` and `/internal/admin` remain separate systems; most Super Admin pages own local shell composition. |
-| Cross-role hardening | Not started for V3 | Existing checks do not cover the required authenticated role, browser, state, viewport, localisation and accessibility matrix. |
-| Legacy deletion | Not started | Atlas, Cosmic, Wonder Blocks, old shells, duplicate routes and compatibility CSS remain in production paths. |
-| Flutter alignment | Not assessed in this tranche | Web foundation must be approved before native alignment begins. |
+| Immediate safety patch | Implemented on branch | Student dead links/countdowns, Parent child scope, Teacher metric honesty/class scope, School Admin mobile navigation, and AppShell tablet behavior have focused runtime coverage. Fresh final-head CI and authenticated preview checks remain. |
+| Phase 0: baseline and governance | Partial | Route/access inventories, rollout contracts, evidence templates, and default-off controls exist. Product analytics baselines, named rollout owners, and approved role-journey baselines remain operational work. |
+| Phase 1: experience blueprint | Implemented in code, review pending | The shared Calm Intelligence direction is represented by scoped V3 tokens, patterns, shells, manifests, and five role views. Final product/design sign-off and authenticated state review remain. |
+| Phase 2: V3 foundation | Implemented on branch | `packages/ui/src/v3`, scoped cascade tokens, capability resolver, role manifests, route gates, overlay primitives, data states, and shared shell exist. Final-head build, bundle, accessibility, and browser gates remain. |
+| Student vertical slice | Implemented behind flag | Today, Learn, Practice, Progress, Rewards and Exam destinations have V3 mappings while unmigrated legacy destinations remain available. No external cohort is enabled. |
+| Teacher vertical slice | Implemented behind flag | Today, classes, students, insights, grading, assignment, resources and settings are mapped. Remediation now verifies exact teacher, class, learner and alert scope server-side. Seeded teacher journeys remain unvalidated. |
+| Parent vertical slice | Implemented behind flag | Home, plan, progress, reports, calendar, messages and settings preserve authoritative selected-child scope in URLs and request keys. Pagination completeness for child-filtered message RPC results needs backend follow-up. |
+| School Admin vertical slice | Implemented behind flag | Overview, people, academics, insights, governance and settings are mapped. The selected-school roster RPC migration is present but has not been applied/tested in an isolated database. |
+| Super Admin vertical slice | Implemented behind flag | Command, institutions, operations, governance, revenue and settings share the V3 workspace while legacy internal-admin paths remain available where unmigrated. Seeded privileged-user validation remains mandatory. |
+| Cross-role hardening | In progress | Focused security, routing, responsive, metric-trust and accessibility contracts exist. Fresh full CI, local build, browser inspection and manual assistive-technology/device checks are still required. |
+| Legacy deletion | Not started | The implementation deliberately retains legacy routes for unmigrated destinations and explicit flag-off users. Deletion is gated on 100% rollout plus observation and deep-link verification. |
+| Flutter alignment | Partial | Mobile theme, routing, parent shell and role assignment consume the V3 contract. Assignment is tri-state and fails closed; the complete native screen inventory has not been migrated. |
 
-## Critical architectural gaps
+## Information architecture and route behavior
 
-1. **No isolated V3 system.** The current design tokens and shell rules live in
-   a large global stylesheet. The attached plan requires a locally scoped V3
-   root and cascade layer so legacy surfaces cannot be repainted accidentally.
-2. **No single UI capability resolver.** Navigation is split across Student,
-   Parent, Teacher, School Admin and Super Admin manifests. Several current
-   paths fail open while flag/module state is unknown, which conflicts with the
-   target fail-closed contract.
-3. **Role scope is page-local.** Parent child, Teacher class, and analytical
-   scope are not governed by one typed shell contract and URL/cache-key policy.
-4. **Shell composition is client-heavy.** Authentication, capability and scope
-   resolution are not server-first across roles.
-5. **Branding is duplicated.** Tenant and school providers coexist rather than
-   one controlled, server-resolved branding input.
-6. **Release gates remain incomplete.** This worktree adds an explicit
-   `chromium` project and starts a local target when CI does not provide an
-   external `BASE_URL`, so the advisory suite can execute rather than fail at
-   configuration or connection time. The general E2E step still uses
-   `continue-on-error`, and visual/accessibility tests do not certify the full
-   attached role, state, browser and viewport matrix.
+The role manifests in `packages/lib/src/experience-v3/manifests.ts` are the
+code-backed source for migrated destinations. Navigation and route access use
+the same capability resolver:
 
-## Safety-tranche scope
+1. Resolve authenticated identity, role, tenant and relevant scope.
+2. Resolve the role's sticky V3 assignment server-side.
+3. Match a canonical mapped V3 destination.
+4. Allow the mapped destination only when its capability is granted.
+5. Render legacy for an explicitly disabled assignment or an unmapped legacy
+   destination.
+6. Deny malformed assignments, resolver failures, unauthorized scopes and
+   mapped forbidden routes; these conditions must never fall back to legacy.
 
-This implementation tranche is intentionally limited to current-user safety:
+The responsive shell owns exactly one persistent main landmark and exposes
+desktop rail, compact/tablet, and mobile navigation behavior without duplicating
+page landmarks. Role-specific context selectors preserve child, class, school,
+year or institution scope as appropriate.
 
-- preserve navigation at every current breakpoint and remove the AppShell
-  tablet gutter;
-- provide complete School Admin mobile navigation with safe-area clearance;
-- preserve Parent child scope and make failed reads recoverable;
-- remove invented Teacher metrics and make the class filter real;
-- route legacy Study Plan actions to the working Exam Prep experience;
-- remove expired approximate examination countdowns;
-- retain the already-verified light-theme/Cosmic-disable behavior.
+## Primary user flows represented
 
-This tranche does **not** enable V3 cohorts, migrate role routes, change global
-brand tokens, delete legacy UI, deploy an Edge Function, run a database
-migration, or modify production configuration.
+- **Student:** resume today's next action, learn/practice, inspect progress,
+  enter exam preparation, and view rewards without fabricated metrics.
+- **Teacher:** select a class, see attention signals, inspect students, create
+  work, grade, and issue a remediation only for an owned class and learner.
+- **Parent:** select an authoritatively linked child, inspect daily progress,
+  reports, calendar and messages, with the child included in data keys.
+- **School Admin:** choose the permitted school context, then move between
+  overview, people, academics, insights, governance and settings.
+- **Super Admin:** access command, institution, operational, governance,
+  revenue and settings workspaces through privileged server gates.
 
-## Worktree validation snapshot
+## State and permission behavior
 
-- Host TypeScript passed with `tsc --noEmit`.
-- Fifty-nine focused runtime tests passed: Student 5, Parent 11, Teacher 25,
-  and School Admin/AppShell 18.
-- Playwright successfully collected 345 Chromium tests across 38 files; the
-  full browser suite was not executed.
-- The auth-flow guard and `git diff --check` passed.
-- Targeted ESLint passed for 37 changed TypeScript files. The remaining file,
-  `packages/lib/src/constants.ts`, reproduces the same three subject-import
-  rule failures from `HEAD` and was not made worse by this tranche.
-- A placeholder-only local production build emitted no application diagnostic
-  but did not complete within the bounded validation window.
-- The local `/welcome` route subsequently compiled and rendered in the in-app
-  browser at 320×568 and 768×1024 without document-level horizontal
-  overflow. Authenticated role journeys and responsive visual certification
-  remain unvalidated; the standalone Playwright smoke could not launch because
-  its Chromium binary is not installed on this machine.
-- Deno-native Edge tests, live Supabase queries, authenticated staging flows,
-  deployment and production verification were not run.
+Shared V3 data-state primitives cover loading, empty, stale, error and denied
+states. Missing measurements display an explicit unavailable value rather than
+zero or a generated statistic. Parent and Teacher scope failures remain
+recoverable without showing data from a different child or class. Mobile V3
+assignment uses `enabled`, `legacy`, and `denied`; only a valid HTTP 200 boolean
+`false` selects legacy, while malformed responses, HTTP errors and exceptions
+show a recoverable fail-closed access screen.
 
-## Required next implementation phase
+## Responsive, browser and accessibility contract
 
-After this safety tranche is verified, the next coherent batch is the V3
-foundation only:
+The implementation targets 320, 360, 390, 430, 768, 1024, 1280 and 1440 px,
+with additional wide-screen coverage in the review suite. It provides one main
+landmark, a visible skip target, keyboard-operable overlays, focus restoration,
+safe-area-aware mobile navigation, coarse-pointer touch sizing, reduced-motion
+styles, long-text reflow, and a Safari 14 fallback that does not depend solely
+on `:has()`.
 
-1. Approve a five-role, code-backed Calm Intelligence blueprint at phone,
-   tablet and desktop sizes.
-2. Create `packages/ui/src/v3/` with exact scoped semantic tokens, fallbacks,
-   certified primitives and an accessible overlay foundation.
-3. Add the five default-OFF sticky role flags and a single server capability
-   resolver consumed by both navigation and route guards.
-4. Build one server-composed responsive shell plus typed Student, Teacher,
-   Parent, School and Super Admin scope contracts.
-5. Add route-manifest, interaction, accessibility, responsive visual, browser,
-   bundle and literal-colour gates before migrating the Student vertical slice.
+These source and focused-test contracts do not replace final rendered review.
+The final branch still requires Chromium inspection at all approved widths,
+fresh Firefox/WebKit automation where available, and manual Safari,
+screen-reader, 200% zoom, Windows scaling and physical-device checks before an
+external cohort can be enabled.
 
-No production cohort should be enabled until those foundation exit gates pass.
+## Design-system boundaries
+
+V3 styling is locally scoped through `ExperienceV3Root` and the V3 cascade
+layer. Semantic tokens cover background, surface, text, border, brand, status,
+focus, spacing, radius, shadow and motion. Existing legacy globals remain in
+place for explicit flag-off and unmigrated routes. Any global token change is
+outside this integration and requires separate representative-screen review.
+
+## Release and data gates
+
+- All five V3 role flags must remain disabled with rollout `0` until reviewed.
+- The flag seed is maintained in PR #1254 and is not merged at this snapshot.
+- The selected-school RPC migration must receive an isolated database dry run,
+  RLS/grant review, generated-type refresh and independent approval before the
+  School Admin V3 path can be released.
+- PR #1255's production completion gate is independently reviewed and must not
+  be bypassed.
+- PR #1256 must pass protected CI and independent last-push approval at its
+  final head.
+- Merge does not authorize cohort rollout. Follow
+  `docs/deployment/one-experience-v3-rollout.md` through internal, pilot, 5%,
+  25%, 50% and 100% sticky cohorts with stop/rollback criteria.
+
+## Remaining implementation sequence
+
+1. Complete final-head static, runtime, Deno, Flutter, build and responsive
+   browser validation; replace any stale evidence with commit-bound evidence.
+2. Validate the selected-school migration on an isolated Supabase stack and
+   regenerate database types from that schema.
+3. Obtain independent review and green protected CI for the release gate, flag
+   seed, database change and frontend branch in dependency order.
+4. Exercise seeded authenticated accounts for all five roles, including
+   loading, empty, stale, error, denied and slow-network states.
+5. Merge with all V3 flags off; perform internal and pilot rollout with
+   observability and rollback ownership.
+6. Delete legacy shells and compatibility paths only after 100% adoption,
+   observation, deep-link verification and a separate reviewed change.
+
+## Completion boundary
+
+This branch may be described as an integrated V3 implementation candidate only
+after its final-head checks pass. The full replacement is complete only after
+database validation, protected merge, staged rollout, authenticated
+cross-browser/device certification, observation, and verified legacy removal.
