@@ -217,7 +217,11 @@ export function TeacherStudentsV3() {
   if (heatmap.error) return <DataState state="error" title={tt(isHi, 'Learner evidence is unavailable', 'छात्र प्रमाण उपलब्ध नहीं है')} description={tt(isHi, 'No scores have been estimated in the browser.', 'ब्राउज़र में किसी स्कोर का अनुमान नहीं लगाया गया है।')} action={<V3Button variant="secondary" onClick={() => void heatmap.mutate()}>{tt(isHi, 'Try again', 'फिर कोशिश करें')}</V3Button>} />;
 
   const rows = heatmap.data?.matrix ?? [];
-  const sorted = [...rows].sort((a, b) => a.avg_mastery - b.avg_mastery);
+  const sorted = [...rows].sort(
+    (a, b) =>
+      (a.avg_mastery ?? Number.POSITIVE_INFINITY)
+      - (b.avg_mastery ?? Number.POSITIVE_INFINITY),
+  );
   const alertRows = Array.isArray(alertsQuery.data) ? alertsQuery.data as unknown as RiskAlert[] : alertsQuery.data?.alerts ?? [];
   const alertByName = new Map(alertRows.map((alert) => [alert.student_name.trim().toLowerCase(), alert]));
   const resolvedSelectedAlertId = selectedAlertId || alertRows.find((alert) => alert.student_id === selectedStudentId)?.id;
@@ -253,13 +257,20 @@ export function TeacherStudentsV3() {
       {!sorted.length ? <DataState state="empty" title={tt(isHi, 'No mastery evidence yet', 'अभी कोई मास्टरी प्रमाण नहीं')} description={tt(isHi, 'Evidence appears after learners complete assessed practice.', 'छात्रों के आकलित अभ्यास के बाद प्रमाण दिखेगा।')} /> : (
         <div className="v3-list">
           {sorted.map((student) => {
-            const tone = student.avg_mastery < 40 ? 'danger' : student.avg_mastery < 65 ? 'warning' : 'success';
+            const mastery = student.avg_mastery;
+            const tone = mastery == null
+              ? 'neutral'
+              : mastery < 40
+                ? 'danger'
+                : mastery < 65
+                  ? 'warning'
+                  : 'success';
             const alert = alertByName.get(student.student_name.trim().toLowerCase());
             const studentId = (student as typeof student & { student_id?: string }).student_id || alert?.student_id;
             const content = (
               <>
-                <span><strong>{student.student_name}</strong><small>{tt(isHi, 'Average mastery', 'औसत मास्टरी')}: {student.avg_mastery == null ? '—' : `${Math.round(student.avg_mastery)}%`}</small></span>
-                <StatusBadge tone={tone}>{student.avg_mastery < 40 ? tt(isHi, 'Needs attention', 'ध्यान चाहिए') : student.avg_mastery < 65 ? tt(isHi, 'Developing', 'विकासशील') : tt(isHi, 'On track', 'सही दिशा में')}</StatusBadge>
+                <span><strong>{student.student_name}</strong><small>{tt(isHi, 'Average mastery', 'औसत मास्टरी')}: {mastery == null ? '—' : `${Math.round(mastery)}%`}</small></span>
+                <StatusBadge tone={tone}>{mastery == null ? tt(isHi, 'Not assessed', 'आकलन नहीं हुआ') : mastery < 40 ? tt(isHi, 'Needs attention', 'ध्यान चाहिए') : mastery < 65 ? tt(isHi, 'Developing', 'विकासशील') : tt(isHi, 'On track', 'सही दिशा में')}</StatusBadge>
               </>
             );
             return studentId ? (
