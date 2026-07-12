@@ -60,8 +60,8 @@ The older CI-independent model is retired. If GitHub Actions, Vercel, or Supabas
   to re-enable. Vercel Git delivery and Vercel cron remain active.
 - Live `main` protection now enforces administrators, one approving review,
   stale-review dismissal, last-push approval, conversation resolution, and no
-  force-push/deletion. Required status checks remain unset until this PR lands;
-  then require the new aggregate `CI Gate` after one successful observed run.
+  force-push/deletion. The strict, GitHub-Actions-app-bound aggregate `CI Gate`
+  is the required status check.
 - Do not set `git.deploymentEnabled.main=false` until the CLI deploy is mandatory and health directly depends on it; PR previews must remain enabled.
 
 ---
@@ -227,8 +227,10 @@ Monitor:
 
 - `.github/workflows/ci.yml`
 - `.github/workflows/deploy-production.yml`
-- `.github/workflows/synthetic-monitor.yml`
 - migration, Edge Function, OpenAPI, mobile, and content-quality workflows when touched
+
+`synthetic-monitor.yml` remains manually disabled until its ref, environment,
+and secret controls are remediated; it is not active production-health evidence.
 
 Production deploy is not complete until:
 
@@ -422,7 +424,8 @@ Capture:
 ### Daily
 
 - Review production deploy status.
-- Check synthetic monitor status.
+- Confirm the disabled GitHub synthetic monitor has not been treated as active evidence;
+  use the canonical deployment health checks and Sentry until it is remediated.
 - Review Sentry for new high-severity issues.
 - Confirm no failed critical cron/job health metrics.
 - Review payment reconciliation and webhook errors.
