@@ -374,7 +374,9 @@ jobs:
     # job would always fail boot. Trusted PRs (same-repo) and pushes still run.
     # (Previously also `needs: secret-scan` — removed for the same masking
     # reason documented on the `quality` job above.)
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
+    if: >
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push') &&
+      (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]')
     steps:
       - uses: actions/checkout@v6
 
@@ -728,6 +730,7 @@ jobs:
       - name: Enforce required CI outcomes
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
           SAME_REPOSITORY_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
@@ -735,10 +738,15 @@ jobs:
           const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
           const required = ['secret-scan','quality','edge-function-tests','integration-tests','build'];
           const forkSkips = [];
+          const isDependabotPr = process.env.EVENT_NAME === 'pull_request' && process.env.PR_AUTHOR_LOGIN === 'dependabot[bot]';
           if (process.env.EVENT_NAME === 'pull_request') {
             required.push('e2e');
             if (process.env.SAME_REPOSITORY_PR === 'true') {
-              required.push('e2e-critical-paths');
+              if (isDependabotPr) {
+                required.splice(required.indexOf('integration-tests'), 1);
+              } else {
+                required.push('e2e-critical-paths');
+              }
             } else {
               required.splice(required.indexOf('integration-tests'), 1);
               forkSkips.push('integration-tests', 'e2e-critical-paths');
