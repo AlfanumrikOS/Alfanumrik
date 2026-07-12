@@ -45,8 +45,9 @@ class ParentAppShell extends ConsumerWidget {
     if (assignmentAsync.isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final assignment =
-        assignmentAsync.valueOrNull ?? OneExperienceAssignment.denied;
+    final resolution =
+        assignmentAsync.valueOrNull ?? OneExperienceResolution.denied;
+    final assignment = resolution.assignment;
     if (assignment == OneExperienceAssignment.denied) {
       return const Scaffold(
         body: Center(child: Text('Parent workspace unavailable.')),
@@ -55,7 +56,17 @@ class ParentAppShell extends ConsumerWidget {
     if (assignment == OneExperienceAssignment.legacy) return child;
 
     final location = GoRouterState.of(context).matchedLocation;
-    final selectedIndex = parentDestinationIndexForLocation(location);
+    final destinations = _destinations.where((destination) {
+      final capability = mobileCapabilityForPath('parent', destination.path);
+      return capability == null || resolution.allowsCapability(capability);
+    }).toList(growable: false);
+    final resolvedIndex = destinations.indexWhere(
+      (destination) =>
+          location == destination.path ||
+          (destination.path != '/parent' &&
+              location.startsWith('${destination.path}/')),
+    );
+    final selectedIndex = resolvedIndex < 0 ? 0 : resolvedIndex;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -71,10 +82,10 @@ class ParentAppShell extends ConsumerWidget {
                   selectedIndex: selectedIndex,
                   onDestinationSelected: (index) {
                     if (index != selectedIndex) {
-                      context.go(_destinations[index].path);
+                      context.go(destinations[index].path);
                     }
                   },
-                  destinations: _destinations
+                  destinations: destinations
                       .map(
                         (destination) => NavigationDestination(
                           icon: Icon(destination.icon),
@@ -102,10 +113,10 @@ class ParentAppShell extends ConsumerWidget {
                       : NavigationRailLabelType.selected,
                   onDestinationSelected: (index) {
                     if (index != selectedIndex) {
-                      context.go(_destinations[index].path);
+                      context.go(destinations[index].path);
                     }
                   },
-                  destinations: _destinations
+                  destinations: destinations
                       .map(
                         (destination) => NavigationRailDestination(
                           icon: Icon(destination.icon),

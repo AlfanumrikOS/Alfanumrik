@@ -65,8 +65,9 @@ class AppShell extends ConsumerWidget {
     if (ApiConstants.useV2 && assignmentAsync.isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final assignment =
-        assignmentAsync.valueOrNull ?? OneExperienceAssignment.denied;
+    final resolution =
+        assignmentAsync.valueOrNull ?? OneExperienceResolution.denied;
+    final assignment = resolution.assignment;
     if (ApiConstants.useV2 && assignment == OneExperienceAssignment.denied) {
       return const Scaffold(
         body: Center(child: Text('Learning workspace unavailable.')),
@@ -74,7 +75,13 @@ class AppShell extends ConsumerWidget {
     }
     final oneExperience =
         ApiConstants.useV2 && assignment == OneExperienceAssignment.enabled;
-    final tabs = _tabs(oneExperience);
+    final tabs = oneExperience
+        ? _v2Tabs.where((tab) {
+            final capability = mobileCapabilityForPath('student', tab.path);
+            return capability == null ||
+                resolution.allowsCapability(capability);
+          }).toList(growable: false)
+        : _tabs(false);
     final location = GoRouterState.of(context).matchedLocation;
     final currentIndex = _currentIndex(location, tabs);
 

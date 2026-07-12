@@ -22,6 +22,7 @@ import '../../ui/screens/settings/settings_screen.dart';
 import '../../ui/widgets/app_shell.dart';
 import '../../ui/widgets/parent_app_shell.dart';
 import '../../providers/experience_provider.dart';
+import '../../providers/parent_provider.dart';
 import '../../providers/role_provider.dart';
 import '../constants/api_constants.dart';
 
@@ -40,8 +41,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
       final isAuth = session != null;
-      final isLoginRoute =
-          state.matchedLocation == '/login' ||
+      final isLoginRoute = state.matchedLocation == '/login' ||
           state.matchedLocation == '/signup';
 
       if (!isAuth && !isLoginRoute) return '/login';
@@ -70,16 +70,30 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isGuardian = role == UserRole.guardian;
       final experienceAsync = ref.read(oneExperienceProvider);
       if (experienceAsync.isLoading) {
+        // A child switch re-resolves the parent scope. Keep the current parent
+        // subroute while its shell renders a closed loading state.
+        if (isAuth && state.matchedLocation.startsWith('/parent')) return null;
         return state.matchedLocation == '/role-check' ? null : '/role-check';
       }
-      final assignment =
-          experienceAsync.valueOrNull ?? OneExperienceAssignment.denied;
+      final resolution =
+          experienceAsync.valueOrNull ?? OneExperienceResolution.denied;
+      final assignment = resolution.assignment;
       if (assignment == OneExperienceAssignment.denied) {
         return state.matchedLocation == '/experience-unavailable'
             ? null
             : '/experience-unavailable';
       }
       final oneExperience = assignment == OneExperienceAssignment.enabled;
+      if (oneExperience &&
+          !oneExperienceAllowsPath(
+            resolution,
+            experienceRoleFor(role)!,
+            state.matchedLocation,
+          )) {
+        return state.matchedLocation == '/experience-unavailable'
+            ? null
+            : '/experience-unavailable';
+      }
 
       if (isAuth && isLoginRoute) {
         return isGuardian ? '/parent' : (oneExperience ? '/today' : '/');
@@ -276,15 +290,15 @@ class _RoleRefreshNotifier extends ChangeNotifier {
       roleProvider,
       (_, __) => notifyListeners(),
     );
-    _experienceSub = ref.listen<AsyncValue<OneExperienceAssignment>>(
+    _experienceSub = ref.listen<AsyncValue<OneExperienceResolution>>(
       oneExperienceProvider,
       (_, __) => notifyListeners(),
     );
   }
 
   late final ProviderSubscription<AsyncValue<UserRole>> _sub;
-  late final ProviderSubscription<AsyncValue<OneExperienceAssignment>>
-  _experienceSub;
+  late final ProviderSubscription<AsyncValue<OneExperienceResolution>>
+      _experienceSub;
 
   @override
   void dispose() {
@@ -401,7 +415,14 @@ class _ExperienceUnavailableScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
-                    onPressed: () => ref.invalidate(oneExperienceProvider),
+                    onPressed: () {
+                      if (ref.read(roleProvider).valueOrNull ==
+                          UserRole.guardian) {
+                        ref.invalidate(parentChildrenProvider);
+                        ref.invalidate(parentThreadsProvider);
+                      }
+                      ref.invalidate(oneExperienceProvider);
+                    },
                     icon: const Icon(Icons.refresh),
                     label: const Text('Retry'),
                   ),

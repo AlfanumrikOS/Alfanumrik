@@ -51,9 +51,7 @@ class _ProgressSection extends ConsumerWidget {
         final children = response.children.toList(growable: false);
         final childId = _activeChildId(ref, children);
         if (childId == null) return const _EmptySection('No linked child yet.');
-        return ref
-            .watch(parentGlanceProvider(childId))
-            .when(
+        return ref.watch(parentGlanceProvider(childId)).when(
               loading: () => const _SectionLoading(),
               error: (_, __) => _SectionError(
                 onRetry: () => ref.invalidate(parentGlanceProvider(childId)),
@@ -104,9 +102,7 @@ class _PlanSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ref
-        .watch(parentChildrenProvider)
-        .when(
+    return ref.watch(parentChildrenProvider).when(
           loading: () => const _SectionLoading(),
           error: (_, __) => _SectionError(
             onRetry: () => ref.invalidate(parentChildrenProvider),
@@ -117,9 +113,7 @@ class _PlanSection extends ConsumerWidget {
             if (childId == null) {
               return const _EmptySection('No linked child yet.');
             }
-            return ref
-                .watch(parentPlanProvider(childId))
-                .when(
+            return ref.watch(parentPlanProvider(childId)).when(
                   loading: () => const _SectionLoading(),
                   error: (_, __) => _SectionError(
                     onRetry: () => ref.invalidate(parentPlanProvider(childId)),
@@ -175,12 +169,13 @@ class _MessagesSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ref
-        .watch(parentThreadsProvider)
-        .when(
+    return ref.watch(parentThreadsProvider).when(
           loading: () => const _SectionLoading(),
           error: (_, __) => _SectionError(
-            onRetry: () => ref.invalidate(parentThreadsProvider),
+            onRetry: () {
+              ref.invalidate(parentChildrenProvider);
+              ref.invalidate(parentThreadsProvider);
+            },
           ),
           data: (body) {
             final threads = body['threads'] as List? ?? const [];
@@ -199,8 +194,7 @@ class _MessagesSection extends ConsumerWidget {
                 ...threads.whereType<Map>().map((thread) {
                   final id = thread['id']?.toString();
                   final teacher = thread['teacher_name']?.toString().trim();
-                  final preview =
-                      thread['last_message_preview']?.toString() ??
+                  final preview = thread['last_message_preview']?.toString() ??
                       'Open conversation';
                   final unread = thread['unread_count'];
                   return Card(
@@ -297,39 +291,32 @@ class _ParentConversationScreenState
                 return ListView(
                   reverse: true,
                   padding: const EdgeInsets.all(16),
-                  children: messages.reversed
-                      .whereType<Map>()
-                      .map((message) {
-                        final mine = message['sender_role'] == 'guardian';
-                        return Align(
-                          alignment: mine
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft,
-                          child: Container(
-                            constraints: const BoxConstraints(maxWidth: 360),
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: mine
-                                  ? AppColors.primary
-                                  : AppColors.surfaceRaised,
-                              borderRadius: BorderRadius.circular(16),
-                              border: mine
-                                  ? null
-                                  : Border.all(color: AppColors.border),
-                            ),
-                            child: Text(
-                              message['body']?.toString() ?? '—',
-                              style: TextStyle(
-                                color: mine
-                                    ? Colors.white
-                                    : AppColors.textPrimary,
-                              ),
-                            ),
+                  children: messages.reversed.whereType<Map>().map((message) {
+                    final mine = message['sender_role'] == 'guardian';
+                    return Align(
+                      alignment:
+                          mine ? Alignment.centerRight : Alignment.centerLeft,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 360),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: mine
+                              ? AppColors.primary
+                              : AppColors.surfaceRaised,
+                          borderRadius: BorderRadius.circular(16),
+                          border:
+                              mine ? null : Border.all(color: AppColors.border),
+                        ),
+                        child: Text(
+                          message['body']?.toString() ?? '—',
+                          style: TextStyle(
+                            color: mine ? Colors.white : AppColors.textPrimary,
                           ),
-                        );
-                      })
-                      .toList(growable: false),
+                        ),
+                      ),
+                    );
+                  }).toList(growable: false),
                 );
               },
             ),

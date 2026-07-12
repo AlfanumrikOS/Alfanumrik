@@ -40,8 +40,9 @@ class _ParentGlanceScreenState extends ConsumerState<ParentGlanceScreen> {
     if (assignmentAsync.isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final assignment =
-        assignmentAsync.valueOrNull ?? OneExperienceAssignment.denied;
+    final resolution =
+        assignmentAsync.valueOrNull ?? OneExperienceResolution.denied;
+    final assignment = resolution.assignment;
     if (assignment == OneExperienceAssignment.denied) {
       return const Scaffold(
         body: Center(child: Text('Parent workspace unavailable.')),
@@ -350,8 +351,8 @@ class _SnapshotCard extends StatelessWidget {
         text: sessionsThisWeek == null
             ? (isHi ? 'इस सप्ताह सेशन —' : 'Sessions this week —')
             : isHi
-            ? '$sessionsThisWeek सेशन इस सप्ताह'
-            : '$sessionsThisWeek ${sessionsThisWeek == 1 ? 'session' : 'sessions'} this week',
+                ? '$sessionsThisWeek सेशन इस सप्ताह'
+                : '$sessionsThisWeek ${sessionsThisWeek == 1 ? 'session' : 'sessions'} this week',
       ),
     );
 
@@ -363,8 +364,8 @@ class _SnapshotCard extends StatelessWidget {
         text: streakDays == null
             ? (isHi ? 'सीखने की स्ट्रीक —' : 'Learning streak —')
             : isHi
-            ? '$streakDays-दिन की स्ट्रीक'
-            : '$streakDays-day streak',
+                ? '$streakDays-दिन की स्ट्रीक'
+                : '$streakDays-day streak',
       ),
     );
 
@@ -606,8 +607,8 @@ class _EncourageButton extends ConsumerWidget {
         backgroundColor: outcome == EncourageOutcome.success
             ? AppColors.success
             : (outcome == EncourageOutcome.rateLimited
-                  ? AppColors.warning
-                  : AppColors.error),
+                ? AppColors.warning
+                : AppColors.error),
         behavior: SnackBarBehavior.floating,
       ),
     );
