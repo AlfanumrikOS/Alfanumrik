@@ -3,7 +3,6 @@ import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/cache/cache_manager.dart';
-import '../../core/constants/api_constants.dart';
 import '../../core/constants/coin_rules.dart';
 import '../../core/network/api_result.dart';
 import '../../core/network/v2_api_client.dart';
@@ -12,7 +11,7 @@ import '../models/chapter.dart';
 /// Learning repository — chapters / topics / concept content + topic
 /// completion.
 ///
-/// Gated on [ApiConstants.useV2]:
+/// Gated by server-assigned generated-client injection:
 ///   * OFF (default) — BYTE-IDENTICAL legacy path: reads the `chapters` /
 ///     `topics` tables directly and awards completion via the `add_xp` RPC.
 ///     The generated `/v2` client is never constructed or called.
@@ -38,7 +37,7 @@ class LearningRepository {
 
   /// Fetch chapters for a subject + grade.
   ///
-  /// When [ApiConstants.useV2] is ON this maps the `GET /v2/learn/curriculum`
+  /// When a generated client is present this maps `GET /v2/learn/curriculum`
   /// tree onto the [Chapter] model (synthesising the navigation `id` from the
   /// chapter number so the concept route can resolve it). When OFF it reads
   /// the `chapters` table verbatim (legacy path).
@@ -46,7 +45,7 @@ class LearningRepository {
     required String subjectCode,
     required String grade,
   }) async {
-    if (ApiConstants.useV2 && _v2 != null) {
+    if (_v2 != null) {
       return _getChaptersV2(subjectCode: subjectCode, grade: grade);
     }
 

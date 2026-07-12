@@ -1,17 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/constants/api_constants.dart';
-import '../core/network/v2_api_client.dart';
 import '../data/models/dashboard_data.dart';
 import '../data/repositories/dashboard_repository.dart';
 import 'auth_provider.dart';
+import 'experience_provider.dart';
 
 final dashboardRepositoryProvider = Provider<DashboardRepository>((ref) {
-  // Inject the generated /v2 client ONLY when the flag is on. Flag-OFF builds
-  // pass null so the legacy RPC/table path is byte-identical and the dart-dio
-  // client is never constructed.
+  // The build switch only permits assignment resolution. Inject the generated
+  // client after an explicit server-enabled assignment; legacy/denied/loading
+  // states retain the historical RPC/table data plane.
   return DashboardRepository(
-    v2Client: ApiConstants.useV2 ? ref.read(v2ApiClientProvider) : null,
+    v2Client: ref.watch(oneExperienceV2ApiClientProvider),
   );
 });
 
@@ -26,7 +25,7 @@ class DashboardNotifier extends AsyncNotifier<DashboardData> {
     final student = ref.watch(studentProvider).valueOrNull;
     if (student == null) return const DashboardData();
 
-    final repo = ref.read(dashboardRepositoryProvider);
+    final repo = ref.watch(dashboardRepositoryProvider);
     final result = await repo.getDashboardData(student.id);
     return result.dataOrNull ?? const DashboardData();
   }

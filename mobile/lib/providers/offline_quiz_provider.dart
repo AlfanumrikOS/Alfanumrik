@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/constants/api_constants.dart';
 import '../core/network/network_info.dart';
 import '../data/models/offline_quiz_models.dart';
 import '../data/repositories/offline_drain_service.dart';
 import '../data/repositories/offline_quiz_store.dart';
 import '../data/repositories/quiz_repository.dart';
+import 'experience_provider.dart';
 import 'quiz_provider.dart';
 
 /// ────────────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ import 'quiz_provider.dart';
 /// null when `useV2` is OFF (no offline path). App-scoped (no autoDispose) so
 /// the boxes stay open for the process lifetime.
 final offlineQuizStoreProvider = FutureProvider<OfflineQuizStore?>((ref) async {
-  if (!ApiConstants.useV2) return null;
+  if (!ref.watch(oneExperienceRuntimeEnabledProvider)) return null;
   return OfflineQuizStore.open();
 });
 
@@ -88,7 +88,7 @@ final offlineQueueCountProvider = Provider<int>((ref) {
 /// for the foreground / today-load / quiz-completion call sites.
 final offlineQuizCoordinatorProvider =
     Provider<OfflineQuizCoordinator?>((ref) {
-  if (!ApiConstants.useV2) return null;
+  if (!ref.watch(oneExperienceRuntimeEnabledProvider)) return null;
   final store = ref.watch(offlineQuizStoreProvider).valueOrNull;
   if (store == null) return null;
 

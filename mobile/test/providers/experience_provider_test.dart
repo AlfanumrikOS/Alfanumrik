@@ -184,7 +184,75 @@ void main() {
       expect(
           oneExperienceAllowsPath(resolution, 'student', '/progress'), isFalse);
       expect(
-          oneExperienceAllowsPath(resolution, 'student', '/settings'), isTrue);
+          oneExperienceAllowsPath(resolution, 'student', '/settings'), isFalse);
+      expect(oneExperienceAllowsPath(resolution, 'student', '/chat'), isFalse);
+      expect(
+          oneExperienceAllowsPath(resolution, 'student', '/stem-lab'), isFalse);
+
+      const permitted = OneExperienceResolution(
+        assignment: OneExperienceAssignment.enabled,
+        role: 'student',
+        permittedCapabilities: {
+          'student.today',
+          'student.foxy',
+          'student.learn',
+          'shared.settings',
+        },
+      );
+      expect(oneExperienceAllowsPath(permitted, 'student', '/chat'), isTrue);
+      expect(
+          oneExperienceAllowsPath(permitted, 'student', '/settings'), isTrue);
+      expect(
+          oneExperienceAllowsPath(permitted, 'student', '/stem-lab'), isTrue);
+      // Subscription is intentionally outside the V3 navigation manifest and
+      // remains governed by its existing server APIs.
+      expect(oneExperienceAllowsPath(permitted, 'student', '/plans'), isTrue);
+    });
+
+    test('enables the V2 data plane only for explicit server assignment',
+        () async {
+      Future<bool> enabledFor(OneExperienceResolution resolution) async {
+        final container = ProviderContainer(
+          overrides: [
+            oneExperienceProvider.overrideWith((ref) async => resolution),
+          ],
+        );
+        await container.read(oneExperienceProvider.future);
+        final enabled = container.read(oneExperienceRuntimeEnabledProvider);
+        container.dispose();
+        return enabled;
+      }
+
+      expect(await enabledFor(OneExperienceResolution.legacy), isFalse);
+      expect(await enabledFor(OneExperienceResolution.denied), isFalse);
+      expect(
+        await enabledFor(
+          const OneExperienceResolution(
+            assignment: OneExperienceAssignment.enabled,
+            role: 'student',
+            permittedCapabilities: {'student.today'},
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('does not construct the generated client for legacy data planes', () {
+      final legacy = ProviderContainer(
+        overrides: [
+          oneExperienceRuntimeEnabledProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(legacy.dispose);
+      expect(legacy.read(oneExperienceV2ApiClientProvider), isNull);
+
+      final enabled = ProviderContainer(
+        overrides: [
+          oneExperienceRuntimeEnabledProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(enabled.dispose);
+      expect(enabled.read(oneExperienceV2ApiClientProvider), isNotNull);
     });
   });
 

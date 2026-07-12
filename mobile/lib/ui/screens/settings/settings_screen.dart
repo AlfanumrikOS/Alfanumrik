@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/api_constants.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../providers/experience_provider.dart';
 import '../../../providers/subscription_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -14,6 +14,10 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final student = ref.watch(studentProvider).valueOrNull;
     final subscription = ref.watch(subscriptionProvider).valueOrNull;
+    final experience = ref.watch(oneExperienceProvider).valueOrNull;
+    final oneExperience = ref.watch(oneExperienceRuntimeEnabledProvider);
+    bool allows(String capability) =>
+        experience?.allowsCapability(capability) == true;
     // Device-locale Hindi detection — matches today_screen / quiz_screen until
     // an app-wide toggle ships.
     final isHi = Localizations.localeOf(context).languageCode == 'hi';
@@ -86,43 +90,52 @@ class SettingsScreen extends ConsumerWidget {
 
           const SizedBox(height: 16),
 
-          // /v2 student-parity surfaces (Wave 2.3b). Shown ONLY when the flag
-          // is on — flag-OFF builds render the exact same Settings screen as
-          // today (this group is absent).
-          if (ApiConstants.useV2) ...[
+          // V2 destinations require the server-enabled assignment and their
+          // filtered manifest capabilities. Explicit legacy retains the
+          // historical Settings screen without this group.
+          if (oneExperience &&
+              allows('shared.settings') &&
+              (allows('student.foxy') ||
+                  allows('student.progress') ||
+                  allows('student.rewards') ||
+                  allows('student.learn'))) ...[
             _SettingsGroup(
               title: isHi ? 'मेरी सीख' : 'My Learning',
               children: [
-                _SettingsTile(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  title: isHi ? 'फॉक्सी से पूछें' : 'Ask Foxy',
-                  subtitle: isHi
-                      ? 'अपने सीखने के संदर्भ में सहायता पाएँ'
-                      : 'Get help in your learning context',
-                  onTap: () => context.go('/chat'),
-                ),
-                _SettingsTile(
-                  icon: Icons.insights_rounded,
-                  title: isHi ? 'प्रगति' : 'Progress',
-                  subtitle: isHi
-                      ? 'स्कोर, महारत और ज्ञान अंतराल'
-                      : 'Scores, mastery & knowledge gaps',
-                  onTap: () => context.go('/progress'),
-                ),
-                _SettingsTile(
-                  icon: Icons.leaderboard_rounded,
-                  title: isHi ? 'लीडरबोर्ड' : 'Leaderboard',
-                  subtitle: isHi ? 'देखें आप कहाँ हैं' : 'See where you rank',
-                  onTap: () => context.go('/leaderboard'),
-                ),
-                _SettingsTile(
-                  icon: Icons.science_outlined,
-                  title: isHi ? 'STEM लैब' : 'STEM Lab',
-                  subtitle: isHi
-                      ? 'इंटरैक्टिव प्रयोग और सिमुलेशन'
-                      : 'Interactive experiments and simulations',
-                  onTap: () => context.push('/stem-lab'),
-                ),
+                if (allows('student.foxy'))
+                  _SettingsTile(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    title: isHi ? 'फॉक्सी से पूछें' : 'Ask Foxy',
+                    subtitle: isHi
+                        ? 'अपने सीखने के संदर्भ में सहायता पाएँ'
+                        : 'Get help in your learning context',
+                    onTap: () => context.go('/chat'),
+                  ),
+                if (allows('student.progress'))
+                  _SettingsTile(
+                    icon: Icons.insights_rounded,
+                    title: isHi ? 'प्रगति' : 'Progress',
+                    subtitle: isHi
+                        ? 'स्कोर, महारत और ज्ञान अंतराल'
+                        : 'Scores, mastery & knowledge gaps',
+                    onTap: () => context.go('/progress'),
+                  ),
+                if (allows('student.rewards'))
+                  _SettingsTile(
+                    icon: Icons.leaderboard_rounded,
+                    title: isHi ? 'लीडरबोर्ड' : 'Leaderboard',
+                    subtitle: isHi ? 'देखें आप कहाँ हैं' : 'See where you rank',
+                    onTap: () => context.go('/leaderboard'),
+                  ),
+                if (allows('student.learn'))
+                  _SettingsTile(
+                    icon: Icons.science_outlined,
+                    title: isHi ? 'STEM लैब' : 'STEM Lab',
+                    subtitle: isHi
+                        ? 'इंटरैक्टिव प्रयोग और सिमुलेशन'
+                        : 'Interactive experiments and simulations',
+                    onTap: () => context.push('/stem-lab'),
+                  ),
               ],
             ),
             const SizedBox(height: 12),

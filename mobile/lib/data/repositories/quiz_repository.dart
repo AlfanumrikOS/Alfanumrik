@@ -4,7 +4,6 @@ import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/cache/cache_manager.dart';
-import '../../core/constants/api_constants.dart';
 import '../../core/network/api_result.dart';
 import '../../core/network/v2_api_client.dart';
 import '../models/offline_quiz_models.dart';
@@ -15,7 +14,7 @@ import 'offline_drain_service.dart';
 /// scoring path defined by `submit_quiz_results_v2` (migration
 /// `20260428160000_quiz_session_shuffles.sql`).
 ///
-/// ## Two surfaces, gated by [ApiConstants.useV2]
+/// ## Two surfaces, selected by server-assigned client injection
 ///
 /// * **`useV2` OFF (default)** — BYTE-IDENTICAL to the historical app:
 ///   questions come straight from the `question_bank` table, the
@@ -81,7 +80,7 @@ class QuizRepository {
   /// [startSessionForQuestions]; the resulting [ServerQuizSession.questions]
   /// is what the UI should render.
   ///
-  /// When [ApiConstants.useV2] is ON this calls `GET /v2/quiz/questions` via
+  /// When a generated client is present this calls `GET /v2/quiz/questions` via
   /// the generated [v2.QuizApi]; the route already enforces subject-governance
   /// + academic-scope and NEVER returns `correct_answer_index` (P6). When OFF
   /// it reads the `question_bank` table directly (byte-identical legacy path).
@@ -91,7 +90,7 @@ class QuizRepository {
     int count = 10,
     String? chapterTitle,
   }) async {
-    if (ApiConstants.useV2 && _v2 != null) {
+    if (_v2 != null) {
       return _getQuestionsV2(
         subject: subject,
         grade: grade,
@@ -188,7 +187,7 @@ class QuizRepository {
   }) async {
     if (questionIds.isEmpty) return null;
 
-    if (ApiConstants.useV2 && _v2 != null) {
+    if (_v2 != null) {
       return _startSessionV2(
         studentId: studentId,
         questionIds: questionIds,
@@ -315,7 +314,7 @@ class QuizRepository {
     String? sessionId,
     String? idempotencyKey,
   }) async {
-    if (ApiConstants.useV2 && _v2 != null) {
+    if (_v2 != null) {
       return _submitAttemptV2(
         studentId: studentId,
         subject: subject,

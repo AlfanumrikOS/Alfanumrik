@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants/api_constants.dart';
 import '../core/network/api_client.dart';
+import '../core/network/v2_api_client.dart';
 import 'parent_provider.dart';
 import 'role_provider.dart';
 
@@ -59,6 +60,24 @@ final experienceRequestProvider = Provider<ExperienceRequest>((ref) {
 final oneExperienceBuildEnabledProvider = Provider<bool>(
   (ref) => ApiConstants.useV2,
 );
+
+/// Runtime data-plane switch for student V2 repositories and surfaces.
+///
+/// The compile-time switch only permits a build to ask for assignment. It
+/// never selects V2 data by itself: loading, denied, and explicit server
+/// legacy assignments all remain on the legacy data plane.
+final oneExperienceRuntimeEnabledProvider = Provider<bool>((ref) {
+  return ref.watch(oneExperienceProvider).valueOrNull?.assignment ==
+      OneExperienceAssignment.enabled;
+});
+
+/// Generated V2 client exposed only to a server-enabled One Experience user.
+/// Parent assignment bootstrap continues to use [v2ApiClientProvider]
+/// directly because it must resolve linked-child scope before assignment.
+final oneExperienceV2ApiClientProvider = Provider<V2ApiClient?>((ref) {
+  if (!ref.watch(oneExperienceRuntimeEnabledProvider)) return null;
+  return ref.read(v2ApiClientProvider);
+});
 
 /// Server-authoritative One Experience assignment for this signed-in user.
 ///
@@ -204,9 +223,12 @@ String? mobileCapabilityForPath(String role, String location) {
   }
   if (path == '/today') return 'student.today';
   if (matches('/learn')) return 'student.learn';
+  if (matches('/chat')) return 'student.foxy';
   if (matches('/quiz')) return 'student.practice';
   if (matches('/progress')) return 'student.progress';
   if (matches('/leaderboard')) return 'student.rewards';
+  if (matches('/settings')) return 'shared.settings';
+  if (matches('/stem-lab')) return 'student.learn';
   return null;
 }
 
