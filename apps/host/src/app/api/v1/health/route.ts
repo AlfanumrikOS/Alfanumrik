@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { cacheStats } from '@alfanumrik/lib/cache';
+import { EXPERIENCE_V3_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { SLO } from '@alfanumrik/lib/slo';
 import { getRedis } from '@alfanumrik/lib/redis';
 
@@ -51,6 +52,16 @@ const DEP_TIMEOUT_MS = 3_000;
  */
 const EDGE_FUNCTION_TIMEOUT_MS = 8_000;
 
+const REQUIRED_V3_FLAGS = Object.values(EXPERIENCE_V3_FLAGS);
+const V3_RESOLVER_COLUMNS = [
+  'flag_name',
+  'is_enabled',
+  'target_roles',
+  'target_environments',
+  'target_institutions',
+  'rollout_percentage',
+].join(',');
+
 /** Run a promise with a timeout. Rejects if the promise doesn't resolve in time. */
 function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -72,6 +83,38 @@ interface DependencyResult {
   status: 'ok' | 'degraded' | 'skipped' | 'failed';
   latency_ms: number;
   detail?: string;
+}
+
+interface PrerequisiteResult {
+  status: 'ok' | 'error';
+  latency_ms: number;
+  error_code?: 'query_failed' | 'invalid_response' | 'flag_contract_mismatch' | 'probe_failed';
+}
+
+interface V3ResolverFlagRow {
+  flag_name: string;
+  is_enabled: boolean;
+  target_roles: string[] | null;
+  target_environments: string[] | null;
+  target_institutions: string[] | null;
+  rollout_percentage: number | null;
+}
+
+function isNullableStringArray(value: unknown): value is string[] | null {
+  return value === null || (Array.isArray(value) && value.every((item) => typeof item === 'string'));
+}
+
+function isV3ResolverFlagRow(value: unknown): value is V3ResolverFlagRow {
+  if (!value || typeof value !== 'object') return false;
+
+  const row = value as Record<string, unknown>;
+  const rollout = row.rollout_percentage;
+  return typeof row.flag_name === 'string'
+    && typeof row.is_enabled === 'boolean'
+    && isNullableStringArray(row.target_roles)
+    && isNullableStringArray(row.target_environments)
+    && isNullableStringArray(row.target_institutions)
+    && (rollout === null || (Number.isInteger(rollout) && Number(rollout) >= 0 && Number(rollout) <= 100));
 }
 
 async function checkDatabase(): Promise<CheckResult> {
@@ -105,6 +148,57 @@ async function checkAuth(): Promise<Omit<CheckResult, 'latency_ms'> & { latency_
     return { status: 'ok', latency_ms };
   } catch (e) {
     return { status: 'error', latency_ms: Math.round(performance.now() - start), error: String(e) };
+  }
+}
+
+/**
+ * Prove that all five One Experience V3 flags can be read with every column
+ * consumed by the server-side resolver. Flag activation is deliberately not a
+ * prerequisite: disabled rows are a valid, rollback-safe production state.
+ *
+ * The public response exposes only a bounded error code. Supabase error text
+ * and flag targeting values are never returned by this unauthenticated route.
+ */
+async function checkV3ServerPrerequisites(): Promise<PrerequisiteResult> {
+  const start = performance.now();
+  try {
+    const result = await withTimeout(
+      supabaseAdmin
+        .from('feature_flags')
+        .select(V3_RESOLVER_COLUMNS)
+        .in('flag_name', REQUIRED_V3_FLAGS),
+      SLO.HEALTH_CHECK_TIMEOUT_MS,
+    );
+    const latency_ms = Math.round(performance.now() - start);
+
+    if (result.error) {
+      return { status: 'error', latency_ms, error_code: 'query_failed' };
+    }
+    if (!Array.isArray(result.data)) {
+      return { status: 'error', latency_ms, error_code: 'invalid_response' };
+    }
+
+    const rows: unknown[] = result.data;
+    const uniqueNames = new Set(
+      rows
+        .filter(isV3ResolverFlagRow)
+        .map((row) => row.flag_name),
+    );
+    const expectedNames = new Set<string>(REQUIRED_V3_FLAGS);
+    const hasExactContract = rows.length === REQUIRED_V3_FLAGS.length
+      && uniqueNames.size === REQUIRED_V3_FLAGS.length
+      && [...uniqueNames].every((name) => expectedNames.has(name));
+
+    if (!hasExactContract) {
+      return { status: 'error', latency_ms, error_code: 'flag_contract_mismatch' };
+    }
+    return { status: 'ok', latency_ms };
+  } catch {
+    return {
+      status: 'error',
+      latency_ms: Math.round(performance.now() - start),
+      error_code: 'probe_failed',
+    };
   }
 }
 
@@ -274,9 +368,10 @@ function getMemoryUsage(): { rss_mb: number; heap_used_mb: number; heap_total_mb
 export async function GET() {
   const requestStart = performance.now();
 
-  const [database, auth, edge_functions, redis, razorpay] = await Promise.all([
+  const [database, auth, v3_server_prerequisites, edge_functions, redis, razorpay] = await Promise.all([
     checkDatabase(),
     checkAuth(),
+    checkV3ServerPrerequisites(),
     checkEdgeFunctions(),
     checkRedis(),
     checkRazorpay(),
@@ -284,6 +379,7 @@ export async function GET() {
 
   const dbOk = database.status === 'ok';
   const authOk = auth.status === 'ok';
+  const v3PrerequisitesOk = v3_server_prerequisites.status === 'ok';
 
   // Dependency contributions to overall status:
   //   - 'failed'   → unhealthy_components += name (degrades top-level status)
@@ -293,6 +389,12 @@ export async function GET() {
   const unhealthy_components: string[] = [];
   if (!dbOk) unhealthy_components.push('database');
   if (!authOk) unhealthy_components.push('auth');
+  // Preview/development should surface a missing flag contract without making
+  // an otherwise healthy environment unavailable. Production releases fail
+  // closed because every V3 role resolver depends on this server-side contract.
+  if (DEPLOY_ENV === 'production' && !v3PrerequisitesOk) {
+    unhealthy_components.push('v3_server_prerequisites');
+  }
   if (edge_functions.status === 'failed' || edge_functions.status === 'degraded') {
     unhealthy_components.push('edge_functions');
   }
@@ -345,6 +447,7 @@ export async function GET() {
     checks: {
       database,
       auth,
+      v3_server_prerequisites,
     },
 
     // External dependency probes (Audit F21)
@@ -381,6 +484,7 @@ export async function GET() {
         `total;dur=${responseTimeMs}`,
         `db;dur=${database.latency_ms}`,
         `auth;dur=${auth.latency_ms}`,
+        `v3;dur=${v3_server_prerequisites.latency_ms}`,
         `edge;dur=${edge_functions.latency_ms}`,
         `redis;dur=${redis.latency_ms}`,
         `razorpay;dur=${razorpay.latency_ms}`,
