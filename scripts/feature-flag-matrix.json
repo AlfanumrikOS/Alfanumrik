@@ -1,7 +1,7 @@
 {
   "source": "packages/lib/src/flags/defaults.ts",
   "registryRoot": "packages/lib/src/flags/registries",
-  "flagCount": 120,
+  "flagCount": 125,
   "flags": [
     {
       "name": "ff_adaptive_live_selection_v1",
@@ -1200,6 +1200,51 @@
       "owner": "consumer-experience",
       "rationale": "Default OFF until an operator or reviewed rollout enables it (seeded OFF by 20260512075619_ff_tutor_v1.sql).",
       "source": "packages/lib/src/flags/registries/consumer.ts"
+    },
+    {
+      "name": "ff_ui_v3_parent",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "core-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it.",
+      "source": "packages/lib/src/flags/registries/experience.ts"
+    },
+    {
+      "name": "ff_ui_v3_school_admin",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "core-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it.",
+      "source": "packages/lib/src/flags/registries/experience.ts"
+    },
+    {
+      "name": "ff_ui_v3_student",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "core-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it.",
+      "source": "packages/lib/src/flags/registries/experience.ts"
+    },
+    {
+      "name": "ff_ui_v3_super_admin",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "core-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it.",
+      "source": "packages/lib/src/flags/registries/experience.ts"
+    },
+    {
+      "name": "ff_ui_v3_teacher",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "core-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it.",
+      "source": "packages/lib/src/flags/registries/experience.ts"
     },
     {
       "name": "ff_unified_quiz_v1",

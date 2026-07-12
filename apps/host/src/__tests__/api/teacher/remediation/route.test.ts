@@ -5,14 +5,13 @@
  *   1. authorizeRequest gate fires with `class.assign_remediation` and returns
  *      the auth errorResponse verbatim when not authorized (401/403).
  *   2. 403 when the caller has no teacher profile.
- *   3. 403 (no insert) when the requested student is NOT on the caller's roster
- *      (class_enrollments × class_teachers) — even with a well-formed UUID.
- *   4. Happy path: roster-verified insert returns the created assignment
- *      (status 'assigned', teacher_id = internal teachers.id, class_id from the
- *      roster join). 201.
+ *   3. 403 (no insert) unless the exact requested class is active in the
+ *      teacher's school with active teacher and student membership rows.
+ *   4. Happy path: exact-class roster verification and curriculum scope produce
+ *      the assignment with internal teacher identity. 201.
  *   5. Idempotency: when an OPEN (assigned|in_progress) row already exists for
- *      (teacher, student, chapter), it is returned (no duplicate insert). 200.
- *   6. 400 when student_id is not a UUID.
+ *      (teacher, student, class, chapter), it is returned (no duplicate insert).
+ *   6. 400 when class_id or student_id is not a UUID.
  *   7. GET lists the caller-teacher's assignments, roster-scoped (eq teacher_id),
  *      with optional status/class filters.
  *
@@ -30,12 +29,22 @@ const holders = vi.hoisted(() => ({
   mockAuthorize: vi.fn(),
   mockInsert: vi.fn(),
   mockState: {} as {
-    teacher?: { id: string; school_id: string | null } | null;
+    teacher?: { id: string; school_id: string | null; is_active?: boolean; deleted_at?: string | null } | null;
     teacherError?: { message: string } | null;
-    teacherClasses?: Array<{ class_id: string | null }> | null;
-    teacherClassesError?: { message: string } | null;
-    enrolment?: { class_id: string } | null;
+    classRow?: { id: string; school_id: string | null; grade: string; subject: string | null; is_active?: boolean; deleted_at?: string | null } | null;
+    classError?: { message: string } | null;
+    teacherClass?: { class_id: string; teacher_id?: string; is_active?: boolean } | null;
+    teacherClassError?: { message: string } | null;
+    enrolment?: { class_id: string; student_id?: string; is_active?: boolean } | null;
     enrolmentError?: { message: string } | null;
+    student?: { id: string; school_id?: string | null; is_active?: boolean; deleted_at?: string | null } | null;
+    studentError?: { message: string } | null;
+    topic?: { id: string; subject_id: string; grade?: string; is_active?: boolean; content_status?: string; deleted_at?: string | null } | null;
+    topicError?: { message: string } | null;
+    subject?: { id: string; code: string; name: string; is_active?: boolean } | null;
+    subjectError?: { message: string } | null;
+    sourceAlert?: { id: string; student_id?: string; class_id?: string; teacher_id?: string; is_active?: boolean } | null;
+    sourceAlertError?: { message: string } | null;
     existingOpen?: Record<string, unknown> | null;
     existingOpenError?: { message: string } | null;
     insertResult?: {
@@ -50,6 +59,8 @@ const holders = vi.hoisted(() => ({
   },
   // Capture filters applied to the list query so we can assert roster-scoping.
   listFilters: {} as Record<string, unknown>,
+  tableFilters: {} as Record<string, Record<string, unknown>>,
+  idempotencyFilters: {} as Record<string, unknown>,
   // Capture the idempotency chapter filter (eq vs is null).
   idempotencyChapterFilter: { kind: '', value: undefined as unknown },
   // Capture the 23505 survivor-lookup filters (natural key of the unique index).
@@ -66,56 +77,44 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 }));
 
 vi.mock('@alfanumrik/lib/supabase-admin', () => {
-  // ── teachers: .select().eq().maybeSingle() ──
-  function teachersChain() {
+  function singleRowChain(
+    table: string,
+    row: Record<string, unknown> | null | undefined,
+    error: { message: string } | null | undefined,
+  ) {
+    const filters: Record<string, unknown> = {};
+    holders.tableFilters[table] = filters;
+    const matches = (candidate: Record<string, unknown>) =>
+      Object.entries(filters).every(([column, value]) => {
+        if (!Object.prototype.hasOwnProperty.call(candidate, column)) return true;
+        return Array.isArray(value) ? value.includes(candidate[column]) : candidate[column] === value;
+      });
     const chain = {
-      eq() {
+      eq(column: string, value: unknown) {
+        filters[column] = value;
         return chain;
       },
-      maybeSingle() {
-        return Promise.resolve({
-          data: holders.mockState.teacher ?? null,
-          error: holders.mockState.teacherError ?? null,
-        });
-      },
-    };
-    return chain;
-  }
-
-  // ── class_teachers: .select('class_id').eq('teacher_id', x)  (awaited array) ──
-  function classTeachersChain() {
-    const result = {
-      data: holders.mockState.teacherClasses ?? [],
-      error: holders.mockState.teacherClassesError ?? null,
-    };
-    const chain = {
-      eq() {
+      is(column: string, value: unknown) {
+        filters[column] = value;
         return chain;
       },
-      then(resolve: (v: typeof result) => unknown) {
-        return Promise.resolve(result).then(resolve);
-      },
-    };
-    return chain;
-  }
-
-  // ── class_enrollments: .select().eq().in().limit().maybeSingle() ──
-  function classEnrollmentsChain() {
-    const chain = {
-      eq() {
-        return chain;
-      },
-      in() {
+      in(column: string, value: unknown[]) {
+        filters[column] = value;
         return chain;
       },
       limit() {
         return chain;
       },
       maybeSingle() {
+        const filtered = row && matches(row) ? row : null;
         return Promise.resolve({
-          data: holders.mockState.enrolment ?? null,
-          error: holders.mockState.enrolmentError ?? null,
+          data: filtered,
+          error: error ?? null,
         });
+      },
+      then(resolve: (value: { data: unknown; error: unknown }) => unknown) {
+        const data = row && matches(row) ? [row] : [];
+        return Promise.resolve({ data, error: error ?? null }).then(resolve);
       },
     };
     return chain;
@@ -141,8 +140,10 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
         }
         return chain;
       },
-      in() {
+      in(col: string, val: unknown[]) {
         usedIn = true;
+        filters[col] = val;
+        holders.listFilters[col] = val;
         return chain;
       },
       is(col: string, val: unknown) {
@@ -167,6 +168,7 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
           maybeSingle() {
             if (usedIn) {
               // POST idempotency pre-check (.in('status', OPEN_STATUSES)).
+              holders.idempotencyFilters = { ...filters };
               holders.idempotencyChapterFilter.kind = chapterFilter.kind;
               holders.idempotencyChapterFilter.value = chapterFilter.value;
               return Promise.resolve({
@@ -208,13 +210,28 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
     supabaseAdmin: {
       from(table: string) {
         if (table === 'teachers') {
-          return { select: () => teachersChain() };
+          return { select: () => singleRowChain(table, holders.mockState.teacher, holders.mockState.teacherError) };
+        }
+        if (table === 'classes') {
+          return { select: () => singleRowChain(table, holders.mockState.classRow, holders.mockState.classError) };
         }
         if (table === 'class_teachers') {
-          return { select: () => classTeachersChain() };
+          return { select: () => singleRowChain(table, holders.mockState.teacherClass, holders.mockState.teacherClassError) };
         }
         if (table === 'class_enrollments') {
-          return { select: () => classEnrollmentsChain() };
+          return { select: () => singleRowChain(table, holders.mockState.enrolment, holders.mockState.enrolmentError) };
+        }
+        if (table === 'students') {
+          return { select: () => singleRowChain(table, holders.mockState.student, holders.mockState.studentError) };
+        }
+        if (table === 'curriculum_topics') {
+          return { select: () => singleRowChain(table, holders.mockState.topic, holders.mockState.topicError) };
+        }
+        if (table === 'subjects') {
+          return { select: () => singleRowChain(table, holders.mockState.subject, holders.mockState.subjectError) };
+        }
+        if (table === 'at_risk_alerts') {
+          return { select: () => singleRowChain(table, holders.mockState.sourceAlert, holders.mockState.sourceAlertError) };
         }
         if (table === 'teacher_remediation_assignments') {
           return {
@@ -236,6 +253,9 @@ const CLASS_ID = '44444444-4444-4444-a444-444444444444';
 const CHAPTER_ID = '55555555-5555-4555-a555-555555555555';
 const ALERT_ID = '66666666-6666-4666-a666-666666666666';
 const ASSIGNMENT_ID = '77777777-7777-4777-a777-777777777777';
+const SCHOOL_ID = '88888888-8888-4888-a888-888888888888';
+const SUBJECT_ID = '99999999-9999-4999-a999-999999999999';
+const OTHER_CLASS_ID = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
 
 function makePost(body: unknown): Request {
   return new Request('http://localhost/api/teacher/remediation', {
@@ -243,6 +263,10 @@ function makePost(body: unknown): Request {
     headers: { Authorization: 'Bearer fake.jwt', 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+function makeScopedPost(overrides: Record<string, unknown> = {}): Request {
+  return makePost({ class_id: CLASS_ID, student_id: STUDENT_ID, ...overrides });
 }
 
 function makeGet(qs = ''): Request {
@@ -263,18 +287,53 @@ function authAsTeacher(authUserId: string = TEACHER_AUTH) {
 }
 
 function teacherResolved() {
-  holders.mockState.teacher = { id: TEACHER_ID, school_id: null };
+  holders.mockState.teacher = {
+    id: TEACHER_ID,
+    school_id: SCHOOL_ID,
+    is_active: true,
+    deleted_at: null,
+  };
 }
 
 function rosterIncludes() {
-  holders.mockState.teacherClasses = [{ class_id: CLASS_ID }];
-  holders.mockState.enrolment = { class_id: CLASS_ID };
+  holders.mockState.classRow = {
+    id: CLASS_ID,
+    school_id: SCHOOL_ID,
+    grade: 'Grade 7',
+    subject: 'Mathematics',
+    is_active: true,
+    deleted_at: null,
+  };
+  holders.mockState.teacherClass = { class_id: CLASS_ID, teacher_id: TEACHER_ID, is_active: true };
+  holders.mockState.enrolment = { class_id: CLASS_ID, student_id: STUDENT_ID, is_active: true };
+  holders.mockState.student = {
+    id: STUDENT_ID,
+    school_id: SCHOOL_ID,
+    is_active: true,
+    deleted_at: null,
+  };
+  holders.mockState.topic = {
+    id: CHAPTER_ID,
+    subject_id: SUBJECT_ID,
+    grade: '7',
+    is_active: true,
+    content_status: 'published',
+    deleted_at: null,
+  };
+  holders.mockState.subject = {
+    id: SUBJECT_ID,
+    code: 'math',
+    name: 'Mathematics',
+    is_active: true,
+  };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   holders.mockState = {};
   holders.listFilters = {};
+  holders.tableFilters = {};
+  holders.idempotencyFilters = {};
   holders.idempotencyChapterFilter = { kind: '', value: undefined };
   holders.dedupeFilters = {};
   holders.dedupeChapterFilter = { kind: '', value: undefined };
@@ -310,7 +369,7 @@ describe('POST /api/teacher/remediation — auth gate', () => {
         headers: { 'Content-Type': 'application/json' },
       }),
     });
-    const res = await POST(makePost({ student_id: STUDENT_ID }) as never);
+    const res = await POST(makeScopedPost() as never);
     expect(res.status).toBe(403);
     expect(holders.mockInsert).not.toHaveBeenCalled();
   });
@@ -320,7 +379,7 @@ describe('POST /api/teacher/remediation — auth gate', () => {
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
-    await POST(makePost({ student_id: STUDENT_ID }) as never);
+    await POST(makeScopedPost() as never);
     expect(holders.mockAuthorize).toHaveBeenCalledTimes(1);
     const [, perm] = holders.mockAuthorize.mock.calls[0];
     expect(perm).toBe('class.assign_remediation');
@@ -339,7 +398,7 @@ describe('POST /api/teacher/remediation — auth gate', () => {
         headers: { 'Content-Type': 'application/json' },
       }),
     });
-    const res = await POST(makePost({ student_id: STUDENT_ID }) as never);
+    const res = await POST(makeScopedPost() as never);
     expect(res.status).toBe(401);
     expect(holders.mockInsert).not.toHaveBeenCalled();
   });
@@ -347,11 +406,23 @@ describe('POST /api/teacher/remediation — auth gate', () => {
 
 // ── 2. Validation ─────────────────────────────────────────────────────
 describe('POST /api/teacher/remediation — validation', () => {
+  it('requires a valid class_id', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+
+    const missing = await POST(makePost({ student_id: STUDENT_ID }) as never);
+    const malformed = await POST(makeScopedPost({ class_id: 'not-a-uuid' }) as never);
+
+    expect(missing.status).toBe(400);
+    expect(malformed.status).toBe(400);
+    expect(holders.mockInsert).not.toHaveBeenCalled();
+  });
+
   it('returns 400 when student_id is not a UUID', async () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
-    const res = await POST(makePost({ student_id: 'not-a-uuid' }) as never);
+    const res = await POST(makeScopedPost({ student_id: 'not-a-uuid' }) as never);
     expect(res.status).toBe(400);
     expect(holders.mockInsert).not.toHaveBeenCalled();
   });
@@ -361,7 +432,7 @@ describe('POST /api/teacher/remediation — validation', () => {
     authAsTeacher();
     teacherResolved();
     const res = await POST(
-      makePost({ student_id: STUDENT_ID, chapter_id: 'nope' }) as never,
+      makeScopedPost({ chapter_id: 'nope' }) as never,
     );
     expect(res.status).toBe(400);
   });
@@ -373,7 +444,7 @@ describe('POST /api/teacher/remediation — roster scope (P8)', () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     holders.mockState.teacher = null;
-    const res = await POST(makePost({ student_id: STUDENT_ID }) as never);
+    const res = await POST(makeScopedPost() as never);
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -384,36 +455,119 @@ describe('POST /api/teacher/remediation — roster scope (P8)', () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
-    // Teacher has classes, but the student is enrolled in none of them.
-    holders.mockState.teacherClasses = [{ class_id: CLASS_ID }];
+    rosterIncludes();
     holders.mockState.enrolment = null;
-    const res = await POST(makePost({ student_id: STUDENT_ID }) as never);
+    const res = await POST(makeScopedPost() as never);
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body.error).toMatch(/roster/i);
+    expect(body.error).toMatch(/class or student/i);
     expect(holders.mockInsert).not.toHaveBeenCalled();
   });
 
-  it('returns 403 (no insert) when the teacher has no classes at all', async () => {
+  it('returns 403 when the teacher is not actively assigned to the selected class', async () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
-    holders.mockState.teacherClasses = [];
-    const res = await POST(makePost({ student_id: STUDENT_ID }) as never);
+    rosterIncludes();
+    holders.mockState.teacherClass = { class_id: CLASS_ID, teacher_id: TEACHER_ID, is_active: false };
+    const res = await POST(makeScopedPost() as never);
     expect(res.status).toBe(403);
+    expect(holders.mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('does not substitute another shared class when the requested class is unauthorized', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+
+    const res = await POST(makeScopedPost({ class_id: OTHER_CLASS_ID }) as never);
+
+    expect(res.status).toBe(403);
+    expect(holders.tableFilters.classes).toMatchObject({ id: OTHER_CLASS_ID, school_id: SCHOOL_ID });
+    expect(holders.mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects an inactive student enrollment for the exact class', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.enrolment = { class_id: CLASS_ID, student_id: STUDENT_ID, is_active: false };
+
+    const res = await POST(makeScopedPost() as never);
+
+    expect(res.status).toBe(403);
+    expect(holders.tableFilters.class_enrollments).toMatchObject({
+      class_id: CLASS_ID,
+      student_id: STUDENT_ID,
+      is_active: true,
+    });
+    expect(holders.mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a class outside the teacher school', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.classRow = {
+      ...holders.mockState.classRow!,
+      school_id: 'bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb',
+    };
+
+    const res = await POST(makeScopedPost() as never);
+
+    expect(res.status).toBe(403);
+    expect(holders.tableFilters.classes.school_id).toBe(SCHOOL_ID);
     expect(holders.mockInsert).not.toHaveBeenCalled();
   });
 });
 
 // ── 4. Happy path ─────────────────────────────────────────────────────
 describe('POST /api/teacher/remediation — happy path', () => {
+  it('uses the requested class when the same student belongs to multiple teacher classes', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.classRow = { ...holders.mockState.classRow!, id: OTHER_CLASS_ID };
+    holders.mockState.teacherClass = {
+      class_id: OTHER_CLASS_ID,
+      teacher_id: TEACHER_ID,
+      is_active: true,
+    };
+    holders.mockState.enrolment = {
+      class_id: OTHER_CLASS_ID,
+      student_id: STUDENT_ID,
+      is_active: true,
+    };
+
+    const res = await POST(makeScopedPost({ class_id: OTHER_CLASS_ID }) as never);
+
+    expect(res.status).toBe(201);
+    expect(holders.mockInsert).toHaveBeenCalledWith(expect.objectContaining({
+      class_id: OTHER_CLASS_ID,
+      student_id: STUDENT_ID,
+      teacher_id: TEACHER_ID,
+    }));
+    expect(holders.idempotencyFilters.class_id).toBe(OTHER_CLASS_ID);
+  });
+
   it('inserts a roster-verified assignment and returns it (201)', async () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
+    holders.mockState.sourceAlert = {
+      id: ALERT_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+      teacher_id: TEACHER_ID,
+      is_active: true,
+    };
     const res = await POST(
-      makePost({ student_id: STUDENT_ID, source_alert_id: ALERT_ID }) as never,
+      makeScopedPost({ source_alert_id: ALERT_ID }) as never,
     );
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -422,7 +576,7 @@ describe('POST /api/teacher/remediation — happy path', () => {
     expect(body.data.status).toBe('assigned');
 
     // Insert payload: teacher_id is the INTERNAL teachers.id (never auth.uid()),
-    // class_id is derived from the roster join, status seeded 'assigned'.
+    // class_id is caller-selected and verified against the exact roster rows.
     expect(holders.mockInsert).toHaveBeenCalledTimes(1);
     const payload = holders.mockInsert.mock.calls[0][0] as Record<string, unknown>;
     expect(payload.teacher_id).toBe(TEACHER_ID);
@@ -432,6 +586,98 @@ describe('POST /api/teacher/remediation — happy path', () => {
     expect(payload.status).toBe('assigned');
     expect(payload.source_alert_id).toBe(ALERT_ID);
     expect(payload.chapter_id).toBeNull();
+    expect(holders.tableFilters.class_teachers).toMatchObject({
+      teacher_id: TEACHER_ID,
+      class_id: CLASS_ID,
+      is_active: true,
+    });
+    expect(holders.tableFilters.students).toMatchObject({
+      id: STUDENT_ID,
+      school_id: SCHOOL_ID,
+      is_active: true,
+      deleted_at: null,
+    });
+    expect(holders.tableFilters.at_risk_alerts).toMatchObject({
+      id: ALERT_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+      teacher_id: TEACHER_ID,
+      is_active: true,
+    });
+  });
+
+  it('rejects a source alert that is not owned by the roster learner and teacher', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.sourceAlert = null;
+
+    const res = await POST(
+      makeScopedPost({ source_alert_id: ALERT_ID }) as never,
+    );
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({
+      success: false,
+      error: expect.stringMatching(/source alert/i),
+    });
+    expect(holders.mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a curriculum topic from another class grade', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.topic = { ...holders.mockState.topic!, grade: '8' };
+
+    const res = await POST(makeScopedPost({ chapter_id: CHAPTER_ID }) as never);
+
+    expect(res.status).toBe(403);
+    expect(holders.tableFilters.curriculum_topics).toMatchObject({
+      id: CHAPTER_ID,
+      grade: '7',
+      is_active: true,
+      content_status: 'published',
+      deleted_at: null,
+    });
+    expect(holders.mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a curriculum topic from another class subject', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.subject = {
+      id: SUBJECT_ID,
+      code: 'science',
+      name: 'Science',
+      is_active: true,
+    };
+
+    const res = await POST(makeScopedPost({ chapter_id: CHAPTER_ID }) as never);
+
+    expect(res.status).toBe(403);
+    expect(holders.mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a draft or inactive curriculum topic', async () => {
+    const { POST } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.topic = {
+      ...holders.mockState.topic!,
+      content_status: 'draft',
+      is_active: false,
+    };
+
+    const res = await POST(makeScopedPost({ chapter_id: CHAPTER_ID }) as never);
+
+    expect(res.status).toBe(403);
+    expect(holders.mockInsert).not.toHaveBeenCalled();
   });
 
   it('uses an eq chapter_id filter for the idempotency check when chapter_id is provided', async () => {
@@ -439,9 +685,18 @@ describe('POST /api/teacher/remediation — happy path', () => {
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
-    await POST(makePost({ student_id: STUDENT_ID, chapter_id: CHAPTER_ID }) as never);
+    await POST(makeScopedPost({ chapter_id: CHAPTER_ID }) as never);
     expect(holders.idempotencyChapterFilter.kind).toBe('eq');
     expect(holders.idempotencyChapterFilter.value).toBe(CHAPTER_ID);
+    expect(holders.idempotencyFilters.class_id).toBe(CLASS_ID);
+    expect(holders.tableFilters.curriculum_topics).toMatchObject({
+      id: CHAPTER_ID,
+      grade: '7',
+      is_active: true,
+      content_status: 'published',
+      deleted_at: null,
+    });
+    expect(holders.tableFilters.subjects).toMatchObject({ id: SUBJECT_ID, is_active: true });
     const payload = holders.mockInsert.mock.calls[0][0] as Record<string, unknown>;
     expect(payload.chapter_id).toBe(CHAPTER_ID);
   });
@@ -451,7 +706,7 @@ describe('POST /api/teacher/remediation — happy path', () => {
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
-    await POST(makePost({ student_id: STUDENT_ID }) as never);
+    await POST(makeScopedPost() as never);
     expect(holders.idempotencyChapterFilter.kind).toBe('is_null');
     expect(holders.idempotencyChapterFilter.value).toBeNull();
   });
@@ -476,7 +731,7 @@ describe('POST /api/teacher/remediation — idempotency', () => {
       resolved_at: null,
     };
     const res = await POST(
-      makePost({ student_id: STUDENT_ID, chapter_id: CHAPTER_ID }) as never,
+      makeScopedPost({ chapter_id: CHAPTER_ID }) as never,
     );
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -484,107 +739,59 @@ describe('POST /api/teacher/remediation — idempotency', () => {
     expect(body.idempotent).toBe(true);
     expect(body.data.id).toBe(ASSIGNMENT_ID);
     expect(body.data.status).toBe('in_progress');
+    expect(holders.idempotencyFilters.class_id).toBe(CLASS_ID);
     // No duplicate written.
     expect(holders.mockInsert).not.toHaveBeenCalled();
   });
 });
 
 // ── 5b. DB-backstop dedupe: 23505 → idempotent success ────────────────
-// The partial unique index uq_teacher_remediation_assignments_open_dedupe
-// (migration 20260619000400) is keyed (student_id, class_id, chapter-bucket)
-// WHERE status='assigned' — teacher_id is NOT in the key. The route's
-// per-teacher pre-check cannot see a COLLEAGUE's open row, so a cross-teacher
-// duplicate surfaces as a 23505 on INSERT. The route must treat that as the
-// idempotent-success path (200, surviving row), never a 500.
+// The partial unique index is keyed (student_id, class_id, chapter-bucket) for
+// every open status. A colleague's row is intentionally invisible to the
+// per-teacher pre-check and must stay private on the insert-conflict path.
 describe('POST /api/teacher/remediation — 23505 unique-violation dedupe (cross-teacher)', () => {
-  const OTHER_TEACHER_ID = '88888888-8888-4888-a888-888888888888';
   const UNIQUE_VIOLATION = {
     code: '23505',
     message:
       'duplicate key value violates unique constraint "uq_teacher_remediation_assignments_open_dedupe"',
   };
 
-  function survivorRow(chapterId: string | null) {
-    return {
-      id: ASSIGNMENT_ID,
-      teacher_id: OTHER_TEACHER_ID, // a colleague's row — invisible to the pre-check
-      student_id: STUDENT_ID,
-      class_id: CLASS_ID,
-      chapter_id: chapterId,
-      source_alert_id: null,
-      status: 'assigned',
-      created_at: '2026-06-01T00:00:00Z',
-      resolved_at: null,
-    };
-  }
-
-  it('cross-teacher duplicate: 23505 returns the surviving row as idempotent success (200, not 500)', async () => {
+  it('acknowledges the named conflict without reading or disclosing the colleague row', async () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
     holders.mockState.existingOpen = null; // per-teacher pre-check sees nothing
     holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
-    holders.mockState.dedupeRow = survivorRow(CHAPTER_ID);
 
     const res = await POST(
-      makePost({ student_id: STUDENT_ID, chapter_id: CHAPTER_ID }) as never,
+      makeScopedPost({ chapter_id: CHAPTER_ID }) as never,
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    // Exact same envelope as the pre-check idempotent path.
-    expect(body.success).toBe(true);
-    expect(body.idempotent).toBe(true);
-    expect(body.data.id).toBe(ASSIGNMENT_ID);
-    expect(body.data.status).toBe('assigned');
-    expect(body.data.teacher_id).toBe(OTHER_TEACHER_ID);
+    expect(body).toEqual({ success: true, idempotent: true });
+    expect(JSON.stringify(body)).not.toContain('teacher_id');
+    expect(JSON.stringify(body)).not.toContain(ASSIGNMENT_ID);
 
     // The insert WAS attempted (the pre-check could not see the colleague's
     // row) — this is the post-insert recovery path, not the pre-check path.
     expect(holders.mockInsert).toHaveBeenCalledTimes(1);
 
-    // Survivor lookup keyed on the unique index's natural key — student,
-    // class, chapter (eq), status='assigned' — and NOT teacher_id (a
-    // teacher-scoped lookup would never find the colleague's row).
-    expect(holders.dedupeFilters.student_id).toBe(STUDENT_ID);
-    expect(holders.dedupeFilters.class_id).toBe(CLASS_ID);
-    expect(holders.dedupeFilters.status).toBe('assigned');
-    expect(holders.dedupeFilters.teacher_id).toBeUndefined();
-    expect(holders.dedupeChapterFilter.kind).toBe('eq');
-    expect(holders.dedupeChapterFilter.value).toBe(CHAPTER_ID);
+    expect(holders.dedupeFilters).toEqual({});
   });
 
-  it('general (no-chapter) duplicate: survivor lookup uses chapter_id IS NULL', async () => {
+  it('does not treat an unrelated 23505 as the remediation idempotency contract', async () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
     holders.mockState.existingOpen = null;
-    holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
-    holders.mockState.dedupeRow = survivorRow(null);
+    holders.mockState.insertResult = {
+      data: null,
+      error: { code: '23505', message: 'duplicate key value violates unique constraint "other_key"' },
+    };
 
-    const res = await POST(makePost({ student_id: STUDENT_ID }) as never);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.idempotent).toBe(true);
-    expect(holders.dedupeChapterFilter.kind).toBe('is_null');
-    expect(holders.dedupeChapterFilter.value).toBeNull();
-    expect(holders.dedupeFilters.class_id).toBe(CLASS_ID);
-  });
-
-  it('23505 but the surviving row cannot be resolved → 500 (established failure response)', async () => {
-    const { POST } = await import('@/app/api/teacher/remediation/route');
-    authAsTeacher();
-    teacherResolved();
-    rosterIncludes();
-    holders.mockState.existingOpen = null;
-    holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
-    holders.mockState.dedupeRow = null; // conflict reported, no row found
-
-    const res = await POST(
-      makePost({ student_id: STUDENT_ID, chapter_id: CHAPTER_ID }) as never,
-    );
+    const res = await POST(makeScopedPost() as never);
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body).toMatchObject({ success: false, error: 'Failed to assign remediation' });
@@ -600,16 +807,12 @@ describe('POST /api/teacher/remediation — 23505 unique-violation dedupe (cross
       data: null,
       error: { code: '23503', message: 'foreign key violation' },
     };
-    // Even with a survivor available, a non-23505 error must NOT recover.
-    holders.mockState.dedupeRow = survivorRow(CHAPTER_ID);
-
     const res = await POST(
-      makePost({ student_id: STUDENT_ID, chapter_id: CHAPTER_ID }) as never,
+      makeScopedPost({ chapter_id: CHAPTER_ID }) as never,
     );
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.success).toBe(false);
-    // No survivor lookup ran on the non-23505 branch.
     expect(holders.dedupeFilters).toEqual({});
   });
 });
@@ -637,6 +840,7 @@ describe('GET /api/teacher/remediation — list', () => {
     const { GET } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
+    rosterIncludes();
     holders.mockState.listRows = [
       {
         id: ASSIGNMENT_ID,
@@ -658,16 +862,127 @@ describe('GET /api/teacher/remediation — list', () => {
     expect(body.data).toHaveLength(1);
     // Roster scope: the list query filtered by the internal teacher id.
     expect(holders.listFilters.teacher_id).toBe(TEACHER_ID);
+    expect(holders.listFilters.class_id).toEqual([CLASS_ID]);
   });
 
   it('applies a status filter when provided', async () => {
     const { GET } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
+    rosterIncludes();
     holders.mockState.listRows = [];
     const res = await GET(makeGet('?status=resolved') as never);
     expect(res.status).toBe(200);
     expect(holders.listFilters.status).toBe('resolved');
+  });
+
+  it('hides historical rows after the teacher-class membership is revoked', async () => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.teacherClass = {
+      class_id: CLASS_ID,
+      teacher_id: TEACHER_ID,
+      is_active: false,
+    };
+    holders.mockState.listRows = [{
+      id: ASSIGNMENT_ID,
+      teacher_id: TEACHER_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+    }];
+
+    const res = await GET(makeGet() as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it.each([
+    { label: 'the class is inactive', schoolId: SCHOOL_ID, isActive: false },
+    {
+      label: 'the class no longer belongs to the teacher school',
+      schoolId: 'bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb',
+      isActive: true,
+    },
+  ])('hides rows when $label', async ({ schoolId, isActive }) => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.classRow = {
+      id: CLASS_ID,
+      school_id: schoolId,
+      grade: 'Grade 7',
+      subject: 'Mathematics',
+      is_active: isActive,
+      deleted_at: null,
+    };
+    holders.mockState.listRows = [{
+      id: ASSIGNMENT_ID,
+      teacher_id: TEACHER_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+    }];
+
+    const res = await GET(makeGet() as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it('hides historical rows after the class enrollment is revoked', async () => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.enrolment = {
+      class_id: CLASS_ID,
+      student_id: STUDENT_ID,
+      is_active: false,
+    };
+    holders.mockState.listRows = [{
+      id: ASSIGNMENT_ID,
+      teacher_id: TEACHER_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+    }];
+
+    const res = await GET(makeGet() as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it('filters by the exact active class-student enrollment pair', async () => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.enrolment = {
+      class_id: CLASS_ID,
+      student_id: 'cccccccc-cccc-4ccc-accc-cccccccccccc',
+      is_active: true,
+    };
+    holders.mockState.listRows = [{
+      id: ASSIGNMENT_ID,
+      teacher_id: TEACHER_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+    }];
+
+    const res = await GET(makeGet() as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it('rejects an explicitly requested class outside the live teacher scope', async () => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+
+    const res = await GET(makeGet(`?class_id=${OTHER_CLASS_ID}`) as never);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ success: false });
   });
 
   it('rejects an invalid status filter (400)', async () => {

@@ -179,7 +179,29 @@ export async function getUserPermissions(
   const rpcParams: Record<string, string> = { p_auth_user_id: authUserId };
   if (schoolId) rpcParams.p_school_id = schoolId;
 
-  const { data, error } = await supabase.rpc('get_user_permissions', rpcParams);
+  let { data, error } = await supabase.rpc('get_user_permissions', rpcParams);
+
+  // The tracked production baseline exposes the original one-argument RPC;
+  // tenant-scoped deployments expose the two-argument overload. Preserve
+  // single-school/flag-off compatibility only when PostgREST explicitly says
+  // the scoped overload is absent. Every other error remains fail-closed.
+  const missingScopedOverload = Boolean(
+    schoolId
+      && error
+      && (
+        error.code === 'PGRST202'
+        || error.code === '42883'
+        || (
+          error.message?.includes('get_user_permissions')
+          && (error.message.includes('p_school_id') || error.message.includes('schema cache'))
+        )
+      ),
+  );
+  if (missingScopedOverload) {
+    ({ data, error } = await supabase.rpc('get_user_permissions', {
+      p_auth_user_id: authUserId,
+    }));
+  }
 
   if (error || !data) {
     logger.error('rbac_permissions_failed', {
@@ -193,6 +215,9 @@ export async function getUserPermissions(
     roles: data.roles || [],
     permissions: data.permissions || [],
     schoolId: schoolId ?? null,
+    permissionScope: schoolId
+      ? missingScopedOverload ? 'baseline-global' : 'school'
+      : 'platform',
   };
 
   await setCachedPermissions(authUserId, result, schoolId);
@@ -585,6 +610,7 @@ export async function authorizeRequest(
     roles: perms.roles.map(r => r.name as RoleName),
     permissions: perms.permissions,
     schoolId: options?.context?.schoolId ?? null,
+    permissionScope: perms.permissionScope,
   };
 }
 

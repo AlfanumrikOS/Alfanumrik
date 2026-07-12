@@ -14,10 +14,10 @@
  *     the OFF path keeps using DashboardSidebar byte-identically.
  *
  * Behaviour parity with the legacy shell:
- *   - Module-gated items (moduleKey) hide when moduleEnablement[key] === false;
- *     fail-open when moduleEnablement is null (every item shows).
+ *   - Module-gated items (moduleKey) render locked when enablement is false;
+ *     fail-open when moduleEnablement is null (every item remains actionable).
  *   - Active highlight = longest matching href (root-vs-subroute disambiguation).
- *   - Mobile hamburger + drawer; desktop persistent rail.
+ *   - Mobile five-destination bar + canonical More sheet; desktop persistent rail.
  *   - P7 bilingual via the `isHi` prop.
  */
 
@@ -27,6 +27,7 @@ import { useMemo, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
 import type { ModuleKey } from '@alfanumrik/lib/modules/registry';
 import type { SchoolAdminRole } from '@alfanumrik/lib/school-admin-auth';
+import { BottomSheet } from '@alfanumrik/ui/ui/primitives';
 
 export interface ConsolidatedNavItem {
   href: string;
@@ -201,6 +202,54 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
 
 const DESKTOP_WIDTH = 230;
 
+type SchoolMobileDestinationKey = 'overview' | 'people' | 'academics' | 'insights';
+
+interface SchoolMobileDestination {
+  key: SchoolMobileDestinationKey;
+  href: string;
+  label: string;
+  labelHi: string;
+  icon: string;
+  moduleKey?: ModuleKey;
+}
+
+/**
+ * Four direct destinations plus the More sheet form the five-item mobile IA.
+ * The sheet intentionally repeats these routes while grouping the complete
+ * authorized manifest, keeping every school-admin surface within two actions.
+ */
+const SCHOOL_MOBILE_DESTINATIONS: ReadonlyArray<SchoolMobileDestination> = [
+  {
+    key: 'overview',
+    href: '/school-admin',
+    label: 'Overview',
+    labelHi: 'अवलोकन',
+    icon: '⌂',
+  },
+  {
+    key: 'people',
+    href: '/school-admin/students',
+    label: 'People',
+    labelHi: 'लोग',
+    icon: '⊕',
+  },
+  {
+    key: 'academics',
+    href: '/school-admin/classes',
+    label: 'Academics',
+    labelHi: 'शैक्षणिक',
+    icon: '⊞',
+  },
+  {
+    key: 'insights',
+    href: '/school-admin/reports',
+    label: 'Insights',
+    labelHi: 'अंतर्दृष्टि',
+    icon: '↗',
+    moduleKey: 'analytics',
+  },
+];
+
 export interface ConsolidatedSchoolNavProps {
   brandTitle: string;
   brandSubtitle: string;
@@ -256,7 +305,7 @@ export default function ConsolidatedSchoolNav({
   reportsDepthEnabled = false,
   principalAiEnabled = false,
 }: ConsolidatedSchoolNavProps) {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Apply module gating + (Wave C) rbac gating per section; drop empty sections
   // so we never render a heading with no items beneath it.
@@ -301,6 +350,32 @@ export default function ConsolidatedSchoolNav({
       );
   }, [visibleSections, currentPath]);
 
+  const isModuleLocked = (item: Pick<ConsolidatedNavItem, 'moduleKey'>) =>
+    item.moduleKey != null &&
+    moduleEnablement != null &&
+    moduleEnablement[item.moduleKey] === false;
+
+  const peopleHrefs = visibleSections
+    .find((section) => section.title === 'People')
+    ?.items.map((item) => item.href) ?? [];
+  const academicHrefs = visibleSections
+    .find((section) => section.title === 'Academics')
+    ?.items.map((item) => item.href) ?? [];
+
+  let mobileActiveKey: SchoolMobileDestinationKey | 'more' = 'more';
+  if (activeHref === '/school-admin') {
+    mobileActiveKey = 'overview';
+  } else if (activeHref && peopleHrefs.includes(activeHref)) {
+    mobileActiveKey = 'people';
+  } else if (
+    activeHref === '/school-admin/reports' ||
+    activeHref === '/school-admin/reports-depth'
+  ) {
+    mobileActiveKey = 'insights';
+  } else if (activeHref && academicHrefs.includes(activeHref)) {
+    mobileActiveKey = 'academics';
+  }
+
   const renderBrandHeader = () => {
     const initial = (brandTitle || 'A').charAt(0).toUpperCase();
     return (
@@ -324,21 +399,22 @@ export default function ConsolidatedSchoolNav({
     );
   };
 
-  const renderNav = (onItemClick?: () => void) => (
-    <nav className="flex-1 overflow-y-auto py-1" aria-label={isHi ? 'स्कूल नेविगेशन' : 'School navigation'}>
+  const renderNav = (
+    onItemClick?: () => void,
+    ariaLabel = isHi ? 'स्कूल नेविगेशन' : 'School navigation',
+    touchFriendly = false,
+  ) => (
+    <nav className="flex-1 overflow-y-auto py-1" aria-label={ariaLabel}>
       {visibleSections.map((section) => (
         <div key={section.title} className="mb-1">
-          <div className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          <h3 className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             {isHi ? section.titleHi : section.title}
-          </div>
+          </h3>
           {section.items.map((item) => {
             // A module-keyed item is "locked" only when moduleEnablement is
             // non-null AND explicitly false for that key. When moduleEnablement
             // is null (still loading) every item renders normally (fail-open).
-            const isLocked =
-              item.moduleKey != null &&
-              moduleEnablement != null &&
-              moduleEnablement[item.moduleKey] === false;
+            const isLocked = isModuleLocked(item);
 
             const active = !isLocked && item.href === activeHref;
             const label = isHi ? item.labelHi : item.label;
@@ -348,12 +424,20 @@ export default function ConsolidatedSchoolNav({
                 <div
                   key={item.href}
                   aria-disabled="true"
-                  className="relative flex items-center gap-2.5 border-l-[3px] px-3 py-2.5 text-[13px] cursor-not-allowed opacity-60 select-none"
+                  className={twMerge(
+                    'relative flex items-center gap-2.5 border-l-[3px] px-3 py-2.5 text-[13px] cursor-not-allowed opacity-60 select-none',
+                    touchFriendly && 'min-h-12',
+                  )}
                   style={{ borderLeftColor: 'transparent' }}
                 >
                   <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
                   <span className="truncate flex-1">{label}</span>
-                  <span className="ml-auto text-xs opacity-60" aria-label="Module not enabled">🔒</span>
+                  <span
+                    className="ml-auto text-xs opacity-60"
+                    aria-label={isHi ? 'मॉड्यूल सक्षम नहीं है' : 'Module not enabled'}
+                  >
+                    🔒
+                  </span>
                 </div>
               );
             }
@@ -369,6 +453,7 @@ export default function ConsolidatedSchoolNav({
                 onClick={onItemClick}
                 className={twMerge(
                   'relative flex items-center gap-2.5 border-l-[3px] px-3 py-2.5 text-[13px] no-underline transition-colors',
+                  touchFriendly && 'min-h-12',
                   active ? 'font-semibold' : 'font-normal text-[color-mix(in_srgb,var(--foreground)_80%,transparent)] hover:bg-surface-2',
                 )}
                 style={activeStyle}
@@ -397,43 +482,115 @@ export default function ConsolidatedSchoolNav({
     </aside>
   );
 
-  const mobileHamburger = (
-    <button
-      type="button"
-      onClick={() => setMobileOpen(true)}
-      aria-label={isHi ? 'नेविगेशन मेनू खोलें' : 'Open navigation menu'}
-      aria-expanded={mobileOpen}
-      className="md:hidden fixed top-3 left-3 z-50 flex h-9 w-9 items-center justify-center rounded-md border border-surface-3 bg-surface-1 text-foreground shadow-sm"
+  const mobileBottomNav = (
+    <nav
+      data-testid="school-consolidated-nav-mobile"
+      aria-label={isHi ? 'स्कूल मोबाइल नेविगेशन' : 'School mobile navigation'}
+      className="school-admin-mobile-nav md:hidden fixed inset-x-0 bottom-0 z-40 flex border-t border-surface-3 bg-surface-1 text-foreground shadow-lg"
     >
-      <span aria-hidden="true" className="text-base leading-none">☰</span>
-    </button>
+      {SCHOOL_MOBILE_DESTINATIONS.map((destination) => {
+        const label = isHi ? destination.labelHi : destination.label;
+        const locked = isModuleLocked(destination);
+        const active = !locked && mobileActiveKey === destination.key;
+        const content = (
+          <>
+            <span aria-hidden="true" className="text-base leading-none">{destination.icon}</span>
+            <span className="max-w-full truncate text-[10px] leading-tight">{label}</span>
+          </>
+        );
+        const className = twMerge(
+          'flex min-h-12 min-w-12 flex-1 flex-col items-center justify-center gap-1 px-1 no-underline transition-colors',
+          active
+            ? 'font-semibold'
+            : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+          locked && 'cursor-not-allowed opacity-60',
+        );
+
+        if (locked) {
+          return (
+            <button
+              key={destination.key}
+              type="button"
+              disabled
+              aria-disabled="true"
+              aria-label={`${label}. ${isHi ? 'मॉड्यूल सक्षम नहीं है' : 'Module not enabled'}`}
+              className={className}
+            >
+              {content}
+            </button>
+          );
+        }
+
+        return (
+          <Link
+            key={destination.key}
+            href={destination.href}
+            aria-current={active ? 'page' : undefined}
+            className={className}
+            style={active ? { color: primaryColor, background: `${primaryColor}14` } : undefined}
+          >
+            {content}
+          </Link>
+        );
+      })}
+
+      <button
+        type="button"
+        onClick={() => setMoreOpen(true)}
+        aria-label={isHi ? 'सभी विकल्प खोलें' : 'Open all destinations'}
+        aria-haspopup="dialog"
+        aria-expanded={moreOpen}
+        aria-current={mobileActiveKey === 'more' ? 'page' : undefined}
+        className={twMerge(
+          'flex min-h-12 min-w-12 flex-1 flex-col items-center justify-center gap-1 px-1 transition-colors',
+          mobileActiveKey === 'more'
+            ? 'font-semibold'
+            : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+        )}
+        style={
+          mobileActiveKey === 'more'
+            ? { color: primaryColor, background: `${primaryColor}14` }
+            : undefined
+        }
+      >
+        <span aria-hidden="true" className="text-base leading-none">•••</span>
+        <span className="max-w-full truncate text-[10px] leading-tight">
+          {isHi ? 'अधिक' : 'More'}
+        </span>
+      </button>
+    </nav>
   );
 
-  const mobileDrawer = mobileOpen ? (
-    <>
-      <div
-        data-testid="school-consolidated-nav-backdrop"
-        onClick={() => setMobileOpen(false)}
-        className="md:hidden fixed inset-0 z-40 bg-black/30"
-      />
-      <aside
-        data-testid="school-consolidated-nav-mobile"
-        className="md:hidden fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col overflow-hidden border-r border-surface-3 bg-surface-1 shadow-xl"
-      >
-        {renderBrandHeader()}
-        {renderNav(() => setMobileOpen(false))}
-        {footer && (
-          <div className="border-t border-surface-3 p-3 text-[10px] text-muted-foreground">{footer}</div>
-        )}
-      </aside>
-    </>
-  ) : null;
+  const mobileMoreSheet = (
+    <BottomSheet
+      open={moreOpen}
+      onClose={() => setMoreOpen(false)}
+      title={isHi ? 'सभी विकल्प' : 'All destinations'}
+      description={
+        isHi
+          ? `${brandTitle} के सभी उपलब्ध कार्यक्षेत्र`
+          : `All available workspaces for ${brandTitle}`
+      }
+      handleLabel={isHi ? 'नेविगेशन बंद करें' : 'Close navigation'}
+      footer={
+        footer ? (
+          <div className="py-2 text-[10px] text-muted-foreground">{footer}</div>
+        ) : undefined
+      }
+    >
+      {renderNav(
+        () => setMoreOpen(false),
+        isHi ? 'स्कूल के सभी विकल्प' : 'All school destinations',
+        true,
+      )}
+    </BottomSheet>
+  );
 
   return (
     <>
       {desktopAside}
-      {mobileHamburger}
-      {mobileDrawer}
+      {mobileBottomNav}
+      {mobileMoreSheet}
     </>
   );
 }

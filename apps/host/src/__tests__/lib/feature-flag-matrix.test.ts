@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { FLAG_DEFAULTS } from '@alfanumrik/lib/feature-flags';
 
 function repoPath(rel: string): string {
@@ -55,5 +57,40 @@ describe('feature flag environment matrix (RCA-24)', () => {
         ).toMatch(/\S/);
       }
     }
+  });
+
+  it('fails closed instead of dropping an invalid rolloutPercentage override', () => {
+    const generatorUrl = pathToFileURL(repoPath('scripts/gen-feature-flag-matrix.mjs')).href;
+    const baseOverride = {
+      name: 'ff_invalid_rollout',
+      defaultEnabled: false,
+      stagingEnabled: false,
+      productionEnabled: true,
+      owner: 'platform-ops',
+      rationale: 'Regression fixture.',
+      enablementEvidence: 'Regression fixture.',
+    };
+    const evaluation = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+      import { mergeFeatureFlagMatrixOverrides } from ${JSON.stringify(generatorUrl)};
+      const baseOverride = ${JSON.stringify(baseOverride)};
+      for (const rolloutPercentage of ${JSON.stringify(['25', -1, 101, 25.5, null])}) {
+        let failedClosed = false;
+        try {
+          mergeFeatureFlagMatrixOverrides([], { flags: [{ ...baseOverride, rolloutPercentage }] });
+        } catch (error) {
+          if (!String(error?.message).includes('expected an integer between 0 and 100')) throw error;
+          failedClosed = true;
+        }
+        if (!failedClosed) throw new Error('invalid rolloutPercentage was silently accepted');
+      }
+      const valid = mergeFeatureFlagMatrixOverrides([], {
+        flags: [{ ...baseOverride, rolloutPercentage: 25 }],
+      });
+      process.stdout.write(JSON.stringify(valid[0]));
+    `], { encoding: 'utf8' });
+
+    expect(evaluation.stderr).toBe('');
+    expect(evaluation.status).toBe(0);
+    expect(JSON.parse(evaluation.stdout)).toMatchObject({ rolloutPercentage: 25 });
   });
 });

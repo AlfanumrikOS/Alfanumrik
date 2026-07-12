@@ -1489,9 +1489,9 @@ async function resolveChapterId(
 
 /**
  * Create the teacher_remediation_assignments row (status 'assigned'), reusing the
- * 20260619000400 dedupe index: a 23505 is a benign dedupe → look up the EXISTING
- * assigned row's id (keyed on the FULL natural key: student_id, class_id,
- * chapter_id eq-or-IS-NULL, status). Returns the assignment id, or null on a
+ * open-assignment dedupe index: a 23505 is a benign dedupe → look up the
+ * EXISTING assigned or in-progress row's id (keyed on the FULL natural key:
+ * student_id, class_id, chapter_id eq-or-IS-NULL, open status). Returns the assignment id, or null on a
  * non-dedupe insert failure / unresolvable conflict (caller aborts → retry).
  * Shared by Loop A verify-escalation and Loop C inject-escalation.
  */
@@ -1524,7 +1524,7 @@ async function createOrFindTeacherAssignment(
       .select('id')
       .eq('student_id', student.id)
       .eq('class_id', target.classId)
-      .eq('status', 'assigned');
+      .in('status', ['assigned', 'in_progress']);
     dupLookup = chapterId
       ? dupLookup.eq('chapter_id', chapterId)
       : dupLookup.is('chapter_id', null);
@@ -1536,7 +1536,7 @@ async function createOrFindTeacherAssignment(
       summary.errors++;
       logger.error('adaptive_remediation: assignment dedupe lookup failed', {
         studentId: student.id,
-        error: dupErr?.message ?? 'no existing assigned row found',
+        error: dupErr?.message ?? 'no existing open row found',
       });
       return null;
     }

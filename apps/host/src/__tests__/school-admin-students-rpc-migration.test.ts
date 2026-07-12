@@ -24,6 +24,19 @@ const classPreflightMigrationPath = path.join(
   repoRoot,
   'supabase/migrations/20260710110000_xc3_school_admin_student_create_class_preflight_rpc.sql',
 );
+const selectedScopeMigrationPath = path.join(
+  repoRoot,
+  'supabase/migrations/20260711230713_v3_school_admin_students_selected_scope.sql',
+);
+
+function sqlBetween(source: string, startMarker: string, endMarker: string): string {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  if (start < 0 || end < 0) {
+    throw new Error(`Missing migration markers: ${startMarker} -> ${endMarker}`);
+  }
+  return source.slice(start, end);
+}
 
 describe('XC-3 school-admin students roster read migration', () => {
   it('does not import the broad service-role DB client directly in the route', () => {
@@ -44,6 +57,7 @@ describe('XC-3 school-admin students roster read migration', () => {
 
     expect(getBody).toContain('createRlsScopedClient(request)');
     expect(getBody).toContain("rpc('school_admin_list_students'");
+    expect(getBody).toContain('p_school_id: schoolId');
     expect(getBody).not.toContain(".from('students')");
   });
 
@@ -57,6 +71,7 @@ describe('XC-3 school-admin students roster read migration', () => {
     expect(patchBody).toContain('createRlsScopedClient(request)');
     expect(patchBody).toContain('.rpc(');
     expect(patchBody).toContain("'school_admin_toggle_student_active'");
+    expect(patchBody).toContain('p_school_id: schoolId');
     expect(patchBody).not.toContain(".from('students')");
     expect(patchBody).not.toContain(".from('school_subscriptions')");
   });
@@ -105,6 +120,7 @@ describe('XC-3 school-admin students roster read migration', () => {
     );
 
     expect(createOneStudentBody).toContain("rpc('school_admin_attach_created_student'");
+    expect(createOneStudentBody).toContain('p_school_id: schoolId');
     expect(createOneStudentBody).not.toContain(".from('class_students').insert");
     expect(createOneStudentBody).not.toContain('.update(updates)');
   });
@@ -114,10 +130,106 @@ describe('XC-3 school-admin students roster read migration', () => {
     const postBody = source.slice(source.indexOf('export async function POST'));
 
     expect(postBody).toContain("rpc('school_admin_student_create_preflight'");
+    expect(postBody).toContain('p_school_id: schoolId');
     expect(postBody).toContain('p_class_id: classId');
     expect(postBody).not.toContain('readSeatStatus(');
     expect(postBody).not.toContain(".from('school_subscriptions')");
     expect(postBody).not.toContain(".select('id', { count: 'exact', head: true })");
+  });
+
+  it('adds selected-school overloads without replacing legacy RPC signatures', () => {
+    const sql = readFileSync(selectedScopeMigrationPath, 'utf8');
+    const executableSql = sql
+      .split('\n')
+      .map((line) => line.replace(/--.*$/, ''))
+      .join('\n');
+    for (const signature of [
+      'school_admin_list_students(\n  p_school_id uuid',
+      'school_admin_toggle_student_active(\n  p_school_id uuid',
+      'school_admin_attach_created_student(\n  p_school_id uuid',
+      'school_admin_student_create_preflight(\n  p_school_id uuid',
+    ]) {
+      expect(sql).toContain(signature);
+    }
+    expect(sql.match(/sa\.school_id = p_school_id/g)?.length).toBeGreaterThanOrEqual(4);
+    expect(sql.match(/school_admin_has_selected_permission\(p_school_id, 'institution\.manage_students'\)/g)?.length).toBe(4);
+    expect(sql).toContain("to_regprocedure('public.get_user_permissions(uuid,uuid)')");
+    expect(sql).toContain("to_regprocedure('public.get_user_permissions(uuid)')");
+    expect(sql).toContain("sa.role IN ('principal', 'vice_principal', 'academic_coordinator', 'institution_admin')");
+    expect(sql).toContain('REVOKE ALL ON FUNCTION public.school_admin_has_selected_permission(uuid, text) FROM PUBLIC, anon, authenticated, service_role');
+    expect(sql).toContain('school_admin_list_students(uuid, integer, integer, text, text)');
+    expect(sql).toContain('school_admin_toggle_student_active(uuid, uuid, boolean)');
+    expect(sql).toContain('school_admin_attach_created_student(uuid, uuid, text, uuid)');
+    expect(sql).toContain('school_admin_student_create_preflight(uuid, text, integer, uuid)');
+    expect(sql).toContain('This migration is intentionally additive');
+    expect(sql).toContain('Legacy wrapper hardening is a later migration');
+
+    for (const legacySignature of [
+      'school_admin_list_students(integer, integer, text, text)',
+      'school_admin_toggle_student_active(uuid, boolean)',
+      'school_admin_attach_created_student(uuid, text, uuid)',
+      'school_admin_student_create_preflight(text, integer, uuid)',
+      'school_admin_student_create_preflight(text, integer)',
+    ]) {
+      expect(executableSql).not.toContain(legacySignature);
+    }
+    expect(executableSql).not.toContain('Explicit school scope required');
+    expect(executableSql).not.toContain('v_school_ids');
+  });
+
+  it('applies the additive selected-school overloads and grants atomically', () => {
+    const sql = readFileSync(selectedScopeMigrationPath, 'utf8')
+      .split('\n')
+      .map((line) => line.replace(/--.*$/, ''))
+      .join('\n');
+
+    expect(sql).toMatch(
+      /BEGIN;\s*CREATE OR REPLACE FUNCTION public\.school_admin_has_selected_permission/i,
+    );
+    expect(sql.trimEnd()).toMatch(/COMMIT;$/i);
+  });
+
+  it('serializes selected-school activation before row lock, seat count, and update', () => {
+    const sql = readFileSync(selectedScopeMigrationPath, 'utf8');
+    const toggleSql = sqlBetween(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.school_admin_toggle_student_active(',
+      'CREATE OR REPLACE FUNCTION public.school_admin_attach_created_student(',
+    );
+    const advisoryLock = toggleSql.indexOf(
+      "hashtextextended('school_seat:' || p_school_id::text, 0)",
+    );
+    const studentRowLock = toggleSql.indexOf('SELECT s.id, s.is_active');
+    const seatCount = toggleSql.indexOf('SELECT COUNT(*) INTO v_active_count');
+    const studentUpdate = toggleSql.indexOf('UPDATE public.students');
+
+    expect(advisoryLock).toBeGreaterThan(-1);
+    expect(studentRowLock).toBeGreaterThan(advisoryLock);
+    expect(toggleSql.slice(studentRowLock, seatCount)).toContain('FOR UPDATE');
+    expect(seatCount).toBeGreaterThan(studentRowLock);
+    expect(studentUpdate).toBeGreaterThan(seatCount);
+    expect(
+      toggleSql.match(/hashtextextended\('school_seat:' \|\| p_school_id::text, 0\)/g),
+    ).toHaveLength(1);
+  });
+
+  it('uses the same deterministic subscription precedence in selected toggle and preflight', () => {
+    const sql = readFileSync(selectedScopeMigrationPath, 'utf8');
+    const toggleSql = sqlBetween(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.school_admin_toggle_student_active(',
+      'CREATE OR REPLACE FUNCTION public.school_admin_attach_created_student(',
+    );
+    const preflightSql = sqlBetween(
+      sql,
+      'CREATE OR REPLACE FUNCTION public.school_admin_student_create_preflight(',
+      'REVOKE ALL ON FUNCTION public.school_admin_list_students(',
+    );
+    const subscriptionOrder =
+      /FROM public\.school_subscriptions ss\s+WHERE ss\.school_id = p_school_id\s+ORDER BY CASE WHEN ss\.status IN \('active', 'trial'\) THEN 0 ELSE 1 END,\s+ss\.created_at DESC NULLS LAST\s+LIMIT 1;/;
+
+    expect(toggleSql).toMatch(subscriptionOrder);
+    expect(preflightSql).toMatch(subscriptionOrder);
   });
 
   it('does not perform route-level service-role class ownership prechecks during single create', () => {

@@ -14,6 +14,8 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { useExperienceV3 } from '@alfanumrik/lib/use-experience-v3';
 import {
   getAdminSecretFromSession,
   clearAdminSession,
@@ -72,7 +74,7 @@ const S: Record<string, any> = {
   } as React.CSSProperties,
 };
 
-export default function SuperAdminPage() {
+function LegacyInternalAdminPage() {
   const [secret, setSecret] = useState('');
   const [tab, setTab] = useState<Tab>('command');
   const [toast, setToast] = useState('');
@@ -175,4 +177,14 @@ export default function SuperAdminPage() {
       )}
     </div>
   );
+}
+
+export default function InternalAdminPage() {
+  const router = useRouter();
+  const { enabled, loading, routeMapped, legacyAllowed, denied } = useExperienceV3('super-admin');
+  useEffect(() => {
+    if (enabled && routeMapped) router.replace('/super-admin/command');
+  }, [enabled, routeMapped, router]);
+  if (loading || denied || (enabled && routeMapped) || (!legacyAllowed && !enabled)) return null;
+  return <LegacyInternalAdminPage />;
 }

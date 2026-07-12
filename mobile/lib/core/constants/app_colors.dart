@@ -1,37 +1,43 @@
 import 'package:flutter/material.dart';
 
-/// Alfanumrik design tokens — warm, scholarly palette.
+/// Alfanumrik One Experience design tokens — Calm Intelligence.
+///
+/// These values intentionally mirror the governed web V3 semantic palette.
+/// Feature screens may use the subject colours below for data visualisation,
+/// but actions and status messaging must use these semantic tokens.
 class AppColors {
   AppColors._();
 
-  // Primary — warm brown/amber scholarly tone
-  static const Color primary = Color(0xFF8B6F47);
-  static const Color primaryLight = Color(0xFFD4C4B0);
-  static const Color primaryDark = Color(0xFF5C4A2F);
+  // Brand and accessible action colours.
+  static const Color brand = Color(0xFFE8581C);
+  static const Color primary = Color(0xFFB94718);
+  static const Color primaryLight = Color(0xFFF8E5D9);
+  static const Color primaryDark = Color(0xFF8F3512);
 
-  // Accent — teal for interactive elements
-  static const Color accent = Color(0xFF0891B2);
-  static const Color accentLight = Color(0xFFCFFAFE);
+  // Information is intentionally distinct from the primary action colour.
+  static const Color accent = Color(0xFF176D68);
+  static const Color accentLight = Color(0xFFDCECEA);
 
   // Backgrounds
-  static const Color background = Color(0xFFFBF8F4);
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceAlt = Color(0xFFF5F0E8);
+  static const Color background = Color(0xFFFBF7F1);
+  static const Color surface = Color(0xFFFFFDFC);
+  static const Color surfaceRaised = Color(0xFFFFFFFF);
+  static const Color surfaceAlt = Color(0xFFF8E5D9);
 
   // Text
-  static const Color textPrimary = Color(0xFF1A1A1A);
-  static const Color textSecondary = Color(0xFF666666);
-  static const Color textTertiary = Color(0xFF999999);
+  static const Color textPrimary = Color(0xFF211E1A);
+  static const Color textSecondary = Color(0xFF6D655E);
+  static const Color textTertiary = Color(0xFF756B63);
 
   // Borders
-  static const Color border = Color(0xFFE8DDD0);
-  static const Color borderLight = Color(0xFFF0EBE3);
+  static const Color border = Color(0xFFE5DBD0);
+  static const Color borderLight = Color(0xFFEDE5DC);
 
   // Status colors
-  static const Color success = Color(0xFF22C55E);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color error = Color(0xFFEF4444);
-  static const Color info = Color(0xFF3B82F6);
+  static const Color success = Color(0xFF27734E);
+  static const Color warning = Color(0xFF9A580A);
+  static const Color error = Color(0xFFB42318);
+  static const Color info = Color(0xFF176D68);
 
   // Subject colors
   static const Color mathColor = Color(0xFF6366F1);

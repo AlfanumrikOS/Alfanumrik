@@ -66,7 +66,7 @@ describe('feature flag matrix reconciliation planner', () => {
         patch: {
           flag_name: 'ff_expected_off',
           is_enabled: false,
-          target_environments: ['production'],
+          target_environments: ['staging', 'production'],
           rollout_percentage: 0,
         },
       },
@@ -79,7 +79,7 @@ describe('feature flag matrix reconciliation planner', () => {
         patch: {
           flag_name: 'ff_expected_on',
           is_enabled: true,
-          target_environments: ['production'],
+          target_environments: ['staging', 'production'],
           rollout_percentage: 100,
         },
       },
@@ -106,12 +106,149 @@ describe('feature flag matrix reconciliation planner', () => {
     expect(plan.actions[0]).toMatchObject({
       flagName: 'ff_expected_off',
       expectedEnabled: false,
-      patch: { is_enabled: false, rollout_percentage: 0, target_environments: ['staging'] },
+      patch: {
+        is_enabled: false,
+        rollout_percentage: 0,
+        target_environments: ['staging', 'production'],
+      },
     });
     expect(plan.actions[1]).toMatchObject({
       flagName: 'ff_expected_on',
       expectedEnabled: true,
-      patch: { is_enabled: true, rollout_percentage: 100, target_environments: ['staging'] },
+      patch: {
+        is_enabled: true,
+        rollout_percentage: 100,
+        target_environments: ['staging', 'production'],
+      },
+    });
+  });
+
+  it.each([
+    {
+      environment: 'production' as const,
+      liveTargets: ['staging'],
+    },
+    {
+      environment: 'staging' as const,
+      liveTargets: ['production'],
+    },
+  ])(
+    'restores both intended targets when $environment reconciliation finds a subset',
+    ({ environment, liveTargets }) => {
+      const sharedMatrix: FeatureFlagMatrix = {
+        flags: [{
+          name: 'ff_shared_environment',
+          stagingEnabled: true,
+          productionEnabled: true,
+          rolloutPercentage: 25,
+        }],
+      };
+      const rows: LiveFeatureFlagRow[] = [{
+        flag_name: 'ff_shared_environment',
+        is_enabled: true,
+        target_environments: liveTargets,
+        rollout_percentage: 25,
+      }];
+
+      const plan = buildFeatureFlagReconciliationPlan(sharedMatrix, rows, environment);
+
+      expect(plan.actions).toHaveLength(1);
+      expect(plan.actions[0]).toMatchObject({
+        type: 'update_drift',
+        environment,
+        expectedEnabled: true,
+        reason: 'live row is disabled or scoped out but matrix expects enabled',
+        patch: {
+          flag_name: 'ff_shared_environment',
+          is_enabled: true,
+          target_environments: ['staging', 'production'],
+          rollout_percentage: 25,
+        },
+      });
+    },
+  );
+
+  it.each([
+    {
+      environment: 'production' as const,
+      stagingEnabled: true,
+      productionEnabled: false,
+      desiredTargets: ['staging'],
+    },
+    {
+      environment: 'staging' as const,
+      stagingEnabled: false,
+      productionEnabled: true,
+      desiredTargets: ['production'],
+    },
+  ])(
+    'removes an undesired $environment target without disabling the intended environment',
+    ({ environment, stagingEnabled, productionEnabled, desiredTargets }) => {
+      const singleEnvironmentMatrix: FeatureFlagMatrix = {
+        flags: [{
+          name: 'ff_single_environment',
+          stagingEnabled,
+          productionEnabled,
+          rolloutPercentage: 50,
+        }],
+      };
+      const rows: LiveFeatureFlagRow[] = [{
+        flag_name: 'ff_single_environment',
+        is_enabled: true,
+        target_environments: ['staging', 'production'],
+        rollout_percentage: 50,
+      }];
+
+      const plan = buildFeatureFlagReconciliationPlan(
+        singleEnvironmentMatrix,
+        rows,
+        environment,
+      );
+
+      expect(plan.actions).toHaveLength(1);
+      expect(plan.actions[0]).toMatchObject({
+        type: 'update_drift',
+        environment,
+        expectedEnabled: false,
+        reason: 'live row is enabled but matrix expects disabled',
+        patch: {
+          flag_name: 'ff_single_environment',
+          is_enabled: true,
+          target_environments: desiredTargets,
+          rollout_percentage: 50,
+        },
+      });
+    },
+  );
+
+  it('disables both environments when the matrix classifies the flag as fully disabled', () => {
+    const disabledMatrix: FeatureFlagMatrix = {
+      flags: [{
+        name: 'ff_disabled_everywhere',
+        stagingEnabled: false,
+        productionEnabled: false,
+        rolloutPercentage: 0,
+      }],
+    };
+    const rows: LiveFeatureFlagRow[] = [{
+      flag_name: 'ff_disabled_everywhere',
+      is_enabled: true,
+      target_environments: ['production'],
+      rollout_percentage: 100,
+    }];
+
+    const plan = buildFeatureFlagReconciliationPlan(disabledMatrix, rows, 'production');
+
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0]).toMatchObject({
+      type: 'update_drift',
+      expectedEnabled: false,
+      patch: {
+        flag_name: 'ff_disabled_everywhere',
+        is_enabled: false,
+        target_environments: ['staging', 'production'],
+        rollout_percentage: 0,
+      },
     });
   });
 
@@ -183,6 +320,104 @@ describe('feature flag matrix reconciliation planner', () => {
       },
     ]);
   });
+
+  it.each([5, 25, 50])(
+    'preserves an explicitly declared %i%% rollout in environment and full-posture plans',
+    (rolloutPercentage) => {
+      const stagedMatrix: FeatureFlagMatrix = {
+        flags: [{
+          name: 'ff_staged_rollout',
+          stagingEnabled: false,
+          productionEnabled: true,
+          rolloutPercentage,
+        }],
+      };
+      const liveAtOneHundred: LiveFeatureFlagRow[] = [{
+        flag_name: 'ff_staged_rollout',
+        is_enabled: true,
+        target_environments: ['production'],
+        rollout_percentage: 100,
+      }];
+
+      const environmentPlan = buildFeatureFlagReconciliationPlan(
+        stagedMatrix,
+        liveAtOneHundred,
+        'production',
+      );
+      const fullPlan = buildFeatureFlagFullReconciliationPlan(
+        stagedMatrix,
+        liveAtOneHundred,
+      );
+
+      expect(environmentPlan.actions).toHaveLength(1);
+      expect(environmentPlan.actions[0]).toMatchObject({
+        type: 'update_drift',
+        reason: `live rollout_percentage is 100 but matrix explicitly expects ${rolloutPercentage}`,
+        patch: {
+          is_enabled: true,
+          target_environments: ['production'],
+          rollout_percentage: rolloutPercentage,
+        },
+      });
+      expect(fullPlan.actions).toHaveLength(1);
+      expect(fullPlan.actions[0]).toMatchObject({
+        type: 'reconcile_full_matrix_posture',
+        patch: {
+          is_enabled: true,
+          target_environments: ['production'],
+          rollout_percentage: rolloutPercentage,
+        },
+      });
+    },
+  );
+
+  it('preserves both enabled environments during percentage-only reconciliation', () => {
+    const stagedMatrix: FeatureFlagMatrix = {
+      flags: [{
+        name: 'ff_shared_rollout',
+        stagingEnabled: true,
+        productionEnabled: true,
+        rolloutPercentage: 25,
+      }],
+    };
+    const liveRows: LiveFeatureFlagRow[] = [{
+      flag_name: 'ff_shared_rollout',
+      is_enabled: true,
+      target_environments: ['staging', 'production'],
+      rollout_percentage: 100,
+    }];
+
+    const plan = buildFeatureFlagReconciliationPlan(stagedMatrix, liveRows, 'production');
+
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0]).toMatchObject({
+      type: 'update_drift',
+      patch: {
+        is_enabled: true,
+        target_environments: ['staging', 'production'],
+        rollout_percentage: 25,
+      },
+    });
+  });
+
+  it.each([-1, 101, 25.5])(
+    'fails closed before planning an invalid rolloutPercentage %s',
+    (rolloutPercentage) => {
+      const invalidMatrix: FeatureFlagMatrix = {
+        flags: [{
+          name: 'ff_invalid_rollout',
+          stagingEnabled: false,
+          productionEnabled: true,
+          rolloutPercentage,
+        }],
+      };
+
+      expect(() => buildFeatureFlagReconciliationPlan(invalidMatrix, [], 'production'))
+        .toThrow(/expected an integer between 0 and 100/);
+      expect(() => buildFeatureFlagFullReconciliationPlan(invalidMatrix, []))
+        .toThrow(/expected an integer between 0 and 100/);
+    },
+  );
 
   it('supports all-environment CLI reconciliation without requiring an upsert constraint', () => {
     const script = readFileSync(SCRIPT_PATH, 'utf8');

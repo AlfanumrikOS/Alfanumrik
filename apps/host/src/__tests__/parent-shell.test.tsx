@@ -18,17 +18,30 @@
 import { render, screen, within } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
+const navigation = vi.hoisted(() => ({
+  pathname: '/parent',
+  query: '',
+  replace: vi.fn(),
+  push: vi.fn(),
+}));
+
 // ── Static mocks shared across all suites ────────────────────────────────
 // next/navigation and supabase don't need to vary per-mode, so they're
 // declared at the top level (vitest hoists vi.mock).
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
-  usePathname: () => '/parent',
+  useRouter: () => ({ replace: navigation.replace, push: navigation.push }),
+  usePathname: () => navigation.pathname,
+  useSearchParams: () => new URLSearchParams(navigation.query),
 }));
 
 vi.mock('@alfanumrik/lib/supabase', () => ({
-  supabase: { auth: { signOut: vi.fn() } },
+  supabase: {
+    auth: {
+      signOut: vi.fn(),
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+    },
+  },
   // Editorial Atlas flag pass-through (added 2026-05-11) — the shell reads
   // feature flags on mount to decide between legacy and Atlas chrome. Mock
   // returns an empty record so isAtlasEnabled() resolves false and the
@@ -38,6 +51,10 @@ vi.mock('@alfanumrik/lib/supabase', () => ({
 
 beforeEach(() => {
   sessionStorage.clear();
+  navigation.pathname = '/parent';
+  navigation.query = '';
+  navigation.replace.mockReset();
+  navigation.push.mockReset();
 });
 
 // ────────────────────────────────────────────────────────────────────────
@@ -52,6 +69,7 @@ describe('ParentShell — guardian mode', () => {
   });
 
   it('renders the restored guardian nav items in the desktop sidebar', async () => {
+    navigation.query = 'childId=s-2';
     const { default: ParentShell } = await import('@/app/parent/_components/ParentShell');
     render(
       <ParentShell>
@@ -76,6 +94,18 @@ describe('ParentShell — guardian mode', () => {
     ].forEach(label => {
       expect(within(sidebar).getByText(label)).toBeInTheDocument();
     });
+    expect(within(sidebar).getByRole('link', { name: /Calendar/i })).toHaveAttribute(
+      'href',
+      '/parent/calendar?childId=s-2',
+    );
+    expect(within(sidebar).getByRole('link', { name: /Messages/i })).toHaveAttribute(
+      'href',
+      '/parent/messages?childId=s-2',
+    );
+    expect(within(sidebar).getByRole('link', { name: /Reports/i })).toHaveAttribute(
+      'href',
+      '/parent/reports?childId=s-2',
+    );
   });
 });
 
@@ -99,6 +129,7 @@ describe('ParentShell — link-code mode', () => {
   });
 
   it('shows Home/Calendar/Reports/Support and hides Children + Profile', async () => {
+    navigation.query = 'childId=foreign-child';
     const { default: ParentShell } = await import('@/app/parent/_components/ParentShell');
     render(
       <ParentShell>
@@ -118,6 +149,14 @@ describe('ParentShell — link-code mode', () => {
     expect(within(sidebar).queryByText('Notifications')).not.toBeInTheDocument();
     expect(within(sidebar).queryByText('Billing')).not.toBeInTheDocument();
     expect(within(sidebar).queryByText('Profile')).not.toBeInTheDocument();
+    expect(within(sidebar).getByRole('link', { name: /Calendar/i })).toHaveAttribute(
+      'href',
+      '/parent/calendar?childId=s-1',
+    );
+    expect(within(sidebar).getByRole('link', { name: /Reports/i })).toHaveAttribute(
+      'href',
+      '/parent/reports?childId=s-1',
+    );
   });
 });
 

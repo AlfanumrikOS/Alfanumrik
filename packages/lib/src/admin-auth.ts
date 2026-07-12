@@ -50,6 +50,20 @@ export function hasMinimumLevel(have: string | null | undefined, need: AdminLeve
   return LEVEL_RANK[have as AdminLevel] >= LEVEL_RANK[need];
 }
 
+/**
+ * Capability permissions projected by the V3 operator shell from the verified
+ * `admin_users.admin_level`. These are deliberately narrower than API access:
+ * APIs continue to enforce their own required admin level and RBAC permission.
+ */
+export function adminExperiencePermissions(level: string | null | undefined): readonly string[] {
+  if (!level || !(level in LEVEL_RANK)) return [];
+  const permissions = ['system.audit'];
+  if (hasMinimumLevel(level, 'finance')) permissions.push('finance.view_revenue');
+  if (hasMinimumLevel(level, 'admin')) permissions.push('role.manage');
+  if (hasMinimumLevel(level, 'super_admin')) permissions.push('system.config');
+  return permissions;
+}
+
 export interface AdminAuth {
   authorized: true;
   userId: string;

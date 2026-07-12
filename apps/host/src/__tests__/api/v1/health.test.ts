@@ -10,16 +10,46 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EXPERIENCE_V3_FLAGS } from '@alfanumrik/lib/feature-flags';
+
+const { supabaseMockState } = vi.hoisted(() => ({
+  supabaseMockState: {
+    featureFlagRows: [] as unknown[],
+    featureFlagError: null as { message: string } | null,
+    selectedColumns: '',
+    filteredColumn: '',
+    filteredFlagNames: [] as string[],
+  },
+}));
 
 // ── supabaseAdmin mock — DB + auth probes always succeed in this suite. ──
 vi.mock('@alfanumrik/lib/supabase-admin', () => {
   return {
     supabaseAdmin: {
-      from: () => ({
-        select: () => ({
-          limit: () => Promise.resolve({ data: [{ id: 'topic-1' }], error: null }),
-        }),
-      }),
+      from: (table: string) => {
+        if (table === 'feature_flags') {
+          return {
+            select: (columns: string) => {
+              supabaseMockState.selectedColumns = columns;
+              return {
+                in: (column: string, values: string[]) => {
+                  supabaseMockState.filteredColumn = column;
+                  supabaseMockState.filteredFlagNames = [...values];
+                  return Promise.resolve({
+                    data: supabaseMockState.featureFlagRows,
+                    error: supabaseMockState.featureFlagError,
+                  });
+                },
+              };
+            },
+          };
+        }
+        return {
+          select: () => ({
+            limit: () => Promise.resolve({ data: [{ id: 'topic-1' }], error: null }),
+          }),
+        };
+      },
       auth: {
         admin: {
           listUsers: () => Promise.resolve({ data: { users: [] }, error: null }),
@@ -42,6 +72,23 @@ vi.mock('@alfanumrik/lib/redis', () => ({
 
 // ── fetch mock for Edge Function + Razorpay HTTP calls ──
 let _fetchResponses: Map<string, () => Promise<Response> | Response> = new Map();
+const originalVercelEnv = process.env.VERCEL_ENV;
+
+function resolverFlagRows(overrides: Partial<{
+  is_enabled: boolean;
+  rollout_percentage: number | null;
+}> = {}) {
+  return Object.values(EXPERIENCE_V3_FLAGS).map((flag_name) => ({
+    flag_name,
+    is_enabled: false,
+    target_roles: null,
+    target_environments: ['production'],
+    target_institutions: null,
+    rollout_percentage: 0,
+    ...overrides,
+  }));
+}
+
 function setFetchResponse(matcher: string, fn: () => Promise<Response> | Response) {
   _fetchResponses.set(matcher, fn);
 }
@@ -49,7 +96,13 @@ function setFetchResponse(matcher: string, fn: () => Promise<Response> | Respons
 beforeEach(() => {
   _fetchResponses = new Map();
   _redisClient = null;
+  supabaseMockState.featureFlagRows = resolverFlagRows();
+  supabaseMockState.featureFlagError = null;
+  supabaseMockState.selectedColumns = '';
+  supabaseMockState.filteredColumn = '';
+  supabaseMockState.filteredFlagNames = [];
   // Default env: simulate fully-configured prod
+  process.env.VERCEL_ENV = 'production';
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-role-test';
   process.env.UPSTASH_REDIS_REST_URL = 'https://upstash.test';
@@ -72,6 +125,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.resetModules();
+  if (originalVercelEnv === undefined) {
+    delete process.env.VERCEL_ENV;
+  } else {
+    process.env.VERCEL_ENV = originalVercelEnv;
+  }
 });
 
 async function callHealth() {
@@ -104,6 +162,98 @@ describe('GET /api/v1/health — dependency probes', () => {
       expect(body.dependencies.edge_functions.status).toBe('ok');
       expect(body.dependencies.redis.status).toBe('ok');
       expect(body.dependencies.razorpay.status).toBe('ok');
+      expect(body.checks.v3_server_prerequisites).toEqual(expect.objectContaining({ status: 'ok' }));
+      expect(body.checks.v3_server_prerequisites).not.toHaveProperty('error_code');
+      expect(body.unhealthy_components).toBeUndefined();
+    });
+  });
+
+  describe('One Experience V3 server prerequisites', () => {
+    it('accepts all five unique resolver rows while every flag remains disabled', async () => {
+      supabaseMockState.featureFlagRows = resolverFlagRows({
+        is_enabled: false,
+        rollout_percentage: 0,
+      });
+
+      const body = await (await callHealth()).json();
+
+      expect(body.checks.v3_server_prerequisites).toEqual(expect.objectContaining({
+        status: 'ok',
+        latency_ms: expect.any(Number),
+      }));
+      expect(supabaseMockState.selectedColumns.split(',')).toEqual([
+        'flag_name',
+        'is_enabled',
+        'target_roles',
+        'target_environments',
+        'target_institutions',
+        'rollout_percentage',
+      ]);
+      expect(supabaseMockState.filteredColumn).toBe('flag_name');
+      expect(new Set(supabaseMockState.filteredFlagNames)).toEqual(
+        new Set(Object.values(EXPERIENCE_V3_FLAGS)),
+      );
+      expect(body.ok).toBe(true);
+      expect(body.status).toBe('healthy');
+      expect(body.unhealthy_components).toBeUndefined();
+    });
+
+    it('fails closed in production when one required flag row is missing', async () => {
+      supabaseMockState.featureFlagRows = resolverFlagRows().slice(0, -1);
+
+      const body = await (await callHealth()).json();
+
+      expect(body.checks.v3_server_prerequisites).toEqual(expect.objectContaining({
+        status: 'error',
+        error_code: 'flag_contract_mismatch',
+      }));
+      expect(body.ok).toBe(false);
+      expect(body.status).toBe('degraded');
+      expect(body.unhealthy_components).toContain('v3_server_prerequisites');
+    });
+
+    it('requires five unique expected rows with every resolver column', async () => {
+      const rows = resolverFlagRows();
+      supabaseMockState.featureFlagRows = [rows[0], rows[0], ...rows.slice(2)];
+
+      let body = await (await callHealth()).json();
+      expect(body.checks.v3_server_prerequisites.error_code).toBe('flag_contract_mismatch');
+
+      vi.resetModules();
+      supabaseMockState.featureFlagRows = resolverFlagRows().map((row, index) => (
+        index === 0 ? { ...row, target_roles: undefined } : row
+      ));
+
+      body = await (await callHealth()).json();
+      expect(body.checks.v3_server_prerequisites.error_code).toBe('flag_contract_mismatch');
+    });
+
+    it('returns only a sanitized error code when Supabase rejects the query', async () => {
+      supabaseMockState.featureFlagError = {
+        message: 'relation feature_flags and service role secret abc123 are unavailable',
+      };
+
+      const body = await (await callHealth()).json();
+      const prerequisite = body.checks.v3_server_prerequisites;
+
+      expect(prerequisite).toEqual(expect.objectContaining({
+        status: 'error',
+        error_code: 'query_failed',
+      }));
+      expect(JSON.stringify(prerequisite)).not.toContain('service role secret');
+      expect(prerequisite).not.toHaveProperty('detail');
+      expect(prerequisite).not.toHaveProperty('data');
+    });
+
+    it('surfaces a failed probe without blocking non-production health', async () => {
+      process.env.VERCEL_ENV = 'preview';
+      supabaseMockState.featureFlagRows = [];
+
+      const body = await (await callHealth()).json();
+
+      expect(body.checks.v3_server_prerequisites.status).toBe('error');
+      expect(body.ok).toBe(true);
+      expect(body.status).toBe('healthy');
       expect(body.unhealthy_components).toBeUndefined();
     });
   });
@@ -253,6 +403,7 @@ describe('GET /api/v1/health — dependency probes', () => {
       expect(timing).toMatch(/total;/);
       expect(timing).toMatch(/db;/);
       expect(timing).toMatch(/auth;/);
+      expect(timing).toMatch(/v3;/);
       expect(timing).toMatch(/edge;/);
       expect(timing).toMatch(/redis;/);
       expect(timing).toMatch(/razorpay;/);

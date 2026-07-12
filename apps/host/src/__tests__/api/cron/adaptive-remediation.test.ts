@@ -743,11 +743,11 @@ describe('verify phase — B2B assignment 23505 dedupe (architect cond 2, route 
     curriculum_topics: { data: { id: 'topic-1' } },
   };
 
-  it('23505 from the partial unique index (status=assigned) is a benign dedupe — links the EXISTING row and escalates', async () => {
+  it('23505 links the EXISTING in-progress row and escalates without a race duplicate', async () => {
     installHandler(verifyFixture({}, {
       ...B2B_FIXTURE,
       'assignments.insert': { data: null, error: { code: '23505', message: 'duplicate key value' } },
-      'assignments.lookup': { data: [{ id: 'tra-existing' }], error: null },
+      'assignments.lookup': { data: [{ id: 'tra-existing', status: 'in_progress' }], error: null },
     }));
     const { POST } = await loadRoute();
     const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'verify' }));
@@ -758,7 +758,9 @@ describe('verify phase — B2B assignment 23505 dedupe (architect cond 2, route 
     const lookup = fromCalls.find((c) => classify(c) === 'assignments.lookup');
     expect(lookup).toBeDefined();
     expect(hasOp(lookup!, 'eq', 'student_id')).toBe(true);
-    expect(hasOp(lookup!, 'eq', 'status')).toBe(true);
+    expect(hasOp(lookup!, 'eq', 'status')).toBe(false);
+    const statusIn = lookup!.ops.find((o) => o.op === 'in' && o.args[0] === 'status');
+    expect(statusIn?.args[1]).toEqual(['assigned', 'in_progress']);
     expect(hasOp(lookup!, 'eq', 'chapter_id')).toBe(true); // chapter mapped → eq
     // Round 2 cross-handoff fix: the unique-index key (migration
     // 20260619000400) is (student_id, class_id, chapter-bucket) — the lookup

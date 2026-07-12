@@ -6,6 +6,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { Card, Button, SectionHeader, LoadingFoxy, Badge } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
+import { studyPlanRoute } from '@alfanumrik/lib/routes/study-menu-routes';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 
 /* ─── Types ─── */
@@ -475,11 +476,11 @@ export default function ScanPage() {
                     {isHi ? 'समान प्रश्न' : 'Similar Questions'}
                   </button>
                   <button
-                    onClick={() => router.push(`/study-plan?add_topic=${encodeURIComponent(q.topic)}`)}
+                    onClick={() => router.push(studyPlanRoute())}
                     className="text-xs px-3 py-1.5 rounded-lg font-semibold"
                     style={{ background: 'rgba(8,145,178,0.1)', border: '1px solid rgba(8,145,178,0.2)', color: '#0891B2' }}
                   >
-                    {isHi ? 'प्लान में जोड़ो' : 'Add to Plan'}
+                    {isHi ? 'परीक्षा तैयारी खोलें' : 'Open Exam Prep'}
                   </button>
                 </div>
               </Card>

@@ -11,8 +11,9 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 });
 
 /// Current student — loaded after auth, refreshed on profile changes
-final studentProvider =
-    AsyncNotifierProvider<StudentNotifier, Student?>(StudentNotifier.new);
+final studentProvider = AsyncNotifierProvider<StudentNotifier, Student?>(
+  StudentNotifier.new,
+);
 
 class StudentNotifier extends AsyncNotifier<Student?> {
   @override
@@ -25,15 +26,14 @@ class StudentNotifier extends AsyncNotifier<Student?> {
     return result.dataOrNull;
   }
 
-  Future<ApiResult<Student>> signIn({
+  Future<ApiResult<Student?>> signIn({
     required String email,
     required String password,
   }) async {
     state = const AsyncLoading();
-    final result = await ref.read(authRepositoryProvider).signIn(
-          email: email,
-          password: password,
-        );
+    final result = await ref
+        .read(authRepositoryProvider)
+        .signIn(email: email, password: password);
     result.when(
       success: (student) => state = AsyncData(student),
       failure: (msg) => state = AsyncError(msg, StackTrace.current),
@@ -48,12 +48,9 @@ class StudentNotifier extends AsyncNotifier<Student?> {
     required String grade,
   }) async {
     state = const AsyncLoading();
-    final result = await ref.read(authRepositoryProvider).signUp(
-          email: email,
-          password: password,
-          name: name,
-          grade: grade,
-        );
+    final result = await ref
+        .read(authRepositoryProvider)
+        .signUp(email: email, password: password, name: name, grade: grade);
     result.when(
       success: (student) => state = AsyncData(student),
       failure: (msg) => state = AsyncError(msg, StackTrace.current),

@@ -48,6 +48,10 @@ interface DashboardPayload {
   insights?: string[];
 }
 
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     // ── 1. AuthZ (RBAC permission gate, P9) ──
@@ -145,16 +149,18 @@ export async function GET(request: NextRequest) {
     const week = dash.weekSummary ?? {};
     const childName = dash.student?.name ?? dash.name ?? null;
     const rawGrade = dash.student?.grade ?? dash.grade ?? null;
+    const weeklyQuizzes = finiteNumber(week.quizzes);
+    const streak = finiteNumber(stats.streak);
 
     const snapshot = {
-      sessions_this_week: Number(week.quizzes) || 0,
-      streak_days: Number(stats.streak) || 0,
-      accuracy: typeof stats.accuracy === 'number' ? stats.accuracy : null,
-      avg_score: typeof week.avgScore === 'number' ? week.avgScore : null,
-      time_minutes: typeof stats.minutes === 'number' ? stats.minutes : null,
-      xp: typeof stats.xp === 'number' ? stats.xp : null,
-      total_quizzes: typeof stats.totalQuizzes === 'number' ? stats.totalQuizzes : null,
-      total_chats: typeof stats.totalChats === 'number' ? stats.totalChats : null,
+      sessions_this_week: weeklyQuizzes,
+      streak_days: streak,
+      accuracy: finiteNumber(stats.accuracy),
+      avg_score: finiteNumber(week.avgScore),
+      time_minutes: finiteNumber(stats.minutes),
+      xp: finiteNumber(stats.xp),
+      total_quizzes: finiteNumber(stats.totalQuizzes),
+      total_chats: finiteNumber(stats.totalChats),
     };
 
     // Highlights / concerns derived from the SAME existing fields the web
@@ -163,12 +169,12 @@ export async function GET(request: NextRequest) {
     const highlights: string[] = [];
     const concerns: string[] = [];
 
-    if ((Number(week.quizzes) || 0) > 0) {
-      const n = Number(week.quizzes);
+    if (weeklyQuizzes != null && weeklyQuizzes > 0) {
+      const n = weeklyQuizzes;
       highlights.push(`Completed ${n} quiz${n > 1 ? 'zes' : ''} this week.`);
     }
-    if ((Number(stats.streak) || 0) >= 3) {
-      highlights.push(`On a ${Number(stats.streak)}-day learning streak.`);
+    if (streak != null && streak >= 3) {
+      highlights.push(`On a ${streak}-day learning streak.`);
     }
     const mastered = Number(dash.bktMastery?.levels?.mastered) || 0;
     if (mastered > 0) {
@@ -179,13 +185,13 @@ export async function GET(request: NextRequest) {
       highlights.push(`Asked Foxy ${n} question${n > 1 ? 's' : ''}.`);
     }
 
-    if ((Number(stats.streak) || 0) === 0) {
+    if (streak === 0) {
       concerns.push('No active streak right now — a short session would restart it.');
     }
     if (typeof stats.accuracy === 'number' && stats.accuracy > 0 && stats.accuracy < 50) {
       concerns.push(`Accuracy is at ${stats.accuracy}%. More practice on weak topics could help.`);
     }
-    if ((Number(week.quizzes) || 0) === 0) {
+    if (weeklyQuizzes === 0) {
       concerns.push('No sessions yet this week.');
     }
 

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import TeacherShell from './_components/TeacherShell';
+import { Suspense } from 'react';
+import TeacherV3LayoutGate from './_components/TeacherV3LayoutGate';
 
 export const metadata: Metadata = {
   title: 'Teacher Dashboard',
@@ -7,5 +8,9 @@ export const metadata: Metadata = {
 };
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {
-  return <TeacherShell>{children}</TeacherShell>;
+  return (
+    <Suspense fallback={<div role="status">Loading teacher workspace…</div>}>
+      <TeacherV3LayoutGate>{children}</TeacherV3LayoutGate>
+    </Suspense>
+  );
 }

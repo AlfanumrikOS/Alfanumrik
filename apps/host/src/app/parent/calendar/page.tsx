@@ -1,8 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import {
+  loadParentSession,
+  type ParentSession,
+  type StudentSession,
+} from '../_components/parent-session';
+import {
+  readParentChildId,
+  replaceParentChildId,
+  resolveLinkedChild,
+  withParentChildId,
+} from '../_components/parent-child-scope';
 
 // ============================================================
 // BILINGUAL HELPER (P7)
@@ -12,39 +24,12 @@ const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 // ============================================================
 // SESSION TYPES + LOADER (mirrors parent/page.tsx HMAC pattern)
 // ============================================================
-const SESSION_KEY = 'alfanumrik_parent_session';
-const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
-
-interface ParentSession { id: string; name: string }
-interface StudentSession { id: string; name: string; grade: string }
-
-async function hmacSign(payload: string, secret: string): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(payload));
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function loadParentSession(): Promise<{ guardian: ParentSession; student: StudentSession } | null> {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const { payload, hmac, nonce } = JSON.parse(raw);
-    if (!payload || !hmac || !nonce) return null;
-    const expected = await hmacSign(payload, nonce);
-    if (expected !== hmac) { sessionStorage.removeItem(SESSION_KEY); return null; }
-    const { guardian, student, issuedAt } = JSON.parse(payload);
-    if (Date.now() - issuedAt > SESSION_TTL_MS) { sessionStorage.removeItem(SESSION_KEY); return null; }
-    return { guardian, student };
-  } catch { sessionStorage.removeItem(SESSION_KEY); return null; }
-}
-
 // ============================================================
 // AUTHED FETCH (attaches the guardian's Supabase JWT)
 // ============================================================
-async function authedFetch(url: string): Promise<Response> {
+const PARENT_CALENDAR_TIMEOUT_MS = 15_000;
+
+async function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -52,7 +37,17 @@ async function authedFetch(url: string): Promise<Response> {
   } catch {
     /* anonymous — server returns 401/403 */
   }
-  return fetch(url, { headers });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PARENT_CALENDAR_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...init,
+      headers: { ...headers, ...(init.headers as Record<string, string> | undefined) },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // ============================================================
@@ -79,6 +74,13 @@ interface CalendarResponse {
   error?: string;
 }
 
+interface LinkedChildrenResponse {
+  success: boolean;
+  data?: {
+    children?: Array<{ student_id: string; name: string; grade: string | null }>;
+  };
+}
+
 // Per-type styling — colors used for the calendar dot legend, event chips, and
 // upcoming-events rows. quiz_activity is past engagement; the others upcoming.
 const EVENT_STYLE: Record<CalendarEventType, { color: string; en: string; hi: string }> = {
@@ -86,19 +88,6 @@ const EVENT_STYLE: Record<CalendarEventType, { color: string; en: string; hi: st
   school_exam: { color: '#EF4444', en: 'School Exam', hi: 'स्कूल परीक्षा' },
   quiz_activity: { color: '#F97316', en: 'Quiz activity', hi: 'क्विज़ गतिविधि' },
 };
-
-// ============================================================
-// BOARD EXAM DATES (Grade 10 and 12 only) — P5: grades are strings
-// Static national dates, not per-child data — these stay client-side.
-// ============================================================
-const BOARD_EXAM_DATES: Record<string, Date> = {
-  '10': new Date('2026-03-15'),
-  '12': new Date('2026-03-01'),
-};
-
-function getDaysUntil(target: Date): number {
-  return Math.max(0, Math.ceil((target.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-}
 
 // ============================================================
 // CALENDAR GRID HELPERS
@@ -132,13 +121,18 @@ function localDateKey(iso: string): string {
 // ============================================================
 // MAIN PAGE
 // ============================================================
-export default function ParentCalendarPage() {
+function ParentCalendarContent() {
   const auth = useAuth();
   const isHi = auth.isHi ?? false;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedChildId = readParentChildId(searchParams);
 
   const [guardian, setGuardian] = useState<ParentSession | null>(null);
   const [student, setStudent] = useState<StudentSession | null>(null);
   const [checking, setChecking] = useState(true);
+  const [scopeError, setScopeError] = useState<string | null>(null);
+  const [scopeAttempt, setScopeAttempt] = useState(0);
 
   // Calendar view state
   const now = new Date();
@@ -151,30 +145,72 @@ export default function ParentCalendarPage() {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [notLinked, setNotLinked] = useState(false);
 
-  // Auth resolution (reuse the parent child-selector / HMAC session pattern)
+  // Resolve URL child scope only against a server-authorized guardian link
+  // list. Link-code sessions remain pinned to their single signed child.
   useEffect(() => {
     if (auth.isLoading) return;
-    const resolve = (g: ParentSession | null, s: StudentSession | null) => {
-      setGuardian(g);
-      setStudent(s);
+    let cancelled = false;
+
+    const resolve = async () => {
+      setChecking(true);
+      setScopeError(null);
+
+      if (auth.guardian) {
+        setGuardian(auth.guardian);
+        setStudent(null);
+        try {
+          const response = await authedFetch('/api/v2/parent/children');
+          const json = (await response.json().catch(() => ({}))) as LinkedChildrenResponse;
+          if (!response.ok || !json.success) throw new Error('parent.children_failed');
+          const linkedChildren: StudentSession[] = (json.data?.children ?? [])
+            .map((child) => ({
+              id: child.student_id,
+              name: child.name,
+              grade: child.grade ?? '',
+            }))
+            .filter((child) => Boolean(child.id));
+          const scopedChild = resolveLinkedChild(linkedChildren, requestedChildId, linkedChildren[0]?.id);
+          if (cancelled) return;
+          if (!scopedChild) {
+            setScopeError(t(isHi, 'No linked child was found.', 'कोई जुड़ा हुआ बच्चा नहीं मिला।'));
+            return;
+          }
+          setStudent(scopedChild);
+          if (requestedChildId !== scopedChild.id) {
+            router.replace(replaceParentChildId('/parent/calendar', searchParams, scopedChild.id));
+          }
+        } catch {
+          if (!cancelled) {
+            setScopeError(t(isHi, 'Could not load linked children. Please try again.', 'जुड़े हुए बच्चों को लोड नहीं किया जा सका। कृपया फिर से कोशिश करें।'));
+          }
+        } finally {
+          if (!cancelled) setChecking(false);
+        }
+        return;
+      }
+
+      const session = await loadParentSession();
+      if (cancelled) return;
+      if (session) {
+        setGuardian(session.guardian);
+        setStudent(session.student);
+        if (requestedChildId !== session.student.id) {
+          router.replace(replaceParentChildId('/parent/calendar', searchParams, session.student.id));
+        }
+      }
       setChecking(false);
     };
-    if (auth.guardian) {
-      loadParentSession().then(session => resolve(auth.guardian!, session?.student ?? null));
-      return;
-    }
-    loadParentSession().then(session => {
-      if (session) resolve(session.guardian, session.student);
-      else { setChecking(false); }
-    });
-  }, [auth.isLoading, auth.guardian]);
+
+    void resolve();
+    return () => { cancelled = true; };
+  }, [auth.isLoading, auth.guardian, isHi, requestedChildId, router, scopeAttempt, searchParams]);
 
   // Redirect if not authenticated
   useEffect(() => {
-    if (!checking && !guardian && !student) {
+    if (!checking && !guardian && !student && !scopeError) {
       window.location.href = '/parent';
     }
-  }, [checking, guardian, student]);
+  }, [checking, guardian, scopeError, student]);
 
   // Fetch aggregated calendar events for the active child from the API.
   // horizon_days=120 (the API max) so the whole forward window is covered;
@@ -223,10 +259,6 @@ export default function ParentCalendarPage() {
     if (student) fetchEvents();
   }, [student, fetchEvents]);
 
-  const grade = student?.grade || '';
-  const boardExamDate = BOARD_EXAM_DATES[grade] || null;
-  const daysUntilBoard = boardExamDate ? getDaysUntil(boardExamDate) : null;
-
   // Map events onto the visible month's day cells, keyed by local date.
   // Each day can carry multiple event types; we collect the distinct set so the
   // grid can render one dot per type present that day.
@@ -238,9 +270,8 @@ export default function ParentCalendarPage() {
     eventTypesByDay[key].add(ev.type);
   }
 
-  // Upcoming events = assignment + school_exam strictly in the future, plus the
-  // board exam (client-side). quiz_activity is past engagement and is surfaced
-  // only as calendar dots, not in the upcoming list.
+  // Upcoming events come only from live assignment and school-exam records.
+  // quiz_activity is past engagement and is surfaced only as calendar dots.
   const nowMs = Date.now();
   const upcoming = events
     .filter((e) => (e.type === 'assignment' || e.type === 'school_exam') && new Date(e.date).getTime() >= nowMs)
@@ -278,6 +309,23 @@ export default function ParentCalendarPage() {
     );
   }
 
+  if (scopeError) {
+    return (
+      <div style={pageStyle}>
+        <div role="alert" style={{ ...cardStyle, marginTop: 40, textAlign: 'center', color: '#B91C1C' }}>
+          <p style={{ margin: '0 0 14px' }}>{scopeError}</p>
+          <button
+            type="button"
+            onClick={() => setScopeAttempt((attempt) => attempt + 1)}
+            style={{ ...navBtnStyle, width: 'auto', minWidth: 96, padding: '0 16px', color: '#C2410C' }}
+          >
+            {t(isHi, 'Try again', 'फिर से कोशिश करें')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!guardian || !student) return null;
 
   return (
@@ -297,7 +345,7 @@ export default function ParentCalendarPage() {
         color: '#fff',
       }}>
         <button
-          onClick={() => { window.location.href = '/parent'; }}
+          onClick={() => router.push(withParentChildId('/parent', student.id))}
           style={{
             background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 6,
             padding: '4px 10px', color: '#fff', fontSize: 12, fontWeight: 600,
@@ -336,49 +384,6 @@ export default function ParentCalendarPage() {
               'इस बच्चे का कैलेंडर देखने के लिए आपको एक स्वीकृत लिंक चाहिए। जुड़ने के लिए बच्चे पेज खोलें।'
             )}
           </p>
-        </div>
-      )}
-
-      {/* ── BOARD EXAM COUNTDOWN (Grade 10 / 12 only — client-side static) ── */}
-      {boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0 && (
-        <div style={{
-          backgroundColor: '#FFF8F0',
-          border: '2px solid #FDBA74',
-          borderRadius: 14,
-          padding: '16px 18px',
-          marginBottom: 16,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-          animation: 'pulse 3s ease-in-out infinite',
-        }}>
-          <div style={{
-            width: 52, height: 52, borderRadius: '50%',
-            background: 'linear-gradient(135deg, #F97316, #EA580C)',
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 18, fontWeight: 800, color: '#fff', lineHeight: 1 }}>
-              {daysUntilBoard}
-            </span>
-            <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.85)', lineHeight: 1 }}>
-              {t(isHi, 'DAYS', 'दिन')}
-            </span>
-          </div>
-          <div>
-            <p style={{ fontSize: 14, fontWeight: 700, color: '#1E293B', margin: '0 0 2px' }}>
-              {t(isHi, 'CBSE Board Exam', 'CBSE बोर्ड परीक्षा')}
-            </p>
-            <p style={{ fontSize: 12, color: '#64748B', margin: 0 }}>
-              {t(isHi, 'Grade', 'कक्षा')} {grade} &bull; {boardExamDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </p>
-            {daysUntilBoard <= 30 && (
-              <p style={{ fontSize: 11, color: '#EF4444', margin: '4px 0 0', fontWeight: 600 }}>
-                {t(isHi, 'Time to intensify preparation!', 'तैयारी तेज़ करने का समय!')}
-              </p>
-            )}
-          </div>
         </div>
       )}
 
@@ -518,18 +523,6 @@ export default function ParentCalendarPage() {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* Board exam event (client-side, if applicable) */}
-            {boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0 && (
-              <EventRow
-                dateLabel={boardExamDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                title={`${t(isHi, 'CBSE Board Exam', 'CBSE बोर्ड परीक्षा')} (${t(isHi, 'Grade', 'कक्षा')} ${grade})`}
-                chipLabel={t(isHi, 'Board', 'बोर्ड')}
-                chipColor="#EF4444"
-                daysLeft={daysUntilBoard}
-                isHi={isHi}
-              />
-            )}
-
             {/* Server-aggregated upcoming events (assignments + school exams) */}
             {upcoming.map((ev) => {
               const evDate = new Date(ev.date);
@@ -549,7 +542,7 @@ export default function ParentCalendarPage() {
             })}
 
             {/* Empty state — no upcoming events at all */}
-            {upcoming.length === 0 && !(boardExamDate && daysUntilBoard !== null && daysUntilBoard >= 0) && (
+            {upcoming.length === 0 && (
               <div style={{
                 borderRadius: 12,
                 border: '1px dashed #FDBA7488',
@@ -603,6 +596,14 @@ export default function ParentCalendarPage() {
         Alfanumrik Learning OS | {t(isHi, 'Parent Portal', 'अभिभावक पोर्टल')}
       </p>
     </div>
+  );
+}
+
+export default function ParentCalendarPage() {
+  return (
+    <Suspense>
+      <ParentCalendarContent />
+    </Suspense>
   );
 }
 

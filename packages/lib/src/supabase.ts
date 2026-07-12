@@ -20,6 +20,7 @@ import {
   type AdaptiveClient,
 } from './adaptive/select-adaptive-questions';
 import { humaneCardLabel } from './srs-card-label';
+import { buildFallbackStudentSnapshot, normalizeStudentSnapshot } from './student-snapshot';
 
 // Re-export from the canonical client module — new code uses supabase-client.ts
 export { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
@@ -38,7 +39,7 @@ function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000):
 export async function getStudentSnapshot(studentId: string) {
   try {
     const { data, error } = await supabase.rpc('get_student_snapshot', { p_student_id: studentId });
-    if (!error && data) return data as import('./types').StudentSnapshot;
+    if (!error && data) return normalizeStudentSnapshot(data);
   } catch { /* RPC may not exist — fall back */ }
 
   const [profilesResult, masteredResult, inProgressResult, quizzesResult] = await Promise.all([
@@ -47,20 +48,7 @@ export async function getStudentSnapshot(studentId: string) {
     supabase.from('concept_mastery').select('*', { count: 'exact', head: true }).eq('student_id', studentId).lt('mastery_probability', 0.95).gt('mastery_probability', 0),
     supabase.from('quiz_sessions').select('*', { count: 'exact', head: true }).eq('student_id', studentId),
   ]);
-  const p = profilesResult.data ?? [];
-  const totalXp = p.reduce((a, r) => a + (r.xp ?? 0), 0);
-  const streak = Math.max(...p.map((r) => r.streak_days ?? 0), 0);
-  const totalCorrect = p.reduce((a, r) => a + (r.total_questions_answered_correctly ?? 0), 0);
-  const totalAsked = p.reduce((a, r) => a + (r.total_questions_asked ?? 0), 0);
-  const mastered = masteredResult.count;
-  const inProgress = inProgressResult.count;
-  const quizzes = quizzesResult.count;
-
-  return {
-    total_xp: totalXp, current_streak: streak, topics_mastered: mastered ?? 0,
-    topics_in_progress: inProgress ?? 0, quizzes_taken: quizzes ?? 0,
-    avg_score: totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0,
-  } satisfies import('./types').StudentSnapshot;
+  return buildFallbackStudentSnapshot({ profilesResult, masteredResult, inProgressResult, quizzesResult });
 }
 
 /* ── Student learning profiles ── */
@@ -1770,5 +1758,4 @@ export async function getQuestionHistoryStats(
     return { total_questions: 0, seen_questions: 0, unseen_questions: 0, coverage_percent: 0 };
   }
 }
-
 

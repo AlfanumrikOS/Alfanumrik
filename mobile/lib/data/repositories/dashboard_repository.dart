@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/cache/cache_manager.dart';
-import '../../core/constants/api_constants.dart';
 import '../../core/network/api_result.dart';
 import '../../core/network/v2_api_client.dart';
 import '../models/dashboard_data.dart';
@@ -26,7 +25,7 @@ class DashboardRepository {
   /// Fetch all dashboard data in a single RPC call.
   /// Falls back to parallel queries if RPC not available.
   ///
-  /// When [ApiConstants.useV2] is ON the profile is sourced from
+  /// When a server-assigned generated client is present, the profile is sourced from
   /// `GET /v2/student/profile` (plan → usage limits) and the daily queue from
   /// `GET /v2/today`; see [_getDashboardDataV2]. When OFF this is the
   /// byte-identical legacy RPC/table path.
@@ -36,7 +35,7 @@ class DashboardRepository {
   /// [DashboardData.fromJson] to parse `performance_score` and
   /// `foxy_coins` fields. See web `score-config.ts` and `coin-rules.ts`.
   Future<ApiResult<DashboardData>> getDashboardData(String studentId) async {
-    if (ApiConstants.useV2 && _v2 != null) {
+    if (_v2 != null) {
       return _getDashboardDataV2(studentId);
     }
 

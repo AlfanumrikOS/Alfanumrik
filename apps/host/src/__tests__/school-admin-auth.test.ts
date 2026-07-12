@@ -30,6 +30,8 @@ function createChainableMock(resolvedValue: { data: unknown; error: unknown }) {
   chain.limit = vi.fn().mockReturnValue(chain);
   chain.maybeSingle = vi.fn().mockResolvedValue(resolvedValue);
   chain.single = vi.fn().mockResolvedValue(resolvedValue);
+  chain.then = (resolve: (value: typeof resolvedValue) => unknown, reject?: (reason: unknown) => unknown) =>
+    Promise.resolve(resolvedValue).then(resolve, reject);
   return chain;
 }
 
@@ -125,7 +127,24 @@ describe('authorizeSchoolAdmin', () => {
     });
 
     it('when user lacks the required permission', async () => {
-      mockUnauthorized(403);
+      const permissionDenied = new Response('Forbidden', { status: 403 });
+      mockAuthorized('user-without-permission');
+      mockAuthorizeRequest.mockResolvedValueOnce({
+        authorized: true,
+        userId: 'user-without-permission',
+        roles: ['institution_admin'],
+        permissions: [],
+      }).mockResolvedValueOnce({
+        authorized: false,
+        userId: 'user-without-permission',
+        roles: ['institution_admin'],
+        permissions: [],
+        errorResponse: permissionDenied,
+      });
+      schoolAdminsChain = createChainableMock({
+        data: { id: 'admin-1', school_id: 'school-abc', role: 'institution_admin', is_active: true },
+        error: null,
+      });
 
       const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'institution.view_reports');
 
@@ -232,9 +251,8 @@ describe('authorizeSchoolAdmin', () => {
 
     it('returns 500 when maybeSingle throws an unexpected error', async () => {
       mockAuthorized('user-throw');
-      (schoolAdminsChain.maybeSingle as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error('Unexpected crash')
-      );
+      schoolAdminsChain.then = (_resolve: unknown, reject: (reason: unknown) => unknown) =>
+        Promise.reject(new Error('Unexpected crash')).catch(reject);
 
       const result: SchoolAdminAuthResult = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
 
@@ -249,11 +267,19 @@ describe('authorizeSchoolAdmin', () => {
   // ── Permission code forwarding ────────────────────────────────────────────
 
   describe('permission code forwarding', () => {
-    it('passes the permission code to authorizeRequest', async () => {
-      mockUnauthorized();
+    it('evaluates the permission only after selecting the school context', async () => {
+      mockAuthorized('scoped-admin');
+      schoolAdminsChain = createChainableMock({
+        data: { id: 'admin-1', school_id: 'school-scoped', role: 'institution_admin', is_active: true },
+        error: null,
+      });
+      schoolsChain = createChainableMock({ data: { id: 'school-scoped', is_active: true }, error: null });
       const req = makeRequest();
       await authorizeSchoolAdmin(req, 'institution.view_reports');
-      expect(mockAuthorizeRequest).toHaveBeenCalledWith(req, 'institution.view_reports');
+      expect(mockAuthorizeRequest).toHaveBeenNthCalledWith(1, req);
+      expect(mockAuthorizeRequest).toHaveBeenNthCalledWith(2, req, 'institution.view_reports', {
+        context: { schoolId: 'school-scoped' },
+      });
     });
   });
 
@@ -275,6 +301,136 @@ describe('authorizeSchoolAdmin', () => {
       expect(schoolAdminsChain.select).toHaveBeenCalledWith('id, school_id, role, is_active');
       expect(schoolAdminsChain.eq).toHaveBeenCalledWith('auth_user_id', 'user-verify-query');
       expect(schoolAdminsChain.eq).toHaveBeenCalledWith('is_active', true);
+    });
+
+    it('requires an explicit scope for multiple active school memberships', async () => {
+      mockAuthorized('multi-school-admin');
+      schoolAdminsChain = createChainableMock({
+        data: [
+          { id: 'admin-1', school_id: 'school-a', role: 'institution_admin', is_active: true },
+          { id: 'admin-2', school_id: 'school-b', role: 'institution_admin', is_active: true },
+        ],
+        error: null,
+      });
+
+      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+      expect(result.authorized).toBe(false);
+      expect(result.errorResponse!.status).toBe(400);
+      expect((await result.errorResponse!.json()).school_ids).toEqual(['school-a', 'school-b']);
+    });
+
+    it('selects only a requested active membership and rejects a foreign school', async () => {
+      mockAuthorized('multi-school-admin');
+      schoolAdminsChain = createChainableMock({
+        data: [
+          { id: 'admin-1', school_id: 'school-a', role: 'institution_admin', is_active: true },
+          { id: 'admin-2', school_id: 'school-b', role: 'principal', is_active: true },
+        ],
+        error: null,
+      });
+      schoolsChain = createChainableMock({ data: { id: 'school-b', is_active: true }, error: null });
+
+      const selected = await authorizeSchoolAdmin(makeRequest('https://test.alfanumrik.com/api/school-admin/classes?schoolId=school-b'), 'class.manage');
+      expect(selected).toMatchObject({ authorized: true, schoolId: 'school-b', schoolAdminId: 'admin-2', schoolAdminRole: 'principal' });
+
+      const denied = await authorizeSchoolAdmin(makeRequest('https://test.alfanumrik.com/api/school-admin/classes?school_id=foreign'), 'class.manage');
+      expect(denied.authorized).toBe(false);
+      expect(denied.errorResponse!.status).toBe(403);
+    });
+
+    it('applies the selected membership role matrix for multi-school users even when the flag is off', async () => {
+      mockAuthorized('multi-school-role-admin');
+      mockIsFeatureEnabled.mockResolvedValue(false);
+      schoolAdminsChain = createChainableMock({
+        data: [
+          { id: 'admin-a', school_id: 'school-a', role: 'principal', is_active: true },
+          { id: 'admin-b', school_id: 'school-b', role: 'academic_coordinator', is_active: true },
+        ],
+        error: null,
+      });
+      schoolsChain = createChainableMock({ data: { id: 'school-b', is_active: true }, error: null });
+
+      // The scoped RBAC seam is deliberately authorized here, simulating the
+      // baseline one-argument global permission fallback. The selected School
+      // B role must still deny a billing permission it does not hold.
+      const result = await authorizeSchoolAdmin(
+        makeRequest('https://test.alfanumrik.com/api/school-admin/billing?schoolId=school-b'),
+        'institution.manage_billing',
+      );
+
+      expect(result.authorized).toBe(false);
+      expect(result.schoolId).toBe('school-b');
+      expect((await result.errorResponse!.json()).code).toBe('SCHOOL_ADMIN_ROLE_DENIED');
+    });
+
+    it('denies a multi-school selection when selected-school permission resolution denies', async () => {
+      const scopedDenial = new Response('Forbidden', { status: 403 });
+      mockAuthorizeRequest
+        .mockResolvedValueOnce({ authorized: true, userId: 'multi-school-permission-admin', roles: ['institution_admin'], permissions: [] })
+        .mockResolvedValueOnce({ authorized: false, userId: 'multi-school-permission-admin', roles: ['institution_admin'], permissions: [], errorResponse: scopedDenial });
+      schoolAdminsChain = createChainableMock({
+        data: [
+          { id: 'admin-a', school_id: 'school-a', role: 'institution_admin', is_active: true },
+          { id: 'admin-b', school_id: 'school-b', role: 'institution_admin', is_active: true },
+        ],
+        error: null,
+      });
+      schoolsChain = createChainableMock({ data: { id: 'school-b', is_active: true }, error: null });
+
+      const result = await authorizeSchoolAdmin(
+        makeRequest('https://test.alfanumrik.com/api/school-admin/students?schoolId=school-b'),
+        'institution.manage_students',
+      );
+
+      expect(result.authorized).toBe(false);
+      expect(result.schoolId).toBe('school-b');
+      expect(result.errorResponse).toBe(scopedDenial);
+    });
+
+    it('denies non-matrix permissions for multi-school users on the baseline global fallback', async () => {
+      mockAuthorizeRequest
+        .mockResolvedValueOnce({ authorized: true, userId: 'multi-school-baseline-admin', roles: ['institution_admin'], permissions: [] })
+        .mockResolvedValueOnce({
+          authorized: true,
+          userId: 'multi-school-baseline-admin',
+          roles: ['institution_admin'],
+          permissions: ['school.manage_content'],
+          permissionScope: 'baseline-global',
+        });
+      schoolAdminsChain = createChainableMock({
+        data: [
+          { id: 'admin-a', school_id: 'school-a', role: 'institution_admin', is_active: true },
+          { id: 'admin-b', school_id: 'school-b', role: 'institution_admin', is_active: true },
+        ],
+        error: null,
+      });
+      schoolsChain = createChainableMock({ data: { id: 'school-b', is_active: true }, error: null });
+
+      const result = await authorizeSchoolAdmin(
+        makeRequest('https://test.alfanumrik.com/api/school-admin/content?schoolId=school-b'),
+        'school.manage_content',
+      );
+
+      expect(result.authorized).toBe(false);
+      expect(result.schoolId).toBe('school-b');
+      expect((await result.errorResponse!.json()).code).toBe('SCHOOL_SCOPED_RBAC_REQUIRED');
+    });
+
+    it('rejects conflicting camelCase and API school scope values', async () => {
+      mockAuthorized('multi-school-admin');
+      schoolAdminsChain = createChainableMock({
+        data: [
+          { id: 'admin-1', school_id: 'school-a', role: 'institution_admin', is_active: true },
+          { id: 'admin-2', school_id: 'school-b', role: 'institution_admin', is_active: true },
+        ],
+        error: null,
+      });
+      const result = await authorizeSchoolAdmin(
+        makeRequest('https://test.alfanumrik.com/api/school-admin/classes?schoolId=school-a&school_id=school-b'),
+        'class.manage',
+      );
+      expect(result.authorized).toBe(false);
+      expect(result.errorResponse!.status).toBe(400);
     });
 
     it('queries schools table to verify school is active', async () => {

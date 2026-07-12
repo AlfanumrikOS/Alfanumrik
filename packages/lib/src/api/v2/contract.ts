@@ -870,8 +870,8 @@ export const ParentGlanceChild = z
  */
 export const ParentGlanceSnapshot = z
   .object({
-    sessions_this_week: z.number().int().min(0).openapi({ example: 4 }),
-    streak_days: z.number().int().min(0).openapi({ example: 7 }),
+    sessions_this_week: z.number().int().min(0).nullable().openapi({ example: 4 }),
+    streak_days: z.number().int().min(0).nullable().openapi({ example: 7 }),
     accuracy: z.number().nullable().optional().openapi({ example: 72 }),
     avg_score: z.number().nullable().optional().openapi({ example: 68 }),
     time_minutes: z.number().nullable().optional().openapi({ example: 120 }),

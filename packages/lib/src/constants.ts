@@ -114,7 +114,7 @@ export const ROLE_CONFIG = {
       { href: '/exams', icon: '📋', label: 'Exams', labelHi: 'परीक्षा' },
       { href: '/scan', icon: '📷', label: 'Scan', labelHi: 'स्कैन' },
       { href: '/reports', icon: '📊', label: 'Reports', labelHi: 'रिपोर्ट' },
-      { href: '/study-plan', icon: '📅', label: 'Plan', labelHi: 'योजना' },
+      { href: '/exam-prep', icon: '📅', label: 'Exam Plan', labelHi: 'परीक्षा योजना' },
       { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
     ],
   },

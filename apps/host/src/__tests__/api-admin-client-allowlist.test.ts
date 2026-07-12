@@ -158,7 +158,12 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // RCA-01/XC-3 parent messages migration (2026-07-10): ratcheted 252 -> 249
 // when the three parent messaging routes moved guardian/thread/message reads,
 // state events, read marking, and notifications to auth.uid()-anchored RPCs.
-const EXPECTED_COUNT = 249;
+// Alfanumrik One Experience V3 (2026-07-12): 249 -> 250 because the unified,
+// authenticated rollout/capability endpoint must resolve role membership across
+// role-specific tables and support Bearer-session verification. This explicit
+// ledger entry remains subject to route-level role, scope, RBAC, and tenant
+// checks until those cross-role reads move behind narrower authenticated RPCs.
+const EXPECTED_COUNT = 250;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

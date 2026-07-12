@@ -7,6 +7,7 @@ import { supabase } from '@alfanumrik/lib/supabase';
 import { ProgressBar, SectionHeader, LoadingFoxy, PremiumCard, GlowButton } from '@alfanumrik/ui/ui';
 import { toast } from '@alfanumrik/ui/ui/toast';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
+import { studyPlanRoute } from '@alfanumrik/lib/routes/study-menu-routes';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 
 /* ─── Types ─── */
@@ -590,7 +591,7 @@ export default function ExamsPage() {
                   {/* Action buttons */}
                   <div className="flex gap-2 mt-3 flex-wrap">
                     <button
-                      onClick={() => router.push(`/study-plan?exam_id=${exam.id}`)}
+                      onClick={() => router.push(studyPlanRoute())}
                       className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all active:scale-95"
                       style={{
                         background: 'rgb(var(--purple-rgb) / 0.1)',
@@ -598,7 +599,7 @@ export default function ExamsPage() {
                         color: 'var(--purple)',
                       }}
                     >
-                      📅 {isHi ? 'स्टडी प्लान' : 'Study Plan'}
+                      📅 {isHi ? 'परीक्षा तैयारी' : 'Exam Prep'}
                     </button>
                     <button
                       onClick={() => router.push(`/quiz?mode=exam&exam_id=${exam.id}`)}

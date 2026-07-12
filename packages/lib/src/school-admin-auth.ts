@@ -3,9 +3,11 @@
  *
  * Wraps the standard RBAC authorizeRequest() with school_admins lookup.
  * Every school-admin API route calls authorizeSchoolAdmin() first to:
- *   1. Verify JWT + RBAC permission via authorizeRequest()
- *   2. Look up the school_admins record to get school_id
- *   3. Verify the school is active
+ *   1. Verify JWT and resolve the caller identity
+ *   2. Look up every active school_admins membership for the caller
+ *   3. Validate an optional URL school scope against those memberships
+ *   4. Verify the selected school is active
+ *   5. Evaluate RBAC permission in that selected school's context
  *
  * All subsequent queries in the route MUST be scoped to the returned schoolId
  * to enforce tenant isolation.
@@ -156,11 +158,13 @@ export function schoolAdminRoleAllows(role: SchoolAdminRole, permissionCode: str
   if (!allowed) return false;
   // Codes the matrix governs are the union across all four roles. If a code is
   // outside that union, Wave C does not narrow it (defer to the RBAC check).
-  const isMatrixGoverned =
-    SCHOOL_ADMIN_ROLE_CAPABILITIES.principal.has(permissionCode) ||
-    SCHOOL_ADMIN_ROLE_CAPABILITIES.institution_admin.has(permissionCode);
+  const isMatrixGoverned = schoolAdminRolePermissionIsGoverned(permissionCode);
   if (!isMatrixGoverned) return true;
   return allowed.has(permissionCode);
+}
+
+export function schoolAdminRolePermissionIsGoverned(permissionCode: string): boolean {
+  return Object.values(SCHOOL_ADMIN_ROLE_CAPABILITIES).some((permissions) => permissions.has(permissionCode));
 }
 
 // ─── Main Auth Function ──────────────────────────────────────
@@ -169,9 +173,10 @@ export function schoolAdminRoleAllows(role: SchoolAdminRole, permissionCode: str
  * Authorize a request as a school admin with a specific permission.
  *
  * Steps:
- *  1. Calls authorizeRequest() to validate JWT and check RBAC permission.
- *  2. Queries school_admins to find the admin record for this auth user.
- *  3. Verifies the linked school is active.
+ *  1. Calls authorizeRequest() to validate the JWT and resolve identity.
+ *  2. Resolves one active school_admins membership from validated URL scope.
+ *  3. Verifies the selected school is active.
+ *  4. Calls authorizeRequest() again with context.schoolId for scoped RBAC.
  *
  * Returns schoolId for tenant-scoped queries.
  */
@@ -179,33 +184,36 @@ export async function authorizeSchoolAdmin(
   request: Request,
   permissionCode: string
 ): Promise<SchoolAdminAuthResult> {
-  // Step 1: Standard RBAC check (JWT + permission)
-  const rbacAuth = await authorizeRequest(request, permissionCode);
+  // Step 1: Authenticate and resolve the caller identity without making an
+  // unscoped permission decision. Permission evaluation happens only after
+  // the requested active membership has been selected below.
+  const identityAuth = await authorizeRequest(request);
 
-  if (!rbacAuth.authorized) {
+  if (!identityAuth.authorized) {
     return {
       authorized: false,
-      userId: rbacAuth.userId,
+      userId: identityAuth.userId,
       schoolId: null,
       schoolAdminId: null,
       schoolAdminRole: null,
-      errorResponse: rbacAuth.errorResponse,
+      errorResponse: identityAuth.errorResponse,
     };
   }
 
-  const userId = rbacAuth.userId!;
+  const userId = identityAuth.userId!;
   const supabase = getSupabaseAdmin();
 
   try {
-    // Step 2: Look up school_admins record.
+    // Step 2: Look up active school_admins memberships. This intentionally
+    // does not use maybeSingle(): institution admins may govern more than one
+    // school and their requested URL scope is an authorization boundary.
     // `role` is fetched in the SAME query (no extra round-trip) so the Wave C
     // matrix narrowing and the returned schoolAdminRole reuse it.
-    const { data: adminRecord, error: adminError } = await supabase
+    const { data: adminRows, error: adminError } = await supabase
       .from('school_admins')
       .select('id, school_id, role, is_active')
       .eq('auth_user_id', userId)
-      .eq('is_active', true)
-      .maybeSingle();
+      .eq('is_active', true);
 
     if (adminError) {
       logger.error('school_admin_auth_lookup_failed', {
@@ -225,7 +233,9 @@ export async function authorizeSchoolAdmin(
       };
     }
 
-    if (!adminRecord) {
+    type AdminRow = { id: string; school_id: string; role: SchoolAdminRole | null; is_active: boolean };
+    const memberships = (Array.isArray(adminRows) ? adminRows : adminRows ? [adminRows] : []) as AdminRow[];
+    if (memberships.length === 0) {
       return {
         authorized: false,
         userId,
@@ -239,7 +249,60 @@ export async function authorizeSchoolAdmin(
       };
     }
 
-    const schoolAdminRole = (adminRecord.role as SchoolAdminRole) ?? null;
+    const requestUrl = new URL(request.url);
+    const camelScope = requestUrl.searchParams.get('schoolId')?.trim() || null;
+    const snakeScope = requestUrl.searchParams.get('school_id')?.trim() || null;
+    if (camelScope && snakeScope && camelScope !== snakeScope) {
+      return {
+        authorized: false,
+        userId,
+        schoolId: null,
+        schoolAdminId: null,
+        schoolAdminRole: null,
+        errorResponse: NextResponse.json(
+          { success: false, error: 'Conflicting school scope' },
+          { status: 400 },
+        ),
+      };
+    }
+    const requestedSchoolId = camelScope ?? snakeScope;
+    let adminRecord: AdminRow | undefined;
+    if (requestedSchoolId) {
+      adminRecord = memberships.find((membership) => membership.school_id === requestedSchoolId);
+      if (!adminRecord) {
+        return {
+          authorized: false,
+          userId,
+          schoolId: null,
+          schoolAdminId: null,
+          schoolAdminRole: null,
+          errorResponse: NextResponse.json(
+            { success: false, error: 'School scope is not one of your active memberships' },
+            { status: 403 },
+          ),
+        };
+      }
+    } else if (memberships.length === 1) {
+      adminRecord = memberships[0];
+    } else {
+      return {
+        authorized: false,
+        userId,
+        schoolId: null,
+        schoolAdminId: null,
+        schoolAdminRole: null,
+        errorResponse: NextResponse.json(
+          {
+            success: false,
+            error: 'Multiple schools — specify schoolId',
+            school_ids: memberships.map((membership) => membership.school_id),
+          },
+          { status: 400 },
+        ),
+      };
+    }
+
+    const schoolAdminRole = adminRecord.role ?? null;
 
     // Step 3: Verify the school is active
     const { data: school, error: schoolError } = await supabase
@@ -280,14 +343,59 @@ export async function authorizeSchoolAdmin(
       };
     }
 
-    // Step 4 (Wave C): role-aware capability narrowing.
+    // Step 4: Evaluate the requested permission in the selected school's RBAC
+    // context. Calling authorizeRequest without this context returns the union
+    // of a multi-school user's grants and can authorize School B using a grant
+    // held only at School A.
+    const scopedRbac = await authorizeRequest(request, permissionCode, {
+      context: { schoolId: adminRecord.school_id },
+    });
+    if (!scopedRbac.authorized) {
+      return {
+        authorized: false,
+        userId,
+        schoolId: adminRecord.school_id,
+        schoolAdminId: adminRecord.id,
+        schoolAdminRole,
+        errorResponse: scopedRbac.errorResponse,
+      };
+    }
+
+    if (
+      memberships.length > 1
+      && scopedRbac.permissionScope === 'baseline-global'
+      && !schoolAdminRolePermissionIsGoverned(permissionCode)
+    ) {
+      return {
+        authorized: false,
+        userId,
+        schoolId: adminRecord.school_id,
+        schoolAdminId: adminRecord.id,
+        schoolAdminRole,
+        errorResponse: NextResponse.json(
+          {
+            success: false,
+            error: 'Selected-school permission resolution is unavailable',
+            code: 'SCHOOL_SCOPED_RBAC_REQUIRED',
+          },
+          { status: 403 },
+        ),
+      };
+    }
+
+    // Step 5 (Wave C): role-aware capability narrowing.
     // GATED behind ff_school_admin_rbac (default OFF). When the flag is OFF this
     // entire block is SKIPPED, so the auth decision is byte-identical to before
     // Wave C (RBAC check + active-school lookup only). When ON, the caller's
     // school_admins.role must grant the requested permissionCode per the
     // CEO-approved matrix, else 403. The role field was already fetched above —
     // no extra DB round-trip.
-    const rbacEnforced = await isFeatureEnabled(SCHOOL_ADMIN_RBAC_FLAGS.V1);
+    // Multi-school requests always apply the selected membership's role
+    // matrix, even while the rollout flag is off. This safely narrows the
+    // baseline one-argument permission fallback, which cannot encode school-
+    // scoped user_roles. Single-school behavior remains flag-controlled.
+    const rbacEnforced = memberships.length > 1
+      || await isFeatureEnabled(SCHOOL_ADMIN_RBAC_FLAGS.V1);
     if (rbacEnforced) {
       if (!schoolAdminRole || !schoolAdminRoleAllows(schoolAdminRole, permissionCode)) {
         // Best-effort denial audit (fire-and-forget; never blocks the response).

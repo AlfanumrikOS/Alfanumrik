@@ -15,6 +15,7 @@ import StreakBadge from '@alfanumrik/ui/challenge/StreakBadge';
 import { STREAK_VISIBILITY_THRESHOLD } from '@alfanumrik/lib/challenge-config';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { toast } from '@alfanumrik/ui/ui/toast';
+import { useIsInsideRoleShellMain } from '@alfanumrik/ui/v3';
 
 /** Row shape returned by /api/v1/leaderboard/mastery. Phase 5 follow-on. */
 interface MasteryLeaderEntry {
@@ -115,6 +116,7 @@ function TabLoader({ label }: { label: string }) {
 export default function LeaderboardPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
+  const isInsideRoleShellMain = useIsInsideRoleShellMain();
 
   const [tab, setTab] = useState<Tab>('ranks');
   const [period, setPeriod] = useState('weekly');
@@ -391,6 +393,7 @@ export default function LeaderboardPage() {
     { id: 'fame', label: 'Hall of Fame', labelHi: 'गौरव गाथा', icon: '👑' },
     { id: 'titles', label: 'My Titles', labelHi: 'मेरे खिताब', icon: '🎖️' },
   ];
+  const ContentElement = isInsideRoleShellMain ? 'div' : 'main';
 
   return (
     <div className="mesh-bg min-h-dvh pb-nav">
@@ -424,7 +427,7 @@ export default function LeaderboardPage() {
         </div>
       </header>
 
-      <main className="app-container py-4 space-y-3">
+      <ContentElement className="app-container py-4 space-y-3">
         <SectionErrorBoundary section="Leaderboard">
 
         {fetchError && (
@@ -1215,7 +1218,7 @@ export default function LeaderboardPage() {
         )}
 
         </SectionErrorBoundary>
-      </main>
+      </ContentElement>
 
 
     </div>

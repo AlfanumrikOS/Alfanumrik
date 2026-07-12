@@ -243,6 +243,7 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
         const release = mappingEntryBlock(text, 'release', 2);
         const completion = mappingEntryBlock(text, 'production-release-completion-gate', 2);
         const semanticUnhealthy = "b.ok===false&&['degraded','unhealthy'].includes(b.status)";
+        const v3ServerPrerequisite = "b.checks?.v3_server_prerequisites?.status==='ok'";
         return workflowPushMainOnly(text)
           && concurrency.includes('cancel-in-progress: false')
           && includesAll("['healthy','degraded','unhealthy'].includes(b.status)", "typeof b.version?.git_sha==='string'")(gate)
@@ -258,6 +259,10 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
           && jobDependencies(health).includes('deploy')
           && jobDependencies(health).includes('production-verification-gate')
           && health.split(semanticUnhealthy).length - 1 >= 2
+          && health.split(v3ServerPrerequisite).length - 1 === 1
+          && post.split(v3ServerPrerequisite).length - 1 === 1
+          && !gate.includes(v3ServerPrerequisite)
+          && text.split(v3ServerPrerequisite).length - 1 === 2
           && includesAll(
             'POLL_WINDOW_SECONDS=600',
             'CURRENT_SHA_SEEN=0',
@@ -326,7 +331,7 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
           && !/soft[- ]pass|soft-success/i.test(health + post)
           && !text.includes('force_deploy_all_functions');
       },
-      failure: 'Production must be push-only, semantic/exact-SHA verified, and roll back only to a bound known-good deployment with post-rollback proof.',
+      failure: 'Production must be push-only, V3-prerequisite and semantic/exact-SHA verified, and roll back only to a bound known-good deployment with post-rollback proof.',
     },
     {
       id: 'ci-gate-and-exact-sha-poll',
@@ -335,7 +340,7 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
       pass: (text) => {
         const gate = mappingEntryBlock(text, 'ci-gate', 2);
         const health = mappingEntryBlock(text, 'health-check', 2);
-        return text.includes('permissions:\n  contents: read')
+        return /permissions:\r?\n  contents: read/.test(text)
           && includesAll('name: CI Gate', 'if: always()', 'SAME_REPOSITORY_PR', "forkSkips.push('integration-tests', 'e2e-critical-paths')", 'process.exit(1)')(gate)
           && includesAll('Trusted integration job requires', 'exit 1')(mappingEntryBlock(text, 'integration-tests', 2))
           && includesAll('POLL_WINDOW_SECONDS=600', 'while [ "$SECONDS" -lt "$DEADLINE" ]; do', 'EXPECTED_SHA=', "b.ok===true&&b.status==='healthy'", "b.version?.git_sha||''")(health)

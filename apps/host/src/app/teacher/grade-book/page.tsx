@@ -19,7 +19,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { useTeacherGradebookDepth } from '@alfanumrik/lib/use-teacher-gradebook-depth';
 import { BLOOM_LEVEL_ORDER } from '@alfanumrik/lib/types';
@@ -519,6 +519,9 @@ function ClassDepthView({
 export default function TeacherGradeBookPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const requestedClassId = searchParams?.get('class') ?? '';
 
   // Wave C — gate the mastery/Bloom depth view. Default OFF ⇒ the page is the
   // existing score matrix only (byte-identical).
@@ -561,13 +564,16 @@ export default function TeacherGradeBookPage() {
       const dash = await api('get_dashboard', { teacher_id: teacherId });
       const cls = (dash?.classes || []) as ClassRow[];
       setClasses(cls);
-      if (cls.length > 0 && !selectedClassId) setSelectedClassId(cls[0].id);
+      if (cls.length > 0 && !selectedClassId) {
+        const validatedRequested = cls.some((item) => item.id === requestedClassId) ? requestedClassId : '';
+        setSelectedClassId(validatedRequested || cls[0].id);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : tt(isHi, 'Failed to load classes', 'कक्षाएं लोड करने में विफल'));
     } finally {
       setClassesLoading(false);
     }
-  }, [teacherId, selectedClassId, isHi]);
+  }, [teacherId, selectedClassId, requestedClassId, isHi]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
 
@@ -753,7 +759,14 @@ export default function TeacherGradeBookPage() {
         </label>
         <select
           value={selectedClassId}
-          onChange={e => setSelectedClassId(e.target.value)}
+          onChange={e => {
+            const nextClass = e.target.value;
+            if (!classes.some((item) => item.id === nextClass)) return;
+            setSelectedClassId(nextClass);
+            const params = new URLSearchParams(searchParams?.toString() ?? '');
+            params.set('class', nextClass);
+            router.replace(`${pathname ?? '/teacher/grade-book'}?${params.toString()}`);
+          }}
           style={{
             padding: '6px 10px', background: '#F5F0EA', color: '#1A1207',
             border: '1px solid #EDE6DC', borderRadius: 6, fontSize: 13, outline: 'none',

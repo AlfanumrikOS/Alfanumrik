@@ -64,15 +64,6 @@ class _AlfanumrikAppState extends ConsumerState<AlfanumrikApp>
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.light,
       routerConfig: router,
-      builder: (context, child) {
-        // Prevent system font scaling from breaking layout
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.noScaling,
-          ),
-          child: child ?? const SizedBox.shrink(),
-        );
-      },
     );
   }
 }

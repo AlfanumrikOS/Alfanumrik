@@ -1,17 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/constants/api_constants.dart';
-import '../core/network/v2_api_client.dart';
 import '../data/models/chapter.dart';
 import '../data/repositories/learning_repository.dart';
 import 'auth_provider.dart';
+import 'experience_provider.dart';
 
 final learningRepositoryProvider = Provider<LearningRepository>((ref) {
-  // Inject the generated /v2 client ONLY when the flag is on. Flag-OFF builds
-  // pass null so the legacy table path is byte-identical and the dart-dio
-  // client is never constructed.
+  // Server assignment, rather than the permissive build switch, selects the
+  // generated V2 data plane. Explicit legacy remains on Supabase tables.
   return LearningRepository(
-    v2Client: ApiConstants.useV2 ? ref.read(v2ApiClientProvider) : null,
+    v2Client: ref.watch(oneExperienceV2ApiClientProvider),
   );
 });
 
@@ -21,7 +19,7 @@ final chaptersProvider =
   final student = ref.watch(studentProvider).valueOrNull;
   if (student == null) return [];
 
-  final repo = ref.read(learningRepositoryProvider);
+  final repo = ref.watch(learningRepositoryProvider);
   final result = await repo.getChapters(
     subjectCode: subjectCode,
     grade: student.grade,
@@ -32,7 +30,7 @@ final chaptersProvider =
 /// Topics for a given chapter
 final topicsProvider =
     FutureProvider.family<List<Topic>, String>((ref, chapterId) async {
-  final repo = ref.read(learningRepositoryProvider);
+  final repo = ref.watch(learningRepositoryProvider);
   final result = await repo.getTopics(chapterId);
   return result.dataOrNull ?? [];
 });
@@ -40,7 +38,7 @@ final topicsProvider =
 /// Single topic content (legacy `topics`-table path; `useV2` OFF).
 final topicContentProvider =
     FutureProvider.family<Topic?, String>((ref, topicId) async {
-  final repo = ref.read(learningRepositoryProvider);
+  final repo = ref.watch(learningRepositoryProvider);
   final result = await repo.getTopicContent(topicId);
   return result.dataOrNull;
 });
@@ -57,7 +55,7 @@ final conceptV2Provider = FutureProvider.family<Topic?, ({String subjectCode, St
     (ref, args) async {
   final student = ref.watch(studentProvider).valueOrNull;
   if (student == null) return null;
-  final repo = ref.read(learningRepositoryProvider);
+  final repo = ref.watch(learningRepositoryProvider);
   final result = await repo.getConceptV2(
     subjectCode: args.subjectCode,
     grade: student.grade,

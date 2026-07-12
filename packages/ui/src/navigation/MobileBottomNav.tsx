@@ -238,14 +238,17 @@ export function MobileBottomNav() {
                     return (
                       <button
                         key={role}
+                        type="button"
                         onClick={() => handleRoleSwitch(role)}
+                        aria-label={isHi ? cfg.labelHi : cfg.label}
+                        aria-current={isCurrent ? 'true' : undefined}
                         className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-left transition-all active:scale-[0.98]"
                         style={{
                           background: isCurrent ? `${cfg.color}12` : 'transparent',
                           color: isCurrent ? cfg.color : 'var(--text-2)',
                         }}
                       >
-                        <span className="text-xl w-7 text-center">{cfg.icon}</span>
+                        <span className="text-xl w-7 text-center" aria-hidden="true">{cfg.icon}</span>
                         <span className="text-sm font-semibold">{isHi ? cfg.labelHi : cfg.label}</span>
                         {isCurrent && <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: `${cfg.color}20`, color: cfg.color }}>{isHi ? 'सक्रिय' : 'Active'}</span>}
                       </button>

@@ -32,17 +32,16 @@ class ApiConstants {
 
   // ─── /v2 contract switch (Wave 2.3 mobile-parity) ───────────────────────────
   //
-  // When ON, the app renders the new server-driven `/v2` surfaces via the
-  // GENERATED dart-dio client (lib/api/v2). Wave 2.3 scope is the adaptive
-  // "Today" home + a 4-tab nav (Today / Learn / Foxy / Me). Everything else
-  // (quiz, learning, dashboard repositories) stays on the legacy path until
-  // the next increment.
+  // This is an emergency BUILD-TIME kill switch only. When ON, the app still
+  // asks the authenticated `/api/experience-v3` endpoint for the role's
+  // server-resolved sticky cohort before rendering One Experience. A missing,
+  // disabled or 0% flag therefore remains legacy.
   //
   // DEFAULT OFF: a build without `--dart-define=USE_V2=true` behaves EXACTLY
   // as today — current 5-tab nav, legacy repositories, Dashboard as the authed
   // landing. No current user sees any change.
   //
-  // Turn on per-build:
+  // Permit server-controlled cohorts per build:
   //   flutter run --dart-define=USE_V2=true
   //   flutter build apk --dart-define=USE_V2=true
   static const bool useV2 = bool.fromEnvironment('USE_V2', defaultValue: false);

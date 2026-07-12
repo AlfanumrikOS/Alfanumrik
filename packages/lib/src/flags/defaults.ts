@@ -42,6 +42,7 @@ import {
   FOXY_CURRICULUM_GUARD_FLAGS,
   FOXY_RESPONSE_CACHE_L2_FLAGS,
 } from './registries/foxy';
+import { EXPERIENCE_V3_FLAGS } from './registries/experience';
 
 /**
  * Default values for known flags. `isFeatureEnabled()` already returns false
@@ -111,6 +112,11 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [WHITE_LABEL_FLAGS.TENANT_CONFIG_V2]: false,
   [WHITE_LABEL_FLAGS.EVENT_BUS_V1]: false,
   ff_institution_entitlements_v1: false, // seeded OFF by 20260615205753_seed_ff_institution_entitlements_v1.sql
+  [EXPERIENCE_V3_FLAGS.STUDENT]: false,
+  [EXPERIENCE_V3_FLAGS.TEACHER]: false,
+  [EXPERIENCE_V3_FLAGS.PARENT]: false,
+  [EXPERIENCE_V3_FLAGS.SCHOOL_ADMIN]: false,
+  [EXPERIENCE_V3_FLAGS.SUPER_ADMIN]: false,
 } as const;
 
 /**

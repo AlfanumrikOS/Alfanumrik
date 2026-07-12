@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ADMIN_LEVELS, hasMinimumLevel } from './admin-auth';
+import { ADMIN_LEVELS, adminExperiencePermissions, hasMinimumLevel } from './admin-auth';
 
 describe('ADMIN_LEVELS', () => {
   it('declares 6 levels in precedence order (lowest → highest)', () => {
@@ -64,5 +64,15 @@ describe('hasMinimumLevel', () => {
         expect(hasMinimumLevel(ADMIN_LEVELS[i], ADMIN_LEVELS[j])).toBe(expected);
       }
     }
+  });
+});
+
+describe('adminExperiencePermissions', () => {
+  it('projects exact V3 operator capabilities from the verified level hierarchy', () => {
+    expect(adminExperiencePermissions('support')).toEqual(['system.audit']);
+    expect(adminExperiencePermissions('finance')).toEqual(['system.audit', 'finance.view_revenue']);
+    expect(adminExperiencePermissions('admin')).toEqual(['system.audit', 'finance.view_revenue', 'role.manage']);
+    expect(adminExperiencePermissions('super_admin')).toEqual(['system.audit', 'finance.view_revenue', 'role.manage', 'system.config']);
+    expect(adminExperiencePermissions('unknown')).toEqual([]);
   });
 });

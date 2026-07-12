@@ -606,6 +606,18 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
 
+  // The code-backed V3 review surface must be absent at the HTTP boundary in
+  // production. A page-level notFound() can be streamed after a 200 shell in
+  // modern Next.js, so enforce a real 404 before rendering as defense in depth.
+  if (
+    (process.env.NODE_ENV === 'production' ||
+      process.env.VERCEL_ENV === 'production') &&
+    (pathname === '/dev/experience-v3' ||
+      pathname.startsWith('/dev/experience-v3/'))
+  ) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   // ── /guardian/* → /parent/* permanent redirect ──────────────────────
   // The codebase standardised on `/parent` as the guardian portal route
   // prefix; `/guardian` was a documented alias that never had its own

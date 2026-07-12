@@ -79,6 +79,8 @@ export interface AppShellProps {
    * readable 1240px cap.
    */
   bleed?: boolean;
+  /** Use `div` when nested inside the V3 RoleShell's canonical main landmark. */
+  contentAs?: 'main' | 'div';
 }
 
 const SCROLL_COMPACT_THRESHOLD = 24;
@@ -94,6 +96,7 @@ export function AppShell({
   oneHandKey = 'alfanumrik:one-hand',
   className,
   bleed = false,
+  contentAs = 'main',
 }: AppShellProps) {
   const { isHi } = useAuth();
   const [headerCompact, setHeaderCompact] = useState(false);
@@ -169,11 +172,13 @@ export function AppShell({
   // Variant flags
   const hasRail = variant === 'rail' || variant === 'split';
   const hasAside = variant === 'split' && !!aside;
+  const ContentElement = contentAs;
 
   return (
     <div
       className={clsx('app-shell-v2', className)}
       data-variant={variant}
+      data-has-rail={hasRail ? 'true' : 'false'}
       data-no-aside={!hasAside ? 'true' : 'false'}
       data-one-hand={oneHand ? 'true' : 'false'}
       data-bleed={bleed ? 'true' : 'false'}
@@ -210,9 +215,9 @@ export function AppShell({
 
       {/* Main content — single column on mobile, two-column at tab,
           three-column at desk (when split variant requested). */}
-      <main className="app-shell-content" id="main">
+      <ContentElement className="app-shell-content" id={contentAs === 'main' ? 'main' : undefined}>
         {children}
-      </main>
+      </ContentElement>
 
       {/* Optional right aside — desktop only via CSS. */}
       {hasAside && <aside className="app-shell-aside">{aside}</aside>}

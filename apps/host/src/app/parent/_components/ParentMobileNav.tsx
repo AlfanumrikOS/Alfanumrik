@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { withParentChildId } from './parent-child-scope';
 
 interface ParentMobileNavProps {
   unreadCount: number;        // notification badge
   messagesUnread: number;     // messages badge
   isHi: boolean;
   mode: 'guardian' | 'link-code';
+  childId: string | null;
   onLogout: () => void;
 }
 
@@ -48,6 +50,7 @@ export default function ParentMobileNav({
   messagesUnread,
   isHi,
   mode,
+  childId,
   onLogout,
 }: ParentMobileNavProps) {
   const pathname = usePathname();
@@ -168,7 +171,10 @@ export default function ParentMobileNav({
                   <button
                     key={item.href}
                     type="button"
-                    onClick={() => { setShowMore(false); router.push(item.href); }}
+                    onClick={() => {
+                      setShowMore(false);
+                      router.push(withParentChildId(item.href, childId));
+                    }}
                     className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
                     style={{
                       background: active ? 'rgba(249, 115, 22, 0.08)' : 'transparent',
@@ -226,7 +232,7 @@ export default function ParentMobileNav({
               <button
                 key={tab.href}
                 type="button"
-                onClick={() => router.push(tab.href)}
+                onClick={() => router.push(withParentChildId(tab.href, childId))}
                 aria-label={isHi ? tab.labelHi : tab.label}
                 aria-current={active ? 'page' : undefined}
                 className="flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center"

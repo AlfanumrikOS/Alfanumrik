@@ -371,6 +371,7 @@ describe('POST /api/school-admin/students — single create', () => {
     expect(attachRpcCalls).toHaveLength(0);
     expect(preflightRpcCalls).toEqual([
       {
+        p_school_id: SCHOOL_ID,
         p_email: 'anika@school.edu',
         p_attempted_count: 1,
         p_class_id: 'class-x',

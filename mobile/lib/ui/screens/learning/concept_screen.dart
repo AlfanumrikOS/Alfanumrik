@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/api_constants.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/coin_rules.dart';
 import '../../../providers/learning_provider.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../providers/experience_provider.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/error_widget.dart';
 
@@ -24,7 +24,7 @@ class ConceptScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Flag-gated source: ON → `GET /v2/learn/concept` (keyed by subject +
     // chapter); OFF → the byte-identical legacy `topics`-table provider.
-    const useV2 = ApiConstants.useV2;
+    final useV2 = ref.watch(oneExperienceRuntimeEnabledProvider);
     final conceptArgs = (subjectCode: subjectCode, chapterId: topicId);
     final topicAsync = useV2
         ? ref.watch(conceptV2Provider(conceptArgs))

@@ -17,6 +17,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:alfanumrik/providers/parent_provider.dart';
 
 void main() {
+  group('active child scope', () {
+    test('keeps a linked selection and rejects stale selections', () {
+      const linked = ['child-1', 'child-2'];
+      expect(resolveActiveParentChildId(linked, 'child-2'), 'child-2');
+      expect(resolveActiveParentChildId(linked, 'foreign-child'), 'child-1');
+      expect(resolveActiveParentChildId(linked, null), 'child-1');
+      expect(resolveActiveParentChildId(const [], 'child-2'), isNull);
+    });
+  });
+
   group('outcomeFromStatus — mirrors POST /v2/parent/encourage contract', () {
     test('200 → success', () {
       expect(outcomeFromStatus(200), EncourageOutcome.success);

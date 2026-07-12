@@ -542,12 +542,18 @@
           "sessions_this_week": {
             "example": 4,
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "streak_days": {
             "example": 7,
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "time_minutes": {
             "example": 120,

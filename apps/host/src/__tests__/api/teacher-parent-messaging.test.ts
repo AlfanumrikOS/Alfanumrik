@@ -774,6 +774,43 @@ describe('cross-role visibility', () => {
     expect(json.unreadTotal).toBe(1);
   });
 
+  it('scopes the parent thread list and unread total to the selected child', async () => {
+    authedAs(GUARDIAN_AUTH_X, ['child.view_progress']);
+    const base = {
+      teacher_id: TEACHER_ID_A,
+      guardian_id: GUARDIAN_ID_X,
+      school_id: SCHOOL_ID,
+      subject: null,
+      created_at: '2026-05-15T10:00:00.000Z',
+      updated_at: '2026-05-15T10:00:00.000Z',
+    };
+    threads.push(
+      { ...base, id: 'aaaaaaaa-0000-0000-0000-000000000001', student_id: STUDENT_ID_X, last_message_at: '2026-05-15T11:00:00.000Z' },
+      { ...base, id: 'aaaaaaaa-0000-0000-0000-000000000002', student_id: STUDENT_ID_Y, last_message_at: '2026-05-15T12:00:00.000Z' },
+    );
+    messages.push(
+      { id: 'bbbbbbbb-0000-0000-0000-000000000001', thread_id: threads[0].id, sender_role: 'teacher', sender_auth_user_id: TEACHER_AUTH_A, body: 'Child X update', created_at: '2026-05-15T11:00:00.000Z', read_at: null },
+      { id: 'bbbbbbbb-0000-0000-0000-000000000002', thread_id: threads[1].id, sender_role: 'teacher', sender_auth_user_id: TEACHER_AUTH_A, body: 'Child Y update', created_at: '2026-05-15T12:00:00.000Z', read_at: null },
+    );
+
+    const res = await PARENT_THREADS(
+      getRequest(`/api/parent/messages/threads?student_id=${STUDENT_ID_X}`) as never,
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.threads).toHaveLength(1);
+    expect(json.threads[0].student_id).toBe(STUDENT_ID_X);
+    expect(json.unreadTotal).toBe(1);
+  });
+
+  it('rejects a malformed selected-child scope', async () => {
+    authedAs(GUARDIAN_AUTH_X, ['child.view_progress']);
+    const res = await PARENT_THREADS(
+      getRequest('/api/parent/messages/threads?student_id=not-a-uuid') as never,
+    );
+    expect(res.status).toBe(400);
+  });
+
   it('parent X sends → teacher A sees the thread in their list', async () => {
     authedAs(GUARDIAN_AUTH_X, ['child.view_progress']);
     await PARENT_POST(

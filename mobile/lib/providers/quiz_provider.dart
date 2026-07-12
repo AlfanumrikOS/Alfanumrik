@@ -1,24 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
-import '../core/constants/api_constants.dart';
 import '../core/network/network_info.dart';
-import '../core/network/v2_api_client.dart';
 import '../data/models/offline_quiz_models.dart';
 import '../data/models/quiz_question.dart';
 import '../data/repositories/quiz_repository.dart';
 import 'auth_provider.dart';
 import 'dashboard_provider.dart';
+import 'experience_provider.dart';
 import 'offline_quiz_provider.dart';
 
 const _uuidGen = Uuid();
 
 final quizRepositoryProvider = Provider<QuizRepository>((ref) {
-  // Inject the generated /v2 client ONLY when the flag is on. Flag-OFF builds
-  // pass null so the legacy Supabase-RPC/table path is byte-identical to today
-  // and the dart-dio client is never even constructed.
+  // The generated transport is injected only for an explicit server-enabled
+  // assignment. A permissive build remains legacy until that response arrives.
   return QuizRepository(
-    v2Client: ApiConstants.useV2 ? ref.read(v2ApiClientProvider) : null,
+    v2Client: ref.watch(oneExperienceV2ApiClientProvider),
   );
 });
 
@@ -312,8 +310,9 @@ class QuizNotifier extends Notifier<QuizState> {
     // grading), queue the attempt instead of submitting. The coordinator
     // drains it when connectivity returns. When ONLINE — or when useV2 is OFF —
     // this whole block is skipped and submission is byte-identical to today.
-    final coordinator =
-        ApiConstants.useV2 ? ref.read(offlineQuizCoordinatorProvider) : null;
+    final coordinator = ref.read(oneExperienceRuntimeEnabledProvider)
+        ? ref.read(offlineQuizCoordinatorProvider)
+        : null;
     final sessionId = state.serverSessionId;
     if (coordinator != null &&
         sessionId != null &&

@@ -39,6 +39,8 @@ function createChainableMock(resolvedValue: { data: unknown; error: unknown }) {
   chain.eq = vi.fn().mockReturnValue(chain);
   chain.maybeSingle = vi.fn().mockResolvedValue(resolvedValue);
   chain.single = vi.fn().mockResolvedValue(resolvedValue);
+  chain.then = (resolve: (value: typeof resolvedValue) => unknown, reject?: (reason: unknown) => unknown) =>
+    Promise.resolve(resolvedValue).then(resolve, reject);
   return chain;
 }
 

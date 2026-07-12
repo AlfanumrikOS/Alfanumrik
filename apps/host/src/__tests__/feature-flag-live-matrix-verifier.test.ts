@@ -122,6 +122,101 @@ describe('RCA-24 live feature flag matrix verifier', () => {
     ]);
   });
 
+  it.each([5, 25, 50])(
+    'honors an explicitly declared %i%% rollout percentage',
+    (rolloutPercentage) => {
+      const stagedMatrix: FeatureFlagMatrix = {
+        flags: [{
+          name: 'ff_staged_rollout',
+          stagingEnabled: false,
+          productionEnabled: true,
+          rolloutPercentage,
+        }],
+      };
+      const rows: LiveFeatureFlagRow[] = [{
+        flag_name: 'ff_staged_rollout',
+        is_enabled: true,
+        target_environments: ['production'],
+        rollout_percentage: rolloutPercentage,
+      }];
+
+      expect(compareFeatureFlagRows(stagedMatrix, rows, 'production')).toMatchObject({
+        ok: true,
+        mismatched: [],
+      });
+    },
+  );
+
+  it('reports live percentage drift from an explicit matrix rollout', () => {
+    const stagedMatrix: FeatureFlagMatrix = {
+      flags: [{
+        name: 'ff_staged_rollout',
+        stagingEnabled: false,
+        productionEnabled: true,
+        rolloutPercentage: 25,
+      }],
+    };
+    const rows: LiveFeatureFlagRow[] = [{
+      flag_name: 'ff_staged_rollout',
+      is_enabled: true,
+      target_environments: ['production'],
+      rollout_percentage: 100,
+    }];
+
+    const result = compareFeatureFlagRows(stagedMatrix, rows, 'production');
+
+    expect(result.ok).toBe(false);
+    expect(result.mismatched).toEqual([{
+      name: 'ff_staged_rollout',
+      expectedEnabled: true,
+      actualEnabled: true,
+      expectedRolloutPercentage: 25,
+      actualRolloutPercentage: 100,
+      reason: 'row rollout_percentage is 100 but matrix explicitly expects 25',
+    }]);
+  });
+
+  it.each([-1, 101, 25.5])(
+    'fails closed for invalid declared rolloutPercentage %s',
+    (rolloutPercentage) => {
+      const invalidMatrix: FeatureFlagMatrix = {
+        flags: [{
+          name: 'ff_invalid_rollout',
+          stagingEnabled: false,
+          productionEnabled: true,
+          rolloutPercentage,
+        }],
+      };
+
+      expect(() => compareFeatureFlagRows(invalidMatrix, [], 'production'))
+        .toThrow(/expected an integer between 0 and 100/);
+    },
+  );
+
+  it('rejects contradictory zero and nonzero rollout declarations', () => {
+    const enabledAtZero: FeatureFlagMatrix = {
+      flags: [{
+        name: 'ff_enabled_at_zero',
+        stagingEnabled: false,
+        productionEnabled: true,
+        rolloutPercentage: 0,
+      }],
+    };
+    const disabledAtTwentyFive: FeatureFlagMatrix = {
+      flags: [{
+        name: 'ff_disabled_at_twenty_five',
+        stagingEnabled: false,
+        productionEnabled: false,
+        rolloutPercentage: 25,
+      }],
+    };
+
+    expect(() => compareFeatureFlagRows(enabledAtZero, [], 'production'))
+      .toThrow(/enabled environment requires a value between 1 and 100/);
+    expect(() => compareFeatureFlagRows(disabledAtTwentyFive, [], 'production'))
+      .toThrow(/disabled in every environment must declare 0/);
+  });
+
   it('does not fail on unclassified flags that are inert in the target environment', () => {
     const rows: LiveFeatureFlagRow[] = [
       {

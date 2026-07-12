@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { supabase } from '@alfanumrik/lib/supabase';
@@ -10,12 +10,19 @@ import { REPORT_MONTHS_COUNT } from '@alfanumrik/lib/constants';
 import { getQuizScoreColor } from '@alfanumrik/lib/score-colors';
 import ParentLabReportWidget from '@alfanumrik/ui/parent/ParentLabReportWidget';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import {
+  readParentChildId,
+  replaceParentChildId,
+  resolveLinkedChild,
+  withParentChildId,
+} from '../_components/parent-child-scope';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const SESSION_KEY = 'alfanumrik_parent_session';
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
+const PARENT_REPORT_TIMEOUT_MS = 15_000;
 
 const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
 
@@ -155,11 +162,19 @@ async function api(action: string, params: Record<string, unknown> = {}) {
     if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
   } catch { /* no session — request will be rejected by Edge Function */ }
 
-  const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PARENT_REPORT_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action, ...params }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
   if (!res.ok) {
     const errorText = await res.text().catch(() => 'Unknown error');
     throw new Error(`API error ${res.status}: ${errorText}`);
@@ -1455,7 +1470,11 @@ function ChildSelector({ childList, selectedId, onSelect }: {
 function ParentReportsPage() {
   const auth = useAuth();
   const isHi = auth.isHi ?? false;
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const requestedChildId = readParentChildId(searchParams);
+  const requestedChildIdRef = useRef(requestedChildId);
+  requestedChildIdRef.current = requestedChildId;
   const [guardian, setGuardian] = useState<ReportParentSession | null>(null);
   const [student, setStudent] = useState<ReportStudentSession | null>(null);
   const [children, setChildren] = useState<Array<{ id: string; name: string; grade?: string }>>([]);
@@ -1464,53 +1483,88 @@ function ParentReportsPage() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [scoreTrends, setScoreTrends] = useState<ScoreTrendEntry[]>([]);
   const [error, setError] = useState('');
+  const [scopeError, setScopeError] = useState('');
+  const [scopeAttempt, setScopeAttempt] = useState(0);
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'all'>('week');
   const [viewMode, setViewMode] = useState<'weekly' | 'monthly'>('weekly');
-  const hasFetched = useRef(false);
+  const reportSequence = useRef(0);
 
   // Auth: resolve guardian + student + children list
   useEffect(() => {
     if (auth.isLoading) return;
 
-    const resolveSession = async (g: ReportParentSession | null, s: ReportStudentSession | null) => {
-      setGuardian(g);
-      setStudent(s);
-      // Load all children for this guardian
-      if (g?.id) {
+    let cancelled = false;
+
+    const resolveSession = async () => {
+      setChecking(true);
+      setScopeError('');
+
+      if (auth.guardian) {
+        // Guardian mode derives child scope only from the authenticated,
+        // server-filtered link list. A stale link-code cache is not authority.
+        setGuardian(auth.guardian);
+        setStudent(null);
         try {
-          const res = await api('get_children', { guardian_id: g.id });
-          if (res?.children && Array.isArray(res.children)) {
-            setChildren(res.children);
-          } else if (s) {
-            setChildren([{ id: s.id, name: s.name, grade: s.grade }]);
+          const res = await api('get_children', { guardian_id: auth.guardian.id });
+          if (cancelled) return;
+          const linkedChildren: ReportStudentSession[] = Array.isArray(res?.children)
+            ? res.children
+                .map((child: Record<string, unknown>) => ({
+                  id: String(child.id ?? ''),
+                  name: String(child.name ?? ''),
+                  grade: String(child.grade ?? ''),
+                }))
+                .filter((child: ReportStudentSession) => Boolean(child.id))
+            : [];
+          const scopedChild = resolveLinkedChild(
+            linkedChildren,
+            requestedChildIdRef.current,
+            linkedChildren[0]?.id,
+          );
+          setChildren(linkedChildren);
+          setStudent(scopedChild);
+          if (!scopedChild) {
+            setScopeError(t(isHi, 'No linked child was found.', 'कोई जुड़ा हुआ बच्चा नहीं मिला।'));
           }
         } catch {
-          if (s) setChildren([{ id: s.id, name: s.name, grade: s.grade }]);
+          if (!cancelled) {
+            setChildren([]);
+            setStudent(null);
+            setScopeError(t(
+              isHi,
+              'Could not load linked children. Please try again.',
+              'जुड़े हुए बच्चों को लोड नहीं किया जा सका। कृपया फिर से कोशिश करें।',
+            ));
+          }
+        } finally {
+          if (!cancelled) setChecking(false);
         }
+        return;
+      }
+
+      // Link-code sessions remain pinned to their verified single child.
+      const session = await loadParentSession();
+      if (cancelled) return;
+      if (session) {
+        setGuardian(session.guardian);
+        setChildren([session.student]);
+        setStudent(session.student);
       }
       setChecking(false);
     };
 
-    if (auth.guardian) {
-      loadParentSession().then(session => {
-        resolveSession(auth.guardian, session?.student ?? null);
-      });
-      return;
-    }
-
-    loadParentSession().then(session => {
-      if (session) {
-        resolveSession(session.guardian, session.student);
-      } else {
-        setChecking(false);
-      }
-    });
-  }, [auth.isLoading, auth.guardian]);
+    void resolveSession();
+    return () => { cancelled = true; };
+  }, [auth.isLoading, auth.guardian, isHi, scopeAttempt]);
 
   // Handle child selection
   const handleSelectChild = (childId: string) => {
     const child = children.find(c => c.id === childId);
-    if (child) setStudent({ id: child.id, name: child.name, grade: child.grade || '' });
+    if (!child) return;
+    setReport(null);
+    setScoreTrends([]);
+    setStudent({ id: child.id, name: child.name, grade: child.grade || '' });
+    router.replace(replaceParentChildId('/parent/reports', searchParams, child.id));
   };
 
   // Pre-select the child specified by ?childId= query param (set by "View Full
@@ -1519,11 +1573,17 @@ function ParentReportsPage() {
   // after the initial fetch.
   useEffect(() => {
     if (children.length === 0) return;
-    const childIdParam = searchParams.get('childId');
-    if (!childIdParam) return;
-    const match = children.find(c => c.id === childIdParam);
-    if (match) setStudent({ id: match.id, name: match.name, grade: match.grade || '' });
-  }, [children, searchParams]);
+    const scopedChild = resolveLinkedChild(children, requestedChildId, student?.id);
+    if (!scopedChild) return;
+    if (student?.id !== scopedChild.id) {
+      setReport(null);
+      setScoreTrends([]);
+      setStudent({ id: scopedChild.id, name: scopedChild.name, grade: scopedChild.grade || '' });
+    }
+    if (requestedChildId !== scopedChild.id) {
+      router.replace(replaceParentChildId('/parent/reports', searchParams, scopedChild.id));
+    }
+  }, [children, requestedChildId, router, searchParams, student?.id]);
 
   // Auth guard: redirect if not logged in
   useEffect(() => {
@@ -1536,6 +1596,7 @@ function ParentReportsPage() {
   // Fetch report data
   const fetchReport = useCallback(async () => {
     if (!guardian || !student) return;
+    const sequence = ++reportSequence.current;
     setLoading(true);
     setError('');
     try {
@@ -1544,14 +1605,27 @@ function ParentReportsPage() {
         student_id: student.id,
         date_range: dateRange,
       });
+      if (sequence !== reportSequence.current) return;
       if (res.error) {
         setError(res.error);
+        setReport(null);
+        setLoading(false);
+        return;
       } else {
         setReport(res);
+        // Score trends below are additive; they must not keep the report in a
+        // full-page loading state after the primary response is available.
+        setLoading(false);
       }
     } catch (err) {
+      if (sequence !== reportSequence.current) return;
       setError(isHi ? 'रिपोर्ट लोड नहीं हो सकी। कृपया बाद में फिर कोशिश करें।' : 'Could not load report. Please try again later.');
+      setReport(null);
+      setLoading(false);
+      return;
     }
+
+    if (sequence !== reportSequence.current) return;
 
     // Fetch Performance Score trends from score_history + performance_scores
     // RLS handles parent access via guardian_student_links policies
@@ -1600,16 +1674,16 @@ function ParentReportsPage() {
             levelName: String(cs.level_name || getLevelFromScore(currentScore)),
           };
         });
-        setScoreTrends(trends);
+        if (sequence === reportSequence.current) setScoreTrends(trends);
       } else {
-        setScoreTrends([]);
+        if (sequence === reportSequence.current) setScoreTrends([]);
       }
     } catch {
       // Non-fatal: score trends are additive
-      setScoreTrends([]);
+      if (sequence === reportSequence.current) setScoreTrends([]);
     }
 
-    setLoading(false);
+    if (sequence === reportSequence.current) setLoading(false);
   }, [guardian, student, dateRange, isHi]);
 
   useEffect(() => {
@@ -1637,6 +1711,24 @@ function ParentReportsPage() {
         <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
           <div style={{ width: 40, height: 40, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
           {t(isHi, 'Loading...', 'लोड हो रहा है...')}
+        </div>
+      </div>
+    );
+  }
+
+  if (scopeError) {
+    return (
+      <div style={pageStyle}>
+        <style>{printStyles}</style>
+        <div role="alert" style={{ ...cardStyle, marginTop: 40, textAlign: 'center', color: '#B91C1C' }}>
+          <p style={{ margin: '0 0 14px' }}>{scopeError}</p>
+          <button
+            type="button"
+            onClick={() => setScopeAttempt((attempt) => attempt + 1)}
+            style={{ minHeight: 44, border: 0, borderRadius: 8, background: '#16A34A', color: '#fff', padding: '8px 18px', fontWeight: 600 }}
+          >
+            {t(isHi, 'Try again', 'फिर से कोशिश करें')}
+          </button>
         </div>
       </div>
     );
@@ -1697,7 +1789,7 @@ function ParentReportsPage() {
             <div style={{ fontSize: 16, fontWeight: 600, opacity: 0.95 }}>{student.name}</div>
             <div style={{ fontSize: 13, opacity: 0.8, marginTop: 2 }}>{t(isHi, 'Grade', 'कक्षा')} {student.grade}</div>
           </div>
-          <a href="/parent" className="no-print" style={{
+          <a href={withParentChildId('/parent', student.id)} className="no-print" style={{
             padding: '8px 14px', backgroundColor: 'rgba(255,255,255,0.2)',
             color: '#fff', border: 'none', borderRadius: 8,
             fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none',

@@ -3,9 +3,8 @@
 // `mapPrimaryRole` is the pure heart of the guardian↔student fork: it turns the
 // `get_user_role` RPC payload (the SAME RPC web's AuthContext calls) into a
 // [UserRole]. The router uses guardian → /parent, everything-else → student
-// flow, so the mapping's fail-safe (unknown → NOT guardian) is what guarantees
-// a transient/odd payload can never strand a student or wrongly fork a
-// non-guardian into the parent tree.
+// flow. Unknown remains a distinct fail-closed result so a transient/odd
+// payload can never fork a guardian, teacher or operator into the student tree.
 //
 // Pure — no Supabase, no network.
 import 'package:flutter_test/flutter_test.dart';
@@ -21,10 +20,12 @@ void main() {
       expect(mapPrimaryRole({'primary_role': 'student'}), UserRole.student);
     });
 
-    test('teacher → UserRole.unknown (not surfaced on mobile; never guardian)',
-        () {
-      expect(mapPrimaryRole({'primary_role': 'teacher'}), UserRole.unknown);
-    });
+    test(
+      'teacher → UserRole.unknown (not surfaced on mobile; never guardian)',
+      () {
+        expect(mapPrimaryRole({'primary_role': 'teacher'}), UserRole.unknown);
+      },
+    );
 
     test('none → UserRole.unknown', () {
       expect(mapPrimaryRole({'primary_role': 'none'}), UserRole.unknown);

@@ -1002,6 +1002,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: One Experience V3 contract gate
+        run: npm run check:v3-frontend
+
       # Security audit: critical vulns fail CI, others warn.
       - name: Security audit
         run: npm audit --audit-level=critical || echo "::warning::npm audit found vulnerabilities"
@@ -1151,24 +1154,37 @@ jobs:
           # deno cache resolves and downloads all remote imports (std@0.210.0/assert,
           # esm.sh/@supabase/supabase-js@2, etc.) and stores them in the Deno cache dir.
           # The test step then runs with only --allow-read --allow-env (no network).
-          deno cache --no-lock --no-check \
-            supabase/functions/parent-portal/__tests__/contract.test.ts \
-            supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
-            supabase/functions/daily-cron/__tests__/contract.test.ts \
-            supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
-            supabase/functions/send-auth-email/__tests__/always-200.test.ts \
-            supabase/functions/grounded-answer/__tests__/cache.test.ts \
-            supabase/functions/grounded-answer/__tests__/circuit.test.ts \
-            supabase/functions/grounded-answer/__tests__/citations.test.ts \
-            supabase/functions/grounded-answer/__tests__/claude.test.ts \
-            supabase/functions/grounded-answer/__tests__/confidence.test.ts \
-            supabase/functions/grounded-answer/__tests__/coverage.test.ts \
-            supabase/functions/grounded-answer/__tests__/embedding.test.ts \
-            supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
-            supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
-            supabase/functions/grounded-answer/__tests__/trace.test.ts \
-            supabase/functions/grounded-answer/__tests__/validation.test.ts \
-            supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
+          attempt=1
+          while true; do
+            if deno cache --no-lock --no-check \
+              supabase/functions/parent-portal/__tests__/contract.test.ts \
+              supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
+              supabase/functions/daily-cron/__tests__/contract.test.ts \
+              supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
+              supabase/functions/send-auth-email/__tests__/always-200.test.ts \
+              supabase/functions/grounded-answer/__tests__/cache.test.ts \
+              supabase/functions/grounded-answer/__tests__/circuit.test.ts \
+              supabase/functions/grounded-answer/__tests__/citations.test.ts \
+              supabase/functions/grounded-answer/__tests__/claude.test.ts \
+              supabase/functions/grounded-answer/__tests__/confidence.test.ts \
+              supabase/functions/grounded-answer/__tests__/coverage.test.ts \
+              supabase/functions/grounded-answer/__tests__/embedding.test.ts \
+              supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
+              supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
+              supabase/functions/grounded-answer/__tests__/trace.test.ts \
+              supabase/functions/grounded-answer/__tests__/validation.test.ts \
+              supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts; then
+              break
+            fi
+            if [ "$attempt" -ge 3 ]; then
+              echo "::error::Deno module cache pre-warm failed after $attempt attempts."
+              exit 1
+            fi
+            delay=$((attempt * 5))
+            echo "::warning::Deno module download failed on attempt $attempt; retrying in ${delay}s."
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
 
       - name: Run Edge Function Deno tests (deterministic, offline)
         run: |
@@ -1269,6 +1285,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The generic E2E job remains advisory while its legacy flakes are being
+      # retired. These V3 checks are intentionally part of the blocking build
+      # job so the preview suite cannot silently pass by skipping when its
+      # local-only code is absent.
+      - name: Install Chromium for V3 browser gate
+        if: github.event_name == 'pull_request'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run V3 local development preview assertions
+        if: github.event_name == 'pull_request'
+        run: >-
+          npx playwright test e2e/one-experience-v3-preview.spec.ts
+          --project=chromium
+          --grep-invert "production build denies the preview route"
+        env:
+          # Deliberately non-secret and useful only on this ephemeral local
+          # development server. Production denies the route regardless of code.
+          EXPERIENCE_V3_PREVIEW_CODE: 'ci-v3-local-preview-only'
+
       # Bump Node heap to 6 GB. Default is ~2 GB which the project's bundle
       # has outgrown — surfaced on PR #817 as a deterministic
       # `FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap
@@ -1280,6 +1315,16 @@ jobs:
         run: npm run build
         env:
           NODE_OPTIONS: --max-old-space-size=6144
+
+      - name: Prove the production build denies the V3 preview route
+        if: github.event_name == 'pull_request'
+        run: >-
+          npx playwright test e2e/one-experience-v3-preview.spec.ts
+          --project=chromium
+          --grep "production build denies the preview route"
+        env:
+          EXPERIENCE_V3_PREVIEW_CODE: 'ci-v3-local-preview-only'
+          V3_EXPECT_PREVIEW_404: 'true'
 
       - name: Bundle size report
         run: |

@@ -36,6 +36,7 @@ import { loadChapterContent } from './actions';
 import type { ChapterContent } from '@alfanumrik/lib/learn/fetchChapterContent';
 import { resolvePedagogyRule } from '@alfanumrik/lib/learn/pedagogy-content-rules';
 import { useChapterReadiness } from '@alfanumrik/lib/useChapterReadiness';
+import { useExperiencePresence } from '@alfanumrik/ui/v3/foundations/ExperiencePresence';
 
 // Lazy-loaded so the markdown + KaTeX bundle stays out of first paint.
 // Only pulled when the student opens Read mode.
@@ -100,6 +101,8 @@ interface ConceptState {
 
 function ChapterConceptPageContent() {
   const router = useRouter();
+  const { active: experienceV3 } = useExperiencePresence();
+  const studentHome = experienceV3 ? '/today' : '/dashboard';
   const params = useParams();
   const searchParams = useSearchParams();
   const subject = params.subject as string;
@@ -829,6 +832,7 @@ function ChapterConceptPageContent() {
       <div className="mesh-bg">
         <AppShell
           variant="mobile"
+          contentAs={experienceV3 ? 'div' : 'main'}
 
           header={
             <div className="page-header-inner flex items-center gap-3">
@@ -1032,9 +1036,10 @@ function ChapterConceptPageContent() {
       <div className="mesh-bg">
         <AppShell
           variant="mobile"
+          contentAs={experienceV3 ? 'div' : 'main'}
           header={
             <div className="page-header-inner flex items-center gap-3">
-              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
+              <button onClick={() => router.push(studentHome)} className="text-[var(--text-3)]">&larr;</button>
               <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
                 {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
               </span>
@@ -1073,10 +1078,11 @@ function ChapterConceptPageContent() {
       <div className="mesh-bg">
         <AppShell
           variant="mobile"
+          contentAs={experienceV3 ? 'div' : 'main'}
 
           header={
             <div className="page-header-inner flex items-center gap-3">
-              <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)]">&larr;</button>
+              <button onClick={() => router.push(studentHome)} className="text-[var(--text-3)]">&larr;</button>
               <span className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
                 {subMeta?.icon} {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
               </span>
@@ -1142,7 +1148,7 @@ function ChapterConceptPageContent() {
         isHi={isHi}
         loading={readLoading}
         content={readContent}
-        onBack={() => router.push('/dashboard')}
+        onBack={() => router.push(studentHome)}
         onSwitchToPractice={switchToPracticeMode}
       />
     );
@@ -1163,7 +1169,7 @@ function ChapterConceptPageContent() {
     <div className="w-full px-4 md:px-8 py-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] mr-1">&larr;</button>
+          <button onClick={() => router.push(studentHome)} className="text-[var(--text-3)] mr-1">&larr;</button>
           <span className="text-lg">{subMeta?.icon}</span>
           <span className="text-sm font-semibold truncate" style={{ color: subMeta?.color }}>
             {subMeta?.name} · {isHi ? `अध्याय ${chapterNum}` : `Chapter ${chapterNum}`}
@@ -1214,6 +1220,7 @@ function ChapterConceptPageContent() {
     <div className="mesh-bg">
       <AppShell
         variant="mobile"
+        contentAs={experienceV3 ? 'div' : 'main'}
 
         header={learnHeaderContent}
         bleed={true}
@@ -2306,7 +2313,7 @@ function ChapterConceptPageContent() {
                   <Button
                     fullWidth
                     variant="ghost"
-                    onClick={() => router.push('/dashboard')}
+                    onClick={() => router.push(studentHome)}
                   >
                     🏠 {isHi ? 'डैशबोर्ड पर वापस जाएं' : 'Return to Dashboard'}
                   </Button>
@@ -2993,4 +3000,3 @@ function parseCbseTeacherExplanation(text: string, title: string, isHi: boolean)
 
   return steps;
 }
-

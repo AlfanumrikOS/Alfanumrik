@@ -19,11 +19,14 @@
  * EXISTING /quiz engine; the quiz engine itself is never modified.
  */
 
-import { notFound } from 'next/navigation';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useRequireAuth } from '@alfanumrik/lib/useRequireAuth';
 import { usePracticeOsFlag } from '@alfanumrik/lib/use-practice-os-flag';
 import { LoadingFoxy } from '@alfanumrik/ui/ui';
+import StudentV3Gate from '../_components/StudentV3Gate';
+import { StudentPracticeV3 } from '../_components/StudentV3Pages';
 
 // Lazy-load the hub so the flag-OFF/404 path never fetches this bundle.
 const PracticeCenter = dynamic(() => import('@alfanumrik/ui/practice/os/PracticeCenter'), {
@@ -31,14 +34,19 @@ const PracticeCenter = dynamic(() => import('@alfanumrik/ui/practice/os/Practice
   loading: () => <LoadingFoxy />,
 });
 
-export default function PracticePage() {
+function LegacyPracticePage() {
   const { isReady, student, isHi } = useRequireAuth();
   const flag = usePracticeOsFlag();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (flag === 'off') router.replace('/quiz');
+  }, [flag, router]);
 
   // Resolved OFF → the route does not exist. (PENDING falls through to a
   // skeleton so we never 404 a legitimately-ON user on first paint.)
   if (flag === 'off') {
-    notFound();
+    return <LoadingFoxy />;
   }
 
   // Still resolving the flag, or auth not ready yet → neutral loading.
@@ -48,4 +56,8 @@ export default function PracticePage() {
 
   // flag === 'on' and auth ready → render the Practice Center.
   return <PracticeCenter studentId={student?.id} grade={student?.grade} isHi={isHi} />;
+}
+
+export default function PracticePage() {
+  return <StudentV3Gate legacy={<LegacyPracticePage />} v3={<StudentPracticeV3 />} />;
 }

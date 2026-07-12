@@ -351,7 +351,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
           isLoading: identityLoading,
         }}
       >
-        <main className={`flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
+        <main className={`school-admin-shell__content flex-1 max-w-screen-xl overflow-auto p-6${cosmicEnabled ? ' relative z-10' : ''}`}>{children}</main>
       </SchoolAdminContext.Provider>
     </div>
   );

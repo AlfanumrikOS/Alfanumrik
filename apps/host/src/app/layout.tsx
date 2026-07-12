@@ -1,4 +1,5 @@
 import '@alfanumrik/ui/globals.css';
+import '@alfanumrik/ui/v3/foundations/tokens.css';
 // KaTeX math styling, self-hosted from the npm package (was a third-party CDN
 // <link> that browsers' Tracking Prevention blocked + version-mismatched).
 import 'katex/dist/katex.min.css';
@@ -193,7 +194,7 @@ export default function RootLayout({
                   role-scoped palettes. Renders no markup itself. */}
               <CosmicThemeProvider>
                 <ErrorBoundary>
-                  <div id="main-content" className="app-shell">
+                  <div className="app-shell">
                     <GlobalAppLayout>{children}</GlobalAppLayout>
                   </div>
                 </ErrorBoundary>

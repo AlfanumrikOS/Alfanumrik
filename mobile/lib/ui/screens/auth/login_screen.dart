@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../providers/experience_provider.dart';
+import '../../../providers/role_provider.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -35,15 +37,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
 
-    final result = await ref.read(studentProvider.notifier).signIn(
-          email: _emailCtrl.text.trim(),
-          password: _passCtrl.text,
-        );
+    final result = await ref
+        .read(studentProvider.notifier)
+        .signIn(email: _emailCtrl.text.trim(), password: _passCtrl.text);
 
     if (!mounted) return;
 
     result.when(
-      success: (_) => context.go('/'),
+      success: (_) {
+        // These providers are session-cached. Clear any assignment from a
+        // previous account before GoRouter resolves the new account's role and
+        // sticky cohort.
+        ref.invalidate(roleProvider);
+        ref.invalidate(oneExperienceProvider);
+        context.go('/');
+      },
       failure: (msg) => setState(() {
         _isLoading = false;
         _error = msg;
@@ -80,10 +88,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const Text(
                   'Smart learning for CBSE students',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textTertiary,
-                  ),
+                  style: TextStyle(fontSize: 14, color: AppColors.textTertiary),
                 ),
 
                 const SizedBox(height: 48),
@@ -100,7 +105,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     child: Text(
                       _error!,
                       style: const TextStyle(
-                          color: AppColors.error, fontSize: 13),
+                        color: AppColors.error,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
 
@@ -115,7 +122,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     prefixIcon: Icon(Icons.email_outlined, size: 20),
                   ),
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email is required';
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Email is required';
+                    }
                     if (!v.contains('@')) return 'Enter a valid email';
                     return null;
                   },
@@ -176,7 +185,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const Text(
                       "Don't have an account? ",
                       style: TextStyle(
-                          color: AppColors.textTertiary, fontSize: 13),
+                        color: AppColors.textTertiary,
+                        fontSize: 13,
+                      ),
                     ),
                     GestureDetector(
                       onTap: () => context.go('/signup'),
