@@ -51,6 +51,15 @@ describe('DevOps deployment policy contract', () => {
     expect(release?.pass(workflow.replace('vercel rollback "$ROLLBACK_BASELINE_DEPLOYMENT_ID"', 'vercel promote "$ROLLBACK_BASELINE_DEPLOYMENT_ID"'))).toBe(false);
     expect(release?.pass(workflow.replace('vercel rollback "$ROLLBACK_BASELINE_DEPLOYMENT_ID"', 'vercel ls --prod\n          vercel rollback "$ROLLBACK_BASELINE_DEPLOYMENT_ID"'))).toBe(false);
     expect(release?.pass(workflow.replace('if [ "$PRODUCTION_MIGRATIONS_CHANGED" = "true" ] || [ "$EDGE_FUNCTIONS_CHANGED" = "true" ]; then', 'if false; then'))).toBe(false);
+    expect(release?.pass(workflow.replace("${{ !cancelled()\n      && needs.health-check.result == 'success'", "${{ needs.health-check.result == 'success'"))).toBe(false);
+    expect(release?.pass(workflow.replace("${{ !cancelled()\n      && github.ref == 'refs/heads/main'", "${{ github.ref == 'refs/heads/main'"))).toBe(false);
+    expect(release?.pass(workflow.replace("      && needs.post-deploy-verify.result == 'success'\n", ''))).toBe(false);
+    expect(release?.pass(workflow.replace('if: ${{ always() }}\n    steps:\n      - name: Enforce terminal production release outcomes', 'if: ${{ success() }}\n    steps:\n      - name: Enforce terminal production release outcomes'))).toBe(false);
+    expect(release?.pass(workflow.replace('needs: [health-check, post-deploy-verify, release]', 'needs: [health-check, post-deploy-verify]'))).toBe(false);
+    expect(release?.pass(workflow.replace('RELEASE_RESULT: ${{ needs.release.result }}', 'RELEASE_RESULT: success'))).toBe(false);
+    expect(release?.pass(workflow.replace('EXPECTED_SHA: ${{ github.sha }}', 'EXPECTED_SHA: stale-sha'))).toBe(false);
+    expect(release?.pass(workflow.replace('require_equal "Release result" "$RELEASE_RESULT" "success"', 'echo "$RELEASE_RESULT"'))).toBe(false);
+    expect(release?.pass(workflow.replace('echo "Production release completion evidence is incomplete."\n            exit 1', 'echo "Production release completion evidence is incomplete."\n            exit 0'))).toBe(false);
 
     const vercel = readFileSync(resolve(__dirname, '../../../../vercel.json'), 'utf8');
     const unsafe = JSON.stringify({ ...JSON.parse(vercel), git: { deploymentEnabled: { main: false } } });

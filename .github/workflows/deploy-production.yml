@@ -783,7 +783,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [health-check]
     if: >-
-      ${{ needs.health-check.result == 'success'
+      ${{ !cancelled()
+      && needs.health-check.result == 'success'
       && needs.health-check.outputs.exact_sha_verified == 'true'
       && needs.health-check.outputs.verified_github_sha == github.sha }}
     outputs:
@@ -932,7 +933,8 @@ jobs:
     # (health-check + post-deploy-verify) instead, and only tag on a real push to
     # main where both passed.
     if: >-
-      ${{ github.ref == 'refs/heads/main'
+      ${{ !cancelled()
+      && github.ref == 'refs/heads/main'
       && github.event_name == 'push'
       && needs.health-check.result == 'success'
       && needs.health-check.outputs.exact_sha_verified == 'true'
@@ -1043,3 +1045,50 @@ jobs:
 
           Deployment triggered by push to \`main\`.
           EOF
+
+  # A skipped job reports success to GitHub. Keep a terminal sentinel so an
+  # unexpected condition/needs propagation skip cannot leave production green
+  # without endpoint verification and release evidence.
+  production-release-completion-gate:
+    name: Production Release Completion Gate
+    runs-on: ubuntu-latest
+    needs: [health-check, post-deploy-verify, release]
+    if: ${{ always() }}
+    steps:
+      - name: Enforce terminal production release outcomes
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          HEALTH_CHECK_RESULT: ${{ needs.health-check.result }}
+          HEALTH_EXACT_SHA_VERIFIED: ${{ needs.health-check.outputs.exact_sha_verified }}
+          HEALTH_VERIFIED_GITHUB_SHA: ${{ needs.health-check.outputs.verified_github_sha }}
+          POST_DEPLOY_VERIFY_RESULT: ${{ needs.post-deploy-verify.result }}
+          POST_EXACT_SHA_VERIFIED: ${{ needs.post-deploy-verify.outputs.exact_sha_verified }}
+          POST_VERIFIED_GITHUB_SHA: ${{ needs.post-deploy-verify.outputs.verified_github_sha }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+        run: |
+          FAILED=0
+
+          require_equal() {
+            local label="$1"
+            local actual="$2"
+            local expected="$3"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$label expected '$expected' but was '${actual:-<empty>}'"
+              FAILED=1
+            fi
+          }
+
+          require_equal "Health check result" "$HEALTH_CHECK_RESULT" "success"
+          require_equal "Health exact-SHA proof" "$HEALTH_EXACT_SHA_VERIFIED" "true"
+          require_equal "Health verified SHA" "$HEALTH_VERIFIED_GITHUB_SHA" "$EXPECTED_SHA"
+          require_equal "Post-deploy verification result" "$POST_DEPLOY_VERIFY_RESULT" "success"
+          require_equal "Post-deploy exact-SHA proof" "$POST_EXACT_SHA_VERIFIED" "true"
+          require_equal "Post-deploy verified SHA" "$POST_VERIFIED_GITHUB_SHA" "$EXPECTED_SHA"
+          require_equal "Release result" "$RELEASE_RESULT" "success"
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "Production release completion evidence is incomplete."
+            exit 1
+          fi
+
+          echo "Production release completion evidence is complete for $EXPECTED_SHA."
