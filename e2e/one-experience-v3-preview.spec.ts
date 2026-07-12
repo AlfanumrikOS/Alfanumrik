@@ -13,7 +13,8 @@ function previewUrl(role: typeof roles[number], options?: { locale?: 'hi'; copy?
 
 async function openPreview(page: Page, url: string) {
   const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.locator('[data-experience="v3"] main#main-content').waitFor({ state: 'visible' });
+  await page.locator('#main-content').waitFor({ state: 'visible' });
+  await page.locator('[data-experience="v3"] main.v3-main').waitFor({ state: 'visible' });
   // DOMContentLoaded is sufficient for layout checks, but interaction cases
   // must wait until React has attached handlers. This avoids the persistent
   // HMR connection that makes `networkidle` unsuitable in Next.js dev mode.
@@ -47,7 +48,8 @@ test.describe('One Experience V3 responsive preview', () => {
         const response = await openPreview(page, previewUrl(role));
         expect(response?.status()).toBe(200);
         await expect(page.locator('[data-experience="v3"]')).toHaveCount(1);
-        await expect(page.locator('main#main-content')).toBeVisible();
+        await expect(page.locator('#main-content')).toBeVisible();
+        await expect(page.locator('main')).toHaveCount(1);
 
         const overflow = await page.evaluate(
           () => document.documentElement.scrollWidth - window.innerWidth,
@@ -72,7 +74,7 @@ test.describe('One Experience V3 responsive preview', () => {
     await page.keyboard.press('Tab');
     await expect(page.locator('.skip-nav')).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page.locator('main#main-content')).toBeFocused();
+    await expect(page.locator('#main-content')).toBeFocused();
 
     const notifications = page.getByRole('button', { name: 'Notifications' }).first();
     await notifications.focus();
@@ -94,7 +96,7 @@ test.describe('One Experience V3 responsive preview', () => {
 
     const dialog = page.getByRole('dialog', { name: 'More' });
     await expect(dialog).toBeVisible();
-    await expect(page.locator('main#main-content')).toHaveAttribute('inert', '');
+    await expect(page.locator('#main-content')).toHaveAttribute('inert', '');
     await expect(dialog.getByRole('navigation', { name: 'More destinations' }).getByRole('link')).toHaveCount(4);
     await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused();
 
@@ -150,7 +152,8 @@ test.describe('One Experience V3 responsive preview', () => {
     await openPreview(page, previewUrl('parent', { locale: 'hi', copy: 'long' }));
     await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
     await expect(page.locator('.v3-bottom-nav')).toBeVisible();
-    await expect(page.locator('main#main-content')).toBeVisible();
+    await expect(page.locator('#main-content')).toBeVisible();
+    await expect(page.locator('main')).toHaveCount(1);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
