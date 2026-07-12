@@ -15,7 +15,7 @@ const CLASS_SCOPE_KEY = 'alfanumrik.teacher.v3.class';
 type TeacherScope = {
   enabled: boolean;
   classId: string | null;
-  classes: Array<{ id: string; name: string; student_count: number; avg_mastery?: number }>;
+  classes: Array<{ id: string; name: string; student_count: number; avg_mastery?: number | null }>;
   loading: boolean;
   error: unknown;
   setClassId: (classId: string) => void;
