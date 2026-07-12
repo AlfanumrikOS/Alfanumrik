@@ -84,6 +84,11 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
   ) {
     const filters: Record<string, unknown> = {};
     holders.tableFilters[table] = filters;
+    const matches = (candidate: Record<string, unknown>) =>
+      Object.entries(filters).every(([column, value]) => {
+        if (!Object.prototype.hasOwnProperty.call(candidate, column)) return true;
+        return Array.isArray(value) ? value.includes(candidate[column]) : candidate[column] === value;
+      });
     const chain = {
       eq(column: string, value: unknown) {
         filters[column] = value;
@@ -93,17 +98,23 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
         filters[column] = value;
         return chain;
       },
+      in(column: string, value: unknown[]) {
+        filters[column] = value;
+        return chain;
+      },
       limit() {
         return chain;
       },
       maybeSingle() {
-        const filtered = row && Object.entries(filters).every(([column, value]) => (
-          !Object.prototype.hasOwnProperty.call(row, column) || row[column] === value
-        )) ? row : null;
+        const filtered = row && matches(row) ? row : null;
         return Promise.resolve({
           data: filtered,
           error: error ?? null,
         });
+      },
+      then(resolve: (value: { data: unknown; error: unknown }) => unknown) {
+        const data = row && matches(row) ? [row] : [];
+        return Promise.resolve({ data, error: error ?? null }).then(resolve);
       },
     };
     return chain;
@@ -129,8 +140,10 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
         }
         return chain;
       },
-      in() {
+      in(col: string, val: unknown[]) {
         usedIn = true;
+        filters[col] = val;
+        holders.listFilters[col] = val;
         return chain;
       },
       is(col: string, val: unknown) {
@@ -733,101 +746,52 @@ describe('POST /api/teacher/remediation — idempotency', () => {
 });
 
 // ── 5b. DB-backstop dedupe: 23505 → idempotent success ────────────────
-// The partial unique index uq_teacher_remediation_assignments_open_dedupe
-// (migration 20260619000400) is keyed (student_id, class_id, chapter-bucket)
-// WHERE status='assigned' — teacher_id is NOT in the key. The route's
-// per-teacher pre-check cannot see a COLLEAGUE's open row, so a cross-teacher
-// duplicate surfaces as a 23505 on INSERT. The route must treat that as the
-// idempotent-success path (200, surviving row), never a 500.
+// The partial unique index is keyed (student_id, class_id, chapter-bucket) for
+// every open status. A colleague's row is intentionally invisible to the
+// per-teacher pre-check and must stay private on the insert-conflict path.
 describe('POST /api/teacher/remediation — 23505 unique-violation dedupe (cross-teacher)', () => {
-  const OTHER_TEACHER_ID = 'bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb';
   const UNIQUE_VIOLATION = {
     code: '23505',
     message:
       'duplicate key value violates unique constraint "uq_teacher_remediation_assignments_open_dedupe"',
   };
 
-  function survivorRow(chapterId: string | null) {
-    return {
-      id: ASSIGNMENT_ID,
-      teacher_id: OTHER_TEACHER_ID, // a colleague's row — invisible to the pre-check
-      student_id: STUDENT_ID,
-      class_id: CLASS_ID,
-      chapter_id: chapterId,
-      source_alert_id: null,
-      status: 'assigned',
-      created_at: '2026-06-01T00:00:00Z',
-      resolved_at: null,
-    };
-  }
-
-  it('cross-teacher duplicate: 23505 returns the surviving row as idempotent success (200, not 500)', async () => {
+  it('acknowledges the named conflict without reading or disclosing the colleague row', async () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
     holders.mockState.existingOpen = null; // per-teacher pre-check sees nothing
     holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
-    holders.mockState.dedupeRow = survivorRow(CHAPTER_ID);
 
     const res = await POST(
       makeScopedPost({ chapter_id: CHAPTER_ID }) as never,
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    // Exact same envelope as the pre-check idempotent path.
-    expect(body.success).toBe(true);
-    expect(body.idempotent).toBe(true);
-    expect(body.data.id).toBe(ASSIGNMENT_ID);
-    expect(body.data.status).toBe('assigned');
-    expect(body.data.teacher_id).toBe(OTHER_TEACHER_ID);
+    expect(body).toEqual({ success: true, idempotent: true });
+    expect(JSON.stringify(body)).not.toContain('teacher_id');
+    expect(JSON.stringify(body)).not.toContain(ASSIGNMENT_ID);
 
     // The insert WAS attempted (the pre-check could not see the colleague's
     // row) — this is the post-insert recovery path, not the pre-check path.
     expect(holders.mockInsert).toHaveBeenCalledTimes(1);
 
-    // Survivor lookup keyed on the unique index's natural key — student,
-    // class, chapter (eq), status='assigned' — and NOT teacher_id (a
-    // teacher-scoped lookup would never find the colleague's row).
-    expect(holders.dedupeFilters.student_id).toBe(STUDENT_ID);
-    expect(holders.dedupeFilters.class_id).toBe(CLASS_ID);
-    expect(holders.dedupeFilters.status).toBe('assigned');
-    expect(holders.dedupeFilters.teacher_id).toBeUndefined();
-    expect(holders.dedupeChapterFilter.kind).toBe('eq');
-    expect(holders.dedupeChapterFilter.value).toBe(CHAPTER_ID);
+    expect(holders.dedupeFilters).toEqual({});
   });
 
-  it('general (no-chapter) duplicate: survivor lookup uses chapter_id IS NULL', async () => {
+  it('does not treat an unrelated 23505 as the remediation idempotency contract', async () => {
     const { POST } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
     rosterIncludes();
     holders.mockState.existingOpen = null;
-    holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
-    holders.mockState.dedupeRow = survivorRow(null);
+    holders.mockState.insertResult = {
+      data: null,
+      error: { code: '23505', message: 'duplicate key value violates unique constraint "other_key"' },
+    };
 
     const res = await POST(makeScopedPost() as never);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.idempotent).toBe(true);
-    expect(holders.dedupeChapterFilter.kind).toBe('is_null');
-    expect(holders.dedupeChapterFilter.value).toBeNull();
-    expect(holders.dedupeFilters.class_id).toBe(CLASS_ID);
-  });
-
-  it('23505 but the surviving row cannot be resolved → 500 (established failure response)', async () => {
-    const { POST } = await import('@/app/api/teacher/remediation/route');
-    authAsTeacher();
-    teacherResolved();
-    rosterIncludes();
-    holders.mockState.existingOpen = null;
-    holders.mockState.insertResult = { data: null, error: UNIQUE_VIOLATION };
-    holders.mockState.dedupeRow = null; // conflict reported, no row found
-
-    const res = await POST(
-      makeScopedPost({ chapter_id: CHAPTER_ID }) as never,
-    );
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body).toMatchObject({ success: false, error: 'Failed to assign remediation' });
@@ -843,16 +807,12 @@ describe('POST /api/teacher/remediation — 23505 unique-violation dedupe (cross
       data: null,
       error: { code: '23503', message: 'foreign key violation' },
     };
-    // Even with a survivor available, a non-23505 error must NOT recover.
-    holders.mockState.dedupeRow = survivorRow(CHAPTER_ID);
-
     const res = await POST(
       makeScopedPost({ chapter_id: CHAPTER_ID }) as never,
     );
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.success).toBe(false);
-    // No survivor lookup ran on the non-23505 branch.
     expect(holders.dedupeFilters).toEqual({});
   });
 });
@@ -880,6 +840,7 @@ describe('GET /api/teacher/remediation — list', () => {
     const { GET } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
+    rosterIncludes();
     holders.mockState.listRows = [
       {
         id: ASSIGNMENT_ID,
@@ -901,16 +862,127 @@ describe('GET /api/teacher/remediation — list', () => {
     expect(body.data).toHaveLength(1);
     // Roster scope: the list query filtered by the internal teacher id.
     expect(holders.listFilters.teacher_id).toBe(TEACHER_ID);
+    expect(holders.listFilters.class_id).toEqual([CLASS_ID]);
   });
 
   it('applies a status filter when provided', async () => {
     const { GET } = await import('@/app/api/teacher/remediation/route');
     authAsTeacher();
     teacherResolved();
+    rosterIncludes();
     holders.mockState.listRows = [];
     const res = await GET(makeGet('?status=resolved') as never);
     expect(res.status).toBe(200);
     expect(holders.listFilters.status).toBe('resolved');
+  });
+
+  it('hides historical rows after the teacher-class membership is revoked', async () => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.teacherClass = {
+      class_id: CLASS_ID,
+      teacher_id: TEACHER_ID,
+      is_active: false,
+    };
+    holders.mockState.listRows = [{
+      id: ASSIGNMENT_ID,
+      teacher_id: TEACHER_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+    }];
+
+    const res = await GET(makeGet() as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it.each([
+    { label: 'the class is inactive', schoolId: SCHOOL_ID, isActive: false },
+    {
+      label: 'the class no longer belongs to the teacher school',
+      schoolId: 'bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb',
+      isActive: true,
+    },
+  ])('hides rows when $label', async ({ schoolId, isActive }) => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.classRow = {
+      id: CLASS_ID,
+      school_id: schoolId,
+      grade: 'Grade 7',
+      subject: 'Mathematics',
+      is_active: isActive,
+      deleted_at: null,
+    };
+    holders.mockState.listRows = [{
+      id: ASSIGNMENT_ID,
+      teacher_id: TEACHER_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+    }];
+
+    const res = await GET(makeGet() as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it('hides historical rows after the class enrollment is revoked', async () => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.enrolment = {
+      class_id: CLASS_ID,
+      student_id: STUDENT_ID,
+      is_active: false,
+    };
+    holders.mockState.listRows = [{
+      id: ASSIGNMENT_ID,
+      teacher_id: TEACHER_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+    }];
+
+    const res = await GET(makeGet() as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it('filters by the exact active class-student enrollment pair', async () => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+    holders.mockState.enrolment = {
+      class_id: CLASS_ID,
+      student_id: 'cccccccc-cccc-4ccc-accc-cccccccccccc',
+      is_active: true,
+    };
+    holders.mockState.listRows = [{
+      id: ASSIGNMENT_ID,
+      teacher_id: TEACHER_ID,
+      student_id: STUDENT_ID,
+      class_id: CLASS_ID,
+    }];
+
+    const res = await GET(makeGet() as never);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, data: [] });
+  });
+
+  it('rejects an explicitly requested class outside the live teacher scope', async () => {
+    const { GET } = await import('@/app/api/teacher/remediation/route');
+    authAsTeacher();
+    teacherResolved();
+    rosterIncludes();
+
+    const res = await GET(makeGet(`?class_id=${OTHER_CLASS_ID}`) as never);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ success: false });
   });
 
   it('rejects an invalid status filter (400)', async () => {

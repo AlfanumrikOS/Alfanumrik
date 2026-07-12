@@ -9,12 +9,11 @@
  *            already exists for (teacher, student, class, chapter) it is returned
  *            rather than duplicated;
  *        (2) DB backstop — the partial unique index
- *            uq_teacher_remediation_assignments_open_dedupe (migration
- *            20260619000400; key student × class × chapter-bucket WHERE
- *            status='assigned', teacher_id deliberately NOT in the key) turns
- *            a cross-teacher or check-then-insert-race duplicate INSERT into
- *            a 23505, which is handled as idempotent success: the surviving
- *            assigned row is looked up and returned (200), never a 500.
+ *            uq_teacher_remediation_assignments_open_dedupe (key student ×
+ *            class × chapter-bucket for every open status, teacher_id
+ *            deliberately NOT in the key) turns a cross-teacher or
+ *            check-then-insert-race duplicate INSERT into a named 23505, which
+ *            is acknowledged without exposing the colleague's assignment.
  *
  * GET  — lists the caller-teacher's remediation assignments, optionally
  *        filtered by status / class. Roster-scoped (a teacher only ever sees
@@ -60,9 +59,20 @@ const PostBodySchema = z.object({
 
 const OPEN_STATUSES = ['assigned', 'in_progress'] as const;
 const ALL_STATUSES = ['assigned', 'in_progress', 'resolved', 'dismissed'] as const;
+const OPEN_DEDUPE_INDEX = 'uq_teacher_remediation_assignments_open_dedupe';
 
 function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
+}
+
+function isOpenAssignmentConflict(error: {
+  code?: string;
+  message?: string;
+  details?: string | null;
+  hint?: string | null;
+}): boolean {
+  const evidence = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+  return error.code === '23505' && evidence.includes(OPEN_DEDUPE_INDEX);
 }
 
 /**
@@ -96,6 +106,72 @@ type RemediationClassScope = {
   grade: string;
   subject: string | null;
 };
+type RemediationReadScope = {
+  classIds: string[];
+  enrollmentKeys: Set<string>;
+};
+
+function enrollmentKey(classId: string, studentId: string): string {
+  return `${classId}:${studentId}`;
+}
+
+/**
+ * Resolve the caller's live read scope. Service-role reads bypass RLS, so a
+ * historical assignment is only returned while the teacher still owns an
+ * active class in their school and the learner still has an active enrollment
+ * in that exact class.
+ */
+async function resolveRemediationReadScope(
+  teacher: TeacherIdentity,
+  requestedClassId: string | null,
+): Promise<RemediationReadScope | null> {
+  if (!teacher.school_id) return null;
+
+  let teacherClassesQuery = supabaseAdmin
+    .from('class_teachers')
+    .select('class_id')
+    .eq('teacher_id', teacher.id)
+    .eq('is_active', true);
+  if (requestedClassId) teacherClassesQuery = teacherClassesQuery.eq('class_id', requestedClassId);
+
+  const { data: teacherClasses, error: teacherClassesError } = await teacherClassesQuery;
+  if (teacherClassesError) throw new Error('read_scope_lookup_failed');
+  const assignedClassIds = Array.from(
+    new Set(((teacherClasses ?? []) as Array<{ class_id: string }>).map((row) => row.class_id)),
+  );
+  if (requestedClassId && !assignedClassIds.includes(requestedClassId)) return null;
+  if (assignedClassIds.length === 0) return { classIds: [], enrollmentKeys: new Set() };
+
+  const { data: classes, error: classesError } = await supabaseAdmin
+    .from('classes')
+    .select('id')
+    .in('id', assignedClassIds)
+    .eq('school_id', teacher.school_id)
+    .eq('is_active', true)
+    .is('deleted_at', null);
+  if (classesError) throw new Error('read_scope_lookup_failed');
+  const classIds = Array.from(
+    new Set(((classes ?? []) as Array<{ id: string }>).map((row) => row.id)),
+  );
+  if (requestedClassId && !classIds.includes(requestedClassId)) return null;
+  if (classIds.length === 0) return { classIds: [], enrollmentKeys: new Set() };
+
+  const { data: enrollments, error: enrollmentsError } = await supabaseAdmin
+    .from('class_enrollments')
+    .select('class_id, student_id')
+    .in('class_id', classIds)
+    .eq('is_active', true);
+  if (enrollmentsError) throw new Error('read_scope_lookup_failed');
+
+  return {
+    classIds,
+    enrollmentKeys: new Set(
+      ((enrollments ?? []) as Array<{ class_id: string; student_id: string }>).map((row) =>
+        enrollmentKey(row.class_id, row.student_id),
+      ),
+    ),
+  };
+}
 
 function canonicalGrade(value: string): string | null {
   const match = value.trim().match(/^(?:(?:grade|class)\s*-?\s*)?(\d{1,2})(?:st|nd|rd|th)?$/i);
@@ -376,46 +452,11 @@ export async function POST(request: NextRequest) {
     )
     .single();
   if (insertErr) {
-    // 23505 = the partial unique dedupe index
-    // (uq_teacher_remediation_assignments_open_dedupe, migration
-    // 20260619000400) caught a duplicate OPEN row for the same
-    // (student, class, chapter-bucket). The pre-check above is keyed
-    // per-teacher, so a COLLEAGUE's open row — or a concurrent request racing
-    // this non-atomic check-then-insert — surfaces here as a unique violation
-    // instead of via the pre-check. Same duplicate signal to the student →
-    // same idempotent-success contract as the pre-check path: look up the
-    // surviving assigned row on the index's natural key (student, class,
-    // chapter eq-or-IS-NULL, status='assigned' — NOT teacher_id) and return it.
-    if (insertErr.code === '23505') {
-      let survivorQuery = supabaseAdmin
-        .from('teacher_remediation_assignments')
-        .select(
-          'id, teacher_id, student_id, class_id, chapter_id, source_alert_id, status, created_at, resolved_at',
-        )
-        .eq('student_id', studentId)
-        .eq('class_id', classId)
-        .eq('status', 'assigned');
-      survivorQuery = chapterId
-        ? survivorQuery.eq('chapter_id', chapterId)
-        : survivorQuery.is('chapter_id', null);
-      const { data: survivor, error: survivorErr } = await survivorQuery
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (survivorErr || !survivor) {
-        // Conflict reported but the surviving row can't be resolved (e.g. it
-        // transitioned between the failed insert and this lookup) — fall back
-        // to the established failure response; the teacher can simply retry.
-        logger.error('teacher_remediation_dedupe_lookup_failed', {
-          error: new Error(survivorErr?.message ?? 'no surviving assigned row found'),
-          route: 'teacher/remediation',
-        });
-        return err('Failed to assign remediation', 500);
-      }
-      return NextResponse.json(
-        { success: true, data: survivor, idempotent: true },
-        { status: 200 },
-      );
+    // The named DB backstop proves an open assignment already exists. Do not
+    // look it up: the row may belong to another teacher, and returning it would
+    // disclose a colleague's internal id and assignment metadata.
+    if (isOpenAssignmentConflict(insertErr)) {
+      return NextResponse.json({ success: true, idempotent: true }, { status: 200 });
     }
     logger.error('teacher_remediation_insert_failed', {
       error: new Error(insertErr.message),
@@ -453,12 +494,28 @@ export async function GET(request: NextRequest) {
     return err('Invalid class_id filter', 400);
   }
 
+  let readScope: RemediationReadScope | null;
+  try {
+    readScope = await resolveRemediationReadScope(teacher, classParam);
+  } catch (error) {
+    logger.error('teacher_remediation_read_scope_lookup_failed', {
+      error: error instanceof Error ? error : new Error('read scope lookup failed'),
+      route: 'teacher/remediation',
+    });
+    return err('Failed to verify class roster', 500);
+  }
+  if (!readScope) return err('Class is not available for remediation', 403);
+  if (readScope.classIds.length === 0 || readScope.enrollmentKeys.size === 0) {
+    return NextResponse.json({ success: true, data: [] }, { status: 200 });
+  }
+
   let query = supabaseAdmin
     .from('teacher_remediation_assignments')
     .select(
       'id, teacher_id, student_id, class_id, chapter_id, source_alert_id, status, created_at, resolved_at',
     )
-    .eq('teacher_id', teacher.id);
+    .eq('teacher_id', teacher.id)
+    .in('class_id', readScope.classIds);
   if (statusParam) query = query.eq('status', statusParam);
   if (classParam) query = query.eq('class_id', classParam);
 
@@ -471,5 +528,10 @@ export async function GET(request: NextRequest) {
     return err('Failed to list remediation assignments', 500);
   }
 
-  return NextResponse.json({ success: true, data: data ?? [] }, { status: 200 });
+  const rosterScoped = ((data ?? []) as Array<{ class_id: string; student_id: string }>).filter(
+    (assignment) => readScope.enrollmentKeys.has(
+      enrollmentKey(assignment.class_id, assignment.student_id),
+    ),
+  );
+  return NextResponse.json({ success: true, data: rosterScoped }, { status: 200 });
 }
