@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import ParentV3LayoutGate from './_components/ParentV3LayoutGate';
 
 export const metadata: Metadata = {
@@ -9,7 +10,9 @@ export const metadata: Metadata = {
 export default function ParentLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="parent-portal">
-      <ParentV3LayoutGate>{children}</ParentV3LayoutGate>
+      <Suspense fallback={<div className="min-h-dvh bg-[#FFF8F0]" aria-busy="true" />}>
+        <ParentV3LayoutGate>{children}</ParentV3LayoutGate>
+      </Suspense>
     </div>
   );
 }

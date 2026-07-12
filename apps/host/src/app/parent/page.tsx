@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase, getFeatureFlags } from '@alfanumrik/lib/supabase';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
@@ -19,6 +20,11 @@ import {
   clearLockoutAttempts,
   isLockedOut,
 } from './_components/parent-session';
+import {
+  readParentChildId,
+  replaceParentChildId,
+  resolveLinkedChild,
+} from './_components/parent-child-scope';
 
 // Parent Glance Home — the sole parent UI (legacy 8-tab dashboard removed).
 // Lazy-loaded to keep the first-paint bundle tight.
@@ -31,6 +37,22 @@ import { ParentV3Home } from './_components/ParentV3Views';
 // BILINGUAL HELPERS (P7)
 // ============================================================
 const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
+
+const PARENT_REQUEST_TIMEOUT_MS = 15_000;
+
+async function withParentRequestTimeout<T>(promise: Promise<T>): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('parent.request_timeout')), PARENT_REQUEST_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 // ============================================================
 // INTERFACES
@@ -461,20 +483,75 @@ interface PerfScoreRow {
 }
 
 function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessages }: { guardian: ParentSession; initialStudent: StudentSession; allChildren: StudentSession[]; isHi: boolean; canFetchMessages: boolean }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedChildId = readParentChildId(searchParams);
   const [dash, setDash] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedChildIdx, setSelectedChildIdx] = useState(0);
   const [perfScores, setPerfScores] = useState<PerfScoreRow[]>([]);
   const [labStreak, setLabStreak] = useState<number | null>(null);
+  const loadSequence = useRef(0);
 
   // Derive current student from selectedChildIdx
-  const children = allChildren.length > 0 ? allChildren : [initialStudent];
+  const children = useMemo(
+    () => (allChildren.length > 0 ? allChildren : [initialStudent]),
+    [allChildren, initialStudent],
+  );
   const student = children[selectedChildIdx] ?? initialStudent;
 
+  // Treat childId as a hint only. Resolve it against the guardian-scoped child
+  // list before it can influence a data request; replace unknown ids with the
+  // verified primary child.
+  useEffect(() => {
+    const scopedChild = resolveLinkedChild(children, requestedChildId, initialStudent.id);
+    if (!scopedChild) return;
+    const nextIndex = children.findIndex((child) => child.id === scopedChild.id);
+    if (nextIndex >= 0 && nextIndex !== selectedChildIdx) {
+      setDash(null);
+      setPerfScores([]);
+      setLabStreak(null);
+      setSelectedChildIdx(nextIndex);
+    }
+    if (requestedChildId !== scopedChild.id) {
+      router.replace(replaceParentChildId('/parent', searchParams, scopedChild.id));
+    }
+  }, [children, initialStudent.id, requestedChildId, router, searchParams, selectedChildIdx]);
+
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
-    const d = await api('get_child_dashboard', { student_id: student.id, guardian_id: guardian.id });
-    setDash(d);
+    setLoadError(null);
+    try {
+      const d = await withParentRequestTimeout(
+        api('get_child_dashboard', { student_id: student.id, guardian_id: guardian.id }),
+      );
+      if (sequence !== loadSequence.current) return;
+      if (!d || d.error) {
+        setDash(null);
+        setLoadError(t(
+          isHi,
+          `We couldn't load ${student.name}'s progress. Please try again.`,
+          `${student.name} की प्रगति लोड नहीं हो सकी। कृपया फिर से कोशिश करें।`,
+        ));
+        return;
+      }
+      setDash(d);
+    } catch {
+      if (sequence !== loadSequence.current) return;
+      setDash(null);
+      setLoadError(t(
+        isHi,
+        `We couldn't load ${student.name}'s progress. Please try again.`,
+        `${student.name} की प्रगति लोड नहीं हो सकी। कृपया फिर से कोशिश करें।`,
+      ));
+      return;
+    } finally {
+      // The primary dashboard request owns the full-page loading state. The
+      // additive score/streak reads below must never keep the page spinning.
+      if (sequence === loadSequence.current) setLoading(false);
+    }
 
     // Fetch Performance Scores for this child (RLS handles parent access via guardian_student_links)
     try {
@@ -482,6 +559,7 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
         .from('performance_scores')
         .select('subject, overall_score, level_name')
         .eq('student_id', student.id);
+      if (sequence !== loadSequence.current) return;
       if (psData && psData.length > 0) {
         setPerfScores(psData.map((r: Record<string, unknown>) => ({
           subject: String(r.subject || ''),
@@ -502,13 +580,12 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
         .select('current_streak')
         .eq('student_id', student.id)
         .maybeSingle();
+      if (sequence !== loadSequence.current) return;
       setLabStreak(streakRow ? Number(streakRow.current_streak ?? 0) : 0);
     } catch {
       setLabStreak(null);
     }
-
-    setLoading(false);
-  }, [student.id, guardian.id]);
+  }, [student.id, student.name, guardian.id, isHi]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -569,11 +646,34 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
 
   const logout = () => { clearParentSession(); window.location.reload(); };
 
-  if (loading) return (
+  if (loading && !dash) return (
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
       <div className="text-center py-20 text-gray-500">
         <div className="w-10 h-10 border-[3px] border-orange-200 border-t-orange-500 rounded-full mx-auto mb-4 animate-spin" />
         {t(isHi, `Loading ${student.name}'s progress...`, `${student.name} की प्रगति लोड हो रही है...`)}
+      </div>
+    </div>
+  );
+
+  if (loadError || !dash) return (
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
+      <ChildSelectorPills
+        studentList={children}
+        selectedIdx={selectedChildIdx}
+        onSelect={(idx) => {
+          const nextChild = children[idx];
+          if (nextChild) router.replace(replaceParentChildId('/parent', searchParams, nextChild.id));
+        }}
+      />
+      <div className="text-center py-[60px] text-red-600" role="alert">
+        <p>{loadError || t(isHi, 'Failed to load dashboard', 'डैशबोर्ड लोड करने में विफल')}</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="mt-4 min-h-[44px] rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white"
+        >
+          {t(isHi, 'Try again', 'फिर से कोशिश करें')}
+        </button>
       </div>
     </div>
   );
@@ -596,11 +696,8 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
               selectedIdx={selectedChildIdx}
               onSelect={(idx) => {
                 if (idx === selectedChildIdx) return;
-                setLoading(true);
-                setDash(null);
-                setPerfScores([]);
-                setLabStreak(null);
-                setSelectedChildIdx(idx);
+                const nextChild = children[idx];
+                if (nextChild) router.replace(replaceParentChildId('/parent', searchParams, nextChild.id));
               }}
             />
           </div>
@@ -635,12 +732,15 @@ function Dashboard({ guardian, initialStudent, allChildren, isHi, canFetchMessag
 // ============================================================
 // MAIN PAGE COMPONENT
 // ============================================================
-function LegacyParentPage() {
+function ParentPageContent() {
   const auth = useAuth();
+  const isHi = auth.isHi ?? false;
   const [guardian, setGuardian] = useState<ParentSession | null>(null);
   const [student, setStudent] = useState<StudentSession | null>(null);
   const [allChildren, setAllChildren] = useState<StudentSession[]>([]);
   const [checking, setChecking] = useState(true);
+  const [scopeError, setScopeError] = useState<string | null>(null);
+  const [scopeAttempt, setScopeAttempt] = useState(0);
 
   // D-authunify (ff_parent_unified_auth_v1, Wave D, Finding #5). When ON, the
   // Supabase guardian-JWT (auth.guardian) is the SINGLE source of truth for the
@@ -656,7 +756,7 @@ function LegacyParentPage() {
   // Fetch all children for this guardian so the multi-child selector works
   const fetchAllChildren = useCallback(async (guardianId: string, primaryStudent: StudentSession) => {
     try {
-      const res = await api('get_children', { guardian_id: guardianId });
+      const res = await withParentRequestTimeout(api('get_children', { guardian_id: guardianId }));
       if (res?.children && Array.isArray(res.children)) {
         const normalized: StudentSession[] = res.children.map((c: Record<string, unknown>) => ({
           id: String(c.id || ''),
@@ -684,8 +784,9 @@ function LegacyParentPage() {
   // the parent-portal Edge Function, which requires the Bearer JWT) instead of
   // the HMAC sessionStorage cache. No loadParentSession() call on this path.
   const resolveGuardianFromJwt = useCallback(async (g: ParentSession) => {
+    setScopeError(null);
     try {
-      const res = await api('get_children', { guardian_id: g.id });
+      const res = await withParentRequestTimeout(api('get_children', { guardian_id: g.id }));
       const raw = (res?.children ?? res?.students);
       const normalized: StudentSession[] = Array.isArray(raw)
         ? raw.map((c: Record<string, unknown>) => ({
@@ -696,14 +797,24 @@ function LegacyParentPage() {
         : [];
       setAllChildren(normalized);
       setStudent(normalized.length > 0 ? normalized[0] : null);
+      if (normalized.length === 0) {
+        setScopeError(t(isHi, 'No linked child was found.', 'कोई जुड़ा हुआ बच्चा नहीं मिला।'));
+      }
     } catch {
       setAllChildren([]);
       setStudent(null);
+      setScopeError(t(
+        isHi,
+        'Could not load linked children. Please try again.',
+        'जुड़े हुए बच्चों को लोड नहीं किया जा सका। कृपया फिर से कोशिश करें।',
+      ));
     }
-  }, []);
+  }, [isHi]);
 
   useEffect(() => {
     if (auth.isLoading) return;
+    setChecking(true);
+    setScopeError(null);
 
     // ── D-authunify ON: guardian-JWT is the single source of truth ──────────
     // No HMAC sessionStorage fallback. If there's no auth.guardian, leave
@@ -726,10 +837,14 @@ function LegacyParentPage() {
     if (auth.guardian) {
       setGuardian(auth.guardian);
       // Student data will be fetched by the dashboard API; load from verified session if available
-      loadParentSession().then(session => {
+      loadParentSession().then(async session => {
         if (session) {
           setStudent(session.student);
           fetchAllChildren(auth.guardian!.id, session.student);
+        } else {
+          // An authenticated guardian must not be sent back to the login form
+          // just because the optional link-code cache is absent.
+          await resolveGuardianFromJwt(auth.guardian!);
         }
         setChecking(false);
       });
@@ -745,7 +860,7 @@ function LegacyParentPage() {
       }
       setChecking(false);
     });
-  }, [auth.isLoading, auth.guardian, fetchAllChildren, unifiedAuth, resolveGuardianFromJwt]);
+  }, [auth.isLoading, auth.guardian, fetchAllChildren, unifiedAuth, resolveGuardianFromJwt, scopeAttempt]);
 
   if (checking || auth.isLoading) return (
     <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
@@ -753,7 +868,20 @@ function LegacyParentPage() {
     </div>
   );
 
-  const isHi = auth.isHi ?? false;
+  if (scopeError && guardian) return (
+    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-dvh">
+      <div className="mt-10 rounded-2xl border border-red-200 bg-white p-6 text-center text-red-700" role="alert">
+        <p>{scopeError}</p>
+        <button
+          type="button"
+          onClick={() => setScopeAttempt((attempt) => attempt + 1)}
+          className="mt-4 min-h-[44px] rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white"
+        >
+          {t(isHi, 'Try again', 'फिर से कोशिश करें')}
+        </button>
+      </div>
+    </div>
+  );
 
   if (!guardian || !student) {
     // If guardian profile exists from signup, pre-fill name
@@ -800,4 +928,12 @@ function LegacyParentPage() {
 
 export default function ParentPage() {
   return <ParentV3PageGate legacy={<LegacyParentPage />} v3={<ParentV3Home />} />;
+}
+
+function LegacyParentPage() {
+  return (
+    <Suspense>
+      <ParentPageContent />
+    </Suspense>
+  );
 }

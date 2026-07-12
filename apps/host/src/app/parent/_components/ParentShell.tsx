@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import DashboardSidebar, { type SidebarNavItem } from '@alfanumrik/ui/admin-ui/DashboardSidebar';
 import { useParentAuth } from './useParentAuth';
 import { supabase } from '@alfanumrik/lib/supabase';
 import ParentMobileNav from './ParentMobileNav';
+import { readParentChildId, withParentChildId } from './parent-child-scope';
 
 const NAV_ITEMS: SidebarNavItem[] = [
   { href: '/parent', label: 'Dashboard', labelHi: 'डैशबोर्ड', icon: '▦' },
@@ -136,8 +137,13 @@ async function consentGateFetcher(url: string): Promise<{ allChildrenConsented: 
 export default function ParentShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { isHi } = useAuth();
-  const { mode, parentName, loading } = useParentAuth();
+  const { mode, parentName, pinnedStudent, loading } = useParentAuth();
+  const requestedChildId = readParentChildId(searchParams);
+  // Link-code sessions are cryptographically pinned to one child. Never carry
+  // an arbitrary childId from the address bar into that session's navigation.
+  const scopedChildId = mode === 'link-code' ? pinnedStudent?.id ?? null : requestedChildId;
   // Call all hooks unconditionally at the top — rules-of-hooks.
   // Only guardian mode parents have a Supabase JWT; link-code parents
   // can't authenticate against /api/parent/notifications. Guard the
@@ -164,16 +170,14 @@ export default function ParentShell({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!consentGateEnabled) return;
     if (gateData && !gateData.allChildrenConsented) {
-      const returnTo = encodeURIComponent(pathname || '/parent');
+      const returnTo = encodeURIComponent(withParentChildId(pathname || '/parent', scopedChildId));
       router.replace(`/parent/consent?returnTo=${returnTo}`);
     }
-  }, [consentGateEnabled, gateData, pathname, router]);
+  }, [consentGateEnabled, gateData, pathname, router, scopedChildId]);
 
-  // While auth is resolving, render children naked. Pages that require auth
-  // (everything except `/parent` itself, which IS the login screen) will
-  // gate themselves. Wrapping a still-resolving auth in a shell would flash
-  // the sidebar before potential redirect.
-  if (loading) return <>{children}</>;
+  // Do not expose a protected child route while parent auth is unresolved.
+  // The unauthenticated login page is rendered immediately after resolution.
+  if (loading) return <div className="min-h-dvh bg-[#FFF8F0]" aria-busy="true" />;
 
   // Unauthenticated → render naked. The /parent route renders its login screen
   // directly; other parent routes will redirect to /parent (handled by their pages).
@@ -203,7 +207,9 @@ export default function ParentShell({ children }: { children: React.ReactNode })
     if (item.href === '/parent/notifications') return { ...item, badge: unreadCount };
     if (item.href === '/parent/messages') return { ...item, badge: messagesUnread };
     return item;
-  });
+  }).map(item => ({ ...item, href: withParentChildId(item.href, scopedChildId) }));
+
+  const scopedCurrentPath = withParentChildId(pathname || '/parent', scopedChildId);
 
   const handleLogout = async () => {
     if (mode === 'guardian') {
@@ -225,7 +231,7 @@ export default function ParentShell({ children }: { children: React.ReactNode })
         brandSubtitle={isHi ? 'अभिभावक' : 'Parent'}
         primaryColor="#F97316" /* brand orange — parent portal accent */
         items={visibleItems}
-        currentPath={pathname || ''}
+        currentPath={scopedCurrentPath}
         isHi={isHi}
         disableMobileHamburger={true}
         footer={
@@ -248,6 +254,7 @@ export default function ParentShell({ children }: { children: React.ReactNode })
         messagesUnread={messagesUnread}
         isHi={isHi}
         mode={mode === 'link-code' ? 'link-code' : 'guardian'}
+        childId={scopedChildId}
         onLogout={handleLogout}
       />
     </div>

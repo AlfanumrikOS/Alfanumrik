@@ -56,13 +56,13 @@ import {
   useGradingQueue,
   useStudentMasteryReport,
   useClassLeaderboard,
+  type TeacherHeatmapData,
+  type TeacherHeatmapRow,
 } from '@alfanumrik/lib/teacher/use-teacher-data';
 import { TeacherDashboardSkeleton } from '@alfanumrik/ui/Skeleton';
 import { StatusBadge, type StatusBadgeVariant } from '@alfanumrik/ui/admin-ui/StatusBadge';
 import type {
-  HeatmapData,
   HeatmapCell,
-  HeatmapRow,
   RiskAlert,
   RemediationStatus,
 } from '@alfanumrik/lib/types';
@@ -86,8 +86,10 @@ const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 interface DashboardClass {
   id: string;
   name: string;
+  grade?: string | null;
+  subject?: string | null;
   student_count: number;
-  avg_mastery?: number;
+  avg_mastery?: number | null;
 }
 interface HeatmapConcept {
   id: string;
@@ -115,7 +117,7 @@ const SEV_ACCENT: Record<string, string> = {
 // `student_id` (the students page reads it defensively too). We widen the type
 // locally so the drill-through can use the id when present without a contract
 // change.
-type HeatmapRowWithId = HeatmapRow & { student_id?: string };
+type HeatmapRowWithId = TeacherHeatmapRow;
 
 // ─── Roster mastery heatmap ─────────────────────────────────────────────────
 function RosterHeatmap({
@@ -123,7 +125,7 @@ function RosterHeatmap({
   isHi,
   onCellStudent,
 }: {
-  data: HeatmapData;
+  data: TeacherHeatmapData;
   isHi: boolean;
   onCellStudent: (row: HeatmapRowWithId) => void;
 }) {
@@ -173,7 +175,7 @@ function RosterHeatmap({
           </tr>
         </thead>
         <tbody>
-          {data.matrix.map((row: HeatmapRow, ri: number) => (
+          {data.matrix.map((row: TeacherHeatmapRow, ri: number) => (
             <tr key={ri} className="hover:bg-[var(--surface-2)]">
               <td
                 className="px-2 py-1.5 font-semibold text-[13px] whitespace-nowrap sticky left-0"
@@ -193,7 +195,7 @@ function RosterHeatmap({
                 className="px-1 py-1.5 text-center font-bold text-[13px]"
                 style={{ color: 'var(--text-1)' }}
               >
-                {row.avg_mastery}%
+                {row.avg_mastery != null ? `${row.avg_mastery}%` : '\u2014'}
               </td>
               {(row.cells || []).slice(0, 12).map((cell: HeatmapCell, ci: number) => (
                 <td key={ci} className="py-[5px] px-[3px] text-center">
@@ -502,9 +504,19 @@ export default function CommandCenter() {
   // until a class id is present.
   const effectiveClassId = activeClassId || dash?.classes?.[0]?.id || undefined;
 
-  const { data: heatmap, isLoading: heatmapLoading } = useHeatmap(effectiveClassId, heatmapSubject);
+  const {
+    data: heatmap,
+    isLoading: heatmapLoading,
+    error: heatmapError,
+    mutate: mutateHeatmap,
+  } = useHeatmap(effectiveClassId, heatmapSubject);
   // Inert until a class scope resolves — never a transient roster-wide read.
-  const { data: alertsRes, mutate: mutateAlerts } = useAlerts(effectiveClassId, !!effectiveClassId);
+  const {
+    data: alertsRes,
+    isLoading: alertsLoading,
+    error: alertsError,
+    mutate: mutateAlerts,
+  } = useAlerts(effectiveClassId, !!effectiveClassId);
   const { data: queueRes, isLoading: queueSwrLoading, error: queueSwrError, mutate: mutateQueue } =
     useGradingQueue(gradingQueueEnabled, effectiveClassId);
   const {
@@ -915,6 +927,7 @@ export default function CommandCenter() {
           <button
             onClick={() => {
               mutateDashboard();
+              mutateHeatmap();
               mutateAlerts();
             }}
             className="py-2 px-3 bg-transparent rounded-lg text-[13px] font-semibold cursor-pointer"
@@ -943,12 +956,12 @@ export default function CommandCenter() {
         />
         <KpiTile
           label={tt(isHi, 'At-risk', 'जोखिम में')}
-          value={alertsRes ? alerts.length : '—'}
+          value={alertsLoading || alertsError ? '—' : alerts.length}
           accent={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #D97706)'}
         />
         <KpiTile
           label={tt(isHi, 'Assignments', 'असाइनमेंट')}
-          value={stats?.active_assignments ?? '—'}
+          value={stats?.active_assignments != null ? stats.active_assignments : '\u2014'}
           accent="var(--success, #059669)"
         />
 
@@ -1081,6 +1094,25 @@ export default function CommandCenter() {
                 style={{ background: 'var(--surface-2)' }}
                 aria-hidden="true"
               />
+            ) : heatmapError ? (
+              <div
+                data-testid="heatmap-error"
+                role="alert"
+                className="text-center py-8"
+                style={{ color: 'var(--danger, #DC2626)' }}
+              >
+                <p className="text-[14px] font-semibold mb-3">
+                  {tt(isHi, "Couldn't load mastery data.", 'मास्टरी डेटा लोड नहीं हो सका।')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void mutateHeatmap()}
+                  className="min-h-11 rounded-lg px-4 py-2 text-[13px] font-semibold"
+                  style={{ border: '1px solid var(--danger, #DC2626)' }}
+                >
+                  {tt(isHi, 'Try again', 'फिर से कोशिश करें')}
+                </button>
+              </div>
             ) : heatmap ? (
               <RosterHeatmap data={heatmap} isHi={isHi} onCellStudent={onHeatmapStudent} />
             ) : (
@@ -1111,12 +1143,31 @@ export default function CommandCenter() {
             badgeVariant={alerts.length > 0 ? 'danger' : 'neutral'}
           />
           <div className="mt-3 flex flex-col gap-2.5">
-            {loadingClass ? (
+            {alertsLoading ? (
               <div
                 className="h-24 rounded-lg animate-pulse motion-reduce:animate-none"
                 style={{ background: 'var(--surface-2)' }}
                 aria-hidden="true"
               />
+            ) : alertsError ? (
+              <div
+                data-testid="alerts-error"
+                role="alert"
+                className="text-center py-8"
+                style={{ color: 'var(--danger, #DC2626)' }}
+              >
+                <p className="text-[14px] font-semibold mb-3">
+                  {tt(isHi, "Couldn't load at-risk alerts.", 'जोखिम अलर्ट लोड नहीं हो सके।')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void mutateAlerts()}
+                  className="min-h-11 rounded-lg px-4 py-2 text-[13px] font-semibold"
+                  style={{ border: '1px solid var(--danger, #DC2626)' }}
+                >
+                  {tt(isHi, 'Try again', 'फिर से कोशिश करें')}
+                </button>
+              </div>
             ) : alerts.length === 0 ? (
               <div className="py-8 text-center" style={{ color: 'var(--text-3)' }}>
                 <span className="text-2xl block mb-2" style={{ color: 'var(--success, #059669)' }}>

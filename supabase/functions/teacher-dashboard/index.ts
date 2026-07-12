@@ -37,6 +37,13 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import {
+  averageFractionsAsPercent,
+  averagePercentages,
+  averageScopedMasteryByStudent,
+  finiteMetricOrNull,
+  resolveClassCurriculumScope,
+} from './metrics.ts'
 // P12: teachers should only see subjects each student is currently enrolled in
 // (grade-map ∩ plan). See:
 //   docs/superpowers/specs/2026-04-15-subject-governance-design.md §6.2
@@ -58,6 +65,53 @@ const SERVICE_CLIENT = createClient(supabaseUrl, serviceRoleKey, {
 
 function getServiceClient() {
   return SERVICE_CLIENT
+}
+
+type CurriculumTopicScopeRow = {
+  id: string
+  title: string
+  chapter_number: number | null
+}
+
+/**
+ * Resolve active curriculum topics for one governed grade + subject code.
+ * `curriculum_topics` stores a subject UUID, so resolve the public subject code
+ * through `subjects` instead of querying a non-existent subject_code column.
+ */
+async function listCurriculumTopicsForScope(
+  supabase: ReturnType<typeof getServiceClient>,
+  grade: string | null,
+  subjectCode: string | null,
+  limit = 2000,
+): Promise<CurriculumTopicScopeRow[]> {
+  if (!grade || !subjectCode) return []
+
+  const { data: subject, error: subjectError } = await supabase
+    .from('subjects')
+    .select('id')
+    .eq('code', subjectCode)
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle()
+  if (subjectError || !subject?.id) return []
+
+  const { data: topics, error: topicsError } = await supabase
+    .from('curriculum_topics')
+    .select('id, title, chapter_number')
+    .eq('grade', grade)
+    .eq('subject_id', subject.id)
+    .eq('is_active', true)
+    .is('deleted_at', null)
+    .order('chapter_number')
+    .order('display_order')
+    .limit(limit)
+
+  if (topicsError) return []
+  return (topics || []).map((topic) => ({
+    id: String(topic.id),
+    title: String(topic.title || ''),
+    chapter_number: topic.chapter_number == null ? null : Number(topic.chapter_number),
+  }))
 }
 
 // ─── Per-resource ownership helpers (P13 follow-up to JWT binding) ──────
@@ -192,6 +246,14 @@ async function handleGetDashboard(
 
   if (!teacher) return errorResponse('Teacher not found', 404, origin)
 
+  const teacherSubjectCodes = (Array.isArray(teacher.subjects_taught)
+    ? teacher.subjects_taught
+    : teacher.subjects_taught != null
+      ? [teacher.subjects_taught]
+      : [])
+    .map((subject) => String(subject).trim().toLowerCase())
+    .filter(Boolean)
+
   // Per-class roster student shape surfaced to /teacher/classes' expanded view
   // (cls.students). Field names match the frontend ClassData contract exactly
   // (src/app/teacher/classes/page.tsx:56):
@@ -199,7 +261,14 @@ async function handleGetDashboard(
   // `xp` is the student's existing xp_total (read-only; no XP math changed).
   // `mastery` is the same BKT p_know average already used by the heatmap,
   // rounded to a percent (no mastery math changed).
-  type DashStudent = { id: string; name: string; xp: number; mastery: number }
+  type DashStudent = {
+    id: string
+    class_id: string
+    name: string
+    grade: string | null
+    xp: number | null
+    mastery: number | null
+  }
   // Per-class assignment shape surfaced to /teacher/classes (cls.assignments).
   // Field names match the frontend ClassData contract exactly
   // (src/app/teacher/classes/page.tsx:57): { id, title, type, due_date }
@@ -214,15 +283,19 @@ async function handleGetDashboard(
   let classes: Array<{
     id: string
     name: string
+    grade: string | null
+    section: string | null
+    subject: string | null
+    class_code: string | null
     student_count: number
-    avg_mastery?: number
+    avg_mastery?: number | null
     students?: DashStudent[]
     assignments?: DashAssignment[]
   }> = []
   try {
     const { data: classData } = await supabase
       .from('class_teachers')
-      .select('class_id, classes(id, name, grade, section)')
+      .select('class_id, classes(id, name, grade, section, subject, class_code)')
       .eq('teacher_id', teacherId)
 
     if (classData && classData.length > 0) {
@@ -256,40 +329,53 @@ async function handleGetDashboard(
 
           const { data: liveStudents } = await supabase
             .from('students')
-            .select('id, name, xp_total')
+            .select('id, name, grade, xp_total')
             .in('id', rosterIds)
             .is('deleted_at', null)
             .limit(200)
           const liveIds = (liveStudents || []).map((s: any) => String(s.id))
-          // Batch the mastery snapshot: avg p_know per student over their
-          // concept_mastery rows. Degrade gracefully if the table is absent.
-          const masteryByStudent = new Map<string, { sum: number; n: number }>()
-          if (liveIds.length > 0) {
+          // Resolve the class-owned curriculum slice before reading mastery.
+          // A class metric must not average a student's unrelated grades or
+          // subjects into this class card.
+          const classScope = resolveClassCurriculumScope(
+            String(cls.id),
+            cls.grade,
+            cls.subject,
+            undefined,
+            teacherSubjectCodes,
+          )
+          const scopedTopics = await listCurriculumTopicsForScope(
+            supabase,
+            classScope.grade,
+            classScope.subjectCode,
+          )
+          const scopedTopicIds = scopedTopics.map((topic) => topic.id)
+          let masteryRows: Array<{ student_id: unknown; topic_id: unknown; p_know: unknown }> = []
+          if (liveIds.length > 0 && scopedTopicIds.length > 0) {
             try {
               const { data: cm } = await supabase
                 .from('concept_mastery')
-                .select('student_id, p_know')
+                .select('student_id, topic_id, p_know')
                 .in('student_id', liveIds)
+                .in('topic_id', scopedTopicIds)
                 .limit(20000)
-              for (const row of cm || []) {
-                const sid = String((row as any).student_id)
-                const pk = Number((row as any).p_know) || 0
-                const agg = masteryByStudent.get(sid) || { sum: 0, n: 0 }
-                agg.sum += pk
-                agg.n += 1
-                masteryByStudent.set(sid, agg)
-              }
-            } catch { /* concept_mastery absent — mastery defaults to 0 */ }
+              masteryRows = cm || []
+            } catch { /* concept_mastery absent -- mastery remains unavailable */ }
           }
+          const masteryByStudent = averageScopedMasteryByStudent(
+            liveIds,
+            scopedTopicIds,
+            masteryRows,
+          )
           for (const s of liveStudents || []) {
             const sid = String((s as any).id)
-            const agg = masteryByStudent.get(sid)
-            const mastery = agg && agg.n > 0 ? Math.round((agg.sum / agg.n) * 100) : 0
             dashStudents.push({
               id: sid,
+              class_id: String(cls.id),
               name: (s as any).name || 'Student',
-              xp: Number((s as any).xp_total) || 0,
-              mastery,
+              grade: (s as any).grade == null ? null : String((s as any).grade),
+              xp: finiteMetricOrNull((s as any).xp_total),
+              mastery: masteryByStudent.get(sid) ?? null,
             })
           }
         }
@@ -319,8 +405,12 @@ async function handleGetDashboard(
         classes.push({
           id: cls.id,
           name: cls.name || `${cls.grade}-${cls.section || 'A'}`,
+          grade: cls.grade == null ? null : String(cls.grade),
+          section: cls.section == null ? null : String(cls.section),
+          subject: cls.subject == null ? null : String(cls.subject),
+          class_code: cls.class_code == null ? null : String(cls.class_code),
           student_count: count ?? 0,
-          avg_mastery: 0,
+          avg_mastery: averagePercentages(dashStudents.map((student) => student.mastery)),
           students: dashStudents,
           assignments: dashAssignments,
         })
@@ -347,8 +437,12 @@ async function handleGetDashboard(
       classes.push({
         id: `grade-${grade}`,
         name: `Grade ${grade}`,
+        grade: String(grade),
+        section: null,
+        subject: null,
+        class_code: null,
         student_count: count ?? 0,
-        avg_mastery: 0,
+        avg_mastery: null,
         students: [],
         assignments: [],
       })
@@ -357,14 +451,20 @@ async function handleGetDashboard(
 
   const totalStudents = classes.reduce((sum, c) => sum + c.student_count, 0)
 
-  // Count recent alerts (students with low performance)
+  // Count recent alerts only inside the JWT-resolved teacher roster. The
+  // service-role client must never turn this summary into a cross-school read.
   let activeAlerts = 0
   let criticalAlerts = 0
   try {
-    const { data: lowPerf } = await supabase
-      .from('student_learning_profiles')
-      .select('student_id, total_questions_asked, total_questions_answered_correctly')
-      .gt('total_questions_asked', 5)
+    const dashboardStudents = await resolveStudentsForTeacher(supabase, teacherId)
+    const dashboardStudentIds = dashboardStudents.map((student) => student.id)
+    const { data: lowPerf } = dashboardStudentIds.length > 0
+      ? await supabase
+        .from('student_learning_profiles')
+        .select('student_id, total_questions_asked, total_questions_answered_correctly')
+        .in('student_id', dashboardStudentIds)
+        .gt('total_questions_asked', 5)
+      : { data: [] }
 
     if (lowPerf) {
       for (const p of lowPerf) {
@@ -384,7 +484,9 @@ async function handleGetDashboard(
       total_students: totalStudents,
       active_alerts: activeAlerts,
       critical_alerts: criticalAlerts,
-      active_assignments: 0,
+      // The current assignment rows do not expose a governed "active" state.
+      // Null is honest; the frontend renders it as unavailable.
+      active_assignments: null,
     },
   }, 200, {}, origin)
 }
@@ -406,12 +508,41 @@ async function handleGetHeatmap(
     return errorResponse('Class not owned by caller', 403, origin)
   }
 
-  // Determine students in this class/grade
+  // Resolve the governed class curriculum scope. For regular classes, grade
+  // and default subject come from owned class metadata. A requested subject may
+  // override the default only when it is in the teacher's subject assignment.
   const isGradeId = classId.startsWith('grade-')
-  const grade = isGradeId ? classId.replace('grade-', '') : null
+  const pseudoGrade = isGradeId ? classId.replace('grade-', '') : null
+  const { data: classMetadata } = isGradeId
+    ? { data: null }
+    : await supabase
+      .from('classes')
+      .select('grade, subject')
+      .eq('id', classId)
+      .limit(1)
+      .maybeSingle()
+  const { data: teacherScope } = await supabase
+    .from('teachers')
+    .select('subjects_taught')
+    .eq('id', teacherId)
+    .limit(1)
+    .maybeSingle()
+  const allowedSubjects = Array.isArray(teacherScope?.subjects_taught)
+    ? teacherScope.subjects_taught
+    : teacherScope?.subjects_taught != null
+      ? [teacherScope.subjects_taught]
+      : []
+  let curriculumScope = resolveClassCurriculumScope(
+    classId,
+    classMetadata?.grade ?? pseudoGrade,
+    classMetadata?.subject,
+    subject,
+    allowedSubjects,
+  )
 
+  // Determine students in this class/grade.
   let students: Array<{ id: string; name: string | null; grade: string | null }> | null = null
-  if (isGradeId && grade) {
+  if (isGradeId && pseudoGrade) {
     // TSB-1 (P8/P13): the grade pseudo-class fans out by grade only — scope it
     // to the teacher's OWN school. Fail-closed (empty) when the teacher has no
     // school. assertTeacherOwnsClass already 403s a school-less teacher above;
@@ -422,7 +553,7 @@ async function handleGetHeatmap(
       const { data } = await supabase
         .from('students')
         .select('id, name, grade')
-        .eq('grade', grade)
+        .eq('grade', pseudoGrade)
         .eq('school_id', schoolId)
         .limit(50)
       students = data
@@ -449,6 +580,9 @@ async function handleGetHeatmap(
 
   if (!students || students.length === 0) {
     return jsonResponse({
+      class_id: classId,
+      grade: curriculumScope.grade,
+      subject: curriculumScope.subjectCode,
       student_count: 0,
       concept_count: 0,
       concepts: [],
@@ -456,23 +590,34 @@ async function handleGetHeatmap(
     }, 200, {}, origin)
   }
 
-  // Get concepts/topics for this grade/subject
-  let conceptQuery = supabase.from('curriculum_topics').select('id, title, chapter_number').order('chapter_number')
-  if (grade) conceptQuery = conceptQuery.eq('grade', grade)
-  if (subject) conceptQuery = conceptQuery.eq('subject_code', subject)
-  const { data: concepts } = await conceptQuery.limit(12)
+  // If legacy class metadata has no grade, accept only one unambiguous roster
+  // grade. Multiple grades fail honest (no concepts) rather than broadening.
+  if (!curriculumScope.grade) {
+    const rosterGrades = [...new Set(
+      students.map((student) => student.grade == null ? '' : String(student.grade).trim()).filter(Boolean),
+    )]
+    if (rosterGrades.length === 1) {
+      curriculumScope = { ...curriculumScope, grade: rosterGrades[0].replace(/^grade\s+/i, '') }
+    }
+  }
 
-  const conceptList = (concepts || []).map(c => ({
-    id: c.id,
-    title: c.title,
-    chapter: c.chapter_number,
+  const scopedTopics = await listCurriculumTopicsForScope(
+    supabase,
+    curriculumScope.grade,
+    curriculumScope.subjectCode,
+    12,
+  )
+  const conceptList = scopedTopics.map((concept) => ({
+    id: concept.id,
+    title: concept.title,
+    chapter: concept.chapter_number,
   }))
 
   // Build mastery matrix
   const matrix = []
   for (const student of students) {
     const cells = []
-    let totalMastery = 0
+    const observedMastery: number[] = []
 
     for (const concept of conceptList) {
       // Try BKT mastery state
@@ -489,28 +634,35 @@ async function handleGetHeatmap(
           .single()
 
         if (bkt) {
-          pKnow = bkt.p_know ?? 0
+          const observedPKnow = finiteMetricOrNull(bkt.p_know)
+          if (observedPKnow !== null) {
+            pKnow = observedPKnow
+            observedMastery.push(observedPKnow)
+          }
           attempts = bkt.attempts ?? 0
           level = bkt.mastery_level || 'none'
         }
       } catch { /* table may not exist */ }
 
       cells.push({ p_know: pKnow, level, attempts })
-      totalMastery += pKnow
     }
 
-    const avgMastery = conceptList.length > 0
-      ? Math.round((totalMastery / conceptList.length) * 100)
-      : 0
+    const avgMastery = averageFractionsAsPercent(observedMastery)
 
     matrix.push({
+      student_id: student.id,
+      class_id: classId,
       student_name: student.name || 'Student',
+      grade: student.grade == null ? null : String(student.grade),
       avg_mastery: avgMastery,
       cells,
     })
   }
 
   return jsonResponse({
+    class_id: classId,
+    grade: curriculumScope.grade,
+    subject: curriculumScope.subjectCode,
     student_count: students.length,
     concept_count: conceptList.length,
     concepts: conceptList,

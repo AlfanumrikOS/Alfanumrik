@@ -104,6 +104,8 @@ function alertsPayload(remediationStatus: string) {
 function installFetch(opts: {
   alertsStatus: string;
   remediationOk: boolean;
+  heatmapOk?: boolean;
+  alertsOk?: boolean;
   onRemediationPost?: (body: unknown) => void;
   // After a successful POST the component re-reads alerts; this is the status
   // the second get_alerts returns.
@@ -119,9 +121,15 @@ function installFetch(opts: {
         return { ok: true, json: async () => DASHBOARD } as Response;
       }
       if (body.action === 'get_heatmap') {
+        if (opts.heatmapOk === false) {
+          return { ok: false, status: 503, text: async () => 'unavailable' } as Response;
+        }
         return { ok: true, json: async () => HEATMAP } as Response;
       }
       if (body.action === 'get_alerts') {
+        if (opts.alertsOk === false) {
+          return { ok: false, status: 503, text: async () => 'unavailable' } as Response;
+        }
         alertsCalls += 1;
         const status =
           alertsCalls > 1 && opts.alertsStatusAfter ? opts.alertsStatusAfter : opts.alertsStatus;
@@ -215,5 +223,91 @@ describe('CommandCenter — assign remediation', () => {
     renderCC();
     const switcher = await screen.findByTestId('class-switcher');
     expect(within(switcher as HTMLElement).getByText(/Grade 7 A/)).toBeInTheDocument();
+  });
+
+  it('renders recoverable errors instead of reassuring empty mastery and alert states', async () => {
+    installFetch({
+      alertsStatus: 'none',
+      remediationOk: true,
+      heatmapOk: false,
+      alertsOk: false,
+    });
+
+    renderCC();
+
+    expect(await screen.findByTestId('heatmap-error')).toHaveTextContent("Couldn't load mastery data.");
+    expect(await screen.findByTestId('alerts-error')).toHaveTextContent("Couldn't load at-risk alerts.");
+    expect(screen.queryByText('No mastery data yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('No at-risk students detected.')).not.toBeInTheDocument();
+
+    const atRiskTile = screen.getByText('At-risk', { selector: 'p' }).parentElement;
+    expect(atRiskTile).not.toBeNull();
+    expect(within(atRiskTile as HTMLElement).getByText('\u2014')).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByTestId('heatmap-error')).getByRole('button', { name: 'Try again' }));
+    fireEvent.click(within(screen.getByTestId('alerts-error')).getByRole('button', { name: 'Try again' }));
+  });
+
+  it('switches class-scoped roster data and renders unavailable summary metrics honestly', async () => {
+    const requestedHeatmaps: string[] = [];
+    global.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || '{}'));
+      if (body.action === 'get_dashboard') {
+        return {
+          ok: true,
+          json: async () => ({
+            teacher: { name: 'Ms. Rao' },
+            classes: [
+              { id: 'class-1', name: 'Grade 7 A', student_count: 1, avg_mastery: 62 },
+              { id: 'class-2', name: 'Grade 7 B', student_count: 1, avg_mastery: null },
+            ],
+            stats: {
+              total_students: 2,
+              active_alerts: 0,
+              critical_alerts: 0,
+              active_assignments: null,
+            },
+          }),
+        } as Response;
+      }
+      if (body.action === 'get_heatmap') {
+        requestedHeatmaps.push(body.class_id);
+        const isSecond = body.class_id === 'class-2';
+        return {
+          ok: true,
+          json: async () => ({
+            class_id: body.class_id,
+            student_count: 1,
+            concept_count: 1,
+            concepts: [{ id: 'c1', title: 'Motion', chapter: 2 }],
+            matrix: [{
+              student_id: isSecond ? 'student-2' : 'student-1',
+              class_id: body.class_id,
+              student_name: isSecond ? 'Ravi' : 'Asha',
+              grade: '7',
+              avg_mastery: isSecond ? null : 62,
+              cells: [{ p_know: isSecond ? 0 : 0.62, level: isSecond ? 'none' : 'mid', attempts: isSecond ? 0 : 5 }],
+            }],
+          }),
+        } as Response;
+      }
+      if (body.action === 'get_alerts') {
+        return { ok: true, json: async () => [] } as Response;
+      }
+      return { ok: true, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    renderCC();
+
+    await screen.findByText('Asha');
+    const assignmentsTile = screen.getByText('Assignments', { selector: 'p' }).parentElement;
+    expect(assignmentsTile).not.toBeNull();
+    expect(within(assignmentsTile as HTMLElement).getByText('\u2014')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('class-switcher'), { target: { value: 'class-2' } });
+
+    await screen.findByText('Ravi');
+    expect(screen.queryByText('Asha')).not.toBeInTheDocument();
+    expect(requestedHeatmaps).toContain('class-2');
   });
 });

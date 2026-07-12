@@ -1545,6 +1545,7 @@ img, video, iframe, canvas, svg {
    bottom nav). Tablet adds a rail. Desktop adds an optional aside. */
 .app-shell-v2 {
   display: grid;
+  min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg);
   grid-template-areas:
@@ -2048,6 +2049,19 @@ body.foxy-body-lock {
   .app-shell-v2 > .app-shell-nav { display: none; }
 }
 
+/* A mobile AppShell never renders a rail. Keep its grid single-column at
+   tablet and desktop widths so the generic responsive rail track cannot leave
+   an empty 240px gutter beside the content. */
+@media (min-width: 768px) {
+  .app-shell-v2[data-has-rail="false"] {
+    grid-template-areas:
+      "header"
+      "content"
+      "nav";
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ── Wide: 1440px+, cap max-width ───────────────────────────── */
 @media (min-width: 1440px) {
   .app-shell-v2 > .app-shell-content {
@@ -2082,6 +2096,23 @@ body.foxy-body-lock {
 @media (min-width: 1440px) {
   .app-shell-v2[data-bleed="true"] > .app-shell-content {
     padding-inline: 0;
+  }
+}
+
+/* School Admin uses a fixed mobile destination bar. Reserve enough space for
+   its 48px controls and the device safe area so the last page action remains
+   reachable above the bar. Desktop retains the shell's existing p-6 rhythm. */
+.school-admin-mobile-nav {
+  padding-bottom: var(--safe-bottom);
+}
+
+.school-admin-shell__content {
+  padding-bottom: calc(5.5rem + var(--safe-bottom));
+}
+
+@media (min-width: 768px) {
+  .school-admin-shell__content {
+    padding-bottom: 1.5rem;
   }
 }
 

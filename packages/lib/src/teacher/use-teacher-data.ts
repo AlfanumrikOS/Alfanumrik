@@ -24,7 +24,7 @@ import {
   supabaseAnonKey as SUPABASE_ANON,
 } from '@alfanumrik/lib/supabase';
 import type {
-  HeatmapData,
+  HeatmapCell,
   RiskAlert,
   StudentMasteryReport,
 } from '@alfanumrik/lib/types';
@@ -37,6 +37,14 @@ const TEACHER_SWR_CONFIG: SWRConfiguration = {
   dedupingInterval: 10000,
   errorRetryCount: 2,
   keepPreviousData: true,
+};
+
+// A class switch is a scope change, not a background refresh. Keeping the
+// previous key's data would briefly show one class's students under another
+// class label, so every class-scoped hook clears while its new key resolves.
+const CLASS_SCOPED_SWR_CONFIG: SWRConfiguration = {
+  ...TEACHER_SWR_CONFIG,
+  keepPreviousData: false,
 };
 
 /**
@@ -82,14 +90,16 @@ export async function teacherDashboardFetch<T = unknown>(
 export interface TeacherDashboardClass {
   id: string;
   name: string;
+  grade?: string | null;
+  subject?: string | null;
   student_count: number;
-  avg_mastery?: number;
+  avg_mastery?: number | null;
 }
 export interface TeacherDashboardStats {
   total_students: number;
   active_alerts: number;
   critical_alerts: number;
-  active_assignments: number;
+  active_assignments: number | null;
 }
 export interface TeacherDashboardData {
   teacher?: { name: string };
@@ -106,6 +116,25 @@ export interface AlertsResponse {
 export interface GradingQueueResponse {
   items: GradingQueueItem[];
   count: number;
+}
+
+/** `get_heatmap` -- class identity and nullable mastery are server-owned. */
+export interface TeacherHeatmapRow {
+  student_id: string;
+  class_id: string;
+  student_name: string;
+  grade: string | null;
+  avg_mastery: number | null;
+  cells: HeatmapCell[];
+}
+export interface TeacherHeatmapData {
+  class_id: string;
+  grade: string | null;
+  subject: string | null;
+  student_count: number;
+  concept_count: number;
+  concepts: { id: string; title: string; chapter: number }[];
+  matrix: TeacherHeatmapRow[];
 }
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
@@ -129,15 +158,15 @@ export function useHeatmap(classId?: string, subject?: string) {
   const { teacher } = useAuth();
   const teacherId = teacher?.id || '';
   const subj = subject || 'math';
-  return useSWR<HeatmapData>(
+  return useSWR<TeacherHeatmapData>(
     teacherId && classId ? ['teacher-dashboard', 'get_heatmap', teacherId, classId, subj] : null,
     () =>
-      teacherDashboardFetch<HeatmapData>('get_heatmap', {
+      teacherDashboardFetch<TeacherHeatmapData>('get_heatmap', {
         teacher_id: teacherId,
         class_id: classId,
         subject: subj,
       }),
-    TEACHER_SWR_CONFIG,
+    CLASS_SCOPED_SWR_CONFIG,
   );
 }
 
@@ -163,7 +192,7 @@ export function useAlerts(classId?: string, enabled: boolean = true) {
         teacher_id: teacherId,
         ...(classId ? { class_id: classId } : {}),
       }),
-    TEACHER_SWR_CONFIG,
+    CLASS_SCOPED_SWR_CONFIG,
   );
 }
 
@@ -193,7 +222,7 @@ export function useGradingQueue(enabled: boolean, classId?: string) {
         teacher_id: teacherId,
         ...(classId ? { class_id: classId } : {}),
       }),
-    TEACHER_SWR_CONFIG,
+    classId ? CLASS_SCOPED_SWR_CONFIG : TEACHER_SWR_CONFIG,
   );
 }
 
@@ -245,6 +274,6 @@ export function useClassLeaderboard(classId: string | null, enabled: boolean) {
         }>;
       }>;
     },
-    { ...TEACHER_SWR_CONFIG, refreshInterval: 300000 }, // 5 min
+    { ...CLASS_SCOPED_SWR_CONFIG, refreshInterval: 300000 }, // 5 min
   );
 }

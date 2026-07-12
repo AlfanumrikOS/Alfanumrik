@@ -6,7 +6,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
  * AppShell — responsive shell primitive tests (2026-05-19).
  *
  * Covers:
- *   - Renders the data-variant attribute for each variant
+ *   - Renders variant and rail-presence attributes for responsive CSS
  *   - Header / nav / children render in their respective slots
  *   - Rail is rendered only for 'rail' + 'split' variants
  *   - Aside is rendered only for 'split' variant AND when aside prop is passed
@@ -44,12 +44,15 @@ describe('<AppShell />', () => {
       <AppShell variant="mobile">x</AppShell>,
     );
     expect(container.querySelector('.app-shell-v2')?.getAttribute('data-variant')).toBe('mobile');
+    expect(container.querySelector('.app-shell-v2')?.getAttribute('data-has-rail')).toBe('false');
 
     rerender(<AppShell variant="rail">x</AppShell>);
     expect(container.querySelector('.app-shell-v2')?.getAttribute('data-variant')).toBe('rail');
+    expect(container.querySelector('.app-shell-v2')?.getAttribute('data-has-rail')).toBe('true');
 
     rerender(<AppShell variant="split">x</AppShell>);
     expect(container.querySelector('.app-shell-v2')?.getAttribute('data-variant')).toBe('split');
+    expect(container.querySelector('.app-shell-v2')?.getAttribute('data-has-rail')).toBe('true');
   });
 
   it('renders header content in the sticky header slot', () => {

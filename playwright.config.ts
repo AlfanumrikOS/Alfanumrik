@@ -1,4 +1,11 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
+
+const certificationBaseURL =
+  process.env.CERTIFICATION_RUN_ENABLED === 'true'
+    ? process.env.CERTIFICATION_BASE_URL
+    : undefined;
+const configuredBaseURL = process.env.BASE_URL || certificationBaseURL;
+const localBaseURL = 'http://localhost:3000';
 
 export default defineConfig({
   testDir: './e2e',
@@ -16,6 +23,16 @@ export default defineConfig({
   // Safe to list locally (no browser, no network) via:
   //   CERTIFICATION_RUN_ENABLED=true npx playwright test e2e/certification --list
   testIgnore: process.env.CERTIFICATION_RUN_ENABLED === 'true' ? undefined : ['**/certification/**'],
+  // CI invokes `--project=chromium`; keep that command contract explicit so a
+  // missing project cannot be mistaken for an executed browser suite. Firefox
+  // and WebKit are added only when their binaries and role journeys become
+  // blocking certification gates.
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
   use: {
     // CI uses Playwright's pinned browser. Constrained review environments may
     // provide a compatible audited Chromium binary without changing test code.
@@ -28,10 +45,7 @@ export default defineConfig({
     // navigations resolve against the target. (Each cert spec ALSO sets its
     // own baseURL via `test.use({ baseURL: CERTIFICATION_BASE_URL })`, so this
     // is belt-and-suspenders — it changes nothing for non-certification runs.)
-    baseURL:
-      process.env.BASE_URL ||
-      (process.env.CERTIFICATION_RUN_ENABLED === 'true' ? process.env.CERTIFICATION_BASE_URL : undefined) ||
-      'http://localhost:3000',
+    baseURL: configuredBaseURL || localBaseURL,
     // Vercel "Protection Bypass for Automation": when CERTIFICATION_BYPASS_SECRET
     // is set (a certification run against an SSO-protected Vercel Preview), send
     // the bypass header on every request, and ask Vercel to set a bypass cookie
@@ -47,9 +61,15 @@ export default defineConfig({
       : {},
     trace: 'on-first-retry',
   },
-  webServer: process.env.CI ? undefined : {
+  // A relative navigation is meaningful only when an application is actually
+  // serving it. Start the local host whenever the caller did not supply an
+  // explicit deployment target, including the advisory PR E2E job in CI.
+  // External certification/critical-path runs set a base URL and never start
+  // or mutate a local/remote service through this config.
+  webServer: configuredBaseURL ? undefined : {
     command: 'npm run dev',
-    port: 3000,
-    reuseExistingServer: true,
+    url: localBaseURL,
+    reuseExistingServer: !process.env.CI,
+    timeout: 180_000,
   },
 });

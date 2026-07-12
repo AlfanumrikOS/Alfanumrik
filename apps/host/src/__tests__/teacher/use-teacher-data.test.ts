@@ -201,4 +201,60 @@ describe('hook key discipline — inert until required params present', () => {
       subject: 'math',
     });
   });
+
+  it('clears the previous class heatmap while a newly selected class is loading', async () => {
+    let releaseSecond!: () => void;
+    const secondResponse = new Promise<Response>((resolve) => {
+      releaseSecond = () => resolve(okResponse({
+        class_id: 'class-2',
+        student_count: 1,
+        concept_count: 0,
+        concepts: [],
+        matrix: [{
+          student_id: 'student-2',
+          class_id: 'class-2',
+          student_name: 'Ravi',
+          grade: '7',
+          avg_mastery: null,
+          cells: [],
+        }],
+      }));
+    });
+
+    (global.fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_url: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body || '{}'));
+        if (body.class_id === 'class-2') return secondResponse;
+        return okResponse({
+          class_id: 'class-1',
+          student_count: 1,
+          concept_count: 0,
+          concepts: [],
+          matrix: [{
+            student_id: 'student-1',
+            class_id: 'class-1',
+            student_name: 'Asha',
+            grade: '7',
+            avg_mastery: 65,
+            cells: [],
+          }],
+        });
+      },
+    );
+
+    const { result, rerender } = renderHook(
+      ({ classId }: { classId: string }) => useHeatmap(classId),
+      { initialProps: { classId: 'class-1' }, wrapper: SwrWrapper },
+    );
+
+    await waitFor(() => expect(result.current.data?.class_id).toBe('class-1'));
+    rerender({ classId: 'class-2' });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+
+    expect(result.current.data).toBeUndefined();
+
+    releaseSecond();
+    await waitFor(() => expect(result.current.data?.class_id).toBe('class-2'));
+    expect(result.current.data?.matrix[0]?.student_name).toBe('Ravi');
+  });
 });

@@ -178,6 +178,7 @@ export function AppShell({
     <div
       className={clsx('app-shell-v2', className)}
       data-variant={variant}
+      data-has-rail={hasRail ? 'true' : 'false'}
       data-no-aside={!hasAside ? 'true' : 'false'}
       data-one-hand={oneHand ? 'true' : 'false'}
       data-bleed={bleed ? 'true' : 'false'}

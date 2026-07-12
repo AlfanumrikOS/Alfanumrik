@@ -6,7 +6,6 @@
  * When ON:
  * - Shows "Board Readiness: X%" instead of "Level N Explorer"
  * - Shows "Days Active" instead of streak flame emoji
- * - Shows board exam countdown for grade 10/12
  * - Hides XP/gamification decorations
  *
  * Persisted to localStorage key: 'alfanumrik_exam_mode'
@@ -17,19 +16,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 
 const STORAGE_KEY = 'alfanumrik_exam_mode';
-
-// CBSE board exam dates (approximate — update yearly)
-const BOARD_EXAM_DATES: Record<string, string> = {
-  '10': '2026-02-15', // Class 10 boards (approximate)
-  '12': '2026-02-05', // Class 12 boards (approximate)
-};
-
-function daysUntil(dateStr: string): number {
-  const target = new Date(dateStr);
-  const now = new Date();
-  const diff = target.getTime() - now.getTime();
-  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-}
 
 interface ExamModeToggleProps {
   /** Board readiness score 0-100 (shown instead of level when exam mode is ON) */
@@ -87,12 +73,8 @@ export default function ExamModeToggle({
   compact = false,
   className = '',
 }: ExamModeToggleProps) {
-  const { student, isHi } = useAuth();
-  const grade = student?.grade ?? '9';
+  const { isHi } = useAuth();
   const { examMode, toggleExamMode } = useExamMode();
-
-  const boardDate = BOARD_EXAM_DATES[grade];
-  const daysLeft = boardDate ? daysUntil(boardDate) : null;
 
   if (compact) {
     return (
@@ -164,15 +146,6 @@ export default function ExamModeToggle({
               </p>
             </div>
 
-            {/* Board Exam Countdown */}
-            {daysLeft !== null && (
-              <div className="flex-1 min-w-0 p-3 rounded-xl text-center" style={{ background: daysLeft <= 30 ? '#FEF2F2' : '#FFF8F0' }}>
-                <p className="text-xl font-black" style={{ color: daysLeft <= 30 ? '#DC2626' : 'var(--orange, #F97316)' }}>{daysLeft}</p>
-                <p className="text-[10px]" style={{ color: 'var(--text-2)' }}>
-                  {isHi ? `कक्षा ${grade} बोर्ड` : `Class ${grade} Board`}
-                </p>
-              </div>
-            )}
           </>
         ) : (
           <>

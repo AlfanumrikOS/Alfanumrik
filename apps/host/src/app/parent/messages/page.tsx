@@ -20,9 +20,11 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import ParentV3PageGate from '../_components/ParentV3PageGate';
 import { ParentV3Messages } from '../_components/ParentV3Views';
+import { readParentChildId } from '../_components/parent-child-scope';
 
 const LIST_POLL_MS = 30_000;
 const PANEL_POLL_MS = 15_000;
+const PARENT_MESSAGES_TIMEOUT_MS = 15_000;
 
 interface ThreadRow {
   id: string;
@@ -61,6 +63,13 @@ interface MessagesResponse {
   nextCursor: string | null;
   error?: string;
 }
+interface LinkedChildrenResponse {
+  success: boolean;
+  data?: {
+    children?: Array<{ student_id: string; name: string; grade: string | null }>;
+  };
+  error?: string;
+}
 
 async function authedFetch(url: string, init: RequestInit = {}) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -68,13 +77,25 @@ async function authedFetch(url: string, init: RequestInit = {}) {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
   } catch { /* anonymous */ }
-  return fetch(url, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> | undefined) } });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PARENT_MESSAGES_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...init,
+      headers: { ...headers, ...(init.headers as Record<string, string> | undefined) },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 const fetcher = async <T,>(url: string): Promise<T> => {
   const res = await authedFetch(url);
   if (!res.ok) throw new Error(`parent-messages.fetch_failed:${res.status}`);
-  return res.json() as Promise<T>;
+  const json = await res.json() as T & { success?: boolean };
+  if (json.success === false) throw new Error('parent-messages.request_failed');
+  return json;
 };
 
 function tt(isHi: boolean, en: string, hi: string) {
@@ -101,17 +122,61 @@ function ParentMessagesContent() {
   const router = useRouter();
 
   const selectedFromUrl = searchParams?.get('thread') ?? null;
+  const scopedChildId = readParentChildId(searchParams);
   const [draftThreadId, setDraftThreadId] = useState<string | null>(null);
   const [draftBody, setDraftBody] = useState('');
   const [sending, setSending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const { data: threadsData, mutate: mutateThreads } = useSWR<ThreadsResponse>(
+  const {
+    data: linkedChildrenData,
+    error: linkedChildrenError,
+    isLoading: linkedChildrenLoading,
+    mutate: mutateLinkedChildren,
+  } = useSWR<LinkedChildrenResponse>(
+    '/api/v2/parent/children',
+    fetcher,
+    { revalidateOnFocus: true, shouldRetryOnError: false },
+  );
+  const {
+    data: threadsData,
+    error: threadsError,
+    isLoading: threadsLoading,
+    mutate: mutateThreads,
+  } = useSWR<ThreadsResponse>(
     '/api/parent/messages/threads',
     fetcher,
     { refreshInterval: LIST_POLL_MS, revalidateOnFocus: true, shouldRetryOnError: false },
   );
-  const threads = useMemo(() => threadsData?.threads ?? [], [threadsData?.threads]);
+  const authorizedThreads = useMemo(() => threadsData?.threads ?? [], [threadsData?.threads]);
+  const linkedChildren = useMemo(
+    () => linkedChildrenData?.data?.children ?? [],
+    [linkedChildrenData?.data?.children],
+  );
+  const linkedChildIds = useMemo(
+    () => new Set(linkedChildren.map((child) => child.student_id)),
+    [linkedChildren],
+  );
+  const scopeFallbackChildId = linkedChildren[0]?.student_id ?? null;
+  const activeChildId = scopedChildId && linkedChildIds.has(scopedChildId) ? scopedChildId : null;
+  const invalidChildScope = Boolean(scopedChildId && linkedChildrenData && !activeChildId);
+  const needsScopeNormalization = Boolean(
+    linkedChildrenData && scopeFallbackChildId && (!scopedChildId || invalidChildScope),
+  );
+  const noLinkedChildren = Boolean(linkedChildrenData && linkedChildren.length === 0);
+  const threads = useMemo(() => {
+    if (!activeChildId) return [];
+    return authorizedThreads.filter((thread) => thread.student_id === activeChildId);
+  }, [activeChildId, authorizedThreads]);
+
+  useEffect(() => {
+    if (!needsScopeNormalization || !scopeFallbackChildId) return;
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    params.set('childId', scopeFallbackChildId);
+    params.delete('thread');
+    setDraftThreadId(null);
+    router.replace(`/parent/messages?${params.toString()}`);
+  }, [needsScopeNormalization, router, scopeFallbackChildId, searchParams]);
 
   const selectedThreadId = useMemo(() => {
     if (selectedFromUrl && threads.some((t) => t.id === selectedFromUrl)) return selectedFromUrl;
@@ -120,7 +185,12 @@ function ParentMessagesContent() {
   }, [selectedFromUrl, draftThreadId, threads]);
   const selectedThread = threads.find((t) => t.id === selectedThreadId) ?? null;
 
-  const { data: messagesData, mutate: mutateMessages } = useSWR<MessagesResponse>(
+  const {
+    data: messagesData,
+    error: messagesError,
+    isLoading: messagesLoading,
+    mutate: mutateMessages,
+  } = useSWR<MessagesResponse>(
     selectedThreadId ? `/api/parent/messages/threads/${selectedThreadId}/messages` : null,
     fetcher,
     { refreshInterval: PANEL_POLL_MS, revalidateOnFocus: true, shouldRetryOnError: false },
@@ -154,12 +224,12 @@ function ParentMessagesContent() {
       }
       setDraftBody('');
       await Promise.all([mutateMessages(), mutateThreads()]);
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Send failed');
+    } catch {
+      setErrorMsg(tt(isHi, 'Message could not be sent. Please try again.', 'संदेश नहीं भेजा जा सका। कृपया फिर से कोशिश करें।'));
     } finally {
       setSending(false);
     }
-  }, [draftBody, selectedThread, sending, mutateMessages, mutateThreads]);
+  }, [draftBody, selectedThread, sending, mutateMessages, mutateThreads, isHi]);
 
   return (
     <div className="flex h-dvh w-full flex-col bg-orange-50/30 text-slate-900 md:flex-row">
@@ -175,7 +245,45 @@ function ParentMessagesContent() {
           </p>
         </header>
         <ul className="flex-1 divide-y divide-orange-100 overflow-y-auto">
-          {threads.length === 0 ? (
+          {linkedChildrenLoading ? (
+            <li className="p-6 text-center text-sm text-slate-500" role="status">
+              {tt(isHi, 'Loading linked children…', 'जुड़े हुए बच्चे लोड हो रहे हैं…')}
+            </li>
+          ) : linkedChildrenError ? (
+            <li className="p-6 text-center text-sm text-red-700" role="alert">
+              <p>{tt(isHi, "Couldn't load child access.", 'बच्चों की पहुंच लोड नहीं हो सकी।')}</p>
+              <button
+                type="button"
+                onClick={() => void mutateLinkedChildren()}
+                className="mt-3 min-h-[44px] rounded-md border border-red-200 px-4 py-2 font-medium"
+              >
+                {tt(isHi, 'Try again', 'फिर से कोशिश करें')}
+              </button>
+            </li>
+          ) : needsScopeNormalization ? (
+            <li className="p-6 text-center text-sm text-amber-800" role="status">
+              {tt(isHi, 'Switching to an available child…', 'उपलब्ध बच्चे पर जा रहे हैं…')}
+            </li>
+          ) : noLinkedChildren ? (
+            <li className="p-6 text-center text-sm text-amber-800" role="alert">
+              {tt(isHi, 'No linked child is available for messages.', 'संदेशों के लिए कोई जुड़ा हुआ बच्चा उपलब्ध नहीं है।')}
+            </li>
+          ) : threadsLoading ? (
+            <li className="p-6 text-center text-sm text-slate-500" role="status">
+              {tt(isHi, 'Loading conversations…', 'बातचीत लोड हो रही है…')}
+            </li>
+          ) : threadsError ? (
+            <li className="p-6 text-center text-sm text-red-700" role="alert">
+              <p>{tt(isHi, "Couldn't load conversations.", 'बातचीत लोड नहीं हो सकी।')}</p>
+              <button
+                type="button"
+                onClick={() => void mutateThreads()}
+                className="mt-3 min-h-[44px] rounded-md border border-red-200 px-4 py-2 font-medium"
+              >
+                {tt(isHi, 'Try again', 'फिर से कोशिश करें')}
+              </button>
+            </li>
+          ) : threads.length === 0 ? (
             <li className="p-6 text-center text-sm text-slate-500">
               {tt(isHi, 'No conversations yet.', 'अभी तक कोई बातचीत नहीं।')}
             </li>
@@ -249,7 +357,22 @@ function ParentMessagesContent() {
             </header>
 
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              {messages.length === 0 ? (
+              {messagesLoading ? (
+                <p className="py-8 text-center text-sm text-slate-500" role="status">
+                  {tt(isHi, 'Loading messages…', 'संदेश लोड हो रहे हैं…')}
+                </p>
+              ) : messagesError ? (
+                <div className="py-8 text-center text-sm text-red-700" role="alert">
+                  <p>{tt(isHi, "Couldn't load messages.", 'संदेश लोड नहीं हो सके।')}</p>
+                  <button
+                    type="button"
+                    onClick={() => void mutateMessages()}
+                    className="mt-3 min-h-[44px] rounded-md border border-red-200 px-4 py-2 font-medium"
+                  >
+                    {tt(isHi, 'Try again', 'फिर से कोशिश करें')}
+                  </button>
+                </div>
+              ) : messages.length === 0 ? (
                 <p className="py-8 text-center text-sm text-slate-500">
                   {tt(isHi, 'No messages yet.', 'अभी तक कोई संदेश नहीं।')}
                 </p>

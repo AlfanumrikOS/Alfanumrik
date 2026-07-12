@@ -53,8 +53,8 @@ interface ClassData {
   subject?: string;
   student_count: number;
   class_code: string;
-  average_mastery: number;
-  students?: { id: string; name: string; xp: number; mastery: number }[];
+  avg_mastery: number | null;
+  students?: { id: string; name: string; xp: number | null; mastery: number | null }[];
   assignments?: { id: string; title: string; type: string; due_date?: string }[];
   last_activity?: string;
 }
@@ -508,18 +508,18 @@ export default function TeacherClassesPage() {
                   <div style={{ marginTop: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <span style={{ fontSize: 12, color: '#7D7264' }}>{tt(isHi, 'Average Mastery', 'औसत मास्टरी')}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: cls.average_mastery >= 70 ? '#059669' : cls.average_mastery >= 40 ? '#D97706' : '#7D7264' }}>
-                        {cls.average_mastery ?? 0}%
+                      <span style={{ fontSize: 13, fontWeight: 600, color: cls.avg_mastery != null && cls.avg_mastery >= 70 ? '#059669' : cls.avg_mastery != null && cls.avg_mastery >= 40 ? '#D97706' : '#7D7264' }}>
+                        {cls.avg_mastery != null ? `${cls.avg_mastery}%` : '\u2014'}
                       </span>
                     </div>
                     <div style={{ height: 6, backgroundColor: '#F5F0EA', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
-                        width: `${Math.min(cls.average_mastery ?? 0, 100)}%`,
+                        width: `${cls.avg_mastery == null ? 0 : Math.min(cls.avg_mastery, 100)}%`,
                         borderRadius: 3,
-                        background: cls.average_mastery >= 70
+                        background: cls.avg_mastery != null && cls.avg_mastery >= 70
                           ? 'linear-gradient(90deg, #059669, #10B981)'
-                          : cls.average_mastery >= 40
+                          : cls.avg_mastery != null && cls.avg_mastery >= 40
                             ? 'linear-gradient(90deg, #D97706, #F59E0B)'
                             : 'linear-gradient(90deg, #A89B86, #7D7264)',
                         transition: 'width 0.6s ease',
@@ -704,8 +704,8 @@ export default function TeacherClassesPage() {
                               }}>
                                 <span style={{ color: '#1A1207', fontWeight: 500 }}>{s.name}</span>
                                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                                  <span style={{ color: '#F59E0B', fontSize: 12, fontWeight: 600 }}>{s.xp} XP</span>
-                                  <span style={{ color: '#E8581C', fontSize: 12, fontWeight: 600 }}>{s.mastery}%</span>
+                                  <span style={{ color: '#F59E0B', fontSize: 12, fontWeight: 600 }}>{s.xp != null ? `${s.xp} XP` : '\u2014'}</span>
+                                  <span style={{ color: '#E8581C', fontSize: 12, fontWeight: 600 }}>{s.mastery != null ? `${s.mastery}%` : '\u2014'}</span>
                                 </div>
                               </div>
                             ))}
