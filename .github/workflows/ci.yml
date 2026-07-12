@@ -323,24 +323,37 @@ jobs:
           # deno cache resolves and downloads all remote imports (std@0.210.0/assert,
           # esm.sh/@supabase/supabase-js@2, etc.) and stores them in the Deno cache dir.
           # The test step then runs with only --allow-read --allow-env (no network).
-          deno cache --no-lock --no-check \
-            supabase/functions/parent-portal/__tests__/contract.test.ts \
-            supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
-            supabase/functions/daily-cron/__tests__/contract.test.ts \
-            supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
-            supabase/functions/send-auth-email/__tests__/always-200.test.ts \
-            supabase/functions/grounded-answer/__tests__/cache.test.ts \
-            supabase/functions/grounded-answer/__tests__/circuit.test.ts \
-            supabase/functions/grounded-answer/__tests__/citations.test.ts \
-            supabase/functions/grounded-answer/__tests__/claude.test.ts \
-            supabase/functions/grounded-answer/__tests__/confidence.test.ts \
-            supabase/functions/grounded-answer/__tests__/coverage.test.ts \
-            supabase/functions/grounded-answer/__tests__/embedding.test.ts \
-            supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
-            supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
-            supabase/functions/grounded-answer/__tests__/trace.test.ts \
-            supabase/functions/grounded-answer/__tests__/validation.test.ts \
-            supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
+          attempt=1
+          while true; do
+            if deno cache --no-lock --no-check \
+              supabase/functions/parent-portal/__tests__/contract.test.ts \
+              supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
+              supabase/functions/daily-cron/__tests__/contract.test.ts \
+              supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
+              supabase/functions/send-auth-email/__tests__/always-200.test.ts \
+              supabase/functions/grounded-answer/__tests__/cache.test.ts \
+              supabase/functions/grounded-answer/__tests__/circuit.test.ts \
+              supabase/functions/grounded-answer/__tests__/citations.test.ts \
+              supabase/functions/grounded-answer/__tests__/claude.test.ts \
+              supabase/functions/grounded-answer/__tests__/confidence.test.ts \
+              supabase/functions/grounded-answer/__tests__/coverage.test.ts \
+              supabase/functions/grounded-answer/__tests__/embedding.test.ts \
+              supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
+              supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
+              supabase/functions/grounded-answer/__tests__/trace.test.ts \
+              supabase/functions/grounded-answer/__tests__/validation.test.ts \
+              supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts; then
+              break
+            fi
+            if [ "$attempt" -ge 3 ]; then
+              echo "::error::Deno module cache pre-warm failed after $attempt attempts."
+              exit 1
+            fi
+            delay=$((attempt * 5))
+            echo "::warning::Deno module download failed on attempt $attempt; retrying in ${delay}s."
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
 
       - name: Run Edge Function Deno tests (deterministic, offline)
         run: |
