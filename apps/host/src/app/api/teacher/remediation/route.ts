@@ -8,12 +8,12 @@
  *        (1) per-teacher pre-check — if an OPEN row (assigned | in_progress)
  *            already exists for (teacher, student, class, chapter) it is returned
  *            rather than duplicated;
- *        (2) DB backstop — the partial unique index
- *            uq_teacher_remediation_assignments_open_dedupe (key student ×
- *            class × chapter-bucket for every open status, teacher_id
- *            deliberately NOT in the key) turns a cross-teacher or
- *            check-then-insert-race duplicate INSERT into a named 23505, which
- *            is acknowledged without exposing the colleague's assignment.
+ *        (2) DB backstop — the deployed partial unique index
+ *            uq_teacher_remediation_assignments_open_dedupe currently protects
+ *            assigned rows. This route is deliberately compatible with a later
+ *            independently reviewed widening to assigned | in_progress: either
+ *            form turns a protected cross-teacher/check-then-insert race into a
+ *            named 23505 without exposing the colleague's assignment.
  *
  * GET  — lists the caller-teacher's remediation assignments, optionally
  *        filtered by status / class. Roster-scoped (a teacher only ever sees
@@ -452,9 +452,10 @@ export async function POST(request: NextRequest) {
     )
     .single();
   if (insertErr) {
-    // The named DB backstop proves an open assignment already exists. Do not
-    // look it up: the row may belong to another teacher, and returning it would
-    // disclose a colleague's internal id and assignment metadata.
+    // The named DB backstop proves a protected assignment already exists
+    // (assigned in the current schema; any open status after a future widening).
+    // Do not look it up: the row may belong to another teacher, and returning
+    // it would disclose a colleague's internal id and assignment metadata.
     if (isOpenAssignmentConflict(insertErr)) {
       return NextResponse.json({ success: true, idempotent: true }, { status: 200 });
     }

@@ -20,6 +20,25 @@ The database seed and frontend are reviewed separately. Apply the flag seed
 first with every row disabled and at 0%, verify the rows, then deploy the web
 build. Do not combine a frontend deploy with a cohort increase.
 
+## Schema compatibility sequence
+
+This release may apply only the additive selected-school roster migration. It
+adds the `p_school_id` RPC overloads and their grants without replacing,
+revoking or commenting any legacy function signature. The safe sequence is:
+
+1. Dry-run the additive migration on an isolated Supabase stack.
+2. Apply it and verify both the new overloads and every existing unscoped RPC.
+3. Deploy the frontend callers that send the authorized `p_school_id`.
+4. Observe multi-school and rollback journeys.
+5. Harden legacy wrappers only in a later reviewed migration after production
+   has no old callers and rollback no longer depends on those signatures.
+
+The teacher remediation duplicate cleanup and all-open unique index are
+explicitly deferred. Before a later release, deploy the route compatibility
+first, capture the affected row IDs, measure lock/index duration against
+production-scale data, define bounded timeouts and prove row-level recovery.
+It must not be bundled into this frontend deployment.
+
 ## Preflight
 
 1. Confirm the approved frontend and flag-seed pull requests target the same
@@ -29,18 +48,22 @@ build. Do not combine a frontend deploy with a cohort increase.
 3. Verify the production preview route returns 404 from the built artifact.
 4. Verify all five rows are disabled with rollout 0 and no stale environment,
    role or institution targeting.
-5. Exercise one seeded account per role against the deployment candidate.
-6. Confirm rollback ownership and the observation channel before deployment.
+5. Verify the selected-school migration is strictly additive and that the
+   deferred teacher data/index migration is absent from the release diff.
+6. Exercise one seeded account per role against the deployment candidate.
+7. Confirm rollback ownership and the observation channel before deployment.
 
 ## Deploy
 
 1. Apply the reviewed flag-seed migration. Re-read all five rows; do not infer
    success from migration history alone.
-2. Deploy the frontend commit with every cohort still disabled.
-3. Verify login, legacy navigation and one critical legacy journey per role.
-4. Verify the health endpoint, JavaScript error rate, API error rate and Core
+2. Apply the additive selected-school RPC overload migration and verify old and
+   new signatures before deploying any dependent frontend caller.
+3. Deploy the frontend commit with every cohort still disabled.
+4. Verify login, legacy navigation and one critical legacy journey per role.
+5. Verify the health endpoint, JavaScript error rate, API error rate and Core
    Web Vitals have not regressed.
-5. Enable only internal accounts through institution/role targeting or an
+6. Enable only internal accounts through institution/role targeting or an
    explicitly approved internal cohort.
 
 ## Cohort progression
@@ -81,6 +104,12 @@ If the frontend itself regresses while all flags are disabled, roll back the
 web deployment using the normal production deployment mechanism. Do not delete
 the V3 rows during an incident; keeping them disabled preserves a clear audit
 trail and prevents accidental default-on behavior.
+
+The additive selected-school overloads may remain after a frontend rollback:
+the prior application continues using legacy signatures because this release
+does not replace or revoke them. Any future legacy-wrapper hardening or teacher
+data/index migration requires its own database recovery and app-compatibility
+rollback; it is not covered by the frontend flag rollback above.
 
 ## Completion and deletion
 

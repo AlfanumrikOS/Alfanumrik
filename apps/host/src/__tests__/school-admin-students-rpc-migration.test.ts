@@ -128,8 +128,12 @@ describe('XC-3 school-admin students roster read migration', () => {
     expect(postBody).not.toContain(".select('id', { count: 'exact', head: true })");
   });
 
-  it('binds every roster RPC to an explicitly selected active membership', () => {
+  it('adds selected-school overloads without replacing legacy RPC signatures', () => {
     const sql = readFileSync(selectedScopeMigrationPath, 'utf8');
+    const executableSql = sql
+      .split('\n')
+      .map((line) => line.replace(/--.*$/, ''))
+      .join('\n');
     for (const signature of [
       'school_admin_list_students(\n  p_school_id uuid',
       'school_admin_toggle_student_active(\n  p_school_id uuid',
@@ -140,7 +144,6 @@ describe('XC-3 school-admin students roster read migration', () => {
     }
     expect(sql.match(/sa\.school_id = p_school_id/g)?.length).toBeGreaterThanOrEqual(4);
     expect(sql.match(/school_admin_has_selected_permission\(p_school_id, 'institution\.manage_students'\)/g)?.length).toBe(4);
-    expect(sql.match(/Explicit school scope required/g)?.length).toBeGreaterThanOrEqual(5);
     expect(sql).toContain("to_regprocedure('public.get_user_permissions(uuid,uuid)')");
     expect(sql).toContain("to_regprocedure('public.get_user_permissions(uuid)')");
     expect(sql).toContain("sa.role IN ('principal', 'vice_principal', 'academic_coordinator', 'institution_admin')");
@@ -149,6 +152,20 @@ describe('XC-3 school-admin students roster read migration', () => {
     expect(sql).toContain('school_admin_toggle_student_active(uuid, uuid, boolean)');
     expect(sql).toContain('school_admin_attach_created_student(uuid, uuid, text, uuid)');
     expect(sql).toContain('school_admin_student_create_preflight(uuid, text, integer, uuid)');
+    expect(sql).toContain('This migration is intentionally additive');
+    expect(sql).toContain('Legacy wrapper hardening is a later migration');
+
+    for (const legacySignature of [
+      'school_admin_list_students(integer, integer, text, text)',
+      'school_admin_toggle_student_active(uuid, boolean)',
+      'school_admin_attach_created_student(uuid, text, uuid)',
+      'school_admin_student_create_preflight(text, integer, uuid)',
+      'school_admin_student_create_preflight(text, integer)',
+    ]) {
+      expect(executableSql).not.toContain(legacySignature);
+    }
+    expect(executableSql).not.toContain('Explicit school scope required');
+    expect(executableSql).not.toContain('v_school_ids');
   });
 
   it('does not perform route-level service-role class ownership prechecks during single create', () => {

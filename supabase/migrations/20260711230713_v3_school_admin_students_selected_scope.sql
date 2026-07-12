@@ -2,9 +2,11 @@
 -- server-authorized school selected by a multi-school administrator.
 --
 -- The new overloads require p_school_id and independently verify that it is an
--- active membership of auth.uid(). Existing signatures remain as compatibility
--- wrappers for single-school callers; they fail closed for ambiguous
--- multi-school accounts instead of selecting an arbitrary LIMIT 1 membership.
+-- active membership of auth.uid(). This migration is intentionally additive:
+-- every legacy signature and grant remains byte-for-byte owned by its original
+-- migration so the currently deployed application remains rollback-compatible.
+-- Legacy wrapper hardening is a later migration, after all callers use the
+-- explicit selected-school overloads and the deployment has been observed.
 
 -- Internal defense-in-depth permission resolver for the SECURITY DEFINER
 -- overloads below. It is never callable by API roles. Deployments that have
@@ -406,127 +408,6 @@ BEGIN
 END;
 $$;
 
--- Compatibility wrappers: preserve existing single-school callers while
--- refusing to guess for multi-school administrators.
-CREATE OR REPLACE FUNCTION public.school_admin_list_students(
-  p_page integer DEFAULT 1,
-  p_limit integer DEFAULT 20,
-  p_grade text DEFAULT NULL,
-  p_search text DEFAULT NULL
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_school_ids uuid[];
-BEGIN
-  SELECT array_agg(sa.school_id ORDER BY sa.school_id) INTO v_school_ids
-  FROM public.school_admins sa
-  JOIN public.schools sc ON sc.id = sa.school_id AND sc.is_active = true
-  WHERE sa.auth_user_id = auth.uid() AND sa.is_active = true;
-  IF COALESCE(cardinality(v_school_ids), 0) <> 1 THEN
-    RETURN jsonb_build_object('success', false, 'status', 400, 'error', 'Explicit school scope required');
-  END IF;
-  RETURN public.school_admin_list_students(v_school_ids[1], p_page, p_limit, p_grade, p_search);
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.school_admin_toggle_student_active(
-  p_student_id uuid,
-  p_is_active boolean
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_school_ids uuid[];
-BEGIN
-  SELECT array_agg(sa.school_id ORDER BY sa.school_id) INTO v_school_ids
-  FROM public.school_admins sa
-  JOIN public.schools sc ON sc.id = sa.school_id AND sc.is_active = true
-  WHERE sa.auth_user_id = auth.uid() AND sa.is_active = true;
-  IF COALESCE(cardinality(v_school_ids), 0) <> 1 THEN
-    RETURN jsonb_build_object('success', false, 'status', 400, 'error', 'Explicit school scope required');
-  END IF;
-  RETURN public.school_admin_toggle_student_active(v_school_ids[1], p_student_id, p_is_active);
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.school_admin_attach_created_student(
-  p_student_auth_user_id uuid,
-  p_phone text DEFAULT NULL,
-  p_class_id uuid DEFAULT NULL
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_school_ids uuid[];
-BEGIN
-  SELECT array_agg(sa.school_id ORDER BY sa.school_id) INTO v_school_ids
-  FROM public.school_admins sa
-  JOIN public.schools sc ON sc.id = sa.school_id AND sc.is_active = true
-  WHERE sa.auth_user_id = auth.uid() AND sa.is_active = true;
-  IF COALESCE(cardinality(v_school_ids), 0) <> 1 THEN
-    RETURN jsonb_build_object('success', false, 'status', 400, 'error', 'Explicit school scope required');
-  END IF;
-  RETURN public.school_admin_attach_created_student(v_school_ids[1], p_student_auth_user_id, p_phone, p_class_id);
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.school_admin_student_create_preflight(
-  p_email text,
-  p_attempted_count integer DEFAULT 1,
-  p_class_id uuid DEFAULT NULL
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_school_ids uuid[];
-BEGIN
-  SELECT array_agg(sa.school_id ORDER BY sa.school_id) INTO v_school_ids
-  FROM public.school_admins sa
-  JOIN public.schools sc ON sc.id = sa.school_id AND sc.is_active = true
-  WHERE sa.auth_user_id = auth.uid() AND sa.is_active = true;
-  IF COALESCE(cardinality(v_school_ids), 0) <> 1 THEN
-    RETURN jsonb_build_object('success', false, 'status', 400, 'error', 'Explicit school scope required');
-  END IF;
-  RETURN public.school_admin_student_create_preflight(v_school_ids[1], p_email, p_attempted_count, p_class_id);
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.school_admin_student_create_preflight(
-  p_email text,
-  p_attempted_count integer
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_school_ids uuid[];
-BEGIN
-  SELECT array_agg(sa.school_id ORDER BY sa.school_id) INTO v_school_ids
-  FROM public.school_admins sa
-  JOIN public.schools sc ON sc.id = sa.school_id AND sc.is_active = true
-  WHERE sa.auth_user_id = auth.uid() AND sa.is_active = true;
-  IF COALESCE(cardinality(v_school_ids), 0) <> 1 THEN
-    RETURN jsonb_build_object('success', false, 'status', 400, 'error', 'Explicit school scope required');
-  END IF;
-  RETURN public.school_admin_student_create_preflight(v_school_ids[1], p_email, p_attempted_count, NULL);
-END;
-$$;
-
 REVOKE ALL ON FUNCTION public.school_admin_list_students(uuid, integer, integer, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.school_admin_list_students(uuid, integer, integer, text, text) TO authenticated;
 REVOKE ALL ON FUNCTION public.school_admin_toggle_student_active(uuid, uuid, boolean) FROM PUBLIC, anon;
@@ -535,18 +416,6 @@ REVOKE ALL ON FUNCTION public.school_admin_attach_created_student(uuid, uuid, te
 GRANT EXECUTE ON FUNCTION public.school_admin_attach_created_student(uuid, uuid, text, uuid) TO authenticated;
 REVOKE ALL ON FUNCTION public.school_admin_student_create_preflight(uuid, text, integer, uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.school_admin_student_create_preflight(uuid, text, integer, uuid) TO authenticated;
-
--- Reassert compatibility-wrapper grants after CREATE OR REPLACE.
-REVOKE ALL ON FUNCTION public.school_admin_list_students(integer, integer, text, text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.school_admin_list_students(integer, integer, text, text) TO authenticated;
-REVOKE ALL ON FUNCTION public.school_admin_toggle_student_active(uuid, boolean) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.school_admin_toggle_student_active(uuid, boolean) TO authenticated;
-REVOKE ALL ON FUNCTION public.school_admin_attach_created_student(uuid, text, uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.school_admin_attach_created_student(uuid, text, uuid) TO authenticated;
-REVOKE ALL ON FUNCTION public.school_admin_student_create_preflight(text, integer, uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.school_admin_student_create_preflight(text, integer, uuid) TO authenticated;
-REVOKE ALL ON FUNCTION public.school_admin_student_create_preflight(text, integer) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.school_admin_student_create_preflight(text, integer) TO authenticated;
 
 COMMENT ON FUNCTION public.school_admin_list_students(uuid, integer, integer, text, text)
   IS 'Lists students only for the active school-admin membership explicitly selected by p_school_id.';

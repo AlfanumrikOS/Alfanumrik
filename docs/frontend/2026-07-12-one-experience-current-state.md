@@ -14,12 +14,13 @@ feature flags, focused runtime tests, a Flutter alignment slice, and an
 unauthenticated review route.
 
 It is also not accurate to call the programme complete or production ready.
-The branch has not yet passed fresh protected CI at its final head, the new
-database migration has not been exercised against an isolated database, the
-five flag rows are in a separate unmerged pull request, authenticated journeys
-have not been certified across the required browser/device matrix, and no V3
-cohort has been enabled. Legacy deletion and the post-rollout observation
-period have not started.
+The branch has not yet passed fresh protected CI at its final head, the
+strictly additive selected-school RPC migration has not been exercised against
+an isolated database, the five flag rows are in a separate unmerged pull
+request, authenticated journeys have not been certified across the required
+browser/device matrix, and no V3 cohort has been enabled. The data-mutating
+teacher all-open dedupe migration is deliberately deferred to a later release.
+Legacy deletion and the post-rollout observation period have not started.
 
 The implementation therefore represents a substantial production-candidate
 integration branch with explicit release gates, not a completed 20-22 week
@@ -34,9 +35,9 @@ replacement programme compressed into one session.
 | Phase 1: experience blueprint | Implemented in code, review pending | The shared Calm Intelligence direction is represented by scoped V3 tokens, patterns, shells, manifests, and five role views. Final product/design sign-off and authenticated state review remain. |
 | Phase 2: V3 foundation | Implemented on branch | `packages/ui/src/v3`, scoped cascade tokens, capability resolver, role manifests, route gates, overlay primitives, data states, and shared shell exist. Final-head build, bundle, accessibility, and browser gates remain. |
 | Student vertical slice | Implemented behind flag | Today, Learn, Practice, Progress, Rewards and Exam destinations have V3 mappings while unmigrated legacy destinations remain available. No external cohort is enabled. |
-| Teacher vertical slice | Implemented behind flag | Today, classes, students, insights, grading, assignment, resources and settings are mapped. Remediation now verifies exact teacher, class, learner and alert scope server-side. Seeded teacher journeys remain unvalidated. |
+| Teacher vertical slice | Implemented behind flag | Today, classes, students, insights, grading, assignment, resources and settings are mapped. Remediation verifies exact teacher, class, learner and alert scope server-side, and the route is compatible with the existing assigned-only dedupe index. The data cleanup/all-open index remains a later, independently reviewed migration. Seeded teacher journeys remain unvalidated. |
 | Parent vertical slice | Implemented behind flag | Home, plan, progress, reports, calendar, messages and settings preserve authoritative selected-child scope in URLs and request keys. Pagination completeness for child-filtered message RPC results needs backend follow-up. |
-| School Admin vertical slice | Implemented behind flag | Overview, people, academics, insights, governance and settings are mapped. The selected-school roster RPC migration is present but has not been applied/tested in an isolated database. |
+| School Admin vertical slice | Implemented behind flag | Overview, people, academics, insights, governance and settings are mapped. The selected-school roster RPC migration adds only new scoped overloads and leaves every legacy signature untouched for rollback compatibility; it has not been applied/tested in an isolated database. |
 | Super Admin vertical slice | Implemented behind flag | Command, institutions, operations, governance, revenue and settings share the V3 workspace while legacy internal-admin paths remain available where unmigrated. Seeded privileged-user validation remains mandatory. |
 | Cross-role hardening | In progress | Focused security, routing, responsive, metric-trust and accessibility contracts exist. Fresh full CI, local build, browser inspection and manual assistive-technology/device checks are still required. |
 | Legacy deletion | Not started | The implementation deliberately retains legacy routes for unmigrated destinations and explicit flag-off users. Deletion is gated on 100% rollout plus observation and deep-link verification. |
@@ -113,10 +114,14 @@ outside this integration and requires separate representative-screen review.
 - All five V3 role flags must remain disabled with rollout `0` until reviewed.
 - The flag seed is maintained in PR #1254 and is not merged at this snapshot.
 - The selected-school RPC migration must receive an isolated database dry run,
-  RLS/grant review, generated-type refresh and independent approval before the
-  School Admin V3 path can be released.
-- PR #1255's production completion gate is independently reviewed and must not
-  be bypassed.
+  RLS/grant review, generated-type refresh and independent approval. Apply its
+  additive overloads before the frontend; harden or remove legacy signatures
+  only in a later migration after all callers and rollback paths are verified.
+- The teacher remediation data cleanup/all-open unique index is not part of
+  this release. A later migration requires production row-count and duplicate
+  evidence, bounded lock timing, recovery evidence and route-first deployment.
+- PR #1255's production completion gate is now on `main` and must succeed for
+  the exact deployed SHA; its terminal verification must not be bypassed.
 - PR #1256 must pass protected CI and independent last-push approval at its
   final head.
 - Merge does not authorize cohort rollout. Follow
@@ -127,14 +132,16 @@ outside this integration and requires separate representative-screen review.
 
 1. Complete final-head static, runtime, Deno, Flutter, build and responsive
    browser validation; replace any stale evidence with commit-bound evidence.
-2. Validate the selected-school migration on an isolated Supabase stack and
-   regenerate database types from that schema.
+2. Validate the additive selected-school migration on an isolated Supabase
+   stack, regenerate database types, and prove existing unscoped RPC callers
+   remain unchanged before applying it ahead of the frontend.
 3. Obtain independent review and green protected CI for the release gate, flag
-   seed, database change and frontend branch in dependency order.
+   seed, additive database change and frontend branch in dependency order.
 4. Exercise seeded authenticated accounts for all five roles, including
    loading, empty, stale, error, denied and slow-network states.
 5. Merge with all V3 flags off; perform internal and pilot rollout with
-   observability and rollback ownership.
+   observability and rollback ownership. Keep the teacher all-open constraint
+   and legacy school-RPC hardening in later, separately recoverable migrations.
 6. Delete legacy shells and compatibility paths only after 100% adoption,
    observation, deep-link verification and a separate reviewed change.
 
