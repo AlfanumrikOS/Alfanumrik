@@ -337,7 +337,12 @@ export function TeacherAssignV3() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-        body: JSON.stringify(targetedRemediationPayload(selectedStudentId, resolvedTargetConceptId, selectedAlertId)),
+        body: JSON.stringify(targetedRemediationPayload({
+          classId: scope.classId,
+          studentId: selectedStudentId,
+          topicId: resolvedTargetConceptId,
+          alertId: selectedAlertId,
+        })),
       });
       const body = await response.json().catch(() => ({})) as { success?: boolean; error?: string; idempotent?: boolean };
       if (!response.ok || !body.success) throw new Error(body.error || `HTTP ${response.status}`);

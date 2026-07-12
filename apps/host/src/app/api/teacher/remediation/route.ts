@@ -6,7 +6,7 @@
  *        chapter). Writes one `teacher_remediation_assignments` row (status
  *        'assigned'). Idempotent in TWO layers:
  *        (1) per-teacher pre-check — if an OPEN row (assigned | in_progress)
- *            already exists for (teacher, student, chapter) it is returned
+ *            already exists for (teacher, student, class, chapter) it is returned
  *            rather than duplicated;
  *        (2) DB backstop — the partial unique index
  *            uq_teacher_remediation_assignments_open_dedupe (migration
@@ -21,22 +21,22 @@
  *        rows they assigned).
  *
  * Auth: `class.assign_remediation` permission (A1 migration seeds it onto the
- *        teacher role) AND a server-side roster check — the student must be on
- *        the caller's roster via `class_enrollments × class_teachers`. RLS already
- *        enforces this at the DB layer (A1 policies); we re-verify in the route
- *        as defense-in-depth so a forged `student_id` is rejected with a 403
- *        before any insert.
+ *        teacher role) AND a server-side exact-class roster check. The selected
+ *        class must be active in the teacher's school, with active
+ *        `class_teachers` and `class_enrollments` rows. RLS also enforces the DB
+ *        path; this route repeats every boundary because its service client
+ *        bypasses RLS.
  *
  * Identity contract (A1, non-negotiable):
  *   - teacher_id  = internal `teachers.id`   (resolved from auth.uid(), NEVER auth.uid())
  *   - student_id  = `students.id`
  *   - chapter_id  = `curriculum_topics.id`   (nullable — general/alert remediation)
  *   - source_alert_id = `at_risk_alerts.id`  (nullable)
- *   - class_id    = `classes.id`             (derived from the roster join)
+ *   - class_id    = `classes.id`             (caller-selected, server-verified)
  *   - status      ∈ assigned | in_progress | resolved | dismissed
  *
- * P9 RBAC (route gate) · P8 roster scope (server-verified) · P5 grade stays a
- * string upstream (no grade handled here) · P13 no PII in logs.
+ * P9 RBAC (route gate) · P8 exact-class scope (server-verified) · P5 grade
+ * normalized only for curriculum matching · P13 no PII in logs.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -48,6 +48,7 @@ import { logger } from '@alfanumrik/lib/logger';
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 const PostBodySchema = z.object({
+  class_id: z.string().regex(UUID_RE, 'class_id must be a valid UUID'),
   student_id: z.string().regex(UUID_RE, 'student_id must be a valid UUID'),
   chapter_id: z.string().regex(UUID_RE, 'chapter_id must be a valid UUID').nullable().optional(),
   source_alert_id: z
@@ -75,6 +76,8 @@ async function resolveTeacher(authUserId: string): Promise<
     .from('teachers')
     .select('id, school_id')
     .eq('auth_user_id', authUserId)
+    .eq('is_active', true)
+    .is('deleted_at', null)
     .maybeSingle();
   if (error) {
     logger.error('teacher_remediation_teacher_lookup_failed', {
@@ -86,51 +89,170 @@ async function resolveTeacher(authUserId: string): Promise<
   return (data as { id: string; school_id: string | null } | null) ?? null;
 }
 
+type TeacherIdentity = { id: string; school_id: string | null };
+type RemediationClassScope = {
+  id: string;
+  school_id: string;
+  grade: string;
+  subject: string | null;
+};
+
+function canonicalGrade(value: string): string | null {
+  const match = value.trim().match(/^(?:(?:grade|class)\s*-?\s*)?(\d{1,2})(?:st|nd|rd|th)?$/i);
+  if (!match) return null;
+  const grade = Number(match[1]);
+  return grade >= 6 && grade <= 12 ? String(grade) : null;
+}
+
+function subjectKey(value: string): string {
+  return value.trim().toLocaleLowerCase('en-IN').replace(/[^a-z0-9]+/g, '');
+}
+
 /**
- * Roster check (defense-in-depth, mirrors the A1 RLS join). A teacher "owns" a
- * student iff they share a class via class_enrollments × class_teachers. Returns
- * the class_id of that shared class (used for the assignment row) or null when
- * the student is NOT on the caller's roster.
- *
- * We resolve the join through the teacher's class ids so the lookup is two
- * indexed equality reads rather than a cross-table JOIN (the Supabase client
- * has no JOIN builder).
+ * Resolve the exact caller-selected class scope. The service-role client
+ * bypasses RLS, so every relationship is re-checked explicitly here:
+ * active teacher-class assignment, active student enrollment, active class,
+ * and matching school membership for teacher, class, and student.
  */
-async function rosterClassId(teacherId: string, studentId: string): Promise<string | null> {
-  // 1. Classes this teacher is attached to.
-  const { data: teacherClasses, error: tcErr } = await supabaseAdmin
-    .from('class_teachers')
-    .select('class_id')
-    .eq('teacher_id', teacherId);
-  if (tcErr) {
-    logger.error('teacher_remediation_class_teachers_lookup_failed', {
-      error: new Error(tcErr.message),
+async function resolveRemediationClassScope(
+  teacher: TeacherIdentity,
+  classId: string,
+  studentId: string,
+): Promise<RemediationClassScope | null> {
+  if (!teacher.school_id) return null;
+
+  const { data: classRow, error: classError } = await supabaseAdmin
+    .from('classes')
+    .select('id, school_id, grade, subject')
+    .eq('id', classId)
+    .eq('school_id', teacher.school_id)
+    .eq('is_active', true)
+    .is('deleted_at', null)
+    .limit(1)
+    .maybeSingle();
+  if (classError) {
+    logger.error('teacher_remediation_class_lookup_failed', {
+      error: new Error(classError.message),
       route: 'teacher/remediation',
     });
-    throw new Error('roster_lookup_failed');
+    throw new Error('class_scope_lookup_failed');
   }
-  const classIds = (teacherClasses ?? [])
-    .map((r) => (r as { class_id: string | null }).class_id)
-    .filter((c): c is string => !!c);
-  if (classIds.length === 0) return null;
+  const selectedClass = classRow as {
+    id: string;
+    school_id: string | null;
+    grade: string;
+    subject: string | null;
+  } | null;
+  if (!selectedClass?.school_id) return null;
 
-  // 2. Is the student enrolled in any of those classes?
-  const { data: enrolment, error: csErr } = await supabaseAdmin
-    .from('class_enrollments')
+  const { data: teacherClass, error: teacherClassError } = await supabaseAdmin
+    .from('class_teachers')
     .select('class_id')
-    .eq('student_id', studentId)
-    .in('class_id', classIds)
+    .eq('teacher_id', teacher.id)
+    .eq('class_id', classId)
     .eq('is_active', true)
     .limit(1)
     .maybeSingle();
-  if (csErr) {
-    logger.error('teacher_remediation_class_enrollments_lookup_failed', {
-      error: new Error(csErr.message),
+  if (teacherClassError) {
+    logger.error('teacher_remediation_class_teacher_lookup_failed', {
+      error: new Error(teacherClassError.message),
       route: 'teacher/remediation',
     });
-    throw new Error('roster_lookup_failed');
+    throw new Error('class_scope_lookup_failed');
   }
-  return (enrolment as { class_id: string } | null)?.class_id ?? null;
+  if (!teacherClass) return null;
+
+  const { data: enrolment, error: enrolmentError } = await supabaseAdmin
+    .from('class_enrollments')
+    .select('class_id')
+    .eq('class_id', classId)
+    .eq('student_id', studentId)
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+  if (enrolmentError) {
+    logger.error('teacher_remediation_class_enrollment_lookup_failed', {
+      error: new Error(enrolmentError.message),
+      route: 'teacher/remediation',
+    });
+    throw new Error('class_scope_lookup_failed');
+  }
+  if (!enrolment) return null;
+
+  const { data: student, error: studentError } = await supabaseAdmin
+    .from('students')
+    .select('id')
+    .eq('id', studentId)
+    .eq('school_id', selectedClass.school_id)
+    .eq('is_active', true)
+    .is('deleted_at', null)
+    .limit(1)
+    .maybeSingle();
+  if (studentError) {
+    logger.error('teacher_remediation_student_scope_lookup_failed', {
+      error: new Error(studentError.message),
+      route: 'teacher/remediation',
+    });
+    throw new Error('class_scope_lookup_failed');
+  }
+  if (!student) return null;
+
+  return {
+    id: selectedClass.id,
+    school_id: selectedClass.school_id,
+    grade: selectedClass.grade,
+    subject: selectedClass.subject,
+  };
+}
+
+/** Validate that a requested curriculum topic is published for this class. */
+async function curriculumTopicAllowed(
+  classScope: RemediationClassScope,
+  chapterId: string,
+): Promise<boolean> {
+  const grade = canonicalGrade(classScope.grade);
+  if (!grade || !classScope.subject) return false;
+
+  const { data: topic, error: topicError } = await supabaseAdmin
+    .from('curriculum_topics')
+    .select('id, subject_id')
+    .eq('id', chapterId)
+    .eq('grade', grade)
+    .eq('is_active', true)
+    .eq('content_status', 'published')
+    .is('deleted_at', null)
+    .limit(1)
+    .maybeSingle();
+  if (topicError) {
+    logger.error('teacher_remediation_topic_lookup_failed', {
+      error: new Error(topicError.message),
+      route: 'teacher/remediation',
+    });
+    throw new Error('topic_scope_lookup_failed');
+  }
+  const scopedTopic = topic as { id: string; subject_id: string } | null;
+  if (!scopedTopic) return false;
+
+  const { data: subject, error: subjectError } = await supabaseAdmin
+    .from('subjects')
+    .select('id, code, name')
+    .eq('id', scopedTopic.subject_id)
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle();
+  if (subjectError) {
+    logger.error('teacher_remediation_subject_lookup_failed', {
+      error: new Error(subjectError.message),
+      route: 'teacher/remediation',
+    });
+    throw new Error('topic_scope_lookup_failed');
+  }
+  const scopedSubject = subject as { id: string; code: string; name: string } | null;
+  if (!scopedSubject) return false;
+
+  const classSubject = subjectKey(classScope.subject);
+  return classSubject.length > 0
+    && [scopedSubject.code, scopedSubject.name].some((value) => subjectKey(value) === classSubject);
 }
 
 // ─── POST: assign remediation ────────────────────────────────
@@ -147,6 +269,7 @@ export async function POST(request: NextRequest) {
       e instanceof z.ZodError ? e.issues[0]?.message ?? 'Invalid body' : 'Invalid body';
     return err(msg, 400);
   }
+  const classId = body.class_id;
   const studentId = body.student_id;
   const chapterId = body.chapter_id ?? null;
   const sourceAlertId = body.source_alert_id ?? null;
@@ -160,15 +283,25 @@ export async function POST(request: NextRequest) {
   }
   if (!teacher) return err('Teacher account not found', 403);
 
-  // Roster check (P8): the student must be on the caller's roster. Also yields
-  // the class_id for the assignment row.
-  let classId: string | null;
+  // The caller's selected class is an authorization boundary. Never replace it
+  // with an arbitrary shared class when a learner is enrolled in more than one.
+  let classScope: RemediationClassScope | null;
   try {
-    classId = await rosterClassId(teacher.id, studentId);
+    classScope = await resolveRemediationClassScope(teacher, classId, studentId);
   } catch {
-    return err('Failed to verify roster', 500);
+    return err('Failed to verify class roster', 500);
   }
-  if (!classId) return err('Student is not on your roster', 403);
+  if (!classScope) return err('Class or student is not available for remediation', 403);
+
+  if (chapterId) {
+    let topicAllowed = false;
+    try {
+      topicAllowed = await curriculumTopicAllowed(classScope, chapterId);
+    } catch {
+      return err('Failed to verify curriculum topic', 500);
+    }
+    if (!topicAllowed) return err('Topic is not available for the selected class', 403);
+  }
 
   // A source alert is evidence, not caller-controlled metadata. When present,
   // bind it to the same learner, roster-derived class and internal teacher
@@ -182,6 +315,7 @@ export async function POST(request: NextRequest) {
       .eq('student_id', studentId)
       .eq('class_id', classId)
       .eq('teacher_id', teacher.id)
+      .eq('is_active', true)
       .limit(1)
       .maybeSingle();
     if (sourceAlertError) {
@@ -194,7 +328,7 @@ export async function POST(request: NextRequest) {
     if (!sourceAlert) return err('Source alert is not available for this learner', 403);
   }
 
-  // Idempotency: an OPEN row for (teacher, student, chapter) already covers
+  // Idempotency: an OPEN row for (teacher, student, class, chapter) already covers
   // this assignment — return it instead of duplicating. chapter_id is matched
   // including the NULL case (general remediation), so re-assigning general
   // remediation for the same student is also idempotent.
@@ -205,6 +339,7 @@ export async function POST(request: NextRequest) {
     )
     .eq('teacher_id', teacher.id)
     .eq('student_id', studentId)
+    .eq('class_id', classId)
     .in('status', OPEN_STATUSES as unknown as string[]);
   existingQuery = chapterId
     ? existingQuery.eq('chapter_id', chapterId)

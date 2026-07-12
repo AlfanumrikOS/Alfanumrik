@@ -584,11 +584,12 @@ export default function CommandCenter() {
 
   // Assign remediation — optimistic update + rollback on error. The alert id is
   // the key; derived alerts have no chapter, so we POST general remediation
-  // (student_id only). The server owns the authoritative status — we reconcile
+  // (no chapter). The selected class is sent explicitly and re-authorized by
+  // the server. The server owns the authoritative status — we reconcile
   // by revalidating the alerts SWR cache on success.
   const assignRemediation = useCallback(
     async (alert: RiskAlert) => {
-      if (assigning[alert.id]) return;
+      if (assigning[alert.id] || !effectiveClassId) return;
       setAssigning((m) => ({ ...m, [alert.id]: true }));
 
       // Optimistic: flip THIS alert (and any other alert for the same student)
@@ -603,7 +604,7 @@ export default function CommandCenter() {
         const res = await fetch('/api/teacher/remediation', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-          body: JSON.stringify({ student_id: alert.student_id }),
+          body: JSON.stringify({ class_id: effectiveClassId, student_id: alert.student_id }),
         });
         if (!res.ok) throw new Error(`remediation_assign_failed:${res.status}`);
         showToast(tt(isHi, 'Remediation assigned', 'रिमेडिएशन सौंपा गया'), 'success');
@@ -624,7 +625,7 @@ export default function CommandCenter() {
         });
       }
     },
-    [assigning, alerts, alertsRes, isHi, showToast, mutateAlerts],
+    [assigning, alerts, alertsRes, effectiveClassId, isHi, showToast, mutateAlerts],
   );
 
   const goToStudent = useCallback(

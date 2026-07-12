@@ -21,12 +21,19 @@ describe('Teacher V3 scope and data trust', () => {
   });
 
   it('builds the server-owned targeted remediation payload without browser scoring', () => {
-    expect(targetedRemediationPayload('student-1', 'concept-2', 'alert-3')).toEqual({
+    expect(targetedRemediationPayload({
+      classId: 'class-a',
+      studentId: 'student-1',
+      topicId: 'concept-2',
+      alertId: 'alert-3',
+    })).toEqual({
+      class_id: 'class-a',
       student_id: 'student-1',
       chapter_id: 'concept-2',
       source_alert_id: 'alert-3',
     });
-    expect(targetedRemediationPayload('student-1')).toEqual({
+    expect(targetedRemediationPayload({ classId: 'class-a', studentId: 'student-1' })).toEqual({
+      class_id: 'class-a',
       student_id: 'student-1',
       chapter_id: null,
       source_alert_id: null,

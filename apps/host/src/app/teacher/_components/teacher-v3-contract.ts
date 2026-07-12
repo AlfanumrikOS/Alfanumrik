@@ -13,10 +13,16 @@ export function metricOrUnavailable(value: string | number | null | undefined, s
   return value == null ? '—' : `${value}${suffix}`;
 }
 
-export function targetedRemediationPayload(studentId: string, conceptId?: string | null, alertId?: string | null) {
+export function targetedRemediationPayload(input: {
+  classId: string;
+  studentId: string;
+  topicId?: string | null;
+  alertId?: string | null;
+}) {
   return {
-    student_id: studentId,
-    chapter_id: conceptId || null,
-    source_alert_id: alertId || null,
+    class_id: input.classId,
+    student_id: input.studentId,
+    chapter_id: input.topicId || null,
+    source_alert_id: input.alertId || null,
   };
 }

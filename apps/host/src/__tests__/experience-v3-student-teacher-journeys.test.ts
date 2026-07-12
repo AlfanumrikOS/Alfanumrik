@@ -49,7 +49,9 @@ describe('One Experience V3 Student and Teacher journeys', () => {
     expect(source).toContain('teacher-v3-student-focused-page');
     expect(source).toContain('<Drawer open={Boolean(selectedStudentId && desktopDetail)}');
     expect(source).toContain("fetch('/api/teacher/remediation'");
-    expect(source).toContain('targetedRemediationPayload(selectedStudentId, resolvedTargetConceptId, selectedAlertId)');
+    expect(source).toContain('classId: scope.classId');
+    expect(source).toContain('studentId: selectedStudentId');
+    expect(source).toContain('topicId: resolvedTargetConceptId');
     expect(source).toContain("next.delete('student')");
     expect(source).toContain('desktopDetail === null');
     expect(source).toContain('hasMasteryEvidence ? <StatusBadge');

@@ -162,7 +162,7 @@ afterEach(() => {
 });
 
 describe('CommandCenter — assign remediation', () => {
-  it('shows the Assign remediation button when status is none and POSTs student_id', async () => {
+  it('shows the Assign remediation button and POSTs the exact class and student ids', async () => {
     const posted: unknown[] = [];
     installFetch({
       alertsStatus: 'none',
@@ -179,9 +179,9 @@ describe('CommandCenter — assign remediation', () => {
 
     fireEvent.click(btn);
 
-    // The POST carried the alert's student_id (general remediation: no chapter).
+    // The POST carries the active class boundary and alert learner.
     await waitFor(() => expect(posted).toHaveLength(1));
-    expect(posted[0]).toEqual({ student_id: 'stu-1' });
+    expect(posted[0]).toEqual({ class_id: 'class-1', student_id: 'stu-1' });
 
     // After the server reconcile, the row shows the assigned state read-only.
     await waitFor(() => {
