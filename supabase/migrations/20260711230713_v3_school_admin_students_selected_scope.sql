@@ -8,6 +8,8 @@
 -- Legacy wrapper hardening is a later migration, after all callers use the
 -- explicit selected-school overloads and the deployment has been observed.
 
+BEGIN;
+
 -- Internal defense-in-depth permission resolver for the SECURITY DEFINER
 -- overloads below. It is never callable by API roles. Deployments that have
 -- the tenant-scoped get_user_permissions(uuid, uuid) overload use it; baseline
@@ -425,3 +427,5 @@ COMMENT ON FUNCTION public.school_admin_attach_created_student(uuid, uuid, text,
   IS 'Attaches a newly-created student only to the active school-admin membership explicitly selected by p_school_id.';
 COMMENT ON FUNCTION public.school_admin_student_create_preflight(uuid, text, integer, uuid)
   IS 'Runs student-create and class preflight only for the active school-admin membership explicitly selected by p_school_id.';
+
+COMMIT;

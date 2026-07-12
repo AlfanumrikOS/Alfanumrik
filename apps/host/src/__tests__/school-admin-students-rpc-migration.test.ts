@@ -168,6 +168,18 @@ describe('XC-3 school-admin students roster read migration', () => {
     expect(executableSql).not.toContain('v_school_ids');
   });
 
+  it('applies the additive selected-school overloads and grants atomically', () => {
+    const sql = readFileSync(selectedScopeMigrationPath, 'utf8')
+      .split('\n')
+      .map((line) => line.replace(/--.*$/, ''))
+      .join('\n');
+
+    expect(sql).toMatch(
+      /BEGIN;\s*CREATE OR REPLACE FUNCTION public\.school_admin_has_selected_permission/i,
+    );
+    expect(sql.trimEnd()).toMatch(/COMMIT;$/i);
+  });
+
   it('does not perform route-level service-role class ownership prechecks during single create', () => {
     const source = readFileSync(routePath, 'utf8');
     const handleSingleBody = source.slice(
