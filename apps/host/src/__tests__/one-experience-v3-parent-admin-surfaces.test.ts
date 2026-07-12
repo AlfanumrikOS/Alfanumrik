@@ -12,7 +12,8 @@ describe('One Experience V3 — Parent', () => {
     expect(source).toContain('<ParentShell>');
     expect(source).toContain('authoritativeChildId={scope?.childId ?? null}');
     expect(source).toContain('manifest={manifest}');
-    expect(source).toContain('!manifest || !routeAllowed');
+    expect(source).toContain('!routeMapped');
+    expect(source).toContain('!routeAllowed');
   });
 
   it('keeps child scope in every navigation destination and rejects unknown children', () => {
@@ -92,8 +93,11 @@ describe('One Experience V3 — Super Admin', () => {
     const source = read('super-admin/_components/AdminShell.tsx');
     expect(source).toContain("useExperienceV3('super-admin')");
     expect(source).toContain('<SuperAdminV3Workspace');
-    expect(source).toContain('v3.legacyAllowed ? legacyContent');
-    expect(source).toContain('v3.routeAllowed && v3.manifest');
+    expect(source).toContain('const showLegacy = v3.legacyAllowed');
+    expect(source).toContain('!v3.routeMapped');
+    expect(source).toContain('const showV3 = !v3.denied');
+    expect(source).toContain('&& v3.routeMapped');
+    expect(source).toContain('&& v3.routeAllowed');
     expect(source).toContain('This operator destination is unavailable');
   });
 

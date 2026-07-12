@@ -19,7 +19,7 @@ export function StudentV3Shell({ children, manifest }: { children: React.ReactNo
 }
 
 export default function StudentV3Gate({ legacy, v3, withShell = false }: { legacy: React.ReactNode; v3: React.ReactNode; withShell?: boolean }) {
-  const { enabled, loading, manifest, routeAllowed, legacyAllowed, denied } = useExperienceV3('student');
+  const { enabled, loading, manifest, routeMapped, routeAllowed, legacyAllowed, denied } = useExperienceV3('student');
   const { activeRole, isLoading: authLoading } = useAuth();
 
   if (loading || authLoading) {
@@ -27,9 +27,11 @@ export default function StudentV3Gate({ legacy, v3, withShell = false }: { legac
   }
 
   if (legacyAllowed) return <>{legacy}</>;
-  if (denied || !enabled || !routeAllowed || !manifest || activeRole !== 'student') {
+  if (denied || !enabled || !manifest || activeRole !== 'student') {
     return <DataState state="permission" title="This learning destination is unavailable" />;
   }
+  if (!routeMapped) return <>{legacy}</>;
+  if (!routeAllowed) return <DataState state="permission" title="This learning destination is unavailable" />;
 
   return withShell ? <StudentV3Shell manifest={manifest}>{v3}</StudentV3Shell> : <>{v3}</>;
 }

@@ -175,7 +175,7 @@ export async function GET(request: NextRequest) {
     institutionId,
     environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
   });
-  if (!enabled) return NextResponse.json({ enabled: false, capabilities: {}, manifest: null, routeAllowed: false }, { headers: { 'Cache-Control': 'private, no-store' } });
+  if (!enabled) return NextResponse.json({ enabled: false, capabilities: {}, manifest: null, routeMapped: false, routeAllowed: false }, { headers: { 'Cache-Control': 'private, no-store' } });
 
   let permissions: string[] = role === 'super-admin'
     ? [...adminExperiencePermissions(membership.adminLevel)]
@@ -211,6 +211,7 @@ export async function GET(request: NextRequest) {
     enabled: true,
     capabilities: resolved.capabilities,
     manifest: resolved.manifest,
+    routeMapped: requestedPath ? routeResolution !== null : true,
     routeAllowed: requestedPath ? routeResolution?.allowed === true : true,
     scope: role === 'parent'
       ? { childId: membership.childId }

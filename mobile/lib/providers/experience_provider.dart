@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants/api_constants.dart';
 import '../core/network/api_client.dart';
+import 'parent_provider.dart';
 import 'role_provider.dart';
 
 /// Server-authoritative One Experience assignment for this signed-in user.
@@ -16,10 +17,23 @@ final oneExperienceProvider = FutureProvider<bool>((ref) async {
   final experienceRole = experienceRoleFor(role);
   if (experienceRole == null) return false;
 
+  String? activeChildId;
+  if (experienceRole == 'parent') {
+    final requestedChildId = ref.watch(selectedParentChildProvider);
+    final children = await ref.watch(parentChildrenProvider.future);
+    activeChildId = resolveActiveParentChildId(
+      children.children.map((child) => child.studentId),
+      requestedChildId,
+    );
+  }
+
   try {
     final response = await ApiClient().get<Map<String, dynamic>>(
       '/experience-v3',
-      queryParameters: {'role': experienceRole},
+      queryParameters: experienceV3QueryParameters(
+        experienceRole,
+        childId: activeChildId,
+      ),
     );
     return isOneExperienceResponseEnabled(
       statusCode: response.statusCode,
@@ -29,6 +43,17 @@ final oneExperienceProvider = FutureProvider<bool>((ref) async {
     return false;
   }
 });
+
+Map<String, dynamic> experienceV3QueryParameters(
+  String role, {
+  String? childId,
+}) {
+  return <String, dynamic>{
+    'role': role,
+    if (role == 'parent' && childId?.trim().isNotEmpty == true)
+      'childId': childId!.trim(),
+  };
+}
 
 /// Strict response gate: only an authenticated 200 response with the literal
 /// boolean `true` may enter One Experience. Missing, malformed, cached-error,

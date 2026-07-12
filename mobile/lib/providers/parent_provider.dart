@@ -8,6 +8,19 @@ import '../core/network/api_client.dart';
 /// Session-persistent active child shared by every guardian destination.
 final selectedParentChildProvider = StateProvider<String?>((ref) => null);
 
+/// Resolve the active child from the authoritative linked-child list.
+/// A stale or foreign persisted selection can never survive this boundary.
+String? resolveActiveParentChildId(
+  Iterable<String> linkedChildIds,
+  String? requestedChildId,
+) {
+  final ids = linkedChildIds.where((id) => id.trim().isNotEmpty).toList();
+  if (ids.isEmpty) return null;
+  return requestedChildId != null && ids.contains(requestedChildId)
+      ? requestedChildId
+      : ids.first;
+}
+
 /// Existing governed parent calendar endpoint, keyed by linked child.
 final parentPlanProvider = FutureProvider.family<Map<String, dynamic>, String>((
   ref,
@@ -24,11 +37,25 @@ final parentPlanProvider = FutureProvider.family<Map<String, dynamic>, String>((
   return body!;
 });
 
-/// Existing governed teacher-parent thread endpoint.
+/// Existing governed teacher-parent thread endpoint, keyed by the active
+/// authoritative linked child. Changing the selector invalidates this request.
 final parentThreadsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final requestedChildId = ref.watch(selectedParentChildProvider);
+  final children = await ref.watch(parentChildrenProvider.future);
+  final studentId = resolveActiveParentChildId(
+    children.children.map((child) => child.studentId),
+    requestedChildId,
+  );
+  if (studentId == null) {
+    return <String, dynamic>{
+      'success': true,
+      'threads': const <dynamic>[],
+      'unreadTotal': 0,
+    };
+  }
   final response = await ApiClient().get<Map<String, dynamic>>(
     '/parent/messages/threads',
-    queryParameters: {'limit': 50},
+    queryParameters: {'limit': 50, 'student_id': studentId},
   );
   final body = response.data;
   if (response.statusCode != 200 || body?['success'] != true) {

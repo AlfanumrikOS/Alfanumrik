@@ -35,12 +35,14 @@ export function useTeacherV3Scope() {
 }
 
 export default function TeacherV3LayoutGate({ children }: { children: React.ReactNode }) {
-  const { enabled, loading: flagLoading, manifest, routeAllowed, legacyAllowed, denied } = useExperienceV3('teacher');
+  const { enabled, loading: flagLoading, manifest, routeMapped, routeAllowed, legacyAllowed, denied } = useExperienceV3('teacher');
   const { activeRole, isLoading: authLoading } = useAuth();
 
   if (flagLoading || authLoading) return <DataState state="loading" title="Loading teacher workspace…" />;
   if (legacyAllowed) return <TeacherShell>{children}</TeacherShell>;
-  if (denied || !enabled || !routeAllowed || !manifest || activeRole !== 'teacher') return <DataState state="permission" title="This teacher destination is unavailable" />;
+  if (denied || !enabled || !manifest || activeRole !== 'teacher') return <DataState state="permission" title="This teacher destination is unavailable" />;
+  if (!routeMapped) return <TeacherShell>{children}</TeacherShell>;
+  if (!routeAllowed) return <DataState state="permission" title="This teacher destination is unavailable" />;
 
   return <TeacherV3Layout manifest={manifest}>{children}</TeacherV3Layout>;
 }

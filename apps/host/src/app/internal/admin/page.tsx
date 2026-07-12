@@ -181,10 +181,10 @@ function LegacyInternalAdminPage() {
 
 export default function InternalAdminPage() {
   const router = useRouter();
-  const { enabled, loading, legacyAllowed } = useExperienceV3('super-admin');
+  const { enabled, loading, routeMapped, legacyAllowed, denied } = useExperienceV3('super-admin');
   useEffect(() => {
-    if (enabled) router.replace('/super-admin/command');
-  }, [enabled, router]);
-  if (loading || enabled || !legacyAllowed) return null;
+    if (enabled && routeMapped) router.replace('/super-admin/command');
+  }, [enabled, routeMapped, router]);
+  if (loading || denied || (enabled && routeMapped) || (!legacyAllowed && !enabled)) return null;
   return <LegacyInternalAdminPage />;
 }

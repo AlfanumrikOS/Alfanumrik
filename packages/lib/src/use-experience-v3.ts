@@ -13,6 +13,8 @@ export interface ExperienceV3ClientState {
   loading: boolean;
   capabilities: Readonly<Record<string, boolean>>;
   manifest: RoleManifest | null;
+  /** True only when the current path is explicitly owned by the V3 manifest or a governed migration alias. */
+  routeMapped: boolean;
   routeAllowed: boolean;
   scope: ExperienceV3ClientScope | null;
   /** True after explicit flag-off or when the legacy auth boundary must handle an unauthenticated visitor. */
@@ -27,7 +29,7 @@ export interface ExperienceV3ClientScope {
   schools?: ReadonlyArray<{ id: string; name: string }>;
 }
 
-const CLOSED: ExperienceV3ClientState = { enabled: false, loading: true, capabilities: {}, manifest: null, routeAllowed: false, scope: null, legacyAllowed: false, denied: false };
+const CLOSED: ExperienceV3ClientState = { enabled: false, loading: true, capabilities: {}, manifest: null, routeMapped: false, routeAllowed: false, scope: null, legacyAllowed: false, denied: false };
 const DENIED: ExperienceV3ClientState = { ...CLOSED, loading: false, denied: true };
 const FLAG_OFF: ExperienceV3ClientState = { ...CLOSED, loading: false, legacyAllowed: true };
 const DEDUPE_MS = 5_000;
@@ -66,7 +68,7 @@ function resolveClientState(role: ExperienceRole, pathname: string, scopeQuery: 
   }).then(async (response) => {
     // A server authorization denial (including an invalid child/school scope)
     // must never fall through to a more permissive legacy shell.
-    if (response.status === 401) return FLAG_OFF;
+    if (response.status === 401) return DENIED;
     if (response.status === 403) return DENIED;
     if (!response.ok) return DENIED;
     const body: unknown = await response.json();
@@ -79,6 +81,7 @@ function resolveClientState(role: ExperienceRole, pathname: string, scopeQuery: 
           loading: false,
           capabilities: value.capabilities && typeof value.capabilities === 'object' ? value.capabilities : {},
           manifest: value.manifest,
+          routeMapped: value.routeMapped === true,
           routeAllowed: value.routeAllowed === true,
           scope: normalizeScope(value.scope),
           legacyAllowed: false,
@@ -113,7 +116,7 @@ export function useExperienceV3(role: ExperienceRole): ExperienceV3ClientState {
         const session = data.session;
         // No Supabase session is not an authenticated authorization denial.
         // Preserve legacy login redirects and Parent's signed link-code flow;
-        // authenticated 403 and invalid scope responses remain fail-closed.
+        // authenticated 401/403 and invalid scope responses remain fail-closed.
         if (!session?.access_token || !session.user?.id) return FLAG_OFF;
         return resolveClientState(role, pathname, scopeQuery, session.access_token, session.user.id);
       })

@@ -143,10 +143,10 @@ class _ActiveChildSelector extends ConsumerWidget {
       return const Text('Parent');
     }
 
-    final requested = ref.watch(selectedParentChildProvider);
-    final selected = children.any((child) => child.studentId == requested)
-        ? requested!
-        : children.first.studentId;
+    final selected = resolveActiveParentChildId(
+      children.map((child) => child.studentId),
+      ref.watch(selectedParentChildProvider),
+    )!;
 
     return DropdownButtonHideUnderline(
       child: DropdownButton<String>(

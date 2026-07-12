@@ -9,6 +9,17 @@ void main() {
     expect(experienceRoleFor(UserRole.unknown), isNull);
   });
 
+  test('includes the active child in parent assignment resolution only', () {
+    expect(
+      experienceV3QueryParameters('parent', childId: 'child-2'),
+      {'role': 'parent', 'childId': 'child-2'},
+    );
+    expect(
+      experienceV3QueryParameters('student', childId: 'child-2'),
+      {'role': 'student'},
+    );
+  });
+
   group('server assignment response fails closed', () {
     test('accepts only an explicit enabled 200 response', () {
       expect(

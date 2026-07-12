@@ -138,17 +138,6 @@ function ParentMessagesContent() {
     fetcher,
     { revalidateOnFocus: true, shouldRetryOnError: false },
   );
-  const {
-    data: threadsData,
-    error: threadsError,
-    isLoading: threadsLoading,
-    mutate: mutateThreads,
-  } = useSWR<ThreadsResponse>(
-    '/api/parent/messages/threads',
-    fetcher,
-    { refreshInterval: LIST_POLL_MS, revalidateOnFocus: true, shouldRetryOnError: false },
-  );
-  const authorizedThreads = useMemo(() => threadsData?.threads ?? [], [threadsData?.threads]);
   const linkedChildren = useMemo(
     () => linkedChildrenData?.data?.children ?? [],
     [linkedChildrenData?.data?.children],
@@ -164,6 +153,19 @@ function ParentMessagesContent() {
     linkedChildrenData && scopeFallbackChildId && (!scopedChildId || invalidChildScope),
   );
   const noLinkedChildren = Boolean(linkedChildrenData && linkedChildren.length === 0);
+  const {
+    data: threadsData,
+    error: threadsError,
+    isLoading: threadsLoading,
+    mutate: mutateThreads,
+  } = useSWR<ThreadsResponse>(
+    activeChildId
+      ? `/api/parent/messages/threads?student_id=${encodeURIComponent(activeChildId)}`
+      : null,
+    fetcher,
+    { refreshInterval: LIST_POLL_MS, revalidateOnFocus: true, shouldRetryOnError: false },
+  );
+  const authorizedThreads = useMemo(() => threadsData?.threads ?? [], [threadsData?.threads]);
   const threads = useMemo(() => {
     if (!activeChildId) return [];
     return authorizedThreads.filter((thread) => thread.student_id === activeChildId);

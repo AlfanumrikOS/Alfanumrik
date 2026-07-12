@@ -31,11 +31,10 @@ class ParentV3SectionScreen extends ConsumerWidget {
 }
 
 String? _activeChildId(WidgetRef ref, List<ParentChild> children) {
-  if (children.isEmpty) return null;
-  final requested = ref.watch(selectedParentChildProvider);
-  return children.any((child) => child.studentId == requested)
-      ? requested
-      : children.first.studentId;
+  return resolveActiveParentChildId(
+    children.map((child) => child.studentId),
+    ref.watch(selectedParentChildProvider),
+  );
 }
 
 class _ProgressSection extends ConsumerWidget {

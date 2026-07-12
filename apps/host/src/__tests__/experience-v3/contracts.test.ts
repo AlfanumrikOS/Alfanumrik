@@ -80,6 +80,15 @@ describe('One Experience V3 contracts', () => {
     expect(resolveRouteCapability(parent.manifest, '/parent')?.capability).toBe('parent.home');
   });
 
+  it('does not claim or advertise legacy and nonexistent destinations', () => {
+    expect(resolveRouteCapability(getRoleManifest('student'), '/student-library')).toBeNull();
+    expect(resolveRouteCapability(getRoleManifest('parent'), '/parent/attendance')).toBeNull();
+    const studentHrefs = getRoleManifest('student').desktop.map((item) => item.href);
+    const parentHrefs = getRoleManifest('parent').desktop.map((item) => item.href);
+    expect(studentHrefs).not.toEqual(expect.arrayContaining(['/notebook', '/downloads', '/role-switch']));
+    expect(parentHrefs).not.toContain('/role-switch');
+  });
+
   it('keeps School Admin deep links inside their canonical capability and shell', () => {
     const allowed = resolveCapabilities({
       role: 'school-admin',
@@ -205,6 +214,8 @@ describe('One Experience V3 contracts', () => {
     expect(client).toContain('experienceV3ScopeQuery(role');
     expect(client).toContain("response.status === 403");
     expect(client).toContain("response.status === 401");
+    expect(client).toContain('if (response.status === 401) return DENIED');
+    expect(client).toContain('routeMapped: value.routeMapped === true');
     expect(client).toContain('const FLAG_OFF');
     expect(client).toContain('legacyAllowed: true');
     expect(client).toContain('const DENIED');
@@ -224,6 +235,7 @@ describe('One Experience V3 contracts', () => {
     for (const file of gates) {
       const source = await fs.readFile(file, 'utf8');
       expect(source, file).toContain('legacyAllowed');
+      expect(source, file).toContain('routeMapped');
       expect(source, file).toContain('state="permission"');
     }
   });

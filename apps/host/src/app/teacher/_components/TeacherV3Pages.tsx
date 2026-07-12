@@ -454,10 +454,12 @@ export function TeacherSettingsV3() {
 }
 
 export function TeacherPageGate({ legacy, v3 }: { legacy: React.ReactNode; v3: React.ReactNode }) {
-  const { enabled, loading, manifest, capabilities, routeAllowed, legacyAllowed, denied } = useExperienceV3('teacher');
+  const { enabled, loading, manifest, capabilities, routeMapped, routeAllowed, legacyAllowed, denied } = useExperienceV3('teacher');
   const { activeRole, isLoading: authLoading } = useAuth();
   if (loading || authLoading) return <DataState state="loading" title="Loading teacher workspace…" />;
   if (legacyAllowed) return <>{legacy}</>;
-  if (denied || !enabled || !routeAllowed || !manifest || activeRole !== 'teacher') return <DataState state="permission" title="This teacher destination is unavailable" />;
+  if (denied || !enabled || !manifest || activeRole !== 'teacher') return <DataState state="permission" title="This teacher destination is unavailable" />;
+  if (!routeMapped) return <>{legacy}</>;
+  if (!routeAllowed) return <DataState state="permission" title="This teacher destination is unavailable" />;
   return <TeacherV3CapabilitiesContext.Provider value={capabilities}>{v3}</TeacherV3CapabilitiesContext.Provider>;
 }

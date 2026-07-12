@@ -57,7 +57,7 @@ vi.mock('@alfanumrik/lib/supabase', () => ({
 vi.mock('swr', () => ({
   default: (key: string | null) => {
     if (key === '/api/v2/parent/children') return testState.children;
-    if (key === '/api/parent/messages/threads') return testState.threads;
+    if (key?.startsWith('/api/parent/messages/threads?student_id=')) return testState.threads;
     return testState.messages;
   },
 }));

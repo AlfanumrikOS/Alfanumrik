@@ -7,7 +7,7 @@ import SuperAdminV3Workspace from './SuperAdminV3Workspace';
 import { DataState } from '@alfanumrik/ui/v3';
 
 export default function SuperAdminV3ClientGate({ legacy, children }: { legacy: React.ReactNode; children: React.ReactNode }) {
-  const { enabled, loading, manifest, routeAllowed, legacyAllowed, denied } = useExperienceV3('super-admin');
+  const { enabled, loading, manifest, routeMapped, routeAllowed, legacyAllowed, denied } = useExperienceV3('super-admin');
   const [name, setName] = useState('Administrator');
   useEffect(() => {
     if (!enabled) return;
@@ -15,6 +15,8 @@ export default function SuperAdminV3ClientGate({ legacy, children }: { legacy: R
   }, [enabled]);
   if (loading) return null;
   if (legacyAllowed) return <>{legacy}</>;
-  if (denied || !enabled || !manifest || !routeAllowed) return <DataState state="permission" title="This operator destination is unavailable" />;
+  if (denied || !enabled || !manifest) return <DataState state="permission" title="This operator destination is unavailable" />;
+  if (!routeMapped) return <>{legacy}</>;
+  if (!routeAllowed) return <DataState state="permission" title="This operator destination is unavailable" />;
   return <SuperAdminV3Workspace adminName={name} adminLevel="server-enforced" manifest={manifest}>{children}</SuperAdminV3Workspace>;
 }

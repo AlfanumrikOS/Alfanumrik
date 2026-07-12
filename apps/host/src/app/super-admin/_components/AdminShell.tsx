@@ -231,12 +231,19 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       </main>
     </div>
   );
+  const showLegacy = v3.legacyAllowed
+    || (!v3.denied && v3.enabled && !v3.routeMapped && Boolean(v3.manifest));
+  const showV3 = !v3.denied
+    && v3.enabled
+    && v3.routeMapped
+    && v3.routeAllowed
+    && Boolean(v3.manifest);
 
   return (
     <AdminCtx.Provider value={{ accessToken, adminName, supabase, headers, apiFetch }}>
       {v3.loading ? (
         <div className="flex min-h-dvh items-center justify-center bg-surface-1" role="status">Loading operator workspace…</div>
-      ) : v3.legacyAllowed ? legacyContent : !v3.denied && v3.enabled && v3.routeAllowed && v3.manifest ? (
+      ) : showLegacy ? legacyContent : showV3 && v3.manifest ? (
           <SuperAdminV3Workspace adminName={adminName || 'Administrator'} adminLevel="server-enforced" manifest={v3.manifest}>
             {children}
           </SuperAdminV3Workspace>
