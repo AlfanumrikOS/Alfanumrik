@@ -20,6 +20,13 @@ The database seed and frontend are reviewed separately. Apply the flag seed
 first with every row disabled and at 0%, verify the rows, then deploy the web
 build. Do not combine a frontend deploy with a cohort increase.
 
+Current release status (12 July 2026): PR #1254 deployed the five rows at OFF/0
+and PR #1257 deployed the additive selected-school overloads at exact production
+SHA `6d57f4fa8a1b5b48779f8854c6782eebb8b8c890`; both terminal production gates
+passed. The operator later reported the five switches ON, but the current UI
+does not change `rollout_percentage`, so an ON/0 row still resolves to legacy.
+PR #1256 and any non-zero activation remain separate releases.
+
 ## Schema compatibility sequence
 
 This release may apply only the additive selected-school roster migration. It
@@ -41,25 +48,26 @@ It must not be bundled into this frontend deployment.
 
 ## Preflight
 
-1. Confirm the approved frontend and flag-seed pull requests target the same
-   release window and have independent approval.
+1. Confirm PRs #1254 and #1257 remain present in the frontend branch baseline
+   and their exact-SHA production completion gates succeeded.
 2. Confirm CI passes type-check, lint, unit/contract tests, migration lint,
    production build, bundle budget, accessibility automation and Playwright.
 3. Verify the production preview route returns 404 from the built artifact.
-4. Verify all five rows are disabled with rollout 0 and no stale environment,
-   role or institution targeting.
-5. Verify the selected-school migration is strictly additive and that the
+4. Re-read all five rows and require rollout 0 before the frontend merge; do not
+   treat an ON switch at 0% as an enabled cohort.
+5. Verify the deployed selected-school migration remains strictly additive and
+   that the
    deferred teacher data/index migration is absent from the release diff.
 6. Exercise one seeded account per role against the deployment candidate.
 7. Confirm rollback ownership and the observation channel before deployment.
 
 ## Deploy
 
-1. Apply the reviewed flag-seed migration. Re-read all five rows; do not infer
-   success from migration history alone.
-2. Apply the additive selected-school RPC overload migration and verify old and
-   new signatures before deploying any dependent frontend caller.
-3. Deploy the frontend commit with every cohort still disabled.
+1. Completed: PR #1254 applied the reviewed flag-seed migration at OFF/0 and
+   passed exact-SHA production verification.
+2. Completed: PR #1257 applied the additive selected-school overloads after an
+   isolated PG17 behavioral gate and passed exact-SHA production verification.
+3. Deploy the frontend commit with every cohort still at effective rollout 0.
 4. Verify login, legacy navigation and one critical legacy journey per role.
 5. Verify the health endpoint, JavaScript error rate, API error rate and Core
    Web Vitals have not regressed.
