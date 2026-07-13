@@ -60,9 +60,30 @@ async function isBusEnabled(sb: SupabaseClient): Promise<boolean> {
 
 export interface PublishResult {
   published: boolean;
-  reason?: 'flag_off' | 'validation_failed' | 'db_error' | 'duplicate';
+  reason?: 'flag_off' | 'validation_failed' | 'db_error' | 'duplicate' | 'future_occurred_at';
   errorMessage?: string;
 }
+
+/**
+ * Max slack we allow between `occurredAt` and ingestion wall-clock. The bus
+ * cursor orders by `occurred_at` (see runtime/tick-one.ts), so a row whose
+ * occurredAt is far in the FUTURE permanently advances a subscriber's
+ * watermark past that date — after which every legitimately now-stamped event
+ * is silently skipped (`.gte('occurred_at', cursor)` never matches it) until
+ * wall-clock catches up. This was observed in prod (2026-07-13): a poison
+ * event stamped occurred_at=2032 pinned `mastery-state-writer`'s watermark to
+ * 2032. 24h is generous enough that no legitimate now-stamped caller — even
+ * with clock skew or a queued retry — is ever rejected, while egregiously
+ * future timestamps (always a bug or a poison pill) are refused at the edge.
+ *
+ * NOTE: this closes the SANCTIONED path (publishEvent). It does NOT stop a raw
+ * service-role INSERT into state_events (how the 2026-07-13 poison arrived).
+ * The durable structural fix is to order the bus cursor by the monotonic,
+ * server-set `created_at` instead of caller-supplied `occurred_at`; that is an
+ * architect-owned follow-up (see docs/runbooks/edge-function-drift-report.md
+ * neighbours / the testing-strategy gap-7 writeup).
+ */
+const MAX_FUTURE_OCCURRED_AT_MS = 24 * 60 * 60 * 1000; // 24h
 
 /**
  * Publish a domain event. Single entry point — every feature calls
@@ -87,6 +108,18 @@ export async function publishEvent(
       published: false,
       reason: 'validation_failed',
       errorMessage: parsed.error.message.slice(0, 500),
+    };
+  }
+
+  // 1b. Reject far-future occurredAt — poison-watermark guard (see
+  //     MAX_FUTURE_OCCURRED_AT_MS). A future-dated event would advance the
+  //     ordering cursor past real events and silently skip them.
+  const occurredMs = Date.parse(parsed.data.occurredAt);
+  if (Number.isFinite(occurredMs) && occurredMs - Date.now() > MAX_FUTURE_OCCURRED_AT_MS) {
+    return {
+      published: false,
+      reason: 'future_occurred_at',
+      errorMessage: `occurredAt ${parsed.data.occurredAt} is more than 24h in the future; refused to avoid poisoning the bus watermark`,
     };
   }
 
