@@ -606,14 +606,21 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const pathname = path; // alias for clarity in API checks
 
-  // The code-backed V3 review surface must be absent at the HTTP boundary in
+  // The code-backed dev/preview surfaces (V3 review, the UI kitchen-sink, and
+  // the cosmic design gallery) must be absent at the HTTP boundary in
   // production. A page-level notFound() can be streamed after a 200 shell in
   // modern Next.js, so enforce a real 404 before rendering as defense in depth.
+  // Access is preserved in dev/preview (NODE_ENV !== 'production' and
+  // VERCEL_ENV of 'development'/'preview').
   if (
     (process.env.NODE_ENV === 'production' ||
       process.env.VERCEL_ENV === 'production') &&
     (pathname === '/dev/experience-v3' ||
-      pathname.startsWith('/dev/experience-v3/'))
+      pathname.startsWith('/dev/experience-v3/') ||
+      pathname === '/dev/ui' ||
+      pathname.startsWith('/dev/ui/') ||
+      pathname === '/dev/cosmic-preview' ||
+      pathname.startsWith('/dev/cosmic-preview/'))
   ) {
     return new NextResponse(null, { status: 404 });
   }

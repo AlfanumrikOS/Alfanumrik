@@ -19,6 +19,7 @@
  * for design sign-off; Phase 1 will reskin real surfaces.
  */
 import { useEffect, useState } from 'react';
+import { notFound } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useCosmicTheme, type CosmicThemePreference } from '@alfanumrik/lib/cosmic-theme';
 import { FoxyMark } from '@alfanumrik/ui/landing/FoxyMark';
@@ -68,6 +69,12 @@ const STRINGS = {
 const ROLES: CosmicRole[] = ['student', 'parent', 'teacher', 'school'];
 
 export default function CosmicPreviewPage() {
+  // Dev-only surface: never expose this preview gallery in production. Mirrors
+  // the page-level guard on /dev/experience-v3 (defense-in-depth alongside the
+  // middleware gate the architect is adding). NODE_ENV is statically inlined in
+  // the client bundle, so this fires on both SSR and client navigation in prod.
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') notFound();
+
   const { isHi } = useAuth();
   const { cosmicEnabled, cosmicTheme, setCosmicTheme } = useCosmicTheme();
   const [role, setRole] = useState<CosmicRole>('student');
