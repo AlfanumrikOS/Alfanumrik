@@ -84,3 +84,29 @@ Deno.test('internal cron auth accepts approved CRON_SECRET without service-role 
   assert(result.ok, 'expected success')
   assert(result.authMethod === 'cron_secret', `expected cron_secret, got ${result.authMethod}`)
 })
+
+Deno.test('internal cron auth accepts the get_cron_secret() DB fallback when the env secret mismatches', async () => {
+  const dbSb = {
+    async rpc(name: string) {
+      if (name === 'get_cron_secret') return { data: 'db-held-secret', error: null }
+      return { data: { found: false }, error: null }
+    },
+  }
+  const req = new Request(`https://example.test/functions/v1/${route}`, { method: 'POST', headers: { 'x-cron-secret': 'db-held-secret' } })
+  const result = await verifyInternalCronRequest({ req, route, sb: dbSb, requestId, bodyText: '', nowMs, cronSecret: 'rotated-env-value', serviceRoleKey, signingSecret })
+  assert(result.ok, 'expected success via DB fallback')
+  assert(result.authMethod === 'cron_secret', `expected cron_secret, got ${result.authMethod}`)
+})
+
+Deno.test('internal cron auth stays fail-closed when the DB fallback errors or mismatches', async () => {
+  const failingSb = {
+    async rpc(name: string) {
+      if (name === 'get_cron_secret') return { data: null, error: { message: 'permission denied' } }
+      return { data: { found: false }, error: null }
+    },
+  }
+  const req = new Request(`https://example.test/functions/v1/${route}`, { method: 'POST', headers: { 'x-cron-secret': 'wrong-secret' } })
+  const result = await verifyInternalCronRequest({ req, route, sb: failingSb, requestId, bodyText: '', nowMs, cronSecret: 'env-value', serviceRoleKey, signingSecret })
+  assert(!result.ok, 'expected rejection')
+  assert(result.status === 401, `expected 401, got ${result.status}`)
+})

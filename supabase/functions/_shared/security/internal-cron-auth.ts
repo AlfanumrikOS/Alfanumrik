@@ -27,6 +27,27 @@ export async function verifyInternalCronRequest(args: {
     return { ok: true, callerName: args.route, authMethod: 'cron_secret', internalCallerId: null }
   }
 
+  // get_cron_secret() DB RPC fallback — implements the contract already
+  // documented (daily-cron header + contract.test.ts §1 comment) but never
+  // wired: pg_cron jobs authenticate with the DB-held secret (readable
+  // in-database only; service-role EXECUTE), which rotates independently of
+  // the CRON_SECRET env var. 2026-07-09 incident: the env var rotated,
+  // pg_cron was left with no valid credential path, and synthetic-host-monitor
+  // 401'd on every tick for 17 days. Fail-closed: RPC error, non-string, or
+  // mismatch falls through to the bearer/signed-internal path (which rejects
+  // unsigned callers), never opens access.
+  if (providedCron && args.sb) {
+    try {
+      const rpcRes = await args.sb.rpc('get_cron_secret')
+      const dbSecret = typeof rpcRes.data === 'string' ? rpcRes.data : ''
+      if (!rpcRes.error && dbSecret && constantTimeEqual(providedCron, dbSecret)) {
+        return { ok: true, callerName: args.route, authMethod: 'cron_secret', internalCallerId: null }
+      }
+    } catch {
+      // fall through to bearer/signed-internal path
+    }
+  }
+
   const serviceRoleKey = args.serviceRoleKey ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   if (!checkBearerToken(args.req.headers.get('authorization'), serviceRoleKey)) {
     return { ok: false, status: 401, code: 'deny_auth', message: 'missing valid internal caller signature or CRON_SECRET' }
