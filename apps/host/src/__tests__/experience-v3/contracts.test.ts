@@ -277,6 +277,43 @@ describe('One Experience V3 contracts', () => {
     expect(roleShell).not.toContain('<main id="main-content"');
     expect(leaderboard).toContain('useIsInsideRoleShellMain()');
     expect(leaderboard).toContain("const ContentElement = isInsideRoleShellMain ? 'div' : 'main';");
-    expect(rewards).toContain("export { default } from '../leaderboard/page';");
+    // /rewards was consolidated into /leaderboard. It is no longer a dead
+    // re-export of the leaderboard page component (which rendered leaderboard
+    // content at the /rewards URL and duplicated the main-content ownership
+    // problem this test guards). It now issues a real server-side redirect to
+    // the canonical /leaderboard URL. Pin that intent — not a no-op.
+    expect(rewards).toContain("import { redirect } from 'next/navigation'");
+    expect(rewards).toContain("redirect('/leaderboard')");
+    expect(rewards).not.toContain("export { default } from '../leaderboard/page';");
+  });
+
+  it('keeps the code-backed dev/preview surfaces 404 in production (page guard + middleware gate)', async () => {
+    const fs = await import('node:fs/promises');
+
+    // Defense-in-depth layer 1: every dev-only preview page carries a
+    // page-level production guard that calls notFound(). NODE_ENV is statically
+    // inlined in the client bundle, so this fires on SSR and client navigation.
+    const devPages = [
+      'src/app/dev/experience-v3/page.tsx',
+      'src/app/dev/ui/page.tsx',
+      'src/app/dev/cosmic-preview/page.tsx',
+    ];
+    for (const file of devPages) {
+      const source = await fs.readFile(file, 'utf8');
+      expect(source, file).toContain("import { notFound } from 'next/navigation'");
+      expect(source, file).toContain(
+        "if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') notFound();",
+      );
+    }
+
+    // Defense-in-depth layer 2: the middleware (proxy.ts) enforces a real
+    // HTTP-boundary 404 for the SAME three dev surfaces (exact + subpath) in
+    // production, before any page shell can stream a 200.
+    const proxy = await fs.readFile('src/proxy.ts', 'utf8');
+    for (const devPath of ['/dev/experience-v3', '/dev/ui', '/dev/cosmic-preview']) {
+      expect(proxy, devPath).toContain(`pathname === '${devPath}'`);
+      expect(proxy, devPath).toContain(`pathname.startsWith('${devPath}/')`);
+    }
+    expect(proxy).toContain('new NextResponse(null, { status: 404 })');
   });
 });

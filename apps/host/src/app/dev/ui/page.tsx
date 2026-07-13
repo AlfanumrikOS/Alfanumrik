@@ -9,6 +9,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { useRef, useState } from 'react';
+import { notFound } from 'next/navigation';
 import {
   Button,
   IconButton,
@@ -481,6 +482,12 @@ function FeedbackNavDataSection() {
 }
 
 export default function UiShowcasePage() {
+  // Dev-only surface: never expose this design gallery in production. Mirrors
+  // the page-level guard on /dev/experience-v3 (defense-in-depth alongside the
+  // middleware gate the architect is adding). NODE_ENV is statically inlined in
+  // the client bundle, so this fires on both SSR and client navigation in prod.
+  if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') notFound();
+
   const [selectedChips, setSelectedChips] = useState<Set<string>>(new Set(['success']));
   const toggleChip = (k: string) =>
     setSelectedChips((prev) => {
