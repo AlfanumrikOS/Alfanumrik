@@ -30,6 +30,9 @@ const SCAN_OCR_PROFILE = createStaticAiRouteProfile({
 })
 
 // ── Supabase service-role connection ──
+// Hotfix redeploy 2026-07-13: forces the production function-deploy pipeline to
+// re-detect and ship scan-ocr (prod was pinned at the broken v29 that 500'd on
+// every request). See the declaration note below.
 // These were referenced at the top of the request handler (createClient(...)
 // BEFORE admitAiRoute) but never declared — a ReferenceError that threw on
 // EVERY request, before any auth guard, surfacing as a bare HTTP 500 (caught
