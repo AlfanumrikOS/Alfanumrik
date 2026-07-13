@@ -1,0 +1,50 @@
+# Edge Function auth sweep — live unauthenticated probe of every DEPLOYED
+# function (including production-only orphans that no static test can see).
+# Companion to the static sweep in
+# apps/host/src/__tests__/edge-function-auth-guard-sweep.test.ts.
+#
+# Advisory-first rollout, mirroring rag-eval.yml: keep `continue-on-error`
+# true until 5 consecutive clean runs, then flip to false so a regression
+# (a function serving unauthenticated traffic) goes red loudly.
+#
+# The probe sends ONE anonymous `POST {}` per function with a 150ms gap —
+# negligible load, no credentials, no mutation intent. Any state change it
+# causes is itself the P9 finding.
+name: Edge Function auth sweep
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 22:30 UTC = 04:00 IST nightly (offset from rag-eval's 22:00 to avoid
+    # overlapping probes against the same project)
+    - cron: '30 22 * * *'
+
+concurrency:
+  group: edge-auth-sweep
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: Unauthenticated probe (production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Advisory until 5 consecutive clean runs. Then flip to false.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run sweep
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/edge-auth-sweep.mjs
