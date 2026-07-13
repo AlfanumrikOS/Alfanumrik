@@ -1237,6 +1237,23 @@ export async function proxy(request: NextRequest) {
     return addSecurityHeaders(response, request, requestId);
   }
 
+  // Synthetic host-monitor probes (Edge Function `synthetic-host-monitor`)
+  // GET /api/school-config across every school host in a 5-minute burst from
+  // a small set of Supabase egress IPs — which exhausted the general bucket
+  // and made the monitor record 100% http_4xx (verified 2026-07-13, first
+  // ticks after the 17-day outage fix). Exempt ONLY that exact probe shape:
+  // GET + /api/school-config + the monitor's UA prefix. school-config is a
+  // public, read-only, unauthenticated config read (no user data, no writes),
+  // so a spoofed-UA bypass gains an attacker nothing beyond that public
+  // endpoint; every other path/method keeps full rate limiting.
+  const isSyntheticMonitorProbe =
+    request.method === 'GET' &&
+    pathname === '/api/school-config' &&
+    (request.headers.get('user-agent') ?? '').startsWith('Alfanumrik-Synthetic-Monitor/');
+  if (isSyntheticMonitorProbe) {
+    return addSecurityHeaders(response, request, requestId);
+  }
+
   // General rate limit for all routes
   const { allowed, remaining: generalRemaining } = await checkRateLimit(`general:${ip}`, RATE_LIMIT_MAX, 'general');
   if (!allowed) {

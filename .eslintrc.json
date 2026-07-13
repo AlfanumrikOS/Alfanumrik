@@ -21,7 +21,8 @@
     "alfanumrik/no-raw-subject-imports": "error",
     "alfanumrik/no-canonical-write-outside-projector": "warn",
     "alfanumrik/no-direct-ai-calls": "off",
-    "alfanumrik/no-direct-rag-rpc": "off"
+    "alfanumrik/no-direct-rag-rpc": "off",
+    "alfanumrik/no-inline-taxonomy-reads": "warn"
   },
   "overrides": [
     {
@@ -159,7 +160,7 @@
                   "../**/xp-rules",
                   "../../**/xp-rules"
                 ],
-                "message": "@/lib/xp-rules is @deprecated. New code MUST import from @/lib/score-config (Performance Score) or @/lib/coin-rules (Foxy Coins) instead. Existing 17 imports remain for backward compat — see audit F19. Migration roadmap: docs/architecture/xp-deprecation.md (TBD)."
+                "message": "@/lib/xp-rules is @deprecated. New code MUST import from @/lib/score-config (Performance Score) or @/lib/coin-rules (Foxy Coins) instead. Existing 17 imports remain for backward compat \u2014 see audit F19. Migration roadmap: docs/architecture/xp-deprecation.md (TBD)."
               }
             ]
           }

@@ -88,7 +88,10 @@ function validateQuestions(questions: unknown[]): QuizQuestion[] {
  * the questions — callers can log/alert when falling back.
  *
  * Source order:
- *   1. quiz-engine Edge Function (adaptive, IRT, RAG)  → best
+ *   1. quiz-generator Edge Function (adaptive, IRT, RAG) → best
+ *      (drift-report note 2026-07-13: this source previously named the
+ *      `quiz-engine` function, which no longer exists in production — the
+ *      invoke below was repointed to the canonical `quiz-generator`.)
  *   2. select_quiz_questions_rag RPC                      → good
  *   3. select_quiz_questions_v2 RPC                       → acceptable
  *   4. direct question_bank query                         → last resort

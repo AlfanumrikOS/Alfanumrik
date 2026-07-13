@@ -13,6 +13,8 @@ const path = require('path');
 const noRawSubjectImports = require('./no-raw-subject-imports');
 // Phase 3 — canonical-write boundary (ADR-005 §"The enforceable rule" #1)
 const noCanonicalWriteOutsideProjector = require('./no-canonical-write-outside-projector');
+// ADR-007 taxonomy boundary (tech-debt register item 9, 2026-07-13)
+const noInlineTaxonomyReads = require('./no-inline-taxonomy-reads');
 
 // Grounding-boundary rules live at the repo root under eslint-rules/
 // so they can be tested and referenced without mixing with subject rules.
@@ -27,6 +29,7 @@ module.exports = {
     'no-raw-subject-imports': noRawSubjectImports.rules['no-raw-subject-imports'],
     'no-canonical-write-outside-projector':
       noCanonicalWriteOutsideProjector.rules['no-canonical-write-outside-projector'],
+    'no-inline-taxonomy-reads': noInlineTaxonomyReads.rules['no-inline-taxonomy-reads'],
     // Grounding-boundary rules (Tasks 3.18 / 3.19)
     'no-direct-ai-calls': noDirectAiCalls,
     'no-direct-rag-rpc': noDirectRagRpc,
