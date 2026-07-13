@@ -218,3 +218,17 @@ supabase functions download quiz-engine --project-ref shktyoxqhundlvkiwguu
 ```
 
 Alternatively, rewrite `src/lib/domains/quiz.ts` `fetchQuizQuestions()` to drop Source 1 (Edge Function) entirely and start from Source 2 (`select_quiz_questions_rag` RPC). The chain already silently falls through, so removal is non-breaking — but it does eliminate the "best" adaptive+IRT path until something replaces it.
+
+---
+
+## Execution log — 2026-07-13 (ADR-006 consolidation)
+
+`quiz-generator-v2` and `enhanced-quiz-generator` (both Category A) were
+**tombstoned in production**: each now serves a structured
+`410 { code: 'GONE' }` pointing callers at the canonical `quiz-generator`.
+Verification before tombstoning: fresh repo grep (zero invocations, matching
+the Category A scan above) + zero invocations in Supabase edge logs. The
+tombstone is reversible (redeploy) and fails loudly per Hard Rule 10; run the
+`supabase functions delete` commands above for permanent removal after a clean
+observation window. The remaining Category A orphans are untouched — deleting
+them stays a separate ops task per this runbook.

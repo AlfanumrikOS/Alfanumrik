@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+import { SYLLABUS_CACHE_TAG } from '@/lib/curriculum/cached-taxonomy';
 
 export const runtime = 'nodejs';
 
@@ -111,6 +113,9 @@ export async function POST(request: NextRequest) {
 
       if (error) throw error;
       await logAdminAction({ action: 'create_topic', entity_type: 'curriculum_topic', entity_id: data.id, ip });
+      // Taxonomy changed — invalidate the shared syllabus cache immediately
+      // (Hard Rule 2: stale syllabus must never outlive a content edit).
+      revalidateTag(SYLLABUS_CACHE_TAG, 'max');
       return NextResponse.json({ success: true, data });
     }
 
@@ -165,6 +170,7 @@ export async function PATCH(request: NextRequest) {
     if (error) throw error;
 
     await logAdminAction({ action: `update_${resource}`, entity_type: table, entity_id: id, ip });
+    if (table === 'curriculum_topics') revalidateTag(SYLLABUS_CACHE_TAG, 'max');
     return NextResponse.json({ success: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Internal error' }, { status: 500 });
@@ -192,6 +198,7 @@ export async function DELETE(request: NextRequest) {
     } else if (resource === 'topic') {
       const { error } = await supabase.from('curriculum_topics').update({ is_active: false }).eq('id', id);
       if (error) throw error;
+      revalidateTag(SYLLABUS_CACHE_TAG, 'max');
     } else {
       return NextResponse.json({ error: 'Invalid resource' }, { status: 400 });
     }

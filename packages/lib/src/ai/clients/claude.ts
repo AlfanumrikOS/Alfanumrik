@@ -193,7 +193,19 @@ export async function callClaude(options: ClaudeRequestOptions): Promise<ClaudeR
   let lastError = 'Claude API unavailable';
 
   for (const modelName of modelsToTry) {
-    const result = await callModel(
+    // Bounded exponential backoff on transient failures (429 / 408-timeout /
+    // 5xx incl. 529 / network-as-503). Mirrors the Deno-side retry posture in
+    // supabase/functions/_shared/reliability.ts so both hosts share one
+    // discipline — a direct no-backoff call is incident class #4 (500/529
+    // cascades). Non-transient statuses (400/401/403/404) never retry.
+    // Parity is asserted by scripts/check-ai-retry-parity.mjs in CI.
+    const MAX_ATTEMPTS_PER_MODEL = 3;
+    const BASE_DELAY_MS = 300;
+    const MAX_DELAY_MS = 2_000;
+    const isTransient = (status?: number) =>
+      status === 429 || status === 408 || (typeof status === 'number' && status >= 500);
+
+    let result = await callModel(
       modelName,
       systemPrompt,
       apiMessages,
@@ -203,6 +215,32 @@ export async function callClaude(options: ClaudeRequestOptions): Promise<ClaudeR
       options.tools,
       options.toolChoice,
     );
+    for (
+      let attempt = 1;
+      attempt < MAX_ATTEMPTS_PER_MODEL && 'error' in result && isTransient(result.status);
+      attempt++
+    ) {
+      const delayMs = Math.min(MAX_DELAY_MS, BASE_DELAY_MS * 2 ** (attempt - 1));
+      const jitteredMs = Math.round(delayMs * (0.5 + Math.random() * 0.5));
+      logger.warn('claude_api_retry', {
+        model: modelName,
+        attempt,
+        maxAttempts: MAX_ATTEMPTS_PER_MODEL,
+        status: result.status,
+        delayMs: jitteredMs,
+      });
+      await new Promise((resolve) => setTimeout(resolve, jitteredMs));
+      result = await callModel(
+        modelName,
+        systemPrompt,
+        apiMessages,
+        resolvedMaxTokens,
+        resolvedTemp,
+        resolvedTimeout,
+        options.tools,
+        options.toolChoice,
+      );
+    }
 
     if ('error' in result) {
       lastError = result.error;
