@@ -1166,6 +1166,7 @@ jobs:
               supabase/functions/parent-portal/__tests__/contract.test.ts \
               supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
               supabase/functions/daily-cron/__tests__/contract.test.ts \
+              supabase/functions/scan-ocr/__tests__/contract.test.ts \
               supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
               supabase/functions/send-auth-email/__tests__/always-200.test.ts \
               supabase/functions/grounded-answer/__tests__/cache.test.ts \
@@ -1199,6 +1200,7 @@ jobs:
             supabase/functions/teacher-dashboard/__tests__/ \
             supabase/functions/export-report/__tests__/ \
             supabase/functions/daily-cron/__tests__/ \
+            supabase/functions/scan-ocr/__tests__/ \
             supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
             supabase/functions/send-auth-email/__tests__/always-200.test.ts \
             supabase/functions/grounded-answer/__tests__/cache.test.ts \
