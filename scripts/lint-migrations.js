@@ -34,6 +34,78 @@ const ROOT = path.resolve(__dirname, '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'supabase', 'migrations');
 
 const ALLOW_MARKER = /--\s*lint:allow-placeholder\b/i;
+const ALLOW_QUOTA_MARKER = /--\s*lint:allow-quota-write\b/i;
+
+// ── Quota-never-reset rule (testing-strategy Phase 1, gap 2) ────────────────
+//
+// Product rule (§8 / CLAUDE.md payments): "Never reset user quotas on deploy —
+// quota defaults belong in application code, not in migration
+// INSERT … ON CONFLICT DO UPDATE scripts." A migration that executes TOP-LEVEL
+// DML against a quota/usage-state table silently rewrites live per-user
+// counters on every environment the chain is applied to.
+//
+// Scope precision:
+//   - Only TOP-LEVEL statements are flagged. DML inside dollar-quoted bodies
+//     (`$$ … $$`, `$tag$ … $tag$` — i.e. CREATE FUNCTION / DO blocks) is
+//     application-level logic executed at RUNTIME, not at deploy, and every
+//     existing quota write in the chain lives there (verified 2026-07-13:
+//     stem_lab_engagement_tier1, purchase_streak_freeze_rpc,
+//     platform_security_layer, baseline — all inside function bodies).
+//   - Opt-out for a deliberate, reviewed backfill: -- lint:allow-quota-write
+const QUOTA_STATE_TABLES = [
+  'student_daily_usage',
+  'api_rate_limits',
+  'api_rate_limits_v2',
+  'rate_limits',
+  'coin_balances',
+  'security_request_usage_daily',
+  'security_request_usage_monthly',
+  'security_tenant_ai_usage_daily',
+  'security_tenant_ai_usage_monthly',
+  'security_tenant_ai_budgets',
+];
+
+const QUOTA_TABLE_ALTERNATION = QUOTA_STATE_TABLES.join('|');
+// INSERT INTO / UPDATE / DELETE FROM / TRUNCATE on a quota-state table.
+// Table may be schema-qualified (public.) and/or double-quoted.
+const QUOTA_DML_RE = new RegExp(
+  '\\b(?:' +
+    `insert\\s+into\\s+(?:"?public"?\\s*\\.\\s*)?"?(${QUOTA_TABLE_ALTERNATION})"?\\b` +
+    '|' +
+    `update\\s+(?:only\\s+)?(?:"?public"?\\s*\\.\\s*)?"?(${QUOTA_TABLE_ALTERNATION})"?\\s+set\\b` +
+    '|' +
+    `delete\\s+from\\s+(?:only\\s+)?(?:"?public"?\\s*\\.\\s*)?"?(${QUOTA_TABLE_ALTERNATION})"?\\b` +
+    '|' +
+    `truncate\\s+(?:table\\s+)?(?:only\\s+)?(?:"?public"?\\s*\\.\\s*)?"?(${QUOTA_TABLE_ALTERNATION})"?\\b` +
+    ')',
+  'gi',
+);
+
+/**
+ * Strip dollar-quoted bodies (`$$ … $$`, `$tag$ … $tag$`) so only TOP-LEVEL
+ * (deploy-time) statements remain for the quota rule. Non-nested, matching
+ * PostgreSQL's own tag semantics: a body opened with $tag$ closes only at the
+ * next identical $tag$.
+ */
+function stripDollarQuotedBodies(sql) {
+  return sql.replace(/\$([A-Za-z_][A-Za-z0-9_]*)?\$[\s\S]*?\$\1\$/g, ' ');
+}
+
+/**
+ * Returns the list of quota-state tables hit by top-level DML in `sql`
+ * (already comment-stripped). Empty array = clean.
+ */
+function findTopLevelQuotaWrites(sql) {
+  const topLevel = stripDollarQuotedBodies(sql);
+  const tables = new Set();
+  let m;
+  while ((m = QUOTA_DML_RE.exec(topLevel)) !== null) {
+    const table = m[1] || m[2] || m[3] || m[4];
+    if (table) tables.add(table.toLowerCase());
+  }
+  QUOTA_DML_RE.lastIndex = 0;
+  return [...tables].sort();
+}
 
 // Body patterns we treat as "no-op placeholder" once comments + whitespace
 // are stripped. Each pattern is matched against the fully-normalized body
@@ -112,12 +184,25 @@ function listMigrationFiles(dir) {
 
 function lintFile(filePath) {
   const raw = fs.readFileSync(filePath, 'utf8');
+  const stripped = stripComments(raw);
+
+  // ── Quota-never-reset rule — runs even on allow-placeholder files (the two
+  // markers are independent opt-outs for independent hazards). ──
+  if (!ALLOW_QUOTA_MARKER.test(raw)) {
+    const quotaHits = findTopLevelQuotaWrites(stripped);
+    if (quotaHits.length > 0) {
+      return {
+        status: 'fail',
+        reason: `top-level DML on quota-state table(s): ${quotaHits.join(', ')} — quota defaults belong in application code, not migrations`,
+      };
+    }
+  }
+
   // The allow marker must appear in the original source (comments are where
   // it lives). Check before stripping.
   if (ALLOW_MARKER.test(raw)) {
     return { status: 'allowed' };
   }
-  const stripped = stripComments(raw);
   const normalized = normalizeBody(stripped);
   if (normalized === '') {
     // File is comment-only / empty. That's arguably also a problem
@@ -176,4 +261,6 @@ module.exports = {
   normalizeBody,
   isPlaceholder,
   lintFile,
+  stripDollarQuotedBodies,
+  findTopLevelQuotaWrites,
 };
