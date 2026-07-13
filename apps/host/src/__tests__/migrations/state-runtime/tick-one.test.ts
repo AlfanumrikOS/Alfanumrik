@@ -27,10 +27,18 @@ const ctx: SubscriberContext = {
 const RUN_ID       = crypto.randomUUID().replace(/-/g, '');
 const RUN_ACTOR_ID = crypto.randomUUID();                // unique per-run event tag
 
-// Per-run base, far in the future and randomly offset so concurrent/past runs
-// occupy different ~136-year bands (cross-run separation — same intent as before).
-const RUN_OFFSET_SEC = parseInt(RUN_ID.slice(0, 8), 16); // 0..4294967295 ≈ 136-year spread
-const RUN_BASE_MS    = Date.now() + 365 * 24 * 3600_000 + RUN_OFFSET_SEC * 1000;
+// Per-run base in the RECENT PAST with a bounded per-run offset for cross-run
+// separation. MUST NOT be far-future: the bus cursor now orders by `created_at`
+// (runtime/tick-one.ts), and insertEvent sets created_at = occurredAt, so a
+// far-future value here would advance a subscriber watermark into the future
+// and skip real events — the exact 2026-07-13 poison-watermark incident, now on
+// the created_at axis. 30 days ago + up to a 7-day per-run offset keeps runs
+// separated, near-present, and never future. Cross-run isolation on a shared
+// state-runtime DB additionally rests on the per-run subscriber name + the
+// RUN_ACTOR_ID delete below; the durable fix is a per-run isolated DB (see the
+// hasIsolatedStateRuntimeDb TODO in the helper).
+const RUN_OFFSET_SEC = parseInt(RUN_ID.slice(0, 8), 16) % (7 * 24 * 3600); // 0..7 days
+const RUN_BASE_MS    = Date.now() - 30 * 24 * 3600_000 + RUN_OFFSET_SEC * 1000;
 
 const HAPPY = `happy-${RUN_ID.slice(0, 6)}`;
 
