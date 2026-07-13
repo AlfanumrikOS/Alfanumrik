@@ -1,3 +1,7 @@
+// Ops note (2026-07-13): get_cron_secret() was rotated in-database the same
+// day the DB-fallback below shipped; pg_cron jobs read the identical value
+// from vault ('cron_secret'). Rotate BOTH together — see the runbook entry in
+// docs/runbooks/edge-function-drift-report.md execution log.
 import { checkBearerToken, constantTimeEqual } from '../auth.ts'
 import { buildCanonicalInternalRequest, sha256Hex, verifyInternalRequestSignature } from './request-signature.ts'
 import { writeSecurityAudit } from './audit.ts'
