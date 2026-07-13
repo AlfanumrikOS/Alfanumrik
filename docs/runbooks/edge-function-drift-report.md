@@ -232,3 +232,35 @@ tombstone is reversible (redeploy) and fails loudly per Hard Rule 10; run the
 `supabase functions delete` commands above for permanent removal after a clean
 observation window. The remaining Category A orphans are untouched — deleting
 them stays a separate ops task per this runbook.
+
+## Execution log — 2026-07-13 (full Category A sweep, tech-debt remediation Phase 1)
+
+All 35 remaining Category A orphans were **tombstoned** (structured 410 with a
+pointer to the canonical replacement where one exists): adaptive-engine,
+adaptive-orchestrator, chat-history, classify-rag-exercises, cognitive-engine,
+devops-agent, diagnostic-engine, ingest-orchestrator, learning-analytics,
+learning-loop, lesson-engine, mass-gen, misconception-engine, ml-adaptation,
+ncert-ingest-v2, ncert-ingest-v3, ncert-ingestion, offline-sync, pdf-diagnose,
+pdf-ingestion, pdf-processor, pilot-analytics, pool-generator, quiz-submit,
+rag-engine, rag-retrieval, response-handler, session-manager,
+student-experience, student-notes, study-plan, tarl-engine, tts-voice,
+voice-tutor, welcome-email.
+
+Pre-sweep verification: the Category A reference scan was re-run fresh
+(grep across apps/, packages/, src/, mobile/, supabase/functions/, vercel.json
+for `functions/v1/<name>` + `invoke('<name>')`) — zero hits for all 35.
+
+**Deliberately NOT touched:**
+- `payments` — remains live until the Razorpay dashboard webhook URL is
+  confirmed to point at the Vercel route (this runbook's warning stands).
+- `super-admin` (Category C) — human eyeball still required per above.
+- `quiz-engine` (Category B) — RESOLVED by verification: the function no
+  longer exists in production at all, and `packages/lib/src/domains/quiz.ts`
+  already invokes `quiz-generator`; only a stale comment remained (fixed).
+- `foxy-tutor` — NOT an orphan: still invoked by the live Flutter app
+  (mobile/lib/data/repositories/chat_repository.dart) despite the
+  constitution's "retired 2026-07-01" claim. Repoint mobile before touching.
+
+Permanent deletion (`supabase functions delete`) remains available per the
+command list above after a clean observation window (suggest 30 days —
+tombstone hits show up as 410s in edge logs if anything unknown calls one).
