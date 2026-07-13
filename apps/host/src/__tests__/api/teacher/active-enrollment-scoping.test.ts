@@ -72,8 +72,8 @@ function readSource(rel: string): string {
 /**
  * Extract the `.from('<table>')` query-builder chain as a single whitespace-
  * collapsed string: from the `.from('<table>')` token through the first
- * terminator (`.maybeSingle(` / `.single(` / `.limit(` / `;`). Returns null when
- * the table is never queried. Lets us assert a filter is ON THE RIGHT chain.
+ * terminator (`.maybeSingle(` / `.single(` / `;`). Returns null when the table
+ * is never queried. Lets us assert a filter is ON THE RIGHT chain.
  */
 function fromChain(src: string, table: string): string | null {
   const marker = `.from('${table}')`;
@@ -86,6 +86,32 @@ function fromChain(src: string, table: string): string | null {
   return slice.replace(/\s+/g, ' ');
 }
 
+/**
+ * ALL `.from('<table>')` chains in the file, in source order. 2026-07-13
+ * (REG-201 canary repair): the original single-chain extractor silently pinned
+ * whichever chain appeared FIRST. When the remediation route later gained a
+ * second, earlier `class_enrollments` read (the bulk teacher-classes roster
+ * builder for GET), the canary started asserting student-scoping against the
+ * bulk chain — a false positive of the extractor, not a P8 regression (the
+ * student-scoped membership check still exists, still is_active-filtered).
+ * Asserting over EVERY chain is strictly stronger: no enrollment read can now
+ * appear anywhere in the file without carrying its boundary filters.
+ */
+function fromChains(src: string, table: string): string[] {
+  const marker = `.from('${table}')`;
+  const chains: string[] = [];
+  let idx = src.indexOf(marker);
+  while (idx !== -1) {
+    const rest = src.slice(idx);
+    const termRe = /\.maybeSingle\(|\.single\(|;/;
+    const m = termRe.exec(rest);
+    const slice = m ? rest.slice(0, m.index + (m[0] === ';' ? 1 : 0)) : rest;
+    chains.push(slice.replace(/\s+/g, ' '));
+    idx = src.indexOf(marker, idx + marker.length);
+  }
+  return chains;
+}
+
 const REMEDIATION = 'src/app/api/teacher/remediation/route.ts';
 const PARENT_NOTIFY = 'src/app/api/teacher/parent-notify/route.ts';
 const ENROLL = 'src/app/api/schools/enroll/route.ts';
@@ -96,25 +122,46 @@ const TEACHER_ROUTES: Array<[string, string]> = [
 ];
 
 describe('Tier-2 PR A — teacher/enrollment is_active scoping (P8) — REG-201', () => {
-  // ── Assertion 1: both teacher roster lookups filter on is_active ──────────
+  // ── Assertion 1: EVERY class_enrollments read is boundary-scoped ──────────
+  // 2026-07-13 (canary repair, see fromChains docstring): the remediation route
+  // now has TWO enrollment reads — a bulk teacher-classes roster builder (GET
+  // list scope) and the student-scoped membership check (POST assign path).
+  // Both must carry the P8 boundary: is_active=true AND class scoping to the
+  // teacher's classes. At least one chain must additionally be student-scoped
+  // (the membership check that gates assignment).
   describe.each(TEACHER_ROUTES)(
-    'teacher/%s — class_enrollments roster lookup is is_active-scoped',
+    'teacher/%s — every class_enrollments read is is_active + class scoped',
     (_name, rel) => {
       const src = readSource(rel);
-      const chain = fromChain(src, 'class_enrollments');
+      const enrollmentChains = fromChains(src, 'class_enrollments');
 
-      it('queries class_enrollments (non-vacuous: from + select present)', () => {
-        expect(chain).not.toBeNull();
-        // Confirm this is the real roster read, not a stray reference.
-        expect(chain).toContain(".from('class_enrollments')");
-        expect(chain).toContain('.select(');
-        // The roster read is scoped to the requested student + the teacher's classes.
-        expect(chain).toContain(".eq('student_id'");
-        expect(chain).toContain(".in('class_id'");
+      it('queries class_enrollments (non-vacuous: at least one chain with select present)', () => {
+        expect(enrollmentChains.length).toBeGreaterThan(0);
+        for (const chain of enrollmentChains) {
+          expect(chain).toContain(".from('class_enrollments')");
+          expect(chain).toContain('.select(');
+        }
       });
 
-      it("includes .eq('is_active', true) ON the class_enrollments chain", () => {
-        expect(chain).toContain(".eq('is_active', true)");
+      it("EVERY class_enrollments chain includes .eq('is_active', true) — the only boundary on an admin-client read", () => {
+        for (const chain of enrollmentChains) {
+          expect(chain).toContain(".eq('is_active', true)");
+        }
+      });
+
+      it("EVERY class_enrollments chain is scoped to the teacher's classes (.in('class_id' or .eq('class_id')", () => {
+        for (const chain of enrollmentChains) {
+          const classScoped = chain.includes(".in('class_id'") || chain.includes(".eq('class_id'");
+          expect(classScoped, `chain missing class scoping: ${chain}`).toBe(true);
+        }
+      });
+
+      it('at least one chain is the student-scoped membership check (.eq(\'student_id\')', () => {
+        const studentScoped = enrollmentChains.filter((c) => c.includes(".eq('student_id'"));
+        expect(studentScoped.length).toBeGreaterThan(0);
+        for (const chain of studentScoped) {
+          expect(chain).toContain(".eq('is_active', true)");
+        }
       });
     },
   );
@@ -143,16 +190,31 @@ describe('Tier-2 PR A — teacher/enrollment is_active scoping (P8) — REG-201'
     'teacher/%s — guard: class_teachers (teacher-auth) lookup preserved & NOT is_active-narrowed',
     (_name, rel) => {
       const src = readSource(rel);
-      const teacherChain = fromChain(src, 'class_teachers');
+      const teacherChains = fromChains(src, 'class_teachers');
 
-      it('still performs the class_teachers teacher-auth lookup', () => {
-        expect(teacherChain).not.toBeNull();
-        expect(teacherChain).toContain(".from('class_teachers')");
-        expect(teacherChain).toContain(".eq('teacher_id'");
+      it('still performs the class_teachers teacher-auth lookup on every chain', () => {
+        expect(teacherChains.length).toBeGreaterThan(0);
+        for (const chain of teacherChains) {
+          expect(chain).toContain(".from('class_teachers')");
+          expect(chain).toContain(".eq('teacher_id'");
+        }
       });
 
-      it('did NOT add an is_active filter to the class_teachers lookup (the change is on class_enrollments only)', () => {
-        expect(teacherChain).not.toContain('is_active');
+      // 2026-07-13 (canary repair): the ORIGINAL guard pinned "did NOT add
+      // is_active to class_teachers" because Tier-2 PR A's change was scoped to
+      // class_enrollments only. The remediation route has since DELIBERATELY
+      // adopted is_active scoping on class_teachers as well — its header doc
+      // requires "active class_teachers and class_enrollments rows", and the
+      // effect is fail-CLOSED (a deactivated teacher loses remediation access),
+      // i.e. strictly tighter than what this guard protected against. The pin
+      // is therefore updated: is_active on class_teachers is ALLOWED everywhere
+      // and REQUIRED on teacher/remediation. Weakening back (removing it from
+      // remediation) turns this red again.
+      it('teacher/remediation class_teachers lookups are is_active-scoped (fail-closed teacher auth)', () => {
+        if (rel !== REMEDIATION) return;
+        for (const chain of teacherChains) {
+          expect(chain).toContain(".eq('is_active', true)");
+        }
       });
     },
   );
