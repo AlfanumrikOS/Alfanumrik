@@ -20,6 +20,10 @@ import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
+import {
+  getActiveTopicsForSubjects,
+  getSubjectIdCodeRows,
+} from '@/lib/curriculum/cached-taxonomy';
 
 interface AvailableSubjectRow {
   code: string;
@@ -76,33 +80,22 @@ export async function GET(request: NextRequest) {
       return v2Success({ schemaVersion: 1 as const, grade, subjects: [] });
     }
 
-    // 2. Resolve subject code → subject id (one query).
+    // 2. Resolve subject code → subject id (cached reference data — ADR-007).
     const codes = subjectRows.map((s) => s.code);
-    const { data: subjectMeta } = await admin
-      .from('subjects')
-      .select('id, code')
-      .in('code', codes);
+    const subjectMeta = await getSubjectIdCodeRows(codes);
     const idByCode = new Map<string, string>();
     const codeById = new Map<string, string>();
-    for (const m of (subjectMeta ?? []) as Array<{ id: string; code: string }>) {
+    for (const m of subjectMeta) {
       idByCode.set(m.code, m.id);
       codeById.set(m.id, m.code);
     }
 
-    // 3. Fetch curriculum topics for these subjects + grade (one query).
+    // 3. Fetch curriculum topics for these subjects + grade via the shared
+    //    cached taxonomy fetcher (tag: 'syllabus', TTL 1h, revalidated on
+    //    admin content writes). Public reference data only — the per-user
+    //    plan gating above stays uncached by design (§8).
     const subjectIds = [...idByCode.values()];
-    let topics: TopicRow[] = [];
-    if (subjectIds.length > 0) {
-      const { data: topicData } = await admin
-        .from('curriculum_topics')
-        .select('id, subject_id, chapter_number, title, title_hi, parent_topic_id')
-        .in('subject_id', subjectIds)
-        .eq('grade', grade)
-        .eq('is_active', true)
-        .order('chapter_number', { ascending: true })
-        .order('display_order', { ascending: true });
-      topics = (topicData ?? []) as TopicRow[];
-    }
+    const topics: TopicRow[] = await getActiveTopicsForSubjects(grade, subjectIds);
 
     // 4. Group topics by subject → chapter_number.
     //    chapter "title" uses the first top-level (parent_topic_id null) topic's

@@ -1005,6 +1005,12 @@ jobs:
       - name: One Experience V3 contract gate
         run: npm run check:v3-frontend
 
+      # ADR-006 #4: both Anthropic call paths (Node claude.ts, Deno
+      # reliability.ts) must keep exponential-backoff retry on 429/5xx/529.
+      # Guards against incident class #4 (500/529 cascades).
+      - name: AI retry parity gate
+        run: node scripts/check-ai-retry-parity.mjs
+
       # Security audit: critical vulns fail CI, others warn.
       - name: Security audit
         run: npm audit --audit-level=critical || echo "::warning::npm audit found vulnerabilities"
