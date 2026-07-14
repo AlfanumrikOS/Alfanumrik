@@ -1438,7 +1438,7 @@ function ChapterConceptPageContent() {
                       {productiveFailureActive && question && !isAnswered && (
                         <div
                           className="rounded-xl p-3 mb-3"
-                          style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
+                          style={{ background: 'rgba(232,88,28,0.06)', border: '1px solid rgba(232,88,28,0.2)' }}
                           data-testid="productive-failure-banner"
                         >
                           <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#E8581C' }}>

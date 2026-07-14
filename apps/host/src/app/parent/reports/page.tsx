@@ -1082,7 +1082,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 12 }}>
               <div style={{ textAlign: 'center', padding: 12, backgroundColor: '#F8FAFC', borderRadius: 12 }}>
                 <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase' as const }}>{t(isHi, 'Predicted Score', 'अनुमानित अंक')}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#E8581C' }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--orange)' }}>
                   {monthlyData.predictedScore ?? '--'}
                 </div>
                 <div style={{ fontSize: 10, color: '#94A3B8' }}>/80</div>

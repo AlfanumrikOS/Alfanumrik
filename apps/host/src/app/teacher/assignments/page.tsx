@@ -240,7 +240,7 @@ function AssignmentsPageContent() {
     return (
       <div style={pageStyle}>
         <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: '#E8581C', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: 'var(--orange)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
           {tt(isHi, 'Loading assignments...', 'असाइनमेंट लोड हो रहे हैं...')}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -301,7 +301,7 @@ function AssignmentsPageContent() {
       {error && (
         <div style={{ backgroundColor: 'rgba(220,38,38,0.1)', border: '1px solid #DC2626', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#B91C1C', fontSize: 14 }}>
           {error}
-          <button onClick={loadData} style={{ marginLeft: 12, color: '#E8581C', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+          <button onClick={loadData} style={{ marginLeft: 12, color: 'var(--orange)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
             {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
         </div>
@@ -319,7 +319,7 @@ function AssignmentsPageContent() {
           </p>
           <button
             onClick={() => { resetForm(); setShowModal(true); }}
-            style={{ padding: '12px 28px', background: 'linear-gradient(135deg, #E8581C, #C2410C)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
+            style={{ padding: '12px 28px', background: 'linear-gradient(135deg, var(--orange), #C2410C)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
           >
             {tt(isHi, 'Create First Assignment', 'पहला असाइनमेंट बनाएं')}
           </button>
@@ -518,7 +518,7 @@ function AssignmentsPageContent() {
                       padding: '9px 0',
                       borderRadius: 8,
                       border: '1px solid',
-                      borderColor: formDifficulty === d ? '#E8581C' : '#EDE6DC',
+                      borderColor: formDifficulty === d ? 'var(--orange)' : '#EDE6DC',
                       backgroundColor: formDifficulty === d ? '#FBE6D9' : 'transparent',
                       color: formDifficulty === d ? '#C2410C' : '#7D7264',
                       fontSize: 13,
@@ -542,7 +542,7 @@ function AssignmentsPageContent() {
                 step={1}
                 value={formCount}
                 onChange={e => setFormCount(Number(e.target.value))}
-                style={{ width: '100%', accentColor: '#E8581C' }}
+                style={{ width: '100%', accentColor: 'var(--orange)' }}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#7D7264', marginTop: 2 }}>
                 <span>5</span><span>20</span>

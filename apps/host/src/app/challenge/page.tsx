@@ -457,7 +457,7 @@ export default function ChallengePage() {
               <div
                 className="rounded-xl p-3 flex items-center gap-3"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.06), rgba(249, 115, 22, 0.04))',
+                  background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.06), rgba(232, 88, 28, 0.04))',
                   border: '1px solid rgba(124, 58, 237, 0.15)',
                 }}
               >
@@ -515,7 +515,7 @@ export default function ChallengePage() {
                   className="rounded-2xl p-5 text-center space-y-2 animate-bounce-in"
                   style={{
                     background: 'linear-gradient(135deg, #FFF7ED, #F5E6FF)',
-                    border: '1.5px solid rgba(249, 115, 22, 0.3)',
+                    border: '1.5px solid rgba(232, 88, 28, 0.3)',
                   }}
                 >
                   {milestones.map((m, i) => (

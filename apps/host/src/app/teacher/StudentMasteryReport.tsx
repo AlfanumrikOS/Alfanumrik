@@ -140,7 +140,7 @@ export default function StudentMasteryReport({
                 onClick={onShareWithParent}
                 disabled={shareWithParentBusy}
                 data-testid="report-share-parent-btn"
-                className="py-1 px-2.5 bg-[#E8581C] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                className="py-1 px-2.5 bg-[var(--orange)] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
               >
                 {shareWithParentBusy
                   ? tt(isHi, 'Sending…', 'भेजा जा रहा है…')
@@ -191,7 +191,7 @@ export default function StudentMasteryReport({
             <button
               type="button"
               onClick={onRetry}
-              className="py-2 px-5 bg-[#E8581C] text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
+              className="py-2 px-5 bg-[var(--orange)] text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
             >
               {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
             </button>

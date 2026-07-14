@@ -415,7 +415,7 @@ export default function LensRayDiagram() {
             value={objectDist}
             onChange={e => setObjectDist(parseFloat(e.target.value))}
             aria-label={`Object distance slider, ${objectDist.toFixed(1)} centimetres, range 2 to 35`}
-            style={{ width: '100%', accentColor: '#E8581C' }}
+            style={{ width: '100%', accentColor: 'var(--orange)' }}
           />
         </div>
         <div>

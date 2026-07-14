@@ -56,7 +56,7 @@ export default function CircleTheorems() {
       const a1=angle; const a2=180-angle;
       const [P,Q,S,T]=[ptOn(-80),ptOn(10),ptOn(120),ptOn(200)];
       return(<>
-        <polygon points={`${P.x},${P.y} ${Q.x},${Q.y} ${S.x},${S.y} ${T.x},${T.y}`} fill="rgba(249,115,22,0.12)" stroke="var(--orange)" strokeWidth="1.5"/>
+        <polygon points={`${P.x},${P.y} ${Q.x},${Q.y} ${S.x},${S.y} ${T.x},${T.y}`} fill="rgba(232,88,28,0.12)" stroke="var(--orange)" strokeWidth="1.5"/>
         {[P,Q,S,T].map((p,i)=><circle key={i} cx={p.x} cy={p.y} r={4} fill="var(--orange)"/>)}
         <text x={P.x+8} y={P.y+4} fontSize="10" fill="var(--orange)">{fmtAng(a1)}</text>
         <text x={S.x+8} y={S.y+4} fontSize="10" fill="var(--purple)">{fmtAng(a2)}</text>

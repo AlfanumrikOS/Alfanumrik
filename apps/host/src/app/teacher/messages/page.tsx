@@ -250,7 +250,7 @@ function TeacherMessagesContent() {
                         {t.student_name ? `→ ${t.student_name}` : ''}
                       </span>
                       {t.unread_count > 0 && (
-                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#E8581C] px-1.5 text-[10px] font-semibold text-white">
+                        <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[var(--orange)] px-1.5 text-[10px] font-semibold text-white">
                           {t.unread_count > 99 ? '99+' : t.unread_count}
                         </span>
                       )}
@@ -293,7 +293,7 @@ function TeacherMessagesContent() {
               )}
               <div className="flex items-end gap-2">
                 <textarea
-                  className="min-h-[44px] flex-1 resize-none rounded-md border border-[#EDE6DC] bg-[#FFFFFF] px-3 py-2 text-sm text-[#1A1207] placeholder-[#A89B86] focus:border-[#E8581C] focus:outline-none"
+                  className="min-h-[44px] flex-1 resize-none rounded-md border border-[#EDE6DC] bg-[#FFFFFF] px-3 py-2 text-sm text-[#1A1207] placeholder-[#A89B86] focus:border-[var(--orange)] focus:outline-none"
                   rows={3}
                   maxLength={4000}
                   value={draftBody}
@@ -305,7 +305,7 @@ function TeacherMessagesContent() {
                 <button
                   type="submit"
                   disabled={sending || draftBody.trim().length === 0}
-                  className="rounded-md bg-[#E8581C] px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md bg-[var(--orange)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
                 </button>
@@ -352,7 +352,7 @@ function TeacherMessagesContent() {
                       <div
                         className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                           mine
-                            ? 'rounded-br-md bg-[#E8581C] text-white'
+                            ? 'rounded-br-md bg-[var(--orange)] text-white'
                             : 'rounded-bl-md bg-[#F5F0EA] text-[#1A1207]'
                         }`}
                       >
@@ -379,7 +379,7 @@ function TeacherMessagesContent() {
               )}
               <div className="flex items-end gap-2">
                 <textarea
-                  className="min-h-[44px] flex-1 resize-none rounded-md border border-[#EDE6DC] bg-[#FFFFFF] px-3 py-2 text-sm text-[#1A1207] placeholder-[#A89B86] focus:border-[#E8581C] focus:outline-none"
+                  className="min-h-[44px] flex-1 resize-none rounded-md border border-[#EDE6DC] bg-[#FFFFFF] px-3 py-2 text-sm text-[#1A1207] placeholder-[#A89B86] focus:border-[var(--orange)] focus:outline-none"
                   rows={2}
                   maxLength={4000}
                   value={draftBody}
@@ -390,7 +390,7 @@ function TeacherMessagesContent() {
                 <button
                   type="submit"
                   disabled={sending || draftBody.trim().length === 0}
-                  className="rounded-md bg-[#E8581C] px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-md bg-[var(--orange)] px-3 py-2 text-sm font-medium text-white transition-opacity hover:bg-[#C2410C] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {sending ? tt(isHi, 'Sending…', 'भेज रहे…') : tt(isHi, 'Send', 'भेजें')}
                 </button>

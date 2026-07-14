@@ -87,7 +87,7 @@ function ForTeachersContent() {
             <Link
               href="/login?role=teacher"
               className="text-sm font-bold px-8 py-3.5 rounded-xl text-white w-full sm:w-auto text-center"
-              style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+              style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
             >
               {t('Start Free', 'मुफ़्त शुरू करें')}
             </Link>
@@ -166,7 +166,7 @@ function ForTeachersContent() {
             <Link
               href="/login?role=teacher"
               className="text-sm font-bold px-8 py-3.5 rounded-xl text-white w-full sm:w-auto text-center"
-              style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+              style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
             >
               {t('Start Free', 'मुफ़्त शुरू करें')}
             </Link>
