@@ -7816,3 +7816,71 @@ unchanged). All four flag-gated default-OFF and byte-identical on the OFF path.
 **Total catalog: 213 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-247 — Foxy Perception + event-data-layer: observability-only `learner.turn_classified` + fire-and-forget/fail-safe classifier (flag `ff_foxy_perception_v1`, default OFF) (2026-07-15)
+
+Source: Foxy Intelligent Learning OS, Phase 1C ("Perception classifier"). After
+building the reply, `/api/foxy` fires a per-turn PERCEPTION classifier that turns
+each tutoring turn into structured, PII-free signal (topic → chapter_concepts uuid,
+Bloom level, misconception code, struggle signal, learner intent) and publishes a
+`learner.turn_classified` OBSERVABILITY event. The LLM classification runs ONLY on
+the Python MOL service (`POST /v1/classify`, cheap gpt-4o-mini evaluation task); the
+Node route calls it FIRE-AND-FORGET (a `void`ed async IIFE in the post-response
+phase) so the student's answer is returned with ZERO added latency and a classifier
+failure can never affect the turn.
+
+Files: `packages/lib/src/ai/clients/python-mol.ts` (Node fail-closed client to the
+Python MOL service), `packages/lib/src/foxy/perception.ts` (`classifyTurn` — a PURE
+orchestrator around the Python call; parse/validate → codes/ids/enums; reuses the
+EXISTING `resolveLeadConceptId` topic resolver + `MISCONCEPTION_CODE_REGEX` ontology
+gate; NEVER calls an LLM itself), `apps/host/src/app/api/foxy/route.ts` (post-response
+fire-and-forget block), `python/services/ai/api/v1/classify.py` +
+`python/services/ai/business/foxy_perception/*` + `python/services/ai/api/main.py`
+(the classify endpoint + models/classifier), migration
+`20260715130000_seed_ff_foxy_perception_v1.sql` (seeds `ff_foxy_perception_v1`
+is_enabled=false / rollout=0). Committed foundation this rests on:
+`learner.turn_classified` event kind (`packages/lib/src/state/events/registry.ts` +
+Deno `supabase/functions/_shared/state-runtime/events-registry.ts`), the journey
+projector's `null` mapping (`packages/lib/src/state/journey/journey.ts`), and
+`learning_events.student_pk`.
+
+**Why.** Perception is the first "sensor" of the Foxy Learning OS: it must generate
+rich in-turn signal WITHOUT ever putting student text on the bus or in logs (P13),
+WITHOUT writing any mastery/p_know/error surface (the binding assessment learner-state
+contract — P1/P2/P3 must stay byte-identical), and WITHOUT adding any latency or
+failure surface to the tutoring turn. It is doubly dark in production: the
+`ff_foxy_perception_v1` flag is default-OFF AND the Node client no-ops until
+`PYTHON_AI_BASE_URL` is wired in — so even a flipped flag is a no-op without infra.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-247 | `foxy_perception_observability_only_fire_and_forget_pii_free` | **(a) Observability-only — NO mastery write, journey→null, zero subscribers**: `learner.turn_classified` is OBSERVABILITY-ONLY per the binding assessment learner-state contract — the journey projector maps it to `null` (off the timeline, never a milestone) and NO subscriber consumes it (it appears only in the event registry + journey projector, never in `mastery-state-writer` / `concept-mastery-projector` / `scheduled-actions-writer` / any projector), so it can never feed a mastery / p_know / error surface. P1/P2/P3 are byte-identical (perception never scores, awards XP, or runs anti-cheat). **(b) Fire-and-forget + fail-safe (flag OFF / no infra → byte-identical, no publish, no latency)**: the whole step (flag read → Python classify → publish) lives in a single `void`ed post-response async block; the reply is never awaited on it. Flag OFF → `classifyTurn` is NEVER called and NO `learner.turn_classified` is published, and the turn still returns a clean 200 (byte-identical to today). `PYTHON_AI_BASE_URL` empty/unset → `callPythonMol` returns null unconditionally with NO fetch attempted (architect kill switch), so `classifyTurn` returns null and nothing publishes. A null/garbage/non-object Python body, a non-2xx / network error / AbortController timeout, a throwing classifier, or a throwing topic-resolver all resolve to null (or a best-effort classification with `topicId:null`) and NEVER throw / NEVER affect the 200 reply / NEVER publish an invalid event; a missing assistant message id also skips the publish (the registry requires a UUID `messageId`). **(c) P13 — codes/ids/enums only, no student text on the bus or in logs**: the returned `TurnClassification` and the published event payload carry CODES/IDS/ENUMS ONLY (studentId/foxySessionId/messageId/subjectCode/grade/chapterNumber/topicId/bloomLevel/misconceptionCode/struggleSignal/intent) — the student's message text is sent ONLY to the internal Python classifier (same trust boundary as the tutor LLM call) and is never placed on the object, the event, or a log; the event schema strips unknown PII-shaped keys (messageText/email/phone/name) and Bloom is normalized to the canonical LOWERCASE taxonomy; a hallucinated free-text misconception is dropped by the ontology regex; the Node client + route log status/enums/booleans only. **(d) Node↔Deno registry parity (CI-enforced)**: `learner.turn_classified` is present in BOTH the Node event registry and the Deno mirror (`extractDenoAllEventKinds` + `extractDenoLiteralKinds`), pinned by the Deno-parity suite. **(e) Python classify contract**: the `/v1/classify` models + classifier + endpoint accept a scoped body and return the snake_case classification shape (33 Python tests: 9 models + 19 classifier + 5 integration). | `apps/host/src/__tests__/api/foxy/perception.test.ts` (classifyTurn orchestration + validation + fail-safe + P13); `apps/host/src/__tests__/api/foxy/python-mol-client.test.ts` (fail-closed client — empty `PYTHON_AI_BASE_URL`→null/no-fetch, header forwarding, non-2xx/network/timeout→null); `apps/host/src/__tests__/api/foxy/perception-fire-and-forget.test.ts` (route wiring — flag ON publishes, flag OFF byte-identical, null/throwing classifier no-op, P13 payload); `apps/host/src/__tests__/state/events-registry-turn-classified.test.ts` (schema codes/ids/enums-only + P5 grade-string + P13 key-stripping); `apps/host/src/__tests__/state/events-registry-deno-parity.test.ts` (Node↔Deno parity); `python/tests/unit/test_foxy_perception_models.py`, `python/tests/unit/test_foxy_perception_classifier.py`, `python/tests/integration/test_classify_endpoint.py` | E | P13, P12, P5, P1/P2/P3 (untouched — observability-only) |
+
+### Invariants covered by this section
+
+- P13 (data privacy) — the raw turn text is sent ONLY to the internal Python
+  classifier; the returned `TurnClassification`, the `learner.turn_classified`
+  event payload, and every Node/route log carry codes/ids/enums ONLY. The event
+  schema strips unknown PII-shaped keys, and a hallucinated free-text misconception
+  is dropped by the ontology regex before it can be emitted.
+- P12 (AI safety) — classification is internal (CBSE-scoped, age-appropriate by the
+  Python classifier's prompt + model) and publishes NOTHING to students; it is a
+  pure post-response observability telemetry step, doubly dark (flag OFF +
+  `PYTHON_AI_BASE_URL` unset) until deliberately enabled.
+- P5 (grade format) — the event schema requires a grade STRING "6".."12" (integer /
+  out-of-range grades rejected).
+- P1 / P2 / P3 (scoring / XP / anti-cheat) — UNTOUCHED. `learner.turn_classified`
+  is observability-only: journey→null, zero subscribers, no mastery write. Flag OFF
+  and no-infra paths render `/api/foxy` byte-identical to today with no added latency.
+
+### Catalog total
+
+Pre-REG-247: 213 entries (through REG-243..REG-246, Foxy Learning OS Phase 0.2/0.3/0.4).
+Adds REG-247 (Foxy Perception + event-data-layer — `learner.turn_classified`
+observability-only [journey→null, zero subscribers, no mastery write] + fire-and-forget/
+fail-safe classifier [flag OFF or empty `PYTHON_AI_BASE_URL` → byte-identical, no
+publish, no added latency] + P13 codes/ids/enums-only + CI-enforced Node↔Deno registry
+parity; flag `ff_foxy_perception_v1`, default OFF).
+**Total catalog: 214 entries (target: 35 — TARGET EXCEEDED).**
+
+---

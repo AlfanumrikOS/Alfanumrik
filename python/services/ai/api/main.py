@@ -33,6 +33,7 @@ from .health import router as health_router
 from .limiter import limiter
 from .v1.bulk_non_mcq_gen import router as bulk_non_mcq_gen_router
 from .v1.bulk_question_gen import router as bulk_question_gen_router
+from .v1.classify import router as classify_router
 from .v1.extract_ncert_questions import router as extract_ncert_questions_router
 from .v1.foxy_tutor import router as foxy_tutor_router
 from .v1.generate import router as generate_router
@@ -155,6 +156,7 @@ def create_app() -> FastAPI:
     app.include_router(voice_router)
     app.include_router(nep_compliance_router)
     app.include_router(foxy_tutor_router)
+    app.include_router(classify_router)
     app.include_router(cme_router)
     app.include_router(ncert_solver_router)
     app.include_router(quiz_generator_router)

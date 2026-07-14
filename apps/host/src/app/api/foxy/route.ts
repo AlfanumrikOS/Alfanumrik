@@ -107,6 +107,13 @@ import { parseFoxyChapterNumber } from '@alfanumrik/lib/foxy/chapter-parser';
 // ./_lib/test-surface.ts. chapter-parser.ts remains the single source of truth;
 // this route imports it only for its own internal use below.
 import { detectStruggleSignal } from '@alfanumrik/lib/foxy/struggle-detection';
+// Foxy Perception (Phase 1C, 2026-07-15) — per-turn "sensor". Flag-gated by
+// ff_foxy_perception_v1 (default OFF) AND dark when PYTHON_AI_BASE_URL is unset.
+// classifyTurn is a PURE orchestrator around the Python MOL /v1/classify call;
+// it returns null on ANY failure so the Foxy turn is never affected. The route
+// fires it forget-and-forget in the post-response phase and publishes the
+// resulting learner.turn_classified observability event (codes/ids/enums only).
+import { classifyTurn } from '@alfanumrik/lib/foxy/perception';
 import type { LlmGrader } from '@alfanumrik/lib/ai/validation/quiz-oracle';
 import { parseLlmGraderResponse } from '@alfanumrik/lib/ai/validation/quiz-oracle';
 import {
@@ -2570,6 +2577,100 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       struggleErr instanceof Error ? struggleErr.message : String(struggleErr),
     );
   }
+
+  // ── Phase 1C: per-turn PERCEPTION classifier (OBSERVABILITY telemetry) ─────
+  // Turn this Foxy turn into structured, PII-free signal (topic / Bloom /
+  // misconception / struggle / intent) and PUBLISH learner.turn_classified.
+  //
+  // FULLY DARK IN PRODUCTION until BOTH (a) ff_foxy_perception_v1 is ON AND (b)
+  // PYTHON_AI_BASE_URL is wired in (callPythonMol returns null when it's empty).
+  //
+  // FIRE-AND-FORGET: the ENTIRE step — the flag read, the Python classification
+  // call, AND the publish — runs inside a single `void`ed async IIFE. Nothing
+  // here is awaited on the hot path, so the student's answer is returned below
+  // with ZERO added latency, and a classifier failure can NEVER affect the turn.
+  // When the flag is OFF the IIFE returns immediately (no classifier call, no
+  // DB write) → the turn is byte-identical to today.
+  //
+  // OBSERVABILITY ONLY: this NEVER writes a mastery surface. It publishes to the
+  // bus via publishEvent (itself a no-op when ff_event_bus_v1 is OFF). P13: the
+  // event carries codes/ids/enums ONLY — the student's message text is sent to
+  // the internal Python classifier but is never echoed onto the bus or logs.
+  void (async () => {
+    try {
+      // Off-hot-path gate — awaited HERE (in the background), never above.
+      const perceptionEnabled = await isFeatureEnabled('ff_foxy_perception_v1', {
+        role: 'student',
+        userId: auth.userId!,
+      });
+      // No assistant message id → no valid `messageId` for the event envelope
+      // (the registry requires a UUID). Skip rather than emit an invalid event.
+      if (!perceptionEnabled || !assistantMessageId) return;
+
+      const classification = await classifyTurn({
+        studentId,
+        grade: enrolledGrade,
+        subject,
+        chapter,
+        studentMessage: message,
+        foxyAnswer: assistantContent,
+        authToken: callerBearerToken,
+        supabase: supabaseAdmin,
+      });
+      if (!classification) return;
+
+      // Best-effort tenant scope (B2C → null), mirroring the struggle event.
+      let perceptionTenantId: string | null = null;
+      try {
+        const { data: schoolRow } = await supabaseAdmin
+          .from('students')
+          .select('school_id')
+          .eq('id', studentId)
+          .maybeSingle();
+        perceptionTenantId =
+          (schoolRow as { school_id?: string | null } | null)?.school_id ?? null;
+      } catch {
+        perceptionTenantId = null;
+      }
+
+      await publishEvent(supabaseAdmin, {
+        kind: 'learner.turn_classified',
+        eventId: randomUUID(),
+        occurredAt: new Date().toISOString(),
+        actorAuthUserId: auth.userId!,
+        tenantId: perceptionTenantId,
+        idempotencyKey: `turn_classified:${resolvedSessionId}:${assistantMessageId}`,
+        payload: {
+          studentId,
+          foxySessionId: resolvedSessionId,
+          messageId: assistantMessageId,
+          subjectCode: subject ? subject.toLowerCase() : subject,
+          grade: enrolledGrade,
+          chapterNumber: classification.chapterNumber,
+          topicId: classification.topicId,
+          bloomLevel: classification.bloomLevel,
+          misconceptionCode: classification.misconceptionCode,
+          struggleSignal: classification.struggleSignal,
+          intent: classification.intent,
+        },
+      });
+      logger.info('foxy.perception.turn_classified', {
+        // P13: enums/booleans + scope only — never the student's message, id,
+        // or the resolved topic id.
+        subject,
+        grade: enrolledGrade,
+        bloomLevel: classification.bloomLevel,
+        struggleSignal: classification.struggleSignal,
+        misconceptionBound: classification.misconceptionCode !== null,
+        topicBound: classification.topicId !== null,
+      });
+    } catch (perceptionErr) {
+      console.warn(
+        '[foxy] perception classify failed:',
+        perceptionErr instanceof Error ? perceptionErr.message : String(perceptionErr),
+      );
+    }
+  })();
 
   // Post-response cognitive logging (fire-and-forget)
   if (cognitiveCtx.nextAction) {
