@@ -108,7 +108,7 @@ const spinnerStyle: React.CSSProperties = {
   width: 36,
   height: 36,
   border: '3px solid #EDE6DC',
-  borderTopColor: '#E8581C',
+  borderTopColor: 'var(--orange)',
   borderRadius: '50%',
   margin: '0 auto 14px',
   animation: 'spin 0.8s linear infinite',
@@ -442,7 +442,7 @@ export default function TeacherAttendancePage() {
             onClick={() => router.push('/teacher')}
             style={{
               background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6,
-              padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600,
+              padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600,
               cursor: 'pointer', marginBottom: 8,
             }}
           >
@@ -480,7 +480,7 @@ export default function TeacherAttendancePage() {
             onClick={() => router.push('/teacher')}
             style={{
               background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6,
-              padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600,
+              padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600,
               cursor: 'pointer', marginBottom: 8,
             }}
           >
@@ -680,7 +680,7 @@ export default function TeacherAttendancePage() {
             disabled={saving}
             style={{
               padding: '12px 28px',
-              backgroundColor: saving ? '#C2410C' : '#E8581C',
+              backgroundColor: saving ? '#C2410C' : 'var(--orange)',
               color: '#fff',
               border: 'none',
               borderRadius: 10,

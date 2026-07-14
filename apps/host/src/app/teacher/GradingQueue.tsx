@@ -147,7 +147,7 @@ export default function GradingQueue({
             <button
               type="button"
               onClick={onRetry}
-              className="py-2 px-5 bg-[#E8581C] text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
+              className="py-2 px-5 bg-[var(--orange)] text-white border-none rounded-lg text-[13px] font-semibold cursor-pointer"
             >
               {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
             </button>

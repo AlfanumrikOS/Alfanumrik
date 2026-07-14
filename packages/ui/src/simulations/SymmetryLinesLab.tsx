@@ -46,7 +46,7 @@ export default function SymmetryLinesLab() {
       const pts = Array.from({length:n},(_,i)=>({ x:cx+r*Math.cos(i*2*Math.PI/n-Math.PI/2), y:cy+r*Math.sin(i*2*Math.PI/n-Math.PI/2) }));
       ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
       pts.forEach(p=>ctx.lineTo(p.x,p.y)); ctx.closePath();
-      ctx.fillStyle='rgba(249,115,22,0.18)'; ctx.fill();
+      ctx.fillStyle='rgba(232,88,28,0.18)'; ctx.fill();
       ctx.strokeStyle='var(--orange)'; ctx.lineWidth=2.5; ctx.stroke();
       ctx.setLineDash([6,4]); ctx.lineWidth=1.5; ctx.strokeStyle='#ef4444';
       for (let i=0; i<n; i++) {

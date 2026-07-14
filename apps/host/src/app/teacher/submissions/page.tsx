@@ -70,7 +70,7 @@ const spinnerStyle: React.CSSProperties = {
   width: 40,
   height: 40,
   border: '3px solid #EDE6DC',
-  borderTopColor: '#E8581C',
+  borderTopColor: 'var(--orange)',
   borderRadius: '50%',
   margin: '0 auto 16px',
   animation: 'spin 0.8s linear infinite',
@@ -245,7 +245,7 @@ function SubmissionListView({
     <div>
       <button
         onClick={onBack}
-        style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}
+        style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}
       >
         &larr; {tt(isHi, 'Back to assignments', 'असाइनमेंट पर वापस')}
       </button>
@@ -363,7 +363,7 @@ function SubmissionDetailView({
       <div>
         <button
           onClick={onBack}
-          style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}
+          style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}
         >
           &larr; {tt(isHi, 'Back', 'वापस')}
         </button>
@@ -409,7 +409,7 @@ function SubmissionDetailView({
     <div>
       <button
         onClick={onBack}
-        style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}
+        style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 12 }}
       >
         &larr; {tt(isHi, 'Back to submissions', 'सबमिशन पर वापस')}
       </button>
@@ -718,7 +718,7 @@ function TeacherSubmissionsPageContent() {
         <div>
           <button
             onClick={() => router.push('/teacher')}
-            style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
             &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
           </button>
@@ -732,7 +732,7 @@ function TeacherSubmissionsPageContent() {
         {!selected && (
           <button
             onClick={loadAssignments}
-            style={{ padding: '8px 16px', background: 'transparent', color: '#E8581C', border: '1px solid #E8581C', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+            style={{ padding: '8px 16px', background: 'transparent', color: 'var(--orange)', border: '1px solid var(--orange)', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
           >
             {tt(isHi, 'Refresh', 'रिफ्रेश')}
           </button>

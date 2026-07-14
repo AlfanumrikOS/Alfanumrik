@@ -92,7 +92,7 @@ function ForParentsContent() {
           <Link
             href="/login?role=parent"
             className="inline-block text-sm font-bold px-8 py-3.5 rounded-xl text-white"
-            style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+            style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
           >
             {t('Join as Parent', 'अभिभावक के रूप में जुड़ें')}
           </Link>
@@ -132,7 +132,7 @@ function ForParentsContent() {
               <div key={s.step} className="text-center">
                 <div
                   className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-extrabold mx-auto mb-4 text-white"
-                  style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+                  style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
                 >
                   {s.step}
                 </div>
@@ -181,7 +181,7 @@ function ForParentsContent() {
           <Link
             href="/login?role=parent"
             className="inline-block text-sm font-bold px-8 py-3.5 rounded-xl text-white"
-            style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+            style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
           >
             {t('Join as Parent', 'अभिभावक के रूप में जुड़ें')}
           </Link>

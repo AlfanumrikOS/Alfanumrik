@@ -177,7 +177,11 @@ export default function ParentMobileNav({
                     }}
                     className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
                     style={{
+<<<<<<< Updated upstream
                       background: active ? 'rgba(249, 115, 22, 0.08)' : 'transparent',
+=======
+                      background: active ? 'rgba(232, 88, 28, 0.08)' : 'transparent',
+>>>>>>> Stashed changes
                       color: active ? '#E8581C' : 'var(--text-2)',
                     }}
                   >

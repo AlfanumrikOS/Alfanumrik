@@ -26,9 +26,9 @@ export default function SurfaceAreaVolume() {
       const off=h*(shape==='cube'?6:5); const ox=off*0.8; const oy=off*0.5;
       const x=cx-fw/2; const y=cy-fh/2;
       return(<>
-        <polygon points={`${x+ox},${y-oy} ${x+ox+fw},${y-oy} ${x+fw},${y} ${x},${y}`} fill="rgba(249,115,22,0.25)" stroke="var(--purple)" strokeWidth="2"/>
-        <rect x={x} y={y} width={fw} height={fh} fill="rgba(249,115,22,0.18)" stroke="var(--orange)" strokeWidth="2"/>
-        <polygon points={`${x+fw},${y} ${x+fw+ox},${y-oy} ${x+fw+ox},${y+fh-oy} ${x+fw},${y+fh}`} fill="rgba(249,115,22,0.1)" stroke="var(--purple)" strokeWidth="2"/>
+        <polygon points={`${x+ox},${y-oy} ${x+ox+fw},${y-oy} ${x+fw},${y} ${x},${y}`} fill="rgba(232,88,28,0.25)" stroke="var(--purple)" strokeWidth="2"/>
+        <rect x={x} y={y} width={fw} height={fh} fill="rgba(232,88,28,0.18)" stroke="var(--orange)" strokeWidth="2"/>
+        <polygon points={`${x+fw},${y} ${x+fw+ox},${y-oy} ${x+fw+ox},${y+fh-oy} ${x+fw},${y+fh}`} fill="rgba(232,88,28,0.1)" stroke="var(--purple)" strokeWidth="2"/>
         <line x1={x} y1={y+fh} x2={x+ox} y2={y+fh-oy} stroke="var(--text-2)" strokeWidth="1" strokeDasharray="4,3"/>
         <line x1={x+ox} y1={y+fh-oy} x2={x+fw+ox} y2={y+fh-oy} stroke="var(--text-2)" strokeWidth="1" strokeDasharray="4,3"/>
         <line x1={x+ox} y1={y-oy} x2={x+ox} y2={y+fh-oy} stroke="var(--text-2)" strokeWidth="1" strokeDasharray="4,3"/>
@@ -39,11 +39,11 @@ export default function SurfaceAreaVolume() {
       const rr=Math.min(r*10,70); const hh=Math.min(h*12,140); const ey=hh*0.18;
       const x=cx; const y=cy-hh/2;
       return(<>
-        <ellipse cx={x} cy={y+hh} rx={rr} ry={ey} fill="rgba(249,115,22,0.2)" stroke="var(--orange)" strokeWidth="2"/>
-        <rect x={x-rr} y={y} width={rr*2} height={hh} fill="rgba(249,115,22,0.15)" stroke="none"/>
+        <ellipse cx={x} cy={y+hh} rx={rr} ry={ey} fill="rgba(232,88,28,0.2)" stroke="var(--orange)" strokeWidth="2"/>
+        <rect x={x-rr} y={y} width={rr*2} height={hh} fill="rgba(232,88,28,0.15)" stroke="none"/>
         <line x1={x-rr} y1={y} x2={x-rr} y2={y+hh} stroke="var(--orange)" strokeWidth="2"/>
         <line x1={x+rr} y1={y} x2={x+rr} y2={y+hh} stroke="var(--orange)" strokeWidth="2"/>
-        <ellipse cx={x} cy={y} rx={rr} ry={ey} fill="rgba(249,115,22,0.3)" stroke="var(--purple)" strokeWidth="2"/>
+        <ellipse cx={x} cy={y} rx={rr} ry={ey} fill="rgba(232,88,28,0.3)" stroke="var(--purple)" strokeWidth="2"/>
         <text x={x+rr+8} y={y+hh/2} fontSize="10" fill="var(--text-2)">h={h}</text>
         <text x={x} y={y-ey-6} textAnchor="middle" fontSize="10" fill="var(--text-2)">r={r}</text>
       </>);
@@ -52,7 +52,7 @@ export default function SurfaceAreaVolume() {
       const rr=Math.min(r*10,80); const hh=Math.min(h*14,160); const ey=rr*0.25;
       const y1=cy-hh/2; const y2=cy+hh/2;
       return(<>
-        <ellipse cx={cx} cy={y2} rx={rr} ry={ey} fill="rgba(249,115,22,0.25)" stroke="var(--orange)" strokeWidth="2"/>
+        <ellipse cx={cx} cy={y2} rx={rr} ry={ey} fill="rgba(232,88,28,0.25)" stroke="var(--orange)" strokeWidth="2"/>
         <line x1={cx-rr} y1={y2} x2={cx} y2={y1} stroke="var(--purple)" strokeWidth="2"/>
         <line x1={cx+rr} y1={y2} x2={cx} y2={y1} stroke="var(--purple)" strokeWidth="2"/>
         <line x1={cx} y1={y1} x2={cx} y2={y2} stroke="var(--text-2)" strokeWidth="1" strokeDasharray="4,3"/>
@@ -62,7 +62,7 @@ export default function SurfaceAreaVolume() {
     }
     const rr=Math.min(r*16,100);
     return(<>
-      <circle cx={cx} cy={cy} r={rr} fill="rgba(249,115,22,0.2)" stroke="var(--orange)" strokeWidth="2.5"/>
+      <circle cx={cx} cy={cy} r={rr} fill="rgba(232,88,28,0.2)" stroke="var(--orange)" strokeWidth="2.5"/>
       <ellipse cx={cx} cy={cy} rx={rr} ry={rr*0.25} fill="none" stroke="var(--purple)" strokeWidth="1.5" strokeDasharray="5,4"/>
       <line x1={cx} y1={cy} x2={cx+rr} y2={cy} stroke="var(--text-2)" strokeWidth="1" strokeDasharray="3,3"/>
       <text x={cx+rr/2} y={cy-6} textAnchor="middle" fontSize="10" fill="var(--text-2)">r={r}</text>

@@ -277,7 +277,7 @@ function SchoolsContent() {
 
             <div
               className="rounded-xl p-4 text-center"
-              style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.15)' }}
+              style={{ background: 'rgba(232,88,28,0.06)', border: '1px solid rgba(232,88,28,0.15)' }}
             >
               <p className="text-sm font-bold" style={{ color: '#E8581C' }}>
                 {t(

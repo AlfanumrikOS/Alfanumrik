@@ -75,7 +75,7 @@ const spinnerStyle: React.CSSProperties = {
   width: 40,
   height: 40,
   border: '3px solid #EDE6DC',
-  borderTopColor: '#E8581C',
+  borderTopColor: 'var(--orange)',
   borderRadius: '50%',
   margin: '0 auto 16px',
   animation: 'spin 0.8s linear infinite',
@@ -245,7 +245,7 @@ function CellEditModal({
             onClick={submit}
             disabled={saving}
             style={{
-              padding: '8px 18px', background: saving ? '#C2410C' : '#E8581C',
+              padding: '8px 18px', background: saving ? '#C2410C' : 'var(--orange)',
               color: '#fff', border: 'none', borderRadius: 8, fontSize: 13,
               fontWeight: 600, cursor: saving ? 'wait' : 'pointer',
             }}
@@ -395,7 +395,7 @@ function ClassDepthView({
         <button
           onClick={onRetry}
           style={{
-            padding: '8px 16px', background: '#E8581C', color: '#fff', border: 'none',
+            padding: '8px 16px', background: 'var(--orange)', color: '#fff', border: 'none',
             borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
           }}
         >
@@ -700,7 +700,7 @@ export default function TeacherGradeBookPage() {
           <button
             onClick={() => router.push('/teacher/classes')}
             style={{
-              padding: '8px 18px', background: '#E8581C', color: '#fff', border: 'none',
+              padding: '8px 18px', background: 'var(--orange)', color: '#fff', border: 'none',
               borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
             }}
           >
@@ -725,7 +725,7 @@ export default function TeacherGradeBookPage() {
             onClick={() => router.push('/teacher')}
             style={{
               background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6,
-              padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600,
+              padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600,
               cursor: 'pointer', marginBottom: 8,
             }}
           >

@@ -20,7 +20,7 @@ export default function AreaPerimeter() {
   const scale = (v: number) => v * ((W-pad*2) / 24);
 
   const renderShape = () => {
-    const fill = 'rgba(249,115,22,0.18)'; const stroke = 'var(--purple)'; const sw = 2.5;
+    const fill = 'rgba(232,88,28,0.18)'; const stroke = 'var(--purple)'; const sw = 2.5;
     if (shape==='square') { const s=scale(a); const x=(W-s)/2; const y=(H-s)/2; return <rect x={x} y={y} width={s} height={s} fill={fill} stroke={stroke} strokeWidth={sw} />; }
     if (shape==='rectangle') { const w=scale(a); const hh=scale(b); const x=(W-w)/2; const y=(H-hh)/2; return <rect x={x} y={y} width={w} height={hh} fill={fill} stroke={stroke} strokeWidth={sw} />; }
     if (shape==='circle') { return <circle cx={W/2} cy={H/2} r={scale(r)/2} fill={fill} stroke={stroke} strokeWidth={sw} />; }

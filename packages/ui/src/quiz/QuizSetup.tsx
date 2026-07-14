@@ -245,7 +245,7 @@ export default function QuizSetup({
                 <button
                   onClick={() => onStartSmartQuiz(smartSuggestion)}
                   className="w-full py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.97]"
-                  style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+                  style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
                 >
                   {isHi ? '\uD83D\uDE80 अभी शुरू करो' : '\uD83D\uDE80 Start Now'}
                 </button>
