@@ -24,6 +24,11 @@ vi.mock('@alfanumrik/lib/AuthContext', () => ({
 vi.mock('@alfanumrik/ui/foxy/ReportIssueModal', () => ({
   ReportIssueModal: () => null,
 }));
+// HardAbstainCard pulls AlternativesGrid/supabase; stub it so the hard-abstain
+// suppression test can render the abstain path without the real card's deps.
+vi.mock('@alfanumrik/ui/grounding/HardAbstainCard', () => ({
+  HardAbstainCard: () => <div data-testid="hard-abstain-card" />,
+}));
 
 import ChatBubble from '@alfanumrik/ui/foxy/ChatBubble';
 
@@ -152,5 +157,43 @@ describe('GUARD #8 — ChatBubble flag ON (new learning-action bar)', () => {
       />,
     );
     expect(screen.queryByTestId('learning-action-gotit')).toBeNull();
+  });
+
+  it('hard-abstain bubbles show NO learning-action bar (criteria 4 — non-teaching surface)', () => {
+    render(
+      <ChatBubble
+        {...baseProps({
+          learningActionsEnabled: true,
+          onLearningAction: vi.fn(),
+          groundingStatus: 'hard-abstain',
+          abstainReason: 'chapter_not_ready',
+          content: <div />,
+          rawContent: '',
+        })}
+      />,
+    );
+    // The abstain card renders instead of teaching content...
+    expect(screen.getByTestId('hard-abstain-card')).toBeTruthy();
+    // ...and none of the four learning-action buttons appear.
+    expect(screen.queryByTestId('learning-action-gotit')).toBeNull();
+    expect(screen.queryByTestId('learning-action-simpler')).toBeNull();
+    expect(screen.queryByTestId('learning-action-example')).toBeNull();
+    expect(screen.queryByTestId('learning-action-quiz')).toBeNull();
+    expect(screen.queryByTestId('learning-action-overflow')).toBeNull();
+  });
+
+  it('the four primary buttons carry a >=44px min tap target (mobile 4G accessibility)', () => {
+    render(<ChatBubble {...baseProps({ learningActionsEnabled: true, onLearningAction: vi.fn() })} />);
+    for (const testId of [
+      'learning-action-gotit',
+      'learning-action-simpler',
+      'learning-action-example',
+      'learning-action-quiz',
+      'learning-action-overflow',
+    ]) {
+      expect(screen.getByTestId(testId).className).toContain('min-h-[44px]');
+    }
+    // The icon-only overflow trigger is also >=44px wide.
+    expect(screen.getByTestId('learning-action-overflow').className).toContain('min-w-[44px]');
   });
 });

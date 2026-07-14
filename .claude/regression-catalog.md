@@ -5289,7 +5289,7 @@ gave that invariant executable, handler-level coverage.
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-177 | `send_auth_email_always_200` | The `send-auth-email` Edge Function returns HTTP 200 on ALL handler code paths — non-POST request, OPTIONS preflight, missing hook secret, invalid webhook signature, invalid payload, Mailgun send failure, Mailgun send success, no-Mailgun-config, and top-level throw — plus a source canary asserting no non-200 status literal exists in the handler. A non-200 from a Supabase Send-Email hook blocks ALL signups (P15 rule 1). | `supabase/functions/send-auth-email/__tests__/always-200.test.ts` (behavioral `Deno.serve` handler-capture); guarded against deletion by `e2e/auth-onboarding-p15.spec.ts` | E |
+| REG-177 | `send_auth_email_always_200` | The `send-auth-email` Edge Function returns HTTP 200 on ALL handler code paths — non-POST request, OPTIONS preflight, missing hook secret, invalid webhook signature, invalid payload, relay-send failure, relay-send success, no-relay-config (`warning: 'no_relay_config'`), and top-level throw — plus a source canary asserting no non-200 status literal exists in the handler. A non-200 from a Supabase Send-Email hook blocks ALL signups (P15 rule 1). Provider-swap-hardened (2026-07-15, Mailgun→Resend via the provider-agnostic `_shared/relay-mailer.ts`): the send-path tests inject a stub transport through `setDefaultEmailTransport()`, so the suite runs fully offline (CI runs it with `--allow-read --allow-env`, NO `--allow-net`) and can never open a live socket or fire a real Resend send. | `supabase/functions/send-auth-email/__tests__/always-200.test.ts` (behavioral `Deno.serve` handler-capture); guarded against deletion + substring-drift by `e2e/auth-onboarding-p15.spec.ts` | E |
 
 ### Invariants covered by this section
 
@@ -7746,5 +7746,73 @@ Adds REG-242 (Foxy quota-remaining DB-authoritative correctness — `used_count`
 read, `get_plan_limit`-derived remaining, unlimited-for-paid with no spurious
 upgrade prompt, and the `subscription_plans` paid=-1 / free-finite contract).
 **Total catalog: 209 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-243..REG-246 — Foxy Learning OS Phase 0.2 / 0.3 / 0.4 (durable thread + long-answer integrity + real practice + teach-then-stop) (2026-07-15)
+
+Source: Foxy Learning OS Phase 0.2 (durable conversation thread + Deno bounded
+continuation + pending-row hygiene), Phase 0.3 (real gradable practice), Phase 0.4
+(teach-then-stop + post-answer action bar). All four behaviors are gated behind
+SEPARATE default-OFF feature flags (`ff_foxy_durable_thread_v1`,
+`ff_foxy_answer_continuation_v1`, `ff_foxy_real_practice_v1`,
+`ff_foxy_learning_actions_v1`; seeds `20260715000000` / `20260715000100` /
+`20260715000200` + the existing learning-actions flag) and every entry pins its
+own flag-OFF byte-identical path against a mirror/characterization test.
+
+Files: `apps/host/src/app/foxy/_hooks/useFoxyChat.ts`, `apps/host/src/app/foxy/page.tsx`,
+`apps/host/src/lib/use-foxy-durable-thread-flag.ts`, `packages/lib/src/use-foxy-durable-thread-flag.ts`,
+`apps/host/src/app/api/foxy/_lib/session.ts`, `apps/host/src/app/api/foxy/route.ts`,
+`supabase/functions/grounded-answer/{claude.ts,pipeline.ts,_continuation-flag.ts}`,
+`packages/lib/src/foxy/{prompt-sections.ts,quiz-me-oracle-gate.ts}`,
+`packages/ui/src/foxy/ChatBubble.tsx`.
+
+**Why.** Foxy's context "broke" (students had to re-type the question) because a rapid
+second send — or a reload — before the server session frame returned minted a second,
+empty session; a topic change silently forked a new thread. Long answers were truncated
+at `max_tokens` and the tail was lost to the JSON-rescue net, while empty/pending
+assistant rows (from a hard-abstain or a dead LLM call) leaked into cross-session prompt
+assembly as empty `[previous · Foxy]` snippets that poisoned later turns. Practice mode
+emitted 5 markdown pseudo-MCQs that render as un-answerable text yet claimed "Generated 5
+questions" (a fake-action bug). And Foxy re-narrated its own menu of next actions in prose
+even though the on-screen action bar already offered them. These four flag-gated fixes
+address each, additively and reversibly.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-243 | `foxy_durable_conversation_thread_continuity` | **Client (`useFoxyChat`)**: with `ff_foxy_durable_thread_v1` ON the client mints ONE durable conversation id synchronously (ref-based) so two rapid sends fired before the first resolves carry the SAME `session_id` (the race fix), persisted to BOTH `localStorage.foxy_thread` and the `?c=` URL param; `readStoredThreadId` prefers `?c=` over localStorage then falls back; `adoptConversationId` mirrors id→state+URL+localStorage (reload continuity); `startNewConversation` mints a fresh distinct id. Flag OFF (default) is byte-identical: a send writes NO `foxy_thread`/`?c=`, the first send carries `sessionId:null`, and `startNewConversation` clears the id touching no storage. **Server (`resolveSession`)**: flag ON, the client id is authoritative — an existing row is UPDATEd IN PLACE on a subject/chapter/mode change (same id, no fork, reactivate/idle path never consulted); a well-formed id with no row is INSERTed WITH that id + a `foxy_session_started:<clientId>` event; a `23505` collision with ANOTHER student's id falls back to a server-generated id (never reads/returns the other tenant's row) and warns `foxy.session.thread_id_collision` with `studentId` ONLY (P13); a malformed uuid falls straight through to a server id with no lookup on the bad id. | `apps/host/src/__tests__/foxy/use-foxy-chat.test.ts` (durable-thread describe); `apps/host/src/__tests__/foxy-resolve-session.test.ts` (Phase 0.2 durable-thread describe) | E | P8, P13 |
+| REG-244 | `foxy_long_answer_bounded_continuation_and_pending_row_hygiene` | **(a) Bounded ONE-round continuation** (`ff_foxy_answer_continuation_v1`): a Foxy structured turn that stops at `stop_reason='max_tokens'` with the flag ON issues EXACTLY ONE continuation call (2 Claude fetches total, never 3 even if the continuation ALSO truncates); the merged payload is preferred ONLY if it round-trips validation, else it falls back to the EXISTING rescue on the primary — never regress (`structured` always defined, no raw JSON leaks into any paragraph). Flag OFF → NO continuation, byte-identical rescue (1 salvaged block, no `answer` block). A complete `end_turn` answer never fires a continuation (the flag read is short-circuited on the happy path). `stopReason` is normalized for both providers (Anthropic `stop_reason`; OpenAI `finish_reason='length'`→`max_tokens`; absent→`other`, never spuriously `max_tokens`). **(b) Pending-row hygiene**: `loadPriorSessionContext(excludePending=true)` filters pending assistant rows so an empty `[previous · Foxy]` snippet can never leak; `excludePending=false` (default) is byte-identical (pending row still flows); a missing `pending` column → defensive fallback to the legacy unfiltered query + a category-only warn (`foxy_prior_session_pending_filter_failed`, no email/phone/name). On a safety hard-abstain the route UPDATEs the pre-inserted pending assistant row to `SAFE_ABSTAIN_MESSAGE` with `pending=false` (flag ON) / leaves it untouched (flag OFF); the abstain response shape+status (200, `response:''`, `groundingStatus:'hard-abstain'`) is never altered. | `supabase/functions/grounded-answer/__tests__/foxy-answer-continuation.test.ts` + `.../__tests__/claude.test.ts` (Deno, stopReason normalization); `apps/host/src/__tests__/api/foxy/prior-session-context-pending.test.ts`; `apps/host/src/__tests__/api/foxy/foxy-safety-block-pending-cleanup.test.ts` | E | P12, P13 |
+| REG-245 | `foxy_real_gradable_practice_oracle_gated_single_binding_anti_fake` | **(`ff_foxy_real_practice_v1`)** EVERY practice mcq is oracle-gated through the SAME machinery that gates `question_bank` inserts (REG-54): `gatePracticeMcqs` runs deterministic P6 checks first (a duplicate-options mcq is dropped with reason `p6_options_not_distinct` and NO LLM call), then the LLM grader, failing CLOSED per mcq on a grader throw (`llm_grader_unavailable`, drops that mcq, never aborts the batch); survivors are capped at `PRACTICE_MCQ_MAX_KEEP` (3) with a bounded oracle-attempt ceiling (LLM-cost cap). **Anti-fake guardrail**: `buildGatedPracticeResponse` rebuilds the turn to contain ONLY oracle-passed `mcq` blocks — any prose ("I generated 5 questions!") is STRIPPED so a turn can never CLAIM questions it didn't emit; returns null when nothing survives → the route serves the graceful bilingual fallback (never an ungated/garbage mcq); title+subject preserved, mcq order preserved, round-trips `FoxyResponseSchema`. **Single evidential binding (served-items invariant)**: the ONE server-held answer key is derived from `kept[0]`, which is the FIRST rendered mcq — so the key grades exactly the question shown, and only one evidential serve happens per turn. Flag OFF → directive selector returns the LEGACY `MODE_DIRECTIVES.practice` (5 pseudo-MCQ paragraphs) byte-identically; flag ON → the interactive `PRACTICE_MCQ_DIRECTIVE` (EXACTLY 3 mcq blocks, mastery-aware/ZPD-bounded difficulty, "do not claim to have created a quiz"); `quiz_me` still wins with `SINGLE_MCQ_DIRECTIVE`. | `apps/host/src/__tests__/lib/foxy/real-practice-gate.test.ts` | E | P6, P1, P2, P3 |
+| REG-246 | `foxy_teach_then_stop_meta_offer_suppressed_socratic_check_preserved` | **(`ff_foxy_learning_actions_v1`)** `TEACH_THEN_STOP_DIRECTIVE` bans the ASSISTANT'S own menu of next actions (forbids "Would you like…", "I can give you an example", "Shall I quiz…", "just let me know", "menu of next actions") because the on-screen action bar already offers them, while KEEPING exactly ONE substantive Socratic check-for-understanding question that asks the STUDENT to apply/restate/reason — its shape set by pedagogy mode (CHECK / SCAFFOLD / STRETCH) and never a yes/no "did you understand?". Bilingual (Hindi/Hinglish, technical terms — CBSE/NCERT/Bloom's — in English). It is threaded ONLY through the `mode_directive` channel (via `composeModeDirective`) on prose-teaching turns (mode ≠ practice) when the flag is ON; `quiz_me`/real-practice MCQ shapes still win; flag OFF is byte-identical to the legacy selector for every mode (no teach-then-stop text leaks). `FOXY_SAFETY_RAILS` (P12) and the `buildSystemPrompt` base persona are UNCHANGED — the directive is never baked into the rails/persona (verified for every valid mode). **ChatBubble UI**: flag OFF renders the legacy thumbs/Report bar byte-identically; flag ON renders the learning-action bar (Got it / Explain simpler / Show example / Quiz me + overflow Save/Report) dispatching `got_it`/`explain_simpler`/`show_example`/`quiz_me`/`save`, with NO bar on error-fallback or hard-abstain bubbles, bilingual labels, and ≥44px tap targets. | `apps/host/src/__tests__/api/foxy/teach-then-stop-directive.test.ts`; `apps/host/src/__tests__/foxy/learning-action-chat-bubble.test.tsx` | E | P7, P12 |
+
+### Invariants covered by this section
+
+- P8 (RLS / tenant boundary) — REG-243: a durable client-supplied thread id that
+  collides with another student's session (`23505`) NEVER reads or returns the
+  other tenant's row; the caller always gets a fresh server-generated id.
+- P13 (data privacy) — REG-243 collision warn carries `studentId` only; REG-244's
+  pending-filter fallback warn is category-only (no email/phone/name) and the
+  safety-abstain audit/response never leaks answer text.
+- P12 (AI safety) — REG-244: `structured` is always defined and the bounded
+  continuation can only improve, never regress, the existing safety net; REG-246:
+  `FOXY_SAFETY_RAILS` + the base persona are byte-identical, and no learning-action
+  bar renders on abstain/error surfaces.
+- P6 / P1 / P2 / P3 (question quality + scoring/anti-fake integrity) — REG-245:
+  every served practice mcq passes the P6 + REG-54 oracle, the single evidential
+  key grades exactly the question shown, and a turn can never fabricate a quiz claim.
+- P7 (bilingual) — REG-246: the teach-then-stop directive and the action-bar chips
+  carry EN + Devanagari, technical terms kept in English.
+
+### Catalog total
+
+Pre-REG-243: 209 entries (through REG-242, Foxy quota-remaining DB-authoritative).
+Adds REG-243 (durable conversation-thread continuity — client race fix + server
+upsert-by-client-id + cross-tenant 23505 isolation + no-reset-on-topic-change),
+REG-244 (long-answer integrity — bounded ONE-round max_tokens continuation +
+pending/empty assistant-row hygiene), REG-245 (real gradable practice — oracle-gated
+interactive MCQs + single evidential binding + anti-fake guardrail), REG-246
+(teach-then-stop — meta-offer suppressed, Socratic check preserved, FOXY_SAFETY_RAILS
+unchanged). All four flag-gated default-OFF and byte-identical on the OFF path.
+**Total catalog: 213 entries (target: 35 — TARGET EXCEEDED).**
 
 ---

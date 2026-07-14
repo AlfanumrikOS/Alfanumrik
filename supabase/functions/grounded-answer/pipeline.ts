@@ -37,7 +37,11 @@ import { isMMRDiversityEnabled } from './_mmr-flag.ts';
 // curriculum_guard / abstain — see transfer-retrieval.ts safety contract.
 import { isDigitalTwinEnabled } from './_twin-flag.ts';
 import { retrieveTransferChunks, mergeTransferChunks } from './transfer-retrieval.ts';
-import { callClaude, type ClaudeResponse } from './claude.ts';
+import { callClaude, type ClaudeResponse, type ClaudeConversationTurn } from './claude.ts';
+// Phase 0.2: bounded max_tokens continuation for truncated Foxy structured
+// answers. Default-OFF, fail-CLOSED flag. When OFF the pipeline is byte-
+// identical to today (the existing rescueFromTruncatedJson net still applies).
+import { isAnswerContinuationEnabled } from './_continuation-flag.ts';
 import {
   runGroundingCheck,
   GROUNDING_CHECK_SYSTEM_PROMPT,
@@ -642,6 +646,94 @@ function parseFoxyStructured(args: {
  * for telemetry, so dashboards still report the requested budget.
  */
 const FOXY_STRUCTURED_TOKEN_MULTIPLIER = 1.6;
+
+// ── Phase 0.2: bounded max_tokens continuation ──────────────────────────────
+//
+// When a Foxy structured turn stops with stop_reason='max_tokens' the JSON is
+// cut off mid-answer. rescueFromTruncatedJson salvages the COMPLETE blocks
+// before the cut, but everything after is lost. When
+// ff_foxy_answer_continuation_v1 is ON we instead issue exactly ONE bounded
+// continuation call that finishes the JSON from where the model stopped, then
+// prefer the merged payload IF it round-trips validation. Any failure falls
+// back to the EXISTING rescue → wrapAsParagraph net on the ORIGINAL partial —
+// the continuation can only improve, never regress (P12: structured is always
+// defined). Capped at a single round; no unbounded loops.
+
+/**
+ * Ceiling on the continuation call's max_tokens. The remaining JSON tail is
+ * usually short, but we give generous headroom (bounded by the primary's
+ * effective budget) so the continuation itself does not truncate again on a
+ * long tail. Haiku's context window comfortably absorbs primary + continuation.
+ */
+const FOXY_CONTINUATION_TOKEN_CAP = 2048;
+
+/**
+ * Instruction sent as the continuation user turn. The partial answer is passed
+ * as the preceding assistant turn (via conversationTurns), so the model has the
+ * exact text it must continue. It must emit ONLY the missing JSON suffix — no
+ * repetition, no restart, no fences, no commentary — so that
+ * `partialAnswer + continuation` concatenates into one valid JSON document.
+ */
+const FOXY_CONTINUATION_INSTRUCTION =
+  'Your previous reply was cut off before the JSON was complete. ' +
+  'Continue the JSON response from EXACTLY where you stopped. ' +
+  'Output ONLY the remaining characters needed to finish the JSON object — ' +
+  'do NOT repeat any text you already wrote, do NOT restart the object, ' +
+  'do NOT wrap it in code fences, and do NOT add any commentary.';
+
+/**
+ * Issue exactly ONE bounded continuation call for a truncated Foxy structured
+ * answer. Never throws (callClaude never throws). Returns the raw continuation
+ * text plus token usage so the caller can concatenate + account for spend.
+ *
+ * The continuation is a plain callClaude — deliberately NOT shadow-logged
+ * (matches the existing soft-mode re-grounding retry, which also skips the MOL
+ * shadow) so telemetry stays one-row-per-primary-turn.
+ */
+async function continueFoxyStructured(args: {
+  systemPrompt: string;
+  partialAnswer: string;
+  userQuery: string;
+  priorTurns?: ClaudeConversationTurn[];
+  maxTokens: number;
+  timeoutMs: number;
+  anthropicKey: string;
+  openaiApiKey: string;
+  modelPreference: 'haiku' | 'sonnet' | 'auto';
+}): Promise<{ ok: boolean; content: string; inputTokens: number; outputTokens: number }> {
+  const priorTurns = args.priorTurns ?? [];
+  const result = await callClaude({
+    systemPrompt: args.systemPrompt,
+    userMessage: FOXY_CONTINUATION_INSTRUCTION,
+    maxTokens: args.maxTokens,
+    // Temperature 0: the continuation is a deterministic "finish the JSON"
+    // task, not a creative generation. Mirrors the re-grounding retry's 0.0.
+    temperature: 0,
+    timeoutMs: args.timeoutMs,
+    apiKey: args.anthropicKey,
+    openaiApiKey: args.openaiApiKey,
+    modelPreference: args.modelPreference,
+    // Reconstruct the turn the model was mid-way through: prior history, the
+    // student's question, then the model's own partial answer as an assistant
+    // turn. The continuation instruction (the user turn callClaude appends)
+    // tells it to emit only the remaining JSON.
+    conversationTurns: [
+      ...priorTurns,
+      { role: 'user', content: args.userQuery },
+      { role: 'assistant', content: args.partialAnswer },
+    ],
+  });
+  if (!result.ok) {
+    console.warn(`foxy: structured_continuation_call_failed reason=${result.reason}`);
+    return { ok: false, content: '', inputTokens: 0, outputTokens: 0 };
+  }
+  return {
+    ok: true,
+    content: result.content,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+  };
+}
 
 /**
  * retrieve_only citations: every chunk becomes a Citation (indexed 1..N)
@@ -1301,6 +1393,9 @@ export async function runPipeline(
   //   - chunks were retrieved (nothing to re-ground to if chunks.length=0)
   //   - the answer starts with the general-knowledge escape sentinel
   let primaryAnswer = claude.content;
+  // Phase 0.2: the stop reason of whatever call produced `primaryAnswer`. The
+  // soft-mode re-grounding retry below can replace both, so keep them in sync.
+  let primaryStopReason = claude.stopReason;
   if (
     request.mode === 'soft' &&
     chunks.length > 0 &&
@@ -1332,6 +1427,9 @@ export async function runPipeline(
       // original (same quality, no point in a second retry).
       if (!answerStartsWithGeneralKnowledgeEscape(regroundResult.content)) {
         primaryAnswer = regroundResult.content;
+        // The re-ground answer is now the basis for continuation, so track its
+        // stop reason (it too can hit max_tokens).
+        primaryStopReason = regroundResult.stopReason;
         // Update token accounting so the trace row reflects total spend.
         ctx.inputTokens = (ctx.inputTokens ?? 0) + regroundResult.inputTokens;
         ctx.outputTokens = (ctx.outputTokens ?? 0) + regroundResult.outputTokens;
@@ -1372,13 +1470,61 @@ export async function runPipeline(
   // and `answer` contains the raw markdown/text response.
   let answerForResponse = primaryAnswer;
   let structuredForResponse: FoxyResponse | undefined;
+  // Source text for citation extraction. Defaults to primaryAnswer (today's
+  // behavior); upgraded to the merged payload ONLY when a continuation was
+  // applied, so [N] references in the recovered tail are also captured.
+  let citationSource = primaryAnswer;
 
   if (isFoxyStructured) {
     const subjectHint = mapSubjectCodeToFoxySubject(request.scope.subject_code);
-    const parsed = parseFoxyStructured({
-      rawAnswer: primaryAnswer,
-      subjectHint,
-    });
+
+    // ── Phase 0.2: bounded max_tokens continuation (flag-gated, default OFF) ──
+    // Only when the producing call stopped at max_tokens AND the flag is ON.
+    // The `&&` short-circuits the flag read on the happy path, so a complete
+    // structured turn never touches feature_flags or fires a second call.
+    let parsed: ParsedStructured | null = null;
+    if (
+      primaryStopReason === 'max_tokens' &&
+      (await isAnswerContinuationEnabled(sb))
+    ) {
+      const cont = await continueFoxyStructured({
+        systemPrompt,
+        partialAnswer: primaryAnswer,
+        userQuery: request.query,
+        priorTurns: request.generation.conversation_turns,
+        // Bound the continuation budget so a pathological tail cannot run away.
+        maxTokens: Math.min(effectiveMaxTokens, FOXY_CONTINUATION_TOKEN_CAP),
+        timeoutMs: request.timeout_ms,
+        anthropicKey,
+        openaiApiKey,
+        modelPreference: request.generation.model_preference,
+      });
+      if (cont.ok && cont.content.length > 0) {
+        // Account for the continuation's spend in the trace total.
+        ctx.inputTokens = (ctx.inputTokens ?? 0) + cont.inputTokens;
+        ctx.outputTokens = (ctx.outputTokens ?? 0) + cont.outputTokens;
+        const merged = primaryAnswer + cont.content;
+        const parsedMerged = parseFoxyStructured({ rawAnswer: merged, subjectHint });
+        // Prefer the merged payload ONLY if it round-trips validation
+        // (parsed.ok covers clean-parse OR truncation-rescue). If the
+        // continuation also truncated or drifted, fall through to the existing
+        // rescue path on the ORIGINAL partial — never regress the safety net.
+        if (parsedMerged.ok) {
+          parsed = parsedMerged;
+          citationSource = merged;
+          console.warn('foxy: structured_continuation_applied');
+        } else {
+          console.warn('foxy: structured_continuation_unvalidated — falling back to rescue on primary');
+        }
+      }
+    }
+
+    // Flag OFF, not truncated, continuation call failed, or merged did not
+    // validate → EXACTLY today's behavior (parse/rescue/wrap on primaryAnswer).
+    if (!parsed) {
+      parsed = parseFoxyStructured({ rawAnswer: primaryAnswer, subjectHint });
+    }
+
     structuredForResponse = parsed.structured;
     // Denormalize the structured payload into a single string for legacy
     // storage. This is what foxy_chat_messages.content (TEXT) keeps. When
@@ -1387,7 +1533,7 @@ export async function runPipeline(
     answerForResponse = denormalizeFoxyResponse(parsed.structured);
   }
 
-  const citations = extractCitations(primaryAnswer, chunks);
+  const citations = extractCitations(citationSource, chunks);
   ctx.answerLength = answerForResponse.length;
 
   // Total token spend includes the primary call and any re-grounding retry.

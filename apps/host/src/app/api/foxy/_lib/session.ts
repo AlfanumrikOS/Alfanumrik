@@ -44,6 +44,117 @@ const MAX_HISTORY_TURNS = 30;
 // ff_foxy_session_reactivate_v1 in resolveSession().
 const SESSION_IDLE_MINUTES = 240;
 
+// ─── Phase 0.2 (2026-07-15): durable-thread helpers ──────────────────────────
+
+// Client-authoritative session ids (durable thread) are validated against the
+// canonical 8-4-4-4-12 hex UUID shape before we trust one as a foxy_sessions
+// primary key. A malformed id falls back to a server-generated id (today's
+// create path). Case-insensitive; matches Postgres uuid literal acceptance.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isWellFormedUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
+
+/**
+ * Best-effort publish of ai.foxy_session_started for a freshly INSERTed
+ * foxy_sessions row. Extracted VERBATIM from resolveSession's create path so
+ * BOTH the server-generated-id create AND the Phase 0.2 client-authoritative-id
+ * create publish the identical envelope. Best-effort — a publish failure logs
+ * and continues; it must never block session creation (ADR-001 Phase 2d,
+ * gated by ff_event_bus_v1 inside publishEvent).
+ */
+async function publishFoxySessionStarted(
+  sessionId: string,
+  subject: string,
+  chapter: string | null,
+  mode: string,
+  authUserId: string,
+  schoolId: string | null,
+): Promise<void> {
+  try {
+    await publishEvent(supabaseAdmin, {
+      kind: 'ai.foxy_session_started',
+      eventId: randomUUID(),
+      occurredAt: new Date().toISOString(),
+      actorAuthUserId: authUserId,
+      tenantId: schoolId,
+      idempotencyKey: `foxy_session_started:${sessionId}`,
+      payload: {
+        foxySessionId: sessionId,
+        subjectCode: subject ? subject.toLowerCase() : null,
+        chapterNumber: parseFoxyChapterNumber(chapter),
+        mode: mapFoxyModeToEventMode(mode),
+      },
+    });
+  } catch (err) {
+    logger.warn('foxy.resolveSession: publishEvent ai.foxy_session_started failed', {
+      foxySessionId: sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+type FoxySessionCreateResult =
+  | { ok: true; id: string }
+  | { ok: false; collision: true };
+
+/**
+ * INSERT a foxy_sessions row and publish ai.foxy_session_started.
+ *
+ * `explicitId === null` → today's server-generated-id create path
+ * (behavior-identical to the pre-Phase-0.2 inline create; the DB DEFAULT
+ * gen_random_uuid() supplies the id).
+ *
+ * `explicitId` set → Phase 0.2 client-authoritative-id create (durable
+ * thread). A Postgres unique_violation (23505) on the client-supplied id means
+ * the id already belongs to ANOTHER student — we return `{ collision: true }`
+ * WITHOUT reading or exposing that row, so the caller can retry with a
+ * server-generated id (P8/P13 cross-tenant safety). Any other insert error
+ * throws exactly as the legacy inline create did.
+ */
+async function createFoxySession(
+  explicitId: string | null,
+  studentId: string,
+  subject: string,
+  grade: string,
+  chapter: string | null,
+  mode: string,
+  authUserId: string,
+  schoolId: string | null,
+): Promise<FoxySessionCreateResult> {
+  const insertPayload: Record<string, unknown> = {
+    student_id: studentId,
+    subject,
+    grade,
+    chapter: chapter || null,
+    mode,
+    last_active_at: new Date().toISOString(),
+  };
+  if (explicitId) insertPayload.id = explicitId;
+
+  const { data: newSession, error } = await supabaseAdmin
+    .from('foxy_sessions')
+    .insert(insertPayload)
+    .select('id')
+    .single();
+
+  if (error || !newSession) {
+    // Client-authoritative id collided with a row owned by ANOTHER student.
+    // Signal the caller to fall back to a server-generated id; never touch or
+    // read the colliding row (P8/P13). explicitId===null (server path) can
+    // never take this branch, so that path throws byte-identically to legacy.
+    if (explicitId && (error as { code?: string } | null)?.code === '23505') {
+      return { ok: false, collision: true };
+    }
+    throw new Error(`Failed to create Foxy session: ${error?.message}`);
+  }
+
+  await publishFoxySessionStarted(newSession.id, subject, chapter, mode, authUserId, schoolId);
+  return { ok: true, id: newSession.id };
+}
+
 // ─── Helper: get or create session ───────────────────────────────────────────
 
 /* @internal Exported for unit testing only — do NOT import from app code. */
@@ -68,42 +179,146 @@ export async function resolveSession(
   schoolId: string | null,
 ): Promise<string> {
   if (providedSessionId) {
-    // Phase 1 (2026-05-18): flag-gated reactivation semantics. When ON, we
-    // load the session WITHOUT the idle filter and reuse it as long as the
-    // pedagogy context (subject + chapter + mode) still matches. This is
-    // the structural fix for RC1 in the Foxy continuity plan — silent
-    // session resets after the idle cutoff destroyed student-perceived
-    // history. The OLD path (flag OFF) is kept verbatim except for the
-    // new silent_reset telemetry line so we can measure RC1 in prod.
-    const reactivateMode = await isFeatureEnabled('ff_foxy_session_reactivate_v1', {
+    // ── Phase 0.2 (2026-07-15): durable-thread semantics ──────────────────────
+    // When ff_foxy_durable_thread_v1 is ON, the client sends an authoritative
+    // client-generated session id on every turn and the thread is NEVER
+    // silently reset — not on a subject/chapter/mode change (we UPDATE the row
+    // IN PLACE) and not on idle (idle age is irrelevant when the flag is ON).
+    // When OFF, behavior is byte-identical to today: the
+    // ff_foxy_session_reactivate_v1 path + idle logic in the `else` below.
+    const durableThread = await isFeatureEnabled('ff_foxy_durable_thread_v1', {
       role: 'student',
       userId: authUserId,
     });
 
-    if (reactivateMode) {
-      // NEW path: never silently reset; explicit context-change check.
-      const { data: existing } = await supabaseAdmin
-        .from('foxy_sessions')
-        .select('id, subject, chapter, mode, last_active_at')
-        .eq('id', providedSessionId)
-        .eq('student_id', studentId)
-        .single();
+    if (durableThread) {
+      if (isWellFormedUuid(providedSessionId)) {
+        const { data: existing } = await supabaseAdmin
+          .from('foxy_sessions')
+          .select('id')
+          .eq('id', providedSessionId)
+          .eq('student_id', studentId)
+          .single();
 
-      if (existing) {
-        const ctxMatches =
-          existing.subject === subject
-          && (existing.chapter || null) === (chapter || null)
-          && existing.mode === mode;
-        const idleMs = Date.now() - new Date(existing.last_active_at).getTime();
+        if (existing) {
+          // Reuse the durable thread. A subject/chapter/mode change UPDATES the
+          // row in place — it does NOT fork a new session. Scoped by
+          // student_id so a student can only ever update their OWN row (P8).
+          await supabaseAdmin
+            .from('foxy_sessions')
+            .update({
+              subject,
+              chapter: chapter || null,
+              mode,
+              last_active_at: new Date().toISOString(),
+            })
+            .eq('id', providedSessionId)
+            .eq('student_id', studentId);
+          return providedSessionId;
+        }
 
-        if (ctxMatches) {
-          if (idleMs > SESSION_IDLE_MINUTES * 60 * 1000) {
-            logger.info('foxy.session.reactivated_after_idle', {
-              foxySessionId: providedSessionId,
-              studentId,
-              idleDurationMs: idleMs,
-            });
+        // No row for (providedSessionId, studentId) → create WITH the client-
+        // authoritative id so the thread id is stable across reloads.
+        const created = await createFoxySession(
+          providedSessionId,
+          studentId,
+          subject,
+          grade,
+          chapter,
+          mode,
+          authUserId,
+          schoolId,
+        );
+        if (created.ok) return created.id;
+
+        // PK collision: the id exists but belongs to ANOTHER student. Do NOT
+        // touch or leak that row. Fall through to a server-generated id (the
+        // client adopts the returned id). P13: no PII, no other-tenant ids.
+        logger.warn('foxy.session.thread_id_collision', { studentId });
+      }
+      // Invalid uuid OR PK collision → fall through to the server-generated
+      // create path below (today's create). No idle/reactivate logic runs
+      // when the durable flag is ON.
+    } else {
+      // Phase 1 (2026-05-18): flag-gated reactivation semantics. When ON, we
+      // load the session WITHOUT the idle filter and reuse it as long as the
+      // pedagogy context (subject + chapter + mode) still matches. This is
+      // the structural fix for RC1 in the Foxy continuity plan — silent
+      // session resets after the idle cutoff destroyed student-perceived
+      // history. The OLD path (flag OFF) is kept verbatim except for the
+      // new silent_reset telemetry line so we can measure RC1 in prod.
+      const reactivateMode = await isFeatureEnabled('ff_foxy_session_reactivate_v1', {
+        role: 'student',
+        userId: authUserId,
+      });
+
+      if (reactivateMode) {
+        // NEW path: never silently reset; explicit context-change check.
+        const { data: existing } = await supabaseAdmin
+          .from('foxy_sessions')
+          .select('id, subject, chapter, mode, last_active_at')
+          .eq('id', providedSessionId)
+          .eq('student_id', studentId)
+          .single();
+
+        if (existing) {
+          const ctxMatches =
+            existing.subject === subject
+            && (existing.chapter || null) === (chapter || null)
+            && existing.mode === mode;
+          const idleMs = Date.now() - new Date(existing.last_active_at).getTime();
+
+          if (ctxMatches) {
+            if (idleMs > SESSION_IDLE_MINUTES * 60 * 1000) {
+              logger.info('foxy.session.reactivated_after_idle', {
+                foxySessionId: providedSessionId,
+                studentId,
+                idleDurationMs: idleMs,
+              });
+            }
+            await supabaseAdmin
+              .from('foxy_sessions')
+              .update({ last_active_at: new Date().toISOString() })
+              .eq('id', providedSessionId);
+            return providedSessionId;
           }
+
+          // Context mismatch — student switched subject / chapter / mode mid-conversation.
+          // This is a legitimate new-session boundary; log it for product analytics.
+          logger.info('foxy.session.context_changed', {
+            foxySessionId: providedSessionId,
+            studentId,
+            oldContext: {
+              subject: existing.subject,
+              chapter: existing.chapter,
+              mode: existing.mode,
+            },
+            newContext: { subject, chapter, mode },
+          });
+          // fall through to new-session create below
+        } else {
+          // Session row not found at all (deleted? wrong tenant?) — log so we can
+          // distinguish from idle-filter exclusion.
+          logger.warn('foxy.session.silent_reset', {
+            providedSessionId,
+            studentId,
+            reason: 'session_not_found',
+          });
+          // fall through to new-session create below
+        }
+      } else {
+        // OLD path (flag OFF): idle filter behavior. Kept verbatim except for
+        // the new silent_reset telemetry on the fall-through case.
+        const cutoff = new Date(Date.now() - SESSION_IDLE_MINUTES * 60 * 1000).toISOString();
+        const { data: existing } = await supabaseAdmin
+          .from('foxy_sessions')
+          .select('id')
+          .eq('id', providedSessionId)
+          .eq('student_id', studentId)
+          .gte('last_active_at', cutoff)
+          .single();
+
+        if (existing) {
           await supabaseAdmin
             .from('foxy_sessions')
             .update({ last_active_at: new Date().toISOString() })
@@ -111,104 +326,40 @@ export async function resolveSession(
           return providedSessionId;
         }
 
-        // Context mismatch — student switched subject / chapter / mode mid-conversation.
-        // This is a legitimate new-session boundary; log it for product analytics.
-        logger.info('foxy.session.context_changed', {
-          foxySessionId: providedSessionId,
-          studentId,
-          oldContext: {
-            subject: existing.subject,
-            chapter: existing.chapter,
-            mode: existing.mode,
-          },
-          newContext: { subject, chapter, mode },
-        });
-        // fall through to new-session create below
-      } else {
-        // Session row not found at all (deleted? wrong tenant?) — log so we can
-        // distinguish from idle-filter exclusion.
+        // Phase 1 observability: log every case where the client sent a
+        // sessionId but the OLD path is about to create a new session. This
+        // is the silent_reset signal we never had before. Measurable in
+        // PostHog; should drop to near-zero once ff_foxy_session_reactivate_v1
+        // is rolled out to 100%.
         logger.warn('foxy.session.silent_reset', {
           providedSessionId,
           studentId,
-          reason: 'session_not_found',
+          reason: 'idle_filter_excluded',
         });
-        // fall through to new-session create below
       }
-    } else {
-      // OLD path (flag OFF): idle filter behavior. Kept verbatim except for
-      // the new silent_reset telemetry on the fall-through case.
-      const cutoff = new Date(Date.now() - SESSION_IDLE_MINUTES * 60 * 1000).toISOString();
-      const { data: existing } = await supabaseAdmin
-        .from('foxy_sessions')
-        .select('id')
-        .eq('id', providedSessionId)
-        .eq('student_id', studentId)
-        .gte('last_active_at', cutoff)
-        .single();
-
-      if (existing) {
-        await supabaseAdmin
-          .from('foxy_sessions')
-          .update({ last_active_at: new Date().toISOString() })
-          .eq('id', providedSessionId);
-        return providedSessionId;
-      }
-
-      // Phase 1 observability: log every case where the client sent a
-      // sessionId but the OLD path is about to create a new session. This
-      // is the silent_reset signal we never had before. Measurable in
-      // PostHog; should drop to near-zero once ff_foxy_session_reactivate_v1
-      // is rolled out to 100%.
-      logger.warn('foxy.session.silent_reset', {
-        providedSessionId,
-        studentId,
-        reason: 'idle_filter_excluded',
-      });
     }
   }
 
-  const { data: newSession, error } = await supabaseAdmin
-    .from('foxy_sessions')
-    .insert({
-      student_id: studentId,
-      subject,
-      grade,
-      chapter: chapter || null,
-      mode,
-      last_active_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single();
-
-  if (error || !newSession) {
-    throw new Error(`Failed to create Foxy session: ${error?.message}`);
+  // Server-generated create path (today's create). Reached when:
+  //  - no providedSessionId, OR
+  //  - durable OFF and the reactivate/idle path fell through, OR
+  //  - durable ON with an invalid uuid or a PK collision.
+  const created = await createFoxySession(
+    null,
+    studentId,
+    subject,
+    grade,
+    chapter,
+    mode,
+    authUserId,
+    schoolId,
+  );
+  if (!created.ok) {
+    // Unreachable: a server-generated id never collides. Defensive throw so the
+    // function has a total return type.
+    throw new Error('Failed to create Foxy session');
   }
-
-  // ADR-001 Phase 2d — publish ai.foxy_session_started for the brand-new
-  // session row. Best-effort; failures log and continue.
-  try {
-    await publishEvent(supabaseAdmin, {
-      kind: 'ai.foxy_session_started',
-      eventId: randomUUID(),
-      occurredAt: new Date().toISOString(),
-      actorAuthUserId: authUserId,
-      tenantId: schoolId,
-      idempotencyKey: `foxy_session_started:${newSession.id}`,
-      payload: {
-        foxySessionId: newSession.id,
-        subjectCode: subject ? subject.toLowerCase() : null,
-        chapterNumber: parseFoxyChapterNumber(chapter),
-        mode: mapFoxyModeToEventMode(mode),
-      },
-    });
-  } catch (err) {
-    logger.warn('foxy.resolveSession: publishEvent ai.foxy_session_started failed', {
-      foxySessionId: newSession.id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  return newSession.id;
+  return created.id;
 }
 
 // ─── Helper: load recent conversation history ─────────────────────────────────
@@ -279,6 +430,17 @@ export async function loadPriorSessionContext(
   grade: string,
   currentSessionId: string,
   chapter: string | null,
+  /**
+   * Phase 0.2 (ff_foxy_answer_continuation_v1). When true, exclude pending
+   * assistant rows (empty content still awaiting their LLM completion, or
+   * orphaned by a hard-abstain) from the cross-session context — the same
+   * exclusion `loadHistory` applies same-session. When false (the default),
+   * behavior is BYTE-IDENTICAL to today (no pending filter). The caller
+   * (route.ts) resolves the flag once and threads the boolean here so the
+   * read filter and the safety-block write cleanup evaluate the flag with the
+   * identical { role, userId } context during a partial rollout.
+   */
+  excludePending = false,
 ): Promise<PriorSessionTurn[]> {
   void grade; // session-row scoping (subject + chapter) is sufficient for now
   try {
@@ -304,16 +466,53 @@ export async function loadPriorSessionContext(
 
     const priorSessionIds = priorSessions.map((s: any) => s.id);
 
-    const { data: priorMessages } = await supabaseAdmin
-      .from('foxy_chat_messages')
-      .select('role, content, created_at')
-      .in('session_id', priorSessionIds)
-      .order('created_at', { ascending: false })
-      .limit(PRIOR_SESSION_MSG_LIMIT);
+    let priorMessages: PriorSessionTurn[] | null = null;
+    if (excludePending) {
+      // Phase 0.2 (ff_foxy_answer_continuation_v1): exclude pending assistant
+      // rows so an empty (content='') turn — the row a hard-abstain / dead LLM
+      // call leaves behind — never reaches cross-session prompt assembly as an
+      // empty `[previous · Foxy]` snippet. Mirrors loadHistory's `pending=false`
+      // filter AND its defensive fallback: on an env where the `pending` column
+      // does not exist yet (migration 20260528000012 not applied) the predicate
+      // fails with "column does not exist" and we fall back to the legacy
+      // unfiltered query so cross-session context keeps working.
+      const { data, error } = await supabaseAdmin
+        .from('foxy_chat_messages')
+        .select('role, content, created_at')
+        .in('session_id', priorSessionIds)
+        .eq('pending', false)
+        .order('created_at', { ascending: false })
+        .limit(PRIOR_SESSION_MSG_LIMIT);
+      if (error) {
+        logger.warn('foxy_prior_session_pending_filter_failed', {
+          error: error.message,
+          studentId,
+          subject,
+        });
+        const { data: fallback } = await supabaseAdmin
+          .from('foxy_chat_messages')
+          .select('role, content, created_at')
+          .in('session_id', priorSessionIds)
+          .order('created_at', { ascending: false })
+          .limit(PRIOR_SESSION_MSG_LIMIT);
+        priorMessages = (fallback as PriorSessionTurn[] | null) ?? null;
+      } else {
+        priorMessages = (data as PriorSessionTurn[] | null) ?? null;
+      }
+    } else {
+      // Flag OFF — byte-identical to the pre-Phase-0.2 query (no pending filter).
+      const { data } = await supabaseAdmin
+        .from('foxy_chat_messages')
+        .select('role, content, created_at')
+        .in('session_id', priorSessionIds)
+        .order('created_at', { ascending: false })
+        .limit(PRIOR_SESSION_MSG_LIMIT);
+      priorMessages = (data as PriorSessionTurn[] | null) ?? null;
+    }
 
     if (!priorMessages || priorMessages.length === 0) return [];
     // Reverse to chronological order so the prompt reads forward in time.
-    return (priorMessages as PriorSessionTurn[]).reverse();
+    return priorMessages.reverse();
   } catch (err) {
     logger.warn('foxy_prior_session_context_failed', {
       error: err instanceof Error ? err.message : String(err),

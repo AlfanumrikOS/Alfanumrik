@@ -163,3 +163,128 @@ export async function gateQuizMeMcq(
     llm_calls: result.llm_calls,
   };
 }
+
+// ─── Real practice — multi-MCQ oracle gate (ff_foxy_real_practice_v1) ─────────
+//
+// BINDING CONTRACT (assessment, P6 + REG-54): every mcq block shown in a
+// real-practice turn MUST pass the SAME oracle that gates the single Quiz-me
+// mcq — deterministic P6 checks first, then the LLM grader (fails CLOSED on
+// grader throw). A failing mcq is DROPPED (never shown). This reuses
+// `mcqBlockToCandidate` + `validateCandidate` verbatim (the exact machinery
+// gateQuizMeMcq uses), so there is one oracle, not two.
+//
+// The gate is BOUNDED: it keeps at most `maxKeep` survivors and runs the oracle
+// on at most `attemptCap` blocks, so the LLM-grader cost per turn can never
+// exceed `attemptCap` calls regardless of how many mcqs the model emits.
+
+/** Default number of oracle-passed mcqs a real-practice turn keeps. */
+export const PRACTICE_MCQ_MAX_KEEP = 3;
+
+export interface PracticeMcqRejection {
+  /** Position of the dropped mcq among the response's mcq blocks. */
+  index: number;
+  reason: OracleResultRejectCategory;
+  detail: string;
+}
+
+export interface PracticeGateResult {
+  /** Oracle-passed mcq blocks in original order, capped at `maxKeep`. */
+  kept: FoxyMcqBlock[];
+  /** Total mcq blocks the model emitted. */
+  totalMcqs: number;
+  /** How many mcq blocks were actually run through the oracle (<= attemptCap). */
+  gated: number;
+  /** Dropped mcqs with their reject reason. */
+  rejections: PracticeMcqRejection[];
+  /** Total LLM-grader calls made across all gated mcqs. */
+  llm_calls: number;
+}
+
+/**
+ * Oracle-gate EVERY mcq block in a real-practice FoxyResponse. Keeps only the
+ * mcqs that pass (deterministic P6 + REG-54 LLM grader); drops the rest. Never
+ * throws for a per-mcq oracle rejection — a rejected mcq is simply omitted from
+ * `kept`. The LLM grader still fails CLOSED per mcq (a grader throw drops THAT
+ * mcq, it does not abort the batch), so an unaudited mcq is never kept (P12).
+ *
+ * `subject` is accepted for call-site symmetry/logging only; it is NOT forwarded
+ * to the oracle candidate (see mcqBlockToCandidate for why).
+ */
+export async function gatePracticeMcqs(
+  response: FoxyResponse,
+  opts: {
+    grade?: string;
+    subject?: string;
+    enableLlmGrader: boolean;
+    llmGrade?: LlmGrader;
+    /** Max survivors to keep (stop gating once reached). Default PRACTICE_MCQ_MAX_KEEP. */
+    maxKeep?: number;
+    /** Max mcqs to run through the oracle (bounds LLM cost). Default maxKeep + 2. */
+    attemptCap?: number;
+  },
+): Promise<PracticeGateResult> {
+  void opts.subject; // not forwarded — see mcqBlockToCandidate doc
+  const maxKeep = Math.max(1, opts.maxKeep ?? PRACTICE_MCQ_MAX_KEEP);
+  const attemptCap = Math.max(maxKeep, opts.attemptCap ?? maxKeep + 2);
+
+  const mcqs = response.blocks.filter(isFoxyMcqBlock);
+  const kept: FoxyMcqBlock[] = [];
+  const rejections: PracticeMcqRejection[] = [];
+  let llmCalls = 0;
+  let gated = 0;
+
+  for (let i = 0; i < mcqs.length; i++) {
+    if (kept.length >= maxKeep) break;
+    if (gated >= attemptCap) break;
+    gated += 1;
+
+    const candidate = mcqBlockToCandidate(mcqs[i], { grade: opts.grade });
+    const result = await validateCandidate(candidate, {
+      enableLlmGrader: opts.enableLlmGrader,
+      llmGrade: opts.llmGrade,
+    });
+    llmCalls += result.llm_calls;
+
+    if (result.ok) {
+      kept.push(mcqs[i]);
+    } else {
+      rejections.push({ index: i, reason: result.category, detail: result.reason });
+    }
+  }
+
+  return { kept, totalMcqs: mcqs.length, gated, rejections, llm_calls: llmCalls };
+}
+
+/**
+ * ANTI-FAKE GUARDRAIL (BINDING CONTRACT): a real-practice assistant turn may
+ * contain ONLY oracle-passed mcq blocks. This rebuilds the response so ANY prose
+ * the model emitted (e.g. an "I generated 5 questions!" paragraph) is STRIPPED —
+ * a turn can never CLAIM a quiz it did not actually produce as real, gated mcq
+ * blocks. The route calls this with the survivors from `gatePracticeMcqs`.
+ *
+ * Returns null when `kept` is empty; the caller MUST then serve the graceful
+ * bilingual fallback (never an empty or claim-only turn). Otherwise returns a
+ * FoxyResponse whose blocks are EXACTLY the kept mcq blocks (title/subject
+ * preserved). The kept blocks are a validated subset of the already
+ * schema-validated input, so the result round-trips FoxyResponseSchema.
+ */
+export function buildGatedPracticeResponse(
+  original: FoxyResponse,
+  kept: FoxyMcqBlock[],
+): FoxyResponse | null {
+  if (kept.length === 0) return null;
+  return {
+    title: original.title,
+    subject: original.subject,
+    blocks: kept.map((m) => ({
+      type: 'mcq' as const,
+      stem: m.stem,
+      options: [...m.options],
+      correct_answer_index: m.correct_answer_index,
+      explanation: m.explanation,
+      ...(m.bloom_level ? { bloom_level: m.bloom_level } : {}),
+      ...(m.difficulty ? { difficulty: m.difficulty } : {}),
+      ...(m.label ? { label: m.label } : {}),
+    })),
+  };
+}

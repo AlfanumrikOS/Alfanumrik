@@ -265,7 +265,13 @@ describe('resolveSession() — Phase 1 continuity fix', () => {
   });
 
   it('Case 4: idle >4h, flag ON, context matches → reuse + reactivated_after_idle log', async () => {
-    mockIsFeatureEnabled.mockResolvedValue(true); // flag ON
+    // ff_foxy_session_reactivate_v1 ON; the newer ff_foxy_durable_thread_v1
+    // stays OFF so this test still exercises the reactivate path exactly as
+    // before (Phase 0.2 durable thread takes precedence when ON and is
+    // covered in its own describe block below).
+    mockIsFeatureEnabled.mockImplementation(
+      async (flag: string) => flag === 'ff_foxy_session_reactivate_v1',
+    ); // flag ON
     mockSupabaseFrom.mockImplementation((table: string) => {
       if (table === 'foxy_sessions') {
         return chainMock({
@@ -310,7 +316,13 @@ describe('resolveSession() — Phase 1 continuity fix', () => {
   });
 
   it('Case 5: flag ON, context mismatch (subject change) → new session + context_changed log', async () => {
-    mockIsFeatureEnabled.mockResolvedValue(true); // flag ON
+    // ff_foxy_session_reactivate_v1 ON; the newer ff_foxy_durable_thread_v1
+    // stays OFF so this test still exercises the reactivate path exactly as
+    // before (Phase 0.2 durable thread takes precedence when ON and is
+    // covered in its own describe block below).
+    mockIsFeatureEnabled.mockImplementation(
+      async (flag: string) => flag === 'ff_foxy_session_reactivate_v1',
+    ); // flag ON
     let firstFromCall = true;
     mockSupabaseFrom.mockImplementation((table: string) => {
       if (table === 'foxy_sessions') {
@@ -362,7 +374,13 @@ describe('resolveSession() — Phase 1 continuity fix', () => {
   });
 
   it('Case 6: flag ON, sessionId not found → new session + silent_reset(session_not_found) log', async () => {
-    mockIsFeatureEnabled.mockResolvedValue(true); // flag ON
+    // ff_foxy_session_reactivate_v1 ON; the newer ff_foxy_durable_thread_v1
+    // stays OFF so this test still exercises the reactivate path exactly as
+    // before (Phase 0.2 durable thread takes precedence when ON and is
+    // covered in its own describe block below).
+    mockIsFeatureEnabled.mockImplementation(
+      async (flag: string) => flag === 'ff_foxy_session_reactivate_v1',
+    ); // flag ON
     let firstFromCall = true;
     mockSupabaseFrom.mockImplementation((table: string) => {
       if (table === 'foxy_sessions') {
@@ -396,5 +414,217 @@ describe('resolveSession() — Phase 1 continuity fix', () => {
         reason: 'session_not_found',
       }),
     );
+  });
+});
+
+// ─── Phase 0.2 durable thread (ff_foxy_durable_thread_v1 ON) ────────────────
+//
+// When the durable flag is ON, the client sends an authoritative client-
+// generated session id on every turn. The thread is NEVER silently reset: a
+// subject/chapter/mode change updates the row IN PLACE (same id), a well-formed
+// id with no row yet is created WITH that id, a PK collision with another
+// student falls back to a server id (no cross-tenant read/write), and a
+// malformed id falls back to a server id. The reactivate/idle path is bypassed.
+
+describe('resolveSession() — Phase 0.2 durable thread (flag ON)', () => {
+  // Capture insert/update payloads so we can assert the client id is honored
+  // in place and that a collision never leaks the other tenant's row.
+  const insertPayloads: Array<Record<string, unknown>> = [];
+  const updatePayloads: Array<Record<string, unknown>> = [];
+
+  /**
+   * foxy_sessions chain that records inserts/updates. The initial
+   * .select(...).single() resolves to `existingRow`; an .insert(payload)
+   * .select('id').single() resolves via `insert(payload)` so the collision
+   * test can branch on whether the client id was supplied.
+   */
+  function buildDurableFrom(config: {
+    existingRow: unknown;
+    insert: (payload: Record<string, unknown>) => ChainResult;
+  }) {
+    return (table: string) => {
+      if (table !== 'foxy_sessions') {
+        return chainMock({ data: null, error: null });
+      }
+      let capturedInsert: Record<string, unknown> | null = null;
+      const chain: Record<string, unknown> = {};
+      for (const m of ['select', 'eq', 'gte', 'order', 'limit']) {
+        chain[m] = (..._args: unknown[]) => chain;
+      }
+      chain.update = (payload: Record<string, unknown>) => {
+        updatePayloads.push(payload);
+        return chain;
+      };
+      chain.insert = (payload: Record<string, unknown>) => {
+        capturedInsert = payload;
+        insertPayloads.push(payload);
+        return chain;
+      };
+      chain.single = () =>
+        capturedInsert
+          ? Promise.resolve(config.insert(capturedInsert))
+          : Promise.resolve({ data: config.existingRow, error: null });
+      chain.then = (resolve: (v: unknown) => void, reject: (e: unknown) => void) =>
+        Promise.resolve({ data: null, error: null }).then(resolve, reject);
+      return chain;
+    };
+  }
+
+  // Durable flag ON; every other flag (incl. reactivate) OFF.
+  function durableOn() {
+    mockIsFeatureEnabled.mockImplementation(
+      async (flag: string) => flag === 'ff_foxy_durable_thread_v1',
+    );
+  }
+
+  beforeEach(() => {
+    insertPayloads.length = 0;
+    updatePayloads.length = 0;
+  });
+
+  it('reuse-on-topic-change: existing row → in-place UPDATE, same id, no new session', async () => {
+    durableOn();
+    mockSupabaseFrom.mockImplementation(
+      buildDurableFrom({
+        existingRow: { id: PROVIDED_SESSION_ID },
+        insert: () => ({ data: { id: NEW_SESSION_ID }, error: null }),
+      }),
+    );
+
+    // Subject + chapter + mode ALL differ from whatever the row held — a topic
+    // change must NOT fork a new session under the durable flag.
+    const result = await resolveSession(
+      STUDENT_ID,
+      'chemistry',
+      '11',
+      'thermodynamics',
+      'explain',
+      PROVIDED_SESSION_ID,
+      AUTH_USER_ID,
+      SCHOOL_ID,
+    );
+
+    expect(result).toBe(PROVIDED_SESSION_ID);
+    // Context updated in place.
+    expect(updatePayloads).toHaveLength(1);
+    expect(updatePayloads[0]).toMatchObject({
+      subject: 'chemistry',
+      chapter: 'thermodynamics',
+      mode: 'explain',
+    });
+    // No new session created / published.
+    expect(insertPayloads).toHaveLength(0);
+    expect(mockPublishEvent).not.toHaveBeenCalled();
+    // Reactivate/idle path never consulted when durable is ON.
+    expect(mockIsFeatureEnabled).not.toHaveBeenCalledWith(
+      'ff_foxy_session_reactivate_v1',
+      expect.anything(),
+    );
+  });
+
+  it('create-with-client-id: no row → INSERT with the client id + foxy_session_started', async () => {
+    durableOn();
+    mockSupabaseFrom.mockImplementation(
+      buildDurableFrom({
+        existingRow: null,
+        insert: (p) => ({ data: { id: (p.id as string) ?? NEW_SESSION_ID }, error: null }),
+      }),
+    );
+
+    const result = await resolveSession(
+      STUDENT_ID,
+      'physics',
+      '11',
+      'optics',
+      'learn',
+      PROVIDED_SESSION_ID,
+      AUTH_USER_ID,
+      SCHOOL_ID,
+    );
+
+    expect(result).toBe(PROVIDED_SESSION_ID);
+    expect(insertPayloads).toHaveLength(1);
+    expect(insertPayloads[0].id).toBe(PROVIDED_SESSION_ID);
+    expect(insertPayloads[0]).toMatchObject({
+      student_id: STUDENT_ID,
+      subject: 'physics',
+      mode: 'learn',
+    });
+    // New-session event published under the client id.
+    expect(mockPublishEvent).toHaveBeenCalledTimes(1);
+    const envelope = mockPublishEvent.mock.calls[0][1] as { idempotencyKey: string };
+    expect(envelope.idempotencyKey).toBe(`foxy_session_started:${PROVIDED_SESSION_ID}`);
+  });
+
+  it('23505 collision (id owned by ANOTHER student) → new server id, no leak', async () => {
+    durableOn();
+    mockSupabaseFrom.mockImplementation(
+      buildDurableFrom({
+        // No row owned by THIS student for the provided id.
+        existingRow: null,
+        insert: (p) =>
+          p.id
+            // Client id collides with a row that belongs to another student.
+            ? { data: null, error: { code: '23505' } }
+            // Server-generated retry succeeds.
+            : { data: { id: NEW_SESSION_ID }, error: null },
+      }),
+    );
+
+    const result = await resolveSession(
+      STUDENT_ID,
+      'physics',
+      '11',
+      'optics',
+      'learn',
+      PROVIDED_SESSION_ID,
+      AUTH_USER_ID,
+      SCHOOL_ID,
+    );
+
+    // The caller gets a fresh SERVER id, never the other student's id.
+    expect(result).toBe(NEW_SESSION_ID);
+    expect(result).not.toBe(PROVIDED_SESSION_ID);
+    // Collision warned with studentId ONLY (no PII, no other-tenant id).
+    expect(mockLoggerWarn).toHaveBeenCalledWith('foxy.session.thread_id_collision', {
+      studentId: STUDENT_ID,
+    });
+    // Two insert attempts: client id (collided) then server id.
+    expect(insertPayloads).toHaveLength(2);
+    expect(insertPayloads[0].id).toBe(PROVIDED_SESSION_ID);
+    expect(insertPayloads[1].id).toBeUndefined();
+    // The colliding row was never read (only a single select on THIS student's
+    // scope returned null) and the published session is the server id.
+    expect(mockPublishEvent).toHaveBeenCalledTimes(1);
+    const envelope = mockPublishEvent.mock.calls[0][1] as { idempotencyKey: string };
+    expect(envelope.idempotencyKey).toBe(`foxy_session_started:${NEW_SESSION_ID}`);
+  });
+
+  it('invalid-uuid fallback → server-generated id, no lookup on the bad id', async () => {
+    durableOn();
+    mockSupabaseFrom.mockImplementation(
+      buildDurableFrom({
+        existingRow: null,
+        insert: (p) => ({ data: { id: (p.id as string) ?? NEW_SESSION_ID }, error: null }),
+      }),
+    );
+
+    const result = await resolveSession(
+      STUDENT_ID,
+      'physics',
+      '11',
+      'optics',
+      'learn',
+      'not-a-valid-uuid',
+      AUTH_USER_ID,
+      SCHOOL_ID,
+    );
+
+    expect(result).toBe(NEW_SESSION_ID);
+    // Straight to a server-generated INSERT — no select/update on the bad id.
+    expect(updatePayloads).toHaveLength(0);
+    expect(insertPayloads).toHaveLength(1);
+    expect(insertPayloads[0].id).toBeUndefined();
+    expect(mockPublishEvent).toHaveBeenCalledTimes(1);
   });
 });

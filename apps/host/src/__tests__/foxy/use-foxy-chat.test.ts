@@ -29,7 +29,7 @@ vi.mock('@alfanumrik/lib/supabase', () => ({
   },
 }));
 
-import { useFoxyChat } from '@/app/foxy/_hooks/useFoxyChat';
+import { useFoxyChat, readStoredThreadId } from '@/app/foxy/_hooks/useFoxyChat';
 
 const basePayload = {
   message: 'Hi Foxy',
@@ -147,5 +147,134 @@ describe('useFoxyChat', () => {
     expect(result.current.messages).toEqual([]);
     expect(result.current.chatSessionId).toBeNull();
     expect(result.current.xpGained).toBe(0);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════
+   ff_foxy_durable_thread_v1 — CLIENT owns a durable conversation id.
+   Fixes the "context breaks / re-type your question" bug: a rapid 2nd
+   send (before the server session frame returns) or a reload must reuse
+   the SAME id. All new behavior is gated by the durableThreadEnabled
+   option; with it OFF the hook is byte-identical to today.
+   ══════════════════════════════════════════════════════════════ */
+
+/** Reset the URL + the durable-thread localStorage key between cases. */
+function resetDurableThreadState() {
+  try { window.localStorage.removeItem('foxy_thread'); } catch { /* ignore */ }
+  try { window.history.replaceState(null, '', '/foxy'); } catch { /* ignore */ }
+}
+
+/** Record every fetch request body so we can assert the wire `session_id`.
+ *  Echoes the sent session_id back as the server's sessionId (realistic:
+ *  the durable server upserts under the client id). */
+function installBodyRecordingFetch(): any[] {
+  const bodies: any[] = [];
+  global.fetch = vi.fn().mockImplementation((_url: string, init: any) => {
+    const body = JSON.parse(init.body);
+    bodies.push(body);
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({ response: 'Hi there!', sessionId: body.session_id ?? body.sessionId ?? null }),
+      body: null,
+    });
+  }) as unknown as typeof fetch;
+  return bodies;
+}
+
+describe('useFoxyChat — durable thread (ff_foxy_durable_thread_v1)', () => {
+  beforeEach(() => {
+    resetDurableThreadState();
+  });
+
+  it('OFF (default): a send never writes foxy_thread or the ?c= URL param', async () => {
+    window.localStorage.setItem('alfanumrik_foxy_stream', '0'); // deterministic JSON branch
+    const bodies = installBodyRecordingFetch();
+    const { result } = renderHook(() => useFoxyChat()); // no options → durable OFF
+
+    await act(async () => {
+      await result.current.sendMessage(basePayload);
+    });
+
+    expect(window.localStorage.getItem('foxy_thread')).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('c')).toBeNull();
+    // Legacy wire shape unchanged: first send carries a null session id.
+    expect(bodies[0].sessionId).toBeNull();
+  });
+
+  it('ON: two rapid sends share ONE client-minted conversation id (the race fix)', async () => {
+    const bodies = installBodyRecordingFetch();
+    const { result } = renderHook(() => useFoxyChat({ durableThreadEnabled: true }));
+
+    await act(async () => {
+      // Fire the 2nd send BEFORE awaiting the 1st — mirrors typing fast while a
+      // long answer streams. Both must read the same synchronously-minted ref.
+      const p1 = result.current.sendMessage(basePayload);
+      const p2 = result.current.sendMessage(basePayload);
+      await Promise.all([p1, p2]);
+    });
+
+    const ids = bodies.map((b) => b.session_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBeTruthy();          // a real client-minted uuid, not null
+    expect(ids[1]).toBe(ids[0]);          // same id → no second/empty session
+    expect(new Set(ids).size).toBe(1);
+    // Persisted to BOTH stores so a reload restores the same thread.
+    expect(window.localStorage.getItem('foxy_thread')).toBe(ids[0]);
+    expect(new URL(window.location.href).searchParams.get('c')).toBe(ids[0]);
+  });
+
+  it('ON: after adopting a restored id, the next send reuses it (reload continuity)', async () => {
+    const bodies = installBodyRecordingFetch();
+    const { result } = renderHook(() => useFoxyChat({ durableThreadEnabled: true }));
+
+    act(() => { result.current.adoptConversationId('restored-thread-123'); });
+    await act(async () => { await result.current.sendMessage(basePayload); });
+
+    expect(bodies[0].session_id).toBe('restored-thread-123');
+  });
+
+  it('readStoredThreadId prefers ?c= over localStorage, then falls back to localStorage', () => {
+    window.localStorage.setItem('foxy_thread', 'ls-id');
+    window.history.replaceState(null, '', '/foxy?c=url-id');
+    expect(readStoredThreadId()).toBe('url-id');
+
+    window.history.replaceState(null, '', '/foxy');
+    expect(readStoredThreadId()).toBe('ls-id');
+
+    window.localStorage.removeItem('foxy_thread');
+    expect(readStoredThreadId()).toBeNull();
+  });
+
+  it('ON: adoptConversationId mirrors id to state + URL + localStorage', () => {
+    const { result } = renderHook(() => useFoxyChat({ durableThreadEnabled: true }));
+    act(() => { result.current.adoptConversationId('thread-xyz'); });
+
+    expect(result.current.chatSessionId).toBe('thread-xyz');
+    expect(window.localStorage.getItem('foxy_thread')).toBe('thread-xyz');
+    expect(new URL(window.location.href).searchParams.get('c')).toBe('thread-xyz');
+  });
+
+  it('ON: startNewConversation mints a fresh id distinct from the previous one', () => {
+    const { result } = renderHook(() => useFoxyChat({ durableThreadEnabled: true }));
+    act(() => { result.current.adoptConversationId('old-id'); });
+    act(() => { result.current.startNewConversation(); });
+
+    const fresh = result.current.chatSessionId;
+    expect(fresh).toBeTruthy();
+    expect(fresh).not.toBe('old-id');
+    expect(window.localStorage.getItem('foxy_thread')).toBe(fresh);
+    expect(new URL(window.location.href).searchParams.get('c')).toBe(fresh);
+  });
+
+  it('OFF: startNewConversation clears the id and touches no storage (byte-identical)', () => {
+    const { result } = renderHook(() => useFoxyChat()); // durable OFF
+    act(() => { result.current.setChatSessionId('sess-legacy'); });
+    act(() => { result.current.startNewConversation(); });
+
+    expect(result.current.chatSessionId).toBeNull();
+    expect(window.localStorage.getItem('foxy_thread')).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('c')).toBeNull();
   });
 });

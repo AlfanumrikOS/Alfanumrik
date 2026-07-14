@@ -88,7 +88,12 @@ import {
 import { buildTenantOverrideSection } from '@alfanumrik/lib/ai/prompts/tenant-overrides';
 import { type FoxyResponse } from '@alfanumrik/lib/foxy/schema';
 import { denormalizeFoxyResponse } from '@alfanumrik/lib/foxy/denormalize';
-import { gateQuizMeMcq, findSingleMcqBlock } from '@alfanumrik/lib/foxy/quiz-me-oracle-gate';
+import {
+  gateQuizMeMcq,
+  findSingleMcqBlock,
+  gatePracticeMcqs,
+  buildGatedPracticeResponse,
+} from '@alfanumrik/lib/foxy/quiz-me-oracle-gate';
 import { resolveFoxyEnrollmentScope } from '@alfanumrik/lib/foxy-scope';
 import {
   resolveLeadConceptId,
@@ -110,6 +115,11 @@ import {
 } from '@alfanumrik/lib/ai/validation/quiz-oracle-prompts';
 // FOX-1 (P12): deterministic output content backstop on the LIVE grounded path.
 import { screenStudentFacingText } from '@alfanumrik/lib/ai/validation/output-screen';
+// Phase 0.2 (ff_foxy_answer_continuation_v1): clean, self-screening bilingual
+// safe-abstain string reused to resolve a pre-inserted pending assistant row
+// when the output-safety backstop hard-abstains (so it is never orphaned as an
+// empty pending row that could later leak into cross-session prompt assembly).
+import { SAFE_ABSTAIN_MESSAGE } from '@alfanumrik/lib/ai/validation/output-guard';
 // FOX-2 (P12): student-message prompt-injection neutralizer (input-side).
 import { neutralizeInjectionAttempt } from '@alfanumrik/lib/ai/validation/input-guard';
 import { callClaude } from '@alfanumrik/lib/ai';
@@ -282,6 +292,10 @@ import {
   VALID_COACH_DIRECTIVES,
   COACH_DIRECTIVE_SECTIONS,
   SINGLE_MCQ_DIRECTIVE,
+  PRACTICE_MCQ_DIRECTIVE,
+  PRACTICE_MCQ_COUNT,
+  TEACH_THEN_STOP_DIRECTIVE,
+  composeModeDirective,
   buildQuizMeLlmGrader,
   buildQuizMeFallbackResponse,
   isBareOpen,
@@ -839,11 +853,30 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // Part 2B: chapter topic-progression context (ordered topics + position +
   // next unmastered topic). Best-effort; empty when no ordered ladder exists.
   let topicProgress: ChapterTopicProgress = EMPTY_TOPIC_PROGRESS;
+  // Phase 0.2 (ff_foxy_answer_continuation_v1): when ON, prior-session context
+  // assembly excludes pending assistant rows (empty content awaiting an LLM
+  // completion, or orphaned by a hard-abstain) so they never leak into the
+  // cross-session prompt as empty `[previous · Foxy]` snippets. Evaluated ONCE
+  // here with the SAME canonical { role:'student', userId: auth.userId }
+  // context used by the safety-block write cleanup so the read filter and the
+  // write cleanup agree during a partial rollout. When OFF: the read filter is
+  // not applied and loadPriorSessionContext is byte-identical to today.
+  const excludePendingPriorContext = await isFeatureEnabled('ff_foxy_answer_continuation_v1', {
+    role: 'student',
+    userId: auth.userId!,
+  });
   try {
     const [ctx, hist, prior, labs, prog] = await Promise.all([
       loadCognitiveContext(studentId, subject, grade, chapter),
       loadHistory(resolvedSessionId),
-      loadPriorSessionContext(studentId, subject, grade, resolvedSessionId, chapter),
+      loadPriorSessionContext(
+        studentId,
+        subject,
+        grade,
+        resolvedSessionId,
+        chapter,
+        excludePendingPriorContext,
+      ),
       fetchRecentLabContext(supabaseAdmin, studentId, 5),
       loadChapterTopicProgress(studentId, subject, grade, chapter),
     ]);
@@ -1512,6 +1545,64 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     userId: auth.userId!,
   });
 
+  // ── Phase 0.3: real practice — INTERACTIVE, oracle-gated MCQs (flag-gated) ──
+  // When `ff_foxy_real_practice_v1` is ON, a practice turn (UI-selected practice
+  // OR quiz-intent auto-promotion, but NOT the single-MCQ "Quiz me" action) emits
+  // real `mcq` blocks (interactive + gradable) instead of the legacy 5 markdown
+  // pseudo-MCQs that render as non-interactive text. The flag is read ONLY for a
+  // practice turn, so every other turn is byte-identical to today (no extra DB
+  // roundtrip, no behavior change). When OFF (default) practice keeps the legacy
+  // MODE_DIRECTIVES.practice shape verbatim.
+  const isPracticeTurn = mode === 'practice' && !isQuizMe;
+  const realPracticeEnabled = isPracticeTurn
+    ? await isFeatureEnabled('ff_foxy_real_practice_v1', {
+        role: 'student',
+        userId: auth.userId!,
+      })
+    : false;
+  // `isRealPractice` gates BOTH the mcq-emitting prompt directive and the
+  // post-LLM multi-MCQ oracle gate / evidential serve below. Like "Quiz me", a
+  // real-practice turn is forced off the streaming path (the mcqs must be
+  // oracle-gated on the FULL structured payload BEFORE display — the SSE path
+  // has no gate point).
+  const isRealPractice = isPracticeTurn && realPracticeEnabled;
+
+  // ── Phase 0.4: teach-then-stop (ff_foxy_learning_actions_v1) ────────────
+  // When the redesigned post-answer action bar is live, the student's screen
+  // already shows tappable buttons (Got it / Explain simpler / Show example /
+  // Quiz me). So Foxy re-narrating that menu in prose ("Would you like me to
+  // explain this more simply? I can also give you an example, or quiz you on
+  // it — just let me know!") is redundant and un-teacherly. When ON, we inject
+  // TEACH_THEN_STOP_DIRECTIVE so Foxy TEACHES cleanly and ends with at most ONE
+  // substantive check question, WITHOUT enumerating the assistant's own menu of
+  // next actions. The directive still REQUIRES a single Socratic check (that is
+  // teaching, not a meta-offer), so genuine pedagogy is preserved.
+  //
+  // Reuses the EXISTING flag that renders those buttons (never creates/flips a
+  // flag). Scoped to prose-teaching turns (mode !== 'practice'); practice /
+  // quiz_me / real-practice emit MCQs and are unaffected — the read is skipped
+  // entirely on those turns (no extra DB roundtrip, byte-identical). Flag OFF
+  // (default) OR a practice turn → teachThenStopDirective = '' → mode_directive
+  // is byte-identical to today. Threaded via the mode_directive template
+  // variable below (the same channel as SINGLE_MCQ_DIRECTIVE /
+  // PRACTICE_MCQ_DIRECTIVE); FOXY_SAFETY_RAILS + base persona are untouched.
+  const teachThenStopEnabled =
+    mode !== 'practice'
+      ? await isFeatureEnabled('ff_foxy_learning_actions_v1', {
+          role: 'student',
+          userId: auth.userId!,
+        })
+      : false;
+  const teachThenStopDirective = teachThenStopEnabled ? TEACH_THEN_STOP_DIRECTIVE : '';
+  if (teachThenStopEnabled) {
+    logger.info('foxy.teach_then_stop.injected', {
+      // P13: mode + scope only — never studentId/message.
+      mode,
+      subject,
+      grade,
+    });
+  }
+
   // history_messages is kept as a deprecated alias for one release so the
   // grounded-answer service can switch over without forcing a synchronized
   // deploy. The service now prefers conversation_turns when present.
@@ -1561,7 +1652,22 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // "Quiz me" (isQuizMe) routes through practice mode but swaps the
         // 5-question shape for SINGLE_MCQ_DIRECTIVE so the model emits EXACTLY
         // ONE mcq block — which is oracle-gated (P6 + REG-54) before the wire.
-        mode_directive: isQuizMe ? SINGLE_MCQ_DIRECTIVE : (MODE_DIRECTIVES[mode] ?? ''),
+        //
+        // Real practice (isRealPractice, ff_foxy_real_practice_v1 ON) swaps the
+        // legacy 5-paragraph pseudo-MCQ shape for PRACTICE_MCQ_DIRECTIVE so the
+        // model emits N real, interactive `mcq` blocks — each oracle-gated below
+        // before display. Flag OFF → MODE_DIRECTIVES.practice verbatim.
+        // Phase 0.4 (ff_foxy_learning_actions_v1): on prose-teaching turns the
+        // teach-then-stop directive is composed onto the (usually empty) per-
+        // mode directive so Foxy ends with ONE check question and stops
+        // self-narrating the on-screen action menu. teachThenStopDirective is
+        // '' when the flag is OFF or on a practice turn, and composeModeDirective
+        // returns the base verbatim in that case → byte-identical to today.
+        mode_directive: isQuizMe
+          ? SINGLE_MCQ_DIRECTIVE
+          : isRealPractice
+            ? PRACTICE_MCQ_DIRECTIVE
+            : composeModeDirective(MODE_DIRECTIVES[mode] ?? '', teachThenStopDirective),
         // Phase 2.2: coaching mode and its instruction line, consumed by
         // the rewritten foxy_tutor_v1 template.
         coach_mode: coachMode.toUpperCase(),
@@ -1687,7 +1793,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // streaming path emits text deltas to the browser before the payload is
   // complete (no gate point). Force quiz_me off the stream so a failing MCQ can
   // never reach the student. (simplify/example are prose and stream fine.)
-  if (wantsStream && !isQuizMe) {
+  //
+  // Real practice (isRealPractice) is forced off the stream for the SAME reason:
+  // every emitted mcq is oracle-gated on the FULL structured payload before
+  // display, so an ungated/garbage mcq can never reach the student mid-stream.
+  if (wantsStream && !isQuizMe && !isRealPractice) {
     const streamingEnabled = await isFeatureEnabled('ff_foxy_streaming', {
       role: 'student',
       userId: auth.userId!,
@@ -1911,6 +2021,11 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   let evidentialServedItemId: string | null = null;
   let quizMeEvidential = false;
   let quizMeNonEvidentialReason: string | null = null;
+  // Phase 0.3: set true when a real-practice turn produced >=1 oracle-passed mcq
+  // block, so the wire emits the (single) evidential `quizMe` contract for the
+  // FIRST mcq exactly like a "Quiz me" turn does. Stays false when we fell back
+  // to the graceful message (no mcq → no quizMe contract, no fake claim).
+  let realPracticeApplied = false;
   if (isQuizMe) {
     if (structured) {
       try {
@@ -2014,6 +2129,138 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       structured = buildQuizMeFallbackResponse(subject);
       quizMeWireText = denormalizeFoxyResponse(structured);
     }
+  } else if (isRealPractice) {
+    // ── Real practice: multi-MCQ oracle gate + one evidential lead item ──────
+    // (ff_foxy_real_practice_v1 ON.) The practice turn should carry N real `mcq`
+    // blocks. Before showing ANY of them:
+    //   1. Oracle-gate EVERY mcq (P6 + REG-54, deterministic + LLM grader; fails
+    //      CLOSED per mcq). Failing mcqs are DROPPED, never shown (P12).
+    //   2. Anti-fake guardrail: rebuild the turn to contain ONLY the oracle-passed
+    //      mcq blocks (buildGatedPracticeResponse strips ALL prose), so a turn can
+    //      never CLAIM questions it did not actually emit as gated mcqs.
+    //   3. If NO mcq survives → graceful bilingual fallback (never a garbage mcq
+    //      and never a false "I made a quiz" claim).
+    //   4. Serve the FIRST surviving mcq as ONE evidential foxy_served_items row
+    //      on the lead concept — identical to "Quiz me". Answering it moves
+    //      mastery through the sanctioned /api/foxy/quiz-answer pipeline (3s floor
+    //      + idempotency + XP-free). The remaining mcqs are real, answerable
+    //      self-check (NON-evidential — no server-issued item, so quiz-answer
+    //      refuses them; mastery can never be double-counted on one turn — P1/P2/P3).
+    // The renderer wires the single `quizMe` contract to the FIRST mcq block and
+    // renders every other mcq as self-check, so no client change is required.
+    if (structured) {
+      try {
+        const gated = await gatePracticeMcqs(structured, {
+          grade,
+          subject,
+          enableLlmGrader: true,
+          llmGrade: buildQuizMeLlmGrader(),
+          maxKeep: PRACTICE_MCQ_COUNT,
+        });
+        const rebuilt = buildGatedPracticeResponse(structured, gated.kept);
+        if (!rebuilt) {
+          // No mcq survived (all rejected, or none emitted). Never show a claim
+          // without real questions — fall back to the graceful bilingual message.
+          logger.warn('foxy.real_practice.all_rejected', {
+            // P13: scope + counts only; never mcq text or studentId.
+            subject,
+            grade,
+            totalMcqs: gated.totalMcqs,
+            llmCalls: gated.llm_calls,
+          });
+          structured = buildQuizMeFallbackResponse(subject);
+          quizMeWireText = denormalizeFoxyResponse(structured);
+        } else {
+          // Anti-fake: `structured` is now ONLY the oracle-passed mcq blocks.
+          structured = rebuilt;
+          quizMeWireText = denormalizeFoxyResponse(structured);
+          realPracticeApplied = true;
+          logger.info('foxy.real_practice.gated', {
+            subject,
+            grade,
+            kept: gated.kept.length,
+            dropped: gated.totalMcqs - gated.kept.length,
+            llmCalls: gated.llm_calls,
+          });
+          // Serve ONE evidential item for the FIRST surviving mcq (lead concept).
+          // UNIQUE(session_id, concept_id) guarantees at most one evidential serve
+          // per (session, concept) — a repeat never double-moves mastery.
+          try {
+            const lead = selectLeadConcept(cognitiveCtx);
+            const resolved = await resolveLeadConceptId(supabaseAdmin, {
+              subject,
+              grade,
+              chapter,
+              leadConceptTitle: lead?.title ?? null,
+            });
+            if (resolved.ok) {
+              const { payload, correctIndex } = payloadFromMcqBlock(gated.kept[0]);
+              const serve = await serveEvidentialItem(supabaseAdmin, {
+                sessionId: resolvedSessionId,
+                studentId,
+                conceptId: resolved.concept.id,
+                payload,
+                correctIndex,
+              });
+              if (serve.evidential) {
+                evidentialServedItemId = serve.servedItemId;
+                quizMeEvidential = true;
+                logger.info('foxy.real_practice.evidential_served', {
+                  // P13: scope + provenance only — no concept title / studentId.
+                  subject,
+                  grade,
+                  leadSource: lead?.source ?? null,
+                });
+              } else {
+                // duplicate_in_session or insert_failed → NON-evidential (still
+                // real + answerable, just no mastery move this turn).
+                quizMeNonEvidentialReason = serve.reason;
+                logger.info('foxy.real_practice.non_evidential', {
+                  subject,
+                  grade,
+                  reason: serve.reason,
+                });
+              }
+            } else {
+              // Concept unresolvable → the mcqs stay real/answerable but the turn
+              // is NON-evidential (cannot bind an evidential anchor).
+              quizMeNonEvidentialReason = resolved.reason;
+              logger.info('foxy.real_practice.non_evidential', {
+                subject,
+                grade,
+                reason: resolved.reason,
+              });
+            }
+          } catch (serveErr) {
+            // Serving the evidential anchor is best-effort: a failure must NOT
+            // break the turn. The student still sees the oracle-passed mcqs; they
+            // are simply non-evidential this turn.
+            quizMeNonEvidentialReason = 'serve_threw';
+            logger.warn('foxy.real_practice.serve_threw', {
+              subject,
+              grade,
+              error: serveErr instanceof Error ? serveErr.message : String(serveErr),
+            });
+          }
+        }
+      } catch (gateErr) {
+        // Defense-in-depth: the gate fails closed internally per mcq, but if
+        // anything unexpected throws here we refuse to show ungated mcqs and
+        // serve the graceful fallback instead (P12).
+        logger.warn('foxy.real_practice.gate_threw', {
+          subject,
+          grade,
+          error: gateErr instanceof Error ? gateErr.message : String(gateErr),
+        });
+        structured = buildQuizMeFallbackResponse(subject);
+        quizMeWireText = denormalizeFoxyResponse(structured);
+      }
+    } else {
+      // No structured payload at all (upstream malformed) — real practice cannot
+      // be honored. Serve the graceful fallback rather than a raw text blob.
+      structured = buildQuizMeFallbackResponse(subject);
+      quizMeWireText = denormalizeFoxyResponse(structured);
+    }
   }
 
   // When `structured` is present, the canonical assistant text is the
@@ -2064,6 +2311,49 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     });
     // Refund the quota unit — the student did not receive a usable answer.
     await refundQuota(studentId, 'foxy_chat');
+
+    // Phase 0.2 (ff_foxy_answer_continuation_v1): if the native-turns path
+    // pre-inserted a pending assistant row (content='', pending=true) before
+    // the LLM call, hard-abstaining here would leave it ORPHANED. loadHistory
+    // already filters it out same-session, but an orphaned empty row would
+    // otherwise linger and (pre-fix) leak into loadPriorSessionContext as an
+    // empty `[previous · Foxy]` snippet. When the flag is ON, resolve the row
+    // to the clean, self-screening bilingual SAFE_ABSTAIN_MESSAGE and clear
+    // `pending` so it becomes a legitimate (safe) assistant turn rather than an
+    // empty orphan. Best-effort — a failure here must NOT change the abstain
+    // response the student receives. When OFF: byte-identical to today (the row
+    // is left as-is; the read-side filter in loadPriorSessionContext is also
+    // gated OFF). P13: category/scope-only failure log, never PII or answer text.
+    if (preInsertedIds.assistantId) {
+      const continuationEnabled = await isFeatureEnabled('ff_foxy_answer_continuation_v1', {
+        role: 'student',
+        userId: auth.userId!,
+      });
+      if (continuationEnabled) {
+        try {
+          const { error: cleanupErr } = await supabaseAdmin
+            .from('foxy_chat_messages')
+            .update({ content: SAFE_ABSTAIN_MESSAGE, pending: false })
+            .eq('id', preInsertedIds.assistantId);
+          if (cleanupErr) {
+            logger.warn('foxy.output.safety_blocked_pending_cleanup_failed', {
+              subject,
+              grade,
+              mode,
+              error: cleanupErr.message,
+            });
+          }
+        } catch (cleanupErr) {
+          logger.warn('foxy.output.safety_blocked_pending_cleanup_threw', {
+            subject,
+            grade,
+            mode,
+            error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+          });
+        }
+      }
+    }
+
     logFoxyAsk(0);
     return NextResponse.json({
       success: true,
@@ -2405,13 +2695,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     // with clients that haven't been updated to read this field yet.
     ...(structured ? { structured } : {}),
     // ── Part B1: evidential quiz-me contract on the wire ───────────────────
-    // Present ONLY on a "Quiz me" turn. `quizMe.evidential` tells the client
-    // whether answering moves mastery: when true, the client POSTs
+    // Present on a "Quiz me" turn AND on a real-practice turn that produced >=1
+    // oracle-passed mcq. `quizMe.evidential` tells the client whether answering
+    // the FIRST mcq moves mastery: when true, the client POSTs
     // { served_item_id, chosen_index, attempt_id, response_time_ms } to
     // /api/foxy/quiz-answer to commit the graded result through the sanctioned
     // path. When false, the MCQ is practice-only (no mastery move) and the
     // client renders it without the served_item_id (no grade endpoint call).
-    ...(isQuizMe
+    // (For real practice the renderer binds this to the FIRST mcq; every other
+    // mcq renders as real self-check — no wire contract needed for those.)
+    ...(isQuizMe || realPracticeApplied
       ? {
           quizMe: quizMeEvidential
             ? { evidential: true as const, servedItemId: evidentialServedItemId }

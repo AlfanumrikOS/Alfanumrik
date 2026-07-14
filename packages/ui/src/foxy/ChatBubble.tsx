@@ -352,8 +352,22 @@ export function ChatBubble({
       )}
 
       {/* ── New learning-action bar (flag ON) ───────────────────────────────
-          Tutor messages only; suppressed on the error fallback bubble. */}
-      {learningActionsEnabled && isTutor && rawContent !== 'Oops! Please try again.' && (
+          Tutor TEACHING turns only. Suppressed on the error fallback bubble
+          ('Oops! Please try again.') AND on hard-abstain bubbles — when the
+          grounded-answer service refuses, a HardAbstainCard renders in place of
+          teaching content, so "Got it / Explain simpler / Show example / Quiz
+          me on this" would be nonsensical there (criteria 4: no bar on pure
+          abstain/error surfaces). The flag-OFF legacy bar above is deliberately
+          left untouched, so the OFF path stays byte-identical to today.
+
+          PHASE 2 PLUG-IN POINT — Teaching Director `suggestedButtons`:
+          The Director will later supply a context-aware subset of the four
+          primary actions. To wire it: add a `suggestedButtons?: LearningActionType[]`
+          prop to this component and gate each primary button below with
+          `(suggestedButtons?.includes('<type>') ?? true)`. Prop absent → all
+          four render (today's behavior), so it is a purely additive change.
+          Nothing is wired now. */}
+      {learningActionsEnabled && isTutor && !showHardAbstainCard && rawContent !== 'Oops! Please try again.' && (
         <div className="mt-2 pl-1">
           {gotIt ? (
             // Got it ✓ collapses the row into a lightweight micro-CTA — no
@@ -378,7 +392,7 @@ export function ChatBubble({
               <button
                 type="button"
                 onClick={() => onLearningAction?.('got_it')}
-                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
                 style={{
                   background: 'color-mix(in srgb, var(--success) 8%, transparent)',
                   color: 'var(--success)',
@@ -391,7 +405,7 @@ export function ChatBubble({
               <button
                 type="button"
                 onClick={() => onLearningAction?.('explain_simpler')}
-                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
                 style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
                 data-testid="learning-action-simpler"
               >
@@ -400,7 +414,7 @@ export function ChatBubble({
               <button
                 type="button"
                 onClick={() => onLearningAction?.('show_example')}
-                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
                 style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
                 data-testid="learning-action-example"
               >
@@ -409,7 +423,7 @@ export function ChatBubble({
               <button
                 type="button"
                 onClick={() => onLearningAction?.('quiz_me')}
-                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
+                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
                 style={{
                   background: 'color-mix(in srgb, var(--purple) 8%, transparent)',
                   color: 'var(--purple)',
@@ -428,7 +442,7 @@ export function ChatBubble({
                   aria-haspopup="menu"
                   aria-expanded={overflowOpen}
                   aria-label={isHi ? 'और विकल्प' : 'More options'}
-                  className="px-2.5 py-1.5 rounded-xl text-[14px] font-bold leading-none transition-all active:scale-95 min-h-[36px] min-w-[36px]"
+                  className="px-2.5 py-1.5 rounded-xl text-[14px] font-bold leading-none transition-all active:scale-95 min-h-[44px] min-w-[44px]"
                   style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
                   data-testid="learning-action-overflow"
                 >
@@ -445,7 +459,7 @@ export function ChatBubble({
                       role="menuitem"
                       disabled={saved}
                       onClick={() => { onLearningAction?.('save'); setOverflowOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98] disabled:cursor-default"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] font-semibold transition-all active:scale-[0.98] disabled:cursor-default"
                       style={{ color: saved ? 'var(--success)' : 'var(--text-2)' }}
                       data-testid="learning-action-save"
                     >
@@ -459,7 +473,7 @@ export function ChatBubble({
                         type="button"
                         role="menuitem"
                         onClick={() => { onSpeak(); setOverflowOpen(false); }}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
                         style={{ color: 'var(--text-2)' }}
                         data-testid="learning-action-speak"
                       >
@@ -471,7 +485,7 @@ export function ChatBubble({
                       type="button"
                       role="menuitem"
                       onClick={() => { setIssueModalOpen(true); setOverflowOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
                       style={{ color: 'var(--text-2)' }}
                       data-testid="learning-action-report"
                     >
