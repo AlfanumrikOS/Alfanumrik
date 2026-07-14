@@ -12,6 +12,8 @@
  *   4. src/app/auth/callback/route.ts must exist
  *   5. src/app/auth/confirm/route.ts must exist
  *   6. AuthScreen.tsx must NOT have client-side profile inserts
+ *      (shipped copy: ../../packages/ui/src/auth/AuthScreen.tsx — the one
+ *       apps/host/src/app/login/page.tsx actually imports)
  *   7. AuthContext.tsx must NOT have client-side profile inserts
  *   8. src/app/api/auth/session/route.ts must exist
  *   9. AuthScreen.tsx must have all 4 role tabs (Student, Teacher, Parent, School)
@@ -78,8 +80,19 @@ if (!exists('src/app/auth/confirm/route.ts')) {
 }
 
 // ── Check 6: No client-side profile inserts in AuthScreen ────────────────────
-const authScreenContent = read('src/components/auth/AuthScreen.tsx');
-if (authScreenContent !== null) {
+// The SHIPPED auth screen is packages/ui/src/auth/AuthScreen.tsx — the one that
+// apps/host/src/app/login/page.tsx imports as @alfanumrik/ui/auth/AuthScreen.
+// This guard runs with cwd=apps/host (invoked from apps/host/package.json
+// `build`), so read() resolves relative to apps/host. The stale, unshipped
+// apps/host/src/components/auth/AuthScreen.tsx is NOT validated by this gate.
+const AUTH_SCREEN_PATH = '../../packages/ui/src/auth/AuthScreen.tsx';
+const authScreenContent = read(AUTH_SCREEN_PATH);
+if (authScreenContent === null) {
+  // Fail CLOSED: a missing/unreadable shipped AuthScreen means Checks 6 and 9
+  // (P8 no-client-insert + P15 role-tab completeness) cannot be validated at
+  // all. A silent skip here would be a no-op gate — worse than a failing one.
+  fail(`❌ FATAL: shipped AuthScreen not found at ${AUTH_SCREEN_PATH} (resolved from cwd=apps/host). Auth-gate cannot validate P8/P15 — failing closed.`);
+} else {
   const clientInsertPattern = /\.from\('students'\)\.insert|\.from\('teachers'\)\.insert|\.from\('guardians'\)\.insert/;
   if (clientInsertPattern.test(authScreenContent)) {
     fail('❌ FATAL: AuthScreen.tsx has client-side profile inserts. This bypasses RLS — violates P8.');

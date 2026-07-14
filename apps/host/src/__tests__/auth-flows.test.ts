@@ -166,6 +166,14 @@ describe('identity/constants.ts — PUBLIC_ROUTES', () => {
 // AuthScreen.tsx — role tabs
 // ─────────────────────────────────────────────────────────────────────────────
 
+// AuthScreen path note (2026-07-14): the login route ships the SHARED-package
+// screen — `apps/host/src/app/login/page.tsx` imports `@alfanumrik/ui/auth/AuthScreen`,
+// which resolves to `packages/ui/src/auth/AuthScreen.tsx`. These guards must read
+// THAT file, not the stale/dead `apps/host/src/components/auth/AuthScreen.tsx` copy
+// (no longer imported by any route). `readFile()` joins its arg onto process.cwd()
+// (= apps/host under vitest), so the sibling package is reached via `../../packages/ui/...`.
+const AUTH_SCREEN = '../../packages/ui/src/auth/AuthScreen.tsx';
+
 describe('AuthScreen.tsx — all 4 role tabs present', () => {
   // 2026-06-16: the role-tab labels became bilingual (pre-login EN/हिंदी toggle).
   // `label: 'Student'` is now `label: t('Student', 'विद्यार्थी')`. The intent of
@@ -174,33 +182,33 @@ describe('AuthScreen.tsx — all 4 role tabs present', () => {
   // monolingual literal. This is NOT a weakened assertion: it pins MORE (both the
   // English term AND the Hindi translation must be present together).
   it('has Student tab (bilingual label)', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: t('Student', 'विद्यार्थी')");
+    expect(readFile(AUTH_SCREEN)).toContain("label: t('Student', 'विद्यार्थी')");
   });
 
   it('has Teacher tab (bilingual label)', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: t('Teacher', 'शिक्षक')");
+    expect(readFile(AUTH_SCREEN)).toContain("label: t('Teacher', 'शिक्षक')");
   });
 
   it('has Parent tab (bilingual label)', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: t('Parent', 'अभिभावक')");
+    expect(readFile(AUTH_SCREEN)).toContain("label: t('Parent', 'अभिभावक')");
   });
 
   it('has School tab (institution_admin, bilingual label)', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).toContain("label: t('School', 'स्कूल')");
+    expect(readFile(AUTH_SCREEN)).toContain("label: t('School', 'स्कूल')");
   });
 });
 
 describe('AuthScreen.tsx — no client-side profile inserts', () => {
   it('does NOT contain .from(students).insert', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).not.toMatch(/\.from\('students'\)\.insert/);
+    expect(readFile(AUTH_SCREEN)).not.toMatch(/\.from\('students'\)\.insert/);
   });
 
   it('does NOT contain .from(teachers).insert', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).not.toMatch(/\.from\('teachers'\)\.insert/);
+    expect(readFile(AUTH_SCREEN)).not.toMatch(/\.from\('teachers'\)\.insert/);
   });
 
   it('does NOT contain .from(guardians).insert', () => {
-    expect(readFile('src/components/auth/AuthScreen.tsx')).not.toMatch(/\.from\('guardians'\)\.insert/);
+    expect(readFile(AUTH_SCREEN)).not.toMatch(/\.from\('guardians'\)\.insert/);
   });
 });
 
@@ -277,7 +285,7 @@ describe('CRITICAL AUTH PATH — protection comments on critical files', () => {
   const criticalFiles = [
     'src/proxy.ts',
     'src/lib/AuthContext.tsx',
-    'src/components/auth/AuthScreen.tsx',
+    AUTH_SCREEN,
     'src/app/auth/callback/route.ts',
     'src/app/auth/confirm/route.ts',
     'src/lib/identity/constants.ts',
