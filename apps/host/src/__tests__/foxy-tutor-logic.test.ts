@@ -3,11 +3,21 @@ import { describe, it, expect, beforeEach } from 'vitest';
 /**
  * Foxy Tutor Logic Tests
  *
- * Tests the pure logic extracted from supabase/functions/foxy-tutor/index.ts:
+ * Tests the pure logic originally extracted from supabase/functions/foxy-tutor/
+ * index.ts:
  * - Circuit breaker state transitions
  * - Rate limiting logic
  * - System prompt building
  * - Plan-based daily usage limits
+ *
+ * NOTE (2026-07-14): the foxy-tutor Edge Function was RETIRED for web
+ * (2026-07-01); these replicated helpers are kept as a self-contained pin of the
+ * pure algorithms. The Plan Usage Limits block below has been updated to the
+ * current UNLIMITED-PAID model: enforcement is DB-authoritative
+ * (check_and_record_usage → get_plan_limit → subscription_plans.foxy_chats_per_
+ * day), where paid plans are -1 (unlimited, mapped to the 999999 sentinel) and
+ * only the free plan stays finite. The stale finite paid caps (starter 30 /
+ * pro 100) no longer reflect the platform.
  */
 
 // ─── Replicated circuit breaker from foxy-tutor/index.ts ────────────────
@@ -73,15 +83,21 @@ function createRateLimiter(windowMs: number, maxRequests: number, maxMapSize: nu
   };
 }
 
-// ─── Replicated plan limits from foxy-tutor/index.ts ────────────────────
+// ─── Plan daily foxy-chat limits — unlimited-paid model (2026-07-14) ─────
+//
+// Originally lifted from the (now-retired) foxy-tutor Edge Function. Updated to
+// the DB-authoritative unlimited-paid reality: only the free plan is finite;
+// every paid tier (and its legacy alias) is uncapped at the 999999 sentinel that
+// get_plan_limit() maps subscription_plans.foxy_chats_per_day=-1 to.
+const UNLIMITED_CHAT_QUOTA = 999999;
 
 const PLAN_LIMITS: Record<string, number> = {
   free: 5,
-  starter: 30,
-  basic: 30,
-  pro: 100,
-  premium: 100,
-  unlimited: 999999,
+  starter: UNLIMITED_CHAT_QUOTA,
+  basic: UNLIMITED_CHAT_QUOTA,
+  pro: UNLIMITED_CHAT_QUOTA,
+  premium: UNLIMITED_CHAT_QUOTA,
+  unlimited: UNLIMITED_CHAT_QUOTA,
 };
 
 // ─── Replicated system prompt builder (simplified) ──────────────────────
@@ -277,22 +293,33 @@ describe('Foxy Tutor Logic', () => {
     });
   });
 
-  describe('Plan Usage Limits', () => {
-    it('free plan gets 5 messages per day', () => {
+  describe('Plan Usage Limits (unlimited-paid model)', () => {
+    it('free plan keeps a finite 5 messages per day', () => {
       expect(PLAN_LIMITS['free']).toBe(5);
     });
 
-    it('starter/basic plans get 30 messages per day', () => {
-      expect(PLAN_LIMITS['starter']).toBe(30);
-      expect(PLAN_LIMITS['basic']).toBe(30);
+    it('starter/basic plans are UNLIMITED (paid tiers; -1 → 999999 sentinel)', () => {
+      expect(PLAN_LIMITS['starter']).toBe(UNLIMITED_CHAT_QUOTA);
+      expect(PLAN_LIMITS['basic']).toBe(UNLIMITED_CHAT_QUOTA);
     });
 
-    it('pro/premium plans get 100 messages per day', () => {
-      expect(PLAN_LIMITS['pro']).toBe(100);
-      expect(PLAN_LIMITS['premium']).toBe(100);
+    it('pro/premium plans are UNLIMITED (paid tiers)', () => {
+      expect(PLAN_LIMITS['pro']).toBe(UNLIMITED_CHAT_QUOTA);
+      expect(PLAN_LIMITS['premium']).toBe(UNLIMITED_CHAT_QUOTA);
     });
 
-    it('unknown plan falls back to free limit', () => {
+    it('unlimited plan is UNLIMITED', () => {
+      expect(PLAN_LIMITS['unlimited']).toBe(UNLIMITED_CHAT_QUOTA);
+    });
+
+    it('only the free tier is finite — every paid tier is uncapped', () => {
+      expect(PLAN_LIMITS['free']).toBeLessThan(UNLIMITED_CHAT_QUOTA);
+      for (const paid of ['starter', 'basic', 'pro', 'premium', 'unlimited']) {
+        expect(PLAN_LIMITS[paid]).toBe(UNLIMITED_CHAT_QUOTA);
+      }
+    });
+
+    it('unknown plan falls back to the free (finite) limit', () => {
       const plan = 'nonexistent';
       const limit = PLAN_LIMITS[plan] ?? PLAN_LIMITS['free'];
       expect(limit).toBe(5);

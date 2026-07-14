@@ -1,60 +1,32 @@
 /**
- * Foxy Plan Normalization Tests
+ * Foxy Plan Normalization + DB-authoritative quota-model tests.
  *
- * Tests the normalizePlan logic added to src/app/api/foxy/route.ts
- * to handle legacy DB plan code aliases and billing-cycle suffixes.
+ * These symbols are imported REAL from the route's co-located `_lib/constants`
+ * (they are exported now, so there is nothing left to "replicate" and no parity
+ * drift is possible — the older version of this file hand-copied them):
+ *   - normalizePlan   — legacy alias + billing-cycle-suffix canonicalization
+ *   - UNLIMITED_QUOTA — the 999999 sentinel the DB maps foxy_chats_per_day=-1 to
+ *   - UPGRADE_PROMPTS — soft-upsell config; ONLY the finite free tier has an entry
  *
- * Canonical plan codes: free | starter | pro | unlimited
+ * HISTORY (2026-07-14 quota fix): the old Node-side `DAILY_QUOTA` map
+ * (free:10 / starter:30 / pro:100 / unlimited:999999) was DELETED. It implied a
+ * false Node-side authority — enforcement is DB-authoritative
+ * (`check_and_record_usage` → `get_plan_limit` → `subscription_plans.
+ * foxy_chats_per_day`). Paid plans are now UNLIMITED (-1 → 999999); only the
+ * free plan keeps a finite cap. These tests reflect that reality; the previous
+ * assertions on the deleted DAILY_QUOTA values were stale.
  *
- * normalizePlan is not exported from route.ts (it is an internal helper),
- * so this file replicates the exact function logic. This is explicitly labeled
- * as a parity test: if the implementation in route.ts changes, this test
- * must be updated to match.
- *
- * Source: src/app/api/foxy/route.ts — normalizePlan()
+ * Source: src/app/api/foxy/_lib/constants.ts (normalizePlan, UNLIMITED_QUOTA,
+ *         UPGRADE_PROMPTS) + the route's soft-upgrade-prompt gating block in
+ *         src/app/api/foxy/route.ts.
  */
 
 import { describe, it, expect } from 'vitest';
-
-// ─── Replication of internal normalizePlan from src/app/api/foxy/route.ts ────
-//
-// Canonical implementation (keep in sync with route.ts):
-//
-//   function normalizePlan(raw: string): string {
-//     return (raw || 'free')
-//       .replace(/_(monthly|yearly)$/, '')
-//       .replace(/^basic$/, 'starter')
-//       .replace(/^premium$/, 'pro')
-//       .replace(/^ultimate$/, 'unlimited');
-//   }
-
-function normalizePlan(raw: string | null | undefined): string {
-  return (raw || 'free')
-    .replace(/_(monthly|yearly)$/, '')
-    .replace(/^basic$/, 'starter')
-    .replace(/^premium$/, 'pro')
-    .replace(/^ultimate$/, 'unlimited');
-}
-
-// ─── DAILY_QUOTA constants parity ────────────────────────────────────────────
-//
-// Canonical DAILY_QUOTA from src/app/api/foxy/route.ts:
-//   const DAILY_QUOTA: Record<string, number> = {
-//     free: 10,
-//     starter: 30,
-//     pro: 100,
-//     unlimited: 999999,
-//   };
-//
-// Keep in sync with route.ts. These values govern how many Foxy chats a
-// student can send per day per plan tier.
-
-const DAILY_QUOTA: Record<string, number> = {
-  free: 10,
-  starter: 30,
-  pro: 100,
-  unlimited: 999999,
-};
+import {
+  normalizePlan,
+  UNLIMITED_QUOTA,
+  UPGRADE_PROMPTS,
+} from '@/app/api/foxy/_lib/constants';
 
 // ─── Canonical plan code pass-through ────────────────────────────────────────
 
@@ -142,98 +114,93 @@ describe('normalizePlan: graceful fallback for missing or invalid input', () => 
   });
 
   it("null falls back to 'free' — no crash", () => {
-    expect(normalizePlan(null)).toBe('free');
+    // Runtime signature is (raw: string); the `raw || 'free'` guard tolerates a
+    // null/undefined that leaks through at runtime. Cast so the type-checker
+    // still models the real string-typed public contract.
+    expect(normalizePlan(null as unknown as string)).toBe('free');
   });
 
   it("undefined falls back to 'free' — no crash", () => {
-    expect(normalizePlan(undefined)).toBe('free');
+    expect(normalizePlan(undefined as unknown as string)).toBe('free');
   });
 
-  it("unknown plan code passes through unchanged (looked up in DAILY_QUOTA later)", () => {
-    // Unknown codes are not mapped to a canonical name — they pass through
-    // so the caller falls back to DEFAULT_QUOTA when the key is missing.
-    // This is intentional: normalizePlan only maps KNOWN aliases.
-    const result = normalizePlan('enterprise');
-    expect(result).toBe('enterprise');
+  it('unknown plan code passes through unchanged (canonical map lookup misses later)', () => {
+    // Unknown codes are not mapped to a canonical name — they pass through so
+    // the caller falls back to its default when the key is missing. This is
+    // intentional: normalizePlan only maps KNOWN aliases.
+    expect(normalizePlan('enterprise')).toBe('enterprise');
   });
 });
 
-// ─── DAILY_QUOTA constant values ─────────────────────────────────────────────
+// ─── UNLIMITED_QUOTA sentinel ────────────────────────────────────────────────
 
-describe('DAILY_QUOTA: constants match canonical plan tiers', () => {
-  it('free plan quota is 10 chats per day', () => {
-    expect(DAILY_QUOTA['free']).toBe(10);
+describe('UNLIMITED_QUOTA: mirrors the DB unlimited cap', () => {
+  it('is 999999 (the value get_plan_limit maps foxy_chats_per_day=-1 to)', () => {
+    expect(UNLIMITED_QUOTA).toBe(999999);
+  });
+});
+
+// ─── UPGRADE_PROMPTS: only the finite free tier can be nudged ─────────────────
+
+describe('UPGRADE_PROMPTS: only the finite free tier has an entry', () => {
+  it('free has a bilingual (P7) message with a showAtRemaining threshold and nextPlan', () => {
+    const free = UPGRADE_PROMPTS.free;
+    expect(free).toBeDefined();
+    expect(typeof free.showAtRemaining).toBe('number');
+    expect(free.showAtRemaining).toBeGreaterThan(0);
+    // {remaining} placeholder is interpolated by the route.
+    expect(free.message).toContain('{remaining}');
+    expect(free.messageHi).toContain('{remaining}');
+    // Hindi copy carries Devanagari (P7).
+    expect(/[ऀ-ॿ]/.test(free.messageHi)).toBe(true);
+    expect(free.nextPlan).toBe('starter');
   });
 
-  it('starter plan quota is 30 chats per day', () => {
-    expect(DAILY_QUOTA['starter']).toBe(30);
+  it('has NO entry for any paid plan — unlimited means nothing to upsell', () => {
+    for (const paid of ['starter', 'pro', 'unlimited']) {
+      expect(UPGRADE_PROMPTS[paid]).toBeUndefined();
+    }
+  });
+});
+
+// ─── Upgrade-prompt gating (parity with route.ts) ────────────────────────────
+//
+// Parity helper for the route's "Build soft upgrade prompt" block
+// (src/app/api/foxy/route.ts). Keep in sync with that gate: a prompt is shown
+// ONLY when the plan has an UPGRADE_PROMPTS entry AND the DB-authoritative limit
+// is finite (< UNLIMITED_QUOTA) AND remaining is at/below the threshold.
+function wouldShowUpgradePrompt(plan: string, remaining: number, limit: number): boolean {
+  const cfg = UPGRADE_PROMPTS[plan];
+  return Boolean(
+    cfg
+      && limit < UNLIMITED_QUOTA
+      && typeof remaining === 'number'
+      && remaining <= cfg.showAtRemaining,
+  );
+}
+
+describe('upgrade-prompt gating: DB-authoritative, unlimited paid plans never nudge', () => {
+  it('free near exhaustion (finite limit, remaining <= threshold) → prompt shown', () => {
+    const threshold = UPGRADE_PROMPTS.free.showAtRemaining;
+    expect(wouldShowUpgradePrompt('free', threshold, 5)).toBe(true);
+    expect(wouldShowUpgradePrompt('free', 0, 5)).toBe(true);
   });
 
-  it('pro plan quota is 100 chats per day', () => {
-    expect(DAILY_QUOTA['pro']).toBe(100);
+  it('free with plenty remaining (above threshold) → no prompt', () => {
+    const threshold = UPGRADE_PROMPTS.free.showAtRemaining;
+    expect(wouldShowUpgradePrompt('free', threshold + 1, 5)).toBe(false);
   });
 
-  it('unlimited plan quota is effectively unlimited (999999)', () => {
-    expect(DAILY_QUOTA['unlimited']).toBe(999999);
-  });
-
-  it('all four canonical plan codes have quota entries', () => {
-    const canonicalCodes = ['free', 'starter', 'pro', 'unlimited'];
-    for (const code of canonicalCodes) {
-      expect(DAILY_QUOTA).toHaveProperty(code);
-      expect(typeof DAILY_QUOTA[code]).toBe('number');
-      expect(DAILY_QUOTA[code]).toBeGreaterThan(0);
+  it('paid unlimited plans (limit === UNLIMITED_QUOTA) → never prompt, even at remaining 0', () => {
+    for (const paid of ['starter', 'pro', 'unlimited']) {
+      expect(wouldShowUpgradePrompt(paid, 0, UNLIMITED_QUOTA)).toBe(false);
+      expect(wouldShowUpgradePrompt(paid, 2, UNLIMITED_QUOTA)).toBe(false);
     }
   });
 
-  it('quota is monotonically increasing across plan tiers', () => {
-    // Each higher tier must have a higher or equal quota than the tier below
-    expect(DAILY_QUOTA['starter']).toBeGreaterThan(DAILY_QUOTA['free']);
-    expect(DAILY_QUOTA['pro']).toBeGreaterThan(DAILY_QUOTA['starter']);
-    expect(DAILY_QUOTA['unlimited']).toBeGreaterThan(DAILY_QUOTA['pro']);
-  });
-});
-
-// ─── normalizePlan + DAILY_QUOTA integration ─────────────────────────────────
-
-describe('normalizePlan + DAILY_QUOTA: end-to-end plan resolution', () => {
-  const DEFAULT_QUOTA = 10;
-
-  function resolveQuota(rawPlan: string | null | undefined): number {
-    const normalized = normalizePlan(rawPlan);
-    return DAILY_QUOTA[normalized] ?? DEFAULT_QUOTA;
-  }
-
-  it("'basic' resolves to starter quota (30)", () => {
-    expect(resolveQuota('basic')).toBe(30);
-  });
-
-  it("'premium' resolves to pro quota (100)", () => {
-    expect(resolveQuota('premium')).toBe(100);
-  });
-
-  it("'ultimate' resolves to unlimited quota (999999)", () => {
-    expect(resolveQuota('ultimate')).toBe(999999);
-  });
-
-  it("'pro_yearly' resolves to pro quota (100)", () => {
-    expect(resolveQuota('pro_yearly')).toBe(100);
-  });
-
-  it("'basic_monthly' resolves to starter quota (30)", () => {
-    expect(resolveQuota('basic_monthly')).toBe(30);
-  });
-
-  it("empty string resolves to free quota (10)", () => {
-    expect(resolveQuota('')).toBe(10);
-  });
-
-  it("null resolves to free quota (10)", () => {
-    expect(resolveQuota(null)).toBe(10);
-  });
-
-  it("unknown plan code falls back to DEFAULT_QUOTA (10)", () => {
-    // 'enterprise' is not in DAILY_QUOTA, so ?? DEFAULT_QUOTA applies
-    expect(resolveQuota('enterprise')).toBe(DEFAULT_QUOTA);
+  it('normalized legacy paid aliases also never prompt (basic→starter, premium→pro are unlimited)', () => {
+    expect(wouldShowUpgradePrompt(normalizePlan('basic'), 0, UNLIMITED_QUOTA)).toBe(false);
+    expect(wouldShowUpgradePrompt(normalizePlan('premium_yearly'), 0, UNLIMITED_QUOTA)).toBe(false);
+    expect(wouldShowUpgradePrompt(normalizePlan('ultimate_monthly'), 0, UNLIMITED_QUOTA)).toBe(false);
   });
 });

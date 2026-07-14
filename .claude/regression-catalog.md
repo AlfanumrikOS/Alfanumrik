@@ -7651,3 +7651,100 @@ erroring fail-open, and REG-50 single-retrieval-contract parity on L2 hits).
 **Total catalog: 207 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-241 — academic-vocabulary NO-MASK on the legacy/fallback Foxy path (P12, both directions) (2026-07-14)
+
+Source: Foxy Phase-0 output-guard word-masking fix. `validateOutput`'s substring
+BLOCKLIST (`packages/lib/src/ai/validation/output-guard.ts`) is now
+WARN/FLAG-ONLY and NON-DESTRUCTIVE (a match records an advisory `errors` entry so
+`valid` goes false, but `sanitizedContent` is NO LONGER rewritten to `***`), a
+new bilingual `SAFE_ABSTAIN_MESSAGE` was added, and the three legacy
+intent-router workflows (`explain.ts`, `revision.ts`, `doubt-solve.ts`) now route
+the student-facing text through the word-boundary-safe `screenStudentFacingText`
+(serve-original-or-abstain) instead of assigning `validateOutput().sanitizedContent`.
+
+**Why.** The old bare-substring BLOCKLIST rewrote any match to `***`, censoring
+legitimate CBSE vocabulary that merely CONTAINS a token — `assertive`→`***ertive`,
+`class`→`cl***`, `passage`→`p***age`, `assess`, `potassium`, `Assam`, `assembly`,
+`sexual reproduction`→`***ual reproduction`, `shell`→`s***`. That masked text
+reached students on the legacy/fallback Foxy path (`ff_grounded_ai_foxy` OFF, or
+the grounded-service abstain fallback). Over-masking is a P12 violation in the
+OTHER direction from unfiltered output: it silently breaks real lessons, so the
+PASS set is as load-bearing as the BLOCK set. The real student-facing safety
+decision now belongs solely to the word-boundary-safe `screenStudentFacingText`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-241 | `foxy_legacy_path_academic_vocab_served_unmasked_genuine_abuse_still_blocked` | (a) **No-mask PASS set**: `validateOutput` returns `sanitizedContent` byte-identical to the input (no `***`) for all 41 realistic CBSE sentences whose curriculum word collides with an `ass`/`hell`/`sex` BLOCKLIST substring (`assertive`, `assertion`, `assert`, `class`, `classify`, `classroom`, `pass`, `passage`, `passive`, `assess`, `assessment`, `mass`, `brass`, `grass`, `compass`, `embarrass`, `associate`, `essay`, `hello`, `shell`, `sexual reproduction`, `therapist`, `analysis`, `potassium`, `molasses`, `glass`, `biomass`, `landmass`, `sextant`, `Assam`, `Sussex`, `Essex`, `assembly`, `ambassador`, `harassment`, `association`, `assassination`, `assassinate`, `assume`, `assumption`, `classical`); each exact word survives verbatim; the three named incident cases (`assertive`/`class`/`passage`) never emit `***ertive`/`cl***`/`p***age`. (b) `screenStudentFacingText` passes every one of those sentences (`safe:true`, no `blocklist` category). (c) **BLOCK set still fires**: genuine profanity/slurs/self-harm (`fuck`, `shit`, the n-word, `faggot`, `kill yourself`, `kys`, `go die`, Hindi Devanagari abuse, Hinglish abuse) are STILL hard-blocked by `screenStudentFacingText` (`safe:false`, category `blocklist`); `validateOutput` still records an advisory flag (`valid:false`, `errors.length>0`) for blocklisted profanity but does NOT mutate `sanitizedContent`. (d) **Workflow boundary** (the value flowing into `persistLegacyFoxyResponse`): all three legacy workflows serve SAFE model text ORIGINAL-and-unmodified (curriculum survives, no `***`), and replace UNSAFE model text with the clean bilingual `SAFE_ABSTAIN_MESSAGE` — never the raw unsafe text, never a `***`-masked variant. (e) `SAFE_ABSTAIN_MESSAGE` is itself bilingual (EN + Devanagari, P7) and self-screening (re-screening it is a no-op). | `src/__tests__/lib/ai/validation/output-guard-no-mask.test.ts` (95 tests — 41-term PASS set × validateOutput + screen, the 3 incident pins, 9 UNSAFE hard-blocks, the advisory-flag-without-mask pin, the SAFE_ABSTAIN_MESSAGE bilingual + self-screen pins); `src/__tests__/lib/ai/workflows/legacy-workflows-no-mask.test.ts` (6 tests — explain/revision/doubt-solve × {safe→original, unsafe→SAFE_ABSTAIN_MESSAGE}) | E | P12, P7 |
+
+### Invariants covered by this section
+
+- P12 (AI safety — BOTH directions). The BLOCK set proves genuinely unsafe
+  content is still hard-refused by the word-boundary `screenStudentFacingText`
+  backstop; the PASS set proves the coarse substring BLOCKLIST can no longer
+  censor legitimate CBSE curriculum — the over-masking regression that shipped
+  `***`-mangled lessons to students on the legacy/fallback path is pinned closed.
+- P7 (bilingual) — the safe-abstain fallback is EN + Devanagari and re-screens
+  clean.
+
+### Catalog total
+
+Pre-REG-241: 207 entries (through REG-240, grounded-answer L2 Redis cache tier).
+Adds REG-241 (academic-vocabulary NO-MASK on the legacy/fallback Foxy path —
+non-destructive advisory BLOCKLIST + word-boundary `screenStudentFacingText` as
+the sole student-facing blocker + serve-original-or-`SAFE_ABSTAIN_MESSAGE` at the
+legacy-workflow boundary).
+**Total catalog: 208 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-242 — Foxy quota-remaining is DB-authoritative + unlimited-for-paid; no spurious upgrade prompt (P2-adjacent / P11-adjacent) (2026-07-14)
+
+Source: Foxy Phase-0 quota fix. `apps/host/src/app/api/foxy/_lib/quota.ts` now reads
+the RPC's real `used_count` column (NOT the never-existent `current_count`) from
+`check_and_record_usage` and derives `remaining` against the SAME DB authority the
+RPC enforced with, via a `get_plan_limit` call. `_lib/constants.ts` DELETED the
+misleading Node-side `DAILY_QUOTA` map (free:10 / starter:30 / pro:100 /
+unlimited:999999) and added the `UNLIMITED_QUOTA = 999999` sentinel + a `free`-only
+`UPGRADE_PROMPTS` entry. `route.ts` gates the soft upgrade prompt on
+`limit < UNLIMITED_QUOTA`. Migration `20260714120000_foxy_unlimited_for_paid_plans.sql`
+sets the paid plan codes' `subscription_plans.foxy_chats_per_day = -1` (unlimited;
+`get_plan_limit` maps -1 → 999999), leaving `free` finite. `packages/lib/src/usage.ts`
++ `packages/ui/src/foxy/mobile/FoxyToolsSheet.tsx` render "Unlimited" via
+`isUnlimitedUsage`.
+
+**Why.** The `check_and_record_usage` return column is `used_count`; the route read
+a column named `current_count` that never existed in the return shape, so
+`remaining` ALWAYS resolved to the full limit — a wrong countdown. Worse, a stale
+Node-side `DAILY_QUOTA` map implied a false local authority the DB never consulted
+(enforcement is DB-authoritative: `check_and_record_usage` → `get_plan_limit` →
+`subscription_plans.foxy_chats_per_day`). Together they showed paid students a
+finite "30 left" / "100 left" countdown and could surface a spurious upgrade
+prompt, even though paid plans are entitled to UNLIMITED Foxy chats. The fix makes
+both enforcement and the displayed `remaining` DB-authoritative and unlimited-for-paid.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-242 | `foxy_quota_remaining_db_authoritative_unlimited_paid_no_spurious_upgrade` | (a) **No Node-side cap**: the route does NOT pass `p_limit` to `check_and_record_usage` (the RPC derives its own cap); it calls `get_plan_limit` and computes `quotaRemaining = max(0, planLimit − used_count)`, pinned at limit-1 (`used_count=9`, limit 10 → 1), at-limit (`used_count=10` → 0), over-limit clamp (`used_count=15` → 0, never negative), and `allowed:false → HTTP 429` with no LLM call. (b) **Unlimited paid → no upsell**: with `get_plan_limit → 999999` (i.e. `foxy_chats_per_day = -1`) and `used_count=500` on a `pro` plan, `quotaRemaining = 999499` (large, non-negative) and `upgradePrompt` is UNDEFINED. (c) **Prompt gating**: a prompt is shown ONLY when the plan has an `UPGRADE_PROMPTS` entry AND `limit < UNLIMITED_QUOTA` AND `remaining ≤ showAtRemaining` — only the finite `free` tier can nudge; `starter`/`pro`/`unlimited` (and their `basic`/`premium`/`ultimate` aliases via `normalizePlan`) never prompt, even at `remaining 0`. (d) **Client display parity**: `checkDailyUsage`/`getDailyUsageSummary` mirror the DB sentinel — `free` foxy_chat = finite 5; paid tiers (`starter`/`pro`/`unlimited` + `basic`/`premium` aliases + `_monthly`/`_yearly` suffixes) = 999999 → `isUnlimitedUsage` true; `remaining` clamps at 0. (e) **`subscription_plans` contract**: the migration is idempotent (`foxy_chats_per_day IS DISTINCT FROM -1` UPDATE keyed by plan_code) and touches only paid codes (`starter`/`pro`/`unlimited`), leaving `free` finite (verify block WARNs if free went -1). | `src/__tests__/api/foxy/route-characterization.test.ts` (GAP 1 quota-boundary matrix — used_count/get_plan_limit/no-p_limit/unlimited-no-prompt/429); `src/__tests__/lib/usage.test.ts` (unlimited-paid display + alias/suffix normalization + clamp); `src/__tests__/foxy-plan-normalization.test.ts` (UNLIMITED_QUOTA + free-only UPGRADE_PROMPTS + gating parity) | E | P2-adjacent, P11-adjacent, P7 |
+
+### Invariants covered by this section
+
+- P2-adjacent (usage-economy correctness) — the displayed `remaining` is honest
+  (derived from the same DB cap the RPC enforced), never negative, and never
+  understates a paid plan's unlimited entitlement.
+- P11-adjacent (payment entitlement integrity) — the paid-plan Foxy entitlement
+  flows from the `subscription_plans` catalog through `get_plan_limit`, not a
+  stale Node-side table; the migration changes ONLY the per-day chat entitlement
+  (not pricing, subscription status, or payment records), so verified-payment
+  gating and atomic status+payment writes are untouched.
+- P7 (bilingual) — the free-tier upgrade copy carries EN + Devanagari.
+
+### Catalog total
+
+Pre-REG-242: 208 entries (through REG-241, Foxy legacy-path NO-MASK).
+Adds REG-242 (Foxy quota-remaining DB-authoritative correctness — `used_count`
+read, `get_plan_limit`-derived remaining, unlimited-for-paid with no spurious
+upgrade prompt, and the `subscription_plans` paid=-1 / free-finite contract).
+**Total catalog: 209 entries (target: 35 — TARGET EXCEEDED).**
+
+---

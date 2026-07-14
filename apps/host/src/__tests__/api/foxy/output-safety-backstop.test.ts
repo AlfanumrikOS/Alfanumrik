@@ -62,7 +62,7 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 // don't depend on the RPC mock for quota accounting.
 const refundQuotaSpy = vi.fn().mockResolvedValue(undefined);
 vi.mock('@/app/api/foxy/_lib/quota', () => ({
-  checkAndIncrementQuota: vi.fn().mockResolvedValue({ allowed: true, remaining: 49 }),
+  checkAndIncrementQuota: vi.fn().mockResolvedValue({ allowed: true, remaining: 49, limit: 100 }),
   refundQuota: (...args: unknown[]) => refundQuotaSpy(...args),
   resolveTenantAiOverrides: vi.fn().mockResolvedValue({}),
 }));

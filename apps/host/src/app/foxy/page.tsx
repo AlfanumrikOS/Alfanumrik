@@ -16,7 +16,7 @@ import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 // (the reference migration) for the pattern.
 import { AppShell } from '@alfanumrik/ui/responsive';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@alfanumrik/lib/cognitive-engine';
-import { checkDailyUsage, clearUsageCache, type UsageResult } from '@alfanumrik/lib/usage';
+import { checkDailyUsage, clearUsageCache, isUnlimitedUsage, type UsageResult } from '@alfanumrik/lib/usage';
 import { speak, isVoiceSupported } from '@alfanumrik/lib/voice';
 import { usePythonVoiceEnabled } from '@alfanumrik/lib/voice-feature-flag';
 import { adoptVoiceReplyLanguage } from '@alfanumrik/lib/voice-reply-language';
@@ -1301,7 +1301,16 @@ function FoxyExperience() {
         <div className="flex items-center gap-1.5">
           {/* Language pills — extracted to ./_components/FoxySettings.tsx */}
           <LanguagePicker language={language} isLocked={isLangLocked} onLanguageChange={setLanguage} />
-          {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}>💬{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {chatUsage && (
+            <span
+              className="hidden sm:inline text-[8px] opacity-40 ml-1"
+              title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}
+            >
+              💬{isUnlimitedUsage(chatUsage.limit)
+                ? (language === 'hi' ? 'असीमित' : 'Unlimited')
+                : `${chatUsage.remaining}/${chatUsage.limit}`}
+            </span>
+          )}
           {/* Alfa OS — open the mobile ContextPanel bottom sheet. Mobile-only
               (lg:hidden), and rendered only when ff_student_os_v1 is ON so the
               OFF header is byte-identical. */}
@@ -2139,6 +2148,7 @@ function FoxyExperience() {
           studentGrade={studentGrade}
           usageRemaining={chatUsage?.remaining ?? null}
           usageLimit={chatUsage?.limit ?? null}
+          usageUnlimited={isUnlimitedUsage(chatUsage?.limit)}
           onOpenHistory={() => {
             setToolsSheetOpen(false);
             setConversationSidebarOpen(true);

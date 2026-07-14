@@ -4,25 +4,44 @@
  * Tracks and enforces daily usage limits per student per feature.
  * Uses Supabase `student_daily_usage` table with feature + usage_count columns.
  *
- * Plan limits (aligned with subscription_plans table):
+ * Plan limits (aligned with subscription_plans table + get_plan_limit RPC):
  *   free:      5 chats / 5 quizzes per day
- *   starter:   30 chats / 20 quizzes per day
- *   pro:       100 chats / unlimited quizzes per day
+ *   starter:   unlimited chats / 20 quizzes per day
+ *   pro:       unlimited chats / unlimited quizzes per day
  *   unlimited: unlimited everything
+ *
+ * IMPORTANT: enforcement is DB-authoritative — `check_and_record_usage` derives
+ * the cap from `get_plan_limit()` → `subscription_plans.foxy_chats_per_day`
+ * (a value of -1 means "unlimited" and is mapped to 999999). The numbers below
+ * are DISPLAY defaults ONLY and MUST mirror the DB; the paid tiers therefore use
+ * the same {@link UNLIMITED_USAGE_SENTINEL} the DB maps -1 to, so the UI never
+ * implies a finite paid cap (that stale "30 left" / "100 left" was the bug).
  */
 
 import { supabase } from './supabase';
 import { checkPlanGate, type PlanGateResult } from '@alfanumrik/lib/plan-gate';
+import { UNLIMITED_USAGE_SENTINEL, isUnlimitedUsage } from '@alfanumrik/lib/usage-sentinel';
 
 // ─── Limits by subscription plan ─────────────────────────────
 
 type Feature = 'foxy_chat' | 'quiz';
 
+/**
+ * The unlimited sentinel + its detector are single-sourced in the
+ * dependency-free `./usage-sentinel` leaf, so the entitlements catalog (a shared
+ * client+server contract, imported by the `'use client'` super-admin panel) can
+ * reuse the EXACT same value without dragging this module's server-only
+ * transitive graph (`plan-gate` → `supabase-admin`) into a client bundle (P8).
+ * Re-exported here unchanged so every existing `from '.../usage'` importer keeps
+ * working. `UNLIMITED_USAGE_SENTINEL` is also used by `PLAN_LIMITS` below.
+ */
+export { UNLIMITED_USAGE_SENTINEL, isUnlimitedUsage };
+
 const PLAN_LIMITS: Record<string, Record<Feature, number>> = {
-  free:      { foxy_chat: 5,      quiz: 5 },
-  starter:   { foxy_chat: 30,     quiz: 20 },
-  pro:       { foxy_chat: 100,    quiz: 999999 },
-  unlimited: { foxy_chat: 999999, quiz: 999999 },
+  free:      { foxy_chat: 5,                        quiz: 5 },
+  starter:   { foxy_chat: UNLIMITED_USAGE_SENTINEL, quiz: 20 },
+  pro:       { foxy_chat: UNLIMITED_USAGE_SENTINEL, quiz: UNLIMITED_USAGE_SENTINEL },
+  unlimited: { foxy_chat: UNLIMITED_USAGE_SENTINEL, quiz: UNLIMITED_USAGE_SENTINEL },
 };
 
 // Maps legacy codes and billing-cycle variants to canonical tier
@@ -130,15 +149,19 @@ export async function checkDailyUsage(
 export async function recordUsage(
   studentId: string,
   feature: Feature,
-  plan: string = 'free',
+  _plan: string = 'free',
 ): Promise<void> {
   const today = todayISO();
-  const limit = getLimitForPlan(plan, feature);
 
+  // p_limit intentionally omitted: check_and_record_usage derives the
+  // authoritative cap internally via get_plan_limit() and IGNORES any p_limit
+  // argument for EVERY feature (foxy_chat, quiz, …). Passing a Node-side number
+  // here used to imply a false local authority. Mirrors the /api/foxy quota.ts
+  // fix (checkAndIncrementQuota). `_plan` is retained (underscored) only for
+  // call-site/back-compat with existing 3-arg callers.
   await supabase.rpc('check_and_record_usage', {
     p_student_id: studentId,
     p_feature: feature,
-    p_limit: limit,
     p_usage_date: today,
   });
 

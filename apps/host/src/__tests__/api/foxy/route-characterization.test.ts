@@ -13,7 +13,7 @@
  *           unlimited) is consumed only inside `checkAndIncrementQuota`. We pin
  *           the table's TS-side effect: the exact `p_limit` dispatched to the
  *           `check_and_record_usage` RPC per plan, the `remaining = max(0,
- *           limit - current_count)` arithmetic at limit-1 / limit / over-limit,
+ *           limit - used_count)` arithmetic at limit-1 / limit / over-limit,
  *           and the `allowed === false` → HTTP 429 mapping.
  *           NOTE: the actual at-limit ALLOW/DENY verdict is computed inside the
  *           SQL RPC (DB), which this route mocks — so we pin the inputs
@@ -204,12 +204,16 @@ function makeChain(table: string) {
 // RPC mock: captures every call and answers check_and_record_usage from the
 // per-test quota config so we can exercise the boundary at limit-1/limit/over.
 const _rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
-let _quotaRow: { allowed: boolean; current_count: number } = { allowed: true, current_count: 1 };
-// Union of the RPC success-shape (data row[] / error null) and the error-shape
-// (data null / error {message}) so the over-limit override at line ~371 — which
-// drives the DB-error branch — is assignable to the same mock signature.
+// check_and_record_usage returns `used_count` (the post-increment count). The
+// authoritative daily cap is a SEPARATE get_plan_limit RPC (DB authority); the
+// route derives remaining = max(0, planLimit - used_count).
+let _quotaRow: { allowed: boolean; used_count: number } = { allowed: true, used_count: 1 };
+let _planLimit = 10; // get_plan_limit('foxy_chat') return for these tests
+// Union of the RPC success-shape (data row[] / scalar limit / error null) and the
+// error-shape (data null / error {message}) so the over-limit + DB-error branches
+// are assignable to the same mock signature.
 type RpcResult = {
-  data: { allowed: boolean; current_count: number }[] | null;
+  data: { allowed: boolean; used_count: number }[] | number | null;
   error: { message: string } | null;
 };
 const rpcImpl = vi.fn((name: string, args: Record<string, unknown>): Promise<RpcResult> => {
@@ -217,7 +221,10 @@ const rpcImpl = vi.fn((name: string, args: Record<string, unknown>): Promise<Rpc
   if (name === 'check_and_record_usage') {
     return Promise.resolve({ data: [_quotaRow], error: null });
   }
-  return Promise.resolve({ data: [{ allowed: true, current_count: 1 }], error: null });
+  if (name === 'get_plan_limit') {
+    return Promise.resolve({ data: _planLimit, error: null });
+  }
+  return Promise.resolve({ data: [{ allowed: true, used_count: 1 }], error: null });
 });
 
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
@@ -232,9 +239,12 @@ function makePostRequest(body: Record<string, unknown>): NextRequest {
   });
 }
 
-function quotaCheckLimit(): number | undefined {
-  const call = _rpcCalls.find((c) => c.name === 'check_and_record_usage');
-  return call?.args?.p_limit as number | undefined;
+function quotaCheckArgs(): Record<string, unknown> | undefined {
+  return _rpcCalls.find((c) => c.name === 'check_and_record_usage')?.args;
+}
+
+function planLimitCalled(): boolean {
+  return _rpcCalls.some((c) => c.name === 'get_plan_limit');
 }
 
 function refundFired(): boolean {
@@ -245,7 +255,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   _fromTables.length = 0;
   _rpcCalls.length = 0;
-  _quotaRow = { allowed: true, current_count: 1 };
+  _quotaRow = { allowed: true, used_count: 1 };
+  _planLimit = 10;
   // Default: enrolled grade '8', free plan, onboarding completed — claimed
   // grade '8' so the grade-spoof block never fires unless a test wants it.
   _studentRow = {
@@ -301,72 +312,70 @@ function body(extra: Record<string, unknown> = {}): Record<string, unknown> {
 // GAP 1 — QUOTA-TIER BOUNDARY MATRIX
 // ───────────────────────────────────────────────────────────────────────────
 
-describe('GAP 1 — DAILY_QUOTA tier table: per-plan p_limit dispatch', () => {
-  const cases: Array<[string, number]> = [
-    ['free', 10],
-    ['starter', 30],
-    ['pro', 100],
-    ['unlimited', 999999],
-  ];
+describe('GAP 1 — quota enforcement is DB-authoritative (no Node-side p_limit)', () => {
+  // The old Node-side DAILY_QUOTA map + p_limit dispatch were a misleading dead
+  // path: check_and_record_usage IGNORES p_limit and derives the cap from
+  // get_plan_limit() (subscription_plans.foxy_chats_per_day). These tests pin the
+  // corrected contract.
+  it('does NOT pass p_limit to check_and_record_usage (the RPC derives the cap)', async () => {
+    const { res } = await postFoxy(body());
+    expect(res.status).toBe(200);
+    const args = quotaCheckArgs();
+    expect(args).toBeDefined();
+    expect(args).not.toHaveProperty('p_limit');
+  });
 
-  it.each(cases)(
-    'plan "%s" dispatches p_limit=%d to check_and_record_usage',
-    async (plan, expectedLimit) => {
-      _studentRow = {
-        subscription_plan: plan,
-        account_status: 'active',
-        academic_goal: null,
-        name: null,
-        grade: '8',
-        onboarding_completed: true,
-      };
-      const { res } = await postFoxy(body());
-      expect(res.status).toBe(200);
-      expect(quotaCheckLimit()).toBe(expectedLimit);
-    },
-  );
+  it('derives remaining from the get_plan_limit RPC (DB authority)', async () => {
+    _planLimit = 30;
+    _quotaRow = { allowed: true, used_count: 4 };
+    const { res, body: b } = await postFoxy(body());
+    expect(res.status).toBe(200);
+    expect(planLimitCalled()).toBe(true);
+    expect(b.quotaRemaining).toBe(26); // 30 - 4
+  });
 
-  it('an unknown/unmapped plan falls back to DEFAULT_QUOTA=10', async () => {
-    // normalizeFoxyPlanCode coerces unknown plans to "free" before the route
-    // even reaches DAILY_QUOTA, so the dispatched limit is the free=10 value.
+  it('unlimited paid plan (get_plan_limit → 999999) yields no negative remaining and no spurious upgrade prompt', async () => {
+    _planLimit = 999999; // subscription_plans.foxy_chats_per_day = -1
+    _quotaRow = { allowed: true, used_count: 500 };
     _studentRow = {
-      subscription_plan: 'some_legacy_unknown_plan',
+      subscription_plan: 'pro',
       account_status: 'active',
       academic_goal: null,
       name: null,
       grade: '8',
       onboarding_completed: true,
     };
-    const { res } = await postFoxy(body());
+    const { res, body: b } = await postFoxy(body());
     expect(res.status).toBe(200);
-    expect(quotaCheckLimit()).toBe(10);
+    expect(b.quotaRemaining).toBe(999499);
+    expect(b.upgradePrompt).toBeUndefined();
   });
 });
 
 describe('GAP 1 — quota boundary: remaining arithmetic + allow/deny (free, limit=10)', () => {
-  it('at limit-1 (current_count=9) → allowed, 200, quotaRemaining=1', async () => {
-    _quotaRow = { allowed: true, current_count: 9 };
+  it('at limit-1 (used_count=9) → allowed, 200, quotaRemaining=1', async () => {
+    _quotaRow = { allowed: true, used_count: 9 };
     const { res, body: b } = await postFoxy(body());
     expect(res.status).toBe(200);
     expect(b.quotaRemaining).toBe(1);
   });
 
-  it('at the limit (current_count=10) → allowed, 200, quotaRemaining=0', async () => {
-    _quotaRow = { allowed: true, current_count: 10 };
+  it('at the limit (used_count=10) → allowed, 200, quotaRemaining=0', async () => {
+    _quotaRow = { allowed: true, used_count: 10 };
     const { res, body: b } = await postFoxy(body());
     expect(res.status).toBe(200);
     expect(b.quotaRemaining).toBe(0);
   });
 
-  it('remaining is clamped at 0 — never negative (current_count=15)', async () => {
-    _quotaRow = { allowed: true, current_count: 15 };
+  it('remaining is clamped at 0 — never negative (used_count=15)', async () => {
+    _quotaRow = { allowed: true, used_count: 15 };
     const { res, body: b } = await postFoxy(body());
     expect(res.status).toBe(200);
     expect(b.quotaRemaining).toBe(0);
   });
 
   it('over the limit (RPC reports allowed=false) → 429 with quotaRemaining=0, no LLM call', async () => {
-    _quotaRow = { allowed: false, current_count: 11 };
+    _quotaRow = { allowed: false, used_count: 11 };
     const { res, body: b } = await postFoxy(body());
     expect(res.status).toBe(429);
     expect(b.quotaRemaining).toBe(0);
@@ -415,8 +424,8 @@ describe('GAP 2 — abstain reasons that fall back to LEGACY (no abstain card, n
 
 describe('GAP 2 — abstain reason that REFUNDS quota (chapter_not_ready)', () => {
   beforeEach(() => {
-    // current_count=2 on free(10) → remaining=8 at the time of the abstain.
-    _quotaRow = { allowed: true, current_count: 2 };
+    // used_count=2 on free(10) → remaining=8 at the time of the abstain.
+    _quotaRow = { allowed: true, used_count: 2 };
     _groundedReturn = {
       grounded: false,
       abstain_reason: 'chapter_not_ready',
@@ -452,7 +461,7 @@ describe('GAP 2 — abstain reasons that do NOT refund (effectiveRemaining === r
   it.each(noRefund)(
     'abstain_reason "%s" → hard-abstain, quotaRemaining stays = remaining (8), no refund write',
     async (reason) => {
-      _quotaRow = { allowed: true, current_count: 2 }; // remaining = 8
+      _quotaRow = { allowed: true, used_count: 2 }; // remaining = 8
       _groundedReturn = {
         grounded: false,
         abstain_reason: reason,

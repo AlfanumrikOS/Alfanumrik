@@ -149,8 +149,7 @@ import {
   FoxyRequestBodySchema,
   REFUND_ABSTAIN_REASONS,
   LEGACY_FALLBACK_ABSTAIN_REASONS,
-  DAILY_QUOTA,
-  DEFAULT_QUOTA,
+  UNLIMITED_QUOTA,
   UPGRADE_PROMPTS,
   type RagSource,
   type DiagramRef,
@@ -758,8 +757,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     tags: { grade: enrolledGrade },
   });
 
-  // 5. Quota check
-  const { allowed, remaining } = await checkAndIncrementQuota(studentId, plan);
+  // 5. Quota check. `limit` is the DB-authoritative daily cap the RPC enforced
+  // against (UNLIMITED_QUOTA for the unlimited paid plans) — threaded through so
+  // the upgrade-prompt logic below never guesses from a Node-side table.
+  const { allowed, remaining, limit } = await checkAndIncrementQuota(studentId);
   if (!allowed) {
     return errorJson(
       'Daily Foxy chat limit reached. Upgrade your plan or try again tomorrow.',
@@ -2337,11 +2338,21 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     },
   });
 
-  // Build soft upgrade prompt if quota near exhaustion
-  const limit = DAILY_QUOTA[plan] ?? DEFAULT_QUOTA;
+  // Build soft upgrade prompt if quota near exhaustion. `limit` is the same
+  // DB-authoritative cap the quota RPC enforced against (returned by
+  // checkAndIncrementQuota) — never a Node-side guess. The unlimited paid plans
+  // return UNLIMITED_QUOTA, so `remaining` is astronomically large and no prompt
+  // is ever shown; only the finite free tier has an UPGRADE_PROMPTS entry.
+  // `plan` is already canonical (free|starter|pro|unlimited) via
+  // resolveFoxyEnrollmentScope.
   const upgradeConfig = UPGRADE_PROMPTS[plan];
   let upgradePrompt: { message: string; messageHi: string; nextPlan: string; remaining: number } | null = null;
-  if (upgradeConfig && typeof remaining === 'number' && remaining <= (limit - upgradeConfig.threshold)) {
+  if (
+    upgradeConfig
+    && limit < UNLIMITED_QUOTA
+    && typeof remaining === 'number'
+    && remaining <= upgradeConfig.showAtRemaining
+  ) {
     upgradePrompt = {
       message: upgradeConfig.message.replace('{remaining}', String(remaining)),
       messageHi: upgradeConfig.messageHi.replace('{remaining}', String(remaining)),

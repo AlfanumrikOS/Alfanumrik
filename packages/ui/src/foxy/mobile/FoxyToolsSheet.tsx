@@ -69,6 +69,12 @@ interface FoxyToolsSheetProps {
   /** Remaining/limit chat messages today, or null when usage is unknown. */
   usageRemaining: number | null;
   usageLimit: number | null;
+  /**
+   * True when the plan is effectively unlimited for Foxy chats — render
+   * "Unlimited" / "असीमित" instead of a finite remaining/limit fraction.
+   * Optional and defaults to false so existing callers keep the fraction.
+   */
+  usageUnlimited?: boolean;
 
   /** Opens the existing ConversationManager history slide-over. */
   onOpenHistory: () => void;
@@ -96,6 +102,7 @@ export function FoxyToolsSheet({
   studentGrade,
   usageRemaining,
   usageLimit,
+  usageUnlimited = false,
   onOpenHistory,
   onOpenContext,
 }: FoxyToolsSheetProps) {
@@ -282,7 +289,12 @@ export function FoxyToolsSheet({
               </span>
             </div>
           </div>
-          {usageRemaining !== null && usageLimit !== null && (
+          {usageUnlimited ? (
+            <p className="text-xs mt-2" style={{ color: 'var(--text-2)' }}>
+              💬 {isHi ? 'फॉक्सी संदेश' : 'Foxy messages'}:{' '}
+              <span className="font-bold">{isHi ? 'असीमित' : 'Unlimited'}</span>
+            </p>
+          ) : usageRemaining !== null && usageLimit !== null && (
             <p className="text-xs mt-2" style={{ color: 'var(--text-2)' }}>
               💬 {isHi ? 'आज बचे संदेश' : 'Messages left today'}:{' '}
               <span className="font-bold">{usageRemaining}/{usageLimit}</span>

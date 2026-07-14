@@ -258,6 +258,11 @@ vi.mock('@alfanumrik/lib/useAllowedSubjects', () => ({
 vi.mock('@alfanumrik/lib/usage', () => ({
   checkDailyUsage: async () => ({ allowed: true, remaining: 100, limit: 100, used: 0, plan: 'free' }),
   clearUsageCache: () => {},
+  // Foxy page now branches its usage badge on isUnlimitedUsage() (unlimited-paid
+  // display). Mirror the real predicate (limit >= 999999 sentinel) so the mocked
+  // finite free limit (100) renders the "100/100" countdown, not "Unlimited".
+  isUnlimitedUsage: (limit: number | null | undefined) =>
+    typeof limit === 'number' && limit >= 999999,
 }));
 
 vi.mock('@alfanumrik/lib/voice', () => ({

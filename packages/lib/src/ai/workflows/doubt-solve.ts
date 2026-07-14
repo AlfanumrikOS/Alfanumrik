@@ -13,7 +13,8 @@ import { getAIConfig } from '../config';
 import { callClaude } from '../clients/claude';
 import { retrieveNcertChunks } from '../retrieval/ncert-retriever';
 import { buildFoxySystemPrompt } from '../prompts/foxy-system';
-import { validateOutput } from '../validation/output-guard';
+import { validateOutput, SAFE_ABSTAIN_MESSAGE } from '../validation/output-guard';
+import { screenStudentFacingText } from '../validation/output-screen';
 import { TraceLogger, logTrace } from '../tracing/trace-logger';
 import { loadWorkflowCognitiveContext } from './context-loader';
 
@@ -104,7 +105,16 @@ export async function runDoubtWorkflow(
       latencyMs: claudeResponse.latencyMs,
     });
 
-    // 4. Validate output
+    // 4. Screen output for student-facing safety (P12).
+    //
+    // Phase 0.1 fix: we NO LONGER assign validateOutput().sanitizedContent back
+    // to the student-facing text — its BLOCKLIST matched bare substrings and
+    // censored legitimate CBSE vocabulary ("class" → "cl***"). The safety
+    // DECISION is now made by the word-boundary-safe screenStudentFacingText():
+    //   • safe   → serve the ORIGINAL, unmodified model text (no masking).
+    //   • unsafe → serve the clean bilingual safe-abstain message.
+    // validateOutput still runs as warn-only trace telemetry; it can no longer
+    // rewrite what a student sees.
     let responseText = claudeResponse.content;
     if (config.enableOutputValidation) {
       trace.startStep('output_validation');
@@ -112,10 +122,19 @@ export async function runDoubtWorkflow(
         grade: params.grade,
         subject: params.subject,
       });
-      if (validation.sanitizedContent) {
-        responseText = validation.sanitizedContent;
+      const screen = screenStudentFacingText(responseText, {
+        grade: params.grade,
+        subject: params.subject,
+      });
+      if (!screen.safe) {
+        responseText = SAFE_ABSTAIN_MESSAGE;
       }
-      trace.endStep({ valid: validation.valid, warnings: validation.warnings });
+      trace.endStep({
+        valid: validation.valid,
+        warnings: validation.warnings,
+        screenSafe: screen.safe,
+        screenCategories: screen.categories,
+      });
     }
 
     // 5. Finalize trace and return

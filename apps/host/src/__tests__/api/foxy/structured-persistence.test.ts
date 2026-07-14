@@ -233,10 +233,14 @@ beforeEach(() => {
     if (flag === 'ff_foxy_streaming') return Promise.resolve(false);
     return Promise.resolve(false);
   });
-  // check_and_record_usage RPC: allow with current_count=1.
-  rpcImpl.mockResolvedValue({
-    data: [{ allowed: true, current_count: 1 }],
-    error: null,
+  // check_and_record_usage RPC: allow with used_count=1. get_plan_limit RPC
+  // (DB-authoritative daily cap) returns a finite free-tier-ish number so the
+  // route's remaining = max(0, limit - used_count) resolves cleanly.
+  rpcImpl.mockImplementation((name: string) => {
+    if (name === 'get_plan_limit') {
+      return Promise.resolve({ data: 10, error: null });
+    }
+    return Promise.resolve({ data: [{ allowed: true, used_count: 1 }], error: null });
   });
 });
 

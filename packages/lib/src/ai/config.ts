@@ -55,17 +55,6 @@ export function getAIConfig(): AIConfig {
   };
 }
 
-// ─── Quota Limits (display-only — enforcement uses DB-derived values) ───────
-
-export const DAILY_QUOTA: Record<string, number> = {
-  free: 10,
-  starter: 30,
-  pro: 100,
-  unlimited: 999_999,
-};
-
-export const DEFAULT_QUOTA = 10;
-
 /**
  * Normalize raw plan codes from the DB to canonical keys.
  * Handles legacy aliases (basic->starter, premium->pro, ultimate->unlimited)

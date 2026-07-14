@@ -3,9 +3,39 @@
  *
  * Enforces AI safety (P12): age-appropriate, no leaked errors,
  * no prompt injection artifacts, no hallucination markers.
+ *
+ * ⚠️ PHASE 0.1 HARDENING (2026-07-14) — the profanity BLOCKLIST below is now
+ * WARN/FLAG-ONLY and NON-DESTRUCTIVE. It used to rewrite bare-substring matches
+ * to `***`, which censored legitimate CBSE curriculum vocabulary that merely
+ * *contains* a token ("class" → "cl***", "assertive" → "***ertive", "shell" →
+ * "s***", "sexual reproduction" → "***ual reproduction", "passage" → "p***age").
+ * That masked text reached students on the legacy/fallback Foxy path. The
+ * `***`-masking has been removed: a match still records an entry in `errors`
+ * (so `valid` becomes false and callers get an advisory flag) but `validateOutput`
+ * NO LONGER mutates `sanitizedContent` for a blocklist match.
+ *
+ * The REAL student-facing safety decision is owned by the word-boundary-safe
+ * `screenStudentFacingText` (./output-screen.ts). This substring BLOCKLIST is a
+ * coarse observability signal only — it must not decide, and must never mutate,
+ * what a student sees.
  */
 
 import type { ValidationResult } from '../types';
+
+/**
+ * Clean, age-appropriate, bilingual (P7) safe-abstain reply. Served in place of
+ * a model turn when the word-boundary `screenStudentFacingText` backstop judges
+ * the LLM output unsafe on the legacy/fallback Foxy path. Foxy stays in its AI
+ * study-buddy identity (never impersonates a human teacher — P12). This string
+ * is itself clean (contains no blocklist/hard-block token), so re-screening it
+ * downstream is a no-op.
+ */
+export const SAFE_ABSTAIN_MESSAGE =
+  "Let's keep our chat focused on your studies — I can't help with that one. " +
+  'Try asking me something about your chapter, or check with your teacher if you are unsure.' +
+  '\n\n' +
+  'चलो अपनी पढ़ाई पर ध्यान देते हैं — मैं इसमें मदद नहीं कर सकता। ' +
+  'अपने अध्याय के बारे में कुछ पूछो, या किसी बात पर संदेह हो तो अपने शिक्षक से पूछ लेना।';
 
 const BLOCKLIST = [
   'damn', 'hell', 'shit', 'fuck', 'bastard', 'ass', 'bitch', 'crap',
@@ -74,11 +104,18 @@ export function validateOutput(
     }
   }
 
-  // 3. Inappropriate content
+  // 3. Inappropriate content — WARN/FLAG ONLY, NON-DESTRUCTIVE (Phase 0.1).
+  //
+  // This BLOCKLIST matches BARE SUBSTRINGS, so it fires on legitimate CBSE
+  // vocabulary ("class"/"mass"/"passage" ⊃ "ass", "shell"/"hello" ⊃ "hell",
+  // "sexual reproduction" ⊃ "sex"). We record the match as an advisory flag
+  // (=> `valid` false) for telemetry, but we DO NOT rewrite `sanitized` — the
+  // old `.replace(word, '***')` censored real lessons and shipped masked text
+  // to students. The word-boundary `screenStudentFacingText` (./output-screen)
+  // is the actual student-facing blocker; this loop is observability only.
   for (const word of BLOCKLIST) {
     if (lower.includes(word)) {
-      errors.push(`Inappropriate content detected: "${word}"`);
-      sanitized = sanitized.replace(new RegExp(word, 'gi'), '***');
+      errors.push(`Inappropriate content flagged (advisory): "${word}"`);
     }
   }
 
