@@ -3,6 +3,7 @@
 import useSWR from 'swr';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { authedFetch } from '@alfanumrik/lib/authed-fetch';
 
 /**
  * Phase 2.D — Spaced-repetition CTA on the student dashboard.
@@ -35,7 +36,10 @@ interface ReviewsDueResponse {
 }
 
 const fetcher = async (url: string): Promise<ReviewsDueResponse> => {
-  const res = await fetch(url);
+  // authedFetch forwards `Authorization: Bearer <token>` from the live Supabase
+  // session (session is in localStorage, not a cookie), so the server's
+  // authorizeRequest authenticates the student instead of 401ing.
+  const res = await authedFetch(url);
   if (!res.ok) {
     const err = new Error(`Failed: ${res.status}`) as Error & { status: number };
     err.status = res.status;

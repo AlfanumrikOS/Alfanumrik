@@ -19,6 +19,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { StatRing, Skeleton } from '@alfanumrik/ui/ui';
+import { authedFetch } from '@alfanumrik/lib/authed-fetch';
 
 /* color-mix alpha helper — keeps tints tied to semantic tokens (works for both
    var() tokens and hex). */
@@ -109,7 +110,10 @@ export default function BoardScoreWidget({ isHi, studentId }: BoardScoreWidgetPr
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/board-score', { credentials: 'include' });
+      // authedFetch forwards `Authorization: Bearer <token>` from the live
+      // Supabase session (session lives in localStorage, not a cookie), so the
+      // server's authorizeRequest sees the user instead of 401ing.
+      const res = await authedFetch('/api/board-score');
       if (!res.ok) {
         setError(`fetch_error:${res.status}`);
         return;
