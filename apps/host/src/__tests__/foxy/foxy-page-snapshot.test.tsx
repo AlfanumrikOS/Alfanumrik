@@ -72,9 +72,13 @@ vi.mock('@alfanumrik/ui/foxy/ConversationManager', () => ({
   ],
   MODE_MAP: { learn: 'learn', practice: 'practice' },
 }));
-vi.mock('@alfanumrik/ui/foxy/ConversationHeader', () => ({
-  ConversationHeader: () => <div data-mock="conv-header2" />,
-}));
+// NOTE: `@alfanumrik/ui/foxy/ConversationHeader` is intentionally NOT mocked.
+// As of the 2026-07 desktop header compaction (branch ui/foxy-header-compact),
+// the page no longer imports or renders <ConversationHeader> — its title +
+// "New Chat" affordances were folded into the premium header band (Row 1). The
+// former `conv-header2` mock was dead (the module isn't imported anywhere in the
+// page), so it was pruned. See the "desktop header compaction" describe block
+// below, which locks in the folded-into-Row-1 layout.
 vi.mock('@alfanumrik/ui/foxy/LoadingState', () => ({
   LoadingState: () => <div data-mock="loading" />,
 }));
@@ -470,5 +474,91 @@ describe('Foxy page — conversation starters (footer removed, popover added)', 
     // Opening the popover surfaces the starters on demand — and only then.
     fireEvent.click(findToggle()!);
     expect(container.querySelectorAll('[data-mock="starters"]').length).toBe(1);
+  });
+});
+
+/**
+ * Desktop Foxy header compaction (2026-07, branch ui/foxy-header-compact):
+ * 4 stacked chrome rows → 2. The standalone <ConversationHeader> row (the old
+ * 4th row) was REMOVED; its two unique affordances — the active-conversation
+ * TITLE and the "+ New Chat" button — were folded into the premium header band
+ * (Row 1, `.foxy-header-premium`), gated on an active thread (messages.length
+ * > 0). The subject-tabs row + chapter/mode toolbar were merged into ONE
+ * `.foxy-toolbar` row (Row 2).
+ *
+ * These assertions lock the redesign in so a regression is caught if someone
+ * (a) re-introduces a separate ConversationHeader row, or (b) drops the title
+ * or "New Chat" from Row 1. Note: NO ConversationHeader mock exists anymore —
+ * the page doesn't import that module — so a re-added header row would surface
+ * a SECOND "New Chat" control and trip the exactly-one assertion below.
+ */
+describe('Foxy page — desktop header compaction (title + New Chat folded into Row 1)', () => {
+  const seedActiveConversation = () => {
+    const now = new Date().toISOString();
+    db.data.foxy_sessions = [
+      { id: 'sess-1', subject: 'science', chapter: null, last_active_at: now },
+    ];
+    db.data.foxy_chat_messages = [
+      { id: 'm-a', session_id: 'sess-1', role: 'assistant', content: 'Photosynthesis is how plants make food.', structured: null, created_at: now },
+      { id: 'm-b', session_id: 'sess-1', role: 'user', content: 'Tell me more', structured: null, created_at: now },
+    ];
+  };
+
+  it('active conversation: the premium band (Row 1) owns the title + "New Chat"; there is no separate ConversationHeader row', async () => {
+    seedActiveConversation();
+    const { default: FoxyPage } = await import('@/app/foxy/page');
+    const { container } = render(<FoxyPage />);
+
+    const premiumBand = () => container.querySelector('.foxy-header-premium');
+
+    // Wait for the resumed session to hydrate the active-conversation UI: the
+    // "New Chat" affordance only exists once messages.length > 0.
+    await waitFor(() => {
+      const band = premiumBand();
+      expect(band).toBeTruthy();
+      expect(band!.textContent ?? '').toMatch(/New Chat|नई चैट/);
+    });
+
+    const band = premiumBand()!;
+    // The conversation TITLE folded into Row 1. generateTitle() runs on the
+    // seeded first user turn ('Tell me more') → title === 'Tell me more'
+    // (deterministic: fetchRecentSession maps role 'user' → 'student', which
+    // generateTitle picks as firstUserMsg; no prefix is stripped).
+    expect(band.textContent ?? '').toContain('Tell me more');
+    // …and the message-count chip rides along in Row 1.
+    expect(band.textContent ?? '').toMatch(/\d+\s*(msgs|संदेश)/);
+
+    // The "New Chat" button lives INSIDE the premium band — not in a 4th row.
+    // Exactly one such control must exist in the whole tree: a re-introduced
+    // ConversationHeader row would render a second one and fail here.
+    const newChatButtons = Array.from(container.querySelectorAll('button')).filter((b) =>
+      /New Chat|नई चैट/.test(b.textContent ?? ''),
+    );
+    expect(newChatButtons).toHaveLength(1);
+    expect(band.contains(newChatButtons[0])).toBe(true);
+
+    // Header is now exactly two rows: Row 1 (.foxy-header-premium) + Row 2
+    // (.foxy-toolbar — subjects · chapter · modes merged). No stray old
+    // ConversationHeader mock leaks into the DOM either.
+    expect(container.querySelectorAll('.foxy-header-premium')).toHaveLength(1);
+    expect(container.querySelectorAll('.foxy-toolbar')).toHaveLength(1);
+    expect(container.querySelector('[data-mock="conv-header2"]')).toBeNull();
+  });
+
+  it('empty state: Row 1 renders but withholds the title + "New Chat" until a thread exists', async () => {
+    // db stays empty (beforeEach) → messages.length === 0 → empty-state path.
+    const { default: FoxyPage } = await import('@/app/foxy/page');
+    const { container } = render(<FoxyPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector('.foxy-header-premium')).toBeTruthy();
+    });
+    const band = container.querySelector('.foxy-header-premium')!;
+    // No active thread → the folded-in title + New Chat control stay hidden.
+    expect(band.textContent ?? '').not.toMatch(/New Chat|नई चैट/);
+    const newChatButtons = Array.from(container.querySelectorAll('button')).filter((b) =>
+      /New Chat|नई चैट/.test(b.textContent ?? ''),
+    );
+    expect(newChatButtons).toHaveLength(0);
   });
 });

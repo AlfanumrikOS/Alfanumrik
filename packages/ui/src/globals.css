@@ -1627,7 +1627,11 @@ body.foxy-body-lock {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
-  width: 100%;
+  /* Now a flex child of `.foxy-toolbar` (subjects + chapter + modes share one
+     row on desktop). It grows via `sm:flex-1` and needs `min-width: 0` so the
+     horizontal-scroll works when the pills overflow. Below sm it takes its own
+     full-width line via `w-full` (Tailwind) and wraps chapter/modes below. */
+  min-width: 0;
 }
 .foxy-subject-tabs::-webkit-scrollbar {
   display: none;
