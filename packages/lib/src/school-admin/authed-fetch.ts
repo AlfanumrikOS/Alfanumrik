@@ -1,54 +1,13 @@
 /**
- * authed-fetch.ts — Bearer-token forwarding helper for school-admin client fetchers.
+ * authed-fetch.ts (school-admin path) — thin re-export.
  *
- * WHY this exists:
- *   The browser Supabase client (`src/lib/supabase-client.ts`) persists the session
- *   in localStorage, NOT in a cookie (it uses plain `createClient`, not
- *   `createBrowserClient`). Server routes — `authorizeRequest` / `authorizeSchoolAdmin`
- *   — authenticate via `Authorization: Bearer <access_token>` FIRST, then fall back to
- *   cookies. A client fetch that relies on `credentials: 'same-origin'` alone sends no
- *   cookie that carries the session, so the server sees no user and returns 401.
+ * The Bearer-token forwarding helper was promoted to the neutral path
+ * `@alfanumrik/lib/authed-fetch` so non-school-admin client fetchers (e.g. the
+ * student dashboard's BoardScoreWidget / ReviewsDueCard) can import it without
+ * reaching into a `school-admin/` folder. This module preserves the historical
+ * import path so every existing school-admin importer keeps working unchanged.
  *
- *   The established app pattern (see `src/app/school-admin/reports/page.tsx` getToken
- *   helper) is to read the access token from the live session and forward it as a
- *   Bearer header. This module is that pattern, factored once.
- *
- * Tiny + dependency-free by design.
+ * Prefer `@alfanumrik/lib/authed-fetch` for new callers.
  */
 
-import { supabase } from '@alfanumrik/lib/supabase-client';
-
-/**
- * Read the current access token from the live Supabase session.
- * Returns null when there is no session (the caller still fires the request;
- * the server returns 401 and existing error handling shows a retry).
- */
-export async function getAccessToken(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
-}
-
-/**
- * A thin `fetch` wrapper that injects `Authorization: Bearer <token>` into the
- * request headers while preserving every caller-provided header, method, and body.
- * Keeps `credentials: 'same-origin'` so the cookie path remains as a fallback.
- *
- * Any caller-set `Authorization` header is preserved (only added when absent).
- * If no token is available, the request is still sent (no header) so the
- * server-side 401 → existing retry UX path remains intact.
- */
-export async function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const token = await getAccessToken();
-
-  // Merge headers without clobbering caller-provided ones (e.g. Content-Type).
-  const headers = new Headers(init.headers);
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-
-  return fetch(url, {
-    credentials: 'same-origin',
-    ...init,
-    headers,
-  });
-}
+export { authedFetch, getAccessToken } from '@alfanumrik/lib/authed-fetch';
