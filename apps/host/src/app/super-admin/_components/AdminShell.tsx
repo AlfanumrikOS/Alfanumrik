@@ -40,7 +40,6 @@ const NAV_ITEMS: SidebarItem[] = [
   { href: '/super-admin/users', label: 'Users & Roles', labelHi: 'उपयोगकर्ता और भूमिकाएँ', icon: '⊕' },
   { href: '/super-admin/rbac', label: 'RBAC', labelHi: 'RBAC', icon: '⛊' },
   { href: '/super-admin/oauth-apps', label: 'OAuth Apps', labelHi: 'OAuth ऐप्स', icon: '⊚' },
-  { href: '/super-admin/subscribers', label: 'Subscribers', labelHi: 'सब्सक्राइबर', icon: '⊳' },
   { href: '/super-admin/entitlements', label: 'Entitlements', labelHi: 'एंटाइटलमेंट', icon: '⊞' },
   // ── Institutions ─────────────────────────────────────────────────────────
   { type: 'section', label: 'Institutions', labelHi: 'संस्थाएं' },
@@ -55,6 +54,10 @@ const NAV_ITEMS: SidebarItem[] = [
   { href: '/super-admin/observability', label: 'Observability', labelHi: 'अवलोकनीयता', icon: '◎' },
   { href: '/super-admin/sla', label: 'SLA Monitor', labelHi: 'SLA मॉनिटर', icon: '⊗' },
   { href: '/super-admin/alerts', label: 'Alerts', labelHi: 'अलर्ट', icon: '⊚' },
+  // Event Runtime = the state-event dead-letter / replay console
+  // (/super-admin/subscribers). Lives here with observability/SLA/alerts as a
+  // runtime-ops tool — NOT in Users (it is not customer-subscriber management).
+  { href: '/super-admin/subscribers', label: 'Event Runtime', labelHi: 'इवेंट रनटाइम', icon: '⊳' },
   // ── Operations ──────────────────────────────────────────────────────────
   { type: 'section', label: 'Operations', labelHi: 'संचालन' },
   { href: '/super-admin/subscriptions', label: 'Subscriptions', labelHi: 'सदस्यता', icon: '◈' },
