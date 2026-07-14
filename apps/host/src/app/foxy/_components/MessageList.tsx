@@ -189,6 +189,17 @@ export function MessageList({
           legacyTutorContent
         );
 
+        // Empty-bubble guard: a tutor turn only has a renderable body when it
+        // carries structured content, non-whitespace text, or a ui-action.
+        // Otherwise (streaming settled with no text delta, or an empty persisted
+        // row) ChatBubble would paint a blank white bar under the header — so we
+        // signal `hasBodyContent={false}` and it drops the body box. Student
+        // bubbles always have a body (text and/or an image).
+        const hasRenderableBody =
+          msg.role === 'tutor'
+            ? Boolean(useStructured) || effectiveContent.trim().length > 0 || Boolean(uiActionPayload)
+            : true;
+
         return (
           <div key={msg.id}>
             <ChatBubble
@@ -236,6 +247,7 @@ export function MessageList({
               }
               saved={savedMessageIds.has(msg.id)}
               gotIt={gotItMessageIds?.has(msg.id) ?? false}
+              hasBodyContent={hasRenderableBody}
             />
             {/* Legacy Save-to-flashcard button (flag OFF — byte-identical to
                 today). When the new bar is active, Save lives in its overflow
