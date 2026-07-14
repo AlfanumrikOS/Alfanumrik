@@ -32,6 +32,8 @@ import type {
   GroundingStatus,
   AbstainReason,
   SuggestedAlternative,
+  SuggestedButtonType,
+  NextAction,
 } from '@alfanumrik/ui/foxy/ChatBubble';
 import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
 import type { ChatMessage, StreamingCallbacks, QuizMeWire } from '../_lib/foxy-types';
@@ -248,6 +250,11 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
       messageId:              typeof data.messageId === 'string' ? data.messageId : null,
       // Part B1: evidential "Quiz me" contract (present only on a quiz_me turn).
       quizMe:                 (data.quizMe as QuizMeWire | undefined) ?? undefined,
+      // Phase 2.1 Teaching Director (ff_foxy_teaching_director_v1) — present ONLY
+      // when the flag is ON and a plan composed. Absent ⇒ undefined ⇒ ChatBubble
+      // renders all four buttons (byte-identical to today).
+      suggestedButtons:       Array.isArray(data.suggestedButtons) ? (data.suggestedButtons as SuggestedButtonType[]) : undefined,
+      nextActions:            Array.isArray(data.nextActions) ? (data.nextActions as NextAction[]) : undefined,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
@@ -322,6 +329,9 @@ export async function callFoxyTutorStream(
         claudeModel: data?.meta?.claude_model || data?.claudeModel || '',
         structured: (data?.structured as FoxyResponse | undefined) ?? undefined,
         badgeState: (data?.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
+        // Phase 2.1 Teaching Director — carried on the JSON-fallback done too.
+        suggestedButtons: Array.isArray(data?.suggestedButtons) ? (data.suggestedButtons as SuggestedButtonType[]) : undefined,
+        nextActions: Array.isArray(data?.nextActions) ? (data.nextActions as NextAction[]) : undefined,
       });
       if (typeof data?.messageId === 'string' && data.messageId.length > 0) {
         callbacks.onPersisted?.({ messageId: data.messageId });
@@ -381,6 +391,11 @@ export async function callFoxyTutorStream(
           claudeModel: typeof parsed?.claudeModel === 'string' ? parsed.claudeModel : '',
           structured: (parsed?.structured as FoxyResponse | undefined) ?? undefined,
           badgeState: (parsed?.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
+          // Phase 2.1 Teaching Director — the `done` frame is enriched in
+          // parallel to carry the same subset/next-actions the blocking JSON
+          // does. Absent on today's frames ⇒ undefined ⇒ all four render.
+          suggestedButtons: Array.isArray(parsed?.suggestedButtons) ? (parsed.suggestedButtons as SuggestedButtonType[]) : undefined,
+          nextActions: Array.isArray(parsed?.nextActions) ? (parsed.nextActions as NextAction[]) : undefined,
         });
       } else if (eventName === 'persisted') {
         if (typeof parsed?.messageId === 'string' && parsed.messageId.length > 0) {
@@ -901,6 +916,15 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
                 if (info.badgeState) {
                   next = { ...next, badgeState: info.badgeState };
                 }
+                // Phase 2.1 Teaching Director — stamp the context-aware button
+                // subset + advisory next-actions when the enriched `done` frame
+                // carried them. Absent ⇒ untouched ⇒ ChatBubble renders all four.
+                if (info.suggestedButtons) {
+                  next = { ...next, suggestedButtons: info.suggestedButtons };
+                }
+                if (info.nextActions) {
+                  next = { ...next, nextActions: info.nextActions };
+                }
                 if (next.content && next.content.length > 0) return next;
                 if (next.groundingStatus === 'hard-abstain') return next;
                 if (info.groundedFromChunks === true) return next;
@@ -996,6 +1020,11 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
         // Part B1: stamp the evidential contract so the MCQ renderer knows
         // whether answering moves mastery (evidential) or is practice-only.
         quizMe: resp.quizMe,
+        // Phase 2.1 Teaching Director — stamp the context-aware button subset +
+        // advisory next-actions from the blocking JSON response. Absent (flag
+        // OFF / no plan) ⇒ undefined ⇒ ChatBubble renders all four buttons.
+        suggestedButtons: resp.suggestedButtons,
+        nextActions: resp.nextActions,
       }]);
       if (resp.upgradePrompt) {
         const up = resp.upgradePrompt;

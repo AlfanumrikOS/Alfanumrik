@@ -53,6 +53,13 @@ import {
 import { refundQuota } from './quota';
 import { extractValidatedStructured } from './responders';
 import { classifyExpectationLifecycle } from './cognitive-context';
+// Phase 2.1 (ff_foxy_teaching_director_v1): the composed teaching plan for the
+// turn is threaded in from the route so (FIX 1) the streaming `done` event
+// carries the same suggestedButtons + nextActions the blocking path returns, and
+// (FIX 2) the per-session lesson step advances ONLY after a successful,
+// non-safety-blocked teaching answer. Null/undefined (non-teaching turn, flag
+// OFF, or Director failure) → done event unchanged + no persist.
+import { persistLessonProgress, type TeachingPlan } from './teaching-director';
 
 // ─── Streaming turn handler (Phase 1.1) ─────────────────────────────────────
 //
@@ -99,6 +106,13 @@ export async function handleStreamingFoxyTurn(params: {
   // hook below is skipped entirely (zero extra DB writes).
   usePendingExpectations?: boolean;
   openExpectation?: OpenExpectation | null;
+  // Phase 2.1 (ff_foxy_teaching_director_v1, default OFF): the teaching plan the
+  // route composed for THIS turn. When present (teaching turn + flag ON + a
+  // successful compose) the `done` event is enriched with the plan's
+  // suggestedButtons + nextActions (FIX 1) and the lesson step is advanced on a
+  // successful, non-safety-blocked answer (FIX 2). Null/undefined → both are
+  // no-ops and the streamed wire shape is byte-identical to today.
+  teachingPlan?: TeachingPlan | null;
 }): Promise<Response> {
   const upstream = await callGroundedAnswerStream(params.groundedRequest, {
     hopTimeoutMs: params.hopTimeoutMs,
@@ -160,6 +174,12 @@ export async function handleStreamingFoxyTurn(params: {
   // pre-structured behavior). See REG-50 (Foxy single-retrieval) and the
   // matching non-streaming branch around line 1700 for the contract pin.
   let lastStructuredRaw: unknown = null;
+  // Phase 2.1 (FIX 1): the full parsed `done` payload object, captured so the
+  // flush() can re-serialize it WITH the teaching plan's suggestedButtons +
+  // nextActions appended (only when a plan was composed for the turn). Stays null
+  // until a `done` frame with an object payload arrives; when no plan is present
+  // the raw upstream done frame is re-emitted verbatim instead (byte-identical).
+  let lastDonePayload: Record<string, unknown> | null = null;
   // Synthesize a leading `session` event so the client knows the sessionId
   // up front (Edge Function doesn't know it).
   const encoder = new TextEncoder();
@@ -261,6 +281,17 @@ export async function handleStreamingFoxyTurn(params: {
     // unsafe text never lands in the DB; otherwise persist the validated answer.
     const persistContent = safetyRedacted ? '' : assistantContent;
     const persistStructured = safetyRedacted ? null : (structured ?? null);
+
+    // ── Phase 2.1 (FIX 2): advance the lesson step ONLY on a successful answer ──
+    // persistOnDone runs solely on the `done` frame (a grounded success). We
+    // additionally skip on a safety redaction — so an abstain / upstream error /
+    // premature stream end (no `done`) / content-screen block never advances the
+    // lesson (the student did not get the teaching, so the lesson stays put).
+    // Best-effort / fire-and-forget: persistLessonProgress is internally guarded
+    // and never throws, and a persist failure must never affect the turn.
+    if (params.teachingPlan && !safetyRedacted) {
+      void persistLessonProgress(params.resolvedSessionId, params.teachingPlan);
+    }
 
     const sourcesPayload =
       lastCitations.length > 0
@@ -467,6 +498,12 @@ export async function handleStreamingFoxyTurn(params: {
           if (payload && typeof payload === 'object' && 'structured' in payload) {
             lastStructuredRaw = (payload as { structured?: unknown }).structured ?? null;
           }
+          // Phase 2.1 (FIX 1): retain the full parsed done payload so flush() can
+          // re-serialize it with the teaching plan's suggestedButtons +
+          // nextActions appended (only when a plan was composed for this turn).
+          if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+            lastDonePayload = payload as Record<string, unknown>;
+          }
           bufferedDoneFrame = rawFrame;
         } else if (eventName === 'abstain') {
           // Abstain → refund based on the same policy as the blocking path
@@ -521,7 +558,25 @@ export async function handleStreamingFoxyTurn(params: {
           await refundQuota(params.studentId, 'foxy_chat');
         } else {
           for (const frame of bufferedTextFrames) controller.enqueue(frame);
-          if (bufferedDoneFrame) controller.enqueue(bufferedDoneFrame);
+          // Phase 2.1 (FIX 1): when a teaching plan was composed for this turn
+          // (flag ON + teaching turn), re-serialize the `done` payload WITH the
+          // same suggestedButtons + nextActions the blocking path returns, so the
+          // streaming client renders the plan-driven action buttons. With no plan
+          // (flag OFF / non-teaching / Director failure) the upstream done frame
+          // is re-emitted verbatim → byte-identical to today.
+          if (params.teachingPlan && lastDonePayload) {
+            controller.enqueue(
+              encoder.encode(
+                `event: done\ndata: ${JSON.stringify({
+                  ...lastDonePayload,
+                  suggestedButtons: params.teachingPlan.suggestedButtons,
+                  nextActions: params.teachingPlan.recommendedNextActions,
+                })}\n\n`,
+              ),
+            );
+          } else if (bufferedDoneFrame) {
+            controller.enqueue(bufferedDoneFrame);
+          }
           if (!assistantMessageId) return;
           try {
             controller.enqueue(

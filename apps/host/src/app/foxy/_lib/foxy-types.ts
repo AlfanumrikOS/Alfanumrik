@@ -6,7 +6,13 @@
  * via `import type { ... } from './_lib/foxy-types'`.
  */
 
-import type { GroundingStatus, AbstainReason, SuggestedAlternative } from '@alfanumrik/ui/foxy/ChatBubble';
+import type {
+  GroundingStatus,
+  AbstainReason,
+  SuggestedAlternative,
+  SuggestedButtonType,
+  NextAction,
+} from '@alfanumrik/ui/foxy/ChatBubble';
 import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
 
 export interface SubjectConfig {
@@ -61,6 +67,15 @@ export interface StreamingCallbacks {
      * legacy responses (renders nothing).
      */
     badgeState?: 'verified' | 'check_manually' | 'none' | 'out_of_scope';
+    /**
+     * Phase 2.1 Teaching Director (ff_foxy_teaching_director_v1) — context-aware
+     * subset of the four primary post-answer buttons. Present on the enriched
+     * SSE `done` frame ONLY when the flag is ON and a plan composed; absent ⇒
+     * the bar renders all four (byte-identical to today).
+     */
+    suggestedButtons?: SuggestedButtonType[];
+    /** Phase 2.1 — advisory follow-up actions (bilingual, display-only). */
+    nextActions?: NextAction[];
   }) => void;
   onAbstain?: (info: { abstainReason: AbstainReason; suggestedAlternatives: SuggestedAlternative[]; traceId?: string }) => void;
   onError?: (info: { reason: string; traceId?: string }) => void;
@@ -120,4 +135,19 @@ export interface ChatMessage {
    * claim). Absent on every non-quiz turn (the MCQ, if any, is self-check).
    */
   quizMe?: QuizMeWire;
+  /**
+   * Phase 2.1 Teaching Director (ff_foxy_teaching_director_v1). Context-aware
+   * subset of the four primary learning-action buttons the Director wants Foxy
+   * to surface this turn. Stamped from BOTH the blocking JSON response
+   * (`data.suggestedButtons`) and the enriched streaming `done` frame. Present
+   * ONLY when the flag is ON and a plan composed; absent ⇒ ChatBubble renders
+   * all four buttons (byte-identical to today).
+   */
+  suggestedButtons?: SuggestedButtonType[];
+  /**
+   * Phase 2.1 — advisory follow-up actions from the Director, rendered as a
+   * subtle display-only chip row beneath the action bar (bilingual, P7). Never
+   * dispatches or mutates state. Absent ⇒ no chip row.
+   */
+  nextActions?: NextAction[];
 }

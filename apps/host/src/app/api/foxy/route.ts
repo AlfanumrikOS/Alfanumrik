@@ -248,6 +248,19 @@ import {
 // their _lib homes — not duplicated. No symbol is imported by a test from the
 // route's public surface, so no re-export is needed.
 import { handleStreamingFoxyTurn } from './_lib/streaming';
+// Phase 2.1 (ff_foxy_teaching_director_v1, default OFF) — Teaching Director
+// wiring. Thin adapter around the PURE, assessment-owned composeTeachingPlan.
+// When the flag is OFF none of these run and the turn is byte-identical to
+// today. Helpers only ADD a directive string + two envelope fields; they never
+// touch the RAG / grounding / abstain / structured-validation path.
+import {
+  isTeachingTurn,
+  loadLessonStepState,
+  maybeComposeTeachingPlan,
+  buildTeachingDirectorSection,
+  persistLessonProgress,
+  type TeachingPlan,
+} from './_lib/teaching-director';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -966,6 +979,10 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // buildCognitivePromptSection, so the P12 grounding/abstain rails are
   // untouched. P13: IDs / numbers / codes only — never names / emails / phones.
   let twinPromptSection = '';
+  // Hoisted so the Phase 2.1 Teaching Director (below) can consume the SAME
+  // loaded twin without a second read. Stays null when ff_digital_twin_v1 is
+  // OFF or no snapshot exists; the Director tolerates a null/empty twin.
+  let twinContext: Awaited<ReturnType<typeof loadTwinContextForFoxy>> = null;
   try {
     const twinEnabled = await isFeatureEnabled('ff_digital_twin_v1', {
       role: 'student',
@@ -973,6 +990,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     });
     if (twinEnabled) {
       const twin = await loadTwinContextForFoxy(studentId);
+      twinContext = twin;
       if (twin && !twin.isEmpty) {
         twinPromptSection = `\n\n${renderTwinPromptSection(twin)}`;
         logger.info('foxy.twin_context.injected', {
@@ -1615,6 +1633,77 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // deploy. The service now prefers conversation_turns when present.
   const historyMessagesAlias = JSON.stringify(history);
 
+  // ── Phase 2.1: Foxy Teaching Director (ff_foxy_teaching_director_v1) ──────
+  // On a TEACHING turn (learn/explain/revise/doubt/homework/explorer — NOT the
+  // MCQ-emitting quiz_me / practice turns), compose an explicit, deterministic
+  // teaching plan from the already-loaded learner state and inject it as an
+  // ADDITIVE directive section. The plan also advances a per-session lesson
+  // step (persisted to foxy_sessions) and supplies a context-aware button set
+  // on the wire so the UI can render real, plan-driven action buttons.
+  //
+  // Default OFF via ff_foxy_teaching_director_v1: when OFF this whole block is
+  // skipped, `teachingDirectorSection` stays '' and `teachingPlan` stays null,
+  // so the grounded request + wire shape are BYTE-IDENTICAL to today.
+  //
+  // SAFETY: the Director ONLY adds a directive string (appended to the
+  // cognitive_context_section template var below) + two wire fields. It does
+  // NOT touch reference_material, the safety rails, the RAG/grounding/abstain
+  // path, or structured validation. Every step is guarded so ANY Director
+  // failure is a safe no-op (falls back to today's behavior). The compose is
+  // pure/sync; it does not slow the turn.
+  let teachingDirectorSection = '';
+  let teachingPlan: TeachingPlan | null = null;
+  // `mode` is already promoted to 'practice' for quiz_me upstream, so
+  // isTeachingTurn(mode) alone excludes quiz_me + practice + real-practice; the
+  // extra guards are belt-and-suspenders in case that promotion ever changes.
+  const directorTeachingTurn = isTeachingTurn(mode) && !isQuizMe && !isRealPractice;
+  if (directorTeachingTurn) {
+    try {
+      const directorEnabled = await isFeatureEnabled('ff_foxy_teaching_director_v1', {
+        role: 'student',
+        userId: auth.userId!,
+      });
+      if (directorEnabled) {
+        const lessonStepState = await loadLessonStepState(resolvedSessionId);
+        teachingPlan = maybeComposeTeachingPlan({
+          cognitiveContext: cognitiveCtx,
+          chapterProgress: topicProgress,
+          persona: academicGoal,
+          lessonStepState,
+          twin: twinContext,
+        });
+        if (teachingPlan) {
+          teachingDirectorSection = buildTeachingDirectorSection(teachingPlan);
+          // FIX 2 (Phase 2.1 polish): the lesson step is NO LONGER advanced here
+          // at compose time. Composing the plan only INJECTS the directive; the
+          // step is persisted (persistLessonProgress) later, ONLY after a
+          // successful, safety-screened teaching answer is produced — on the
+          // blocking success return below AND inside handleStreamingFoxyTurn. An
+          // abstain / grounding-fail / upstream error / safety block therefore
+          // leaves the lesson step untouched (the student didn't get the teaching).
+          logger.info('foxy.teaching_director.injected', {
+            // P13: enums/scope only — never the concept title, ids, or studentId.
+            subject,
+            grade,
+            whyNow: teachingPlan.currentObjective.whyNow,
+            lessonStep: teachingPlan.lessonStep,
+            targetBloom: teachingPlan.targetBloom,
+            depthCeiling: teachingPlan.depthCeiling,
+            buttonCount: teachingPlan.suggestedButtons.length,
+          });
+        }
+      }
+    } catch (dirErr) {
+      // Non-fatal — Foxy works without the Director. Safe no-op: reset both so a
+      // partial failure can never leak a half-built section onto the wire.
+      teachingDirectorSection = '';
+      teachingPlan = null;
+      logger.warn('foxy_teaching_director_failed', {
+        error: dirErr instanceof Error ? dirErr.message : String(dirErr),
+      });
+    }
+  }
+
   const groundedRequest: GroundedRequest = {
     caller: 'foxy',
     student_id: studentId,
@@ -1689,7 +1778,20 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // exists, `twinPromptSection` carries the LONGITUDINAL LEARNING SIGNALS
         // block appended to the cognitive context. When OFF (default) it is ''
         // → byte-identical to today.
-        cognitive_context_section: buildCognitivePromptSection(cognitiveCtx) + twinPromptSection,
+        // Phase 2.1: the Teaching Director section (WHAT to teach + WHY now
+        // bilingual + lesson step + Bloom/depth) is APPENDED to the cognitive
+        // context — the SAME rendered channel the Digital Twin uses
+        // (twinPromptSection above). {{cognitive_context_section}} is a real
+        // slot in every foxy_tutor_* template (unlike {{foxy_system_prompt}}),
+        // so the directive actually reaches the model WITHOUT adding a new
+        // Edge-template slot or touching reference_material / the safety rails.
+        // `teachingDirectorSection` is '' when ff_foxy_teaching_director_v1 is
+        // OFF, on a non-teaching (quiz_me/practice) turn, or on ANY Director
+        // failure → appends nothing → byte-identical to today.
+        cognitive_context_section:
+          buildCognitivePromptSection(cognitiveCtx) +
+          twinPromptSection +
+          (teachingDirectorSection ? `\n\n${teachingDirectorSection}` : ''),
         // Phase 2: curated misconception ontology — fires the
         // MISCONCEPTION_REPAIR branch in foxy_tutor_v1 with real data.
         // Empty string when no misconceptions observed (template-safe).
@@ -1838,6 +1940,12 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // write the new expectation row. OFF → no-op in the helper.
         usePendingExpectations,
         openExpectation,
+        // Phase 2.1 (FIX 1 + FIX 2): thread the composed teaching plan so the
+        // streaming `done` event carries the same suggestedButtons + nextActions
+        // the blocking path returns AND the lesson step advances only on a
+        // successful, non-safety-blocked answer. Null (flag OFF / non-teaching /
+        // Director failure) → done event unchanged + no persist.
+        teachingPlan,
       });
     }
     // Streaming requested but flag off → silently fall through to blocking.
@@ -2766,6 +2874,18 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const groundedFromChunks = groundedFromChunksRaw;
   const citationsCount = grounded.citations.length;
 
+  // ── Phase 2.1 (FIX 2): advance the per-session lesson step ─────────────────
+  // Reached ONLY on a successful, safety-screened grounded teaching answer — the
+  // abstain, legacy-fallback, out-of-scope, math-solve, and safety-block paths
+  // all return earlier and never reach here, so they never advance the lesson.
+  // `teachingPlan` is non-null only on a teaching turn with
+  // ff_foxy_teaching_director_v1 ON and a successful compose. Best-effort /
+  // fire-and-forget: persistLessonProgress is internally guarded and never
+  // throws, and a persist failure never affects this turn's response.
+  if (teachingPlan) {
+    void persistLessonProgress(resolvedSessionId, teachingPlan);
+  }
+
   logFoxyAsk(grounded.meta.tokens_used ?? null);
   return NextResponse.json({
     success: true,
@@ -2810,6 +2930,20 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
           quizMe: quizMeEvidential
             ? { evidential: true as const, servedItemId: evidentialServedItemId }
             : { evidential: false as const, reason: quizMeNonEvidentialReason },
+        }
+      : {}),
+    // ── Phase 2.1: Teaching Director wire fields ───────────────────────────
+    // Present ONLY on a teaching turn with ff_foxy_teaching_director_v1 ON AND
+    // a successfully composed plan. `suggestedButtons` is the context-aware
+    // subset of the four primary post-answer actions (got_it / explain_simpler
+    // / show_example / quiz_me) the UI should render; `nextActions` is the
+    // advisory follow-up list (bilingual labels, P7). When the flag is OFF or
+    // the Director failed, both keys are OMITTED — the client falls back to the
+    // static 4-button bar (ChatBubble treats an absent set as "render all").
+    ...(teachingPlan
+      ? {
+          suggestedButtons: teachingPlan.suggestedButtons,
+          nextActions: teachingPlan.recommendedNextActions,
         }
       : {}),
   });
