@@ -29,11 +29,15 @@ module.exports = {
         // system-installed copy. Latin runs still resolve the primary face.
         sans: ['Plus Jakarta Sans', 'Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
         heading: ['Sora', 'Plus Jakarta Sans', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'sans-serif'],
-        // Alfa Momentum triad (Wave 0). `display` = premium editorial
-        // headlines (Fraunces); Fraunces lacks Devanagari glyphs, so the
-        // Noto Devanagari fallbacks keep Hindi (isHi) headings legible. `data`
-        // = the numeric/stat/XP/score voice (Sora). `heading` kept for back-compat.
-        display: ['Fraunces', 'var(--font-noto-serif-deva)', 'Noto Serif Devanagari', 'Georgia', 'serif'],
+        // FONT-ROLE LOCKDOWN (Batch 2 · Increment 3). App display/heading = Sora,
+        // matching the --font-display CSS var. The prior `display` entry pointed at
+        // Fraunces (the editorial MARKETING skin, --font-serif) — inverted vs the
+        // CSS vars and referenced by ZERO bare `.font-display` utilities — so it is
+        // realigned to Sora here. Fraunces stays confined to /welcome + landing via
+        // the --font-serif token; it is intentionally NOT exposed as an app Tailwind
+        // utility. `data` = the numeric/stat/XP/score voice (Sora); `heading` (Sora)
+        // is in active use (teacher surfaces). Devanagari fallbacks preserved (P7).
+        display: ['Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
         data: ['Sora', 'var(--font-noto-sans-deva)', 'Noto Sans Devanagari', 'system-ui', 'sans-serif'],
       },
       colors: {

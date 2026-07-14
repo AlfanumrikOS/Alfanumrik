@@ -402,7 +402,7 @@ export default function LeaderboardPage() {
         <div className="app-container py-3">
           <div className="flex items-center gap-3">
             <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
+            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               🏆 {isHi ? 'रैंकिंग और प्रतियोगिता' : 'Rankings & Compete'}
             </h1>
           </div>

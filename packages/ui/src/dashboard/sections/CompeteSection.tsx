@@ -81,7 +81,7 @@ export default function CompeteSection({
               <p
                 className="mt-1"
                 style={{
-                  fontFamily: 'var(--font-serif)',
+                  fontFamily: 'var(--font-display)',
                   fontSize: 'var(--text-md)',
                   color: 'var(--ink-2)',
                   letterSpacing: '-0.01em',
@@ -107,7 +107,7 @@ export default function CompeteSection({
               <p
                 className="mt-2"
                 style={{
-                  fontFamily: 'var(--font-serif)',
+                  fontFamily: 'var(--font-display)',
                   fontSize: 'clamp(22px, 5vw, 28px)',
                   color: 'var(--ink)',
                   letterSpacing: '-0.015em',
@@ -183,7 +183,7 @@ export default function CompeteSection({
             <p
               className="mt-1"
               style={{
-                fontFamily: 'var(--font-serif)',
+                fontFamily: 'var(--font-display)',
                 fontSize: 'var(--text-lg)',
                 color: 'var(--ink)',
                 letterSpacing: '-0.01em',

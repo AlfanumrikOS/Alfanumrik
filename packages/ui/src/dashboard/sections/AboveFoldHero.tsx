@@ -67,8 +67,10 @@ export default function AboveFoldHero({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-fluid-4)' }}>
       {/* 1. EDITORIAL NAME + STAT STRIP — the hero's hero.
-            Fraunces serif name turns "school portal" into "editorial
-            product". 3-cell strip below it: streak / XP / level. */}
+            The editorial-name display heading (Sora, --font-display per the
+            font-role lockdown) keeps the "editorial product" feel while
+            standardizing app surfaces on Sora. 3-cell strip below it:
+            streak / XP / level. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-fluid-3)' }}>
         <h1 className="editorial-name" data-testid="dashboard-greeting-name">
           {student.name}
@@ -178,7 +180,7 @@ export default function AboveFoldHero({
                 <p
                   className="truncate"
                   style={{
-                    fontFamily: 'var(--font-serif)',
+                    fontFamily: 'var(--font-display)',
                     fontWeight: 500,
                     fontSize: 'var(--text-lg)',
                     color: 'var(--ink)',
@@ -241,7 +243,7 @@ export default function AboveFoldHero({
             <p
               className="truncate"
               style={{
-                fontFamily: 'var(--font-serif)',
+                fontFamily: 'var(--font-display)',
                 fontWeight: 500,
                 fontSize: 'var(--text-lg)',
                 color: 'var(--ink)',
@@ -274,7 +276,7 @@ export default function AboveFoldHero({
         <div className="editorial-card">
           <p
             style={{
-              fontFamily: 'var(--font-serif)',
+              fontFamily: 'var(--font-display)',
               fontWeight: 500,
               fontSize: 'var(--text-lg)',
               color: 'var(--ink)',
