@@ -159,13 +159,8 @@ export default function ElectronConfiguration() {
 
           // Box
           const filled = orbCount > 0;
-<<<<<<< Updated upstream
-          ctx.fillStyle = filled ? 'rgba(249, 115, 22, 0.08)' : '#fff';
-          ctx.strokeStyle = filled ? '#E8581C' : '#cbd5e1';
-=======
           ctx.fillStyle = filled ? 'rgba(232, 88, 28, 0.08)' : '#fff';
-          ctx.strokeStyle = filled ? '#F97316' : '#cbd5e1';
->>>>>>> Stashed changes
+          ctx.strokeStyle = filled ? '#E8581C' : '#cbd5e1';
           ctx.lineWidth = filled ? 1.5 : 1;
           ctx.beginPath();
           ctx.roundRect(bx, y, boxW, boxH, 3);

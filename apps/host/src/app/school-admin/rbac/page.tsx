@@ -582,13 +582,8 @@ export default function SchoolAdminRBACPage() {
               onClick={() => setActiveTab(tab.key)}
               className="px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all active:scale-95 flex-shrink-0"
               style={{
-<<<<<<< Updated upstream
-                background: activeTab === tab.key ? 'rgba(249,115,22,0.1)' : 'transparent',
-                border: activeTab === tab.key ? '1.5px solid rgba(249,115,22,0.3)' : '1.5px solid transparent',
-=======
                 background: activeTab === tab.key ? 'rgba(232,88,28,0.1)' : 'transparent',
                 border: activeTab === tab.key ? '1.5px solid rgba(232,88,28,0.3)' : '1.5px solid transparent',
->>>>>>> Stashed changes
                 color: activeTab === tab.key ? '#E8581C' : 'var(--text-3)',
               }}
             >
