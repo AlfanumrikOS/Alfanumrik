@@ -136,6 +136,20 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     signalType: 'repeated_hint',
     occurredAt: FIXTURE_ISO,
   },
+  // Foxy per-turn PERCEPTION classifier (Phase 1). Observability-only.
+  'learner.turn_classified': {
+    studentId: FIXTURE_UUID_B,
+    foxySessionId: FIXTURE_UUID_A,
+    messageId: FIXTURE_UUID_C,
+    subjectCode: 'math',
+    grade: '9',
+    chapterNumber: 4,
+    topicId: FIXTURE_UUID_C,
+    bloomLevel: 'apply',
+    misconceptionCode: 'MATH.FRAC.EQUIV.01',
+    struggleSignal: 'repeated_wrong',
+    intent: 'check_answer',
+  },
   // ADR-001 Phase 3c / E10 sunset — resolver answer as a durable event.
   'learner.next_action_resolved': {
     studentId: FIXTURE_UUID_B,

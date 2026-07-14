@@ -386,6 +386,15 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
       // analytics only. Mapping to `null` keeps it off the journey timeline and
       // guarantees this projector never derives a milestone from a struggle signal.
       return null;
+    case 'learner.turn_classified':
+      // Foxy per-turn PERCEPTION classifier (Phase 1 — Foxy Intelligent Learning
+      // OS). OBSERVABILITY-ONLY: per the binding assessment learner-state contract
+      // (mirrors learner.learning_action / learner.struggle_observed) it MUST NOT
+      // feed any mastery / p_know / error surface and is NOT a learner milestone.
+      // It drives Foxy's in-turn adaptation + analytics + reports only. Mapping to
+      // `null` keeps this high-frequency (one-per-turn) signal off the journey
+      // timeline and guarantees the projector never derives a milestone from it.
+      return null;
     case 'learner.next_action_resolved':
       // ADR-001 Phase 3c / E10 sunset — the Learner Loop resolver's answer,
       // consumed by the scheduled-actions-writer projector. This is substrate
