@@ -14,7 +14,7 @@
 //     CBSE, Bloom's) are NOT translated.
 //   - Accessibility: colour is ALWAYS paired with a text label and an icon, so a
 //     signal is never communicated by colour alone.
-//   - Brand: status/signal colours use the platform tokens (orange #F97316,
+//   - Brand: status/signal colours use the platform tokens (orange #E8581C,
 //     purple #7C3AED) plus the standard semantic green/amber/red used across the
 //     existing progress + command-center surfaces.
 //
@@ -53,7 +53,7 @@ export const PULSE_COLORS = {
   high: '#DC2626',
   // Phase A Loop A — adaptive-remediation timeline accents (paired with icon
   // + text at every call site; never colour-alone).
-  remediation: '#F97316', // brand orange — Foxy stepped in
+  remediation: '#E8581C', // brand orange — Foxy stepped in
   recovered: '#16A34A', // green — comeback verified
   escalated: '#F59E0B', // amber — a human was pulled in
   // Phase A Loops B & C — engagement (inactivity) + concentration accents.

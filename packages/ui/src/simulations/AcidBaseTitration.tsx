@@ -166,7 +166,7 @@ export default function AcidBaseTitration() {
     ctx.stroke();
 
     // Drawn portion (orange)
-    ctx.strokeStyle = '#f97316';
+    ctx.strokeStyle = '#e8581c';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     let first = true;
@@ -198,7 +198,7 @@ export default function AcidBaseTitration() {
   return (
     <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", maxWidth: 580, margin: '0 auto', padding: '0 4px' }}>
       <div style={{ textAlign: 'center', marginBottom: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#F97316' }}>Acid-Base Titration</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#E8581C' }}>Acid-Base Titration</div>
         <div style={{ fontSize: 11, color: '#64748b' }}>0.1M HCl (25 mL) + 0.1M NaOH — CBSE Class 11-12</div>
       </div>
 

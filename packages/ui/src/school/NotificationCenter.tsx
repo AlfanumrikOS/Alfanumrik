@@ -28,7 +28,7 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string }> = {
   // (recipient_type school + super_admin). Amber = action-needed-but-not-blocked.
   seat_grace_warn: { icon: '⏳', color: '#F59E0B' },
   score_notification: { icon: '🎯', color: '#22C55E' },
-  streak_warning: { icon: '🔥', color: '#F97316' },
+  streak_warning: { icon: '🔥', color: '#E8581C' },
   default: { icon: '💬', color: '#6B7280' },
 };
 

@@ -105,7 +105,7 @@ export default function ShadowFormation() {
     }
 
     // Shadow height indicator
-    ctx.strokeStyle = '#f97316'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#e8581c'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(SCREEN_X + 18, shadowTop); ctx.lineTo(SCREEN_X + 18, shadowBot); ctx.stroke();
     ctx.fillStyle = 'var(--orange)'; ctx.font = 'bold 11px sans-serif';
     ctx.fillText(`${shadowH.toFixed(0)}px`, SCREEN_X + 36, (shadowTop + shadowBot) / 2 + 4);

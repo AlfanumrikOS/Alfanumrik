@@ -229,7 +229,7 @@ export default function ParentShell({ children }: { children: React.ReactNode })
       <DashboardSidebar
         brandTitle="Alfanumrik"
         brandSubtitle={isHi ? 'अभिभावक' : 'Parent'}
-        primaryColor="#F97316" /* brand orange — parent portal accent */
+        primaryColor="#E8581C" /* brand orange — parent portal accent */
         items={visibleItems}
         currentPath={scopedCurrentPath}
         isHi={isHi}

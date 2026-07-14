@@ -86,7 +86,7 @@ interface LinkedChildrenResponse {
 const EVENT_STYLE: Record<CalendarEventType, { color: string; en: string; hi: string }> = {
   assignment: { color: '#2563EB', en: 'Assignment', hi: 'असाइनमेंट' },
   school_exam: { color: '#EF4444', en: 'School Exam', hi: 'स्कूल परीक्षा' },
-  quiz_activity: { color: '#F97316', en: 'Quiz activity', hi: 'क्विज़ गतिविधि' },
+  quiz_activity: { color: '#E8581C', en: 'Quiz activity', hi: 'क्विज़ गतिविधि' },
 };
 
 // ============================================================
@@ -299,7 +299,7 @@ function ParentCalendarContent() {
         <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
           <div style={{
             width: 40, height: 40,
-            border: '3px solid #FDBA7444', borderTopColor: '#F97316',
+            border: '3px solid #FDBA7444', borderTopColor: '#E8581C',
             borderRadius: '50%', margin: '0 auto 16px',
             animation: 'spin 0.8s linear infinite',
           }} />
@@ -440,7 +440,7 @@ function ParentCalendarContent() {
                   aspectRatio: '1',
                   borderRadius: 10,
                   backgroundColor: isToday ? '#FFF3E0' : '#FAFAFA',
-                  border: isToday ? '2px solid #F97316' : '1px solid #F1F5F9',
+                  border: isToday ? '2px solid #E8581C' : '1px solid #F1F5F9',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -485,7 +485,7 @@ function ParentCalendarContent() {
             </div>
           ))}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 14, height: 14, borderRadius: 4, border: '2px solid #F97316', backgroundColor: '#FFF3E0' }} />
+            <div style={{ width: 14, height: 14, borderRadius: 4, border: '2px solid #E8581C', backgroundColor: '#FFF3E0' }} />
             <span style={{ fontSize: 11, color: '#64748B' }}>{t(isHi, 'Today', 'आज')}</span>
           </div>
         </div>
@@ -501,7 +501,7 @@ function ParentCalendarContent() {
           <div style={{ textAlign: 'center', padding: 20, color: '#94A3B8' }}>
             <div style={{
               width: 28, height: 28,
-              border: '3px solid #FDBA7444', borderTopColor: '#F97316',
+              border: '3px solid #FDBA7444', borderTopColor: '#E8581C',
               borderRadius: '50%', margin: '0 auto 8px',
               animation: 'spin 0.8s linear infinite',
             }} />
@@ -513,7 +513,7 @@ function ParentCalendarContent() {
             <button
               onClick={fetchEvents}
               style={{
-                padding: '8px 18px', backgroundColor: 'transparent', color: '#F97316',
+                padding: '8px 18px', backgroundColor: 'transparent', color: '#E8581C',
                 border: '1px solid #FDBA74', borderRadius: 8, fontSize: 13, fontWeight: 600,
                 cursor: 'pointer', minHeight: 44,
               }}
@@ -576,7 +576,7 @@ function ParentCalendarContent() {
             dateLabel={t(isHi, 'Ongoing', 'जारी')}
             title={t(isHi, 'Daily Practice Goal — 1 quiz per day', 'दैनिक अभ्यास लक्ष्य — प्रति दिन 1 क्विज़')}
             chipLabel={t(isHi, 'Goal', 'लक्ष्य')}
-            chipColor="#F97316"
+            chipColor="#E8581C"
             daysLeft={null}
             isHi={isHi}
           />
@@ -690,7 +690,7 @@ const navBtnStyle: React.CSSProperties = {
   borderRadius: 10,
   border: '1px solid #FDBA7444',
   backgroundColor: '#FFF8F0',
-  color: '#F97316',
+  color: '#E8581C',
   fontSize: 20,
   cursor: 'pointer',
   display: 'flex',

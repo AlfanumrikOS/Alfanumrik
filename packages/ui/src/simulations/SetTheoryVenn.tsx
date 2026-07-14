@@ -10,7 +10,7 @@ export const metadata = {
   description: 'Build Venn diagrams and explore union, intersection, complement, and difference of sets',
 };
 
-const ORANGE = '#F97316';
+const ORANGE = '#E8581C';
 const PURPLE = '#7C3AED';
 
 type Region = 'A-only' | 'B-only' | 'intersection' | 'outside' | null;

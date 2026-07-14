@@ -178,7 +178,7 @@ function JoinPageContent() {
                 )}
                 {result.role && (
                   <Badge
-                    color={result.role === 'teacher' ? '#0891B2' : '#F97316'}
+                    color={result.role === 'teacher' ? '#0891B2' : '#E8581C'}
                     size="md"
                   >
                     {result.role === 'teacher'

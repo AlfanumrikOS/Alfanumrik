@@ -69,7 +69,7 @@ export default function CrystallizationLab() {
     ctx.fillText('100°', cx2 + 2, cy2 + ch - 2);
     ctx.fillText('20°', cx2 + cw - 25, cy2 + ch - 2);
 
-    ctx.beginPath(); ctx.strokeStyle = '#f97316'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.strokeStyle = '#e8581c'; ctx.lineWidth = 2;
     for (let t2 = 0; t2 <= 100; t2 += 5) {
       const sol = 0.2 + (t2 / 100) * 0.8;
       const px = cx2 + (1 - t2 / 100) * (cw - 20) + 10;

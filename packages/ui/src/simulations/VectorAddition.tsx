@@ -10,7 +10,7 @@ export const metadata = {
   description: 'Visualize vector addition using parallelogram law — components, resultant, and direction',
 };
 
-const ORANGE = '#F97316';
+const ORANGE = '#E8581C';
 const PURPLE = '#7C3AED';
 const SCALE = 28; // pixels per unit
 

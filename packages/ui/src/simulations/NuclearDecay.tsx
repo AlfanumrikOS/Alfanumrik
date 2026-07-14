@@ -16,7 +16,7 @@ export default function NuclearDecay() {
   const lastTickRef = useRef<number>(0);
   const elapsedRef = useRef(0);
 
-  const modeColors = { alpha: { intact: '#f97316', decayed: '#374151', daughter: '#fbbf24' }, beta: { intact: '#7c3aed', decayed: '#374151', daughter: '#a78bfa' }, gamma: { intact: '#10b981', decayed: '#374151', daughter: '#6ee7b7' } };
+  const modeColors = { alpha: { intact: '#e8581c', decayed: '#374151', daughter: '#fbbf24' }, beta: { intact: '#7c3aed', decayed: '#374151', daughter: '#a78bfa' }, gamma: { intact: '#10b981', decayed: '#374151', daughter: '#6ee7b7' } };
   const col = modeColors[mode];
 
   const reset = useCallback(() => {
@@ -167,7 +167,7 @@ export default function NuclearDecay() {
         <input type="range" min={1} max={10} value={halfLife} onChange={e => setHalfLife(+e.target.value)} style={{ width: '100%' }} />
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        N(t) = N₀ × (½)^(t/t½) = <b style={{ color: 'var(--orange,#f97316)' }}>{Nt}</b> at t={elapsed.toFixed(1)}s
+        N(t) = N₀ × (½)^(t/t½) = <b style={{ color: 'var(--orange,#e8581c)' }}>{Nt}</b> at t={elapsed.toFixed(1)}s
       </div>
     </div>
   );

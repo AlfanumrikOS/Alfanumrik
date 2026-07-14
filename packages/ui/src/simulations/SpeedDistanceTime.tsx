@@ -105,7 +105,7 @@ export default function SpeedDistanceTime() {
         <input type="range" min={0} max={10} value={time} onChange={e => setTime(+e.target.value)} style={{ width: '100%' }} />
       </div>
       <div style={{ marginTop: 6, textAlign: 'center' }}>
-        {badge('d', `${distance} m`, '#f97316')}
+        {badge('d', `${distance} m`, '#e8581c')}
         {badge('s', `${speed} m/s`, '#7c3aed')}
         {badge('t', `${time} s`, '#0891b2')}
       </div>

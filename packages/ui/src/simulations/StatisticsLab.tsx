@@ -10,7 +10,7 @@ export const metadata = {
   description: 'Calculate mean, median, mode, variance and visualize data distributions with histograms',
 };
 
-const ORANGE = '#F97316';
+const ORANGE = '#E8581C';
 const PURPLE = '#7C3AED';
 
 const PRESETS: Record<string, string> = {
@@ -107,7 +107,7 @@ export default function StatisticsLab() {
       // Gradient bar
       const grad = ctx.createLinearGradient(x, y, x, y + barH);
       grad.addColorStop(0, '#7C3AED');
-      grad.addColorStop(1, '#F97316');
+      grad.addColorStop(1, '#E8581C');
       ctx.fillStyle = grad;
       ctx.fillRect(x + 1, y, barW - 2, barH);
 

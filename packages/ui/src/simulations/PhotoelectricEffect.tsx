@@ -150,7 +150,7 @@ export default function PhotoelectricEffect() {
         </div>
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        KE_max = hf − φ = <b style={{ color: 'var(--orange,#f97316)' }}>{aboveThreshold ? `${KE} eV` : '0 (below threshold)'}</b> &nbsp;|&nbsp; h = 6.63×10⁻³⁴ J·s
+        KE_max = hf − φ = <b style={{ color: 'var(--orange,#e8581c)' }}>{aboveThreshold ? `${KE} eV` : '0 (below threshold)'}</b> &nbsp;|&nbsp; h = 6.63×10⁻³⁴ J·s
       </div>
     </div>
   );

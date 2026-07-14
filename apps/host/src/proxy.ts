@@ -114,7 +114,7 @@ function rateLimitResponse(request: NextRequest, retryAfterSeconds = 60): NextRe
   }
 
   // HTML response — inline, no asset hops. Bilingual. Editorial palette
-  // (#FBF8F4 cream, #F97316 orange, #1F1F1F ink) so the page visually
+  // (#FBF8F4 cream, #E8581C orange, #1F1F1F ink) so the page visually
   // belongs to Alfanumrik even on first impression. Meta-refresh after the
   // retry window so users don't have to hit reload.
   const html = `<!DOCTYPE html>
@@ -162,7 +162,7 @@ function rateLimitResponse(request: NextRequest, retryAfterSeconds = 60): NextRe
     display: inline-block;
     margin-top: 20px;
     padding: 12px 24px;
-    background: #F97316;
+    background: #E8581C;
     color: #FFFFFF;
     text-decoration: none;
     font-weight: 600;
@@ -781,7 +781,7 @@ export async function proxy(request: NextRequest) {
     requestHeaders.set('x-school-slug', schoolConfig.slug);
     requestHeaders.set('x-school-logo', schoolConfig.logo_url || '');
     requestHeaders.set('x-school-primary-color', schoolConfig.primary_color || '#7C3AED');
-    requestHeaders.set('x-school-secondary-color', schoolConfig.secondary_color || '#F97316');
+    requestHeaders.set('x-school-secondary-color', schoolConfig.secondary_color || '#E8581C');
     requestHeaders.set('x-school-tagline', encodeURIComponent(schoolConfig.tagline || ''));
   }
 
@@ -1030,7 +1030,7 @@ export async function proxy(request: NextRequest) {
     response.headers.set('x-school-slug', schoolConfig.slug);
     response.headers.set('x-school-logo', schoolConfig.logo_url || '');
     response.headers.set('x-school-primary-color', schoolConfig.primary_color || '#7C3AED');
-    response.headers.set('x-school-secondary-color', schoolConfig.secondary_color || '#F97316');
+    response.headers.set('x-school-secondary-color', schoolConfig.secondary_color || '#E8581C');
     response.headers.set('x-school-tagline', encodeURIComponent(schoolConfig.tagline || ''));
   }
 

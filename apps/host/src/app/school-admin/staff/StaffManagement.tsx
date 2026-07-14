@@ -595,7 +595,7 @@ export default function StaffManagement() {
           <div
             role="alert"
             className="mb-4 rounded-xl p-3 text-xs font-medium"
-            style={{ background: '#FFF7ED', border: '1px solid #F9731633', color: '#9A3412' }}
+            style={{ background: '#FFF7ED', border: '1px solid #E8581C33', color: '#9A3412' }}
           >
             {actionError}
           </div>

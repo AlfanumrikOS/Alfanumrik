@@ -208,7 +208,7 @@ describe('Tenant Isolation: buildTenantContext', () => {
     const ctx = buildTenantContext(school);
 
     expect(ctx.branding.primaryColor).toBe('#7C3AED'); // Alfanumrik purple
-    expect(ctx.branding.secondaryColor).toBe('#F97316'); // Alfanumrik orange
+    expect(ctx.branding.secondaryColor).toBe('#E8581C'); // Alfanumrik orange
     expect(ctx.branding.logoUrl).toBeNull();
     expect(ctx.branding.faviconUrl).toBeNull();
   });

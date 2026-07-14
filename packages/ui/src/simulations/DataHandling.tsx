@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 
 type ChartType = 'bar'|'pie'|'line'|'histogram';
-const COLORS = ['#f97316','#7c3aed','#22c55e','#3b82f6','#ef4444'];
+const COLORS = ['#e8581c','#7c3aed','#22c55e','#3b82f6','#ef4444'];
 
 const initData = [
   {label:'Exam 1', value:85},{label:'Exam 2', value:90},

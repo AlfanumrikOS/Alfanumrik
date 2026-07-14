@@ -268,7 +268,7 @@ export default function BrandingPage() {
           />
           <Input
             label={t(!!isHi, 'Secondary color (hex)', 'द्वितीयक रंग (हेक्स)')}
-            placeholder="#F97316"
+            placeholder="#E8581C"
             value={form.secondaryColor}
             onChange={e => setForm({ ...form, secondaryColor: e.target.value })}
           />

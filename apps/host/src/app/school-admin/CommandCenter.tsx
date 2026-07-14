@@ -266,7 +266,7 @@ function OverviewStrip({
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
       <Kpi label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} color="#7C3AED" />
       <Kpi label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} color="#0891B2" />
-      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="#F97316" />
+      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="#E8581C" />
       <Kpi
         label={tt(isHi, 'Active', 'सक्रिय')}
         value={overview.active_students}

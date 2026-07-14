@@ -83,7 +83,7 @@ export default function SoundWaves() {
     }
 
     // Labels: C = compression, R = rarefaction
-    ctx.fillStyle = '#F97316';
+    ctx.fillStyle = '#E8581C';
     ctx.font = 'bold 10px sans-serif';
     ctx.textAlign = 'center';
     for (let i = 0; i < 2; i++) {
@@ -119,7 +119,7 @@ export default function SoundWaves() {
     ctx.stroke();
 
     const waveAmp = (botH / 2) * 0.75 * amp;
-    ctx.strokeStyle = '#F97316';
+    ctx.strokeStyle = '#E8581C';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
     for (let px = 0; px <= W; px++) {
@@ -160,13 +160,13 @@ export default function SoundWaves() {
     return () => cancelAnimationFrame(rafRef.current);
   }, [drawFrame]);
 
-  const sliderStyle = { width: '100%', accentColor: '#F97316' };
+  const sliderStyle = { width: '100%', accentColor: '#E8581C' };
   const labelStyle: React.CSSProperties = { color: '#94a3b8', fontSize: 13 };
-  const valueStyle: React.CSSProperties = { color: '#F97316', fontWeight: 700 };
+  const valueStyle: React.CSSProperties = { color: '#E8581C', fontWeight: 700 };
 
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
-      <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Sound Waves</h2>
+      <h2 style={{ color: '#E8581C', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Sound Waves</h2>
       <div ref={containerRef} className="w-full" style={{ aspectRatio: '400/240' }}>
         <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
       </div>
@@ -196,7 +196,7 @@ export default function SoundWaves() {
         ].map(({ label, value }) => (
           <div key={label} style={{ background: '#0f0f23', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <div style={{ color: '#64748b', fontSize: 11 }}>{label}</div>
-            <div style={{ color: '#F97316', fontWeight: 700, fontSize: 14 }}>{value}</div>
+            <div style={{ color: '#E8581C', fontWeight: 700, fontSize: 14 }}>{value}</div>
           </div>
         ))}
       </div>

@@ -40,7 +40,7 @@ export default function CircuitBuilder() {
     ctx.strokeRect(x, y - h / 2, w, h);
     ctx.fillStyle = '#334155';
     ctx.fillRect(x, y - h / 2, w, h);
-    ctx.fillStyle = '#F97316';
+    ctx.fillStyle = '#E8581C';
     ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(label, x + w / 2, y + 4);
@@ -72,7 +72,7 @@ export default function CircuitBuilder() {
     ctx.lineWidth = 2;
     ctx.strokeRect(batX, batY - batH / 2, batW, batH);
     ctx.fillRect(batX, batY - batH / 2, batW, batH);
-    ctx.fillStyle = '#F97316';
+    ctx.fillStyle = '#E8581C';
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('+', batX + batW / 2, batY - 10);
@@ -172,20 +172,20 @@ export default function CircuitBuilder() {
     ctx.fillText(`V = ${voltage}V`, batX, H - 10);
     ctx.fillText(`I = ${current.toFixed(3)}A`, batX + 80, H - 10);
     ctx.fillText(`P = ${power.toFixed(2)}W`, batX + 180, H - 10);
-    ctx.fillStyle = '#F97316';
+    ctx.fillStyle = '#E8581C';
     ctx.font = 'bold 12px sans-serif';
     ctx.fillText(`R_total = ${rTotal.toFixed(2)}Ω`, W - 130, H - 10);
   }, [resistance1, resistance2, voltage, mode, current, power, rTotal, currentColor, drawResistor, size, canvasRef]);
 
   useEffect(() => { draw(); }, [draw]);
 
-  const sliderStyle = { width: '100%', accentColor: '#F97316' };
+  const sliderStyle = { width: '100%', accentColor: '#E8581C' };
   const labelStyle: React.CSSProperties = { color: '#94a3b8', fontSize: 13 };
-  const valueStyle: React.CSSProperties = { color: '#F97316', fontWeight: 700 };
+  const valueStyle: React.CSSProperties = { color: '#E8581C', fontWeight: 700 };
 
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
-      <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Circuit Builder</h2>
+      <h2 style={{ color: '#E8581C', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Circuit Builder</h2>
       <div ref={containerRef} className="w-full" style={{ aspectRatio: '400/220' }}>
         <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
       </div>
@@ -193,7 +193,7 @@ export default function CircuitBuilder() {
         {(['series', 'parallel'] as Mode[]).map(m => (
           <button key={m} onClick={() => setMode(m)}
             style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
-              background: mode === m ? '#F97316' : '#1e293b', color: mode === m ? '#fff' : '#94a3b8',
+              background: mode === m ? '#E8581C' : '#1e293b', color: mode === m ? '#fff' : '#94a3b8',
               fontWeight: 700, fontSize: 13 }}>
             {m.charAt(0).toUpperCase() + m.slice(1)}
           </button>
@@ -223,7 +223,7 @@ export default function CircuitBuilder() {
         ].map(({ label, value }) => (
           <div key={label} style={{ background: '#0f0f23', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <div style={{ color: '#64748b', fontSize: 11 }}>{label}</div>
-            <div style={{ color: '#F97316', fontWeight: 700, fontSize: 15 }}>{value}</div>
+            <div style={{ color: '#E8581C', fontWeight: 700, fontSize: 15 }}>{value}</div>
           </div>
         ))}
       </div>

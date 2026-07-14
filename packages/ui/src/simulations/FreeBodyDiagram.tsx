@@ -59,7 +59,7 @@ export default function FreeBodyDiagram() {
         <text x={cx} y={cy + 6} textAnchor="middle" fill="#d1d5db" fontSize="13" fontWeight="bold">{mass}kg</text>
 
         {/* Weight (down) */}
-        {arrow(cx, cy + boxH / 2, cx, cy + boxH / 2 + wLen, '#f97316', `W=${W}N`, 'bottom')}
+        {arrow(cx, cy + boxH / 2, cx, cy + boxH / 2 + wLen, '#e8581c', `W=${W}N`, 'bottom')}
         {/* Normal (up) */}
         {arrow(cx, cy - boxH / 2, cx, cy - boxH / 2 - nLen, '#10b981', `N=${N}N`, 'top')}
         {/* Applied force (right) */}
@@ -96,7 +96,7 @@ export default function FreeBodyDiagram() {
         </div>
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        F_net = ma = <b style={{ color: 'var(--orange,#f97316)' }}>{netForce.toFixed(1)} N</b> &nbsp;|&nbsp; f = μN = <b style={{ color: 'var(--purple,#7c3aed)' }}>{friction.toFixed(1)} N</b>
+        F_net = ma = <b style={{ color: 'var(--orange,#e8581c)' }}>{netForce.toFixed(1)} N</b> &nbsp;|&nbsp; f = μN = <b style={{ color: 'var(--purple,#7c3aed)' }}>{friction.toFixed(1)} N</b>
       </div>
     </div>
   );

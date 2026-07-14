@@ -29,7 +29,7 @@ export default function Transformer() {
   }, []);
 
   const fluxOffset = (tick / 60) * 40;
-  const modeColor: Record<Mode, string> = { 'step-up': '#f97316', 'step-down': '#7c3aed', 'isolation': '#10b981' };
+  const modeColor: Record<Mode, string> = { 'step-up': '#e8581c', 'step-down': '#7c3aed', 'isolation': '#10b981' };
   const col = modeColor[mode];
 
   return (

@@ -56,20 +56,20 @@ export default function EvolutionTree() {
       <svg viewBox="0 0 560 300" style={{ width: '100%', background: 'var(--surface-2)', borderRadius: 8, display: 'block' }}>
         {BRANCHES.map((b, i) => (
           <line key={i} x1={b.from[0]} y1={b.from[1]} x2={b.to[0]} y2={b.to[1]}
-            stroke={lca && b.organism && (b.organism === org1 || b.organism === org2) ? '#F97316' : '#7C3AED'} strokeWidth={2} />
+            stroke={lca && b.organism && (b.organism === org1 || b.organism === org2) ? '#E8581C' : '#7C3AED'} strokeWidth={2} />
         ))}
         {BRANCHES.filter(b => b.organism).map((b, i) => {
           const isHighlighted = b.organism === org1 || b.organism === org2;
           return (
             <g key={i} onClick={() => handleOrgClick(b.organism!)} style={{ cursor: 'pointer' }}>
-              <circle cx={b.x! + 8} cy={b.y! + 6} r={16} fill={isHighlighted ? '#F97316' : '#E8EAF6'} stroke={isHighlighted ? '#E65100' : '#7C3AED'} strokeWidth={1.5} opacity={0.9} />
+              <circle cx={b.x! + 8} cy={b.y! + 6} r={16} fill={isHighlighted ? '#E8581C' : '#E8EAF6'} stroke={isHighlighted ? '#E65100' : '#7C3AED'} strokeWidth={1.5} opacity={0.9} />
               <text x={b.x! + 8} y={b.y! + 10} textAnchor="middle" fontSize={9} fill={isHighlighted ? '#fff' : '#3949AB'} fontWeight={isHighlighted ? 700 : 400}>{b.organism}</text>
             </g>
           );
         })}
         {TRAITS.map(t => (
           <g key={t.id} onClick={() => setSelected(selected === t.id ? null : t.id)} style={{ cursor: 'pointer' }}>
-            <circle cx={t.x} cy={t.y} r={12} fill={selected === t.id ? '#F97316' : (lca === t.id ? '#FFE082' : '#FFF9C4')}
+            <circle cx={t.x} cy={t.y} r={12} fill={selected === t.id ? '#E8581C' : (lca === t.id ? '#FFE082' : '#FFF9C4')}
               stroke={selected === t.id ? '#E65100' : '#F9A825'} strokeWidth={1.8} />
             <text x={t.x} y={t.y + 3} textAnchor="middle" fontSize={7} fill="#5D4037" fontWeight={700}>{t.label}</text>
           </g>
@@ -86,7 +86,7 @@ export default function EvolutionTree() {
         </div>
       )}
       {lca && (
-        <div style={{ marginTop: 8, padding: '8px 12px', background: '#FFF3E0', borderRadius: 8, fontSize: 13, color: '#E65100', borderLeft: '3px solid #F97316' }}>
+        <div style={{ marginTop: 8, padding: '8px 12px', background: '#FFF3E0', borderRadius: 8, fontSize: 13, color: '#E65100', borderLeft: '3px solid #E8581C' }}>
           Common ancestor of <strong>{org1}</strong> and <strong>{org2}</strong>: diverged at <em>{TRAITS.find(t => t.id === lca)?.label}</em>
         </div>
       )}

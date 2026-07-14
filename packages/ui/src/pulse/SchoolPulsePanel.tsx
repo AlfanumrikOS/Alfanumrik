@@ -105,7 +105,7 @@ export default function SchoolPulsePanel({
           <button
             type="button"
             onClick={onRetry}
-            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white active:scale-95 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#F97316)] focus-visible:ring-offset-2"
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white active:scale-95 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#E8581C)] focus-visible:ring-offset-2"
             style={{ background: 'var(--purple, #7C3AED)', minHeight: 44 }}
           >
             {tp(isHi, 'Retry', 'दोबारा कोशिश करें')}
@@ -196,7 +196,7 @@ export default function SchoolPulsePanel({
         {atRiskHref && !allClear && (
           <a
             href={atRiskHref}
-            className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-[0.98] transition-all min-h-[44px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#F97316)] focus-visible:ring-offset-2"
+            className="inline-flex items-center px-3 py-2 rounded-xl text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-[0.98] transition-all min-h-[44px] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#E8581C)] focus-visible:ring-offset-2"
           >
             {tp(isHi, 'View classes at risk', 'जोखिम वाली कक्षाएँ देखें')} ↑
           </a>

@@ -160,7 +160,7 @@ export default function ElectronConfiguration() {
           // Box
           const filled = orbCount > 0;
           ctx.fillStyle = filled ? 'rgba(249, 115, 22, 0.08)' : '#fff';
-          ctx.strokeStyle = filled ? '#F97316' : '#cbd5e1';
+          ctx.strokeStyle = filled ? '#E8581C' : '#cbd5e1';
           ctx.lineWidth = filled ? 1.5 : 1;
           ctx.beginPath();
           ctx.roundRect(bx, y, boxW, boxH, 3);
@@ -176,7 +176,7 @@ export default function ElectronConfiguration() {
           }
           // Down arrow
           if (elCount >= 2) {
-            ctx.fillStyle = '#F97316';
+            ctx.fillStyle = '#E8581C';
             ctx.font = 'bold 14px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('↓', bx + boxW / 2 + 5, y + boxH - 6);
@@ -286,7 +286,7 @@ export default function ElectronConfiguration() {
           <span>Spin-up (first electron)</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ color: '#F97316', fontSize: 14, fontWeight: 700 }}>↓</span>
+          <span style={{ color: '#E8581C', fontSize: 14, fontWeight: 700 }}>↓</span>
           <span>Spin-down (paired)</span>
         </div>
       </div>

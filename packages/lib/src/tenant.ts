@@ -33,7 +33,7 @@ const NOT_FOUND_SENTINEL = 'NOT_FOUND';
 
 /** Default Alfanumrik brand colors */
 const DEFAULT_PRIMARY = '#7C3AED';
-const DEFAULT_SECONDARY = '#F97316';
+const DEFAULT_SECONDARY = '#E8581C';
 
 /** Supabase REST API select fields for schools table */
 const SCHOOL_SELECT = 'id,slug,name,subscription_plan,is_active,logo_url,primary_color,secondary_color,tagline,settings';

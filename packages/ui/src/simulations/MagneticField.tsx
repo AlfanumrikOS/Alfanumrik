@@ -112,7 +112,7 @@ export default function MagneticField() {
     }
 
     // Draw wire cross-section at center
-    ctx.fillStyle = '#F97316';
+    ctx.fillStyle = '#E8581C';
     ctx.beginPath();
     ctx.arc(cx, cy, 12, 0, 2 * Math.PI);
     ctx.fill();
@@ -156,13 +156,13 @@ export default function MagneticField() {
 
   useEffect(() => { draw(); }, [draw]);
 
-  const sliderStyle = { width: '100%', accentColor: '#F97316' };
+  const sliderStyle = { width: '100%', accentColor: '#E8581C' };
   const labelStyle: React.CSSProperties = { color: '#94a3b8', fontSize: 13 };
-  const valueStyle: React.CSSProperties = { color: '#F97316', fontWeight: 700 };
+  const valueStyle: React.CSSProperties = { color: '#E8581C', fontWeight: 700 };
 
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
-      <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Magnetic Field Visualizer</h2>
+      <h2 style={{ color: '#E8581C', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Magnetic Field Visualizer</h2>
       <div ref={containerRef} className="w-full" style={{ aspectRatio: '400/280' }}>
         <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
       </div>
@@ -187,7 +187,7 @@ export default function MagneticField() {
       <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
         <input type="checkbox" id="compass" checked={showCompass}
           onChange={e => setShowCompass(e.target.checked)}
-          style={{ accentColor: '#F97316', width: 16, height: 16, cursor: 'pointer' }} />
+          style={{ accentColor: '#E8581C', width: 16, height: 16, cursor: 'pointer' }} />
         <label htmlFor="compass" style={{ ...labelStyle, cursor: 'pointer' }}>Show compass needles</label>
       </div>
       <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>

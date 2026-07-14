@@ -702,7 +702,7 @@ describe('Phase A.3: tenant headers propagated via request, not response', () =>
       requestHeaders.set('x-school-slug', schoolConfig.slug);
       requestHeaders.set('x-school-logo', schoolConfig.logo_url || '');
       requestHeaders.set('x-school-primary-color', schoolConfig.primary_color || '#7C3AED');
-      requestHeaders.set('x-school-secondary-color', schoolConfig.secondary_color || '#F97316');
+      requestHeaders.set('x-school-secondary-color', schoolConfig.secondary_color || '#E8581C');
       requestHeaders.set('x-school-tagline', encodeURIComponent(schoolConfig.tagline || ''));
     }
     return requestHeaders;
@@ -805,7 +805,7 @@ describe('Phase A.3: tenant headers propagated via request, not response', () =>
 
     // Falls back to Alfanumrik default palette so the UI never renders unstyled.
     expect(forwarded.get('x-school-primary-color')).toBe('#7C3AED');
-    expect(forwarded.get('x-school-secondary-color')).toBe('#F97316');
+    expect(forwarded.get('x-school-secondary-color')).toBe('#E8581C');
   });
 });
 

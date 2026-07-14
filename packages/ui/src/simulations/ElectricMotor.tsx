@@ -66,7 +66,7 @@ export default function ElectricMotor() {
     const arrowSize = 10 + F * 3;
     // Left conductor — force direction based on angle
     const leftUp = Math.cos(angle) > 0;
-    ctx.fillStyle = '#f97316';
+    ctx.fillStyle = '#e8581c';
     drawArrow(ctx, -aw, 0, -aw, leftUp ? -arrowSize : arrowSize, 6);
     ctx.fillStyle = '#a855f7';
     drawArrow(ctx, aw, 0, aw, leftUp ? arrowSize : -arrowSize, 6);
@@ -81,7 +81,7 @@ export default function ElectricMotor() {
 
     // Force labels
     ctx.font = '12px sans-serif';
-    ctx.fillStyle = '#f97316';
+    ctx.fillStyle = '#e8581c';
     ctx.textAlign = 'left';
     ctx.fillText(`F = ${F.toFixed(2)} N`, 20, H - 20);
     ctx.fillStyle = '#a855f7';
@@ -134,12 +134,12 @@ export default function ElectricMotor() {
           <label style={{ color: 'var(--text-2)', fontSize: 13 }}>Current I: {current.toFixed(1)} A</label>
           <input type="range" min={0.5} max={5} step={0.1} value={current} onChange={e => setCurrent(+e.target.value)} style={{ width: '100%' }} />
         </div>
-        <button onClick={() => setPlaying(p => !p)} style={{ padding: '8px 16px', background: playing ? 'var(--orange, #f97316)' : 'var(--purple, #7c3aed)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
+        <button onClick={() => setPlaying(p => !p)} style={{ padding: '8px 16px', background: playing ? 'var(--orange, #e8581c)' : 'var(--purple, #7c3aed)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
           {playing ? 'Pause' : 'Play'}
         </button>
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        F = BIL = <b style={{ color: 'var(--orange, #f97316)' }}>{F} N</b> &nbsp;|&nbsp; Torque = BINA = <b style={{ color: 'var(--purple, #7c3aed)' }}>{T} N·m</b>
+        F = BIL = <b style={{ color: 'var(--orange, #e8581c)' }}>{F} N</b> &nbsp;|&nbsp; Torque = BINA = <b style={{ color: 'var(--purple, #7c3aed)' }}>{T} N·m</b>
         <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>B = 0.5 T, L = 0.3 m, N = 50 turns, A = 0.12 m²</div>
       </div>
     </div>

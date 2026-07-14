@@ -1441,7 +1441,7 @@ function ChapterConceptPageContent() {
                           style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
                           data-testid="productive-failure-banner"
                         >
-                          <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#F97316' }}>
+                          <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#E8581C' }}>
                             {isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
                           </p>
                           <p className="text-xs text-[var(--text-2)] leading-snug">

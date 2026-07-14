@@ -157,7 +157,7 @@ describe('buildTenantContext', () => {
     const result = buildTenantContext(school);
 
     expect(result.branding.primaryColor).toBe('#7C3AED');
-    expect(result.branding.secondaryColor).toBe('#F97316');
+    expect(result.branding.secondaryColor).toBe('#E8581C');
     expect(result.branding.logoUrl).toBeNull();
     expect(result.branding.faviconUrl).toBeNull();
     expect(result.branding.showPoweredBy).toBe(true);

@@ -40,25 +40,25 @@ export default function PlantParts() {
             <ellipse cx={260} cy={250} rx={30} ry={10} fill="#8D6E63" opacity={0.5} />
             <ellipse cx={290} cy={265} rx={22} ry={8} fill="#8D6E63" opacity={0.4} />
             <rect x={270} y={130} width={10} height={70} fill="#66BB6A" />
-            <ellipse cx={230} cy={140} rx={35} ry={20} fill="#81C784" transform="rotate(-20,230,140)" onClick={() => setSelected(selected === 'leaf' ? null : 'leaf')} style={{ cursor: 'pointer' }} stroke={selected === 'leaf' ? '#F97316' : 'transparent'} strokeWidth={2} />
-            <ellipse cx={320} cy={150} rx={30} ry={18} fill="#66BB6A" transform="rotate(15,320,150)" onClick={() => setSelected(selected === 'leaf' ? null : 'leaf')} style={{ cursor: 'pointer' }} stroke={selected === 'leaf' ? '#F97316' : 'transparent'} strokeWidth={2} />
+            <ellipse cx={230} cy={140} rx={35} ry={20} fill="#81C784" transform="rotate(-20,230,140)" onClick={() => setSelected(selected === 'leaf' ? null : 'leaf')} style={{ cursor: 'pointer' }} stroke={selected === 'leaf' ? '#E8581C' : 'transparent'} strokeWidth={2} />
+            <ellipse cx={320} cy={150} rx={30} ry={18} fill="#66BB6A" transform="rotate(15,320,150)" onClick={() => setSelected(selected === 'leaf' ? null : 'leaf')} style={{ cursor: 'pointer' }} stroke={selected === 'leaf' ? '#E8581C' : 'transparent'} strokeWidth={2} />
             <g onClick={() => setSelected(selected === 'flower' ? null : 'flower')} style={{ cursor: 'pointer' }}>
               {[0, 60, 120, 180, 240, 300].map((a, i) => (
-                <ellipse key={i} cx={275 + 18 * Math.cos(a * Math.PI / 180)} cy={85 + 12 * Math.sin(a * Math.PI / 180)} rx={10} ry={7} fill="#FF8A65" transform={`rotate(${a},${275 + 18 * Math.cos(a * Math.PI / 180)},${85 + 12 * Math.sin(a * Math.PI / 180)})`} stroke={selected === 'flower' ? '#F97316' : 'transparent'} strokeWidth={1.5} />
+                <ellipse key={i} cx={275 + 18 * Math.cos(a * Math.PI / 180)} cy={85 + 12 * Math.sin(a * Math.PI / 180)} rx={10} ry={7} fill="#FF8A65" transform={`rotate(${a},${275 + 18 * Math.cos(a * Math.PI / 180)},${85 + 12 * Math.sin(a * Math.PI / 180)})`} stroke={selected === 'flower' ? '#E8581C' : 'transparent'} strokeWidth={1.5} />
               ))}
               <circle cx={275} cy={85} r={8} fill="#FFD54F" />
             </g>
             <g onClick={() => setSelected(selected === 'stem' ? null : 'stem')} style={{ cursor: 'pointer' }}>
-              <rect x={268} y={100} width={14} height={100} fill="#4CAF50" stroke={selected === 'stem' ? '#F97316' : 'transparent'} strokeWidth={2} rx={3} />
+              <rect x={268} y={100} width={14} height={100} fill="#4CAF50" stroke={selected === 'stem' ? '#E8581C' : 'transparent'} strokeWidth={2} rx={3} />
             </g>
             <g onClick={() => setSelected(selected === 'root' ? null : 'root')} style={{ cursor: 'pointer' }}>
               <line x1={275} y1={200} x2={250} y2={240} stroke="#8D6E63" strokeWidth={3} />
               <line x1={275} y1={210} x2={295} y2={250} stroke="#8D6E63" strokeWidth={2.5} />
               <line x1={275} y1={220} x2={260} y2={270} stroke="#8D6E63" strokeWidth={2} />
-              <rect x={240} y={195} width={70} height={85} fill={selected === 'root' ? '#F9731633' : 'transparent'} rx={4} stroke={selected === 'root' ? '#F97316' : 'transparent'} strokeWidth={1.5} />
+              <rect x={240} y={195} width={70} height={85} fill={selected === 'root' ? '#E8581C33' : 'transparent'} rx={4} stroke={selected === 'root' ? '#E8581C' : 'transparent'} strokeWidth={1.5} />
             </g>
             <g onClick={() => setSelected(selected === 'fruit' ? null : 'fruit')} style={{ cursor: 'pointer' }}>
-              <circle cx={240} cy={108} r={12} fill="#FF7043" stroke={selected === 'fruit' ? '#F97316' : 'transparent'} strokeWidth={2} />
+              <circle cx={240} cy={108} r={12} fill="#FF7043" stroke={selected === 'fruit' ? '#E8581C' : 'transparent'} strokeWidth={2} />
             </g>
             <line x1={400} y1={140} x2={230} y2={143} stroke="#aaa" strokeWidth={1} strokeDasharray="3,2" />
             <text x={405} y={144} fontSize={11} fill="var(--text-2)">Leaf</text>

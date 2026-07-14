@@ -89,7 +89,7 @@ function relativeTime(dateStr: string): string {
 function statusColor(status: string): string {
   switch (status) {
     case 'active': return '#16A34A';
-    case 'pending': return '#F97316';
+    case 'pending': return '#E8581C';
     case 'expired': case 'ended': return '#6B7280';
     case 'revoked': case 'rejected': return '#DC2626';
     case 'approved': return '#16A34A';
@@ -527,7 +527,7 @@ export default function SchoolAdminRBACPage() {
 
         {/* New token display banner */}
         {newTokenDisplay && (
-          <Card accent="#F97316">
+          <Card accent="#E8581C">
             <div className="space-y-3">
               <div className="flex items-start gap-2">
                 <span className="text-lg" aria-hidden="true">&#x26A0;&#xFE0F;</span>
@@ -584,7 +584,7 @@ export default function SchoolAdminRBACPage() {
               style={{
                 background: activeTab === tab.key ? 'rgba(249,115,22,0.1)' : 'transparent',
                 border: activeTab === tab.key ? '1.5px solid rgba(249,115,22,0.3)' : '1.5px solid transparent',
-                color: activeTab === tab.key ? '#F97316' : 'var(--text-3)',
+                color: activeTab === tab.key ? '#E8581C' : 'var(--text-3)',
               }}
             >
               {t(isHi, tab.labelEn, tab.labelHi)}
@@ -599,11 +599,11 @@ export default function SchoolAdminRBACPage() {
           <section aria-label={t(isHi, 'RBAC Overview', 'RBAC अवलोकन')}>
             <div className="grid grid-cols-3 gap-3">
               {/* Active Elevations */}
-              <Card accent="#F97316">
+              <Card accent="#E8581C">
                 <div className="text-center py-2">
                   <div
                     className="text-2xl font-bold font-['Sora',system-ui,sans-serif]"
-                    style={{ color: '#F97316' }}
+                    style={{ color: '#E8581C' }}
                   >
                     {loadingData ? '\u2014' : stats.activeElevations}
                   </div>
@@ -666,7 +666,7 @@ export default function SchoolAdminRBACPage() {
 
             {/* Grant Elevation form */}
             {showElevationForm && (
-              <Card accent="#F97316" className="mb-4">
+              <Card accent="#E8581C" className="mb-4">
                 <h3 className="text-sm font-bold text-[var(--text-1)] mb-3">
                   {t(isHi, 'Grant Elevation', 'अधिकार दें')}
                 </h3>

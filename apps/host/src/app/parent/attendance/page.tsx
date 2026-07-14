@@ -541,7 +541,7 @@ export default function ParentAttendancePage() {
                 >
                   <span
                     className="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-[11px] font-bold"
-                    style={{ background: active ? 'rgba(255,255,255,0.3)' : '#F97316' }}
+                    style={{ background: active ? 'rgba(255,255,255,0.3)' : '#E8581C' }}
                     aria-hidden="true"
                   >
                     {child.name.charAt(0).toUpperCase()}

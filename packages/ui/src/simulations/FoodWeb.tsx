@@ -71,14 +71,14 @@ export default function FoodWeb() {
           const isRemoved = removed.has(a) || removed.has(b);
           return (
             <line key={i} x1={A.x + 30} y1={A.y + 14} x2={B.x + 30} y2={B.y + 14}
-              stroke={isRemoved ? '#ccc' : isHighlighted ? '#F97316' : '#aaa'}
+              stroke={isRemoved ? '#ccc' : isHighlighted ? '#E8581C' : '#aaa'}
               strokeWidth={isHighlighted ? 2.5 : 1.2} strokeDasharray={isRemoved ? '4,3' : undefined}
               markerEnd="url(#arrow)" opacity={isRemoved ? 0.3 : 1} />
           );
         })}
         <defs>
           <marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M0,0 L0,6 L6,3 z" fill="#F97316" />
+            <path d="M0,0 L0,6 L6,3 z" fill="#E8581C" />
           </marker>
         </defs>
         {ORGANISMS.map(o => {
@@ -113,7 +113,7 @@ export default function FoodWeb() {
         <button onClick={handleRemove} disabled={!selected} style={{ padding: '6px 16px', background: selected ? '#f44336' : '#ccc', color: '#fff', border: 'none', borderRadius: 6, cursor: selected ? 'pointer' : 'not-allowed', fontSize: 13 }}>Remove Selected</button>
         <button onClick={() => { setRemoved(new Set()); setSelected(null); }} style={{ padding: '6px 16px', background: 'var(--purple)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>Reset</button>
       </div>
-      <div style={{ marginTop: 8, padding: '8px 12px', background: '#FFF3E0', borderRadius: 8, fontSize: 13, color: '#E65100', borderLeft: '3px solid #F97316' }}>
+      <div style={{ marginTop: 8, padding: '8px 12px', background: '#FFF3E0', borderRadius: 8, fontSize: 13, color: '#E65100', borderLeft: '3px solid #E8581C' }}>
         Energy transfer: only <strong>10%</strong> moves to the next trophic level (10% Law)
       </div>
     </div>

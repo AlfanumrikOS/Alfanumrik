@@ -27,10 +27,10 @@ const SHAPES: Record<ShapeType, ShapeInfo> = {
   circle:    { label: 'Circle',               sides: 0, linesOfSymmetry: Infinity, rotationalOrder: Infinity },
 };
 
-const BRAND_ORANGE = '#F97316';
+const BRAND_ORANGE = '#E8581C';
 const BRAND_PURPLE = '#9333EA';
 const SHAPE_FILL = '#FFF7ED';
-const SHAPE_STROKE = '#F97316';
+const SHAPE_STROKE = '#E8581C';
 const SYMMETRY_LINE_COLOR = '#9333EA';
 const HIGHLIGHT_COLOR = '#22C55E';
 const GRID_COLOR = '#F5F0EB';

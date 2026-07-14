@@ -89,7 +89,7 @@ function StepIndicator({ currentStep, completedSteps, isHi }: StepIndicatorProps
                 background: isComplete
                   ? '#7C3AED'
                   : isCurrent
-                    ? '#F97316'
+                    ? '#E8581C'
                     : '#E5E7EB',
               }}
             />
@@ -111,7 +111,7 @@ function StepIndicator({ currentStep, completedSteps, isHi }: StepIndicatorProps
                 color: isComplete
                   ? '#7C3AED'
                   : isCurrent
-                    ? '#F97316'
+                    ? '#E8581C'
                     : '#9CA3AF',
               }}
             >
@@ -173,7 +173,7 @@ function WelcomeStep({ schoolName, isHi, onNext }: WelcomeStepProps) {
       <button
         onClick={onNext}
         className="w-full max-w-xs py-3 rounded-xl text-white font-semibold text-sm transition-all active:scale-[0.98]"
-        style={{ background: '#F97316', minHeight: 48 }}
+        style={{ background: '#E8581C', minHeight: 48 }}
       >
         {t(isHi, 'Get Started', 'शुरू करें')}
       </button>
@@ -193,7 +193,7 @@ interface BrandingStepProps {
 function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
   const [logoUrl, setLogoUrl] = useState('');
   const [primaryColor, setPrimaryColor] = useState('#7C3AED');
-  const [secondaryColor, setSecondaryColor] = useState('#F97316');
+  const [secondaryColor, setSecondaryColor] = useState('#E8581C');
   const [tagline, setTagline] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -370,7 +370,7 @@ function BrandingStep({ isHi, onNext, onBack }: BrandingStepProps) {
           onClick={handleSave}
           disabled={saving}
           className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
-          style={{ background: '#F97316', minHeight: 44 }}
+          style={{ background: '#E8581C', minHeight: 44 }}
         >
           {saving
             ? t(isHi, 'Saving...', 'सहेजा जा रहा है...')
@@ -546,7 +546,7 @@ function InviteTeachersStep({ isHi, onNext, onBack }: InviteTeachersStepProps) {
           onClick={onNext}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: successCount > 0 ? '#F97316' : 'var(--surface-2, #f5f5f5)',
+            background: successCount > 0 ? '#E8581C' : 'var(--surface-2, #f5f5f5)',
             color: successCount > 0 ? '#fff' : 'var(--text-2, #333)',
             border: successCount > 0 ? 'none' : '1px solid var(--border, #e5e7eb)',
             minHeight: 44,
@@ -681,9 +681,9 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
                   onClick={() => setSection(s)}
                   className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
                   style={{
-                    background: section === s ? '#F97316' : 'var(--surface-2, #f5f5f5)',
+                    background: section === s ? '#E8581C' : 'var(--surface-2, #f5f5f5)',
                     color: section === s ? '#fff' : 'var(--text-2, #333)',
-                    border: section === s ? '1px solid #F97316' : '1px solid var(--border, #e5e7eb)',
+                    border: section === s ? '1px solid #E8581C' : '1px solid var(--border, #e5e7eb)',
                     minHeight: 44,
                     minWidth: 44,
                   }}
@@ -736,7 +736,7 @@ function CreateClassStep({ isHi, onNext, onBack }: CreateClassStepProps) {
           onClick={onNext}
           className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: createdClassCode ? '#F97316' : 'var(--surface-2, #f5f5f5)',
+            background: createdClassCode ? '#E8581C' : 'var(--surface-2, #f5f5f5)',
             color: createdClassCode ? '#fff' : 'var(--text-2, #333)',
             border: createdClassCode ? 'none' : '1px solid var(--border, #e5e7eb)',
             minHeight: 44,
@@ -960,7 +960,7 @@ function InviteCodesStep({ isHi, onComplete, onBack }: InviteCodesStepProps) {
           onClick={onComplete}
           className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold transition-all active:scale-[0.98]"
           style={{
-            background: generatedCode ? '#16A34A' : '#F97316',
+            background: generatedCode ? '#16A34A' : '#E8581C',
             minHeight: 44,
           }}
         >
