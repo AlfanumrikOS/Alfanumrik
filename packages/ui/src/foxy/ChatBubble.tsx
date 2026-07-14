@@ -101,6 +101,17 @@ interface ChatBubbleProps {
   saved?: boolean;
   /** True once the student tapped "Got it" on this answer (flag ON bar). */
   gotIt?: boolean;
+  /**
+   * Whether this message actually has a renderable body. Defaults to true so
+   * every existing caller stays byte-identical. MessageList passes `false` for a
+   * tutor turn whose text is empty AND that carries no structured payload / no
+   * ui-action — the "streaming settled with no text" and "empty persisted
+   * content" cases that otherwise paint an empty white bubble under the header.
+   * When false (and there is no verifier badge to show), the message-body box is
+   * not rendered at all. Grounding banners / hard-abstain cards are unaffected —
+   * they render outside this guard.
+   */
+  hasBodyContent?: boolean;
 }
 
 export function ChatBubble({
@@ -127,6 +138,7 @@ export function ChatBubble({
   onLearningAction,
   saved,
   gotIt,
+  hasBodyContent = true,
 }: ChatBubbleProps) {
   const { isHi } = useAuth();
   const isTutor = role === 'tutor';
@@ -189,8 +201,11 @@ export function ChatBubble({
         />
       )}
 
-      {/* Message body — suppressed on hard-abstain since content is empty */}
-      {!showHardAbstainCard && (
+      {/* Message body — suppressed on hard-abstain (content is empty there), and
+          suppressed when there is genuinely nothing to render (hasBodyContent
+          === false) so an empty tutor turn never paints a blank white bar. A
+          verifier badge still forces the box open. */}
+      {!showHardAbstainCard && (hasBodyContent || showBadge) && (
         <div
           className={`w-full rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden min-w-0 ${isTutor ? 'foxy-bubble-tutor' : 'foxy-bubble-user'}`}
           style={{
@@ -525,7 +540,8 @@ function areChatBubblePropsEqual(prev: React.ComponentProps<typeof ChatBubble>, 
     prev.learningActionsEnabled === next.learningActionsEnabled &&
     prev.onLearningAction === next.onLearningAction &&
     prev.saved === next.saved &&
-    prev.gotIt === next.gotIt
+    prev.gotIt === next.gotIt &&
+    prev.hasBodyContent === next.hasBodyContent
   );
 }
 

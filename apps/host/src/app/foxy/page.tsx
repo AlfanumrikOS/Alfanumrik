@@ -344,6 +344,10 @@ function FoxyExperience() {
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
   const [showTopicSheet, setShowTopicSheet] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // Collapsed by default (Hick's Law — reduce initial choices)
+  // Active-conversation starter suggestions live in a compact popover on the
+  // composer (not a permanent footer row) so the chat thread keeps the space.
+  // Empty state still shows the full starter chips inline.
+  const [showStarters, setShowStarters] = useState(false);
 
   // Alfa OS flagship redesign (ff_student_os_v1) — when ON, render the 3-pane
   // workspace (conversations rail | chat | ContextPanel). Defaults OFF → the
@@ -1761,7 +1765,7 @@ function FoxyExperience() {
             targets it outside `.foxy-os`); under `.foxy-os` it gets
             `min-height:0` so the scroll area shrinks when the keyboard opens
             and the composer stays visible (Phase 2). */}
-        <div className="foxy-chat-column flex-1 flex flex-col min-w-0">
+        <div className="foxy-chat-column flex-1 flex flex-col min-w-0 min-h-0">
           {/* `pb-32` removed — AppShell.app-shell-content already reserves
               --shell-nav-h + safe-area-inset bottom space for the fixed
               BottomNav. Adding pb-32 here would overpad the scroll area
@@ -1961,19 +1965,51 @@ function FoxyExperience() {
             <div ref={endRef} />
           </div>
 
-          {/* Compact starter chips — always visible after conversation starts so
-              students retain prompt guidance after the empty state disappears.
-              Uses compact=true: 3 chips only, no "More" toggle, smaller styling. */}
+          {/* Compact starter suggestions — folded into a popover anchored to the
+              composer instead of a permanent footer row. An active conversation
+              therefore gives the chat thread the dominant vertical space, while
+              every starter intent stays reachable (empty state still shows the
+              full inline chips above). This is the "second command row" the
+              redesign removes. */}
           {messages.length > 0 && (
-            <div className="px-4 py-2 flex gap-2 flex-wrap border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-              <ConversationStarters
-                subject={activeSubject}
-                language={language}
-                topicTitle={activeTopic?.title}
-                hasLastTopic={true}
-                onSelect={handleStarterClick}
-                compact={true}
-              />
+            <div className="relative px-3 pt-1.5" style={{ background: 'var(--surface-1)' }}>
+              <button
+                type="button"
+                onClick={() => setShowStarters((v) => !v)}
+                aria-expanded={showStarters}
+                aria-haspopup="true"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all active:scale-95"
+                style={{
+                  background: showStarters ? `color-mix(in srgb, ${cfg.color} 12%, var(--surface-1))` : 'var(--surface-2)',
+                  color: showStarters ? cfg.color : 'var(--text-3)',
+                  border: `1px solid ${showStarters ? `color-mix(in srgb, ${cfg.color} 30%, transparent)` : 'var(--border)'}`,
+                  minHeight: 32,
+                }}
+              >
+                <span aria-hidden="true">💡</span>
+                {language === 'hi' ? 'सुझाव' : 'Suggestions'}
+                <span aria-hidden="true">{showStarters ? '▾' : '▸'}</span>
+              </button>
+              {showStarters && (
+                <>
+                  {/* Click-away scrim closes the popover. */}
+                  <div className="fixed inset-0 z-40" onClick={() => setShowStarters(false)} />
+                  <div
+                    role="menu"
+                    className="absolute left-3 right-3 bottom-full mb-1 z-50 rounded-2xl p-2 shadow-lg animate-slide-up"
+                    style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+                  >
+                    <ConversationStarters
+                      subject={activeSubject}
+                      language={language}
+                      topicTitle={activeTopic?.title}
+                      hasLastTopic={true}
+                      onSelect={(text, intent) => { setShowStarters(false); handleStarterClick(text, intent); }}
+                      compact={true}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           )}
 

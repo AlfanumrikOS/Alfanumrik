@@ -40,6 +40,14 @@ export interface ChatInputProps {
   /** Voice 3: fires with the STT-detected language (en/hi/hinglish) so the page
    *  can adapt Foxy's spoken reply to the language the student actually spoke. */
   onDetectedLanguage?: (lang: string) => void;
+  /**
+   * When true, the tool row (fx Math / Points / Photo / Voice + the math-symbol
+   * panel) is collapsed behind a single inline "+" toggle in the composer row so
+   * the composer's permanent vertical footprint shrinks to one row — the chat
+   * thread reclaims that space. Every action stays reachable via the toggle.
+   * Defaults to false so every existing caller (e.g. /help) renders byte-identically.
+   */
+  collapsibleTools?: boolean;
 }
 
 export const ChatInput = memo(function ChatInput({
@@ -50,9 +58,16 @@ export const ChatInput = memo(function ChatInput({
   language = 'en',
   onVoiceSend,
   onDetectedLanguage,
+  collapsibleTools = false,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [showSymbols, setShowSymbols] = useState(false);
+  // Progressive-disclosure state for the compact composer (collapsibleTools).
+  // When collapsibleTools is false this is inert — the tool row always renders.
+  const [toolsOpen, setToolsOpen] = useState(false);
+  // Whether the tool row (and the math-symbol panel) is currently visible.
+  // Always visible in the legacy/uncollapsed mode; behind the "+" toggle otherwise.
+  const toolsVisible = !collapsibleTools || toolsOpen;
   const [symTab, setSymTab] = useState('basic');
   const [pointMode, setPointMode] = useState(false);
   const [pointCount, setPointCount] = useState(1);
@@ -252,7 +267,7 @@ export const ChatInput = memo(function ChatInput({
         .mic-pulsing { animation: mic-pulse 1.2s ease-in-out infinite; }
       `}</style>
 
-      {showSymbols && (
+      {showSymbols && toolsVisible && (
         <div className="px-3 pt-2 pb-1">
           <div className="flex gap-1 overflow-x-auto mb-2" style={{ scrollbarWidth: 'none' }}>
             {MATH_SYMBOL_TABS.map(tab => (
@@ -279,6 +294,7 @@ export const ChatInput = memo(function ChatInput({
         </div>
       )}
 
+      {toolsVisible && (
       <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
         <button onClick={() => setShowSymbols(!showSymbols)}
           className="px-2 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95"
@@ -351,6 +367,7 @@ export const ChatInput = memo(function ChatInput({
           {language === 'hi' ? 'Enter से भेजें · Shift+Enter से नई लाइन' : 'Enter to send · Shift+Enter for new line'}
         </span>
       </div>
+      )}
 
       {imagePreview && (
         <div className="px-3 pt-2 flex items-center gap-2">
@@ -374,6 +391,27 @@ export const ChatInput = memo(function ChatInput({
           rule overrides padding-bottom to ride above the soft keyboard via
           `--kb-inset` (Phase 2 keyboard-aware composer). */}
       <div className="foxy-composer-row px-3 py-2 flex items-end gap-2" style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 8px), 8px)' }}>
+        {collapsibleTools && (
+          <button
+            type="button"
+            onClick={() => setToolsOpen((o) => !o)}
+            aria-expanded={toolsOpen}
+            aria-label={
+              toolsOpen
+                ? (language === 'hi' ? 'टूल छिपाएँ' : 'Hide tools')
+                : (language === 'hi' ? 'टूल दिखाएँ (गणित, फ़ोटो, आवाज़)' : 'Show tools (math, photo, voice)')
+            }
+            title={toolsOpen ? (language === 'hi' ? 'टूल छिपाएँ' : 'Hide tools') : (language === 'hi' ? 'टूल' : 'Tools')}
+            className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all active:scale-90"
+            style={{
+              background: toolsOpen ? `${cfg.color}15` : 'var(--surface-2)',
+              color: toolsOpen ? cfg.color : 'var(--text-3)',
+              border: `1px solid ${toolsOpen ? `${cfg.color}30` : 'var(--border)'}`,
+            }}
+          >
+            {toolsOpen ? '×' : '+'}
+          </button>
+        )}
         <textarea
           ref={taRef}
           value={text}
