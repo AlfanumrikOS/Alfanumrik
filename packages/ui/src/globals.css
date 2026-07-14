@@ -2259,7 +2259,7 @@ body.foxy-body-lock {
   line-height: 1;
 }
 .mobile-nav-v2__badge--danger { background: var(--danger, #DC2626); }
-.mobile-nav-v2__badge--warning { background: #F59E0B; }
+.mobile-nav-v2__badge--warning { background: #F5A623; }
 
 /* Suppress hover-only behaviors on touch */
 @media (hover: hover) {
