@@ -56,7 +56,7 @@ export default function ElectromagneticSpectrum() {
         <div style={{ marginTop: 10, padding: '12px', background: 'var(--surface-2)', borderRadius: 8 }}>
           <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-1)', marginBottom: 6 }}>{sel.name} Waves</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 13 }}>
-            <div><span style={{ color: 'var(--text-2)' }}>Wavelength: </span><b style={{ color: 'var(--orange,#f97316)' }}>{sel.wavelength}</b></div>
+            <div><span style={{ color: 'var(--text-2)' }}>Wavelength: </span><b style={{ color: 'var(--orange,#e8581c)' }}>{sel.wavelength}</b></div>
             <div><span style={{ color: 'var(--text-2)' }}>Frequency: </span><b style={{ color: 'var(--purple,#7c3aed)' }}>{sel.frequency}</b></div>
             <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--text-2)' }}>Uses: </span><span style={{ color: 'var(--text-1)' }}>{sel.use}</span></div>
             <div style={{ gridColumn: '1/-1' }}><span style={{ color: 'var(--text-2)' }}>Source: </span><span style={{ color: 'var(--text-1)' }}>{sel.source}</span></div>
@@ -68,7 +68,7 @@ export default function ElectromagneticSpectrum() {
       )}
 
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        c = fλ &nbsp;|&nbsp; c = <b style={{ color: 'var(--orange,#f97316)' }}>3 × 10⁸ m/s</b>
+        c = fλ &nbsp;|&nbsp; c = <b style={{ color: 'var(--orange,#e8581c)' }}>3 × 10⁸ m/s</b>
       </div>
     </div>
   );

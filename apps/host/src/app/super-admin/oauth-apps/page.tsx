@@ -48,7 +48,7 @@ function appTypeBadge(type: string): { bg: string; fg: string; label: string } {
   switch (type) {
     case 'first_party': return { bg: 'rgba(124,58,237,0.1)', fg: '#7C3AED', label: 'First Party' };
     case 'third_party': return { bg: 'rgba(37,99,235,0.1)', fg: '#2563EB', label: 'Third Party' };
-    case 'school_internal': return { bg: 'rgba(249,115,22,0.1)', fg: '#F97316', label: 'School Internal' };
+    case 'school_internal': return { bg: 'rgba(249,115,22,0.1)', fg: '#E8581C', label: 'School Internal' };
     default: return { bg: '#F9FAFB', fg: '#9CA3AF', label: type };
   }
 }

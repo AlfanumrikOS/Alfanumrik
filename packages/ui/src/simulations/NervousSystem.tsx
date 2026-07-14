@@ -65,7 +65,7 @@ export default function NervousSystem() {
     const x = nodes[seg].x + (nodes[seg + 1].x - nodes[seg].x) * t2;
     const y = nodes[seg].y + (nodes[seg + 1].y - nodes[seg].y) * t2;
     ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2);
-    ctx.fillStyle = '#F97316'; ctx.fill();
+    ctx.fillStyle = '#E8581C'; ctx.fill();
 
     ctx.fillStyle = '#333'; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
     ctx.fillText(`Signal speed: ${myelinated ? '~100 m/s (myelinated)' : '~1 m/s (unmyelinated)'}`, 10, 200);
@@ -91,7 +91,7 @@ export default function NervousSystem() {
           <circle cx={60} cy={80} r={8} fill="#90CAF9" onClick={() => setSelected('dendrite')} style={{ cursor: 'pointer' }} />
           <circle cx={40} cy={100} r={8} fill="#90CAF9" onClick={() => setSelected('dendrite')} style={{ cursor: 'pointer' }} />
           <circle cx={60} cy={120} r={8} fill="#90CAF9" onClick={() => setSelected('dendrite')} style={{ cursor: 'pointer' }} />
-          <circle cx={155} cy={100} r={22} fill="#CE93D8" stroke={selected === 'cell' ? '#F97316' : '#aaa'} strokeWidth={2} onClick={() => setSelected('cell')} style={{ cursor: 'pointer' }} />
+          <circle cx={155} cy={100} r={22} fill="#CE93D8" stroke={selected === 'cell' ? '#E8581C' : '#aaa'} strokeWidth={2} onClick={() => setSelected('cell')} style={{ cursor: 'pointer' }} />
           <text x={155} y={104} textAnchor="middle" fontSize={10} fill="#fff" fontWeight={700}>Soma</text>
           <line x1={177} y1={100} x2={460} y2={100} stroke="#A5D6A7" strokeWidth={4} onClick={() => setSelected('axon')} style={{ cursor: 'pointer' }} strokeDasharray="1" />
           {[210, 260, 310, 360, 410].map(x => (
@@ -120,9 +120,9 @@ export default function NervousSystem() {
           <div style={{ height: 20, background: '#E8F5E9', borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
             <div style={{ height: '100%', width: '100%', background: '#4CAF50', borderRadius: 10 }} />
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-1)', marginBottom: 6 }}>Unmyelinated fibre: <strong style={{ color: '#F97316' }}>~1 m/s</strong></div>
+          <div style={{ fontSize: 13, color: 'var(--text-1)', marginBottom: 6 }}>Unmyelinated fibre: <strong style={{ color: '#E8581C' }}>~1 m/s</strong></div>
           <div style={{ height: 20, background: '#FFF3E0', borderRadius: 10, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: '1%', background: '#F97316', borderRadius: 10 }} />
+            <div style={{ height: '100%', width: '1%', background: '#E8581C', borderRadius: 10 }} />
           </div>
           <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-2)' }}>Myelin sheath acts as insulator — impulse jumps node-to-node (saltatory conduction), 100x faster!</div>
         </div>

@@ -36,7 +36,7 @@ function getStateColor(state: string): string {
   switch (state) {
     case 'Solid': return '#7c3aed';
     case 'Liquid': return '#0ea5e9';
-    case 'Gas': return '#F97316';
+    case 'Gas': return '#E8581C';
     case 'Supercritical': return '#ef4444';
     default: return '#64748b';
   }
@@ -202,7 +202,7 @@ export default function StatesOfMatter() {
     <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", maxWidth: 520, margin: '0 auto', padding: '0 4px' }}>
       {/* Header */}
       <div style={{ textAlign: 'center', marginBottom: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#F97316' }}>States of Matter</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#E8581C' }}>States of Matter</div>
         <div style={{ fontSize: 11, color: '#64748b' }}>Particle Simulation — CBSE Class 9-10</div>
       </div>
 
@@ -253,7 +253,7 @@ export default function StatesOfMatter() {
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#94a3b8', marginTop: 2 }}>
           <span>50 K</span>
           <span style={{ color: '#7c3aed', fontWeight: 600 }}>Melt: 300K</span>
-          <span style={{ color: '#F97316', fontWeight: 600 }}>Boil: 400K</span>
+          <span style={{ color: '#E8581C', fontWeight: 600 }}>Boil: 400K</span>
           <span>600 K</span>
         </div>
       </div>

@@ -46,9 +46,11 @@ module.exports = {
           purple: '#7C3AED',
           cream: '#FBF8F4',
           warm: '#FEF3E2',
-          // Dynamic school branding — overridden by SchoolThemeProvider CSS vars
+          // Dynamic school branding — overridden by SchoolThemeProvider CSS vars.
+          // Fallbacks are the canonical Alfanumrik brand pair (purple #7C3AED /
+          // brand-orange #E8581C — the tokenized --orange/--v3-brand value).
           primary: 'var(--color-brand-primary, #7C3AED)',
-          secondary: 'var(--color-brand-secondary, #F97316)',
+          secondary: 'var(--color-brand-secondary, #E8581C)',
         },
         // New semantic tokens — map to CSS custom properties
         primary: {

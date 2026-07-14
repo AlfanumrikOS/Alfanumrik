@@ -14,7 +14,7 @@ const QUICK_ACTIONS: Array<{
   labelHi: string;
   color: string;
 }> = [
-  { key: 'quiz',   href: '/quiz',   icon: '⚡', label: 'Quiz',     labelHi: 'क्विज़',           color: '#F97316' },
+  { key: 'quiz',   href: '/quiz',   icon: '⚡', label: 'Quiz',     labelHi: 'क्विज़',           color: '#E8581C' },
   { key: 'learn',  href: '/learn',  icon: '📖', label: 'Chapters', labelHi: 'अध्याय',           color: '#2563EB' },
   { key: 'foxy',   href: '/foxy',   icon: '🦊', label: 'Ask Foxy', labelHi: 'फॉक्सी से पूछो',   color: '#7C3AED' },
   { key: 'review', href: '/review', icon: '🔄', label: 'Revise',   labelHi: 'रिव्यू',           color: '#0D9488' },

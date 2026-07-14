@@ -742,10 +742,10 @@ function downloadReportPDF(studentName: string, grade: string, reportData: Repor
     .header p { font-size: 13px; opacity: 0.9; }
     .container { padding: 0 28px 28px; }
     .section { margin-bottom: 22px; }
-    .section-title { font-size: 14px; font-weight: 700; color: #F97316; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 2px solid #FFF3E0; padding-bottom: 4px; }
+    .section-title { font-size: 14px; font-weight: 700; color: #E8581C; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; border-bottom: 2px solid #FFF3E0; padding-bottom: 4px; }
     .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
     .stat-box { background: #FFF8F0; border-radius: 10px; padding: 12px; text-align: center; border: 1px solid #FDBA7444; }
-    .stat-value { font-size: 22px; font-weight: 800; color: #F97316; }
+    .stat-value { font-size: 22px; font-weight: 800; color: #E8581C; }
     .stat-label { font-size: 10px; color: #64748B; text-transform: uppercase; margin-top: 2px; }
     table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; border: 1px solid #F1F5F9; }
     th { background: #FFF8F0; padding: 10px 12px; font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase; text-align: left; }
@@ -853,7 +853,7 @@ function PrintShareSection({ studentName, grade, reportData, isHi = false }: { s
       <h3 style={{ ...cardTitle, textAlign: 'center' }}>{t(isHi, 'Share This Report', 'यह रिपोर्ट साझा करें')}</h3>
       <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
         <button onClick={() => downloadReportPDF(studentName, grade, reportData)} style={{
-          padding: '12px 24px', backgroundColor: '#F97316', color: '#fff',
+          padding: '12px 24px', backgroundColor: '#E8581C', color: '#fff',
           border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700,
           cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
         }}>

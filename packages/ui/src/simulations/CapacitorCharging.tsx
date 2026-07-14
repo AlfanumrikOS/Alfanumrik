@@ -60,7 +60,7 @@ export default function CapacitorCharging() {
 
     // Vc(t) curve
     ctx.beginPath();
-    ctx.strokeStyle = '#f97316';
+    ctx.strokeStyle = '#e8581c';
     ctx.lineWidth = 2.5;
     for (let px = 0; px <= gW; px++) {
       const t = (px / gW) * tMax;
@@ -90,7 +90,7 @@ export default function CapacitorCharging() {
     const dotY = gBot - (Vc_now / V0) * gH;
     ctx.beginPath();
     ctx.arc(dotX, dotY, 6, 0, Math.PI * 2);
-    ctx.fillStyle = '#f97316';
+    ctx.fillStyle = '#e8581c';
     ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = '11px sans-serif';
@@ -118,7 +118,7 @@ export default function CapacitorCharging() {
     }
 
     // Legend
-    ctx.fillStyle = '#f97316';
+    ctx.fillStyle = '#e8581c';
     ctx.fillText('— Vc(t)', gRight - 80, gTop + 14);
     ctx.fillStyle = '#7c3aed';
     ctx.fillText('— I(t)', gRight - 80, gTop + 28);
@@ -149,7 +149,7 @@ export default function CapacitorCharging() {
         <input type="range" min={0} max={100} value={tSlider} onChange={e => setTSlider(+e.target.value)} style={{ width: '100%' }} />
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        V(t) = V₀(1 − e^(−t/RC)) &nbsp;|&nbsp; τ = RC = <b style={{ color: 'var(--orange,#f97316)' }}>{tau.toFixed(3)} s</b>
+        V(t) = V₀(1 − e^(−t/RC)) &nbsp;|&nbsp; τ = RC = <b style={{ color: 'var(--orange,#e8581c)' }}>{tau.toFixed(3)} s</b>
       </div>
     </div>
   );

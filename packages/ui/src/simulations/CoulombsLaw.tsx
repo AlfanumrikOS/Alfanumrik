@@ -133,7 +133,7 @@ export default function CoulombsLaw() {
     ctx.fillText(`q2=${q2}μC`, q2X, midY + chargeR + 14);
 
     // Force label
-    ctx.fillStyle = '#F97316';
+    ctx.fillStyle = '#E8581C';
     ctx.font = 'bold 13px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`F = ${forceStr}`, W / 2, H - 12);
@@ -141,9 +141,9 @@ export default function CoulombsLaw() {
 
   useEffect(() => { draw(); }, [draw]);
 
-  const sliderStyle = { width: '100%', accentColor: '#F97316' };
+  const sliderStyle = { width: '100%', accentColor: '#E8581C' };
   const labelStyle: React.CSSProperties = { color: '#94a3b8', fontSize: 13 };
-  const valueStyle: React.CSSProperties = { color: '#F97316', fontWeight: 700 };
+  const valueStyle: React.CSSProperties = { color: '#E8581C', fontWeight: 700 };
 
   const SignToggle = ({ sign, onToggle, color }: { sign: '+' | '-'; onToggle: () => void; color: string }) => (
     <button onClick={onToggle}
@@ -155,7 +155,7 @@ export default function CoulombsLaw() {
 
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
-      <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Coulomb&#39;s Law</h2>
+      <h2 style={{ color: '#E8581C', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Coulomb&#39;s Law</h2>
       <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
         <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
       </div>
@@ -196,7 +196,7 @@ export default function CoulombsLaw() {
       <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div style={{ background: '#0f0f23', borderRadius: 8, padding: '10px', textAlign: 'center' }}>
           <div style={{ color: '#64748b', fontSize: 11 }}>Electrostatic Force</div>
-          <div style={{ color: '#F97316', fontWeight: 700, fontSize: 16 }}>{forceStr}</div>
+          <div style={{ color: '#E8581C', fontWeight: 700, fontSize: 16 }}>{forceStr}</div>
         </div>
         <div style={{ background: '#0f0f23', borderRadius: 8, padding: '10px', textAlign: 'center' }}>
           <div style={{ color: '#64748b', fontSize: 11 }}>Interaction Type</div>

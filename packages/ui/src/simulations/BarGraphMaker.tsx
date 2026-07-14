@@ -72,7 +72,7 @@ const PRESETS: PresetData[] = [
 ];
 
 const BAR_COLORS = [
-  '#F97316', '#9333EA', '#2563EB', '#16A34A', '#EAB308', '#EC4899', '#06B6D4', '#6366F1',
+  '#E8581C', '#9333EA', '#2563EB', '#16A34A', '#EAB308', '#EC4899', '#06B6D4', '#6366F1',
 ];
 
 const BG_COLOR = '#FAFAF9';

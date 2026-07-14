@@ -225,9 +225,9 @@ export default function PYQPage() {
                     onClick={() => setSelectedYear(yr)}
                     className="px-4 py-2 rounded-xl font-semibold text-sm transition-all"
                     style={{
-                      background: selectedYear === yr ? 'var(--orange, #F97316)' : 'var(--surface-1)',
+                      background: selectedYear === yr ? 'var(--orange, #E8581C)' : 'var(--surface-1)',
                       color: selectedYear === yr ? '#fff' : 'var(--text-1)',
-                      border: `1px solid ${selectedYear === yr ? 'var(--orange, #F97316)' : 'var(--border)'}`,
+                      border: `1px solid ${selectedYear === yr ? 'var(--orange, #E8581C)' : 'var(--border)'}`,
                     }}
                   >
                     {yr}
@@ -243,7 +243,7 @@ export default function PYQPage() {
               fullWidth
               disabled={loading}
               onClick={startPractice}
-              style={{ background: 'var(--orange, #F97316)', color: '#fff', borderRadius: '1rem' }}
+              style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '1rem' }}
             >
               {loading
                 ? (isHi ? 'लोड हो रहा है…' : 'Loading questions…')
@@ -268,7 +268,7 @@ export default function PYQPage() {
             ? 'इस विषय के लिए पिछले साल के प्रश्न जल्द उपलब्ध होंगे।'
             : 'Previous year questions for this subject are coming soon.'}
         </p>
-        <Button onClick={() => router.push('/quiz?subject=' + (selectedSubject ?? ''))} style={{ background: 'var(--orange, #F97316)', color: '#fff', borderRadius: '1rem' }}>
+        <Button onClick={() => router.push('/quiz?subject=' + (selectedSubject ?? ''))} style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '1rem' }}>
           {isHi ? 'प्रश्न बैंक से अभ्यास करें' : 'Practice from Question Bank'}
         </Button>
         <button onClick={restart} className="text-sm underline" style={{ color: 'var(--text-2)' }}>
@@ -305,7 +305,7 @@ export default function PYQPage() {
                 {currentIdx + 1}/{questions.length}
               </p>
             </div>
-            <div className="text-sm font-bold" style={{ color: 'var(--orange, #F97316)' }}>
+            <div className="text-sm font-bold" style={{ color: 'var(--orange, #E8581C)' }}>
               {correctCount} ✓
             </div>
           </div>
@@ -354,8 +354,8 @@ export default function PYQPage() {
                   bg = '#FEF2F2'; border = '#DC2626'; textColor = '#B91C1C';
                 }
               } else if (selectedOption === idx) {
-                bg = 'var(--orange, #F97316)' + '10';
-                border = 'var(--orange, #F97316)';
+                bg = 'var(--orange, #E8581C)' + '10';
+                border = 'var(--orange, #E8581C)';
               }
 
               return (
@@ -413,7 +413,7 @@ export default function PYQPage() {
 
           {/* Next Button */}
           {isAnswered && (
-            <Button fullWidth onClick={goNext} style={{ background: 'var(--orange, #F97316)', color: '#fff', borderRadius: '1rem' }}>
+            <Button fullWidth onClick={goNext} style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '1rem' }}>
               {currentIdx + 1 >= questions.length
                 ? (isHi ? 'परिणाम देखें →' : 'See Results →')
                 : (isHi ? 'अगला प्रश्न →' : 'Next Question →')}
@@ -436,7 +436,7 @@ export default function PYQPage() {
         </h2>
 
         <Card className="w-full max-w-sm text-center">
-          <p className="text-4xl font-black mb-1" style={{ color: 'var(--orange, #F97316)' }}>{pct}%</p>
+          <p className="text-4xl font-black mb-1" style={{ color: 'var(--orange, #E8581C)' }}>{pct}%</p>
           <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
             {correctCount}/{questions.length} {isHi ? 'सही' : 'correct'}
           </p>
@@ -448,7 +448,7 @@ export default function PYQPage() {
         </Card>
 
         <div className="flex flex-col gap-3 w-full max-w-sm">
-          <Button fullWidth onClick={startPractice} style={{ background: 'var(--orange, #F97316)', color: '#fff', borderRadius: '1rem' }}>
+          <Button fullWidth onClick={startPractice} style={{ background: 'var(--orange, #E8581C)', color: '#fff', borderRadius: '1rem' }}>
             {isHi ? 'फिर से कोशिश करें' : 'Try Again'}
           </Button>
           <Button fullWidth variant="ghost" onClick={restart}>

@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       slug: request.headers.get('x-school-slug') || '',
       logoUrl: request.headers.get('x-school-logo') || null,
       primaryColor: request.headers.get('x-school-primary-color') || '#7C3AED',
-      secondaryColor: request.headers.get('x-school-secondary-color') || '#F97316',
+      secondaryColor: request.headers.get('x-school-secondary-color') || '#E8581C',
     },
     {
       headers: {

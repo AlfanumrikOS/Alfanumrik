@@ -104,7 +104,7 @@ function statusColor(status: string): string {
     case 'in-progress':
       return '#2563EB';
     default:
-      return '#F97316';
+      return '#E8581C';
   }
 }
 
@@ -311,7 +311,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
       style={{
         ...cardStyle,
         transition: 'border-color 0.2s',
-        borderColor: open ? '#F97316' : '#FDBA7433',
+        borderColor: open ? '#E8581C' : '#FDBA7433',
       }}
     >
       <button
@@ -336,7 +336,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
         <span
           style={{
             fontSize: 18,
-            color: '#F97316',
+            color: '#E8581C',
             transition: 'transform 0.3s ease',
             transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
             flexShrink: 0,
@@ -419,7 +419,7 @@ function MyTickets({
             width: 28,
             height: 28,
             border: '3px solid #FDBA7444',
-            borderTopColor: '#F97316',
+            borderTopColor: '#E8581C',
             borderRadius: '50%',
             margin: '0 auto 10px',
             animation: 'spin 0.8s linear infinite',
@@ -443,7 +443,7 @@ function MyTickets({
           style={{
             padding: '8px 18px',
             backgroundColor: 'transparent',
-            color: '#F97316',
+            color: '#E8581C',
             border: '1px solid #FDBA74',
             borderRadius: 8,
             fontSize: 13,
@@ -939,8 +939,8 @@ export default function ParentSupportPage() {
           >
             <span
               style={{
-                backgroundColor: '#F9731620',
-                color: '#F97316',
+                backgroundColor: '#E8581C20',
+                color: '#E8581C',
                 width: 24,
                 height: 24,
                 borderRadius: '50%',

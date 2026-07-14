@@ -31,7 +31,7 @@ const DEFAULT_CONFIG: SchoolConfig = {
   slug: '',
   logoUrl: null,
   primaryColor: '#7C3AED',
-  secondaryColor: '#F97316',
+  secondaryColor: '#E8581C',
   tagline: 'Adaptive Learning OS',
   isSchoolContext: false,
 };

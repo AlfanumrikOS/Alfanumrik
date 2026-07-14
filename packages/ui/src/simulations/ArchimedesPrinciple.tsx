@@ -97,7 +97,7 @@ export default function ArchimedesPrinciple() {
     const arrowBase = objX + objSize / 2;
     // Weight arrow (down)
     const wLen = Math.min(60, weightAir * 6);
-    ctx.strokeStyle = '#f97316';
+    ctx.strokeStyle = '#e8581c';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(arrowBase, clampedY + objSize);
@@ -118,7 +118,7 @@ export default function ArchimedesPrinciple() {
     ctx.fillStyle = '#9ca3af';
     ctx.textAlign = 'center';
     ctx.fillText('Spring Scale', scaleX, scaleTopY - 8);
-    ctx.fillStyle = '#f97316';
+    ctx.fillStyle = '#e8581c';
     ctx.fillText(`W=${weightAir.toFixed(2)}N`, arrowBase + 30, clampedY + objSize + wLen / 2);
     ctx.fillStyle = '#60a5fa';
     ctx.fillText(`Fb=${buoyForce.toFixed(2)}N`, arrowBase - 45, clampedY + objSize - bLen / 2);
@@ -152,7 +152,7 @@ export default function ArchimedesPrinciple() {
         </div>
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        F_b = ρ_liq × V × g = <b style={{ color: 'var(--orange,#f97316)' }}>{buoyForce.toFixed(3)} N</b> &nbsp;|&nbsp; App. W = <b style={{ color: 'var(--purple,#7c3aed)' }}>{apparentWeight.toFixed(3)} N</b>
+        F_b = ρ_liq × V × g = <b style={{ color: 'var(--orange,#e8581c)' }}>{buoyForce.toFixed(3)} N</b> &nbsp;|&nbsp; App. W = <b style={{ color: 'var(--purple,#7c3aed)' }}>{apparentWeight.toFixed(3)} N</b>
       </div>
     </div>
   );

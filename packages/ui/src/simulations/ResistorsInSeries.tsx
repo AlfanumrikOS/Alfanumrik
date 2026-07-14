@@ -15,7 +15,7 @@ export default function ResistorsInSeries() {
   const v1 = I * r1, v2 = I * r2, v3 = I * r3;
 
   useEffect(() => {
-    const dotColors = ['#f97316', '#7c3aed', '#10b981'];
+    const dotColors = ['#e8581c', '#7c3aed', '#10b981'];
     const loop = () => {
       tickRef.current = (tickRef.current + 1) % 200;
       const canvas = canvasRef.current;
@@ -50,7 +50,7 @@ export default function ResistorsInSeries() {
       ctx.fillText(`${voltage}V`, bx, topY - 28);
 
       // Resistors
-      const resistors = [[rx1, r1, v1, '#f97316'], [rx2, r2, v2, '#7c3aed'], [rx3, r3, v3, '#10b981']] as [number, number, number, string][];
+      const resistors = [[rx1, r1, v1, '#e8581c'], [rx2, r2, v2, '#7c3aed'], [rx3, r3, v3, '#10b981']] as [number, number, number, string][];
       resistors.forEach(([x, r, vr, color]) => {
         ctx.fillStyle = color + '33';
         ctx.strokeStyle = color;
@@ -97,7 +97,7 @@ export default function ResistorsInSeries() {
       <h3 style={{ color: 'var(--text-1)', fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Resistors in Series</h3>
       <canvas ref={canvasRef} width={560} height={280} style={{ width: '100%', borderRadius: 8, background: 'var(--surface-2)', display: 'block' }} />
       <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        {[['R₁', r1, setR1, '#f97316'], ['R₂', r2, setR2, '#7c3aed'], ['R₃', r3, setR3, '#10b981'], ['V', voltage, setVoltage, '#facc15']].map(([label, val, setter, color]) => (
+        {[['R₁', r1, setR1, '#e8581c'], ['R₂', r2, setR2, '#7c3aed'], ['R₃', r3, setR3, '#10b981'], ['V', voltage, setVoltage, '#facc15']].map(([label, val, setter, color]) => (
           <div key={label as string}>
             <label style={{ color: color as string, fontSize: 13 }}>{label as string}: {val as number}{label === 'V' ? 'V' : 'Ω'}</label>
             <input type="range" min={label === 'V' ? 6 : 1} max={label === 'V' ? 24 : 50} value={val as number} onChange={e => (setter as (v: number) => void)(+e.target.value)} style={{ width: '100%' }} />
@@ -105,7 +105,7 @@ export default function ResistorsInSeries() {
         ))}
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        R_total = R₁+R₂+R₃ = <b style={{ color: 'var(--orange,#f97316)' }}>{rTotal}Ω</b> &nbsp;|&nbsp; V = V₁+V₂+V₃ = <b style={{ color: 'var(--purple,#7c3aed)' }}>{(v1 + v2 + v3).toFixed(1)}V</b>
+        R_total = R₁+R₂+R₃ = <b style={{ color: 'var(--orange,#e8581c)' }}>{rTotal}Ω</b> &nbsp;|&nbsp; V = V₁+V₂+V₃ = <b style={{ color: 'var(--purple,#7c3aed)' }}>{(v1 + v2 + v3).toFixed(1)}V</b>
       </div>
     </div>
   );

@@ -3655,7 +3655,7 @@ html[data-design="cosmic"] .bottom-nav-mobile__slot[data-active="true"]::after {
 
 /* ── 5c. COSMIC PARENT NAV (DashboardSidebar active state) ──────────────────
    Phase 2 — parent portal reskin. The shared DashboardSidebar paints its
-   active item with the per-portal `primaryColor` prop INLINE (#F97316 for the
+   active item with the per-portal `primaryColor` prop INLINE (#E8581C for the
    parent portal). Inline styles win over class rules, so we retint the active
    item to the cosmic parent accent (peach via --accent) using attribute
    selectors with !important — ONLY inside the cosmic scope AND the

@@ -1358,7 +1358,7 @@ export default function QuizPage() {
     if (subject === 'chemistry' && /organic|benzene|alkane|alkene|alkyl|ester|aldehyde|ketone|amine|polymer|aromatic/.test(text)) {
       return { label: 'JEE Adv', labelHi: 'JEE एडवांस', color: '#7C3AED' };
     }
-    return { label: 'Board', labelHi: 'बोर्ड', color: '#F97316' };
+    return { label: 'Board', labelHi: 'बोर्ड', color: '#E8581C' };
   }
 
   if (isLoading || !student) return <LoadingFoxy />;

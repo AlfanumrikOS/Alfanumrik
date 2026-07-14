@@ -812,7 +812,7 @@ export default function SchoolAdminReportsPage() {
           <ReportStatCard
             value={active_students.toLocaleString('en-IN')}
             label={t(isHi, 'Active Students', 'सक्रिय छात्र')}
-            color="var(--color-brand-secondary, #F97316)"
+            color="var(--color-brand-secondary, #E8581C)"
           />
           <ReportStatCard
             value={`${Math.round(completion_rate)}%`}
@@ -1225,7 +1225,7 @@ export default function SchoolAdminReportsPage() {
               </div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                 <div style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-brand-secondary, #F97316)' }}>
+                  <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-brand-secondary, #E8581C)' }}>
                     {studentData.total_quizzes}
                   </span>
                   <p style={{ fontSize: 11, color: '#6b7280' }}>{t(isHi, 'Quizzes', 'क्विज़')}</p>

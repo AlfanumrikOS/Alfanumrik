@@ -178,7 +178,7 @@ export default function ParentMobileNav({
                     className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-left transition-all active:scale-[0.98]"
                     style={{
                       background: active ? 'rgba(249, 115, 22, 0.08)' : 'transparent',
-                      color: active ? '#F97316' : 'var(--text-2)',
+                      color: active ? '#E8581C' : 'var(--text-2)',
                     }}
                   >
                     <span className="text-xl w-7 text-center" aria-hidden="true">{item.icon}</span>
@@ -186,7 +186,7 @@ export default function ParentMobileNav({
                     {badgeCount > 0 && (
                       <span
                         className="ml-auto min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
-                        style={{ background: '#F97316' }}
+                        style={{ background: '#E8581C' }}
                       >
                         {badgeCount > 99 ? '99+' : badgeCount}
                       </span>
@@ -194,7 +194,7 @@ export default function ParentMobileNav({
                     {active && badgeCount === 0 && (
                       <span
                         className="ml-auto w-1.5 h-1.5 rounded-full"
-                        style={{ background: '#F97316' }}
+                        style={{ background: '#E8581C' }}
                       />
                     )}
                   </button>
@@ -236,7 +236,7 @@ export default function ParentMobileNav({
                 aria-label={isHi ? tab.labelHi : tab.label}
                 aria-current={active ? 'page' : undefined}
                 className="flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center"
-                style={{ color: active ? '#F97316' : 'var(--ink-3, #64748b)' }}
+                style={{ color: active ? '#E8581C' : 'var(--ink-3, #64748b)' }}
               >
                 <span
                   className="relative inline-block"
@@ -279,7 +279,7 @@ export default function ParentMobileNav({
             aria-label={isHi ? 'अधिक विकल्प' : 'More options'}
             aria-expanded={showMore}
             className="flex flex-col items-center gap-0.5 py-1.5 px-2 bg-transparent border-0 min-w-[44px] min-h-[44px] justify-center"
-            style={{ color: isMoreActive ? '#F97316' : 'var(--ink-3, #64748b)' }}
+            style={{ color: isMoreActive ? '#E8581C' : 'var(--ink-3, #64748b)' }}
           >
             <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>⋯</span>
             <span

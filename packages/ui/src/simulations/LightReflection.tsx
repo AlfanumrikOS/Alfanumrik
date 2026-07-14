@@ -174,7 +174,7 @@ export default function LightReflection() {
 
         // F and C labels
         const f = mW * 0.3;
-        ctx.fillStyle = '#f97316';
+        ctx.fillStyle = '#e8581c';
         ctx.font = 'bold 12px system-ui';
         ctx.textAlign = 'center';
         ctx.fillText('F', cx, mirrorY - f + 16);
@@ -197,7 +197,7 @@ export default function LightReflection() {
 
         // F and C labels (behind mirror for convex)
         const f = mW * 0.3;
-        ctx.fillStyle = '#f97316';
+        ctx.fillStyle = '#e8581c';
         ctx.font = 'bold 12px system-ui';
         ctx.textAlign = 'center';
         ctx.fillText('F', cx, mirrorY + f - 4);

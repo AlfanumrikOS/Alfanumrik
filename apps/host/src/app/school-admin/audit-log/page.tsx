@@ -78,7 +78,7 @@ function actionColor(action: string): string {
   if (action.includes('deactivated') || action.includes('revoked')) return '#DC2626';
   if (action.includes('published') || action.includes('approved')) return '#0891B2';
   if (action.includes('exported')) return '#7C3AED';
-  if (action.includes('generated')) return '#F97316';
+  if (action.includes('generated')) return '#E8581C';
   return 'var(--text-2)';
 }
 

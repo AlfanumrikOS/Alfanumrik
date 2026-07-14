@@ -523,7 +523,7 @@ export default function ChallengePage() {
                       <div className="text-4xl mb-2">{m.badgeIcon}</div>
                       <p
                         className="text-base font-bold"
-                        style={{ fontFamily: 'var(--font-display)', color: '#F97316' }}
+                        style={{ fontFamily: 'var(--font-display)', color: '#E8581C' }}
                       >
                         {isHi ? m.badgeLabelHi : m.badgeLabel}
                       </p>
@@ -619,7 +619,7 @@ export default function ChallengePage() {
               <Button
                 variant="soft"
                 fullWidth
-                color="#F97316"
+                color="#E8581C"
                 onClick={() => router.push('/dashboard')}
               >
                 {isHi ? 'डैशबोर्ड पर जाओ' : 'Back to Dashboard'}
@@ -644,7 +644,7 @@ export default function ChallengePage() {
               </p>
               <Button
                 variant="soft"
-                color="#F97316"
+                color="#E8581C"
                 onClick={() => router.push('/dashboard')}
               >
                 {isHi ? 'डैशबोर्ड पर जाओ' : 'Go to Dashboard'}
