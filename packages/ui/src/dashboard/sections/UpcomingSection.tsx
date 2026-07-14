@@ -134,7 +134,7 @@ export default function UpcomingSection({
               </span>
               <span
                 style={{
-                  fontFamily: 'var(--font-serif)',
+                  fontFamily: 'var(--font-display)',
                   fontSize: 'var(--text-md)',
                   color: 'var(--ink-2)',
                   letterSpacing: '-0.01em',
@@ -148,7 +148,7 @@ export default function UpcomingSection({
             <div className="text-right flex-shrink-0">
               <p
                 style={{
-                  fontFamily: 'var(--font-serif)',
+                  fontFamily: 'var(--font-display)',
                   fontSize: 'var(--text-2xl)',
                   fontWeight: 500,
                   color: urgencyColor,
@@ -253,7 +253,7 @@ export default function UpcomingSection({
                     <p
                       className="truncate"
                       style={{
-                        fontFamily: 'var(--font-serif)',
+                        fontFamily: 'var(--font-display)',
                         fontWeight: 500,
                         fontSize: 'var(--text-md)',
                         color: 'var(--ink)',

@@ -128,7 +128,7 @@ export default function TodaysMission({
 
         <h1
           className="text-2xl md:text-[1.7rem] font-bold leading-[1.15] tracking-[-0.01em]"
-          style={{ fontFamily: 'var(--font-serif)', color: 'var(--text-1)' }}
+          style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
         >
           {todaysTopic?.title
             ? todaysTopic.title
@@ -164,7 +164,7 @@ export default function TodaysMission({
                 <div className="text-4xl mb-2" aria-hidden="true">🧭</div>
                 <p
                   className="text-lg font-bold mb-1"
-                  style={{ color: 'var(--text-1)', fontFamily: 'var(--font-serif)' }}
+                  style={{ color: 'var(--text-1)', fontFamily: 'var(--font-display)' }}
                 >
                   {isHi ? 'डायग्नोस्टिक शुरू करें' : 'Start your diagnostic'}
                 </p>

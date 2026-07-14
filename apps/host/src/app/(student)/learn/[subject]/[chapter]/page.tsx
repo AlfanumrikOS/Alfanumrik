@@ -1601,7 +1601,7 @@ function ChapterConceptPageContent() {
                         return (
                           <div className="mt-6 p-5 rounded-2xl bg-[#0F2A2E] text-[#F5F0EA] border border-emerald-950/40 shadow-lg space-y-4 animate-fadeIn">
                             <div className="flex items-center justify-between pb-3 border-b border-emerald-900/30">
-                              <span className="text-sm font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-serif)' }}>
+                              <span className="text-sm font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-display)' }}>
                                 <span>🎓</span>
                                 <span>{isHi ? 'शिक्षक का ब्लैकबोर्ड (Tricks & Analogy)' : "Teacher's Blackboard (Tricks & Analogy)"}</span>
                               </span>

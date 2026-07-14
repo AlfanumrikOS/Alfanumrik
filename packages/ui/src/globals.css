@@ -1263,7 +1263,7 @@ img, video, iframe, canvas, svg {
 .atlas-eyebrow-accent { color: var(--accent); }
 
 .atlas-editorial {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 400;
   font-size: clamp(28px, 3.4vw, 44px);
   line-height: 1.18;
@@ -2378,11 +2378,12 @@ body.foxy-body-lock {
 .editorial-card--ink   { background: var(--ink); color: var(--cream); border-color: rgba(255,255,255,0.08); }
 
 /* ─── Editorial headings ────────────────────────────────────────
-   Fraunces serif for hero text. Atlas-display in serif takes the
-   product from "school portal" to "editorial product" without any
-   structural changes. */
+   FONT-ROLE LOCKDOWN (Batch 2 · Increment 3): app display/heading is
+   Sora (--font-display). Fraunces (--font-serif) is confined to the
+   marketing skin (/welcome + landing) only, so these in-app editorial
+   headings resolve to Sora + Noto Devanagari fallback (P7). */
 .editorial-name {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   /* Floor bumped down to 24px from 28px so long names (>12 chars)
      don't cause the h1 to overflow at 320px viewport width.
@@ -2398,7 +2399,7 @@ body.foxy-body-lock {
   word-break: break-word;
 }
 .editorial-h1 {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   font-size: var(--text-3xl);
   line-height: 1.12;
@@ -2407,7 +2408,7 @@ body.foxy-body-lock {
   margin: 0;
 }
 .editorial-display {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   font-size: clamp(36px, 8vw, 56px);
   line-height: 1.05;
@@ -2418,7 +2419,7 @@ body.foxy-body-lock {
   font-feature-settings: "tnum";
 }
 .editorial-section-title {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   font-size: var(--text-xl);
   line-height: 1.2;
@@ -2469,7 +2470,7 @@ body.foxy-body-lock {
   }
 }
 .dashboard-stat-cell__value {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   /* Tighter clamp floor (17px) so long numbers fit at 320px */
   font-size: clamp(17px, 3.8vw, 28px);
@@ -2592,10 +2593,11 @@ body.foxy-body-lock {
 }
 
 /* ─── Rank display (Compete section) ────────────────────────────
-   Huge serif number on mobile so the rank reads as a headline, not
-   a chart datum. Pairs with editorial-card chrome. */
+   Huge display number (Sora, --font-display) on mobile so the rank
+   reads as a headline, not a chart datum. Pairs with editorial-card
+   chrome. */
 .dashboard-rank-display {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   font-size: clamp(36px, 8vw, 56px);
   line-height: 1;
@@ -2614,8 +2616,8 @@ body.foxy-body-lock {
    The dark-ink editorial hero card on the student dashboard. Sits
    on top of `.editorial-card--ink` and overrides only what the
    editorial chrome doesn't already give us:
-     • Fluid serif headline (Fraunces) — clamps 28→44px so on a
-       Redmi 9A it never overflows but on a MacBook reads as a
+     • Fluid display headline (Sora, --font-display) — clamps 28→44px
+       so on a Redmi 9A it never overflows but on a MacBook reads as a
        magazine cover headline.
      • Cream text + warm orange dot eyebrow on the dark ground.
      • One dominant CTA + one quiet ghost — clear visual hierarchy. */
@@ -2648,7 +2650,7 @@ body.foxy-body-lock {
   box-shadow: 0 0 0 4px rgba(232, 88, 28, 0.18);
 }
 .atlas-mission-headline {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   font-size: clamp(28px, 6.4vw, 44px);
   line-height: 1.08;
@@ -2771,7 +2773,7 @@ body.foxy-body-lock {
   box-shadow: var(--shadow-atlas-2);
 }
 .dashboard-timeline-item__days {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   font-size: clamp(22px, 5vw, 28px);
   line-height: 1;
@@ -2900,7 +2902,7 @@ body.foxy-body-lock {
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
   font-weight: 500;
   font-size: var(--text-xl);
   line-height: 1;

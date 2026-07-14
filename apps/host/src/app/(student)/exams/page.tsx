@@ -279,7 +279,7 @@ export default function ExamsPage() {
         <div className="app-container py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
-            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
+            <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               {isHi ? 'मेरी परीक्षाएँ' : 'My Exams'}
             </h1>
           </div>
@@ -302,7 +302,7 @@ export default function ExamsPage() {
         {showForm && (
           <PremiumCard gradient className="warm-cta">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
+              <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>
                 {isHi ? 'नई परीक्षा जोड़ें' : 'Add New Exam'}
               </h2>
               <button onClick={() => setShowForm(false)} className="text-[var(--text-3)] text-sm p-2 rounded-lg" aria-label={isHi ? 'बंद करें' : 'Close'}>&times;</button>
@@ -489,7 +489,7 @@ export default function ExamsPage() {
         ) : exams.length === 0 && !showForm ? (
           <div className="text-center py-16">
             <div className="text-5xl mb-4">📋</div>
-            <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-serif)' }}>
+            <h3 className="text-lg font-bold mb-2" style={{ fontFamily: 'var(--font-display)' }}>
               {isHi ? 'कोई परीक्षा नहीं' : 'No Exams Yet'}
             </h3>
             <p className="text-sm text-[var(--text-3)] mb-4 max-w-xs mx-auto">
@@ -530,7 +530,7 @@ export default function ExamsPage() {
                     <div className="flex items-center gap-2.5 flex-1 min-w-0">
                       <span className="text-2xl flex-shrink-0">{subMeta?.icon || '📚'}</span>
                       <div className="min-w-0">
-                        <h3 className="text-sm font-bold truncate" style={{ fontFamily: 'var(--font-serif)' }}>
+                        <h3 className="text-sm font-bold truncate" style={{ fontFamily: 'var(--font-display)' }}>
                           {exam.exam_name}
                         </h3>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -561,7 +561,7 @@ export default function ExamsPage() {
                       <div
                         className="text-2xl font-extrabold tabular-nums leading-none"
                         style={{
-                          fontFamily: 'var(--font-serif)',
+                          fontFamily: 'var(--font-display)',
                           color: daysLeft <= 3 ? 'var(--red)' : daysLeft <= 7 ? 'var(--gold)' : 'var(--green)',
                         }}
                       >

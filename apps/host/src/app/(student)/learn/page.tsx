@@ -202,7 +202,7 @@ function LegacyLearnPage() {
               ←
             </button>
           ) : null}
-          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
+          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {selectedSubject
               ? `${selectedMeta?.icon} ${selectedMeta?.name}`
               : (isHi ? '📚 विषय' : '📚 Subjects')}
