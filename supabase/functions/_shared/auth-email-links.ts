@@ -40,3 +40,28 @@ export function buildAuthActionUrl(params: {
 
   return `${baseSiteUrl}/dashboard`
 }
+
+/**
+ * Derive a per-auth-token dimension used ONLY as an idempotency-key input
+ * (never rendered, never a URL). Preference order: `tokenHash` → `token`.
+ * For email-change flows the "new" token (`tokenHashNew` → `tokenNew`) is
+ * folded in so that a re-issued change confirmation gets a distinct key.
+ *
+ * Rationale (P15): under Resend the Idempotency-Key is honoured for 24h. If the
+ * key ignored the token, a legitimately re-requested confirmation/reset within
+ * that window would be silently deduped and never delivered. Keying on the token
+ * means: same token twice → same key (genuine retries dedupe); distinct tokens
+ * → distinct keys (re-requested links actually send). Returns '' when no token
+ * material is present (caller falls back to template+recipient+subject).
+ */
+export function authEmailTokenDimension(params: {
+  token?: string
+  tokenHash?: string
+  tokenNew?: string
+  tokenHashNew?: string
+}): string {
+  const { token, tokenHash, tokenNew, tokenHashNew } = params
+  const primary = tokenHash || token || ''
+  const secondary = tokenHashNew || tokenNew || ''
+  return secondary ? `${primary}:${secondary}` : primary
+}

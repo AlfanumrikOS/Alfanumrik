@@ -16,7 +16,7 @@ import { resolve } from 'node:path';
  *        supabase/functions/send-auth-email/__tests__/always-200.test.ts
  *      which captures the Deno.serve() handler and asserts HTTP 200 on all nine
  *      code paths (non-POST, OPTIONS, missing secret, bad signature, invalid
- *      payload, Mailgun failure, Mailgun success, no-Mailgun-config, top-level
+ *      payload, relay failure, relay success, no-relay-config, top-level
  *      throw) plus a non-200-status source canary. The block below is no longer
  *      a fake `expect(true)` marker — it asserts that real test exists and still
  *      contains the load-bearing assertions, so deleting the Deno coverage turns
@@ -92,9 +92,9 @@ test.describe('P15: Onboarding Integrity', () => {
       'missing hook secret returns 200',
       'invalid webhook signature returns 200',
       'missing user/email_data returns 200',
-      'Mailgun send failure returns 200',
-      'Mailgun send success returns 200',
-      'missing Mailgun config returns 200',
+      'relay send failure returns 200',
+      'relay send success returns 200',
+      'missing relay config returns 200',
       'unexpected throw is caught and returns 200',
       'no non-200 Response status',
     ];
