@@ -1,4 +1,4 @@
-export type ProviderName = 'openai' | 'anthropic' | 'mailgun' | 'whatsapp' | 'google_vision' | 'ocr_space' | 'voyage' | 'posthog' | 'internal' | 'unknown'
+export type ProviderName = 'openai' | 'anthropic' | 'mailgun' | 'resend' | 'whatsapp' | 'google_vision' | 'ocr_space' | 'voyage' | 'posthog' | 'internal' | 'unknown'
 
 export type ProviderErrorKind = 'timeout' | 'rate_limit' | 'server_error' | 'auth' | 'bad_request' | 'network' | 'unknown'
 
@@ -132,6 +132,8 @@ export function classifyProviderError(provider: ProviderName, error: unknown, ti
 function inferProvider(input: string | URL | Request): ProviderName {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (url.includes('mailgun.net')) return 'mailgun'
+  // Resend relay (relay-mailer.ts). Matches both api.resend.com and resend.com.
+  if (url.includes('resend.com')) return 'resend'
   if (url.includes('graph.facebook.com')) return 'whatsapp'
   if (url.includes('vision.googleapis.com')) return 'google_vision'
   if (url.includes('ocr.space')) return 'ocr_space'

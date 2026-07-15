@@ -19,7 +19,7 @@
  * Response:
  *   200 { ok: true, delivered: true,  message_id }
  *   200 { ok: true, delivered: false, reason } — soft-fail (no billing email,
- *                                                Mailgun outage, etc.). Caller
+ *                                                relay outage, etc.). Caller
  *                                                still got a 200 so the cron
  *                                                doesn't retry-storm.
  *   400 invalid input
@@ -27,8 +27,8 @@
  *   404 contract or school not found
  *
  * Idempotency: the daily-cron updates reminders_sent[] BEFORE calling us, so
- * we don't need our own dedup. Mailgun's own dedup-by-message-id is fine for
- * accidental double-sends within seconds.
+ * we don't need our own dedup. The relay's Idempotency-Key (Resend honours it
+ * for 24h) collapses accidental double-sends.
  *
  * P13 (PII): we send to the school's billing_email (or schools.email
  * fallback). We log only message_id + status, never the email body or
@@ -36,7 +36,8 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
+import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
+import { sendEmail } from '../_shared/relay-mailer.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders } from '../_shared/cors.ts'
 import { checkBearerToken } from '../_shared/auth.ts'
@@ -45,8 +46,16 @@ import { checkBearerToken } from '../_shared/auth.ts'
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+// Transport is the shared relay (Resend primary, TRANSITIONAL Mailgun fallback).
+// Email is attempted when EITHER Resend (RESEND_API_KEY) OR Mailgun
+// (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the relay picks Resend and
+// falls back to Mailgun at send time. Prod today has only MAILGUN_* set, so this
+// keeps renewal reminders flowing through the Resend cutover with zero downtime.
+// Remove MAILGUN_* once Resend is confirmed live in prod.
+const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY') ?? ''
 const MAILGUN_API_KEY           = Deno.env.get('MAILGUN_API_KEY') ?? ''
 const MAILGUN_DOMAIN            = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+const HAS_EMAIL_TRANSPORT       = Boolean(RESEND_API_KEY) || Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
 const FROM_EMAIL                = Deno.env.get('RENEWAL_FROM_EMAIL') ?? 'Alfanumrik <billing@alfanumrik.com>'
 const REPLY_TO                  = 'support@alfanumrik.com'
 const SITE_URL                  = Deno.env.get('SITE_URL') ?? 'https://alfanumrik.com'
@@ -217,40 +226,30 @@ ${SITE_URL}`
   return { subject, html, text }
 }
 
-// ── Mailgun send ─────────────────────────────────────────────────────────
+// ── Relay send ───────────────────────────────────────────────────────────
+// Thin wrapper over the shared sendEmail seam. Preserves the RENEWAL_FROM_EMAIL
+// From override and the { success, id?, error? } shape the handler consumes;
+// `error` carries the relay's PII-free failure code.
 
-async function sendMailgunEmail(params: {
+async function sendRenewalEmail(params: {
   to: string; subject: string; html: string; text: string;
   tags?: Array<{ name: string; value: string }>;
 }): Promise<{ success: boolean; id?: string; error?: string }> {
-  if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) {
-    return { success: false, error: 'mailgun_not_configured' }
+  if (!HAS_EMAIL_TRANSPORT) {
+    return { success: false, error: 'relay_not_configured' }
   }
-  const form = new FormData()
-  form.append('from', FROM_EMAIL)
-  form.append('to', params.to)
-  form.append('subject', params.subject)
-  form.append('html', params.html)
-  form.append('text', params.text)
-  form.append('h:Reply-To', REPLY_TO)
-  if (params.tags) {
-    for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
-  }
-  const res = await fetchWithTimeout(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
-    provider: 'mailgun',
-    operation: 'send_email',
-    timeoutMs: 10_000,
-    retry: { maxAttempts: 3 },
-    idempotencyKey: createEmailIdempotencyKey({ template: 'mailgun_email', recipient: params.to, subject: params.subject }),
-    method: 'POST',
-    headers: { 'Authorization': `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
-    body: form,
+  const result = await sendEmail({
+    from: FROM_EMAIL,
+    to: params.to,
+    subject: params.subject,
+    html: params.html,
+    text: params.text,
+    replyTo: REPLY_TO,
+    tags: params.tags,
+    idempotencyKey: createEmailIdempotencyKey({ template: 'renewal_reminder', recipient: params.to, subject: params.subject }),
+    operation: 'send_renewal_reminder',
   })
-  if (!res.ok) {
-    return { success: false, error: `mailgun_${res.status}` }
-  }
-  const result = await res.json()
-  return { success: true, id: result.id }
+  return { success: result.success, id: result.id, error: result.code }
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────
@@ -318,7 +317,7 @@ serve(async (req) => {
   }
 
   const { subject, html, text } = renderEmail(c, s, tMinus)
-  const send = await sendMailgunEmail({
+  const send = await sendRenewalEmail({
     to: recipient,
     subject,
     html,

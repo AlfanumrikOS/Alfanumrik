@@ -1505,6 +1505,7 @@ async function processContractReminders(supabase: ReturnType<typeof createClient
       // outer step — once a checkpoint is "fired" we don't want to retry
       // for that t_minus on the same contract on the next cron tick.
       let delivered = false
+      let providerMessageId: string | null = null
       try {
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
         const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -1520,6 +1521,13 @@ async function processContractReminders(supabase: ReturnType<typeof createClient
           if (res.ok) {
             const out = await res.json().catch(() => ({}))
             delivered = out?.delivered === true
+            // The renewal path has NO per-send audit ROW: reminders_sent[] only
+            // records which t_minus checkpoints fired, and there is no
+            // subscription_events-equivalent write here. This telemetry event is
+            // the only durable evidence record, so we enrich it with the returned
+            // Resend message id to keep a send correlatable to a delivery during
+            // a dispute. A Resend id is not PII (P13).
+            providerMessageId = typeof out?.message_id === 'string' ? out.message_id : null
           } else {
             console.warn(`daily-cron: send-renewal-reminder ${res.status} for ${c.id} T-${tMinus}`)
           }
@@ -1537,6 +1545,7 @@ async function processContractReminders(supabase: ReturnType<typeof createClient
           school_id: c.school_id,
           t_minus: tMinus,
           delivered,
+          provider_message_id: providerMessageId,
           contract_number: c.contract_number,
         })
       } catch (e) {
