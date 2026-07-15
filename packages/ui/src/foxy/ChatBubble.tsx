@@ -237,18 +237,12 @@ export function ChatBubble({
         <span className="text-xs font-bold" style={{ color: isTutor ? 'var(--orange)' : color }}>
           {isTutor ? 'Foxy' : (studentName || 'You')}
         </span>
-        <span className="text-[10px] text-[var(--text-3)]">{time}</span>
-
-        {isTutor && (
-          <span
-            className="ml-auto px-1.5 py-0.5 rounded text-[8px] font-semibold"
-            style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
-            title={traceId ? `trace: ${traceId}` : undefined}
-          >
-            🦊
-          </span>
-        )}
-
+        <span
+          className="text-[10px] text-[var(--text-3)]"
+          title={isTutor && traceId ? `trace: ${traceId}` : undefined}
+        >
+          {time}
+        </span>
       </div>
 
       {showUnverifiedBanner && <UnverifiedBanner traceId={traceId} />}
