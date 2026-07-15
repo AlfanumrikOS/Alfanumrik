@@ -1704,6 +1704,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/super-admin/foxy-report/[studentId]",
+      "file": "apps/host/src/app/api/super-admin/foxy-report/[studentId]/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/super-admin/goal-profiles",
       "file": "apps/host/src/app/api/super-admin/goal-profiles/route.ts",
       "access": "super_admin",
