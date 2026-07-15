@@ -9,6 +9,7 @@ import { usePermissions } from '@alfanumrik/lib/usePermissions';
 import { usePulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulse } from '@alfanumrik/ui/pulse';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -212,7 +213,7 @@ function StudentCard({
       style={{
         backgroundColor: '#FFFFFF',
         borderRadius: 14,
-        border: isStruggling ? '1px solid #DC262666' : needsAttention ? '1px solid #D9770644' : '1px solid #F5F0EA',
+        border: isStruggling ? '1px solid #DC262666' : needsAttention ? '1px solid #D9770644' : '1px solid var(--surface-2)',
         overflow: 'hidden',
         transition: 'all 0.3s ease',
         position: 'relative',
@@ -278,15 +279,15 @@ function StudentCard({
 
         {/* Stats Row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
-          <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+          <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>XP</p>
             <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#7C3AED' }}>{formatMetric(student.xp)}</p>
           </div>
-          <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+          <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Streak', 'स्ट्रीक')}</p>
             <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#F59E0B' }}>{formatMetric(student.streak, 'd')}</p>
           </div>
-          <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+          <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Mastery', 'मास्टरी')}</p>
             <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: 'var(--orange)' }}>{formatMetric(student.mastery, '%')}</p>
           </div>
@@ -301,7 +302,7 @@ function StudentCard({
         </div>
 
         {/* Mastery Progress Bar */}
-        <div style={{ backgroundColor: '#F5F0EA', borderRadius: 6, height: 6, overflow: 'hidden' }}>
+        <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 6, height: 6, overflow: 'hidden' }}>
           <div
             style={{
               width: `${student.mastery === null ? 0 : Math.min(student.mastery, 100)}%`,
@@ -361,7 +362,7 @@ function StudentCard({
           transition: 'max-height 0.4s ease',
         }}
       >
-        <div style={{ padding: '0 18px 18px', borderTop: '1px solid #F5F0EA' }}>
+        <div style={{ padding: '0 18px 18px', borderTop: '1px solid var(--surface-2)' }}>
           {/* Subject Breakdown */}
           <h4 style={{ fontSize: 13, fontWeight: 600, color: '#1A1207', margin: '14px 0 10px' }}>{tt(isHi, 'Subject Breakdown', 'विषयवार विवरण')}</h4>
           {subjects.length === 0 ? (
@@ -376,7 +377,7 @@ function StudentCard({
                     <span style={{ fontSize: 12, color: '#7D7264' }}>{subj.name}</span>
                     <span style={{ fontSize: 12, fontWeight: 600, color: subj.color }}>{Math.min(subj.mastery, 100)}%</span>
                   </div>
-                  <div style={{ backgroundColor: '#F5F0EA', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                  <div style={{ backgroundColor: 'var(--surface-2)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
                     <div
                       style={{
                         width: `${Math.min(subj.mastery, 100)}%`,
@@ -402,7 +403,7 @@ function StudentCard({
                     key={i}
                     style={{
                       flex: 1,
-                      backgroundColor: '#F5F0EA',
+                      backgroundColor: 'var(--surface-2)',
                       borderRadius: 8,
                       padding: '8px 4px',
                       textAlign: 'center',
@@ -448,7 +449,7 @@ function StudentCard({
               width: '100%',
               minHeight: 60,
               padding: '10px 12px',
-              backgroundColor: '#F5F0EA',
+              backgroundColor: 'var(--surface-2)',
               border: '1px solid #EDE6DC',
               borderRadius: 8,
               color: '#1A1207',
@@ -469,7 +470,7 @@ function StudentCard({
             style={{
               width: '100%',
               padding: '10px 12px',
-              backgroundColor: '#F5F0EA',
+              backgroundColor: 'var(--surface-2)',
               border: '1px solid #EDE6DC',
               borderRadius: 8,
               color: '#1A1207',
@@ -658,25 +659,20 @@ function LegacyTeacherStudentsPage() {
 
   const strugglingCount = allStudents.filter((student) => riskRank(student) > 0).length;
 
-  // Loading state
+  // Loading state — shared warm-cream roster skeleton.
   if (authLoading || (loading && !error)) {
     return (
-      <div style={pageStyle}>
-        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              border: '3px solid #F5F0EA',
-              borderTopColor: 'var(--orange)',
-              borderRadius: '50%',
-              margin: '0 auto 16px',
-              animation: 'spin 0.8s linear infinite',
-            }}
-          />
-          {tt(isHi, 'Loading students...', 'छात्र लोड हो रहे हैं...')}
+      <div
+        style={pageStyle}
+        role="status"
+        aria-busy="true"
+        aria-label={tt(isHi, 'Loading students…', 'छात्र लोड हो रहे हैं…')}
+      >
+        <span className="sr-only">{tt(isHi, 'Loading students…', 'छात्र लोड हो रहे हैं…')}</span>
+        <div style={{ paddingTop: 16, marginBottom: 20 }}>
+          <Bone width={220} height={28} />
         </div>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <TeacherTableSkeleton rows={8} />
       </div>
     );
   }
@@ -715,8 +711,8 @@ function LegacyTeacherStudentsPage() {
       {error && (
         <div
           style={{
-            backgroundColor: '#FCEEEE',
-            border: '1px solid #DC2626',
+            backgroundColor: 'var(--danger-light)',
+            border: '1px solid var(--danger)',
             borderRadius: 10,
             padding: '14px 18px',
             marginBottom: 16,
@@ -725,12 +721,12 @@ function LegacyTeacherStudentsPage() {
             alignItems: 'center',
           }}
         >
-          <span style={{ color: '#B91C1C', fontSize: 14 }}>{error}</span>
+          <span style={{ color: 'var(--danger)', fontSize: 14 }}>{error}</span>
           <button
             onClick={load}
             style={{
               padding: '6px 14px',
-              backgroundColor: '#DC2626',
+              backgroundColor: 'var(--danger)',
               color: '#fff',
               border: 'none',
               borderRadius: 6,
@@ -765,7 +761,7 @@ function LegacyTeacherStudentsPage() {
                 width: '100%',
                 padding: '11px 14px 11px 38px',
                 backgroundColor: '#FFFFFF',
-                border: '1px solid #F5F0EA',
+                border: '1px solid var(--surface-2)',
                 borderRadius: 10,
                 color: '#1A1207',
                 fontSize: 14,
@@ -795,7 +791,7 @@ function LegacyTeacherStudentsPage() {
             style={{
               padding: '11px 14px',
               backgroundColor: '#FFFFFF',
-              border: '1px solid #F5F0EA',
+              border: '1px solid var(--surface-2)',
               borderRadius: 10,
               color: '#1A1207',
               fontSize: 14,
@@ -887,7 +883,7 @@ function LegacyTeacherStudentsPage() {
           style={{
             backgroundColor: '#FFFFFF',
             borderRadius: 14,
-            border: '1px solid #F5F0EA',
+            border: '1px solid var(--surface-2)',
             padding: '60px 24px',
             textAlign: 'center',
           }}
@@ -921,7 +917,7 @@ function LegacyTeacherStudentsPage() {
           style={{
             backgroundColor: '#FFFFFF',
             borderRadius: 14,
-            border: '1px solid #F5F0EA',
+            border: '1px solid var(--surface-2)',
             padding: '60px 24px',
             textAlign: 'center',
           }}
@@ -940,7 +936,7 @@ function LegacyTeacherStudentsPage() {
           style={{
             backgroundColor: '#FFFFFF',
             borderRadius: 14,
-            border: '1px solid #F5F0EA',
+            border: '1px solid var(--surface-2)',
             padding: '40px 24px',
             textAlign: 'center',
           }}

@@ -233,7 +233,7 @@ function TeacherMessagesContent() {
                   <button
                     type="button"
                     onClick={() => selectThread(t.id)}
-                    className={`flex w-full flex-col gap-1 p-4 text-left transition-colors hover:bg-[#F5F0EA] ${
+                    className={`flex w-full flex-col gap-1 p-4 text-left transition-colors hover:bg-[var(--surface-2)] ${
                       isActive ? 'bg-[#F0E9DF]' : ''
                     }`}
                   >
@@ -289,7 +289,7 @@ function TeacherMessagesContent() {
               }}
             >
               {errorMsg && (
-                <p className="mb-2 rounded-md bg-[#FCEEEE] px-2 py-1 text-xs text-[#B91C1C]">{errorMsg}</p>
+                <p className="mb-2 rounded-md bg-[var(--danger-light)] px-2 py-1 text-xs text-[var(--danger)]">{errorMsg}</p>
               )}
               <div className="flex items-end gap-2">
                 <textarea
@@ -353,11 +353,11 @@ function TeacherMessagesContent() {
                         className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm ${
                           mine
                             ? 'rounded-br-md bg-[var(--orange)] text-white'
-                            : 'rounded-bl-md bg-[#F5F0EA] text-[#1A1207]'
+                            : 'rounded-bl-md bg-[var(--surface-2)] text-[var(--text-1)]'
                         }`}
                       >
                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                        <div className={`mt-1 text-[10px] ${mine ? 'text-[#FBE6D9]' : 'text-[#7D7264]'}`}>
+                        <div className={`mt-1 text-[10px] ${mine ? 'text-[var(--accent-soft)]' : 'text-[var(--text-3)]'}`}>
                           {relativeTime(m.created_at, isHi)}
                         </div>
                       </div>
@@ -375,7 +375,7 @@ function TeacherMessagesContent() {
               }}
             >
               {errorMsg && (
-                <p className="mb-2 rounded-md bg-[#FCEEEE] px-2 py-1 text-xs text-[#B91C1C]">{errorMsg}</p>
+                <p className="mb-2 rounded-md bg-[var(--danger-light)] px-2 py-1 text-xs text-[var(--danger)]">{errorMsg}</p>
               )}
               <div className="flex items-end gap-2">
                 <textarea

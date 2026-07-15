@@ -216,17 +216,17 @@ export default function StudentMasteryReport({
               <StatTile
                 label={tt(isHi, 'Quizzes', 'क्विज़')}
                 value={report.recent.quizzes}
-                color="#7C3AED"
+                color="var(--purple, #7C3AED)"
               />
               <StatTile
                 label={tt(isHi, 'Avg score', 'औसत स्कोर')}
                 value={`${report.recent.avg_score}%`}
-                color="var(--info, #2563EB)"
+                color="var(--info, #0891B2)"
               />
               <StatTile
                 label={tt(isHi, 'Streak', 'स्ट्रीक')}
                 value={report.recent.streak}
-                color="var(--success, #059669)"
+                color="var(--success, #16A34A)"
               />
             </div>
 

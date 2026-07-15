@@ -158,7 +158,7 @@ export default function TeacherProfilePage() {
           </button>
         </div>
 
-        <button onClick={handleSignOut} style={{ marginTop: 20, width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid #EF4444', background: '#FEF2F2', color: '#EF4444', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+        <button onClick={handleSignOut} style={{ marginTop: 20, width: '100%', padding: '12px', borderRadius: 12, border: '1.5px solid var(--danger)', background: 'var(--danger-light)', color: 'var(--danger)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
           {tt(isHi, 'Sign Out', 'साइन आउट')}
         </button>
       </div>

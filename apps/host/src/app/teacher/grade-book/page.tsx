@@ -24,6 +24,7 @@ import { supabase } from '@alfanumrik/lib/supabase';
 import { useTeacherGradebookDepth } from '@alfanumrik/lib/use-teacher-gradebook-depth';
 import { BLOOM_LEVEL_ORDER } from '@alfanumrik/lib/types';
 import type { ClassMasteryBloomSummary } from '@alfanumrik/lib/types';
+import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -71,15 +72,6 @@ const cardStyle: React.CSSProperties = {
   marginBottom: 16,
 };
 
-const spinnerStyle: React.CSSProperties = {
-  width: 40,
-  height: 40,
-  border: '3px solid #EDE6DC',
-  borderTopColor: 'var(--orange)',
-  borderRadius: '50%',
-  margin: '0 auto 16px',
-  animation: 'spin 0.8s linear infinite',
-};
 
 /* ─── Types ─── */
 interface ClassRow { id: string; name: string }
@@ -170,7 +162,7 @@ function CellEditModal({
           padding: 22,
           paddingBottom: isMobile ? 'max(20px, env(safe-area-inset-bottom, 20px))' : '22px',
           maxWidth: 'min(420px, calc(100vw - 32px))',
-          width: '100%', border: '1px solid #F5F0EA',
+          width: '100%', border: '1px solid var(--surface-2)',
         }}
       >
         <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700, color: '#1A1207' }}>
@@ -188,7 +180,7 @@ function CellEditModal({
           value={score}
           onChange={e => setScore(e.target.value)}
           style={{
-            width: '100%', padding: '8px 10px', backgroundColor: '#F5F0EA',
+            width: '100%', padding: '8px 10px', backgroundColor: 'var(--surface-2)',
             color: '#1A1207', border: '1px solid #EDE6DC', borderRadius: 8,
             fontSize: 13, marginBottom: 12, outline: 'none', boxSizing: 'border-box',
           }}
@@ -202,7 +194,7 @@ function CellEditModal({
           value={maxScore}
           onChange={e => setMaxScore(e.target.value)}
           style={{
-            width: '100%', padding: '8px 10px', backgroundColor: '#F5F0EA',
+            width: '100%', padding: '8px 10px', backgroundColor: 'var(--surface-2)',
             color: '#1A1207', border: '1px solid #EDE6DC', borderRadius: 8,
             fontSize: 13, marginBottom: 12, outline: 'none', boxSizing: 'border-box',
           }}
@@ -218,7 +210,7 @@ function CellEditModal({
           maxLength={500}
           placeholder={tt(isHi, 'Internal notes — not shown to learners', 'आंतरिक टिप्पणी — विद्यार्थियों को नहीं दिखेगी')}
           style={{
-            width: '100%', padding: '8px 10px', backgroundColor: '#F5F0EA',
+            width: '100%', padding: '8px 10px', backgroundColor: 'var(--surface-2)',
             color: '#1A1207', border: '1px solid #EDE6DC', borderRadius: 8,
             fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
             boxSizing: 'border-box',
@@ -226,7 +218,7 @@ function CellEditModal({
         />
 
         {error && (
-          <p style={{ color: '#B91C1C', fontSize: 12, margin: '10px 0 0' }}>{error}</p>
+          <p style={{ color: 'var(--danger)', fontSize: 12, margin: '10px 0 0' }}>{error}</p>
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
@@ -272,7 +264,7 @@ function MatrixView({
     return (
       <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
         <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
-        <p style={{ fontSize: 15, fontWeight: 600, color: '#4A3F2E', margin: '8px 0 4px' }}>
+        <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '8px 0 4px' }}>
           {tt(isHi, 'No students in this class yet', 'इस कक्षा में अभी कोई छात्र नहीं है')}
         </p>
         <p style={{ fontSize: 13, color: '#7D7264', margin: 0 }}>
@@ -286,10 +278,10 @@ function MatrixView({
     <div style={{ ...cardStyle, padding: 0, overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
         <thead>
-          <tr style={{ background: '#F5F0EA' }}>
+          <tr style={{ background: 'var(--surface-2)' }}>
             <th style={{
               padding: '10px 14px', textAlign: 'left', fontSize: 12, fontWeight: 600,
-              color: '#4A3F2E', position: 'sticky', left: 0, background: '#F5F0EA', zIndex: 1,
+              color: 'var(--text-2)', position: 'sticky', left: 0, background: 'var(--surface-2)', zIndex: 1,
               minWidth: 160,
             }}>
               {tt(isHi, 'Student', 'छात्र')}
@@ -297,7 +289,7 @@ function MatrixView({
             {data.columns.map(col => (
               <th key={col.key} style={{
                 padding: '10px 14px', textAlign: 'center', fontSize: 12, fontWeight: 600,
-                color: '#4A3F2E', minWidth: 90, whiteSpace: 'nowrap',
+                color: 'var(--text-2)', minWidth: 90, whiteSpace: 'nowrap',
               }}>
                 {col.label}
                 <div style={{ fontSize: 10, color: '#7D7264', fontWeight: 400 }}>
@@ -312,7 +304,7 @@ function MatrixView({
             <tr key={stu.id} style={{ background: idx % 2 === 0 ? '#FFFFFF' : '#FAF7F2' }}>
               <td style={{
                 padding: '14px 14px', fontSize: 13, fontWeight: 500, color: '#1A1207',
-                borderTop: '1px solid #F5F0EA', position: 'sticky', left: 0,
+                borderTop: '1px solid var(--surface-2)', position: 'sticky', left: 0,
                 background: idx % 2 === 0 ? '#FFFFFF' : '#FAF7F2',
               }}>
                 {stu.name}
@@ -333,7 +325,7 @@ function MatrixView({
                     onClick={() => onCellClick(stu.id, stu.name, col)}
                     style={{
                       padding: '14px 14px', fontSize: 13, fontWeight: 600,
-                      color, textAlign: 'center', borderTop: '1px solid #F5F0EA',
+                      color, textAlign: 'center', borderTop: '1px solid var(--surface-2)',
                       cursor: 'pointer', transition: 'background 0.15s',
                     }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(232,88,28,0.10)')}
@@ -382,7 +374,7 @@ function ClassDepthView({
   if (loading) {
     return (
       <div style={{ ...cardStyle }} data-testid="class-depth-loading">
-        <div style={{ height: 120, borderRadius: 10, background: '#F5F0EA' }} />
+        <div style={{ height: 120, borderRadius: 10, background: 'var(--surface-2)' }} />
       </div>
     );
   }
@@ -443,7 +435,7 @@ function ClassDepthView({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))', gap: 18, marginTop: 16 }}>
         {/* Weakest concepts */}
         <div data-testid="class-depth-concepts">
-          <h3 style={{ fontSize: 12, fontWeight: 600, color: '#4A3F2E', textTransform: 'uppercase', letterSpacing: 0.4, margin: '0 0 10px' }}>
+          <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 0.4, margin: '0 0 10px' }}>
             {tt(isHi, 'Weakest concepts', 'सबसे कमज़ोर अवधारणाएं')}
           </h3>
           {weakestConcepts.length === 0 ? (
@@ -454,10 +446,10 @@ function ClassDepthView({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {weakestConcepts.map((c) => (
                 <div key={c.topic_id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 12, color: '#4A3F2E', width: '46%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.concept}>
+                  <span style={{ fontSize: 12, color: 'var(--text-2)', width: '46%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.concept}>
                     {c.concept}
                   </span>
-                  <div style={{ flex: 1, height: 16, borderRadius: 4, background: '#F5F0EA', overflow: 'hidden' }}>
+                  <div style={{ flex: 1, height: 16, borderRadius: 4, background: 'var(--surface-2)', overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, c.avg_mastery_pct))}%`, background: heatColorPct(c.avg_mastery_pct) }} />
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#1A1207', width: 40, textAlign: 'right' }}>
@@ -472,7 +464,7 @@ function ClassDepthView({
         {/* Bloom's distribution — canonical 6 levels; weakest highlighted.
             Bloom's level NAMES are technical terms — NOT translated (P7). */}
         <div data-testid="class-depth-bloom">
-          <h3 style={{ fontSize: 12, fontWeight: 600, color: '#4A3F2E', textTransform: 'uppercase', letterSpacing: 0.4, margin: '0 0 10px' }}>
+          <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: 0.4, margin: '0 0 10px' }}>
             {/* "Bloom's" is a technical term — kept verbatim (P7 exception). */}
             {tt(isHi, "Bloom's distribution", "Bloom's वितरण")}
           </h3>
@@ -492,7 +484,7 @@ function ClassDepthView({
                   <span style={{ fontSize: 12, fontWeight: 500, color: '#1A1207', width: 84, textTransform: 'capitalize' }}>
                     {b.level}
                   </span>
-                  <div style={{ flex: 1, height: 14, borderRadius: 4, background: '#F5F0EA', overflow: 'hidden' }}>
+                  <div style={{ flex: 1, height: 14, borderRadius: 4, background: 'var(--surface-2)', overflow: 'hidden' }}>
                     {b.attempted && (
                       <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, b.accuracy_pct))}%`, background: heatColorPct(b.accuracy_pct) }} />
                     )}
@@ -671,12 +663,17 @@ export default function TeacherGradeBookPage() {
 
   if (authLoading || classesLoading) {
     return (
-      <div style={pageStyle}>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
-          <div style={spinnerStyle} />
-          {tt(isHi, 'Loading grade book...', 'ग्रेड बुक लोड हो रही है...')}
+      <div
+        style={pageStyle}
+        role="status"
+        aria-busy="true"
+        aria-label={tt(isHi, 'Loading grade book…', 'ग्रेड बुक लोड हो रही है…')}
+      >
+        <span className="sr-only">{tt(isHi, 'Loading grade book…', 'ग्रेड बुक लोड हो रही है…')}</span>
+        <div style={{ paddingTop: 16, marginBottom: 20 }}>
+          <Bone width={200} height={28} />
         </div>
+        <TeacherTableSkeleton rows={8} />
       </div>
     );
   }
@@ -684,14 +681,14 @@ export default function TeacherGradeBookPage() {
   if (!classesLoading && classes.length === 0) {
     return (
       <div style={pageStyle}>
-        <header style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #F5F0EA' }}>
+        <header style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)' }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1A1207', margin: 0 }}>
             {tt(isHi, 'Grade Book', 'ग्रेड बुक')}
           </h1>
         </header>
         <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>📚</div>
-          <p style={{ fontSize: 15, fontWeight: 600, color: '#4A3F2E', margin: '8px 0 4px' }}>
+          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '8px 0 4px' }}>
             {tt(isHi, 'No classes yet', 'अभी कोई कक्षा नहीं')}
           </p>
           <p style={{ fontSize: 13, color: '#7D7264', margin: '0 0 16px' }}>
@@ -718,7 +715,7 @@ export default function TeacherGradeBookPage() {
 
       <header style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-        marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #F5F0EA', flexWrap: 'wrap', gap: 12,
+        marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)', flexWrap: 'wrap', gap: 12,
       }}>
         <div>
           <button
@@ -768,7 +765,7 @@ export default function TeacherGradeBookPage() {
             router.replace(`${pathname ?? '/teacher/grade-book'}?${params.toString()}`);
           }}
           style={{
-            padding: '6px 10px', background: '#F5F0EA', color: '#1A1207',
+            padding: '6px 10px', background: 'var(--surface-2)', color: '#1A1207',
             border: '1px solid #EDE6DC', borderRadius: 6, fontSize: 13, outline: 'none',
             minWidth: 200,
           }}
@@ -779,7 +776,7 @@ export default function TeacherGradeBookPage() {
         </select>
 
         <div style={{
-          marginLeft: 'auto', display: 'flex', gap: 4, background: '#F5F0EA',
+          marginLeft: 'auto', display: 'flex', gap: 4, background: 'var(--surface-2)',
           borderRadius: 8, padding: 4,
         }}>
           {(['current', 'previous'] as const).map(t => (
@@ -801,7 +798,7 @@ export default function TeacherGradeBookPage() {
       </div>
 
       {error && (
-        <div style={{ ...cardStyle, borderColor: '#EF4444', color: '#B91C1C', textAlign: 'center', fontSize: 14 }}>
+        <div style={{ ...cardStyle, borderColor: 'var(--danger)', color: 'var(--danger)', textAlign: 'center', fontSize: 14 }}>
           {error}
         </div>
       )}
@@ -818,11 +815,9 @@ export default function TeacherGradeBookPage() {
       )}
 
       {loading ? (
-        <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
-          <div style={spinnerStyle} />
-          <p style={{ color: '#7D7264', fontSize: 13, margin: 0 }}>
-            {tt(isHi, 'Loading grade book...', 'ग्रेड बुक लोड हो रही है...')}
-          </p>
+        <div role="status" aria-busy="true">
+          <span className="sr-only">{tt(isHi, 'Loading grade book…', 'ग्रेड बुक लोड हो रही है…')}</span>
+          <TeacherTableSkeleton rows={8} />
         </div>
       ) : data ? (
         <MatrixView

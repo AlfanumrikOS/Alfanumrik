@@ -108,9 +108,9 @@ const SEV_VARIANT: Record<string, StatusBadgeVariant> = {
 };
 const SEV_ACCENT: Record<string, string> = {
   critical: 'var(--danger, #DC2626)',
-  high: '#E8581C',
-  medium: 'var(--warning, #D97706)',
-  low: 'var(--info, #2563EB)',
+  high: 'var(--orange, #E8581C)',
+  medium: 'var(--warning, #F5A623)',
+  low: 'var(--info, #0891B2)',
 };
 
 // The Edge heatmap row carries `student_name`; some deploys additionally stamp
@@ -816,7 +816,11 @@ export default function CommandCenter() {
 
   // ── Loading (initial) ── Atlas warm-cream skeleton.
   if (dashLoading && !dash) {
-    return <TeacherDashboardSkeleton />;
+    return (
+      <TeacherDashboardSkeleton
+        label={tt(isHi, 'Loading your command center…', 'आपका कमांड सेंटर लोड हो रहा है…')}
+      />
+    );
   }
 
   // ── Not a teacher yet ──
@@ -958,12 +962,12 @@ export default function CommandCenter() {
         <KpiTile
           label={tt(isHi, 'At-risk', 'जोखिम में')}
           value={alertsLoading || alertsError ? '—' : alerts.length}
-          accent={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #D97706)'}
+          accent={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #F5A623)'}
         />
         <KpiTile
           label={tt(isHi, 'Assignments', 'असाइनमेंट')}
           value={stats?.active_assignments != null ? stats.active_assignments : '\u2014'}
-          accent="var(--success, #059669)"
+          accent="var(--success, #16A34A)"
         />
 
         {gradingQueueEnabled && (
@@ -977,12 +981,13 @@ export default function CommandCenter() {
             <p className="text-[11px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
               {tt(isHi, 'Awaiting grading', 'ग्रेडिंग लंबित')}
             </p>
-            <p className="text-[26px] font-extrabold mt-1 flex items-center gap-2" style={{ color: 'var(--info, #2563EB)' }}>
+            <p className="text-[26px] font-extrabold mt-1 flex items-center gap-2" style={{ color: 'var(--info, #0891B2)' }}>
               {queueLoading ? '…' : queueCount}
               {!queueLoading && queueCount > 0 && (
                 <span
                   data-testid="awaiting-grading-badge"
-                  className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-[#2563EB] text-white text-[12px] font-bold"
+                  className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-white text-[12px] font-bold"
+                  style={{ background: 'var(--info, #0891B2)' }}
                 >
                   {queueCount}
                 </span>

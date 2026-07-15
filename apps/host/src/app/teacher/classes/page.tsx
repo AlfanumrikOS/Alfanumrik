@@ -11,6 +11,7 @@ import { usePermissions } from '@alfanumrik/lib/usePermissions';
 import { useClassPulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulseList } from '@alfanumrik/ui/pulse';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -294,15 +295,20 @@ export default function TeacherClassesPage() {
 
   const getSubjectMeta = (code?: string) => subjects.find(s => s.code === code);
 
-  // Loading state
+  // Loading state — shared warm-cream skeleton (header + class-card list).
   if (loading) {
     return (
-      <div style={pageStyle}>
-        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: 'var(--orange)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
-          {tt(isHi, 'Loading classes...', 'कक्षाएं लोड हो रही हैं...')}
+      <div
+        style={pageStyle}
+        role="status"
+        aria-busy="true"
+        aria-label={tt(isHi, 'Loading classes…', 'कक्षाएं लोड हो रही हैं…')}
+      >
+        <span className="sr-only">{tt(isHi, 'Loading classes…', 'कक्षाएं लोड हो रही हैं…')}</span>
+        <div style={{ paddingTop: 16, marginBottom: 24 }}>
+          <Bone width={200} height={28} />
         </div>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <CardListSkeleton count={5} />
       </div>
     );
   }
@@ -360,12 +366,12 @@ export default function TeacherClassesPage() {
       {/* Error state */}
       {error && (
         <div style={{
-          backgroundColor: 'rgba(220,38,38,0.1)',
-          border: '1px solid #DC2626',
+          backgroundColor: 'var(--danger-light)',
+          border: '1px solid var(--danger)',
           borderRadius: 10,
           padding: '12px 16px',
           marginBottom: 16,
-          color: '#B91C1C',
+          color: 'var(--danger)',
           fontSize: 14,
         }}>
           {error}
@@ -382,7 +388,7 @@ export default function TeacherClassesPage() {
           padding: '60px 20px',
           backgroundColor: '#FFFFFF',
           borderRadius: 16,
-          border: '1px solid #F5F0EA',
+          border: '1px solid var(--surface-2)',
         }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>🏫</div>
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1A1207', margin: '0 0 8px' }}>
@@ -428,7 +434,7 @@ export default function TeacherClassesPage() {
                 style={{
                   backgroundColor: '#FFFFFF',
                   borderRadius: 14,
-                  border: '1px solid #F5F0EA',
+                  border: '1px solid var(--surface-2)',
                   overflow: 'hidden',
                   animation: `fadeIn 0.3s ease ${idx * 0.05}s both`,
                   transition: 'border-color 0.2s, box-shadow 0.2s',
@@ -439,7 +445,7 @@ export default function TeacherClassesPage() {
                   e.currentTarget.style.boxShadow = '0 4px 24px rgba(232,88,28,0.12)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#F5F0EA';
+                  e.currentTarget.style.borderColor = 'var(--surface-2)';
                   e.currentTarget.style.boxShadow = 'none';
                 }}
               >
@@ -512,7 +518,7 @@ export default function TeacherClassesPage() {
                         {cls.avg_mastery != null ? `${cls.avg_mastery}%` : '\u2014'}
                       </span>
                     </div>
-                    <div style={{ height: 6, backgroundColor: '#F5F0EA', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: 6, backgroundColor: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
                         width: `${cls.avg_mastery == null ? 0 : Math.min(cls.avg_mastery, 100)}%`,
@@ -533,7 +539,7 @@ export default function TeacherClassesPage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    backgroundColor: '#F5F0EA',
+                    backgroundColor: 'var(--surface-2)',
                     borderRadius: 8,
                     padding: '8px 12px',
                   }}>
@@ -698,7 +704,7 @@ export default function TeacherClassesPage() {
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
                                 padding: '8px 10px',
-                                backgroundColor: '#F5F0EA',
+                                backgroundColor: 'var(--surface-2)',
                                 borderRadius: 8,
                                 fontSize: 13,
                               }}>
@@ -730,7 +736,7 @@ export default function TeacherClassesPage() {
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
                                 padding: '8px 10px',
-                                backgroundColor: '#F5F0EA',
+                                backgroundColor: 'var(--surface-2)',
                                 borderRadius: 8,
                                 fontSize: 13,
                               }}>
@@ -829,7 +835,7 @@ export default function TeacherClassesPage() {
           style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.2s ease' }}
           onClick={e => { if (e.target === e.currentTarget) setEditingClass(null); }}
         >
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #F5F0EA', padding: '28px 24px', width: '100%', maxWidth: 440, margin: '0 16px', animation: 'fadeIn 0.25s ease' }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid var(--surface-2)', padding: '28px 24px', width: '100%', maxWidth: 440, margin: '0 16px', animation: 'fadeIn 0.25s ease' }}>
             <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 20px' }}>
               {tt(isHi, 'Edit Class', 'कक्षा संपादित करें')}
             </h2>
@@ -841,7 +847,7 @@ export default function TeacherClassesPage() {
                 type="text"
                 value={editName}
                 onChange={e => setEditName(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#F5F0EA', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '10px 12px', backgroundColor: 'var(--surface-2)', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
               />
             </label>
 
@@ -851,7 +857,7 @@ export default function TeacherClassesPage() {
               <select
                 value={editSection}
                 onChange={e => setEditSection(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', backgroundColor: '#F5F0EA', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}
+                style={{ width: '100%', padding: '10px 12px', backgroundColor: 'var(--surface-2)', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}
               >
                 {SECTIONS.map(s => (
                   <option key={s} value={s}>{s || tt(isHi, '— None —', '— कोई नहीं —')}</option>
@@ -903,7 +909,7 @@ export default function TeacherClassesPage() {
           <div style={{
             backgroundColor: '#FFFFFF',
             borderRadius: 16,
-            border: '1px solid #F5F0EA',
+            border: '1px solid var(--surface-2)',
             padding: '28px 24px',
             width: '100%',
             maxWidth: 440,
@@ -925,7 +931,7 @@ export default function TeacherClassesPage() {
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  backgroundColor: '#F5F0EA',
+                  backgroundColor: 'var(--surface-2)',
                   border: '1px solid #EDE6DC',
                   borderRadius: 8,
                   color: '#1A1207',
@@ -945,7 +951,7 @@ export default function TeacherClassesPage() {
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  backgroundColor: '#F5F0EA',
+                  backgroundColor: 'var(--surface-2)',
                   border: '1px solid #EDE6DC',
                   borderRadius: 8,
                   color: '#1A1207',
@@ -970,7 +976,7 @@ export default function TeacherClassesPage() {
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  backgroundColor: '#F5F0EA',
+                  backgroundColor: 'var(--surface-2)',
                   border: '1px solid #EDE6DC',
                   borderRadius: 8,
                   color: '#1A1207',
@@ -995,7 +1001,7 @@ export default function TeacherClassesPage() {
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  backgroundColor: '#F5F0EA',
+                  backgroundColor: 'var(--surface-2)',
                   border: '1px solid #EDE6DC',
                   borderRadius: 8,
                   color: '#1A1207',

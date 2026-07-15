@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRequireAuth } from '@alfanumrik/lib/useRequireAuth';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 
 // ── Bilingual helper (P7) ──────────────────────────────────────
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
@@ -104,15 +105,6 @@ const cardStyle: React.CSSProperties = {
   marginBottom: 16,
 };
 
-const spinnerStyle: React.CSSProperties = {
-  width: 36,
-  height: 36,
-  border: '3px solid #EDE6DC',
-  borderTopColor: 'var(--orange)',
-  borderRadius: '50%',
-  margin: '0 auto 14px',
-  animation: 'spin 0.8s linear infinite',
-};
 
 // ── Status button config ──────────────────────────────────────
 interface StatusConfig {
@@ -236,7 +228,7 @@ function StatsBar({
       gap: 10,
       flexWrap: 'wrap',
       padding: '12px 16px',
-      backgroundColor: '#F5F0EA',
+      backgroundColor: 'var(--surface-2)',
       borderRadius: 10,
       marginBottom: 16,
     }}>
@@ -278,7 +270,7 @@ function SkeletonRows() {
         <div key={i} style={{
           height: 52,
           borderRadius: 10,
-          backgroundColor: '#F5F0EA',
+          backgroundColor: 'var(--surface-2)',
           animation: 'pulse 1.5s ease-in-out infinite',
         }} />
       ))}
@@ -420,14 +412,17 @@ export default function TeacherAttendancePage() {
   // ── Render: auth / classes loading ──────────────────────
   if (!isReady || classesLoading) {
     return (
-      <div style={pageStyle}>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>
-        <div style={{ textAlign: 'center', padding: 80 }}>
-          <div style={spinnerStyle} />
-          <p style={{ color: '#7D7264', fontSize: 13 }}>
-            {tt(isHi, 'Loading attendance...', 'उपस्थिति लोड हो रही है...')}
-          </p>
+      <div
+        style={pageStyle}
+        role="status"
+        aria-busy="true"
+        aria-label={tt(isHi, 'Loading attendance…', 'उपस्थिति लोड हो रही है…')}
+      >
+        <span className="sr-only">{tt(isHi, 'Loading attendance…', 'उपस्थिति लोड हो रही है…')}</span>
+        <div style={{ paddingTop: 16, marginBottom: 20 }}>
+          <Bone width={200} height={28} />
         </div>
+        <TeacherTableSkeleton rows={8} />
       </div>
     );
   }
@@ -437,7 +432,7 @@ export default function TeacherAttendancePage() {
     return (
       <div style={pageStyle}>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <header style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #F5F0EA' }}>
+        <header style={{ marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)' }}>
           <button
             onClick={() => router.push('/teacher')}
             style={{
@@ -453,7 +448,7 @@ export default function TeacherAttendancePage() {
           </h1>
         </header>
         <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
-          <p style={{ fontSize: 15, fontWeight: 600, color: '#4A3F2E', margin: '0 0 6px' }}>
+          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '0 0 6px' }}>
             {tt(isHi, 'No classes assigned yet', 'अभी कोई कक्षा नहीं दी गई है')}
           </p>
           <p style={{ fontSize: 13, color: '#7D7264', margin: 0 }}>
@@ -473,7 +468,7 @@ export default function TeacherAttendancePage() {
       {/* ── Header ── */}
       <header style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-        marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #F5F0EA', flexWrap: 'wrap', gap: 12,
+        marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)', flexWrap: 'wrap', gap: 12,
       }}>
         <div>
           <button
@@ -507,7 +502,7 @@ export default function TeacherAttendancePage() {
             value={selectedClassId}
             onChange={e => { setSelectedClassId(e.target.value); setSaved(false); }}
             style={{
-              width: '100%', padding: '8px 10px', backgroundColor: '#F5F0EA',
+              width: '100%', padding: '8px 10px', backgroundColor: 'var(--surface-2)',
               color: '#1A1207', border: '1px solid #EDE6DC', borderRadius: 8,
               fontSize: 13, outline: 'none', cursor: 'pointer',
             }}
@@ -531,7 +526,7 @@ export default function TeacherAttendancePage() {
             max={today}
             onChange={e => { setSelectedDate(e.target.value); setSaved(false); }}
             style={{
-              width: '100%', padding: '8px 10px', backgroundColor: '#F5F0EA',
+              width: '100%', padding: '8px 10px', backgroundColor: 'var(--surface-2)',
               color: '#1A1207', border: '1px solid #EDE6DC', borderRadius: 8,
               fontSize: 13, outline: 'none', cursor: 'pointer',
               boxSizing: 'border-box',
@@ -556,8 +551,8 @@ export default function TeacherAttendancePage() {
       )}
       {saveError && (
         <div style={{
-          backgroundColor: '#FEE2E2', border: '1px solid #EF4444', borderRadius: 10,
-          padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#B91C1C',
+          backgroundColor: 'var(--danger-light)', border: '1px solid var(--danger)', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 14, fontSize: 13, color: 'var(--danger)',
         }}>
           {saveError}
         </div>
@@ -598,14 +593,14 @@ export default function TeacherAttendancePage() {
         {/* Error */}
         {!rosterLoading && rosterError && (
           <div style={{
-            backgroundColor: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10,
+            backgroundColor: 'var(--danger-light)', border: '1px solid var(--danger)', borderRadius: 10,
             padding: '14px 16px', textAlign: 'center',
           }}>
-            <p style={{ fontSize: 13, color: '#B91C1C', margin: '0 0 10px' }}>{rosterError}</p>
+            <p style={{ fontSize: 13, color: 'var(--danger)', margin: '0 0 10px' }}>{rosterError}</p>
             <button
               onClick={loadAttendance}
               style={{
-                padding: '6px 14px', backgroundColor: '#EF4444', color: '#fff',
+                padding: '6px 14px', backgroundColor: 'var(--danger)', color: '#fff',
                 border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
               }}
             >
@@ -638,7 +633,7 @@ export default function TeacherAttendancePage() {
                     padding: '10px 12px',
                     borderRadius: 10,
                     backgroundColor: idx % 2 === 0 ? '#FAFAF8' : '#FFFFFF',
-                    border: `1px solid ${entry.status !== 'present' ? cfg.activeBorder + '60' : '#F5F0EA'}`,
+                    border: `1px solid ${entry.status !== 'present' ? cfg.activeBorder + '60' : 'var(--surface-2)'}`,
                     flexWrap: 'wrap',
                   }}
                 >

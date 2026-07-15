@@ -5,6 +5,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { Bone, CardListSkeleton, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -75,15 +76,6 @@ const tabBarStyle: React.CSSProperties = {
   border: '1px solid var(--border)',
 };
 
-const spinnerStyle: React.CSSProperties = {
-  width: 40,
-  height: 40,
-  border: '3px solid #EDE6DC',
-  borderTopColor: 'var(--orange)',
-  borderRadius: '50%',
-  margin: '0 auto 16px',
-  animation: 'spin 0.8s linear infinite',
-};
 
 /* ─── Interfaces ─── */
 interface OverviewStats {
@@ -246,10 +238,10 @@ function ClassOverviewTab({ data, isHi }: { data: OverviewData | null; isHi: boo
             return (
               <div key={lvl.key}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: '#4A3F2E', fontWeight: 500 }}>{lvl.label}</span>
+                  <span style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>{lvl.label}</span>
                   <span style={{ fontSize: 13, color: '#7D7264' }}>{pct}%</span>
                 </div>
-                <div style={{ height: 10, backgroundColor: '#F5F0EA', borderRadius: 6, overflow: 'hidden' }}>
+                <div style={{ height: 10, backgroundColor: 'var(--surface-2)', borderRadius: 6, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: lvl.color, borderRadius: 6, transition: 'width 0.5s ease' }} />
                 </div>
               </div>
@@ -267,7 +259,7 @@ function ClassOverviewTab({ data, isHi }: { data: OverviewData | null; isHi: boo
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {topPerformers.slice(0, 5).map((s: PerformerEntry, i: number) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: '#F5F0EA', borderRadius: 8 }}>
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: 'var(--surface-2)', borderRadius: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: 'var(--orange)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
                     <span style={{ fontSize: 14, fontWeight: 500, color: '#1A1207' }}>{s.name || s.student_name}</span>
@@ -286,7 +278,7 @@ function ClassOverviewTab({ data, isHi }: { data: OverviewData | null; isHi: boo
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {needsAttention.slice(0, 5).map((s: PerformerEntry, i: number) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: '#F5F0EA', borderRadius: 8, borderLeft: '3px solid #EF4444' }}>
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: 'var(--surface-2)', borderRadius: 8, borderLeft: '3px solid #EF4444' }}>
                   <span style={{ fontSize: 14, fontWeight: 500, color: '#1A1207' }}>{s.name || s.student_name}</span>
                   <span style={{ fontSize: 12, color: '#EF4444', fontWeight: 600 }}>{s.reason || `${s.mastery ?? 0}% mastery`}</span>
                 </div>
@@ -340,12 +332,12 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
           placeholder={tt(isHi, 'Search students...', 'छात्र खोजें...')}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ width: '100%', padding: '10px 12px', backgroundColor: '#F5F0EA', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
+          style={{ width: '100%', padding: '10px 12px', backgroundColor: 'var(--surface-2)', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
         />
         <select
           value={selectedId}
           onChange={(e) => setSelectedId(e.target.value)}
-          style={{ width: '100%', padding: '10px 12px', backgroundColor: '#F5F0EA', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+          style={{ width: '100%', padding: '10px 12px', backgroundColor: 'var(--surface-2)', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
         >
           <option value="">{tt(isHi, '-- Choose a student --', '-- छात्र चुनें --')}</option>
           {filtered.map((s: StudentListEntry) => (
@@ -357,14 +349,14 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
       </div>
 
       {loading && (
-        <div style={{ textAlign: 'center', padding: 40, color: '#7D7264' }}>
-          <div style={spinnerStyle} />
-          {tt(isHi, 'Loading student data...', 'छात्र डेटा लोड हो रहा है...')}
+        <div role="status" aria-busy="true">
+          <span className="sr-only">{tt(isHi, 'Loading student data…', 'छात्र डेटा लोड हो रहा है…')}</span>
+          <CardListSkeleton count={4} />
         </div>
       )}
 
       {error && (
-        <div style={{ ...cardStyle, borderColor: '#EF4444', color: '#B91C1C', textAlign: 'center', fontSize: 14 }}>
+        <div style={{ ...cardStyle, borderColor: 'var(--danger)', color: 'var(--danger)', textAlign: 'center', fontSize: 14 }}>
           {error}
         </div>
       )}
@@ -398,10 +390,10 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
                   return (
                     <div key={i}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontSize: 13, color: '#4A3F2E', fontWeight: 500 }}>{subj.subject || subj.name}</span>
+                        <span style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>{subj.subject || subj.name}</span>
                         <span style={{ fontSize: 12, color: getMasteryColor(level), fontWeight: 600 }}>{getMasteryLabel(level, isHi)} ({pct}%)</span>
                       </div>
-                      <div style={{ height: 8, backgroundColor: '#F5F0EA', borderRadius: 6, overflow: 'hidden' }}>
+                      <div style={{ height: 8, backgroundColor: 'var(--surface-2)', borderRadius: 6, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: getMasteryColor(level), borderRadius: 6, transition: 'width 0.5s ease' }} />
                       </div>
                     </div>
@@ -420,7 +412,7 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
               ) : (
                 <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
                   {(profile.strengths || []).map((s: string | StrengthWeaknessItem, i: number) => (
-                    <li key={i} style={{ color: '#4A3F2E', fontSize: 13, marginBottom: 4 }}>
+                    <li key={i} style={{ color: 'var(--text-2)', fontSize: 13, marginBottom: 4 }}>
                       {typeof s === 'string' ? s : s.topic || s.name}
                     </li>
                   ))}
@@ -435,7 +427,7 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
               ) : (
                 <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
                   {(profile.weaknesses || []).map((w: string | StrengthWeaknessItem, i: number) => (
-                    <li key={i} style={{ color: '#4A3F2E', fontSize: 13, marginBottom: 4 }}>
+                    <li key={i} style={{ color: 'var(--text-2)', fontSize: 13, marginBottom: 4 }}>
                       {typeof w === 'string' ? w : w.topic || w.name}
                     </li>
                   ))}
@@ -451,13 +443,13 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
               <div style={{ ...cardStyle, borderLeft: '3px solid var(--orange)' }}>
                 <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--orange)', margin: '0 0 8px' }}>{tt(isHi, 'Recommendations', 'सुझाव')}</h3>
                 {typeof recs === 'string' ? (
-                  <p style={{ color: '#4A3F2E', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                  <p style={{ color: 'var(--text-2)', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
                     {recs}
                   </p>
                 ) : (
                   <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
                     {(recs as (string | RecommendationItem)[]).map((r: string | RecommendationItem, i: number) => (
-                      <li key={i} style={{ color: '#4A3F2E', fontSize: 13, marginBottom: 4 }}>
+                      <li key={i} style={{ color: 'var(--text-2)', fontSize: 13, marginBottom: 4 }}>
                         {typeof r === 'string' ? r : r.text || r.message}
                       </li>
                     ))}
@@ -507,10 +499,10 @@ function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
               return (
                 <div key={i}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, color: '#4A3F2E', fontWeight: 500 }}>{w.label || w.week || (isHi ? `सप्ताह ${i + 1}` : `Week ${i + 1}`)}</span>
+                    <span style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>{w.label || w.week || (isHi ? `सप्ताह ${i + 1}` : `Week ${i + 1}`)}</span>
                     <span style={{ fontSize: 13, color: '#7D7264' }}>{pct}%</span>
                   </div>
-                  <div style={{ height: 12, backgroundColor: '#F5F0EA', borderRadius: 6, overflow: 'hidden' }}>
+                  <div style={{ height: 12, backgroundColor: 'var(--surface-2)', borderRadius: 6, overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: 'var(--orange)', borderRadius: 6, transition: 'width 0.5s ease' }} />
                   </div>
                 </div>
@@ -576,9 +568,9 @@ function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
             </div>
           </>
         ) : (
-          <div style={{ borderRadius: 8, border: '1px dashed #EDE6DC', backgroundColor: '#F5F0EA', padding: 32, textAlign: 'center' }}>
+          <div style={{ borderRadius: 8, border: '1px dashed #EDE6DC', backgroundColor: 'var(--surface-2)', padding: 32, textAlign: 'center' }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
-            <p style={{ fontSize: 13, fontWeight: 500, color: '#4A3F2E', margin: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-2)', margin: 0 }}>
               {tt(isHi, 'No activity data yet', 'अभी तक कोई गतिविधि डेटा नहीं')}
             </p>
             <p style={{ fontSize: 12, color: '#7D7264', marginTop: 4, marginBottom: 0 }}>
@@ -598,7 +590,7 @@ function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {mostImproved.map((s: ImprovedStudent, i: number) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: '#F5F0EA', borderRadius: 8 }}>
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', backgroundColor: 'var(--surface-2)', borderRadius: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ width: 28, height: 28, borderRadius: '50%', backgroundColor: '#059669', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
                   <span style={{ fontSize: 14, fontWeight: 500, color: '#1A1207' }}>{s.name || s.student_name}</span>
@@ -657,15 +649,20 @@ export default function TeacherReportsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Loading state
+  // Loading state — shared warm-cream report skeleton.
   if (authLoading || (loading && !error)) {
     return (
-      <div style={pageStyle}>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
-          <div style={spinnerStyle} />
-          {tt(isHi, 'Loading reports...', 'रिपोर्ट लोड हो रही हैं...')}
+      <div
+        style={pageStyle}
+        role="status"
+        aria-busy="true"
+        aria-label={tt(isHi, 'Loading reports…', 'रिपोर्ट लोड हो रही हैं…')}
+      >
+        <span className="sr-only">{tt(isHi, 'Loading reports…', 'रिपोर्ट लोड हो रही हैं…')}</span>
+        <div style={{ paddingTop: 16, marginBottom: 20 }}>
+          <Bone width={200} height={28} />
         </div>
+        <TeacherTableSkeleton rows={8} />
       </div>
     );
   }
@@ -681,7 +678,7 @@ export default function TeacherReportsPage() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* Header */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #F5F0EA' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)' }}>
         <div>
           <button
             onClick={() => router.push('/teacher')}
@@ -704,7 +701,7 @@ export default function TeacherReportsPage() {
 
       {/* Error Banner */}
       {error && (
-        <div style={{ ...cardStyle, borderColor: '#EF4444', color: '#B91C1C', textAlign: 'center', fontSize: 14, marginBottom: 16 }}>
+        <div style={{ ...cardStyle, borderColor: 'var(--danger)', color: 'var(--danger)', textAlign: 'center', fontSize: 14, marginBottom: 16 }}>
           {error}
           <button
             onClick={loadData}
