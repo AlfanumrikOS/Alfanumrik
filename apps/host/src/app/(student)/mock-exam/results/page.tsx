@@ -173,7 +173,7 @@ function MockExamResultsInner() {
             {pct >= 80 && (
               <li>🌟 {isHi ? 'बढ़िया! अब कठिन प्रश्नों पर ध्यान दें।' : 'Excellent! Focus on high-difficulty questions now.'}</li>
             )}
-            <li>🔄 {isHi ? 'गलत उत्तरों को Foxy के साथ समझें।' : 'Review incorrect answers with Foxy AI tutor.'}</li>
+            <li>🔄 {isHi ? 'गलत उत्तरों को Foxy के साथ समझें।' : 'Review incorrect answers with Foxy.'}</li>
             <li>📅 {isHi ? 'अगले सप्ताह फिर से मॉक परीक्षा दें।' : 'Retake a mock exam next week to track improvement.'}</li>
           </ul>
         </Card>

@@ -200,7 +200,7 @@ function DiagnosticsContent() {
             {/* Foxy AI Tutor */}
             <div style={S.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Foxy AI Tutor</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Foxy</div>
                 <StatusBadge
                   label={obsData.activity_24h.chats > 0 ? 'Active' : 'Idle'}
                   variant={obsData.activity_24h.chats > 0 ? 'success' : 'warning'}

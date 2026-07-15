@@ -277,8 +277,8 @@ export default function BillingPage() {
             <div style={{ marginTop: 16, padding: 16, borderRadius: 12, background: 'rgba(232,88,28,0.04)', border: '1px dashed rgba(232,88,28,0.2)' }}>
               <p style={{ fontSize: 13, color: '#888', lineHeight: 1.6 }}>
                 {isHi
-                  ? 'आप Explorer (मुफ्त) योजना पर हैं। Foxy AI ट्यूटर, अनलिमिटेड क्विज़ और अधिक सुविधाओं के लिए अपग्रेड करें।'
-                  : 'You\'re on the Explorer (free) plan. Upgrade for unlimited Foxy AI tutoring, quizzes, and more features.'}
+                  ? 'आप Explorer (मुफ्त) योजना पर हैं। Foxy, अनलिमिटेड क्विज़ और अधिक सुविधाओं के लिए अपग्रेड करें।'
+                  : 'You\'re on the Explorer (free) plan. Upgrade for unlimited Foxy tutoring, quizzes, and more features.'}
               </p>
             </div>
           )}

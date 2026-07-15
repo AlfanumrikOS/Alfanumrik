@@ -984,8 +984,8 @@ function DownloadDataConfirmModal({
         </h3>
         <p style={{ fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 1.6, margin: '0 0 16px' }}>
           {t(isHi,
-            `This will download a JSON file with all of ${childName}'s data — quiz history, Foxy AI chats, learning progress, and account info.`,
-            `यह ${childName} के सभी डेटा के साथ एक JSON फ़ाइल डाउनलोड करेगा — क्विज़ इतिहास, फॉक्सी AI चैट, सीखने की प्रगति और खाता जानकारी।`
+            `This will download a JSON file with all of ${childName}'s data — quiz history, Foxy chats, learning progress, and account info.`,
+            `यह ${childName} के सभी डेटा के साथ एक JSON फ़ाइल डाउनलोड करेगा — क्विज़ इतिहास, फॉक्सी चैट, सीखने की प्रगति और खाता जानकारी।`
           )}
         </p>
         <p style={{ fontSize: 11, color: '#94A3B8', textAlign: 'center', lineHeight: 1.5, margin: '0 0 20px' }}>

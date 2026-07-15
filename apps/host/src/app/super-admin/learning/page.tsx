@@ -147,7 +147,7 @@ function LearningContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Learning Intelligence</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Quiz, Foxy AI, content coverage, and XP oversight</p>
+          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Quiz, Foxy, content coverage, and XP oversight</p>
         </div>
         <button onClick={fetchAll} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Refresh</button>
       </div>
@@ -569,7 +569,7 @@ function LearningContent() {
               </div>
             </div>
             <div style={{ ...cardStyle, borderLeft: `3px solid ${totalChats > 0 ? '#16A34A' : '#D97706'}` }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>Foxy AI (RAG/Chat)</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>Foxy (RAG/Chat)</div>
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
                 {totalChats} total chat sessions, {chats24h} in last 24h
               </div>

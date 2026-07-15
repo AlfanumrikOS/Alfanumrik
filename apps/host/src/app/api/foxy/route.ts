@@ -88,6 +88,7 @@ import {
 import { buildTenantOverrideSection } from '@alfanumrik/lib/ai/prompts/tenant-overrides';
 import { type FoxyResponse } from '@alfanumrik/lib/foxy/schema';
 import { denormalizeFoxyResponse } from '@alfanumrik/lib/foxy/denormalize';
+import { stripFakeQuizClaim } from '@alfanumrik/lib/foxy/anti-fake-quiz-claim';
 import {
   gateQuizMeMcq,
   findSingleMcqBlock,
@@ -2373,6 +2374,29 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     } else {
       // No structured payload at all (upstream malformed) — real practice cannot
       // be honored. Serve the graceful fallback rather than a raw text blob.
+      structured = buildQuizMeFallbackResponse(subject);
+      quizMeWireText = denormalizeFoxyResponse(structured);
+    }
+  } else if (isPracticeTurn) {
+    // ── Flag-OFF practice: unconditional anti-fake backstop (AC4, P6) ─────────
+    // When ff_foxy_real_practice_v1 is OFF, a practice turn does NOT run the
+    // oracle gate / mcq emission above — but it must STILL never ship a
+    // claim-only turn (e.g. a token-truncated intro that says "Here are 5
+    // questions" with no questions after it). Decoupled from isRealPractice ON
+    // PURPOSE: run the SAME deterministic anti-fake strip the legacy path uses.
+    // A turn carrying real questions (markdown (A)/(B)/(C)/(D) options) passes
+    // through untouched; a claim with no questions is replaced by the graceful
+    // bilingual fallback. No flag is read here, so flag-OFF practice is otherwise
+    // byte-identical to today — only a genuinely claim-only turn is rewritten.
+    const candidateText = structured ? denormalizeFoxyResponse(structured) : grounded.answer;
+    const antiFake = stripFakeQuizClaim(candidateText);
+    if (antiFake.claimOnly) {
+      logger.warn('foxy.practice.fake_quiz_claim_stripped', {
+        // P13: scope only — never the answer text or studentId.
+        subject,
+        grade,
+        realPracticeEnabled,
+      });
       structured = buildQuizMeFallbackResponse(subject);
       quizMeWireText = denormalizeFoxyResponse(structured);
     }

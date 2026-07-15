@@ -10,7 +10,7 @@ function FoxyCard() {
     <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg)', border: '1px solid var(--border)', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
       <div className="px-4 py-3 flex items-center gap-2 border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
         <FoxyMark size="sm" />
-        <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: '#E8581C' }}>Foxy AI Tutor</span>
+        <span className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: '#E8581C' }}>Foxy</span>
         <div className="ml-auto flex gap-1">
           {['Learn', 'Practice', 'Quiz'].map((mode, i) => (
             <span key={mode} className="text-[10px] font-semibold px-2.5 py-1 rounded-full" style={{ background: i === 0 ? '#E8581C' : 'var(--surface-2)', color: i === 0 ? '#fff' : 'var(--text-3)' }}>{mode}</span>

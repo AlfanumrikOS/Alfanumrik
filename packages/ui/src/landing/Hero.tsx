@@ -33,7 +33,7 @@ function PhoneMockup() {
         </div>
         <div className="px-3 py-2 flex items-center gap-2 border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
           <FoxyMark size="sm" />
-          <span className="text-xs font-bold" style={{ color: '#E8581C', fontFamily: 'var(--font-display)' }}>Foxy AI Tutor</span>
+          <span className="text-xs font-bold" style={{ color: '#E8581C', fontFamily: 'var(--font-display)' }}>Foxy</span>
           <div className="ml-auto flex gap-1">
             {['Learn', 'Practice', 'Quiz'].map((mode, i) => (
               <span key={mode} className="text-[9px] font-semibold px-2 py-0.5 rounded-full" style={{ background: i === 0 ? '#E8581C' : 'var(--surface-2)', color: i === 0 ? '#fff' : 'var(--text-3)' }}>{mode}</span>

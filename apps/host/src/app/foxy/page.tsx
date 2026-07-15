@@ -1344,7 +1344,7 @@ function FoxyExperience() {
           {FOXY_FACES[foxyState]}
         </div>
         <div className="min-w-0 shrink">
-          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">{isHi ? 'AI ट्यूटर' : 'AI Tutor'}</span></div>
+          <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">{isHi ? 'तुम्हारा ट्यूटर' : 'your tutor'}</span></div>
           <div className="text-xs opacity-70 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{isHi ? `${streakDays} दिन` : `${streakDays}d streak`}</span><span>{isHi ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span></div>
         </div>
         {/* Active-conversation title — folds in the ConversationHeader's unique

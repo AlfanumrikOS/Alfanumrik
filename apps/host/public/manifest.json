@@ -1,7 +1,7 @@
 {
   "name": "Alfanumrik",
   "short_name": "Alfanumrik",
-  "description": "Tonight's homework can be different. Foxy — India's most patient AI tutor for CBSE Grades 6–12, in Hindi and English. Free to start.",
+  "description": "Tonight's homework can be different. Foxy — India's most patient tutor for CBSE Grades 6–12, in Hindi and English. Free to start.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -56,7 +56,7 @@
       "sizes": "390x844",
       "type": "image/svg+xml",
       "form_factor": "narrow",
-      "label": "Foxy AI Tutor — Student Learning View"
+      "label": "Foxy — Student Learning View"
     }
   ]
 }

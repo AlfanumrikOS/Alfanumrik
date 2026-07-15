@@ -9,7 +9,7 @@ import Breadcrumbs from '@alfanumrik/ui/Breadcrumbs';
 /* ─── Data ─── */
 
 const FOR_STUDENTS = [
-  { icon: '🦊', title: 'AI Tutor — Foxy', titleHi: 'AI ट्यूटर — Foxy', desc: 'Chat with your personal AI tutor in Hindi or English. Get step-by-step explanations tailored to your level.', descHi: 'हिंदी या अंग्रेज़ी में अपने व्यक्तिगत AI ट्यूटर से बात करें। अपने स्तर के अनुसार स्टेप-बाय-स्टेप समझ पाएँ।' },
+  { icon: '🦊', title: 'Foxy', titleHi: 'Foxy', desc: 'Chat with your personal tutor in Hindi or English. Get step-by-step explanations tailored to your level.', descHi: 'हिंदी या अंग्रेज़ी में अपने व्यक्तिगत ट्यूटर से बात करें। अपने स्तर के अनुसार स्टेप-बाय-स्टेप समझ पाएँ।' },
   { icon: '🎯', title: 'Adaptive Quizzes', titleHi: 'अनुकूली क्विज़', desc: 'Questions adjust difficulty in real-time based on your mastery. Always in your zone of proximal development.', descHi: 'प्रश्न आपकी दक्षता के आधार पर रियल-टाइम में कठिनाई समायोजित करते हैं। हमेशा आपके निकटतम विकास क्षेत्र में।' },
   { icon: '🔁', title: 'Spaced Repetition', titleHi: 'स्पेस्ड रिपीटिशन', desc: 'SM-2 algorithm schedules reviews at the optimal time to move knowledge from short-term to long-term memory.', descHi: 'SM-2 एल्गोरिदम ज्ञान को अल्पकालिक से दीर्घकालिक स्मृति में ले जाने के लिए सही समय पर रिव्यू शेड्यूल करता है।' },
   { icon: '🔬', title: 'Interactive Simulations', titleHi: 'इंटरैक्टिव सिमुलेशन', desc: 'Explore physics, chemistry, and math through hands-on virtual experiments and visualizations.', descHi: 'भौतिकी, रसायन विज्ञान और गणित को वर्चुअल प्रयोगों और विज़ुअलाइज़ेशन के ज़रिए सीखें।' },

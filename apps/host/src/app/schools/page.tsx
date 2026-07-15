@@ -261,7 +261,7 @@ function SchoolsContent() {
               {[
                 { en: 'All platform features included', hi: 'सभी प्लेटफ़ॉर्म सुविधाएं शामिल' },
                 { en: 'Unlimited quizzes and assessments', hi: 'असीमित क्विज़ और मूल्यांकन' },
-                { en: 'AI tutor (Foxy) for every student', hi: 'हर छात्र के लिए AI ट्यूटर (Foxy)' },
+                { en: 'Foxy for every student', hi: 'हर छात्र के लिए Foxy' },
                 { en: 'Teacher and parent portals', hi: 'शिक्षक और अभिभावक पोर्टल' },
                 { en: 'API access and reporting', hi: 'API एक्सेस और रिपोर्टिंग' },
                 { en: 'Dedicated onboarding support', hi: 'समर्पित ऑनबोर्डिंग सपोर्ट' },

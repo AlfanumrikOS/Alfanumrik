@@ -115,8 +115,8 @@ export const MODULE_REGISTRY: readonly ModuleMeta[] = [
   },
   {
     key: 'ai_tutor',
-    displayName: 'AI Tutor (Foxy)',
-    displayNameHi: 'AI ट्यूटर',
+    displayName: 'Foxy',
+    displayNameHi: 'फॉक्सी',
     description: 'Conversational tutor with RAG grounding and tenant-tuned personality.',
     routePrefix: '/foxy',
     defaultsByType: {

@@ -7884,3 +7884,72 @@ parity; flag `ff_foxy_perception_v1`, default OFF).
 **Total catalog: 214 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-248 — unconditional, FLAG-INDEPENDENT anti-fake-quiz-claim backstop: Foxy never ships "Generated N quiz questions." with no questions (2026-07-15)
+
+Source: Foxy "fake action" fix. A quiz/practice turn could surface the
+student-facing sentence "Generated 5 quiz questions." while the actual validated
+questions lived in `metadata.questions` — which the legacy persist path drops.
+The student saw a CLAIM of a quiz with ZERO questions to answer. REG-245 closed
+this ONLY on the flag-ON real-practice oracle path (`ff_foxy_real_practice_v1`);
+this entry pins the NEW UNCONDITIONAL backstop that runs on the flag-OFF / legacy
+paths regardless of ANY feature flag. Assessment gave APPROVE-WITH-CONDITIONS on
+the fix; these tests are the conditions.
+
+Files: `packages/lib/src/foxy/anti-fake-quiz-claim.ts` (`stripFakeQuizClaim(text)
+→ {claimOnly, text}` + `QUIZ_CLAIM_FALLBACK_TEXT` — pure, deterministic,
+never-throws detector: `claimOnly` is true only when the text matches a
+"generated/created/prepared/here-are N questions"-style claim [EN + Hindi/
+Devanagari, danda-aware] AND carries < 3 MCQ option markers [`A)`/`(a)`/`1.`] AND
+< 2 question marks), `packages/lib/src/ai/workflows/quiz-generate.ts`
+(`renderQuizQuestionsText()` renders real `QuizQuestion[]` — bilingual header, 4
+lettered options, inline `Answers / उत्तर` key — or returns `QUIZ_CLAIM_FALLBACK_TEXT`
+when 0 survive P6 validation; assessment fixed the n===1 singular grammar),
+`apps/host/src/app/api/foxy/_lib/legacy-flow.ts` (`persistLegacyFoxyResponse`
+strips a claim-only turn to the bilingual fallback in BOTH the wire `response` and
+the persisted `foxy_chat_messages.content`, flag-independent — the one gate BOTH
+legacy call sites flow through), `apps/host/src/app/api/foxy/route.ts` (new
+`else if (isPracticeTurn)` branch ~:2380 strips a claim-only flag-OFF practice turn
+→ `buildQuizMeFallbackResponse(subject)`).
+
+**Why.** A tutor asserting it did something it did NOT surface is a "fake action":
+it erodes trust and, for a quiz, means the student is handed a phantom
+assessment (P6 "question quality" — a served quiz turn must actually carry
+answerable questions; P1-adjacent — a claimed-but-absent quiz cannot be graded).
+The fix is DEFENSE-IN-DEPTH across 4 layers so a claim-with-no-questions can never
+reach a student on ANY path: (1) the render layer never emits a bare claim, (2)
+the legacy persist gate strips it, (3) the flag-OFF practice route branch strips
+it, (4) the pure detector under all three is EN+Hindi and passes real questions
+through untouched. The fallback (`QUIZ_CLAIM_FALLBACK_TEXT`) is bilingual (P7).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-248 | `foxy_unconditional_anti_fake_quiz_claim_backstop_flag_independent` | **(a) Pure detector** (`stripFakeQuizClaim`): EN "Generated 5 quiz questions." (and "I have created a quiz with 5 questions") with no options → `claimOnly:true`, `text === QUIZ_CLAIM_FALLBACK_TEXT`; the SAME "Here are N questions" claim BACKED by real A)/B)/C)/D) options → `claimOnly:false`, passes through byte-identical; Hindi "5 प्रश्न बनाए।" (danda-aware) claim-only → stripped; normal teaching prose → not stripped; empty/whitespace/non-string (undefined/null/number) → defensively `claimOnly:false`, never throws; `QUIZ_CLAIM_FALLBACK_TEXT` is bilingual (EN + Devanagari) and self-stable (feeding it back → `claimOnly:false`, no strip loop). **Two INTENTIONAL narrow false-positive boundaries assessment flagged, PINNED as documented:** a claim + exactly TWO numbered imperative questions with no "?" (2 option markers < the 3-marker floor) is STILL stripped; a Hindi claim + Devanagari-lettered options (क)/ख)/ग)/घ), which the Latin-only `[A-Da-d1-4]` evidence detector doesn't recognize) is STILL stripped — over-stripping here is strictly safer than shipping a phantom quiz, and pinning them makes any future widening of the evidence detector a deliberate reviewed change. **(b) Render/workflow** (`renderQuizQuestionsText` via `runQuizGenerateWorkflow`, real `validateQuizQuestions`): a validated multi-question set renders REAL questions (bilingual plural header "Here are 4 practice questions" + "(4 अभ्यास प्रश्न", 4 lettered options, "Answers / उत्तर:" key) that passes the backstop (`claimOnly:false`) and is never a bare "Generated N" claim; the n===1 degraded path (1 survives P6) renders SINGULAR grammar ("Here is 1 practice question … attempt it … check the answer below", no plural leak, "(1 अभ्यास प्रश्न"); 0 survivors → `response === QUIZ_CLAIM_FALLBACK_TEXT` with `metadata.questions` empty and `validationErrors` non-empty. **(c) Legacy persist** (`persistLegacyFoxyResponse`, flag-independent): a claim-only `legacy.response` → the returned wire `response` AND the persisted `foxy_chat_messages.content` assistant row are BOTH `QUIZ_CLAIM_FALLBACK_TEXT` (never the claim); a real-question turn (A)/B)/C)/D)) passes through UNTOUCHED in both surfaces; NO feature flag is consulted on this path (`isFeatureEnabled` never called). **(d) Route flag-OFF practice branch** (`else if (isPracticeTurn)`, mirrored with the real `denormalizeFoxyResponse` + `stripFakeQuizClaim` + `buildQuizMeFallbackResponse`): a claim-only STRUCTURED turn AND a claim-only GROUNDED answer (structured null) are both swapped for `buildQuizMeFallbackResponse(subject)` (mcq-free, `FoxyResponseSchema`-valid, bilingual EN+Hinglish, and itself not a claim); a real practice structured turn (claim paragraph + 3 real mcq blocks → denormalizes with A)…D) markers) passes through UNTOUCHED (same payload reference flows on). | `apps/host/src/__tests__/lib/foxy/anti-fake-quiz-claim.test.ts` (detector unit + the 2 intentional-FP boundary pins + fallback bilingual/self-stable); `apps/host/src/__tests__/lib/ai/workflows/quiz-generate-anti-fake-render.test.ts` (multi-question real render + n===1 singular grammar + 0-survivors fallback); `apps/host/src/__tests__/api/foxy/legacy-flow-anti-fake.test.ts` (wire+persisted content both fallback, real-turn passthrough, flag-independence); `apps/host/src/__tests__/api/foxy/foxy-practice-flag-off-anti-fake.test.ts` (route branch — structured+grounded claim-only → fallback, real (A)-(D) turn passthrough) | E | P6, P1-adjacent, P7 |
+
+### Invariants covered by this section
+
+- P6 (question quality) — a served quiz/practice turn must actually CARRY
+  answerable questions. The backstop guarantees a "Generated N questions." claim
+  with no rendered questions is replaced by a graceful fallback on EVERY
+  non-oracle path (render, legacy persist, flag-OFF practice route branch), so a
+  phantom quiz can never reach a student. REG-245 covers the flag-ON oracle path;
+  REG-248 covers the unconditional flag-independent backstop underneath it.
+- P1-adjacent (score accuracy) — a claimed-but-absent quiz cannot be graded; by
+  refusing to surface a phantom quiz the platform never presents an ungradable
+  "assessment" to a student.
+- P7 (bilingual) — `QUIZ_CLAIM_FALLBACK_TEXT` (EN + Devanagari) and the route's
+  `buildQuizMeFallbackResponse` (EN + Hinglish CTA) are both bilingual, and the
+  n===1 render preserves correct singular grammar in both EN and Hindi.
+
+### Catalog total
+
+Pre-REG-248: 214 entries (through REG-247, Foxy Perception observability event).
+Adds REG-248 (unconditional flag-independent anti-fake-quiz-claim backstop — the
+4-layer defense [pure EN+Hindi detector + real-question render + legacy-persist
+strip in wire+persisted content + flag-OFF practice route branch] that guarantees
+Foxy never ships a "Generated N quiz questions." claim with no questions, plus the
+two intentional narrow false-positive boundaries assessment flagged; complements
+REG-245's flag-ON oracle path).
+**Total catalog: 215 entries (target: 35 — TARGET EXCEEDED).**
+
+---

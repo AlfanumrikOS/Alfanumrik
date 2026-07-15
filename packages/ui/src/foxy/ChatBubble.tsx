@@ -245,7 +245,7 @@ export function ChatBubble({
             style={{ background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
             title={traceId ? `trace: ${traceId}` : undefined}
           >
-            🤖 AI
+            🦊
           </span>
         )}
 

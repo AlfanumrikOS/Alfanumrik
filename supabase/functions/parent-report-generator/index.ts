@@ -407,8 +407,8 @@ function buildFallbackReport(stats: WeeklyStats, language: string, studentName: 
         : 'Encourage your child to practice on Alfanumrik for 10-15 minutes daily')
     : stats.avg_score < 60
       ? (isHi
-          ? 'कमजोर विषयों पर Foxy AI ट्यूटर से मदद लेने के लिए कहें'
-          : 'Suggest using Foxy AI tutor for help with weaker topics')
+          ? 'कमजोर विषयों पर Foxy से मदद लेने के लिए कहें'
+          : 'Suggest using Foxy for help with weaker topics')
       : (isHi
           ? 'शानदार प्रगति! बच्चे की मेहनत की सराहना करें'
           : 'Great progress! Appreciate your child\'s effort and consistency')

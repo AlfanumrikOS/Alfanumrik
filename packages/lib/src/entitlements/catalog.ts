@@ -166,8 +166,8 @@ export const ENTITLEMENT_CATALOG: readonly CatalogEntry[] = [
     category: 'module',
     control: 'toggle',
     valueShape: 'enabled',
-    labelEn: 'AI Tutor (Foxy)',
-    labelHi: 'AI ट्यूटर (फॉक्सी)',
+    labelEn: 'Foxy',
+    labelHi: 'फॉक्सी',
     planDefault: moduleDefault('ai_tutor'),
   },
   {

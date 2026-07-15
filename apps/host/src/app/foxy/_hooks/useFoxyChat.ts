@@ -190,8 +190,8 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
         if (errCode === 'PERMISSION_DENIED' || errCode === 'NO_ROLES') {
           return {
             reply: isHi
-              ? 'फॉक्सी पेड प्लान पर उपलब्ध है। अपग्रेड करें और AI ट्यूटर से चैट करें!'
-              : 'Foxy is available on paid plans. Upgrade to chat with your AI tutor!',
+              ? 'फॉक्सी पेड प्लान पर उपलब्ध है। अपग्रेड करें और अपने ट्यूटर से चैट करें!'
+              : 'Foxy is available on paid plans. Upgrade to chat with your tutor!',
             xp_earned: 0,
             session_id: null,
           };
