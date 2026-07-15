@@ -668,6 +668,7 @@ function BulkUploadForm({ isHi, onUpload, onClose }: BulkUploadProps) {
             style={{
               maxHeight: 300,
               overflowY: 'auto',
+              overflowX: 'auto',
               border: '1px solid var(--border)',
               borderRadius: 12,
             }}
@@ -716,7 +717,7 @@ function BulkUploadForm({ isHi, onUpload, onClose }: BulkUploadProps) {
 
       {/* Upload error */}
       {uploadError && (
-        <p className="text-xs font-medium" style={{ color: '#DC2626' }} role="alert">{uploadError}</p>
+        <p className="text-xs font-medium" style={{ color: 'var(--danger)' }} role="alert">{uploadError}</p>
       )}
 
       {/* Actions */}
