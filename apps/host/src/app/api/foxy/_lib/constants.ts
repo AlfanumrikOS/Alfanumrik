@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import type { AbstainReason } from '@alfanumrik/lib/ai/grounded-client';
+import { UNLIMITED_USAGE_SENTINEL } from '@alfanumrik/lib/usage-sentinel';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -60,40 +61,38 @@ export const LEGACY_FALLBACK_ABSTAIN_REASONS: AbstainReason[] = [
   'circuit_open',
 ];
 
-// Quota per plan per day
-export const DAILY_QUOTA: Record<string, number> = {
-  free: 10,
-  starter: 30,
-  pro: 100,
-  unlimited: 999999, // effectively unlimited
-};
-export const DEFAULT_QUOTA = 10;
+// Sentinel that mirrors the DB's "unlimited" cap. `get_plan_limit()` maps a
+// `subscription_plans.foxy_chats_per_day = -1` (unlimited) to 999999, so any
+// plan whose returned limit is >= this value is treated as effectively
+// uncapped by the Node layer (no "messages left" countdown pressure, no upsell).
+//
+// SINGLE SOURCE: the literal `999999` lives in exactly ONE place across all
+// layers — the dependency-free `@alfanumrik/lib/usage-sentinel` leaf. We alias
+// it here as `UNLIMITED_QUOTA` so every existing route/quota importer keeps
+// working unchanged, while the value can never drift from the DB-mirroring leaf
+// that `packages/lib/src/usage.ts` and the entitlements catalog also consume.
+//
+// NOTE: enforcement + the effective per-plan cap live ENTIRELY in the DB
+// (`check_and_record_usage` → `get_plan_limit` → subscription_plans). There is
+// deliberately NO Node-side per-plan quota table here anymore — a stale local
+// copy is exactly what made `remaining` wrong and implied a false authority.
+export const UNLIMITED_QUOTA = UNLIMITED_USAGE_SENTINEL;
 
-// Soft upgrade prompts — shown ONLY when quota is near exhaustion (not on errors)
-export const UPGRADE_PROMPTS: Record<string, { threshold: number; message: string; messageHi: string; nextPlan: string }> = {
+// Soft upgrade prompts — shown ONLY when quota is near exhaustion (not on errors).
+//
+// Only the finite FREE tier can surface a nudge. The paid plans (starter / pro /
+// unlimited) are all UNLIMITED for Foxy chats (subscription_plans.foxy_chats_
+// per_day = -1 → UNLIMITED_QUOTA), so there is nothing to upsell and no key is
+// present for them — an absent key means "never prompt". `showAtRemaining` is the
+// number of chats remaining (post-turn) at or below which the nudge appears; it
+// is expressed in absolute `remaining` terms so it is robust to the exact free
+// cap (5, 10, …) without re-deriving a limit here. P7: EN + Hindi.
+export const UPGRADE_PROMPTS: Record<string, { showAtRemaining: number; message: string; messageHi: string; nextPlan: string }> = {
   free: {
-    threshold: 8, // show when 8/10 used (2 remaining)
-    message: 'You have {remaining} messages left today. Upgrade to Starter for 30 daily messages!',
-    messageHi: 'आज {remaining} मैसेज बाकी हैं। Starter प्लान लो और 30 रोज़ पाओ!',
+    showAtRemaining: 2, // nudge when 2 or fewer Foxy chats remain today
+    message: 'You have {remaining} Foxy messages left today. Upgrade to Starter for unlimited daily chats!',
+    messageHi: 'आज आपके {remaining} Foxy मैसेज बाकी हैं। Starter प्लान लें और असीमित चैट पाएं!',
     nextPlan: 'starter',
-  },
-  starter: {
-    threshold: 25, // show when 25/30 used (5 remaining)
-    message: 'You have {remaining} messages left today. Upgrade to Pro for 100 daily messages!',
-    messageHi: 'आज {remaining} मैसेज बाकी हैं। Pro प्लान लो और 100 रोज़ पाओ!',
-    nextPlan: 'pro',
-  },
-  pro: {
-    threshold: 90, // show when 90/100 used (10 remaining)
-    message: 'You have {remaining} messages left today. Upgrade to Unlimited for unlimited messages!',
-    messageHi: 'आज {remaining} मैसेज बाकी हैं। Unlimited प्लान लो!',
-    nextPlan: 'unlimited',
-  },
-  unlimited: {
-    threshold: 999999, // never show
-    message: '',
-    messageHi: '',
-    nextPlan: '',
   },
 };
 

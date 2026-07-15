@@ -247,6 +247,13 @@ export function MessageList({
               }
               saved={savedMessageIds.has(msg.id)}
               gotIt={gotItMessageIds?.has(msg.id) ?? false}
+              // Phase 2.1 Teaching Director (ff_foxy_teaching_director_v1). Only
+              // thread the plan fields through when the learning-action bar is
+              // active — the bar is the only surface that consumes them, so the
+              // flag-OFF path stays byte-identical to today. Absent on the
+              // message (flag OFF / no plan) ⇒ ChatBubble renders all four.
+              suggestedButtons={learningActionsEnabled ? msg.suggestedButtons : undefined}
+              nextActions={learningActionsEnabled ? msg.nextActions : undefined}
               hasBodyContent={hasRenderableBody}
             />
             {/* Legacy Save-to-flashcard button (flag OFF — byte-identical to

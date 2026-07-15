@@ -163,7 +163,14 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // role-specific tables and support Bearer-session verification. This explicit
 // ledger entry remains subject to route-level role, scope, RBAC, and tenant
 // checks until those cross-role reads move behind narrower authenticated RPCs.
-const EXPECTED_COUNT = 250;
+// Foxy Learning Report (2026-07-14): 250 -> 251 for the new read-only,
+// super_admin.access-gated per-student report route
+// src/app/api/super-admin/foxy-report/[studentId]/route.ts. It is
+// super-admin-by-design (service-role read of already-populated learning-loop
+// tables, no writes), mirroring the sibling marking-integrity/[studentId] and
+// foxy-quality routes. Subject to route-level RBAC + UUID validation; no new
+// permission was introduced.
+const EXPECTED_COUNT = 251;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -238,7 +245,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 249 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 251 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);

@@ -32,9 +32,81 @@ import type {
   GroundingStatus,
   AbstainReason,
   SuggestedAlternative,
+  SuggestedButtonType,
+  NextAction,
 } from '@alfanumrik/ui/foxy/ChatBubble';
 import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
 import type { ChatMessage, StreamingCallbacks, QuizMeWire } from '../_lib/foxy-types';
+
+/* ══════════════════════════════════════════════════════════════
+   DURABLE THREAD — ff_foxy_durable_thread_v1 (Phase 0.2, client side)
+   ══════════════════════════════════════════════════════════════
+
+   When the flag is ON, the CLIENT owns the conversation id. It is minted once
+   (crypto.randomUUID) and persisted in BOTH the URL query (`?c=<uuid>`) and
+   localStorage (single global key `foxy_thread`, chosen so switching subject or
+   chapter mid-conversation does NOT abandon the thread) so it survives a rapid
+   second send AND a page reload. The id is sent as the existing `session_id`
+   wire field on EVERY turn including the first. When OFF, none of this runs and
+   behavior is byte-identical to today (transient, server-minted session id). */
+
+/** Single global localStorage key for the active durable Foxy thread id. */
+export const FOXY_THREAD_STORAGE_KEY = 'foxy_thread'; // gitleaks:allow
+
+/** Mint a fresh conversation id. Uses crypto.randomUUID where available with a
+ *  v4 fallback for environments that lack it. */
+export function genConversationId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* fall through to manual v4 */
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/** Persist (or clear, when `id` is null) the durable thread id to BOTH the URL
+ *  `?c=` param (via replaceState — no navigation / no refetch) and localStorage.
+ *  Best-effort: storage/quota/URL failures are swallowed. */
+export function persistThread(id: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (id) window.localStorage.setItem(FOXY_THREAD_STORAGE_KEY, id);
+    else window.localStorage.removeItem(FOXY_THREAD_STORAGE_KEY);
+  } catch {
+    /* storage disabled / quota — URL still carries the id */
+  }
+  try {
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set('c', id);
+    else url.searchParams.delete('c');
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch {
+    /* history unavailable — localStorage still carries the id */
+  }
+}
+
+/** Read the durable thread id to restore on mount/reload: URL `?c=` first, then
+ *  localStorage. Returns null when neither is present. */
+export function readStoredThreadId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const fromUrl = new URL(window.location.href).searchParams.get('c');
+    if (fromUrl) return fromUrl;
+  } catch {
+    /* malformed URL — fall through to localStorage */
+  }
+  try {
+    return window.localStorage.getItem(FOXY_THREAD_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
 
 /* ══════════════════════════════════════════════════════════════
    STREAMING — Phase 1.1
@@ -178,6 +250,11 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
       messageId:              typeof data.messageId === 'string' ? data.messageId : null,
       // Part B1: evidential "Quiz me" contract (present only on a quiz_me turn).
       quizMe:                 (data.quizMe as QuizMeWire | undefined) ?? undefined,
+      // Phase 2.1 Teaching Director (ff_foxy_teaching_director_v1) — present ONLY
+      // when the flag is ON and a plan composed. Absent ⇒ undefined ⇒ ChatBubble
+      // renders all four buttons (byte-identical to today).
+      suggestedButtons:       Array.isArray(data.suggestedButtons) ? (data.suggestedButtons as SuggestedButtonType[]) : undefined,
+      nextActions:            Array.isArray(data.nextActions) ? (data.nextActions as NextAction[]) : undefined,
     };
   } catch (err) {
     console.error('[Foxy] Network error:', err);
@@ -252,6 +329,9 @@ export async function callFoxyTutorStream(
         claudeModel: data?.meta?.claude_model || data?.claudeModel || '',
         structured: (data?.structured as FoxyResponse | undefined) ?? undefined,
         badgeState: (data?.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
+        // Phase 2.1 Teaching Director — carried on the JSON-fallback done too.
+        suggestedButtons: Array.isArray(data?.suggestedButtons) ? (data.suggestedButtons as SuggestedButtonType[]) : undefined,
+        nextActions: Array.isArray(data?.nextActions) ? (data.nextActions as NextAction[]) : undefined,
       });
       if (typeof data?.messageId === 'string' && data.messageId.length > 0) {
         callbacks.onPersisted?.({ messageId: data.messageId });
@@ -311,6 +391,11 @@ export async function callFoxyTutorStream(
           claudeModel: typeof parsed?.claudeModel === 'string' ? parsed.claudeModel : '',
           structured: (parsed?.structured as FoxyResponse | undefined) ?? undefined,
           badgeState: (parsed?.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
+          // Phase 2.1 Teaching Director — the `done` frame is enriched in
+          // parallel to carry the same subset/next-actions the blocking JSON
+          // does. Absent on today's frames ⇒ undefined ⇒ all four render.
+          suggestedButtons: Array.isArray(parsed?.suggestedButtons) ? (parsed.suggestedButtons as SuggestedButtonType[]) : undefined,
+          nextActions: Array.isArray(parsed?.nextActions) ? (parsed.nextActions as NextAction[]) : undefined,
         });
       } else if (eventName === 'persisted') {
         if (typeof parsed?.messageId === 'string' && parsed.messageId.length > 0) {
@@ -455,6 +540,19 @@ export interface UseFoxyChatResult {
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
   chatSessionId: string | null;
   setChatSessionId: React.Dispatch<React.SetStateAction<string | null>>;
+  /**
+   * Durable-thread (ff_foxy_durable_thread_v1): set the active conversation id
+   * from an explicit client action (restore on mount, or select from the
+   * sidebar). Updates the synchronous ref + state, and persists to URL +
+   * localStorage when the flag is ON.
+   */
+  adoptConversationId: (id: string | null) => void;
+  /**
+   * Durable-thread (ff_foxy_durable_thread_v1): start a new conversation. Flag
+   * ON → mint a fresh uuid + persist (URL + localStorage). Flag OFF → clear the
+   * id exactly as today (server mints one on next send).
+   */
+  startNewConversation: () => void;
   xpGained: number;
   setXpGained: React.Dispatch<React.SetStateAction<number>>;
   nextMessageId: () => number;
@@ -485,11 +583,22 @@ export interface UseFoxyChatResult {
  * so the page module can react without leaking unrelated state into the
  * chat protocol.
  */
-export function useFoxyChat(): UseFoxyChatResult {
+export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFoxyChatResult {
+  const durableThreadEnabled = options?.durableThreadEnabled === true;
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [xpGained, setXpGained] = useState(0);
+
+  // Durable-thread race fix (ff_foxy_durable_thread_v1): the authoritative
+  // conversation id lives in a ref that is updated SYNCHRONOUSLY the moment an
+  // id is known (mint on first send, adopt on restore/select). Two rapid
+  // sendMessage calls in the same tick therefore both read the SAME id — unlike
+  // the async chatSessionId state, which lags a render behind and would let the
+  // server mint a second, empty session. Inert when the flag is OFF
+  // (sendMessage reads chatSessionId, exactly as today).
+  const conversationIdRef = useRef<string | null>(null);
 
   // Monotonic message-id counter — avoids Date.now() collision when two
   // setMessages pushes happen in the same ms (user msg + optimistic tutor).
@@ -499,11 +608,38 @@ export function useFoxyChat(): UseFoxyChatResult {
     return Date.now() * 1000 + messageIdCounterRef.current;
   }, []);
 
+  // Set the active conversation id from an EXPLICIT client action (restoring a
+  // stored thread on mount, or selecting one from the sidebar). Updates the ref
+  // synchronously + mirrors to state, and persists to URL/localStorage when the
+  // durable-thread flag is ON.
+  const adoptConversationId = useCallback((id: string | null) => {
+    conversationIdRef.current = id;
+    setChatSessionId(id);
+    if (durableThreadEnabled) persistThread(id);
+  }, [durableThreadEnabled]);
+
+  // "New conversation" action. Flag ON → clear the id, mint a fresh uuid, and
+  // persist it (URL + localStorage). Flag OFF → clear the id exactly as today
+  // (the server mints one on the next send).
+  const startNewConversation = useCallback(() => {
+    if (durableThreadEnabled) {
+      const fresh = genConversationId();
+      conversationIdRef.current = fresh;
+      setChatSessionId(fresh);
+      persistThread(fresh);
+    } else {
+      conversationIdRef.current = null;
+      setChatSessionId(null);
+    }
+  }, [durableThreadEnabled]);
+
   const clearMessages = useCallback(() => {
     setMessages([]);
+    conversationIdRef.current = null;
     setChatSessionId(null);
     setXpGained(0);
-  }, []);
+    if (durableThreadEnabled) persistThread(null);
+  }, [durableThreadEnabled]);
 
   // Phase 1 learning actions — non-evidential telemetry. Best-effort: never
   // throws, returns false on any failure. Reuses the same Bearer/cookie auth
@@ -662,6 +798,24 @@ export function useFoxyChat(): UseFoxyChatResult {
     }
 
     try {
+      // Durable-thread id resolution (flag ON): read/mint the conversation id
+      // from the ref SYNCHRONOUSLY so a rapid second send in the same tick reuses
+      // it (no double session). If an id is already known via state but not yet
+      // mirrored into the ref (e.g. a session resumed before the flag resolved
+      // ON), adopt it rather than orphaning it. Flag OFF → today's chatSessionId.
+      let effectiveSessionId: string | null;
+      if (durableThreadEnabled) {
+        if (!conversationIdRef.current) {
+          const adopted = chatSessionId ?? genConversationId();
+          conversationIdRef.current = adopted;
+          setChatSessionId(adopted);
+          persistThread(adopted);
+        }
+        effectiveSessionId = conversationIdRef.current;
+      } else {
+        effectiveSessionId = chatSessionId;
+      }
+
       const foxyParams: Record<string, any> = {
         message: payload.augmentedMessage ?? text,
         student_id: payload.studentId || '',
@@ -673,7 +827,7 @@ export function useFoxyChat(): UseFoxyChatResult {
         topic_id: payload.topicId || null,
         topic_title: payload.topicTitle || null,
         chapter: payload.chapter || null,
-        session_id: chatSessionId,
+        session_id: effectiveSessionId,
         selected_chapters: payload.selectedChapters || null,
       };
       if (payload.intent) foxyParams.intent = payload.intent;
@@ -720,7 +874,11 @@ export function useFoxyChat(): UseFoxyChatResult {
         try {
           await callFoxyTutorStream(foxyParams, {
             onSession: (sid) => {
-              if (sid) {
+              if (durableThreadEnabled) {
+                // Client owns the id (set synchronously at mint time). Ignore the
+                // server's echoed id; just surface the active id to page hooks.
+                hooks?.onSessionId?.(conversationIdRef.current ?? sid);
+              } else if (sid) {
                 setChatSessionId(sid);
                 hooks?.onSessionId?.(sid);
               }
@@ -757,6 +915,15 @@ export function useFoxyChat(): UseFoxyChatResult {
                 // when present; absent leaves the bubble byte-identical to today.
                 if (info.badgeState) {
                   next = { ...next, badgeState: info.badgeState };
+                }
+                // Phase 2.1 Teaching Director — stamp the context-aware button
+                // subset + advisory next-actions when the enriched `done` frame
+                // carried them. Absent ⇒ untouched ⇒ ChatBubble renders all four.
+                if (info.suggestedButtons) {
+                  next = { ...next, suggestedButtons: info.suggestedButtons };
+                }
+                if (info.nextActions) {
+                  next = { ...next, nextActions: info.nextActions };
                 }
                 if (next.content && next.content.length > 0) return next;
                 if (next.groundingStatus === 'hard-abstain') return next;
@@ -853,6 +1020,11 @@ export function useFoxyChat(): UseFoxyChatResult {
         // Part B1: stamp the evidential contract so the MCQ renderer knows
         // whether answering moves mastery (evidential) or is practice-only.
         quizMe: resp.quizMe,
+        // Phase 2.1 Teaching Director — stamp the context-aware button subset +
+        // advisory next-actions from the blocking JSON response. Absent (flag
+        // OFF / no plan) ⇒ undefined ⇒ ChatBubble renders all four buttons.
+        suggestedButtons: resp.suggestedButtons,
+        nextActions: resp.nextActions,
       }]);
       if (resp.upgradePrompt) {
         const up = resp.upgradePrompt;
@@ -866,7 +1038,11 @@ export function useFoxyChat(): UseFoxyChatResult {
         hooks?.onUpgradePromptText?.(promptMsg);
       }
       if (resp.xp_earned > 0) setXpGained((p: number) => p + resp.xp_earned);
-      if (resp.session_id) {
+      if (durableThreadEnabled) {
+        // Client owns the id; do not overwrite the ref/state from the server's
+        // echoed id. Surface the active id to page hooks.
+        if (conversationIdRef.current) hooks?.onSessionId?.(conversationIdRef.current);
+      } else if (resp.session_id) {
         setChatSessionId(resp.session_id);
         hooks?.onSessionId?.(resp.session_id);
       }
@@ -891,7 +1067,7 @@ export function useFoxyChat(): UseFoxyChatResult {
       hooks?.onComplete?.({ usedStreaming: false });
     }
     setLoading(false);
-  }, [chatSessionId, nextMessageId]);
+  }, [chatSessionId, nextMessageId, durableThreadEnabled]);
 
   return {
     messages,
@@ -900,6 +1076,8 @@ export function useFoxyChat(): UseFoxyChatResult {
     setLoading,
     chatSessionId,
     setChatSessionId,
+    adoptConversationId,
+    startNewConversation,
     xpGained,
     setXpGained,
     nextMessageId,

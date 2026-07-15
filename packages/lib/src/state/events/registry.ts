@@ -234,6 +234,71 @@ export const LearnerStruggleObservedSchema = EventBaseSchema.extend({
   }),
 });
 
+// Foxy per-turn PERCEPTION classifier (Phase 1 — Foxy Intelligent Learning OS,
+// 2026-07-15). Emitted once per Foxy assistant turn by the in-turn "perception"
+// classifier: a compact, structured read of WHAT the turn was about (subject /
+// grade / chapter / topic / Bloom level), WHICH misconception (if any) the
+// classifier detected, WHICH struggle signal it observed, and the learner's
+// INTENT label. It is the rich observability substrate that feeds Foxy's
+// in-turn adaptation, analytics, and reports.
+//
+//   ⚠️ BINDING learner-state contract (assessment-issued, mirrors
+//   learner.learning_action / learner.struggle_observed): No subscriber may
+//   consume this event to write ANY mastery / p_know / error surface
+//   (concept_mastery, cme_concept_state, student_skill_state, knowledge_gaps,
+//   learner_mastery, cme_error_log, quiz_sessions, student_learning_profiles,
+//   bloom_progression). A PERCEPTION of a turn cannot move mastery_mean /
+//   p_know / error_count_*. Only a REAL graded answer feeds mastery, through
+//   the EXISTING concept-check / BKT path (learner.concept_check_answered) —
+//   never through this event. The bus row is pure observability: it drives
+//   Foxy's in-turn adaptation + analytics + reports ONLY.
+//
+// P5: `grade` is a STRING ("6".."12"), never an integer.
+// P13: payload is codes + ids + enums ONLY — never the student's message text,
+//   email, phone, or name. `misconceptionCode` / `intent` are short classifier
+//   LABELS, not free text; the raw turn content is never echoed onto the bus.
+export const LearnerTurnClassifiedSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.turn_classified'),
+  payload: z.object({
+    studentId: uuidLike(),
+    foxySessionId: uuidLike(),
+    messageId: uuidLike(),
+    subjectCode: z.string(),
+    // P5 — grade is a string "6".."12".
+    grade: z.string().regex(/^(?:[6-9]|1[0-2])$/),
+    // Nullable: the classifier can fire before a chapter is bound to the turn.
+    chapterNumber: z.number().int().positive().nullable(),
+    topicId: uuidLike().nullable(),
+    // Bloom's taxonomy verb — canonical LOWERCASE taxonomy codes, IDENTICAL to
+    // the `BloomLevel` type in packages/lib/src/cognitive-engine.ts and the
+    // bloom_progression / question_bank.bloom_level columns this signal feeds.
+    // (The Foxy MCQ-block schema's PascalCase FoxyBloomLevelEnum is a separate
+    // LLM-rendering artifact; the perception classifier producer normalizes to
+    // lowercase AT EMIT TIME so every downstream consumer — cognitive-engine,
+    // reports, analytics — reads the canonical casing with zero conversion.)
+    // Nullable when the turn isn't a graded-cognition moment (e.g. a greeting
+    // or pure doubt).
+    bloomLevel: z
+      .enum(['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'])
+      .nullable(),
+    // Short misconception LABEL (e.g. an Eedi-style code) — never free text.
+    // Null when the classifier detected no misconception.
+    misconceptionCode: z.string().min(1).max(64).nullable(),
+    // Mirrors learner.struggle_observed's signalType, plus 'none' for a clean turn.
+    struggleSignal: z.enum([
+      'none',
+      'repeated_hint',
+      'repeated_wrong',
+      'explicit_confusion',
+      'long_idle',
+      'give_up',
+    ]),
+    // Short INTENT label the classifier assigned (e.g. 'ask_concept',
+    // 'request_hint', 'check_answer'). Bounded — a code, never message text (P13).
+    intent: z.string().min(1).max(64),
+  }),
+});
+
 // ADR-001 Phase 3c / ADR-005 E10 sunset — the Learner Loop resolver's
 // answer becomes a durable event so a projector (scheduled-actions-writer)
 // can own the canonical write to public.scheduled_actions instead of the
@@ -788,6 +853,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerConceptCheckAnsweredSchema,
   LearnerLearningActionSchema,
   LearnerStruggleObservedSchema,
+  LearnerTurnClassifiedSchema,
   LearnerNextActionResolvedSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
@@ -843,6 +909,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.concept_check_answered',
   'learner.learning_action',
   'learner.struggle_observed',
+  'learner.turn_classified',
   'learner.next_action_resolved',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',

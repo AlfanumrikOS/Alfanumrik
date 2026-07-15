@@ -16,7 +16,7 @@ import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 // (the reference migration) for the pattern.
 import { AppShell } from '@alfanumrik/ui/responsive';
 import { LESSON_STEPS, getLessonStepPrompt, getNextLessonStep, type LessonStep, type LessonState } from '@alfanumrik/lib/cognitive-engine';
-import { checkDailyUsage, clearUsageCache, type UsageResult } from '@alfanumrik/lib/usage';
+import { checkDailyUsage, clearUsageCache, isUnlimitedUsage, type UsageResult } from '@alfanumrik/lib/usage';
 import { speak, isVoiceSupported } from '@alfanumrik/lib/voice';
 import { usePythonVoiceEnabled } from '@alfanumrik/lib/voice-feature-flag';
 import { adoptVoiceReplyLanguage } from '@alfanumrik/lib/voice-reply-language';
@@ -44,11 +44,12 @@ import {
   FALLBACK_SCIENCE,
 } from './_lib/foxy-constants';
 import type { SubjectConfig, ChatMessage } from './_lib/foxy-types';
-import { useFoxyChat } from './_hooks/useFoxyChat';
+import { useFoxyChat, readStoredThreadId } from './_hooks/useFoxyChat';
 import type { CoachDirective } from './_hooks/useFoxyChat';
 import type { LearningActionType } from '@alfanumrik/ui/foxy/ChatBubble';
 import { useFoxyOsFlag } from '@alfanumrik/lib/use-foxy-os-flag';
 import { useFoxyLearningActionsFlag } from '@alfanumrik/lib/use-foxy-learning-actions-flag';
+import { useFoxyDurableThreadFlag } from '@alfanumrik/lib/use-foxy-durable-thread-flag';
 import { useKeyboardInset } from '@alfanumrik/lib/foxy/use-keyboard-inset';
 import { useCosmicLightSurface } from '@alfanumrik/lib/use-cosmic-light-surface';
 import type { MasterySuggestion } from '@alfanumrik/ui/foxy/MasteryAwareness';
@@ -300,6 +301,13 @@ function FoxyExperience() {
   // all live inside `useFoxyChat`. Cross-cutting reactions (foxy face,
   // voice TTS, daily-usage modal, conversation list refresh) are dispatched
   // via the optional `SendMessageHooks` callbacks passed at each call site.
+  // Durable Foxy thread (ff_foxy_durable_thread_v1). When ON, the CLIENT owns a
+  // stable conversation id (URL `?c=` + localStorage `foxy_thread`) that survives
+  // a rapid double-send and a page reload — fixing the "context breaks / re-type
+  // your question" bug. Default OFF → byte-identical to today (transient,
+  // server-minted session id). Read at the top of render so it is stable across
+  // the hook order (mirrors useFoxyLearningActionsFlag / useFoxyOsFlag).
+  const durableThreadEnabled = useFoxyDurableThreadFlag();
   const {
     messages,
     setMessages,
@@ -307,13 +315,15 @@ function FoxyExperience() {
     setLoading,
     chatSessionId,
     setChatSessionId,
+    adoptConversationId,
+    startNewConversation,
     xpGained,
     setXpGained,
     nextMessageId,
     sendMessage: sendMessageCore,
     recordLearningAction,
     submitQuizAnswer,
-  } = useFoxyChat();
+  } = useFoxyChat({ durableThreadEnabled });
 
   // Phase 1 post-answer learning actions (ff_foxy_learning_actions_v1). When
   // OFF, ChatBubble renders the legacy QA-tester bar byte-identically to today.
@@ -577,12 +587,36 @@ function FoxyExperience() {
     // allowedSubjects sync effect below populate once the service hook resolves.
     setStudentSubs((authStudent.selected_subjects as string[] | undefined) ?? []);
     (async () => {
+      if (durableThreadEnabled) {
+        // Durable thread (flag ON): the CLIENT owns the conversation id. Restore
+        // it from the URL (`?c=`) first, else localStorage, and load that
+        // thread's history REGARDLESS of subject or idle age. If nothing is
+        // stored we start fresh — the first send mints a new id.
+        const storedId = readStoredThreadId();
+        if (!storedId) return;
+        adoptConversationId(storedId);
+        const session = await fetchConversationById(storedId);
+        if (session?.messages) {
+          setMessages(
+            session.messages.map((m: any, i: number) => ({
+              id: Date.now() + i,
+              role: (m.role === 'assistant' ? 'tutor' : 'student') as 'tutor' | 'student',
+              content: m.content,
+              timestamp: m.ts || m.created_at || new Date().toISOString(),
+              structured: (m.structured as FoxyResponse | undefined) ?? undefined,
+              persistedMessageId: m.role === 'assistant' && typeof m.id === 'string' ? m.id : undefined,
+            })),
+          );
+        }
+        return;
+      }
       const recent = await fetchRecentSession(authStudent.id, subjectKey);
       if (recent) {
         setChatSessionId(recent.sessionId);
         setMessages(recent.messages);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authStudent, setChatSessionId, setMessages]);
 
   // Load conversation list
@@ -599,7 +633,11 @@ function FoxyExperience() {
   const selectConversation = useCallback(async (sessionId: string) => {
     const session = await fetchConversationById(sessionId);
     if (!session) return;
-    setChatSessionId(session.id);
+    // Durable thread (flag ON): adopt the selected thread as the client-owned id
+    // (ref + state + URL/localStorage) so subsequent sends continue it and a
+    // reload restores it. Flag OFF → today's state-only behavior.
+    if (durableThreadEnabled) adoptConversationId(session.id);
+    else setChatSessionId(session.id);
     const subject = session.subject || activeSubject;
     if (subject && SUBJECTS[subject]) {
       setActiveSubject(subject);
@@ -629,12 +667,14 @@ function FoxyExperience() {
     setConversations((prev: ConversationSummary[]) =>
       prev.map((c: ConversationSummary) => ({ ...c, isActive: c.id === sessionId }))
     );
-  }, [activeSubject, SUBJECTS, setChatSessionId, setMessages, setXpGained]);
+  }, [activeSubject, SUBJECTS, setChatSessionId, setMessages, setXpGained, durableThreadEnabled, adoptConversationId]);
 
   // Start a new conversation — clears chat and updates list
   const handleNewConversation = useCallback(() => {
     setMessages([]);
-    setChatSessionId(null);
+    // Durable thread (flag ON): mint a fresh uuid + persist (URL + localStorage).
+    // Flag OFF: clears the id exactly as today (server mints one on next send).
+    startNewConversation();
     setActiveTopic(null);
     setSelectedChapters([]);
     setCollapsedAbove(null);
@@ -642,7 +682,7 @@ function FoxyExperience() {
     setLessonStepsCompleted([]);
     setXpGained(0);
     setConversations((prev: ConversationSummary[]) => prev.map((c: ConversationSummary) => ({ ...c, isActive: false })));
-  }, [setChatSessionId, setMessages, setXpGained]);
+  }, [startNewConversation, setMessages, setXpGained]);
 
   // Refresh conversation list after a message is sent (debounced)
   const refreshConversations = useCallback(() => {
@@ -1144,7 +1184,12 @@ function FoxyExperience() {
     if (typeof window !== 'undefined') localStorage.setItem('alfanumrik_subject', key);
     if (key === 'hindi') setLanguage('hi');
     else if (key === 'english') setLanguage('en');
-    // Try to resume most recent active session for this subject (within 30 min)
+    // Durable thread (flag ON): switching subjects does NOT abandon the thread
+    // (criterion 2c). Keep the client-owned id + the existing messages; the next
+    // turn simply carries the new subject on the same conversation id.
+    if (durableThreadEnabled) return;
+    // Flag OFF: legacy behavior — clear and try to resume the most recent active
+    // session for this subject (within the idle window).
     setMessages([]); setChatSessionId(null);
     if (student?.id) {
       fetchRecentSession(student.id, key).then(result => {
@@ -1316,7 +1361,16 @@ function FoxyExperience() {
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Language pills — extracted to ./_components/FoxySettings.tsx */}
           <LanguagePicker language={language} isLocked={isLangLocked} onLanguageChange={setLanguage} />
-          {chatUsage && <span className="hidden sm:inline text-[8px] opacity-40 ml-1" title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}>💬{chatUsage.remaining}/{chatUsage.limit}</span>}
+          {chatUsage && (
+            <span
+              className="hidden sm:inline text-[8px] opacity-40 ml-1"
+              title={language === 'hi' ? 'बचे हुए संदेश' : 'Chat messages remaining'}
+            >
+              💬{isUnlimitedUsage(chatUsage.limit)
+                ? (language === 'hi' ? 'असीमित' : 'Unlimited')
+                : `${chatUsage.remaining}/${chatUsage.limit}`}
+            </span>
+          )}
           {/* Alfa OS — open the mobile ContextPanel bottom sheet. Mobile-only
               (lg:hidden), and rendered only when ff_student_os_v1 is ON so the
               OFF header is byte-identical. */}
@@ -1473,8 +1527,11 @@ function FoxyExperience() {
                     <button
                       key={topic.id}
                       onClick={() => {
-                        // RCA-FIX CRITICAL-UX-3: Confirm before clearing active conversation
-                        if (messages.length > 0) {
+                        // Durable thread (flag ON): switching chapter does NOT abandon
+                        // the thread (criterion 2c) — keep the id + messages, just
+                        // re-scope. Flag OFF: legacy confirm-then-clear behavior.
+                        if (!durableThreadEnabled && messages.length > 0) {
+                          // RCA-FIX CRITICAL-UX-3: Confirm before clearing active conversation.
                           // TODO(ux-debt): Replace window.confirm with native Dialog component for
                           // mobile-friendly confirmation (back gesture dismissal). Tracked by quality review 2026-06-26.
                           const confirmed = window.confirm(
@@ -1486,8 +1543,10 @@ function FoxyExperience() {
                         }
                         setActiveTopic(topic);
                         setSelectedChapters([topic.id]);
-                        setMessages([]);
-                        setChatSessionId(null);
+                        if (!durableThreadEnabled) {
+                          setMessages([]);
+                          setChatSessionId(null);
+                        }
                         setCollapsedAbove(null);
                         setShowChapterDD(false);
                       }}
@@ -1753,8 +1812,12 @@ function FoxyExperience() {
                 const lc = MASTERY_COLORS[lvl] || MASTERY_COLORS.not_started;
                 return (
                   <button key={topic.id} onClick={() => {
-                    // RCA-FIX CRITICAL-UX-3: Confirm before clearing active conversation
-                    if (messages.length > 0) {
+                    // Durable thread (flag ON): teaching a new chapter does NOT abandon
+                    // the thread (criterion 2c) — keep the id + messages and send the
+                    // teach prompt on the same conversation. Flag OFF: legacy
+                    // confirm-then-clear behavior.
+                    if (!durableThreadEnabled && messages.length > 0) {
+                      // RCA-FIX CRITICAL-UX-3: Confirm before clearing active conversation.
                       // TODO(ux-debt): Replace window.confirm with native Dialog component for
                       // mobile-friendly confirmation (back gesture dismissal). Tracked by quality review 2026-06-26.
                       const confirmed = window.confirm(
@@ -1764,7 +1827,10 @@ function FoxyExperience() {
                       );
                       if (!confirmed) return;
                     }
-                    setActiveTopic(topic); setMessages([]); setChatSessionId(null); setCollapsedAbove(null); setTimeout(() => sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50);
+                    setActiveTopic(topic);
+                    if (!durableThreadEnabled) { setMessages([]); setChatSessionId(null); }
+                    setCollapsedAbove(null);
+                    setTimeout(() => sendMessage(language === 'hi' ? `मुझे सिखाओ: ${topic.title} (अध्याय ${topic.chapter_number})` : `Teach me about: ${topic.title} (Chapter ${topic.chapter_number})`), 50);
                   }} className="w-full text-left p-2.5 rounded-xl transition-all active:scale-[0.98]" style={{ border: `1px solid ${lc}25`, background: activeTopic?.id === topic.id ? `${lc}10` : 'var(--surface-1)' }}>
                     <div className="text-[11px] font-bold truncate" style={{ color: 'var(--text-1)' }}>{language === 'hi' ? 'अध्याय' : 'Ch'} {topic.chapter_number}: {topic.title}</div>
                     <div className="flex items-center gap-2 mt-1">
@@ -2126,8 +2192,12 @@ function FoxyExperience() {
             if (topic) {
               setActiveTopic(topic);
               setSelectedChapters([topic.id]);
-              setMessages([]);
-              setChatSessionId(null);
+              // Durable thread (flag ON): re-scoping to a topic does NOT abandon
+              // the thread (criterion 2c). Flag OFF: clear + reset id as today.
+              if (!durableThreadEnabled) {
+                setMessages([]);
+                setChatSessionId(null);
+              }
               setCollapsedAbove(null);
             }
             setStudySheetOpen(false);
@@ -2193,6 +2263,7 @@ function FoxyExperience() {
           studentGrade={studentGrade}
           usageRemaining={chatUsage?.remaining ?? null}
           usageLimit={chatUsage?.limit ?? null}
+          usageUnlimited={isUnlimitedUsage(chatUsage?.limit)}
           onOpenHistory={() => {
             setToolsSheetOpen(false);
             setConversationSidebarOpen(true);

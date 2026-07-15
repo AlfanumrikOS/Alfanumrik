@@ -72,14 +72,16 @@ describe('checkDailyUsage', () => {
     expect(r.remaining).toBe(5);
   });
 
-  it('uses starter limits (30 chats / 20 quizzes)', async () => {
+  it('treats starter foxy_chat as unlimited (DB -1 → 999999 sentinel)', async () => {
+    // Paid plans (starter/pro/unlimited) are unlimited for Foxy chats — the
+    // client display mirrors the DB's get_plan_limit sentinel (999999).
     mockMaybeSingle.mockResolvedValueOnce({ data: { usage_count: 7 }, error: null });
 
     const r = await checkDailyUsage('s-2', 'foxy_chat', 'starter');
 
-    expect(r.limit).toBe(30);
+    expect(r.limit).toBe(999999);
     expect(r.count).toBe(7);
-    expect(r.remaining).toBe(23);
+    expect(r.remaining).toBe(999992);
     expect(r.allowed).toBe(true);
   });
 
@@ -121,7 +123,7 @@ describe('checkDailyUsage', () => {
   it('normalizes legacy plan aliases (basic → starter)', async () => {
     mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
     const r = await checkDailyUsage('s-alias', 'foxy_chat', 'basic');
-    expect(r.limit).toBe(30); // starter limit
+    expect(r.limit).toBe(999999); // starter foxy_chat is now unlimited
   });
 
   it('strips _monthly billing-cycle suffix', async () => {
@@ -156,9 +158,13 @@ describe('recordUsage', () => {
       expect.objectContaining({
         p_student_id: 'student-x',
         p_feature: 'foxy_chat',
-        p_limit: 30,
+        p_usage_date: expect.any(String),
       }),
     );
+    // p_limit is intentionally NOT passed — the DB derives the cap via
+    // get_plan_limit() and ignores any p_limit arg (mirrors quota.ts).
+    const passedParams = mockRpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(passedParams).not.toHaveProperty('p_limit');
   });
 
   it('optimistically bumps the cached count when present for today', async () => {
@@ -203,7 +209,7 @@ describe('getDailyUsageSummary', () => {
     const out = await getDailyUsageSummary('student-q', 'starter');
 
     expect(out.foxy_chat.count).toBe(12);
-    expect(out.foxy_chat.remaining).toBe(18);
+    expect(out.foxy_chat.remaining).toBe(999987); // starter foxy_chat unlimited (999999 - 12)
     expect(out.quiz.count).toBe(3);
     expect(out.quiz.remaining).toBe(17);
   });

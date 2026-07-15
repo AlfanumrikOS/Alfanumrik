@@ -1,5 +1,6 @@
 from .classifier import grade_tier
-from .types import StudentContext, TaskType
+from .foxy_structured_prompt import FOXY_STRUCTURED_OUTPUT_PROMPT
+from .types import StructuredMode, StudentContext, TaskType
 
 FOXY_BASE = """You are Foxy 🦊, a warm, encouraging, and highly explanatory AI teacher for Indian CBSE/NCERT students.
 - Behave like a real teacher. Guide the student comprehensively through the flow of the chapter's content as per the subject. Always explain the "why" and "how" behind concepts in detail, rather than giving short one-liner answers.
@@ -62,6 +63,7 @@ def build_system_prompt(
     task: TaskType,
     ctx: StudentContext,
     rag_context: str | None,
+    structured: StructuredMode | None = None,
 ) -> str:
     tier = grade_tier(ctx.grade)
 
@@ -100,6 +102,22 @@ def build_system_prompt(
         p += 'NCERT REFERENCE MATERIAL (do not mention "reference material" to student):\n'
         p += rag_context[:6000] + "\n\n"
         p += "Answer only using the provided NCERT context. If the context does not cover the question, say so honestly and suggest the student check with a teacher.\n"
+
+    # Phase 2.2 (MOL-unification): when the caller requests the Foxy
+    # structured contract, append the SAME strict FoxyResponse block-schema
+    # instruction the TS Claude path appends (structured-prompt.ts). Appended
+    # LAST so the "return ONLY valid JSON" contract is the strongest, final
+    # instruction (it overrides the legacy markdown FORMATTING block above).
+    #
+    # NB: in production the grounded-answer seam supplies the fully-composed TS
+    # prompt via config.system_prompt_override, which BYPASSES this builder
+    # entirely — so this branch is the Python-native structured capability
+    # (exercised by the parity/pytest harness and available for future direct
+    # Python composition), not the production hot path. VALIDATION always stays
+    # on the TS side (parseFoxyStructured -> wrapAsParagraph fallback), so a
+    # shape drift can never render raw JSON to a student (P12).
+    if structured == "foxy":
+        p += "\n\n" + FOXY_STRUCTURED_OUTPUT_PROMPT
 
     return p
 

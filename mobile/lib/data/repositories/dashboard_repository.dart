@@ -199,10 +199,17 @@ class DashboardRepository {
     }
   }
 
+  // Foxy chat daily cap. ALL paid plans are now UNLIMITED: migration
+  // 20260714120000_foxy_unlimited_for_paid_plans.sql sets
+  // subscription_plans.foxy_chats_per_day = -1 for starter/pro/unlimited, and
+  // get_plan_limit() maps -1 → 999999. This mirrors web usage.ts PLAN_LIMITS
+  // (starter/pro foxy_chat = UNLIMITED_USAGE_SENTINEL = 999999). The stale
+  // finite caps (starter 30, pro 100) were the "30 left / 100 left" bug the
+  // server no longer enforces — do NOT re-introduce them. Only free stays finite.
   int _chatLimit(String? plan) {
     switch (_normalizePlan(plan)) {
-      case 'starter':   return 30;
-      case 'pro':       return 100;
+      case 'starter':   return 999999; // unlimited (was 30)
+      case 'pro':       return 999999; // unlimited (was 100)
       case 'unlimited': return 999999;
       default:          return 5; // free
     }

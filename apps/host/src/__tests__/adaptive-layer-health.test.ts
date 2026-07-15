@@ -837,8 +837,8 @@ describe('Section 4: Safety Guardrails Health', () => {
 
   beforeAll(() => {
     // H1 REFACTOR extracted route internals into co-located modules:
-    //   M1 → src/app/api/foxy/_lib/constants.ts (DAILY_QUOTA, VALID_GRADES,
-    //        normalizePlan, …)
+    //   M1 → src/app/api/foxy/_lib/constants.ts (UNLIMITED_QUOTA, UPGRADE_PROMPTS,
+    //        VALID_GRADES, normalizePlan, …)
     //   M2 → src/lib/foxy/prompt-sections.ts (FOXY_SAFETY_RAILS, the prompt
     //        builders, …)
     // Read all three so the guardrail assertions follow the extracted content
@@ -854,11 +854,14 @@ describe('Section 4: Safety Guardrails Health', () => {
       expect(foxySource).toContain('checkAndIncrementQuota');
     });
 
-    it('defines quotas per plan (free, starter, pro, unlimited)', () => {
-      expect(foxySource).toContain('free:');
-      expect(foxySource).toContain('starter:');
-      expect(foxySource).toContain('pro:');
-      expect(foxySource).toContain('unlimited:');
+    it('routes per-plan quota enforcement to the DB, not a Node-side table', () => {
+      // Enforcement + the effective per-plan cap live entirely in the DB
+      // (subscription_plans.foxy_chats_per_day via get_plan_limit /
+      // check_and_record_usage). The Node layer only knows the unlimited
+      // sentinel + the finite free-tier upgrade nudge.
+      expect(foxySource).toContain('UNLIMITED_QUOTA');
+      expect(foxySource).toContain('UPGRADE_PROMPTS');
+      expect(foxySource).toContain('free:'); // sole finite-tier upsell entry
     });
 
     it('returns 429 when quota is exceeded', () => {

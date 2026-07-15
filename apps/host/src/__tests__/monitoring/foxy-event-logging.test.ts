@@ -181,7 +181,10 @@ function makeChain(table: string) {
 let _quotaAllowed = true;
 const rpcImpl = vi.fn((name: string) => {
   if (name === 'check_and_record_usage') {
-    return Promise.resolve({ data: [{ allowed: _quotaAllowed, current_count: 1 }], error: null });
+    return Promise.resolve({ data: [{ allowed: _quotaAllowed, used_count: 1 }], error: null });
+  }
+  if (name === 'get_plan_limit') {
+    return Promise.resolve({ data: 10, error: null });
   }
   return Promise.resolve({ data: [], error: null });
 });

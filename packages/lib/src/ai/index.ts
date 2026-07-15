@@ -18,7 +18,7 @@
 export { callClaude, isCircuitBreakerOpen, getCircuitBreakerState } from './clients/claude';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
-export { getAIConfig, normalizePlan, DAILY_QUOTA, DEFAULT_QUOTA } from './config';
+export { getAIConfig, normalizePlan } from './config';
 export { VALID_GRADES, VALID_MODES, VALID_LANGUAGES } from './config';
 export type { Grade, FoxyMode, Language } from './config';
 

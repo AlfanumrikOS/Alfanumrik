@@ -74,7 +74,7 @@ describe('resolveLeadConceptId', () => {
     if (!res.ok) expect(res.reason).toBe('no_chapter_scope');
   });
 
-  it('prefers the concept whose title matches the lead title', async () => {
+  it('prefers the concept whose title matches the lead title (match: title_match)', async () => {
     const rows = [conceptRow({ id: 'a', title: 'Cell Structure', concept_number: 1 }), conceptRow({ id: 'b', title: 'Photosynthesis', concept_number: 2 })];
     const res = await resolveLeadConceptId(chapterConceptsClient(rows), {
       subject: 'science',
@@ -83,10 +83,15 @@ describe('resolveLeadConceptId', () => {
       leadConceptTitle: 'photosynthesis',
     });
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.concept.id).toBe('b');
+    // Graded-path byte-identity: the resolved concept is unchanged; the new
+    // `match` discriminator is purely additive.
+    if (res.ok) {
+      expect(res.concept.id).toBe('b');
+      expect(res.match).toBe('title_match');
+    }
   });
 
-  it('falls back to the first concept when no title match', async () => {
+  it('falls back to the first concept when no title match (match: first_concept_fallback)', async () => {
     const rows = [conceptRow({ id: 'a', concept_number: 1 }), conceptRow({ id: 'b', concept_number: 2 })];
     const res = await resolveLeadConceptId(chapterConceptsClient(rows), {
       subject: 'science',
@@ -95,7 +100,26 @@ describe('resolveLeadConceptId', () => {
       leadConceptTitle: 'Unrelated Topic',
     });
     expect(res.ok).toBe(true);
-    if (res.ok) expect(res.concept.id).toBe('a');
+    // Graded path STILL anchors to concept #1 (unchanged) — the discriminator
+    // only flags it as a fallback so perception can degrade to null.
+    if (res.ok) {
+      expect(res.concept.id).toBe('a');
+      expect(res.match).toBe('first_concept_fallback');
+    }
+  });
+
+  it('flags a first_concept_fallback when no lead title is supplied at all', async () => {
+    const rows = [conceptRow({ id: 'a', concept_number: 1 }), conceptRow({ id: 'b', concept_number: 2 })];
+    const res = await resolveLeadConceptId(chapterConceptsClient(rows), {
+      subject: 'science',
+      grade: '7',
+      chapter: '1',
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.concept.id).toBe('a');
+      expect(res.match).toBe('first_concept_fallback');
+    }
   });
 
   it('returns no_concept_match when the chapter has no concepts', async () => {

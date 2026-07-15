@@ -614,6 +614,130 @@ export const SINGLE_MCQ_DIRECTIVE = [
   'Hinglish); keep technical terms (CBSE, NCERT, Bloom\'s) in English.',
 ].join('\n');
 
+// ─── Real practice — interactive multi-MCQ directive (ff_foxy_real_practice_v1) ─
+//
+// The number of interactive mcq blocks a real-practice turn asks the model for.
+// Chosen small (3) so EVERY emitted mcq can be oracle-gated (P6 + REG-54 — each
+// mcq costs one grader call) without an unbounded LLM budget, while still giving
+// the student a genuine multi-question practice set. The route caps the number
+// of survivors it keeps at this same value (gatePracticeMcqs `maxKeep`).
+export const PRACTICE_MCQ_COUNT = 3;
+
+// Real-practice directive. Overrides the legacy MODE_DIRECTIVES.practice shape
+// (5 markdown-in-paragraph pseudo-MCQs that render as NON-interactive text) with
+// EXACTLY N real `mcq` blocks — each rendered as an interactive, answerable MCQ
+// by FoxyStructuredRenderer and each oracle-gated by the route BEFORE display.
+// This is the fix for the fake-action bug ("it says 'Generated 5 questions' but
+// they're just text you can't answer"). Injected ONLY when
+// ff_foxy_real_practice_v1 is ON; when OFF the route uses MODE_DIRECTIVES.practice
+// verbatim (byte-identical to today).
+//
+// Anti-fake (P12): the closing instruction FORBIDS any prose claim of having made
+// a quiz. The route additionally STRIPS all non-mcq blocks at the API boundary
+// (buildGatedPracticeResponse) so a turn can never CLAIM questions it didn't
+// actually emit as gated mcq blocks. P7: bilingual, technical terms in English.
+export const PRACTICE_MCQ_DIRECTIVE = [
+  '## Mode Directive (PRACTICE — REAL interactive quiz — overrides STEP CARDS above)',
+  `The student is in PRACTICE MODE. Generate EXACTLY ${PRACTICE_MCQ_COUNT} interactive`,
+  'practice questions as "mcq" blocks — NOT teaching content, NOT paragraphs.',
+  '',
+  `Respond with EXACTLY ${PRACTICE_MCQ_COUNT} "mcq" blocks and NOTHING else: no intro`,
+  'paragraph, no closing prose, no "here are N questions" sentence, and no step /',
+  'definition / example / answer / question / math / paragraph blocks. Open the',
+  'response directly with the first mcq block. Use the "title" field for context',
+  '(e.g. "Practice: Acids, Bases & Salts").',
+  '',
+  'Each "mcq" block MUST satisfy (every field is required):',
+  '- "stem": a clear 15-50 word question testing ONE specific concept, inside the',
+  '  student\'s CBSE grade/subject/chapter scope. No "{{" or "[BLANK]" markers.',
+  '- "options": EXACTLY 4 distinct, non-empty options; exactly one is correct.',
+  '- "correct_answer_index": integer 0..3 pointing at the correct option.',
+  '- "explanation": 1-2 sentences (>=10 chars) saying why the correct option is right.',
+  '- "bloom_level" and "difficulty": set them honestly for each question.',
+  '',
+  `Make the ${PRACTICE_MCQ_COUNT} questions distinct and CALIBRATE their difficulty to`,
+  'the student\'s mastery signals in the cognitive context below. Never pose a',
+  'question more than ONE Bloom level above the student\'s current ceiling for the',
+  'topic: a struggling student gets mostly easy/medium recall-and-understand items',
+  '(e.g. 2 easy, 1 medium); a proficient student gets a genuine higher-order item',
+  '(e.g. 1 easy, 1 medium, 1 hard). If no mastery signal is available yet, default',
+  'to a gentle spread (e.g. 2 easy, 1 medium). Stay strictly inside the student\'s',
+  'grade and chapter scope — do NOT pull problems from outside the Reference',
+  'Material below.',
+  'Write the stem/options/explanation in the student\'s language (English, Hindi, or',
+  'Hinglish); keep technical terms (CBSE, NCERT, Bloom\'s) in English.',
+  '',
+  'IMPORTANT — do NOT claim to have created a quiz in prose. The ONLY questions',
+  'that count are the mcq blocks themselves; never write a sentence like "I',
+  `generated ${PRACTICE_MCQ_COUNT} questions". Emit the mcq blocks and nothing else.`,
+].join('\n');
+
+// ─── Phase 0.4: teach-then-stop directive (ff_foxy_learning_actions_v1) ──────
+//
+// When the redesigned post-answer action bar is live, the student's screen
+// ALREADY shows tappable buttons for the next step: "Got it", "Explain
+// simpler", "Show example", and "Quiz me". So Foxy re-narrating those same
+// options in prose ("Would you like me to explain this more simply? I can also
+// give you an example, or quiz you on it — just let me know!") is redundant and
+// un-teacherly. This directive tells Foxy to TEACH cleanly, END with at most
+// ONE substantive check question, and NOT enumerate the assistant's own menu of
+// next actions.
+//
+// CRITICAL distinction (do NOT over-suppress pedagogy): this forbids OFFERING
+// THE ASSISTANT'S MENU of next actions — it does NOT forbid asking the STUDENT
+// a real question. A single Socratic check / scaffold / stretch question is
+// still expected (that IS teaching). Only the assistant's self-narrated
+// "shall I… / do you want me to… / just let me know" menu is banned.
+//
+// Threaded ONLY through the `mode_directive` template variable (the same channel
+// as SINGLE_MCQ_DIRECTIVE / PRACTICE_MCQ_DIRECTIVE) and ONLY on prose-teaching
+// turns (mode !== 'practice'), gated by the EXISTING ff_foxy_learning_actions_v1
+// flag. Flag OFF → this string is never injected → the prompt is byte-identical
+// to today. P7 (bilingual) + P12 (age-appropriate, in-scope) are preserved and
+// FOXY_SAFETY_RAILS are untouched — this only constrains the CLOSING shape.
+export const TEACH_THEN_STOP_DIRECTIVE = [
+  '## POST-ANSWER ACTIONS — TEACH, THEN STOP (overrides any "offer a follow-up" / closing-offer lines above)',
+  "The student's screen already shows tappable buttons for what to do next:",
+  '"Got it", "Explain simpler", "Show example", and "Quiz me". Those buttons —',
+  'not your prose — are how the student chooses the next step.',
+  '',
+  'DO:',
+  '- Teach the concept cleanly and completely. "STOP" here means STOP narrating',
+  '  your own menu of next steps — it does NOT mean stop teaching, and it does NOT',
+  '  stop you from advancing the chapter when the student is clearly ready.',
+  '- End with AT MOST ONE short, specific check-for-understanding question that',
+  '  asks the STUDENT to apply, restate, or reason about the idea you just taught.',
+  '  Let your pedagogy mode set its shape — a CHECK (apply the just-taught idea to',
+  '  a new tiny example), a SCAFFOLD (the next sub-step in the chain), or a STRETCH',
+  '  (one Bloom level higher; for a strong student, sometimes the same level in a',
+  '  fresh context). This single Socratic check is required teaching — keep it',
+  '  concrete (never a yes/no "did you understand?").',
+  '',
+  'DO NOT:',
+  '- Offer YOUR OWN menu of next actions. Never write lines like "Would you like',
+  '  me to explain this more simply?", "I can give you an example", "Shall I quiz',
+  '  you on this?", "Do you want me to…", or "just let me know!". The on-screen',
+  '  buttons already do that — narrating them is redundant and un-teacherly.',
+  '- Stack several offers or a "what would you like next?" list at the end.',
+  '',
+  "In short: ask the STUDENT one real question; do NOT advertise the assistant's",
+  'own follow-up options. Keep this in the student\'s language (English, Hindi, or',
+  "Hinglish); technical terms (CBSE, NCERT, Bloom's) stay in English.",
+].join('\n');
+
+// Compose a per-mode directive with an additive directive fragment. Used to
+// append TEACH_THEN_STOP_DIRECTIVE onto the (usually empty) per-mode directive
+// WITHOUT disturbing byte-identical output when the fragment is empty:
+//   - extra === '' → returns `base` unchanged (the byte-identical guarantee for
+//                    the flag-OFF path and for the legacy practice shape)
+//   - base  === '' → returns `extra`
+//   - both set     → `base` + one blank line + `extra`
+export function composeModeDirective(base: string, extra: string): string {
+  if (!extra) return base;
+  if (!base) return extra;
+  return `${base}\n\n${extra}`;
+}
+
 // Claude-backed LLM grader for the Quiz-me oracle gate (REG-54 second pass).
 // Wraps callClaude with the canonical grader prompt and the strict-JSON parser.
 // On ANY failure (circuit open, network, unparseable JSON) it THROWS, so the

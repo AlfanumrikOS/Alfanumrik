@@ -380,3 +380,130 @@ Deno.test('missing API key → auth_error, no fetch', async () => {
     restoreFetch();
   }
 });
+
+// ── Phase 0.2: stopReason surfacing (drives Foxy bounded continuation) ────────
+//
+// The non-streaming ClaudeResponse ok variant now carries a normalized
+// `stopReason`. The Foxy structured pipeline keys the bounded continuation off
+// `stopReason === 'max_tokens'`, so these lock the normalization for both
+// providers.
+
+function mockAnthropicOkResponseWithStop(
+  text: string,
+  stopReason: string | null,
+): Response {
+  return new Response(
+    JSON.stringify({
+      id: 'msg_test',
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'text', text }],
+      model: 'claude-test',
+      stop_reason: stopReason,
+      usage: { input_tokens: 40, output_tokens: 200 },
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+function mockOpenAIOkResponse(text: string, finishReason: string | null): Response {
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { content: text }, finish_reason: finishReason }],
+      usage: { prompt_tokens: 40, completion_tokens: 200 },
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+Deno.test('Anthropic stop_reason=max_tokens → stopReason:max_tokens', async () => {
+  installFetchStub([
+    () => Promise.resolve(mockAnthropicOkResponseWithStop('partial answer...', 'max_tokens')),
+  ]);
+  try {
+    const result = await callClaude({
+      systemPrompt: 'sp',
+      userMessage: 'q',
+      maxTokens: 128,
+      temperature: 0.3,
+      timeoutMs: 30_000,
+      apiKey: 'sk-test',
+      modelPreference: 'haiku',
+    });
+    assertEquals(result.ok, true);
+    if (result.ok) assertEquals(result.stopReason, 'max_tokens');
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test('Anthropic stop_reason=end_turn → stopReason:end_turn', async () => {
+  installFetchStub([
+    () => Promise.resolve(mockAnthropicOkResponseWithStop('complete answer.', 'end_turn')),
+  ]);
+  try {
+    const result = await callClaude({
+      systemPrompt: 'sp',
+      userMessage: 'q',
+      maxTokens: 1024,
+      temperature: 0.3,
+      timeoutMs: 30_000,
+      apiKey: 'sk-test',
+      modelPreference: 'haiku',
+    });
+    assertEquals(result.ok, true);
+    if (result.ok) assertEquals(result.stopReason, 'end_turn');
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test('Anthropic stop_reason absent → stopReason:other (never spuriously max_tokens)', async () => {
+  // Defensive: a missing stop_reason must NOT read as max_tokens, or the
+  // continuation would fire on complete answers.
+  installFetchStub([
+    () => Promise.resolve(mockAnthropicOkResponse('answer with no stop_reason field')),
+  ]);
+  try {
+    const result = await callClaude({
+      systemPrompt: 'sp',
+      userMessage: 'q',
+      maxTokens: 1024,
+      temperature: 0.3,
+      timeoutMs: 30_000,
+      apiKey: 'sk-test',
+      modelPreference: 'haiku',
+    });
+    assertEquals(result.ok, true);
+    if (result.ok) assertEquals(result.stopReason, 'other');
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test('OpenAI finish_reason=length → stopReason:max_tokens (normalized)', async () => {
+  // Only OpenAI is stubbed, and Haiku 529 forces the fallback to gpt-4o-mini.
+  installFetchStub([
+    () => Promise.resolve(new Response('overloaded', { status: 529 })),
+    () => Promise.resolve(mockOpenAIOkResponse('partial from gpt', 'length')),
+  ]);
+  try {
+    const result = await callClaude({
+      systemPrompt: 'sp',
+      userMessage: 'q',
+      maxTokens: 128,
+      temperature: 0.3,
+      timeoutMs: 30_000,
+      apiKey: 'sk-test',
+      openaiApiKey: 'sk-openai',
+      modelPreference: 'haiku',
+    });
+    assertEquals(result.ok, true);
+    if (result.ok) {
+      assertEquals(result.provider, 'openai');
+      assertEquals(result.stopReason, 'max_tokens');
+    }
+  } finally {
+    restoreFetch();
+  }
+});

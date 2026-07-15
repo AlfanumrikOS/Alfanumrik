@@ -75,8 +75,22 @@ export interface ResolveConceptInput {
   leadConceptTitle?: string | null;
 }
 
+/**
+ * How an `ok: true` concept was chosen:
+ *   - 'title_match'           — the supplied leadConceptTitle actually matched a
+ *                               concept in the scoped chapter (exact, then substring).
+ *   - 'first_concept_fallback'— no title match (or no title supplied), so the
+ *                               FIRST concept of the chapter was used.
+ *
+ * The GRADED evidential-quiz path treats both the same (it anchors an item to
+ * whatever concept resolves — see route.ts). This discriminator exists so the
+ * OBSERVABILITY-only perception path can degrade to NULL on a fallback instead of
+ * systematically over-representing each chapter's concept #1 in analytics.
+ */
+export type ConceptMatchKind = 'title_match' | 'first_concept_fallback';
+
 export type ResolveConceptResult =
-  | { ok: true; concept: ChapterConceptRow }
+  | { ok: true; concept: ChapterConceptRow; match: ConceptMatchKind }
   | { ok: false; reason: 'no_chapter_scope' | 'no_concept_match' | 'lookup_failed' };
 
 /**
@@ -122,15 +136,15 @@ export async function resolveLeadConceptId(
     const lead = input.leadConceptTitle ? normTitle(input.leadConceptTitle) : '';
     if (lead) {
       const exact = rows.find((r) => normTitle(r.title) === lead);
-      if (exact) return { ok: true, concept: exact };
+      if (exact) return { ok: true, concept: exact, match: 'title_match' };
       const partial = rows.find(
         (r) => normTitle(r.title).includes(lead) || lead.includes(normTitle(r.title)),
       );
-      if (partial) return { ok: true, concept: partial };
+      if (partial) return { ok: true, concept: partial, match: 'title_match' };
     }
 
     // (2) first concept of the chapter (deterministic by concept_number order).
-    return { ok: true, concept: rows[0] };
+    return { ok: true, concept: rows[0], match: 'first_concept_fallback' };
   } catch {
     return { ok: false, reason: 'lookup_failed' };
   }

@@ -45,6 +45,7 @@
  */
 
 import { MODULE_REGISTRY, type ModuleKey } from '@alfanumrik/lib/modules/registry';
+import { UNLIMITED_USAGE_SENTINEL } from '@alfanumrik/lib/usage-sentinel';
 
 // ─── Plan codes (the 4 canonical billing tiers) ───────────────────────────
 
@@ -53,9 +54,12 @@ export type PlanCode = 'free' | 'starter' | 'pro' | 'unlimited';
 
 export const PLAN_CODES: readonly PlanCode[] = ['free', 'starter', 'pro', 'unlimited'] as const;
 
-/** The usage.ts unlimited sentinel. A limit's effective `max` of this value
- *  (or a stored {max:null}) means "no cap". Kept in lockstep with usage.ts. */
-export const UNLIMITED_SENTINEL = 999999;
+/** The unlimited sentinel, single-sourced from `usage-sentinel` — the SAME value
+ *  usage.ts and the DB (`get_plan_limit` maps `-1` → 999999) use. A limit's
+ *  effective `max` of this value (or a stored {max:null}) means "no cap".
+ *  Re-exported under the catalog's historical name so existing importers
+ *  (resolver.ts, the super-admin panel) are unaffected. */
+export const UNLIMITED_SENTINEL = UNLIMITED_USAGE_SENTINEL;
 
 // ─── Value-shape types ─────────────────────────────────────────────────────
 
@@ -259,8 +263,16 @@ export const ENTITLEMENT_CATALOG: readonly CatalogEntry[] = [
     valueShape: 'max_period',
     labelEn: 'Foxy Chats per Day',
     labelHi: 'प्रतिदिन फॉक्सी चैट',
-    // usage.ts PLAN_LIMITS.foxy_chat: 5 / 30 / 100 / unlimited
-    planDefault: limitDefault('day', { free: 5, starter: 30, pro: 100, unlimited: UNLIMITED_SENTINEL }),
+    // usage.ts PLAN_LIMITS.foxy_chat: 5 (free, finite) / unlimited for EVERY paid
+    // tier (starter, pro, unlimited) — mirrors the DB `foxy_chats_per_day = -1`.
+    // A finite starter/pro cap here would imply a stale "30 left" / "100 left"
+    // that contradicts the DB-authoritative unlimited grant; free stays capped.
+    planDefault: limitDefault('day', {
+      free: 5,
+      starter: UNLIMITED_SENTINEL,
+      pro: UNLIMITED_SENTINEL,
+      unlimited: UNLIMITED_SENTINEL,
+    }),
   },
   {
     key: 'limit.quiz_daily',

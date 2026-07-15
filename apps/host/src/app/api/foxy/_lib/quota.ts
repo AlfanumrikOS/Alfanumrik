@@ -15,36 +15,83 @@ import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { getAllTenantConfig } from '@alfanumrik/lib/tenant-config';
 import { coerceTenantType } from '@alfanumrik/lib/tenant-domain';
-import { DAILY_QUOTA, DEFAULT_QUOTA, normalizePlan } from './constants';
+import { UNLIMITED_QUOTA } from './constants';
 
 // ─── Helper: check and increment daily quota (atomic via RPC) ────────────────
 
+/**
+ * Atomically check-and-increment the student's daily `foxy_chat` usage.
+ *
+ * AUTHORITY MODEL (important — do not reintroduce a Node-side limit table):
+ * The DB is the single source of truth for enforcement. `check_and_record_usage`
+ * derives the cap internally via `get_plan_limit()` → `subscription_plans.
+ * foxy_chats_per_day` (a value of `-1` means unlimited and is mapped to
+ * {@link UNLIMITED_QUOTA} inside the RPC). The RPC IGNORES any `p_limit`
+ * argument, so we no longer pass one — passing a Node-side number here used to
+ * imply the old local `DAILY_QUOTA` map governed enforcement. It never did;
+ * that was a misleading dead path and has been removed.
+ *
+ * The RPC's return column is `used_count` (NOT `current_count` — that name never
+ * existed in the return shape; reading it made `remaining` always resolve to the
+ * full limit). We read `used_count` (the post-increment count on an allowed turn)
+ * and derive `remaining` against the SAME DB authority the RPC enforced with, by
+ * calling `get_plan_limit`. One extra indexed RPC on a path that already awaits a
+ * multi-second LLM round-trip — negligible latency, and it keeps `remaining`
+ * honest (astronomically large, never negative, for the now-unlimited paid plans).
+ */
 export async function checkAndIncrementQuota(
   studentId: string,
-  plan: string,
-): Promise<{ allowed: boolean; remaining: number }> {
-  const normalizedPlan = normalizePlan(plan);
-  const limit = DAILY_QUOTA[normalizedPlan] ?? DEFAULT_QUOTA;
+): Promise<{ allowed: boolean; remaining: number; limit: number }> {
   const today = new Date().toISOString().split('T')[0];
 
   const { data: rows, error } = await supabaseAdmin.rpc('check_and_record_usage', {
     p_student_id: studentId,
     p_feature: 'foxy_chat',
-    p_limit: limit,
     p_usage_date: today,
+    // NOTE: p_limit intentionally omitted — the RPC derives the authoritative
+    // cap from get_plan_limit() and ignores this argument. See the doc above.
   });
 
   if (error) {
     logger.error('foxy_quota_check_failed', { error: error.message, studentId });
-    return { allowed: false, remaining: 0 };
+    return { allowed: false, remaining: 0, limit: 0 };
   }
 
-  const row = rows?.[0];
+  const row = (rows as Array<{ allowed?: boolean; used_count?: number }> | null)?.[0];
   if (!row?.allowed) {
-    return { allowed: false, remaining: 0 };
+    return { allowed: false, remaining: 0, limit: 0 };
   }
 
-  return { allowed: true, remaining: Math.max(0, limit - (row.current_count ?? 0)) };
+  const limit = await resolveDailyLimit(studentId);
+  const usedCount = row.used_count ?? 0;
+  return { allowed: true, remaining: Math.max(0, limit - usedCount), limit };
+}
+
+/**
+ * Resolve the student's DB-authoritative daily `foxy_chat` cap via the same
+ * `get_plan_limit` RPC that `check_and_record_usage` uses internally (so the two
+ * never disagree). Returns {@link UNLIMITED_QUOTA} for the unlimited paid plans
+ * (`foxy_chats_per_day = -1`).
+ *
+ * Fail-soft: the authoritative check_and_record_usage already returned
+ * allowed=true for this turn, so a transient limit-lookup failure must not turn
+ * a served answer into a spurious "0 left / upgrade now" nudge. On error we treat
+ * the cap as unlimited — the display degrades to "plenty left, no upsell", which
+ * is the safe direction (we never wrongly block and never spuriously upsell).
+ */
+async function resolveDailyLimit(studentId: string): Promise<number> {
+  const { data, error } = await supabaseAdmin.rpc('get_plan_limit', {
+    p_student_id: studentId,
+    p_feature: 'foxy_chat',
+  });
+  if (error || typeof data !== 'number') {
+    logger.warn('foxy_quota_limit_lookup_failed', {
+      error: error?.message,
+      studentId,
+    });
+    return UNLIMITED_QUOTA;
+  }
+  return data;
 }
 
 /**

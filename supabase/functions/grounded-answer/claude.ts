@@ -38,6 +38,51 @@ export interface ClaudeConversationTurn {
   content: string;
 }
 
+/**
+ * Normalized generation stop reason, surfaced on the ok-true ClaudeResponse.
+ *
+ * Providers differ: Anthropic returns `stop_reason` (`end_turn` | `max_tokens`
+ * | `stop_sequence` | `tool_use`), OpenAI returns `finish_reason` (`stop` |
+ * `length` | `content_filter` | `tool_calls`). We normalize both into this
+ * small union so callers can branch on a single vocabulary. `max_tokens` is
+ * the one the Foxy bounded-continuation path (Phase 0.2) keys off — it means
+ * the model was cut off by the token budget mid-answer.
+ */
+export type ClaudeStopReason =
+  | 'end_turn'
+  | 'max_tokens'
+  | 'stop_sequence'
+  | 'tool_use'
+  | 'other';
+
+/** Map Anthropic `stop_reason` → normalized union. Unknown/absent → 'other'. */
+function normalizeAnthropicStopReason(raw: unknown): ClaudeStopReason {
+  switch (raw) {
+    case 'end_turn':
+      return 'end_turn';
+    case 'max_tokens':
+      return 'max_tokens';
+    case 'stop_sequence':
+      return 'stop_sequence';
+    case 'tool_use':
+      return 'tool_use';
+    default:
+      return 'other';
+  }
+}
+
+/** Map OpenAI `finish_reason` → normalized union. `length` is OpenAI's max_tokens. */
+function normalizeOpenAIFinishReason(raw: unknown): ClaudeStopReason {
+  switch (raw) {
+    case 'length':
+      return 'max_tokens';
+    case 'stop':
+      return 'end_turn';
+    default:
+      return 'other';
+  }
+}
+
 export interface ClaudeRequest {
   systemPrompt: string;
   userMessage: string;
@@ -65,6 +110,13 @@ export type ClaudeResponse =
       inputTokens: number;
       outputTokens: number;
       insufficientContext: boolean;
+      /**
+       * Normalized generation stop reason (Phase 0.2). `max_tokens` signals the
+       * model hit the token budget mid-answer — the Foxy structured pipeline
+       * uses this to trigger a bounded continuation. Optional/additive: older
+       * consumers of the ok-true variant ignore it. Always set by callClaude.
+       */
+      stopReason?: ClaudeStopReason;
       /**
        * C3 (MOL grounded-answer integration, 2026-05-18): how many non-final
        * models failed before this one succeeded. 0 = the first model in the
@@ -189,6 +241,7 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
         inputTokens: attempt.inputTokens,
         outputTokens: attempt.outputTokens,
         insufficientContext: trimmed === INSUFFICIENT_CONTEXT_SENTINEL,
+        stopReason: attempt.stopReason,
         fallback_count: failureChain.length,
         failure_chain: failureChain.length > 0 ? failureChain.slice() : undefined,
       };
@@ -251,7 +304,7 @@ function resolveModelOrder(pref: 'haiku' | 'sonnet' | 'auto'): ModelTarget[] {
 }
 
 type SingleCallResult =
-  | { kind: 'ok'; content: string; inputTokens: number; outputTokens: number }
+  | { kind: 'ok'; content: string; inputTokens: number; outputTokens: number; stopReason: ClaudeStopReason }
   | { kind: 'timeout' }
   | { kind: 'auth_error' }
   | { kind: 'server_error' }
@@ -355,8 +408,9 @@ async function callOnce(params: {
 
     const inputTokens = typeof body.usage?.input_tokens === 'number' ? body.usage.input_tokens : 0;
     const outputTokens = typeof body.usage?.output_tokens === 'number' ? body.usage.output_tokens : 0;
+    const stopReason = normalizeAnthropicStopReason(body.stop_reason);
 
-    return { kind: 'ok', content: text, inputTokens, outputTokens };
+    return { kind: 'ok', content: text, inputTokens, outputTokens, stopReason };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       return { kind: 'timeout' };
@@ -695,8 +749,9 @@ async function callOpenAIOnce(params: {
     const text = (body.choices?.[0]?.message?.content ?? '').trim();
     const inputTokens = body.usage?.prompt_tokens ?? 0;
     const outputTokens = body.usage?.completion_tokens ?? 0;
+    const stopReason = normalizeOpenAIFinishReason(body.choices?.[0]?.finish_reason);
 
-    return { kind: 'ok', content: text, inputTokens, outputTokens };
+    return { kind: 'ok', content: text, inputTokens, outputTokens, stopReason };
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       return { kind: 'timeout' };

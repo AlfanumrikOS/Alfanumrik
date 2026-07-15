@@ -46,6 +46,44 @@ export type LearningActionType =
   | 'quiz_me'
   | 'save';
 
+/**
+ * The four PRIMARY post-answer buttons the Teaching Director may suggest — the
+ * structural subset of `LearningActionType` MINUS 'save' (the notebook utility
+ * the Director never advises). Mirrors `SuggestedButton` in
+ * `packages/lib/src/foxy/teaching-director.ts`. When `suggestedButtons` is
+ * present on a turn the bar renders ONLY these; absent ⇒ all four render.
+ */
+export type SuggestedButtonType = 'got_it' | 'explain_simpler' | 'show_example' | 'quiz_me';
+
+/** Kind of an advisory "next" action the Director recommends (never auto-runs). */
+export type NextActionKind =
+  | 'quiz_concept'
+  | 'review_prerequisite'
+  | 'advance_topic'
+  | 'reflect';
+
+/**
+ * An advisory follow-up the Teaching Director surfaces beneath the action bar
+ * (flag ON only). Display-only: these communicate what comes next; they never
+ * mutate XP/mastery and carry no client-side business logic. Structural mirror
+ * of `RecommendedAction` in `packages/lib/src/foxy/teaching-director.ts`.
+ */
+export interface NextAction {
+  kind: NextActionKind;
+  /** Bilingual, student-facing CTA label (P7). */
+  label: { en: string; hi: string };
+  /** Concept the action targets, when known. */
+  conceptId?: string;
+}
+
+/** Leading glyph per next-action kind (display-only affordance). */
+const NEXT_ACTION_ICON: Record<NextActionKind, string> = {
+  quiz_concept: '📝',
+  review_prerequisite: '🔁',
+  advance_topic: '➡️',
+  reflect: '💭',
+};
+
 interface ChatBubbleProps {
   role: 'student' | 'tutor';
   content: ReactNode;
@@ -101,6 +139,22 @@ interface ChatBubbleProps {
   saved?: boolean;
   /** True once the student tapped "Got it" on this answer (flag ON bar). */
   gotIt?: boolean;
+
+  // ── Phase 2.1 Teaching Director (ff_foxy_teaching_director_v1) ─────────────
+  /**
+   * Context-aware subset of the four PRIMARY learning-action buttons supplied by
+   * the Teaching Director. When present, ONLY the listed buttons render (each
+   * primary button is gated by `(suggestedButtons?.includes('<type>') ?? true)`).
+   * When ABSENT (flag OFF, or Director produced no plan) all four render —
+   * byte-identical to today. Only meaningful while `learningActionsEnabled`.
+   */
+  suggestedButtons?: SuggestedButtonType[];
+  /**
+   * Advisory "next" actions the Director recommends. Rendered as a subtle,
+   * display-only chip row beneath the action bar (bilingual, P7). Never
+   * dispatches an action or mutates state. Absent ⇒ no chip row (today's UI).
+   */
+  nextActions?: NextAction[];
   /**
    * Whether this message actually has a renderable body. Defaults to true so
    * every existing caller stays byte-identical. MessageList passes `false` for a
@@ -138,6 +192,8 @@ export function ChatBubble({
   onLearningAction,
   saved,
   gotIt,
+  suggestedButtons,
+  nextActions,
   hasBodyContent = true,
 }: ChatBubbleProps) {
   const { isHi } = useAuth();
@@ -156,6 +212,9 @@ export function ChatBubble({
   const [issueModalOpen, setIssueModalOpen] = useState(false);
   // Phase 1: the "⋯" overflow menu state for the new learning-action bar.
   const [overflowOpen, setOverflowOpen] = useState(false);
+  // Phase 2.1: a primary button renders when the Teaching Director suggested it
+  // OR when no subset was supplied (absent ⇒ render all four — today's default).
+  const showPrimary = (t: SuggestedButtonType) => suggestedButtons?.includes(t) ?? true;
 
   return (
     <div className="mb-4 w-full animate-slide-up">
@@ -367,8 +426,23 @@ export function ChatBubble({
       )}
 
       {/* ── New learning-action bar (flag ON) ───────────────────────────────
-          Tutor messages only; suppressed on the error fallback bubble. */}
-      {learningActionsEnabled && isTutor && rawContent !== 'Oops! Please try again.' && (
+          Tutor TEACHING turns only. Suppressed on the error fallback bubble
+          ('Oops! Please try again.') AND on hard-abstain bubbles — when the
+          grounded-answer service refuses, a HardAbstainCard renders in place of
+          teaching content, so "Got it / Explain simpler / Show example / Quiz
+          me on this" would be nonsensical there (criteria 4: no bar on pure
+          abstain/error surfaces). The flag-OFF legacy bar above is deliberately
+          left untouched, so the OFF path stays byte-identical to today.
+
+          PHASE 2.1 — Teaching Director `suggestedButtons` (WIRED):
+          The Director supplies a context-aware subset of the four primary
+          actions (present only when ff_foxy_teaching_director_v1 is ON and a
+          plan composed). Each primary button below is gated by
+          `showPrimary('<type>')` === `(suggestedButtons?.includes('<type>') ?? true)`,
+          so an ABSENT set renders all four (today's behavior) and a present set
+          renders ONLY the listed buttons. `nextActions`, when present, renders a
+          subtle display-only chip row beneath the bar. Purely additive. */}
+      {learningActionsEnabled && isTutor && !showHardAbstainCard && rawContent !== 'Oops! Please try again.' && (
         <div className="mt-2 pl-1">
           {gotIt ? (
             // Got it ✓ collapses the row into a lightweight micro-CTA — no
@@ -389,51 +463,60 @@ export function ChatBubble({
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-1.5">
-              {/* Primary row */}
-              <button
-                type="button"
-                onClick={() => onLearningAction?.('got_it')}
-                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
-                style={{
-                  background: 'color-mix(in srgb, var(--success) 8%, transparent)',
-                  color: 'var(--success)',
-                  border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)',
-                }}
-                data-testid="learning-action-gotit"
-              >
-                {isHi ? 'समझ गया ✓' : 'Got it ✓'}
-              </button>
-              <button
-                type="button"
-                onClick={() => onLearningAction?.('explain_simpler')}
-                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
-                style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
-                data-testid="learning-action-simpler"
-              >
-                {isHi ? 'आसान करके बताओ' : 'Explain simpler'}
-              </button>
-              <button
-                type="button"
-                onClick={() => onLearningAction?.('show_example')}
-                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
-                style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
-                data-testid="learning-action-example"
-              >
-                {isHi ? 'उदाहरण दिखाओ' : 'Show example'}
-              </button>
-              <button
-                type="button"
-                onClick={() => onLearningAction?.('quiz_me')}
-                className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[36px]"
-                style={{
-                  background: 'color-mix(in srgb, var(--purple) 8%, transparent)',
-                  color: 'var(--purple)',
-                  border: '1px solid color-mix(in srgb, var(--purple) 22%, transparent)',
-                }}
-                data-testid="learning-action-quiz"
-              >
-                {isHi ? 'इस पर क्विज़ लो' : 'Quiz me on this'}
-              </button>
+              {/* Primary row — each button is gated by the Director's
+                  context-aware subset (absent ⇒ all four render). */}
+              {showPrimary('got_it') && (
+                <button
+                  type="button"
+                  onClick={() => onLearningAction?.('got_it')}
+                  className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
+                  style={{
+                    background: 'color-mix(in srgb, var(--success) 8%, transparent)',
+                    color: 'var(--success)',
+                    border: '1px solid color-mix(in srgb, var(--success) 20%, transparent)',
+                  }}
+                  data-testid="learning-action-gotit"
+                >
+                  {isHi ? 'समझ गया ✓' : 'Got it ✓'}
+                </button>
+              )}
+              {showPrimary('explain_simpler') && (
+                <button
+                  type="button"
+                  onClick={() => onLearningAction?.('explain_simpler')}
+                  className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
+                  style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                  data-testid="learning-action-simpler"
+                >
+                  {isHi ? 'आसान करके बताओ' : 'Explain simpler'}
+                </button>
+              )}
+              {showPrimary('show_example') && (
+                <button
+                  type="button"
+                  onClick={() => onLearningAction?.('show_example')}
+                  className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
+                  style={{ background: 'var(--surface-1)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                  data-testid="learning-action-example"
+                >
+                  {isHi ? 'उदाहरण दिखाओ' : 'Show example'}
+                </button>
+              )}
+              {showPrimary('quiz_me') && (
+                <button
+                  type="button"
+                  onClick={() => onLearningAction?.('quiz_me')}
+                  className="px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all active:scale-95 min-h-[44px]"
+                  style={{
+                    background: 'color-mix(in srgb, var(--purple) 8%, transparent)',
+                    color: 'var(--purple)',
+                    border: '1px solid color-mix(in srgb, var(--purple) 22%, transparent)',
+                  }}
+                  data-testid="learning-action-quiz"
+                >
+                  {isHi ? 'इस पर क्विज़ लो' : 'Quiz me on this'}
+                </button>
+              )}
 
               {/* Overflow "⋯" menu — Save · Read aloud · Report an issue */}
               <div className="relative">
@@ -443,7 +526,7 @@ export function ChatBubble({
                   aria-haspopup="menu"
                   aria-expanded={overflowOpen}
                   aria-label={isHi ? 'और विकल्प' : 'More options'}
-                  className="px-2.5 py-1.5 rounded-xl text-[14px] font-bold leading-none transition-all active:scale-95 min-h-[36px] min-w-[36px]"
+                  className="px-2.5 py-1.5 rounded-xl text-[14px] font-bold leading-none transition-all active:scale-95 min-h-[44px] min-w-[44px]"
                   style={{ background: 'var(--surface-1)', color: 'var(--text-3)', border: '1px solid var(--border)' }}
                   data-testid="learning-action-overflow"
                 >
@@ -460,7 +543,7 @@ export function ChatBubble({
                       role="menuitem"
                       disabled={saved}
                       onClick={() => { onLearningAction?.('save'); setOverflowOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98] disabled:cursor-default"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] font-semibold transition-all active:scale-[0.98] disabled:cursor-default"
                       style={{ color: saved ? 'var(--success)' : 'var(--text-2)' }}
                       data-testid="learning-action-save"
                     >
@@ -474,7 +557,7 @@ export function ChatBubble({
                         type="button"
                         role="menuitem"
                         onClick={() => { onSpeak(); setOverflowOpen(false); }}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
                         style={{ color: 'var(--text-2)' }}
                         data-testid="learning-action-speak"
                       >
@@ -486,7 +569,7 @@ export function ChatBubble({
                       type="button"
                       role="menuitem"
                       onClick={() => { setIssueModalOpen(true); setOverflowOpen(false); }}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12px] font-semibold transition-all active:scale-[0.98]"
                       style={{ color: 'var(--text-2)' }}
                       data-testid="learning-action-report"
                     >
@@ -496,6 +579,33 @@ export function ChatBubble({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Phase 2.1 — advisory "next" affordance from the Teaching Director.
+              Display-only chips (no dispatch, no state mutation) that hint at
+              what comes next. Rendered only when the Director supplied at least
+              one recommended action. Bilingual (P7). Absent ⇒ nothing renders,
+              so the OFF path stays byte-identical to today. */}
+          {nextActions && nextActions.length > 0 && (
+            <div
+              className="mt-1.5 flex flex-wrap items-center gap-1.5"
+              data-testid="learning-next-actions"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-3)' }}>
+                {isHi ? 'आगे' : 'Next'}
+              </span>
+              {nextActions.map((na, i) => (
+                <span
+                  key={`${na.kind}-${na.conceptId ?? i}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                  data-testid={`learning-next-action-${na.kind}`}
+                >
+                  <span aria-hidden="true">{NEXT_ACTION_ICON[na.kind]}</span>
+                  {isHi ? na.label.hi : na.label.en}
+                </span>
+              ))}
             </div>
           )}
         </div>
@@ -541,6 +651,8 @@ function areChatBubblePropsEqual(prev: React.ComponentProps<typeof ChatBubble>, 
     prev.onLearningAction === next.onLearningAction &&
     prev.saved === next.saved &&
     prev.gotIt === next.gotIt &&
+    JSON.stringify(prev.suggestedButtons) === JSON.stringify(next.suggestedButtons) &&
+    JSON.stringify(prev.nextActions) === JSON.stringify(next.nextActions) &&
     prev.hasBodyContent === next.hasBodyContent
   );
 }
