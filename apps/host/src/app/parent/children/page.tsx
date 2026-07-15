@@ -10,6 +10,7 @@ import ParentChildChat from '@alfanumrik/ui/parent/ParentChildChat';
 import { usePermissions } from '@alfanumrik/lib/usePermissions';
 import { usePulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulse } from '@alfanumrik/ui/pulse';
+import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 
 const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -269,7 +270,7 @@ function ChildCard({
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         padding: '10px 18px',
-        backgroundColor: '#FFF8F0',
+        backgroundColor: 'var(--bg)',
         borderTop: '1px solid #FDBA7433',
       }}>
         <div style={{ display: 'flex', gap: 16 }}>
@@ -705,7 +706,7 @@ function LinkChildSection({
             style={{
               flex: 1,
               padding: '12px 14px',
-              backgroundColor: '#FFF8F0',
+              backgroundColor: 'var(--bg)',
               border: '1px solid #FDBA7444',
               borderRadius: 10,
               color: '#1E293B',
@@ -755,7 +756,7 @@ function LinkChildSection({
               style={{
                 flex: 1,
                 padding: '12px 14px',
-                backgroundColor: '#FFF8F0',
+                backgroundColor: 'var(--bg)',
                 border: '1px solid #FDBA7444',
                 borderRadius: 10,
                 color: '#1E293B',
@@ -1116,17 +1117,16 @@ export default function ParentChildrenPage() {
   // Loading state
   if (authLoading || loading) {
     return (
-      <div style={pageStyle}>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
-          <div style={{
-            width: 40, height: 40,
-            border: '3px solid #FDBA7444', borderTopColor: '#E8581C',
-            borderRadius: '50%', margin: '0 auto 16px',
-            animation: 'spin 0.8s linear infinite',
-          }} />
-          {t(isHi, 'Loading children...', 'बच्चे लोड हो रहे हैं...')}
+      <div style={pageStyle} role="status" aria-busy="true">
+        <span className="sr-only">{t(isHi, 'Loading children...', 'बच्चे लोड हो रहे हैं...')}</span>
+        {/* Header placeholder */}
+        <div style={{ borderRadius: 16, padding: '24px 22px', marginBottom: 20, background: 'var(--surface-2)' }}>
+          <Bone width={160} height={24} />
+          <div style={{ marginTop: 8 }}>
+            <Bone width="70%" height={12} />
+          </div>
         </div>
+        <CardListSkeleton count={2} />
       </div>
     );
   }
@@ -1354,6 +1354,6 @@ const pageStyle: React.CSSProperties = {
   padding: '20px 16px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
   color: '#1E293B',
-  backgroundColor: '#FFF8F0',
+  backgroundColor: 'var(--bg)',
   minHeight: '100dvh',
 };

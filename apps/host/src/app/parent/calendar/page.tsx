@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 import {
   loadParentSession,
   type ParentSession,
@@ -294,17 +295,12 @@ function ParentCalendarContent() {
   // Loading state (auth resolving)
   if (checking || auth.isLoading) {
     return (
-      <div style={pageStyle}>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
-          <div style={{
-            width: 40, height: 40,
-            border: '3px solid #FDBA7444', borderTopColor: '#E8581C',
-            borderRadius: '50%', margin: '0 auto 16px',
-            animation: 'spin 0.8s linear infinite',
-          }} />
-          {t(isHi, 'Loading...', 'लोड हो रहा है...')}
+      <div style={pageStyle} role="status" aria-busy="true">
+        <span className="sr-only">{t(isHi, 'Loading...', 'लोड हो रहा है...')}</span>
+        <div style={{ marginBottom: 14 }}>
+          <Bone width="55%" height={26} />
         </div>
+        <CardListSkeleton count={4} />
       </div>
     );
   }
@@ -498,14 +494,9 @@ function ParentCalendarContent() {
         </h3>
 
         {eventsLoading ? (
-          <div style={{ textAlign: 'center', padding: 20, color: '#94A3B8' }}>
-            <div style={{
-              width: 28, height: 28,
-              border: '3px solid #FDBA7444', borderTopColor: '#E8581C',
-              borderRadius: '50%', margin: '0 auto 8px',
-              animation: 'spin 0.8s linear infinite',
-            }} />
-            {t(isHi, 'Loading events...', 'कार्यक्रम लोड हो रहे हैं...')}
+          <div role="status" aria-busy="true">
+            <span className="sr-only">{t(isHi, 'Loading events...', 'कार्यक्रम लोड हो रहे हैं...')}</span>
+            <CardListSkeleton count={3} />
           </div>
         ) : eventsError ? (
           <div style={{ textAlign: 'center', padding: '16px 8px' }}>
@@ -546,7 +537,7 @@ function ParentCalendarContent() {
               <div style={{
                 borderRadius: 12,
                 border: '1px dashed #FDBA7488',
-                backgroundColor: '#FFF8F0',
+                backgroundColor: 'var(--bg)',
                 padding: '18px 14px',
                 textAlign: 'center',
               }}>
@@ -622,7 +613,7 @@ function EventRow({ dateLabel, title, chipLabel, chipColor, daysLeft, isHi }: {
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
       padding: '10px 12px',
-      backgroundColor: '#FFF8F0',
+      backgroundColor: 'var(--bg)',
       borderRadius: 12,
       border: '1px solid #FDBA7444',
     }}>
@@ -672,7 +663,7 @@ const pageStyle: React.CSSProperties = {
   padding: '20px 16px 40px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
   color: '#1E293B',
-  backgroundColor: '#FFF8F0',
+  backgroundColor: 'var(--bg)',
   minHeight: '100dvh',
 };
 
@@ -689,7 +680,7 @@ const navBtnStyle: React.CSSProperties = {
   height: 36,
   borderRadius: 10,
   border: '1px solid #FDBA7444',
-  backgroundColor: '#FFF8F0',
+  backgroundColor: 'var(--bg)',
   color: '#E8581C',
   fontSize: 20,
   cursor: 'pointer',

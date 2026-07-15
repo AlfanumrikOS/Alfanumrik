@@ -189,6 +189,84 @@ export function CardListSkeleton({ count = 5 }: { count?: number }) {
 }
 
 /**
+ * Parent dashboard skeleton — mirrors the ParentGlanceHome layout (header +
+ * 2×2 stat grid + weekly-activity card + insights/report card) so the parent
+ * portal's first paint shows the real dashboard shape instead of a raw
+ * "Loading…" spinner. Reuses the shared `Bone` primitive and the warm-cream
+ * surface tokens (var(--bg)/var(--surface-1)/var(--border)); no dark mode.
+ *
+ * `label` is an optional bilingual status string exposed to assistive tech
+ * only — the visual is text-free by design (P7: caller passes the localized
+ * string via the existing isHi/t pattern).
+ */
+export function ParentDashboardSkeleton({ label }: { label?: string }) {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label={label}
+      className="max-w-[600px] mx-auto px-4 py-5 min-h-dvh"
+      style={{ background: 'var(--bg)' }}
+    >
+      {label ? <span className="sr-only">{label}</span> : null}
+
+      {/* Header — child name + logout chip */}
+      <div
+        className="flex items-start justify-between mb-4 pb-3.5"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
+        <div className="space-y-2">
+          <Bone width={180} height={24} />
+          <Bone width={120} height={12} />
+        </div>
+        <Bone width={64} height={28} radius={12} />
+      </div>
+
+      {/* 2×2 stat grid */}
+      <div className="grid grid-cols-2 gap-2.5 mb-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-xl p-3 space-y-2"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+          >
+            <Bone width="55%" height={10} />
+            <Bone width="40%" height={22} />
+          </div>
+        ))}
+      </div>
+
+      {/* Weekly activity card */}
+      <div
+        className="rounded-[14px] p-4 mb-3 space-y-3"
+        style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      >
+        <Bone width="45%" height={12} />
+        <div className="flex items-end gap-2 h-[64px]">
+          {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+            <Bone key={i} width="100%" height={20 + ((i * 13) % 44)} radius={4} />
+          ))}
+        </div>
+      </div>
+
+      {/* Insights / report card */}
+      <div
+        className="rounded-[14px] p-4 space-y-3"
+        style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+      >
+        <Bone width="50%" height={14} />
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-start gap-2.5">
+            <Bone width={24} height={24} radius={12} />
+            <Bone width={`${60 + ((i * 12) % 30)}%`} height={13} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Simulation skeleton — placeholder for lazily-loaded STEM simulations.
  * Distinct visual (emoji + CSS pulse) preserved verbatim from the former
  * standalone src/components/simulations/SimulationSkeleton.tsx (folded in

@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 import type { ParentNotificationRow } from '@/app/api/parent/notifications/route';
 
 const POLL_MS = 30_000;
@@ -199,8 +200,9 @@ function ParentNotificationsContent() {
       </div>
 
       {isLoading && !data ? (
-        <div className="py-12 text-center text-[13px] text-muted-foreground">
-          {t(isHi, 'Loading…', 'लोड हो रहा है…')}
+        <div role="status" aria-busy="true">
+          <span className="sr-only">{t(isHi, 'Loading…', 'लोड हो रहा है…')}</span>
+          <CardListSkeleton count={5} />
         </div>
       ) : error ? (
         <div
