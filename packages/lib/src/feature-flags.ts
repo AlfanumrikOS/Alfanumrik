@@ -180,5 +180,4 @@ export * from './flags/registries/consumer';
 export * from './flags/registries/teacher';
 export * from './flags/registries/school';
 export * from './flags/registries/foxy';
-export * from './flags/registries/experience';
 export * from './flags/defaults';

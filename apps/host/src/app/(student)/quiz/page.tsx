@@ -16,7 +16,6 @@ import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import QuizSetup from '@alfanumrik/ui/quiz/QuizSetup';
 import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
 import WrittenAnswerInput from '@alfanumrik/ui/quiz/ncert/WrittenAnswerInput';
-import { useExperiencePresence } from '@alfanumrik/ui/v3/foundations/ExperiencePresence';
 
 // Lazy-load QuizResults — only shown after quiz completion (results screen)
 const QuizResults = dynamic(() => import('@alfanumrik/ui/quiz/QuizResults'), {
@@ -192,7 +191,7 @@ function originalToShuffled(origIdx: number, _shuffleMap: number[]|null) {
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function QuizPage() {
-  const { active: experienceV3 } = useExperiencePresence();
+  const experienceV3 = false;
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();

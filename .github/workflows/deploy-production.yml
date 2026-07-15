@@ -528,7 +528,7 @@ jobs:
               LAST_STATUS="$STATUS"
               case "$STATUS" in 401|403|429) ;; *) ALL_PROTECTION=0 ;; esac
               if [ "$STATUS" = "200" ]; then
-                HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'&&b.checks?.v3_server_prerequisites?.status==='ok'))}catch{process.stdout.write('false')}" "$BODY_FILE")
+                HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$BODY_FILE")
                 SEMANTIC_UNHEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===false&&['degraded','unhealthy'].includes(b.status)))}catch{process.stdout.write('false')}" "$BODY_FILE")
                 DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$BODY_FILE")
                 if [ "$DEPLOYED_SHA" = "$EXPECTED_SHA" ]; then
@@ -817,7 +817,7 @@ jobs:
           HEALTH_BODY=$(mktemp)
           HEALTH_STATUS=$(curl -sS --max-time 15 -o "$HEALTH_BODY" -w "%{http_code}" \
             "${BYPASS_HEADER[@]}" "${TARGET_URL}/api/v1/health" 2>/dev/null || true)
-          HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'&&b.checks?.v3_server_prerequisites?.status==='ok'))}catch{process.stdout.write('false')}" "$HEALTH_BODY")
+          HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$HEALTH_BODY")
           DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$HEALTH_BODY")
           rm -f "$HEALTH_BODY"
           if [ "$HEALTH_STATUS" != "200" ] || [ "$HEALTHY" != "true" ] || [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]; then

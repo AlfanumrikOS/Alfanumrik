@@ -615,9 +615,7 @@ export async function proxy(request: NextRequest) {
   if (
     (process.env.NODE_ENV === 'production' ||
       process.env.VERCEL_ENV === 'production') &&
-    (pathname === '/dev/experience-v3' ||
-      pathname.startsWith('/dev/experience-v3/') ||
-      pathname === '/dev/ui' ||
+    (pathname === '/dev/ui' ||
       pathname.startsWith('/dev/ui/') ||
       pathname === '/dev/cosmic-preview' ||
       pathname.startsWith('/dev/cosmic-preview/'))

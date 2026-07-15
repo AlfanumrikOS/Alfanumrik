@@ -49,21 +49,6 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/school-admin',
   useSearchParams: () => new URLSearchParams(),
 }));
-// V3 cohort resolution is server-authoritative. These legacy Command Center
-// assertions exercise the explicit flag-OFF result, rather than relying on an
-// unauthenticated async resolver effect that would leave the gate loading.
-vi.mock('@alfanumrik/lib/use-experience-v3', () => ({
-  useExperienceV3: () => ({
-    enabled: false,
-    loading: false,
-    capabilities: {},
-    manifest: null,
-    routeAllowed: false,
-    scope: null,
-    legacyAllowed: true,
-    denied: false,
-  }),
-}));
 vi.mock('@alfanumrik/lib/AuthContext', () => ({ useAuth: () => ({ authUserId: 'admin-user-1', isHi: false }) }));
 vi.mock('@alfanumrik/lib/tenant-context', () => ({
   useTenant: () => ({ schoolName: 'Greenwood High', schoolId: 's1', branding: { primaryColor: '#7C3AED', logoUrl: null, showPoweredBy: false } }),

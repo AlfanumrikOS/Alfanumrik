@@ -33,8 +33,6 @@ import { getPlanConfig } from '@alfanumrik/lib/plans';
 import { useSubjectReadiness } from '@alfanumrik/lib/useSubjectReadiness';
 import { ChapterReadinessBadge } from '@alfanumrik/ui/learn/ChapterReadinessBadge';
 import { useSubjectsOsFlag } from '@alfanumrik/lib/use-subjects-os-flag';
-import StudentV3Gate from '../_components/StudentV3Gate';
-import { StudentLearnV3 } from '../_components/StudentV3Pages';
 
 // Phase 3 of Exam-Ready 360°. Lazy-loaded — the summary banner hides itself
 // while the API is in-flight, so deferring its bundle keeps the chapter-list
@@ -533,5 +531,5 @@ function LegacyLearnPage() {
 }
 
 export default function LearnPage() {
-  return <StudentV3Gate legacy={<LegacyLearnPage />} v3={<StudentLearnV3 />} />;
+  return <LegacyLearnPage />;
 }

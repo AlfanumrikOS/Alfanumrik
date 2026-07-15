@@ -9,7 +9,6 @@ import { usePermissions } from '@alfanumrik/lib/usePermissions';
 import { usePulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulse } from '@alfanumrik/ui/pulse';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
-import { TeacherPageGate, TeacherStudentsV3 } from '../_components/TeacherV3Pages';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -974,7 +973,7 @@ function LegacyTeacherStudentsPage() {
 }
 
 export default function TeacherStudentsPage() {
-  return <TeacherPageGate legacy={<LegacyTeacherStudentsPage />} v3={<TeacherStudentsV3 />} />;
+  return <LegacyTeacherStudentsPage />;
 }
 
 const pageStyle: React.CSSProperties = {

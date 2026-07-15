@@ -10,17 +10,6 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-vi.mock('@alfanumrik/lib/use-experience-v3', () => ({
-  useExperienceV3: () => ({
-    enabled: false,
-    loading: false,
-    manifest: null,
-    routeAllowed: false,
-    legacyAllowed: true,
-    denied: false,
-  }),
-}));
-
 vi.mock('@alfanumrik/lib/AuthContext', () => ({
   useAuth: () => ({
     teacher: { id: 'teacher-1', name: 'Ms Rao' },
