@@ -2,23 +2,29 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { StatCard, StatusBadge } from '@alfanumrik/ui/admin-ui';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { StatCard, StatusBadge, DataTable, AdminErrorState, type Column } from '@alfanumrik/ui/admin-ui';
+import { AdminDashboardSkeleton } from '@alfanumrik/ui/Skeleton';
 
+// Neutral palette mapped to brand tokens (was hardcoded hex). Semantic status
+// hexes that have an exact brand token (success/danger) are tokenized too;
+// categorical washes (blue accent, amber warning, the *Light backgrounds) stay
+// literal because they encode status at a glance, not chrome.
 const colors = {
-  bg: '#FFFFFF',
-  text1: '#111827',
-  text2: '#6B7280',
-  text3: '#9CA3AF',
-  border: '#E5E7EB',
-  borderLight: '#F3F4F6',
-  surface: '#F9FAFB',
+  bg: 'var(--surface-1)',
+  text1: 'var(--text-1)',
+  text2: 'var(--text-2)',
+  text3: 'var(--text-3)',
+  border: 'var(--border)',
+  borderLight: 'var(--surface-2)',
+  surface: 'var(--surface-2)',
   accent: '#2563EB',
   accentLight: '#EFF6FF',
-  success: '#16A34A',
+  success: 'var(--success)',
   successLight: '#F0FDF4',
   warning: '#D97706',
   warningLight: '#FFFBEB',
-  danger: '#DC2626',
+  danger: 'var(--danger)',
   dangerLight: '#FEF2F2',
 } as const;
 
@@ -84,6 +90,7 @@ interface BackupRecord {
 interface DeployRecord {
   id: string; app_version: string; commit_sha: string | null; commit_message: string | null;
   commit_author: string | null; branch: string | null; environment: string; status: string; deployed_at: string; notes: string | null;
+  [key: string]: unknown;
 }
 
 interface FailedJob {
@@ -114,6 +121,7 @@ interface StatsResponse {
 
 function DiagnosticsContent() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
   const [obsData, setObsData] = useState<ObsData | null>(null);
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null);
   const [backups, setBackups] = useState<BackupRecord[]>([]);
@@ -122,33 +130,58 @@ function DiagnosticsContent() {
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [obsRes, deployRes, backupRes, histRes, jobsRes, flagsRes, statsRes] = await Promise.all([
-      apiFetch('/api/super-admin/observability'),
-      apiFetch('/api/super-admin/deploy'),
-      apiFetch('/api/super-admin/platform-ops?action=backups'),
-      apiFetch('/api/super-admin/platform-ops?action=deployments&limit=10'),
-      apiFetch('/api/super-admin/support?action=failed_jobs'),
-      apiFetch('/api/super-admin/feature-flags'),
-      apiFetch('/api/super-admin/stats'),
-    ]);
-    if (obsRes.ok) setObsData(await obsRes.json());
-    if (deployRes.ok) setDeployInfo(await deployRes.json());
-    if (backupRes.ok) { const d = await backupRes.json(); setBackups(d.data || []); }
-    if (histRes.ok) { const d = await histRes.json(); setDeployHistory(d.data || []); }
-    if (jobsRes.ok) { const d = await jobsRes.json(); setFailedJobs(d.data || []); }
-    if (flagsRes.ok) { const d = await flagsRes.json(); setFlags(d.data || []); }
-    if (statsRes.ok) setStats(await statsRes.json());
-    setLoading(false);
-  }, [apiFetch]);
+    setError(null);
+    try {
+      const [obsRes, deployRes, backupRes, histRes, jobsRes, flagsRes, statsRes] = await Promise.all([
+        apiFetch('/api/super-admin/observability'),
+        apiFetch('/api/super-admin/deploy'),
+        apiFetch('/api/super-admin/platform-ops?action=backups'),
+        apiFetch('/api/super-admin/platform-ops?action=deployments&limit=10'),
+        apiFetch('/api/super-admin/support?action=failed_jobs'),
+        apiFetch('/api/super-admin/feature-flags'),
+        apiFetch('/api/super-admin/stats'),
+      ]);
+      if (obsRes.ok) setObsData(await obsRes.json());
+      if (deployRes.ok) setDeployInfo(await deployRes.json());
+      if (backupRes.ok) { const d = await backupRes.json(); setBackups(d.data || []); }
+      if (histRes.ok) { const d = await histRes.json(); setDeployHistory(d.data || []); }
+      if (jobsRes.ok) { const d = await jobsRes.json(); setFailedJobs(d.data || []); }
+      if (flagsRes.ok) { const d = await flagsRes.json(); setFlags(d.data || []); }
+      if (statsRes.ok) setStats(await statsRes.json());
+      // The observability feed is the backbone of this page — if it fails the
+      // page would otherwise render a blank header with no diagnostics at all.
+      if (!obsRes.ok) {
+        throw new Error(isHi ? 'ऑब्ज़र्वेबिलिटी डेटा लोड नहीं हो सका' : 'Observability data could not be loaded');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : (isHi ? 'डायग्नोस्टिक्स लोड करने में विफल' : 'Failed to load diagnostics'));
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, isHi]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   if (loading && !obsData) {
-    return <div style={{ color: colors.text3, padding: 40, textAlign: 'center' }}>Loading diagnostics...</div>;
+    return <AdminDashboardSkeleton label={isHi ? 'डायग्नोस्टिक्स लोड हो रहा है…' : 'Loading diagnostics…'} />;
   }
+
+  if (error && !obsData) {
+    return <AdminErrorState onRetry={fetchAll} message={error} isHi={isHi} />;
+  }
+
+  const deployHistoryColumns: Column<DeployRecord>[] = [
+    { key: 'app_version', label: 'Version', render: d => <strong>{d.app_version}</strong> },
+    { key: 'branch', label: 'Branch', render: d => d.branch || '—' },
+    { key: 'environment', label: 'Env', render: d => <StatusBadge label={d.environment} variant={d.environment === 'production' ? 'info' : 'neutral'} /> },
+    { key: 'status', label: 'Status', render: d => <StatusBadge label={d.status} variant={d.status === 'success' ? 'success' : d.status === 'failed' ? 'danger' : 'neutral'} /> },
+    { key: 'commit_sha', label: 'Commit', render: d => <code style={{ fontSize: 11 }}>{(d.commit_sha || '').slice(0, 8)}</code> },
+    { key: 'deployed_at', label: 'Deployed', sortable: true, render: d => <span style={{ fontSize: 12 }}>{new Date(d.deployed_at).toLocaleString()}</span> },
+  ];
 
   return (
     <div>
@@ -164,6 +197,11 @@ function DiagnosticsContent() {
           Refresh
         </button>
       </div>
+
+      {/* Partial-failure banner — a later refresh failed but data is still shown. */}
+      {error && obsData && (
+        <AdminErrorState compact onRetry={fetchAll} message={error} isHi={isHi} />
+      )}
 
       {/* Health Status Bar */}
       {obsData && (
@@ -267,7 +305,7 @@ function DiagnosticsContent() {
         {failedJobs.length === 0 ? (
           <div style={{ ...S.card, color: colors.text3, fontSize: 12 }}>No failed jobs. All clear.</div>
         ) : (
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', overflowX: 'auto' }}>
             <table style={S.table}>
               <thead>
                 <tr>
@@ -332,36 +370,17 @@ function DiagnosticsContent() {
         </div>
       )}
 
-      {/* Deployment History */}
+      {/* Deployment History — routed onto the shared admin-ui DataTable
+          (built-in overflow-x-auto + token styling; was a raw <table>). */}
       {deployHistory.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <h2 style={S.h2}>Deployment History</h2>
-          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <th style={S.th}>Version</th>
-                  <th style={S.th}>Branch</th>
-                  <th style={S.th}>Env</th>
-                  <th style={S.th}>Status</th>
-                  <th style={S.th}>Commit</th>
-                  <th style={S.th}>Deployed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deployHistory.map(d => (
-                  <tr key={d.id}>
-                    <td style={S.td}><strong>{d.app_version}</strong></td>
-                    <td style={S.td}>{d.branch || '—'}</td>
-                    <td style={S.td}><StatusBadge label={d.environment} variant={d.environment === 'production' ? 'info' : 'neutral'} /></td>
-                    <td style={S.td}><StatusBadge label={d.status} variant={d.status === 'success' ? 'success' : d.status === 'failed' ? 'danger' : 'neutral'} /></td>
-                    <td style={{ ...S.td, fontSize: 11 }}><code>{(d.commit_sha || '').slice(0, 8)}</code></td>
-                    <td style={{ ...S.td, fontSize: 12 }}>{new Date(d.deployed_at).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={deployHistoryColumns}
+            data={deployHistory}
+            keyField="id"
+            emptyMessage="No deployment history"
+          />
         </div>
       )}
 

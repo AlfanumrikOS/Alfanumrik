@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { StatusBadge } from '@alfanumrik/ui/admin-ui';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { StatusBadge, AdminErrorState, NoDataState } from '@alfanumrik/ui/admin-ui';
+import { Bone } from '@alfanumrik/ui/Skeleton';
 
 interface FeatureFlag {
   id: string; name: string; enabled: boolean; rollout_percentage: number | null;
@@ -12,8 +14,10 @@ interface FeatureFlag {
 
 function FlagsContent() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [newFlagName, setNewFlagName] = useState('');
   const [editingFlagId, setEditingFlagId] = useState<string | null>(null);
   const [flagScopeRoles, setFlagScopeRoles] = useState('');
@@ -22,10 +26,20 @@ function FlagsContent() {
 
   const fetchFlags = useCallback(async () => {
     setLoading(true);
-    const res = await apiFetch('/api/super-admin/feature-flags');
-    if (res.ok) { const d = await res.json(); setFlags(d.data || []); }
-    setLoading(false);
-  }, [apiFetch]);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/super-admin/feature-flags');
+      // Without this branch a failed fetch left an empty list that was
+      // indistinguishable from "no flags configured" — a silent-null defect.
+      if (!res.ok) throw new Error(isHi ? 'फ़्लैग लोड नहीं हो सके' : 'Feature flags could not be loaded');
+      const d = await res.json();
+      setFlags(d.data || []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : (isHi ? 'फ़्लैग लोड करने में विफल' : 'Failed to load flags'));
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, isHi]);
 
   useEffect(() => { fetchFlags(); }, [fetchFlags]);
 
@@ -76,12 +90,17 @@ function FlagsContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground">Feature Flags</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Toggle features, emergency disables, and beta access controls</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Toggle features, emergency disables, and beta access controls</p>
         </div>
-        <div style={{ fontSize: 13, color: '#6B7280' }}>
+        <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
           {flags.filter(f => f.enabled).length} of {flags.length} enabled
         </div>
       </div>
+
+      {/* Partial-failure banner — a later refresh failed but flags are still shown. */}
+      {error && flags.length > 0 && (
+        <AdminErrorState compact onRetry={fetchFlags} message={error} isHi={isHi} />
+      )}
 
       {/* Create Flag */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
@@ -97,22 +116,40 @@ function FlagsContent() {
 
       {/* Flag List */}
       <div style={{ display: 'grid', gap: 8, marginBottom: 24 }}>
-        {loading && flags.length === 0 && <div style={{ color: '#9CA3AF', padding: 20, textAlign: 'center' }}>Loading...</div>}
-        {!loading && flags.length === 0 && (
-          <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ textAlign: 'center', color: '#9CA3AF', padding: 24 }}>
-            No feature flags configured. Add one above.
+        {loading && flags.length === 0 && (
+          <div aria-busy="true" role="status" className="grid gap-2">
+            <span className="sr-only">{isHi ? 'फ़्लैग लोड हो रहे हैं…' : 'Loading feature flags…'}</span>
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className="flex items-center justify-between rounded-lg border border-surface-3 bg-surface-1 p-4">
+                <div className="space-y-1.5">
+                  <Bone width={180} height={14} />
+                  <Bone width={120} height={10} />
+                </div>
+                <Bone width={64} height={28} radius={14} />
+              </div>
+            ))}
           </div>
+        )}
+        {!loading && error && flags.length === 0 && (
+          <AdminErrorState onRetry={fetchFlags} message={error} isHi={isHi} />
+        )}
+        {!loading && !error && flags.length === 0 && (
+          <NoDataState
+            reason="no_data"
+            title={isHi ? 'कोई फ़ीचर फ़्लैग नहीं' : 'No feature flags configured'}
+            message={isHi ? 'ऊपर एक फ़्लैग जोड़ें।' : 'Add one above to get started.'}
+          />
         )}
         {flags.map(flag => (
           <div
             key={flag.id}
             className="rounded-lg border border-surface-3 bg-surface-1 p-4"
-            style={{ borderLeft: `3px solid ${flag.enabled ? '#16A34A' : '#E5E7EB'}` }}
+            style={{ borderLeft: `3px solid ${flag.enabled ? 'var(--success)' : 'var(--surface-3)'}` }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <code style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{flag.name}</code>
-                {flag.description && <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{flag.description}</div>}
+                <code style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{flag.name}</code>
+                {flag.description && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{flag.description}</div>}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button
@@ -131,8 +168,8 @@ function FlagsContent() {
                     padding: '6px 18px', borderRadius: 20, border: 'none',
                     cursor: togglingId === flag.id ? 'not-allowed' : 'pointer',
                     fontSize: 12, fontWeight: 700,
-                    background: flag.enabled ? '#16A34A' : '#E5E7EB',
-                    color: flag.enabled ? '#fff' : '#9CA3AF',
+                    background: flag.enabled ? 'var(--success)' : 'var(--surface-3)',
+                    color: flag.enabled ? 'var(--surface-1)' : 'var(--text-3)',
                     opacity: togglingId === flag.id ? 0.5 : 1,
                     transition: 'opacity 0.15s',
                   }}
@@ -142,7 +179,7 @@ function FlagsContent() {
                 <button
                   onClick={() => deleteFlag(flag)}
                   className="rounded-md border bg-transparent px-2.5 py-1 text-[11px] font-medium hover:bg-surface-2"
-                  style={{ color: '#DC2626', borderColor: '#DC2626' }}
+                  style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
                 >
                   Del
                 </button>
@@ -158,16 +195,16 @@ function FlagsContent() {
                 <span key={e} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: '#FFFBEB', color: '#D97706' }}>env:{e}</span>
               ))}
               {(!flag.target_roles?.length) && (!flag.target_environments?.length) && (
-                <span style={{ fontSize: 10, color: '#9CA3AF' }}>Global (all roles, all environments)</span>
+                <span style={{ fontSize: 10, color: 'var(--text-3)' }}>Global (all roles, all environments)</span>
               )}
             </div>
 
             {/* Scope editor */}
             {editingFlagId === flag.id && (
-              <div style={{ marginTop: 12, padding: 12, background: '#F9FAFB', borderRadius: 8 }}>
+              <div style={{ marginTop: 12, padding: 12, background: 'var(--surface-2)', borderRadius: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
-                    <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Target Roles</label>
+                    <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Target Roles</label>
                     <input
                       value={flagScopeRoles}
                       onChange={e => setFlagScopeRoles(e.target.value)}
@@ -176,7 +213,7 @@ function FlagsContent() {
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, color: '#9CA3AF', display: 'block', marginBottom: 4, fontWeight: 600 }}>Target Environments</label>
+                    <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>Target Environments</label>
                     <input
                       value={flagScopeEnvs}
                       onChange={e => setFlagScopeEnvs(e.target.value)}
@@ -208,7 +245,7 @@ function FlagsContent() {
               className="rounded-lg border border-surface-3 bg-surface-1"
               style={{ opacity: exists ? 0.5 : 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12 }}
             >
-              <code style={{ fontSize: 12, color: '#6B7280' }}>{name}</code>
+              <code style={{ fontSize: 12, color: 'var(--text-2)' }}>{name}</code>
               {!exists ? (
                 <button
                   onClick={() => { setNewFlagName(name); }}

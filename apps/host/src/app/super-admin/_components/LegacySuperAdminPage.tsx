@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from './AdminShell';
-import { useCosmicTheme } from '@alfanumrik/lib/cosmic-theme';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { AdminControlRoomSkeleton } from '@alfanumrik/ui/Skeleton';
+import { AdminErrorState } from '@alfanumrik/ui/admin-ui';
 import {
   SystemStatusBar,
   QuickOperations,
@@ -28,10 +30,7 @@ import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 
 function ControlRoom() {
   const { apiFetch } = useAdmin();
-  // Cosmic Phase 3: the version-code chip hardcodes a light bg the token bridge
-  // can't reach; swap it for a bridged surface when cosmic is ON. OFF ⇒ false ⇒
-  // byte-identical light chip.
-  const { cosmicEnabled } = useCosmicTheme();
+  const { isHi } = useAuth();
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [obsData, setObsData] = useState<ObsData | null>(null);
   const [deployInfo, setDeployInfo] = useState<DeployInfo | null>(null);
@@ -95,19 +94,17 @@ function ControlRoom() {
   };
 
   if (loading && !stats) {
-    return <div style={{ color: '#9CA3AF', padding: 40, textAlign: 'center' }}>Loading control room...</div>;
+    return <AdminControlRoomSkeleton label={isHi ? 'कंट्रोल रूम लोड हो रहा है…' : 'Loading control room…'} />;
   }
 
   if (error && !stats) {
     return (
-      <div style={{ color: '#EF4444', padding: 40, textAlign: 'center' }}>
-        <div style={{ fontSize: 24, marginBottom: 8 }}>&#x26A0;&#xFE0F;</div>
-        <p style={{ fontWeight: 600, marginBottom: 12 }}>Failed to load dashboard data</p>
-        <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 16 }}>{error}</p>
-        <button onClick={fetchAll} style={{ padding: '8px 20px', background: '#7C3AED', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          Retry
-        </button>
-      </div>
+      <AdminErrorState
+        onRetry={fetchAll}
+        title={isHi ? 'डैशबोर्ड डेटा लोड नहीं हो सका' : 'Failed to load dashboard data'}
+        message={error}
+        isHi={isHi}
+      />
     );
   }
 
@@ -117,19 +114,23 @@ function ControlRoom() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
           <h1 className="font-bold text-foreground" style={{ fontSize: 18 }}>Control Room</h1>
-          <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>Platform operations, system status, and quick interventions</p>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>Platform operations, system status, and quick interventions</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {deployInfo && <code style={{ fontSize: 11, color: '#9CA3AF', background: cosmicEnabled ? 'var(--surface-2)' : '#F9FAFB', padding: '4px 8px', borderRadius: 4 }}>v{deployInfo.app_version}</code>}
+          {deployInfo && <code style={{ fontSize: 11, color: 'var(--text-3)', background: 'var(--surface-2)', padding: '4px 8px', borderRadius: 4 }}>v{deployInfo.app_version}</code>}
           <button onClick={fetchAll} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Refresh All</button>
         </div>
       </div>
 
+      {/* Partial-failure banner — some widgets failed but stale data is shown. */}
       {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, color: '#DC2626', fontSize: 13 }}>
-          &#x26A0;&#xFE0F; Some data failed to load: {error} &mdash;{' '}
-          <button onClick={fetchAll} style={{ background: 'none', border: 'none', color: '#DC2626', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Retry</button>
-        </div>
+        <AdminErrorState
+          compact
+          onRetry={fetchAll}
+          title={isHi ? 'कुछ डेटा लोड नहीं हो सका' : 'Some data failed to load'}
+          message={error}
+          isHi={isHi}
+        />
       )}
 
       {/* System Status Bar */}

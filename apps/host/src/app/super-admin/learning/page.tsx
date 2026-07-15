@@ -5,6 +5,9 @@ import dynamic from 'next/dynamic';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
 import StatCard from '../_components/StatCard';
 import StatusBadge from '../_components/StatusBadge';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { AdminErrorState } from '@alfanumrik/ui/admin-ui';
+import { AdminDashboardSkeleton } from '@alfanumrik/ui/Skeleton';
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 
 const tableStyle: React.CSSProperties = {
@@ -15,42 +18,42 @@ const tableStyle: React.CSSProperties = {
 const thStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '10px 14px',
-  borderBottom: '2px solid #E5E7EB',
-  color: '#6B7280',
+  borderBottom: '2px solid var(--surface-3)',
+  color: 'var(--text-2)',
   fontSize: 11,
   fontWeight: 600,
   textTransform: 'uppercase',
   letterSpacing: 1,
-  background: '#F9FAFB',
+  background: 'var(--surface-2)',
   position: 'sticky',
   top: 0,
   zIndex: 1,
 };
 const tdStyle: React.CSSProperties = {
   padding: '10px 14px',
-  borderBottom: '1px solid #F3F4F6',
-  color: '#111827',
+  borderBottom: '1px solid var(--surface-2)',
+  color: 'var(--text-1)',
   fontSize: 13,
 };
 const cardStyle: React.CSSProperties = {
   padding: 16,
   borderRadius: 8,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
 };
 const secondaryBtnStyle: React.CSSProperties = {
   padding: '8px 16px',
   borderRadius: 6,
-  border: '1px solid #E5E7EB',
-  background: '#FFFFFF',
-  color: '#111827',
+  border: '1px solid var(--border)',
+  background: 'var(--surface-1)',
+  color: 'var(--text-1)',
   fontSize: 13,
   fontWeight: 500,
   cursor: 'pointer',
 };
 
 const StrategicReportsTab = dynamic(() => import('./_components/StrategicReportsTab'), {
-  loading: () => <div style={{ color: '#9CA3AF', padding: 40, textAlign: 'center' }}>Loading strategic reports...</div>,
+  loading: () => <div style={{ color: 'var(--text-3)', padding: 40, textAlign: 'center' }}>Loading strategic reports...</div>,
 });
 
 interface AnalyticsData {
@@ -107,34 +110,51 @@ type TabId = 'engagement' | 'strategic';
 
 function LearningContent() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [obsData, setObsData] = useState<ObsData | null>(null);
   const [markingMix, setMarkingMix] = useState<MarkingPathMixData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('engagement');
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [aRes, sRes, oRes, mRes] = await Promise.all([
-      apiFetch('/api/super-admin/analytics'),
-      apiFetch('/api/super-admin/stats'),
-      apiFetch('/api/super-admin/observability'),
-      // marking-path-mix returns 200 even on degradation (no_token /
-      // http_error / timeout / parse_error). Drop it on hard 4xx/5xx.
-      apiFetch('/api/super-admin/marking-path-mix'),
-    ]);
-    if (aRes.ok) setAnalytics(await aRes.json());
-    if (sRes.ok) setStats(await sRes.json());
-    if (oRes.ok) setObsData(await oRes.json());
-    if (mRes.ok) setMarkingMix(await mRes.json());
-    setLoading(false);
-  }, [apiFetch]);
+    setError(null);
+    try {
+      const [aRes, sRes, oRes, mRes] = await Promise.all([
+        apiFetch('/api/super-admin/analytics'),
+        apiFetch('/api/super-admin/stats'),
+        apiFetch('/api/super-admin/observability'),
+        // marking-path-mix returns 200 even on degradation (no_token /
+        // http_error / timeout / parse_error). Drop it on hard 4xx/5xx.
+        apiFetch('/api/super-admin/marking-path-mix'),
+      ]);
+      if (aRes.ok) setAnalytics(await aRes.json());
+      if (sRes.ok) setStats(await sRes.json());
+      if (oRes.ok) setObsData(await oRes.json());
+      if (mRes.ok) setMarkingMix(await mRes.json());
+      // analytics is the backbone of the Engagement tab — surface a failure
+      // instead of silently rendering an empty page.
+      if (!aRes.ok) {
+        throw new Error(isHi ? 'लर्निंग एनालिटिक्स लोड नहीं हो सका' : 'Learning analytics could not be loaded');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : (isHi ? 'लर्निंग इंटेलिजेंस लोड करने में विफल' : 'Failed to load learning intelligence'));
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, isHi]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   if (loading && !analytics) {
-    return <div style={{ color: '#9CA3AF', padding: 40, textAlign: 'center' }}>Loading learning intelligence...</div>;
+    return <AdminDashboardSkeleton label={isHi ? 'लर्निंग इंटेलिजेंस लोड हो रहा है…' : 'Loading learning intelligence…'} />;
+  }
+
+  if (error && !analytics) {
+    return <AdminErrorState onRetry={fetchAll} message={error} isHi={isHi} />;
   }
 
   const totalQuizzes = stats?.totals.quiz_sessions ?? 0;
@@ -147,13 +167,18 @@ function LearningContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <h1 className="text-xl font-bold text-foreground" style={{ marginBottom: 4 }}>Learning Intelligence</h1>
-          <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Quiz, Foxy, content coverage, and XP oversight</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Quiz, Foxy, content coverage, and XP oversight</p>
         </div>
         <button onClick={fetchAll} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Refresh</button>
       </div>
 
+      {/* Partial-failure banner — a later refresh failed but data is still shown. */}
+      {error && analytics && (
+        <AdminErrorState compact onRetry={fetchAll} message={error} isHi={isHi} />
+      )}
+
       {/* Tab Bar */}
-      <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #E5E7EB', marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid var(--surface-3)', marginBottom: 24 }}>
         {([
           { id: 'engagement' as TabId, label: 'Engagement & Content' },
           { id: 'strategic' as TabId, label: 'Strategic Reports' },
@@ -165,10 +190,10 @@ function LearningContent() {
               padding: '10px 20px',
               fontSize: 13,
               fontWeight: activeTab === tab.id ? 700 : 500,
-              color: activeTab === tab.id ? '#111827' : '#9CA3AF',
+              color: activeTab === tab.id ? 'var(--text-1)' : 'var(--text-3)',
               background: 'none',
               border: 'none',
-              borderBottom: activeTab === tab.id ? '2px solid #111827' : '2px solid transparent',
+              borderBottom: activeTab === tab.id ? '2px solid var(--text-1)' : '2px solid transparent',
               marginBottom: -2,
               cursor: 'pointer',
               transition: 'color 0.15s, border-color 0.15s',
@@ -269,7 +294,7 @@ function LearningContent() {
       {analytics && analytics.top_students.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>XP Leaderboard</h2>
-          <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', overflowX: 'auto' }}>
             <table style={tableStyle}>
               <thead>
                 <tr>
@@ -457,7 +482,7 @@ function LearningContent() {
       <div style={{ marginBottom: 24 }}>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" style={{ marginBottom: 12 }}>Marking Authenticity Path Mix</h2>
         {!markingMix ? (
-          <div style={{ ...cardStyle, color: '#9CA3AF', fontSize: 13 }}>Loading marking-path mix...</div>
+          <div style={{ ...cardStyle, color: 'var(--text-3)', fontSize: 13 }}>Loading marking-path mix...</div>
         ) : !markingMix.ok ? (
           // Degraded — render the same banner pattern as /super-admin/health.
           // Reason text disambiguates "we never asked" (no_token) from "we
@@ -479,7 +504,7 @@ function LearningContent() {
             )}
           </div>
         ) : !markingMix.mix || markingMix.mix.length === 0 ? (
-          <div style={{ ...cardStyle, fontSize: 12, color: '#6B7280' }}>
+          <div style={{ ...cardStyle, fontSize: 12, color: 'var(--text-2)' }}>
             No <code>quiz_graded</code> events in the last {markingMix.window_days} day(s).
           </div>
         ) : (
