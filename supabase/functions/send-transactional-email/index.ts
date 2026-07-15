@@ -82,8 +82,16 @@ function jsonResponse(body: unknown, status = 200, origin?: string | null): Resp
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-// Transport is the shared Resend relay; RESEND_API_KEY gates configured-ness.
+// Transport is the shared relay (Resend primary, TRANSITIONAL Mailgun fallback).
+// Email is attempted when EITHER Resend (RESEND_API_KEY) OR Mailgun
+// (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the relay picks Resend and
+// falls back to Mailgun at send time. Prod today has only MAILGUN_* set, so this
+// keeps transactional email flowing through the Resend cutover with zero
+// downtime. Remove MAILGUN_* once Resend is confirmed live in prod.
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
+const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
+const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+const HAS_EMAIL_TRANSPORT = Boolean(RESEND_API_KEY) || Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
@@ -676,9 +684,10 @@ Deno.serve(async (req: Request) => {
     ? (params.idempotency_key ?? '')
     : (params.invite_code ?? '')
 
-  // Graceful degradation: if the relay isn't configured, return 200 with
-  // sent:false so callers (which are fire-and-forget) don't retry.
-  if (!RESEND_API_KEY) {
+  // Graceful degradation: if NO relay is configured (neither Resend nor the
+  // transitional Mailgun fallback), return 200 with sent:false so callers (which
+  // are fire-and-forget) don't retry.
+  if (!HAS_EMAIL_TRANSPORT) {
     console.warn(`[Transactional Email] Relay not configured. Skipping send for template=${template} code=${truncateCode(logKey)}`)
     return jsonResponse({ sent: false, error: 'relay_not_configured' }, 200, origin)
   }

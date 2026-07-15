@@ -50,7 +50,12 @@ type Handler = (req: Request) => Promise<Response> | Response;
 // constructing the Webhook; we pass the bare `whsec_...` form here.
 const SECRET = 'whsec_' + btoa('alfanumrik-send-auth-email-test-secret');
 
-const ENV_KEYS = ['SEND_EMAIL_HOOK_SECRET', 'RESEND_API_KEY', 'SITE_URL'];
+// MAILGUN_* are included so the two-key config guard (RESEND_API_KEY OR the
+// transitional MAILGUN_API_KEY+MAILGUN_DOMAIN fallback) is DETERMINISTIC per
+// scenario: each loadHandler() clears them before applying the scenario env, so
+// an ambient MAILGUN_* (e.g. on a dev/prod-shaped machine) can never leak into
+// the "no relay config" path and flip it green→red.
+const ENV_KEYS = ['SEND_EMAIL_HOOK_SECRET', 'RESEND_API_KEY', 'MAILGUN_API_KEY', 'MAILGUN_DOMAIN', 'SITE_URL'];
 
 const realServe = Deno.serve;
 let cacheBust = 0;
@@ -229,6 +234,52 @@ Deno.test('send-auth-email: missing relay config returns 200 (no_relay_config)',
   const handler = await loadHandler({
     SEND_EMAIL_HOOK_SECRET: SECRET,
     // No RESEND_API_KEY.
+  });
+  const res = await handler(signedRequest(validPayloadBody()));
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.success, true);
+  assertEquals(body.warning, 'no_relay_config');
+});
+
+// ─── Path 8b: Mailgun fallback configured (no Resend) → send is ATTEMPTED ────
+// TRANSITIONAL zero-downtime cutover: prod has MAILGUN_API_KEY + MAILGUN_DOMAIN
+// but not RESEND_API_KEY. The two-key guard must NOT short-circuit to
+// no_relay_config — it must fall through to the send path. We inject a stub
+// transport (no socket) to prove the guard let the send through; the stub's
+// success surfaces as success:true, still HTTP 200.
+Deno.test('send-auth-email: Mailgun-only config attempts send (transitional fallback, no no_relay_config)', async () => {
+  const handler = await loadHandler({
+    SEND_EMAIL_HOOK_SECRET: SECRET,
+    // No RESEND_API_KEY — only the transitional Mailgun fallback is configured.
+    MAILGUN_API_KEY: 'key-mg-test-0001',
+    MAILGUN_DOMAIN: 'mg.alfanumrik.test',
+  });
+  setDefaultEmailTransport({
+    name: 'stub-mailgun',
+    send: () => Promise.resolve({ success: true, provider: 'mailgun', id: 'mg-msg-uuid-0001' }),
+  });
+  try {
+    const res = await handler(signedRequest(validPayloadBody()));
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    // Guard fell through to the send path (NOT the no_relay_config short-circuit).
+    assertEquals(body.success, true, 'Mailgun-only config must attempt the send, not warn no_relay_config');
+    assertEquals(body.warning, undefined, 'no_relay_config must NOT fire when Mailgun is configured');
+  } finally {
+    setDefaultEmailTransport(null);
+  }
+});
+
+// ─── Path 8c: Mailgun key WITHOUT domain → treated as unconfigured (no_relay_config)
+// The Mailgun fallback needs BOTH MAILGUN_API_KEY and MAILGUN_DOMAIN. A key
+// without a domain is not a usable transport, so the guard must still degrade to
+// no_relay_config (→ 200, Supabase built-in email can take over).
+Deno.test('send-auth-email: Mailgun key without domain still returns 200 (no_relay_config)', async () => {
+  const handler = await loadHandler({
+    SEND_EMAIL_HOOK_SECRET: SECRET,
+    MAILGUN_API_KEY: 'key-mg-test-0001',
+    // No MAILGUN_DOMAIN.
   });
   const res = await handler(signedRequest(validPayloadBody()));
   assertEquals(res.status, 200);

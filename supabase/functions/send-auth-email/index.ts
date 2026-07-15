@@ -32,6 +32,14 @@ import { sendEmail } from '../_shared/relay-mailer.ts'
 const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
 const hookSecret = rawHookSecret.startsWith('v1,') ? rawHookSecret.slice(3) : rawHookSecret
 const resendApiKey = Deno.env.get('RESEND_API_KEY') || ''
+// TRANSITIONAL Mailgun fallback (remove once Resend is confirmed live in prod).
+// Email is attempted when EITHER Resend OR Mailgun is configured; the relay
+// (_shared/relay-mailer.ts) prefers Resend and falls back to Mailgun at send
+// time. Prod today has only MAILGUN_* set, so this keeps auth email flowing
+// through the Resend cutover with zero downtime (P15).
+const mailgunApiKey = Deno.env.get('MAILGUN_API_KEY') || ''
+const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') || ''
+const hasEmailTransport = Boolean(resendApiKey) || Boolean(mailgunApiKey && mailgunDomain)
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 // R13 fix: SITE_URL configurable via env var for preview/staging deploys.
@@ -304,11 +312,13 @@ Deno.serve(async (req: Request) => {
         emailContent = confirmationEmail(actionUrl)
     }
 
-    // Relay guard: if no relay provider is configured, return 200 so the auth
-    // operation still succeeds (Supabase built-in email can take over). Never
-    // block signup/reset on a missing email secret.
-    if (!resendApiKey) {
-      console.warn('[Auth Email] RESEND_API_KEY not set. Returning 200 so Supabase built-in email can work.')
+    // Relay guard: if NO relay provider is configured (neither Resend nor the
+    // transitional Mailgun fallback), return 200 so the auth operation still
+    // succeeds (Supabase built-in email can take over). Never block signup/reset
+    // on a missing email secret. The `no_relay_config` warning string is stable
+    // (pinned by the always-200 Deno test).
+    if (!hasEmailTransport) {
+      console.warn('[Auth Email] No email relay configured (RESEND_API_KEY / MAILGUN_*). Returning 200 so Supabase built-in email can work.')
       return new Response(JSON.stringify({ success: true, warning: 'no_relay_config' }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })

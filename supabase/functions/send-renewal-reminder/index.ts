@@ -46,8 +46,16 @@ import { checkBearerToken } from '../_shared/auth.ts'
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-// Transport is the shared Resend relay; RESEND_API_KEY gates configured-ness.
+// Transport is the shared relay (Resend primary, TRANSITIONAL Mailgun fallback).
+// Email is attempted when EITHER Resend (RESEND_API_KEY) OR Mailgun
+// (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the relay picks Resend and
+// falls back to Mailgun at send time. Prod today has only MAILGUN_* set, so this
+// keeps renewal reminders flowing through the Resend cutover with zero downtime.
+// Remove MAILGUN_* once Resend is confirmed live in prod.
 const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY') ?? ''
+const MAILGUN_API_KEY           = Deno.env.get('MAILGUN_API_KEY') ?? ''
+const MAILGUN_DOMAIN            = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+const HAS_EMAIL_TRANSPORT       = Boolean(RESEND_API_KEY) || Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
 const FROM_EMAIL                = Deno.env.get('RENEWAL_FROM_EMAIL') ?? 'Alfanumrik <billing@alfanumrik.com>'
 const REPLY_TO                  = 'support@alfanumrik.com'
 const SITE_URL                  = Deno.env.get('SITE_URL') ?? 'https://alfanumrik.com'
@@ -227,7 +235,7 @@ async function sendRenewalEmail(params: {
   to: string; subject: string; html: string; text: string;
   tags?: Array<{ name: string; value: string }>;
 }): Promise<{ success: boolean; id?: string; error?: string }> {
-  if (!RESEND_API_KEY) {
+  if (!HAS_EMAIL_TRANSPORT) {
     return { success: false, error: 'relay_not_configured' }
   }
   const result = await sendEmail({

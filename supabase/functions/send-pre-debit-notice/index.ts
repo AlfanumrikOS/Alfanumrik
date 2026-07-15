@@ -62,10 +62,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-// Regulated notice is delivered via the shared Resend relay. RESEND_API_KEY
-// gates configured-ness; when absent the notice is treated as undeliverable
-// (fails closed → audit 'pre_debit_notice_failed' → 500 → cron retries/skips).
+// Regulated notice is delivered via the shared relay (Resend primary,
+// TRANSITIONAL Mailgun fallback). The notice is deliverable when EITHER Resend
+// (RESEND_API_KEY) OR Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured;
+// the relay picks Resend and falls back to Mailgun at send time. Prod today has
+// only MAILGUN_* set, so this keeps the RBI-mandated notice deliverable through
+// the Resend cutover with zero downtime. When BOTH are absent the notice is
+// treated as undeliverable and FAILS CLOSED (audit 'pre_debit_notice_failed' →
+// 500 → cron retries/skips the auto-charge). Remove MAILGUN_* once Resend live.
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
+const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
+const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+const HAS_EMAIL_TRANSPORT = Boolean(RESEND_API_KEY) || Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
 const FROM_EMAIL = 'Alfanumrik Billing <billing@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
@@ -246,7 +254,9 @@ function buildEmail(req: PreDebitRequest): { subject: string; html: string; text
 // correlationId folds the day-scoped idempotencyKey in so the SAME upcoming
 // charge always derives the SAME Resend key across cron re-runs in the window.
 async function sendEmailWithRetry(to: string, subject: string, html: string, text: string, idempotencyKey: string): Promise<{ ok: boolean; provider_id?: string; error?: string; attempts: number }> {
-  if (!RESEND_API_KEY) {
+  // Fail-closed config guard: no provider configured (neither Resend nor the
+  // transitional Mailgun fallback) → treat the regulated notice as undeliverable.
+  if (!HAS_EMAIL_TRANSPORT) {
     return { ok: false, error: 'relay_not_configured', attempts: 0 }
   }
   const result = await sendEmail({

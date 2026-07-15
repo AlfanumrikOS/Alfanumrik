@@ -18,9 +18,16 @@ import { edgeLog, getRequestId, writeBusinessAudit, type EdgeLogContext } from '
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-// Relay is configured iff RESEND_API_KEY is set. When absent we degrade to the
-// notifications-table fallback (keyed on relay-not-configured, below).
+// Relay is configured iff EITHER Resend (RESEND_API_KEY) OR the TRANSITIONAL
+// Mailgun fallback (MAILGUN_API_KEY + MAILGUN_DOMAIN) is set. The relay
+// (_shared/relay-mailer.ts) prefers Resend and falls back to Mailgun at send
+// time — prod today has only MAILGUN_* set, so this keeps welcome email flowing
+// through the Resend cutover with zero downtime. When BOTH are absent we degrade
+// to the notifications-table fallback (below). Remove MAILGUN_* once Resend live.
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
+const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
+const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+const HAS_EMAIL_TRANSPORT = Boolean(RESEND_API_KEY) || Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
 const FROM_EMAIL = 'Alfanumrik <welcome@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 // SITE_URL must come from env per P15 #6. See audit 2026-04-27 F4.
@@ -235,10 +242,11 @@ Deno.serve(async (req: Request) => {
       default: return errorResponse('Invalid role', 400, origin)
     }
 
-    // Send via the shared Resend relay if configured. sendEmail derives the
-    // Resend transport internally (reads RESEND_API_KEY), retries with an
-    // Idempotency-Key, and returns a PII-free failure `code` on error.
-    if (RESEND_API_KEY) {
+    // Send via the shared relay if configured (Resend primary, Mailgun fallback).
+    // sendEmail resolves the transport internally, retries with an
+    // Idempotency-Key, and returns a PII-free failure `code` (+ which provider
+    // handled it) on error.
+    if (HAS_EMAIL_TRANSPORT) {
       try {
         const result = await sendEmail({
           from: FROM_EMAIL,
@@ -261,12 +269,13 @@ Deno.serve(async (req: Request) => {
         })
 
         if (result.success) {
-          edgeLog('info', context, { action: 'welcome_email.sent', status: 'ok', provider: 'resend', role, relay_message_id: result.id ?? null })
-          await writeBusinessAudit({ supabase: supabaseClient, context, action: 'welcome_email.sent', status: 'ok', metadata: { provider: 'resend', role } })
-          return jsonResponse({ sent: true, provider: 'resend', id: result.id }, 200, {}, origin)
+          const provider = result.provider ?? 'relay'
+          edgeLog('info', context, { action: 'welcome_email.sent', status: 'ok', provider, role, relay_message_id: result.id ?? null })
+          await writeBusinessAudit({ supabase: supabaseClient, context, action: 'welcome_email.sent', status: 'ok', metadata: { provider, role } })
+          return jsonResponse({ sent: true, provider, id: result.id }, 200, {}, origin)
         }
-        // result.code is a PII-free machine code (resend_http_<status> / resend_exception).
-        edgeLog('error', context, { action: 'welcome_email.relay_failed', status: 'error', provider: 'resend', reason: result.code ?? 'unknown' })
+        // result.code is a PII-free machine code (resend_http_<status> / mailgun_http_<status> / *_exception).
+        edgeLog('error', context, { action: 'welcome_email.relay_failed', status: 'error', provider: result.provider ?? 'relay', reason: result.code ?? 'unknown' })
       } catch (fetchErr) {
         edgeLog('error', context, { action: 'welcome_email.fetch_failed', status: 'error', reason: redactPIIInText(fetchErr instanceof Error ? fetchErr.message : String(fetchErr)).text })
       }
