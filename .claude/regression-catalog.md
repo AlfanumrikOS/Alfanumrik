@@ -8427,3 +8427,65 @@ oracle parity, callClaude-only transport with no model override, and the
 **Total catalog: 223 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-257 — Foxy undelimited-LaTeX math normalization — explicit-command-triggered render-time correction + production canary-corpus immutability (2026-07-16)
+
+Source: math-format #1 (2026-07 production screenshots). The Foxy model
+sometimes emits inline math WITHOUT the required delimiters — e.g.
+`Example: (\frac{14}{15} \times \frac{25}{42})` instead of
+`\(\frac{14}{15} \times \frac{25}{42}\)` — so students saw raw LaTeX. The fix
+is a PURE render-time post-pass (`packages/ui/src/foxy/math-normalization.ts`:
+`containsAllowlistedMathCommand` trigger predicate + `splitUndelimitedMath` +
+`normalizeMathSegments`), wired into `InlineContent` in
+`packages/ui/src/foxy/FoxyStructuredRenderer.tsx` as
+`normalizeMathSegments(tokenizeInline(text))`.
+
+**Why this is a regression pin.** The pass runs over EVERY text span Foxy
+renders, so the binding CEO constraint is a NEGATIVE one: **no non-math
+production message may be altered by the pass.** The trigger fires ONLY on an
+explicit allowlisted backslash LaTeX command with a word boundary (`\frac`
+yes, `\franchise` never); bare `^`, `_`, `$`, brackets, `°`/`∠`/`÷`/`₹`
+symbols, ASCII-art underscores, and Devanagari prose must NEVER trigger it.
+The canary corpus (`apps/host/src/__tests__/fixtures/foxy-math-canary-corpus.json`
+— real sanitized production Foxy messages, P13: `{ provenance, math: [16],
+nonMath: [25] }`; `nonMath` contains zero backslashes by construction) pins
+that constraint against production reality, and iterates the fixture so
+future corpus additions are covered automatically. If a nonMath excerpt is
+ever altered, that is a REAL defect in the trigger — fix the pass, never the
+fixture.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-257a | `undelimited_math_normalization_trigger_span_acceptance_failsafe` | (1) TRIGGER: fires only on allowlisted backslash commands with a word boundary; NEVER on bare `^`/`_`/`$`/brackets (`snake_case_name`, `x^2 …`, `price is $5`, `array[i]_index`) or non-allowlisted commands (`\franchise`/`\fraction`/`\lefty`). (2) SPAN: paren pseudo-delimiters stripped; maximal contiguous math run captured; adjacent prose/bare numbers/trailing sentence punctuation never swallowed; `(a+b)(c+d)`-style non-wrapping parens preserved. (3) ACCEPTANCE: the 5 exact production screenshot strings (incl. `(\frac{14}{15} \times \frac{25}{42})`) render `.katex` + `.mfrac` stacked fractions with zero `<code>` fallback, no raw `\frac`/`\times` in visible text, prose byte-exact — across paragraph/example/step/answer/exam_tip/definition/question/mcq blocks; code blocks stay raw. (4) BYTE-IDENTITY: properly-delimited math (`\(..\)`, `$..$`, `$$..$$`, `\[..\]`) and command-free prose pass through reference-equal. (5) FAIL-SAFE (P12): a malformed undelimited span (`\frac{1}{`) degrades to the existing `<code>` fallback — never throws, never blanks the chat. | `apps/host/src/__tests__/foxy/undelimited-math-normalization.test.tsx` (39 tests) | E | P12, P6-adjacent, P7-neutral (no user-facing strings) |
+| REG-257b | `math_canary_corpus_nonmath_immutability_and_math_detection` | (1) NON-MATH IMMUTABILITY (the load-bearing pin): for EVERY `nonMath` excerpt — `containsAllowlistedMathCommand(excerpt) === false` AND `normalizeMathSegments(tokenizeInline(excerpt))` returns the ORIGINAL segment array (reference-equal untouched fast-path) with no in-place mutation (deep-equal to an independent tokenization); `splitUndelimitedMath` is likewise a single-text-segment no-op. Iterated over the fixture — future corpus additions are auto-covered. (2) MATH DETECTION: every `math` excerpt yields >=1 math segment through the full pipeline; excerpts carrying an allowlisted command OUTSIDE proper delimiters (>=2 pinned, incl. the named `3.5 \times 100 = 350` and `\frac{1}{4} + \frac{1}{2}` cases) gain strictly MORE math segments while every tokenizer-extracted delimited math segment passes through by object reference; properly-delimited-only excerpts return reference-equal (no double conversion, segment counts stable). (3) FIXTURE INTEGRITY GUARDS: JSON parses into `{ provenance, math[], nonMath[] }` of non-empty strings; provenance records sanitization (P13); size floors >=15 math / >=25 nonMath; every nonMath excerpt contains ZERO backslash characters; the two named undelimited cases remain present — all fail loudly if the fixture is gutted. | `apps/host/src/__tests__/foxy/math-canary-corpus.test.ts` (64 tests) + `apps/host/src/__tests__/fixtures/foxy-math-canary-corpus.json` | E | P12, P13, P6-adjacent |
+
+### Invariants covered by this section
+
+- P12 (AI safety, fail-safe rendering) — the produced math segments render
+  through the existing KaTeX path (`throwOnError: false` + `<code>` fallback):
+  a bad or malformed undelimited span can degrade but can never throw or blank
+  the student chat; the trigger is deliberately narrow (explicit allowlisted
+  command only) so model prose can never be mangled into math.
+- P13 (data privacy) — the canary corpus is built from sanitized production
+  Foxy messages; the provenance string records the sanitization and the test
+  pins that record, so an unsanitized fixture swap fails the guard.
+- P6-adjacent (display correctness) — served math content must DISPLAY as
+  math: the screenshot strings render stacked fractions (`.mfrac`), raw
+  LaTeX never leaks to visible text, and already-delimited math is never
+  double-converted.
+- CEO negative constraint — bare `^`, `_`, `$` never trigger; no non-math
+  production message is altered by the pass (reference-equality pinned over
+  all 25 real prod nonMath excerpts, auto-extending to corpus additions).
+
+### Catalog total
+
+Pre-REG-257: 223 entries (through REG-256, teacher-skills eval harness pins).
+Adds REG-257 (Foxy undelimited-LaTeX math normalization —
+explicit-command-triggered render-time correction + production canary-corpus
+immutability: screenshot fixture `14/15 × 25/42` renders stacked fractions,
+no non-math prod message altered [reference-equal untouched fast-path over
+the whole nonMath corpus], bare `^`/`_`/`$` never trigger, delimited math
+never double-converted, and loud fixture-integrity guards).
+**Total catalog: 224 entries (target: 35 — TARGET EXCEEDED).**
+
+---
