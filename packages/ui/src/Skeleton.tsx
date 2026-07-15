@@ -300,10 +300,21 @@ export function SimulationSkeleton() {
  * header rail of ~5 KPI tile bones, an at-risk rail of ~3 row bones, and a
  * roster mastery heatmap grid of bones. Warm-cream (NOT dark) using the shared
  * var(--surface-*) tokens so it matches the rest of the OS shell.
+ *
+ * `label` is an optional bilingual status string exposed to assistive tech
+ * only — the visual is text-free by design (P7: caller passes the localized
+ * string via the existing isHi/t pattern; the server-rendered first paint may
+ * omit it since a text-free skeleton is inherently language-neutral).
  */
-export function TeacherDashboardSkeleton() {
+export function TeacherDashboardSkeleton({ label }: { label?: string }) {
   return (
-    <div className="mesh-bg min-h-dvh pb-nav">
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label={label}
+      className="mesh-bg min-h-dvh pb-nav"
+    >
+      {label ? <span className="sr-only">{label}</span> : null}
       {/* Header rail */}
       <div className="page-header">
         <div className="app-container py-3 flex items-center justify-between">

@@ -19,6 +19,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -66,15 +67,6 @@ const cardStyle: React.CSSProperties = {
   marginBottom: 16,
 };
 
-const spinnerStyle: React.CSSProperties = {
-  width: 40,
-  height: 40,
-  border: '3px solid #EDE6DC',
-  borderTopColor: 'var(--orange)',
-  borderRadius: '50%',
-  margin: '0 auto 16px',
-  animation: 'spin 0.8s linear infinite',
-};
 
 /* ─── Interfaces ─── */
 interface AssignmentRow {
@@ -172,7 +164,7 @@ function AssignmentListView({
     return (
       <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
         <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
-        <p style={{ fontSize: 15, fontWeight: 600, color: '#4A3F2E', margin: '8px 0 4px' }}>
+        <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '8px 0 4px' }}>
           {tt(isHi, 'No assignments yet', 'अभी तक कोई असाइनमेंट नहीं')}
         </p>
         <p style={{ fontSize: 13, color: '#7D7264', margin: 0 }}>
@@ -196,7 +188,7 @@ function AssignmentListView({
             transition: 'border-color 0.15s',
           }}
           onMouseEnter={e => (e.currentTarget.style.borderColor = '#E8581C')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = '#F5F0EA')}
+          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--surface-2)')}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ flex: 1 }}>
@@ -260,19 +252,17 @@ function SubmissionListView({
       </div>
 
       {loading ? (
-        <div style={{ ...cardStyle, textAlign: 'center', padding: 36 }}>
-          <div style={spinnerStyle} />
-          <p style={{ color: '#7D7264', fontSize: 13, margin: 0 }}>
-            {tt(isHi, 'Loading submissions...', 'सबमिशन लोड हो रहे हैं...')}
-          </p>
+        <div role="status" aria-busy="true">
+          <span className="sr-only">{tt(isHi, 'Loading submissions…', 'सबमिशन लोड हो रहे हैं…')}</span>
+          <TeacherTableSkeleton rows={6} />
         </div>
       ) : rows.length === 0 ? (
         <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>📝</div>
-          <p style={{ fontSize: 15, fontWeight: 600, color: '#4A3F2E', margin: '8px 0 4px' }}>
+          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-2)', margin: '8px 0 4px' }}>
             {tt(isHi, 'No submissions yet', 'अभी तक कोई सबमिशन नहीं')}
           </p>
-          <p style={{ fontSize: 13, color: '#7D7264', margin: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
             {tt(isHi, 'Students will appear here once they start the assignment.', 'जब छात्र असाइनमेंट शुरू करेंगे, वे यहां दिखाई देंगे।')}
           </p>
         </div>
@@ -296,7 +286,7 @@ function SubmissionListView({
                   background: '#FFFFFF',
                 }}
                 onMouseEnter={e => clickable && (e.currentTarget.style.borderColor = '#E8581C')}
-                onMouseLeave={e => clickable && (e.currentTarget.style.borderColor = '#F5F0EA')}
+                onMouseLeave={e => clickable && (e.currentTarget.style.borderColor = 'var(--surface-2)')}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                   <div style={{ flex: 1 }}>
@@ -367,11 +357,14 @@ function SubmissionDetailView({
         >
           &larr; {tt(isHi, 'Back', 'वापस')}
         </button>
-        <div style={{ ...cardStyle, textAlign: 'center', padding: 48 }}>
-          <div style={spinnerStyle} />
-          <p style={{ color: '#7D7264', fontSize: 13, margin: 0 }}>
-            {tt(isHi, 'Loading submission...', 'सबमिशन लोड हो रहा है...')}
-          </p>
+        <div style={{ ...cardStyle, padding: 20 }} role="status" aria-busy="true">
+          <span className="sr-only">{tt(isHi, 'Loading submission…', 'सबमिशन लोड हो रहा है…')}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Bone width="55%" height={18} />
+            <Bone width="35%" height={12} />
+            <Bone height={80} radius={12} />
+            <Bone height={44} radius={12} />
+          </div>
         </div>
       </div>
     );
@@ -451,7 +444,7 @@ function SubmissionDetailView({
             {detail.answers.map((a, i) => (
               <div key={a.question_id} style={{
                 padding: '12px 14px',
-                background: '#F5F0EA',
+                background: 'var(--surface-2)',
                 borderRadius: 10,
                 borderLeft: `3px solid ${a.correct ? '#22C55E' : '#EF4444'}`,
               }}>
@@ -463,7 +456,7 @@ function SubmissionDetailView({
                     {a.correct ? '✓' : '✗'}
                   </span>
                 </div>
-                <div style={{ marginTop: 6, fontSize: 12, color: '#4A3F2E' }}>
+                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-2)' }}>
                   <span style={{ color: '#7D7264' }}>{tt(isHi, 'Answer', 'उत्तर')}:</span> {renderAnswer(a.student_answer)}
                 </div>
                 {!a.correct && a.correct_answer != null && (
@@ -491,7 +484,7 @@ function SubmissionDetailView({
           style={{
             width: '100%',
             padding: '10px 12px',
-            backgroundColor: '#F5F0EA',
+            backgroundColor: 'var(--surface-2)',
             color: '#1A1207',
             border: '1px solid #EDE6DC',
             borderRadius: 8,
@@ -515,7 +508,7 @@ function SubmissionDetailView({
             style={{
               width: 90,
               padding: '6px 10px',
-              backgroundColor: '#F5F0EA',
+              backgroundColor: 'var(--surface-2)',
               color: '#1A1207',
               border: '1px solid #EDE6DC',
               borderRadius: 6,
@@ -544,7 +537,7 @@ function SubmissionDetailView({
           </button>
         </div>
         {error && (
-          <p style={{ marginTop: 10, color: '#B91C1C', fontSize: 12 }}>{error}</p>
+          <p style={{ marginTop: 10, color: 'var(--danger)', fontSize: 12 }}>{error}</p>
         )}
         {success && !error && (
           <p style={{ marginTop: 10, color: '#22C55E', fontSize: 12 }}>
@@ -699,12 +692,17 @@ function TeacherSubmissionsPageContent() {
 
   if (authLoading || (loading && assignments.length === 0 && !error)) {
     return (
-      <div style={pageStyle}>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
-          <div style={spinnerStyle} />
-          {tt(isHi, 'Loading submissions...', 'सबमिशन लोड हो रहे हैं...')}
+      <div
+        style={pageStyle}
+        role="status"
+        aria-busy="true"
+        aria-label={tt(isHi, 'Loading submissions…', 'सबमिशन लोड हो रहे हैं…')}
+      >
+        <span className="sr-only">{tt(isHi, 'Loading submissions…', 'सबमिशन लोड हो रहे हैं…')}</span>
+        <div style={{ paddingTop: 16, marginBottom: 20 }}>
+          <Bone width={200} height={28} />
         </div>
+        <TeacherTableSkeleton rows={6} />
       </div>
     );
   }
@@ -714,7 +712,7 @@ function TeacherSubmissionsPageContent() {
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
 
       {/* Header */}
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #F5F0EA' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid var(--surface-2)' }}>
         <div>
           <button
             onClick={() => router.push('/teacher')}
@@ -740,7 +738,7 @@ function TeacherSubmissionsPageContent() {
       </header>
 
       {error && (
-        <div style={{ ...cardStyle, borderColor: '#EF4444', color: '#B91C1C', textAlign: 'center', fontSize: 14 }}>
+        <div style={{ ...cardStyle, borderColor: 'var(--danger)', color: 'var(--danger)', textAlign: 'center', fontSize: 14 }}>
           {error}
         </div>
       )}

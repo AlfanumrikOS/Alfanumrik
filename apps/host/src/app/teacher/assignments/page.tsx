@@ -7,6 +7,7 @@ import { supabase } from '@alfanumrik/lib/supabase';
 import { useTeacherAllowedSubjects } from '@alfanumrik/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
+import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -67,7 +68,7 @@ const DIFFICULTIES = ['Easy', 'Medium', 'Hard'];
 const GRADES = [...VALID_GRADES];
 
 function statusBadge(dueDate: string | null): { label: string; labelHi: string; bg: string; color: string } {
-  if (!dueDate) return { label: 'No due date', labelHi: 'कोई अंतिम तिथि नहीं', bg: '#F5F0EA', color: '#7D7264' };
+  if (!dueDate) return { label: 'No due date', labelHi: 'कोई अंतिम तिथि नहीं', bg: 'var(--surface-2)', color: '#7D7264' };
   const now = new Date();
   const due = new Date(dueDate);
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -97,7 +98,7 @@ const pageStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
-  backgroundColor: '#F5F0EA',
+  backgroundColor: 'var(--surface-2)',
   border: '1px solid #EDE6DC',
   borderRadius: 8,
   color: '#1A1207',
@@ -238,12 +239,17 @@ function AssignmentsPageContent() {
 
   if (loading) {
     return (
-      <div style={pageStyle}>
-        <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: 'var(--orange)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
-          {tt(isHi, 'Loading assignments...', 'असाइनमेंट लोड हो रहे हैं...')}
+      <div
+        style={pageStyle}
+        role="status"
+        aria-busy="true"
+        aria-label={tt(isHi, 'Loading assignments…', 'असाइनमेंट लोड हो रहे हैं…')}
+      >
+        <span className="sr-only">{tt(isHi, 'Loading assignments…', 'असाइनमेंट लोड हो रहे हैं…')}</span>
+        <div style={{ paddingTop: 16, marginBottom: 24 }}>
+          <Bone width={200} height={28} />
         </div>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <CardListSkeleton count={5} />
       </div>
     );
   }
@@ -299,7 +305,7 @@ function AssignmentsPageContent() {
 
       {/* Error */}
       {error && (
-        <div style={{ backgroundColor: 'rgba(220,38,38,0.1)', border: '1px solid #DC2626', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: '#B91C1C', fontSize: 14 }}>
+        <div style={{ backgroundColor: 'var(--danger-light)', border: '1px solid var(--danger)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, color: 'var(--danger)', fontSize: 14 }}>
           {error}
           <button onClick={loadData} style={{ marginLeft: 12, color: 'var(--orange)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
             {tt(isHi, 'Retry', 'पुनः प्रयास')}
@@ -309,7 +315,7 @@ function AssignmentsPageContent() {
 
       {/* Empty state */}
       {assignments.length === 0 && !error && (
-        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #F5F0EA' }}>
+        <div style={{ textAlign: 'center', padding: '60px 20px', backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid var(--surface-2)' }}>
           <div style={{ fontSize: 64, marginBottom: 16 }}>📋</div>
           <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 8px' }}>
             {tt(isHi, 'No assignments yet', 'अभी तक कोई असाइनमेंट नहीं')}
@@ -341,13 +347,13 @@ function AssignmentsPageContent() {
                 style={{
                   backgroundColor: '#FFFFFF',
                   borderRadius: 14,
-                  border: '1px solid #F5F0EA',
+                  border: '1px solid var(--surface-2)',
                   padding: '18px 20px',
                   animation: `fadeIn 0.3s ease ${idx * 0.05}s both`,
                   transition: 'border-color 0.2s, box-shadow 0.2s',
                 }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#E8581C'; e.currentTarget.style.boxShadow = '0 4px 24px rgba(232,88,28,0.1)'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#F5F0EA'; e.currentTarget.style.boxShadow = 'none'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--surface-2)'; e.currentTarget.style.boxShadow = 'none'; }}
               >
                 {/* Top row */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
@@ -369,7 +375,7 @@ function AssignmentsPageContent() {
                 {/* Class + Subject */}
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                   {cls && (
-                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264' }}>
+                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--surface-2)', color: '#7D7264' }}>
                       {cls.name}
                     </span>
                   )}
@@ -378,10 +384,10 @@ function AssignmentsPageContent() {
                       {subj.icon} {subj.name}
                     </span>
                   )}
-                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264', textTransform: 'capitalize' }}>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--surface-2)', color: '#7D7264', textTransform: 'capitalize' }}>
                     {asgn.difficulty}
                   </span>
-                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: '#F5F0EA', color: '#7D7264' }}>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, backgroundColor: 'var(--surface-2)', color: '#7D7264' }}>
                     {asgn.question_count} {tt(isHi, 'Qs', 'प्रश्न')}
                   </span>
                 </div>
@@ -395,7 +401,7 @@ function AssignmentsPageContent() {
                         {pct}%
                       </span>
                     </div>
-                    <div style={{ height: 5, backgroundColor: '#F5F0EA', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: 5, backgroundColor: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{
                         height: '100%',
                         width: `${pct}%`,
@@ -444,7 +450,7 @@ function AssignmentsPageContent() {
           style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.2s ease' }}
           onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}
         >
-          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #F5F0EA', padding: '28px 24px', width: '100%', maxWidth: 480, margin: '0 16px', maxHeight: '90vh', overflowY: 'auto', animation: 'fadeIn 0.25s ease' }}>
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid var(--surface-2)', padding: '28px 24px', width: '100%', maxWidth: 480, margin: '0 16px', maxHeight: '90vh', overflowY: 'auto', animation: 'fadeIn 0.25s ease' }}>
             <h2 style={{ fontSize: 20, fontWeight: 700, color: '#1A1207', margin: '0 0 20px' }}>
               {tt(isHi, 'New Assignment', 'नया असाइनमेंट')}
             </h2>
