@@ -155,7 +155,7 @@ async function mintCloudRunIdToken(
       const token = res.data?.token;
       return typeof token === 'string' && token.length > 0 ? token : null;
     } catch {
-      // No Vercel OIDC token, STS/impersonation failure, generateIdToken gitleaks:allow
+      // No Vercel OIDC token, STS/impersonation failure, generateIdToken
       // non-2xx, or network — perception stays dark. NEVER logs the token/body.
       return null;
     }
@@ -207,7 +207,7 @@ export interface CallPythonMolArgs {
  * Returns `null` when:
  *   - `PYTHON_AI_BASE_URL` (or `baseUrlOverride`) is empty  → perception dark
  *   - the WIF mint is ARMED (all four GCP_* env vars set) but the Google ID
- *     token cannot be minted (off-Vercel/no OIDC token, STS/impersonation gitleaks:allow
+ *     token cannot be minted (off-Vercel/no OIDC token, STS/impersonation
  *     error, generateIdToken non-2xx, or mint timeout) — we NEVER send an
  *     unauthenticated request to the Invoker-IAM-enforced Cloud Run service
  *   - the WIF mint is armed but the base URL is malformed (no derivable aud)

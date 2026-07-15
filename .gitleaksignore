@@ -1,0 +1,17 @@
+# gitleaks fingerprint suppressions
+#
+# Each line is a commit-scoped finding fingerprint that gitleaks reads from the
+# repo root and applies across the entire scan range. Inline `gitleaks:allow`
+# directives cannot retroactively suppress a finding in an EARLIER historical
+# commit, so genuine prose false positives introduced by a past commit must be
+# pinned here by fingerprint.
+#
+# Both entries below are prose false positives in the keyless
+# Vercel-OIDC -> Workload Identity Federation client
+# (packages/lib/src/ai/clients/python-mol.ts). The generic-api-key rule matched
+# the base64-shaped phrase "STS/impersonation" sitting next to the word "token"
+# in a JSDoc block and an inline catch-comment. That client mints an EPHEMERAL
+# runtime Google ID token against a public Google endpoint; it contains NO
+# literal secret by design (nothing is hard-coded). Scope: these two lines only.
+7739c19437730909f9cf5cab2bf7a65459622bdd:packages/lib/src/ai/clients/python-mol.ts:generic-api-key:158
+7739c19437730909f9cf5cab2bf7a65459622bdd:packages/lib/src/ai/clients/python-mol.ts:generic-api-key:210
