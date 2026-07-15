@@ -2,7 +2,7 @@
  * alfabot-send-inquiry — AlfaBot "Submit your query" mailer.
  *
  * Receives a visitor-submitted inquiry from the Next.js route
- * `/api/alfabot/inquiry` and forwards it to the inquiry inbox via Mailgun.
+ * `/api/alfabot/inquiry` and forwards it to the inquiry inbox via the relay.
  *
  * Auth: this function is service-role-only. The Next.js route is the only
  * legitimate caller — it bears the SUPABASE_SERVICE_ROLE_KEY in the
@@ -12,23 +12,29 @@
  * routing changes are intentionally obvious — edit this constant.
  *
  * P13 (Data Privacy):
- *   - We DO log the Mailgun message id, anon id, sessionId, and timestamps.
+ *   - We DO log the relay message id, anon id, sessionId, and timestamps.
  *   - We NEVER log the visitor's email, name, or question content to stdout.
  *     (The email payload itself carries them — that's the whole point —
  *     but they do not enter Supabase function logs or Sentry.)
  *
- * Pattern mirrors `supabase/functions/send-welcome-email/index.ts` (Mailgun
- * POST shape, base64 Basic auth, form-encoded body, 10s AbortController).
+ * Transport: the shared Resend relay (`_shared/relay-mailer.ts`), same seam as
+ * send-welcome-email / send-transactional-email. sendEmail owns timeout, retry,
+ * and the Idempotency-Key, so the old raw-fetch + AbortController is gone.
  *
  * Owner: backend.
  */
 
 import { edgeLog, getRequestId, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
 import { getCorsHeaders } from '../_shared/cors.ts'
+import { sendEmail } from '../_shared/relay-mailer.ts'
+import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
 
 // ─── Hardcoded recipient ─────────────────────────────────────────────────────
 // CHANGE THIS LINE to re-route AlfaBot inquiries. Single source of truth.
 const INQUIRY_RECIPIENT = 'alfanumrik10@gmail.com'
+// From address on the shared Resend sending domain. Reply-To is set per-request
+// to the visitor's email so the team can reply directly to them.
+const FROM_EMAIL = 'AlfaBot <noreply@alfanumrik.com>'
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
 // CORS logic (ALLOWED_ORIGINS + Vercel-preview detection) lives in
@@ -53,7 +59,6 @@ const MAX_EMAIL_LEN = 254
 const MIN_QUESTION_LEN = 10
 const MAX_QUESTION_LEN = 2000
 const MAX_ANON_ID_LEN = 200
-const MAILGUN_TIMEOUT_MS = 10_000
 
 interface InquiryRequest {
   name?: string
@@ -118,7 +123,7 @@ function validateBody(body: unknown): ValidatedInquiry | { error: string } {
   return { name, email, question, sessionId, anonId }
 }
 
-// ─── Mailgun ─────────────────────────────────────────────────────────────────
+// ─── Email body builders ─────────────────────────────────────────────────────
 
 function htmlEscape(s: string): string {
   return s
@@ -184,53 +189,35 @@ function buildHtmlBody(args: {
   ].join('')
 }
 
-interface MailgunResult {
+interface RelayResult {
   ok: boolean
   messageId?: string
-  status?: number
   error?: string
 }
 
-async function sendViaMailgun(args: {
-  apiKey: string
-  domain: string
+async function sendViaRelay(args: {
   to: string
   replyTo: string
   subject: string
   text: string
   html: string
-}): Promise<MailgunResult> {
-  const form = new FormData()
-  form.append('from', `AlfaBot <noreply@${args.domain}>`)
-  form.append('to', args.to)
-  form.append('h:Reply-To', args.replyTo)
-  form.append('subject', args.subject)
-  form.append('text', args.text)
-  form.append('html', args.html)
-  form.append('o:tag', 'category:alfabot-inquiry')
-
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), MAILGUN_TIMEOUT_MS)
-  try {
-    const res = await fetch(`https://api.mailgun.net/v3/${args.domain}/messages`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { 'Authorization': `Basic ${btoa(`api:${args.apiKey}`)}` },
-      body: form,
-    })
-    clearTimeout(timer)
-    if (!res.ok) {
-      let errText = ''
-      try { errText = await res.text() } catch { /* ignore */ }
-      return { ok: false, status: res.status, error: `http_${res.status}` + (errText ? `:${errText.slice(0, 200)}` : '') }
-    }
-    const json = (await res.json()) as { id?: string }
-    return { ok: true, messageId: json.id ?? '', status: res.status }
-  } catch (err) {
-    clearTimeout(timer)
-    const isAbort = err instanceof Error && err.name === 'AbortError'
-    return { ok: false, error: isAbort ? 'timeout' : (err instanceof Error ? err.message : 'fetch_failed') }
-  }
+  idempotencyKey: string
+}): Promise<RelayResult> {
+  const result = await sendEmail({
+    from: FROM_EMAIL,
+    to: args.to,
+    replyTo: args.replyTo,
+    subject: args.subject,
+    text: args.text,
+    html: args.html,
+    tags: [{ name: 'category', value: 'alfabot-inquiry' }],
+    idempotencyKey: args.idempotencyKey,
+    operation: 'send_alfabot_inquiry',
+  })
+  // result.code is a PII-free machine code (resend_http_<status> / resend_exception).
+  return result.success
+    ? { ok: true, messageId: result.id ?? '' }
+    : { ok: false, error: result.code ?? 'relay_send_failed' }
 }
 
 // ─── Structured logging (no PII) ─────────────────────────────────────────────
@@ -309,15 +296,22 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: false, error: validated.error }, 400, origin)
   }
 
-  // ── Mailgun config ──
-  const apiKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
-  const domain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-  if (!apiKey || !domain) {
-    logEvent(context, 'alfabot_inquiry.mailgun_config_missing', 'error', {
-      has_api_key: Boolean(apiKey),
-      has_domain: Boolean(domain),
+  // ── Relay config ──
+  // Attempt a send when EITHER Resend (RESEND_API_KEY) OR the TRANSITIONAL
+  // Mailgun fallback (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the relay
+  // (_shared/relay-mailer.ts) prefers Resend and falls back to Mailgun at send
+  // time. Prod today has only MAILGUN_* set, so this keeps the inquiry mailer
+  // working through the Resend cutover with zero downtime. Remove MAILGUN_* once
+  // Resend is confirmed live in prod. Only when BOTH are absent → 503.
+  const relayKey = Deno.env.get('RESEND_API_KEY') ?? ''
+  const mailgunApiKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
+  const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+  const hasEmailTransport = Boolean(relayKey) || Boolean(mailgunApiKey && mailgunDomain)
+  if (!hasEmailTransport) {
+    logEvent(context, 'alfabot_inquiry.relay_config_missing', 'error', {
+      has_api_key: hasEmailTransport,
     })
-    return jsonResponse({ ok: false, error: 'mailgun_config_missing' }, 503, origin)
+    return jsonResponse({ ok: false, error: 'relay_config_missing' }, 503, origin)
   }
 
   // ── Build email ──
@@ -326,25 +320,30 @@ Deno.serve(async (req: Request) => {
   const html = buildHtmlBody(validated)
 
   // ── Send ──
-  const result = await sendViaMailgun({
-    apiKey,
-    domain,
+  // Idempotency: dedup a genuine retry of the same submission (session/anon,
+  // falling back to the visitor email) while distinct inquiries still send.
+  const result = await sendViaRelay({
     to: INQUIRY_RECIPIENT,
     replyTo: validated.email, // so the team can reply directly to the visitor
     subject,
     text,
     html,
+    idempotencyKey: createEmailIdempotencyKey({
+      template: 'alfabot_inquiry',
+      recipient: INQUIRY_RECIPIENT,
+      subject,
+      correlationId: validated.sessionId ?? validated.anonId ?? validated.email,
+    }),
   })
 
   if (!result.ok) {
-    logEvent(context, 'alfabot_inquiry.mailgun_failed', 'error', {
+    logEvent(context, 'alfabot_inquiry.relay_failed', 'error', {
       anon_id: validated.anonId,
       session_id: validated.sessionId,
-      mailgun_status: result.status ?? null,
       reason: result.error ?? 'unknown',
     })
     return jsonResponse(
-      { ok: false, error: `mailgun_${result.status ?? 'error'}` },
+      { ok: false, error: `relay_${result.error ?? 'error'}` },
       502,
       origin,
     )
@@ -353,8 +352,7 @@ Deno.serve(async (req: Request) => {
   logEvent(context, 'alfabot_inquiry.sent', 'ok', {
     anon_id: validated.anonId,
     session_id: validated.sessionId,
-    mailgun_message_id: result.messageId ?? null,
-    mailgun_status: result.status ?? null,
+    relay_message_id: result.messageId ?? null,
   })
 
   return jsonResponse(

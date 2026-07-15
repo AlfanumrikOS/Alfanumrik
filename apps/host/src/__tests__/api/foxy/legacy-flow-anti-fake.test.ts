@@ -1,6 +1,6 @@
 // apps/host/src/__tests__/api/foxy/legacy-flow-anti-fake.test.ts
 //
-// REG-251 (legacy-persist half) — the UNCONDITIONAL, FLAG-INDEPENDENT backstop.
+// REG-252 (legacy-persist half) — the UNCONDITIONAL, FLAG-INDEPENDENT backstop.
 // `persistLegacyFoxyResponse` is the single gate every legacy Foxy turn flows
 // through (ff_grounded_ai_foxy-OFF kill switch AND the grounded-abstain
 // fallback). It strips a claim-only turn to the graceful bilingual fallback in

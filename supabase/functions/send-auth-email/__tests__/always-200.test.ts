@@ -9,8 +9,9 @@
 // `standardwebhooks` module once. After `deno cache` warms it, the test runs
 // offline with just `--allow-read --allow-env` (matching the permission set of
 // the existing `edge-function-tests` CI lane in .github/workflows/ci.yml).
-// No real network call is ever made at runtime: the Mailgun HTTP call is
-// intercepted by stubbing globalThis.fetch.
+// No real network call is ever made at runtime: the send-path tests inject a
+// stub EmailTransport via setDefaultEmailTransport(), so the relay never opens
+// a socket.
 //
 // ── AO-1: the P15 "always return HTTP 200" invariant, now EXECUTABLE ─────────
 // P15 rule 1 (CLAUDE.md / .claude/CLAUDE.md): send-auth-email MUST return HTTP
@@ -27,10 +28,10 @@
 // index.ts passes its request handler inline to Deno.serve() at module top
 // level and does NOT export it. We stub Deno.serve BEFORE importing the module
 // so the top-level `Deno.serve(handler)` call hands us the handler instead of
-// binding a socket. Because the module reads its config (hook secret, Mailgun
+// binding a socket. Because the module reads its config (hook secret, relay
 // creds) from Deno.env at LOAD time, we re-import it with a cache-busting query
 // string for each env scenario (missing-secret vs configured). This exercises
-// the REAL handler logic — signature verification, payload validation, Mailgun
+// the REAL handler logic — signature verification, payload validation, relay
 // dispatch, and the top-level catch — not a static-source canary.
 
 import {
@@ -38,6 +39,9 @@ import {
   assertEquals,
 } from 'https://deno.land/std@0.210.0/assert/mod.ts';
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
+import { setDefaultEmailTransport } from '../../_shared/relay-mailer.ts';
+import { authEmailTokenDimension } from '../../_shared/auth-email-links.ts';
+import { createEmailIdempotencyKey } from '../../_shared/reliability.ts';
 
 type Handler = (req: Request) => Promise<Response> | Response;
 
@@ -46,10 +50,14 @@ type Handler = (req: Request) => Promise<Response> | Response;
 // constructing the Webhook; we pass the bare `whsec_...` form here.
 const SECRET = 'whsec_' + btoa('alfanumrik-send-auth-email-test-secret');
 
-const ENV_KEYS = ['SEND_EMAIL_HOOK_SECRET', 'MAILGUN_API_KEY', 'MAILGUN_DOMAIN', 'SITE_URL'];
+// MAILGUN_* are included so the two-key config guard (RESEND_API_KEY OR the
+// transitional MAILGUN_API_KEY+MAILGUN_DOMAIN fallback) is DETERMINISTIC per
+// scenario: each loadHandler() clears them before applying the scenario env, so
+// an ambient MAILGUN_* (e.g. on a dev/prod-shaped machine) can never leak into
+// the "no relay config" path and flip it green→red.
+const ENV_KEYS = ['SEND_EMAIL_HOOK_SECRET', 'RESEND_API_KEY', 'MAILGUN_API_KEY', 'MAILGUN_DOMAIN', 'SITE_URL'];
 
 const realServe = Deno.serve;
-const realFetch = globalThis.fetch;
 let cacheBust = 0;
 
 /**
@@ -128,8 +136,7 @@ function signedRequest(body: unknown, signingSecret = SECRET): Request {
 
 const CONFIGURED = {
   SEND_EMAIL_HOOK_SECRET: SECRET,
-  MAILGUN_API_KEY: 'key-test-mailgun',
-  MAILGUN_DOMAIN: 'mg.alfanumrik.com',
+  RESEND_API_KEY: 're_test_key_0001',
   SITE_URL: 'https://alfanumrik.test',
 };
 
@@ -154,8 +161,7 @@ Deno.test('send-auth-email: OPTIONS preflight returns 200', async () => {
 Deno.test('send-auth-email: missing hook secret returns 200 with warning', async () => {
   const handler = await loadHandler({
     // No SEND_EMAIL_HOOK_SECRET configured.
-    MAILGUN_API_KEY: 'key-test-mailgun',
-    MAILGUN_DOMAIN: 'mg.alfanumrik.com',
+    RESEND_API_KEY: 're_test_key_0001',
   });
   const res = await handler(signedRequest(validPayloadBody()));
   assertEquals(res.status, 200, 'unconfigured secret must NOT block signup');
@@ -187,56 +193,99 @@ Deno.test('send-auth-email: valid signature but missing user/email_data returns 
   assertEquals(body.error, 'Invalid payload');
 });
 
-// ─── Path 6: Mailgun send FAILURE → 200 (success:false, auth proceeds) ───────
-Deno.test('send-auth-email: Mailgun send failure returns 200 with success:false', async () => {
+// ─── Path 6: relay send FAILURE → 200 (success:false, auth proceeds) ─────────
+Deno.test('send-auth-email: relay send failure returns 200 with success:false', async () => {
   const handler = await loadHandler(CONFIGURED);
-  // Stub the Mailgun HTTP call to a non-retryable 400 so no real network call
-  // is made and fetchWithTimeout returns immediately (no retry backoff).
-  globalThis.fetch = (() =>
-    Promise.resolve(
-      new Response('Mailgun rejected: domain not verified', { status: 400 }),
-    )) as typeof fetch;
+  // Inject a stub transport that reports a PII-free failure code — no socket
+  // is opened, and fetchWithTimeout is never reached.
+  setDefaultEmailTransport({
+    name: 'stub-fail',
+    send: () => Promise.resolve({ success: false, code: 'resend_http_400' }),
+  });
   try {
     const res = await handler(signedRequest(validPayloadBody()));
     assertEquals(res.status, 200, 'email-provider failure must NOT block signup');
     const body = await res.json();
     assertEquals(body.success, false, 'send failed → success:false but still 200');
   } finally {
-    globalThis.fetch = realFetch;
+    setDefaultEmailTransport(null);
   }
 });
 
-// ─── Path 7: Mailgun send SUCCESS → 200 (success:true) ──────────────────────
-Deno.test('send-auth-email: Mailgun send success returns 200 with success:true', async () => {
+// ─── Path 7: relay send SUCCESS → 200 (success:true) ────────────────────────
+Deno.test('send-auth-email: relay send success returns 200 with success:true', async () => {
   const handler = await loadHandler(CONFIGURED);
-  globalThis.fetch = (() =>
-    Promise.resolve(
-      new Response(JSON.stringify({ id: '<mailgun-msg-id@mg.alfanumrik.com>' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    )) as typeof fetch;
+  setDefaultEmailTransport({
+    name: 'stub-ok',
+    send: () => Promise.resolve({ success: true, id: 'resend-msg-uuid-0001' }),
+  });
   try {
     const res = await handler(signedRequest(validPayloadBody()));
     assertEquals(res.status, 200);
     const body = await res.json();
     assertEquals(body.success, true);
   } finally {
-    globalThis.fetch = realFetch;
+    setDefaultEmailTransport(null);
   }
 });
 
-// ─── Path 8: no Mailgun config → 200 (defers to Supabase built-in email) ─────
-Deno.test('send-auth-email: missing Mailgun config returns 200 (no_mailgun_config)', async () => {
+// ─── Path 8: no relay config → 200 (defers to Supabase built-in email) ───────
+Deno.test('send-auth-email: missing relay config returns 200 (no_relay_config)', async () => {
   const handler = await loadHandler({
     SEND_EMAIL_HOOK_SECRET: SECRET,
-    // No MAILGUN_API_KEY / MAILGUN_DOMAIN.
+    // No RESEND_API_KEY.
   });
   const res = await handler(signedRequest(validPayloadBody()));
   assertEquals(res.status, 200);
   const body = await res.json();
   assertEquals(body.success, true);
-  assertEquals(body.warning, 'no_mailgun_config');
+  assertEquals(body.warning, 'no_relay_config');
+});
+
+// ─── Path 8b: Mailgun fallback configured (no Resend) → send is ATTEMPTED ────
+// TRANSITIONAL zero-downtime cutover: prod has MAILGUN_API_KEY + MAILGUN_DOMAIN
+// but not RESEND_API_KEY. The two-key guard must NOT short-circuit to
+// no_relay_config — it must fall through to the send path. We inject a stub
+// transport (no socket) to prove the guard let the send through; the stub's
+// success surfaces as success:true, still HTTP 200.
+Deno.test('send-auth-email: Mailgun-only config attempts send (transitional fallback, no no_relay_config)', async () => {
+  const handler = await loadHandler({
+    SEND_EMAIL_HOOK_SECRET: SECRET,
+    // No RESEND_API_KEY — only the transitional Mailgun fallback is configured.
+    MAILGUN_API_KEY: 'key-mg-test-0001',
+    MAILGUN_DOMAIN: 'mg.alfanumrik.test',
+  });
+  setDefaultEmailTransport({
+    name: 'stub-mailgun',
+    send: () => Promise.resolve({ success: true, provider: 'mailgun', id: 'mg-msg-uuid-0001' }),
+  });
+  try {
+    const res = await handler(signedRequest(validPayloadBody()));
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    // Guard fell through to the send path (NOT the no_relay_config short-circuit).
+    assertEquals(body.success, true, 'Mailgun-only config must attempt the send, not warn no_relay_config');
+    assertEquals(body.warning, undefined, 'no_relay_config must NOT fire when Mailgun is configured');
+  } finally {
+    setDefaultEmailTransport(null);
+  }
+});
+
+// ─── Path 8c: Mailgun key WITHOUT domain → treated as unconfigured (no_relay_config)
+// The Mailgun fallback needs BOTH MAILGUN_API_KEY and MAILGUN_DOMAIN. A key
+// without a domain is not a usable transport, so the guard must still degrade to
+// no_relay_config (→ 200, Supabase built-in email can take over).
+Deno.test('send-auth-email: Mailgun key without domain still returns 200 (no_relay_config)', async () => {
+  const handler = await loadHandler({
+    SEND_EMAIL_HOOK_SECRET: SECRET,
+    MAILGUN_API_KEY: 'key-mg-test-0001',
+    // No MAILGUN_DOMAIN.
+  });
+  const res = await handler(signedRequest(validPayloadBody()));
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.success, true);
+  assertEquals(body.warning, 'no_relay_config');
 });
 
 // ─── Path 9: unexpected throw inside the try block → 200 (top-level catch) ───
@@ -267,5 +316,54 @@ Deno.test('send-auth-email: source contains no non-200 Response status (P15 cana
     nonOk,
     null,
     `index.ts must only ever respond with status: 200 (P15). Found: ${JSON.stringify(nonOk)}`,
+  );
+});
+
+// ─── Token-varying idempotency key (REQUIRED P15 fix) ────────────────────────
+// Under Resend the Idempotency-Key is honoured for 24h. index.ts folds the
+// per-auth token into the key via createEmailIdempotencyKey({ correlationId:
+// authEmailTokenDimension(...) }). Both helpers are pure + exported, so we
+// assert the contract directly (no handler, no transport):
+//   - SAME token twice → SAME key  (a genuine retry dedupes, no double-send)
+//   - DISTINCT tokens  → DISTINCT keys (a re-requested confirm/reset SENDS)
+
+const IDEMPOTENCY_BASE = {
+  template: 'auth_email',
+  recipient: 'aarav.student@example.com',
+  subject: 'Verify your Alfanumrik account | अपना Alfanumrik खाता सत्यापित करें',
+};
+
+Deno.test('send-auth-email: same token twice produces the SAME idempotency key (genuine retry dedupe)', () => {
+  const dim = authEmailTokenDimension({ token: 'tok-123', tokenHash: 'hash-abc-123' });
+  const key1 = createEmailIdempotencyKey({ ...IDEMPOTENCY_BASE, correlationId: dim });
+  const key2 = createEmailIdempotencyKey({ ...IDEMPOTENCY_BASE, correlationId: dim });
+  assertEquals(key1, key2, 'same token must yield the same key so Resend dedupes a genuine retry');
+});
+
+Deno.test('send-auth-email: two distinct tokens produce TWO DISTINCT idempotency keys (re-requested links send)', () => {
+  const keyA = createEmailIdempotencyKey({
+    ...IDEMPOTENCY_BASE,
+    correlationId: authEmailTokenDimension({ token: 'tokA', tokenHash: 'hashA' }),
+  });
+  const keyB = createEmailIdempotencyKey({
+    ...IDEMPOTENCY_BASE,
+    correlationId: authEmailTokenDimension({ token: 'tokB', tokenHash: 'hashB' }),
+  });
+  assert(keyA !== keyB, 'distinct tokens must yield distinct keys so re-requested confirmations actually send');
+});
+
+Deno.test('send-auth-email: authEmailTokenDimension prefers tokenHash and folds in the email-change new token', () => {
+  // tokenHash wins over token.
+  assertEquals(
+    authEmailTokenDimension({ token: 't', tokenHash: 'th' }),
+    authEmailTokenDimension({ tokenHash: 'th' }),
+    'tokenHash must be preferred over token',
+  );
+  // Email-change new token widens the dimension → distinct key from a plain confirm.
+  const change = authEmailTokenDimension({ tokenHash: 'th', tokenHashNew: 'thn' });
+  assert(change.includes('thn'), 'email-change new token must be folded into the dimension');
+  assert(
+    change !== authEmailTokenDimension({ tokenHash: 'th' }),
+    'email-change dimension must differ from the plain-confirm dimension',
   );
 });

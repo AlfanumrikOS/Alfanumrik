@@ -1,6 +1,6 @@
 // apps/host/src/__tests__/lib/foxy/anti-fake-quiz-claim.test.ts
 //
-// REG-251 (unit half) — the UNCONDITIONAL, flag-independent anti-fake-quiz-claim
+// REG-252 (unit half) — the UNCONDITIONAL, flag-independent anti-fake-quiz-claim
 // backstop. Locks the pure detector `stripFakeQuizClaim(text)`:
 //
 //   • A "generated / created / prepared / here are N questions"-style claim that

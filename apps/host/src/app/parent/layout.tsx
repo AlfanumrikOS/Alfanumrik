@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 export default function ParentLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="parent-portal">
-      <Suspense fallback={<div className="min-h-dvh bg-[#FFF8F0]" aria-busy="true" />}>
+      <Suspense fallback={<div className="min-h-dvh bg-[var(--bg)]" aria-busy="true" />}>
         <ParentShell>{children}</ParentShell>
       </Suspense>
     </div>

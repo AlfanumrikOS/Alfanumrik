@@ -81,7 +81,7 @@ const MECHANISM_SIGNATURES: ReadonlyArray<readonly [Mechanism, RegExp]> = [
   ['internal-cron', /verifyInternalCronRequest\s*\(/],
   ['admin-key', /x-admin-key|ADMIN_API_KEY/],
   ['jwt-user', /\.auth\.getUser\s*\(|resolveTeacherFromJwt|Authorization/],
-  ['shared-secret', /CRON_SECRET|INTERNAL_FN_SECRET|INTERNAL_SECRET|x-internal-secret|verifyRequestSignature\s*\(/],
+  ['shared-secret', /CRON_SECRET|INTERNAL_FN_SECRET|INTERNAL_SECRET|x-internal-secret|SEND_EMAIL_HOOK_SECRET|verifyRequestSignature\s*\(/],
 ] as const;
 
 /**
@@ -131,8 +131,16 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'queue-consumer': ['internal-cron'],
   'quiz-generator': ['jwt-user'],
   'scan-ocr': ['ai-admission', 'jwt-user'],
-  'send-auth-email': ['jwt-user'],
-  'send-pre-debit-notice': ['jwt-user', 'shared-secret'],
+  // 2026-07-15 correction: the Mailgun→Resend migration moved the outbound
+  // `Authorization: Basic ...` Mailgun header into _shared/relay-mailer.ts, so
+  // the old FALSE `jwt-user` match (the literal "Authorization" string) is gone.
+  // Neither function ever did JWT-user auth. Real guard = the standardwebhooks
+  // HMAC verify keyed by SEND_EMAIL_HOOK_SECRET (200-only, fail-closed).
+  'send-auth-email': ['shared-secret'],
+  // 2026-07-15 correction: same Mailgun-header false-positive removed by the
+  // Resend migration. Real guard is unchanged — CRON_SECRET via checkCronSecret
+  // (fail-closed 401 before any I/O). It never did JWT-user auth.
+  'send-pre-debit-notice': ['shared-secret'],
   'send-renewal-reminder': ['jwt-user'],
   'send-transactional-email': ['jwt-user'],
   'send-welcome-email': ['jwt-user'],

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 
 // ============================================================
 // BILINGUAL HELPER (P7)
@@ -255,7 +256,7 @@ const pageStyle: React.CSSProperties = {
   padding: '20px 16px 40px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
   color: '#1E293B',
-  backgroundColor: '#FFF8F0',
+  backgroundColor: 'var(--bg)',
   minHeight: '100dvh',
 };
 
@@ -277,7 +278,7 @@ const sectionTitle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '12px 14px',
-  backgroundColor: '#FFF8F0',
+  backgroundColor: 'var(--bg)',
   border: '1px solid #FDBA7444',
   borderRadius: 10,
   color: '#1E293B',
@@ -413,21 +414,9 @@ function MyTickets({
   // Loading state
   if (loading) {
     return (
-      <div style={{ ...cardStyle, textAlign: 'center', padding: '28px 18px' }}>
-        <div
-          style={{
-            width: 28,
-            height: 28,
-            border: '3px solid #FDBA7444',
-            borderTopColor: '#E8581C',
-            borderRadius: '50%',
-            margin: '0 auto 10px',
-            animation: 'spin 0.8s linear infinite',
-          }}
-        />
-        <p style={{ fontSize: 13, color: '#94A3B8', margin: 0 }}>
-          {t(isHi, 'Loading your tickets...', 'आपके टिकट लोड हो रहे हैं...')}
-        </p>
+      <div role="status" aria-busy="true">
+        <span className="sr-only">{t(isHi, 'Loading your tickets...', 'आपके टिकट लोड हो रहे हैं...')}</span>
+        <CardListSkeleton count={3} />
       </div>
     );
   }
@@ -699,9 +688,12 @@ export default function ParentSupportPage() {
   // Page loading state (auth resolving)
   if (isLoading || !isLoggedIn) {
     return (
-      <div style={{ ...pageStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-        <p style={{ color: '#94A3B8', fontSize: 14 }}>{t(isHi, 'Loading...', 'लोड हो रहा है...')}</p>
+      <div style={pageStyle} role="status" aria-busy="true">
+        <span className="sr-only">{t(isHi, 'Loading...', 'लोड हो रहा है...')}</span>
+        <div style={{ marginBottom: 14 }}>
+          <Bone width="50%" height={26} />
+        </div>
+        <CardListSkeleton count={3} />
       </div>
     );
   }

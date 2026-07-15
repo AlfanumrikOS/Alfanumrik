@@ -177,7 +177,7 @@ export default function ParentShell({ children }: { children: React.ReactNode })
 
   // Do not expose a protected child route while parent auth is unresolved.
   // The unauthenticated login page is rendered immediately after resolution.
-  if (loading) return <div className="min-h-dvh bg-[#FFF8F0]" aria-busy="true" />;
+  if (loading) return <div className="min-h-dvh bg-[var(--bg)]" aria-busy="true" />;
 
   // Unauthenticated → render naked. The /parent route renders its login screen
   // directly; other parent routes will redirect to /parent (handled by their pages).

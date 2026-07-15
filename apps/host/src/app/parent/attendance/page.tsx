@@ -452,7 +452,7 @@ export default function ParentAttendancePage() {
   // ── Auth loading ─────────────────────────────────────────────────────────
   if (!authChecked || auth.isLoading) {
     return (
-      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[#FFF8F0]">
+      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[var(--bg)]">
         <PageSkeleton />
       </div>
     );
@@ -461,7 +461,7 @@ export default function ParentAttendancePage() {
   // ── Main loading ─────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[#FFF8F0]">
+      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[var(--bg)]">
         <PageSkeleton />
       </div>
     );
@@ -470,7 +470,7 @@ export default function ParentAttendancePage() {
   // ── Error state ───────────────────────────────────────────────────────────
   if (error) {
     return (
-      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[#FFF8F0]">
+      <div className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[var(--bg)]">
         <div className="max-w-2xl mx-auto px-4 py-8 text-center">
           <div className="text-4xl mb-3" aria-hidden="true">!</div>
           <p className="text-red-600 text-[14px] font-semibold mb-1">
@@ -501,7 +501,7 @@ export default function ParentAttendancePage() {
 
   return (
     <div
-      className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[#FFF8F0]"
+      className="font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 min-h-dvh bg-[var(--bg)]"
     >
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
 

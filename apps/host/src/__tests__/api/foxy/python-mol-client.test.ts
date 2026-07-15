@@ -13,7 +13,7 @@ import { logger } from '@alfanumrik/lib/logger';
  *   - never log the request/response body (P13) — not asserted here directly,
  *     but the client only ever passes status/reason to the logger.
  *
- * REG-253 (below): the ARMED keyless Cloud Run invoker-token mint. When
+ * REG-254 (below): the ARMED keyless Cloud Run invoker-token mint. When
  * PYTHON_AI_BASE_URL is set AND all four GCP_* WIF env vars are present the
  * client mints a Google-signed ID token (aud = the service origin) via
  * Vercel OIDC → ExternalAccountClient (STS + SA impersonation) →
@@ -31,7 +31,7 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 
 // Heavy Node deps for the armed keyless-mint path. These are `await import()`-ed
 // only when the WIF env is present, so mocking them is a no-op for the dormant
-// tests (which never reach the import) — that is exactly what REG-253's dormant
+// tests (which never reach the import) — that is exactly what REG-254's dormant
 // case pins. `vi.hoisted` gives the mock factories a stable reference the tests
 // can reconfigure per-scenario.
 const { getVercelOidcTokenMock, externalAccountFromJsonMock, generateIdTokenRequestMock } =
@@ -163,7 +163,7 @@ describe('callPythonMol — fail-safe (never throws)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REG-253 — keyless Vercel-OIDC → GCP-WIF Cloud Run invoker-token mint.
+// REG-254 — keyless Vercel-OIDC → GCP-WIF Cloud Run invoker-token mint.
 //
 // This is the ARMED path (WIF env present) that the DORMANT-only suite above
 // does not exercise. Contract under test:
@@ -182,7 +182,7 @@ describe('callPythonMol — fail-safe (never throws)', () => {
 const ARMED_BASE_URL = 'https://py.example.com';
 const CLOUD_RUN_ID_TOKEN = 'cloud-run-id-token-SUPER-SECRET-VALUE';
 
-describe('callPythonMol — keyless WIF Cloud Run invoker mint (REG-253)', () => {
+describe('callPythonMol — keyless WIF Cloud Run invoker mint (REG-254)', () => {
   const ORIGINAL_GCP: Record<string, string | undefined> = {};
 
   beforeEach(() => {
