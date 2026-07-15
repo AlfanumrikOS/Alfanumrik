@@ -58,21 +58,6 @@ describe('DevOps deployment policy contract', () => {
     expect(release?.pass(workflow.replace('needs: [health-check, post-deploy-verify, release]', 'needs: [health-check, post-deploy-verify]'))).toBe(false);
     expect(release?.pass(workflow.replace('RELEASE_RESULT: ${{ needs.release.result }}', 'RELEASE_RESULT: success'))).toBe(false);
     expect(release?.pass(workflow.replace('EXPECTED_SHA: ${{ github.sha }}', 'EXPECTED_SHA: stale-sha'))).toBe(false);
-    const v3Prerequisite = "b.checks?.v3_server_prerequisites?.status==='ok'";
-    const firstV3Proof = workflow.indexOf(v3Prerequisite);
-    const lastV3Proof = workflow.lastIndexOf(v3Prerequisite);
-    expect(firstV3Proof).toBeGreaterThan(-1);
-    expect(lastV3Proof).toBeGreaterThan(firstV3Proof);
-    expect(release?.pass(
-      workflow.slice(0, firstV3Proof) + workflow.slice(firstV3Proof + v3Prerequisite.length),
-    )).toBe(false);
-    expect(release?.pass(
-      workflow.slice(0, lastV3Proof) + workflow.slice(lastV3Proof + v3Prerequisite.length),
-    )).toBe(false);
-    expect(release?.pass(workflow.replace(
-      'id: preflight',
-      `id: preflight\n          # ${v3Prerequisite}`,
-    ))).toBe(false);
     expect(release?.pass(workflow.replace('require_equal "Release result" "$RELEASE_RESULT" "success"', 'echo "$RELEASE_RESULT"'))).toBe(false);
     expect(release?.pass(workflow.replace('echo "Production release completion evidence is incomplete."\n            exit 1', 'echo "Production release completion evidence is incomplete."\n            exit 0'))).toBe(false);
 

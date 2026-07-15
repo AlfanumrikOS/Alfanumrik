@@ -162,22 +162,6 @@ vi.mock('@alfanumrik/lib/AuthContext', () => ({
   useAuth: () => auth.state,
 }));
 
-// This suite characterises the legacy Foxy page. Keep the server-authoritative
-// V3 dispatcher explicitly in its flag-off state so these assertions do not
-// depend on an API response (or accidentally exercise the permission state).
-vi.mock('@alfanumrik/lib/use-experience-v3', () => ({
-  useExperienceV3: () => ({
-    enabled: false,
-    loading: false,
-    capabilities: {},
-    manifest: null,
-    routeAllowed: false,
-    scope: null,
-    legacyAllowed: true,
-    denied: false,
-  }),
-}));
-
 // Data-driven supabase mock. `db.data` defaults to EMPTY arrays — byte-identical
 // behaviour to the original fixed `{ data: [] }` mock, so every existing test is
 // unaffected. The "active conversation" test below seeds `foxy_sessions` +

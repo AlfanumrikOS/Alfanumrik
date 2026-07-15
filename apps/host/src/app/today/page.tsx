@@ -27,8 +27,6 @@ import { useTodayQueue } from '@alfanumrik/lib/today/use-today-queue';
 import { Skeleton, Button, EmptyState } from '@alfanumrik/ui/ui';
 import { calculateLevel } from '@alfanumrik/lib/xp-config';
 import { todayCopy } from '@alfanumrik/lib/today/copy';
-import StudentV3Gate from '../(student)/_components/StudentV3Gate';
-import { StudentTodayV3 } from '../(student)/_components/StudentV3Pages';
 
 // Item cards are split out of first paint — the page chrome (greeting strip +
 // states) is the only thing in the initial bundle.
@@ -244,5 +242,5 @@ function LegacyTodayPage() {
 }
 
 export default function TodayPage() {
-  return <StudentV3Gate legacy={<LegacyTodayPage />} v3={<StudentTodayV3 />} withShell />;
+  return <LegacyTodayPage />;
 }

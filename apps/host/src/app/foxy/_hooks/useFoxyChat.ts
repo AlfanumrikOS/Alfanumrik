@@ -36,7 +36,13 @@ import type {
   NextAction,
 } from '@alfanumrik/ui/foxy/ChatBubble';
 import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
-import type { ChatMessage, StreamingCallbacks, QuizMeWire } from '../_lib/foxy-types';
+import type { ChatMessage, StreamingCallbacks, QuizMeWire, CoachDirective } from '../_lib/foxy-types';
+import { DIRECTIVE_ECHO_LABELS } from '../_lib/foxy-constants';
+
+// Re-exported for existing importers (page.tsx imports CoachDirective from this
+// module). The canonical definition now lives in foxy-types.ts so foxy-constants
+// + MessageList can reference it without importing the chat hook.
+export type { CoachDirective };
 
 /* ══════════════════════════════════════════════════════════════
    DURABLE THREAD — ff_foxy_durable_thread_v1 (Phase 0.2, client side)
@@ -456,9 +462,10 @@ export interface SendMessageHooks {
  *   'simplify' → simpler re-explanation
  *   'example'  → one worked example
  *   'quiz_me'  → exactly one oracle-gated inline MCQ (server FORCES blocking)
+ *
+ * The type itself now lives in foxy-types.ts (re-exported at the top of this
+ * module for existing importers).
  */
-export type CoachDirective = 'simplify' | 'example' | 'quiz_me';
-
 export interface FoxySendPayload {
   message: string;
   augmentedMessage?: string;     // image-OCR fallback message
@@ -788,11 +795,24 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
       }]);
       setLoading(true);
     } else {
+      // Learning-action re-send (coachDirective set): the SAME prior question is
+      // re-sent so Foxy re-teaches, but the UI must NOT re-echo the whole
+      // question (that produced the "question renders twice" bug). Show a compact
+      // directive PILL instead — the `directive` marker drives MessageList to
+      // paint the pill; `content` carries the bilingual label (P7) as a
+      // display/a11y fallback. NON-directive sends (typed messages, mode
+      // auto-prompts, lesson prompts, mastery suggestions) are UNCHANGED — they
+      // still show the real user text. The API payload below is unaffected:
+      // foxyParams.message keeps the full question (see `message` in foxyParams).
+      const directiveEcho = payload.coachDirective;
       setMessages((p) => [...p, {
         id: nextMessageId(),
         role: 'student',
-        content: text,
+        content: directiveEcho
+          ? DIRECTIVE_ECHO_LABELS[directiveEcho][language === 'hi' ? 'hi' : 'en']
+          : text,
         timestamp: new Date().toISOString(),
+        ...(directiveEcho ? { directive: directiveEcho } : {}),
       }]);
       setLoading(true);
     }

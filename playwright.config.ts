@@ -7,14 +7,9 @@ const certificationBaseURL =
 const configuredBaseURL = process.env.BASE_URL || certificationBaseURL;
 const localBaseURL = 'http://localhost:3000';
 const expectV3ProductionDenial = process.env.V3_EXPECT_PREVIEW_404 === 'true';
-const v3PreviewCode = process.env.EXPERIENCE_V3_PREVIEW_CODE;
 const localWebServerProbe = expectV3ProductionDenial
   ? { port: 3000 }
-  : v3PreviewCode
-    ? {
-        url: `${localBaseURL}/dev/experience-v3?role=student&code=${encodeURIComponent(v3PreviewCode)}`,
-      }
-    : { url: localBaseURL };
+  : { url: localBaseURL };
 
 export default defineConfig({
   testDir: './e2e',
@@ -87,8 +82,6 @@ export default defineConfig({
     // uses a TCP readiness probe instead of treating that denial as not-ready.
     ...localWebServerProbe,
     reuseExistingServer: !process.env.CI,
-    // The first webpack compile of the five-role preview is materially larger
-    // than the generic landing-page probe on a cold CI runner.
-    timeout: v3PreviewCode ? 300_000 : 180_000,
+    timeout: 180_000,
   },
 });

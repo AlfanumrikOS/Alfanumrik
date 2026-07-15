@@ -100,6 +100,12 @@ export async function POST(request: NextRequest) {
           // supplied AND the update genuinely succeeded. `already_claimed` never
           // re-sets a password (no stranger re-activation), so it reports false.
           password_set: result.status === 'claimed' && result.password_set,
+          // Phase 4 re-login hint (P13-safe): claimAdminToken dispatched the
+          // principal's single-school tenant claim (app_metadata.school_id), which
+          // only takes effect on their NEXT token/login. The client can use this to
+          // nudge "re-login to see your school view". Non-PII, always 'pending_refresh'
+          // on a successful (idempotent) claim.
+          school_claim: 'pending_refresh' as const,
         },
       });
 

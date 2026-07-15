@@ -11,7 +11,6 @@
     "build": "npm run build -w apps/host",
     "vercel-build": "npm run build -w apps/host && node -e \"require('fs').cpSync('apps/host/.next', '.next', {recursive: true})\"",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
-    "check:v3-frontend": "node scripts/check-v3-frontend-contracts.mjs",
     "lint:migrations": "node scripts/lint-migrations.js",
     "lint": "npm run lint --workspaces --if-present",
     "type-check": "npm run type-check --workspaces --if-present",

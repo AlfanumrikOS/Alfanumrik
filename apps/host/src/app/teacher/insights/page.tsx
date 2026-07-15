@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { TeacherInsightsV3, TeacherPageGate } from '../_components/TeacherV3Pages';
 
 function LegacyReportsRedirect() {
   const router = useRouter();
@@ -11,5 +10,5 @@ function LegacyReportsRedirect() {
 }
 
 export default function TeacherInsightsPage() {
-  return <TeacherPageGate legacy={<LegacyReportsRedirect />} v3={<TeacherInsightsV3 />} />;
+  return <LegacyReportsRedirect />;
 }

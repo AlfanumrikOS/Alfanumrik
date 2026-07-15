@@ -8,10 +8,7 @@ import { supabase } from '@alfanumrik/lib/supabase-client';
 import { getFeatureFlags } from '@alfanumrik/lib/supabase';
 import { EDUCATION_INTELLIGENCE_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { useCosmicTheme } from '@alfanumrik/lib/cosmic-theme';
-import { useExperienceV3 } from '@alfanumrik/lib/use-experience-v3';
 import { Starfield } from '@alfanumrik/ui/cosmic';
-import { DataState } from '@alfanumrik/ui/v3';
-import SuperAdminV3Workspace from './SuperAdminV3Workspace';
 
 interface AdminSession {
   accessToken: string;
@@ -85,7 +82,6 @@ const EDUCATION_INTELLIGENCE_NAV: SidebarItem[] = [
 ];
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
-  const v3 = useExperienceV3('super-admin');
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [adminName, setAdminName] = useState('');
   const [currentPath, setCurrentPath] = useState('');
@@ -197,11 +193,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     );
   }
 
-  const legacyContent = (
-    <div
-      className={`flex min-h-dvh bg-surface-1${cosmicEnabled ? ' super-admin-portal' : ''}`}
-      style={cosmicEnabled ? { position: 'relative' } : undefined}
-    >
+  return (
+    <AdminCtx.Provider value={{ accessToken, adminName, supabase, headers, apiFetch }}>
+      <div
+        className={`flex min-h-dvh bg-surface-1${cosmicEnabled ? ' super-admin-portal' : ''}`}
+        style={cosmicEnabled ? { position: 'relative' } : undefined}
+      >
       {/* Cosmic dark canvas — decorative starfield behind the admin chrome.
           Hidden in light/HC + reduced-motion via globals.css. */}
       {cosmicEnabled && <Starfield className="!fixed inset-0 -z-0" />}
@@ -232,27 +229,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       <main className={`flex-1${cosmicEnabled ? ' relative z-10' : ''}`}>
         <div className="max-w-screen-2xl p-6">{children}</div>
       </main>
-    </div>
-  );
-  const showLegacy = v3.legacyAllowed
-    || (!v3.denied && v3.enabled && !v3.routeMapped && Boolean(v3.manifest));
-  const showV3 = !v3.denied
-    && v3.enabled
-    && v3.routeMapped
-    && v3.routeAllowed
-    && Boolean(v3.manifest);
-
-  return (
-    <AdminCtx.Provider value={{ accessToken, adminName, supabase, headers, apiFetch }}>
-      {v3.loading ? (
-        <div className="flex min-h-dvh items-center justify-center bg-surface-1" role="status">Loading operator workspace…</div>
-      ) : showLegacy ? legacyContent : showV3 && v3.manifest ? (
-          <SuperAdminV3Workspace adminName={adminName || 'Administrator'} adminLevel="server-enforced" manifest={v3.manifest}>
-            {children}
-          </SuperAdminV3Workspace>
-        ) : (
-          <DataState state="permission" title="This operator destination is unavailable" />
-        )}
+      </div>
     </AdminCtx.Provider>
   );
 }

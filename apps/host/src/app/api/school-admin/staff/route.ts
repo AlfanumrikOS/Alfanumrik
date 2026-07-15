@@ -37,6 +37,11 @@ import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logSchoolAudit } from '@alfanumrik/lib/audit';
 import { isFeatureEnabled, SCHOOL_ADMIN_RBAC_FLAGS } from '@alfanumrik/lib/feature-flags';
+// Phase 4: STAFF tenant-claim wiring. Fire-and-forget + single-school-guarded —
+// stamps app_metadata.school_id on a single-school staff member so
+// get_jwt_school_id() RLS can fire for them on their next login. Never blocks the
+// staff-create; skips multi-school admins. Server-only (P8); not barrel-exported.
+import { dispatchSingleSchoolAdminClaim } from '@alfanumrik/lib/identity/school-claim-wiring';
 
 export const runtime = 'nodejs';
 
@@ -220,7 +225,17 @@ export async function POST(request: NextRequest) {
         metadata: { role, reactivated: true },
       });
 
-      return ok({ id: existing.id, role, reactivated: true, alreadyMember: false }, 200);
+      // Phase 4 — tenant claim (fire-and-forget, single-school-guarded). The
+      // reactivated staff member is now an active admin of this school; stamp
+      // app_metadata.school_id so RLS fires on their next login. Applies on the
+      // next token refresh → return `school_claim: 'pending_refresh'` so the client
+      // can nudge a re-login. Never blocks; skips multi-school admins.
+      dispatchSingleSchoolAdminClaim(supabase, existing.auth_user_id, g.schoolId);
+
+      return ok(
+        { id: existing.id, role, reactivated: true, alreadyMember: false, school_claim: 'pending_refresh' },
+        200,
+      );
     }
 
     // ── New membership. The school_admins.auth_user_id FK is NOT NULL, so the
@@ -284,9 +299,19 @@ export async function POST(request: NextRequest) {
           .update({ is_active: true, role, updated_at: new Date().toISOString() })
           .eq('id', byAuth.id)
           .eq('school_id', g.schoolId);
+        // Phase 4 — tenant claim on reactivation (fire-and-forget,
+        // single-school-guarded). Applies on the member's next token refresh.
+        dispatchSingleSchoolAdminClaim(supabase, authUserId, g.schoolId);
       }
       return ok(
-        { id: byAuth.id, role: byAuth.is_active ? byAuth.role : role, reactivated: !byAuth.is_active, alreadyMember: byAuth.is_active },
+        {
+          id: byAuth.id,
+          role: byAuth.is_active ? byAuth.role : role,
+          reactivated: !byAuth.is_active,
+          alreadyMember: byAuth.is_active,
+          // Only hint a pending claim when we actually (re)attached the membership.
+          ...(!byAuth.is_active ? { school_claim: 'pending_refresh' as const } : {}),
+        },
         200,
       );
     }
@@ -324,7 +349,18 @@ export async function POST(request: NextRequest) {
       metadata: { role: inserted.role, reactivated: false },
     });
 
-    return ok({ id: inserted.id, role: inserted.role, reactivated: false, alreadyMember: false }, 201);
+    // Phase 4 — tenant claim (fire-and-forget, single-school-guarded). The new
+    // staff member is now an active admin of exactly this school; stamp
+    // app_metadata.school_id so get_jwt_school_id() RLS fires for them once they
+    // log in. The claim applies on their FIRST token/login → return
+    // `school_claim: 'pending_refresh'` so the client can nudge a re-login. Never
+    // blocks the create; skipped for multi-school admins (the claim is scalar).
+    dispatchSingleSchoolAdminClaim(supabase, authUserId, g.schoolId);
+
+    return ok(
+      { id: inserted.id, role: inserted.role, reactivated: false, alreadyMember: false, school_claim: 'pending_refresh' },
+      201,
+    );
   } catch (err) {
     logger.error('school_admin_staff_post_exception', {
       error: err instanceof Error ? err : new Error(String(err)),

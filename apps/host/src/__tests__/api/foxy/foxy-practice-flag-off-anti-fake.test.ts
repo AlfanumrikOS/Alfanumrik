@@ -1,6 +1,6 @@
 // apps/host/src/__tests__/api/foxy/foxy-practice-flag-off-anti-fake.test.ts
 //
-// REG-248 (route flag-OFF practice half) — when ff_foxy_real_practice_v1 is OFF,
+// REG-251 (route flag-OFF practice half) — when ff_foxy_real_practice_v1 is OFF,
 // a practice turn does NOT run the oracle gate, but the route STILL runs the
 // deterministic anti-fake backstop: a claim-only turn is replaced by the graceful
 // `buildQuizMeFallbackResponse(subject)`, while a real turn with actual

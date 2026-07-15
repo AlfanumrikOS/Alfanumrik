@@ -14,8 +14,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { useExperienceV3 } from '@alfanumrik/lib/use-experience-v3';
 import {
   getAdminSecretFromSession,
   clearAdminSession,
@@ -180,11 +178,5 @@ function LegacyInternalAdminPage() {
 }
 
 export default function InternalAdminPage() {
-  const router = useRouter();
-  const { enabled, loading, routeMapped, legacyAllowed, denied } = useExperienceV3('super-admin');
-  useEffect(() => {
-    if (enabled && routeMapped) router.replace('/super-admin/command');
-  }, [enabled, routeMapped, router]);
-  if (loading || denied || (enabled && routeMapped) || (!legacyAllowed && !enabled)) return null;
   return <LegacyInternalAdminPage />;
 }

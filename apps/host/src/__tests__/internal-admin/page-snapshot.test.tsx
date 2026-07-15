@@ -27,19 +27,6 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn() }),
 }));
 
-vi.mock('@alfanumrik/lib/use-experience-v3', () => ({
-  useExperienceV3: () => ({
-    enabled: false,
-    loading: false,
-    capabilities: {},
-    manifest: null,
-    routeAllowed: false,
-    scope: null,
-    legacyAllowed: true,
-    denied: false,
-  }),
-}));
-
 // Default fetch payload — shaped to keep every tab from crashing on first render.
 // The Command tab dereferences command.totals.{students,...}, command.activity.{dau,...},
 // command.ai.{calls_last_1h,...}, command.revenue.{today_inr,...}, command.support.open_tickets,

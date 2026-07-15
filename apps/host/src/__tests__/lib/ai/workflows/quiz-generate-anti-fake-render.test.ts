@@ -1,6 +1,6 @@
 // apps/host/src/__tests__/lib/ai/workflows/quiz-generate-anti-fake-render.test.ts
 //
-// REG-248 (workflow half) — the quiz-generate workflow NEVER surfaces a bare
+// REG-251 (workflow half) — the quiz-generate workflow NEVER surfaces a bare
 // "Generated N quiz questions." claim. Either it renders the ACTUAL validated
 // questions AS the student-facing `response` (AC1), or — when 0 questions survive
 // P6 validation — it returns the graceful bilingual fallback.

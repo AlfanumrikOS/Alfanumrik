@@ -23,22 +23,6 @@ vi.mock('@alfanumrik/lib/use-school-command-center', () => ({
   useSchoolCommandCenter: () => false,
 }));
 
-// The replacement experience flag is resolved by the authenticated server.
-// Pin the complete flag-OFF contract so this legacy dispatch test does not
-// depend on an async session request or accidentally weaken denied behavior.
-vi.mock('@alfanumrik/lib/use-experience-v3', () => ({
-  useExperienceV3: () => ({
-    enabled: false,
-    loading: false,
-    capabilities: {},
-    manifest: null,
-    routeAllowed: false,
-    scope: null,
-    legacyAllowed: true,
-    denied: false,
-  }),
-}));
-
 // Stub the two candidate bodies so we can assert which one the page dispatches
 // without importing their real data layers.
 vi.mock('@/app/school-admin/CommandCenter', () => ({

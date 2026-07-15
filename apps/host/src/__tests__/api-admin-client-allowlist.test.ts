@@ -170,7 +170,11 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // tables, no writes), mirroring the sibling marking-integrity/[studentId] and
 // foxy-quality routes. Subject to route-level RBAC + UUID validation; no new
 // permission was introduced.
-const EXPECTED_COUNT = 251;
+// Alfanumrik One Experience V3 removal (2026-07-15): 251 -> 250. The unified
+// experience-v3 rollout/capability route (src/app/api/experience-v3/route.ts)
+// was deleted along with the One Experience V3 feature; its ledger entry is
+// pruned in the SAME PR so the guard ratchets DOWN, not drifts.
+const EXPECTED_COUNT = 250;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -245,7 +249,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 251 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 250 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);
