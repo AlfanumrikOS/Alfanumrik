@@ -82,16 +82,13 @@ function jsonResponse(body: unknown, status = 200, origin?: string | null): Resp
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-// Transport is the shared relay (Resend primary, TRANSITIONAL Mailgun fallback).
-// Email is attempted when EITHER Resend (RESEND_API_KEY) OR Mailgun
-// (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the relay picks Resend and
-// falls back to Mailgun at send time. Prod today has only MAILGUN_* set, so this
-// keeps transactional email flowing through the Resend cutover with zero
-// downtime. Remove MAILGUN_* once Resend is confirmed live in prod.
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
+// Product decision 2026-07-15: Mailgun is the email provider. Email is attempted
+// when Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the shared relay
+// (_shared/relay-mailer.ts) selects Mailgun and never auto-selects Resend. Prod
+// has MAILGUN_* set, so transactional email flows through Mailgun.
 const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
 const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-const HAS_EMAIL_TRANSPORT = Boolean(RESEND_API_KEY) || Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
+const HAS_EMAIL_TRANSPORT = Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
@@ -100,7 +97,7 @@ const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
 // ─── Relay client ────────────────────────────────────────────────────────────
 // Thin wrapper over the shared sendEmail seam. Returns the same
 // { success, id?, error? } shape the handler already consumes; `error` carries
-// the relay's PII-free failure code (resend_http_<status> / resend_exception).
+// the relay's PII-free failure code (mailgun_http_<status> / mailgun_exception).
 async function sendTransactionalEmail(params: {
   to: string
   subject: string

@@ -297,16 +297,14 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Relay config ──
-  // Attempt a send when EITHER Resend (RESEND_API_KEY) OR the TRANSITIONAL
-  // Mailgun fallback (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the relay
-  // (_shared/relay-mailer.ts) prefers Resend and falls back to Mailgun at send
-  // time. Prod today has only MAILGUN_* set, so this keeps the inquiry mailer
-  // working through the Resend cutover with zero downtime. Remove MAILGUN_* once
-  // Resend is confirmed live in prod. Only when BOTH are absent → 503.
-  const relayKey = Deno.env.get('RESEND_API_KEY') ?? ''
+  // Product decision 2026-07-15: Mailgun is the email provider. Attempt a send
+  // when Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the shared
+  // relay (_shared/relay-mailer.ts) selects Mailgun and never auto-selects
+  // Resend. Prod has MAILGUN_* set, so the inquiry mailer works. When Mailgun is
+  // absent → 503.
   const mailgunApiKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
   const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-  const hasEmailTransport = Boolean(relayKey) || Boolean(mailgunApiKey && mailgunDomain)
+  const hasEmailTransport = Boolean(mailgunApiKey && mailgunDomain)
   if (!hasEmailTransport) {
     logEvent(context, 'alfabot_inquiry.relay_config_missing', 'error', {
       has_api_key: hasEmailTransport,

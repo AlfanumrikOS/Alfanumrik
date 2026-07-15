@@ -62,18 +62,16 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-// Regulated notice is delivered via the shared relay (Resend primary,
-// TRANSITIONAL Mailgun fallback). The notice is deliverable when EITHER Resend
-// (RESEND_API_KEY) OR Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured;
-// the relay picks Resend and falls back to Mailgun at send time. Prod today has
-// only MAILGUN_* set, so this keeps the RBI-mandated notice deliverable through
-// the Resend cutover with zero downtime. When BOTH are absent the notice is
-// treated as undeliverable and FAILS CLOSED (audit 'pre_debit_notice_failed' →
-// 500 → cron retries/skips the auto-charge). Remove MAILGUN_* once Resend live.
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
+// Product decision 2026-07-15: Mailgun is the email provider. The regulated
+// notice is delivered via the shared relay, which selects Mailgun and never
+// auto-selects Resend. The notice is deliverable when Mailgun (MAILGUN_API_KEY +
+// MAILGUN_DOMAIN) is configured; prod has MAILGUN_* set, so the RBI-mandated
+// notice is deliverable. When Mailgun is absent the notice is treated as
+// undeliverable and FAILS CLOSED (audit 'pre_debit_notice_failed' → 500 → cron
+// retries/skips the auto-charge). P11 fail-closed posture is unchanged.
 const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
 const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-const HAS_EMAIL_TRANSPORT = Boolean(RESEND_API_KEY) || Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
+const HAS_EMAIL_TRANSPORT = Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
 const FROM_EMAIL = 'Alfanumrik Billing <billing@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
@@ -254,8 +252,9 @@ function buildEmail(req: PreDebitRequest): { subject: string; html: string; text
 // correlationId folds the day-scoped idempotencyKey in so the SAME upcoming
 // charge always derives the SAME Resend key across cron re-runs in the window.
 async function sendEmailWithRetry(to: string, subject: string, html: string, text: string, idempotencyKey: string): Promise<{ ok: boolean; provider_id?: string; error?: string; attempts: number }> {
-  // Fail-closed config guard: no provider configured (neither Resend nor the
-  // transitional Mailgun fallback) → treat the regulated notice as undeliverable.
+  // Fail-closed config guard: Mailgun not configured (product decision
+  // 2026-07-15: Mailgun is the email provider) → treat the regulated notice as
+  // undeliverable.
   if (!HAS_EMAIL_TRANSPORT) {
     return { ok: false, error: 'relay_not_configured', attempts: 0 }
   }
