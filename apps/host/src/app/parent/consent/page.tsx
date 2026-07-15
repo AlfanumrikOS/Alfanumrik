@@ -18,6 +18,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 
 const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -227,8 +228,13 @@ function ParentConsentContent() {
 
   if (loadingChildren) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-10 text-center text-sm text-gray-500">
-        {t(isHi, 'Loading…', 'लोड हो रहा है…')}
+      <div className="max-w-2xl mx-auto px-4 py-8" role="status" aria-busy="true">
+        <span className="sr-only">{t(isHi, 'Loading…', 'लोड हो रहा है…')}</span>
+        <div className="mb-6 space-y-2">
+          <Bone width="60%" height={26} />
+          <Bone width="90%" height={12} />
+        </div>
+        <CardListSkeleton count={2} />
       </div>
     );
   }

@@ -10,6 +10,7 @@ import { REPORT_MONTHS_COUNT } from '@alfanumrik/lib/constants';
 import { getQuizScoreColor } from '@alfanumrik/lib/score-colors';
 import ParentLabReportWidget from '@alfanumrik/ui/parent/ParentLabReportWidget';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 import {
   readParentChildId,
   replaceParentChildId,
@@ -996,9 +997,9 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
       </div>
 
       {monthlyLoading && (
-        <div style={{ ...cardStyle, textAlign: 'center', padding: 40 }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
-          <span style={{ fontSize: 13, color: '#64748B' }}>{t(isHi, 'Loading monthly report...', 'मासिक रिपोर्ट लोड हो रही है...')}</span>
+        <div role="status" aria-busy="true">
+          <span className="sr-only">{t(isHi, 'Loading monthly report...', 'मासिक रिपोर्ट लोड हो रही है...')}</span>
+          <CardListSkeleton count={3} />
         </div>
       )}
 
@@ -1706,12 +1707,13 @@ function ParentReportsPage() {
   // Loading state
   if (checking || auth.isLoading) {
     return (
-      <div style={pageStyle}>
+      <div style={pageStyle} role="status" aria-busy="true">
         <style>{printStyles}</style>
-        <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
-          {t(isHi, 'Loading...', 'लोड हो रहा है...')}
+        <span className="sr-only">{t(isHi, 'Loading...', 'लोड हो रहा है...')}</span>
+        <div style={{ marginBottom: 14 }}>
+          <Bone width="55%" height={26} />
         </div>
+        <CardListSkeleton count={4} />
       </div>
     );
   }
@@ -1880,9 +1882,9 @@ function ParentReportsPage() {
 
         {/* ── WEEKLY / RANGE VIEW ── */}
         {viewMode === 'weekly' && loading && (
-          <div style={{ textAlign: 'center', padding: 60, color: '#64748B' }}>
-            <div style={{ width: 36, height: 36, border: '3px solid #E2E8F0', borderTopColor: '#16A34A', borderRadius: '50%', margin: '0 auto 14px', animation: 'spin 0.8s linear infinite' }} />
-            {t(isHi, `Loading ${student.name}'s report...`, `${student.name} की रिपोर्ट लोड हो रही है...`)}
+          <div role="status" aria-busy="true">
+            <span className="sr-only">{t(isHi, `Loading ${student.name}'s report...`, `${student.name} की रिपोर्ट लोड हो रही है...`)}</span>
+            <CardListSkeleton count={4} />
           </div>
         )}
 
