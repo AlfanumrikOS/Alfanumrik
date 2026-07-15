@@ -6,55 +6,25 @@
  *   - Teacher: Classroom tools, quick setup guide, dashboard CTA
  *   - Parent:  Tracking features, child linking guide, parent portal CTA
  *
- * Supports Mailgun API as primary provider with notification fallback.
+ * Sends via the shared Resend relay (`_shared/relay-mailer.ts`); when the relay
+ * is not configured it falls back to inserting a `notifications` row.
  */
 
-import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
+import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
+import { sendEmail } from '../_shared/relay-mailer.ts'
+import { redactPIIInText } from '../_shared/redact-pii.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { edgeLog, getRequestId, writeBusinessAudit, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
-const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+// Relay is configured iff RESEND_API_KEY is set. When absent we degrade to the
+// notifications-table fallback (keyed on relay-not-configured, below).
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const FROM_EMAIL = 'Alfanumrik <welcome@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 // SITE_URL must come from env per P15 #6. See audit 2026-04-27 F4.
 const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
-
-async function sendMailgunEmail(params: {
-  to: string; subject: string; html: string; text: string;
-  from?: string; replyTo?: string;
-  headers?: Record<string, string>;
-  tags?: Array<{ name: string; value: string }>;
-}): Promise<{ success: boolean; id?: string; error?: string }> {
-  const form = new FormData()
-  form.append('from', params.from || FROM_EMAIL)
-  form.append('to', params.to)
-  form.append('subject', params.subject)
-  form.append('html', params.html)
-  form.append('text', params.text)
-  if (params.replyTo) form.append('h:Reply-To', params.replyTo)
-  if (params.headers) {
-    for (const [k, v] of Object.entries(params.headers)) form.append(`h:${k}`, v)
-  }
-  if (params.tags) {
-    for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
-  }
-  const res = await fetchWithTimeout(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
-    provider: 'mailgun',
-    operation: 'send_email',
-    timeoutMs: 10_000,
-    retry: { maxAttempts: 3 },
-    idempotencyKey: createEmailIdempotencyKey({ template: 'mailgun_email', recipient: params.to, subject: params.subject }),
-    method: 'POST',
-    headers: { 'Authorization': `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
-    body: form,
-  })
-  if (!res.ok) return { success: false, error: await res.text() }
-  const result = await res.json()
-  return { success: true, id: result.id }
-}
 
 interface WelcomeRequest {
   role: 'student' | 'teacher' | 'parent'
@@ -265,15 +235,17 @@ Deno.serve(async (req: Request) => {
       default: return errorResponse('Invalid role', 400, origin)
     }
 
-    // Send via Mailgun API if configured
-    if (MAILGUN_API_KEY && MAILGUN_DOMAIN) {
+    // Send via the shared Resend relay if configured. sendEmail derives the
+    // Resend transport internally (reads RESEND_API_KEY), retries with an
+    // Idempotency-Key, and returns a PII-free failure `code` on error.
+    if (RESEND_API_KEY) {
       try {
-        const result = await sendMailgunEmail({
+        const result = await sendEmail({
+          from: FROM_EMAIL,
           to: email,
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text,
-          from: FROM_EMAIL,
           replyTo: REPLY_TO,
           headers: {
             'X-Entity-Ref-ID': `welcome-${role}-${Date.now()}`,
@@ -284,20 +256,23 @@ Deno.serve(async (req: Request) => {
             { name: 'category', value: 'welcome' },
             { name: 'role', value: role },
           ],
+          idempotencyKey: createEmailIdempotencyKey({ template: 'welcome_email', recipient: email, subject: emailContent.subject }),
+          operation: 'send_welcome_email',
         })
 
         if (result.success) {
-          edgeLog('info', context, { action: 'welcome_email.sent', status: 'ok', provider: 'mailgun', role, mailgun_message_id: result.id ?? null })
-          await writeBusinessAudit({ supabase: supabaseClient, context, action: 'welcome_email.sent', status: 'ok', metadata: { provider: 'mailgun', role } })
-          return jsonResponse({ sent: true, provider: 'mailgun', id: result.id }, 200, {}, origin)
+          edgeLog('info', context, { action: 'welcome_email.sent', status: 'ok', provider: 'resend', role, relay_message_id: result.id ?? null })
+          await writeBusinessAudit({ supabase: supabaseClient, context, action: 'welcome_email.sent', status: 'ok', metadata: { provider: 'resend', role } })
+          return jsonResponse({ sent: true, provider: 'resend', id: result.id }, 200, {}, origin)
         }
-        edgeLog('error', context, { action: 'welcome_email.mailgun_failed', status: 'error', provider: 'mailgun', reason: result.error ?? 'unknown' })
+        // result.code is a PII-free machine code (resend_http_<status> / resend_exception).
+        edgeLog('error', context, { action: 'welcome_email.relay_failed', status: 'error', provider: 'resend', reason: result.code ?? 'unknown' })
       } catch (fetchErr) {
-        edgeLog('error', context, { action: 'welcome_email.fetch_failed', status: 'error', reason: fetchErr instanceof Error ? fetchErr.message : String(fetchErr) })
+        edgeLog('error', context, { action: 'welcome_email.fetch_failed', status: 'error', reason: redactPIIInText(fetchErr instanceof Error ? fetchErr.message : String(fetchErr)).text })
       }
     }
 
-    // Fallback: store as notification
+    // Fallback: store as notification (relay not configured, or relay send failed)
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',

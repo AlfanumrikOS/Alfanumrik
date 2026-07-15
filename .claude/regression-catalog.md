@@ -8052,3 +8052,54 @@ generation in `provisionTrialSchool`). **Total catalog: 217 entries (target: 35 
 TARGET EXCEEDED).**
 
 ---
+
+## Engineering-Audit — RBI pre-debit notice audit-evidence + fail-closed posture (Phase 2) — 2026-07-15
+
+Source: Phase 2 of the Mailgun→Resend migration follow-up. The regulated RBI
+pre-debit notice (`send-pre-debit-notice`) is delivered through the shared
+Resend relay. Two guarantees ride on the `subscription_events` audit row it
+writes: (1) a notice that cannot be delivered MUST fail closed (recorded as
+`pre_debit_notice_failed` → HTTP 500 → the cron skips/retries the auto-charge
+rather than silently debiting the customer), and (2) a delivered notice MUST
+persist the Resend message id so an audit row can be correlated to a specific
+Resend delivery during a Razorpay/RBI dispute (under Resend the business
+idempotency key no longer rides a searchable provider field, so the returned
+message id is the only correlation handle). Phase 2 renamed the audit key
+`attempts`→`relay_dispatches` and added `provider_message_id` + `provider_status`.
+
+### Notes on ID assignment
+
+REG-251 is the next free id: the REG-248..REG-250 block landed with the sibling
+onboarding/RBAC/white-label PR (#1287), making REG-250 the catalog's max id, so
+this pre-debit entry appends as REG-251 immediately after it. This project appends
+rather than backfilling intentional gaps (REG-170 also remains a documented skip).
+REG-251 is confirmed absent before use. (This entry was authored as REG-241 on the
+email-onboarding branch and renumbered to REG-251 on merge to avoid a collision
+with the origin/main Foxy REG-241..247 block.)
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-251 | `pre_debit_notice_audit_evidence_fail_closed` | The RBI pre-debit notice is fail-closed on relay failure (recorded `pre_debit_notice_failed`, never silently charged) AND the audit row carries `provider_message_id` so an audit row can be correlated to a specific Resend delivery during a Razorpay/RBI dispute. **Success path** (via the REAL `sendEmail()` relay seam with a stub `EmailTransport` injected through `setDefaultEmailTransport()`, socket-free): the injected transport's returned id flows through the real relay to `EmailSendResult.id`, and the audit metadata carries `provider_message_id` = that Resend id (non-null), a success `provider_status` (the delivery id, never a failure default), `relay_dispatches: 1`, and the `pre_debit_notice_sent` outcome. Also pins the defensive `?? 'delivered'` / `?? null` fallbacks (success without an id → `provider_message_id: null`, `provider_status: 'delivered'`, still `sent`). **Fail-closed paths**: (a) a transport returning `{ success:false, code }` → `provider_message_id: null`, `provider_status` = the PII-free failure code, `relay_dispatches: 1`, `eventType='pre_debit_notice_failed'` (NOT `sent`); (b) relay-not-configured (`RESEND_API_KEY` absent — short-circuits before `sendEmail`) → `provider_message_id: null`, `provider_status: 'relay_not_configured'`, `relay_dispatches: 0`, `eventType='pre_debit_notice_failed'`. **Drift canary**: a `Deno.readTextFileSync` of `../index.ts` asserts the exact audit-metadata mapping expressions still exist verbatim (`provider_message_id: sendResult.provider_id ?? null`, `relay_dispatches: sendResult.attempts`, the `provider_status` ternary, the `eventType` fail-closed selector, and the three `sendEmailWithRetry` result branches) — so dropping `provider_message_id`, renaming `relay_dispatches` back to `attempts`, or flipping the fail-closed `eventType` turns the pin red. Approach note: the full handler is not invoked (it imports `@supabase/supabase-js` from esm.sh and makes a real `subscription_events` SELECT in its pre-flight path, and the audit-metadata mapping is inline in the `Deno.serve()` closure with no exported unit) — the load-bearing id→`provider_message_id` fact rides REAL relay code; the unexportable 6-line inline mapping is mirrored AND source-pinned. Runs fully offline (`--allow-read --allow-env`; no socket). | `supabase/functions/send-pre-debit-notice/__tests__/audit-evidence.test.ts` (5 Deno tests: 2 success + 2 fail-closed + 1 source-drift canary) | E | P11, P13 |
+
+### Invariants covered by this section
+
+- P11 (payment integrity) — the RBI pre-debit notice fails closed: a relay
+  failure or an unconfigured relay is recorded as `pre_debit_notice_failed`
+  (→ HTTP 500), so the cron never treats an undelivered notice as sent and the
+  customer is never silently auto-debited without the mandated ≥24h notice.
+- P13 (data privacy) — the persisted correlation handle is a Resend message id
+  (not PII, safe to store/log); on failure `provider_status` carries only a
+  PII-free machine code, never the raw provider error body.
+
+### Catalog total
+
+Pre-REG-251: 217 entries (through REG-250, self-serve school onboarding slug; the
+REG-248..REG-250 block landed with the sibling onboarding/RBAC/white-label PR
+#1287, and the REG-177 refresh above is count-neutral).
+Adds REG-251 (RBI pre-debit notice audit-evidence: `provider_message_id`
+dispute-reconcilable correlation + fail-closed `pre_debit_notice_failed` posture
+on relay failure / relay-not-configured, with a source-drift canary on the
+audit-metadata mapping). **Total catalog: 218 entries (target: 35 — TARGET
+EXCEEDED).**
+
+---

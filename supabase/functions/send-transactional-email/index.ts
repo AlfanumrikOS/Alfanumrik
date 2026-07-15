@@ -1,4 +1,5 @@
-import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
+import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
+import { sendEmail } from '../_shared/relay-mailer.ts'
 /**
  * send-transactional-email – Alfanumrik Edge Function
  *
@@ -9,8 +10,8 @@ import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliabil
  * email). This function is callable from server-side API routes using the
  * service role key.
  *
- * Provider: Mailgun (same as send-auth-email / send-welcome-email — no new
- * provider library added).
+ * Provider: the shared Resend relay (`_shared/relay-mailer.ts`), same seam as
+ * send-auth-email / send-welcome-email — no new provider library added.
  *
  * Auth: SUPABASE_SERVICE_ROLE_KEY in Authorization: Bearer header. The function
  * is deployed with `--no-verify-jwt` and validates the bearer manually so that
@@ -81,22 +82,18 @@ function jsonResponse(body: unknown, status = 200, origin?: string | null): Resp
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
-const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+// Transport is the shared Resend relay; RESEND_API_KEY gates configured-ness.
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
 
-// Phase D.6 cold-start mitigation: precompute the Mailgun endpoint URL and
-// the basic-auth header once. Both are deterministic functions of env
-// variables; recomputing per request wastes a `btoa()` call (cheap but
-// allocations matter when the Edge Function runs at cold-start).
-const MAILGUN_API_URL = `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`
-const MAILGUN_AUTH_HEADER = `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}`
-
-// ─── Mailgun client ──────────────────────────────────────────────────────────
-async function sendMailgunEmail(params: {
+// ─── Relay client ────────────────────────────────────────────────────────────
+// Thin wrapper over the shared sendEmail seam. Returns the same
+// { success, id?, error? } shape the handler already consumes; `error` carries
+// the relay's PII-free failure code (resend_http_<status> / resend_exception).
+async function sendTransactionalEmail(params: {
   to: string
   subject: string
   html: string
@@ -104,32 +101,19 @@ async function sendMailgunEmail(params: {
   headers?: Record<string, string>
   tags?: Array<{ name: string; value: string }>
 }): Promise<{ success: boolean; id?: string; error?: string }> {
-  const form = new FormData()
-  form.append('from', FROM_EMAIL)
-  form.append('to', params.to)
-  form.append('subject', params.subject)
-  form.append('html', params.html)
-  form.append('text', params.text)
-  form.append('h:Reply-To', REPLY_TO)
-  if (params.headers) {
-    for (const [k, v] of Object.entries(params.headers)) form.append(`h:${k}`, v)
-  }
-  if (params.tags) {
-    for (const t of params.tags) form.append('o:tag', `${t.name}:${t.value}`)
-  }
-  const res = await fetchWithTimeout(MAILGUN_API_URL, {
-    provider: 'mailgun',
-    operation: 'send_transactional_email',
-    timeoutMs: 10_000,
-    retry: { maxAttempts: 3 },
+  const result = await sendEmail({
+    from: FROM_EMAIL,
+    to: params.to,
+    subject: params.subject,
+    html: params.html,
+    text: params.text,
+    replyTo: REPLY_TO,
+    headers: params.headers,
+    tags: params.tags,
     idempotencyKey: createEmailIdempotencyKey({ template: 'transactional_email', recipient: params.to, subject: params.subject }),
-    method: 'POST',
-    headers: { Authorization: MAILGUN_AUTH_HEADER },
-    body: form,
+    operation: 'send_transactional_email',
   })
-  if (!res.ok) return { success: false, error: await res.text() }
-  const result = await res.json()
-  return { success: true, id: result.id }
+  return { success: result.success, id: result.id, error: result.code }
 }
 
 // ─── Constant-time string compare (avoid timing attacks on bearer check) ─────
@@ -692,15 +676,15 @@ Deno.serve(async (req: Request) => {
     ? (params.idempotency_key ?? '')
     : (params.invite_code ?? '')
 
-  // Graceful degradation: if Mailgun isn't configured, return 200 with sent:false
-  // so callers (which are fire-and-forget) don't retry.
-  if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) {
-    console.warn(`[Transactional Email] Mailgun not configured. Skipping send for template=${template} code=${truncateCode(logKey)}`)
-    return jsonResponse({ sent: false, error: 'mailgun_not_configured' }, 200, origin)
+  // Graceful degradation: if the relay isn't configured, return 200 with
+  // sent:false so callers (which are fire-and-forget) don't retry.
+  if (!RESEND_API_KEY) {
+    console.warn(`[Transactional Email] Relay not configured. Skipping send for template=${template} code=${truncateCode(logKey)}`)
+    return jsonResponse({ sent: false, error: 'relay_not_configured' }, 200, origin)
   }
 
   try {
-    const result = await sendMailgunEmail({
+    const result = await sendTransactionalEmail({
       to,
       subject: content.subject,
       html: content.html,
@@ -722,8 +706,9 @@ Deno.serve(async (req: Request) => {
       console.log(`[Transactional Email] Sent template=${template} code=${truncateCode(logKey)} to=${redactedEmail} id=${result.id}`)
       return jsonResponse({ sent: true, id: result.id }, 200, origin)
     }
-    console.error(`[Transactional Email] Mailgun error template=${template} code=${truncateCode(logKey)}: ${result.error}`)
-    return jsonResponse({ sent: false, error: result.error ?? 'mailgun_error' }, 200, origin)
+    // result.error is the relay's PII-free failure code.
+    console.error(`[Transactional Email] Relay error template=${template} code=${truncateCode(logKey)}: ${result.error}`)
+    return jsonResponse({ sent: false, error: result.error ?? 'relay_error' }, 200, origin)
   } catch (err) {
     console.error('[Transactional Email] Send exception:', err)
     return jsonResponse({ sent: false, error: (err as Error).message ?? 'send_failed' }, 200, origin)

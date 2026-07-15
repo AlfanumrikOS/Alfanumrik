@@ -111,6 +111,10 @@ export function createResendTransport(opts: { apiKey?: string; fetcher?: typeof 
 
       try {
         const res = await fetchWithTimeout(RESEND_API_URL, {
+          // Explicit so provider metrics are tagged 'resend' rather than being
+          // inferred (inferProvider also maps api.resend.com → 'resend', but
+          // pinning it here keeps the metric attribution stable if the URL moves).
+          provider: 'resend',
           operation: message.operation ?? 'send_email',
           timeoutMs: EMAIL_TIMEOUT_MS,
           retry: { maxAttempts: EMAIL_MAX_ATTEMPTS },

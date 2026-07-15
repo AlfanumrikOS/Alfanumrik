@@ -1,4 +1,5 @@
-import { createEmailIdempotencyKey, fetchWithTimeout } from '../_shared/reliability.ts'
+import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
+import { sendEmail } from '../_shared/relay-mailer.ts'
 /**
  * send-pre-debit-notice — Alfanumrik Edge Function
  *
@@ -61,8 +62,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
-const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
+// Regulated notice is delivered via the shared Resend relay. RESEND_API_KEY
+// gates configured-ness; when absent the notice is treated as undeliverable
+// (fails closed → audit 'pre_debit_notice_failed' → 500 → cron retries/skips).
+const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
 const FROM_EMAIL = 'Alfanumrik Billing <billing@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
@@ -235,49 +238,35 @@ function buildEmail(req: PreDebitRequest): { subject: string; html: string; text
   return { subject, html, text }
 }
 
-// ─── Mailgun delivery (with retry) ───────────────────────────────────────────
+// ─── Relay delivery ──────────────────────────────────────────────────────────
+// The shared relay (sendEmail) owns timeout + retry (10s / 3 attempts) with an
+// Idempotency-Key, so the per-notice manual retry loop is gone — a single
+// dispatch covers the regulated "≥3 attempts before giving up" posture, and
+// Resend collapses any transport double-fire on the idempotency key. The
+// correlationId folds the day-scoped idempotencyKey in so the SAME upcoming
+// charge always derives the SAME Resend key across cron re-runs in the window.
 async function sendEmailWithRetry(to: string, subject: string, html: string, text: string, idempotencyKey: string): Promise<{ ok: boolean; provider_id?: string; error?: string; attempts: number }> {
-  if (!MAILGUN_API_KEY || !MAILGUN_DOMAIN) {
-    return { ok: false, error: 'mailgun_not_configured', attempts: 0 }
+  if (!RESEND_API_KEY) {
+    return { ok: false, error: 'relay_not_configured', attempts: 0 }
   }
-  const maxAttempts = 3
-  let lastError = ''
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const form = new FormData()
-      form.append('from', FROM_EMAIL)
-      form.append('to', to)
-      form.append('subject', subject)
-      form.append('html', html)
-      form.append('text', text)
-      form.append('h:Reply-To', REPLY_TO)
-      // Mailgun-side dedup so even a transport double-fire is collapsed.
-      form.append('h:X-Mailgun-Variables', JSON.stringify({ idempotency_key: idempotencyKey, kind: 'pre_debit_notice' }))
-      form.append('o:tag', 'pre_debit_notice')
-      form.append('o:tag', 'rbi_compliance')
-
-      const res = await fetchWithTimeout(`https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`, {
-        provider: 'mailgun',
-        operation: 'send_pre_debit_notice',
-        timeoutMs: 10_000,
-        retry: { maxAttempts: 3 },
-        idempotencyKey: createEmailIdempotencyKey({ template: 'pre_debit_notice', recipient: to, subject, correlationId: idempotencyKey }),
-        method: 'POST',
-        headers: { 'Authorization': `Basic ${btoa(`api:${MAILGUN_API_KEY}`)}` },
-        body: form,
-      })
-      if (res.ok) {
-        const result = await res.json()
-        return { ok: true, provider_id: result.id, attempts: attempt }
-      }
-      lastError = `mailgun_${res.status}: ${await res.text()}`
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err)
-    }
-    // exponential backoff: 250ms, 1s
-    if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, 250 * Math.pow(4, attempt - 1)))
-  }
-  return { ok: false, error: lastError, attempts: maxAttempts }
+  const result = await sendEmail({
+    from: FROM_EMAIL,
+    to,
+    subject,
+    html,
+    text,
+    replyTo: REPLY_TO,
+    tags: [
+      { name: 'kind', value: 'pre_debit_notice' },
+      { name: 'compliance', value: 'rbi_compliance' },
+    ],
+    idempotencyKey: createEmailIdempotencyKey({ template: 'pre_debit_notice', recipient: to, subject, correlationId: idempotencyKey }),
+    operation: 'send_pre_debit_notice',
+  })
+  // `attempts` is now "relay dispatches" (1); the relay retried internally.
+  return result.success
+    ? { ok: true, provider_id: result.id, attempts: 1 }
+    : { ok: false, error: result.code ?? 'relay_send_failed', attempts: 1 }
 }
 
 // ─── WhatsApp queue (fire-and-forget; failure does NOT block compliance) ─────
@@ -338,7 +327,7 @@ Deno.serve(async (req: Request) => {
 
   // Pre-flight idempotency check: if a 'sent' row already exists, short-circuit.
   // The DB unique index is the authoritative defense against worker races; this
-  // pre-flight just saves us a Mailgun call when the row is already there.
+  // pre-flight just saves us a relay call when the row is already there.
   const { data: existing } = await supabase
     .from('subscription_events')
     .select('id, event_type')
@@ -381,7 +370,21 @@ Deno.serve(async (req: Request) => {
         billing_cycle: input.billing_cycle,
         plan_name: input.plan_name,
         channels: { email: sendResult.ok, whatsapp: whatsappResult?.ok ?? null },
-        attempts: sendResult.attempts,
+        // provider_message_id pins THIS audit row to a specific Resend delivery.
+        // Under Mailgun the business idempotency key rode a *searchable* provider
+        // field (X-Mailgun-Variables), so a Razorpay/RBI dispute could correlate
+        // an audit row to a delivery. Under Resend the key rides only the
+        // non-searchable Idempotency-Key header, so we MUST persist the returned
+        // message id here to keep that correlation. A Resend message id is not
+        // PII (P13) — safe to store/log.
+        provider_message_id: sendResult.provider_id ?? null,
+        // relay_dispatches = how many times WE handed the notice to the shared
+        // relay (always 1). The relay itself retries the HTTP POST up to 3×
+        // internally (fetchWithTimeout, Idempotency-Key-guarded), so this is NOT
+        // the provider-attempt count. provider_status is the authoritative relay
+        // outcome (the Resend message id on success / a PII-free failure code).
+        relay_dispatches: sendResult.attempts,
+        provider_status: sendResult.ok ? (sendResult.provider_id ?? 'delivered') : (sendResult.error ?? 'relay_send_failed'),
         error: sendResult.error ?? null,
         rbi_compliance_version: 'v1',
       },
@@ -397,7 +400,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ success: true, already_sent: true, idempotency_key: idempotencyKey }, 200, {}, origin)
     }
     // Audit write failed for an unexpected reason. We've already sent the email;
-    // surface 5xx so the cron retries (idempotent — Mailgun-side variables match).
+    // surface 5xx so the cron retries (idempotent — relay Idempotency-Key matches).
     return jsonResponse({ error: 'audit_failed', detail: auditError.message, idempotency_key: idempotencyKey }, 500, {}, origin)
   }
 
