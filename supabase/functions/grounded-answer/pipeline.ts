@@ -38,6 +38,12 @@ import { isMMRDiversityEnabled } from './_mmr-flag.ts';
 import { isDigitalTwinEnabled } from './_twin-flag.ts';
 import { retrieveTransferChunks, mergeTransferChunks } from './transfer-retrieval.ts';
 import { callClaude, type ClaudeResponse, type ClaudeConversationTurn } from './claude.ts';
+// Phase 2.2 (2026-07-15): surgical "MOL only on Python" serving seam. Routes
+// ONLY the Foxy model-generation step to the Python MOL /v1/generate when
+// ff_python_foxy_tutor_v1 is ON + PYTHON_AI_BASE_URL is set + the request is in
+// the rollout bucket. Returns null (→ callClaude fallback) on ANY disable or
+// error. RAG retrieval, grounding-check, structured validation stay in TS.
+import { generateFoxyViaPython } from './foxy-python-generation.ts';
 // Phase 0.2: bounded max_tokens continuation for truncated Foxy structured
 // answers. Default-OFF, fail-CLOSED flag. When OFF the pipeline is byte-
 // identical to today (the existing rescueFromTruncatedJson net still applies).
@@ -1157,20 +1163,54 @@ export async function runPipeline(
   // expect — callClaude never throws — but defense in depth) still has a
   // valid `claudeStart`.
   const claudeStart = Date.now();
-  const claude = await callClaude({
-    systemPrompt,
-    userMessage: request.query,
-    maxTokens: effectiveMaxTokens,
-    temperature: effectiveTemperature,
-    timeoutMs: request.timeout_ms,
-    apiKey: anthropicKey,
-    openaiApiKey,
-    modelPreference: request.generation.model_preference,
-    // Phase 2 of Foxy continuity fix (2026-05-18): prefer native
-    // conversation turns when supplied. Absent → byte-identical legacy
-    // single-user-message body to Claude.
-    conversationTurns: request.generation.conversation_turns,
-  });
+  // Phase 2.2 (dark): route Foxy's MODEL-GENERATION step to the Python MOL when
+  // enabled (ff_python_foxy_tutor_v1 ON + PYTHON_AI_BASE_URL set + rollout
+  // bucket). The seam hands Python the EXACT composed system prompt (via
+  // system_prompt_override) plus the already-retrieved rag_context; retrieval,
+  // grounding-check, structured validation, citations, and abstain all remain
+  // in TS below. It returns a ClaudeResponse so every downstream step is
+  // source-agnostic. On ANY disable/error/timeout/non-2xx it returns null and
+  // we fall back to callClaude — a Python outage can never fail a student turn.
+  // When disabled (default: empty PYTHON_AI_BASE_URL) the seam short-circuits
+  // with zero network + zero flag read, so callClaude runs byte-identical to
+  // today. Only Foxy routes; other callers never touch this path.
+  let claude: ClaudeResponse | null = null;
+  if (isFoxyStructured) {
+    claude = await generateFoxyViaPython({
+      // Fresh id per call → uniform random fraction of TRAFFIC in the bucket
+      // (matches the python-ai-proxy request-id bucketing contract).
+      requestId: newMolRequestId(),
+      systemPrompt,
+      userMessage: request.query,
+      conversationTurns: request.generation.conversation_turns,
+      // The same sanitized reference material already baked into systemPrompt —
+      // retrieval still happens exactly once, in TS (REG-50).
+      ragContext: vars.reference_material_section ?? '',
+      studentId: request.student_id,
+      grade: request.scope.grade,
+      subjectCode: request.scope.subject_code,
+      modelPreference: request.generation.model_preference,
+      maxTokens: effectiveMaxTokens,
+      temperature: effectiveTemperature,
+      timeoutMs: request.timeout_ms,
+    });
+  }
+  if (!claude) {
+    claude = await callClaude({
+      systemPrompt,
+      userMessage: request.query,
+      maxTokens: effectiveMaxTokens,
+      temperature: effectiveTemperature,
+      timeoutMs: request.timeout_ms,
+      apiKey: anthropicKey,
+      openaiApiKey,
+      modelPreference: request.generation.model_preference,
+      // Phase 2 of Foxy continuity fix (2026-05-18): prefer native
+      // conversation turns when supplied. Absent → byte-identical legacy
+      // single-user-message body to Claude.
+      conversationTurns: request.generation.conversation_turns,
+    });
+  }
   const claudeLatencyMs = Date.now() - claudeStart;
   // C3 shadow log (telemetry-only). Fire-and-forget — telemetry MUST NOT
   // extend request latency. The flag is cached in-process for ~5 minutes

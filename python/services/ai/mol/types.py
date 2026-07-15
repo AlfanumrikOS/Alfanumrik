@@ -34,6 +34,12 @@ TaskType = Literal[
     "grounding_check",
 ]
 
+# Phase 2.2 (MOL-unification): opt-in structured-output contract. "foxy" makes
+# the prompt-builder append the strict FoxyResponse block-schema instruction so
+# the model emits the same JSON contract the TS Foxy pipeline expects. Optional
+# and additive — absent → today's text-only output, byte-identical.
+StructuredMode = Literal["foxy"]
+
 Language = Literal["en", "hi", "hinglish"]
 LearningSpeed = Literal["slow", "moderate", "fast"]
 # Mirrors the TS union exactly. NOTE: the spec doc listed 'none|jee|neet|cuet|
@@ -155,6 +161,12 @@ class GenerateRequest(BaseModel):
     input: GenerateInput
     student_context: StudentContext
     rag_context: str | None = None
+    # Phase 2.2: opt-in structured-output mode. When "foxy", the prompt-builder
+    # appends the FoxyResponse block-schema instruction. None → text-only
+    # (byte-identical to prior behavior). Bypassed when
+    # config.system_prompt_override is set (the production grounded-answer seam
+    # supplies the fully-composed prompt, which already carries the schema).
+    structured: StructuredMode | None = None
     config: GenerateConfig | None = None
 
 
@@ -244,3 +256,17 @@ class MolResult(BaseModel):
     # expose it on the Python result so callers can surface it in error UIs
     # without re-querying mol_request_logs. Optional, defaults to empty.
     failure_chain: list[str] = Field(default_factory=list)
+    # RAW provider stop/finish reason of the WINNING provider response (the one
+    # whose ``text`` this result carries). Vocabulary is provider-native and
+    # un-normalized:
+    #   - Anthropic ``stop_reason``: end_turn | max_tokens | stop_sequence | tool_use
+    #   - OpenAI   ``finish_reason``: stop | length | content_filter | tool_calls
+    # Additive + optional (like ``failure_chain`` above — not on the TS
+    # MolResult). ``None`` when there is no provider call (e.g. a semantic-cache
+    # hit). The TS grounded-answer seam
+    # (foxy-python-generation.ts::mapMolResultToClaudeResponse) maps this onto
+    # its normalized ``ClaudeStopReason`` so a Python-sourced answer that hit the
+    # token budget mid-JSON can trigger the SAME flag-gated bounded
+    # max_tokens-continuation the Claude path does (``length``/``max_tokens`` →
+    # ``max_tokens``; everything else → ``end_turn``).
+    finish_reason: str | None = None

@@ -326,9 +326,14 @@ async def generate_response(req: GenerateRequest) -> MolResult:
             rest = [t for t in p.chain if t.provider != cfg.preferred_provider]
             p.chain = [*preferred, *rest]
 
-    # Step 6 — system prompt (override path bypasses the real builder)
+    # Step 6 — system prompt (override path bypasses the real builder).
+    # Phase 2.2: when the caller opts into the Foxy structured contract
+    # (req.structured == "foxy") AND does not supply an override, the builder
+    # appends the FoxyResponse block-schema. The production grounded-answer seam
+    # supplies system_prompt_override (fully-composed TS prompt, schema already
+    # baked in), so req.structured is a no-op on that path — no double-append.
     system_prompt = cfg.system_prompt_override or build_system_prompt(
-        task_type, req.student_context, req.rag_context
+        task_type, req.student_context, req.rag_context, structured=req.structured
     )
 
     # Step 7 — user messages
@@ -569,4 +574,10 @@ async def generate_response(req: GenerateRequest) -> MolResult:
         passes=len(responses),
         request_id=request_id,
         failure_chain=all_failures,
+        # Surface the RAW stop reason of the response whose text we return
+        # (``responses[-1]`` — its ``.text`` became ``final_text`` above). This
+        # lets the TS Foxy seam fire its bounded max_tokens-continuation on a
+        # truncated Python answer, matching the Claude path. ``end_turn`` is the
+        # provider default when absent, so this is never None on a provider path.
+        finish_reason=responses[-1].finish_reason,
     )
