@@ -70,6 +70,17 @@ mirroring the semantics of `packages/lib/src/ai/validation/quiz-oracle.ts`
 (`runDeterministicChecks`), including the canonical **string** difficulty enum
 `easy|medium|hard` (A3).
 
+**QZ-P6f sampling boundary (difficulty enum)**: the rubric's string difficulty
+enum `easy|medium|hard` applies to **oracle-candidate batches** — generator
+output sampled BEFORE `question_bank` insert, at the quiz-oracle boundary
+(where difficulty is the canonical string enum per A3). It does **NOT** apply
+to the generator's *served* responses, which echo `question_bank`'s INTEGER
+difficulty `1|2|3` — grading a served batch requires a documented
+integer→string normalization first, or QZ-P6f will fail every question.
+Softening note: QZ-P6f validates `difficulty` and `bloom_level` only **when
+the fields are present** — a batch that omits them can PASS QZ-P6f without
+demonstrating full P6 conformance on those fields.
+
 ## Layout
 
 ```

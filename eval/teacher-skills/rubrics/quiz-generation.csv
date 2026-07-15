@@ -9,6 +9,13 @@
 # the canonical STRING difficulty enum easy|medium|hard (A3). Criteria marked
 # "Deterministic pre-check" in Notes are enforced mechanically before the LLM judge
 # (REG-54 oracle pattern) and are NOT sent to the judge.
+# QZ-P6f sampling boundary: the string difficulty enum easy|medium|hard applies to
+# ORACLE-CANDIDATE batches (generator output sampled pre-question_bank-insert, at the
+# quiz-oracle boundary) — NOT to the generator's *served* responses, which echo
+# question_bank's INTEGER difficulty 1|2|3; grading served batches requires a documented
+# integer->string normalization first. Also note QZ-P6f validates difficulty/bloom_level
+# only when the fields are present — a difficulty-less batch PASS is not full P6
+# conformance on those fields.
 # Lines starting with '#' are comments (harness parser skips them).
 ID,Bucket,Criterion,What pass requires,Notes,Conditional
 QZ-P6a,O — Output / Formatting,Question text non-empty and template-free (P6),"Every question in the batch has non-empty question_text containing no template residue: no '{{' and no '[BLANK]' marker. Fail = any question with empty text or a placeholder marker.",Product invariant P6. Deterministic pre-check: enforced mechanically before the LLM judge (mirrors quiz-oracle p6_text_empty_or_placeholder).,
