@@ -87,6 +87,16 @@ export function denormalizeFoxyResponse(r: FoxyResponse): string {
         }
         break;
       }
+      case 'mermaid': {
+        // Mermaid blocks serialize to their human-readable `title` only (or a
+        // "[diagram]" placeholder). We deliberately do NOT dump the raw mermaid
+        // source into the legacy TEXT column — a wall of `flowchart TD ...` is
+        // useless to a student on session resume and the JSONB payload remains
+        // the source of truth for the actual diagram.
+        const title = (block.title ?? '').trim();
+        lines.push(title.length > 0 ? title : '[diagram]');
+        break;
+      }
       case 'mcq': {
         // MCQ blocks denormalize to a stem + lettered option list. The
         // explanation is appended on its own line so legacy renderers can

@@ -316,6 +316,7 @@ import {
   PRACTICE_MCQ_DIRECTIVE,
   PRACTICE_MCQ_COUNT,
   TEACH_THEN_STOP_DIRECTIVE,
+  DIAGRAM_DIRECTIVE,
   composeModeDirective,
   buildQuizMeLlmGrader,
   buildQuizMeFallbackResponse,
@@ -1629,6 +1630,34 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     });
   }
 
+  // ── Wave 2: real diagrams via Mermaid + ASCII-art ban (ff_foxy_diagrams_v1) ──
+  // On a prose-teaching turn, inject DIAGRAM_DIRECTIVE so Foxy emits a real
+  // `mermaid` block for processes/cycles/flows/hierarchies/relationships (and
+  // the existing `diagram` retrieval block for real figures), and NEVER draws
+  // ASCII/text-art. Scoped to mode !== 'practice' — the MCQ-emitting practice /
+  // quiz_me / real-practice turns don't draw diagrams, so the flag read is
+  // skipped there (no extra DB roundtrip, byte-identical). Flag OFF (default) →
+  // diagramDirective = '' → composeModeDirective returns the base verbatim →
+  // byte-identical to today. The mermaid block the model emits is schema-
+  // validated (allowlisted header, sanitised) and falls back safely if
+  // malformed (P12) — broken diagram source is never shown as prose.
+  const diagramsEnabled =
+    mode !== 'practice'
+      ? await isFeatureEnabled('ff_foxy_diagrams_v1', {
+          role: 'student',
+          userId: auth.userId!,
+        })
+      : false;
+  const diagramDirective = diagramsEnabled ? DIAGRAM_DIRECTIVE : '';
+  if (diagramsEnabled) {
+    logger.info('foxy.diagrams.injected', {
+      // P13: mode + scope only — never studentId/message.
+      mode,
+      subject,
+      grade,
+    });
+  }
+
   // history_messages is kept as a deprecated alias for one release so the
   // grounded-answer service can switch over without forcing a synchronized
   // deploy. The service now prefers conversation_turns when present.
@@ -1760,11 +1789,20 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // self-narrating the on-screen action menu. teachThenStopDirective is
         // '' when the flag is OFF or on a practice turn, and composeModeDirective
         // returns the base verbatim in that case → byte-identical to today.
+        // Wave 2 (ff_foxy_diagrams_v1): on a prose-teaching turn the diagram
+        // directive is composed onto the (already teach-then-stop-composed)
+        // per-mode directive so Foxy emits real `mermaid` blocks and never
+        // ASCII text-art. diagramDirective is '' when the flag is OFF or on a
+        // practice/quiz_me turn, and composeModeDirective returns the base
+        // verbatim in that case → byte-identical to today.
         mode_directive: isQuizMe
           ? SINGLE_MCQ_DIRECTIVE
           : isRealPractice
             ? PRACTICE_MCQ_DIRECTIVE
-            : composeModeDirective(MODE_DIRECTIVES[mode] ?? '', teachThenStopDirective),
+            : composeModeDirective(
+                composeModeDirective(MODE_DIRECTIVES[mode] ?? '', teachThenStopDirective),
+                diagramDirective,
+              ),
         // Phase 2.2: coaching mode and its instruction line, consumed by
         // the rewritten foxy_tutor_v1 template.
         coach_mode: coachMode.toUpperCase(),

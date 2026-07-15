@@ -25,6 +25,8 @@ export const FOXY_MAX_BLOCKS = 50;
 export const FOXY_FALLBACK_MAX_CHARS = 8000;
 export const FOXY_FALLBACK_MAX_BLOCKS = 30;
 export const FOXY_MAX_TITLE_LEN = 120;
+export const FOXY_MAX_MERMAID_CODE_LEN = 2000;
+export const FOXY_MAX_MERMAID_TITLE_LEN = 120;
 
 // ── Types (mirrors src/lib/foxy/schema.ts) ──────────────────────────────────
 
@@ -39,7 +41,8 @@ export type FoxyBlockType =
   | 'question'
   | 'mcq'
   | 'diagram'
-  | 'code';
+  | 'code'
+  | 'mermaid';
 
 export type FoxySubject = 'math' | 'science' | 'sst' | 'english' | 'general';
 
@@ -53,6 +56,64 @@ const VALID_MCQ_BLOOM = new Set([
   'Create',
 ]);
 const VALID_MCQ_DIFFICULTY = new Set(['easy', 'medium', 'hard']);
+
+// Allowlisted Mermaid diagram headers (mirrors src/lib/foxy/schema.ts — the
+// canonical Zod copy is `MERMAID_ALLOWED_HEADERS`). The FIRST non-whitespace
+// token of a `mermaid` block's `code` MUST be one of these or the block is
+// rejected. Keep byte-identical to the Node copy.
+const MERMAID_ALLOWED_HEADERS: ReadonlySet<string> = new Set([
+  'flowchart',
+  'graph',
+  'sequenceDiagram',
+  'classDiagram',
+  'stateDiagram',
+  'stateDiagram-v2',
+  'erDiagram',
+  'mindmap',
+  'pie',
+  'timeline',
+  'journey',
+  'quadrantChart',
+  'gitGraph',
+]);
+
+/**
+ * Validate a `mermaid` block's `code`. Returns an error string on failure or
+ * null when it passes. Mirrors `validateMermaidCode` in src/lib/foxy/schema.ts
+ * EXACTLY — change both or neither.
+ *   1. Non-empty after trim.
+ *   2. First non-whitespace token is an allowlisted diagram header.
+ *   3. No `<script`, `javascript:`, `click ` interaction callbacks, or a
+ *      `%%{init ...}` override of htmlLabels/securityLevel (defense-in-depth;
+ *      the renderer also runs Mermaid with securityLevel:'strict').
+ */
+function validateMermaidCode(code: string): string | null {
+  const trimmed = code.trim();
+  if (trimmed.length === 0) {
+    return "mermaid 'code' must be non-empty";
+  }
+  const firstToken = (trimmed.match(/^\S+/) ?? [''])[0];
+  if (!MERMAID_ALLOWED_HEADERS.has(firstToken)) {
+    return `mermaid 'code' must start with an allowlisted diagram header (got "${firstToken.slice(0, 32)}")`;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.includes('<script')) {
+    return "mermaid 'code' must not contain '<script'";
+  }
+  if (lower.includes('javascript:')) {
+    return "mermaid 'code' must not contain 'javascript:'";
+  }
+  if (/(^|[\r\n])\s*click\s/i.test(trimmed)) {
+    return "mermaid 'code' must not contain 'click' interaction callbacks";
+  }
+  if (
+    lower.includes('%%{init') &&
+    (lower.includes('htmllabels') || lower.includes('securitylevel'))
+  ) {
+    return "mermaid 'code' must not override htmlLabels/securityLevel via %%{init}";
+  }
+  return null;
+}
 
 export interface FoxyBlock {
   type: FoxyBlockType;
@@ -70,6 +131,9 @@ export interface FoxyBlock {
   explanation?: string;
   bloom_level?: string;
   difficulty?: string;
+  // mermaid-only (Wave 2 — drawable diagrams). Present iff type==='mermaid'.
+  code?: string;
+  title?: string;
 }
 
 export interface FoxyResponse {
@@ -90,6 +154,7 @@ const ALLOWED_BLOCK_TYPES: ReadonlySet<FoxyBlockType> = new Set([
   'mcq',
   'diagram',
   'code',
+  'mermaid',
 ]);
 
 const ALLOWED_SUBJECTS: ReadonlySet<FoxySubject> = new Set([
@@ -110,6 +175,13 @@ const TEXT_BEARING_TYPES: ReadonlySet<FoxyBlockType> = new Set([
   'question',
   'code',
 ]);
+
+// Mermaid-only field set (mirrors MERMAID_ONLY_FIELDS in src/lib/foxy/schema.ts).
+// Forbid `code`/`title` anywhere except a `mermaid` block so a stray field
+// cannot ride on a paragraph/step/math/etc. block. Byte-parallel to the Zod
+// superRefine, which forbids these on math + text-bearing blocks (mcq/diagram
+// branches return before the check in BOTH copies, so they are left unchanged).
+const MERMAID_ONLY_FIELDS: ReadonlyArray<'code' | 'title'> = ['code', 'title'];
 
 // ── Validator ───────────────────────────────────────────────────────────────
 
@@ -193,7 +265,7 @@ function validateBlock(block: any, index: number): ValidationResult {
   if (typeof type !== 'string' || !ALLOWED_BLOCK_TYPES.has(type as FoxyBlockType)) {
     return {
       ok: false,
-      reason: `blocks[${index}].type must be one of paragraph|step|math|answer|exam_tip|definition|example|question|mcq|diagram|code (got ${String(type)})`,
+      reason: `blocks[${index}].type must be one of paragraph|step|math|answer|exam_tip|definition|example|question|mcq|diagram|code|mermaid (got ${String(type)})`,
     };
   }
 
@@ -294,6 +366,55 @@ function validateBlock(block: any, index: number): ValidationResult {
     return { ok: true, value: undefined as unknown as FoxyResponse };
   }
 
+  // mermaid blocks: require a valid, allowlisted, sanitised `code`; no
+  // text/latex. `title` optional (<=120). Mirrors the Zod superRefine in
+  // src/lib/foxy/schema.ts so a drawable diagram survives validation through
+  // grounded-answer instead of being dropped to wrapAsParagraph. A malformed
+  // block fails here and the caller falls back safely (P12).
+  if (type === 'mermaid') {
+    const { code, title } = block as Record<string, unknown>;
+    if (text !== undefined) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] of type 'mermaid' must not include a 'text' field`,
+      };
+    }
+    if (latex !== undefined) {
+      return {
+        ok: false,
+        reason: `blocks[${index}] of type 'mermaid' must not include a 'latex' field`,
+      };
+    }
+    if (typeof code !== 'string' || code.trim() === '') {
+      return {
+        ok: false,
+        reason: `blocks[${index}] of type 'mermaid' requires a non-empty 'code' field`,
+      };
+    }
+    if (code.length > FOXY_MAX_MERMAID_CODE_LEN) {
+      return {
+        ok: false,
+        reason: `blocks[${index}].code exceeds ${FOXY_MAX_MERMAID_CODE_LEN} chars`,
+      };
+    }
+    const mermaidErr = validateMermaidCode(code);
+    if (mermaidErr) {
+      return { ok: false, reason: `blocks[${index}] ${mermaidErr}` };
+    }
+    if (title !== undefined) {
+      if (typeof title !== 'string') {
+        return { ok: false, reason: `blocks[${index}].title must be a string` };
+      }
+      if (title.length > FOXY_MAX_MERMAID_TITLE_LEN) {
+        return {
+          ok: false,
+          reason: `blocks[${index}].title exceeds ${FOXY_MAX_MERMAID_TITLE_LEN} chars`,
+        };
+      }
+    }
+    return { ok: true, value: undefined as unknown as FoxyResponse };
+  }
+
   if (label !== undefined) {
     if (typeof label !== 'string') {
       return { ok: false, reason: `blocks[${index}].label must be a string` };
@@ -332,6 +453,16 @@ function validateBlock(block: any, index: number): ValidationResult {
         reason: `blocks[${index}].latex must not contain '$' or '$$' delimiters`,
       };
     }
+    // Mermaid-only fields (`code`/`title`) must not ride on a math block
+    // (mirrors the Zod superRefine — MERMAID_ONLY_FIELDS on the math branch).
+    for (const f of MERMAID_ONLY_FIELDS) {
+      if ((block as Record<string, unknown>)[f] !== undefined) {
+        return {
+          ok: false,
+          reason: `blocks[${index}] of type 'math' must not include '${f}'`,
+        };
+      }
+    }
     return { ok: true, value: undefined as unknown as FoxyResponse };
   }
 
@@ -354,6 +485,16 @@ function validateBlock(block: any, index: number): ValidationResult {
         ok: false,
         reason: `blocks[${index}] of type '${type}' must not include a 'latex' field`,
       };
+    }
+    // Mermaid-only fields (`code`/`title`) must not ride on a text-bearing block
+    // (mirrors the Zod superRefine — MERMAID_ONLY_FIELDS on the text-bearing branch).
+    for (const f of MERMAID_ONLY_FIELDS) {
+      if ((block as Record<string, unknown>)[f] !== undefined) {
+        return {
+          ok: false,
+          reason: `blocks[${index}] of type '${type}' must not include '${f}'`,
+        };
+      }
     }
   }
 
@@ -697,6 +838,13 @@ export function denormalizeFoxyResponse(parsed: FoxyResponse): string {
       if (latex.trim().length > 0) {
         parts.push(`$$${latex}$$`);
       }
+    } else if (block.type === 'mermaid') {
+      // mermaid → human-readable `title` only (or "[diagram]" placeholder).
+      // NEVER dump raw mermaid source into the legacy TEXT column — a wall of
+      // `flowchart TD ...` is useless on session resume. Mirrors the Node-side
+      // denormalize in src/lib/foxy/denormalize.ts.
+      const mtitle = (block.title ?? '').trim();
+      parts.push(mtitle.length > 0 ? mtitle : '[diagram]');
     } else if (block.type === 'mcq') {
       // mcq → stem + lettered options + answer + explanation (mirrors the
       // Node-side denormalize in src/lib/foxy/denormalize.ts). Keeps the

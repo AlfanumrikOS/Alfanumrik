@@ -7953,3 +7953,74 @@ REG-245's flag-ON oracle path).
 **Total catalog: 215 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-249 — Foxy Mermaid diagram block (Wave 2): drawable structured block, grammar-allowlist + XSS-reject validation, lazy strict renderer, ASCII-ban directive flag-gated by `ff_foxy_diagrams_v1` (2026-07-15)
+
+Source: Foxy Pedagogy Wave 2 "real diagrams, never text-art". Foxy used to "draw"
+diagrams as ASCII / box-drawing text-art inside paragraph/step text — unreadable
+on a 4G phone and un-teacherly. Wave 2 adds a NEW drawable structured block
+`{ type:'mermaid', code:string(1..2000), title?:string(<=120) }` that renders as a
+real, colorful SVG diagram, plus a flag-gated prompt directive that BANS ASCII art
+and routes each visual need to the right block (drawable → `mermaid`, real figure →
+`diagram` retrieval, equation → `math`). The ai-engineer added the schema/prompt
+(prompt parity already green) and the frontend added the renderer; neither had
+dedicated mermaid tests. This entry pins the block end-to-end.
+
+Files under test: `packages/lib/src/foxy/schema.ts` (`mermaid` block in
+`FoxyBlockSchema`/`FoxyResponseSchema` superRefine + `validateMermaidCode` +
+`MERMAID_ALLOWED_HEADERS` [13 headers] + `isFoxyMermaidBlock`/`FoxyMermaidBlock`),
+`supabase/functions/grounded-answer/structured-schema.ts` (Deno mirror
+`validateFoxyResponse` + `denormalizeFoxyResponse`),
+`packages/lib/src/foxy/denormalize.ts` (Node denormalize → title or "[diagram]",
+never raw source), `packages/ui/src/foxy/FoxyStructuredRenderer.tsx` (`MermaidBlock`
+— lazy `import('mermaid')`, `securityLevel:'strict'`, `mermaid.parse(code,
+{suppressErrors:true})` guard, loading/ready/error states, bilingual
+`chrome.diagramFailed`/`diagramLoading`), `packages/lib/src/foxy/prompt-sections.ts`
+(`DIAGRAM_DIRECTIVE` + `composeModeDirective`), `apps/host/src/app/api/foxy/route.ts`
+(mode_directive selector; diagram flag read scoped to `mode !== 'practice'`).
+
+**Why.** The `mermaid` block is the ONLY structured block whose `code` is a diagram
+PROGRAM a client renderer executes, so it needs two independent gates: (1) a hard
+grammar-allowlist + XSS-reject at the schema layer (an unknown/hostile diagram type,
+`<script`, `javascript:`, a line-anchored `click ` interaction callback, or a
+`%%{init ...}` override of `htmlLabels`/`securityLevel` is REJECTED before it can
+reach a renderer — P6 output quality + P12 AI safety), and (2) a lazy, strict
+renderer (mermaid pulled via dynamic `import()` so it never enters the shared/first-
+load bundle — P10; run with `securityLevel:'strict'` and `parse`-guarded so a bad
+spec degrades to a quiet bilingual note — P7/P12, never a thrown exception or raw
+diagram source shown to a student). The ASCII-ban `DIAGRAM_DIRECTIVE` is additive
+and flag-gated (`ff_foxy_diagrams_v1`, default OFF): flag OFF → mode_directive is
+byte-identical to today; the directive lives OUTSIDE the parity-locked
+`FOXY_STRUCTURED_OUTPUT_PROMPT` and outside `FOXY_SAFETY_RAILS`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-249 | `foxy_mermaid_block_grammar_allowlist_xss_reject_lazy_strict_renderer_ascii_ban_flag_gated` | **(a) Schema accept/reject matrix** (`FoxyBlockSchema`/`FoxyResponseSchema` + `validateMermaidCode` + `isFoxyMermaidBlock`): a valid mermaid block of EACH of the 13 allowlisted headers (flowchart/graph/sequenceDiagram/classDiagram/stateDiagram/stateDiagram-v2/erDiagram/mindmap/pie/timeline/journey/quadrantChart/gitGraph) is accepted (with/without title, Hindi labels, benign `%%{init theme}`, a `[Click here]` LABEL that is NOT a line-anchored callback, code at the 2000 cap, title at the 120 cap); REJECTS empty/whitespace/oversize(>2000) code, a non-allowlisted first token, `<script`, `javascript:`, a line-anchored `click ` callback, `%%{init ... htmlLabels}` and `... securityLevel` overrides, title>120, `text`/`latex`/mcq-fields on a mermaid block, and `code`/`title` on a non-mermaid (paragraph/math) block; `isFoxyMermaidBlock` narrows a valid block true and returns false for empty/absent code or a non-mermaid block. The Deno mirror `validateFoxyResponse` re-runs the same accept + mermaid-specific reject matrix and AGREES (allowlist + `<script`/`javascript:`/`click`/`%%{init}` + text/latex-on-mermaid + oversize). **KNOWN, PINNED Node↔Deno drift (reported to ai-engineer):** the Deno mirror does NOT forbid mermaid-only fields (`code`/`title`) on a non-mermaid block while Zod does — inert at render time (only mermaid-typed blocks reach MermaidBlock), pinned so a future mirror fix flips the pin. **(b) Denormalize** (Node `denormalizeFoxyResponse` + Deno mirror): a mermaid block WITH a title → the legacy TEXT line is the title verbatim; WITHOUT a title (or whitespace-only) → the literal "[diagram]"; NEVER the raw mermaid `code` (no `flowchart`/`Evaporation`/source leak into the resume TEXT column). **(c) Renderer smoke** (`MermaidBlock` via `FoxyStructuredRenderer`, dynamic `import('mermaid')` mocked): valid code → loading (`Drawing diagram…`) then ready — the SVG returned by `mermaid.render` is injected, `role="img"` aria-label = title (or the generic "Diagram" label), title becomes the figcaption, render called with the exact validated code; `parse` returns false → 'error' shows the bilingual `diagramFailed` fallback (EN "Diagram couldn't be drawn"; Hindi "डायग्राम नहीं बन पाया" under `isHi`, no EN leak) and `render` is NOT called; empty code → error WITHOUT loading mermaid (`parse`/`render` never called); a mermaid block missing `code` routes through the guard's null branch → safe fallback, never throws, the rest of the renderer (response title) is unharmed; a `render()` throw also degrades to the error fallback. **(d) Flag gate** (`ff_foxy_diagrams_v1`, mode_directive selector mirror): flag OFF → mode_directive is BYTE-IDENTICAL to the pre-Wave-2 selector for every mode (with learning-actions flag both OFF and ON), no `DIAGRAM DIRECTIVE` marker leaks; flag ON on a prose-teaching turn (learn/explain/revise/doubt/homework/explorer) → `DIAGRAM_DIRECTIVE` is injected (verbatim when learning-actions OFF; composed `TEACH_THEN_STOP_DIRECTIVE\n\nDIAGRAM_DIRECTIVE` when both ON); a `practice` turn / `quiz_me` / real-practice NEVER get the directive (MCQ shapes win, and the route skips the flag read on practice); `DIAGRAM_DIRECTIVE` bans ASCII/text-art, routes to mermaid/diagram/math blocks, lists the 13 headers, states the 1..2000 bound, forbids `<script`/`javascript:`/`click`/`%%{init`, is bilingual (Hindi/Hinglish/CBSE), and is NOT baked into `FOXY_STRUCTURED_OUTPUT_PROMPT` / `FOXY_SAFETY_RAILS` / the `buildSystemPrompt` base persona for any mode. | `apps/host/src/__tests__/lib/foxy/mermaid-schema.test.ts` (schema accept/reject matrix + guard + `validateMermaidCode` + Deno mirror parity + pinned drift); `apps/host/src/__tests__/lib/foxy/mermaid-denormalize.test.ts` (Node + Deno denormalize → title/"[diagram]", never raw source); `apps/host/src/__tests__/foxy/mermaid-block.test.tsx` (renderer smoke — loading/ready/error, bilingual fallback, guard null-safety); `apps/host/src/__tests__/api/foxy/diagram-directive.test.ts` (flag gate — byte-identical OFF, injected ON, practice/quiz_me/real-practice unaffected, directive content + parity-lock exclusion) | E | P6, P12, P7 |
+
+### Invariants covered by this section
+
+- P6 (question/output quality) — the drawable `mermaid` block passes a hard
+  grammar-allowlist (first token must be one of 13 diagram headers) + XSS/interaction
+  reject (`<script`/`javascript:`/line-anchored `click `/`%%{init}` override) at the
+  schema layer, so a malformed or hostile diagram program is never served.
+- P12 (AI safety) — defense-in-depth: the schema gate refuses hostile constructs
+  regardless, AND the renderer runs mermaid lazily with `securityLevel:'strict'` and
+  a `parse`-guard, degrading a bad spec to a quiet note rather than executing it or
+  showing raw diagram source. The ASCII-ban `DIAGRAM_DIRECTIVE` is additive and
+  flag-gated (default OFF) and never mutates the parity-locked prompt or safety rails.
+- P7 (bilingual) — the renderer's `diagramLoading`/`diagramFailed` chrome and the
+  `DIAGRAM_DIRECTIVE` label guidance are bilingual (EN + Devanagari), technical terms
+  (CBSE/NCERT/Bloom's) untranslated.
+
+### Catalog total
+
+Pre-REG-249: 215 entries (through REG-248, unconditional anti-fake-quiz-claim backstop).
+Adds REG-249 (Foxy Mermaid diagram block — drawable structured block with
+grammar-allowlist + XSS-reject validation [Node Zod + Deno mirror], title/"[diagram]"
+denormalize that never leaks raw source, lazy strict `securityLevel:'strict'` renderer
+with bilingual failure fallback, and the ASCII-ban `DIAGRAM_DIRECTIVE` flag-gated by
+`ff_foxy_diagrams_v1` [byte-identical when OFF]; documents one pinned Node↔Deno mirror
+parity gap on mermaid-only-fields-on-other-blocks reported to ai-engineer).
+**Total catalog: 216 entries (target: 35 — TARGET EXCEEDED).**
+
+---

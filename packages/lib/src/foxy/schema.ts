@@ -33,6 +33,12 @@ export const FOXY_MAX_TEXT_LEN = 2000;
 /** Max length for any latex field (chars). KaTeX rendering is the consumer. */
 export const FOXY_MAX_LATEX_LEN = 500;
 
+/** Max length for a `mermaid` block's `code` field (chars). */
+export const FOXY_MAX_MERMAID_CODE_LEN = 2000;
+
+/** Max length for a `mermaid` block's `title` caption (chars). */
+export const FOXY_MAX_MERMAID_TITLE_LEN = 120;
+
 /** Min/max blocks per response. */
 export const FOXY_MIN_BLOCKS = 1;
 export const FOXY_MAX_BLOCKS = 50;
@@ -58,6 +64,14 @@ export const FOXY_FALLBACK_MAX_BLOCKS = 30;
  *   - question     -- a probing question back to the student (Socratic, text-only)
  *   - mcq          -- a 4-option multiple-choice question (auditable, gated by
  *                     the quiz-oracle before emission so it satisfies P6)
+ *   - diagram      -- an image-retrieval query for a real labelled figure
+ *                     (search_query only) -- NOT a drawable spec.
+ *   - code         -- a code snippet (text + optional language).
+ *   - mermaid      -- a drawable Mermaid diagram spec (`code` + optional
+ *                     `title`). The `code` must lead with an allowlisted
+ *                     diagram header and is sanitised in superRefine. Never
+ *                     emitted until `ff_foxy_diagrams_v1` is ON (the model is
+ *                     only told about it via the appended DIAGRAM_DIRECTIVE).
  */
 export const FoxyBlockTypeEnum = z.enum([
   'paragraph',
@@ -71,6 +85,7 @@ export const FoxyBlockTypeEnum = z.enum([
   'mcq',
   'diagram',
   'code',
+  'mermaid',
 ]);
 
 /** Block types that require a non-empty `text` field (i.e. not math, not mcq, not diagram). */
@@ -97,6 +112,71 @@ export const FoxyBloomLevelEnum = z.enum([
 
 /** Difficulty enum accepted on MCQ blocks (matches `question_bank` enum). */
 export const FoxyDifficultyEnum = z.enum(['easy', 'medium', 'hard']);
+
+/**
+ * Allowlisted Mermaid diagram headers. The FIRST non-whitespace token of a
+ * `mermaid` block's `code` MUST be one of these, or the block is rejected.
+ * This is a hard grammar gate: an unknown/hostile diagram type never reaches
+ * the renderer. Keep this set byte-identical to the Deno mirror in
+ * `supabase/functions/grounded-answer/structured-schema.ts`.
+ */
+export const MERMAID_ALLOWED_HEADERS: ReadonlySet<string> = new Set([
+  'flowchart',
+  'graph',
+  'sequenceDiagram',
+  'classDiagram',
+  'stateDiagram',
+  'stateDiagram-v2',
+  'erDiagram',
+  'mindmap',
+  'pie',
+  'timeline',
+  'journey',
+  'quadrantChart',
+  'gitGraph',
+]);
+
+/**
+ * Validate the `code` of a `mermaid` block. Returns an error string on
+ * failure, or `null` when the code passes. Rules (mirror the Deno copy
+ * EXACTLY -- change both or neither):
+ *   1. Non-empty after trim.
+ *   2. First non-whitespace token is an allowlisted diagram header.
+ *   3. No `<script`, `javascript:`, `click ` interaction callbacks, or a
+ *      `%%{init ...}` directive that overrides `htmlLabels`/`securityLevel`.
+ *      Defense-in-depth: the renderer runs Mermaid with securityLevel:'strict',
+ *      but we refuse to ship these constructs regardless (P12).
+ */
+export function validateMermaidCode(code: string): string | null {
+  const trimmed = code.trim();
+  if (trimmed.length === 0) {
+    return "mermaid 'code' must be non-empty";
+  }
+  const firstToken = (trimmed.match(/^\S+/) ?? [''])[0];
+  if (!MERMAID_ALLOWED_HEADERS.has(firstToken)) {
+    return `mermaid 'code' must start with an allowlisted diagram header (got "${firstToken.slice(0, 32)}")`;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.includes('<script')) {
+    return "mermaid 'code' must not contain '<script'";
+  }
+  if (lower.includes('javascript:')) {
+    return "mermaid 'code' must not contain 'javascript:'";
+  }
+  // `click` is a Mermaid interaction callback (JS binding / href). Match it as
+  // a statement (line start + whitespace) so a node LABEL that merely contains
+  // the word "click" is not a false positive.
+  if (/(^|[\r\n])\s*click\s/i.test(trimmed)) {
+    return "mermaid 'code' must not contain 'click' interaction callbacks";
+  }
+  if (
+    lower.includes('%%{init') &&
+    (lower.includes('htmllabels') || lower.includes('securitylevel'))
+  ) {
+    return "mermaid 'code' must not override htmlLabels/securityLevel via %%{init}";
+  }
+  return null;
+}
 
 /**
  * Internal raw shape -- we use `z.object().superRefine` to enforce
@@ -150,10 +230,23 @@ const FoxyBlockBase = z.object({
     .string()
     .max(50, 'language exceeds 50 chars')
     .optional(),
+  // ── Mermaid-only fields ────────────────────────────────────────────────────
+  // Present iff `type === 'mermaid'` (enforced via superRefine below). `code`
+  // is a drawable Mermaid diagram spec (allowlisted header + sanitised);
+  // `title` is an optional short caption used as the legacy denormalized text.
+  code: z
+    .string()
+    .min(1, 'mermaid code must be non-empty')
+    .max(FOXY_MAX_MERMAID_CODE_LEN, `code exceeds ${FOXY_MAX_MERMAID_CODE_LEN} chars`)
+    .optional(),
+  title: z
+    .string()
+    .max(FOXY_MAX_MERMAID_TITLE_LEN, `title exceeds ${FOXY_MAX_MERMAID_TITLE_LEN} chars`)
+    .optional(),
 });
 
 export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
-  const { type, text, latex, stem, options, correct_answer_index, explanation, search_query } =
+  const { type, text, latex, stem, options, correct_answer_index, explanation, search_query, code } =
     block;
 
   // MCQ-only field set leaks onto non-mcq blocks would let malformed AI
@@ -161,6 +254,11 @@ export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
   const MCQ_ONLY_FIELDS: Array<
     'stem' | 'options' | 'correct_answer_index' | 'explanation'
   > = ['stem', 'options', 'correct_answer_index', 'explanation'];
+
+  // Mermaid-only field set. Same rationale as MCQ_ONLY_FIELDS: forbid these
+  // anywhere except a mermaid block so a stray `code`/`title` cannot ride on
+  // a paragraph/math/etc. block.
+  const MERMAID_ONLY_FIELDS: Array<'code' | 'title'> = ['code', 'title'];
 
   if (type === 'math') {
     if (text !== undefined) {
@@ -188,6 +286,15 @@ export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
       });
     }
     for (const f of MCQ_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type 'math' must not include '${f}'`,
+        });
+      }
+    }
+    for (const f of MERMAID_ONLY_FIELDS) {
       if (block[f] !== undefined) {
         ctx.addIssue({
           code: 'custom',
@@ -294,8 +401,50 @@ export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
     return;
   }
 
-  // Non-math, non-mcq, non-diagram types: text required; latex forbidden; mcq-only
-  // fields forbidden.
+  if (type === 'mermaid') {
+    // Drawable Mermaid diagram. `code` required + allowlisted header +
+    // sanitised. `text`/`latex` forbidden (the diagram lives in `code`); mcq
+    // fields forbidden. `title` is validated by the field schema (<=120).
+    if (text !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['text'],
+        message: "blocks of type 'mermaid' must not include a 'text' field",
+      });
+    }
+    if (latex !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['latex'],
+        message: "blocks of type 'mermaid' must not include a 'latex' field",
+      });
+    }
+    if (code === undefined || code.trim() === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['code'],
+        message: "blocks of type 'mermaid' require a non-empty 'code' field",
+      });
+      return;
+    }
+    const mermaidErr = validateMermaidCode(code);
+    if (mermaidErr) {
+      ctx.addIssue({ code: 'custom', path: ['code'], message: mermaidErr });
+    }
+    for (const f of MCQ_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type 'mermaid' must not include '${f}'`,
+        });
+      }
+    }
+    return;
+  }
+
+  // Non-math, non-mcq, non-diagram, non-mermaid types: text required; latex
+  // forbidden; mcq-only + mermaid-only fields forbidden.
   if (TEXT_BEARING_TYPES.has(type)) {
     if (text === undefined || text.trim() === '') {
       ctx.addIssue({
@@ -312,6 +461,15 @@ export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
       });
     }
     for (const f of MCQ_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type '${type}' must not include '${f}'`,
+        });
+      }
+    }
+    for (const f of MERMAID_ONLY_FIELDS) {
       if (block[f] !== undefined) {
         ctx.addIssue({
           code: 'custom',
@@ -402,6 +560,26 @@ export function isFoxyMcqBlock(block: FoxyBlock): block is FoxyMcqBlock {
     typeof (block as { correct_answer_index?: unknown })
       .correct_answer_index === 'number' &&
     typeof (block as { explanation?: unknown }).explanation === 'string'
+  );
+}
+
+/**
+ * Narrowed type for a Mermaid diagram block. Useful for the renderer (Wave 2)
+ * and any consumer that needs `code`/`title` without threading optional chains.
+ */
+export type FoxyMermaidBlock = {
+  type: 'mermaid';
+  code: string;
+  title?: string;
+  label?: string;
+};
+
+/** Type guard: narrows a FoxyBlock to FoxyMermaidBlock when it is a Mermaid block. */
+export function isFoxyMermaidBlock(block: FoxyBlock): block is FoxyMermaidBlock {
+  return (
+    block.type === 'mermaid' &&
+    typeof (block as { code?: unknown }).code === 'string' &&
+    (block as { code: string }).code.trim().length > 0
   );
 }
 
