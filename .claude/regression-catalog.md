@@ -7884,3 +7884,160 @@ parity; flag `ff_foxy_perception_v1`, default OFF).
 **Total catalog: 214 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Email-Onboarding Phase 3b — institution_admin as a first-class onboarding role — 2026-07-15
+
+Source: Phase 3b of the Supabase-native email-onboarding work. `institution_admin`
+(school admin) becomes a first-class citizen of the signup→profile→dashboard
+funnel. Three app-code changes land the behaviour:
+`packages/lib/src/identity/school-admin-bootstrap.ts` (the single
+`ensureSchoolAdminOnboarding` helper — RPC-first via `bootstrap_user_profile`
++ city/state/principal_name patch + idempotent admin-client fallback, canonical
+`school_admins.role='principal'`, `onboarding_state` written);
+`packages/lib/src/identity/onboarding.ts` (`resolveIdentity` /
+`validateIdentityCompleteness` now query `school_admins`, so onboarding-status
+and repair SEE a school admin); and `packages/lib/src/identity/complete-signup.ts`
+(the shared bootstrap+session helper both `/auth/callback` and `/auth/confirm`
+delegate to). The invariant this pins: a school-admin signup must create
+school + admin(role=principal) + onboarding_state, be visible to
+identity-resolution/repair, and NEVER break the funnel — every write is
+fail-soft and the auth routes stay 3xx-only (P15).
+
+### Notes on ID assignment
+
+REG-248 is the next free id: after the origin/main merge the catalog's max id is
+REG-247 (Foxy Perception) and this project appends rather than backfilling
+intentional gaps (REG-170 remains a documented skip). REG-248 is confirmed absent
+before use. (This entry was authored as REG-242 on the email-onboarding branch and
+renumbered to REG-248 on merge to avoid a collision with the origin/main Foxy
+REG-241..247 block.)
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-248 | `institution_admin_first_class_onboarding` | (a) **Identity resolution sees school admins**: `resolveIdentity()` with a `school_admins` row returns `hasProfile=true`, `detectedRole='institution_admin'`, `profile.type='school_admin'` (full row spread, `role='principal'`), and `institution_admin` wins at highest precedence when student/teacher/guardian/school_admin rows all co-exist; a school admin with a completed `onboarding_state` is `isOnboarded=true`. (b) **Completeness is role-generic**: `validateIdentityCompleteness()` treats a school admin (school_admins row + completed onboarding) as complete (`[]`), and attributes a missing profile row to the `institution_admin` role when absent. (c) **Bootstrap shape — RPC-first**: `ensureSchoolAdminOnboarding()` calls `bootstrap_user_profile` with `p_role='institution_admin'` + normalized `p_school_name`/`p_board`, then PATCHES `city`/`state`/`principal_name` onto the RPC-created school (no direct-insert fallback fires), and upserts `onboarding_state` (`intended_role='institution_admin'`, `step='completed'`, `profile_id`=RPC id); returns `{ok:true, schoolId, schoolAdminId, onboardingStateWritten:true}`. (d) **Bootstrap shape — admin-client fallback (P15)**: when the RPC is unavailable (error) OR its transport throws, the helper creates `schools` + `school_admins` directly with the CANONICAL `role='principal'`, writes `city`/`state`, upserts `onboarding_state`, and idempotently REUSES the earliest existing membership instead of duplicating. (e) **Fail-soft (P15)**: a failed `onboarding_state` write does NOT throw/block signup — returns `ok:true` with `onboardingStateWritten:false`; when no `school_admins` row can be established at all, returns the structured not-ok result (never throws). (f) **Both auth routes stay 3xx-only**: `/auth/callback` (PKCE) and `/auth/confirm` (token_hash + legacy token) drive the real GET handlers through the shared `completeSignupBootstrap` and every branch (success / exchange-fail / missing-param / getUser-throws) returns a redirect, never a 500. NOTE (documented gap): no live E2E exercises institution_admin end-to-end — the P15 E2E specs (`e2e/auth-onboarding-p15.spec.ts`, `e2e/auth-onboarding-3role.spec.ts`) still cover only student/teacher/guardian. Extending them to a 4th (institution_admin) role is an open follow-up. | `apps/host/src/__tests__/identity-onboarding.test.ts` (resolveIdentity school-admin detection + precedence + onboarded; validateIdentityCompleteness school-admin complete + missing-row), `apps/host/src/__tests__/school-admin-bootstrap.test.ts` (6 tests: RPC-first + city/state patch, admin-client fallback role=principal, idempotent reuse, RPC-throws fallback, fail-soft onboarding_state, not-ok backstop), `apps/host/src/__tests__/auth-callback-resilience.test.ts` (both routes 3xx-only through the shared helper) | E | P15, P9 |
+
+### Invariants covered by this section
+
+- P15 (onboarding integrity) — the school-admin signup funnel is fully fail-soft:
+  a failed onboarding_state write, a failed RPC, or an unestablishable admin row
+  never throws into the auth flow, and both `/auth/callback` + `/auth/confirm`
+  stay 3xx-only.
+- P9 (RBAC enforcement) — the funnel establishes the institution_admin role via
+  the canonical `school_admins.role='principal'` (the DB `sync_school_admin_role`
+  trigger assigns the RBAC role on insert), consistently on both the RPC-first
+  and admin-client fallback paths.
+
+### Catalog total
+
+Pre-REG-248: 214 entries (through REG-247, Foxy Perception observability-only
+event-data-layer). Adds REG-248 (institution_admin first-class onboarding:
+RPC-first + fail-soft admin-client fallback creating
+school+admin(role=principal)+onboarding_state, identity-resolution/repair
+visibility, both signup paths 3xx-only through the shared completeSignupBootstrap).
+**Total catalog: 215 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-249 — school_id JWT claim (app_metadata) is STAFF-only, single-school, merge + fail-soft; teachers/classes gain additive get_jwt_school_id() staff SELECT RLS (Phase 4 tenant isolation, P8+P13) (2026-07-15)
+
+Phase 4 makes JWT-claim tenant isolation real: `setSchoolClaim()` writes
+`app_metadata.school_id` (the ONLY claim `public.get_jwt_school_id()` reads for
+the school-staff RLS SELECT policies), and `dispatchSingleSchoolAdminClaim()`
+wires it into the STAFF link points behind a single-school guard. The claim is
+stamped ONLY for a single-school STAFF member — never a multi-school admin, and
+structurally never a student or teacher-import (keyed strictly on
+`school_admins`; students are DELIBERATELY excluded because the students staff
+RLS policy is role-agnostic and a student claim would leak same-school peer PII).
+
+### Notes on ID assignment
+
+REG-249 is the next free id: after the origin/main merge (and the renumbered
+REG-248 institution_admin entry) the catalog's max id is REG-248 and this project
+appends rather than backfilling intentional gaps (REG-170 remains a documented
+skip). REG-249 is confirmed absent before use. (This entry was authored as REG-243
+on the email-onboarding branch and renumbered to REG-249 on merge to avoid a
+collision with the origin/main Foxy REG-241..247 block.)
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-249 | `school_id_jwt_claim_staff_only_merge_failsoft` | (a) **MERGE, never clobber**: `setSchoolClaim(authUserId, schoolId)` fetches the user's current `app_metadata` and spreads it — an existing key (`provider`/`providers`/`role`) SURVIVES while `school_id` is added; when a DIFFERENT `school_id` already exists it replaces ONLY `school_id` (other keys untouched); a null/absent `app_metadata` yields just `{ school_id }`. On success returns `{ok:true, changed:true, reason:'set'}` and calls `updateUserById` exactly once. (b) **Idempotent no-op**: when the stored claim already equals the target, NO `updateUserById` call is made and it returns `{ok:true, changed:false, reason:'noop_already_set'}`. (c) **Fail-soft (never throws)**: every failure path returns a structured result and the promise RESOLVES (never rejects) — `invalid_input` (missing authUserId/schoolId, never fetches), `user_not_found`, `fetch_failed`, `update_failed`, and `threw` (an admin call that rejects is caught). (d) **P13**: on a logging failure path with a user carrying `email` + a token-shaped field, the emitted `console.error` output contains NEITHER the email NOR the token (opaque uuids only); the happy MERGE path logs nothing. (e) **Single-school wiring guard** (`setSchoolClaimForSingleSchoolAdmin`/`dispatchSingleSchoolAdminClaim`): a single active `school_admins` membership equal to expected → stamps the claim (`reason:'set'`, `updateUserById` called, query keyed strictly on `school_admins`); MULTIPLE memberships → `skipped_multi_school` with NO claim and `setSchoolClaim` never reached; a single membership for a DIFFERENT school → `skipped_multi_school`; ZERO memberships (a student/teacher-only user has no `school_admins` row) → skipped, never claimed — this is the structural "students are never claimed" guard; fail-soft reasons `skipped_lookup_failed` (lookup error → service-role safety net remains), `skipped_threw` (admin client rejects), `skipped_invalid_input` (no DB touch); `dispatchSingleSchoolAdminClaim` returns `void` synchronously, eventually stamps for a single-school admin, and NEVER throws when the underlying lookup rejects. (f) **Call-site source canary**: the 4 STAFF link points dispatch the claim — `ensureSchoolAdminOnboarding` (school-admin-bootstrap.ts), `establishPrincipalAdmin` + `claimAdminToken` (school-provisioning.ts, ≥2 calls), and `POST /api/school-admin/staff` — while the teacher bulk-import route dispatches ZERO and carries the documented `INTENTIONALLY DEFERRED` note (no auth user at import), and the student bulk-import route dispatches ZERO (students are never claimed). SCOPE NOTE: these tests pin the helper/wiring BEHAVIOR that writes the claim + the call-site presence. The accompanying additive migrations `20260715110000_school_staff_jwt_rls_teachers_classes.sql` (mirrors the existing students staff SELECT policy onto `teachers` + `classes` via `get_jwt_school_id()`; RLS stays ENABLED, PERMISSIVE-OR only broadens, idempotent `DROP POLICY IF EXISTS`) and `20260715110100_backfill_app_metadata_school_id.sql` (backfills the claim for single-school `school_admins`/`teachers` only, shallow-merge, ABSENT-claim-only, single-school `HAVING COUNT(DISTINCT school_id)=1`; students DELIBERATELY EXCLUDED) are referenced as the additive-policy delivery — live-DB RLS ENFORCEMENT is deploy/integration-time and is NOT asserted by these unit tests. | `packages/lib/src/identity/school-claim.test.ts` (12 tests: 3 MERGE + 1 idempotent + 6 fail-soft + 2 P13) and `packages/lib/src/identity/school-claim-wiring.test.ts` (14 tests: 4 single-school-guard + 3 fail-soft + 2 dispatch fire-and-forget + 5 call-site source canary), mirrored into the apps/host vitest lane via the `apps/host/src/lib/identity/school-claim{,-wiring}.test.ts` re-export stubs. Additive policies: `supabase/migrations/20260715110000_school_staff_jwt_rls_teachers_classes.sql` + `20260715110100_backfill_app_metadata_school_id.sql`. | E | P8, P13 |
+
+### Invariants covered by this section
+
+- P8 (RLS / tenant boundary) — the scalar `app_metadata.school_id` claim that
+  `get_jwt_school_id()` reads is stamped ONLY for single-school STAFF (keyed on
+  `school_admins`); multi-school admins stay on the explicit
+  `school_admins`-scoped path, and the teachers/classes additive staff SELECT
+  policies close the tenant-scoping gap without narrowing any existing policy.
+- P13 (data privacy) — students are structurally never claimed (the wiring keys
+  on `school_admins` and the backfill migration excludes students), so the
+  role-agnostic students staff policy can never let a student read same-school
+  peers' PII; and `setSchoolClaim` logs opaque uuids only (never email/token).
+
+### Catalog total
+
+Pre-REG-249: 215 entries (through REG-248, institution_admin first-class
+onboarding). Adds REG-249 (school_id JWT claim is single-school STAFF-only,
+merge + fail-soft; the 4 staff link points dispatch it while teacher/student
+imports do not; accompanying additive teachers/classes staff SELECT RLS +
+single-school STAFF-only backfill referenced, not live-DB-enforced here).
+**Total catalog: 216 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-250 — self-serve school onboarding assigns a unique subdomain slug (server-derived, idempotent, fail-soft) so new schools are reachable at <slug>.alfanumrik.com (Phase 6 white-label, P15) (2026-07-15)
+
+The self-serve email onboarding path (`ensureSchoolAdminOnboarding`,
+`packages/lib/src/identity/school-admin-bootstrap.ts`) previously left
+`schools.slug` NULL. A NULL slug matches NO subdomain, so a freshly-signed-up
+school was unreachable at `<slug>.alfanumrik.com`. Phase 6 wires
+`resolveUniqueSchoolSlug()` + `patchSchoolDetails()` so the helper now derives a
+UNIQUE slug from the server-normalized school name (via the extracted leaf
+normaliser `packages/lib/src/normalize-slug.ts`) and folds it into the SAME
+`schools` UPDATE as city/state/principal_name — a single round-trip, on the same
+fail-soft best-effort path as the rest of the helper (P15: a slug failure can
+never block school signup).
+
+This complements the trial/bulk-provisioning path, which ALREADY had its own
+slug+code generation in `provisionTrialSchool`
+(`packages/lib/src/school-provisioning.ts`, its own `MAX_SLUG_ATTEMPTS`
+collision loop writing `code`=`slug`=finalSlug), exercised by
+`apps/host/src/__tests__/school-admin/provision-trial-school-admin-link.test.ts`
+plus the pure `apps/host/src/__tests__/lib/normalize-slug.test.ts`. REG-250 closes
+the equivalent gap on the SELF-SERVE path.
+
+### Notes on ID assignment
+
+REG-250 is the next free id: after the origin/main merge (and the renumbered
+REG-248/REG-249 entries ahead of it) the catalog's max id is REG-249 and this
+project appends rather than backfilling intentional gaps (REG-170 remains a
+documented skip). REG-250 was confirmed absent before use. (This entry was
+authored as REG-244 on the email-onboarding branch and renumbered to REG-250 on
+merge to avoid a collision with the origin/main Foxy REG-241..247 block.) SCOPE
+HONESTY: the originating task referred to the trial path as "REG-135", but in THIS
+catalog REG-135 is the MOL deterministic-priority router
+(`mol_deterministic_openai_priority`) — the trial-path slug generation has no
+dedicated REG id here, so REG-250 references the actual trial-path test files above
+rather than citing a mismatched number.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-250 | `self_serve_school_slug_unique_idempotent_failsoft` | Exercises the REAL `ensureSchoolAdminOnboarding` (RPC-success branch) with only the Supabase admin client mocked at the `getSupabaseAdmin` seam; the fire-and-forget Phase-4 tenant-claim dispatch is stubbed. (a) **NEW school (slug NULL)** → the idempotency read returns NULL, exactly ONE free candidate (`delhi-public-school`) is probed, and that slug is written into the SAME `schools` UPDATE as `city`/`state` (single round-trip); the slug is server-normalized (`/^[a-z0-9]+(?:-[a-z0-9]+)*$/`, lowercase hyphen-delimited). A name that normalizes to empty (`'###'`) falls back to the base `'school'`. (b) **IDEMPOTENT (never overwrites)** → when `schools.slug` is already non-null (`my-school-original`, operator-set / prior P15 re-run), the current-slug read short-circuits: NO collision probe runs, and the `schools` UPDATE carries NO `slug` key while still patching the other columns (`city`/`state`) — a pre-existing slug is left untouched. (c) **COLLISION suffixing** → a taken base is suffixed: `{base}` taken → probe `{base}-1` (free) → write `{base}-1`; `{base}`,`-1`,`-2` all taken → deterministically resolves the first free `-3`. (d) **FAIL-SOFT (P15)** → a slug UPDATE unique-violation (`23505 … "schools_slug_key"`) is swallowed (helper returns `ok:true`, `schoolAdminId` intact — signup NOT blocked); and a slug RESOLUTION failure (the current-slug read THROWS) is caught → returns a null slug, still patches `city`/`state` with NO `slug` key, and onboarding completes `ok:true`. SCOPE NOTE: unit-level — asserts the resolve→normalize→probe→patch BEHAVIOR + branching. Does NOT assert the live-DB `schools_slug_key` UNIQUE constraint, actual wildcard-subdomain TLS/routing, or the RPC-fallback (direct-insert) branch's slug path (RPC-success branch only); those are deploy/integration-time. | `packages/lib/src/identity/school-admin-slug.test.ts` (7 tests: 2 new-school + 1 idempotent + 2 collision + 2 fail-soft), mirrored into the apps/host vitest lane via the `apps/host/src/lib/identity/school-admin-slug.test.ts` re-export stub (same mechanism as REG-249). Code under test: `packages/lib/src/identity/school-admin-bootstrap.ts` (`resolveUniqueSchoolSlug` + `patchSchoolDetails` + `ensureSchoolAdminOnboarding`); normaliser `packages/lib/src/normalize-slug.ts`. | E | P15 |
+
+### Invariants covered by this section
+
+- P15 (onboarding integrity) — slug derivation is on the helper's best-effort
+  fail-soft path: neither a slug write unique-violation nor a slug resolution
+  throw can block or fail school signup, and an idempotent re-run never clobbers
+  a previously-captured slug. The self-serve school becomes reachable at its
+  themed subdomain without adding a failure mode to the #1 acquisition funnel.
+
+### Catalog total
+
+Pre-REG-250: 216 entries (through REG-249, school_id JWT claim staff-only).
+Adds REG-250 (self-serve school onboarding assigns a unique, server-derived,
+idempotent, fail-soft subdomain slug; complements the trial path's own slug
+generation in `provisionTrialSchool`). **Total catalog: 217 entries (target: 35 —
+TARGET EXCEEDED).**
+
+---

@@ -24,33 +24,32 @@
 import { createHash, randomBytes } from 'crypto';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+// Canonical slug normaliser (leaf module). Re-exported below so this module's
+// public API (`@alfanumrik/lib/school-provisioning` → normalizeSlug) is
+// unchanged for existing importers (provision route, REG-135, unit tests).
+import { normalizeSlug } from '@alfanumrik/lib/normalize-slug';
 import {
   deliverEmail,
   truncateInviteCode,
   type EmailLocale,
 } from '@alfanumrik/lib/email-delivery';
+// Phase 3b (B2): the trial/bulk provisioning path shares the onboarding_state
+// writer with the self-serve signup path so both flows produce an identical
+// school-admin onboarding shape (school_admins.role='principal' + a completed
+// onboarding_state row). Fail-soft — see writeSchoolAdminOnboardingState.
+import { writeSchoolAdminOnboardingState } from '@alfanumrik/lib/identity/school-admin-bootstrap';
+// Phase 4: STAFF tenant-claim wiring. Fire-and-forget + single-school-guarded —
+// stamps app_metadata.school_id on a single-school principal so get_jwt_school_id()
+// RLS can fire. Never blocks provisioning/claim; skips multi-school admins. Import
+// directly (server-only; not re-exported from the identity barrel — P8).
+import { dispatchSingleSchoolAdminClaim } from '@alfanumrik/lib/identity/school-claim-wiring';
 
 // ─── Slug + invite code helpers (mirror trial route) ───────────────────
 
-/**
- * Canonical slug normaliser shared by both provisioning paths.
- * Produces a lowercase, hyphen-delimited, alphanumeric string safe for use as
- * a URL path segment and a DB `slug` / `code` column.
- *
- * Examples:
- *   normalizeSlug("St. Xavier's High School")  → "st-xaviers-high-school"
- *   normalizeSlug("  ABC   School ")           → "abc-school"
- *   normalizeSlug("School #1 (Bengaluru)")     → "school-1-bengaluru"
- */
-export function normalizeSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
+// Re-export the canonical slug normaliser (imported at the top from the leaf
+// module `@alfanumrik/lib/normalize-slug`) so `@alfanumrik/lib/school-provisioning`
+// → normalizeSlug keeps working for existing importers.
+export { normalizeSlug };
 
 /** @deprecated Use normalizeSlug() instead. */
 function generateSlug(name: string): string {
@@ -304,6 +303,14 @@ export async function claimAdminToken(
       });
     }
 
+    // Phase 4 — tenant claim (STAFF only). The link is now active for this
+    // principal; stamp app_metadata.school_id so get_jwt_school_id() RLS fires on
+    // their next login. Fire-and-forget + single-school-guarded: never blocks the
+    // claim (the link is already active), skipped for multi-school admins. Applies
+    // on the principal's NEXT token refresh — the claim route returns a
+    // `school_claim: 'pending_refresh'` hint so the client can nudge a re-login.
+    dispatchSingleSchoolAdminClaim(admin, link.auth_user_id, row.school_id, '[SchoolProvisioning]');
+
     return {
       status: 'claimed',
       school_id: row.school_id,
@@ -405,6 +412,30 @@ export async function establishPrincipalAdmin(
     schoolAdminId = (inserted as { id: string }).id;
   }
 
+  // Phase 3b (B2): write the SAME onboarding_state row the self-serve signup
+  // path writes (intended_role='institution_admin', step='completed',
+  // profile_id=school_admins.id), so a provisioned/claimed principal is visible
+  // to resolveIdentity() / onboarding-status / repair exactly like a self-serve
+  // school admin. Fully fail-soft (P15): a failure here never blocks
+  // provisioning — the school + admin rows already exist.
+  if (schoolAdminId) {
+    await writeSchoolAdminOnboardingState(
+      admin,
+      authUserId,
+      schoolAdminId,
+      '[SchoolProvisioning]'
+    );
+
+    // Phase 4 — tenant claim (STAFF only). Now that this principal's single-school
+    // membership is established, stamp app_metadata.school_id so get_jwt_school_id()
+    // RLS fires once they log in. Fire-and-forget + single-school-guarded: never
+    // blocks provisioning (the school + admin rows already exist), and skipped for
+    // multi-school admins. The claim applies on the principal's FIRST token/login
+    // (they claim via POST /api/schools/claim-admin) — the service-role read paths
+    // remain the safety net until then.
+    dispatchSingleSchoolAdminClaim(admin, authUserId, schoolId, '[SchoolProvisioning]');
+  }
+
   // Mint a one-time claim token (store hash only). Best-effort — a failure here
   // still leaves a usable admin link (the super-admin repair path can re-issue).
   let claimToken: string | null = null;
@@ -476,6 +507,13 @@ export type ProvisionTrialSchoolResult =
       admin_linked: boolean;
       /** The principal's school_admins row id (when linked). */
       school_admin_id?: string;
+      /**
+       * Phase 4 re-login hint (P13-safe, non-PID). Present when the principal was
+       * linked: their tenant claim (app_metadata.school_id) was dispatched but
+       * only takes effect on their FIRST token/login, so the frontend can nudge a
+       * "re-login to see your school view". Absence ⇒ no claim was dispatched.
+       */
+      school_claim?: 'pending_refresh';
     }
   | {
       status: 'already_exists';
@@ -726,6 +764,9 @@ export async function provisionTrialSchool(
       email_dispatched: emailDispatched,
       admin_linked: adminLink.linked,
       school_admin_id: adminLink.schoolAdminId ?? undefined,
+      // Re-login hint: only when a principal link was actually established (a
+      // single-school claim was dispatched inside establishPrincipalAdmin).
+      ...(adminLink.linked ? { school_claim: 'pending_refresh' as const } : {}),
     };
   } catch (err) {
     logger.error('school_provisioning_unexpected_error', {

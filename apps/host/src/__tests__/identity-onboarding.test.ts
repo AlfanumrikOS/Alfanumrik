@@ -58,6 +58,21 @@ function guardianRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Phase 3b (B3): school admins now flow through resolveIdentity(). Mirrors the
+// column set resolveIdentity() selects from school_admins
+// (id, name, auth_user_id, school_id, role, is_active).
+function schoolAdminRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'school-admin-1',
+    name: 'Test Principal',
+    auth_user_id: AUTH_USER_ID,
+    school_id: 'school-1',
+    role: 'principal',
+    is_active: true,
+    ...overrides,
+  };
+}
+
 function onboardingRow(overrides: Partial<OnboardingState & { created_at: string }> = {}): OnboardingState & { created_at: string } {
   return {
     step: 'completed' as const,
@@ -86,12 +101,15 @@ function createMockSupabase(config: {
   students?: unknown;
   teachers?: unknown;
   guardians?: unknown;
+  school_admins?: unknown;
   onboarding_state?: unknown;
 }) {
   const responses: Record<string, { data: unknown; error: unknown }> = {
     students: config.students !== undefined ? found(config.students) : NO_ROW,
     teachers: config.teachers !== undefined ? found(config.teachers) : NO_ROW,
     guardians: config.guardians !== undefined ? found(config.guardians) : NO_ROW,
+    school_admins:
+      config.school_admins !== undefined ? found(config.school_admins) : NO_ROW,
     onboarding_state:
       config.onboarding_state !== undefined
         ? found(config.onboarding_state)
@@ -230,6 +248,50 @@ describe('resolveIdentity', () => {
 
     expect(result.detectedRole).toBe('teacher');
     expect(result.profile?.type).toBe('teacher');
+  });
+
+  // ── Phase 3b (B3): school_admins is now a first-class profile table ──
+
+  it('returns hasProfile=true, detectedRole="institution_admin" when a school_admins row exists', async () => {
+    const sb = createMockSupabase({
+      school_admins: schoolAdminRow(),
+      onboarding_state: onboardingRow({ intended_role: 'institution_admin', profile_id: 'school-admin-1' }),
+    });
+    const result = await resolveIdentity(sb, AUTH_USER_ID);
+
+    expect(result.hasProfile).toBe(true);
+    expect(result.detectedRole).toBe('institution_admin');
+    expect(result.profile?.type).toBe('school_admin');
+    // The full school_admins row is spread onto profile (role=principal etc.).
+    expect(result.profile?.id).toBe('school-admin-1');
+    expect((result.profile as Record<string, unknown>).role).toBe('principal');
+  });
+
+  it('institution_admin takes precedence over teacher, guardian, and student', async () => {
+    // All four profile tables return a row for this auth user. resolveIdentity()
+    // must pick institution_admin — the highest-precedence role — mirroring the
+    // auth-route signup detect order (school_admins wins).
+    const sb = createMockSupabase({
+      students: studentRow(),
+      teachers: teacherRow(),
+      guardians: guardianRow(),
+      school_admins: schoolAdminRow(),
+      onboarding_state: onboardingRow({ intended_role: 'institution_admin' }),
+    });
+    const result = await resolveIdentity(sb, AUTH_USER_ID);
+
+    expect(result.detectedRole).toBe('institution_admin');
+    expect(result.profile?.type).toBe('school_admin');
+  });
+
+  it('marks a school admin with completed onboarding as onboarded', async () => {
+    const sb = createMockSupabase({
+      school_admins: schoolAdminRow(),
+      onboarding_state: onboardingRow({ step: 'completed', intended_role: 'institution_admin' }),
+    });
+    const result = await resolveIdentity(sb, AUTH_USER_ID);
+
+    expect(result.isOnboarded).toBe(true);
   });
 });
 
@@ -483,5 +545,47 @@ describe('validateIdentityCompleteness', () => {
     const missing = validateIdentityCompleteness(identity);
     expect(missing.length).toBe(1);
     expect(missing[0]).toBe('onboarding_state row');
+  });
+
+  // Phase 3b (B3): validateIdentityCompleteness is role-generic — a school
+  // admin with a school_admins row + completed onboarding_state is complete,
+  // with no institution_admin-specific branching.
+  it('treats a school admin with a school_admins row + completed onboarding as complete', () => {
+    const identity: IdentityResolution = {
+      hasProfile: true,
+      detectedRole: 'institution_admin',
+      profile: {
+        type: 'school_admin',
+        id: 'school-admin-1',
+        name: 'Test Principal',
+        role: 'principal',
+        school_id: 'school-1',
+      },
+      onboarding: onboardingRow({
+        step: 'completed',
+        intended_role: 'institution_admin',
+        profile_id: 'school-admin-1',
+      }) as OnboardingState,
+      isOnboarded: true,
+    };
+    expect(validateIdentityCompleteness(identity)).toEqual([]);
+  });
+
+  it('flags an institution_admin missing their school_admins row', () => {
+    // hasProfile=false → the missing profile row is attributed to the
+    // institution_admin role (generic, no role-specific branch).
+    const identity: IdentityResolution = {
+      hasProfile: false,
+      detectedRole: null,
+      profile: null,
+      onboarding: onboardingRow({
+        step: 'completed',
+        intended_role: 'institution_admin',
+        profile_id: null,
+      }) as OnboardingState,
+      isOnboarded: false,
+    };
+    const missing = validateIdentityCompleteness(identity, 'institution_admin');
+    expect(missing.some((m) => m.includes('institution_admin profile row'))).toBe(true);
   });
 });

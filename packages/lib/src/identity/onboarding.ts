@@ -42,7 +42,7 @@ export interface IdentityResolution {
   detectedRole: ValidRole | null;
   /** Profile data for the detected role */
   profile: {
-    type: 'student' | 'teacher' | 'guardian';
+    type: 'student' | 'teacher' | 'guardian' | 'school_admin';
     id: string;
     name: string;
     [key: string]: unknown;
@@ -69,45 +69,73 @@ export async function resolveIdentity(
   authUserId: string
 ): Promise<IdentityResolution> {
   // Parallel fetch all profile tables + onboarding state
-  const [studentResult, teacherResult, guardianResult, onboardingResult] =
-    await Promise.all([
-      supabase
-        .from('students')
-        .select('id, name, grade, auth_user_id, is_demo, account_status')
-        .eq('auth_user_id', authUserId)
-        .maybeSingle(),
-      supabase
-        .from('teachers')
-        .select('id, name, auth_user_id, is_demo')
-        .eq('auth_user_id', authUserId)
-        .maybeSingle(),
-      supabase
-        .from('guardians')
-        .select('id, name, auth_user_id, is_demo')
-        .eq('auth_user_id', authUserId)
-        .maybeSingle(),
-      supabase
-        .from('onboarding_state')
-        .select(
-          'step, intended_role, profile_id, error_message, created_at, completed_at'
-        )
-        .eq('auth_user_id', authUserId)
-        .maybeSingle(),
-    ]);
+  const [
+    studentResult,
+    teacherResult,
+    guardianResult,
+    schoolAdminResult,
+    onboardingResult,
+  ] = await Promise.all([
+    supabase
+      .from('students')
+      .select('id, name, grade, auth_user_id, is_demo, account_status')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle(),
+    supabase
+      .from('teachers')
+      .select('id, name, auth_user_id, is_demo')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle(),
+    supabase
+      .from('guardians')
+      .select('id, name, auth_user_id, is_demo')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle(),
+    // Phase 3b (B3): school admins now flow through identity resolution so
+    // GET /api/auth/onboarding-status and POST /api/auth/repair can SEE them.
+    // Previously a school admin (school_admins row created by the app-side
+    // helper or the bootstrap RPC) was invisible here — onboarding-status
+    // reported hasProfile=false and repair could not classify them.
+    //
+    // NOTE: school_admins has NO unique constraint on auth_user_id (a person
+    // may administer multiple schools), so a rare multi-school admin yields
+    // >1 row and .maybeSingle() resolves to { data: null } WITHOUT throwing.
+    // Such multi-school admins are handled by admin_repair_user_onboarding()'s
+    // earliest-membership logic; the common single-school founder resolves
+    // cleanly here.
+    supabase
+      .from('school_admins')
+      .select('id, name, auth_user_id, school_id, role, is_active')
+      .eq('auth_user_id', authUserId)
+      .maybeSingle(),
+    supabase
+      .from('onboarding_state')
+      .select(
+        'step, intended_role, profile_id, error_message, created_at, completed_at'
+      )
+      .eq('auth_user_id', authUserId)
+      .maybeSingle(),
+  ]);
 
   const student = studentResult.data;
   const teacher = teacherResult.data;
   const guardian = guardianResult.data;
+  const schoolAdmin = schoolAdminResult.data;
   const onboarding = onboardingResult.data as OnboardingState | null;
 
-  const hasProfile = !!(student || teacher || guardian);
+  const hasProfile = !!(student || teacher || guardian || schoolAdmin);
 
-  // Role detection priority: teacher > guardian > student
-  // (matches existing behavior in onboarding-status API)
+  // Role detection priority: institution_admin > teacher > guardian > student.
+  // This mirrors the auth-route signup detect order in
+  // apps/host/src/app/auth/{callback,confirm}/route.ts, where an existing
+  // school_admins row wins over the other profile tables.
   let detectedRole: ValidRole | null = null;
   let profile: IdentityResolution['profile'] = null;
 
-  if (teacher) {
+  if (schoolAdmin) {
+    detectedRole = 'institution_admin';
+    profile = { type: 'school_admin', ...schoolAdmin };
+  } else if (teacher) {
     detectedRole = 'teacher';
     profile = { type: 'teacher', ...teacher };
   } else if (guardian) {
@@ -195,6 +223,14 @@ export function isDemoAccount(identity: IdentityResolution): boolean {
 /**
  * Validate that all required identity records exist for a role.
  * Used by repair and health check flows.
+ *
+ * Role-generic: it operates purely on the IdentityResolution produced by
+ * resolveIdentity(). Because resolveIdentity() now also queries school_admins
+ * (Phase 3b B3), an institution_admin's presence/absence is reflected in
+ * identity.hasProfile + identity.detectedRole here without any role-specific
+ * branching — a school admin missing their school_admins row surfaces as a
+ * missing "institution_admin profile row", and a missing/failed onboarding_state
+ * surfaces identically to every other role.
  *
  * @returns List of missing records (empty = healthy)
  */

@@ -28,6 +28,7 @@ import { sanitizeText } from '@alfanumrik/lib/sanitize';
 import { logIdentityEvent, extractAuditContext } from '@alfanumrik/lib/identity/audit';
 import {
   VALID_BOARDS,
+  VALID_ROLES,
   isValidRole,
   isValidGrade,
   isValidBoard,
@@ -155,10 +156,18 @@ async function handleBootstrap(
       typeof body.name === 'string' ? sanitizeText(body.name.trim()) : '';
 
     if (!role || !isValidRole(role)) {
+      // The check validates against the full VALID_ROLES set — which includes
+      // institution_admin — so the message lists them dynamically rather than
+      // hard-coding "student, teacher, or parent" (which misleadingly implied
+      // institution_admin was invalid). This client-facing route is primarily
+      // exercised by the student/teacher/parent AuthContext fallback; school
+      // admins are bootstrapped server-side via ensureSchoolAdminOnboarding on
+      // the auth callback/confirm routes, but institution_admin is a valid role
+      // and is accepted here too.
       return NextResponse.json(
         {
           success: false,
-          error: 'Invalid role. Must be student, teacher, or parent.',
+          error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}.`,
           code: 'INVALID_ROLE',
         },
         { status: 400 }
