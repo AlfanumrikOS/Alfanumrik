@@ -1,0 +1,24 @@
+# NEW FILE (Alfanumrik original) — follows the rubric CSV schema and P/R/O/M bucket
+# framework of "Agent Skills for K-12 Teachers" (https://github.com/anthropics/
+# k12-teacher-skills, commit 7c03c83, Apache-2.0 — Copyright 2026 Anthropic, PBC;
+# Copyright 2026 Learning Commons; see ../vendor/LICENSE and ../vendor/NOTICE).
+# No criterion text is copied from upstream. Scores EXISTING quiz-generator output
+# batches. The QZ-P6* criteria are derived DIRECTLY from product invariant P6
+# (.claude/CLAUDE.md) and mirror the semantics of the REG-54 validation oracle
+# (packages/lib/src/ai/validation/quiz-oracle.ts runDeterministicChecks) — including
+# the canonical STRING difficulty enum easy|medium|hard (A3). Criteria marked
+# "Deterministic pre-check" in Notes are enforced mechanically before the LLM judge
+# (REG-54 oracle pattern) and are NOT sent to the judge.
+# Lines starting with '#' are comments (harness parser skips them).
+ID,Bucket,Criterion,What pass requires,Notes,Conditional
+QZ-P6a,O — Output / Formatting,Question text non-empty and template-free (P6),"Every question in the batch has non-empty question_text containing no template residue: no '{{' and no '[BLANK]' marker. Fail = any question with empty text or a placeholder marker.",Product invariant P6. Deterministic pre-check: enforced mechanically before the LLM judge (mirrors quiz-oracle p6_text_empty_or_placeholder).,
+QZ-P6b,O — Output / Formatting,Exactly 4 options (P6),Every question offers exactly 4 answer options. Fail = any question with fewer or more than 4 options or a non-array options field.,Product invariant P6. Deterministic pre-check (mirrors quiz-oracle p6_options_not_4).,
+QZ-P6c,O — Output / Formatting,Options distinct and non-empty (P6),"Every question's 4 options are all non-empty strings and all distinct (case-insensitive, after trimming). Fail = any empty option or any case-insensitive duplicate.",Product invariant P6. Deterministic pre-check (mirrors quiz-oracle p6_options_not_4 / p6_options_not_distinct).,
+QZ-P6d,O — Output / Formatting,correct_answer_index in range (P6),Every question's correct_answer_index is an integer between 0 and 3 inclusive. Fail = missing / non-integer / out-of-range index.,Product invariant P6. Deterministic pre-check (mirrors quiz-oracle p6_correct_index_out_of_range).,
+QZ-P6e,O — Output / Formatting,Non-empty explanation (P6),Every question carries a non-empty explanation. Fail = any question with an empty or missing explanation.,Product invariant P6. Deterministic pre-check (mirrors quiz-oracle p6_explanation_empty).,
+QZ-P6f,O — Output / Formatting,Valid difficulty and bloom_level (P6),"Every question's difficulty, when present, is one of the canonical strings easy|medium|hard, and its bloom_level, when present, is one of remember|understand|apply|analyze|evaluate|create. Fail = any other value.",Product invariant P6. Deterministic pre-check (mirrors quiz-oracle p6_invalid_difficulty / p6_invalid_bloom; string difficulty enum per A3).,
+QZ-P5,O — Output / Formatting,Grade is a string in CBSE band (P5),"The batch (and any per-question grade echo) records grade as a JSON string ""6"" through ""12"" — never an integer. Fail = integer grade, missing batch grade, or out-of-band value.",Product invariant P5. Deterministic pre-check (mirrors quiz-oracle p5_invalid_grade).,
+QZ-P1,P — Pedagogy,Within CBSE scope for grade and subject,"Every question tests content that belongs to the CBSE syllabus for the batch's stated grade and subject. Fail = any question drawing on out-of-syllabus or wrong-grade content.",Product invariant P12 — curriculum scope. LLM-judged.,
+QZ-R1,R — Rigor,Distractors are plausible same-concept errors,"For every question, the three wrong options are plausible: each reflects a believable error a student at this grade could make on this concept (a computational slip, a common misconception, a near-miss definition) — not absurd, obviously-joke, or off-topic fillers. Name any implausible distractor in the explanation.",Distractor quality — the discriminating power of the item. LLM-judged.,
+QZ-R2,R — Rigor,Explanation justifies the keyed answer,"For every question, the explanation actually explains why the option at correct_answer_index is correct (and, ideally, why tempting distractors are wrong). Fail = an explanation that contradicts the keyed answer, justifies a different option, or merely restates the question.",Catches key/explanation mismatch — the failure mode the REG-54 LLM grader targets. LLM-judged.,
+QZ-O1,O — Output / Formatting,Age-appropriate wording,"Every question and explanation is worded age-appropriately for the batch's grade band (6-8 / 9-10 / 11-12): vocabulary and sentence complexity match the band, and no content is inappropriate for school-age students. Fail = any question a teacher would not put in front of that class.",Product invariant P12 — age-appropriateness. LLM-judged.,

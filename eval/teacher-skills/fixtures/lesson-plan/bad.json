@@ -1,0 +1,60 @@
+{
+  "_comment": "SYNTHETIC fixture (hand-written, no real student data). DELIBERATELY FAILING lesson artifact: grade is an INTEGER 8 (fails A2a / P5), no *_hi field anywhere (fails A1 / P7), merged learning goal (fails P3), only one vague misconception (fails P4a/P4b), no phase timings (fails P5), vague prerequisite (fails P2), teacher-only content on the student page (fails O2), generic look-fors (fails P6b).",
+  "conditions": [],
+  "artifact": {
+    "shared": {
+      "grade": 8,
+      "subject": "math",
+      "language": "en",
+      "duration": 40,
+      "title": "Discounts Lesson",
+      "objective_text": "Students will learn about percentages and discounts.",
+      "learning_goal": "Students will learn about discounts.",
+      "prerequisite": "Students should have some background in percentages.",
+      "phases": [
+        { "name": "Introduction" },
+        { "name": "Practice" },
+        { "name": "Wrap up" }
+      ],
+      "misconceptions": {
+        "type": "table",
+        "headers": ["What students do"],
+        "rows": [["Students may get confused about percentages."]]
+      },
+      "look_fors": [
+        "Circulate and check for understanding.",
+        "Make sure students are on task."
+      ]
+    },
+    "documents": [
+      {
+        "id": "lesson_plan",
+        "audience": "teacher",
+        "title": "Discounts Lesson",
+        "sections": [
+          {
+            "heading": "Plan",
+            "blocks": [
+              { "type": "labeled", "label": "Goal", "text": "Teach discounts. This lesson is well-structured." }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "student_materials",
+        "audience": "student",
+        "title": "Worksheet",
+        "sections": [
+          {
+            "heading": "Problems",
+            "blocks": [
+              { "type": "task", "text": "Q1. Find 25% of 800." },
+              { "type": "task", "text": "Q2. Find 10% of 600." },
+              { "type": "teacher_note", "text": "Answer key: Q1 = 200, Q2 = 60. The teacher distributes calculators and circulates to check for misconceptions." }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

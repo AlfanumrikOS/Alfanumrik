@@ -1,0 +1,35 @@
+{
+  "_comment": "SYNTHETIC fixture (hand-written, no real student data). DELIBERATELY FAILING quiz-generator batch — every QZ deterministic check has at least one violation to catch: batch grade is an INTEGER 9 (fails QZ-P5); q1 has template residue '{{topic}}' (fails QZ-P6a) and only 3 options (fails QZ-P6b); q2 has case-insensitive duplicate options (fails QZ-P6c) and correct_answer_index 4 (fails QZ-P6d); q3 has an empty explanation (fails QZ-P6e), difficulty 'very-hard' and bloom_level 'memorize' (fails QZ-P6f); distractors in q2 are absurd (fails QZ-R1 under the LLM judge).",
+  "conditions": [],
+  "artifact": {
+    "grade": 9,
+    "subject": "math",
+    "chapter": "Polynomials",
+    "questions": [
+      {
+        "question_text": "What is the degree of {{topic}} in the expression above?",
+        "options": ["3", "2", "7"],
+        "correct_answer_index": 0,
+        "explanation": "The degree is the highest power.",
+        "difficulty": "easy",
+        "bloom_level": "understand"
+      },
+      {
+        "question_text": "If p(x) = x^2 - 3x + 2, what is p(2)?",
+        "options": ["0", "Zero", "zero", "the year 1947"],
+        "correct_answer_index": 4,
+        "explanation": "Substitute x = 2 to get 0.",
+        "difficulty": "medium",
+        "bloom_level": "apply"
+      },
+      {
+        "question_text": "Which of the following is NOT a polynomial?",
+        "options": ["x^2 + 1/x", "x^2 + x", "5", "x^3 - 2x + 1"],
+        "correct_answer_index": 0,
+        "explanation": "",
+        "difficulty": "very-hard",
+        "bloom_level": "memorize"
+      }
+    ]
+  }
+}

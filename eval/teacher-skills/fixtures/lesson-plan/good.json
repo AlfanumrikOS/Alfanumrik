@@ -1,0 +1,133 @@
+{
+  "_comment": "SYNTHETIC fixture (hand-written, no real student data, placeholder names only). Minimal lesson artifact following the upstream lesson.json shared/documents schema, adapted: NCERT objective instead of a CCSS standard; grade is the P5 string \"8\"; title_hi present (A1 bilingual readiness). Expected: PASS-leaning — all deterministic checks (A1, A2a) pass; LLM-judged criteria pass on a full-judge run.",
+  "conditions": [],
+  "chat_response": "Here is your complete lesson package: the teacher-facing lesson plan, the student worksheet, and the observation template. Two follow-up options I can build next: (1) a differentiated three-tier version of the worksheet for mixed-readiness groups, or (2) a Hindi-medium parallel worksheet for bilingual sections. Which would help most?",
+  "artifact": {
+    "shared": {
+      "grade": "8",
+      "subject": "math",
+      "language": "en",
+      "duration": 40,
+      "title": "Comparing Quantities: Finding the Better Discount",
+      "title_hi": "राशियों की तुलना: बेहतर छूट ज्ञात करना",
+      "objective_text": "Students understand percentage as a comparison tool and can compute the discounted price and discount percentage in real buying situations, including comparing two different discount offers on the same marked price.",
+      "objective_ref": "NCERT Class 8 Mathematics, Ch. 7 — Comparing Quantities (curriculum_topics: comparing-quantities-discount)",
+      "big_idea": "A percentage is a ratio out of 100, so two offers can only be compared fairly after converting both to the same base.",
+      "swbat": [
+        "compute a discounted price from a marked price and discount percent",
+        "compute the discount percent given marked price and sale price",
+        "decide which of two discount offers is better and justify the choice with percentages"
+      ],
+      "prerequisite": "Students can convert between fractions, decimals and percentages (NCERT Class 7 Maths Ch. 7 — Comparing Quantities: percentage as another way of comparing quantities).",
+      "anchor_task": {
+        "teacher": [
+          "Put the two offers on the board; keep the question covered.",
+          "Gut vote, then turn-and-talk: write one maths question that would settle it."
+        ],
+        "student": {
+          "type": "callout",
+          "kind": "student-task",
+          "label": "Try this together",
+          "text": "Two shops sell the same school bag with a marked price of Rs 800. Shop A offers '25% off'. Shop B offers 'Rs 180 off'. Circle the better offer, then write one maths question that would settle it for sure."
+        }
+      },
+      "phases": [
+        { "name": "Warm-up: percent-to-fraction sprint", "minutes": 5 },
+        { "name": "Launch: anchor task gut vote", "minutes": 5 },
+        { "name": "Explore: offer comparison problem set in pairs", "minutes": 15 },
+        { "name": "Discuss: turn-and-talk, then partner-compare of strategies", "minutes": 10 },
+        { "name": "Exit ticket", "minutes": 5 }
+      ],
+      "misconceptions": {
+        "type": "table",
+        "headers": ["What students do", "Why it happens", "Teacher move"],
+        "rows": [
+          [
+            "Treats 'Rs 180 off' as if it were '18% off' because both start with 18.",
+            "Rupee amounts and percentages are not yet distinguished as different comparison bases.",
+            "Ask: 180 out of how much? Convert the rupee discount to a percent of the marked price on a ratio table."
+          ],
+          [
+            "Computes 25% of the sale price instead of the marked price.",
+            "The base of a percentage is not anchored; 'of what' is dropped.",
+            "Have the student label the base explicitly before computing: 25% OF the marked price Rs 800."
+          ],
+          [
+            "Adds two successive discounts (10% then 20%) into a single 30% discount.",
+            "Percentages are treated as additive quantities regardless of changing base.",
+            "Work one concrete case: Rs 100 marked, 10% then 20%. Compare against a straight 30% and ask why they differ."
+          ]
+        ]
+      },
+      "look_fors": [
+        "Student converts 'Rs 180 off Rs 800' into a percent (22.5%) before comparing — shows base-anchored comparison; if instead they compare Rs 200 vs Rs 180 directly, that is also a valid strategy: listen for whether the base is named. Teacher move: ask 'out of what?'",
+        "Student labels the base ('of the marked price') when writing 25% computations — the lesson's core habit. Teacher move: praise the label aloud so pairs copy it.",
+        "Student checks the successive-discount trap item with a concrete rupee example rather than adding percents. Teacher move: if they added, point them to the ratio table from the warm-up.",
+        "Note: the anchor task admits multiple valid comparison strategies (percent both offers, or convert both to rupees) — either counts as correct; look-fors above name both."
+      ],
+      "visual_scaffold_rationale": "A blank ratio table (marked price to 100) is offered but NOT pre-filled: drawing the table themselves forces students to choose the base, which is exactly the concept under attack. The table is introduced only after the gut vote, so the visual serves sense-making, not answer-getting.",
+      "engagement_hook": "The anchor task is a real shop-window dilemma with a deliberately conflicting surface cue (Rs 180 'looks' bigger than 25% to some, smaller to others) — designed for a split gut vote that creates a need for the mathematics.",
+      "exit_ticket": {
+        "student": "A shirt is marked Rs 600. Offer 1: two successive discounts of 10% and then 10%. Offer 2: a single 20% discount. Which offer gives the lower price? Show your working and explain in one sentence why the two are not the same.",
+        "rationale": "Targets the structurally hardest case of the objective — successive discounts on a changing base — not the easiest single-discount computation."
+      },
+      "adaptation_notes": [
+        "Preserve: the anchor task's conflicting-cue design and the Discuss phase's student-to-student partner-compare — they carry the conceptual load; swapping to naked computation drills removes the objective's comparison demand.",
+        "Preserve: exit ticket on successive discounts (the hardest case); replacing it with a single-discount item would drop the rigor below the objective."
+      ]
+    },
+    "documents": [
+      {
+        "id": "lesson_plan",
+        "audience": "teacher",
+        "eyebrow": "Class 8 · Mathematics · Comparing Quantities",
+        "title": "Finding the Better Discount",
+        "title_hi": "बेहतर छूट ज्ञात करना",
+        "meta": "Class 8 · 40 minutes · NCERT Ch. 7",
+        "sections": [
+          {
+            "heading": "At a glance",
+            "blocks": [
+              { "type": "from_shared", "key": "objective_text" },
+              { "type": "labeled", "label": "Big idea", "text": "A percentage is a ratio out of 100, so two offers can only be compared fairly after converting both to the same base." },
+              { "type": "labeled", "label": "Lesson arc", "text": "Warm-up 5 min → Launch 5 → Explore 15 → Discuss 10 → Exit ticket 5 (40 min total)" }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "student_materials",
+        "audience": "student",
+        "title": "Discount Detective Worksheet",
+        "title_hi": "छूट जासूस कार्यपत्रक",
+        "sections": [
+          {
+            "heading": "Try this together",
+            "blocks": [
+              { "type": "from_shared", "key": "anchor_task" },
+              { "type": "task", "text": "Q1. A bag is marked Rs 800 at 25% off. What do you pay? Show your working in the space below.", "writing_space_lines": 4 },
+              { "type": "task", "text": "Q2. Another shop takes Rs 180 off the same Rs 800 bag. What percent discount is that? Show your working.", "writing_space_lines": 4 },
+              { "type": "task", "text": "Q3. Which offer is better? Explain your thinking in two sentences — you may use percentages or rupees, but say which base you compared on.", "writing_space_lines": 5 },
+              { "type": "reflection", "text": "Check your thinking: what strategy did you use to compare the two offers, and how confident are you (1-5)?", "writing_space_lines": 3 }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "observation_template",
+        "audience": "teacher",
+        "title": "Observation Sheet: Better Discount",
+        "rows": [
+          { "look_for": "Student names the base ('of the marked price') before computing a percent", "writing_space_lines": 3 },
+          { "look_for": "Student converts the rupee discount to a percent (or both offers to rupees) before comparing", "writing_space_lines": 3 },
+          { "look_for": "Student tests the successive-discount item with a concrete example instead of adding percents", "writing_space_lines": 3 }
+        ],
+        "exit_ticket_sort": {
+          "got_it": "Correct final prices for both offers AND the explanation names the changing base (second 10% acts on a smaller amount).",
+          "almost_there": "Correct computation for one offer, or correct prices with an explanation that does not mention the base.",
+          "needs_reteach": "Adds 10% + 10% = 20% and concludes the offers are equal."
+        }
+      }
+    ]
+  }
+}

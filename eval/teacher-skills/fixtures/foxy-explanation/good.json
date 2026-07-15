@@ -1,0 +1,17 @@
+{
+  "_comment": "SYNTHETIC fixture (hand-written, no real student data, no PII). A good Foxy 'explain' exchange: grounded in NCERT Class 8 Science, step-by-step, anticipates a misconception, gives the mechanism, cites the chapter, EN in / EN out, AI identity maintained. Expected: FX-O2 deterministic pass; LLM-judged criteria pass on a full-judge run.",
+  "conditions": [],
+  "chat_response": "Great question! Let's work through why we see lightning before we hear thunder, step by step.\n\nStep 1 — Two signals, one event. A lightning strike produces light and sound at the same moment.\n\nStep 2 — Very different speeds. Light travels extremely fast (about 300,000 km every second), while sound travels through air at only about 340 metres per second. This speed difference is the mechanism: both signals leave together, but light finishes the journey almost instantly while sound lags behind.\n\nStep 3 — The gap tells you the distance. Every 3 seconds of gap means the storm is roughly 1 kilometre away, because sound needs about 3 seconds to cover 1 km.\n\nCareful here — a common mix-up: it is NOT that thunder happens after lightning. They happen together; we just receive the light first.\n\nYou can read more in NCERT Class 8 Science, Chapter 13 (Sound) — especially the section on the speed of sound in different media.\n\nQuick check for you: if you count a 9-second gap, about how far is the storm? I'm an AI study buddy, so if you want to go deeper into how sound speed changes in water or steel, just ask — or check with your teacher for a class demonstration.",
+  "artifact": {
+    "mode": "explain",
+    "grade": "8",
+    "subject": "science",
+    "language": "en",
+    "student_question": "Why do we see lightning first and hear thunder later?",
+    "response": {
+      "text": "Great question! Let's work through why we see lightning before we hear thunder, step by step. Step 1 — Two signals, one event: a lightning strike produces light and sound at the same moment. Step 2 — Very different speeds: light travels about 300,000 km per second while sound travels through air at only about 340 metres per second; both signals leave together, but light arrives almost instantly while sound lags behind. Step 3 — The gap tells you the distance: every 3 seconds of gap means the storm is roughly 1 kilometre away. Careful here — a common mix-up: it is NOT that thunder happens after lightning; they happen together, we just receive the light first. Quick check: if you count a 9-second gap, about how far is the storm?",
+      "ncert_reference": "NCERT Class 8 Science, Ch. 13 — Sound (speed of sound in different media)",
+      "ai_identity_note": "I'm an AI study buddy — for a class demonstration, check with your teacher."
+    }
+  }
+}

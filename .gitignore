@@ -31,6 +31,10 @@ playwright/.cache/
 # scripts/rag-eval.mjs. Uploaded as CI artifacts; do not track in git.
 eval/rag/reports/
 
+# Teacher-skills eval run artefacts — per-run JSON reports written by
+# eval/teacher-skills/harness/report.ts. Do not track in git.
+eval/teacher-skills/reports/
+
 # stray build logs
 build-out.txt
 build-tmp.txt

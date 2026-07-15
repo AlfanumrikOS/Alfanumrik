@@ -8364,3 +8364,66 @@ qa-only TS filter, adapter never-throws degradation, and the
 **Total catalog: 222 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-256 — teacher-skills eval harness pins — P13 judge-prompt boundary, P6/P5 oracle parity, callClaude-only transport, exit-code policy (2026-07-15)
+
+Pins the offline teacher-skills eval harness (`eval/teacher-skills/`, adapted
+from Apache-2.0 anthropics/k12-teacher-skills@7c03c83; sibling of the REG-140
+RAG harness).
+
+Pins: (1) **P13 boundary** — an artifact with a PII-shaped key is verdict
+REVIEW with zero criteria evaluated and is NEVER serialized into a judge
+prompt (with `--judge` on the judge is a real external LLM call, so this is a
+data-exfiltration boundary); the harness has NO Supabase client and NO DB
+reads — synthetic/dev fixtures only, never production student data.
+(2) **Deterministic-before-LLM** — QZ-P6a..f/QZ-P5 checks mirror quiz-oracle
+`runDeterministicChecks` semantics (exactly-4 distinct options,
+`correct_answer_index` 0-3, placeholder regex, string difficulty enum
+easy|medium|hard, Bloom's six, grade strings "6"-"12") and are decided
+synchronously, never delegated to the judge. (3) **Transport** — judge calls
+go only through injected `callClaude` (`@alfanumrik/lib/ai`), no Anthropic
+SDK import, no direct api.anthropic.com, and NO model override ever passed
+(model changes are user-approval-gated). (4) **Exit-code policy** — 0 on a
+completed run (verdicts live in the report), 2 on operator/config error, and
+`--judge` on without config fails at the gate BEFORE any AI import.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-256 | `teacher_skills_eval_harness_p13_judge_boundary_oracle_parity_callclaude_transport_exit_codes` | (1) P13 boundary: an artifact carrying a PII-shaped key yields verdict REVIEW with zero criteria evaluated and is never serialized into a judge prompt; the harness has no Supabase client and no DB reads (synthetic/dev fixtures only). (2) Deterministic-before-LLM: QZ-P6a..f/QZ-P5 checks mirror quiz-oracle `runDeterministicChecks` semantics (exactly-4 distinct options, `correct_answer_index` 0-3, placeholder regex, string difficulty enum easy\|medium\|hard, Bloom's six, grade strings "6"-"12") and are decided synchronously, never delegated to the judge. (3) Transport: judge calls flow only through injected `callClaude` (`@alfanumrik/lib/ai`) — no Anthropic SDK import, no direct api.anthropic.com, no model override ever passed. (4) Exit codes: 0 on completed run, 2 on operator/config error; `--judge` without config fails at the gate before any AI import. | `apps/host/src/__tests__/eval/teacher-skills/` (5 files, 83 tests) | E | P13, P6/P5 parity (measurement-side), P12-adjacent |
+
+### Invariants covered by this section
+
+- P13 (data privacy) — a PII-shaped artifact key short-circuits to verdict
+  REVIEW with zero criteria evaluated and is never serialized into a judge
+  prompt; with `--judge` on the judge is a real external LLM call, so this is
+  a data-exfiltration boundary. The harness has no Supabase client and no DB
+  reads — synthetic/dev fixtures only, never production student data.
+- P6/P5 parity (measurement-side) — the harness's deterministic QZ checks
+  mirror the quiz-oracle `runDeterministicChecks` semantics exactly (option
+  count/distinctness, answer-index range, placeholder regex, string difficulty
+  enum, Bloom's six, grade strings "6"-"12"), so the eval harness cannot drift
+  into grading against a different quality/grade contract than production.
+- P12-adjacent (audited AI transport) — judge calls go only through the
+  injected `callClaude` from `@alfanumrik/lib/ai` with no model override, so
+  the user-approval gate on model changes cannot be bypassed from the harness;
+  `--judge` without config fails at the gate before any AI import.
+- Operational integrity — exit-code policy: 0 on completed run (verdicts live
+  in the report, never in the exit code), 2 on operator/config error.
+
+Assessment conditions tracked at merge: QZ-P6f string-difficulty sampling
+boundary vs the generator's integer-difficulty served path must be documented
+before grading real batches; A1 technical-term clause documented-or-split;
+foxy good-fixture grade-level calibration.
+
+### Catalog total
+
+Pre-REG-256: 222 entries (through REG-255, quiz-generator RAG retrieval
+single-source pin).
+Adds REG-256 (teacher-skills eval harness pins — P13 judge-prompt boundary
+[PII-shaped key → REVIEW, zero criteria, never serialized to the judge; no
+Supabase client / no DB reads], deterministic-before-LLM QZ-P6a..f/QZ-P5
+oracle parity, callClaude-only transport with no model override, and the
+0/2 exit-code policy with the `--judge`-without-config pre-AI-import gate).
+**Total catalog: 223 entries (target: 35 — TARGET EXCEEDED).**
+
+---

@@ -19,6 +19,7 @@
     "supabase:gen-types": "npm run supabase:gen-types --workspaces --if-present",
     "supabase:check-types": "npm run supabase:check-types --workspaces --if-present",
     "gen:openapi": "node scripts/gen-openapi.mjs",
-    "gen:openapi:check": "node scripts/gen-openapi.mjs --check"
+    "gen:openapi:check": "node scripts/gen-openapi.mjs --check",
+    "eval:teacher:harness": "npm run eval:teacher:harness -w apps/host --"
   }
 }

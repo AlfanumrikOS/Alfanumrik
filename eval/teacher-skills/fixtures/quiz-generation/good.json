@@ -1,0 +1,38 @@
+{
+  "_comment": "SYNTHETIC fixture (hand-written, no real student data). A good quiz-generator batch: grade is the P5 string \"9\", every question satisfies P6 (non-empty template-free text, exactly 4 distinct non-empty options, correct_answer_index 0-3, non-empty explanation, canonical difficulty easy|medium|hard and bloom_level). Expected: all QZ deterministic checks pass; LLM-judged criteria pass on a full-judge run.",
+  "conditions": [],
+  "artifact": {
+    "grade": "9",
+    "subject": "math",
+    "chapter": "Polynomials",
+    "questions": [
+      {
+        "question_text": "What is the degree of the polynomial 4x^3 - 2x^2 + 7?",
+        "options": ["3", "2", "7", "4"],
+        "correct_answer_index": 0,
+        "explanation": "The degree of a polynomial is the highest power of the variable with a non-zero coefficient. The highest power of x here is 3 (in 4x^3), so the degree is 3. It is not 2 (that is just another exponent present), not 7 (that is the constant term), and not 4 (that is a coefficient).",
+        "difficulty": "easy",
+        "bloom_level": "understand",
+        "grade": "9"
+      },
+      {
+        "question_text": "If p(x) = x^2 - 3x + 2, what is the value of p(2)?",
+        "options": ["0", "2", "4", "-2"],
+        "correct_answer_index": 0,
+        "explanation": "Substitute x = 2: p(2) = (2)^2 - 3(2) + 2 = 4 - 6 + 2 = 0. Since p(2) = 0, x = 2 is a zero of the polynomial. The distractors come from sign or substitution slips: 2 from dropping the -3x term's product, 4 from stopping at 2^2, and -2 from computing 4 - 6 and forgetting the +2.",
+        "difficulty": "medium",
+        "bloom_level": "apply",
+        "grade": "9"
+      },
+      {
+        "question_text": "Which of the following expressions is NOT a polynomial?",
+        "options": ["x^2 + 1/x", "x^2 + x", "5", "x^3 - 2x + 1"],
+        "correct_answer_index": 0,
+        "explanation": "A polynomial allows only whole-number (non-negative integer) powers of the variable. The term 1/x equals x^(-1), a negative power, so x^2 + 1/x is not a polynomial. A constant like 5 IS a polynomial (degree 0), which is the tempting trap among the distractors.",
+        "difficulty": "medium",
+        "bloom_level": "analyze",
+        "grade": "9"
+      }
+    ]
+  }
+}
