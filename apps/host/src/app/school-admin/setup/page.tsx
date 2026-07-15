@@ -563,7 +563,7 @@ function Step3InviteCodes({
                       {ic.code}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
-                      <Badge color={ic.role === 'teacher' ? '#7C3AED' : '#F97316'}>
+                      <Badge color={ic.role === 'teacher' ? '#7C3AED' : '#E8581C'}>
                         {ic.role === 'teacher'
                           ? t(isHi, 'Teacher', 'शिक्षक')
                           : t(isHi, 'Student', 'छात्र')}
@@ -694,7 +694,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
       </Card>
 
       {/* Invite Codes Summary */}
-      <Card accent="#F97316">
+      <Card accent="#E8581C">
         <h3 className="text-sm font-bold text-[var(--text-3)] uppercase tracking-wider mb-3">
           {t(isHi, `Invite Codes (${inviteCodes.length})`, `आमंत्रण कोड (${inviteCodes.length})`)}
         </h3>
@@ -712,7 +712,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
                 >
                   {ic.code}
                 </span>
-                <Badge color={ic.role === 'teacher' ? '#7C3AED' : '#F97316'}>
+                <Badge color={ic.role === 'teacher' ? '#7C3AED' : '#E8581C'}>
                   {ic.role}
                 </Badge>
               </div>

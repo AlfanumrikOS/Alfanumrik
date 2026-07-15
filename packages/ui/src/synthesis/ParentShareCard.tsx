@@ -66,7 +66,7 @@ export default function ParentShareCard(props: ParentShareCardProps) {
           onClick={() => setTab('en')}
           className="px-3 py-1 font-semibold transition-colors"
           style={{
-            background: tab === 'en' ? '#F97316' : '#fff',
+            background: tab === 'en' ? '#E8581C' : '#fff',
             color: tab === 'en' ? '#fff' : '#9A3412',
           }}
           data-testid="parent-share-tab-en"
@@ -78,7 +78,7 @@ export default function ParentShareCard(props: ParentShareCardProps) {
           onClick={() => setTab('hi')}
           className="px-3 py-1 font-semibold transition-colors"
           style={{
-            background: tab === 'hi' ? '#F97316' : '#fff',
+            background: tab === 'hi' ? '#E8581C' : '#fff',
             color: tab === 'hi' ? '#fff' : '#9A3412',
           }}
           data-testid="parent-share-tab-hi"

@@ -202,7 +202,7 @@ export default function ProgressSection({
               <div
                 className="font-semibold"
                 style={{
-                  fontFamily: 'var(--font-serif)',
+                  fontFamily: 'var(--font-display)',
                   fontSize: 'var(--text-lg)',
                   color: '#C32E2E',
                 }}

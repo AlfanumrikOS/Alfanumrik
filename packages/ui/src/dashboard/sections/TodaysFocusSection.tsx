@@ -192,7 +192,7 @@ export default function TodaysFocusSection({
               router.push('/learn');
             }}
             className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
-            style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)' }}
+            style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)' }}
           >
             📚 {isHi ? 'पढ़ना शुरू करो →' : 'Start Learning →'}
           </button>

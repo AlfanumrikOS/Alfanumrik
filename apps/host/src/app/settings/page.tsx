@@ -52,7 +52,7 @@ function ToggleSwitch({
       onClick={() => onChange(!checked)}
       className="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       style={{
-        background: checked ? 'var(--orange, #F97316)' : 'var(--surface-2, #e5e7eb)',
+        background: checked ? 'var(--orange, #E8581C)' : 'var(--surface-2, #e5e7eb)',
         /* ring color when focused */
       }}
     >
@@ -276,7 +276,7 @@ export default function SettingsPage() {
           {/* Avatar circle */}
           <div
             className="w-14 h-14 rounded-full flex items-center justify-center text-white text-lg font-bold shrink-0 select-none"
-            style={{ background: 'linear-gradient(135deg, var(--orange, #F97316), var(--purple, #7C3AED))' }}
+            style={{ background: 'linear-gradient(135deg, var(--orange, #E8581C), var(--purple, #7C3AED))' }}
             aria-hidden="true"
           >
             {initials}
@@ -295,7 +295,7 @@ export default function SettingsPage() {
             <Link
               href="/onboarding"
               className="text-xs font-semibold mt-1.5 inline-block"
-              style={{ color: 'var(--orange, #F97316)' }}
+              style={{ color: 'var(--orange, #E8581C)' }}
             >
               {isHi ? 'प्रोफ़ाइल संपादित करें →' : 'Edit profile →'}
             </Link>
@@ -312,7 +312,7 @@ export default function SettingsPage() {
               language === 'en' ? (
                 <span
                   className="text-xs font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--orange, #F97316)', color: '#fff' }}
+                  style={{ background: 'var(--orange, #E8581C)', color: '#fff' }}
                 >
                   {isHi ? 'चुना गया' : 'Selected'}
                 </span>
@@ -326,7 +326,7 @@ export default function SettingsPage() {
               language === 'hi' ? (
                 <span
                   className="text-xs font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: 'var(--orange, #F97316)', color: '#fff' }}
+                  style={{ background: 'var(--orange, #E8581C)', color: '#fff' }}
                 >
                   चुना गया
                 </span>

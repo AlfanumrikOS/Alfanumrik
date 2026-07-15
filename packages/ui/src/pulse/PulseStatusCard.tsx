@@ -165,7 +165,7 @@ export default function PulseStatusCard({
               icon="⭐"
               label="XP"
               value={Number(vitals!.xp).toLocaleString()}
-              color="#F97316"
+              color="#E8581C"
             />
           )}
           {showLevel && (

@@ -669,7 +669,7 @@ export const NULL_TENANT: TenantContext = {
   branding: {
     logoUrl: null,
     primaryColor: '#7C3AED',
-    secondaryColor: '#F97316',
+    secondaryColor: '#E8581C',
     tagline: null,
     faviconUrl: null,
     showPoweredBy: false,

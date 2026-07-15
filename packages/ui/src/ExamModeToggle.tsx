@@ -151,13 +151,13 @@ export default function ExamModeToggle({
           <>
             {/* Level */}
             <div className="flex-1 min-w-0 p-3 rounded-xl text-center" style={{ background: '#FFF8F0' }}>
-              <p className="text-xl font-black" style={{ color: 'var(--orange, #F97316)' }}>Lv.{level}</p>
+              <p className="text-xl font-black" style={{ color: 'var(--orange, #E8581C)' }}>Lv.{level}</p>
               <p className="text-[10px]" style={{ color: 'var(--text-2)' }}>{levelName}</p>
             </div>
 
             {/* Streak */}
             <div className="flex-1 min-w-0 p-3 rounded-xl text-center" style={{ background: '#FFF8F0' }}>
-              <p className="text-xl font-black" style={{ color: '#F97316' }}>🔥 {streak}</p>
+              <p className="text-xl font-black" style={{ color: '#E8581C' }}>🔥 {streak}</p>
               <p className="text-[10px]" style={{ color: 'var(--text-2)' }}>
                 {isHi ? 'स्ट्रीक' : 'Streak'}
               </p>

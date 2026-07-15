@@ -299,7 +299,7 @@ export default function TeacherClassesPage() {
     return (
       <div style={pageStyle}>
         <div style={{ textAlign: 'center', padding: 80, color: '#7D7264' }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: '#E8581C', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
+          <div style={{ width: 40, height: 40, border: '3px solid #F5F0EA', borderTopColor: 'var(--orange)', borderRadius: '50%', margin: '0 auto 16px', animation: 'spin 0.8s linear infinite' }} />
           {tt(isHi, 'Loading classes...', 'कक्षाएं लोड हो रही हैं...')}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -369,7 +369,7 @@ export default function TeacherClassesPage() {
           fontSize: 14,
         }}>
           {error}
-          <button onClick={loadClasses} style={{ marginLeft: 12, color: '#E8581C', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+          <button onClick={loadClasses} style={{ marginLeft: 12, color: 'var(--orange)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
             {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
         </div>
@@ -539,7 +539,7 @@ export default function TeacherClassesPage() {
                   }}>
                     <div>
                       <span style={{ fontSize: 11, color: '#7D7264', display: 'block' }}>{tt(isHi, 'Class Code', 'कक्षा कोड')}</span>
-                      <span style={{ fontSize: 16, fontWeight: 700, color: '#E8581C', fontFamily: 'monospace', letterSpacing: 1.5 }}>
+                      <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--orange)', fontFamily: 'monospace', letterSpacing: 1.5 }}>
                         {cls.class_code}
                       </span>
                     </div>
@@ -547,7 +547,7 @@ export default function TeacherClassesPage() {
                       onClick={() => copyClassCode(cls.class_code, cls.id)}
                       style={{
                         padding: '6px 12px',
-                        backgroundColor: isCopied ? '#059669' : '#E8581C',
+                        backgroundColor: isCopied ? '#059669' : 'var(--orange)',
                         color: '#fff',
                         border: 'none',
                         borderRadius: 6,
@@ -568,7 +568,7 @@ export default function TeacherClassesPage() {
                       onClick={() => toggleExpand(cls.id)}
                       style={{
                         padding: '7px 14px',
-                        backgroundColor: isExpanded ? '#E8581C' : 'transparent',
+                        backgroundColor: isExpanded ? 'var(--orange)' : 'transparent',
                         color: isExpanded ? '#fff' : '#E8581C',
                         border: '1px solid #E8581C',
                         borderRadius: 7,
@@ -705,7 +705,7 @@ export default function TeacherClassesPage() {
                                 <span style={{ color: '#1A1207', fontWeight: 500 }}>{s.name}</span>
                                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                                   <span style={{ color: '#F59E0B', fontSize: 12, fontWeight: 600 }}>{s.xp != null ? `${s.xp} XP` : '\u2014'}</span>
-                                  <span style={{ color: '#E8581C', fontSize: 12, fontWeight: 600 }}>{s.mastery != null ? `${s.mastery}%` : '\u2014'}</span>
+                                  <span style={{ color: 'var(--orange)', fontSize: 12, fontWeight: 600 }}>{s.mastery != null ? `${s.mastery}%` : '\u2014'}</span>
                                 </div>
                               </div>
                             ))}

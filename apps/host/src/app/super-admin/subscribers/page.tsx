@@ -27,6 +27,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
 
 const colors = {
   bg: '#FFFFFF',
@@ -82,6 +83,7 @@ function lagColor(seconds: number | null): string {
 
 function SubscribersInner() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<SubscriberRow[]>([]);
@@ -113,7 +115,7 @@ function SubscribersInner() {
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        <h1 className="text-lg font-bold text-foreground m-0">Subscribers</h1>
+        <h1 className="text-lg font-bold text-foreground m-0">{isHi ? 'इवेंट रनटाइम' : 'Event Runtime'}</h1>
         <p style={{ fontSize: 12, color: colors.text2, margin: '4px 0 0' }}>
           State-event runtime cursors. Replay moves cursors BACKWARD so subscribers
           reprocess events. Dead-letters can be retried by deleting them.

@@ -28,7 +28,12 @@ export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
   // useReviewCards is the existing spaced-repetition reader; we use only its
   // length for a glanceable count. ReviewsDueCard owns the primary CTA.
   const { data: reviewCards, isLoading, error } = useReviewCards(studentId, 20);
-  const dueCount = Array.isArray(reviewCards) ? reviewCards.length : 0;
+  // `loaded` = the fetch genuinely resolved with an array payload. dueCount
+  // falls back to 0 while loading / on error, so the reassuring "nothing due"
+  // copy below MUST additionally require `loaded && !error` — otherwise a failed
+  // fetch (or the initial pre-data render) would masquerade as "all caught up".
+  const loaded = Array.isArray(reviewCards);
+  const dueCount = loaded ? reviewCards!.length : 0;
 
   return (
     <section
@@ -69,7 +74,10 @@ export default function RevisionRail({ isHi, studentId }: RevisionRailProps) {
           {/* ReviewsDueCard renders the CTA or null (when 0 due). */}
           <ReviewsDueCard />
 
-          {dueCount === 0 && (
+          {/* Only assert "nothing due — nice work" on a genuine success
+              (fetch resolved, no error, empty array). Never let a failed or
+              in-flight fetch look like the student is all caught up. */}
+          {!error && loaded && dueCount === 0 && (
             <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
               {isHi
                 ? 'अभी कोई दोहराव बाकी नहीं — बढ़िया! नए पाठ पर ध्यान दो।'

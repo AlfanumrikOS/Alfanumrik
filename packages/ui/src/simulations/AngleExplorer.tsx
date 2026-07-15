@@ -28,7 +28,7 @@ const GRID_COLOR = '#F5F0EB';
 const RAY_COLOR = '#1C1917';
 const PROTRACTOR_COLOR = 'rgba(147, 51, 234, 0.08)';
 const PROTRACTOR_STROKE = 'rgba(147, 51, 234, 0.25)';
-const BRAND_ORANGE = '#F97316';
+const BRAND_ORANGE = '#E8581C';
 const BRAND_PURPLE = '#9333EA';
 
 const SNAP_ANGLES = [0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330, 360];

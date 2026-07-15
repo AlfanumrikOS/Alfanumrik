@@ -155,7 +155,7 @@ function SchoolsContent() {
               'AI-संचालित शिक्षा से'
             )}
             <br />
-            <span style={{ color: '#F97316' }}>
+            <span style={{ color: '#E8581C' }}>
               {t('AI-Powered Learning', 'अपने स्कूल को बदलें')}
             </span>
           </h1>
@@ -171,7 +171,7 @@ function SchoolsContent() {
           <button
             onClick={scrollToForm}
             className="text-sm font-bold px-8 py-3.5 rounded-xl text-white mt-4"
-            style={{ background: 'linear-gradient(135deg, #7C3AED, #F97316)', minHeight: 44, minWidth: 44 }}
+            style={{ background: 'linear-gradient(135deg, #7C3AED, #E8581C)', minHeight: 44, minWidth: 44 }}
           >
             {t('Start Free Trial', 'मुफ्त ट्रायल शुरू करें')}
           </button>
@@ -277,9 +277,9 @@ function SchoolsContent() {
 
             <div
               className="rounded-xl p-4 text-center"
-              style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.15)' }}
+              style={{ background: 'rgba(232,88,28,0.06)', border: '1px solid rgba(232,88,28,0.15)' }}
             >
-              <p className="text-sm font-bold" style={{ color: '#F97316' }}>
+              <p className="text-sm font-bold" style={{ color: '#E8581C' }}>
                 {t(
                   'Free 30-day trial with 50 seats — no credit card required',
                   'मुफ्त 30-दिन ट्रायल 50 सीटों के साथ — क्रेडिट कार्ड नहीं चाहिए'
@@ -612,7 +612,7 @@ function TrialForm() {
         style={{
           background: submitting
             ? 'var(--text-3, #999)'
-            : 'linear-gradient(135deg, #7C3AED, #F97316)',
+            : 'linear-gradient(135deg, #7C3AED, #E8581C)',
           minHeight: 44,
           opacity: submitting ? 0.7 : 1,
           cursor: submitting ? 'not-allowed' : 'pointer',

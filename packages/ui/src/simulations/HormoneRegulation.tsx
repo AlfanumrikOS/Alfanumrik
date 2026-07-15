@@ -88,16 +88,16 @@ export default function HormoneRegulation() {
           return null;
         })}
         <line x1={300 + 60} y1={180 + 14} x2={300 + 60} y2={30 + 14}
-          stroke="#F97316" strokeWidth={2} strokeDasharray="5,3" opacity={0.7}
+          stroke="#E8581C" strokeWidth={2} strokeDasharray="5,3" opacity={0.7}
           markerEnd="url(#fbarrow)" />
-        <text x={400} y={105} fontSize={10} fill="#F97316" fontWeight={700}>Negative</text>
-        <text x={400} y={118} fontSize={10} fill="#F97316" fontWeight={700}>Feedback</text>
+        <text x={400} y={105} fontSize={10} fill="#E8581C" fontWeight={700}>Negative</text>
+        <text x={400} y={118} fontSize={10} fill="#E8581C" fontWeight={700}>Feedback</text>
         <defs>
           <marker id="harrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
             <path d="M0,0 L0,6 L6,3 z" fill={isLow ? '#4CAF50' : '#E53935'} />
           </marker>
           <marker id="fbarrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M0,0 L0,6 L6,3 z" fill="#F97316" />
+            <path d="M0,0 L0,6 L6,3 z" fill="#E8581C" />
           </marker>
         </defs>
         {s.nodes.map(n => (
@@ -108,7 +108,7 @@ export default function HormoneRegulation() {
           </g>
         ))}
         <circle cx={dotX + 60} cy={dotY + 14} r={7} fill="#1565C0" opacity={0.85} />
-        <circle cx={fbDot[0] + 60} cy={fbDot[1] + 14} r={5} fill="#F97316" opacity={0.7} />
+        <circle cx={fbDot[0] + 60} cy={fbDot[1] + 14} r={5} fill="#E8581C" opacity={0.7} />
         <text x={16} y={220} fontSize={11} fill={isLow ? '#C62828' : '#1565C0'} fontWeight={700}>
           Hormone level: {isLow ? 'LOW → ↑ signals' : isHigh ? 'HIGH → ↓ signals (feedback)' : 'NORMAL'}
         </text>
@@ -122,7 +122,7 @@ export default function HormoneRegulation() {
       <div style={{ marginTop: 8, padding: '6px 10px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 12, color: 'var(--text-2)' }}>
         {s.feedback}
       </div>
-      <div style={{ marginTop: 8, padding: '8px 12px', background: '#FFF3E0', borderRadius: 8, fontSize: 13, color: '#E65100', borderLeft: '3px solid #F97316' }}>
+      <div style={{ marginTop: 8, padding: '8px 12px', background: '#FFF3E0', borderRadius: 8, fontSize: 13, color: '#E65100', borderLeft: '3px solid #E8581C' }}>
         Negative feedback: <strong>output inhibits input</strong> → maintains homeostasis
       </div>
     </div>

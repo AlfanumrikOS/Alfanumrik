@@ -293,7 +293,7 @@ function AlfabotDashboardInner() {
     if (!stats) return [];
     return [
       { label: 'Parent', value: stats.audienceMix.parent, color: '#7C3AED' },
-      { label: 'Student', value: stats.audienceMix.student, color: '#F97316' },
+      { label: 'Student', value: stats.audienceMix.student, color: '#E8581C' },
       { label: 'Teacher', value: stats.audienceMix.teacher, color: '#22C55E' },
       { label: 'School', value: stats.audienceMix.school, color: '#3B82F6' },
     ];
@@ -339,7 +339,7 @@ function AlfabotDashboardInner() {
       {/* ── 1. Today at a glance ──────────────────────────────────────── */}
       <section className="mb-6 grid grid-cols-4 gap-3">
         <StatCard label="Sessions today" value={stats.today.sessions} accentColor="#7C3AED" />
-        <StatCard label="Messages today" value={stats.today.messages} accentColor="#F97316" />
+        <StatCard label="Messages today" value={stats.today.messages} accentColor="#E8581C" />
         <StatCard
           label="Estimated spend"
           value={formatUsd(stats.today.spendUsd)}
@@ -394,7 +394,7 @@ function AlfabotDashboardInner() {
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Messages / day — last 30d
           </div>
-          <Sparkline values={trendMessages} stroke="#F97316" width={260} height={40} />
+          <Sparkline values={trendMessages} stroke="#E8581C" width={260} height={40} />
           <div className="mt-1 text-[11px] text-muted-foreground">
             Peak {Math.max(0, ...trendMessages).toLocaleString()} · today {stats.today.messages.toLocaleString()}
           </div>

@@ -492,7 +492,7 @@ function LegacyProgressPage() {
       <header className="page-header">
         <div className="page-header-inner flex items-center gap-3">
           <button onClick={() => router.push('/dashboard')} className="text-[var(--text-3)] p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>&larr;</button>
-          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-serif)' }}>
+          <h1 className="text-lg font-bold" style={{ fontFamily: 'var(--font-display)' }}>
             {isHi ? 'प्रगति' : 'Progress'}
           </h1>
           {/* Foxy Coins in header */}

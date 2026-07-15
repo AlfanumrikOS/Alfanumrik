@@ -25,7 +25,7 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   quiz_result: { icon: '⚡', color: '#D97706', label: 'Quiz', labelHi: 'क्विज़' },
   // Phase A Loop A — adaptive remediation (En in title/body; Hindi rides
   // data.title_hi / data.body_hi per the house pattern — rendered below).
-  remediation_assigned: { icon: '🦊', color: '#F97316', label: 'Extra Practice', labelHi: 'अतिरिक्त अभ्यास' },
+  remediation_assigned: { icon: '🦊', color: '#E8581C', label: 'Extra Practice', labelHi: 'अतिरिक्त अभ्यास' },
   remediation_recovered: { icon: '🎉', color: '#16A34A', label: 'Comeback', labelHi: 'वापसी' },
   remediation_escalated: { icon: '🤝', color: '#F59E0B', label: 'Extra Help', labelHi: 'अतिरिक्त मदद' },
   // Phase A Loop B — inactivity / re-engagement (En in title/body; Hindi rides
@@ -39,7 +39,7 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   concentration_reescalated: { icon: '🔁', color: '#DC2626', label: 'Still At Risk', labelHi: 'अब भी जोखिम में' },
   // First-quiz nudge — sent by daily-cron to students who completed onboarding
   // but never took a quiz. Deep-link: /diagnostic.
-  first_quiz_nudge: { icon: '🚀', color: '#F97316', label: 'Get Started', labelHi: 'शुरू करो' },
+  first_quiz_nudge: { icon: '🚀', color: '#E8581C', label: 'Get Started', labelHi: 'शुरू करो' },
   // Loop B engagement — streak about to break (daily-cron early-warning nudge).
   streak_at_risk: { icon: '🔥', color: '#EF4444', label: 'Streak at Risk', labelHi: 'स्ट्रीक खतरे में' },
 };

@@ -79,7 +79,7 @@ const spinnerStyle: React.CSSProperties = {
   width: 40,
   height: 40,
   border: '3px solid #EDE6DC',
-  borderTopColor: '#E8581C',
+  borderTopColor: 'var(--orange)',
   borderRadius: '50%',
   margin: '0 auto 16px',
   animation: 'spin 0.8s linear infinite',
@@ -269,10 +269,10 @@ function ClassOverviewTab({ data, isHi }: { data: OverviewData | null; isHi: boo
               {topPerformers.slice(0, 5).map((s: PerformerEntry, i: number) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', backgroundColor: '#F5F0EA', borderRadius: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: '#E8581C', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
+                    <span style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: 'var(--orange)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
                     <span style={{ fontSize: 14, fontWeight: 500, color: '#1A1207' }}>{s.name || s.student_name}</span>
                   </div>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: '#E8581C' }}>{s.xp ?? s.total_xp ?? 0} XP</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--orange)' }}>{s.xp ?? s.total_xp ?? 0} XP</span>
                 </div>
               ))}
             </div>
@@ -448,8 +448,8 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
           {(profile.recommendations || profile.recommendation) && (() => {
             const recs = profile.recommendations || profile.recommendation;
             return (
-              <div style={{ ...cardStyle, borderLeft: '3px solid #E8581C' }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#E8581C', margin: '0 0 8px' }}>{tt(isHi, 'Recommendations', 'सुझाव')}</h3>
+              <div style={{ ...cardStyle, borderLeft: '3px solid var(--orange)' }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--orange)', margin: '0 0 8px' }}>{tt(isHi, 'Recommendations', 'सुझाव')}</h3>
                 {typeof recs === 'string' ? (
                   <p style={{ color: '#4A3F2E', fontSize: 13, margin: 0, lineHeight: 1.6 }}>
                     {recs}
@@ -511,7 +511,7 @@ function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
                     <span style={{ fontSize: 13, color: '#7D7264' }}>{pct}%</span>
                   </div>
                   <div style={{ height: 12, backgroundColor: '#F5F0EA', borderRadius: 6, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: '#E8581C', borderRadius: 6, transition: 'width 0.5s ease' }} />
+                    <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: 'var(--orange)', borderRadius: 6, transition: 'width 0.5s ease' }} />
                   </div>
                 </div>
               );
@@ -685,7 +685,7 @@ export default function TeacherReportsPage() {
         <div>
           <button
             onClick={() => router.push('/teacher')}
-            style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#E8581C', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            style={{ background: 'rgba(232,88,28,0.12)', border: 'none', borderRadius: 6, padding: '4px 10px', color: 'var(--orange)', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
             &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
           </button>
@@ -696,7 +696,7 @@ export default function TeacherReportsPage() {
         </div>
         <button
           onClick={loadData}
-          style={{ padding: '8px 16px', background: 'transparent', color: '#E8581C', border: '1px solid #E8581C', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+          style={{ padding: '8px 16px', background: 'transparent', color: 'var(--orange)', border: '1px solid var(--orange)', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
         >
           {tt(isHi, 'Refresh', 'रिफ्रेश')}
         </button>
@@ -708,7 +708,7 @@ export default function TeacherReportsPage() {
           {error}
           <button
             onClick={loadData}
-            style={{ display: 'block', margin: '10px auto 0', padding: '6px 16px', backgroundColor: '#E8581C', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
+            style={{ display: 'block', margin: '10px auto 0', padding: '6px 16px', backgroundColor: 'var(--orange)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
           >
             {tt(isHi, 'Retry', 'पुनः प्रयास')}
           </button>
@@ -729,7 +729,7 @@ export default function TeacherReportsPage() {
               border: 'none',
               borderRadius: 8,
               cursor: 'pointer',
-              backgroundColor: tab === t.id ? '#E8581C' : 'transparent',
+              backgroundColor: tab === t.id ? 'var(--orange)' : 'transparent',
               color: tab === t.id ? '#fff' : '#7D7264',
               transition: 'all 0.2s ease',
             }}

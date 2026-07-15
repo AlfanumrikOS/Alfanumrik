@@ -49,25 +49,31 @@ export async function tickOne(
 
   const cursor = await readSubscriberOffset(sb, sub.name);
 
-  // Fetch events with occurred_at >= cursor.lastOccurredAt; we filter the
-  // boundary tie (occurred_at = cursor + event_id <= last) in JS to keep the
-  // predicate simple. Over-fetch by 1 to absorb the boundary row.
+  // Order the bus by `created_at` — the server-set, monotonic INGESTION time —
+  // NOT by caller-supplied `occurred_at`. occurred_at can be any value the
+  // publisher chose; on 2026-07-13 a row stamped occurred_at=2032 permanently
+  // advanced a live subscriber's watermark past every real event (they sorted
+  // below it and were silently skipped). created_at reflects true ingestion
+  // order, so a weird occurred_at can neither reorder nor skip real events.
+  // Cursor tuple is (created_at, event_id); we filter the boundary tie in JS.
+  // Over-fetch by 1 to absorb the boundary row.
+  const cursorCreatedAt = cursor.lastCreatedAt ?? cursor.lastOccurredAt;
   const { data: rows, error } = await sb
     .from('state_events')
     .select('*')
     .eq('kind', sub.kind)
-    .gte('occurred_at', cursor.lastOccurredAt)
-    .order('occurred_at', { ascending: true })
+    .gte('created_at', cursorCreatedAt)
+    .order('created_at', { ascending: true })
     .order('event_id', { ascending: true })
     .limit(batchSize + 1);
 
   if (error) throw new Error(`tick-one: fetch failed for ${sub.name}: ${error.message}`);
 
   const events = (rows ?? []).filter(r => {
-    const occ = r.occurred_at as string;
+    const created = r.created_at as string;
     const id = r.event_id as string;
-    if (occ > cursor.lastOccurredAt) return true;
-    if (occ === cursor.lastOccurredAt) return id > (cursor.lastEventId ?? ZERO_UUID);
+    if (created > cursorCreatedAt) return true;
+    if (created === cursorCreatedAt) return id > (cursor.lastEventId ?? ZERO_UUID);
     return false;
   }).slice(0, batchSize);
 
@@ -79,6 +85,9 @@ export async function tickOne(
     const event = parseEventRow(row);
     const rowEventId = ((row as Record<string, unknown>).event_id ?? null) as string | null;
     const rowOccurredAt = ((row as Record<string, unknown>).occurred_at ?? null) as string | null;
+    // Ingestion time drives the cursor; fall back to occurred_at if a legacy row
+    // predates the created_at column (backfilled by migration, but defensive).
+    const rowCreatedAt = ((row as Record<string, unknown>).created_at ?? rowOccurredAt) as string | null;
 
     if (!event) {
       // Schema-parse failure. Treat as a handler failure so the row flows
@@ -106,7 +115,7 @@ export async function tickOne(
         await insertDeadLetter(sb, rowEventId, sub.name, newCount, errMsg);
         await clearRetryState(sb, rowEventId, sub.name);
         deadLettered += 1;
-        advanceTo = { lastEventId: rowEventId, lastOccurredAt: rowOccurredAt };
+        advanceTo = { lastEventId: rowEventId, lastOccurredAt: rowOccurredAt, lastCreatedAt: rowCreatedAt ?? rowOccurredAt };
       } else {
         await upsertRetryState(sb, rowEventId, sub.name, newCount, errMsg);
         // Stop processing the rest of this batch — cursor unchanged so the
@@ -120,7 +129,7 @@ export async function tickOne(
       await sub.handle(event, ctx);
       await clearRetryState(sb, event.eventId, sub.name);
       processed += 1;
-      advanceTo = { lastEventId: event.eventId, lastOccurredAt: event.occurredAt };
+      advanceTo = { lastEventId: event.eventId, lastOccurredAt: event.occurredAt, lastCreatedAt: rowCreatedAt ?? event.occurredAt };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       const prior = await readRetryCount(sb, event.eventId, sub.name);
@@ -129,7 +138,7 @@ export async function tickOne(
         await insertDeadLetter(sb, event.eventId, sub.name, newCount, errMsg);
         await clearRetryState(sb, event.eventId, sub.name);
         deadLettered += 1;
-        advanceTo = { lastEventId: event.eventId, lastOccurredAt: event.occurredAt };
+        advanceTo = { lastEventId: event.eventId, lastOccurredAt: event.occurredAt, lastCreatedAt: rowCreatedAt ?? event.occurredAt };
       } else {
         await upsertRetryState(sb, event.eventId, sub.name, newCount, errMsg);
         // Stop processing the rest of this batch — cursor unchanged so the

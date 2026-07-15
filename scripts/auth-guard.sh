@@ -39,7 +39,16 @@ if [ ! -f "src/app/auth/confirm/route.ts" ]; then
 fi
 
 # 7. No client-side profile inserts in AuthScreen
-if grep -q "\.from('students')\.insert\|\.from('teachers')\.insert\|\.from('guardians')\.insert" src/components/auth/AuthScreen.tsx 2>/dev/null; then
+# The SHIPPED auth screen is packages/ui/src/auth/AuthScreen.tsx (imported by
+# apps/host/src/app/login/page.tsx). This guard mirrors auth-guard.js and runs
+# with cwd=apps/host, so the shipped copy resolves at ../../packages/ui/... .
+AUTH_SCREEN="../../packages/ui/src/auth/AuthScreen.tsx"
+# Fail CLOSED if the shipped file is missing — a silent skip would be a no-op gate.
+if [ ! -f "$AUTH_SCREEN" ]; then
+  echo "❌ FATAL: shipped AuthScreen missing at $AUTH_SCREEN (from apps/host) — auth-gate failing closed"
+  exit 1
+fi
+if grep -q "\.from('students')\.insert\|\.from('teachers')\.insert\|\.from('guardians')\.insert" "$AUTH_SCREEN"; then
   echo "❌ FATAL: AuthScreen.tsx has client-side profile inserts — violates server-only auth"
   exit 1
 fi
@@ -56,9 +65,9 @@ if [ ! -f "src/app/api/auth/session/route.ts" ]; then
   exit 1
 fi
 
-# 10. All 4 role tabs in AuthScreen
+# 10. All 4 role tabs in AuthScreen (shipped copy — see $AUTH_SCREEN above)
 for role in "Student" "Teacher" "Parent" "School"; do
-  if ! grep -q "$role" src/components/auth/AuthScreen.tsx 2>/dev/null; then
+  if ! grep -q "$role" "$AUTH_SCREEN"; then
     echo "❌ FATAL: AuthScreen.tsx missing $role tab"
     exit 1
   fi

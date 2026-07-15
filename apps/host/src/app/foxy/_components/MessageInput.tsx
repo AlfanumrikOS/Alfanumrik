@@ -73,6 +73,10 @@ export function MessageInput({
         language={language}
         onVoiceSend={voiceMode ? onSend : undefined}
         onDetectedLanguage={onDetectedLanguage}
+        // Compact composer: collapse the Math / Points / Photo / Voice row behind
+        // a single "+" toggle so the Foxy chat thread reclaims the vertical space
+        // (desktop + mobile Foxy). Every action stays reachable via the toggle.
+        collapsibleTools
       />
     </>
   );

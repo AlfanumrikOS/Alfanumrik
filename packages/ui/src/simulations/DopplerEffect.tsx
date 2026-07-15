@@ -51,7 +51,7 @@ export default function DopplerEffect() {
 
     // Source (car)
     const sx = srcXRef.current;
-    ctx.fillStyle = '#f97316';
+    ctx.fillStyle = '#e8581c';
     ctx.beginPath();
     ctx.roundRect(sx - 22, H / 2 - 12, 44, 24, 6);
     ctx.fill();
@@ -120,7 +120,7 @@ export default function DopplerEffect() {
           <input type="range" min={0} max={0.8} step={0.05} value={vRatio} onChange={e => setVRatio(+e.target.value)} style={{ width: '100%' }} />
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setRunning(r => !r)} style={{ padding: '7px 14px', background: running ? 'var(--orange,#f97316)' : 'var(--purple,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
+          <button onClick={() => setRunning(r => !r)} style={{ padding: '7px 14px', background: running ? 'var(--orange,#e8581c)' : 'var(--purple,#7c3aed)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
             {running ? 'Pause' : 'Play'}
           </button>
           <button onClick={reset} style={{ padding: '7px 14px', background: '#374151', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Reset</button>

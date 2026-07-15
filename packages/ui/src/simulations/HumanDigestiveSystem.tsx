@@ -38,7 +38,7 @@ export default function HumanDigestiveSystem() {
           return (
             <g key={o.id} onClick={() => setSelected(isSel ? null : o.id)} style={{ cursor: 'pointer' }}>
               <rect x={o.x} y={o.y} width={o.w} height={o.h} rx={8}
-                fill={o.color} stroke={isSel ? '#F97316' : isBolus ? '#1565C0' : '#aaa'}
+                fill={o.color} stroke={isSel ? '#E8581C' : isBolus ? '#1565C0' : '#aaa'}
                 strokeWidth={isSel ? 2.5 : isBolus ? 2.5 : 1} />
               <text x={o.x + o.w / 2} y={o.y + o.h / 2 + 4} textAnchor="middle" fontSize={10} fill="#333" fontWeight={isSel ? 700 : 400}>
                 {o.label}

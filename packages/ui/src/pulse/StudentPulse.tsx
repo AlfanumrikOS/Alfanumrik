@@ -102,7 +102,7 @@ function PulseError({
         <button
           type="button"
           onClick={onRetry}
-          className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white active:scale-95 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#F97316)] focus-visible:ring-offset-2"
+          className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white active:scale-95 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#E8581C)] focus-visible:ring-offset-2"
           style={{ background: 'var(--purple, #7C3AED)', minHeight: 44 }}
         >
           {tp(isHi, 'Retry', 'दोबारा कोशिश करें')}

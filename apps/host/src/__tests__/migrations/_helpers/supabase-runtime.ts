@@ -144,14 +144,21 @@ export async function insertEvent(
   partial: {
     kind: string;
     occurredAt?: string;
+    // Explicit ingestion time. The bus cursor orders by `created_at` (see
+    // runtime/tick-one.ts), so tests that arrange event ORDER must set this,
+    // not just occurredAt. Defaults to occurredAt so a single windowed value
+    // controls both columns. MUST stay near-present — a far-future created_at
+    // would poison a subscriber watermark exactly like the 2026-07-13 incident.
+    createdAt?: string;
     actorAuthUserId?: string;
     tenantId?: string | null;
     idempotencyKey?: string;
     payload?: unknown;
   },
-): Promise<{ eventId: string; occurredAt: string }> {
+): Promise<{ eventId: string; occurredAt: string; createdAt: string }> {
   const eventId = crypto.randomUUID();
   const occurredAt = partial.occurredAt ?? new Date().toISOString();
+  const createdAt = partial.createdAt ?? occurredAt;
   const { error } = await sb.from('state_events').insert({
     event_id: eventId,
     kind: partial.kind,
@@ -159,8 +166,9 @@ export async function insertEvent(
     tenant_id: partial.tenantId ?? null,
     idempotency_key: partial.idempotencyKey ?? `test-${eventId}`,
     occurred_at: occurredAt,
+    created_at: createdAt,
     payload: partial.payload ?? DEFAULT_PAYLOADS[partial.kind] ?? {},
   });
   if (error) throw new Error(`insertEvent failed: ${error.message}`);
-  return { eventId, occurredAt };
+  return { eventId, occurredAt, createdAt };
 }

@@ -289,7 +289,7 @@ function StudentCard({
           </div>
           <div style={{ backgroundColor: '#F5F0EA', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
             <p style={{ margin: 0, fontSize: 10, color: '#7D7264', textTransform: 'uppercase', letterSpacing: 0.5 }}>{tt(isHi, 'Mastery', 'मास्टरी')}</p>
-            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: '#E8581C' }}>{formatMetric(student.mastery, '%')}</p>
+            <p style={{ margin: '2px 0 0', fontSize: 16, fontWeight: 700, color: 'var(--orange)' }}>{formatMetric(student.mastery, '%')}</p>
           </div>
         </div>
 
@@ -307,7 +307,7 @@ function StudentCard({
             style={{
               width: `${student.mastery === null ? 0 : Math.min(student.mastery, 100)}%`,
               height: '100%',
-              backgroundColor: '#E8581C',
+              backgroundColor: 'var(--orange)',
               borderRadius: 6,
               transition: 'width 0.5s ease',
             }}
@@ -488,7 +488,7 @@ function StudentCard({
               marginTop: 12,
               width: '100%',
               padding: '10px 0',
-              backgroundColor: saved ? '#059669' : '#E8581C',
+              backgroundColor: saved ? '#059669' : 'var(--orange)',
               color: '#fff',
               border: 'none',
               borderRadius: 8,
@@ -669,7 +669,7 @@ function LegacyTeacherStudentsPage() {
               width: 40,
               height: 40,
               border: '3px solid #F5F0EA',
-              borderTopColor: '#E8581C',
+              borderTopColor: 'var(--orange)',
               borderRadius: '50%',
               margin: '0 auto 16px',
               animation: 'spin 0.8s linear infinite',
@@ -903,7 +903,7 @@ function LegacyTeacherStudentsPage() {
             style={{
               marginTop: 20,
               padding: '10px 24px',
-              backgroundColor: '#E8581C',
+              backgroundColor: 'var(--orange)',
               color: '#fff',
               border: 'none',
               borderRadius: 8,

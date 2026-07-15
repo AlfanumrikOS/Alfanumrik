@@ -77,14 +77,14 @@ export default function WaveInterference() {
     // Wave 2: green
     plotWave('rgba(74, 222, 128, 0.8)', x => a2 * Math.sin(f2 * x - animPhase + p2Rad));
     // Resultant: orange, thicker
-    plotWave('#F97316', x =>
+    plotWave('#E8581C', x =>
       a1 * Math.sin(f1 * x - animPhase) + a2 * Math.sin(f2 * x - animPhase + p2Rad), 2.5);
 
     // Legend
     const legend = [
       { label: 'Wave 1', color: 'rgba(96,165,250,0.9)' },
       { label: 'Wave 2', color: 'rgba(74,222,128,0.9)' },
-      { label: 'Resultant', color: '#F97316' },
+      { label: 'Resultant', color: '#E8581C' },
     ];
     legend.forEach(({ label, color }, i) => {
       ctx.fillStyle = color;
@@ -116,15 +116,15 @@ export default function WaveInterference() {
     return () => cancelAnimationFrame(raf);
   }, [drawFrame]);
 
-  const sliderStyle = { width: '100%', accentColor: '#F97316' };
+  const sliderStyle = { width: '100%', accentColor: '#E8581C' };
   const labelStyle: React.CSSProperties = { color: '#94a3b8', fontSize: 12 };
-  const valueStyle: React.CSSProperties = { color: '#F97316', fontWeight: 700, fontSize: 12 };
+  const valueStyle: React.CSSProperties = { color: '#E8581C', fontWeight: 700, fontSize: 12 };
   const itype = getInterferenceType();
   const itypeColor = itype === 'Constructive' ? '#22c55e' : itype === 'Destructive' ? '#ef4444' : '#f59e0b';
 
   return (
     <div style={{ background: '#1a1a2e', borderRadius: 12, padding: 16, maxWidth: '100%', fontFamily: 'sans-serif' }}>
-      <h2 style={{ color: '#F97316', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Wave Interference</h2>
+      <h2 style={{ color: '#E8581C', margin: '0 0 12px', fontSize: 18, fontWeight: 700 }}>Wave Interference</h2>
       <div ref={containerRef} className="w-full" style={{ aspectRatio: '2/1' }}>
         <canvas ref={canvasRef} className="rounded-lg" style={{ display: 'block' }} />
       </div>

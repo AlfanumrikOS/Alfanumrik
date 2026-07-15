@@ -426,14 +426,14 @@ function ChildSelectorPills({
               padding: '8px 14px 8px 8px',
               borderRadius: 24,
               border: selected ? 'none' : '1px solid #FDBA7444',
-              backgroundColor: selected ? '#F97316' : '#FFFFFF',
+              backgroundColor: selected ? '#E8581C' : '#FFFFFF',
               color: selected ? '#FFFFFF' : '#475569',
               fontSize: 13,
               fontWeight: selected ? 700 : 500,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               flexShrink: 0,
-              boxShadow: selected ? '0 2px 8px #F9731640' : 'none',
+              boxShadow: selected ? '0 2px 8px #E8581C40' : 'none',
               transition: 'all 0.2s',
             }}
           >
@@ -459,7 +459,7 @@ function ChildSelectorPills({
               fontSize: 10,
               fontWeight: 700,
               backgroundColor: selected ? 'rgba(255,255,255,0.25)' : '#FDBA7433',
-              color: selected ? '#fff' : '#F97316',
+              color: selected ? '#fff' : '#E8581C',
               borderRadius: 8,
               padding: '1px 6px',
             }}>

@@ -84,8 +84,8 @@ export default function GalvanicCell() {
         ))}
 
         {/* External circuit with voltmeter */}
-        <path d="M117,115 L117,50 L280,50 L443,50 L443,115" fill="none" stroke="#f97316" strokeWidth={2.5} />
-        <circle cx={280} cy={50} r={20} fill="var(--surface-1)" stroke="#f97316" strokeWidth={2} />
+        <path d="M117,115 L117,50 L280,50 L443,50 L443,115" fill="none" stroke="#e8581c" strokeWidth={2.5} />
+        <circle cx={280} cy={50} r={20} fill="var(--surface-1)" stroke="#e8581c" strokeWidth={2} />
         <text x={280} y={48} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--orange)">V</text>
         <text x={280} y={60} textAnchor="middle" fontSize="9" fill="var(--orange)">{eCell}V</text>
         {/* Electron flow arrow */}

@@ -163,7 +163,7 @@ export default function MolecularGeometry() {
             <div style={{ color: 'var(--text-1)', marginBottom: 3 }}>Bond angle: <b style={{ color: '#16a34a' }}>{info.angle}</b></div>
             <div style={{ color: 'var(--text-2)', marginBottom: 3 }}>{info.description}</div>
             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <span style={{ padding: '2px 8px', borderRadius: 12, background: 'rgba(249,115,22,0.15)', fontSize: 11, color: 'var(--orange)' }}>
+              <span style={{ padding: '2px 8px', borderRadius: 12, background: 'rgba(232,88,28,0.15)', fontSize: 11, color: 'var(--orange)' }}>
                 Bond: {info.bondPairs}
               </span>
               <span style={{ padding: '2px 8px', borderRadius: 12, background: 'rgba(124,58,237,0.15)', fontSize: 11, color: 'var(--purple)' }}>

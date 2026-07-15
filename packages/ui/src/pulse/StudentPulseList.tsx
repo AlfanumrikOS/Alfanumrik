@@ -100,7 +100,7 @@ export default function StudentPulseList({
           <button
             type="button"
             onClick={onRetry}
-            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white active:scale-95 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#F97316)] focus-visible:ring-offset-2"
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white active:scale-95 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#E8581C)] focus-visible:ring-offset-2"
             style={{ background: 'var(--purple, #7C3AED)', minHeight: 44 }}
           >
             {tp(isHi, 'Retry', 'दोबारा कोशिश करें')}
@@ -147,7 +147,7 @@ export default function StudentPulseList({
           <li key={item.studentId}>
             <Link
               href={href}
-              className="block rounded-xl p-3 transition-all hover:shadow-md active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#F97316)] focus-visible:ring-offset-2"
+              className="block rounded-xl p-3 transition-all hover:shadow-md active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#E8581C)] focus-visible:ring-offset-2"
               style={{
                 background: 'var(--surface-1, #fff)',
                 border: `1px solid ${st.color}33`,

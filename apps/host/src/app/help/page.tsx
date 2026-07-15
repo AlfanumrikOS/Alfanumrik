@@ -356,7 +356,7 @@ export default function HelpPage() {
           </div>
 
           {/* AI Support Bot CTA */}
-          <button onClick={() => setView('chat')} className="w-full rounded-2xl p-5 flex items-center gap-4 transition-all active:scale-[0.98]" style={{ background: 'linear-gradient(135deg, #E8581C, #F5A623)', boxShadow: '0 4px 20px rgba(232,88,28,0.25)' }}>
+          <button onClick={() => setView('chat')} className="w-full rounded-2xl p-5 flex items-center gap-4 transition-all active:scale-[0.98]" style={{ background: 'linear-gradient(135deg, var(--orange), #F5A623)', boxShadow: '0 4px 20px rgba(232,88,28,0.25)' }}>
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0" style={{ background: 'rgba(255,255,255,0.2)' }}>🦊</div>
             <div className="text-left flex-1">
               <div className="text-base font-bold text-white" style={{ fontFamily: 'var(--font-display)' }}>{isHi ? 'Foxy सपोर्ट से बात करें' : 'Chat with Foxy Support'}</div>

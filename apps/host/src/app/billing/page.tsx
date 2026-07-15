@@ -379,7 +379,7 @@ export default function BillingPage() {
         {!isFree && (
           <p style={{ fontSize: 12, color: '#888', marginTop: 16, textAlign: 'center' }}>
             {isHi ? 'भुगतान समस्या? संपर्क करें ' : 'Payment issues? Contact '}
-            <a href="mailto:alfanumrik10@gmail.com" style={{ color: '#E8581C' }}>alfanumrik10@gmail.com</a>
+            <a href="mailto:alfanumrik10@gmail.com" style={{ color: 'var(--orange)' }}>alfanumrik10@gmail.com</a>
           </p>
         )}
       </div>

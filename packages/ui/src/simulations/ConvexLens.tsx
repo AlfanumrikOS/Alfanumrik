@@ -91,7 +91,7 @@ export default function ConvexLens() {
     const imgX = lensX + v * scale;
 
     // Ray 1: parallel to axis → through F2
-    ctx.strokeStyle = '#f97316';
+    ctx.strokeStyle = '#e8581c';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([]);
     ctx.beginPath();
@@ -156,7 +156,7 @@ export default function ConvexLens() {
         </div>
       </div>
       <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, fontSize: 13, color: 'var(--text-1)', textAlign: 'center' }}>
-        1/v − 1/u = 1/f &nbsp;→&nbsp; v = <b style={{ color: 'var(--orange,#f97316)' }}>{v} cm</b> &nbsp;|&nbsp; m = <b style={{ color: 'var(--purple,#7c3aed)' }}>{m}</b> ({v < 0 ? 'Virtual, erect' : 'Real, inverted'})
+        1/v − 1/u = 1/f &nbsp;→&nbsp; v = <b style={{ color: 'var(--orange,#e8581c)' }}>{v} cm</b> &nbsp;|&nbsp; m = <b style={{ color: 'var(--purple,#7c3aed)' }}>{m}</b> ({v < 0 ? 'Virtual, erect' : 'Real, inverted'})
       </div>
     </div>
   );

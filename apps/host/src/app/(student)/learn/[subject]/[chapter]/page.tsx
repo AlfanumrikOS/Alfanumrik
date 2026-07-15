@@ -1438,10 +1438,10 @@ function ChapterConceptPageContent() {
                       {productiveFailureActive && question && !isAnswered && (
                         <div
                           className="rounded-xl p-3 mb-3"
-                          style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.2)' }}
+                          style={{ background: 'rgba(232,88,28,0.06)', border: '1px solid rgba(232,88,28,0.2)' }}
                           data-testid="productive-failure-banner"
                         >
-                          <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#F97316' }}>
+                          <p className="text-[11px] font-bold uppercase tracking-wider mb-1" style={{ color: '#E8581C' }}>
                             {isHi ? 'पहले इसे आज़माओ' : 'Try this first'}
                           </p>
                           <p className="text-xs text-[var(--text-2)] leading-snug">
@@ -1601,7 +1601,7 @@ function ChapterConceptPageContent() {
                         return (
                           <div className="mt-6 p-5 rounded-2xl bg-[#0F2A2E] text-[#F5F0EA] border border-emerald-950/40 shadow-lg space-y-4 animate-fadeIn">
                             <div className="flex items-center justify-between pb-3 border-b border-emerald-900/30">
-                              <span className="text-sm font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-serif)' }}>
+                              <span className="text-sm font-bold text-white flex items-center gap-2" style={{ fontFamily: 'var(--font-display)' }}>
                                 <span>🎓</span>
                                 <span>{isHi ? 'शिक्षक का ब्लैकबोर्ड (Tricks & Analogy)' : "Teacher's Blackboard (Tricks & Analogy)"}</span>
                               </span>

@@ -29,7 +29,10 @@ import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
 import { generateTitle, MODE_MAP, type ConversationSummary } from '@alfanumrik/ui/foxy/ConversationManager.utils';
 const ConversationManager = dynamic(() => import('@alfanumrik/ui/foxy/ConversationManager').then(m => ({ default: m.ConversationManager })), { ssr: false });
-const ConversationHeader = dynamic(() => import('@alfanumrik/ui/foxy/ConversationHeader').then(m => ({ default: m.ConversationHeader })), { ssr: false });
+// NOTE: <ConversationHeader> is no longer rendered on this page — its two unique
+// contributions (the conversation title + "New Chat") were folded into the
+// premium header band (Row 1) to reclaim a full row of desktop chrome. The
+// component file is intentionally left in place (see ConversationHeader.tsx).
 import { useSELCheckIn, type MoodState } from '@alfanumrik/ui/SELCheckIn';
 import { track } from '@alfanumrik/lib/analytics';
 import { normalizeEnrolledGrade } from '@alfanumrik/lib/foxy-scope';
@@ -354,6 +357,10 @@ function FoxyExperience() {
   const [studentSubs, setStudentSubs] = useState<string[]>([]);
   const [showTopicSheet, setShowTopicSheet] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false); // Collapsed by default (Hick's Law — reduce initial choices)
+  // Active-conversation starter suggestions live in a compact popover on the
+  // composer (not a permanent footer row) so the chat thread keeps the space.
+  // Empty state still shows the full starter chips inline.
+  const [showStarters, setShowStarters] = useState(false);
 
   // Alfa OS flagship redesign (ff_student_os_v1) — when ON, render the 3-pane
   // workspace (conversations rail | chat | ContextPanel). Defaults OFF → the
@@ -1310,6 +1317,14 @@ function FoxyExperience() {
     </div>
   );
 
+  // Active-conversation title — the one genuinely unique thing the old
+  // ConversationHeader row contributed. Computed once, then folded into the
+  // premium header band (Row 1) so we can drop the whole redundant chrome row.
+  const activeConversationTitle =
+    messages.length > 0
+      ? generateTitle(messages.map((m: ChatMessage) => ({ role: m.role, content: m.content })), activeSubject)
+      : '';
+
   // ─── Header bag — passed into AppShell.header ─────────────────────────
   // The Foxy sticky chrome was four/five stacked rows (top header, subject
   // tab pills, chapter+mode toolbar, optional ConversationHeader, optional
@@ -1324,26 +1339,26 @@ function FoxyExperience() {
       {/* ═══ HEADER ═══ */}
       {/* `sticky top-0` is dropped — AppShell.header is itself position:sticky. */}
       <div className="foxy-header-premium px-3 py-2.5 flex items-center gap-3" style={{ color: '#fff' }}>
-        <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm p-2 rounded-lg" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>←</button>
-        {/* Mobile: open conversation history sidebar */}
-        <button
-          onClick={() => setConversationSidebarOpen(true)}
-          className="lg:hidden w-10 h-10 rounded-lg flex items-center justify-center transition-all active:scale-95"
-          style={{ background: 'rgba(255,255,255,0.1)' }}
-          aria-label={isHi ? 'चैट हिस्ट्री' : 'Chat history'}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
+        <button onClick={() => router.push('/dashboard')} className="text-white/60 text-sm p-2 rounded-lg shrink-0" aria-label={isHi ? 'वापस जाएं' : 'Go back'}>←</button>
         <div className="foxy-avatar-warm w-10 h-10 rounded-full flex items-center justify-center text-xl shrink-0" style={{ animation: foxyState === 'thinking' ? 'pulse 1s infinite' : 'none' }}>
           {FOXY_FACES[foxyState]}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 shrink">
           <div className="text-sm font-bold truncate">Foxy <span className="text-[10px] font-semibold opacity-60">{isHi ? 'AI ट्यूटर' : 'AI Tutor'}</span></div>
           <div className="text-xs opacity-70 flex gap-2"><span className="hidden sm:inline">{totalXP + xpGained} XP</span><span className="hidden sm:inline">{isHi ? `${streakDays} दिन` : `${streakDays}d streak`}</span><span>{isHi ? `कक्षा ${studentGrade}` : `Gr ${studentGrade}`}</span></div>
         </div>
-        <div className="flex items-center gap-1.5">
+        {/* Active-conversation title — folds in the ConversationHeader's unique
+            title. Always a flex-1 spacer (keeps the controls pinned right); the
+            title text itself only shows sm+ so tiny phones stay uncrowded. */}
+        <div className="flex-1 min-w-0 flex items-center gap-1.5">
+          {messages.length > 0 && (
+            <>
+              <span className="hidden sm:block text-xs font-medium text-white/70 truncate" title={activeConversationTitle}>{activeConversationTitle}</span>
+              <span className="hidden md:inline text-[10px] text-white/40 shrink-0">· {messages.length} {isHi ? 'संदेश' : 'msgs'}</span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Language pills — extracted to ./_components/FoxySettings.tsx */}
           <LanguagePicker language={language} isLocked={isLangLocked} onLanguageChange={setLanguage} />
           {chatUsage && (
@@ -1390,17 +1405,38 @@ function FoxyExperience() {
               {voiceMode ? '🔊' : '🔇'}
             </button>
           )}
+          {/* New Chat — folds in the ConversationHeader's other unique control.
+              Only with an active thread; label collapses to just "+" below sm. */}
+          {messages.length > 0 && (
+            <button
+              onClick={handleNewConversation}
+              className="shrink-0 flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-all active:scale-95"
+              style={{ background: 'rgba(255,255,255,0.14)', border: '1.5px solid rgba(255,255,255,0.2)', color: '#fff' }}
+              aria-label={isHi ? 'नई चैट शुरू करें' : 'Start new chat'}
+              title={isHi ? 'नई चैट' : 'New Chat'}
+            >
+              <span aria-hidden="true">+</span>
+              <span className="hidden sm:inline">{isHi ? 'नई चैट' : 'New Chat'}</span>
+            </button>
+          )}
+          {/* Mobile: open conversation history sidebar (single toggle, lg:hidden) */}
+          <button
+            onClick={() => setConversationSidebarOpen(true)}
+            className="lg:hidden w-10 h-10 rounded-lg flex items-center justify-center transition-all active:scale-95 shrink-0"
+            style={{ background: 'rgba(255,255,255,0.1)' }}
+            aria-label={isHi ? 'चैट हिस्ट्री' : 'Chat history'}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
         </div>
       </div>
 
-      {/* ═══ SUBJECT TAB BAR — horizontal scrollable pills ═══ */}
-      <div
-        className="foxy-subject-tabs flex items-center gap-1.5 px-3 py-2"
-        style={{
-          background: 'var(--surface-1)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
+      {/* ═══ CONTROLS TOOLBAR — subjects · chapter · modes merged into one row (desktop) ═══ */}
+      <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+        {/* Subject pills — horizontal-scroll; own full-width line below sm, flex-1 from sm */}
+        <div className="foxy-subject-tabs flex items-center gap-1.5 w-full sm:w-auto sm:flex-1 min-w-0" role="group" aria-label={isHi ? 'विषय चुनें' : 'Select subject'}>
         {(() => {
           // Build the visible tab list.
           //  - If the student curated `selected_subjects`, honour that list.
@@ -1432,7 +1468,7 @@ function FoxyExperience() {
                 onClick={handleClick}
                 aria-label={sub.isLocked ? `${sub.name} (locked — tap to upgrade)` : sub.name}
                 title={sub.isLocked ? (isHi ? 'अपग्रेड करें' : 'Upgrade to unlock') : sub.name}
-                className={`foxy-pill shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold ${isActive ? 'foxy-pill-active' : ''}`}
+                className={`foxy-pill shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold ${isActive ? 'foxy-pill-active' : ''}`}
                 style={{
                   ['--pill-tint' as string]: sub.color,
                   background: isActive ? `color-mix(in srgb, ${sub.color} 16%, var(--surface-1))` : 'var(--surface-2)',
@@ -1455,13 +1491,14 @@ function FoxyExperience() {
             );
           });
         })()}
-      </div>
+        </div>
 
-      {/* ═══ CHAPTER SELECTOR + MODE BAR ═══ */}
-      <div className="foxy-toolbar" style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+        {/* Divider between subjects and the chapter/mode cluster (single-row desktop only) */}
+        <div className="hidden sm:block w-px h-6 shrink-0" style={{ background: 'var(--border)' }} aria-hidden="true" />
+
         {/* Chapter dropdown */}
-        <div className="relative">
-          <button onClick={() => { setShowChapterDD(!showChapterDD); setShowSubjectDD(false); }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-2)' }}>
+        <div className="relative shrink-0">
+          <button onClick={() => { setShowChapterDD(!showChapterDD); setShowSubjectDD(false); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-[0.97]" style={{ background: 'var(--surface-2)', border: '1.5px solid var(--border)', color: 'var(--text-2)' }}>
             <span className="text-sm">{cfg.icon}</span>
             <span>
               {activeTopic
@@ -1530,21 +1567,6 @@ function FoxyExperience() {
         {/* Simplified mode pills — extracted to ./_components/FoxySettings.tsx */}
         <ModePicker sessionMode={sessionMode} color={cfg.color} isHi={isHi} onSwitchMode={switchMode} />
       </div>
-
-      {/* ═══ CONTEXT BAR — shows active conversation header ═══ */}
-      {messages.length > 0 && (
-        <ConversationHeader
-          title={generateTitle(messages.map((m: ChatMessage) => ({ role: m.role, content: m.content })), activeSubject)}
-          subject={activeSubject}
-          mode={sessionMode}
-          messageCount={messages.length}
-          isHi={isHi}
-          onNewChat={handleNewConversation}
-          onOpenSidebar={() => setConversationSidebarOpen(true)}
-          topicTitle={activeTopic?.title}
-          chapterNumber={activeTopic?.chapter_number}
-        />
-      )}
 
       {/* ═══ LESSON STEP PROGRESS BAR ═══ */}
       {sessionMode === 'lesson' && (
@@ -1827,7 +1849,7 @@ function FoxyExperience() {
             targets it outside `.foxy-os`); under `.foxy-os` it gets
             `min-height:0` so the scroll area shrinks when the keyboard opens
             and the composer stays visible (Phase 2). */}
-        <div className="foxy-chat-column flex-1 flex flex-col min-w-0">
+        <div className="foxy-chat-column flex-1 flex flex-col min-w-0 min-h-0">
           {/* `pb-32` removed — AppShell.app-shell-content already reserves
               --shell-nav-h + safe-area-inset bottom space for the fixed
               BottomNav. Adding pb-32 here would overpad the scroll area
@@ -2027,19 +2049,51 @@ function FoxyExperience() {
             <div ref={endRef} />
           </div>
 
-          {/* Compact starter chips — always visible after conversation starts so
-              students retain prompt guidance after the empty state disappears.
-              Uses compact=true: 3 chips only, no "More" toggle, smaller styling. */}
+          {/* Compact starter suggestions — folded into a popover anchored to the
+              composer instead of a permanent footer row. An active conversation
+              therefore gives the chat thread the dominant vertical space, while
+              every starter intent stays reachable (empty state still shows the
+              full inline chips above). This is the "second command row" the
+              redesign removes. */}
           {messages.length > 0 && (
-            <div className="px-4 py-2 flex gap-2 flex-wrap border-t" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-              <ConversationStarters
-                subject={activeSubject}
-                language={language}
-                topicTitle={activeTopic?.title}
-                hasLastTopic={true}
-                onSelect={handleStarterClick}
-                compact={true}
-              />
+            <div className="relative px-3 pt-1.5" style={{ background: 'var(--surface-1)' }}>
+              <button
+                type="button"
+                onClick={() => setShowStarters((v) => !v)}
+                aria-expanded={showStarters}
+                aria-haspopup="true"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all active:scale-95"
+                style={{
+                  background: showStarters ? `color-mix(in srgb, ${cfg.color} 12%, var(--surface-1))` : 'var(--surface-2)',
+                  color: showStarters ? cfg.color : 'var(--text-3)',
+                  border: `1px solid ${showStarters ? `color-mix(in srgb, ${cfg.color} 30%, transparent)` : 'var(--border)'}`,
+                  minHeight: 32,
+                }}
+              >
+                <span aria-hidden="true">💡</span>
+                {language === 'hi' ? 'सुझाव' : 'Suggestions'}
+                <span aria-hidden="true">{showStarters ? '▾' : '▸'}</span>
+              </button>
+              {showStarters && (
+                <>
+                  {/* Click-away scrim closes the popover. */}
+                  <div className="fixed inset-0 z-40" onClick={() => setShowStarters(false)} />
+                  <div
+                    role="menu"
+                    className="absolute left-3 right-3 bottom-full mb-1 z-50 rounded-2xl p-2 shadow-lg animate-slide-up"
+                    style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
+                  >
+                    <ConversationStarters
+                      subject={activeSubject}
+                      language={language}
+                      topicTitle={activeTopic?.title}
+                      hasLastTopic={true}
+                      onSelect={(text, intent) => { setShowStarters(false); handleStarterClick(text, intent); }}
+                      compact={true}
+                    />
+                  </div>
+                </>
+              )}
             </div>
           )}
 

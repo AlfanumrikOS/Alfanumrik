@@ -29,6 +29,20 @@ const SCAN_OCR_PROFILE = createStaticAiRouteProfile({
   outputTokens: 256,
 })
 
+// ── Supabase service-role connection ──
+// Hotfix redeploy 2026-07-13: forces the production function-deploy pipeline to
+// re-detect and ship scan-ocr (prod was pinned at the broken v29 that 500'd on
+// every request). See the declaration note below.
+// These were referenced at the top of the request handler (createClient(...)
+// BEFORE admitAiRoute) but never declared — a ReferenceError that threw on
+// EVERY request, before any auth guard, surfacing as a bare HTTP 500 (caught
+// by the edge-auth sweep, 2026-07-13). The sibling ncert-solver declares them
+// identically. Without this, the admission layer never ran, so an
+// unauthenticated request 500'd instead of getting the structured 401 the
+// admission layer returns.
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
+const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+
 // ── OCR via Tesseract.js WASM (runs in Edge Function) ──
 // For MVP: use Google Vision API or Tesseract
 // Practical choice: Use built-in fetch to a free OCR API

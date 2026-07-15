@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
 import {
   StatCard,
   StatusBadge,
@@ -216,6 +217,7 @@ function truncate(s: string, max: number) {
 
 function CommandCenterContent() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
 
   // State
   const [tab, setTab] = useState<Tab>('Overview');
@@ -1028,7 +1030,7 @@ function CommandCenterContent() {
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h1 className="text-xl font-bold text-foreground">Command Center</h1>
+          <h1 className="text-xl font-bold text-foreground">{isHi ? 'सुधार लूप' : 'Improvement Loop'}</h1>
           <StatusBadge label={mode === 'suggest' ? 'Suggest' : mode === 'observe' ? 'Observe' : 'Controlled Act'} variant={mode === 'observe' ? 'neutral' : mode === 'suggest' ? 'info' : 'warning'} />
         </div>
         <div className="text-sm text-muted-foreground">Product improvement monitoring &amp; automation</div>

@@ -26,6 +26,10 @@ describe('subscriber offsets', () => {
     expect(offset).toEqual({
       lastEventId: null,
       lastOccurredAt: '1970-01-01T00:00:00Z',
+      // Bus-cursor field added to SubscriberOffset (offsets.ts): the sentinel
+      // now seeds lastCreatedAt to EPOCH too so a never-run subscriber orders
+      // from the beginning of the bus by the monotonic created_at cursor.
+      lastCreatedAt: '1970-01-01T00:00:00Z',
     });
   });
 

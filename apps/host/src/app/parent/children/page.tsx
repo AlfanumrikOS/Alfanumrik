@@ -210,7 +210,7 @@ function ChildCard({
       marginBottom: 14,
       overflow: 'hidden',
       transition: 'box-shadow 0.3s ease',
-      boxShadow: expanded ? '0 4px 20px #F9731615' : 'none',
+      boxShadow: expanded ? '0 4px 20px #E8581C15' : 'none',
     }}>
       {/* Main card area */}
       <div
@@ -1121,7 +1121,7 @@ export default function ParentChildrenPage() {
         <div style={{ textAlign: 'center', padding: 80, color: '#64748B' }}>
           <div style={{
             width: 40, height: 40,
-            border: '3px solid #FDBA7444', borderTopColor: '#F97316',
+            border: '3px solid #FDBA7444', borderTopColor: '#E8581C',
             borderRadius: '50%', margin: '0 auto 16px',
             animation: 'spin 0.8s linear infinite',
           }} />

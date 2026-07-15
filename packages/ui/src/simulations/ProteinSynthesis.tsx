@@ -55,7 +55,7 @@ export default function ProteinSynthesis() {
       }
 
       if (step === 2) {
-        ctx.fillStyle = '#F97316'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#E8581C'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
         ctx.fillText('mRNA → exits nucleus →', W / 2, H - 18);
       }
 
@@ -74,7 +74,7 @@ export default function ProteinSynthesis() {
       ctx.fillStyle = '#888'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText("mRNA (5' → 3')", W / 2, H / 2 + 48);
 
       ctx.fillStyle = '#FFCC80'; ctx.fillRect(W / 2 - codonIdx * 75 + 60 - 80, H / 2 - 60, 160, 55);
-      ctx.strokeStyle = '#F97316'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - codonIdx * 75 + 60 - 80, H / 2 - 60, 160, 55);
+      ctx.strokeStyle = '#E8581C'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - codonIdx * 75 + 60 - 80, H / 2 - 60, 160, 55);
       ctx.fillStyle = '#333'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('Ribosome', W / 2 - codonIdx * 75 + 60, H / 2 - 44);
 
       const aa = CODON_TABLE[EXAMPLE_CODONS[codonIdx]] || '?';

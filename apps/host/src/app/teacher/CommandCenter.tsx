@@ -313,7 +313,7 @@ function AlertRow({
                 onClick={() => onTellParent(alert)}
                 disabled={parentNotifyBusy}
                 data-testid="tell-parent-btn"
-                className="py-1 px-2.5 bg-[#E8581C] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                className="py-1 px-2.5 bg-[var(--orange)] text-white border-none rounded-md text-[11px] font-semibold cursor-pointer disabled:opacity-50"
               >
                 {parentNotifyBusy
                   ? tt(isHi, 'Sending…', 'भेजा जा रहा है…')
@@ -830,7 +830,7 @@ export default function CommandCenter() {
           </h2>
           <button
             onClick={() => window.location.reload()}
-            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
+            className="py-2.5 px-6 bg-[var(--orange)] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Refresh', 'रिफ्रेश')}
           </button>
@@ -850,7 +850,7 @@ export default function CommandCenter() {
           </h2>
           <button
             onClick={() => mutateDashboard()}
-            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
+            className="py-2.5 px-6 bg-[var(--orange)] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
           </button>
@@ -877,7 +877,7 @@ export default function CommandCenter() {
           </p>
           <button
             onClick={() => router.push('/teacher/classes')}
-            className="py-2.5 px-6 bg-[#E8581C] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
+            className="py-2.5 px-6 bg-[var(--orange)] text-white border-none rounded-lg text-sm font-semibold cursor-pointer"
           >
             {tt(isHi, 'Create a Class', 'कक्षा बनाएं')}
           </button>

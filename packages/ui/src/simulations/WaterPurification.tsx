@@ -36,7 +36,7 @@ export default function WaterPurification() {
           return (
             <g key={i} onClick={() => setStep(i)} style={{ cursor: 'pointer' }}>
               <rect x={x} y={40} width={80} height={120} rx={6} fill={wc} opacity={stageOpacity}
-                stroke={isCurrent ? '#F97316' : '#aaa'} strokeWidth={isCurrent ? 2.5 : 1} />
+                stroke={isCurrent ? '#E8581C' : '#aaa'} strokeWidth={isCurrent ? 2.5 : 1} />
               <text x={x + 40} y={35} textAnchor="middle" fontSize={10} fill="var(--text-1)" fontWeight={isCurrent ? 700 : 400}>{STAGES[i].name}</text>
               {i < 4 && <path d={`M${x + 80},100 L${x + 100},100`} stroke="#aaa" strokeWidth={2} markerEnd="url(#farrow)" />}
               {i === 0 && <g>{[0, 1, 2].map(j => <line key={j} x1={x + 15 + j * 22} y1={40} x2={x + 15 + j * 22} y2={60} stroke="#8D6E63" strokeWidth={3} />)}</g>}

@@ -331,7 +331,7 @@ function SubjectsContent() {
               className={inputCls} style={{ width: 220 }}
               value={form.color}
               onChange={(e) => setForm({ ...form, color: e.target.value })}
-              placeholder="#F97316"
+              placeholder="#E8581C"
               aria-label="Subject color hex"
             />
           </Field>
