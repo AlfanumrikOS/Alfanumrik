@@ -20,7 +20,7 @@
  * stub it so it cannot throw the funnel.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // ── Hoisted seam holders ──────────────────────────────────────────────
@@ -117,8 +117,20 @@ vi.mock('@alfanumrik/lib/identity/bootstrap-profile', () => ({
   }),
 }));
 
+// Phase 3b: the school-admin onboarding helper was renamed
+// bootstrapSchoolAdminProfile → ensureSchoolAdminOnboarding (RPC-first +
+// city/state patch + fail-soft fallback). complete-signup.ts (which both auth
+// routes now share) imports THIS name, so the mock must export it or the
+// institution_admin signup branch would call `undefined(...)`. These resilience
+// tests default to profileExists=true so the branch isn't exercised, but the
+// mock must still match the real module's export surface.
 vi.mock('@alfanumrik/lib/identity/school-admin-bootstrap', () => ({
-  bootstrapSchoolAdminProfile: vi.fn(async () => {}),
+  ensureSchoolAdminOnboarding: vi.fn(async () => ({
+    ok: true,
+    schoolId: 'school-1',
+    schoolAdminId: 'school-admin-1',
+    onboardingStateWritten: true,
+  })),
 }));
 
 function makeReq(path: string): NextRequest {
@@ -130,11 +142,38 @@ function location(res: Response): string {
   return res.headers.get('location') ?? '';
 }
 
+// Phase 3b unification: both auth routes now delegate the signup branch to
+// completeSignupBootstrap, which fires a best-effort, UNAWAITED fetch() to the
+// send-welcome-email Edge Function whenever a session token exists (the default
+// getSession stub below supplies access_token 'a', and setup.ts sets
+// NEXT_PUBLIC_SUPABASE_URL to a placeholder host). An UNMOCKED fetch would issue
+// a real network call that rejects asynchronously; its `.catch()` runs
+// console.warn AFTER the test body returns, surfacing under worker teardown as
+// the flaky `EnvironmentTeardownError: Closing rpc while "onUserConsoleLog" was
+// pending`. Stub fetch so the welcome-email call resolves synchronously in-test
+// (mirrors auth-onboarding.test.ts §5). The route never reads the response.
+const fetchSpy = vi.fn().mockResolvedValue(
+  new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+);
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal('fetch', fetchSpy);
   holders.profileExists.value = true;
   holders.getSession.mockResolvedValue({ data: { session: { access_token: 'a', refresh_token: 'r' } } });
   holders.getUser.mockResolvedValue({ data: { user: { id: 'auth-1', email: 'x@y.com', user_metadata: { role: 'student' } } } });
+});
+
+afterEach(async () => {
+  // Drain the microtask queue so the fire-and-forget welcome-email .catch()
+  // chain settles inside the test (fetchSpy resolves synchronously) before the
+  // worker tears down, then restore the real global fetch so the stub cannot
+  // leak into sibling suites.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  vi.unstubAllGlobals();
 });
 
 // ───────────────────────── /auth/callback (PKCE code flow) ─────────────────────────

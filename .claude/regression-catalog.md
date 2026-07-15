@@ -7884,3 +7884,56 @@ parity; flag `ff_foxy_perception_v1`, default OFF).
 **Total catalog: 214 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Email-Onboarding Phase 3b — institution_admin as a first-class onboarding role — 2026-07-15
+
+Source: Phase 3b of the Supabase-native email-onboarding work. `institution_admin`
+(school admin) becomes a first-class citizen of the signup→profile→dashboard
+funnel. Three app-code changes land the behaviour:
+`packages/lib/src/identity/school-admin-bootstrap.ts` (the single
+`ensureSchoolAdminOnboarding` helper — RPC-first via `bootstrap_user_profile`
++ city/state/principal_name patch + idempotent admin-client fallback, canonical
+`school_admins.role='principal'`, `onboarding_state` written);
+`packages/lib/src/identity/onboarding.ts` (`resolveIdentity` /
+`validateIdentityCompleteness` now query `school_admins`, so onboarding-status
+and repair SEE a school admin); and `packages/lib/src/identity/complete-signup.ts`
+(the shared bootstrap+session helper both `/auth/callback` and `/auth/confirm`
+delegate to). The invariant this pins: a school-admin signup must create
+school + admin(role=principal) + onboarding_state, be visible to
+identity-resolution/repair, and NEVER break the funnel — every write is
+fail-soft and the auth routes stay 3xx-only (P15).
+
+### Notes on ID assignment
+
+REG-248 is the next free id: after the origin/main merge the catalog's max id is
+REG-247 (Foxy Perception) and this project appends rather than backfilling
+intentional gaps (REG-170 remains a documented skip). REG-248 is confirmed absent
+before use. (This entry was authored as REG-242 on the email-onboarding branch and
+renumbered to REG-248 on merge to avoid a collision with the origin/main Foxy
+REG-241..247 block.)
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-248 | `institution_admin_first_class_onboarding` | (a) **Identity resolution sees school admins**: `resolveIdentity()` with a `school_admins` row returns `hasProfile=true`, `detectedRole='institution_admin'`, `profile.type='school_admin'` (full row spread, `role='principal'`), and `institution_admin` wins at highest precedence when student/teacher/guardian/school_admin rows all co-exist; a school admin with a completed `onboarding_state` is `isOnboarded=true`. (b) **Completeness is role-generic**: `validateIdentityCompleteness()` treats a school admin (school_admins row + completed onboarding) as complete (`[]`), and attributes a missing profile row to the `institution_admin` role when absent. (c) **Bootstrap shape — RPC-first**: `ensureSchoolAdminOnboarding()` calls `bootstrap_user_profile` with `p_role='institution_admin'` + normalized `p_school_name`/`p_board`, then PATCHES `city`/`state`/`principal_name` onto the RPC-created school (no direct-insert fallback fires), and upserts `onboarding_state` (`intended_role='institution_admin'`, `step='completed'`, `profile_id`=RPC id); returns `{ok:true, schoolId, schoolAdminId, onboardingStateWritten:true}`. (d) **Bootstrap shape — admin-client fallback (P15)**: when the RPC is unavailable (error) OR its transport throws, the helper creates `schools` + `school_admins` directly with the CANONICAL `role='principal'`, writes `city`/`state`, upserts `onboarding_state`, and idempotently REUSES the earliest existing membership instead of duplicating. (e) **Fail-soft (P15)**: a failed `onboarding_state` write does NOT throw/block signup — returns `ok:true` with `onboardingStateWritten:false`; when no `school_admins` row can be established at all, returns the structured not-ok result (never throws). (f) **Both auth routes stay 3xx-only**: `/auth/callback` (PKCE) and `/auth/confirm` (token_hash + legacy token) drive the real GET handlers through the shared `completeSignupBootstrap` and every branch (success / exchange-fail / missing-param / getUser-throws) returns a redirect, never a 500. NOTE (documented gap): no live E2E exercises institution_admin end-to-end — the P15 E2E specs (`e2e/auth-onboarding-p15.spec.ts`, `e2e/auth-onboarding-3role.spec.ts`) still cover only student/teacher/guardian. Extending them to a 4th (institution_admin) role is an open follow-up. | `apps/host/src/__tests__/identity-onboarding.test.ts` (resolveIdentity school-admin detection + precedence + onboarded; validateIdentityCompleteness school-admin complete + missing-row), `apps/host/src/__tests__/school-admin-bootstrap.test.ts` (6 tests: RPC-first + city/state patch, admin-client fallback role=principal, idempotent reuse, RPC-throws fallback, fail-soft onboarding_state, not-ok backstop), `apps/host/src/__tests__/auth-callback-resilience.test.ts` (both routes 3xx-only through the shared helper) | E | P15, P9 |
+
+### Invariants covered by this section
+
+- P15 (onboarding integrity) — the school-admin signup funnel is fully fail-soft:
+  a failed onboarding_state write, a failed RPC, or an unestablishable admin row
+  never throws into the auth flow, and both `/auth/callback` + `/auth/confirm`
+  stay 3xx-only.
+- P9 (RBAC enforcement) — the funnel establishes the institution_admin role via
+  the canonical `school_admins.role='principal'` (the DB `sync_school_admin_role`
+  trigger assigns the RBAC role on insert), consistently on both the RPC-first
+  and admin-client fallback paths.
+
+### Catalog total
+
+Pre-REG-248: 214 entries (through REG-247, Foxy Perception observability-only
+event-data-layer). Adds REG-248 (institution_admin first-class onboarding:
+RPC-first + fail-soft admin-client fallback creating
+school+admin(role=principal)+onboarding_state, identity-resolution/repair
+visibility, both signup paths 3xx-only through the shared completeSignupBootstrap).
+**Total catalog: 215 entries (target: 35 — TARGET EXCEEDED).**
+
+---

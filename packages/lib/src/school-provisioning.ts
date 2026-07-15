@@ -29,6 +29,11 @@ import {
   truncateInviteCode,
   type EmailLocale,
 } from '@alfanumrik/lib/email-delivery';
+// Phase 3b (B2): the trial/bulk provisioning path shares the onboarding_state
+// writer with the self-serve signup path so both flows produce an identical
+// school-admin onboarding shape (school_admins.role='principal' + a completed
+// onboarding_state row). Fail-soft — see writeSchoolAdminOnboardingState.
+import { writeSchoolAdminOnboardingState } from '@alfanumrik/lib/identity/school-admin-bootstrap';
 
 // ─── Slug + invite code helpers (mirror trial route) ───────────────────
 
@@ -403,6 +408,21 @@ export async function establishPrincipalAdmin(
       return { ...empty, authUserId };
     }
     schoolAdminId = (inserted as { id: string }).id;
+  }
+
+  // Phase 3b (B2): write the SAME onboarding_state row the self-serve signup
+  // path writes (intended_role='institution_admin', step='completed',
+  // profile_id=school_admins.id), so a provisioned/claimed principal is visible
+  // to resolveIdentity() / onboarding-status / repair exactly like a self-serve
+  // school admin. Fully fail-soft (P15): a failure here never blocks
+  // provisioning — the school + admin rows already exist.
+  if (schoolAdminId) {
+    await writeSchoolAdminOnboardingState(
+      admin,
+      authUserId,
+      schoolAdminId,
+      '[SchoolProvisioning]'
+    );
   }
 
   // Mint a one-time claim token (store hash only). Best-effort — a failure here

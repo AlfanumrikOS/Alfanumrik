@@ -59,6 +59,11 @@ export interface BootstrapProfileParams {
   school_name: string | null;
   school_city: string | null;
   school_state: string | null;
+  /**
+   * institution_admin principal name (schools.principal_name). Distinct from
+   * `name` (the admin's own name → school_admins.name). Null when absent/blank.
+   */
+  principal_name: string | null;
   phone: string | null;
 }
 
@@ -158,6 +163,9 @@ export function profileParamsFromMetadata(user: {
     school_city: nonEmptyString(meta.city) ?? nonEmptyString(meta.school_city),
     school_state:
       nonEmptyString(meta.state) ?? nonEmptyString(meta.school_state),
+    // AuthScreen persists the founding principal's name as `principal_name`
+    // (schools.principal_name) — distinct from `name` (school_admins.name).
+    principal_name: nonEmptyString(meta.principal_name),
     phone: nonEmptyString(meta.phone),
   };
 }
