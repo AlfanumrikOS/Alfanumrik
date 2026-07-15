@@ -166,3 +166,99 @@ describe('GUARD #8 — quiz_me coachDirective forces the blocking JSON branch', 
     if (typeof window !== 'undefined') window.localStorage.removeItem('alfanumrik_foxy_stream');
   });
 });
+
+/**
+ * DIRECTIVE ECHO — a learning-action re-send renders a COMPACT intent pill
+ * (marker + bilingual label) instead of re-echoing the full prior question (the
+ * "question renders twice" bug). Crucially, the server call is unchanged: the
+ * /api/foxy POST still carries the FULL question so Foxy re-teaches correctly.
+ */
+describe('directive echo — re-send shows a compact pill, server still gets the full question', () => {
+  it('appends a student bubble with the compact EN label + `directive` marker, NOT the full question', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonOk({ response: 'Simpler!', sessionId: 'sess-1', groundingStatus: 'grounded', messageId: 'msg-1' }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const FULL_Q = 'What is photosynthesis and why does it matter?';
+    const { result } = renderHook(() => useFoxyChat());
+    await act(async () => {
+      await result.current.sendMessage({
+        message: FULL_Q,
+        // Mirrors the page wrapper: augmentedMessage carries the full question.
+        augmentedMessage: FULL_Q,
+        grade: '9',
+        subject: 'science',
+        language: 'en',
+        mode: 'learn',
+        coachDirective: 'simplify',
+      });
+    });
+
+    // DISPLAY: the student bubble is the compact pill, NOT the re-echoed question.
+    const studentBubble = result.current.messages.find((m) => m.role === 'student');
+    expect(studentBubble, 'expected a student bubble').toBeTruthy();
+    expect(studentBubble!.directive).toBe('simplify');
+    expect(studentBubble!.content).toBe('🔁 Explain simpler');
+    expect(studentBubble!.content).not.toContain('photosynthesis');
+    // The literal "question renders twice" bug: exactly ONE student bubble is
+    // appended (the pill) — never the pill PLUS a re-echoed full-question bubble.
+    const studentBubbles = result.current.messages.filter((m) => m.role === 'student');
+    expect(studentBubbles).toHaveLength(1);
+    expect(studentBubbles.some((m) => (m.content ?? '').includes('photosynthesis'))).toBe(false);
+
+    // SERVER: the /api/foxy POST still carries the FULL question + the directive.
+    const foxyCall = fetchMock.mock.calls.find((c) => c[0] === '/api/foxy');
+    expect(foxyCall, 'expected a POST to /api/foxy').toBeTruthy();
+    const body = JSON.parse((foxyCall![1] as RequestInit).body as string);
+    expect(body.message).toBe(FULL_Q);
+    expect(body.coachDirective).toBe('simplify');
+  });
+
+  it('localizes the pill to Hindi (P7) while the server still gets the full question', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonOk({ response: 'उदाहरण', sessionId: 'sess-1', groundingStatus: 'grounded', messageId: 'msg-1' }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const FULL_Q = "Explain Newton's first law";
+    const { result } = renderHook(() => useFoxyChat());
+    await act(async () => {
+      await result.current.sendMessage({
+        message: FULL_Q,
+        augmentedMessage: FULL_Q,
+        grade: '9',
+        subject: 'science',
+        language: 'hi',
+        mode: 'learn',
+        coachDirective: 'example',
+      });
+    });
+
+    const studentBubble = result.current.messages.find((m) => m.role === 'student');
+    expect(studentBubble!.directive).toBe('example');
+    expect(studentBubble!.content).toBe('📝 उदाहरण दिखाओ');
+
+    const foxyCall = fetchMock.mock.calls.find((c) => c[0] === '/api/foxy');
+    const body = JSON.parse((foxyCall![1] as RequestInit).body as string);
+    expect(body.message).toBe(FULL_Q);
+    expect(body.coachDirective).toBe('example');
+  });
+
+  it('a normal (non-directive) send is UNCHANGED — real user text, no directive marker', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonOk({ response: 'hi', sessionId: 'sess-1', groundingStatus: 'grounded', messageId: 'msg-1' }),
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const TYPED = 'Why is the sky blue?';
+    const { result } = renderHook(() => useFoxyChat());
+    await act(async () => {
+      await result.current.sendMessage({ message: TYPED, grade: '9', subject: 'science', language: 'en', mode: 'learn' });
+    });
+
+    const studentBubble = result.current.messages.find((m) => m.role === 'student');
+    expect(studentBubble!.content).toBe(TYPED);
+    expect(studentBubble!.directive).toBeUndefined();
+  });
+});

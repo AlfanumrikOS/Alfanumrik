@@ -110,6 +110,29 @@ describe('MessageList', () => {
     expect(bubble.textContent).toContain('What is photosynthesis?');
   });
 
+  it('renders a directive-echo student message as a compact pill, not a re-echoed question', () => {
+    // A learning-action re-send appends a student bubble carrying a `directive`
+    // marker. MessageList must paint it as a compact intent PILL instead of a
+    // normal student bubble echoing the full question (the "renders twice" fix).
+    const directiveMsg: ChatMessage = {
+      id: 3,
+      role: 'student',
+      content: '🔁 Explain simpler',
+      directive: 'simplify',
+      timestamp: '2026-05-09T10:00:02Z',
+    };
+    const { getByTestId, getAllByTestId } = render(
+      <MessageList {...baseProps} messages={[studentMsg, directiveMsg]} />,
+    );
+    // The directive message is a pill…
+    const pill = getByTestId('directive-echo-pill');
+    expect(pill.textContent).toBe('🔁 Explain simpler');
+    expect(pill.textContent).not.toContain('photosynthesis');
+    // …and it did NOT also render through the normal student-bubble path: only
+    // the real question (studentMsg) becomes a bubble-student.
+    expect(getAllByTestId('bubble-student')).toHaveLength(1);
+  });
+
   it('renders tutor bubbles with the legacy RichContent renderer (no structured)', async () => {
     const { getByTestId } = render(<MessageList {...baseProps} messages={[tutorMsg]} />);
     // RichContent is loaded via next/dynamic, so wait for the async chunk
