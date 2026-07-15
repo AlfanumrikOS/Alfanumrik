@@ -5289,7 +5289,7 @@ gave that invariant executable, handler-level coverage.
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-177 | `send_auth_email_always_200` | The `send-auth-email` Edge Function returns HTTP 200 on ALL handler code paths — non-POST request, OPTIONS preflight, missing hook secret, invalid webhook signature, invalid payload, relay-send failure, relay-send success, no-relay-config (`warning: 'no_relay_config'`), and top-level throw — plus a source canary asserting no non-200 status literal exists in the handler. A non-200 from a Supabase Send-Email hook blocks ALL signups (P15 rule 1). Provider-swap-hardened (2026-07-15, Mailgun→Resend via the provider-agnostic `_shared/relay-mailer.ts`): the send-path tests inject a stub transport through `setDefaultEmailTransport()`, so the suite runs fully offline (CI runs it with `--allow-read --allow-env`, NO `--allow-net`) and can never open a live socket or fire a real Resend send. | `supabase/functions/send-auth-email/__tests__/always-200.test.ts` (behavioral `Deno.serve` handler-capture); guarded against deletion + substring-drift by `e2e/auth-onboarding-p15.spec.ts` | E |
+| REG-177 | `send_auth_email_always_200` | The `send-auth-email` Edge Function returns HTTP 200 on ALL handler code paths — non-POST request, OPTIONS preflight, missing hook secret, invalid webhook signature, invalid payload, **relay send failure, relay send success, no-relay-config (`no_relay_config`)**, and top-level throw (`internal_error`) — plus a source canary asserting no non-200 status literal exists in the handler. A non-200 from a Supabase Send-Email hook blocks ALL signups (P15 rule 1). Provider-agnostic after the Mailgun→Resend migration (Phase 1, commit `828b5253`): the handler dispatches through the shared `_shared/relay-mailer.ts` seam (`sendEmail`), and the send-path tests inject a stub `EmailTransport` via `setDefaultEmailTransport()` so NO socket is ever opened — the whole 13-test suite runs fully offline (`--allow-read --allow-env`; `--allow-net` only warms the one esm.sh `standardwebhooks` import on a cold cache). Also pins the token-varying idempotency property (`authEmailTokenDimension` + `createEmailIdempotencyKey`): distinct auth tokens → distinct Resend `Idempotency-Key` so a re-requested confirmation/reset actually sends within Resend's 24h key TTL, while the SAME token → SAME key so a genuine transport retry still dedupes (no double-send). | `supabase/functions/send-auth-email/__tests__/always-200.test.ts` (behavioral `Deno.serve` handler-capture + injected stub transport, offline/socket-free; 13 tests); guarded against deletion by `e2e/auth-onboarding-p15.spec.ts` | E |
 
 ### Invariants covered by this section
 
@@ -5302,6 +5302,17 @@ Pre-REG-177: 143 entries (142 catalogued through REG-175 + REG-176 Foxy
 prompt-template routing). Engineering-Audit Cycle 1 adds REG-177:
 `send-auth-email`-always-200 P15 hook coverage.
 **Total catalog: 144 entries (target: 35 — TARGET EXCEEDED).**
+
+> REG-177 refreshed 2026-07-15 for the Phase 1 Mailgun→Resend migration (commit
+> `828b5253`): provider-agnostic relay path names, the `no_relay_config`
+> fail-soft warning, the injected-stub-transport (`setDefaultEmailTransport`)
+> offline/socket-free posture, and the newly-added token-varying idempotency
+> property. NO new REG id was allocated — it is the same invariant, same test
+> file, same P15 concern (a re-requested confirmation/reset MUST still deliver),
+> and the same e2e deletion-guard. The idempotency-key tests live in the same
+> `always-200.test.ts` suite, so folding them into REG-177 keeps one pin per
+> enforcement locus rather than fragmenting one file across two catalog ids.
+> Count unchanged at 144.
 
 ---
 
