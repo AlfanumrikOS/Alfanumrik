@@ -92,7 +92,7 @@ function studentEmail(name: string, grade?: string, board?: string): { subject: 
         <tr><td style="padding:16px;background:#F5F3FF;border-radius:12px;border-left:4px solid #6C5CE7;">
           <p style="margin:0 0 4px;font-size:15px;font-weight:700;color:#6C5CE7;">&#127919; What's waiting for you</p>
           <ul style="margin:8px 0 0;padding-left:20px;font-size:13px;color:#4B5563;line-height:2;">
-            <li><strong>Foxy AI Tutor</strong> &#8212; Your personal study buddy that explains concepts in your language</li>
+            <li><strong>Foxy</strong> &#8212; Your personal study buddy that explains concepts in your language</li>
             <li><strong>Adaptive Quizzes</strong> &#8212; Smart questions that match your level and help you grow</li>
             <li><strong>XP &amp; Streaks</strong> &#8212; Earn points, maintain streaks, and climb the leaderboard</li>
             <li><strong>Spaced Repetition</strong> &#8212; Never forget what you learn with scientifically-timed reviews</li>
@@ -112,7 +112,7 @@ function studentEmail(name: string, grade?: string, board?: string): { subject: 
       </table>
       <p style="margin:24px 0 0;font-size:12px;color:#9CA3AF;text-align:center;line-height:1.6;">Questions? Just ask Foxy inside the app or email <a href="mailto:support@alfanumrik.com" style="color:#6C5CE7;">support@alfanumrik.com</a></p>
     `, `Welcome to Alfanumrik, ${firstName}! Your AI-powered learning journey starts now.`)
-  const text = `Welcome to Alfanumrik, ${firstName}!${gradeText}\n\nYou're now part of Alfanumrik. Here's what's waiting for you:\n\n- Foxy AI Tutor: Your personal study buddy\n- Adaptive Quizzes: Smart questions that match your level\n- XP & Streaks: Earn points and climb the leaderboard\n- Spaced Repetition: Never forget what you learn\n\nPro Tip: Start with a 5-question quiz in your favourite subject!\n\nStart learning: ${SITE_URL}/dashboard\n\nQuestions? Email support@alfanumrik.com\n\n(c) 2026 Alfanumrik EdTech\n${SITE_URL}/privacy | ${SITE_URL}/terms`
+  const text = `Welcome to Alfanumrik, ${firstName}!${gradeText}\n\nYou're now part of Alfanumrik. Here's what's waiting for you:\n\n- Foxy: Your personal study buddy\n- Adaptive Quizzes: Smart questions that match your level\n- XP & Streaks: Earn points and climb the leaderboard\n- Spaced Repetition: Never forget what you learn\n\nPro Tip: Start with a 5-question quiz in your favourite subject!\n\nStart learning: ${SITE_URL}/dashboard\n\nQuestions? Email support@alfanumrik.com\n\n(c) 2026 Alfanumrik EdTech\n${SITE_URL}/privacy | ${SITE_URL}/terms`
   return { subject, html, text }
 }
 

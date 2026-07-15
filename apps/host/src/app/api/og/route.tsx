@@ -185,7 +185,7 @@ export async function GET() {
                 fontSize: 10, color: '#E8581C', letterSpacing: '0.14em',
               }}
             >
-              AI TUTOR · CBSE INDIA
+              FOXY · CBSE INDIA
             </div>
           </div>
 
@@ -210,7 +210,7 @@ export async function GET() {
             }}
           >
             <span style={{ color: 'rgba(244,236,219,0.72)' }}>
-              Foxy — India&#39;s most patient AI tutor.
+              Foxy — India&#39;s most patient tutor.
             </span>
             <span style={{ color: 'rgba(244,236,219,0.48)', fontSize: 17 }}>
               CBSE Grades 6–12 · Hindi &amp; English

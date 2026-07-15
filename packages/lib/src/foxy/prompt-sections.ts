@@ -725,6 +725,59 @@ export const TEACH_THEN_STOP_DIRECTIVE = [
   "Hinglish); technical terms (CBSE, NCERT, Bloom's) stay in English.",
 ].join('\n');
 
+// ─── Wave 2: Mermaid diagrams + ASCII-art ban (ff_foxy_diagrams_v1) ─────────
+//
+// Foxy used to "draw" diagrams as ASCII / text-art (`/ \`, `----`, box-drawing)
+// inside paragraph/step text — unreadable on a phone and un-teacherly. This
+// directive (a) FORBIDS ASCII/text-art in ANY block, and (b) routes each visual
+// need to the RIGHT block: a drawable diagram → a `mermaid` block; a real
+// labelled photo/figure → the existing `diagram` retrieval block; an equation →
+// the `math` block.
+//
+// DELIBERATELY NOT inside the parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT (that
+// constant stays byte-identical Node<->Deno<->Python). This is an ADDITIVE
+// section injected via the `mode_directive` channel — the SAME channel as
+// TEACH_THEN_STOP_DIRECTIVE / PRACTICE_MCQ_DIRECTIVE — ONLY when
+// `ff_foxy_diagrams_v1` is ON. Flag OFF (default) → never injected → the prompt
+// is byte-identical to today.
+//
+// P7 (bilingual): node/edge labels follow the student's language; technical
+// terms (CBSE, NCERT, Bloom's) stay in English. P12 (AI safety): the emitted
+// `mermaid` block is schema-validated (allowlisted header, no <script> /
+// javascript: / click callbacks); a malformed block fails validation and falls
+// back to safe prose — broken diagram source is NEVER shown to a student.
+export const DIAGRAM_DIRECTIVE = [
+  '## DIAGRAM DIRECTIVE — use real diagrams, NEVER text-art',
+  'NEVER draw a diagram, figure, chart, or table using ASCII / text-art. Do NOT',
+  'sketch pictures with characters like "/", "\\", "|", "----", "+---+", arrows',
+  'built from dashes, or box-drawing characters inside ANY block\'s text. Text-art',
+  'is unreadable on a phone and is forbidden.',
+  '',
+  'Instead, pick the RIGHT block for the visual:',
+  '- A process, cycle, flow, hierarchy, tree, relationship, sequence, timeline, or',
+  '  state machine → emit a "mermaid" block (a real, rendered diagram).',
+  '- A real labelled photo or textbook figure (e.g. "human heart labelled diagram")',
+  '  → use the existing "diagram" block with a search_query.',
+  '- An equation or formula → use a "math" block (or inline \\( ... \\) in text).',
+  '',
+  'A "mermaid" block has this exact shape:',
+  '  { "type": "mermaid", "code": "<mermaid source>", "title": "<short caption, optional, <=120 chars>" }',
+  'Rules for the "code" field (a malformed diagram is DROPPED, so follow these):',
+  '- The FIRST word MUST be one of these diagram types: flowchart, graph,',
+  '  sequenceDiagram, classDiagram, stateDiagram, stateDiagram-v2, erDiagram,',
+  '  mindmap, pie, timeline, journey, quadrantChart, gitGraph.',
+  '- Write syntactically VALID mermaid for that diagram type. Keep it small and',
+  '  focused (a handful of nodes/edges), 1..2000 characters. Newlines inside the',
+  '  JSON string are written as \\n.',
+  '- Put node/edge LABELS in the student\'s language (English, Hindi, or Hinglish);',
+  '  keep technical terms (CBSE, NCERT, Bloom\'s) in English.',
+  '- Do NOT include HTML, "<script", "javascript:", a "click" interaction callback,',
+  '  or a "%%{init ...}" directive — plain diagram syntax only.',
+  '',
+  'Example (a simple process flow):',
+  '  { "type": "mermaid", "code": "flowchart TD\\n  A[Evaporation] --> B[Condensation]\\n  B --> C[Precipitation]\\n  C --> A", "title": "The Water Cycle" }',
+].join('\n');
+
 // Compose a per-mode directive with an additive directive fragment. Used to
 // append TEACH_THEN_STOP_DIRECTIVE onto the (usually empty) per-mode directive
 // WITHOUT disturbing byte-identical output when the fragment is empty:
@@ -842,6 +895,13 @@ You are Foxy, a friendly CBSE tutor. Safety rails you must follow:
 
    Hindi (use when the student wrote in Hindi / Devanagari script):
    "मेरे पास आपकी पाठ्यपुस्तक में इसके लिए सत्यापित स्रोत नहीं है। कृपया मुझे बताएं कि आप कौन सा अध्याय पढ़ रहे हैं, मैं फिर से देखूंगा।"
+` + // Anti-fake action rail (P6 "fake action") — every mode, all flags off/on
+`8. No fake actions: Never claim in prose that you created, generated, or
+   prepared a quiz or a set of questions unless the actual questions appear in
+   THIS SAME reply for the student to see and answer. Do NOT write sentences
+   like "Generated 5 quiz questions." or "Here are 5 questions" with no
+   questions after them. If you cannot produce real questions, say so plainly
+   in the student's language instead of claiming a quiz you did not make.
 `).trim();
 
 // ─── Part A: bare-open detector ─────────────────────────────────────────────

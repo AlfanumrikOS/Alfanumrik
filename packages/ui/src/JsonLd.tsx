@@ -45,7 +45,7 @@ export default function JsonLd() {
       '@id': 'https://alfanumrik.com/#organization',
     },
     description:
-      'AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12.',
+      'AI-powered adaptive learning platform for CBSE students. Foxy teaches in Hindi and English with Bayesian mastery tracking, spaced repetition, and gamified learning. Grades 6-12.',
     educationalLevel: ['Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
     inLanguage: ['en', 'hi'],
     isAccessibleForFree: true,
@@ -55,7 +55,7 @@ export default function JsonLd() {
       audienceType: 'CBSE Students, Grades 6-12',
     },
     featureList: [
-      'AI Tutor (Foxy)',
+      'Foxy',
       'Adaptive Quizzes',
       'Spaced Repetition Review',
       'Interactive Simulations',

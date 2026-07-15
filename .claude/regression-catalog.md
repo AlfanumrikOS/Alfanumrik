@@ -8103,3 +8103,215 @@ audit-metadata mapping). **Total catalog: 218 entries (target: 35 — TARGET
 EXCEEDED).**
 
 ---
+
+## REG-252 — unconditional, FLAG-INDEPENDENT anti-fake-quiz-claim backstop: Foxy never ships "Generated N quiz questions." with no questions (2026-07-15)
+
+Source: Foxy "fake action" fix. A quiz/practice turn could surface the
+student-facing sentence "Generated 5 quiz questions." while the actual validated
+questions lived in `metadata.questions` — which the legacy persist path drops.
+The student saw a CLAIM of a quiz with ZERO questions to answer. REG-245 closed
+this ONLY on the flag-ON real-practice oracle path (`ff_foxy_real_practice_v1`);
+this entry pins the NEW UNCONDITIONAL backstop that runs on the flag-OFF / legacy
+paths regardless of ANY feature flag. Assessment gave APPROVE-WITH-CONDITIONS on
+the fix; these tests are the conditions.
+
+Files: `packages/lib/src/foxy/anti-fake-quiz-claim.ts` (`stripFakeQuizClaim(text)
+→ {claimOnly, text}` + `QUIZ_CLAIM_FALLBACK_TEXT` — pure, deterministic,
+never-throws detector: `claimOnly` is true only when the text matches a
+"generated/created/prepared/here-are N questions"-style claim [EN + Hindi/
+Devanagari, danda-aware] AND carries < 3 MCQ option markers [`A)`/`(a)`/`1.`] AND
+< 2 question marks), `packages/lib/src/ai/workflows/quiz-generate.ts`
+(`renderQuizQuestionsText()` renders real `QuizQuestion[]` — bilingual header, 4
+lettered options, inline `Answers / उत्तर` key — or returns `QUIZ_CLAIM_FALLBACK_TEXT`
+when 0 survive P6 validation; assessment fixed the n===1 singular grammar),
+`apps/host/src/app/api/foxy/_lib/legacy-flow.ts` (`persistLegacyFoxyResponse`
+strips a claim-only turn to the bilingual fallback in BOTH the wire `response` and
+the persisted `foxy_chat_messages.content`, flag-independent — the one gate BOTH
+legacy call sites flow through), `apps/host/src/app/api/foxy/route.ts` (new
+`else if (isPracticeTurn)` branch ~:2380 strips a claim-only flag-OFF practice turn
+→ `buildQuizMeFallbackResponse(subject)`).
+
+**Why.** A tutor asserting it did something it did NOT surface is a "fake action":
+it erodes trust and, for a quiz, means the student is handed a phantom
+assessment (P6 "question quality" — a served quiz turn must actually carry
+answerable questions; P1-adjacent — a claimed-but-absent quiz cannot be graded).
+The fix is DEFENSE-IN-DEPTH across 4 layers so a claim-with-no-questions can never
+reach a student on ANY path: (1) the render layer never emits a bare claim, (2)
+the legacy persist gate strips it, (3) the flag-OFF practice route branch strips
+it, (4) the pure detector under all three is EN+Hindi and passes real questions
+through untouched. The fallback (`QUIZ_CLAIM_FALLBACK_TEXT`) is bilingual (P7).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-252 | `foxy_unconditional_anti_fake_quiz_claim_backstop_flag_independent` | **(a) Pure detector** (`stripFakeQuizClaim`): EN "Generated 5 quiz questions." (and "I have created a quiz with 5 questions") with no options → `claimOnly:true`, `text === QUIZ_CLAIM_FALLBACK_TEXT`; the SAME "Here are N questions" claim BACKED by real A)/B)/C)/D) options → `claimOnly:false`, passes through byte-identical; Hindi "5 प्रश्न बनाए।" (danda-aware) claim-only → stripped; normal teaching prose → not stripped; empty/whitespace/non-string (undefined/null/number) → defensively `claimOnly:false`, never throws; `QUIZ_CLAIM_FALLBACK_TEXT` is bilingual (EN + Devanagari) and self-stable (feeding it back → `claimOnly:false`, no strip loop). **Two INTENTIONAL narrow false-positive boundaries assessment flagged, PINNED as documented:** a claim + exactly TWO numbered imperative questions with no "?" (2 option markers < the 3-marker floor) is STILL stripped; a Hindi claim + Devanagari-lettered options (क)/ख)/ग)/घ), which the Latin-only `[A-Da-d1-4]` evidence detector doesn't recognize) is STILL stripped — over-stripping here is strictly safer than shipping a phantom quiz, and pinning them makes any future widening of the evidence detector a deliberate reviewed change. **(b) Render/workflow** (`renderQuizQuestionsText` via `runQuizGenerateWorkflow`, real `validateQuizQuestions`): a validated multi-question set renders REAL questions (bilingual plural header "Here are 4 practice questions" + "(4 अभ्यास प्रश्न", 4 lettered options, "Answers / उत्तर:" key) that passes the backstop (`claimOnly:false`) and is never a bare "Generated N" claim; the n===1 degraded path (1 survives P6) renders SINGULAR grammar ("Here is 1 practice question … attempt it … check the answer below", no plural leak, "(1 अभ्यास प्रश्न"); 0 survivors → `response === QUIZ_CLAIM_FALLBACK_TEXT` with `metadata.questions` empty and `validationErrors` non-empty. **(c) Legacy persist** (`persistLegacyFoxyResponse`, flag-independent): a claim-only `legacy.response` → the returned wire `response` AND the persisted `foxy_chat_messages.content` assistant row are BOTH `QUIZ_CLAIM_FALLBACK_TEXT` (never the claim); a real-question turn (A)/B)/C)/D)) passes through UNTOUCHED in both surfaces; NO feature flag is consulted on this path (`isFeatureEnabled` never called). **(d) Route flag-OFF practice branch** (`else if (isPracticeTurn)`, mirrored with the real `denormalizeFoxyResponse` + `stripFakeQuizClaim` + `buildQuizMeFallbackResponse`): a claim-only STRUCTURED turn AND a claim-only GROUNDED answer (structured null) are both swapped for `buildQuizMeFallbackResponse(subject)` (mcq-free, `FoxyResponseSchema`-valid, bilingual EN+Hinglish, and itself not a claim); a real practice structured turn (claim paragraph + 3 real mcq blocks → denormalizes with A)…D) markers) passes through UNTOUCHED (same payload reference flows on). | `apps/host/src/__tests__/lib/foxy/anti-fake-quiz-claim.test.ts` (detector unit + the 2 intentional-FP boundary pins + fallback bilingual/self-stable); `apps/host/src/__tests__/lib/ai/workflows/quiz-generate-anti-fake-render.test.ts` (multi-question real render + n===1 singular grammar + 0-survivors fallback); `apps/host/src/__tests__/api/foxy/legacy-flow-anti-fake.test.ts` (wire+persisted content both fallback, real-turn passthrough, flag-independence); `apps/host/src/__tests__/api/foxy/foxy-practice-flag-off-anti-fake.test.ts` (route branch — structured+grounded claim-only → fallback, real (A)-(D) turn passthrough) | E | P6, P1-adjacent, P7 |
+
+### Invariants covered by this section
+
+- P6 (question quality) — a served quiz/practice turn must actually CARRY
+  answerable questions. The backstop guarantees a "Generated N questions." claim
+  with no rendered questions is replaced by a graceful fallback on EVERY
+  non-oracle path (render, legacy persist, flag-OFF practice route branch), so a
+  phantom quiz can never reach a student. REG-245 covers the flag-ON oracle path;
+  REG-252 covers the unconditional flag-independent backstop underneath it.
+- P1-adjacent (score accuracy) — a claimed-but-absent quiz cannot be graded; by
+  refusing to surface a phantom quiz the platform never presents an ungradable
+  "assessment" to a student.
+- P7 (bilingual) — `QUIZ_CLAIM_FALLBACK_TEXT` (EN + Devanagari) and the route's
+  `buildQuizMeFallbackResponse` (EN + Hinglish CTA) are both bilingual, and the
+  n===1 render preserves correct singular grammar in both EN and Hindi.
+
+### Catalog total
+
+Pre-REG-252: 218 entries (through REG-251, RBI pre-debit notice audit-evidence).
+Adds REG-252 (unconditional flag-independent anti-fake-quiz-claim backstop — the
+4-layer defense [pure EN+Hindi detector + real-question render + legacy-persist
+strip in wire+persisted content + flag-OFF practice route branch] that guarantees
+Foxy never ships a "Generated N quiz questions." claim with no questions, plus the
+two intentional narrow false-positive boundaries assessment flagged; complements
+REG-245's flag-ON oracle path).
+**Total catalog: 219 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-253 — Foxy Mermaid diagram block (Wave 2): drawable structured block, grammar-allowlist + XSS-reject validation, lazy strict renderer, ASCII-ban directive flag-gated by `ff_foxy_diagrams_v1` (2026-07-15)
+
+Source: Foxy Pedagogy Wave 2 "real diagrams, never text-art". Foxy used to "draw"
+diagrams as ASCII / box-drawing text-art inside paragraph/step text — unreadable
+on a 4G phone and un-teacherly. Wave 2 adds a NEW drawable structured block
+`{ type:'mermaid', code:string(1..2000), title?:string(<=120) }` that renders as a
+real, colorful SVG diagram, plus a flag-gated prompt directive that BANS ASCII art
+and routes each visual need to the right block (drawable → `mermaid`, real figure →
+`diagram` retrieval, equation → `math`). The ai-engineer added the schema/prompt
+(prompt parity already green) and the frontend added the renderer; neither had
+dedicated mermaid tests. This entry pins the block end-to-end.
+
+Files under test: `packages/lib/src/foxy/schema.ts` (`mermaid` block in
+`FoxyBlockSchema`/`FoxyResponseSchema` superRefine + `validateMermaidCode` +
+`MERMAID_ALLOWED_HEADERS` [13 headers] + `isFoxyMermaidBlock`/`FoxyMermaidBlock`),
+`supabase/functions/grounded-answer/structured-schema.ts` (Deno mirror
+`validateFoxyResponse` + `denormalizeFoxyResponse`),
+`packages/lib/src/foxy/denormalize.ts` (Node denormalize → title or "[diagram]",
+never raw source), `packages/ui/src/foxy/FoxyStructuredRenderer.tsx` (`MermaidBlock`
+— lazy `import('mermaid')`, `securityLevel:'strict'`, `mermaid.parse(code,
+{suppressErrors:true})` guard, loading/ready/error states, bilingual
+`chrome.diagramFailed`/`diagramLoading`), `packages/lib/src/foxy/prompt-sections.ts`
+(`DIAGRAM_DIRECTIVE` + `composeModeDirective`), `apps/host/src/app/api/foxy/route.ts`
+(mode_directive selector; diagram flag read scoped to `mode !== 'practice'`).
+
+**Why.** The `mermaid` block is the ONLY structured block whose `code` is a diagram
+PROGRAM a client renderer executes, so it needs two independent gates: (1) a hard
+grammar-allowlist + XSS-reject at the schema layer (an unknown/hostile diagram type,
+`<script`, `javascript:`, a line-anchored `click ` interaction callback, or a
+`%%{init ...}` override of `htmlLabels`/`securityLevel` is REJECTED before it can
+reach a renderer — P6 output quality + P12 AI safety), and (2) a lazy, strict
+renderer (mermaid pulled via dynamic `import()` so it never enters the shared/first-
+load bundle — P10; run with `securityLevel:'strict'` and `parse`-guarded so a bad
+spec degrades to a quiet bilingual note — P7/P12, never a thrown exception or raw
+diagram source shown to a student). The ASCII-ban `DIAGRAM_DIRECTIVE` is additive
+and flag-gated (`ff_foxy_diagrams_v1`, default OFF): flag OFF → mode_directive is
+byte-identical to today; the directive lives OUTSIDE the parity-locked
+`FOXY_STRUCTURED_OUTPUT_PROMPT` and outside `FOXY_SAFETY_RAILS`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-253 | `foxy_mermaid_block_grammar_allowlist_xss_reject_lazy_strict_renderer_ascii_ban_flag_gated` | **(a) Schema accept/reject matrix** (`FoxyBlockSchema`/`FoxyResponseSchema` + `validateMermaidCode` + `isFoxyMermaidBlock`): a valid mermaid block of EACH of the 13 allowlisted headers (flowchart/graph/sequenceDiagram/classDiagram/stateDiagram/stateDiagram-v2/erDiagram/mindmap/pie/timeline/journey/quadrantChart/gitGraph) is accepted (with/without title, Hindi labels, benign `%%{init theme}`, a `[Click here]` LABEL that is NOT a line-anchored callback, code at the 2000 cap, title at the 120 cap); REJECTS empty/whitespace/oversize(>2000) code, a non-allowlisted first token, `<script`, `javascript:`, a line-anchored `click ` callback, `%%{init ... htmlLabels}` and `... securityLevel` overrides, title>120, `text`/`latex`/mcq-fields on a mermaid block, and `code`/`title` on a non-mermaid (paragraph/math) block; `isFoxyMermaidBlock` narrows a valid block true and returns false for empty/absent code or a non-mermaid block. The Deno mirror `validateFoxyResponse` re-runs the same accept + mermaid-specific reject matrix and AGREES (allowlist + `<script`/`javascript:`/`click`/`%%{init}` + text/latex-on-mermaid + oversize). **KNOWN, PINNED Node↔Deno drift (reported to ai-engineer):** the Deno mirror does NOT forbid mermaid-only fields (`code`/`title`) on a non-mermaid block while Zod does — inert at render time (only mermaid-typed blocks reach MermaidBlock), pinned so a future mirror fix flips the pin. **(b) Denormalize** (Node `denormalizeFoxyResponse` + Deno mirror): a mermaid block WITH a title → the legacy TEXT line is the title verbatim; WITHOUT a title (or whitespace-only) → the literal "[diagram]"; NEVER the raw mermaid `code` (no `flowchart`/`Evaporation`/source leak into the resume TEXT column). **(c) Renderer smoke** (`MermaidBlock` via `FoxyStructuredRenderer`, dynamic `import('mermaid')` mocked): valid code → loading (`Drawing diagram…`) then ready — the SVG returned by `mermaid.render` is injected, `role="img"` aria-label = title (or the generic "Diagram" label), title becomes the figcaption, render called with the exact validated code; `parse` returns false → 'error' shows the bilingual `diagramFailed` fallback (EN "Diagram couldn't be drawn"; Hindi "डायग्राम नहीं बन पाया" under `isHi`, no EN leak) and `render` is NOT called; empty code → error WITHOUT loading mermaid (`parse`/`render` never called); a mermaid block missing `code` routes through the guard's null branch → safe fallback, never throws, the rest of the renderer (response title) is unharmed; a `render()` throw also degrades to the error fallback. **(d) Flag gate** (`ff_foxy_diagrams_v1`, mode_directive selector mirror): flag OFF → mode_directive is BYTE-IDENTICAL to the pre-Wave-2 selector for every mode (with learning-actions flag both OFF and ON), no `DIAGRAM DIRECTIVE` marker leaks; flag ON on a prose-teaching turn (learn/explain/revise/doubt/homework/explorer) → `DIAGRAM_DIRECTIVE` is injected (verbatim when learning-actions OFF; composed `TEACH_THEN_STOP_DIRECTIVE\n\nDIAGRAM_DIRECTIVE` when both ON); a `practice` turn / `quiz_me` / real-practice NEVER get the directive (MCQ shapes win, and the route skips the flag read on practice); `DIAGRAM_DIRECTIVE` bans ASCII/text-art, routes to mermaid/diagram/math blocks, lists the 13 headers, states the 1..2000 bound, forbids `<script`/`javascript:`/`click`/`%%{init`, is bilingual (Hindi/Hinglish/CBSE), and is NOT baked into `FOXY_STRUCTURED_OUTPUT_PROMPT` / `FOXY_SAFETY_RAILS` / the `buildSystemPrompt` base persona for any mode. | `apps/host/src/__tests__/lib/foxy/mermaid-schema.test.ts` (schema accept/reject matrix + guard + `validateMermaidCode` + Deno mirror parity + pinned drift); `apps/host/src/__tests__/lib/foxy/mermaid-denormalize.test.ts` (Node + Deno denormalize → title/"[diagram]", never raw source); `apps/host/src/__tests__/foxy/mermaid-block.test.tsx` (renderer smoke — loading/ready/error, bilingual fallback, guard null-safety); `apps/host/src/__tests__/api/foxy/diagram-directive.test.ts` (flag gate — byte-identical OFF, injected ON, practice/quiz_me/real-practice unaffected, directive content + parity-lock exclusion) | E | P6, P12, P7 |
+
+### Invariants covered by this section
+
+- P6 (question/output quality) — the drawable `mermaid` block passes a hard
+  grammar-allowlist (first token must be one of 13 diagram headers) + XSS/interaction
+  reject (`<script`/`javascript:`/line-anchored `click `/`%%{init}` override) at the
+  schema layer, so a malformed or hostile diagram program is never served.
+- P12 (AI safety) — defense-in-depth: the schema gate refuses hostile constructs
+  regardless, AND the renderer runs mermaid lazily with `securityLevel:'strict'` and
+  a `parse`-guard, degrading a bad spec to a quiet note rather than executing it or
+  showing raw diagram source. The ASCII-ban `DIAGRAM_DIRECTIVE` is additive and
+  flag-gated (default OFF) and never mutates the parity-locked prompt or safety rails.
+- P7 (bilingual) — the renderer's `diagramLoading`/`diagramFailed` chrome and the
+  `DIAGRAM_DIRECTIVE` label guidance are bilingual (EN + Devanagari), technical terms
+  (CBSE/NCERT/Bloom's) untranslated.
+
+### Catalog total
+
+Pre-REG-253: 219 entries (through REG-252, unconditional anti-fake-quiz-claim backstop).
+Adds REG-253 (Foxy Mermaid diagram block — drawable structured block with
+grammar-allowlist + XSS-reject validation [Node Zod + Deno mirror], title/"[diagram]"
+denormalize that never leaks raw source, lazy strict `securityLevel:'strict'` renderer
+with bilingual failure fallback, and the ASCII-ban `DIAGRAM_DIRECTIVE` flag-gated by
+`ff_foxy_diagrams_v1` [byte-identical when OFF]; documents one pinned Node↔Deno mirror
+parity gap on mermaid-only-fields-on-other-blocks reported to ai-engineer).
+**Total catalog: 220 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-254 — Foxy Perception keyless Cloud Run invoker-token mint (Vercel-OIDC → GCP Workload Identity Federation): fail-closed/dormant, header separation, P13 no-token-in-logs (2026-07-15)
+
+Source: Foxy Perception (Phase 1C) armed-auth follow-up. The Python MOL
+classifier now runs on Cloud Run with Invoker IAM enforced, so the Next.js-side
+Node client `packages/lib/src/ai/clients/python-mol.ts` must attach a
+Google-signed ID token (aud = the service URL) in `X-Serverless-Authorization`.
+architect added a KEYLESS mint — Vercel OIDC → Google STS (Workload Identity
+Federation) → SA impersonation → `iamcredentials:generateIdToken` — with no JSON
+service-account key on Vercel. It is ADDITIVE and gated on four NON-SECRET env
+vars (`GCP_PROJECT_NUMBER`, `GCP_SERVICE_ACCOUNT_EMAIL`,
+`GCP_WORKLOAD_IDENTITY_POOL_ID`, `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID`). This
+is the P14 testing-review condition on that auth change: before REG-254 only the
+DORMANT path was covered (empty `PYTHON_AI_BASE_URL` / no GCP_* → null, no
+fetch); the ARMED path was untested.
+
+Files under test: `packages/lib/src/ai/clients/python-mol.ts` (`callPythonMol` +
+the internal `readGcpWifConfig`/`mintCloudRunIdToken` — the four-var arm gate,
+`await import()` of `@vercel/oidc` + `google-auth-library` on the armed path
+ONLY, `ExternalAccountClient.fromJSON` STS/impersonation, explicit
+`generateIdToken` second hop, the independent `MINT_TIMEOUT_MS` (3s) race, and
+the `X-Serverless-Authorization` vs `Authorization` header separation).
+
+**Why.** The target service enforces Invoker IAM, so an unauthenticated request
+is a hard 403 — but perception is fire-and-forget best-effort, so a mint that
+cannot run must degrade to a silent no-op, NEVER a throw and NEVER an
+unauthenticated call. Three failure surfaces are load-bearing: (1) running
+off-Vercel (e.g. the DEFERRED AWS ECS path) where `getVercelOidcToken` throws /
+the OIDC header is absent; (2) STS/impersonation or `generateIdToken` non-2xx;
+(3) a slow Google auth hop that must be bounded independently of the request
+timeout. All three must return `null` with no fetch. The student JWT in
+`Authorization` must be byte-for-byte untouched (the Google token rides a
+SEPARATE header). P13: a mint failure must log a static scope code + path only —
+never the token, the request body, or the failure detail. And the dormant path
+(GCP_* absent) must be byte-identical to before — the heavy deps must never be
+dynamic-imported, so they can never enter the dormant path, the existing tests,
+or any client bundle (P10).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-254 | `foxy_python_mol_keyless_wif_invoker_mint_fail_closed_header_separation_p13` | **(a) Armed happy path**: with `PYTHON_AI_BASE_URL`-equivalent (`baseUrlOverride`) set AND all four `GCP_*` present, `getVercelOidcToken` resolves + `ExternalAccountClient.fromJSON` returns a client whose `request` (the explicit `generateIdToken` hop) resolves `{data:{token}}` → the SINGLE outbound `fetch` carries BOTH `X-Serverless-Authorization: Bearer <idToken>` AND the UNTOUCHED student `Authorization: Bearer student-jwt`; the `audience` passed to `generateIdToken` == the service ORIGIN (`https://py.example.com`, derived via `new URL(baseUrl).origin`, NOT base+path), the hop URL contains `:generateIdToken`, and the Vercel-OIDC subject-token supplier is actually consumed. **(b) Fail-closed — OIDC absent** (simulates off-Vercel/AWS ECS where `getVercelOidcToken` throws): `callPythonMol` returns `null`, NEVER throws, and NO `fetch` is sent to Cloud Run. **(c) Fail-closed — STS/impersonation or generateIdToken rejects (non-2xx)** → `null`, no fetch; **and generateIdToken 2xx but empty/absent token** → `null`, no fetch. **(d) Fail-closed — mint timeout**: the `generateIdToken` hop hangs → only the mint's internal 3s `MINT_TIMEOUT_MS` race can settle (fake timers advance 3000ms) → `null`, never throws, no fetch. **(e) Dormant unchanged**: `GCP_*` absent → the mint block is skipped, NO dynamic import is attempted (`getVercelOidcToken` and `ExternalAccountClient.fromJSON` mocks are never called), NO `X-Serverless-Authorization` header is set, and the student `Authorization` is forwarded — byte-identical to the pre-change legacy behavior (keeps the existing 7 dormant/forwarding/fail-safe tests green). **(f) P13**: on a mint failure whose thrown reason carries token- and body-shaped secrets, only `logger.warn('python_mol.mint_unavailable', { path })` is emitted — the aggregate of ALL logger calls (info/warn/error/debug) contains neither the leaked token string, the student body note, nor the student JWT. | `apps/host/src/__tests__/api/foxy/python-mol-client.test.ts` (dormant suite [pre-existing 7] + `keyless WIF Cloud Run invoker mint (REG-254)` describe: armed happy-path header-separation + aud=origin, OIDC-absent, STS/generateIdToken reject, empty-token, mint-timeout via fake timers, P13 no-token/body-in-logs, and the dormant no-dynamic-import pin) | E | P13, P12, P9-adjacent (Invoker-IAM fail-closed), P10 (armed deps dynamic-imported only) |
+
+### Invariants covered by this section
+
+- P13 (data privacy) — a mint failure logs a STATIC scope code + non-PII path
+  only; the token, the request body, and the raw failure detail never reach the
+  logger (asserted over the union of all four logger levels).
+- P12 (AI safety, fail-closed posture) — a down/absent/slow Google auth hop, an
+  off-Vercel runtime, or an Invoker-IAM-enforced service the client cannot
+  authenticate to is a SILENT no-op (`null`, no fetch), never a degraded turn
+  and never an unauthenticated request; the whole mint is bounded by an
+  independent 3s timeout so it can never wedge perception.
+- Header separation — the Google-signed Cloud Run invoker token rides
+  `X-Serverless-Authorization`; the student Supabase JWT on `Authorization` is
+  byte-for-byte untouched, so the Python service still runs its own
+  `require_active_student` verification on the real student identity.
+- P10 (bundle budget) — `@vercel/oidc` + `google-auth-library` are
+  `await import()`-ed on the armed path ONLY; the dormant path never touches
+  them (pinned by the "no dynamic import attempted" assertion), so they cannot
+  enter the dormant path or any client bundle.
+
+### Catalog total
+
+Pre-REG-254: 220 entries (through REG-253, Foxy Mermaid diagram block).
+Adds REG-254 (Foxy Perception keyless Vercel-OIDC → GCP-WIF Cloud Run
+invoker-token mint — armed happy-path header separation [`X-Serverless-
+Authorization` vs untouched `Authorization`] + aud=service-origin, fail-closed on
+OIDC-absent / STS+generateIdToken failure / empty-token / mint-timeout, dormant
+no-dynamic-import byte-identity, and P13 no-token/body-in-logs).
+**Total catalog: 221 entries (target: 35 — TARGET EXCEEDED).**
+
+---

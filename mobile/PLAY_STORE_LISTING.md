@@ -4,10 +4,10 @@
 Alfanumrik — Smart CBSE Learning
 
 ## Short Description (80 chars max)
-AI-powered CBSE learning app for Class 6-12. Concepts, quizzes & AI tutor.
+AI-powered CBSE learning app for Class 6-12. Concepts, quizzes & Foxy.
 
 ## Full Description (4000 chars max)
-Alfanumrik is an AI-powered learning app built for Indian CBSE students from Class 6 to 12. Study smarter with structured concepts, practice quizzes, and Foxy — your personal AI tutor.
+Alfanumrik is an AI-powered learning app built for Indian CBSE students from Class 6 to 12. Study smarter with structured concepts, practice quizzes, and Foxy — your personal study buddy.
 
 📚 STRUCTURED LEARNING
 • Grade-specific subjects: Mathematics, Science, Physics, Chemistry, Biology, English, Hindi, Social Studies & more
@@ -15,7 +15,7 @@ Alfanumrik is an AI-powered learning app built for Indian CBSE students from Cla
 • Hindi translations for key terms
 • Mark topics complete and track your progress
 
-🦊 FOXY AI TUTOR
+🦊 FOXY
 • Ask any doubt — get simple, student-friendly explanations
 • Topic-scoped conversations for focused learning
 • Quick prompts to get started instantly
@@ -61,7 +61,7 @@ Download now and start learning smarter! 🎯
 Education
 
 ## Tags / Keywords
-cbse, learning, study, class 10, class 12, science, maths, ai tutor, quiz, indian students, board exam, ncert, education, study app, exam preparation
+cbse, learning, study, class 10, class 12, science, maths, ai tutor, foxy, quiz, indian students, board exam, ncert, education, study app, exam preparation
 
 ## Content Rating Questionnaire Answers
 - Violence: No
@@ -102,7 +102,7 @@ cbse, learning, study, class 10, class 12, science, maths, ai tutor, quiz, india
   - Center: "Alfanumrik" logo + tagline "Smart CBSE Learning"
   - Left side: Phone mockup showing dashboard screen
   - Right side: 🦊 Foxy mascot illustration
-  - Bottom: "Class 6-12 | AI Tutor | Quizzes | Free"
+  - Bottom: "Class 6-12 | Foxy | Quizzes | Free"
 
 ## Screenshots (minimum 2, recommended 5-8)
 - Size: 1080 x 1920 px (9:16 portrait) or 1920 x 1080 (16:9 landscape)

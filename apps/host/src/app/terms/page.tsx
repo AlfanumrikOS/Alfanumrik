@@ -26,7 +26,7 @@ export default function TermsPage() {
           <h2 style={h2}>2. Description of Service</h2>
           <p style={p}>
             Alfanumrik is an AI-powered adaptive learning platform for CBSE students.
-            Features include Foxy AI Tutor, adaptive quizzes, spaced repetition review,
+            Features include Foxy, adaptive quizzes, spaced repetition review,
             interactive simulations, and progress tracking.
           </p>
         </section>
@@ -63,9 +63,9 @@ export default function TermsPage() {
         </section>
 
         <section style={section}>
-          <h2 style={h2}>6. AI Tutor Disclaimer</h2>
+          <h2 style={h2}>6. Foxy Disclaimer</h2>
           <p style={p}>
-            Foxy AI Tutor provides educational assistance but is not a substitute for qualified
+            Foxy provides educational assistance but is not a substitute for qualified
             teachers. While we strive for accuracy, AI-generated content may occasionally contain
             errors. Always verify critical information with your textbooks and teachers.
           </p>

@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     short_name: isSchool ? schoolName : 'Alfanumrik',
     description: isSchool
       ? `${schoolName} \u2014 AI-powered adaptive learning for CBSE students`
-      : "India's smartest AI-powered adaptive learning platform for CBSE students. Foxy AI Tutor, Bayesian mastery, spaced repetition, gamified learning. Grades 6-12.",
+      : "India's smartest AI-powered adaptive learning platform for CBSE students. Foxy, Bayesian mastery, spaced repetition, gamified learning. Grades 6-12.",
     start_url: '/',
     scope: '/',
     display: 'standalone' as const,

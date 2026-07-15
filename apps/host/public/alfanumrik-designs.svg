@@ -62,7 +62,7 @@
     <rect x="60" y="126" width="220" height="28" rx="14" fill="#E8581C" opacity="0.15"/>
     <text x="76" y="144"
           class="brand-sans" font-size="13" font-weight="600"
-          fill="#E8581C" letter-spacing="0.6">AI Tutor for CBSE India</text>
+          fill="#E8581C" letter-spacing="0.6">Foxy for CBSE India</text>
 
     <!-- ── Main headline (two lines, ~72px) ── -->
     <text x="60" y="244"
@@ -78,7 +78,7 @@
     <!-- ── Sub-copy ── -->
     <text x="60" y="396"
           class="brand-serif" font-size="22" font-style="italic"
-          fill="#9C8A78">Foxy &#x2014; India&#x2019;s first patient AI tutor.</text>
+          fill="#9C8A78">Foxy &#x2014; India&#x2019;s first patient tutor.</text>
     <text x="60" y="426"
           class="brand-serif" font-size="22"
           fill="#9C8A78">CBSE Grades 6&#x2013;12.&#x2003;Hindi &amp; English.</text>

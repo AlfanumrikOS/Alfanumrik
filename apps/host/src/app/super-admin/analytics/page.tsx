@@ -81,7 +81,7 @@ function AnalyticsContent() {
   }
 
   const features = [
-    { label: 'Foxy AI Tutor', icon: '🦊', key: 'foxy' as const },
+    { label: 'Foxy', icon: '🦊', key: 'foxy' as const },
     { label: 'Quizzes', icon: '⚡', key: 'quizzes' as const },
     { label: 'STEM Lab', icon: '🔬', key: 'stem_lab' as const },
     { label: 'Study Plans', icon: '📋', key: 'study_plans' as const },

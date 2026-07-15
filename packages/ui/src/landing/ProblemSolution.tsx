@@ -11,7 +11,7 @@ const PROBLEMS = [
 ];
 
 const SOLUTIONS = [
-  { Icon: IconBrainConnected, title: 'Concepts explained until they click', titleHi: 'कॉन्सेप्ट तब तक समझाए जाते हैं जब तक समझ न आ जाए', desc: 'Foxy AI tutor breaks every topic step-by-step. In Hindi or English. Adapts to what your child already knows.', descHi: 'Foxy AI ट्यूटर हर टॉपिक स्टेप-बाय-स्टेप समझाता है। हिन्दी या अंग्रेज़ी में। बच्चे की मौजूदा समझ के अनुसार ढलता है।' },
+  { Icon: IconBrainConnected, title: 'Concepts explained until they click', titleHi: 'कॉन्सेप्ट तब तक समझाए जाते हैं जब तक समझ न आ जाए', desc: 'Foxy breaks every topic step-by-step. In Hindi or English. Adapts to what your child already knows.', descHi: 'Foxy हर टॉपिक स्टेप-बाय-स्टेप समझाता है। हिन्दी या अंग्रेज़ी में। बच्चे की मौजूदा समझ के अनुसार ढलता है।' },
   { Icon: IconBullseye, title: 'Practice targets weak spots only', titleHi: 'प्रैक्टिस सिर्फ कमज़ोर जगहों पर', desc: 'Smart quizzes adapt to your child\'s level. Board-exam patterns. Bloom\'s taxonomy built in. No wasted repetition.', descHi: 'स्मार्ट क्विज़ बच्चे के स्तर के अनुसार बदलते हैं। बोर्ड परीक्षा पैटर्न। Bloom\'s टैक्सोनॉमी शामिल। बेकार दोहराव नहीं।' },
   { Icon: IconEyeDashboard, title: 'You see progress every day', titleHi: 'आप हर दिन प्रगति देखते हैं', desc: 'Your parent dashboard shows what they studied, what\'s strong, what needs work — updated after every session.', descHi: 'आपका पैरेंट डैशबोर्ड दिखाता है क्या पढ़ा, क्या मज़बूत है, किस पर काम चाहिए — हर सेशन के बाद अपडेट।' },
 ];

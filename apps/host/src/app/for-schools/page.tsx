@@ -23,7 +23,7 @@ const STEPS = [
 ];
 
 const INCLUDED = [
-  { icon: '🦊', title: 'AI Tutor for Every Student', titleHi: 'हर छात्र के लिए AI ट्यूटर', desc: 'Foxy teaches 16 subjects in Hindi and English with step-by-step explanations.', descHi: 'Foxy 16 विषय हिंदी और अंग्रेज़ी में स्टेप-बाय-स्टेप समझाता है।' },
+  { icon: '🦊', title: 'Foxy for Every Student', titleHi: 'हर छात्र के लिए Foxy', desc: 'Foxy teaches 16 subjects in Hindi and English with step-by-step explanations.', descHi: 'Foxy 16 विषय हिंदी और अंग्रेज़ी में स्टेप-बाय-स्टेप समझाता है।' },
   { icon: '👩‍🏫', title: 'Teacher Dashboards', titleHi: 'शिक्षक डैशबोर्ड', desc: 'Class management, assignment creation, mastery tracking, and automated reports.', descHi: 'कक्षा प्रबंधन, असाइनमेंट बनाना, दक्षता ट्रैकिंग, और ऑटोमेटेड रिपोर्ट।' },
   { icon: '👨‍👩‍👧', title: 'Parent Portal', titleHi: 'पैरेंट पोर्टल', desc: 'Weekly progress reports keep parents informed and engaged in their child\'s learning.', descHi: 'साप्ताहिक प्रगति रिपोर्ट अभिभावकों को उनके बच्चे की पढ़ाई से जोड़े रखती है।' },
   { icon: '📋', title: 'Analytics & Reporting', titleHi: 'एनालिटिक्स और रिपोर्टिंग', desc: 'Institution-level analytics, board readiness scores, and exportable reports.', descHi: 'संस्थान-स्तरीय एनालिटिक्स, बोर्ड तैयारी स्कोर, और एक्सपोर्ट करने योग्य रिपोर्ट।' },

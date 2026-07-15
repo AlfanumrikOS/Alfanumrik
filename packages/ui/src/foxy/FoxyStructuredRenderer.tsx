@@ -28,8 +28,12 @@
 import React, { memo, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import type { FoxyBlock, FoxyResponse } from '@alfanumrik/lib/foxy/schema';
-import { isFoxyMcqBlock } from '@alfanumrik/lib/foxy/schema';
+import type {
+  FoxyBlock,
+  FoxyResponse,
+  FoxyMermaidBlock,
+} from '@alfanumrik/lib/foxy/schema';
+import { isFoxyMcqBlock, isFoxyMermaidBlock } from '@alfanumrik/lib/foxy/schema';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
 import { DiagramViewer } from '@alfanumrik/ui/DiagramViewer';
@@ -109,6 +113,11 @@ interface Chrome {
   formulaError: string;
   reportIssue: string;
   diagram: string;
+  // Mermaid diagram chrome (Wave 2 — drawable diagrams). `diagramLoading` shows
+  // while the (lazy-loaded) mermaid runtime renders; `diagramFailed` is the
+  // quiet, non-crashing fallback when a diagram cannot be parsed/drawn.
+  diagramLoading: string;
+  diagramFailed: string;
   // MCQ self-check chrome (Phase 1 learning actions — formative, no submission)
   mcqCheck: string;
   mcqCorrect: string;
@@ -134,6 +143,8 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     formulaError: 'Issue with formula',
     reportIssue: 'Report issue',
     diagram: 'Diagram',
+    diagramLoading: 'Drawing diagram…',
+    diagramFailed: "Diagram couldn't be drawn",
     mcqCheck: 'Check',
     mcqCorrect: 'Correct!',
     mcqNotQuite: 'Not quite',
@@ -159,6 +170,8 @@ const CHROME: { en: Chrome; hi: Chrome } = {
     formulaError: 'सूत्र में समस्या',
     reportIssue: 'समस्या रिपोर्ट करें',
     diagram: 'चित्र',
+    diagramLoading: 'डायग्राम बन रहा है…',
+    diagramFailed: 'डायग्राम नहीं बन पाया',
     mcqCheck: 'जांचें',
     mcqCorrect: 'सही!',
     mcqNotQuite: 'लगभग',
@@ -1008,6 +1021,186 @@ function McqBlock({
   );
 }
 
+// ── Mermaid diagram block (Wave 2 — drawable, colorful diagrams) ─────────────
+//
+// Renders a validated `mermaid` block as a real SVG diagram (replacing Foxy's
+// ASCII art). The mermaid runtime (~500 kB+) is a HARD bundle-budget concern
+// (P10): it must NEVER enter the shared bundle or the /foxy first-load. So it
+// is pulled in via a dynamic `import('mermaid')` INSIDE the render effect
+// (client-only) — webpack code-splits it into its own async chunk that is
+// fetched only when a mermaid block actually mounts. There is deliberately NO
+// static top-level `import 'mermaid'` in this file.
+//
+// Safety (P12): mermaid runs with `securityLevel: 'strict'` (its SVG output is
+// DOMPurify-sanitised before it reaches us) and the block's `code` was already
+// grammar-gated + sanitised by `validateMermaidCode` in the schema layer.
+// `parse`/`render` are wrapped in try/catch and pre-validated with
+// `mermaid.parse(code, { suppressErrors: true })`; any failure degrades to a
+// quiet bilingual note (P7), never a thrown exception in the message list.
+
+/** Type of the mermaid default export — type-only (erased, no bundle cost). */
+type MermaidApi = typeof import('mermaid')['default'];
+
+/**
+ * One-time lazy loader + initializer for the mermaid runtime. The dynamic
+ * import and `initialize()` run at most once per session; every MermaidBlock
+ * awaits the same cached promise. `initialize` is synchronous and idempotent.
+ */
+let mermaidModulePromise: Promise<MermaidApi> | null = null;
+
+function loadMermaid(): Promise<MermaidApi> {
+  if (!mermaidModulePromise) {
+    mermaidModulePromise = import('mermaid').then(({ default: mermaid }) => {
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: 'base',
+        fontFamily:
+          '"Plus Jakarta Sans", "Sora", ui-sans-serif, system-ui, sans-serif',
+        // Force SVG text labels (no foreignObject HTML) — safer under strict
+        // and avoids clipped HTML labels on narrow 4G phones.
+        htmlLabels: false,
+        // Foxy brand palette. Light fills + dark text = high contrast on cheap
+        // phones; brand-orange/purple borders + lines keep it colorful.
+        // `themeVariables` is typed `any` upstream.
+        themeVariables: {
+          fontFamily:
+            '"Plus Jakarta Sans", "Sora", ui-sans-serif, system-ui, sans-serif',
+          fontSize: '16px',
+          primaryColor: '#FFEDD5', // orange-100 node fill
+          primaryTextColor: '#7C2D12', // orange-900 text (readable)
+          primaryBorderColor: '#F97316', // orange-500 border (brand)
+          secondaryColor: '#EDE9FE', // purple-100 fill
+          secondaryTextColor: '#4C1D95', // purple-900 text
+          secondaryBorderColor: '#7C3AED', // purple-600 border (brand)
+          tertiaryColor: '#FFF7ED', // orange-50 fill
+          tertiaryTextColor: '#7C2D12', // orange-900 text
+          tertiaryBorderColor: '#FDBA74', // orange-300 border
+          lineColor: '#7C3AED', // purple-600 edges (readable on white)
+          textColor: '#1E293B', // slate-800 general text
+          titleColor: '#1E293B', // slate-800 titles
+          noteBkgColor: '#FEF3C7', // amber-100 note background
+          noteTextColor: '#78350F', // amber-900 note text
+          background: 'transparent',
+        },
+      });
+      return mermaid;
+    });
+  }
+  return mermaidModulePromise;
+}
+
+/** Monotonic id source for mermaid's temporary render element (valid DOM id). */
+let mermaidRenderSeq = 0;
+
+type MermaidRenderState =
+  | { status: 'loading' }
+  | { status: 'ready'; svg: string }
+  | { status: 'error' };
+
+function MermaidBlock({ block, chrome }: { block: FoxyBlock; chrome: Chrome }) {
+  // Narrow via the schema guard; `title` may exist even on a malformed block.
+  const mermaidBlock: FoxyMermaidBlock | null = isFoxyMermaidBlock(block)
+    ? block
+    : null;
+  const code = mermaidBlock?.code ?? '';
+  const title = mermaidBlock?.title ?? block.title;
+
+  const [state, setState] = useState<MermaidRenderState>({ status: 'loading' });
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!code.trim()) {
+      setState({ status: 'error' });
+      return;
+    }
+
+    setState({ status: 'loading' });
+    const renderId = `foxy-mmd-${(mermaidRenderSeq += 1)}`;
+
+    (async () => {
+      try {
+        const mermaid = await loadMermaid();
+        // Validate first: `suppressErrors` returns `false` on an invalid
+        // diagram instead of throwing, so a bad spec degrades quietly.
+        const valid = await mermaid.parse(code, { suppressErrors: true });
+        if (!valid) {
+          if (mounted) setState({ status: 'error' });
+          return;
+        }
+        const { svg } = await mermaid.render(renderId, code);
+        if (mounted) setState({ status: 'ready', svg });
+      } catch {
+        // Any runtime failure (render throw, flaky-4G chunk-load failure, an
+        // edge case parse missed) degrades to the quiet fallback below.
+        if (mounted) setState({ status: 'error' });
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [code]);
+
+  const hasTitle = typeof title === 'string' && title.trim().length > 0;
+  const ariaLabel = hasTitle ? (title as string) : chrome.diagram;
+
+  if (state.status === 'error') {
+    // Quiet, friendly, bilingual. Falls back to the optional `title` so the
+    // student still sees the caption even when the drawing failed.
+    return (
+      <div
+        className="my-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-sm"
+        role="note"
+      >
+        <span className="mr-1.5" aria-hidden="true">
+          🖼️
+        </span>
+        {chrome.diagramFailed}
+        {hasTitle && (
+          <span className="mt-1 block text-xs italic text-slate-500">
+            {title}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (state.status === 'loading') {
+    return (
+      <div
+        className="my-3 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-sm text-slate-400"
+        role="status"
+        aria-live="polite"
+      >
+        {chrome.diagramLoading}
+      </div>
+    );
+  }
+
+  // Ready. mermaid rendered with securityLevel:'strict' → the SVG string is
+  // DOMPurify-sanitised by mermaid before it reaches us, so injecting it via
+  // dangerouslySetInnerHTML is safe (defense-in-depth with the schema gate).
+  // Responsive: SVG scales to container width; scrolls under a capped height on
+  // small screens. role="img" + aria-label from the title for a11y.
+  return (
+    <figure className="my-3">
+      <div
+        role="img"
+        aria-label={ariaLabel}
+        className="flex justify-center overflow-auto rounded-xl border border-orange-100 bg-white p-3 max-h-[70vh] [&_svg]:h-auto [&_svg]:max-w-full"
+        dangerouslySetInnerHTML={{ __html: state.svg }}
+      />
+      {hasTitle && (
+        <figcaption className="mt-1.5 text-center text-xs italic text-slate-500">
+          {title}
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
 function BlockRouter({
   block,
   stepNumber,
@@ -1046,6 +1239,8 @@ function BlockRouter({
       return <McqBlock block={block} chrome={chrome} quizMe={quizMe} />;
     case 'diagram':
       return <DiagramBlock block={block} chrome={chrome} />;
+    case 'mermaid':
+      return <MermaidBlock block={block} chrome={chrome} />;
     case 'code':
       return <CodeBlock block={block} />;
     default:

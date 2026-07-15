@@ -16,4 +16,13 @@ paths = [
     'apps/host/src/__tests__/audit\.test\.ts',
     '\.agents/skills/upstash-qstash-js/fundamentals/local-development\.md',
     '\.agents/skills/upstash/upstash-qstash-js/fundamentals/local-development\.md',
+    # Keyless Vercel-OIDC -> Workload Identity Federation invoker-token client.
+    # The generic-api-key rule prose-false-positives on the "STS/impersonation"
+    # phrase (the word "token" adjacent to a `/`-containing value) in a JSDoc
+    # block and an inline comment. This client mints an EPHEMERAL runtime Google
+    # ID token against a public Google endpoint — it is keyless by design and
+    # contains NO literal secret, so allowlisting the file hides no real credential.
+    # Path-scoped (commit-independent) because fingerprint suppression re-breaks
+    # whenever the finding's commit SHA moves. Single-file scope only.
+    'packages/lib/src/ai/clients/python-mol\.ts',
 ]

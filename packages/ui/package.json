@@ -1,1 +1,8 @@
-{"name": "@alfanumrik/ui", "main": "src/index.ts", "types": "src/index.ts"}
+{
+  "name": "@alfanumrik/ui",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "mermaid": "^11.16.0"
+  }
+}

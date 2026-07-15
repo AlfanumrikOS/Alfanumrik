@@ -29,6 +29,7 @@ import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { classifyIntent, routeIntent } from '@alfanumrik/lib/ai';
 import { screenStudentFacingText } from '@alfanumrik/lib/ai/validation/output-screen';
+import { stripFakeQuizClaim } from '@alfanumrik/lib/foxy/anti-fake-quiz-claim';
 import type { RagSource, DiagramRef, ChatMessage } from './constants';
 import { refundQuota, resolveTenantAiOverrides } from './quota';
 
@@ -114,7 +115,29 @@ export async function persistLegacyFoxyResponse(params: {
   legacy: Awaited<ReturnType<typeof runLegacyFoxyFlow>>;
   logFoxyAsk: (tokens: number | null) => void;
 }): Promise<Response> {
-  const outputScreen = screenStudentFacingText(params.legacy.response, {
+  // ── Unconditional anti-fake backstop (P6 "fake action", flag-INDEPENDENT) ──
+  // Both legacy call sites (ff_grounded_ai_foxy OFF kill-switch AND the
+  // grounded-abstain fallback) flow through here, so this is the one deterministic
+  // gate that runs on the legacy persist path regardless of ANY feature flag.
+  // If the model/workflow produced a "generated / created / here are N questions"
+  // claim NOT backed by real rendered questions, we replace the ENTIRE turn with
+  // the graceful bilingual fallback — a claim-with-no-questions can never ship.
+  // A turn that carries real rendered questions (AC1) passes through untouched.
+  const antiFake = stripFakeQuizClaim(params.legacy.response);
+  const responseText = antiFake.text;
+  if (antiFake.claimOnly) {
+    logger.warn('foxy.legacy.fake_quiz_claim_stripped', {
+      // P13: scope + flow only — never the answer text or studentId.
+      subject: params.subject,
+      grade: params.grade,
+      mode: params.mode,
+      intent: params.legacy.intent,
+      traceId: params.legacy.traceId,
+      flow: 'legacy-intent-router',
+    });
+  }
+
+  const outputScreen = screenStudentFacingText(responseText, {
     grade: params.grade,
     subject: params.subject,
   });
@@ -179,7 +202,7 @@ export async function persistLegacyFoxyResponse(params: {
         session_id: params.resolvedSessionId,
         student_id: params.studentId,
         role: 'assistant',
-        content: params.legacy.response,
+        content: responseText,
         sources: params.legacy.sources.length > 0 ? params.legacy.sources : null,
         tokens_used: params.legacy.tokensUsed,
         created_at: new Date(Date.now() + 1).toISOString(),
@@ -226,7 +249,7 @@ export async function persistLegacyFoxyResponse(params: {
   }
   return NextResponse.json({
     success: true,
-    response: params.legacy.response,
+    response: responseText,
     sessionId: params.resolvedSessionId,
     quotaRemaining: params.remaining,
     tokensUsed: params.legacy.tokensUsed,

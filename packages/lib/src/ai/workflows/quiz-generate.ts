@@ -19,6 +19,7 @@ import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { resolveGoalProfile } from '@alfanumrik/lib/goals/goal-profile';
 import { pickQuizParams, type QuizParams } from '@alfanumrik/lib/goals/quiz-params';
 import { logger } from '@alfanumrik/lib/logger';
+import { QUIZ_CLAIM_FALLBACK_TEXT } from '@alfanumrik/lib/foxy/anti-fake-quiz-claim';
 
 export interface QuizGenerateWorkflowParams {
   subject: string;
@@ -36,6 +37,50 @@ export interface QuizGenerateWorkflowParams {
 const DEFAULT_QUIZ_COUNT = 5;
 const DEFAULT_DIFFICULTY = 3;
 const DEFAULT_BLOOM_LEVEL = 'understand';
+
+const OPTION_LABELS = ['A', 'B', 'C', 'D'] as const;
+
+/**
+ * Render validated QuizQuestion[] into student-facing text (P6 "fake action"
+ * fix — AC1). The legacy Foxy persist path surfaces ONLY `response` and drops
+ * `metadata.questions`, so the questions MUST live IN the response string or the
+ * student sees a bare "Generated N questions." claim with nothing to answer.
+ *
+ * Format: a bilingual (P7) header, each question with its 4 lettered options,
+ * then an "Answers / उत्तर" section with the correct letter + explanation. The
+ * option markers ("A)" … "D)") are exactly the real-question evidence the
+ * unconditional anti-fake backstop (stripFakeQuizClaim) looks for, so a turn
+ * rendered here always reads as real questions and is never stripped.
+ */
+function renderQuizQuestionsText(questions: QuizQuestion[]): string {
+  const n = questions.length;
+  // Grammatical agreement for the degraded n===1 case (reachable when only one
+  // question survives P6 validation): "Here is 1 practice question — attempt it,
+  // then check the answer below." Hindi needs no plural agreement here.
+  const isOne = n === 1;
+  const header =
+    `Here ${isOne ? 'is' : 'are'} ${n} practice question${isOne ? '' : 's'} — ` +
+    `attempt ${isOne ? 'it' : 'them'}, then check the answer${isOne ? '' : 's'} below.\n` +
+    `(${n} अभ्यास प्रश्न — पहले हल करें, फिर नीचे उत्तर देखें।)`;
+
+  const body = questions
+    .map((q, i) => {
+      const opts = q.options
+        .map((opt, oi) => `   ${OPTION_LABELS[oi] ?? String(oi + 1)}) ${opt}`)
+        .join('\n');
+      return `${i + 1}. ${q.text}\n${opts}`;
+    })
+    .join('\n\n');
+
+  const answers = questions
+    .map((q, i) => {
+      const letter = OPTION_LABELS[q.correctAnswerIndex] ?? String(q.correctAnswerIndex + 1);
+      return `${i + 1}. ${letter} — ${q.explanation}`;
+    })
+    .join('\n');
+
+  return `${header}\n\n${body}\n\nAnswers / उत्तर:\n${answers}`;
+}
 
 export async function runQuizGenerateWorkflow(
   message: string,
@@ -166,10 +211,14 @@ export async function runQuizGenerateWorkflow(
       });
     }
 
+    // P6 "fake action" fix (AC1): NEVER surface a bare "Generated N quiz
+    // questions." claim with the real questions hidden in metadata. Either render
+    // the actual validated questions AS the student-facing response, or return
+    // the graceful bilingual fallback when none survived validation.
     return {
       response: validQuestions.length > 0
-        ? `Generated ${validQuestions.length} quiz questions.`
-        : 'Could not generate valid quiz questions. Please try again.',
+        ? renderQuizQuestionsText(validQuestions)
+        : QUIZ_CLAIM_FALLBACK_TEXT,
       intent: 'quiz' as FoxyIntent,
       sources: retrieval.chunks,
       tokensUsed: claudeResponse.tokensUsed,

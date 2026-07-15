@@ -385,7 +385,7 @@ export function trialWelcomeEmail(
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;background-color:#fffbeb;border:1px solid #fde68a;border-radius:8px;">
                 <tr>
                   <td style="padding:14px 20px;font-size:14px;color:#92400e;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">
-                    <strong>30-day trial</strong> \u2014 Full access to all features including Foxy AI Tutor, adaptive quizzes, progress tracking, and parent reports. No credit card required.
+                    <strong>30-day trial</strong> \u2014 Full access to all features including Foxy, adaptive quizzes, progress tracking, and parent reports. No credit card required.
                   </td>
                 </tr>
               </table>

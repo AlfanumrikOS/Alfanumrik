@@ -279,7 +279,7 @@ export function MobileBottomNav() {
                 <button
                   key={item.href}
                   onClick={() => router.push(item.href)}
-                  aria-label={`${isHi ? item.labelHi : item.label} - AI Tutor`}
+                  aria-label={isHi ? item.labelHi : item.label}
                   aria-current={active ? 'page' : undefined}
                   className="touchable flex flex-col items-center -mt-3 active:scale-95 transition-transform bg-transparent border-0"
                   style={{ minWidth: 'var(--tap-comfort)' }}

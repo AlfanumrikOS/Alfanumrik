@@ -30,7 +30,7 @@ export const SIDEBAR_SECTIONS = [
     title: 'Home', titleHi: 'होम',
     items: [
       { href: '/dashboard', icon: '🏠', label: 'Home', labelHi: 'होम' },
-      { href: '/foxy', icon: '🦊', label: 'Foxy AI Tutor', labelHi: 'फॉक्सी AI ट्यूटर' },
+      { href: '/foxy', icon: '🦊', label: 'Foxy', labelHi: 'फॉक्सी' },
       { href: '/progress', icon: '📈', label: 'My Progress', labelHi: 'मेरी प्रगति' },
     ],
   },

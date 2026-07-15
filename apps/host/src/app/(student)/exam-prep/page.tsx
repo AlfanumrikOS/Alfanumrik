@@ -437,7 +437,7 @@ export default function ExamPrepPage() {
                 {[
                   { icon: '🧠', en: 'Quick Recall — retrieval practice from yesterday', hi: 'Quick Recall — कल का revision' },
                   { icon: '🔄', en: 'Flashcard Review — spaced repetition (d=0.54)', hi: 'Flashcard Review — spaced repetition' },
-                  { icon: '📖', en: 'New Topic — learn 1 chapter with Foxy AI', hi: 'New Topic — Foxy से 1 chapter सीखो' },
+                  { icon: '📖', en: 'New Topic — learn 1 chapter with Foxy', hi: 'New Topic — Foxy से 1 chapter सीखो' },
                   { icon: '✏️', en: 'Mixed Practice — interleaved problems (d=1.05)', hi: 'Mixed Practice — mixed problems' },
                   { icon: '⚡', en: 'Quiz — wrong answers become flashcards', hi: 'Quiz — गलत जवाब flashcard बनते हैं' },
                 ].map((item, i) => (
