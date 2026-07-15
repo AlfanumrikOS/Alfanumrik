@@ -5,21 +5,26 @@
  * email. The default transport is resolved from env AT SEND TIME by
  * `resolveDefaultTransport()`:
  *
- *   1. RESEND_API_KEY present                     → Resend  (primary)
- *   2. else MAILGUN_API_KEY + MAILGUN_DOMAIN pres → Mailgun (TRANSITIONAL fallback)
- *   3. else                                       → no transport (config-absent)
+ *   1. MAILGUN_API_KEY + MAILGUN_DOMAIN present → Mailgun (the email provider)
+ *   2. else                                     → no transport (config-absent)
  *
- * ⚠️ TRANSITIONAL MAILGUN FALLBACK — REMOVE ONCE RESEND IS CONFIRMED LIVE IN
- * PRODUCTION. Production currently has MAILGUN_API_KEY/MAILGUN_DOMAIN set but
- * NOT RESEND_API_KEY. Without the Mailgun fallback, deploying the Resend
- * cutover would silently stop ALL email (a P15 onboarding outage). The fallback
- * makes the cutover ZERO-DOWNTIME: email keeps flowing through the already-live
- * Mailgun until an operator sets RESEND_API_KEY, at which point Resend takes
- * over automatically with no code change. Delete `createMailgunTransport` and
- * its branches in `resolveDefaultTransport()` / `hasEmailTransportConfig()`
- * once Resend is verified in prod.
+ * ── Product decision 2026-07-15: Mailgun is the email provider. ──────────────
+ * Mailgun is the SOLE default transport. The Resend transport
+ * (`createResendTransport`) is retained for injectability / tests / possible
+ * future use, but is NEVER selected by the default path — do not switch to
+ * Resend without an explicit product decision. Production has
+ * MAILGUN_API_KEY/MAILGUN_DOMAIN set and NO RESEND_API_KEY, so all email flows
+ * through Mailgun.
  *
- * Resend wire (https://resend.com/docs/api-reference/emails/send-email):
+ * Mailgun wire (https://documentation.mailgun.com/docs/mailgun/api-reference/):
+ *   POST https://api.mailgun.net/v3/<MAILGUN_DOMAIN>/messages
+ *   Authorization: Basic base64("api:" + MAILGUN_API_KEY)
+ *   Idempotency-Key: <key>            // set for retry-safety
+ *   body (multipart/form-data): from,to,subject,html,text,h:Reply-To,h:<hdr>,o:tag
+ *   success: { "id": "<message-id>" }
+ *
+ * Resend wire (retained for the injectable transport, NOT the default path;
+ * https://resend.com/docs/api-reference/emails/send-email):
  *   POST https://api.resend.com/emails
  *   Authorization: Bearer <RESEND_API_KEY>
  *   Idempotency-Key: <key>            // Resend honours this for 24h
@@ -27,22 +32,15 @@
  *   body (snake_case): { from, to, subject, html, text, reply_to, headers, tags }
  *   success: { "id": "<uuid>" }
  *
- * Mailgun wire (restored verbatim from the pre-Phase-2 senders, git 4fdd35c3~1):
- *   POST https://api.mailgun.net/v3/<MAILGUN_DOMAIN>/messages
- *   Authorization: Basic base64("api:" + MAILGUN_API_KEY)
- *   Idempotency-Key: <key>            // set for retry-safety parity with Resend
- *   body (multipart/form-data): from,to,subject,html,text,h:Reply-To,h:<hdr>,o:tag
- *   success: { "id": "<message-id>" }
- *
  * Reliability posture is inherited from `fetchWithTimeout` (_shared/reliability.ts):
  * a 10s timeout and up to 3 attempts. The POST is only retried because we pass an
- * `Idempotency-Key` (Resend dedupes retries), so a genuine transport retry never
- * double-sends.
+ * `Idempotency-Key` (the provider dedupes retries), so a genuine transport retry
+ * never double-sends.
  *
  * P13 (Data Privacy): every log line is redacted. Keyed/structured payloads go
  * through `redactPII`; free-form provider error bodies go through
  * `redactPIIInText`. Failure/exception return codes are PII-free machine strings
- * (`resend_http_<status>` / `resend_exception`) — the raw provider detail lives
+ * (`mailgun_http_<status>` / `mailgun_exception`) — the raw provider detail lives
  * ONLY in a redacted log line, never in the returned code.
  *
  * Testing seam: `setDefaultEmailTransport(transport)` swaps the module-global
@@ -87,12 +85,13 @@ export interface EmailSendResult {
   /** PII-free failure code (e.g. 'resend_http_400', 'resend_exception',
    *  'mailgun_http_401', 'mailgun_exception', 'no_transport_configured'). */
   code?: string
-  /** Which concrete transport handled the send ('resend' | 'mailgun'). Optional;
-   *  surfaced for observability during the transitional Resend/Mailgun cutover. */
+  /** Which concrete transport handled the send ('mailgun' | 'resend'). Optional;
+   *  surfaced for observability. Mailgun is the default; Resend is injectable-only. */
   provider?: string
 }
 
-/** A pluggable email transport. Concrete impls: Resend (default), test stubs. */
+/** A pluggable email transport. Concrete impls: Mailgun (default), Resend
+ *  (retained, injectable-only — never the default), test stubs. */
 export interface EmailTransport {
   readonly name: string
   send(message: EmailMessage): Promise<EmailSendResult>
@@ -102,13 +101,22 @@ const RESEND_API_URL = 'https://api.resend.com/emails'
 const EMAIL_TIMEOUT_MS = 10_000
 const EMAIL_MAX_ATTEMPTS = 3
 
-// ─── Resend transport (concrete default) ────────────────────────────────────
+// ─── Resend transport (retained, injectable-only — NOT the default) ──────────
+//
+// Product decision 2026-07-15: Mailgun is the email provider. This Resend
+// transport is retained for injectability / tests / possible future use, but is
+// NEVER selected by resolveDefaultTransport(). Do not switch to Resend without an
+// explicit product decision.
 
 /**
  * Build a Resend-backed transport. `apiKey` defaults to the RESEND_API_KEY
  * Edge Function secret; `fetcher` defaults to global `fetch` (via
  * fetchWithTimeout). Reading the key here (not at module load) keeps the
  * transport re-creatable per call without caching a stale secret.
+ *
+ * NOTE: this is not wired into the default send path (see
+ * `resolveDefaultTransport`). It is used only via an explicit `opts.transport`
+ * override or `setDefaultEmailTransport` (tests).
  */
 export function createResendTransport(opts: { apiKey?: string; fetcher?: typeof fetch } = {}): EmailTransport {
   const apiKey = opts.apiKey ?? Deno.env.get('RESEND_API_KEY') ?? ''
@@ -192,18 +200,15 @@ export function createResendTransport(opts: { apiKey?: string; fetcher?: typeof 
   }
 }
 
-// ─── Mailgun transport (TRANSITIONAL fallback) ──────────────────────────────
+// ─── Mailgun transport (the default provider) ───────────────────────────────
 //
-// ⚠️ TRANSITIONAL — REMOVE ONCE RESEND IS CONFIRMED LIVE IN PRODUCTION.
-// Restored verbatim (wire shape) from the pre-Phase-2 senders (git 4fdd35c3~1)
-// so the Resend cutover can merge with ZERO downtime while prod still has only
-// MAILGUN_API_KEY/MAILGUN_DOMAIN configured. It preserves the SAME
-// reliability/timeout (10s, 3 attempts), the SAME Idempotency-Key posture, and
-// the SAME P13 redaction contract as the Resend transport: the recipient and
-// any free-form provider error body are redacted before they reach a log line,
-// and the returned failure `code` is a PII-free machine string that carries no
-// provider detail. Delete this transport (and its branch in
-// resolveDefaultTransport/hasEmailTransportConfig) once Resend is verified.
+// Product decision 2026-07-15: Mailgun is the SOLE default email transport
+// (resolveDefaultTransport selects it whenever MAILGUN_API_KEY + MAILGUN_DOMAIN
+// are configured). It carries the SAME reliability/timeout (10s, 3 attempts), the
+// SAME Idempotency-Key posture, and the SAME P13 redaction contract as the
+// retained Resend transport: the recipient and any free-form provider error body
+// are redacted before they reach a log line, and the returned failure `code` is a
+// PII-free machine string that carries no provider detail.
 
 const MAILGUN_API_BASE = 'https://api.mailgun.net/v3'
 
@@ -296,32 +301,30 @@ export function createMailgunTransport(opts: { apiKey?: string; domain?: string;
   }
 }
 
-// ─── Transport resolution (env-driven, Resend-primary / Mailgun-fallback) ────
+// ─── Transport resolution (env-driven, Mailgun-only default) ─────────────────
 
 /**
- * True if EITHER email transport is configured: Resend (RESEND_API_KEY) OR the
- * TRANSITIONAL Mailgun fallback (MAILGUN_API_KEY + MAILGUN_DOMAIN). The six email
- * Edge Functions gate their "attempt to send" branch on this same predicate —
- * when it is false (BOTH providers unconfigured) they emit the config-absent
- * warning and degrade gracefully. Remove the Mailgun clause once Resend is live.
+ * True iff the Mailgun transport is configured (MAILGUN_API_KEY + MAILGUN_DOMAIN).
+ * The six email Edge Functions gate their "attempt to send" branch on this same
+ * predicate — when it is false (Mailgun unconfigured) they emit the config-absent
+ * warning / fail-closed and degrade gracefully. Resend is NEVER auto-selected, so
+ * RESEND_API_KEY does not make this true (product decision 2026-07-15).
  */
 export function hasEmailTransportConfig(): boolean {
-  const resend = Deno.env.get('RESEND_API_KEY') ?? ''
   const mailgunKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
   const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-  return Boolean(resend) || Boolean(mailgunKey && mailgunDomain)
+  return Boolean(mailgunKey && mailgunDomain)
 }
 
 /**
- * Pick the default transport at SEND time (never cached): Resend when
- * RESEND_API_KEY is present (primary), else the TRANSITIONAL Mailgun fallback
- * when MAILGUN_API_KEY + MAILGUN_DOMAIN are present, else null (config-absent).
- * The moment an operator sets RESEND_API_KEY in prod, Resend wins automatically
- * with no code change — that is the zero-downtime cutover.
+ * Pick the default transport at SEND time (never cached): Mailgun when
+ * MAILGUN_API_KEY + MAILGUN_DOMAIN are present, else null (config-absent).
+ * Resend is NEVER auto-selected — Mailgun is the email provider (product
+ * decision 2026-07-15). The Resend transport remains reachable only via an
+ * explicit `opts.transport` override on `sendEmail` or `setDefaultEmailTransport`
+ * (tests); it is never returned from here.
  */
 export function resolveDefaultTransport(opts: { fetcher?: typeof fetch } = {}): EmailTransport | null {
-  const resend = Deno.env.get('RESEND_API_KEY') ?? ''
-  if (resend) return createResendTransport({ apiKey: resend, fetcher: opts.fetcher })
   const mailgunKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
   const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
   if (mailgunKey && mailgunDomain) return createMailgunTransport({ apiKey: mailgunKey, domain: mailgunDomain, fetcher: opts.fetcher })
@@ -345,13 +348,13 @@ export function setDefaultEmailTransport(transport: EmailTransport | null): void
  * Dispatch an email. Transport resolution order:
  *   1. an explicit `opts.transport` (per-call override),
  *   2. the module-global default set via `setDefaultEmailTransport` (tests),
- *   3. the env-resolved default (`resolveDefaultTransport`): Resend if
- *      RESEND_API_KEY is set, else the TRANSITIONAL Mailgun fallback if
- *      MAILGUN_API_KEY + MAILGUN_DOMAIN are set.
+ *   3. the env-resolved default (`resolveDefaultTransport`): Mailgun if
+ *      MAILGUN_API_KEY + MAILGUN_DOMAIN are set, else none. Resend is never
+ *      auto-selected (product decision 2026-07-15).
  *
  * Production callers use `sendEmail(message)` — no options — so nothing is
- * request-derived and the transport reads its secret(s) from env. When NEITHER
- * provider is configured the resolver returns null; we then return a PII-free
+ * request-derived and the transport reads its secret(s) from env. When Mailgun
+ * is not configured the resolver returns null; we then return a PII-free
  * `no_transport_configured` failure (callers already gate on
  * `hasEmailTransportConfig()`, so this is a defensive belt-and-braces path).
  */

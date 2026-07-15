@@ -18,8 +18,9 @@
  *      https://shktyoxqhundlvkiwguu.supabase.co/functions/v1/send-auth-email
  *   4. Copy the generated hook secret and set it as SEND_EMAIL_HOOK_SECRET
  *      in Edge Functions -> Secrets
- *   5. Set RESEND_API_KEY in Edge Functions -> Secrets
- *   6. Verify alfanumrik.com domain in Resend (DNS records: DKIM, SPF, DMARC)
+ *   5. Set MAILGUN_API_KEY + MAILGUN_DOMAIN in Edge Functions -> Secrets
+ *      (Mailgun is the email provider — product decision 2026-07-15)
+ *   6. Verify alfanumrik.com domain in Mailgun (DNS records: DKIM, SPF, DMARC)
  */
 
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
@@ -31,15 +32,15 @@ import { sendEmail } from '../_shared/relay-mailer.ts'
 // Supabase stores the secret as "v1,whsec_<base64>" but standardwebhooks expects "whsec_<base64>"
 const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
 const hookSecret = rawHookSecret.startsWith('v1,') ? rawHookSecret.slice(3) : rawHookSecret
-const resendApiKey = Deno.env.get('RESEND_API_KEY') || ''
-// TRANSITIONAL Mailgun fallback (remove once Resend is confirmed live in prod).
-// Email is attempted when EITHER Resend OR Mailgun is configured; the relay
-// (_shared/relay-mailer.ts) prefers Resend and falls back to Mailgun at send
-// time. Prod today has only MAILGUN_* set, so this keeps auth email flowing
-// through the Resend cutover with zero downtime (P15).
+// Product decision 2026-07-15: Mailgun is the email provider. Email is attempted
+// when Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the shared relay
+// (_shared/relay-mailer.ts) selects Mailgun and never auto-selects Resend. Prod
+// has MAILGUN_* set, so this keeps auth email flowing (P15). When Mailgun is not
+// configured we fall through to the no_relay_config 200 below (Supabase built-in
+// email can take over) — signup/login is never blocked.
 const mailgunApiKey = Deno.env.get('MAILGUN_API_KEY') || ''
 const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') || ''
-const hasEmailTransport = Boolean(resendApiKey) || Boolean(mailgunApiKey && mailgunDomain)
+const hasEmailTransport = Boolean(mailgunApiKey && mailgunDomain)
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 // R13 fix: SITE_URL configurable via env var for preview/staging deploys.
@@ -312,13 +313,13 @@ Deno.serve(async (req: Request) => {
         emailContent = confirmationEmail(actionUrl)
     }
 
-    // Relay guard: if NO relay provider is configured (neither Resend nor the
-    // transitional Mailgun fallback), return 200 so the auth operation still
-    // succeeds (Supabase built-in email can take over). Never block signup/reset
-    // on a missing email secret. The `no_relay_config` warning string is stable
-    // (pinned by the always-200 Deno test).
+    // Relay guard: if the Mailgun relay is not configured (product decision
+    // 2026-07-15: Mailgun is the email provider), return 200 so the auth
+    // operation still succeeds (Supabase built-in email can take over). Never
+    // block signup/reset on a missing email secret. The `no_relay_config`
+    // warning string is stable (pinned by the always-200 Deno test).
     if (!hasEmailTransport) {
-      console.warn('[Auth Email] No email relay configured (RESEND_API_KEY / MAILGUN_*). Returning 200 so Supabase built-in email can work.')
+      console.warn('[Auth Email] No email relay configured (MAILGUN_API_KEY / MAILGUN_DOMAIN). Returning 200 so Supabase built-in email can work.')
       return new Response(JSON.stringify({ success: true, warning: 'no_relay_config' }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
@@ -378,7 +379,7 @@ Deno.serve(async (req: Request) => {
     if (!sent) {
       // P13: user.email is PII; log a truncated form only. Audit 2026-04-27 F5.
       const redactedEmailFail = user.email.slice(0, 3) + '***@' + (user.email.split('@')[1] ?? 'unknown')
-      console.error('[Auth Email] Send failed for', redactedEmailFail, '- check RESEND_API_KEY and domain verification in Resend dashboard')
+      console.error('[Auth Email] Send failed for', redactedEmailFail, '- check MAILGUN_API_KEY/MAILGUN_DOMAIN and domain verification in Mailgun dashboard')
     }
 
     // ALWAYS return 200 — never block the auth flow

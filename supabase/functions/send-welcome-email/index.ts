@@ -6,7 +6,7 @@
  *   - Teacher: Classroom tools, quick setup guide, dashboard CTA
  *   - Parent:  Tracking features, child linking guide, parent portal CTA
  *
- * Sends via the shared Resend relay (`_shared/relay-mailer.ts`); when the relay
+ * Sends via the shared Mailgun relay (`_shared/relay-mailer.ts`); when the relay
  * is not configured it falls back to inserting a `notifications` row.
  */
 
@@ -18,16 +18,13 @@ import { edgeLog, getRequestId, writeBusinessAudit, type EdgeLogContext } from '
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-// Relay is configured iff EITHER Resend (RESEND_API_KEY) OR the TRANSITIONAL
-// Mailgun fallback (MAILGUN_API_KEY + MAILGUN_DOMAIN) is set. The relay
-// (_shared/relay-mailer.ts) prefers Resend and falls back to Mailgun at send
-// time — prod today has only MAILGUN_* set, so this keeps welcome email flowing
-// through the Resend cutover with zero downtime. When BOTH are absent we degrade
-// to the notifications-table fallback (below). Remove MAILGUN_* once Resend live.
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? ''
+// Product decision 2026-07-15: Mailgun is the email provider. Relay is configured
+// iff Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is set; the shared relay
+// (_shared/relay-mailer.ts) selects Mailgun and never auto-selects Resend. When
+// Mailgun is absent we degrade to the notifications-table fallback (below).
 const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
 const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-const HAS_EMAIL_TRANSPORT = Boolean(RESEND_API_KEY) || Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
+const HAS_EMAIL_TRANSPORT = Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
 const FROM_EMAIL = 'Alfanumrik <welcome@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 // SITE_URL must come from env per P15 #6. See audit 2026-04-27 F4.
