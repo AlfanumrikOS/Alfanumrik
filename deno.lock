@@ -137,6 +137,7 @@
             "npm:@upstash/ratelimit@^2.0.8",
             "npm:@upstash/redis@^1.37.0",
             "npm:@vercel/analytics@^2.0.1",
+            "npm:@vercel/oidc@^3.8.0",
             "npm:@vercel/speed-insights@2",
             "npm:@vitejs/plugin-react@^6.0.1",
             "npm:@vitest/coverage-v8@^4.1.6",
@@ -146,8 +147,10 @@
             "npm:cross-env@^10.1.0",
             "npm:eslint-config-next@^14.2.35",
             "npm:eslint@^8.57.1",
+            "npm:google-auth-library@^10.9.0",
             "npm:jsdom@^29.1.1",
             "npm:katex@~0.16.45",
+            "npm:mermaid@^11.16.0",
             "npm:next@^16.2.6",
             "npm:pdf-parse@^2.4.5",
             "npm:postcss@^8.4.38",
@@ -170,6 +173,13 @@
             "npm:typescript@^5.4.5",
             "npm:vitest@^4.1.8",
             "npm:zod@^4.3.6"
+          ]
+        }
+      },
+      "packages/ui": {
+        "packageJson": {
+          "dependencies": [
+            "npm:mermaid@^11.16.0"
           ]
         }
       }

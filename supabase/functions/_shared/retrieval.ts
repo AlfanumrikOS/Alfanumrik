@@ -1,8 +1,18 @@
 /**
  * @deprecated Use `_shared/rag/retrieve.ts` instead. This module exists only
- * for backward compatibility with quiz-generator, ncert-solver, and
- * generate-answers (Phase 1 deferred them to keep the change surface small —
- * see audit 2026-04-27 finding F10).
+ * for backward compatibility with ncert-solver, generate-answers, and
+ * bulk-jee-neet-import — all via the `fetchRAGContext` shim in
+ * `_shared/rag-retrieval.ts` (Phase 1 deferred them to keep the change
+ * surface small — see audit 2026-04-27 finding F10). quiz-generator was
+ * migrated off this module on 2026-07-15 (local adapter
+ * `quiz-generator/retrieval.ts` → unified retrieve()); no Edge Function
+ * imports `retrieveChunks` from here directly anymore.
+ *
+ * KNOWN-DEAD BACKEND: `match_rag_chunks_v2` was never applied to production
+ * (see migration 20260415000016_match_rag_chunks_ncert_only.sql, audit
+ * finding #1), so at runtime this module always falls back to the legacy
+ * `match_rag_chunks` RPC, which has no content_type filter and returns no
+ * Q&A columns.
  *
  * New callers MUST use the unified `retrieve()` interface from
  * `_shared/rag/retrieve.ts`. Phase 2 (SQL-layer consolidation — drop

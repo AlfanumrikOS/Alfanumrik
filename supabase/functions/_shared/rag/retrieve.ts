@@ -31,8 +31,13 @@
 //     redaction layer in pipeline.ts handles this).
 //
 // Caller mapping (see docs/architecture/rag-retrieval.md):
-//   grounded-answer  — primary consumer (Phase 1 migrated)
-//   quiz-generator   — Phase 1 migrated via local adapter in its index.ts
+//   grounded-answer  — primary consumer (Phase 1 migrated, adapter in
+//                      grounded-answer/retrieval.ts)
+//   quiz-generator   — migrated 2026-07-15 via local adapter
+//                      quiz-generator/retrieval.ts. (This line previously
+//                      claimed a Phase 1 migration that had NOT happened —
+//                      quiz-generator was still importing the deprecated
+//                      _shared/retrieval.ts until 2026-07-15.)
 //   ncert-solver     — Phase 1 deferred (uses _shared/retrieval.ts shim)
 //   generate-answers — Phase 1 deferred (uses _shared/retrieval.ts shim)
 //   foxy-tutor       — frozen (deprecated; F7 will delete)

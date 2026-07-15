@@ -8315,3 +8315,52 @@ no-dynamic-import byte-identity, and P13 no-token/body-in-logs).
 **Total catalog: 221 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-255 — quiz-generator RAG retrieval single-source pin: unified `_shared/rag/retrieve.ts` only (deprecated `_shared/retrieval.ts` banned) + selectRAGQuestions P6 dormancy tombstone (2026-07-15)
+
+Static import-contract canary on the 2026-07-15 quiz-generator RAG
+consolidation. quiz-generator previously imported `retrieveChunks` from the
+deprecated `_shared/retrieval.ts`, whose primary RPC `match_rag_chunks_v2` was
+never applied to production — the Q&A source silently degraded to the legacy
+`match_rag_chunks` fallback (no Q&A columns) and yielded zero questions.
+
+Pins: (1) no import of `_shared/retrieval.ts` anywhere under
+`supabase/functions/quiz-generator/`; (2) `index.ts` consumes only the local
+adapter `./retrieval.ts` → unified `retrieve()` with caller `'quiz-generator'`,
+rerank false; (3) qa-only TS filter (`question_text` present,
+`content_type !== 'qa'` dropped) compensating for the missing `contentType`
+passthrough; (4) adapter never-throws (`{chunks: [], error}` degradation);
+(5) `selectRAGQuestions()` call site stays commented out — RAG Q&A rows carry
+options `'[]'` / `correct_answer_index` 0, so re-enabling without a non-MCQ
+`question_mode` gate violates P6; re-enablement requires assessment-approved
+grading oracle (or oracle-gated QA→MCQ transform) + full quiz-generation review
+chain (ai-engineer, assessment, testing).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-255 | `quiz_generator_rag_single_source_pin_and_selectRAGQuestions_p6_dormancy` | (1) No file under `supabase/functions/quiz-generator/` imports the deprecated `_shared/retrieval.ts`; (2) `index.ts` consumes only the local adapter `./retrieval.ts`, which delegates to the unified `_shared/rag/retrieve.ts` `retrieve()` with caller `'quiz-generator'` and rerank false; (3) the qa-only TS filter drops chunks without `question_text` / with `content_type !== 'qa'`; (4) the adapter never throws — retrieval failure degrades to `{chunks: [], error}`; (5) the `selectRAGQuestions()` call site remains commented out (P6 dormancy tombstone). | `apps/host/src/__tests__/edge-functions/quiz-generator-rag-consolidation.test.ts` (7 tests) | E | P6, P12-adjacent; REG-50/REG-140-adjacent |
+
+### Invariants covered by this section
+
+- P6 (question quality) — the dormant `selectRAGQuestions()` tombstone pins that
+  RAG Q&A rows (options `'[]'`, `correct_answer_index` 0) cannot re-enter the
+  MCQ quiz path without a non-MCQ `question_mode` gate and an
+  assessment-approved grading oracle; the qa-only filter keeps non-Q&A chunks
+  from feeding P6-violating rows upstream.
+- P12-adjacent (single audited retrieval path for AI content) — quiz-generator
+  retrieval flows only through the unified `retrieve()` with caller
+  attribution; the deprecated silent-zero path cannot be reintroduced without
+  failing this canary. REG-50/REG-140-adjacent (unified retrieval contract).
+
+### Catalog total
+
+Pre-REG-255: 221 entries (through REG-254, Foxy Perception keyless WIF Cloud
+Run invoker-token mint).
+Adds REG-255 (quiz-generator RAG retrieval single-source pin — unified
+`_shared/rag/retrieve.ts` only via the local adapter with caller attribution +
+rerank false, deprecated `_shared/retrieval.ts` banned under quiz-generator/,
+qa-only TS filter, adapter never-throws degradation, and the
+`selectRAGQuestions()` P6 dormancy tombstone).
+**Total catalog: 222 entries (target: 35 — TARGET EXCEEDED).**
+
+---

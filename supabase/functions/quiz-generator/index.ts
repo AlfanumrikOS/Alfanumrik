@@ -32,7 +32,7 @@ function logDeprecatedEdgeFunctionHit() {
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, getCorsHeaders } from '../_shared/cors.ts'
-import { retrieveChunks } from '../_shared/retrieval.ts'
+import { retrieveQAChunks } from './retrieval.ts'
 import { validateSubjectRpc } from '../_shared/subjects-validate.ts'
 import { shouldProxyToPython, forwardToPython } from '../_shared/python-ai-proxy.ts'
 import {
@@ -593,11 +593,19 @@ async function selectRandomQuestions(
 // ─── RAG Q&A question source ─────────────────────────────────────────────────
 
 /**
- * Fetch quiz-ready questions from RAG Q&A chunks via the unified retrieval module.
+ * Fetch quiz-ready questions from RAG Q&A chunks via the unified retrieval module
+ * (`_shared/rag/retrieve.ts` → `match_rag_chunks_ncert`), through the thin local
+ * adapter in ./retrieval.ts (caller: 'quiz-generator').
  *
- * Uses retrieveChunks() with contentType: 'qa' so all callers go through the same
- * match_rag_chunks_v2 path (with automatic fallback to match_rag_chunks), vector
- * search, and retrieval trace logging.
+ * Consolidated 2026-07-15: previously imported the deprecated
+ * `_shared/retrieval.ts` (match_rag_chunks_v2 — an RPC never applied to
+ * production, so this source always degraded to the legacy match_rag_chunks
+ * fallback, which returns no Q&A columns and therefore yielded zero questions).
+ * See ./retrieval.ts header for the full parity analysis.
+ *
+ * NOTE: this function is currently DORMANT — its only call site (Step 3 of the
+ * handler) is commented out pending a non-MCQ question_mode (P6: RAG Q&A chunks
+ * carry no MCQ options).
  */
 async function selectRAGQuestions(
   supabase: SupabaseClient,
@@ -606,22 +614,16 @@ async function selectRAGQuestions(
   chapterNumber: number | null,
   count: number,
   excludeIds: Set<string>,
-  requestingUserId?: string,
+  _requestingUserId?: string, // retained for signature stability; the unified module does not write retrieval_traces
 ): Promise<QuestionRow[]> {
-  // retrieveChunks expects the raw grade string ("9") and subject code ("math") —
-  // match_rag_chunks_v2 handles normalisation internally via the RPC.
-  const result = await retrieveChunks({
+  // The adapter expects the raw grade string ("9", P5) and subject code ("math");
+  // the unified module validates grade at the boundary and never throws here.
+  const result = await retrieveQAChunks({
     supabase,
-    query: subject, // topic-level query; vector search is filtered by chapter + subject
     grade,
     subject,
-    chapterNumber: chapterNumber ?? undefined,
-    contentType: 'qa',
+    chapterNumber,
     matchCount: count * 3, // over-fetch so we can filter + shuffle below
-    caller: 'quiz-generator',
-    userId: requestingUserId,
-    logTrace: true,
-    board: 'CBSE',
   })
 
   if (result.error || result.chunks.length === 0) return []
