@@ -1663,7 +1663,8 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // ── Wave B: math-format house style (ff_foxy_math_format_v2) ──────────────
   // On a prose-teaching turn, inject the math-format directive so worked
   // examples come out as numbered step blocks alternating with display `math`
-  // blocks (one transformation per step), multi-term math is never inline,
+  // blocks (one transformation per step), derivations and tall/stacked
+  // expressions are never inline (short flat equations may stay inline),
   // and LaTeX is never emitted undelimited / pseudo-parenthesised. Scoped to
   // mode !== 'practice' — the MCQ-emitting practice / quiz_me / real-practice
   // turns don't work examples, so the flag read is skipped there (no extra DB
@@ -1831,8 +1832,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // verbatim in that case → byte-identical to today.
         // Wave B (ff_foxy_math_format_v2): the math-format house-style
         // directive (numbered step blocks + display math blocks, one
-        // transformation per step; inline \( ... \) only for single
-        // symbols/values; no undelimited LaTeX) is composed LAST, after the
+        // transformation per step; derivations/stacked expressions in display
+        // math blocks; inline \( ... \) for single symbols/values and short
+        // flat equations; no undelimited LaTeX) is composed LAST, after the
         // diagram directive. mathFormatDirective is '' when the flag is OFF
         // or on a practice/quiz_me turn, and composeModeDirective returns the
         // base verbatim in that case → byte-identical to today.

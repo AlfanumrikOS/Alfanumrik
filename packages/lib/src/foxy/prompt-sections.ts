@@ -788,7 +788,12 @@ export const DIAGRAM_DIRECTIVE = [
 // sometimes writes bare LaTeX or wraps math in plain parentheses as
 // pseudo-delimiters. This directive pins the CEO-approved house style:
 // numbered step blocks (one short action line each) alternating with display
-// "math" blocks, inline math reserved for single symbols/values.
+// "math" blocks; derivations and tall/stacked expressions always in display
+// math blocks; inline math for single symbols/values and short flat equations
+// (assessment 2026-07-16: threshold tuned so simple inline algebra like
+// "\( 2x + 3 = 7 \)" stays legal — the parity-locked structured-output
+// few-shots model exactly that, and banning it both over-fragments short
+// algebra and contradicts the base prompt).
 //
 // DELIBERATELY NOT inside the parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT
 // (that constant stays byte-identical Node<->Deno<->Python). This is an
@@ -817,11 +822,17 @@ export const MATH_FORMAT_DIRECTIVE = [
   '  math block. One transformation = one step block + one math block.',
   '',
   '2. WHERE MATH GOES — display vs inline:',
-  '- Multi-term math (2 or more operators, or more than one fraction/term) MUST',
-  '  be a "math" block on its own line — NEVER inline inside a sentence.',
-  '- Inline \\( ... \\) is reserved for a SINGLE symbol or value woven into a',
-  '  sentence: one fraction, one variable, or one number-with-unit (e.g. "so',
-  '  \\( x = 3 \\)", "a speed of \\( 5 \\text{ m/s} \\)").',
+  '- Every transformation in a worked example or derivation gets its own',
+  '  display "math" block (rule 1). NEVER run a derivation — two or more',
+  '  chained transformations — through a prose sentence.',
+  '- Any TALL or STACKED expression MUST be a "math" block on its own line:',
+  '  a fraction multiplied by / added to another fraction, a nested fraction,',
+  '  a root or exponent stack over a fraction, a summation, an integral.',
+  '  Stacked expressions are unreadable inline on a phone.',
+  '- Inline \\( ... \\) is for math woven into a sentence: a single symbol,',
+  '  value, or fraction, or a short FLAT equation with no stacked parts',
+  '  (e.g. "so \\( 2x + 3 = 7 \\) gives \\( x = 2 \\)", "a speed of',
+  '  \\( 5 \\text{ m/s} \\)").',
   '',
   '3. DELIMITERS — never break these:',
   '- NEVER write LaTeX without delimiters. Bare "\\frac{1}{2}" or "x^2" inside a',
@@ -830,12 +841,14 @@ export const MATH_FORMAT_DIRECTIVE = [
   '  "( x = 2 )" is NOT math formatting. Use \\( ... \\) or a "math" block.',
   '',
   'Example — the correct step + math-block shape for a worked cancellation:',
-  '  {"type":"step","label":"Given","text":"Multiply \\( \\frac{14}{15} \\times \\frac{25}{42} \\)."}',
+  '  {"type":"step","label":"Given","text":"Multiply \\( \\frac{14}{15} \\) by \\( \\frac{25}{42} \\)."}',
   '  {"type":"math","latex":"\\frac{14}{15} \\times \\frac{25}{42} = \\frac{14 \\times 25}{15 \\times 42}"}',
   '  {"type":"step","text":"Cancel 14 and 42 (divide both by 14). A common factor above and below cancels."}',
   '  {"type":"math","latex":"\\frac{1 \\times 25}{15 \\times 3}"}',
   '  {"type":"step","text":"Cancel 25 and 15 (divide both by 5)."}',
   '  {"type":"math","latex":"\\frac{1 \\times 5}{3 \\times 3}"}',
+  '  {"type":"step","text":"Multiply what is left on top and bottom."}',
+  '  {"type":"math","latex":"\\frac{5}{9}"}',
   '  {"type":"answer","text":"The product is \\( \\frac{5}{9} \\)."}',
   '',
   'Keep each step SHORT — one idea per line, readable on a phone. Bilingual:',

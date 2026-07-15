@@ -42,7 +42,7 @@ import { EMPTY_COGNITIVE_CONTEXT, VALID_MODES } from '@/app/api/foxy/_lib/consta
 const DIRECTIVE_MARKER = 'DIAGRAM DIRECTIVE';
 const PROSE_TEACHING_MODES = ['learn', 'explain', 'revise', 'doubt', 'homework', 'explorer'];
 
-// Mirror of the route's mode_directive selector (route.ts ~:1798), INCLUDING the
+// Mirror of the route's mode_directive selector (route.ts ~:1839), INCLUDING the
 // Wave 2 diagram composition. The route computes:
 //   const diagramsEnabled = mode !== 'practice' ? <ff_foxy_diagrams_v1> : false;
 //   const diagramDirective = diagramsEnabled ? DIAGRAM_DIRECTIVE : '';
@@ -52,7 +52,14 @@ const PROSE_TEACHING_MODES = ['learn', 'explain', 'revise', 'doubt', 'homework',
 //       composeModeDirective(MODE_DIRECTIVES[mode] ?? '', teachThenStopDirective),
 //       diagramDirective,
 //     )
-// Kept in sync with the route; if the route's selector changes, update this.
+// Wave B (ff_foxy_math_format_v2) added a THIRD compose around this one —
+// composeModeDirective(<the above>, mathFormatDirective). This mirror models
+// the route with the math-format flag OFF (mathFormatDirective = '', and
+// composeModeDirective with '' is the identity), which is byte-accurate for
+// every case this file tests. The full triple-compose mirror lives in
+// math-format-directive.test.ts (REG-258).
+// Kept in sync with the route; if the route's selector changes, update this
+// AND the math-format mirror.
 function resolveModeDirective(opts: {
   isQuizMe: boolean;
   isRealPractice: boolean;

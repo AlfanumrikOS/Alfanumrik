@@ -8489,3 +8489,61 @@ never double-converted, and loud fixture-integrity guards).
 **Total catalog: 224 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-258 — Foxy math-format house style (Wave B): flag-OFF byte-identity, band-uniformity-until-harness-scores, rubric v2 math criteria, seed OFF (2026-07-16)
+
+Source: math-format #2/#3 (Wave B, branch `feat/foxy-math-format-v2`). Wave A
+(REG-257) fixed the RENDERER; Wave B improves what the model EMITS.
+`MATH_FORMAT_DIRECTIVE` (`packages/lib/src/foxy/prompt-sections.ts`) pins the
+CEO-approved house style — worked examples/derivations as numbered "step"
+blocks (one transformation each) alternating with display "math" blocks;
+tall/stacked math never inline; inline `\( ... \)` properly delimited;
+undelimited LaTeX and plain-parentheses pseudo-delimiters banned; bilingual P7
+note. Injected via the `mode_directive` channel in
+`apps/host/src/app/api/foxy/route.ts` (~:1839) as a THIRD compose, LAST after
+teach-then-stop + diagram, ONLY when `ff_foxy_math_format_v2` is ON and the
+turn is prose-teaching. The scoring side: `quality-eval.ts` RUBRIC_VERSION
+v1→v2 — scaffold_fidelity gains 3 math-format criteria + an explicit
+skip-if-no-math instruction (the 4-key judge JSON contract is UNCHANGED).
+
+**Why this is a regression pin.** (1) The flag is seeded OFF: until an
+operator flips it, every Foxy prompt must be BYTE-IDENTICAL to the pre-Wave-B
+double-composed selector — any drift is a silent prompt change to every
+student turn. (2) CEO constraint (2026-07-16): the '6-8' and '9-12' grade
+bands return IDENTICAL directive text until the eval harness can score
+variants — a premature band divergence would ship an unscored pedagogy change.
+(3) The rubric bump re-opens recent messages for v2 scoring; if the criteria
+or the 4-key contract drift, the nightly judge harness silently mis-scores.
+(4) The seed must keep the REG-125 canonical shape or it walls staging.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-258 | `foxy_math_format_v2_flag_off_byte_identity_band_uniformity_rubric_v2_seed_off` | **(a) Flag-OFF byte-identity** (triple-compose route-selector mirror, kept in sync with route.ts ~:1839): with `ff_foxy_math_format_v2` OFF, the composed `mode_directive` equals the pre-Wave-B double-composed selector (base → teach-then-stop → diagram) for EVERY mode × learning-actions × diagrams flag state (7×2×2), and for quiz_me / real-practice; no `MATH FORMAT DIRECTIVE` marker leaks. **(b) Flag-ON injection, composed LAST**: prose-teaching modes (learn/explain/revise/doubt/homework/explorer) get `MATH_FORMAT_DIRECTIVE` verbatim when other flags are OFF, and the exact `TEACH_THEN_STOP_DIRECTIVE\n\nDIAGRAM_DIRECTIVE\n\nMATH_FORMAT_DIRECTIVE` order when all three are ON (endsWith the math directive); `quiz_me`, real-practice, and legacy `practice` turns NEVER get it (the route skips the flag read on practice). **(c) Band uniformity (CEO 2026-07-16)**: `buildMathFormatDirective('6-8') === buildMathFormatDirective('9-12') === MATH_FORMAT_DIRECTIVE`; `resolveGradeBand` consumes P5 grade STRINGS — "6"/"7"/"8"→'6-8', "9".."12"→'9-12', ""/garbage/"5"/"13"→'6-8'; grade "6" and "12" produce byte-identical directives through the selector. **(d) Directive content**: 14/15 × 25/42 worked-cancellation few-shot ending in 5/9 (structured step/math block shapes); undelimited-LaTeX ban; plain-parentheses pseudo-delimiter ban ("( x = 2 )" is NOT math formatting); one-transformation-per-step structure; bilingual P7 note (Hindi/Hinglish; CBSE/NCERT/Bloom's stay English) — and ABSENT from the parity-locked `FOXY_STRUCTURED_OUTPUT_PROMPT`, `FOXY_SAFETY_RAILS`, and `buildSystemPrompt` output for every mode. **(e) Rubric v2**: `RUBRIC_VERSION === 'v2'`; `buildJudgeSystemPrompt()` carries the 3 math-format criteria under scaffold_fidelity (before age_appropriateness) — (i) derivations + tall/stacked math as standalone display equations not prose, with the flat-inline-equation non-penalise guard, (ii) proper `\( ... \)` delimiters penalising bare `\frac{1}{2}` and `( x = 2 )` pseudo-math, (iii) numbered short steps / one transformation per step / never a dense inline chain — plus skip-checks-(a)-(c)-entirely for non-math answers; judge JSON contract UNCHANGED (exactly the 4 score keys + notes in the prompt; `parseJudgeJson` accepts the 4-key object and nulls on a missing dimension). **(f) Seed OFF** (`20260716120000_seed_ff_foxy_math_format_v2.sql`, comment-stripped/string-blanked static scan): `to_regclass` fresh-DB guard; canonical REG-125 column shape (explicit list, `flag_name` first, `is_enabled`, `rollout_percentage`; never name/enabled); positional `'ff_foxy_math_format_v2', false, 0`; no `true` literal in executable SQL; `ON CONFLICT (flag_name) DO NOTHING` — never `DO UPDATE`, never `(name)`. | `apps/host/src/__tests__/api/foxy/math-format-directive.test.ts` (82 tests) | E | P12 (additive prompt directive only — rails/grounding untouched), P7 (bilingual note), P5 (grade-string band resolution), P6-adjacent (emitted math displays correctly), REG-125-adjacent (seed shape) |
+
+### Invariants covered by this section
+
+- Flag-OFF byte-identity — merging Wave B is a zero-behavior change: the
+  triple compose collapses to the pre-Wave-B selector for every mode and
+  upstream-flag state until an operator flips `ff_foxy_math_format_v2`.
+- CEO band-uniformity constraint — '6-8' and '9-12' return identical text;
+  bands may diverge ONLY once the eval harness can score variants. A failing
+  uniformity pin means someone shipped an unscored per-band pedagogy change.
+- P12 (AI safety) — the directive is additive via mode_directive only; the
+  parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT, FOXY_SAFETY_RAILS, and the base
+  persona are pinned clean of it.
+- Rubric v2 measurement integrity — the nightly judge scores the house style
+  under scaffold_fidelity without penalising non-math answers, and the 4-key
+  JSON contract (DB columns, composite weights) is unchanged.
+- REG-125 (seed shape) — the flag row seeds OFF in the canonical
+  flag_name/is_enabled shape with DO NOTHING conflict resolution.
+
+### Catalog total
+
+Pre-REG-258: 224 entries (through REG-257, Foxy undelimited-LaTeX math
+normalization). Adds REG-258 (Foxy math-format house style Wave B —
+flag-OFF byte-identity of the triple-composed mode_directive selector,
+MATH_FORMAT_DIRECTIVE composed LAST on prose-teaching turns only,
+band-uniformity-until-harness-scores, directive content + parity-lock
+exclusion, rubric v2 scaffold_fidelity math criteria with unchanged 4-key
+judge contract, and the default-OFF canonical seed).
+**Total catalog: 225 entries (target: 35 — TARGET EXCEEDED).**

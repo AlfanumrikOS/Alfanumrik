@@ -10,10 +10,13 @@
  *   - accuracy:           does the answer agree with the cited NCERT chunks?
  *   - scaffoldFidelity:   did the model follow the coach-mode directive?
  *                         (rubric v2: ALSO scores math-format house style —
- *                         multi-term math in display/math blocks not prose,
- *                         inline math properly \( ... \)-delimited, worked
- *                         examples as numbered short steps. These checks only
- *                         apply when the answer contains mathematics.)
+ *                         derivations and tall/stacked expressions in
+ *                         display/math blocks not prose (short flat inline
+ *                         equations are fine), inline math properly
+ *                         \( ... \)-delimited, worked examples as numbered
+ *                         short steps. These checks only apply when the
+ *                         answer contains mathematics and must never lower
+ *                         the score of a non-math answer.)
  *   - ageAppropriateness: suitable for grades 6-12?
  *   - cbseScope:          stays inside the CBSE curriculum boundary?
  *
@@ -298,12 +301,19 @@ export function buildJudgeSystemPrompt(): string {
     '         only confirm after.',
     '     If coach mode is null, score on whether ANY recognisable',
     '     scaffolding pattern was used.',
-    '     ALSO score math formatting under this dimension (skip these',
-    '     checks entirely when the answer contains no mathematics):',
-    '       (a) multi-term math (2 or more operators, or more than one',
-    '           fraction/term) appears as standalone display equations',
-    '           (dedicated math blocks / their own line), NOT woven into',
-    '           prose sentences.',
+    '     ALSO score math formatting under this dimension — but ONLY when',
+    '     the answer actually contains mathematical expressions or',
+    '     calculations. If it contains none (e.g. an English, History, or',
+    '     Civics answer), skip checks (a)-(c) entirely; they must NEVER',
+    '     lower the score of a non-mathematical answer:',
+    '       (a) derivations (two or more chained transformations) and',
+    '           tall/stacked expressions (a fraction combined with another',
+    '           fraction, nested fractions, roots or exponent stacks over',
+    '           fractions, summations, integrals) appear as standalone',
+    '           display equations (dedicated math blocks / their own line),',
+    '           NOT woven into prose sentences. A short flat inline equation',
+    '           (e.g. "\\( 2x + 3 = 7 \\)") is acceptable and must NOT be',
+    '           penalised.',
     '       (b) inline math is properly delimited with \\( ... \\). Bare',
     '           undelimited LaTeX in prose (e.g. "\\frac{1}{2}" outside',
     '           delimiters) or plain parentheses used as pseudo-delimiters',

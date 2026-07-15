@@ -11,8 +11,9 @@
 --     Foxy turns via the mode_directive channel. It pins the CEO-approved
 --     house style: worked examples/derivations = numbered "step" blocks (one
 --     short action line each) alternating with display "math" blocks (one
---     transformation per step); multi-term math always in "math" blocks,
---     never inline; inline \( ... \) reserved for single symbols/values; no
+--     transformation per step); derivations and tall/stacked expressions
+--     always in "math" blocks, never inline; inline \( ... \) for single
+--     symbols/values and short flat equations (assessment 2026-07-16); no
 --     undelimited LaTeX; no plain-parentheses pseudo-delimiters.
 --     When OFF (default): the directive is not appended — the /api/foxy
 --     mode_directive (and thus the full prompt) is BYTE-IDENTICAL to today.
@@ -80,7 +81,7 @@ BEGIN
       'ff_foxy_math_format_v2',
       false,
       0,
-      'Foxy math-format house style (Wave B). When ON: the ai-engineer MATH_FORMAT_DIRECTIVE (band-aware builder, grades 6-8 / 9-12 — both bands identical text today per CEO 2026-07-16) is appended to prose-teaching turns via mode_directive: worked examples as numbered step blocks alternating with display math blocks (one transformation per step), multi-term math never inline, inline \( ... \) only for single symbols/values, no undelimited LaTeX, no plain-parentheses pseudo-delimiters. When OFF (default): no directive — mode_directive + full prompt byte-identical to today. Additive only; never touches the parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT, FOXY_SAFETY_RAILS, or the RAG/grounding/abstain path (P12). Scored by the foxy-quality-sample rubric v2. Default OFF; staged canary. Plan: Foxy math-format, Wave B.',
+      'Foxy math-format house style (Wave B). When ON: the ai-engineer MATH_FORMAT_DIRECTIVE (band-aware builder, grades 6-8 / 9-12 — both bands identical text today per CEO 2026-07-16) is appended to prose-teaching turns via mode_directive: worked examples as numbered step blocks alternating with display math blocks (one transformation per step), derivations and tall/stacked expressions never inline, inline \( ... \) for single symbols/values and short flat equations, no undelimited LaTeX, no plain-parentheses pseudo-delimiters. When OFF (default): no directive — mode_directive + full prompt byte-identical to today. Additive only; never touches the parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT, FOXY_SAFETY_RAILS, or the RAG/grounding/abstain path (P12). Scored by the foxy-quality-sample rubric v2. Default OFF; staged canary. Plan: Foxy math-format, Wave B.',
       NULL,
       NULL,
       NULL,
