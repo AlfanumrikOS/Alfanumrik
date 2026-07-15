@@ -81,10 +81,37 @@ export interface StreamingCallbacks {
   onError?: (info: { reason: string; traceId?: string }) => void;
 }
 
+/**
+ * Phase 1 post-answer learning-action directive. When the student taps
+ * "Explain simpler" / "Show example" / "Quiz me on this" on a Foxy answer, the
+ * SAME prior question is re-sent to the server carrying this directive so Foxy
+ * re-teaches. Maps 1:1 to the server's `coachDirective` enum on POST /api/foxy.
+ *   'simplify' → simpler re-explanation
+ *   'example'  → one worked example
+ *   'quiz_me'  → exactly one oracle-gated inline MCQ (server FORCES blocking)
+ *
+ * Defined here (moved from useFoxyChat) so foxy-constants + MessageList can
+ * reference the directive type/label WITHOUT importing the chat hook. Re-exported
+ * from `useFoxyChat` for existing importers (page.tsx).
+ */
+export type CoachDirective = 'simplify' | 'example' | 'quiz_me';
+
 export interface ChatMessage {
   id: number;
   role: 'student' | 'tutor';
   content: string;
+  /**
+   * Directive-echo marker (Phase 1 learning actions). Set ONLY on a student
+   * bubble that was appended by a learning-action re-send (a tap of "Explain
+   * simpler" / "Show example" / "Quiz me on this"). When set, MessageList renders
+   * a compact, right-aligned intent PILL (see DIRECTIVE_ECHO_LABELS) instead of
+   * re-echoing the full prior question as a normal student bubble — the fix for
+   * the "question renders twice" bug. The FULL question text is still what the
+   * server receives (via foxyParams.message); only the DISPLAYED bubble changes.
+   * Absent on every genuinely-typed message, mode auto-prompt, lesson prompt, and
+   * mastery suggestion — those still render as normal user bubbles.
+   */
+  directive?: CoachDirective;
   timestamp: string;
   xp?: number;
   feedback?: 'up' | 'down' | null;

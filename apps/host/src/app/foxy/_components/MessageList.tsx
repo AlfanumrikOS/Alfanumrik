@@ -28,6 +28,7 @@ import { isFoxyResponse } from '@alfanumrik/lib/foxy/is-foxy-response';
 import { recoverFoxyResponseFromText } from '@alfanumrik/lib/foxy/recover-from-text';
 import { denormalizeFoxyResponse } from '@alfanumrik/lib/foxy/denormalize';
 import type { ChatMessage } from '../_lib/foxy-types';
+import { DIRECTIVE_ECHO_LABELS } from '../_lib/foxy-constants';
 import type { QuizMeBinding } from '@alfanumrik/ui/foxy/FoxyStructuredRenderer';
 import type { SubmitQuizAnswerInput, SubmitQuizAnswerResult } from '../_hooks/useFoxyChat';
 import { RichContent } from '@alfanumrik/ui/foxy/RichContent';
@@ -132,6 +133,29 @@ export function MessageList({
         });
       })().map((msg: ChatMessage, idx: number) => {
         if (collapsedAbove !== null && idx < collapsedAbove) return null;
+
+        // ── Directive-echo pill (learning-action re-send) ──────────────────
+        // A student bubble carrying a `directive` marker is a learning-action
+        // re-send ("Explain simpler" / "Show example" / "Quiz me on this"). We
+        // render a compact, right-aligned intent PILL instead of re-echoing the
+        // full prior question as a normal student bubble — the fix for the
+        // "question renders twice" bug. The server STILL received the full
+        // question (foxyParams.message); only the DISPLAY changes here. Derived
+        // from the marker + `isHi` so it stays bilingual-reactive (P7).
+        if (msg.role === 'student' && msg.directive) {
+          const echo = DIRECTIVE_ECHO_LABELS[msg.directive];
+          return (
+            <div key={msg.id} className="mb-4 flex justify-end animate-slide-up">
+              <span
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[12px] font-semibold"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                data-testid="directive-echo-pill"
+              >
+                {isHi ? echo.hi : echo.en}
+              </span>
+            </div>
+          );
+        }
 
         // ── Phase 2 renderer choice (structured vs legacy markdown) ──
         // Recovery branch: legacy persisted rows that have raw ```json ...```

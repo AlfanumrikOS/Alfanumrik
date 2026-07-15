@@ -1124,10 +1124,13 @@ function FoxyExperience() {
 
     if (action === 'explain_simpler' || action === 'show_example' || action === 'quiz_me') {
       // Find the student question this answer responded to — the nearest
-      // preceding 'student' bubble (same lookup shape as openReport).
+      // preceding 'student' bubble. Skip directive-echo bubbles (learning-action
+      // re-sends whose `content` is a compact intent label, not a real question),
+      // so a CHAINED action ("Explain simpler" then "Show example") re-teaches the
+      // ORIGINAL question rather than re-sending a pill label.
       const idx = messages.findIndex((m: ChatMessage) => m.id === msg.id);
       const priorStudent = idx > 0
-        ? messages.slice(0, idx).reverse().find((m: ChatMessage) => m.role === 'student')
+        ? messages.slice(0, idx).reverse().find((m: ChatMessage) => m.role === 'student' && !m.directive)
         : null;
       const question = priorStudent?.content?.trim();
       if (!question) {

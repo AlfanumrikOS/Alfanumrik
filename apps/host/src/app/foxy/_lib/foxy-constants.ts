@@ -9,10 +9,22 @@
  * `./foxy-types` (also extracted in this task).
  */
 
-import type { SubjectConfig } from './foxy-types';
+import type { SubjectConfig, CoachDirective } from './foxy-types';
 
 // Fallback used only when the subjects service hook hasn't returned yet (first paint)
 export const FALLBACK_SCIENCE: SubjectConfig = { name: 'Science', icon: '⚛', color: '#10B981' };
+
+/**
+ * DIRECTIVE_ECHO_LABELS — compact bilingual (P7) intent labels rendered as the
+ * right-aligned pill for a learning-action re-send, INSTEAD of re-echoing the
+ * full prior question (the "question renders twice" bug fix). Display-only: the
+ * server still receives the full question text so Foxy re-teaches correctly.
+ */
+export const DIRECTIVE_ECHO_LABELS: Record<CoachDirective, { en: string; hi: string }> = {
+  simplify: { en: '🔁 Explain simpler', hi: '🔁 आसान भाषा में' },
+  example:  { en: '📝 Show example', hi: '📝 उदाहरण दिखाओ' },
+  quiz_me:  { en: '⚡ Quiz me', hi: '⚡ मुझे क्विज़ दो' },
+};
 
 export const LANGS = [
   { code: 'en', label: 'EN' },
