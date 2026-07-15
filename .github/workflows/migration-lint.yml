@@ -1,16 +1,21 @@
 name: Migration Lint — SELECT-1 placeholder guard
 
 # Phase E.2: block PRs that introduce a no-op SELECT-1 migration body.
-# Runs only when a PR touches supabase/migrations/** so unrelated changes
-# don't pay the cost. Files can opt out with a top-of-file
-# `-- lint:allow-placeholder` marker (see scripts/lint-migrations.js).
+# Files can opt out with a top-of-file `-- lint:allow-placeholder` marker
+# (see scripts/lint-migrations.js).
+#
+# This workflow ALWAYS runs on pull_request — no `paths:` filter — because
+# "Lint migrations" is a REQUIRED status check in the repository ruleset.
+# A required check that is paths-filtered never reports on PRs outside those
+# paths, leaving them permanently unmergeable ("Required status check
+# 'Lint migrations' is expected"; rulesets ignore admin bypass). PR #1298
+# (UI-only) hit exactly this. Paths filter removed 2026-07-16. The job costs
+# ~14s (checkout + node + lint of the migrations dir in the tree) and passes
+# when the tree is clean, so unconditional runs are cheap. Do NOT re-add a
+# paths filter while this check is required by the ruleset.
 
 on:
   pull_request:
-    paths:
-      - 'supabase/migrations/**'
-      - 'scripts/lint-migrations.js'
-      - '.github/workflows/migration-lint.yml'
 
 concurrency:
   group: migration-lint-${{ github.ref }}
