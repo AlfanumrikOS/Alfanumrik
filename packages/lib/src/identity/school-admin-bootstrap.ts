@@ -58,6 +58,7 @@
  */
 
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+import { dispatchSingleSchoolAdminClaim } from '@alfanumrik/lib/identity/school-claim-wiring';
 import { isValidBoard } from './constants';
 
 type AdminClient = ReturnType<typeof getSupabaseAdmin>;
@@ -403,6 +404,17 @@ export async function ensureSchoolAdminOnboarding(
     const schoolId = await resolveSchoolIdForAdmin(admin, schoolAdminId);
     if (schoolId) {
       await patchSchoolDetails(admin, schoolId, normalized, logPrefix);
+
+      // PHASE 4 — tenant-claim wiring (STAFF only, single-school principal).
+      // Stamp app_metadata.school_id so get_jwt_school_id() RLS can fire for this
+      // principal. Fire-and-forget + single-school-guarded: it never blocks/fails
+      // onboarding (P15), and is skipped for multi-school institution_admins (the
+      // claim is scalar). The claim applies on the admin's NEXT token refresh/login
+      // (see school-claim.ts) — the service-role read paths remain the safety net
+      // until then, and a "re-login to see your school view" nudge is a frontend
+      // follow-up. Students are intentionally NOT claimed (role-agnostic students
+      // RLS — architect follow-up).
+      dispatchSingleSchoolAdminClaim(admin, params.authUserId, schoolId, logPrefix);
     }
 
     // Guarantee onboarding_state (belt-and-suspenders — the RPC writes it on the

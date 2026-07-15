@@ -169,6 +169,24 @@ export async function POST(request: NextRequest) {
     else skipped++;
   }
 
+  // ── Phase 4 tenant claim — INTENTIONALLY DEFERRED for bulk-imported teachers ──
+  // The staff link points (school-admin onboarding / staff-create / provisioning /
+  // claim) wire `setSchoolClaim(authUserId, schoolId)` so a single-school staff
+  // member's app_metadata.school_id is stamped and get_jwt_school_id() RLS can fire.
+  // We do NOT wire it here, by design:
+  //   1. `register_teacher_with_seat_check` creates a `teachers` roster row with NO
+  //      auth_user_id — a bulk-imported teacher has no auth user (hence no JWT) yet,
+  //      so there is nothing to carry a claim. Teachers gain their auth_user_id LATER
+  //      when they self-onboard with the invite code (POST /api/schools/join UPDATEs
+  //      teachers by auth_user_id). That join step is the correct future home for the
+  //      teacher tenant claim (frontend/backend follow-up — see report).
+  //   2. This route keeps ALL `teachers`-table I/O inside the atomic RPC (a direct
+  //      teachers read/write here is a deliberate design regression). The RPC returns
+  //      only teacher_id — never an auth_user_id — so there is no single-school auth
+  //      user to resolve without violating that boundary.
+  // The service-role read paths remain the safety net for teacher data regardless.
+  // (Per the architect condition we also do NOT wire the STUDENT bulk-import route.)
+
   // Final read-only headroom snapshot for the response (non-authoritative; the
   // ceiling is enforced atomically per row above). Best-effort.
   const finalProbe = await probeSeatCapacity(schoolId);

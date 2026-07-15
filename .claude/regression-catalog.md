@@ -7937,3 +7937,50 @@ visibility, both signup paths 3xx-only through the shared completeSignupBootstra
 **Total catalog: 215 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-249 — school_id JWT claim (app_metadata) is STAFF-only, single-school, merge + fail-soft; teachers/classes gain additive get_jwt_school_id() staff SELECT RLS (Phase 4 tenant isolation, P8+P13) (2026-07-15)
+
+Phase 4 makes JWT-claim tenant isolation real: `setSchoolClaim()` writes
+`app_metadata.school_id` (the ONLY claim `public.get_jwt_school_id()` reads for
+the school-staff RLS SELECT policies), and `dispatchSingleSchoolAdminClaim()`
+wires it into the STAFF link points behind a single-school guard. The claim is
+stamped ONLY for a single-school STAFF member — never a multi-school admin, and
+structurally never a student or teacher-import (keyed strictly on
+`school_admins`; students are DELIBERATELY excluded because the students staff
+RLS policy is role-agnostic and a student claim would leak same-school peer PII).
+
+### Notes on ID assignment
+
+REG-249 is the next free id: after the origin/main merge (and the renumbered
+REG-248 institution_admin entry) the catalog's max id is REG-248 and this project
+appends rather than backfilling intentional gaps (REG-170 remains a documented
+skip). REG-249 is confirmed absent before use. (This entry was authored as REG-243
+on the email-onboarding branch and renumbered to REG-249 on merge to avoid a
+collision with the origin/main Foxy REG-241..247 block.)
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-249 | `school_id_jwt_claim_staff_only_merge_failsoft` | (a) **MERGE, never clobber**: `setSchoolClaim(authUserId, schoolId)` fetches the user's current `app_metadata` and spreads it — an existing key (`provider`/`providers`/`role`) SURVIVES while `school_id` is added; when a DIFFERENT `school_id` already exists it replaces ONLY `school_id` (other keys untouched); a null/absent `app_metadata` yields just `{ school_id }`. On success returns `{ok:true, changed:true, reason:'set'}` and calls `updateUserById` exactly once. (b) **Idempotent no-op**: when the stored claim already equals the target, NO `updateUserById` call is made and it returns `{ok:true, changed:false, reason:'noop_already_set'}`. (c) **Fail-soft (never throws)**: every failure path returns a structured result and the promise RESOLVES (never rejects) — `invalid_input` (missing authUserId/schoolId, never fetches), `user_not_found`, `fetch_failed`, `update_failed`, and `threw` (an admin call that rejects is caught). (d) **P13**: on a logging failure path with a user carrying `email` + a token-shaped field, the emitted `console.error` output contains NEITHER the email NOR the token (opaque uuids only); the happy MERGE path logs nothing. (e) **Single-school wiring guard** (`setSchoolClaimForSingleSchoolAdmin`/`dispatchSingleSchoolAdminClaim`): a single active `school_admins` membership equal to expected → stamps the claim (`reason:'set'`, `updateUserById` called, query keyed strictly on `school_admins`); MULTIPLE memberships → `skipped_multi_school` with NO claim and `setSchoolClaim` never reached; a single membership for a DIFFERENT school → `skipped_multi_school`; ZERO memberships (a student/teacher-only user has no `school_admins` row) → skipped, never claimed — this is the structural "students are never claimed" guard; fail-soft reasons `skipped_lookup_failed` (lookup error → service-role safety net remains), `skipped_threw` (admin client rejects), `skipped_invalid_input` (no DB touch); `dispatchSingleSchoolAdminClaim` returns `void` synchronously, eventually stamps for a single-school admin, and NEVER throws when the underlying lookup rejects. (f) **Call-site source canary**: the 4 STAFF link points dispatch the claim — `ensureSchoolAdminOnboarding` (school-admin-bootstrap.ts), `establishPrincipalAdmin` + `claimAdminToken` (school-provisioning.ts, ≥2 calls), and `POST /api/school-admin/staff` — while the teacher bulk-import route dispatches ZERO and carries the documented `INTENTIONALLY DEFERRED` note (no auth user at import), and the student bulk-import route dispatches ZERO (students are never claimed). SCOPE NOTE: these tests pin the helper/wiring BEHAVIOR that writes the claim + the call-site presence. The accompanying additive migrations `20260715110000_school_staff_jwt_rls_teachers_classes.sql` (mirrors the existing students staff SELECT policy onto `teachers` + `classes` via `get_jwt_school_id()`; RLS stays ENABLED, PERMISSIVE-OR only broadens, idempotent `DROP POLICY IF EXISTS`) and `20260715110100_backfill_app_metadata_school_id.sql` (backfills the claim for single-school `school_admins`/`teachers` only, shallow-merge, ABSENT-claim-only, single-school `HAVING COUNT(DISTINCT school_id)=1`; students DELIBERATELY EXCLUDED) are referenced as the additive-policy delivery — live-DB RLS ENFORCEMENT is deploy/integration-time and is NOT asserted by these unit tests. | `packages/lib/src/identity/school-claim.test.ts` (12 tests: 3 MERGE + 1 idempotent + 6 fail-soft + 2 P13) and `packages/lib/src/identity/school-claim-wiring.test.ts` (14 tests: 4 single-school-guard + 3 fail-soft + 2 dispatch fire-and-forget + 5 call-site source canary), mirrored into the apps/host vitest lane via the `apps/host/src/lib/identity/school-claim{,-wiring}.test.ts` re-export stubs. Additive policies: `supabase/migrations/20260715110000_school_staff_jwt_rls_teachers_classes.sql` + `20260715110100_backfill_app_metadata_school_id.sql`. | E | P8, P13 |
+
+### Invariants covered by this section
+
+- P8 (RLS / tenant boundary) — the scalar `app_metadata.school_id` claim that
+  `get_jwt_school_id()` reads is stamped ONLY for single-school STAFF (keyed on
+  `school_admins`); multi-school admins stay on the explicit
+  `school_admins`-scoped path, and the teachers/classes additive staff SELECT
+  policies close the tenant-scoping gap without narrowing any existing policy.
+- P13 (data privacy) — students are structurally never claimed (the wiring keys
+  on `school_admins` and the backfill migration excludes students), so the
+  role-agnostic students staff policy can never let a student read same-school
+  peers' PII; and `setSchoolClaim` logs opaque uuids only (never email/token).
+
+### Catalog total
+
+Pre-REG-249: 215 entries (through REG-248, institution_admin first-class
+onboarding). Adds REG-249 (school_id JWT claim is single-school STAFF-only,
+merge + fail-soft; the 4 staff link points dispatch it while teacher/student
+imports do not; accompanying additive teachers/classes staff SELECT RLS +
+single-school STAFF-only backfill referenced, not live-DB-enforced here).
+**Total catalog: 216 entries (target: 35 — TARGET EXCEEDED).**
+
+---

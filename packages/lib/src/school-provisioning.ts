@@ -34,6 +34,11 @@ import {
 // school-admin onboarding shape (school_admins.role='principal' + a completed
 // onboarding_state row). Fail-soft — see writeSchoolAdminOnboardingState.
 import { writeSchoolAdminOnboardingState } from '@alfanumrik/lib/identity/school-admin-bootstrap';
+// Phase 4: STAFF tenant-claim wiring. Fire-and-forget + single-school-guarded —
+// stamps app_metadata.school_id on a single-school principal so get_jwt_school_id()
+// RLS can fire. Never blocks provisioning/claim; skips multi-school admins. Import
+// directly (server-only; not re-exported from the identity barrel — P8).
+import { dispatchSingleSchoolAdminClaim } from '@alfanumrik/lib/identity/school-claim-wiring';
 
 // ─── Slug + invite code helpers (mirror trial route) ───────────────────
 
@@ -309,6 +314,14 @@ export async function claimAdminToken(
       });
     }
 
+    // Phase 4 — tenant claim (STAFF only). The link is now active for this
+    // principal; stamp app_metadata.school_id so get_jwt_school_id() RLS fires on
+    // their next login. Fire-and-forget + single-school-guarded: never blocks the
+    // claim (the link is already active), skipped for multi-school admins. Applies
+    // on the principal's NEXT token refresh — the claim route returns a
+    // `school_claim: 'pending_refresh'` hint so the client can nudge a re-login.
+    dispatchSingleSchoolAdminClaim(admin, link.auth_user_id, row.school_id, '[SchoolProvisioning]');
+
     return {
       status: 'claimed',
       school_id: row.school_id,
@@ -423,6 +436,15 @@ export async function establishPrincipalAdmin(
       schoolAdminId,
       '[SchoolProvisioning]'
     );
+
+    // Phase 4 — tenant claim (STAFF only). Now that this principal's single-school
+    // membership is established, stamp app_metadata.school_id so get_jwt_school_id()
+    // RLS fires once they log in. Fire-and-forget + single-school-guarded: never
+    // blocks provisioning (the school + admin rows already exist), and skipped for
+    // multi-school admins. The claim applies on the principal's FIRST token/login
+    // (they claim via POST /api/schools/claim-admin) — the service-role read paths
+    // remain the safety net until then.
+    dispatchSingleSchoolAdminClaim(admin, authUserId, schoolId, '[SchoolProvisioning]');
   }
 
   // Mint a one-time claim token (store hash only). Best-effort — a failure here
@@ -496,6 +518,13 @@ export type ProvisionTrialSchoolResult =
       admin_linked: boolean;
       /** The principal's school_admins row id (when linked). */
       school_admin_id?: string;
+      /**
+       * Phase 4 re-login hint (P13-safe, non-PID). Present when the principal was
+       * linked: their tenant claim (app_metadata.school_id) was dispatched but
+       * only takes effect on their FIRST token/login, so the frontend can nudge a
+       * "re-login to see your school view". Absence ⇒ no claim was dispatched.
+       */
+      school_claim?: 'pending_refresh';
     }
   | {
       status: 'already_exists';
@@ -746,6 +775,9 @@ export async function provisionTrialSchool(
       email_dispatched: emailDispatched,
       admin_linked: adminLink.linked,
       school_admin_id: adminLink.schoolAdminId ?? undefined,
+      // Re-login hint: only when a principal link was actually established (a
+      // single-school claim was dispatched inside establishPrincipalAdmin).
+      ...(adminLink.linked ? { school_claim: 'pending_refresh' as const } : {}),
     };
   } catch (err) {
     logger.error('school_provisioning_unexpected_error', {
