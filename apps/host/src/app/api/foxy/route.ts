@@ -317,6 +317,8 @@ import {
   PRACTICE_MCQ_COUNT,
   TEACH_THEN_STOP_DIRECTIVE,
   DIAGRAM_DIRECTIVE,
+  buildMathFormatDirective,
+  resolveGradeBand,
   composeModeDirective,
   buildQuizMeLlmGrader,
   buildQuizMeFallbackResponse,
@@ -1658,6 +1660,38 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     });
   }
 
+  // ── Wave B: math-format house style (ff_foxy_math_format_v2) ──────────────
+  // On a prose-teaching turn, inject the math-format directive so worked
+  // examples come out as numbered step blocks alternating with display `math`
+  // blocks (one transformation per step), multi-term math is never inline,
+  // and LaTeX is never emitted undelimited / pseudo-parenthesised. Scoped to
+  // mode !== 'practice' — the MCQ-emitting practice / quiz_me / real-practice
+  // turns don't work examples, so the flag read is skipped there (no extra DB
+  // roundtrip, byte-identical). Flag OFF (default) → mathFormatDirective = ''
+  // → composeModeDirective returns the base verbatim → byte-identical to
+  // today. The grade band ('6-8' | '9-12') is derived from the session grade
+  // string (P5); both bands produce IDENTICAL text today — see
+  // buildMathFormatDirective (bands diverge only when the eval harness can
+  // score variants, CEO 2026-07-16).
+  const mathFormatEnabled =
+    mode !== 'practice'
+      ? await isFeatureEnabled('ff_foxy_math_format_v2', {
+          role: 'student',
+          userId: auth.userId!,
+        })
+      : false;
+  const mathFormatDirective = mathFormatEnabled
+    ? buildMathFormatDirective(resolveGradeBand(grade))
+    : '';
+  if (mathFormatEnabled) {
+    logger.info('foxy.math_format.injected', {
+      // P13: mode + scope only — never studentId/message.
+      mode,
+      subject,
+      grade,
+    });
+  }
+
   // history_messages is kept as a deprecated alias for one release so the
   // grounded-answer service can switch over without forcing a synchronized
   // deploy. The service now prefers conversation_turns when present.
@@ -1795,13 +1829,23 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // ASCII text-art. diagramDirective is '' when the flag is OFF or on a
         // practice/quiz_me turn, and composeModeDirective returns the base
         // verbatim in that case → byte-identical to today.
+        // Wave B (ff_foxy_math_format_v2): the math-format house-style
+        // directive (numbered step blocks + display math blocks, one
+        // transformation per step; inline \( ... \) only for single
+        // symbols/values; no undelimited LaTeX) is composed LAST, after the
+        // diagram directive. mathFormatDirective is '' when the flag is OFF
+        // or on a practice/quiz_me turn, and composeModeDirective returns the
+        // base verbatim in that case → byte-identical to today.
         mode_directive: isQuizMe
           ? SINGLE_MCQ_DIRECTIVE
           : isRealPractice
             ? PRACTICE_MCQ_DIRECTIVE
             : composeModeDirective(
-                composeModeDirective(MODE_DIRECTIVES[mode] ?? '', teachThenStopDirective),
-                diagramDirective,
+                composeModeDirective(
+                  composeModeDirective(MODE_DIRECTIVES[mode] ?? '', teachThenStopDirective),
+                  diagramDirective,
+                ),
+                mathFormatDirective,
               ),
         // Phase 2.2: coaching mode and its instruction line, consumed by
         // the rewritten foxy_tutor_v1 template.
