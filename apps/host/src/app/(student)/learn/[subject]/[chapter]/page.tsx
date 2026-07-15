@@ -36,7 +36,6 @@ import { loadChapterContent } from './actions';
 import type { ChapterContent } from '@alfanumrik/lib/learn/fetchChapterContent';
 import { resolvePedagogyRule } from '@alfanumrik/lib/learn/pedagogy-content-rules';
 import { useChapterReadiness } from '@alfanumrik/lib/useChapterReadiness';
-import { useExperiencePresence } from '@alfanumrik/ui/v3/foundations/ExperiencePresence';
 
 // Lazy-loaded so the markdown + KaTeX bundle stays out of first paint.
 // Only pulled when the student opens Read mode.
@@ -101,7 +100,7 @@ interface ConceptState {
 
 function ChapterConceptPageContent() {
   const router = useRouter();
-  const { active: experienceV3 } = useExperiencePresence();
+  const experienceV3 = false;
   const studentHome = experienceV3 ? '/today' : '/dashboard';
   const params = useParams();
   const searchParams = useSearchParams();

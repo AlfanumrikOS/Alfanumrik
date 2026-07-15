@@ -15,7 +15,6 @@ import StreakBadge from '@alfanumrik/ui/challenge/StreakBadge';
 import { STREAK_VISIBILITY_THRESHOLD } from '@alfanumrik/lib/challenge-config';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { toast } from '@alfanumrik/ui/ui/toast';
-import { useIsInsideRoleShellMain } from '@alfanumrik/ui/v3';
 
 /** Row shape returned by /api/v1/leaderboard/mastery. Phase 5 follow-on. */
 interface MasteryLeaderEntry {
@@ -116,7 +115,7 @@ function TabLoader({ label }: { label: string }) {
 export default function LeaderboardPage() {
   const { student, isLoggedIn, isLoading, isHi } = useAuth();
   const router = useRouter();
-  const isInsideRoleShellMain = useIsInsideRoleShellMain();
+  const isInsideRoleShellMain = false;
 
   const [tab, setTab] = useState<Tab>('ranks');
   const [period, setPeriod] = useState('weekly');

@@ -25,8 +25,6 @@ import dynamic from 'next/dynamic';
 import { useRequireAuth } from '@alfanumrik/lib/useRequireAuth';
 import { usePracticeOsFlag } from '@alfanumrik/lib/use-practice-os-flag';
 import { LoadingFoxy } from '@alfanumrik/ui/ui';
-import StudentV3Gate from '../_components/StudentV3Gate';
-import { StudentPracticeV3 } from '../_components/StudentV3Pages';
 
 // Lazy-load the hub so the flag-OFF/404 path never fetches this bundle.
 const PracticeCenter = dynamic(() => import('@alfanumrik/ui/practice/os/PracticeCenter'), {
@@ -59,5 +57,5 @@ function LegacyPracticePage() {
 }
 
 export default function PracticePage() {
-  return <StudentV3Gate legacy={<LegacyPracticePage />} v3={<StudentPracticeV3 />} />;
+  return <LegacyPracticePage />;
 }

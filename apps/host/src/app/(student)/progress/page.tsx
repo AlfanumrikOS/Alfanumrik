@@ -20,8 +20,6 @@ import { useMyPulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulse } from '@alfanumrik/ui/pulse';
 import { calculateLevel } from '@alfanumrik/lib/xp-config';
 import type { StudentSnapshot } from '@alfanumrik/lib/types';
-import StudentV3Gate from '../_components/StudentV3Gate';
-import { StudentProgressV3 } from '../_components/StudentV3Pages';
 
 /* ── Types for new Performance Score data ── */
 interface PerformanceScoreRow {
@@ -1040,5 +1038,5 @@ function LegacyProgressPage() {
 }
 
 export default function ProgressPage() {
-  return <StudentV3Gate legacy={<LegacyProgressPage />} v3={<StudentProgressV3 />} />;
+  return <LegacyProgressPage />;
 }

@@ -2,8 +2,6 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import StudentV3Gate from '../../_components/StudentV3Gate';
-import { StudentExamV3 } from '../../_components/StudentV3Pages';
 
 function LegacyExamRedirect() {
   const router = useRouter();
@@ -12,5 +10,5 @@ function LegacyExamRedirect() {
 }
 
 export default function ExamPlanPage() {
-  return <StudentV3Gate legacy={<LegacyExamRedirect />} v3={<StudentExamV3 />} />;
+  return <LegacyExamRedirect />;
 }
