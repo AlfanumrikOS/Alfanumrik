@@ -7984,3 +7984,60 @@ single-school STAFF-only backfill referenced, not live-DB-enforced here).
 **Total catalog: 216 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-250 — self-serve school onboarding assigns a unique subdomain slug (server-derived, idempotent, fail-soft) so new schools are reachable at <slug>.alfanumrik.com (Phase 6 white-label, P15) (2026-07-15)
+
+The self-serve email onboarding path (`ensureSchoolAdminOnboarding`,
+`packages/lib/src/identity/school-admin-bootstrap.ts`) previously left
+`schools.slug` NULL. A NULL slug matches NO subdomain, so a freshly-signed-up
+school was unreachable at `<slug>.alfanumrik.com`. Phase 6 wires
+`resolveUniqueSchoolSlug()` + `patchSchoolDetails()` so the helper now derives a
+UNIQUE slug from the server-normalized school name (via the extracted leaf
+normaliser `packages/lib/src/normalize-slug.ts`) and folds it into the SAME
+`schools` UPDATE as city/state/principal_name — a single round-trip, on the same
+fail-soft best-effort path as the rest of the helper (P15: a slug failure can
+never block school signup).
+
+This complements the trial/bulk-provisioning path, which ALREADY had its own
+slug+code generation in `provisionTrialSchool`
+(`packages/lib/src/school-provisioning.ts`, its own `MAX_SLUG_ATTEMPTS`
+collision loop writing `code`=`slug`=finalSlug), exercised by
+`apps/host/src/__tests__/school-admin/provision-trial-school-admin-link.test.ts`
+plus the pure `apps/host/src/__tests__/lib/normalize-slug.test.ts`. REG-250 closes
+the equivalent gap on the SELF-SERVE path.
+
+### Notes on ID assignment
+
+REG-250 is the next free id: after the origin/main merge (and the renumbered
+REG-248/REG-249 entries ahead of it) the catalog's max id is REG-249 and this
+project appends rather than backfilling intentional gaps (REG-170 remains a
+documented skip). REG-250 was confirmed absent before use. (This entry was
+authored as REG-244 on the email-onboarding branch and renumbered to REG-250 on
+merge to avoid a collision with the origin/main Foxy REG-241..247 block.) SCOPE
+HONESTY: the originating task referred to the trial path as "REG-135", but in THIS
+catalog REG-135 is the MOL deterministic-priority router
+(`mol_deterministic_openai_priority`) — the trial-path slug generation has no
+dedicated REG id here, so REG-250 references the actual trial-path test files above
+rather than citing a mismatched number.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-250 | `self_serve_school_slug_unique_idempotent_failsoft` | Exercises the REAL `ensureSchoolAdminOnboarding` (RPC-success branch) with only the Supabase admin client mocked at the `getSupabaseAdmin` seam; the fire-and-forget Phase-4 tenant-claim dispatch is stubbed. (a) **NEW school (slug NULL)** → the idempotency read returns NULL, exactly ONE free candidate (`delhi-public-school`) is probed, and that slug is written into the SAME `schools` UPDATE as `city`/`state` (single round-trip); the slug is server-normalized (`/^[a-z0-9]+(?:-[a-z0-9]+)*$/`, lowercase hyphen-delimited). A name that normalizes to empty (`'###'`) falls back to the base `'school'`. (b) **IDEMPOTENT (never overwrites)** → when `schools.slug` is already non-null (`my-school-original`, operator-set / prior P15 re-run), the current-slug read short-circuits: NO collision probe runs, and the `schools` UPDATE carries NO `slug` key while still patching the other columns (`city`/`state`) — a pre-existing slug is left untouched. (c) **COLLISION suffixing** → a taken base is suffixed: `{base}` taken → probe `{base}-1` (free) → write `{base}-1`; `{base}`,`-1`,`-2` all taken → deterministically resolves the first free `-3`. (d) **FAIL-SOFT (P15)** → a slug UPDATE unique-violation (`23505 … "schools_slug_key"`) is swallowed (helper returns `ok:true`, `schoolAdminId` intact — signup NOT blocked); and a slug RESOLUTION failure (the current-slug read THROWS) is caught → returns a null slug, still patches `city`/`state` with NO `slug` key, and onboarding completes `ok:true`. SCOPE NOTE: unit-level — asserts the resolve→normalize→probe→patch BEHAVIOR + branching. Does NOT assert the live-DB `schools_slug_key` UNIQUE constraint, actual wildcard-subdomain TLS/routing, or the RPC-fallback (direct-insert) branch's slug path (RPC-success branch only); those are deploy/integration-time. | `packages/lib/src/identity/school-admin-slug.test.ts` (7 tests: 2 new-school + 1 idempotent + 2 collision + 2 fail-soft), mirrored into the apps/host vitest lane via the `apps/host/src/lib/identity/school-admin-slug.test.ts` re-export stub (same mechanism as REG-249). Code under test: `packages/lib/src/identity/school-admin-bootstrap.ts` (`resolveUniqueSchoolSlug` + `patchSchoolDetails` + `ensureSchoolAdminOnboarding`); normaliser `packages/lib/src/normalize-slug.ts`. | E | P15 |
+
+### Invariants covered by this section
+
+- P15 (onboarding integrity) — slug derivation is on the helper's best-effort
+  fail-soft path: neither a slug write unique-violation nor a slug resolution
+  throw can block or fail school signup, and an idempotent re-run never clobbers
+  a previously-captured slug. The self-serve school becomes reachable at its
+  themed subdomain without adding a failure mode to the #1 acquisition funnel.
+
+### Catalog total
+
+Pre-REG-250: 216 entries (through REG-249, school_id JWT claim staff-only).
+Adds REG-250 (self-serve school onboarding assigns a unique, server-derived,
+idempotent, fail-soft subdomain slug; complements the trial path's own slug
+generation in `provisionTrialSchool`). **Total catalog: 217 entries (target: 35 —
+TARGET EXCEEDED).**
+
+---

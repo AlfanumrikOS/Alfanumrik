@@ -59,6 +59,11 @@
 
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { dispatchSingleSchoolAdminClaim } from '@alfanumrik/lib/identity/school-claim-wiring';
+// Phase 6 (white-label, subdomains-first): the canonical slug normaliser, so a
+// self-serve school gets a unique `schools.slug` and becomes reachable at
+// <slug>.alfanumrik.com. Leaf module — never pulls the heavier provisioning
+// module into this critical auth path, and avoids an import cycle.
+import { normalizeSlug } from '@alfanumrik/lib/normalize-slug';
 import { isValidBoard } from './constants';
 
 type AdminClient = ReturnType<typeof getSupabaseAdmin>;
@@ -210,20 +215,86 @@ async function resolveSchoolIdForAdmin(
 }
 
 /**
- * Patch city/state/principal_name onto the school row — the columns the RPC
- * signature cannot carry. Only sets columns we actually have values for so a
- * later idempotent re-run never NULLs-out previously-captured data. Fail-soft.
+ * Phase 6 (white-label, subdomains-first): resolve a UNIQUE `schools.slug` for a
+ * self-serve school so it is reachable at <slug>.alfanumrik.com. The
+ * bootstrap_user_profile RPC creates the schools row with slug=NULL (its
+ * signature can't carry one), and a NULL slug is matched by NO subdomain, so the
+ * new school would otherwise be unreachable.
+ *
+ * Returns the slug to WRITE, or null when nothing should be written:
+ *   - the school already has a slug (idempotent P15 re-run / operator-set) → null;
+ *   - resolution failed (fail-soft) → null.
+ *
+ * Uniqueness: `schools.slug` carries a UNIQUE constraint (schools_slug_key). We
+ * probe for a free candidate and append a short numeric suffix on collision, with
+ * a final time-based suffix so the loop always terminates. A freshly-created
+ * school has slug=NULL, so it can never match its own probe (no self-exclusion
+ * needed). Any residual TOCTOU collision is caught fail-soft by the UPDATE in
+ * patchSchoolDetails (P15) — it never throws into the auth flow.
+ */
+async function resolveUniqueSchoolSlug(
+  admin: AdminClient,
+  schoolId: string,
+  schoolName: string,
+  logPrefix: string
+): Promise<string | null> {
+  try {
+    // Never overwrite an existing slug (idempotency).
+    const { data: current } = await admin
+      .from('schools')
+      .select('slug')
+      .eq('id', schoolId)
+      .maybeSingle();
+    if ((current as { slug?: string | null } | null)?.slug) return null;
+
+    let base = normalizeSlug(schoolName);
+    if (!base) base = 'school';
+
+    let candidate = base;
+    const MAX_ATTEMPTS = 10;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const { data: clash } = await admin
+        .from('schools')
+        .select('id')
+        .eq('slug', candidate)
+        .maybeSingle();
+      if (!clash) return candidate;
+      candidate = `${base}-${attempt}`;
+    }
+    // Deterministic suffixes exhausted — a time-based suffix keeps the write
+    // (very probably) collision-free without another round-trip.
+    return `${base}-${Date.now().toString(36).slice(-4)}`;
+  } catch (err) {
+    console.error(
+      `${logPrefix} school slug resolution failed (non-fatal):`,
+      err instanceof Error ? err.message : err
+    );
+    return null;
+  }
+}
+
+/**
+ * Patch city/state/principal_name (+ Phase 6 slug) onto the school row — the
+ * columns the RPC signature cannot carry. Only sets columns we actually have
+ * values for so a later idempotent re-run never NULLs-out previously-captured
+ * data. Fail-soft: a residual slug unique-violation (23505) or any other write
+ * error is logged and swallowed — it must NEVER block school signup (P15).
  */
 async function patchSchoolDetails(
   admin: AdminClient,
   schoolId: string,
   normalized: NormalizedSchoolAdmin,
+  slug: string | null,
   logPrefix: string
 ): Promise<void> {
   const patch: Record<string, string> = {};
   if (normalized.city) patch.city = normalized.city;
   if (normalized.state) patch.state = normalized.state;
   if (normalized.principalName) patch.principal_name = normalized.principalName;
+  // Phase 6: seed the slug so the themed subdomain resolves. We write ONLY
+  // `slug` (not the legacy `code`) to keep a single UNIQUE-constraint surface —
+  // the tenant resolver and /api/schools/join both look up by `slug`.
+  if (slug) patch.slug = slug;
   if (Object.keys(patch).length === 0) return;
 
   try {
@@ -403,7 +474,17 @@ export async function ensureSchoolAdminOnboarding(
     // Resolve the founding school so we can patch the columns the RPC can't carry.
     const schoolId = await resolveSchoolIdForAdmin(admin, schoolAdminId);
     if (schoolId) {
-      await patchSchoolDetails(admin, schoolId, normalized, logPrefix);
+      // Phase 6: derive a UNIQUE slug (fail-soft) so the school is reachable at
+      // <slug>.alfanumrik.com. Folded into the SAME schools UPDATE as city/state
+      // so we don't add a second round-trip. slug=null ⇒ already set or resolution
+      // failed — patchSchoolDetails simply omits it.
+      const slug = await resolveUniqueSchoolSlug(
+        admin,
+        schoolId,
+        normalized.schoolName,
+        logPrefix
+      );
+      await patchSchoolDetails(admin, schoolId, normalized, slug, logPrefix);
 
       // PHASE 4 — tenant-claim wiring (STAFF only, single-school principal).
       // Stamp app_metadata.school_id so get_jwt_school_id() RLS can fire for this

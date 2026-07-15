@@ -24,6 +24,10 @@
 import { createHash, randomBytes } from 'crypto';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+// Canonical slug normaliser (leaf module). Re-exported below so this module's
+// public API (`@alfanumrik/lib/school-provisioning` → normalizeSlug) is
+// unchanged for existing importers (provision route, REG-135, unit tests).
+import { normalizeSlug } from '@alfanumrik/lib/normalize-slug';
 import {
   deliverEmail,
   truncateInviteCode,
@@ -42,25 +46,10 @@ import { dispatchSingleSchoolAdminClaim } from '@alfanumrik/lib/identity/school-
 
 // ─── Slug + invite code helpers (mirror trial route) ───────────────────
 
-/**
- * Canonical slug normaliser shared by both provisioning paths.
- * Produces a lowercase, hyphen-delimited, alphanumeric string safe for use as
- * a URL path segment and a DB `slug` / `code` column.
- *
- * Examples:
- *   normalizeSlug("St. Xavier's High School")  → "st-xaviers-high-school"
- *   normalizeSlug("  ABC   School ")           → "abc-school"
- *   normalizeSlug("School #1 (Bengaluru)")     → "school-1-bengaluru"
- */
-export function normalizeSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
+// Re-export the canonical slug normaliser (imported at the top from the leaf
+// module `@alfanumrik/lib/normalize-slug`) so `@alfanumrik/lib/school-provisioning`
+// → normalizeSlug keeps working for existing importers.
+export { normalizeSlug };
 
 /** @deprecated Use normalizeSlug() instead. */
 function generateSlug(name: string): string {
