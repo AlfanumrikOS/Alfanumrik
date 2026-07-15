@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
-import { StatCard } from '@alfanumrik/ui/admin-ui';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { StatCard, AdminErrorState } from '@alfanumrik/ui/admin-ui';
 import { BarChart, type ChartSeries } from '@alfanumrik/ui/admin-ui/charts';
+import { AdminDashboardSkeleton } from '@alfanumrik/ui/Skeleton';
 
 interface StatsData {
   totals: { students: number };
@@ -59,25 +61,41 @@ function planColor(plan: string): string {
 
 function AnalyticsContent() {
   const { apiFetch } = useAdmin();
+  const { isHi } = useAuth();
   const [stats, setStats] = useState<StatsData | null>(null);
   const [v2, setV2] = useState<V2Data | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
-    const [sRes, vRes] = await Promise.all([
-      apiFetch('/api/super-admin/stats'),
-      apiFetch('/api/super-admin/analytics-v2'),
-    ]);
-    if (sRes.ok) setStats(await sRes.json());
-    if (vRes.ok) setV2(await vRes.json());
-    setLoading(false);
-  }, [apiFetch]);
+    setError(null);
+    try {
+      const [sRes, vRes] = await Promise.all([
+        apiFetch('/api/super-admin/stats'),
+        apiFetch('/api/super-admin/analytics-v2'),
+      ]);
+      if (sRes.ok) setStats(await sRes.json());
+      if (vRes.ok) setV2(await vRes.json());
+      // Surface a failure instead of silently rendering a blank/zeroed page.
+      if (!sRes.ok || !vRes.ok) {
+        throw new Error(isHi ? 'कुछ एनालिटिक्स लोड नहीं हो सके' : 'Some analytics could not be loaded');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : (isHi ? 'एनालिटिक्स लोड करने में विफल' : 'Failed to load analytics'));
+    } finally {
+      setLoading(false);
+    }
+  }, [apiFetch, isHi]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   if (loading && !v2) {
-    return <div className="p-10 text-center text-muted-foreground">Loading analytics...</div>;
+    return <AdminDashboardSkeleton label={isHi ? 'एनालिटिक्स लोड हो रहा है…' : 'Loading analytics…'} />;
+  }
+
+  if (error && !v2) {
+    return <AdminErrorState onRetry={fetchAll} message={error} isHi={isHi} />;
   }
 
   const features = [
@@ -102,6 +120,11 @@ function AnalyticsContent() {
         </div>
         <button onClick={fetchAll} className="rounded-md border border-surface-3 bg-surface-1 px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">&#8635; Refresh</button>
       </div>
+
+      {/* Partial-failure banner — a later refresh failed but stale data is still shown. */}
+      {error && v2 && (
+        <AdminErrorState compact onRetry={fetchAll} message={error} isHi={isHi} />
+      )}
 
       {/* Row 1: KPI Cards */}
       <div className="mb-6 grid grid-cols-4 gap-3">
@@ -156,7 +179,7 @@ function AnalyticsContent() {
       {v2 && (
         <div className="mb-6">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Feature Usage</h2>
-          <div className="overflow-hidden rounded-lg border border-surface-3">
+          <div className="overflow-x-auto rounded-lg border border-surface-3">
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -197,7 +220,7 @@ function AnalyticsContent() {
       {v2 && v2.recent_signups.length > 0 && (
         <div className="mb-6">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent Signups (Last 10)</h2>
-          <div className="overflow-hidden rounded-lg border border-surface-3">
+          <div className="overflow-x-auto rounded-lg border border-surface-3">
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -242,7 +265,7 @@ function AnalyticsContent() {
       {v2 && v2.top_active.length > 0 && (
         <div className="mb-6">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Top Active Students (Last 7 Days)</h2>
-          <div className="overflow-hidden rounded-lg border border-surface-3">
+          <div className="overflow-x-auto rounded-lg border border-surface-3">
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>

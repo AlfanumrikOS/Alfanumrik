@@ -8,8 +8,10 @@ import {
   StatusBadge,
   DataTable,
   DetailDrawer,
+  AdminErrorState,
   type Column,
 } from '@alfanumrik/ui/admin-ui';
+import { AdminDashboardSkeleton } from '@alfanumrik/ui/Skeleton';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -632,9 +634,9 @@ function CommandCenterContent() {
         const busy = pipelineActionLoading[r.id];
         const btnStyle = (disabled: boolean): React.CSSProperties => ({
           borderRadius: 6,
-          border: '1px solid #E5E7EB',
-          background: '#FFFFFF',
-          color: '#111827',
+          border: '1px solid var(--surface-3)',
+          background: 'var(--surface-1)',
+          color: 'var(--text-1)',
           fontWeight: 500,
           cursor: 'pointer',
           fontSize: 11,
@@ -655,12 +657,12 @@ function CommandCenterContent() {
               </button>
             )}
             {r.status === 'approved' && (
-              <button style={{ ...btnStyle(!!busy), background: '#16A34A', color: '#fff', borderColor: '#16A34A' }} onClick={() => handleDeploy(r.id)}>
+              <button style={{ ...btnStyle(!!busy), background: 'var(--success)', color: 'var(--surface-1)', borderColor: 'var(--success)' }} onClick={() => handleDeploy(r.id)}>
                 {busy === 'deploy' ? 'Deploying...' : 'Deploy'}
               </button>
             )}
             {r.status === 'deployed' && (
-              <button style={{ ...btnStyle(!!busy), background: '#DC2626', color: '#fff', borderColor: '#DC2626' }} onClick={() => handleRollback(r.id)}>
+              <button style={{ ...btnStyle(!!busy), background: 'var(--danger)', color: 'var(--surface-1)', borderColor: 'var(--danger)' }} onClick={() => handleRollback(r.id)}>
                 {busy === 'rollback' ? 'Rolling back...' : 'Rollback'}
               </button>
             )}
@@ -1016,11 +1018,12 @@ function CommandCenterContent() {
   /* ---- Loading / Error ---- */
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: 60, color: '#9CA3AF', fontSize: 14 }}>Loading...</div>;
+    return <AdminDashboardSkeleton label={isHi ? 'सुधार लूप लोड हो रहा है…' : 'Loading improvement loop…'} />;
   }
 
   if (error) {
-    return <div style={{ textAlign: 'center', padding: 60, color: '#DC2626', fontSize: 14 }}>{error}</div>;
+    // Was a dead-end error string with no recovery — now retry-able.
+    return <AdminErrorState onRetry={fetchDashboard} message={error} isHi={isHi} />;
   }
 
   /* ---- Main render ---- */
@@ -1138,7 +1141,7 @@ function CommandCenterContent() {
       {/* ============ Learning Tab ============ */}
       {tab === 'Learning' && (
         <div>
-          {learningLoading && <div style={{ textAlign: 'center', padding: 40, color: '#9CA3AF', fontSize: 14 }}>Loading...</div>}
+          {learningLoading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-3)', fontSize: 14 }}>Loading...</div>}
           {!learningLoading && learning && (
             <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
@@ -1220,7 +1223,7 @@ function CommandCenterContent() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ textAlign: 'center', padding: 20, color: '#9CA3AF', fontSize: 13 }}>
+                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-3)', fontSize: 13 }}>
                     Click &quot;Run Monitors&quot; to check learning quality thresholds
                   </div>
                 )}
@@ -1228,7 +1231,7 @@ function CommandCenterContent() {
             </>
           )}
           {!learningLoading && !learning && (
-            <div style={{ textAlign: 'center', padding: 40, color: '#9CA3AF', fontSize: 14 }}>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-3)', fontSize: 14 }}>
               Learning quality data unavailable
             </div>
           )}

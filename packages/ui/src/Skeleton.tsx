@@ -421,4 +421,150 @@ export function TeacherTableSkeleton({ rows = 6 }: { rows?: number }) {
   );
 }
 
+/**
+ * Generic super-admin dashboard skeleton — a header rail (title + subtitle +
+ * refresh chip), a 4-tile KPI grid, and a table block (header + rows). Used as
+ * the first-paint fallback for the data-heavy super-admin pages (analytics,
+ * diagnostics, learning, command-center) and the AdminShell session gate,
+ * replacing the raw "Loading…" grey text. Warm-cream via the shared
+ * surface/border tokens (no dark mode).
+ *
+ * `label` is an optional bilingual status string exposed to assistive tech
+ * only — the visual is text-free by design (P7: caller passes the localized
+ * string via the existing isHi/t pattern).
+ */
+export function AdminDashboardSkeleton({ label }: { label?: string }) {
+  return (
+    <div role="status" aria-busy="true" aria-label={label}>
+      {label ? <span className="sr-only">{label}</span> : null}
+
+      {/* Header rail — title + subtitle + refresh chip */}
+      <div className="mb-6 flex items-center justify-between">
+        <div className="space-y-2">
+          <Bone width={200} height={22} />
+          <Bone width={320} height={12} />
+        </div>
+        <Bone width={100} height={34} radius={8} />
+      </div>
+
+      {/* KPI grid */}
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-md p-4 space-y-2"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}
+          >
+            <Bone width="55%" height={26} />
+            <Bone width="70%" height={11} />
+          </div>
+        ))}
+      </div>
+
+      {/* Table block */}
+      <div
+        className="rounded-lg overflow-hidden"
+        style={{ border: '1px solid var(--surface-3)' }}
+      >
+        <div
+          className="px-4 py-3 flex items-center gap-4"
+          style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--surface-3)' }}
+        >
+          <Bone width="26%" height={11} />
+          <Bone width="18%" height={11} />
+          <Bone width="18%" height={11} />
+          <Bone width="14%" height={11} />
+        </div>
+        <div className="divide-y" style={{ borderColor: 'var(--surface-2)' }}>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="px-4 py-3 flex items-center gap-4">
+              <Bone width={`${30 + (i % 3) * 8}%`} height={13} />
+              <Bone width="16%" height={13} />
+              <Bone width="16%" height={13} />
+              <Bone width={52} height={20} radius={10} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Control Room skeleton — shape-matched to the super-admin landing
+ * (LegacySuperAdminPage): a system-status bar, the two-column
+ * Operations + Live-Status row, a KPI grid, and the stacked widget rows
+ * (deploy/audit, learner health, platform health). Matching the real section
+ * order eliminates the first-paint layout shift the flat grey loading.tsx
+ * caused. Warm-cream via the shared surface/border tokens (no dark mode).
+ *
+ * `label` is an optional bilingual status string exposed to assistive tech
+ * only — the visual is text-free by design (P7).
+ */
+export function AdminControlRoomSkeleton({ label }: { label?: string }) {
+  return (
+    <div role="status" aria-busy="true" aria-label={label}>
+      {label ? <span className="sr-only">{label}</span> : null}
+
+      {/* Header rail */}
+      <div className="mb-4 flex items-center justify-between">
+        <div className="space-y-2">
+          <Bone width={160} height={20} />
+          <Bone width={300} height={12} />
+        </div>
+        <div className="flex items-center gap-2">
+          <Bone width={64} height={24} radius={4} />
+          <Bone width={96} height={34} radius={8} />
+        </div>
+      </div>
+
+      {/* System status bar */}
+      <div
+        className="mb-4 rounded-[10px]"
+        style={{ height: 56, background: 'var(--surface-2)', border: '1px solid var(--surface-3)' }}
+      />
+
+      {/* Operations + Live status row */}
+      <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className="rounded-[10px] p-4 space-y-3"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)', minHeight: 140 }}
+          >
+            <Bone width="45%" height={12} />
+            <Bone height={40} radius={8} />
+            <Bone height={40} radius={8} />
+          </div>
+        ))}
+      </div>
+
+      {/* KPI grid */}
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="rounded-[10px] p-4 space-y-2"
+            style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}
+          >
+            <Bone width="60%" height={24} />
+            <Bone width="75%" height={11} />
+          </div>
+        ))}
+      </div>
+
+      {/* Widget rows */}
+      <div className="space-y-3">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="rounded-[10px]"
+            style={{ height: 160, background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export { Bone };

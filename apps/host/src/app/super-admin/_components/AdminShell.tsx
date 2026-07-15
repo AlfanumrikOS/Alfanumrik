@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react';
 import { type SupabaseClient } from '@supabase/supabase-js';
 import DashboardSidebar, { type SidebarNavItem, type SidebarItem } from '@alfanumrik/ui/admin-ui/DashboardSidebar';
+import { AdminDashboardSkeleton } from '@alfanumrik/ui/Skeleton';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase-client';
 import { getFeatureFlags } from '@alfanumrik/lib/supabase';
@@ -184,10 +185,13 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }, [headers]);
 
   if (!accessToken) {
+    // Shape-matched first paint instead of a bare centred spinner/text — the
+    // sidebar isn't mounted yet (no token), so render the dashboard skeleton in
+    // the content column the shell will fill once the session resolves.
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-surface-1">
-        <div className="text-sm text-muted-foreground">
-          {isHi ? 'सत्र लोड हो रहा है...' : 'Loading session...'}
+      <div className="min-h-dvh bg-surface-1">
+        <div className="max-w-screen-2xl p-6">
+          <AdminDashboardSkeleton label={isHi ? 'ऑपरेटर वर्कस्पेस लोड हो रहा है…' : 'Loading operator workspace…'} />
         </div>
       </div>
     );

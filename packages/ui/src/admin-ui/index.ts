@@ -13,6 +13,7 @@ export { StatusBadge, type StatusBadgeProps, type StatusBadgeVariant } from './S
 export { ScoreBar, scoreBand, type ScoreBarProps, type ScoreBand } from './ScoreBar';
 export { StalenessTag } from './StalenessTag';
 export { NoDataState, type NoDataStateProps, type NoDataStateReason } from './NoDataState';
+export { AdminErrorState, type AdminErrorStateProps } from './AdminErrorState';
 export { default as DetailDrawer } from './DetailDrawer';
 export type { DetailDrawerProps } from './DetailDrawer';
 export { default as DataTable } from './DataTable';
