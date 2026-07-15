@@ -5,10 +5,14 @@ name: Python AI Services — CI/CD
 # python/services/ai/ to Google Cloud Run (asia-south1).
 #
 # Triggers:
-#   - pull_request  → test job only (no build, no deploy)
-#   - push to main  → test + build + push image + deploy production + smoke
-#   - manual deploys are intentionally disabled until staging has independent,
-#     ref-scoped identity and environment protection
+#   - pull_request      → test job only (no build, no deploy)
+#   - push to main      → test + build + push image + deploy production + smoke
+#   - workflow_dispatch → same deploy path as a main push, for a supervised
+#     manual window (ship current main HEAD without a junk python/* commit). The
+#     deploy jobs still gate on github.ref == refs/heads/main AND
+#     vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true' AND the Production
+#     environment protections + the WIF provider's independent ref restriction —
+#     the manual trigger adds no new privilege, only a way to start the run.
 #
 # Authentication: Workload Identity Federation (NO JSON keys). See
 # docs/PYTHON_AI_DEPLOY.md for the one-time GCP project setup ops must run.
@@ -34,6 +38,12 @@ on:
     paths:
       - 'python/**'
       - '.github/workflows/python-ai-deploy.yml'
+  # Manual, ref-scoped dispatch so an operator can ship the current main HEAD in
+  # a supervised window WITHOUT a junk python/* commit. The deploy jobs below
+  # still require github.ref == refs/heads/main AND the ENABLE_PYTHON_AI_PRODUCTION_DEPLOY
+  # variable AND the Production environment protections + WIF ref restriction —
+  # workflow_dispatch only adds a trigger, it does not widen who/what can deploy.
+  workflow_dispatch:
 
 concurrency:
   group: python-ai-deploy-${{ github.ref }}
@@ -102,7 +112,7 @@ jobs:
   build-and-push:
     name: Build + Push to Artifact Registry
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
     runs-on: ubuntu-latest
     environment: Production
     permissions:
@@ -168,7 +178,7 @@ jobs:
   deploy:
     name: Deploy to Cloud Run
     needs: build-and-push
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
     runs-on: ubuntu-latest
     environment: Production
     permissions:
@@ -339,7 +349,7 @@ jobs:
   post-deploy-smoke:
     name: Post-deploy smoke test
     needs: deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'
     runs-on: ubuntu-latest
     environment: Production
     permissions:

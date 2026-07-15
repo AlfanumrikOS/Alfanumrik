@@ -8024,3 +8024,75 @@ parity gap on mermaid-only-fields-on-other-blocks reported to ai-engineer).
 **Total catalog: 216 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-250 — Foxy Perception keyless Cloud Run invoker-token mint (Vercel-OIDC → GCP Workload Identity Federation): fail-closed/dormant, header separation, P13 no-token-in-logs (2026-07-15)
+
+Source: Foxy Perception (Phase 1C) armed-auth follow-up. The Python MOL
+classifier now runs on Cloud Run with Invoker IAM enforced, so the Next.js-side
+Node client `packages/lib/src/ai/clients/python-mol.ts` must attach a
+Google-signed ID token (aud = the service URL) in `X-Serverless-Authorization`.
+architect added a KEYLESS mint — Vercel OIDC → Google STS (Workload Identity
+Federation) → SA impersonation → `iamcredentials:generateIdToken` — with no JSON
+service-account key on Vercel. It is ADDITIVE and gated on four NON-SECRET env
+vars (`GCP_PROJECT_NUMBER`, `GCP_SERVICE_ACCOUNT_EMAIL`,
+`GCP_WORKLOAD_IDENTITY_POOL_ID`, `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID`). This
+is the P14 testing-review condition on that auth change: before REG-250 only the
+DORMANT path was covered (empty `PYTHON_AI_BASE_URL` / no GCP_* → null, no
+fetch); the ARMED path was untested.
+
+Files under test: `packages/lib/src/ai/clients/python-mol.ts` (`callPythonMol` +
+the internal `readGcpWifConfig`/`mintCloudRunIdToken` — the four-var arm gate,
+`await import()` of `@vercel/oidc` + `google-auth-library` on the armed path
+ONLY, `ExternalAccountClient.fromJSON` STS/impersonation, explicit
+`generateIdToken` second hop, the independent `MINT_TIMEOUT_MS` (3s) race, and
+the `X-Serverless-Authorization` vs `Authorization` header separation).
+
+**Why.** The target service enforces Invoker IAM, so an unauthenticated request
+is a hard 403 — but perception is fire-and-forget best-effort, so a mint that
+cannot run must degrade to a silent no-op, NEVER a throw and NEVER an
+unauthenticated call. Three failure surfaces are load-bearing: (1) running
+off-Vercel (e.g. the DEFERRED AWS ECS path) where `getVercelOidcToken` throws /
+the OIDC header is absent; (2) STS/impersonation or `generateIdToken` non-2xx;
+(3) a slow Google auth hop that must be bounded independently of the request
+timeout. All three must return `null` with no fetch. The student JWT in
+`Authorization` must be byte-for-byte untouched (the Google token rides a
+SEPARATE header). P13: a mint failure must log a static scope code + path only —
+never the token, the request body, or the failure detail. And the dormant path
+(GCP_* absent) must be byte-identical to before — the heavy deps must never be
+dynamic-imported, so they can never enter the dormant path, the existing tests,
+or any client bundle (P10).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-250 | `foxy_python_mol_keyless_wif_invoker_mint_fail_closed_header_separation_p13` | **(a) Armed happy path**: with `PYTHON_AI_BASE_URL`-equivalent (`baseUrlOverride`) set AND all four `GCP_*` present, `getVercelOidcToken` resolves + `ExternalAccountClient.fromJSON` returns a client whose `request` (the explicit `generateIdToken` hop) resolves `{data:{token}}` → the SINGLE outbound `fetch` carries BOTH `X-Serverless-Authorization: Bearer <idToken>` AND the UNTOUCHED student `Authorization: Bearer student-jwt`; the `audience` passed to `generateIdToken` == the service ORIGIN (`https://py.example.com`, derived via `new URL(baseUrl).origin`, NOT base+path), the hop URL contains `:generateIdToken`, and the Vercel-OIDC subject-token supplier is actually consumed. **(b) Fail-closed — OIDC absent** (simulates off-Vercel/AWS ECS where `getVercelOidcToken` throws): `callPythonMol` returns `null`, NEVER throws, and NO `fetch` is sent to Cloud Run. **(c) Fail-closed — STS/impersonation or generateIdToken rejects (non-2xx)** → `null`, no fetch; **and generateIdToken 2xx but empty/absent token** → `null`, no fetch. **(d) Fail-closed — mint timeout**: the `generateIdToken` hop hangs → only the mint's internal 3s `MINT_TIMEOUT_MS` race can settle (fake timers advance 3000ms) → `null`, never throws, no fetch. **(e) Dormant unchanged**: `GCP_*` absent → the mint block is skipped, NO dynamic import is attempted (`getVercelOidcToken` and `ExternalAccountClient.fromJSON` mocks are never called), NO `X-Serverless-Authorization` header is set, and the student `Authorization` is forwarded — byte-identical to the pre-change legacy behavior (keeps the existing 7 dormant/forwarding/fail-safe tests green). **(f) P13**: on a mint failure whose thrown reason carries token- and body-shaped secrets, only `logger.warn('python_mol.mint_unavailable', { path })` is emitted — the aggregate of ALL logger calls (info/warn/error/debug) contains neither the leaked token string, the student body note, nor the student JWT. | `apps/host/src/__tests__/api/foxy/python-mol-client.test.ts` (dormant suite [pre-existing 7] + `keyless WIF Cloud Run invoker mint (REG-250)` describe: armed happy-path header-separation + aud=origin, OIDC-absent, STS/generateIdToken reject, empty-token, mint-timeout via fake timers, P13 no-token/body-in-logs, and the dormant no-dynamic-import pin) | E | P13, P12, P9-adjacent (Invoker-IAM fail-closed), P10 (armed deps dynamic-imported only) |
+
+### Invariants covered by this section
+
+- P13 (data privacy) — a mint failure logs a STATIC scope code + non-PII path
+  only; the token, the request body, and the raw failure detail never reach the
+  logger (asserted over the union of all four logger levels).
+- P12 (AI safety, fail-closed posture) — a down/absent/slow Google auth hop, an
+  off-Vercel runtime, or an Invoker-IAM-enforced service the client cannot
+  authenticate to is a SILENT no-op (`null`, no fetch), never a degraded turn
+  and never an unauthenticated request; the whole mint is bounded by an
+  independent 3s timeout so it can never wedge perception.
+- Header separation — the Google-signed Cloud Run invoker token rides
+  `X-Serverless-Authorization`; the student Supabase JWT on `Authorization` is
+  byte-for-byte untouched, so the Python service still runs its own
+  `require_active_student` verification on the real student identity.
+- P10 (bundle budget) — `@vercel/oidc` + `google-auth-library` are
+  `await import()`-ed on the armed path ONLY; the dormant path never touches
+  them (pinned by the "no dynamic import attempted" assertion), so they cannot
+  enter the dormant path or any client bundle.
+
+### Catalog total
+
+Pre-REG-250: 216 entries (through REG-249, Foxy Mermaid diagram block).
+Adds REG-250 (Foxy Perception keyless Vercel-OIDC → GCP-WIF Cloud Run
+invoker-token mint — armed happy-path header separation [`X-Serverless-
+Authorization` vs untouched `Authorization`] + aud=service-origin, fail-closed on
+OIDC-absent / STS+generateIdToken failure / empty-token / mint-timeout, dormant
+no-dynamic-import byte-identity, and P13 no-token/body-in-logs).
+**Total catalog: 217 entries (target: 35 — TARGET EXCEEDED).**
+
+---

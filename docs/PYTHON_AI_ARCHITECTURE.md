@@ -93,6 +93,41 @@ Routing summary:
 
 ---
 
+## 2a. Authorized invoker hosts
+
+Cloud Run `ai-services` (`asia-south1`) has internet-routable ingress but is
+protected by Invoker IAM (see the §2 routing summary — `allUsers` /
+`allAuthenticatedUsers` are forbidden). Every caller must therefore present a
+short-lived **Google ID token minted for the Cloud Run audience** in
+`X-Serverless-Authorization`, while forwarding the end user's Supabase (student)
+JWT in `Authorization`. FastAPI re-validates the student before doing work.
+
+As of the Python AI / Foxy-perception activation, the callers that hold this
+invoker identity span **three runtime hosts**:
+
+| # | Host | Keyless identity path | Status |
+| --- | --- | --- | --- |
+| 1 | **Vercel** (Next.js, Node) | Vercel OIDC → GCP Workload Identity Federation | **active-build** (being wired now) |
+| 2 | **AWS ECS Fargate** (Node) | ECS task role → GCP WIF (AWS provider) | **deferred, not cancelled** |
+| 3 | **Supabase Edge** (Deno) | grounded-answer generation proxy seam | **existing seam** |
+
+Each host mints its own Google ID token, but the token and header contract are
+identical across all three — this is the same invoker seam described in §2 and
+§3, just reachable from three runtimes.
+
+**Parity requirement.** The auth / ID-token contract MUST stay identical across
+all three hosts:
+- **One audience** = the Cloud Run service URL (the exact
+  `https://ai-services-<HASH>-asia-south1.run.app` value; no per-host variation).
+- **One header contract** = Google ID token in `X-Serverless-Authorization`,
+  student JWT in `Authorization`.
+
+If any host drifts (a different audience, a different header, or a second token
+shape), the three-host fleet is no longer interchangeable and a working caller
+on one runtime tells you nothing about the others. Keep them byte-identical.
+
+---
+
 ## 3. Cutover pattern — stable URLs via Edge proxy
 
 Each Edge Function we move follows the same recipe. The contract that clients (web, mobile) hit does not change.

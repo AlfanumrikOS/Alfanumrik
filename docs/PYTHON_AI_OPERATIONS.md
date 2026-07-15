@@ -542,6 +542,40 @@ weekly during Phase 1-6. Status key:
 (This list mirrors the "Caller status" table in
 [MOL_ARCHITECTURE.md](MOL_ARCHITECTURE.md) — keep both in sync.)
 
+## Known gaps / do-not-populate
+
+Operational hygiene items that are intentionally left in a "not yet wired"
+state. These are NOT code bugs — the code handles the empty case cleanly — but
+populating them prematurely would cause runtime 401s. Do not "fix" them ahead of
+their gating work.
+
+### `PYTHON_AI_BASE_URL` on AWS ECS — leave UNSET until the ECS keyless path exists
+
+**`PYTHON_AI_BASE_URL` MUST remain UNSET in the AWS ECS Secrets Manager secret
+`alfa-prod/app` until the ECS keyless invoker path (AWS ECS task role → GCP
+Workload Identity Federation) is built.** ECS is invoker host #2 in
+[`PYTHON_AI_ARCHITECTURE.md`](PYTHON_AI_ARCHITECTURE.md) §2a — currently
+**deferred, not cancelled**.
+
+Rationale: if `PYTHON_AI_BASE_URL` is populated on ECS before the keyless
+invoker identity exists there, ECS-served perception/generation requests would
+hit Cloud Run Invoker IAM with **no Google ID token in
+`X-Serverless-Authorization`** and get a **401**. The code is safe either way —
+an empty base URL is a clean no-op and never throws
+(`supabase/functions/_shared/python-ai-proxy.ts:149-155`,
+`python-mol.ts:80-83`) — so this is operational hygiene, not a code defect.
+
+Verify the key is absent/empty on ECS:
+
+```bash
+aws secretsmanager get-secret-value --secret-id alfa-prod/app
+# → confirm the PYTHON_AI_BASE_URL JSON key is absent (or present-but-empty).
+# If it is set to a Cloud Run URL, unset it until the AWS→GCP WIF path ships.
+```
+
+(Vercel — invoker host #1, active-build — wires its own keyless path and is not
+subject to this gap. The Supabase Edge seam — host #3 — already mints its token.)
+
 ## See also
 
 - [`docs/MOL_OPERATIONS.md`](MOL_OPERATIONS.md) — alerts and rollout playbook for the shared MoL telemetry layer
