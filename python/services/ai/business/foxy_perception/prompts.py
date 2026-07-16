@@ -17,7 +17,7 @@ from __future__ import annotations
 # taxonomy so a label maps 1:1 onto bloom_progression / question_bank.bloom_level
 # with zero conversion. Order is the fixed CBSE progression remember → create.
 _BLOOM_RUBRIC = (
-    "For \"bloom_level\", score the STUDENT'S cognitive move this turn (judge "
+    'For "bloom_level", score the STUDENT\'S cognitive move this turn (judge '
     "the STUDENT MESSAGE; use FOXY REPLY only as context). Pick exactly one:\n"
     '    - "remember": recalls or states a fact, term, definition, or name '
     '("What is...", "Name the...", "Define...").\n'
@@ -69,7 +69,7 @@ def build_system_prompt(*, grade: str, subject: str) -> str:
         "tutoring turn and CLASSIFY it.\n\n"
         f"Stay strictly within CBSE Class {grade} {subject} scope. Base every "
         "label only on the turn you are given. If a field is not clearly "
-        "supported by the turn, use null (or \"none\"/\"unknown\" where the "
+        'supported by the turn, use null (or "none"/"unknown" where the '
         "field is not nullable). Never invent a misconception that is not "
         "evident.\n\n"
         f"{_BLOOM_RUBRIC}\n\n"

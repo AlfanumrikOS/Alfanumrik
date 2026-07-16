@@ -43,9 +43,7 @@ CLASSIFY_MAX_TOKENS = 256
 # Deterministic classification: temperature 0.0 (factual, not generative).
 CLASSIFY_TEMPERATURE = 0.0
 
-_BLOOM_LEVELS = frozenset(
-    {"remember", "understand", "apply", "analyze", "evaluate", "create"}
-)
+_BLOOM_LEVELS = frozenset({"remember", "understand", "apply", "analyze", "evaluate", "create"})
 _STRUGGLE_SIGNALS = frozenset(
     {
         "none",
