@@ -3,7 +3,11 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 
-import { cleanupLegacyServiceWorker } from '@alfanumrik/lib/RegisterSW';
+import {
+  cleanupLegacyServiceWorker,
+  reportLegacyServiceWorkerCleanup,
+  type LegacyServiceWorkerCleanupResult,
+} from '@alfanumrik/lib/RegisterSW';
 
 function registration(scriptUrl: string) {
   const update = vi.fn(async () => undefined);
@@ -257,6 +261,122 @@ describe('Phase 0 legacy service-worker client cleanup', () => {
       reloadsTriggered: 1,
       failures: 0,
     });
+  });
+});
+
+function cleanupResult(
+  overrides: Partial<LegacyServiceWorkerCleanupResult> = {},
+): LegacyServiceWorkerCleanupResult {
+  return {
+    registrationsFound: 0,
+    unregisterAttempts: 0,
+    registrationsRemoved: 0,
+    cachesRemoved: 0,
+    reloadsTriggered: 0,
+    failures: 0,
+    ...overrides,
+  };
+}
+
+// REG-259 — sw_legacy_cleanup fleet-recovery telemetry. The PostHog decay
+// curve in docs/runbooks/pwa-stale-service-worker-recovery.md §5-6 is the
+// ONLY fleet-wide signal that legacy pre-2026-07-11 devices are healing, so
+// the emit-gate, the exact event name, and the counts-only payload (P13) are
+// all load-bearing for the escalation criteria.
+describe('sw_legacy_cleanup telemetry reporter (REG-259)', () => {
+  const SIX_COUNT_KEYS = [
+    'cachesRemoved',
+    'failures',
+    'registrationsFound',
+    'registrationsRemoved',
+    'reloadsTriggered',
+    'unregisterAttempts',
+  ];
+
+  it('emits nothing for the all-zero healthy-fleet result (zero event volume for clean clients)', () => {
+    const capture = vi.fn();
+
+    reportLegacyServiceWorkerCleanup(cleanupResult(), capture);
+
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it('does not emit when only non-gate counters are set (gate is found/caches/failures ONLY)', () => {
+    const capture = vi.fn();
+
+    // Unreachable in practice (removals imply a found registration), but this
+    // pins the emit-gate to EXACTLY registrationsFound | cachesRemoved |
+    // failures — a widened gate would flood PostHog from healthy clients.
+    reportLegacyServiceWorkerCleanup(
+      cleanupResult({ unregisterAttempts: 2, registrationsRemoved: 1, reloadsTriggered: 1 }),
+      capture,
+    );
+
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it('emits exactly one sw_legacy_cleanup event with ONLY the six numeric counts when a legacy registration is found (P13)', () => {
+    const capture = vi.fn();
+    const result = cleanupResult({
+      registrationsFound: 2,
+      unregisterAttempts: 2,
+      registrationsRemoved: 1,
+      cachesRemoved: 3,
+      reloadsTriggered: 1,
+      failures: 1,
+    });
+
+    reportLegacyServiceWorkerCleanup(result, capture);
+
+    expect(capture).toHaveBeenCalledTimes(1);
+    const [eventName, properties] = capture.mock.calls[0];
+    expect(eventName).toBe('sw_legacy_cleanup');
+    // P13 pin: EXACTLY the six counts — no user id, email, URL, user agent,
+    // or any other enrichment may ever ride on this event.
+    expect(Object.keys(properties).sort()).toEqual(SIX_COUNT_KEYS);
+    expect(properties).toEqual({
+      registrationsFound: 2,
+      unregisterAttempts: 2,
+      registrationsRemoved: 1,
+      cachesRemoved: 3,
+      reloadsTriggered: 1,
+      failures: 1,
+    });
+    for (const key of SIX_COUNT_KEYS) {
+      expect(typeof properties[key], `${key} must be a number`).toBe('number');
+    }
+  });
+
+  it('emits when only caches were removed (controller-less residue still counts as a heal)', () => {
+    const capture = vi.fn();
+
+    reportLegacyServiceWorkerCleanup(cleanupResult({ cachesRemoved: 1 }), capture);
+
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture.mock.calls[0][0]).toBe('sw_legacy_cleanup');
+  });
+
+  it('emits when only failures occurred — the runbook §6 escalation signal must not be silent', () => {
+    const capture = vi.fn();
+
+    reportLegacyServiceWorkerCleanup(cleanupResult({ failures: 1 }), capture);
+
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(capture.mock.calls[0][1]).toEqual(cleanupResult({ failures: 1 }));
+  });
+
+  it('never throws when the capture fn throws — telemetry cannot break the cleanup/reload flow (P15)', () => {
+    const throwingCapture = vi.fn(() => {
+      throw new Error('posthog exploded');
+    });
+
+    expect(() =>
+      reportLegacyServiceWorkerCleanup(
+        cleanupResult({ registrationsFound: 1, failures: 1 }),
+        throwingCapture,
+      ),
+    ).not.toThrow();
+    expect(throwingCapture).toHaveBeenCalledTimes(1);
   });
 });
 

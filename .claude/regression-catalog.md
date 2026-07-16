@@ -8547,3 +8547,76 @@ band-uniformity-until-harness-scores, directive content + parity-lock
 exclusion, rubric v2 scaffold_fidelity math criteria with unchanged 4-key
 judge contract, and the default-OFF canonical seed).
 **Total catalog: 225 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-259 — PWA stale-service-worker retirement: /sw.js no-fetch tombstone, mobile view integrity, sw_legacy_cleanup counts-only telemetry (2026-07-16)
+
+Source: PWA stale-service-worker incident (reported 2026-07-16; root cause =
+legacy v3 service worker on devices that installed the PWA before 2026-07-11
+— cache-first assets with no expiry + a pre-cached `/` shell served a stale,
+broken, "desktop-looking" view inside the installed app indefinitely).
+Containment shipped in commit `6ad1c8ff` (2026-07-11): a no-fetch retirement
+tombstone at `apps/host/public/sw.js` plus the `ServiceWorkerCleanup` client
+mount in `packages/lib/src/RegisterSW.tsx` (unregister owned `/sw.js`
+registrations, delete `alfanumrik-*` caches, bounded one-time reload via the
+`alfanumrik-sw-retirement-reloaded-v1` sessionStorage guard). Follow-up on
+branch `fix/pwa-sw-retirement-followups`: `reportLegacyServiceWorkerCleanup`
+fleet-recovery telemetry (ONE PostHog `sw_legacy_cleanup` event, six numeric
+counts only) + the ops runbook
+`docs/runbooks/pwa-stale-service-worker-recovery.md`.
+
+**Why this is a regression pin.** (1) Any `fetch` handler ever returning to
+`/sw.js` would re-capture legacy clients into cache-first serving and reopen
+the incident — the path and the `alfanumrik-` cache prefix are permanently
+reserved by the retirement machinery (runbook §7). (2) The cleanup must never
+call `registration.update()` handoff-style, must touch ONLY owned `/sw.js`
+same-origin registrations and `alfanumrik-*` caches, and its reload guard
+must stay loop-bounded — an unbounded reload would brick affected devices
+instead of healing them. (3) The PostHog decay curve (runbook §5-6) is the
+ONLY fleet-wide signal that legacy devices are healing and drives the
+escalation criteria, so the emit-gate (fire only when
+`registrationsFound > 0 || cachesRemoved > 0 || failures > 0`; all-zero
+healthy clients emit NOTHING — zero event volume at fleet scale) and the
+counts-only payload (P13: exactly six numeric keys, no user id / email / URL
+/ UA) are load-bearing; the reporter is try/catch-wrapped and must never
+throw into the shared-layout cleanup flow (P15). (4) `display: standalone` +
+`orientation: portrait` in `public/manifest.json` and the root layout's
+`viewport` export (`device-width`, `initialScale: 1`) are the static inputs
+that decide whether the installed PWA renders phone-correct — losing the
+viewport export reproduces the incident's "desktop-looking page on mobile"
+symptom with no service worker involved.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-259a | `sw_js_no_fetch_retirement_tombstone` | `apps/host/public/sw.js` registers ONLY `install` + `activate` handlers — `fetch` handler count is asserted zero via vm-sandbox execution of the deployed source; install `skipWaiting`s; activate deletes exactly the `alfanumrik-*` caches, `clients.claim()`s, and self-`unregister()`s; claim + unregister still run when CacheStorage throws. Client side: `cleanupLegacyServiceWorker` never calls `register()`/`update()`, unregisters ONLY same-origin `/sw.js` registrations (unrelated workers + other origins untouched), deletes ONLY `alfanumrik-*` caches, and the two-state sessionStorage reload guard (`fallback` → `removed`) permits at most one fallback + one confirmed-removal reload — persistent unregister failures can NEVER loop; the all-clean path clears a stale guard and does not reload; a controller-only tab (registration already removed by another tab) reloads once. | `apps/host/src/__tests__/service-worker-containment.test.ts` (7 tests, pre-existing — promoted to the catalog by this entry) | E | P15 / operational integrity (shared-layout mount on the signup funnel), incident non-recurrence |
+| REG-259b | `sw_legacy_cleanup_telemetry_emit_gate_and_counts_only_payload` | `reportLegacyServiceWorkerCleanup`: all-zero result → capture NOT called (healthy-fleet zero-volume gate); a result with only non-gate counters (unregisterAttempts/registrationsRemoved/reloadsTriggered) → NOT called (gate is EXACTLY found/caches/failures); `registrationsFound > 0` → called exactly once with event name `sw_legacy_cleanup` and a payload whose key set equals EXACTLY the six numeric counts `{registrationsFound, unregisterAttempts, registrationsRemoved, cachesRemoved, reloadsTriggered, failures}` — sorted-keys equality proves no extra key (no user id/email/URL/UA) can ride along (P13); every value `typeof number`; `cachesRemoved > 0` alone → emits; `failures > 0` alone → emits (runbook §6 escalation signal never silent); a throwing capture fn → reporter does NOT throw (P15 — telemetry can never break the cleanup/reload flow). | `apps/host/src/__tests__/service-worker-containment.test.ts` (6 tests, `sw_legacy_cleanup telemetry reporter (REG-259)` block) | E | P13 (counts-only payload), P15 (never-throw), operational integrity (fleet-recovery decay curve) |
+| REG-259c | `pwa_manifest_and_root_viewport_view_integrity` | `apps/host/public/manifest.json` keeps `display: "standalone"`, `orientation: "portrait"`, and root `start_url`/`scope`; the root layout (`apps/host/src/app/layout.tsx`, static-source scan — importing it would drag globals.css/KaTeX/the full provider tree into a unit test) keeps `export const viewport: Viewport` with `width: 'device-width'` + `initialScale: 1` and `manifest: '/manifest.json'` in metadata. | `apps/host/src/__tests__/pwa-view-integrity.test.ts` (5 tests) | E | Mobile view integrity (P10-adjacent — Indian 4G phone-first), incident-symptom guard |
+
+### Invariants covered by this section
+
+- Incident non-recurrence — `/sw.js` is a permanent no-fetch tombstone; any
+  future service-worker/offline strategy must NOT reuse the `/sw.js` path or
+  the `alfanumrik-` cache prefix (architect review required; runbook §7).
+- P13 (data privacy) — the `sw_legacy_cleanup` payload is pinned to exactly
+  six numeric counts by sorted-key equality; no identity, URL, or UA
+  enrichment can be added without failing the pin.
+- P15 (onboarding integrity) — `ServiceWorkerCleanup` mounts in the shared
+  layout that wraps auth/onboarding; both the cleanup (bounded reload, never
+  rejects) and the reporter (try/catch, throwing capture swallowed) are
+  pinned unable to break that funnel.
+- Mobile view integrity — manifest standalone/portrait + root viewport
+  export guard the "installed PWA looks like a desktop page" symptom class
+  independently of any service worker.
+- Runbook cross-link — `docs/runbooks/pwa-stale-service-worker-recovery.md`
+  §5-7 (fleet monitoring query, escalation criteria, prevention) depends on
+  the exact event name, emit-gate, and tombstone pinned here.
+
+### Catalog total
+
+Pre-REG-259: 225 entries (through REG-258, Foxy math-format house style
+Wave B). Adds REG-259 (PWA stale-service-worker retirement — no-fetch
+tombstone + bounded client cleanup promoted to the catalog, sw_legacy_cleanup
+emit-gate + counts-only P13 telemetry, and manifest/viewport mobile view
+integrity pins).
+**Total catalog: 226 entries (target: 35 — TARGET EXCEEDED).**

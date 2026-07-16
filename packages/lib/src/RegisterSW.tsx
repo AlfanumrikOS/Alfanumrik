@@ -2,7 +2,10 @@
 
 import { useEffect } from 'react';
 
+import { posthogCapture } from './posthog-client';
+
 const ALFANUMRIK_CACHE_PREFIX = 'alfanumrik-';
+const CLEANUP_TELEMETRY_EVENT = 'sw_legacy_cleanup';
 const RETIRED_WORKER_PATH = '/sw.js';
 const RETIREMENT_RELOAD_GUARD = 'alfanumrik-sw-retirement-reloaded-v1';
 const RELOAD_STATE_FALLBACK = 'fallback';
@@ -236,16 +239,61 @@ export async function cleanupLegacyServiceWorker(
 }
 
 /**
+ * Fleet self-heal telemetry (PII-free, P13). Emits ONE `sw_legacy_cleanup`
+ * PostHog event per cleanup pass, and ONLY when there was something to
+ * report — a legacy registration, an owned cache, or a failure. The healthy
+ * all-zero path (the overwhelming majority of clients) emits nothing, so
+ * clean clients generate zero event volume.
+ *
+ * The payload is exactly the six numeric counts from
+ * `LegacyServiceWorkerCleanupResult`. No user id, no URL, no user agent —
+ * PostHog attaches its own context; we do not enrich.
+ *
+ * Fire-and-forget via the house `posthogCapture()` util (lazy dynamic
+ * import of posthog-js, no-ops when PostHog is disabled, swallows errors).
+ * Wrapped in try/catch so telemetry can never break the cleanup/reload
+ * flow on auth/onboarding pages (P15). `capture` is injectable for tests.
+ */
+export function reportLegacyServiceWorkerCleanup(
+  result: LegacyServiceWorkerCleanupResult,
+  capture: (event: string, properties: Record<string, unknown>) => void = posthogCapture,
+): void {
+  const hasSomethingToReport =
+    result.registrationsFound > 0 || result.cachesRemoved > 0 || result.failures > 0;
+  if (!hasSomethingToReport) return;
+
+  try {
+    capture(CLEANUP_TELEMETRY_EVENT, {
+      registrationsFound: result.registrationsFound,
+      unregisterAttempts: result.unregisterAttempts,
+      registrationsRemoved: result.registrationsRemoved,
+      cachesRemoved: result.cachesRemoved,
+      reloadsTriggered: result.reloadsTriggered,
+      failures: result.failures,
+    });
+  } catch {
+    // Telemetry must never break the containment flow.
+  }
+}
+
+/**
  * Phase 0 containment mount. Kept in the shared layout so every role and
  * white-label tenant retries best-effort cleanup after hydration.
  */
 export default function ServiceWorkerCleanup() {
   useEffect(() => {
-    void cleanupLegacyServiceWorker().then((result) => {
-      if (result.failures > 0) {
-        console.warn('[sw] Legacy service-worker cleanup was incomplete and will be retried.');
-      }
-    });
+    void cleanupLegacyServiceWorker()
+      .then((result) => {
+        reportLegacyServiceWorkerCleanup(result);
+        if (result.failures > 0) {
+          console.warn('[sw] Legacy service-worker cleanup was incomplete and will be retried.');
+        }
+      })
+      .catch(() => {
+        // cleanupLegacyServiceWorker is defensive and should never reject,
+        // but the shared layout (auth/onboarding included) must never be
+        // broken by an unhandled rejection here (P15).
+      });
   }, []);
 
   return null;
