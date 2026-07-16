@@ -1126,12 +1126,17 @@ jobs:
   #   - bulk-jee-neet-curated-import/__tests__/validate.test.ts
   #                                     (pure validation helpers — no I/O)
   #   - grounded-answer/__tests__/*   (12 unit files of pure helpers)
+  #   - _shared/__tests__/gmail-transport.test.ts
+  #                                     (Gmail API transport — offline, injected
+  #                                     fetcher, in-process WebCrypto test key;
+  #                                     the ONE Deno test in _shared/__tests__)
   #
   # EXCLUDED ON PURPOSE:
   #   - grounded-answer/__tests__/{e2e,pipeline}.test.ts — import index.ts which
   #     calls Deno.serve() (binds a socket → requires --allow-net + has a server
   #     side-effect). Flaky/non-deterministic in CI.
-  #   - alfabot-answer, bulk-jee-neet-import/index.test.ts, _shared/__tests__/*,
+  #   - alfabot-answer, bulk-jee-neet-import/index.test.ts, _shared/__tests__/*
+  #     (EXCEPT gmail-transport.test.ts, a Deno test — see SCOPE above),
   #     _shared/mol/__tests__/* — these are VITEST tests (import from 'vitest'),
   #     already covered by the `quality` job's `npm test`, not `deno test`.
   #
@@ -1166,6 +1171,7 @@ jobs:
               supabase/functions/scan-ocr/__tests__/contract.test.ts \
               supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
               supabase/functions/send-auth-email/__tests__/always-200.test.ts \
+              supabase/functions/_shared/__tests__/gmail-transport.test.ts \
               supabase/functions/grounded-answer/__tests__/cache.test.ts \
               supabase/functions/grounded-answer/__tests__/circuit.test.ts \
               supabase/functions/grounded-answer/__tests__/citations.test.ts \
@@ -1200,6 +1206,7 @@ jobs:
             supabase/functions/scan-ocr/__tests__/ \
             supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
             supabase/functions/send-auth-email/__tests__/always-200.test.ts \
+            supabase/functions/_shared/__tests__/gmail-transport.test.ts \
             supabase/functions/grounded-answer/__tests__/cache.test.ts \
             supabase/functions/grounded-answer/__tests__/circuit.test.ts \
             supabase/functions/grounded-answer/__tests__/citations.test.ts \

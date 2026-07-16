@@ -37,7 +37,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
-import { sendEmail } from '../_shared/relay-mailer.ts'
+import { hasEmailTransportConfig, sendEmail } from '../_shared/relay-mailer.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders } from '../_shared/cors.ts'
 import { checkBearerToken } from '../_shared/auth.ts'
@@ -46,13 +46,14 @@ import { checkBearerToken } from '../_shared/auth.ts'
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-// Product decision 2026-07-15: Mailgun is the email provider. Email is attempted
-// when Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the shared relay
-// (_shared/relay-mailer.ts) selects Mailgun and never auto-selects Resend. Prod
-// has MAILGUN_* set, so renewal reminders flow through Mailgun.
-const MAILGUN_API_KEY           = Deno.env.get('MAILGUN_API_KEY') ?? ''
-const MAILGUN_DOMAIN            = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-const HAS_EMAIL_TRANSPORT       = Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
+// Product decision 2026-07-16: Google Workspace (Gmail API) is the email
+// provider (Mailgun disabled the company account). Email is attempted when the
+// shared relay (_shared/relay-mailer.ts) resolves ANY transport — Gmail
+// (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
+// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+// never auto-selected. So renewal reminders flow through Gmail once the
+// Google secrets are set.
+const HAS_EMAIL_TRANSPORT       = hasEmailTransportConfig()
 const FROM_EMAIL                = Deno.env.get('RENEWAL_FROM_EMAIL') ?? 'Alfanumrik <billing@alfanumrik.com>'
 const REPLY_TO                  = 'support@alfanumrik.com'
 const SITE_URL                  = Deno.env.get('SITE_URL') ?? 'https://alfanumrik.com'
