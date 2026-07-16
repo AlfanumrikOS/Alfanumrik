@@ -25,6 +25,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { generateEmbedding, getEmbeddingModel } from '../_shared/embeddings.ts'
 import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile, fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
+import { bumpRagContentVersion } from '../_shared/rag-content-version.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -614,6 +615,15 @@ async function handlePost(
     if (chaptersProcessed < batchSize) {
       await sleep(INTER_CHAPTER_DELAY_MS)
     }
+  }
+
+  // Response-cache v2 (design item 4): new Q&A chunks change what retrieval
+  // can return for this (grade, subject) scope — bump rag_content_versions
+  // so cached grounded answers built on the OLD chunk set are invalidated
+  // (gen_ctx folds the version into every cache key). Best-effort; never
+  // fails the ingestion response.
+  if (!dryRun && totalQACreated > 0) {
+    await bumpRagContentVersion(supabase, params.grade, params.subject)
   }
 
   return jsonResponse(

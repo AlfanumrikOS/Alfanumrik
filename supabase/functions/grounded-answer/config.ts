@@ -71,3 +71,22 @@ export const REGISTERED_PROMPT_TEMPLATES = [
   'quiz_answer_verifier_v1',
   'ncert_solver_v1',
 ] as const;
+
+// ── Response-cache v2 generation-context revisions ───────────────────────────
+// Both revisions are folded into the gen_ctx tuple that is hashed into every
+// response-cache key (L1 in-memory, L2 Redis, L3 ncert_solver_solutions).
+// Bumping either constant instantly invalidates EVERY cached response — old
+// entries become unreachable (new hash) and age out via TTL.
+//
+// PROMPT_REV bump rule: bump whenever ANY registered prompt template's TEXT
+// changes (prompts/*.txt or prompts/inline.ts), OR when pipeline-side prompt
+// assembly changes what the model sees for the same request (e.g. new
+// service-computed template variable, reference-material formatting change,
+// FOXY_STRUCTURED_OUTPUT_PROMPT edit, mode_instruction wording change).
+export const PROMPT_REV = 1;
+// MODEL_ROUTE_REV bump rule: bump whenever model routing changes what model
+// (or generation params) a given model_preference resolves to — e.g. a model
+// id upgrade in claude.ts (HAIKU_MODEL / SONNET_MODEL / GPT_* constants), a
+// change to resolveModelOrder(), or a change to the effective-temperature /
+// effective-max_tokens derivation in the pipeline.
+export const MODEL_ROUTE_REV = 1;

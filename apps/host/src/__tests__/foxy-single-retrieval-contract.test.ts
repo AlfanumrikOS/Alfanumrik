@@ -40,6 +40,21 @@ const pipelinePath = resolve(
 );
 const pipelineSrc = readFileSync(pipelinePath, 'utf8');
 
+/**
+ * Comment-stripped view for the CALL-COUNT assertion (2026-07-16
+ * hardening): the response-cache v2 PR added a code comment that
+ * legitimately reads "… strictly BEFORE retrieveChunks (REG-50
+ * position)", which false-positived the raw-source `retrieveChunks(`
+ * counter. Counting on executable source keeps the enforcement exact —
+ * ANY second real `retrieveChunks(...)` invocation still fails — while
+ * comments may reference the function freely (same convention as the
+ * `match_rag_chunks_ncert` handling below). Block comments are removed
+ * wholesale; `//` line comments are removed except URL `://` sequences.
+ */
+const pipelineExecutableSrc = pipelineSrc
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
 describe('REG-50: single-retrieval contract for Foxy', () => {
   it('pipeline.ts imports retrieveChunks exactly once', () => {
     const importMatches = pipelineSrc.match(/import\s*\{[^}]*\bretrieveChunks\b[^}]*\}\s*from\s*['"]\.\/retrieval(?:\.ts)?['"]/g);
@@ -51,9 +66,13 @@ describe('REG-50: single-retrieval contract for Foxy', () => {
     // The canonical retrieval call in pipeline.ts. If anyone adds a
     // second `retrieveChunks(...)` invocation (e.g. for "re-grounding"
     // or "context expansion"), this assertion fails — by design.
-    const callMatches = pipelineSrc.match(/\bretrieveChunks\s*\(/g);
+    // Counted on comment-stripped source (see pipelineExecutableSrc)
+    // so doc comments may mention the function without weakening the pin.
+    const callMatches = pipelineExecutableSrc.match(/\bretrieveChunks\s*\(/g);
     expect(callMatches).not.toBeNull();
     expect(callMatches!.length).toBe(1);
+    // Belt-and-braces: the single executable call is the awaited sb call.
+    expect(pipelineExecutableSrc).toMatch(/await\s+retrieveChunks\s*\(\s*sb\b/);
   });
 
   it('pipeline.ts grounding-check step uses chunks from the single retrieval, not a fresh RPC', () => {

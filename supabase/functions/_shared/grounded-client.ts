@@ -38,6 +38,16 @@ export type AbstainReason =
 export interface GroundedRequest {
   caller: Caller;
   student_id: string | null;
+  /**
+   * Response-cache v2 scope declaration. 'shared' = the caller asserts this
+   * request carries NO per-student personalization (no conversation turns,
+   * no cognitive/misconception/expectation/session/memory/goal/tenant
+   * prompt sections) so the service may serve/store shared cached
+   * responses. 'none' or absent (fail-closed default) = no cache read, no
+   * cache write. Added to shared client in the same PR as the service-side
+   * contract change (see grounded-answer/types.ts).
+   */
+  cache_scope?: 'shared' | 'none';
   query: string;
   scope: {
     board: 'CBSE';

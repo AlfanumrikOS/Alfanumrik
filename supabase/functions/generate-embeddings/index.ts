@@ -21,6 +21,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { generateEmbeddings, getEmbeddingModel } from '../_shared/embeddings.ts'
 import { constantTimeEqual } from '../_shared/auth.ts'
+import { bumpRagContentVersion } from '../_shared/rag-content-version.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -205,6 +206,11 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
   let failed = 0
   const errors: string[] = []
   const embeddingModel = getEmbeddingModel()
+  // Response-cache v2 (design item 4): distinct (grade, subject) pairs whose
+  // chunks gained/changed embeddings this run — each gets a
+  // rag_content_versions bump after the loop so cached grounded answers
+  // built on the old retrieval state are invalidated.
+  const touchedScopes = new Map<string, { grade: string; subject: string }>()
 
   while (true) {
     // Time check: stop if we are approaching the 9 minute limit
@@ -272,6 +278,14 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
           errors.push(`chunk ${ids[i]}: update error: ${updateErr.message}`)
         } else {
           succeeded++
+          const chunkGrade = String(chunks[i].grade ?? '')
+          const chunkSubject = String(chunks[i].subject ?? '')
+          if (chunkGrade && chunkSubject) {
+            touchedScopes.set(`${chunkGrade}|${chunkSubject}`, {
+              grade: chunkGrade,
+              subject: chunkSubject,
+            })
+          }
         }
       }
 
@@ -309,6 +323,13 @@ async function handlePost(req: Request, origin: string | null): Promise<Response
   }
 
   const remaining = (totalFound ?? 0) - succeeded
+
+  // Response-cache v2 (design item 4): bump the content version for every
+  // (grade, subject) scope whose retrievable state changed. Best-effort;
+  // never fails the ingestion response.
+  for (const scope of touchedScopes.values()) {
+    await bumpRagContentVersion(supabase, scope.grade, scope.subject)
+  }
 
   return jsonResponse(
     {

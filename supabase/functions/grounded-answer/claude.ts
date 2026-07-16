@@ -83,6 +83,25 @@ function normalizeOpenAIFinishReason(raw: unknown): ClaudeStopReason {
   }
 }
 
+/**
+ * Response-cache v2 (design item 9): an ordered slice of the system prompt
+ * with its Anthropic prompt-cache breakpoint flag. The concatenation of all
+ * segment texts MUST equal `systemPrompt` byte-for-byte — buildSystemBlocks
+ * verifies this and falls back to the legacy single block on ANY drift, so
+ * segmentation can never change the prompt text the model sees.
+ */
+export interface SystemSegment {
+  text: string;
+  cacheControl: boolean;
+}
+
+/**
+ * Anthropic allows at most 4 cache_control breakpoints per request. The
+ * pipeline produces ≤2 by construction ([static head] + [RAG tail]);
+ * this cap is a hard guard against future segment plans exceeding it.
+ */
+const MAX_CACHE_CONTROL_BLOCKS = 4;
+
 export interface ClaudeRequest {
   systemPrompt: string;
   userMessage: string;
@@ -99,6 +118,79 @@ export interface ClaudeRequest {
    * Absent or empty array → byte-identical legacy behavior (single user turn).
    */
   conversationTurns?: ClaudeConversationTurn[];
+  /**
+   * Response-cache v2 (design item 9): ordered system-prompt segments for
+   * multi-block Anthropic prompt caching ([static template + safety rails +
+   * mode directive] cached → … → [RAG chunks] cached, per-student sections
+   * uncached). Optional and additive: absent → the legacy single
+   * cache_control block, byte-identical to pre-v2 behavior. OpenAI fallback
+   * paths ignore this (they take the joined `systemPrompt` string).
+   */
+  systemSegments?: SystemSegment[];
+}
+
+/**
+ * Build the Anthropic `system` content-block array. Legacy behavior (no
+ * segments): one text block carrying the whole prompt with a cache_control
+ * breakpoint at the end. With segments: one block per segment, breakpoints
+ * only where `cacheControl` is true.
+ *
+ * Safety properties (block boundaries only — never prompt-text changes):
+ *   1. Byte-identity guard: if the segments do not concatenate to EXACTLY
+ *      `systemPrompt`, fall back to the legacy single block.
+ *   2. Whitespace coalescing: a segment that is empty/whitespace-only is
+ *      prepended to the next segment (or appended to the previous when
+ *      last) so no empty/whitespace-only text block is ever sent.
+ *   3. Breakpoint cap: never more than MAX_CACHE_CONTROL_BLOCKS
+ *      cache_control markers (Anthropic limit is 4; we emit ≤2 today).
+ */
+export function buildSystemBlocks(
+  systemPrompt: string,
+  segments?: SystemSegment[],
+): Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> {
+  const legacySingleBlock: Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> = [
+    { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+  ];
+  if (!segments || segments.length === 0) return legacySingleBlock;
+  if (segments.map((s) => s.text).join('') !== systemPrompt) {
+    // Drift guard — segmentation must never alter the prompt text.
+    console.warn('claude: system segments do not concatenate to systemPrompt — using single block');
+    return legacySingleBlock;
+  }
+
+  // Coalesce empty/whitespace-only segments forward (byte order preserved).
+  const merged: SystemSegment[] = [];
+  let carry = '';
+  for (const seg of segments) {
+    const text = carry + seg.text;
+    carry = '';
+    if (text.trim() === '') {
+      carry = text;
+      continue;
+    }
+    merged.push({ text, cacheControl: seg.cacheControl });
+  }
+  if (carry !== '') {
+    if (merged.length === 0) return legacySingleBlock;
+    merged[merged.length - 1] = {
+      text: merged[merged.length - 1].text + carry,
+      cacheControl: merged[merged.length - 1].cacheControl,
+    };
+  }
+  if (merged.length === 0) return legacySingleBlock;
+
+  let breakpoints = 0;
+  return merged.map((seg) => {
+    const block: { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } } = {
+      type: 'text',
+      text: seg.text,
+    };
+    if (seg.cacheControl && breakpoints < MAX_CACHE_CONTROL_BLOCKS) {
+      block.cache_control = { type: 'ephemeral' };
+      breakpoints++;
+    }
+    return block;
+  });
 }
 
 export type ClaudeResponse =
@@ -229,6 +321,7 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
           timeoutMs: perCallTimeout,
           apiKey: req.apiKey,
           conversationTurns: req.conversationTurns,
+          systemSegments: req.systemSegments,
         });
 
     if (attempt.kind === 'ok') {
@@ -319,6 +412,7 @@ async function callOnce(params: {
   timeoutMs: number;
   apiKey: string;
   conversationTurns?: ClaudeConversationTurn[];
+  systemSegments?: SystemSegment[];
 }): Promise<SingleCallResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
@@ -327,26 +421,21 @@ async function callOnce(params: {
     // Phase 2.4: Anthropic prompt caching.
     //
     // The system prompt for Foxy/grounded-answer is large (safety rails +
-    // cognitive context + reference material can run 3-6k tokens) and
-    // changes only when the chunks/cognitive snapshot shift. We wrap the
-    // system prompt as a single content block with cache_control so
-    // Anthropic caches the prefix for ~5 minutes. Subsequent turns in the
-    // same conversation reuse the cache and only pay for the user message
-    // delta. Caching is a no-op (just a structural change) when the
-    // backend doesn't honor the header — hence safe across model
-    // generations. See https://docs.anthropic.com/claude/docs/prompt-caching
+    // cognitive context + reference material can run 3-6k tokens). Response-
+    // cache v2 (design item 9) restructures the previous single monolithic
+    // cache_control block into ordered blocks via buildSystemBlocks:
+    //   [static template + safety rails + mode directive] (cache_control)
+    //   → [per-student sections] (uncached) → [RAG chunks] (cache_control)
+    // Block boundaries only — the concatenated text is verified
+    // byte-identical to params.systemPrompt (fallback: legacy single
+    // block). Callers that don't pass systemSegments keep the legacy single
+    // block. See https://docs.anthropic.com/claude/docs/prompt-caching
     //
     // Phase 2 of Foxy continuity fix (2026-05-18): prior turns are now passed
     // natively via `params.conversationTurns` when provided. Anthropic's
     // multi-turn coherence is markedly stronger for native messages[] than for
     // string-interpolated history inside a single user-message blob.
-    const systemBlocks = [
-      {
-        type: 'text',
-        text: params.systemPrompt,
-        cache_control: { type: 'ephemeral' },
-      },
-    ];
+    const systemBlocks = buildSystemBlocks(params.systemPrompt, params.systemSegments);
 
     // Phase 2: prepend prior turns when supplied. Empty/undefined → byte-
     // identical legacy single-user-message body.
@@ -484,6 +573,7 @@ export async function* callClaudeStream(
           timeoutMs: perCallTimeout,
           apiKey: req.apiKey,
           conversationTurns: req.conversationTurns,
+          systemSegments: req.systemSegments,
           allowFallback: !isLastModel,
         });
 
@@ -556,6 +646,7 @@ async function* streamOnce(params: {
   apiKey: string;
   allowFallback: boolean;
   conversationTurns?: ClaudeConversationTurn[];
+  systemSegments?: SystemSegment[];
 }): AsyncGenerator<ClaudeStreamEvent, StreamOnceResult, unknown> {
   void params.allowFallback; // reserved for future telemetry; behavior driven by caller's loop
 
@@ -568,13 +659,10 @@ async function* streamOnce(params: {
   let firstTokenSent = false;
 
   try {
-    const systemBlocks = [
-      {
-        type: 'text',
-        text: params.systemPrompt,
-        cache_control: { type: 'ephemeral' },
-      },
-    ];
+    // Response-cache v2 (design item 9): same multi-block prompt-cache
+    // structure as the blocking path — see buildSystemBlocks (byte-identity
+    // guard + whitespace coalescing + ≤4 breakpoints).
+    const systemBlocks = buildSystemBlocks(params.systemPrompt, params.systemSegments);
 
     // Phase 2 of Foxy continuity fix (2026-05-18): prepend native prior
     // turns when provided. Empty/undefined preserves legacy behavior.

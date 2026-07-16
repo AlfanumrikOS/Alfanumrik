@@ -66,6 +66,16 @@ export interface ConversationTurn {
 export interface GroundedRequest {
   caller: Caller;
   student_id: string | null;
+  /**
+   * Response-cache v2 scope declaration. 'shared' = the caller asserts this
+   * request carries NO per-student personalization (no conversation turns,
+   * no cognitive/misconception/expectation/session/memory/goal/tenant
+   * prompt sections) so the grounded-answer service may serve/store shared
+   * cached responses for it. 'none' or absent (the fail-closed default) =
+   * the service performs no cache read and no cache write. Mirror of
+   * supabase/functions/grounded-answer/types.ts — update both in one PR.
+   */
+  cache_scope?: 'shared' | 'none';
   query: string;
   scope: {
     board: 'CBSE';

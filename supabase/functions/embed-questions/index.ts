@@ -14,6 +14,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { generateEmbeddings, getEmbeddingModel } from '../_shared/embeddings.ts'
 import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_shared/security/ai-admission.ts'
+import { bumpRagContentVersion } from '../_shared/rag-content-version.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -176,10 +177,12 @@ async function handlePost(
     MAX_LIMIT,
   )
 
-  // Fetch questions needing embeddings
+  // Fetch questions needing embeddings. grade + subject are selected so the
+  // post-run rag_content_versions bump knows which scopes changed
+  // (response-cache v2, design item 4).
   let query = supabase
     .from('question_bank')
-    .select('id, question_text, options, explanation, difficulty, bloom_level, chapter_number')
+    .select('id, question_text, options, explanation, difficulty, bloom_level, chapter_number, grade, subject')
     .eq('is_active', true)
     .order('created_at', { ascending: true })
     .limit(limit)
@@ -219,6 +222,9 @@ async function handlePost(
   let processed = 0
   let failed = 0
   const errors: string[] = []
+  // Response-cache v2 (design item 4): distinct (grade, subject) pairs whose
+  // questions gained/changed embeddings this run.
+  const touchedScopes = new Map<string, { grade: string; subject: string }>()
 
   // Process in batches of EMBEDDING_BATCH_SIZE
   for (let batchStart = 0; batchStart < questions.length; batchStart += EMBEDDING_BATCH_SIZE) {
@@ -261,6 +267,11 @@ async function handlePost(
           )
         } else {
           processed++
+          const qGrade = String((batchQuestions[i] as Record<string, unknown>).grade ?? '')
+          const qSubject = String((batchQuestions[i] as Record<string, unknown>).subject ?? '')
+          if (qGrade && qSubject) {
+            touchedScopes.set(`${qGrade}|${qSubject}`, { grade: qGrade, subject: qSubject })
+          }
         }
       }
     } catch (batchErr) {
@@ -284,6 +295,13 @@ async function handlePost(
     if (batchEnd < questions.length) {
       await sleep(INTER_BATCH_DELAY_MS)
     }
+  }
+
+  // Response-cache v2 (design item 4): bump the content version for every
+  // (grade, subject) scope whose retrievable state changed. Best-effort;
+  // never fails the ingestion response.
+  for (const scope of touchedScopes.values()) {
+    await bumpRagContentVersion(supabase, scope.grade, scope.subject)
   }
 
   const durationMs = Date.now() - startTime

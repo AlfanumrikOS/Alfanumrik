@@ -304,6 +304,13 @@ Deno.serve(async (req) => {
       const groundedRequest: GroundedRequest = {
         caller: 'ncert-solver',
         student_id: null,
+        // Response-cache v2: unconditionally 'shared' — this request is
+        // personalization-free BY CONSTRUCTION (verify when editing):
+        // student_id is null, there are no conversation_turns, and
+        // template_variables carry only curriculum scope (grade / subject /
+        // chapter). The quota gate (check_and_record_usage above) has
+        // already run, so a cache hit can never bypass daily limits.
+        cache_scope: 'shared',
         query: question,
         scope: {
           board: 'CBSE',

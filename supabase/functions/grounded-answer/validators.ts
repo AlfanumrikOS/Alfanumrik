@@ -40,6 +40,16 @@ export function validateRequest(body: unknown): ValidationResult {
     return { error: { field: 'query', message: 'required' } };
   }
 
+  // Response-cache v2 scope declaration. Optional; absent behaves as
+  // 'none' (fail-closed — no cache read, no cache write).
+  if (
+    b.cache_scope !== undefined &&
+    b.cache_scope !== 'shared' &&
+    b.cache_scope !== 'none'
+  ) {
+    return { error: { field: 'cache_scope', message: "must be 'shared' or 'none'" } };
+  }
+
   if (!b.scope || typeof b.scope !== 'object') {
     return { error: { field: 'scope', message: 'required' } };
   }

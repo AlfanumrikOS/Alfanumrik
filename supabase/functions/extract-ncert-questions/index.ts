@@ -39,6 +39,7 @@ import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { generateResponse, MolError } from '../_shared/mol/index.ts'
 import { isMolAdminRoutingEnabled } from '../_shared/mol/admin-rollback-flag.ts'
 import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile, fetchWithProviderTimeout } from '../_shared/security/ai-admission.ts'
+import { bumpRagContentVersion } from '../_shared/rag-content-version.ts'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -809,6 +810,10 @@ async function handlePost(req: Request, origin: string | null, bodyText: string)
   const results: ChapterResult[] = []
   let totalExtracted = 0
   let totalInserted = 0
+  // Response-cache v2 (design item 4): distinct (grade, subject) pairs that
+  // gained question_bank rows this run. chapter.grade/chapter.subject are
+  // already in normalized form (P5 short grade + snake_case subject code).
+  const touchedScopes = new Map<string, { grade: string; subject: string }>()
 
   for (let i = 0; i < chapters.length; i++) {
     // Time check
@@ -832,11 +837,24 @@ async function handlePost(req: Request, origin: string | null, bodyText: string)
     results.push(result)
     totalExtracted += result.questions_extracted
     totalInserted += result.questions_inserted
+    if (result.questions_inserted > 0) {
+      touchedScopes.set(`${chapter.grade}|${chapter.subject}`, {
+        grade: chapter.grade,
+        subject: chapter.subject,
+      })
+    }
 
     // Delay between chapters (Claude rate limiting)
     if (i < chapters.length - 1) {
       await sleep(INTER_CHAPTER_DELAY_MS)
     }
+  }
+
+  // Response-cache v2 (design item 4): bump the content version for every
+  // (grade, subject) scope that gained questions. Best-effort; never fails
+  // the extraction response.
+  for (const scope of touchedScopes.values()) {
+    await bumpRagContentVersion(supabase, scope.grade, scope.subject)
   }
 
   return jsonResponse(

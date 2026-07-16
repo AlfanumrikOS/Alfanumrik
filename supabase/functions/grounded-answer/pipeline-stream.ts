@@ -60,7 +60,12 @@ import { computeConfidence } from './confidence.ts';
 // (default) or no transfer edge exists. See transfer-retrieval.ts.
 import { isDigitalTwinEnabled } from './_twin-flag.ts';
 import { retrieveTransferChunks, mergeTransferChunks } from './transfer-retrieval.ts';
-import { loadTemplate, resolveTemplate, hashPrompt } from './prompts/index.ts';
+import {
+  loadTemplate,
+  buildSystemPromptSegments,
+  hashPrompt,
+  type PromptSegment,
+} from './prompts/index.ts';
 import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
 import {
   rescueFromTruncatedJson,
@@ -550,14 +555,31 @@ export async function* runStreamingPipeline(
   if (!vars.next_topic) vars.next_topic = '';
   if (!vars.prereq) vars.prereq = '';
 
-  let systemPrompt = resolveTemplate(template, vars);
+  // Response-cache v2 (design item 9): resolve the template as ordered
+  // prompt-cache segments — mirrors pipeline.ts. The joined text is
+  // byte-identical to the previous resolveTemplate(template, vars) output;
+  // claude.ts re-verifies that invariant and falls back to the legacy
+  // single block on any drift.
+  let promptSegments: PromptSegment[] = buildSystemPromptSegments(template, vars);
+  let systemPrompt = promptSegments.map((s) => s.text).join('');
 
   // Foxy structured-output addendum (streaming). Mirrors pipeline.ts logic.
   // Mid-stream we cannot validate; the parse + validate step runs ONCE at
-  // stream close and emits the result on the `done` event.
+  // stream close and emits the result on the `done` event. Appended to the
+  // LAST segment too so segments stay byte-identical to systemPrompt.
   const isFoxyStructured = request.caller === 'foxy';
   if (isFoxyStructured) {
-    systemPrompt = `${systemPrompt}\n\n${FOXY_STRUCTURED_OUTPUT_PROMPT}`;
+    const addendum = `\n\n${FOXY_STRUCTURED_OUTPUT_PROMPT}`;
+    systemPrompt = `${systemPrompt}${addendum}`;
+    if (promptSegments.length > 0) {
+      const last = promptSegments[promptSegments.length - 1];
+      promptSegments = [
+        ...promptSegments.slice(0, -1),
+        { text: `${last.text}${addendum}`, cacheControl: last.cacheControl },
+      ];
+    } else {
+      promptSegments = [{ text: systemPrompt, cacheControl: true }];
+    }
   }
 
   const promptHashStr = await hashPrompt(systemPrompt);
@@ -705,6 +727,11 @@ export async function* runStreamingPipeline(
     // Phase 2 of Foxy continuity fix (2026-05-18): prefer native conversation
     // turns when supplied. Absent → byte-identical legacy single-user body.
     conversationTurns: request.generation.conversation_turns,
+    // Response-cache v2 (design item 9): multi-block prompt caching —
+    // static head + RAG tail carry cache_control breakpoints; per-student
+    // middle stays uncached. Prompt TEXT unchanged (byte-identity verified
+    // in claude.ts buildSystemBlocks).
+    systemSegments: promptSegments,
   });
 
   let accumulated = '';
