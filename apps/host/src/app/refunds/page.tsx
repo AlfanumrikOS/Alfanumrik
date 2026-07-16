@@ -1,22 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Breadcrumbs from '@alfanumrik/ui/Breadcrumbs';
+import { buildMarketingMetadata } from '@/lib/marketing-metadata';
 
-export const metadata: Metadata = {
+// SEO layer, 2026-07-16: adopted the marketing metadata builder.
+// Canonical URL unchanged; builder adds complete openGraph incl. og:image.
+export const metadata: Metadata = buildMarketingMetadata({
+  path: '/refunds',
   title: 'Refunds & Cancellations — Alfanumrik',
   description:
-    'Plain-language refund and cancellation policy for Alfanumrik subscriptions (monthly and annual plans). DPDPA-compliant, India-jurisdiction.',
-  openGraph: {
-    title: 'Refunds & Cancellations — Alfanumrik',
-    description:
-      'Plain-language refund and cancellation policy for Alfanumrik subscriptions (monthly and annual plans). DPDPA-compliant, India-jurisdiction.',
-    url: 'https://alfanumrik.com/refunds',
-    siteName: 'Alfanumrik',
-    type: 'website',
-    locale: 'en_IN',
-  },
-  alternates: { canonical: 'https://alfanumrik.com/refunds' },
-};
+    'Plain-language refund and cancellation policy for Alfanumrik subscriptions — monthly and annual CBSE learning plans (Class 6–12). DPDPA-compliant, India-based.',
+});
 
 /* ─── Sub-Components ─── */
 

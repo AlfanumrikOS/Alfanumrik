@@ -82,6 +82,10 @@ function ThemedShell() {
       ref={rootRef}
       className={s.root}
       data-testid="welcome-root"
+      // lang is set server-side on the shell (the closest element we own —
+      // <html> belongs to the root layout) so ?lang=hi SSR HTML is announced
+      // as Hindi before hydration; the effect above syncs <html lang> after.
+      lang={isHi ? 'hi' : 'en'}
       suppressHydrationWarning
     >
       <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
@@ -103,9 +107,20 @@ function ThemedShell() {
   );
 }
 
-export default function WelcomeV3() {
+export default function WelcomeV3({
+  initialLang,
+}: {
+  /**
+   * Server-derived language from the `?lang=` URL param (threaded by
+   * apps/host/src/app/welcome/page.tsx). Seeds WelcomeV2Provider so the
+   * SSR HTML renders in the requested language; explicit param wins over
+   * the localStorage preference post-hydration. Omitted → unchanged
+   * behavior (EN first paint, localStorage hydration).
+   */
+  initialLang?: 'en' | 'hi';
+} = {}) {
   return (
-    <WelcomeV2Provider>
+    <WelcomeV2Provider initialLang={initialLang}>
       <ThemedShell />
     </WelcomeV2Provider>
   );

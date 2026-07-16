@@ -1,22 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Breadcrumbs from '@alfanumrik/ui/Breadcrumbs';
+import { buildMarketingMetadata } from '@/lib/marketing-metadata';
 
-export const metadata: Metadata = {
+// SEO layer, 2026-07-16: adopted the marketing metadata builder.
+// Canonical URL unchanged; builder adds complete openGraph incl. og:image.
+export const metadata: Metadata = buildMarketingMetadata({
+  path: '/press',
   title: 'Press & Media — Alfanumrik',
   description:
-    'Press inquiries, brand assets, and recent coverage for Alfanumrik — the CBSE-aligned learning platform built by Cusiosense Learning India.',
-  openGraph: {
-    title: 'Press & Media — Alfanumrik',
-    description:
-      'Press inquiries, brand assets, and recent coverage for Alfanumrik — the CBSE-aligned learning platform built by Cusiosense Learning India.',
-    url: 'https://alfanumrik.com/press',
-    siteName: 'Alfanumrik',
-    type: 'website',
-    locale: 'en_IN',
-  },
-  alternates: { canonical: 'https://alfanumrik.com/press' },
-};
+    'Press inquiries, brand assets and coverage for Alfanumrik — the NCERT-aligned adaptive learning platform for CBSE Class 6–12. Contact press@alfanumrik.com.',
+});
 
 /* ─── Sub-Components ─── */
 

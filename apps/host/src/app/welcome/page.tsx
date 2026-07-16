@@ -19,6 +19,14 @@ export default async function WelcomePage({
 }) {
   const params = (await searchParams) ?? {};
   const v = Array.isArray(params.v) ? params.v[0] : params.v;
+  // `?lang=hi|en` → real SSR language (SEO layer, 2026-07-16). The hreflang
+  // hi-IN alternate points at ?lang=hi, so crawlers must receive Hindi HTML
+  // from the server — not after hydration. Only a VALID explicit param is
+  // threaded; no/unknown param keeps existing behavior (EN first paint +
+  // localStorage hydration inside WelcomeV2Provider).
+  const langParam = Array.isArray(params.lang) ? params.lang[0] : params.lang;
+  const initialLang =
+    langParam === 'hi' ? ('hi' as const) : langParam === 'en' ? ('en' as const) : undefined;
   if (v === '2') return <WelcomeV2 />;
-  return <WelcomeV3 />;
+  return <WelcomeV3 initialLang={initialLang} />;
 }

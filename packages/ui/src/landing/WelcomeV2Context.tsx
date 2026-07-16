@@ -50,16 +50,33 @@ const LANG_KEY = 'alf-welcome-lang';
 const THEME_KEY = 'alfanumrik-theme';
 const ROLE_KEY = 'alf-welcome-role';
 
-export function WelcomeV2Provider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Lang>('en');
+export function WelcomeV2Provider({
+  children,
+  initialLang,
+}: {
+  children: ReactNode;
+  /**
+   * Server-derived language (from the `?lang=` URL param on /welcome).
+   * When provided it seeds the FIRST render (so SSR HTML is already in the
+   * requested language) AND wins over localStorage post-hydration — an
+   * explicit URL param is a stronger signal than a stored preference.
+   * When omitted, behavior is unchanged: 'en' first paint, then localStorage.
+   */
+  initialLang?: Lang;
+}) {
+  const [lang, setLang] = useState<Lang>(initialLang ?? 'en');
   const [theme, setTheme] = useState<Theme | null>(null);
   const [role, setRoleState] = useState<Role>('parent');
 
   // Hydrate from localStorage on mount
   useEffect(() => {
     try {
-      const storedLang = localStorage.getItem(LANG_KEY);
-      if (storedLang === 'hi' || storedLang === 'en') setLang(storedLang);
+      // Explicit URL param (initialLang) wins over localStorage — only fall
+      // back to the stored preference when no param was given.
+      if (!initialLang) {
+        const storedLang = localStorage.getItem(LANG_KEY);
+        if (storedLang === 'hi' || storedLang === 'en') setLang(storedLang);
+      }
       // Theme hydration disabled 2026-05-11 — light-only across the product.
       // Leftover localStorage value is harmless; we just stop reading it.
       const storedRole = localStorage.getItem(ROLE_KEY);
@@ -74,7 +91,8 @@ export function WelcomeV2Provider({ children }: { children: ReactNode }) {
     } catch {
       /* localStorage unavailable — fall through */
     }
-  }, []);
+    // initialLang is server-derived and stable for the life of the page.
+  }, [initialLang]);
 
   const toggleLang = () => {
     setLang((prev) => {

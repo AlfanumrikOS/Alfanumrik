@@ -1,5 +1,9 @@
 User-agent: *
 Allow: /
+# /api/ stays disallowed, but the OG image endpoint must remain fetchable by
+# social/search crawlers (og:image on every marketing page points at it).
+# Longest-path-match precedence: this Allow overrides the /api/ Disallow.
+Allow: /api/og
 Disallow: /api/
 Disallow: /super-admin/
 Disallow: /internal/
@@ -9,5 +13,15 @@ Disallow: /profile
 Disallow: /billing
 Disallow: /parent/
 Disallow: /teacher/
+# Auth-gated student pages (each verified to redirect unauthenticated visitors
+# to /login) — removed from sitemap.xml 2026-07-16; disallowed here to stop
+# wasted crawl of pages that can never render content for a crawler.
+Disallow: /foxy
+Disallow: /progress
+Disallow: /leaderboard
+Disallow: /exams
+Disallow: /scan
+Disallow: /stem-centre
+Disallow: /notifications
 
 Sitemap: https://alfanumrik.com/sitemap.xml

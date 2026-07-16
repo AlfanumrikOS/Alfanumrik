@@ -1,21 +1,18 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { buildMarketingMetadata } from '@/lib/marketing-metadata';
 
-export const metadata: Metadata = {
-  title: 'Product — Alfanumrik Adaptive Learning OS',
+// Keyword-hybrid title (SEO layer, 2026-07-16). Pinned substring preserved:
+// landing-seo.spec.ts requires 'Product' in og:title.
+// Canonical URL unchanged (https://alfanumrik.com/product).
+export const metadata: Metadata = buildMarketingMetadata({
+  path: '/product',
+  title: 'Product — Alfanumrik AI Learning Platform for CBSE (Class 6–12)',
   description:
-    'Explore the complete Alfanumrik platform: AI tutoring, adaptive quizzes, teacher dashboards, parent reports, and school intelligence — all in one place.',
-  openGraph: {
-    title: 'Product — Alfanumrik Adaptive Learning OS',
-    description:
-      'The complete school intelligence OS. For students, teachers, parents, and schools.',
-    url: 'https://alfanumrik.com/product',
-    siteName: 'Alfanumrik',
-    type: 'website',
-    locale: 'en_IN',
-  },
-  alternates: { canonical: 'https://alfanumrik.com/product' },
-};
+    'See how Alfanumrik works: NCERT-grounded AI tutoring, adaptive quizzes, teacher dashboards and parent reports for CBSE Class 6–12. Explore the platform.',
+  ogVariant: 'product',
+  bilingual: true,
+});
 
 export default function ProductLayout({ children }: { children: ReactNode }) {
   return children;

@@ -1,0 +1,230 @@
+/* ============================================================
+   Marketing pages v3 — shared primitives (CSS module)
+   Owner: frontend agent.
+   COMPOSES welcome-v3.module.css: components import BOTH modules
+   (`s` for the base v3 kit, `m` for these additions). Every class
+   here is NEW — no duplication of classes that already exist in
+   welcome-v3.module.css. All custom properties (--ink, --line,
+   --cream, --orange, …) resolve at runtime because these classes
+   only ever render inside the welcome-v3 `.root` scope.
+   Design language: white base · cream #FEF3E2 tints · ink #1A1D21
+   CTA bands · orange #E8581C primary · 8px rhythm · 1px #E9E4DA
+   hairlines · Tailark card anatomy. No purple here — purple is
+   reserved for the Competition Scale marker (LadderStripV3).
+   ============================================================ */
+
+/* ── Section tint variant (cream band, pairs with s.section) ── */
+.tintCream {
+  background: var(--cream);
+}
+
+.tintSoft {
+  background: var(--cream-soft);
+}
+
+/* ── 2-column feature grid variant (s.featuresGrid is 3-col) ── */
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .grid2 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+}
+
+/* ── 4-step strip variant (s.stripGrid is 3-col) ─────────────── */
+.stripGrid4 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+}
+
+@media (min-width: 640px) {
+  .stripGrid4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .stripGrid4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ── Before → after kicker (teacher pain points) ─────────────── */
+.kicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  font-size: 13px;
+  margin-top: 16px;
+}
+
+.kicker .was {
+  text-decoration: line-through;
+  color: var(--ink-sec);
+  font-weight: 600;
+}
+
+.kicker .arrow {
+  color: var(--orange);
+  font-weight: 700;
+}
+
+/* When a kicker is present it sits between the icon tile and the
+   h3, so the h3's 24px top margin (Tailark anatomy) tightens. */
+.kicker + h3 {
+  margin-top: 8px;
+}
+
+/* ── Featured quote band (single testimonial) ────────────────── */
+.quoteWrap {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.quoteCard {
+  background: var(--cream-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+@media (min-width: 640px) {
+  .quoteCard {
+    padding: 32px;
+  }
+}
+
+.quoteText {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0;
+}
+
+/* ── Cross-link strip (hairline band of ghost links) ─────────── */
+.linkStrip {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 24px 0;
+  background: #fff;
+}
+
+.linkStripInner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+}
+
+/* ── Prose/story card (about — vision, founder note) ─────────── */
+.proseCard {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: 24px;
+  max-width: 720px;
+  margin: 0 auto;
+  box-shadow: 0 1px 3px rgba(26, 29, 33, 0.04);
+}
+
+@media (min-width: 640px) {
+  .proseCard {
+    padding: 32px;
+  }
+}
+
+.proseCard p {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--sec);
+  margin: 0;
+}
+
+.proseCard p + p {
+  margin-top: 16px;
+}
+
+.proseCard p strong {
+  color: var(--ink);
+}
+
+.proseSign {
+  margin-top: 20px;
+  text-align: right;
+  font-size: 14px;
+  color: var(--sec);
+}
+
+.proseSign small {
+  font-size: 12px;
+}
+
+/* ── Stat cards (about — mission numbers) ────────────────────── */
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .statGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.statCard {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  padding: 20px 16px;
+  text-align: center;
+}
+
+.statValue {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--orange);
+}
+
+.statLabel {
+  margin-top: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sec);
+}
+
+/* ── Trust badge chips (about — DPDPA · ISO · India · Ad-free) ── */
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 18px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sec);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}

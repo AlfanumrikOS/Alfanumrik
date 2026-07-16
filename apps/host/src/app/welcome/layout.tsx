@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Inter, Mukta, JetBrains_Mono } from 'next/font/google';
 import JsonLd from '@alfanumrik/ui/JsonLd';
+import { buildMarketingMetadata } from '@/lib/marketing-metadata';
 
 /* ────────────────────────────────────────────────────────────────
    Self-hosted Google Fonts via next/font.
@@ -43,45 +44,17 @@ const jetbrains = JetBrains_Mono({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'Alfanumrik — What if your child walked into every exam prepared?',
+// Keyword-hybrid title (SEO layer, 2026-07-16). Pinned substrings preserved:
+// e2e/public-pages.spec.ts requires /Alfanumrik/ in the title and
+// landing-seo.spec.ts requires 'Alfanumrik' in og:title. hreflang trio +
+// canonical + complete openGraph (incl. og:image) come from the builder.
+export const metadata: Metadata = buildMarketingMetadata({
+  path: '/welcome',
+  title: 'AI Tutor for CBSE Students (Class 6–12) — Alfanumrik',
   description:
-    'Alfanumrik is a structured learning system for CBSE students in Grades 6–12. Replaces guesswork with real concept clarity, targeted practice, and daily progress tracking — in Hindi and English.',
-  openGraph: {
-    title: 'Alfanumrik — What if your child walked into every exam prepared?',
-    description:
-      'Structured learning that replaces guesswork with concept clarity. CBSE Grades 6–12 in Hindi & English. Free to start.',
-    url: 'https://alfanumrik.com/welcome',
-    locale: 'en_IN',
-    alternateLocale: ['hi_IN'],
-    type: 'website',
-    siteName: 'Alfanumrik',
-    images: [
-      {
-        url: '/api/og',
-        width: 1200,
-        height: 630,
-        alt: 'Alfanumrik — Tonight\'s homework can be different.',
-        type: 'image/png',
-      },
-    ],
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Alfanumrik — Structured Learning for CBSE Students',
-    description:
-      'What if your child walked into every exam prepared? Concept clarity, targeted practice, daily progress. Grades 6–12.',
-    images: ['/api/og'],
-  },
-  alternates: {
-    canonical: 'https://alfanumrik.com/welcome',
-    languages: {
-      'en-IN': 'https://alfanumrik.com/welcome',
-      'hi-IN': 'https://alfanumrik.com/welcome?lang=hi',
-      'x-default': 'https://alfanumrik.com/welcome',
-    },
-  },
-};
+    'Alfanumrik is an AI-powered adaptive learning app for CBSE students in Class 6–12. NCERT-grounded tutoring in Hindi & English. Start free — no card needed.',
+  bilingual: true,
+});
 
 export default function WelcomeLayout({ children }: { children: ReactNode }) {
   // Compose the font CSS-variable classes on a wrapper so child components

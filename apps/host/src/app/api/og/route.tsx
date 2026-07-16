@@ -1,11 +1,105 @@
 import { ImageResponse } from 'next/og';
+import { PRICING } from '@alfanumrik/lib/plans';
 
 export const runtime = 'nodejs';
 
 const W = 1200;
 const H = 630;
 
-export async function GET() {
+/**
+ * Per-page OG image variants (SEO layer, 2026-07-16), selected via
+ * `?v=default|product|pricing|parents|teachers|schools` and referenced by
+ * buildMarketingMetadata (src/lib/marketing-metadata.ts). Only the TEXT
+ * content varies — layout, Foxy mascot, colors and footer are shared.
+ *
+ * `default` MUST stay byte-identical to the pre-variant output (no `?v` or
+ * an unknown value falls through to it): the strings below are the exact
+ * renderings of the previously-inline JSX text nodes.
+ *
+ * Pricing numbers come from PRICING (@alfanumrik/lib/plans) — the single
+ * source of truth. No price literals in this file.
+ */
+interface OgVariantContent {
+  line1: string;
+  line2: string;
+  sub1: string;
+  sub2: string;
+  bullets: [string, string, string];
+}
+
+const VARIANTS: Record<string, OgVariantContent> = {
+  default: {
+    line1: "Tonight's homework",
+    line2: 'can be different.',
+    sub1: "Foxy — India's most patient tutor.",
+    sub2: 'CBSE Grades 6–12 · Hindi & English',
+    bullets: [
+      "Adapts to your child's pace",
+      'Every answer NCERT-grounded',
+      'Free to start · no card needed',
+    ],
+  },
+  product: {
+    line1: 'One platform.',
+    line2: 'Every learner covered.',
+    sub1: 'AI tutoring, quizzes, dashboards & reports.',
+    sub2: 'CBSE Grades 6–12 · Hindi & English',
+    bullets: [
+      'NCERT-grounded AI tutor',
+      'Adaptive quizzes & spaced review',
+      'Teacher & parent dashboards',
+    ],
+  },
+  pricing: {
+    line1: 'Start free.',
+    line2: 'Upgrade any time.',
+    sub1: `Plans from ₹0 to ₹${PRICING.unlimited.monthly}/month.`,
+    sub2: 'CBSE Grades 6–12 · Hindi & English',
+    bullets: [
+      `Starter ₹${PRICING.starter.monthly}/mo`,
+      `Pro ₹${PRICING.pro.monthly}/mo`,
+      `Unlimited ₹${PRICING.unlimited.monthly}/mo`,
+    ],
+  },
+  parents: {
+    line1: 'Know what your child',
+    line2: 'actually learned.',
+    sub1: 'Weekly letters. Subject-wise mastery.',
+    sub2: 'CBSE Grades 6–12 · Hindi & English',
+    bullets: [
+      'Progress letters every week',
+      'Honest mastery tracking',
+      'Free to start · no card needed',
+    ],
+  },
+  teachers: {
+    line1: 'Monday-ready',
+    line2: 'class insights.',
+    sub1: "90-second worksheets. Bloom's analytics.",
+    sub2: 'CBSE Grades 6–12 · built for teachers',
+    bullets: [
+      'Worksheets in 90 seconds',
+      "Bloom's-level class dashboards",
+      'Automated parent reports',
+    ],
+  },
+  schools: {
+    line1: 'School intelligence,',
+    line2: 'in real time.',
+    sub1: 'NEP-aligned reporting · ISO 27001 certified.',
+    sub2: 'CBSE Grades 6–12 · 30 to 3,000 seats',
+    bullets: [
+      'Principal-level dashboards',
+      'NEP-aligned reporting',
+      'India-hosted student data',
+    ],
+  },
+};
+
+export async function GET(request: Request) {
+  const v = new URL(request.url).searchParams.get('v');
+  const content = (v && VARIANTS[v]) || VARIANTS.default;
+
   return new ImageResponse(
     (
       <div
@@ -197,8 +291,8 @@ export async function GET() {
               letterSpacing: '-0.035em', marginBottom: 24,
             }}
           >
-            <span style={{ color: '#F4ECDB' }}>Tonight&#39;s homework</span>
-            <span style={{ color: '#E8581C', fontStyle: 'italic' }}>can be different.</span>
+            <span style={{ color: '#F4ECDB' }}>{content.line1}</span>
+            <span style={{ color: '#E8581C', fontStyle: 'italic' }}>{content.line2}</span>
           </div>
 
           {/* Sub-copy */}
@@ -210,19 +304,15 @@ export async function GET() {
             }}
           >
             <span style={{ color: 'rgba(244,236,219,0.72)' }}>
-              Foxy — India&#39;s most patient tutor.
+              {content.sub1}
             </span>
             <span style={{ color: 'rgba(244,236,219,0.48)', fontSize: 17 }}>
-              CBSE Grades 6–12 · Hindi &amp; English
+              {content.sub2}
             </span>
           </div>
 
           {/* Bullets */}
-          {[
-            'Adapts to your child\'s pace',
-            'Every answer NCERT-grounded',
-            'Free to start · no card needed',
-          ].map((b, i) => (
+          {content.bullets.map((b, i) => (
             <div
               key={i}
               style={{
@@ -255,6 +345,15 @@ export async function GET() {
         </div>
       </div>
     ),
-    { width: W, height: H },
+    {
+      width: W,
+      height: H,
+      // The image only changes on deploy — cache aggressively at the browser
+      // (1 day) and CDN (7 days, serving stale while revalidating).
+      headers: {
+        'Cache-Control':
+          'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400',
+      },
+    },
   );
 }
