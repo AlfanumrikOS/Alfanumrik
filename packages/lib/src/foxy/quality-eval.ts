@@ -9,6 +9,14 @@
  * The scoring rubric is 4 dimensions × 0..100:
  *   - accuracy:           does the answer agree with the cited NCERT chunks?
  *   - scaffoldFidelity:   did the model follow the coach-mode directive?
+ *                         (rubric v2: ALSO scores math-format house style —
+ *                         derivations and tall/stacked expressions in
+ *                         display/math blocks not prose (short flat inline
+ *                         equations are fine), inline math properly
+ *                         \( ... \)-delimited, worked examples as numbered
+ *                         short steps. These checks only apply when the
+ *                         answer contains mathematics and must never lower
+ *                         the score of a non-math answer.)
  *   - ageAppropriateness: suitable for grades 6-12?
  *   - cbseScope:          stays inside the CBSE curriculum boundary?
  *
@@ -88,7 +96,14 @@ export interface QualityScoreOutput {
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-export const RUBRIC_VERSION = 'v1';
+// v1 → v2 (2026-07-16, Foxy math-format Wave B): scaffold_fidelity now also
+// scores the math-format house style (see buildJudgeSystemPrompt). The 4-key
+// JSON contract, composite weights, and DB columns are UNCHANGED — only the
+// judge prompt criteria changed, so the version bump keeps historical v1
+// scores filterable and re-opens recent messages for v2 scoring (the cron's
+// anti-join is per rubric_version; UNIQUE(message_id, rubric_version) keeps
+// runs idempotent).
+export const RUBRIC_VERSION = 'v2';
 
 // Sonnet for the judge. Latency doesn't matter (nightly cron); rubric
 // fidelity does. Pinned to the same model id used elsewhere in the codebase
@@ -286,6 +301,28 @@ export function buildJudgeSystemPrompt(): string {
     '         only confirm after.',
     '     If coach mode is null, score on whether ANY recognisable',
     '     scaffolding pattern was used.',
+    '     ALSO score math formatting under this dimension — but ONLY when',
+    '     the answer actually contains mathematical expressions or',
+    '     calculations. If it contains none (e.g. an English, History, or',
+    '     Civics answer), skip checks (a)-(c) entirely; they must NEVER',
+    '     lower the score of a non-mathematical answer:',
+    '       (a) derivations (two or more chained transformations) and',
+    '           tall/stacked expressions (a fraction combined with another',
+    '           fraction, nested fractions, roots or exponent stacks over',
+    '           fractions, summations, integrals) appear as standalone',
+    '           display equations (dedicated math blocks / their own line),',
+    '           NOT woven into prose sentences. A short flat inline equation',
+    '           (e.g. "\\( 2x + 3 = 7 \\)") is acceptable and must NOT be',
+    '           penalised.',
+    '       (b) inline math is properly delimited with \\( ... \\). Bare',
+    '           undelimited LaTeX in prose (e.g. "\\frac{1}{2}" outside',
+    '           delimiters) or plain parentheses used as pseudo-delimiters',
+    '           (e.g. "( x = 2 )") penalise.',
+    '       (c) worked examples / derivations proceed as numbered short',
+    '           steps — one transformation per step, each step one short',
+    '           action line with its resulting expression on its own line —',
+    '           never a dense inline chain of transformations in one',
+    '           paragraph.',
     '',
     '  3. age_appropriateness — Language, examples, and references suit',
     '     the stated grade. No adult topics; no jargon a grade-N student',
