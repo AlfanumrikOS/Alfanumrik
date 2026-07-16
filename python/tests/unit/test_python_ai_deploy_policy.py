@@ -107,7 +107,19 @@ def test_cloud_run_is_private_and_smoke_uses_google_identity_token() -> None:
     assert "DESCRIBE_STATUS=$?" in deploy
     assert "NOT_FOUND|not found|could not be found|404" in deploy
     assert "Unable to establish existing Cloud Run IAM posture" in deploy
-    assert "print-identity-token" in smoke
+    # Smoke identity-token pins. 2026-07-16: the invoker ID token is minted by
+    # the auth action (token_format: id_token → IAM Credentials generateIdToken
+    # as the federated WIF principal) instead of `gcloud auth
+    # print-identity-token --audiences=...`, which current gcloud refuses for
+    # external_account (WIF) credentials without impersonation. Policy
+    # semantics are UNCHANGED: smoke still authenticates as the deploy SA (the
+    # sole roles/run.invoker principal) via WIF, audience-bound to the deployed
+    # service URL, and presents the token on X-Serverless-Authorization.
+    assert "print-identity-token" not in smoke
+    assert "token_format: 'id_token'" in smoke
+    assert "id_token_audience: ${{ needs.deploy.outputs.service_url }}" in smoke
+    assert "id_token_include_email: true" in smoke
+    assert smoke.count('ID_TOKEN="${{ steps.auth.outputs.id_token }}"') == 2
     assert "X-Serverless-Authorization: Bearer ${ID_TOKEN}" in smoke
     assert "::error::/readyz returned ${STATUS} (expected 200)" in smoke
     assert 'if [[ "${STATUS}" != "200" ]]' in smoke
