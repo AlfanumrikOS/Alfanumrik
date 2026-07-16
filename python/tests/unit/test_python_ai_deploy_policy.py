@@ -1,4 +1,19 @@
-"""Source-policy checks for the production Python AI deployment workflow."""
+"""Source-policy checks for the production Python AI deployment workflow.
+
+Policy history:
+- Originally the credentialed jobs (build-and-push, deploy, post-deploy-smoke)
+  fired ONLY on a push to main — `workflow_dispatch` was byte-pinned absent.
+- 2026-07-15 (Wave 3, PR #1289): `workflow_dispatch` was deliberately added as a
+  bare, input-free trigger so an operator can ship the current main HEAD in a
+  supervised window without a junk python/* commit. The security gate is
+  UNCHANGED: every credentialed job still requires
+  github.ref == 'refs/heads/main' AND
+  vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true' AND the GitHub `Production`
+  environment protections (plus the WIF provider's independent ref
+  restriction). Dispatch-enablement requires the operator window (ENABLE var
+  flipped true + workflow enabled) — the manual trigger adds a way to START a
+  run, never new privilege or a new deploy target.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +22,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "python-ai-deploy.yml"
-MAIN_PUSH_ONLY = (
-    "if: github.event_name == 'push' && github.ref == 'refs/heads/main' "
+# Byte-pinned `if:` condition for every credentialed job. Wave 3 (2026-07-15)
+# widened the event to allow gated workflow_dispatch; main-ref + ENABLE-var
+# pins are unchanged.
+MAIN_REF_GATED_DEPLOY = (
+    "if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') "
+    "&& github.ref == 'refs/heads/main' "
     "&& vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'"
 )
 
@@ -27,17 +46,28 @@ def _job_block(source: str, job_name: str) -> str:
     return match.group(0)
 
 
-def test_workflow_has_no_manual_or_non_main_deploy_path() -> None:
+def test_manual_dispatch_is_input_free_and_no_non_main_deploy_path() -> None:
     source = _workflow_source()
 
-    assert "workflow_dispatch:" not in source
+    # Wave 3 (2026-07-15): workflow_dispatch is allowed, but ONLY as a bare,
+    # input-free trigger — exactly one occurrence, and no inputs that could
+    # steer the deploy away from the fixed production target.
+    assert source.count("workflow_dispatch:") == 1
+    assert "inputs:" not in source
     assert "branches: [main]" in source
     assert "CLOUD_RUN_SERVICE_STAGING" not in source
     assert "github.event.inputs" not in source
     assert "steps.target.outputs" not in source
     assert "Pick target service" not in source
     assert "CLOUD_RUN_SERVICE_PROD: ai-services" in source
-    assert source.count("vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'") == 3
+    # 4 = the 3 credentialed-job `if:` gates + 1 verbatim quote in the Wave 3
+    # header doc comment (Triggers section). The next assertion proves the 3
+    # job gates are each the FULL byte-pinned condition, so a fourth job
+    # sneaking in a bare ENABLE check cannot hide inside this count.
+    assert source.count("vars.ENABLE_PYTHON_AI_PRODUCTION_DEPLOY == 'true'") == 4
+    # The gated condition appears exactly once per credentialed job — no
+    # weaker workflow_dispatch-reachable variant exists anywhere else.
+    assert source.count(MAIN_REF_GATED_DEPLOY) == 3
 
 
 def test_every_credentialed_job_is_main_only_and_production_protected() -> None:
@@ -45,7 +75,7 @@ def test_every_credentialed_job_is_main_only_and_production_protected() -> None:
 
     for job_name in ("build-and-push", "deploy", "post-deploy-smoke"):
         block = _job_block(source, job_name)
-        assert MAIN_PUSH_ONLY in block
+        assert MAIN_REF_GATED_DEPLOY in block
         assert "environment: Production" in block
         assert "uses: google-github-actions/auth@v2" in block
 
