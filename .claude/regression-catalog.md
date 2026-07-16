@@ -8428,7 +8428,131 @@ oracle parity, callClaude-only transport with no model override, and the
 
 ---
 
-## REG-257 — Landing V3 default + V2 rollback hatch (`?v=2`) + FAQ Unlimited-price correction (₹1,499→₹1,099) + REG-65 ₹699 verbatim survives the V3 FAQ rewrite + prices-from-SoT on /welcome and /pricing (2026-07-16)
+## REG-257 — Foxy undelimited-LaTeX math normalization — explicit-command-triggered render-time correction + production canary-corpus immutability (2026-07-16)
+
+Source: math-format #1 (2026-07 production screenshots). The Foxy model
+sometimes emits inline math WITHOUT the required delimiters — e.g.
+`Example: (\frac{14}{15} \times \frac{25}{42})` instead of
+`\(\frac{14}{15} \times \frac{25}{42}\)` — so students saw raw LaTeX. The fix
+is a PURE render-time post-pass (`packages/ui/src/foxy/math-normalization.ts`:
+`containsAllowlistedMathCommand` trigger predicate + `splitUndelimitedMath` +
+`normalizeMathSegments`), wired into `InlineContent` in
+`packages/ui/src/foxy/FoxyStructuredRenderer.tsx` as
+`normalizeMathSegments(tokenizeInline(text))`.
+
+**Why this is a regression pin.** The pass runs over EVERY text span Foxy
+renders, so the binding CEO constraint is a NEGATIVE one: **no non-math
+production message may be altered by the pass.** The trigger fires ONLY on an
+explicit allowlisted backslash LaTeX command with a word boundary (`\frac`
+yes, `\franchise` never); bare `^`, `_`, `$`, brackets, `°`/`∠`/`÷`/`₹`
+symbols, ASCII-art underscores, and Devanagari prose must NEVER trigger it.
+The canary corpus (`apps/host/src/__tests__/fixtures/foxy-math-canary-corpus.json`
+— real sanitized production Foxy messages, P13: `{ provenance, math: [16],
+nonMath: [25] }`; `nonMath` contains zero backslashes by construction) pins
+that constraint against production reality, and iterates the fixture so
+future corpus additions are covered automatically. If a nonMath excerpt is
+ever altered, that is a REAL defect in the trigger — fix the pass, never the
+fixture.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-257a | `undelimited_math_normalization_trigger_span_acceptance_failsafe` | (1) TRIGGER: fires only on allowlisted backslash commands with a word boundary; NEVER on bare `^`/`_`/`$`/brackets (`snake_case_name`, `x^2 …`, `price is $5`, `array[i]_index`) or non-allowlisted commands (`\franchise`/`\fraction`/`\lefty`). (2) SPAN: paren pseudo-delimiters stripped; maximal contiguous math run captured; adjacent prose/bare numbers/trailing sentence punctuation never swallowed; `(a+b)(c+d)`-style non-wrapping parens preserved. (3) ACCEPTANCE: the 5 exact production screenshot strings (incl. `(\frac{14}{15} \times \frac{25}{42})`) render `.katex` + `.mfrac` stacked fractions with zero `<code>` fallback, no raw `\frac`/`\times` in visible text, prose byte-exact — across paragraph/example/step/answer/exam_tip/definition/question/mcq blocks; code blocks stay raw. (4) BYTE-IDENTITY: properly-delimited math (`\(..\)`, `$..$`, `$$..$$`, `\[..\]`) and command-free prose pass through reference-equal. (5) FAIL-SAFE (P12): a malformed undelimited span (`\frac{1}{`) degrades to the existing `<code>` fallback — never throws, never blanks the chat. | `apps/host/src/__tests__/foxy/undelimited-math-normalization.test.tsx` (39 tests) | E | P12, P6-adjacent, P7-neutral (no user-facing strings) |
+| REG-257b | `math_canary_corpus_nonmath_immutability_and_math_detection` | (1) NON-MATH IMMUTABILITY (the load-bearing pin): for EVERY `nonMath` excerpt — `containsAllowlistedMathCommand(excerpt) === false` AND `normalizeMathSegments(tokenizeInline(excerpt))` returns the ORIGINAL segment array (reference-equal untouched fast-path) with no in-place mutation (deep-equal to an independent tokenization); `splitUndelimitedMath` is likewise a single-text-segment no-op. Iterated over the fixture — future corpus additions are auto-covered. (2) MATH DETECTION: every `math` excerpt yields >=1 math segment through the full pipeline; excerpts carrying an allowlisted command OUTSIDE proper delimiters (>=2 pinned, incl. the named `3.5 \times 100 = 350` and `\frac{1}{4} + \frac{1}{2}` cases) gain strictly MORE math segments while every tokenizer-extracted delimited math segment passes through by object reference; properly-delimited-only excerpts return reference-equal (no double conversion, segment counts stable). (3) FIXTURE INTEGRITY GUARDS: JSON parses into `{ provenance, math[], nonMath[] }` of non-empty strings; provenance records sanitization (P13); size floors >=15 math / >=25 nonMath; every nonMath excerpt contains ZERO backslash characters; the two named undelimited cases remain present — all fail loudly if the fixture is gutted. | `apps/host/src/__tests__/foxy/math-canary-corpus.test.ts` (64 tests) + `apps/host/src/__tests__/fixtures/foxy-math-canary-corpus.json` | E | P12, P13, P6-adjacent |
+
+### Invariants covered by this section
+
+- P12 (AI safety, fail-safe rendering) — the produced math segments render
+  through the existing KaTeX path (`throwOnError: false` + `<code>` fallback):
+  a bad or malformed undelimited span can degrade but can never throw or blank
+  the student chat; the trigger is deliberately narrow (explicit allowlisted
+  command only) so model prose can never be mangled into math.
+- P13 (data privacy) — the canary corpus is built from sanitized production
+  Foxy messages; the provenance string records the sanitization and the test
+  pins that record, so an unsanitized fixture swap fails the guard.
+- P6-adjacent (display correctness) — served math content must DISPLAY as
+  math: the screenshot strings render stacked fractions (`.mfrac`), raw
+  LaTeX never leaks to visible text, and already-delimited math is never
+  double-converted.
+- CEO negative constraint — bare `^`, `_`, `$` never trigger; no non-math
+  production message is altered by the pass (reference-equality pinned over
+  all 25 real prod nonMath excerpts, auto-extending to corpus additions).
+
+### Catalog total
+
+Pre-REG-257: 223 entries (through REG-256, teacher-skills eval harness pins).
+Adds REG-257 (Foxy undelimited-LaTeX math normalization —
+explicit-command-triggered render-time correction + production canary-corpus
+immutability: screenshot fixture `14/15 × 25/42` renders stacked fractions,
+no non-math prod message altered [reference-equal untouched fast-path over
+the whole nonMath corpus], bare `^`/`_`/`$` never trigger, delimited math
+never double-converted, and loud fixture-integrity guards).
+**Total catalog: 224 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-258 — Foxy math-format house style (Wave B): flag-OFF byte-identity, band-uniformity-until-harness-scores, rubric v2 math criteria, seed OFF (2026-07-16)
+
+Source: math-format #2/#3 (Wave B, branch `feat/foxy-math-format-v2`). Wave A
+(REG-257) fixed the RENDERER; Wave B improves what the model EMITS.
+`MATH_FORMAT_DIRECTIVE` (`packages/lib/src/foxy/prompt-sections.ts`) pins the
+CEO-approved house style — worked examples/derivations as numbered "step"
+blocks (one transformation each) alternating with display "math" blocks;
+tall/stacked math never inline; inline `\( ... \)` properly delimited;
+undelimited LaTeX and plain-parentheses pseudo-delimiters banned; bilingual P7
+note. Injected via the `mode_directive` channel in
+`apps/host/src/app/api/foxy/route.ts` (~:1839) as a THIRD compose, LAST after
+teach-then-stop + diagram, ONLY when `ff_foxy_math_format_v2` is ON and the
+turn is prose-teaching. The scoring side: `quality-eval.ts` RUBRIC_VERSION
+v1→v2 — scaffold_fidelity gains 3 math-format criteria + an explicit
+skip-if-no-math instruction (the 4-key judge JSON contract is UNCHANGED).
+
+**Why this is a regression pin.** (1) The flag is seeded OFF: until an
+operator flips it, every Foxy prompt must be BYTE-IDENTICAL to the pre-Wave-B
+double-composed selector — any drift is a silent prompt change to every
+student turn. (2) CEO constraint (2026-07-16): the '6-8' and '9-12' grade
+bands return IDENTICAL directive text until the eval harness can score
+variants — a premature band divergence would ship an unscored pedagogy change.
+(3) The rubric bump re-opens recent messages for v2 scoring; if the criteria
+or the 4-key contract drift, the nightly judge harness silently mis-scores.
+(4) The seed must keep the REG-125 canonical shape or it walls staging.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-258 | `foxy_math_format_v2_flag_off_byte_identity_band_uniformity_rubric_v2_seed_off` | **(a) Flag-OFF byte-identity** (triple-compose route-selector mirror, kept in sync with route.ts ~:1839): with `ff_foxy_math_format_v2` OFF, the composed `mode_directive` equals the pre-Wave-B double-composed selector (base → teach-then-stop → diagram) for EVERY mode × learning-actions × diagrams flag state (7×2×2), and for quiz_me / real-practice; no `MATH FORMAT DIRECTIVE` marker leaks. **(b) Flag-ON injection, composed LAST**: prose-teaching modes (learn/explain/revise/doubt/homework/explorer) get `MATH_FORMAT_DIRECTIVE` verbatim when other flags are OFF, and the exact `TEACH_THEN_STOP_DIRECTIVE\n\nDIAGRAM_DIRECTIVE\n\nMATH_FORMAT_DIRECTIVE` order when all three are ON (endsWith the math directive); `quiz_me`, real-practice, and legacy `practice` turns NEVER get it (the route skips the flag read on practice). **(c) Band uniformity (CEO 2026-07-16)**: `buildMathFormatDirective('6-8') === buildMathFormatDirective('9-12') === MATH_FORMAT_DIRECTIVE`; `resolveGradeBand` consumes P5 grade STRINGS — "6"/"7"/"8"→'6-8', "9".."12"→'9-12', ""/garbage/"5"/"13"→'6-8'; grade "6" and "12" produce byte-identical directives through the selector. **(d) Directive content**: 14/15 × 25/42 worked-cancellation few-shot ending in 5/9 (structured step/math block shapes); undelimited-LaTeX ban; plain-parentheses pseudo-delimiter ban ("( x = 2 )" is NOT math formatting); one-transformation-per-step structure; bilingual P7 note (Hindi/Hinglish; CBSE/NCERT/Bloom's stay English) — and ABSENT from the parity-locked `FOXY_STRUCTURED_OUTPUT_PROMPT`, `FOXY_SAFETY_RAILS`, and `buildSystemPrompt` output for every mode. **(e) Rubric v2**: `RUBRIC_VERSION === 'v2'`; `buildJudgeSystemPrompt()` carries the 3 math-format criteria under scaffold_fidelity (before age_appropriateness) — (i) derivations + tall/stacked math as standalone display equations not prose, with the flat-inline-equation non-penalise guard, (ii) proper `\( ... \)` delimiters penalising bare `\frac{1}{2}` and `( x = 2 )` pseudo-math, (iii) numbered short steps / one transformation per step / never a dense inline chain — plus skip-checks-(a)-(c)-entirely for non-math answers; judge JSON contract UNCHANGED (exactly the 4 score keys + notes in the prompt; `parseJudgeJson` accepts the 4-key object and nulls on a missing dimension). **(f) Seed OFF** (`20260716120000_seed_ff_foxy_math_format_v2.sql`, comment-stripped/string-blanked static scan): `to_regclass` fresh-DB guard; canonical REG-125 column shape (explicit list, `flag_name` first, `is_enabled`, `rollout_percentage`; never name/enabled); positional `'ff_foxy_math_format_v2', false, 0`; no `true` literal in executable SQL; `ON CONFLICT (flag_name) DO NOTHING` — never `DO UPDATE`, never `(name)`. | `apps/host/src/__tests__/api/foxy/math-format-directive.test.ts` (82 tests) | E | P12 (additive prompt directive only — rails/grounding untouched), P7 (bilingual note), P5 (grade-string band resolution), P6-adjacent (emitted math displays correctly), REG-125-adjacent (seed shape) |
+
+### Invariants covered by this section
+
+- Flag-OFF byte-identity — merging Wave B is a zero-behavior change: the
+  triple compose collapses to the pre-Wave-B selector for every mode and
+  upstream-flag state until an operator flips `ff_foxy_math_format_v2`.
+- CEO band-uniformity constraint — '6-8' and '9-12' return identical text;
+  bands may diverge ONLY once the eval harness can score variants. A failing
+  uniformity pin means someone shipped an unscored per-band pedagogy change.
+- P12 (AI safety) — the directive is additive via mode_directive only; the
+  parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT, FOXY_SAFETY_RAILS, and the base
+  persona are pinned clean of it.
+- Rubric v2 measurement integrity — the nightly judge scores the house style
+  under scaffold_fidelity without penalising non-math answers, and the 4-key
+  JSON contract (DB columns, composite weights) is unchanged.
+- REG-125 (seed shape) — the flag row seeds OFF in the canonical
+  flag_name/is_enabled shape with DO NOTHING conflict resolution.
+
+### Catalog total
+
+Pre-REG-258: 224 entries (through REG-257, Foxy undelimited-LaTeX math
+normalization). Adds REG-258 (Foxy math-format house style Wave B —
+flag-OFF byte-identity of the triple-composed mode_directive selector,
+MATH_FORMAT_DIRECTIVE composed LAST on prose-teaching turns only,
+band-uniformity-until-harness-scores, directive content + parity-lock
+exclusion, rubric v2 scaffold_fidelity math criteria with unchanged 4-key
+judge contract, and the default-OFF canonical seed).
+**Total catalog: 225 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-259 — Landing V3 default + V2 rollback hatch (`?v=2`) + FAQ Unlimited-price correction (₹1,499→₹1,099) + REG-65 ₹699 verbatim survives the V3 FAQ rewrite + prices-from-SoT on /welcome and /pricing (2026-07-16)
+
+*(renumbered from REG-257 on merge — id taken by main)*
 
 Pins the landing-v3 makeover (CEO-approved design,
 design-previews/welcome-ultra.html + marketing-page-ultra.html): `/welcome`
@@ -8462,7 +8586,7 @@ mirrors `lang="hi"` to `<html>`.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-257 | `landing_v3_default_v2_hatch_faq_price_fix_prices_from_sot` | (1) `/welcome` default → WelcomeV3; `?v=2` → WelcomeV2; unknown `?v` falls through to V3; async server component. (2) "₹1,499" absent from V3 welcome DOM + all JSON-LD; corrected "₹1,099" present and equal to `formatINR(PRICING.unlimited.monthly)`. (3) "₹699" verbatim in the plans FAQ on /welcome AND the annual-billing FAQ on /pricing, lock-stepped to `formatINR(PRICING.pro.monthly)`. (4) 4 plan cards on /pricing with monthly = `PRICING.<plan>.monthly`, yearly toggle → `PRICING.<plan>.yearly` + `≈ yearlyPerMonth()/mo`; Pro (and only Pro) featured; schools band renders `SCHOOL_PER_SEAT_MARKETING_LABEL`. (5) FAQPage JSON-LD mainEntity.length === 10 (bold stripped); Review JSON-LD exactly 2 reviews; single h1; `#hero-cta` → /login. (6) EN→HI toggle flips copy, persists `alf-welcome-lang=hi`, sets `<html lang="hi">`. | `apps/host/src/__tests__/landing-v3/WelcomeV3.test.tsx` (9 tests), `apps/host/src/__tests__/landing-v3/PricingV3.test.tsx` (10 tests), `apps/host/src/__tests__/welcome-v2-routing.test.ts` (6 tests) | E | P7, P11-adjacent (pricing copy), REG-65 continuity, SEO shape |
+| REG-259 | `landing_v3_default_v2_hatch_faq_price_fix_prices_from_sot` | (1) `/welcome` default → WelcomeV3; `?v=2` → WelcomeV2; unknown `?v` falls through to V3; async server component. (2) "₹1,499" absent from V3 welcome DOM + all JSON-LD; corrected "₹1,099" present and equal to `formatINR(PRICING.unlimited.monthly)`. (3) "₹699" verbatim in the plans FAQ on /welcome AND the annual-billing FAQ on /pricing, lock-stepped to `formatINR(PRICING.pro.monthly)`. (4) 4 plan cards on /pricing with monthly = `PRICING.<plan>.monthly`, yearly toggle → `PRICING.<plan>.yearly` + `≈ yearlyPerMonth()/mo`; Pro (and only Pro) featured; schools band renders `SCHOOL_PER_SEAT_MARKETING_LABEL`. (5) FAQPage JSON-LD mainEntity.length === 10 (bold stripped); Review JSON-LD exactly 2 reviews; single h1; `#hero-cta` → /login. (6) EN→HI toggle flips copy, persists `alf-welcome-lang=hi`, sets `<html lang="hi">`. | `apps/host/src/__tests__/landing-v3/WelcomeV3.test.tsx` (9 tests), `apps/host/src/__tests__/landing-v3/PricingV3.test.tsx` (10 tests), `apps/host/src/__tests__/welcome-v2-routing.test.ts` (6 tests) | E | P7, P11-adjacent (pricing copy), REG-65 continuity, SEO shape |
 
 ### E2E coverage
 
@@ -8493,10 +8617,9 @@ mirrors `lang="hi"` to `<html>`.
 
 ### Catalog total
 
-Pre-REG-257: 223 entries (through REG-256, teacher-skills eval harness pins).
-Adds REG-257 (landing V3 default + `?v=2` rollback hatch + FAQ
+Pre-REG-259: 225 entries (through REG-258, Foxy math-format house style
+Wave B).
+Adds REG-259 (landing V3 default + `?v=2` rollback hatch + FAQ
 Unlimited-price correction ₹1,499→₹1,099 + REG-65 ₹699 verbatim survival +
 prices-from-SoT on /welcome and /pricing).
-**Total catalog: 224 entries (target: 35 — TARGET EXCEEDED).**
-
----
+**Total catalog: 226 entries (target: 35 — TARGET EXCEEDED).**

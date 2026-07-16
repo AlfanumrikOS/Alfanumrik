@@ -43,6 +43,24 @@ import { supabase } from '@alfanumrik/lib/supabase-client';
 // callers can import the discriminator without pulling KaTeX into the
 // synchronous bundle (P10).
 import { isFoxyResponse as isFoxyResponseImpl } from '@alfanumrik/lib/foxy/is-foxy-response';
+// Render-time correction for UNDELIMITED inline LaTeX (the model sometimes
+// emits `(\frac{14}{15} \times \frac{25}{42})` with no `\(..\)` delimiters).
+// Pure post-pass over `tokenizeInline` output; fires only on an explicit
+// allowlisted backslash command — see math-normalization.ts for the contract.
+import {
+  normalizeMathSegments,
+  type InlineSegment,
+} from './math-normalization';
+
+// Re-export the normalization primitives (incl. the trigger predicate) so
+// tests and the production canary corpus can pin them directly.
+export {
+  containsAllowlistedMathCommand,
+  splitUndelimitedMath,
+  normalizeMathSegments,
+  MATH_COMMAND_ALLOWLIST,
+} from './math-normalization';
+export type { InlineSegment } from './math-normalization';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -261,9 +279,8 @@ function renderMath(latex: string, displayMode = true): KatexRender {
 // P10: no new dependency — KaTeX is already imported above. The markdown
 // parser is a few regexes, zero bytes of new deps.
 
-type InlineSegment =
-  | { kind: 'text'; value: string }
-  | { kind: 'math'; latex: string; display: boolean };
+// `InlineSegment` is imported from ./math-normalization (shared with the
+// undelimited-math post-pass) — same shape this tokenizer always produced.
 
 /**
  * Split a prose string into ordered text / math segments.
@@ -443,7 +460,11 @@ function renderMarkdownInline(text: string, keyPrefix: string): React.ReactNode[
 function InlineContent({ text }: { text: string | undefined }) {
   const nodes = useMemo<React.ReactNode[]>(() => {
     if (!text) return [];
-    const segments = tokenizeInline(text);
+    // Post-pass: expand UNDELIMITED LaTeX (`(\frac{1}{2} \times \frac{3}{4})`
+    // with no `\(..\)`) inside text segments into math segments. Delimited
+    // math was already extracted by tokenizeInline and passes through
+    // untouched; text with no allowlisted command is returned byte-identical.
+    const segments = normalizeMathSegments(tokenizeInline(text));
     return segments.map((seg, idx) => {
       if (seg.kind === 'math') {
         const rendered = renderMath(seg.latex, seg.display);

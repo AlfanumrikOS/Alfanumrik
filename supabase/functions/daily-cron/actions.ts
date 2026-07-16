@@ -26,6 +26,7 @@ export type DailyCronActionName =
   | 'twin_snapshots_built'
   | 'coverage_audit_triggered'
   | 'question_bank_verify_triggered'
+  | 'verification_delivery_checked'
 
 export interface DailyCronActionContext {
   sb: DailyCronClient

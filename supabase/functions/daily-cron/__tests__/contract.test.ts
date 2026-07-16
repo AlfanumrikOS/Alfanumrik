@@ -138,6 +138,11 @@ const CRITICAL_STEPS: ReadonlyArray<readonly [string, string]> = [
   // question-bank drain.
   ['coverage_audit_triggered', 'triggerCoverageAudit'],
   ['question_bank_verify_triggered', 'triggerVerifyQuestionBank'],
+  // Silent verification-email failure monitor (CEO mandate 2026-07-16) — the
+  // Mailgun-silently-disabled failure mode. Deleting this step makes stalled
+  // signup-verification delivery invisible again. Posture pinned in
+  // contract 5 below.
+  ['verification_delivery_checked', 'checkVerificationDelivery'],
 ];
 
 for (const [stepName, fnName] of CRITICAL_STEPS) {
@@ -270,6 +275,59 @@ Deno.test('daily-cron contract 4d: coverage-audit + question-bank-verify trigger
     assertStringIncludes(body, 'catch');
     assertStringIncludes(body, 'return 0');
   }
+});
+
+// ─── 5. Verification-delivery monitor posture ────────────────────────────────
+// CEO mandate 2026-07-16 (Mailgun silent-disable postmortem). Pins:
+//   a. auth.users is read ONLY via the redacted service-role RPC — never a
+//      direct table read, never an email column, in Deno (P13),
+//   b. the decision logic stays in the offline-tested pure module,
+//   c. the alert rides the EXISTING pipeline as ONE critical ops_event from
+//      the pinned source/category (what the seeded alert rule matches on),
+//   d. a missing RPC (pre-migration deploy order) is a no-op, but real
+//      failures THROW so they surface in the 207 errors map — this monitor
+//      must never itself fail silently.
+
+Deno.test('daily-cron contract 5: verification-delivery monitor reads auth.users only via the redacted RPC, delegates to the pure module, and emits one critical ops_event', () => {
+  const fnIdx = SRC.indexOf('async function checkVerificationDelivery');
+  assert(fnIdx > 0, 'expected checkVerificationDelivery to remain defined');
+  const body = SRC.slice(fnIdx, SRC.indexOf('\nDeno.serve', fnIdx));
+
+  // (a) Redacted RPC is the ONLY auth.users access path in Deno. The RPC does
+  // the internal/test/admin-created exclusions in SQL and returns timestamps
+  // only — no emails or user ids ever reach this function.
+  assertStringIncludes(body, "rpc('get_recent_signup_verification_status'");
+  assert(
+    !body.includes('auth.users') && !SRC.includes("from('auth.users')"),
+    'auth.users must never be read directly from Deno — the redacted RPC is the only access path (P13)',
+  );
+
+  // (b) Decision logic is delegated to the pure module (offline-tested).
+  assertStringIncludes(body, 'evaluateVerificationDelivery(');
+  assertStringIncludes(SRC, "from './verification-delivery.ts'");
+
+  // (c) One critical ops_event through the EXISTING alert pipeline, with the
+  // pinned identity the seeded rule ('Verification email delivery stalled')
+  // matches on. Source/category are imported constants so the pure module,
+  // this step, and the dedup read cannot drift apart.
+  assertStringIncludes(body, "from('ops_events')");
+  assertStringIncludes(body, "severity: 'critical'");
+  assertStringIncludes(body, 'VERIFICATION_MONITOR_SOURCE');
+  assertStringIncludes(body, 'VERIFICATION_MONITOR_CATEGORY');
+  // Dedup state is read back from the same source/category before emitting.
+  assert(
+    /\.eq\('source',\s*VERIFICATION_MONITOR_SOURCE\)/.test(body),
+    'expected the dedup read to filter ops_events on the pinned monitor source',
+  );
+
+  // (d) Pre-migration no-op vs loud failure: missing function is tolerated;
+  // every other error path throws (lands in the 207 errors map).
+  assertStringIncludes(body, 'PGRST202');
+  assert(
+    /throw new Error\(`checkVerificationDelivery rpc:/.test(body) &&
+      /throw new Error\(`checkVerificationDelivery ops_events insert:/.test(body),
+    'RPC and ops_events insert failures must THROW (207 visibility) — the monitor must not fail silently',
+  );
 });
 
 Deno.test('daily-cron contract 4b: contract-lifecycle steps are gated behind ff_school_contracts_v1', () => {

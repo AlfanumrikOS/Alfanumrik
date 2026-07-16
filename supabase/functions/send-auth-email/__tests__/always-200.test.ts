@@ -50,14 +50,26 @@ type Handler = (req: Request) => Promise<Response> | Response;
 // constructing the Webhook; we pass the bare `whsec_...` form here.
 const SECRET = 'whsec_' + btoa('alfanumrik-send-auth-email-test-secret');
 
-// Product decision 2026-07-15: Mailgun is the email provider. index.ts resolves
-// its config guard from MAILGUN_API_KEY + MAILGUN_DOMAIN only (it no longer reads
-// RESEND_API_KEY). Every scenario key below is cleared before the scenario env is
-// applied so an ambient MAILGUN_* (e.g. on a dev/prod-shaped machine) can never
-// leak into the "no relay config" path and flip it green→red. RESEND_API_KEY is
-// kept in the clear-list purely as belt-and-braces (index.ts ignores it) so a
-// stray ambient value can never influence a scenario.
-const ENV_KEYS = ['SEND_EMAIL_HOOK_SECRET', 'RESEND_API_KEY', 'MAILGUN_API_KEY', 'MAILGUN_DOMAIN', 'SITE_URL'];
+// Product decision 2026-07-16: Google Workspace (Gmail API) is the email
+// provider (Mailgun disabled the company account). index.ts resolves its config
+// guard from the shared relay's hasEmailTransportConfig(): Gmail
+// (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
+// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback. Every scenario
+// key below is cleared before the scenario env is applied so an ambient
+// GOOGLE_* / MAILGUN_* (e.g. on a dev/prod-shaped machine) can never leak into
+// the "no relay config" path and flip it green→red. RESEND_API_KEY is kept in
+// the clear-list purely as belt-and-braces (the relay never auto-selects
+// Resend) so a stray ambient value can never influence a scenario.
+const ENV_KEYS = [
+  'SEND_EMAIL_HOOK_SECRET',
+  'RESEND_API_KEY',
+  'GOOGLE_SA_CLIENT_EMAIL',
+  'GOOGLE_SA_PRIVATE_KEY',
+  'GMAIL_SENDER',
+  'MAILGUN_API_KEY',
+  'MAILGUN_DOMAIN',
+  'SITE_URL',
+];
 
 const realServe = Deno.serve;
 let cacheBust = 0;
@@ -136,14 +148,20 @@ function signedRequest(body: unknown, signingSecret = SECRET): Request {
   });
 }
 
-// Mailgun is the configured transport (product decision 2026-07-15). Setting
-// MAILGUN_API_KEY + MAILGUN_DOMAIN makes index.ts's config guard fall through to
-// the send path, where the injected stub transport (setDefaultEmailTransport)
-// handles the dispatch — no socket is ever opened.
+// Gmail (Google Workspace) is the configured transport (product decision
+// 2026-07-16). Setting GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY +
+// GMAIL_SENDER makes index.ts's config guard fall through to the send path,
+// where the injected stub transport (setDefaultEmailTransport) handles the
+// dispatch — no socket is ever opened and the fake PEM is never parsed.
+const GOOGLE_ENV = {
+  GOOGLE_SA_CLIENT_EMAIL: 'relay@alfanumrik-test.iam.gserviceaccount.com',
+  GOOGLE_SA_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\\nTEST-NOT-A-REAL-KEY\\n-----END PRIVATE KEY-----\\n',
+  GMAIL_SENDER: 'noreply@alfanumrik.test',
+};
+
 const CONFIGURED = {
   SEND_EMAIL_HOOK_SECRET: SECRET,
-  MAILGUN_API_KEY: 'key-mg-test-0001',
-  MAILGUN_DOMAIN: 'mg.alfanumrik.test',
+  ...GOOGLE_ENV,
   SITE_URL: 'https://alfanumrik.test',
 };
 
@@ -167,10 +185,9 @@ Deno.test('send-auth-email: OPTIONS preflight returns 200', async () => {
 // ─── Path 3: missing webhook secret → 200 (fail-soft, auth proceeds) ─────────
 Deno.test('send-auth-email: missing hook secret returns 200 with warning', async () => {
   const handler = await loadHandler({
-    // No SEND_EMAIL_HOOK_SECRET configured. Mailgun IS configured, proving the
+    // No SEND_EMAIL_HOOK_SECRET configured. Gmail IS configured, proving the
     // 200-with-warning here comes from the missing hook secret, not the relay.
-    MAILGUN_API_KEY: 'key-mg-test-0001',
-    MAILGUN_DOMAIN: 'mg.alfanumrik.test',
+    ...GOOGLE_ENV,
   });
   const res = await handler(signedRequest(validPayloadBody()));
   assertEquals(res.status, 200, 'unconfigured secret must NOT block signup');
@@ -209,7 +226,7 @@ Deno.test('send-auth-email: relay send failure returns 200 with success:false', 
   // is opened, and fetchWithTimeout is never reached.
   setDefaultEmailTransport({
     name: 'stub-fail',
-    send: () => Promise.resolve({ success: false, provider: 'mailgun', code: 'mailgun_http_400' }),
+    send: () => Promise.resolve({ success: false, provider: 'gmail', code: 'gmail_http_400' }),
   });
   try {
     const res = await handler(signedRequest(validPayloadBody()));
@@ -226,7 +243,7 @@ Deno.test('send-auth-email: relay send success returns 200 with success:true', a
   const handler = await loadHandler(CONFIGURED);
   setDefaultEmailTransport({
     name: 'stub-ok',
-    send: () => Promise.resolve({ success: true, provider: 'mailgun', id: 'mailgun-msg-uuid-0001' }),
+    send: () => Promise.resolve({ success: true, provider: 'gmail', id: 'gmail-msg-uuid-0001' }),
   });
   try {
     const res = await handler(signedRequest(validPayloadBody()));
@@ -242,7 +259,8 @@ Deno.test('send-auth-email: relay send success returns 200 with success:true', a
 Deno.test('send-auth-email: missing relay config returns 200 (no_relay_config)', async () => {
   const handler = await loadHandler({
     SEND_EMAIL_HOOK_SECRET: SECRET,
-    // No MAILGUN_* → Mailgun (the email provider) is unconfigured → no transport.
+    // No GOOGLE_*/GMAIL_SENDER (the email provider) and no legacy MAILGUN_* →
+    // no transport is configured.
   });
   const res = await handler(signedRequest(validPayloadBody()));
   assertEquals(res.status, 200);
@@ -251,16 +269,42 @@ Deno.test('send-auth-email: missing relay config returns 200 (no_relay_config)',
   assertEquals(body.warning, 'no_relay_config');
 });
 
-// ─── Path 8b: Mailgun configured → send is ATTEMPTED via Mailgun ─────────────
-// Product decision 2026-07-15: Mailgun is the email provider. When MAILGUN_API_KEY
-// + MAILGUN_DOMAIN are set the config guard must NOT short-circuit to
-// no_relay_config — it must fall through to the Mailgun send path. We inject a
-// stub transport (no socket) to prove the guard let the send through; the stub's
-// success surfaces as success:true, still HTTP 200. Resend is never auto-selected.
-Deno.test('send-auth-email: Mailgun config attempts send via Mailgun (no no_relay_config)', async () => {
+// ─── Path 8b: Gmail configured → send is ATTEMPTED (no no_relay_config) ──────
+// Product decision 2026-07-16: Google Workspace (Gmail API) is the email
+// provider. When GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER
+// are set the config guard must NOT short-circuit to no_relay_config — it must
+// fall through to the send path. We inject a stub transport (no socket, the
+// fake PEM is never parsed) to prove the guard let the send through; the stub's
+// success surfaces as success:true, still HTTP 200.
+Deno.test('send-auth-email: Gmail config attempts send (no no_relay_config)', async () => {
   const handler = await loadHandler({
     SEND_EMAIL_HOOK_SECRET: SECRET,
-    // Mailgun is the configured (and only) transport — no RESEND_API_KEY needed.
+    // Gmail is the configured (and only) transport — no MAILGUN_* needed.
+    ...GOOGLE_ENV,
+  });
+  setDefaultEmailTransport({
+    name: 'stub-gmail',
+    send: () => Promise.resolve({ success: true, provider: 'gmail', id: 'gmail-msg-uuid-0001' }),
+  });
+  try {
+    const res = await handler(signedRequest(validPayloadBody()));
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    // Guard fell through to the send path (NOT the no_relay_config short-circuit).
+    assertEquals(body.success, true, 'Gmail config must attempt the send, not warn no_relay_config');
+    assertEquals(body.warning, undefined, 'no_relay_config must NOT fire when Gmail is configured');
+  } finally {
+    setDefaultEmailTransport(null);
+  }
+});
+
+// ─── Path 8b-legacy: Mailgun-only config still attempts send (fallback) ──────
+// The Mailgun transport is retained as the legacy fallback (the account is
+// disabled, but the config path must stay harmless): MAILGUN_API_KEY +
+// MAILGUN_DOMAIN alone must still fall through the guard to the send path.
+Deno.test('send-auth-email: Mailgun-only config (legacy fallback) attempts send (no no_relay_config)', async () => {
+  const handler = await loadHandler({
+    SEND_EMAIL_HOOK_SECRET: SECRET,
     MAILGUN_API_KEY: 'key-mg-test-0001',
     MAILGUN_DOMAIN: 'mg.alfanumrik.test',
   });
@@ -272,18 +316,37 @@ Deno.test('send-auth-email: Mailgun config attempts send via Mailgun (no no_rela
     const res = await handler(signedRequest(validPayloadBody()));
     assertEquals(res.status, 200);
     const body = await res.json();
-    // Guard fell through to the send path (NOT the no_relay_config short-circuit).
-    assertEquals(body.success, true, 'Mailgun config must attempt the send, not warn no_relay_config');
-    assertEquals(body.warning, undefined, 'no_relay_config must NOT fire when Mailgun is configured');
+    assertEquals(body.success, true, 'Mailgun fallback config must attempt the send, not warn no_relay_config');
+    assertEquals(body.warning, undefined, 'no_relay_config must NOT fire when legacy Mailgun is configured');
   } finally {
     setDefaultEmailTransport(null);
   }
 });
 
-// ─── Path 8c: Mailgun key WITHOUT domain → treated as unconfigured (no_relay_config)
-// The Mailgun transport needs BOTH MAILGUN_API_KEY and MAILGUN_DOMAIN. A key
-// without a domain is not a usable transport, so the guard must still degrade to
-// no_relay_config (→ 200, Supabase built-in email can take over).
+// ─── Path 8c: PARTIAL Gmail config → treated as unconfigured (no_relay_config)
+// The Gmail transport needs ALL THREE of GOOGLE_SA_CLIENT_EMAIL,
+// GOOGLE_SA_PRIVATE_KEY, and GMAIL_SENDER. Two out of three (no impersonation
+// mailbox) is not a usable transport, so — with no Mailgun fallback either —
+// the guard must still degrade to no_relay_config (→ 200, Supabase built-in
+// email can take over).
+Deno.test('send-auth-email: partial Gmail config (no GMAIL_SENDER) still returns 200 (no_relay_config)', async () => {
+  const handler = await loadHandler({
+    SEND_EMAIL_HOOK_SECRET: SECRET,
+    GOOGLE_SA_CLIENT_EMAIL: GOOGLE_ENV.GOOGLE_SA_CLIENT_EMAIL,
+    GOOGLE_SA_PRIVATE_KEY: GOOGLE_ENV.GOOGLE_SA_PRIVATE_KEY,
+    // No GMAIL_SENDER.
+  });
+  const res = await handler(signedRequest(validPayloadBody()));
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  assertEquals(body.success, true);
+  assertEquals(body.warning, 'no_relay_config');
+});
+
+// ─── Path 8d: Mailgun key WITHOUT domain → treated as unconfigured (no_relay_config)
+// The legacy Mailgun fallback needs BOTH MAILGUN_API_KEY and MAILGUN_DOMAIN. A
+// key without a domain is not a usable transport, so the guard must still
+// degrade to no_relay_config (→ 200, Supabase built-in email can take over).
 Deno.test('send-auth-email: Mailgun key without domain still returns 200 (no_relay_config)', async () => {
   const handler = await loadHandler({
     SEND_EMAIL_HOOK_SECRET: SECRET,
@@ -329,9 +392,12 @@ Deno.test('send-auth-email: source contains no non-200 Response status (P15 cana
 });
 
 // ─── Token-varying idempotency key (REQUIRED P15 fix) ────────────────────────
-// The relay sets an Idempotency-Key on the send (Mailgun is the email provider —
-// product decision 2026-07-15). index.ts folds the per-auth token into the key
-// via createEmailIdempotencyKey({ correlationId: authEmailTokenDimension(...) }).
+// The relay carries an idempotency key on every send (Google Workspace / Gmail
+// API is the email provider — product decision 2026-07-16; for Gmail the key
+// rides as an X-Idempotency-Key MIME header for correlation, and for the legacy
+// Mailgun fallback as a deduping Idempotency-Key HTTP header). index.ts folds
+// the per-auth token into the key via
+// createEmailIdempotencyKey({ correlationId: authEmailTokenDimension(...) }).
 // Both helpers are pure + exported, so we assert the contract directly (no
 // handler, no transport):
 //   - SAME token twice → SAME key  (a genuine retry dedupes, no double-send)

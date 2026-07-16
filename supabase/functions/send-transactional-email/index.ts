@@ -1,5 +1,5 @@
 import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
-import { sendEmail } from '../_shared/relay-mailer.ts'
+import { hasEmailTransportConfig, sendEmail } from '../_shared/relay-mailer.ts'
 /**
  * send-transactional-email – Alfanumrik Edge Function
  *
@@ -82,13 +82,14 @@ function jsonResponse(body: unknown, status = 200, origin?: string | null): Resp
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-// Product decision 2026-07-15: Mailgun is the email provider. Email is attempted
-// when Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the shared relay
-// (_shared/relay-mailer.ts) selects Mailgun and never auto-selects Resend. Prod
-// has MAILGUN_* set, so transactional email flows through Mailgun.
-const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
-const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-const HAS_EMAIL_TRANSPORT = Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
+// Product decision 2026-07-16: Google Workspace (Gmail API) is the email
+// provider (Mailgun disabled the company account). Email is attempted when the
+// shared relay (_shared/relay-mailer.ts) resolves ANY transport — Gmail
+// (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
+// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+// never auto-selected. So transactional email flows through Gmail once the
+// Google secrets are set.
+const HAS_EMAIL_TRANSPORT = hasEmailTransportConfig()
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'

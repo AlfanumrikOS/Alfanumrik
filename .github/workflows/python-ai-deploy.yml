@@ -287,7 +287,7 @@ jobs:
             INVOKER_DISABLED=$(gcloud run services describe "${SERVICE}" \
               --region "${REGION}" \
               --project "${PROJECT}" \
-              --format='value(metadata.annotations.run.googleapis.com/invoker-iam-disabled)')
+              --format='value(metadata.annotations."run.googleapis.com/invoker-iam-disabled")')
             if [[ "${INVOKER_DISABLED}" == "true" ]]; then
               echo "::error::Cloud Run invoker IAM check is disabled"
               exit 1
