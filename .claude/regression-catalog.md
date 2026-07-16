@@ -8427,3 +8427,76 @@ oracle parity, callClaude-only transport with no model override, and the
 **Total catalog: 223 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-257 — Landing V3 default + V2 rollback hatch (`?v=2`) + FAQ Unlimited-price correction (₹1,499→₹1,099) + REG-65 ₹699 verbatim survives the V3 FAQ rewrite + prices-from-SoT on /welcome and /pricing (2026-07-16)
+
+Pins the landing-v3 makeover (CEO-approved design,
+design-previews/welcome-ultra.html + marketing-page-ultra.html): `/welcome`
+renders `WelcomeV3` by DEFAULT with `WelcomeV2` preserved as the `?v=2`
+rollback hatch (version switch is the query param in
+`apps/host/src/app/welcome/page.tsx` — code, not a feature flag), and
+`/pricing` rebuilt on the same V3 system (`PricingV3`, replacing the legacy
+`PricingCards.tsx`).
+
+Pins: (1) **Routing** — no query / unknown `?v` (incl. the long-deleted
+`?v=1`) → V3; `?v=2` → V2 (rollback path until the V2 cleanup PR); the page
+is an async server component (Next 16 `searchParams` Promise).
+(2) **Price-bug fix** — the V3 welcome FAQ's Unlimited price reads ₹1,099
+(= `PRICING.unlimited.monthly`); the retired **₹1,499** literal is ABSENT
+from the rendered page AND from every JSON-LD payload (that is what Google
+indexes). (3) **REG-65 continuity** — the literal "₹699" survives the V3 FAQ
+rewrite VERBATIM on both /welcome and /pricing, with a lock-step assertion
+`formatINR(PRICING.pro.monthly) === '₹699'` so a SoT price change surfaces
+as a deliberate copy decision instead of silent drift. (4) **Prices-from-SoT
+(P11-adjacent)** — every rupee figure on the V3 plan cards derives from
+`PRICING`/`formatINR`/`yearlyPerMonth` (`@alfanumrik/lib/plans`) and the
+schools band renders `SCHOOL_PER_SEAT_MARKETING_LABEL`
+(`@alfanumrik/lib/pricing`); the enforcing tests import the same constants
+(zero price literals in card assertions). (5) **SEO shape** — FAQPage
+JSON-LD `mainEntity.length === 10` (English-only, `**` stripped) and the
+WebApplication Review JSON-LD carries EXACTLY 2 five-star reviews with the
+same `@id` as JsonLd.tsx; single `<h1>` per page; `#hero-cta` → `/login`.
+(6) **P7** — the language toggle flips visible copy to Hindi, persists under
+the version-agnostic `alf-welcome-lang` key (survives V2 ⇄ V3 flips), and
+mirrors `lang="hi"` to `<html>`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-257 | `landing_v3_default_v2_hatch_faq_price_fix_prices_from_sot` | (1) `/welcome` default → WelcomeV3; `?v=2` → WelcomeV2; unknown `?v` falls through to V3; async server component. (2) "₹1,499" absent from V3 welcome DOM + all JSON-LD; corrected "₹1,099" present and equal to `formatINR(PRICING.unlimited.monthly)`. (3) "₹699" verbatim in the plans FAQ on /welcome AND the annual-billing FAQ on /pricing, lock-stepped to `formatINR(PRICING.pro.monthly)`. (4) 4 plan cards on /pricing with monthly = `PRICING.<plan>.monthly`, yearly toggle → `PRICING.<plan>.yearly` + `≈ yearlyPerMonth()/mo`; Pro (and only Pro) featured; schools band renders `SCHOOL_PER_SEAT_MARKETING_LABEL`. (5) FAQPage JSON-LD mainEntity.length === 10 (bold stripped); Review JSON-LD exactly 2 reviews; single h1; `#hero-cta` → /login. (6) EN→HI toggle flips copy, persists `alf-welcome-lang=hi`, sets `<html lang="hi">`. | `apps/host/src/__tests__/landing-v3/WelcomeV3.test.tsx` (9 tests), `apps/host/src/__tests__/landing-v3/PricingV3.test.tsx` (10 tests), `apps/host/src/__tests__/welcome-v2-routing.test.ts` (6 tests) | E | P7, P11-adjacent (pricing copy), REG-65 continuity, SEO shape |
+
+### E2E coverage
+
+- `e2e/welcome-landing.spec.ts` — re-pinned to the V3 default (hero H1
+  "Every chapter…", `#hero-cta`, 4 teaser plan cards + Pro badge, FinalCtaV3
+  ink band replacing the retired StickyMobileCTA wiring test, EN⇆HI Devanagari
+  toggle + `<html lang>`).
+- `e2e/welcome-v2.spec.ts` — V2 scenarios repointed at the `/welcome?v=2`
+  rollback hatch; `?v=1` spec rewritten as "falls through to V3 default";
+  flag-driven-routing section retired (routing is code, not `ff_welcome_v2`).
+  Delete this spec in the same PR that removes the V2 component.
+- `e2e/smoke.spec.ts` pricing block + `e2e/landing-seo.spec.ts` (FAQ 10 /
+  Review 2 / canonical / hreflang) pass against V3 unchanged.
+
+### Invariants covered by this section
+
+- P7 (bilingual UI) — toggle flips copy on both V3 pages; preference persists
+  across the V2 ⇄ V3 rollback boundary via the shared `alf-welcome-lang` key.
+- P11-adjacent (pricing copy integrity, REG-65 family) — public rupee figures
+  on both marketing pages derive from the plans/pricing SoT; the two pinned
+  verbatim literals ("₹699" FAQ copy, `SCHOOL_PER_SEAT_MARKETING_LABEL`) are
+  lock-stepped to the SoT so drift fails the suite.
+- Brand/legal risk closure — the hallucination-class ₹1,499 Unlimited price
+  (wrong vs `PRICING.unlimited.monthly` = ₹1,099) is pinned ABSENT, including
+  inside JSON-LD structured data.
+- Rollback readiness — `?v=2` hatch behaviour is test-enforced, so the V3
+  launch remains instantly reversible without a deploy.
+
+### Catalog total
+
+Pre-REG-257: 223 entries (through REG-256, teacher-skills eval harness pins).
+Adds REG-257 (landing V3 default + `?v=2` rollback hatch + FAQ
+Unlimited-price correction ₹1,499→₹1,099 + REG-65 ₹699 verbatim survival +
+prices-from-SoT on /welcome and /pricing).
+**Total catalog: 224 entries (target: 35 — TARGET EXCEEDED).**
+
+---
