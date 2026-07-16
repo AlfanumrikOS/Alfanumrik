@@ -236,7 +236,7 @@ function StaffRow({ member, isSelf, isHi, busy, onChangeRole, onRevoke }: StaffR
               minHeight: '40px',
               background: 'var(--surface-2)',
               border: '1px solid var(--border)',
-              color: '#DC2626',
+              color: 'var(--danger)',
               opacity: busy ? 0.6 : 1,
               cursor: busy ? 'not-allowed' : 'pointer',
             }}

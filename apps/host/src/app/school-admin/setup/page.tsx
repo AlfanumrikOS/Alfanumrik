@@ -296,7 +296,7 @@ function Step2Classes({ createdClasses, schoolId, isHi, onClassesCreated, onNext
           </p>
           <div className="flex flex-wrap gap-2">
             {createdClasses.map((cls) => (
-              <Badge key={cls.id} color="#16A34A" size="md">
+              <Badge key={cls.id} color="var(--success)" size="md">
                 {cls.name} (Grade {cls.grade})
                 {cls.section ? ` - ${cls.section}` : ''}
               </Badge>
@@ -563,7 +563,7 @@ function Step3InviteCodes({
                       {ic.code}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
-                      <Badge color={ic.role === 'teacher' ? '#7C3AED' : '#E8581C'}>
+                      <Badge color={ic.role === 'teacher' ? 'var(--purple)' : 'var(--orange)'}>
                         {ic.role === 'teacher'
                           ? t(isHi, 'Teacher', 'शिक्षक')
                           : t(isHi, 'Student', 'छात्र')}
@@ -580,7 +580,7 @@ function Step3InviteCodes({
                     onClick={() => handleCopy(ic.code)}
                     className="px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
                     style={{
-                      background: isCopied ? '#16A34A' : 'var(--surface-2)',
+                      background: isCopied ? 'var(--success)' : 'var(--surface-2)',
                       border: '1px solid var(--border)',
                       color: isCopied ? '#fff' : 'var(--text-2)',
                       minHeight: '40px',
@@ -685,7 +685,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
         ) : (
           <div className="flex flex-wrap gap-2">
             {classes.map((cls) => (
-              <Badge key={cls.id} color="#16A34A">
+              <Badge key={cls.id} color="var(--success)">
                 {cls.name} (Gr. {cls.grade})
               </Badge>
             ))}
@@ -712,7 +712,7 @@ function Step4Review({ profile, classes, inviteCodes, isHi, onLaunch, launching 
                 >
                   {ic.code}
                 </span>
-                <Badge color={ic.role === 'teacher' ? '#7C3AED' : '#E8581C'}>
+                <Badge color={ic.role === 'teacher' ? 'var(--purple)' : 'var(--orange)'}>
                   {ic.role}
                 </Badge>
               </div>
@@ -943,7 +943,7 @@ export default function SchoolAdminSetupPage() {
 
       {/* Step indicator */}
       <div className="flex justify-center pt-4 pb-2">
-        <StepIndicator total={4} current={step} color="#7C3AED" />
+        <StepIndicator total={4} current={step} color="var(--purple)" />
       </div>
 
       {/* Step labels */}
@@ -957,7 +957,7 @@ export default function SchoolAdminSetupPage() {
             }}
             className="text-xs font-medium transition-colors"
             style={{
-              color: idx === step ? '#7C3AED' : idx < step ? 'var(--text-2)' : 'var(--text-3)',
+              color: idx === step ? 'var(--purple)' : idx < step ? 'var(--text-2)' : 'var(--text-3)',
               cursor: idx <= step ? 'pointer' : 'default',
               opacity: idx > step ? 0.5 : 1,
             }}

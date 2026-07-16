@@ -88,11 +88,11 @@ function relativeTime(dateStr: string): string {
 
 function statusColor(status: string): string {
   switch (status) {
-    case 'active': return '#16A34A';
-    case 'pending': return '#E8581C';
+    case 'active': return 'var(--success)';
+    case 'pending': return 'var(--orange)';
     case 'expired': case 'ended': return '#6B7280';
-    case 'revoked': case 'rejected': return '#DC2626';
-    case 'approved': return '#16A34A';
+    case 'revoked': case 'rejected': return 'var(--danger)';
+    case 'approved': return 'var(--success)';
     default: return '#6B7280';
   }
 }
