@@ -13,6 +13,7 @@ import {
   Skeleton,
   EmptyState,
 } from '@alfanumrik/ui/ui';
+import { AdminErrorState } from '@alfanumrik/ui/admin-ui';
 
 /* -----------------------------------------------------------------
    BILINGUAL HELPER (P7)
@@ -74,11 +75,11 @@ function formatDateTime(dateStr: string): string {
 }
 
 function actionColor(action: string): string {
-  if (action.includes('invited')) return '#16A34A';
-  if (action.includes('deactivated') || action.includes('revoked')) return '#DC2626';
-  if (action.includes('published') || action.includes('approved')) return '#0891B2';
-  if (action.includes('exported')) return '#7C3AED';
-  if (action.includes('generated')) return '#E8581C';
+  if (action.includes('invited')) return 'var(--success)';
+  if (action.includes('deactivated') || action.includes('revoked')) return 'var(--danger)';
+  if (action.includes('published') || action.includes('approved')) return 'var(--info)';
+  if (action.includes('exported')) return 'var(--purple)';
+  if (action.includes('generated')) return 'var(--orange)';
   return 'var(--text-2)';
 }
 
@@ -345,19 +346,14 @@ export default function SchoolAdminAuditLogPage() {
   if (pageError) {
     return (
       <div className="space-y-4">
-        <Card className="max-w-xs w-full text-center py-8">
-          <div className="text-4xl mb-3">Warning</div>
-          <p className="text-sm text-[var(--text-2)] mb-4">{pageError}</p>
-          <Button
-            variant="primary"
-            onClick={() => {
-              setPageError(null);
-              fetchAuditLog(pagination.page);
-            }}
-          >
-            {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
-          </Button>
-        </Card>
+        <AdminErrorState
+          isHi={isHi}
+          message={pageError}
+          onRetry={() => {
+            setPageError(null);
+            fetchAuditLog(pagination.page);
+          }}
+        />
       </div>
     );
   }

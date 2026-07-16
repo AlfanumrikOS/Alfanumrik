@@ -177,7 +177,7 @@ function SeatGauge({
         ? tt(isHi, 'Over plan', 'योजना से अधिक')
         : null;
 
-  const bandColor = band === 'over' ? '#DC2626' : band === 'grace' ? '#92400E' : undefined;
+  const bandColor = band === 'over' ? 'var(--danger)' : band === 'grace' ? '#92400E' : undefined;
 
   return (
     <div className="flex flex-col gap-1">
@@ -264,13 +264,13 @@ function OverviewStrip({
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-      <Kpi label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} color="#7C3AED" />
-      <Kpi label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} color="#0891B2" />
-      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="#E8581C" />
+      <Kpi label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} color="var(--purple)" />
+      <Kpi label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} color="var(--info)" />
+      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="var(--orange)" />
       <Kpi
         label={tt(isHi, 'Active', 'सक्रिय')}
         value={overview.active_students}
-        color="#16A34A"
+        color="var(--success)"
       />
       {/* Seat utilization. Wave A: display-only. Wave B (flag ON): the same
           gauge augmented with the enforcement band (within plan / grace / over),
@@ -288,7 +288,7 @@ function OverviewStrip({
       <Kpi
         label={tt(isHi, 'Avg mastery', 'औसत महारत')}
         value={masteryPct(overview.avg_mastery)}
-        color="#7C3AED"
+        color="var(--purple)"
       />
     </div>
   );
