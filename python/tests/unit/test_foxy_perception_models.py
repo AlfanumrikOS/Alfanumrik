@@ -10,7 +10,6 @@ from services.ai.business.foxy_perception.models import (
     TurnClassificationResponse,
 )
 
-
 # ── ClassifyTurnRequest ──────────────────────────────────────────────────────
 
 

@@ -62,7 +62,10 @@ def provider_returns_classification(respx_mock):
                 "id": "chatcmpl-classify",
                 "model": "gpt-4o-mini",
                 "choices": [
-                    {"message": {"role": "assistant", "content": classification}, "finish_reason": "stop"}
+                    {
+                        "message": {"role": "assistant", "content": classification},
+                        "finish_reason": "stop",
+                    }
                 ],
                 "usage": {"prompt_tokens": 40, "completion_tokens": 18},
             },
@@ -98,14 +101,14 @@ def test_classify_student_scope_mismatch_is_403(
     client: TestClient, provider_returns_classification
 ):
     """A request for a DIFFERENT student_id than the verified profile is denied."""
-    res = client.post("/v1/classify", json=_valid_body(student_id="22222222-2222-2222-2222-222222222222"))
+    res = client.post(
+        "/v1/classify", json=_valid_body(student_id="22222222-2222-2222-2222-222222222222")
+    )
     assert res.status_code == 403
     assert res.json()["detail"]["error"] == "STUDENT_SCOPE_MISMATCH"
 
 
-def test_classify_grade_mismatch_is_403(
-    client: TestClient, provider_returns_classification
-):
+def test_classify_grade_mismatch_is_403(client: TestClient, provider_returns_classification):
     """A request grade that disagrees with the profile grade is denied (P5/P12)."""
     res = client.post("/v1/classify", json=_valid_body(grade="10"))
     assert res.status_code == 403
@@ -123,7 +126,9 @@ def test_classify_unparseable_model_output_is_502(
             json={
                 "id": "chatcmpl-junk",
                 "model": "gpt-4o-mini",
-                "choices": [{"message": {"role": "assistant", "content": prose}, "finish_reason": "stop"}],
+                "choices": [
+                    {"message": {"role": "assistant", "content": prose}, "finish_reason": "stop"}
+                ],
                 "usage": {"prompt_tokens": 10, "completion_tokens": 8},
             },
         )

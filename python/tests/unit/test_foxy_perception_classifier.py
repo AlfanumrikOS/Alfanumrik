@@ -139,9 +139,11 @@ async def test_classify_turn_happy_path(monkeypatch: pytest.MonkeyPatch):
 
     async def fake_generate(req):
         captured["req"] = req
-        return _mol_result('{"topic_label":"Photosynthesis","bloom_level":"understand",'
-                           '"misconception_code":null,"struggle_signal":"none",'
-                           '"intent":"ask_concept"}')
+        return _mol_result(
+            '{"topic_label":"Photosynthesis","bloom_level":"understand",'
+            '"misconception_code":null,"struggle_signal":"none",'
+            '"intent":"ask_concept"}'
+        )
 
     monkeypatch.setattr(
         "services.ai.business.foxy_perception.classifier.generate_response",

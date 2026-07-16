@@ -43,9 +43,7 @@ CLASSIFY_MAX_TOKENS = 256
 # Deterministic classification: temperature 0.0 (factual, not generative).
 CLASSIFY_TEMPERATURE = 0.0
 
-_BLOOM_LEVELS = frozenset(
-    {"remember", "understand", "apply", "analyze", "evaluate", "create"}
-)
+_BLOOM_LEVELS = frozenset({"remember", "understand", "apply", "analyze", "evaluate", "create"})
 _STRUGGLE_SIGNALS = frozenset(
     {
         "none",
@@ -74,9 +72,9 @@ def _extract_json_object(text: str) -> dict:
     stripped = text.strip()
     # Strip a ```json ... ``` (or bare ```) fence if present.
     if stripped.startswith("```"):
-        stripped = stripped.split("```", 2)
         # ['', 'json\n{...}\n', ''] or ['', '{...}\n', '']
-        stripped = stripped[1] if len(stripped) > 1 else ""
+        fence_parts = stripped.split("```", 2)
+        stripped = fence_parts[1] if len(fence_parts) > 1 else ""
         if stripped.lower().startswith("json"):
             stripped = stripped[4:]
         stripped = stripped.strip()
@@ -136,9 +134,9 @@ def _coerce(raw: dict) -> TurnClassificationResponse:
 
     return TurnClassificationResponse(
         topic_label=topic_label,
-        bloom_level=bloom_level,  # type: ignore[arg-type]  # validated against the enum
+        bloom_level=bloom_level,  # validated against _BLOOM_LEVELS above
         misconception_code=misconception_code,
-        struggle_signal=struggle_signal,  # type: ignore[arg-type]
+        struggle_signal=struggle_signal,
         intent=intent,
     )
 
