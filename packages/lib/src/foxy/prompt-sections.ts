@@ -778,6 +778,114 @@ export const DIAGRAM_DIRECTIVE = [
   '  { "type": "mermaid", "code": "flowchart TD\\n  A[Evaporation] --> B[Condensation]\\n  B --> C[Precipitation]\\n  C --> A", "title": "The Water Cycle" }',
 ].join('\n');
 
+// ─── Wave B: math-format house style (ff_foxy_math_format_v2) ───────────────
+//
+// Wave A fixed the RENDERER (undelimited LaTeX is now rescued at display time).
+// Wave B improves what the model EMITS. The structured-output contract already
+// mandates \( ... \) inline + "math" blocks for standalone equations, but
+// compliance is weak: multi-step worked examples come out as dense inline soup
+// (several chained transformations packed into one paragraph), and the model
+// sometimes writes bare LaTeX or wraps math in plain parentheses as
+// pseudo-delimiters. This directive pins the CEO-approved house style:
+// numbered step blocks (one short action line each) alternating with display
+// "math" blocks; derivations and tall/stacked expressions always in display
+// math blocks; inline math for single symbols/values and short flat equations
+// (assessment 2026-07-16: threshold tuned so simple inline algebra like
+// "\( 2x + 3 = 7 \)" stays legal — the parity-locked structured-output
+// few-shots model exactly that, and banning it both over-fragments short
+// algebra and contradicts the base prompt).
+//
+// DELIBERATELY NOT inside the parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT
+// (that constant stays byte-identical Node<->Deno<->Python). This is an
+// ADDITIVE section injected via the `mode_directive` channel — the SAME
+// channel as TEACH_THEN_STOP_DIRECTIVE / DIAGRAM_DIRECTIVE — ONLY when
+// `ff_foxy_math_format_v2` is ON. Flag OFF (default) → never injected → the
+// prompt is byte-identical to today.
+//
+// P7 (bilingual): step text/labels follow the student's language; the
+// mathematics itself is universal notation; technical terms stay in English.
+// P12: this only constrains FORMAT — it does not widen scope, relax the
+// safety rails, or touch the RAG/grounding/abstain path.
+export const MATH_FORMAT_DIRECTIVE = [
+  '## MATH FORMAT DIRECTIVE — steps + display math, never inline soup',
+  'How you format mathematics is part of teaching it. A worked example written',
+  'as one dense paragraph of chained expressions is WRONG. Follow these rules in',
+  'EVERY response that contains math:',
+  '',
+  '1. WORKED EXAMPLES & DERIVATIONS — numbered steps, ONE transformation each:',
+  '- Use a sequence of "step" blocks. Each "step" block\'s text is ONE short',
+  '  action line stating what you do (e.g. "Cancel 14 and 42 (divide both by',
+  '  14)."), optionally followed by ONE short "why" sentence. Nothing else.',
+  '- Immediately after each action step, emit the RESULTING expression as its',
+  '  own "math" block (display equation; "latex" field, no delimiters).',
+  '- NEVER chain multiple transformations inside one paragraph, one step, or one',
+  '  math block. One transformation = one step block + one math block.',
+  '',
+  '2. WHERE MATH GOES — display vs inline:',
+  '- Every transformation in a worked example or derivation gets its own',
+  '  display "math" block (rule 1). NEVER run a derivation — two or more',
+  '  chained transformations — through a prose sentence.',
+  '- Any TALL or STACKED expression MUST be a "math" block on its own line:',
+  '  a fraction multiplied by / added to another fraction, a nested fraction,',
+  '  a root or exponent stack over a fraction, a summation, an integral.',
+  '  Stacked expressions are unreadable inline on a phone.',
+  '- Inline \\( ... \\) is for math woven into a sentence: a single symbol,',
+  '  value, or fraction, or a short FLAT equation with no stacked parts',
+  '  (e.g. "so \\( 2x + 3 = 7 \\) gives \\( x = 2 \\)", "a speed of',
+  '  \\( 5 \\text{ m/s} \\)").',
+  '',
+  '3. DELIMITERS — never break these:',
+  '- NEVER write LaTeX without delimiters. Bare "\\frac{1}{2}" or "x^2" inside a',
+  '  text field is forbidden — wrap inline math in \\( ... \\).',
+  '- NEVER wrap math in plain parentheses as pseudo-delimiters: "(3/4)" or',
+  '  "( x = 2 )" is NOT math formatting. Use \\( ... \\) or a "math" block.',
+  '',
+  'Example — the correct step + math-block shape for a worked cancellation:',
+  '  {"type":"step","label":"Given","text":"Multiply \\( \\frac{14}{15} \\) by \\( \\frac{25}{42} \\)."}',
+  '  {"type":"math","latex":"\\frac{14}{15} \\times \\frac{25}{42} = \\frac{14 \\times 25}{15 \\times 42}"}',
+  '  {"type":"step","text":"Cancel 14 and 42 (divide both by 14). A common factor above and below cancels."}',
+  '  {"type":"math","latex":"\\frac{1 \\times 25}{15 \\times 3}"}',
+  '  {"type":"step","text":"Cancel 25 and 15 (divide both by 5)."}',
+  '  {"type":"math","latex":"\\frac{1 \\times 5}{3 \\times 3}"}',
+  '  {"type":"step","text":"Multiply what is left on top and bottom."}',
+  '  {"type":"math","latex":"\\frac{5}{9}"}',
+  '  {"type":"answer","text":"The product is \\( \\frac{5}{9} \\)."}',
+  '',
+  'Keep each step SHORT — one idea per line, readable on a phone. Bilingual:',
+  'write step text and labels in the student\'s language (English, Hindi, or',
+  'Hinglish); the mathematics itself is universal notation. Technical terms',
+  '(CBSE, NCERT, Bloom\'s) stay in English.',
+].join('\n');
+
+// Grade band for math-format layout. Derived from the session grade STRING
+// (P5: grades are strings "6".."12", never integers). "6".."8" → '6-8',
+// "9".."12" → '9-12'. Anything unparseable defaults to '6-8' — the simpler,
+// shorter-steps layout is the pedagogically conservative fallback.
+export type GradeBand = '6-8' | '9-12';
+
+export function resolveGradeBand(grade: string): GradeBand {
+  const n = Number.parseInt(grade, 10);
+  if (Number.isFinite(n) && n >= 9 && n <= 12) return '9-12';
+  return '6-8';
+}
+
+// Band-aware builder for the math-format directive. CEO constraint
+// (2026-07-16): BOTH bands produce IDENTICAL directive text for now,
+// defaulting to the 6-8 layout (shorter steps, one idea per line). The band
+// switch exists so per-band variants can land later WITHOUT re-threading the
+// signature through the route — bands diverge only when the eval harness can
+// score variants (CEO 2026-07-16).
+export function buildMathFormatDirective(gradeBand: GradeBand): string {
+  switch (gradeBand) {
+    case '9-12':
+      // Intentionally identical to '6-8' today — see the CEO note above.
+      return MATH_FORMAT_DIRECTIVE;
+    case '6-8':
+    default:
+      return MATH_FORMAT_DIRECTIVE;
+  }
+}
+
 // Compose a per-mode directive with an additive directive fragment. Used to
 // append TEACH_THEN_STOP_DIRECTIVE onto the (usually empty) per-mode directive
 // WITHOUT disturbing byte-identical output when the fragment is empty:
