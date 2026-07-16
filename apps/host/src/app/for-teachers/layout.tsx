@@ -1,35 +1,18 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { buildMarketingMetadata } from '@/lib/marketing-metadata';
 
-export const metadata: Metadata = {
-  title: 'For Teachers — Alfanumrik',
+// Keyword-hybrid title (SEO layer, 2026-07-16). Pinned substring preserved:
+// e2e/public-pages.spec.ts requires /For Teachers/ in the title.
+// Canonical + hreflang trio unchanged (builder emits the same pinned format).
+export const metadata: Metadata = buildMarketingMetadata({
+  path: '/for-teachers',
+  title: 'For Teachers — CBSE Worksheet Generator & Class Analytics | Alfanumrik',
   description:
-    "Walk into Monday's class already knowing which student needs help. Bloom's-level dashboards by section, automated parent reports, and worksheet generation in 90 seconds. CBSE Grades 6–12.",
-  openGraph: {
-    title: 'For Teachers — Alfanumrik',
-    description:
-      "See who read the chapter before the bell rings. Bloom's diagnostics, automated reports, 90-second worksheets. Free for teachers to try.",
-    url: 'https://alfanumrik.com/for-teachers',
-    siteName: 'Alfanumrik',
-    locale: 'en_IN',
-    alternateLocale: ['hi_IN'],
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'For Teachers — Alfanumrik',
-    description:
-      "Bloom's-level class diagnostics every Monday morning. Automated parent reports. 90-second worksheets. Built for Indian CBSE teachers.",
-  },
-  alternates: {
-    canonical: 'https://alfanumrik.com/for-teachers',
-    languages: {
-      'en-IN': 'https://alfanumrik.com/for-teachers',
-      'hi-IN': 'https://alfanumrik.com/for-teachers?lang=hi',
-      'x-default': 'https://alfanumrik.com/for-teachers',
-    },
-  },
-};
+    "Generate CBSE worksheets in 90 seconds, see Bloom's-level class analytics and automate parent reports for Class 6–12. Free for teachers — start today.",
+  ogVariant: 'teachers',
+  bilingual: true,
+});
 
 export default function ForTeachersLayout({ children }: { children: ReactNode }) {
   return children;

@@ -1,22 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Breadcrumbs from '@alfanumrik/ui/Breadcrumbs';
+import { buildMarketingMetadata } from '@/lib/marketing-metadata';
 
-export const metadata: Metadata = {
-  title: 'Careers — Alfanumrik',
+// SEO layer, 2026-07-16: adopted the marketing metadata builder.
+// Canonical URL unchanged; builder adds complete openGraph incl. og:image.
+export const metadata: Metadata = buildMarketingMetadata({
+  path: '/careers',
+  title: "Careers at Alfanumrik — Build India's Learning OS",
   description:
-    'Build the learning OS for India. Senior engineering, content, and customer success roles at Alfanumrik (Cusiosense Learning India).',
-  openGraph: {
-    title: 'Careers — Alfanumrik',
-    description:
-      'Build the learning OS for India. Senior engineering, content, and customer success roles at Alfanumrik (Cusiosense Learning India).',
-    url: 'https://alfanumrik.com/careers',
-    siteName: 'Alfanumrik',
-    type: 'website',
-    locale: 'en_IN',
-  },
-  alternates: { canonical: 'https://alfanumrik.com/careers' },
-};
+    'Join Alfanumrik (Cusiosense Learning India) to build adaptive CBSE learning for Class 6–12. Engineering, content and customer-success roles. Apply today.',
+});
 
 /* ─── Data ─── */
 

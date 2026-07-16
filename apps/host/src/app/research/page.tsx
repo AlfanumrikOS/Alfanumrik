@@ -1,22 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Breadcrumbs from '@alfanumrik/ui/Breadcrumbs';
+import { buildMarketingMetadata } from '@/lib/marketing-metadata';
 
-export const metadata: Metadata = {
+// SEO layer, 2026-07-16: adopted the marketing metadata builder.
+// Canonical URL unchanged; builder adds complete openGraph incl. og:image.
+export const metadata: Metadata = buildMarketingMetadata({
+  path: '/research',
   title: 'Research & Methodology — Alfanumrik',
   description:
-    'Alfanumrik\'s adaptive learning engine is grounded in learning science — Bayesian Knowledge Tracing, Bloom\'s Taxonomy, IRT, and spaced repetition. Learn about our research methodology.',
-  openGraph: {
-    title: 'Research & Methodology — Alfanumrik',
-    description:
-      'Explore the learning science, AI safety, and assessment methodology behind Alfanumrik\'s adaptive platform.',
-    url: 'https://alfanumrik.com/research',
-    siteName: 'Alfanumrik',
-    type: 'website',
-    locale: 'en_IN',
-  },
-  alternates: { canonical: 'https://alfanumrik.com/research' },
-};
+    "The learning science behind Alfanumrik: Bayesian Knowledge Tracing, Bloom's Taxonomy, IRT and spaced repetition for CBSE Class 6–12. Read our methodology.",
+});
 
 /* ─── Data ─── */
 

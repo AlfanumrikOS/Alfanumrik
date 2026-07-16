@@ -1,21 +1,19 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { buildMarketingMetadata } from '@/lib/marketing-metadata';
 
+// SEO layer, 2026-07-16: adopted the marketing metadata builder.
+// Canonical URL unchanged; builder adds complete openGraph incl. og:image.
+// The pre-existing noindex is PRESERVED verbatim (policy decision not owned
+// by the SEO layer — flag to ops/architect if /security should be indexable).
 export const metadata: Metadata = {
-  title: 'Security & Compliance — Alfanumrik',
-  description:
-    'Alfanumrik employs enterprise-grade security for student data — Row Level Security, PKCE authentication, RBAC, DPDPA compliance, and AI safety measures.',
-  robots: { index: false, follow: false },
-  openGraph: {
+  ...buildMarketingMetadata({
+    path: '/security',
     title: 'Security & Compliance — Alfanumrik',
     description:
-      'Enterprise-grade security for student data. Learn about our infrastructure, authentication, and compliance measures.',
-    url: 'https://alfanumrik.com/security',
-    siteName: 'Alfanumrik',
-    type: 'website',
-    locale: 'en_IN',
-  },
-  alternates: { canonical: 'https://alfanumrik.com/security' },
+      'How Alfanumrik protects student data: row-level security, PKCE auth, RBAC, DPDPA compliance and ISO 27001 practices for CBSE learners in Class 6–12.',
+  }),
+  robots: { index: false, follow: false },
 };
 
 /* ─── Data ─── */

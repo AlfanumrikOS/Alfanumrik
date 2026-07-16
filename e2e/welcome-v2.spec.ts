@@ -1,16 +1,32 @@
 import { test, expect, type Page } from '@playwright/test';
-import { enableWelcomeV2, disableWelcomeV2, hasFlagCreds } from './helpers/feature-flag';
 
 /**
- * E2E tests for the WelcomeV2 (Indian Editorial Tutor) redesign.
+ * E2E tests for the WelcomeV2 (Indian Editorial Tutor) landing page.
+ *
+ * ⚠ UPDATED 2026-07-16 (landing-v3 makeover): WelcomeV3 is now the DEFAULT
+ * render on /welcome. WelcomeV2 remains fully wired as the ROLLBACK HATCH at
+ * `/welcome?v=2` until a later cleanup PR removes it. Every V2-specific
+ * scenario in this file therefore navigates `/welcome?v=2` explicitly — that
+ * keeps V2 covered for as long as the rollback path exists. When the V2
+ * component is deleted, delete this spec in the same PR (and move any
+ * still-relevant behaviour pins into e2e/welcome-landing.spec.ts, which owns
+ * the V3 default). The V3 default surface is covered by
+ * e2e/welcome-landing.spec.ts and apps/host/src/__tests__/landing-v3/.
+ *
+ * Two sections were deliberately REWRITTEN (not deleted) for the V3 default:
+ *   1. "?v=1 always shows v1" → "?v=1 falls through to the V3 default"
+ *      (legacy WelcomeV1 was deleted long ago; page.tsx routes any v≠2 to V3)
+ *   2. "ff_welcome_v2 flag drives default routing" → the flag no longer
+ *      routes anything; the default is V3 in code (apps/host/src/app/
+ *      welcome/page.tsx). Replaced with a no-creds pin of that contract.
  *
  * Covers:
- *   1. ?v=1 / ?v=2 query escape hatches always win
- *   2. ff_welcome_v2 flag drives default routing
+ *   1. ?v= query behaviour: ?v=2 → V2 rollback hatch; anything else → V3
+ *   2. Default /welcome renders V3 (routing is code, not flag)
  *   3. Anonymous-visitor cookie (alf_anon_id) — minted with valid UUID v4 +
  *      365d Max-Age, persisted across visits
  *   4. Bilingual headline + lang attribute toggle
- *   5. Theme toggle persistence
+ *   5. Theme lock (light)
  *   6. Role switcher updates hero copy
  *   7. Pricing carousel (mobile) vs grid (tablet+)
  *   8. Footer accordion (mobile) vs columns (tablet+)
@@ -20,14 +36,6 @@ import { enableWelcomeV2, disableWelcomeV2, hasFlagCreds } from './helpers/featu
  * and 2560×1440 (4K-ish) for hairline-stays-1px audit.
  *
  * Owner: testing.
- *
- * Notes for running locally:
- *   - The flag-toggle helper (`enableWelcomeV2` / `disableWelcomeV2`) requires
- *     NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the test
- *     env. Specs that need the flag flipped are gated on `hasFlagCreds()` and
- *     skip cleanly when those are missing — CI deploys with secrets always
- *     run them, local devs without keys get warnings instead of failures.
- *   - `?v=1` / `?v=2` specs do NOT need flag credentials.
  */
 
 const VIEWPORTS = [
@@ -40,40 +48,41 @@ const VIEWPORTS = [
 const UUID_V4_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// V1 hero copy (legacy welcome). Pulled from src/components/landing/Hero.tsx via
-// existing smoke test fixture: parents-focused emotional headline.
-const V1_HERO_FRAGMENT = /child|exam|knowing they're prepared|grade/i;
 // V2 hero copy fragments. Default role = parent → homework-focused hero.
 const V2_HERO_HEADLINE = /Tonight's homework|आज का गृहकार्य/i;
 const V2_DEVANAGARI_NUMERAL = /६/; // Hindi 6, the giant heroNumeral
 const V2_BRAND_TAG = /Vol\.\s*1\s*·\s*Issue\s*\d+/i; // issue bar — only present in v2
+// V3 hero: "Every chapter" + rotor word (landing-v3 makeover default).
+const V3_HERO_HEADLINE = /Every chapter|हर अध्याय/i;
 
 /**
- * Detect which variant rendered. Both v1 and v2 use /welcome.
- * V2's issue bar ("Vol. 1 · Issue NN") is unique to v2.
+ * Detect which variant rendered. Both v3 and v2 use /welcome.
+ * V2's issue bar ("Vol. 1 · Issue NN") is unique to v2; V3 has none.
  */
-async function whichVariant(page: Page): Promise<'v1' | 'v2'> {
+async function whichVariant(page: Page): Promise<'v3' | 'v2'> {
   const v2Marker = page.getByText(V2_BRAND_TAG).first();
   if (await v2Marker.isVisible({ timeout: 2000 }).catch(() => false)) return 'v2';
-  return 'v1';
+  return 'v3';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. ?v= escape hatches — work regardless of flag state
+// 1. ?v= behaviour — ?v=2 is the V2 rollback hatch; everything else → V3
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('Welcome v2 — ?v= escape hatches', () => {
+test.describe('Welcome — ?v= rollback hatch', () => {
   for (const vp of VIEWPORTS) {
-    test(`?v=1 always shows v1 (${vp.name})`, async ({ page }) => {
+    test(`?v=1 falls through to the V3 default (${vp.name})`, async ({ page }) => {
+      // Legacy WelcomeV1 was deleted long ago; page.tsx routes any v other
+      // than "2" to the V3 default (landing-v3 makeover, 2026-07-16).
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/welcome?v=1');
-      // V1 hero text must be visible
-      await expect(page.locator('h1').first()).toBeVisible();
-      // V2 issue bar must NOT be visible
+      // V3 hero headline renders…
+      await expect(page.locator('h1').first()).toContainText(V3_HERO_HEADLINE);
+      // …and the V2 issue-bar marker must NOT be present.
       const issueBar = page.locator(`text=${V2_BRAND_TAG.source}`);
       await expect(issueBar).toHaveCount(0);
     });
 
-    test(`?v=2 always shows v2 (${vp.name})`, async ({ page }) => {
+    test(`?v=2 always shows v2 — rollback hatch (${vp.name})`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/welcome?v=2');
       // V2 hero headline
@@ -87,31 +96,17 @@ test.describe('Welcome v2 — ?v= escape hatches', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. Flag-driven routing (default URL)
+// 2. Default routing — V3 is the code-level default (no flag involved)
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('Welcome v2 — flag-driven routing', () => {
-  test.skip(!hasFlagCreds(), 'requires SUPABASE_SERVICE_ROLE_KEY to flip flag');
-
-  test('flag OFF default → v1', async ({ page }) => {
-    await disableWelcomeV2();
-    // Note: 5-min cache may serve stale value; the ?v= specs above are the
-    // load-bearing assertions. This one documents intent.
+// REWRITTEN 2026-07-16: the old "ff_welcome_v2 flag drives default routing"
+// tests are retired — the version switch is the ?v query param in
+// apps/host/src/app/welcome/page.tsx, not a feature flag, so no flag
+// credentials are needed to pin the default.
+test.describe('Welcome — default routing', () => {
+  test('/welcome with no query renders V3 (V2 only via ?v=2 hatch)', async ({ page }) => {
     await page.goto('/welcome');
-    const variant = await whichVariant(page);
-    if (variant !== 'v1') {
-      test.skip(true, 'flag flipped but v2 remains the rolled-out default/cache value; ?v=1 escape hatch is load-bearing');
-    }
-  });
-
-  test('flag ON default → v2', async ({ page }) => {
-    await enableWelcomeV2();
-    await page.goto('/welcome');
-    // Variant may be stale due to 5-min cache; allow either but fail loud
-    // if the flag flip never propagates after a generous wait.
-    const variant = await whichVariant(page);
-    if (variant !== 'v2') {
-      test.skip(true, 'flag flipped but cache still warm; rerun after invalidation');
-    }
+    expect(await whichVariant(page)).toBe('v3');
+    await expect(page.locator('h1').first()).toContainText(V3_HERO_HEADLINE);
   });
 });
 

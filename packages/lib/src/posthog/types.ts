@@ -57,6 +57,10 @@ export type PostHogEventName =
   | 'landing_faq_opened'
   | 'landing_cta_click'
   | 'landing_breadcrumb_click'
+  // /pricing V3 (landing-v3 makeover): Monthly/Yearly segmented toggle.
+  // Client-side, fired from packages/ui/src/landing/v3/PricingHeroV3.tsx.
+  // PII-free — carries only the chosen billing cycle.
+  | 'pricing_billing_toggle'
   // /learn flow (Phase 2-B of the May 2026 upgrade). All client-side,
   // fired from src/app/learn/[subject]/[chapter]/page.tsx. Closes the
   // telemetry gap on the entire learning loop. PII-free by design — only
@@ -373,7 +377,8 @@ export interface QuizQuestionServedPayload {
 
 export interface LandingNavClickPayload {
   /** Where in the nav: 'primary' = desktop top bar; 'mobile_pages' = burger Pages group; 'mobile_sections' = burger Sections group. */
-  source: 'primary' | 'mobile_pages' | 'mobile_sections';
+  // 'hero_pill' | 'faq_foot' | 'pricing_teaser' added for the landing V3 redesign (HeroV3, FAQV3/PricingFaqV3, PricingTeaserV3).
+  source: 'primary' | 'mobile_pages' | 'mobile_sections' | 'hero_pill' | 'faq_foot' | 'pricing_teaser';
   /** The href clicked (e.g. '/pricing', '/about', '#faq'). */
   destination: string;
   /** The visible label of the link (e.g. 'Pricing', 'About', 'Common questions'). */
@@ -405,13 +410,30 @@ export interface LandingFaqOpenedPayload {
 }
 
 export interface LandingCtaClickPayload {
-  /** Where the CTA lives: 'nav' (top-bar Start free), 'hero' (per-role CTA), 'pricing_teaser', 'final_cta'. */
-  location: 'nav' | 'hero' | 'pricing_teaser' | 'final_cta';
+  /**
+   * Where the CTA lives: 'nav' (top-bar Start free), 'hero' (per-role CTA),
+   * 'pricing_teaser', 'final_cta', 'pricing_plans' (/pricing V3 full plan
+   * cards), 'pricing_schools' (/pricing V3 For Schools ink band).
+   */
+  location:
+    | 'nav'
+    | 'hero'
+    | 'pricing_teaser'
+    | 'final_cta'
+    | 'pricing_plans'
+    | 'pricing_schools';
   /** The CTA destination href. */
   destination: string;
   /** Active role at click time. */
   active_role: 'parent' | 'student' | 'teacher' | 'school';
   /** UI language at click time. */
+  language: 'en' | 'hi';
+}
+
+export interface PricingBillingTogglePayload {
+  /** The billing cycle the visitor switched TO. */
+  cycle: 'monthly' | 'yearly';
+  /** UI language at toggle time. */
   language: 'en' | 'hi';
 }
 
@@ -694,6 +716,7 @@ export type EventPayloadByName = {
   landing_faq_opened: LandingFaqOpenedPayload;
   landing_cta_click: LandingCtaClickPayload;
   landing_breadcrumb_click: LandingBreadcrumbClickPayload;
+  pricing_billing_toggle: PricingBillingTogglePayload;
   learn_chapter_started: LearnChapterStartedPayload;
   learn_concept_advanced: LearnConceptAdvancedPayload;
   learn_quick_check_submitted: LearnQuickCheckSubmittedPayload;
