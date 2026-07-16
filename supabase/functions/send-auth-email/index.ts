@@ -31,6 +31,10 @@ import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
 import { redactPIIInText } from '../_shared/redact-pii.ts'
 import { authEmailTokenDimension, buildAuthActionUrl } from '../_shared/auth-email-links.ts'
 import { hasEmailTransportConfig, sendEmail } from '../_shared/relay-mailer.ts'
+// Shared bilingual rendering primitives (extracted verbatim from this function's
+// v49 templates — see _shared/bilingual-email.ts). Rendered output is
+// byte-identical to the pre-extraction inline helpers.
+import { ctaButton, languageDivider, renderBilingualEmail, urlFallback } from '../_shared/bilingual-email.ts'
 
 // Supabase stores the secret as "v1,whsec_<base64>" but standardwebhooks expects "whsec_<base64>"
 const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
@@ -50,64 +54,6 @@ const REPLY_TO = 'support@alfanumrik.com'
 // Falls back to production URL if not set (safe default).
 const SITE_URL = Deno.env.get('SITE_URL') || 'https://alfanumrik.com'
 
-function baseWrapper(content: string, preheader: string): string {
-  return `<!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="x-apple-disable-message-reformatting">
-  <title>Alfanumrik</title>
-</head>
-<body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${preheader}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;">
-    <tr><td align="center" style="padding:40px 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background-color:#ffffff;border:1px solid #e4e4e7;">
-        <tr><td style="padding:32px 32px 0;text-align:center;">
-          <p style="margin:0;font-size:20px;font-weight:700;color:#18181b;">Alfanumrik</p>
-        </td></tr>
-        <tr><td style="padding:24px 32px 32px;">
-          ${content}
-        </td></tr>
-        <tr><td style="padding:16px 32px;border-top:1px solid #e4e4e7;">
-          <p style="margin:0;font-size:12px;color:#71717a;line-height:1.6;text-align:center;">
-            Alfanumrik EdTech Pvt. Ltd., India<br>
-            <a href="${SITE_URL}/privacy" style="color:#71717a;">Privacy</a> |
-            <a href="${SITE_URL}/terms" style="color:#71717a;">Terms</a> |
-            <a href="mailto:support@alfanumrik.com" style="color:#71717a;">Support</a>
-          </p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`
-}
-
-/** Strip HTML tags and decode entities for plain-text email version */
-function htmlToPlainText(html: string): string {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<li[^>]*>/gi, '  - ')
-    .replace(/<\/h[1-6]>/gi, '\n\n')
-    .replace(/<a[^>]+href="([^"]*)"[^>]*>([^<]*)<\/a>/gi, '$2 ($1)')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#169;/g, '(c)')
-    .replace(/&#\d+;/g, '')
-    .replace(/&[a-z]+;/gi, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
 // ─── Bilingual (EN + HI) auth-email builder ─────────────────────────────────
 //
 // P7: GoTrue's Send-Email hook payload carries no UI locale, so we cannot know
@@ -115,6 +61,9 @@ function htmlToPlainText(html: string): string {
 // then Hindi (Devanagari), in a single body. Technical terms (the "Alfanumrik"
 // brand, email addresses) are left untranslated. One shared renderer keeps the
 // button/URL-fallback markup identical across all four action types.
+// The wrapper/CTA/divider/plain-text primitives live in
+// _shared/bilingual-email.ts (extracted verbatim from this file's v49 inline
+// helpers) so send-welcome-email renders on the SAME structure.
 interface AuthEmailCopy {
   subject: string
   preheader: string
@@ -128,18 +77,6 @@ interface AuthEmailCopy {
   hiNote: string
 }
 
-function ctaButton(url: string, label: string): string {
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-            <tr><td align="center" style="padding:8px 0;">
-              <a href="${url}" style="display:inline-block;padding:12px 32px;background-color:#6C5CE7;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px;">${label}</a>
-            </td></tr>
-          </table>`
-}
-
-function urlFallback(url: string, label: string): string {
-  return `<p style="margin:16px 0 0;font-size:12px;color:#a1a1aa;line-height:1.5;">${label}<br><a href="${url}" style="color:#6C5CE7;word-break:break-all;">${url}</a></p>`
-}
-
 function renderBilingualAuthEmail(url: string, copy: AuthEmailCopy): { subject: string; html: string; text: string } {
   const content = `
           <h2 style="margin:0 0 16px;font-size:18px;font-weight:600;color:#18181b;">${copy.enHeading}</h2>
@@ -147,17 +84,14 @@ function renderBilingualAuthEmail(url: string, copy: AuthEmailCopy): { subject: 
           ${ctaButton(url, copy.enCta)}
           <p style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.5;">${copy.enNote}</p>
           ${urlFallback(url, 'If the button does not work, copy and paste this URL into your browser:')}
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:28px 0 0;">
-            <tr><td style="border-top:1px solid #e4e4e7;font-size:0;line-height:0;height:1px;">&nbsp;</td></tr>
-          </table>
+          ${languageDivider()}
           <h2 lang="hi" style="margin:28px 0 16px;font-size:18px;font-weight:600;color:#18181b;">${copy.hiHeading}</h2>
           <p lang="hi" style="margin:0 0 24px;font-size:14px;color:#3f3f46;line-height:1.7;">${copy.hiBody}</p>
           ${ctaButton(url, copy.hiCta)}
           <p lang="hi" style="margin:24px 0 0;font-size:13px;color:#71717a;line-height:1.7;">${copy.hiNote}</p>
           ${urlFallback(url, 'यदि बटन काम नहीं करता, तो इस URL को अपने ब्राउज़र में कॉपी करके पेस्ट करें:')}
     `
-  const html = baseWrapper(content, copy.preheader)
-  const text = htmlToPlainText(content) + `\n\nAlfanumrik EdTech Pvt. Ltd., India`
+  const { html, text } = renderBilingualEmail(content, copy.preheader, SITE_URL)
   return { subject: copy.subject, html, text }
 }
 
