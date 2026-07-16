@@ -8550,9 +8550,77 @@ judge contract, and the default-OFF canonical seed).
 
 ---
 
-## REG-259 — Landing V3 default + V2 rollback hatch (`?v=2`) + FAQ Unlimited-price correction (₹1,499→₹1,099) + REG-65 ₹699 verbatim survives the V3 FAQ rewrite + prices-from-SoT on /welcome and /pricing (2026-07-16)
+## REG-259 — PWA stale-service-worker retirement: /sw.js no-fetch tombstone, mobile view integrity, sw_legacy_cleanup counts-only telemetry (2026-07-16)
 
-*(renumbered from REG-257 on merge — id taken by main)*
+Source: PWA stale-service-worker incident (reported 2026-07-16; root cause =
+legacy v3 service worker on devices that installed the PWA before 2026-07-11
+— cache-first assets with no expiry + a pre-cached `/` shell served a stale,
+broken, "desktop-looking" view inside the installed app indefinitely).
+Containment shipped in commit `6ad1c8ff` (2026-07-11): a no-fetch retirement
+tombstone at `apps/host/public/sw.js` plus the `ServiceWorkerCleanup` client
+mount in `packages/lib/src/RegisterSW.tsx` (unregister owned `/sw.js`
+registrations, delete `alfanumrik-*` caches, bounded one-time reload via the
+`alfanumrik-sw-retirement-reloaded-v1` sessionStorage guard). Follow-up on
+branch `fix/pwa-sw-retirement-followups`: `reportLegacyServiceWorkerCleanup`
+fleet-recovery telemetry (ONE PostHog `sw_legacy_cleanup` event, six numeric
+counts only) + the ops runbook
+`docs/runbooks/pwa-stale-service-worker-recovery.md`.
+
+**Why this is a regression pin.** (1) Any `fetch` handler ever returning to
+`/sw.js` would re-capture legacy clients into cache-first serving and reopen
+the incident — the path and the `alfanumrik-` cache prefix are permanently
+reserved by the retirement machinery (runbook §7). (2) The cleanup must never
+call `registration.update()` handoff-style, must touch ONLY owned `/sw.js`
+same-origin registrations and `alfanumrik-*` caches, and its reload guard
+must stay loop-bounded — an unbounded reload would brick affected devices
+instead of healing them. (3) The PostHog decay curve (runbook §5-6) is the
+ONLY fleet-wide signal that legacy devices are healing and drives the
+escalation criteria, so the emit-gate (fire only when
+`registrationsFound > 0 || cachesRemoved > 0 || failures > 0`; all-zero
+healthy clients emit NOTHING — zero event volume at fleet scale) and the
+counts-only payload (P13: exactly six numeric keys, no user id / email / URL
+/ UA) are load-bearing; the reporter is try/catch-wrapped and must never
+throw into the shared-layout cleanup flow (P15). (4) `display: standalone` +
+`orientation: portrait` in `public/manifest.json` and the root layout's
+`viewport` export (`device-width`, `initialScale: 1`) are the static inputs
+that decide whether the installed PWA renders phone-correct — losing the
+viewport export reproduces the incident's "desktop-looking page on mobile"
+symptom with no service worker involved.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-259a | `sw_js_no_fetch_retirement_tombstone` | `apps/host/public/sw.js` registers ONLY `install` + `activate` handlers — `fetch` handler count is asserted zero via vm-sandbox execution of the deployed source; install `skipWaiting`s; activate deletes exactly the `alfanumrik-*` caches, `clients.claim()`s, and self-`unregister()`s; claim + unregister still run when CacheStorage throws. Client side: `cleanupLegacyServiceWorker` never calls `register()`/`update()`, unregisters ONLY same-origin `/sw.js` registrations (unrelated workers + other origins untouched), deletes ONLY `alfanumrik-*` caches, and the two-state sessionStorage reload guard (`fallback` → `removed`) permits at most one fallback + one confirmed-removal reload — persistent unregister failures can NEVER loop; the all-clean path clears a stale guard and does not reload; a controller-only tab (registration already removed by another tab) reloads once. | `apps/host/src/__tests__/service-worker-containment.test.ts` (7 tests, pre-existing — promoted to the catalog by this entry) | E | P15 / operational integrity (shared-layout mount on the signup funnel), incident non-recurrence |
+| REG-259b | `sw_legacy_cleanup_telemetry_emit_gate_and_counts_only_payload` | `reportLegacyServiceWorkerCleanup`: all-zero result → capture NOT called (healthy-fleet zero-volume gate); a result with only non-gate counters (unregisterAttempts/registrationsRemoved/reloadsTriggered) → NOT called (gate is EXACTLY found/caches/failures); `registrationsFound > 0` → called exactly once with event name `sw_legacy_cleanup` and a payload whose key set equals EXACTLY the six numeric counts `{registrationsFound, unregisterAttempts, registrationsRemoved, cachesRemoved, reloadsTriggered, failures}` — sorted-keys equality proves no extra key (no user id/email/URL/UA) can ride along (P13); every value `typeof number`; `cachesRemoved > 0` alone → emits; `failures > 0` alone → emits (runbook §6 escalation signal never silent); a throwing capture fn → reporter does NOT throw (P15 — telemetry can never break the cleanup/reload flow). | `apps/host/src/__tests__/service-worker-containment.test.ts` (6 tests, `sw_legacy_cleanup telemetry reporter (REG-259)` block) | E | P13 (counts-only payload), P15 (never-throw), operational integrity (fleet-recovery decay curve) |
+| REG-259c | `pwa_manifest_and_root_viewport_view_integrity` | `apps/host/public/manifest.json` keeps `display: "standalone"`, `orientation: "portrait"`, and root `start_url`/`scope`; the root layout (`apps/host/src/app/layout.tsx`, static-source scan — importing it would drag globals.css/KaTeX/the full provider tree into a unit test) keeps `export const viewport: Viewport` with `width: 'device-width'` + `initialScale: 1` and `manifest: '/manifest.json'` in metadata. | `apps/host/src/__tests__/pwa-view-integrity.test.ts` (5 tests) | E | Mobile view integrity (P10-adjacent — Indian 4G phone-first), incident-symptom guard |
+| REG-259d | `tenant_dynamic_manifest_view_integrity` | Production rewrites `/manifest.json` to the DYNAMIC route `apps/host/src/app/api/school-config/manifest/route.ts` (proxy rewrite in `apps/host/src/proxy.ts`), so REG-259c's static-file pin is not what installed clients fetch. Real GET handler invoked directly (no mocks — tenant config arrives purely via proxy-injected `x-school-*` request headers): on BOTH the default (B2C) branch AND the white-label school-tenant branch (separately-built manifest objects) → `display === 'standalone'`, `orientation === 'portrait'`, `start_url`/`scope` === `'/'`, icons array non-empty with non-empty srcs, `Content-Type: application/manifest+json`. Branch-proving assertions pin default Alfanumrik branding + standard `/icon-*.svg` icons vs tenant branding (name/short_name/theme_color/logo icons) so the shared pins cannot pass on the same branch twice; a tenant slug WITHOUT a logo still yields non-empty default icons (never an icon-less manifest). | `apps/host/src/__tests__/api/school-config/manifest-route.test.ts` (11 tests) | E | Mobile view integrity for white-label tenants (P10-adjacent), incident-symptom guard, installability |
+
+### Invariants covered by this section
+
+- Incident non-recurrence — `/sw.js` is a permanent no-fetch tombstone; any
+  future service-worker/offline strategy must NOT reuse the `/sw.js` path or
+  the `alfanumrik-` cache prefix (architect review required; runbook §7).
+- P13 (data privacy) — the `sw_legacy_cleanup` payload is pinned to exactly
+  six numeric counts by sorted-key equality; no identity, URL, or UA
+  enrichment can be added without failing the pin.
+- P15 (onboarding integrity) — `ServiceWorkerCleanup` mounts in the shared
+  layout that wraps auth/onboarding; both the cleanup (bounded reload, never
+  rejects) and the reporter (try/catch, throwing capture swallowed) are
+  pinned unable to break that funnel.
+- Mobile view integrity — manifest standalone/portrait + root viewport
+  export guard the "installed PWA looks like a desktop page" symptom class
+  independently of any service worker. REG-259d extends the pin to the
+  DYNAMIC tenant manifest route that production actually serves for
+  `/manifest.json` (default AND white-label school branches), which the
+  static-file pin (REG-259c) cannot see.
+- Runbook cross-link — `docs/runbooks/pwa-stale-service-worker-recovery.md`
+  §5-7 (fleet monitoring query, escalation criteria, prevention) depends on
+  the exact event name, emit-gate, and tombstone pinned here.
+
+---
+
+## REG-260 — Landing V3 default + V2 rollback hatch (`?v=2`) + FAQ Unlimited-price correction (₹1,499→₹1,099) + REG-65 ₹699 verbatim survives the V3 FAQ rewrite + prices-from-SoT on /welcome and /pricing (2026-07-16)
+
+*(renumbered from REG-257→259→260 on successive merges — both ids taken by main)*
 
 Pins the landing-v3 makeover (CEO-approved design,
 design-previews/welcome-ultra.html + marketing-page-ultra.html): `/welcome`
@@ -8586,7 +8654,7 @@ mirrors `lang="hi"` to `<html>`.
 
 | # | Test name | Asserts | Location | Status | Invariants |
 |---|---|---|---|---|---|
-| REG-259 | `landing_v3_default_v2_hatch_faq_price_fix_prices_from_sot` | (1) `/welcome` default → WelcomeV3; `?v=2` → WelcomeV2; unknown `?v` falls through to V3; async server component. (2) "₹1,499" absent from V3 welcome DOM + all JSON-LD; corrected "₹1,099" present and equal to `formatINR(PRICING.unlimited.monthly)`. (3) "₹699" verbatim in the plans FAQ on /welcome AND the annual-billing FAQ on /pricing, lock-stepped to `formatINR(PRICING.pro.monthly)`. (4) 4 plan cards on /pricing with monthly = `PRICING.<plan>.monthly`, yearly toggle → `PRICING.<plan>.yearly` + `≈ yearlyPerMonth()/mo`; Pro (and only Pro) featured; schools band renders `SCHOOL_PER_SEAT_MARKETING_LABEL`. (5) FAQPage JSON-LD mainEntity.length === 10 (bold stripped); Review JSON-LD exactly 2 reviews; single h1; `#hero-cta` → /login. (6) EN→HI toggle flips copy, persists `alf-welcome-lang=hi`, sets `<html lang="hi">`. | `apps/host/src/__tests__/landing-v3/WelcomeV3.test.tsx` (9 tests), `apps/host/src/__tests__/landing-v3/PricingV3.test.tsx` (10 tests), `apps/host/src/__tests__/welcome-v2-routing.test.ts` (6 tests) | E | P7, P11-adjacent (pricing copy), REG-65 continuity, SEO shape |
+| REG-260 | `landing_v3_default_v2_hatch_faq_price_fix_prices_from_sot` | (1) `/welcome` default → WelcomeV3; `?v=2` → WelcomeV2; unknown `?v` falls through to V3; async server component. (2) "₹1,499" absent from V3 welcome DOM + all JSON-LD; corrected "₹1,099" present and equal to `formatINR(PRICING.unlimited.monthly)`. (3) "₹699" verbatim in the plans FAQ on /welcome AND the annual-billing FAQ on /pricing, lock-stepped to `formatINR(PRICING.pro.monthly)`. (4) 4 plan cards on /pricing with monthly = `PRICING.<plan>.monthly`, yearly toggle → `PRICING.<plan>.yearly` + `≈ yearlyPerMonth()/mo`; Pro (and only Pro) featured; schools band renders `SCHOOL_PER_SEAT_MARKETING_LABEL`. (5) FAQPage JSON-LD mainEntity.length === 10 (bold stripped); Review JSON-LD exactly 2 reviews; single h1; `#hero-cta` → /login. (6) EN→HI toggle flips copy, persists `alf-welcome-lang=hi`, sets `<html lang="hi">`. | `apps/host/src/__tests__/landing-v3/WelcomeV3.test.tsx` (9 tests), `apps/host/src/__tests__/landing-v3/PricingV3.test.tsx` (10 tests), `apps/host/src/__tests__/welcome-v2-routing.test.ts` (6 tests) | E | P7, P11-adjacent (pricing copy), REG-65 continuity, SEO shape |
 
 ### E2E coverage
 
@@ -8618,8 +8686,10 @@ mirrors `lang="hi"` to `<html>`.
 ### Catalog total
 
 Pre-REG-259: 225 entries (through REG-258, Foxy math-format house style
-Wave B).
-Adds REG-259 (landing V3 default + `?v=2` rollback hatch + FAQ
+Wave B). Adds REG-259 (PWA stale-service-worker retirement — no-fetch
+tombstone + bounded client cleanup promoted to the catalog, sw_legacy_cleanup
+emit-gate + counts-only P13 telemetry, and manifest/viewport mobile view
+integrity pins) and REG-260 (landing V3 default + `?v=2` rollback hatch + FAQ
 Unlimited-price correction ₹1,499→₹1,099 + REG-65 ₹699 verbatim survival +
 prices-from-SoT on /welcome and /pricing).
-**Total catalog: 226 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 227 entries (target: 35 — TARGET EXCEEDED).**
