@@ -18,16 +18,19 @@
  *      https://shktyoxqhundlvkiwguu.supabase.co/functions/v1/send-auth-email
  *   4. Copy the generated hook secret and set it as SEND_EMAIL_HOOK_SECRET
  *      in Edge Functions -> Secrets
- *   5. Set MAILGUN_API_KEY + MAILGUN_DOMAIN in Edge Functions -> Secrets
- *      (Mailgun is the email provider — product decision 2026-07-15)
- *   6. Verify alfanumrik.com domain in Mailgun (DNS records: DKIM, SPF, DMARC)
+ *   5. Set GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER in
+ *      Edge Functions -> Secrets (Google Workspace / Gmail API is the email
+ *      provider — product decision 2026-07-16 after Mailgun disabled the account)
+ *   6. In Google Admin: grant the service account domain-wide delegation for
+ *      scope https://www.googleapis.com/auth/gmail.send, and configure
+ *      noreply@alfanumrik.com as a "Send mail as" alias of GMAIL_SENDER
  */
 
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0'
 import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
 import { redactPIIInText } from '../_shared/redact-pii.ts'
 import { authEmailTokenDimension, buildAuthActionUrl } from '../_shared/auth-email-links.ts'
-import { sendEmail } from '../_shared/relay-mailer.ts'
+import { hasEmailTransportConfig, sendEmail } from '../_shared/relay-mailer.ts'
 // Shared bilingual rendering primitives (extracted verbatim from this function's
 // v49 templates — see _shared/bilingual-email.ts). Rendered output is
 // byte-identical to the pre-extraction inline helpers.
@@ -36,15 +39,15 @@ import { ctaButton, languageDivider, renderBilingualEmail, urlFallback } from '.
 // Supabase stores the secret as "v1,whsec_<base64>" but standardwebhooks expects "whsec_<base64>"
 const rawHookSecret = Deno.env.get('SEND_EMAIL_HOOK_SECRET') || ''
 const hookSecret = rawHookSecret.startsWith('v1,') ? rawHookSecret.slice(3) : rawHookSecret
-// Product decision 2026-07-15: Mailgun is the email provider. Email is attempted
-// when Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the shared relay
-// (_shared/relay-mailer.ts) selects Mailgun and never auto-selects Resend. Prod
-// has MAILGUN_* set, so this keeps auth email flowing (P15). When Mailgun is not
-// configured we fall through to the no_relay_config 200 below (Supabase built-in
-// email can take over) — signup/login is never blocked.
-const mailgunApiKey = Deno.env.get('MAILGUN_API_KEY') || ''
-const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') || ''
-const hasEmailTransport = Boolean(mailgunApiKey && mailgunDomain)
+// Product decision 2026-07-16: Google Workspace (Gmail API) is the email
+// provider (Mailgun disabled the company account). Email is attempted when the
+// shared relay (_shared/relay-mailer.ts) has ANY transport configured — Gmail
+// (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
+// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+// never auto-selected. This transport-agnostic guard keeps auth email flowing
+// (P15). When nothing is configured we fall through to the no_relay_config 200
+// below (Supabase built-in email can take over) — signup/login is never blocked.
+const hasEmailTransport = hasEmailTransportConfig()
 const FROM_EMAIL = 'Alfanumrik <noreply@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 // R13 fix: SITE_URL configurable via env var for preview/staging deploys.
@@ -247,13 +250,14 @@ Deno.serve(async (req: Request) => {
         emailContent = confirmationEmail(actionUrl)
     }
 
-    // Relay guard: if the Mailgun relay is not configured (product decision
-    // 2026-07-15: Mailgun is the email provider), return 200 so the auth
-    // operation still succeeds (Supabase built-in email can take over). Never
-    // block signup/reset on a missing email secret. The `no_relay_config`
-    // warning string is stable (pinned by the always-200 Deno test).
+    // Relay guard: if no email transport is configured (product decision
+    // 2026-07-16: Google Workspace / Gmail API is the email provider, legacy
+    // Mailgun as fallback), return 200 so the auth operation still succeeds
+    // (Supabase built-in email can take over). Never block signup/reset on a
+    // missing email secret. The `no_relay_config` warning string is stable
+    // (pinned by the always-200 Deno test).
     if (!hasEmailTransport) {
-      console.warn('[Auth Email] No email relay configured (MAILGUN_API_KEY / MAILGUN_DOMAIN). Returning 200 so Supabase built-in email can work.')
+      console.warn('[Auth Email] No email relay configured (GOOGLE_SA_CLIENT_EMAIL / GOOGLE_SA_PRIVATE_KEY / GMAIL_SENDER, or legacy MAILGUN_*). Returning 200 so Supabase built-in email can work.')
       return new Response(JSON.stringify({ success: true, warning: 'no_relay_config' }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       })
@@ -313,7 +317,7 @@ Deno.serve(async (req: Request) => {
     if (!sent) {
       // P13: user.email is PII; log a truncated form only. Audit 2026-04-27 F5.
       const redactedEmailFail = user.email.slice(0, 3) + '***@' + (user.email.split('@')[1] ?? 'unknown')
-      console.error('[Auth Email] Send failed for', redactedEmailFail, '- check MAILGUN_API_KEY/MAILGUN_DOMAIN and domain verification in Mailgun dashboard')
+      console.error('[Auth Email] Send failed for', redactedEmailFail, '- check GOOGLE_SA_CLIENT_EMAIL/GOOGLE_SA_PRIVATE_KEY/GMAIL_SENDER and the service account\'s domain-wide delegation (gmail.send scope) in Google Admin')
     }
 
     // ALWAYS return 200 — never block the auth flow

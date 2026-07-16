@@ -26,7 +26,7 @@
 
 import { edgeLog, getRequestId, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
 import { getCorsHeaders } from '../_shared/cors.ts'
-import { sendEmail } from '../_shared/relay-mailer.ts'
+import { hasEmailTransportConfig, sendEmail } from '../_shared/relay-mailer.ts'
 import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
 
 // ─── Hardcoded recipient ─────────────────────────────────────────────────────
@@ -297,14 +297,13 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Relay config ──
-  // Product decision 2026-07-15: Mailgun is the email provider. Attempt a send
-  // when Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is configured; the shared
-  // relay (_shared/relay-mailer.ts) selects Mailgun and never auto-selects
-  // Resend. Prod has MAILGUN_* set, so the inquiry mailer works. When Mailgun is
-  // absent → 503.
-  const mailgunApiKey = Deno.env.get('MAILGUN_API_KEY') ?? ''
-  const mailgunDomain = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-  const hasEmailTransport = Boolean(mailgunApiKey && mailgunDomain)
+  // Product decision 2026-07-16: Google Workspace (Gmail API) is the email
+  // provider (Mailgun disabled the company account). Attempt a send when the
+  // shared relay (_shared/relay-mailer.ts) resolves ANY transport — Gmail
+  // (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
+  // legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+  // never auto-selected. When nothing is configured → 503.
+  const hasEmailTransport = hasEmailTransportConfig()
   if (!hasEmailTransport) {
     logEvent(context, 'alfabot_inquiry.relay_config_missing', 'error', {
       has_api_key: hasEmailTransport,

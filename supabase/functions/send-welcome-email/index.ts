@@ -15,7 +15,7 @@
  */
 
 import { createEmailIdempotencyKey } from '../_shared/reliability.ts'
-import { sendEmail } from '../_shared/relay-mailer.ts'
+import { hasEmailTransportConfig, sendEmail } from '../_shared/relay-mailer.ts'
 import { redactPIIInText } from '../_shared/redact-pii.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { edgeLog, getRequestId, writeBusinessAudit, type EdgeLogContext } from '../_shared/edge-audit-log.ts'
@@ -23,13 +23,14 @@ import { getCorsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { parentEmail, studentEmail, teacherEmail, welcomeEmailHeaders } from './templates.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-// Product decision 2026-07-15: Mailgun is the email provider. Relay is configured
-// iff Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) is set; the shared relay
-// (_shared/relay-mailer.ts) selects Mailgun and never auto-selects Resend. When
-// Mailgun is absent we degrade to the notifications-table fallback (below).
-const MAILGUN_API_KEY = Deno.env.get('MAILGUN_API_KEY') ?? ''
-const MAILGUN_DOMAIN = Deno.env.get('MAILGUN_DOMAIN') ?? ''
-const HAS_EMAIL_TRANSPORT = Boolean(MAILGUN_API_KEY && MAILGUN_DOMAIN)
+// Product decision 2026-07-16: Google Workspace (Gmail API) is the email
+// provider (Mailgun disabled the company account). The relay is configured iff
+// the shared seam (_shared/relay-mailer.ts) resolves ANY transport — Gmail
+// (GOOGLE_SA_CLIENT_EMAIL + GOOGLE_SA_PRIVATE_KEY + GMAIL_SENDER) preferred,
+// legacy Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) as fallback; Resend is
+// never auto-selected. When nothing is configured we degrade to the
+// notifications-table fallback (below).
+const HAS_EMAIL_TRANSPORT = hasEmailTransportConfig()
 const FROM_EMAIL = 'Alfanumrik <welcome@alfanumrik.com>'
 const REPLY_TO = 'support@alfanumrik.com'
 // SITE_URL must come from env per P15 #6. See audit 2026-04-27 F4.
@@ -91,10 +92,10 @@ Deno.serve(async (req: Request) => {
       default: return errorResponse('Invalid role', 400, origin)
     }
 
-    // Send via the shared relay if configured (Resend primary, Mailgun fallback).
-    // sendEmail resolves the transport internally, retries with an
-    // Idempotency-Key, and returns a PII-free failure `code` (+ which provider
-    // handled it) on error.
+    // Send via the shared relay if configured (Gmail primary, legacy Mailgun
+    // fallback — product decision 2026-07-16). sendEmail resolves the transport
+    // internally, retries with an idempotency key, and returns a PII-free
+    // failure `code` (+ which provider handled it) on error.
     if (HAS_EMAIL_TRANSPORT) {
       try {
         const result = await sendEmail({

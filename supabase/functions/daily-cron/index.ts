@@ -29,6 +29,13 @@ import { gradeMolShadowPairs as gradeMolShadowPairsImpl } from '../_shared/mol/g
 import { gradeShadowPair } from '../_shared/mol/grader.ts'
 import { auditInternalCronInvocation, internalCronUnauthorizedResponse, verifyInternalCronRequest } from '../_shared/security/internal-cron-auth.ts'
 import { createDailyCronActions, recordDailyCronActionMetric } from './actions.ts'
+import {
+  evaluateVerificationDelivery,
+  VERIFICATION_MONITOR_CATEGORY,
+  VERIFICATION_MONITOR_SOURCE,
+  type PriorVerificationAlert,
+  type SignupVerificationRow,
+} from './verification-delivery.ts'
 
 // YYYY_MM_DD slug (UTC) used as the day component of idempotency_key.
 function todayUtcSlug(): string {
@@ -1864,6 +1871,104 @@ async function purgePrincipalAiTranscripts(supabase: ReturnType<typeof createCli
   return purged
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Silent verification-email failure monitor (CEO mandate, 2026-07-16).
+//
+// Detects the Mailgun-silently-disabled failure mode: the provider stops
+// delivering, Supabase keeps stamping auth.users.confirmation_sent_at on
+// every signup, email_confirmed_at stays NULL forever, and nobody notices.
+// Trigger: the 3 most-recent EXTERNAL signups are ALL unconfirmed >24h after
+// their confirmation email was stamped (exact spec + dedup live in the pure
+// module ./verification-delivery.ts — offline-tested).
+//
+// Data path (P13): auth.users is read ONLY through the SECURITY DEFINER RPC
+// get_recent_signup_verification_status (migration 20260716093000), which
+// applies the internal/test/admin-created/invite exclusions in SQL and
+// returns TIMESTAMPS ONLY — no emails, no user ids ever reach Deno or logs.
+//
+// Alerting: reuses the EXISTING pipeline (no new mechanism). On trigger we
+// insert ONE critical ops_event (category auth_email_delivery, source
+// verification-delivery-monitor); the ops_events critical-insert trigger
+// fires evaluate_alert_rules() immediately for the seeded rule
+// 'Verification email delivery stalled', which enqueues alert_dispatches for
+// its channels; the alert-deliverer pg_cron drains them within ~1-2 min.
+//
+// Dedup: streak-keyed in the pure module (re-alert only on a NEW incident or
+// a GROWING streak — prior state is the last ops_event from this source), so
+// a persisting condition does not re-alert every night. The rule's
+// window(30) < cooldown(60) tuning additionally guarantees one dispatch per
+// emitted event. Self-heal: a newer confirmed signup clears the condition.
+//
+// Fail-soft: Promise.allSettled isolates this step; a missing RPC
+// (pre-migration deploy order) is a logged no-op; any other error THROWS so
+// it surfaces in the 207 errors map instead of failing silently — this
+// monitor must never itself become a silent failure.
+// ──────────────────────────────────────────────────────────────────────────
+async function checkVerificationDelivery(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const { data: rows, error: rpcErr } = await supabase.rpc('get_recent_signup_verification_status', {
+    p_window_days: 14,
+    p_limit: 50,
+  })
+  if (rpcErr) {
+    const code = (rpcErr as { code?: string }).code ?? ''
+    const msg = ((rpcErr as { message?: string }).message ?? '').toLowerCase()
+    // PGRST202 = PostgREST cannot find the function; 42883 = undefined_function.
+    if (code === 'PGRST202' || code === '42883' || msg.includes('could not find the function')) {
+      console.log('daily-cron: verification_delivery — RPC absent (pre-migration), no-op')
+      return 0
+    }
+    throw new Error(`checkVerificationDelivery rpc: ${rpcErr.message}`)
+  }
+  const signups = (rows ?? []) as SignupVerificationRow[]
+
+  // Dedup state: the last alert this monitor emitted. A failed read degrades
+  // to prior=null (worst case ONE duplicate alert — never a missed one).
+  let prior: PriorVerificationAlert | null = null
+  const { data: prevEvents, error: prevErr } = await supabase
+    .from('ops_events')
+    .select('context')
+    .eq('source', VERIFICATION_MONITOR_SOURCE)
+    .eq('category', VERIFICATION_MONITOR_CATEGORY)
+    .order('occurred_at', { ascending: false })
+    .limit(1)
+  if (prevErr) {
+    console.warn(`checkVerificationDelivery: dedup-state read failed (${prevErr.message}) — proceeding without dedup`)
+  } else {
+    const ctx = ((prevEvents ?? [])[0] as { context?: Record<string, unknown> } | undefined)?.context
+    if (ctx && typeof ctx.dedup_key === 'string' && typeof ctx.streak_length === 'number') {
+      prior = { dedup_key: ctx.dedup_key, streak_length: ctx.streak_length }
+    }
+  }
+
+  const verdict = evaluateVerificationDelivery(signups, prior, new Date())
+
+  // P13: counts + verdict only — no identifiers exist in this data at all.
+  console.log(`daily-cron: verification_delivery — external_signups_14d=${signups.length} stuck_streak=${verdict.streakLength} verdict=${verdict.reason}`)
+
+  if (!verdict.shouldAlert) return 0
+
+  const { error: insErr } = await supabase.from('ops_events').insert({
+    occurred_at: new Date().toISOString(),
+    category: VERIFICATION_MONITOR_CATEGORY,
+    source: VERIFICATION_MONITOR_SOURCE,
+    severity: 'critical',
+    // Counts + earliest/latest timestamps ONLY — no emails, no names (P13).
+    message: `Verification-email delivery appears STALLED: the ${verdict.streakLength} most-recent external signups all have confirmation_sent_at stamped but are still unconfirmed >24h later. Earliest stuck signup created ${verdict.earliestStuckAt}; latest ${verdict.latestStuckAt}. Likely provider-side silent failure (the Mailgun 2026-07 mode). Runbook: docs/runbooks/signup-flow-broken-response.md — check email provider account status and send-auth-email logs first.`,
+    context: {
+      streak_length: verdict.streakLength,
+      total_recent_external: signups.length,
+      earliest_stuck_created_at: verdict.earliestStuckAt,
+      latest_stuck_created_at: verdict.latestStuckAt,
+      dedup_key: verdict.dedupKey,
+      runbook: 'docs/runbooks/signup-flow-broken-response.md',
+    },
+    environment: 'production',
+  })
+  if (insErr) throw new Error(`checkVerificationDelivery ops_events insert: ${insErr.message}`)
+  console.warn(`daily-cron: verification_delivery — ALERT RAISED (streak=${verdict.streakLength}, dedup_key=${verdict.dedupKey})`)
+  return 1
+}
+
 Deno.serve(async (req) => {
   if (req.method==='OPTIONS') return new Response('ok',{headers:corsHeaders})
   const t0=Date.now()
@@ -1902,6 +2007,7 @@ Deno.serve(async (req) => {
       mol_shadow_pairs_graded: () => gradeMolShadowPairs(sb),
       purge_principal_ai: () => purgePrincipalAiTranscripts(sb),
       first_quiz_nudges_sent: () => nudgeFirstQuizStudents(sb),
+      verification_delivery_checked: () => checkVerificationDelivery(sb),
     })
     const actionStartedAt = new Map(actions.map((action) => [action.name, Date.now()]))
     const settled=await Promise.allSettled(actions.map((action)=>action.run({ sb })))
