@@ -1,6 +1,6 @@
 # Alfanumrik SRE Runbook — Wave 1 Production
 
-**Last updated:** 2026-07-17 (§13 second escalation: worker active but still OOM; V8 heap capped at 6144 MB in `vercel-build`)  
+**Last updated:** 2026-07-17 (§13: V8 heap cap in `vercel-build` corrected 6144 → 4096 for the 8 GB/3-process build container; `USE_CLI_DEPLOY=true` is the active production path)  
 **On-call:** ceo@alfanumrik.com  
 **Stack:** Next.js (Vercel) · Supabase (ap-south-1) · Edge Functions · Razorpay
 
@@ -342,30 +342,50 @@ longer does anything as of 2026-07-17.)
 
 **Escalation if the worker alone is insufficient:**
 1. Enable **Enhanced Builds** (16 GB build machine): project Settings → Build & Deployment.
-2. Or set Preview-scoped `NODE_OPTIONS=--max-old-space-size=6144` (matches the local
-   release-gate build path; scope to Preview only).
+2. Or set Preview-scoped `NODE_OPTIONS=--max-old-space-size=4096` (scope to Preview only).
+   (Superseded by the in-code cap below — see the 2026-07-17 correction. Do NOT use 6144
+   here: that is a 16 GB-runner value, and the cap is per-process across 3 build processes.)
 
 **Second escalation 2026-07-17 — worker active, 8 GB still exceeded; heap capped in code:**
 The `_V2` rename worked (build logs show **`✓ webpackBuildWorker`**), but preview AND
 production builds still hit the 8 GB container OOM-killer — they now grind ~40+ minutes
 before dying instead of dying at ~4.5 min, meaning V8 was growing its heap unbounded until
 the container killed it before GC ever came under pressure. Mitigation (branch
-`fix/vercel-build-heap-cap`): `NODE_OPTIONS=--max-old-space-size=6144` is now set **in the
+`fix/vercel-build-heap-cap`): `NODE_OPTIONS=--max-old-space-size=N` is now set **in the
 `vercel-build` scripts themselves** — BOTH the root `package.json` (the active entrypoint:
 the Vercel project directory is `.`, so Vercel runs root `vercel-build` → `npm run build -w
 apps/host`) AND `apps/host/package.json` (defense-in-depth if the project root ever moves to
 `apps/host`). Rationale for code-side rather than dashboard env: dashboard access is the
 exact bottleneck this incident chain keeps hitting (see the `_V2` rename above), and
-package.json cannot carry comments — this section is the canonical rationale. The cap makes
-V8 GC aggressively at 6 GB old-space instead of expanding until the 8 GB container
-OOM-killer fires; 6144 matches the proven local release-gate build value. The inline
+package.json cannot carry comments — this section is the canonical rationale. The inline
 `KEY=value` prefix is Linux-only-safe, which is fine: `vercel-build` only runs on Vercel's
 Linux containers; local Windows `npm run build` is a separate, untouched script. GH Actions
-workflows were deliberately NOT touched — runners pass today.
+workflows were deliberately NOT touched — runners are 16 GB and pass today.
+
+**Correction 2026-07-17 — 6144 was wrong; now 4096.** The first cut used 6144 (copied from
+the GH workflows). That deploy failed at 45m15s. 6144 is a **16 GB-runner** value: the cap is
+**per-process**, and a Vercel build runs **3 concurrent Node processes** on a 4-core/8 GB
+container — parent `next build` + webpack build worker + build-trace worker, the latter two
+spawned with `isolatedMemory:false` so they **inherit** `NODE_OPTIONS`. 3 × 6144 = 18 GB of
+permitted heap on an 8 GB box, so the container OOM-killer always fires before any single V8
+heap reaches its cap and starts GCing aggressively. **4096** keeps the realistic worst case
+under the container limit (workers rarely peak together) while still letting the parent grow.
+If still tight, try **3584**. Do not raise this to match the workflows — different machine.
 - **Verify:** fresh deploy completes without SIGKILL; `✓ webpackBuildWorker` still present.
 - **If THIS fails** (build dies with JS-heap-out-of-memory instead of SIGKILL, or still
-  SIGKILLs): **Enhanced Builds (16 GB build machine) is the only remaining option** —
-  operator dashboard step, project Settings → Build & Deployment, paid feature.
+  SIGKILLs), remaining options **in order**:
+  1. Lower the cap again: 4096 → **3584** (same one-line code change).
+  2. **Route production through the GH 16 GB prebuilt path** — repo variable
+     `USE_CLI_DEPLOY=true`. **Already set to `true` (2026-07-17T13:35Z); this is the CURRENT
+     ACTIVE production path.** Builds run on a 16 GB GH runner and deploy prebuilt, so the
+     8 GB Vercel build container is bypassed entirely. This is the parallel unblock — it is
+     independent of the heap cap, which still governs any Vercel-side build.
+  3. **Sentry sourcemap isolation** (Phase 2): `withSentryConfig` is called with the v7
+     3-argument signature against v10, which silently force-enables full source-map
+     generation — a large share of build heap. Fixing the call is a real memory reduction,
+     not a workaround.
+  4. **Enhanced Builds** (16 GB build machine) — **last resort**, paid, operator dashboard
+     step: Settings → Build & Deployment.
 - **Rollback:** revert the `NODE_OPTIONS=` prefix in both `vercel-build` scripts (no env
   var involved; this one is code-only by design).
 
