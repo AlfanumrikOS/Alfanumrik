@@ -24,20 +24,26 @@ import { track } from '@alfanumrik/lib/posthog/client';
 import s from './alfabot.module.css';
 
 const STARTER_CHIPS: Record<AlfabotAudience, Array<{ en: string; hi: string }>> = {
+  // Counseling-intent refresh (2026-07-17): chips lead with the underlying
+  // concern (value vs tuition, AI trust, honest progress) instead of pure FAQ.
+  // PINNED texts — do not change without updating their tests:
+  //   - parent[0] "Does this match my child's CBSE syllabus?" (AlfaBotPanel.test.tsx)
+  //   - parent[1] must contain "₹699/month" verbatim (AlfaBotPanel.test.tsx)
+  //   - school[0] "What's pricing for 30–3,000 seats?" en-dash (e2e/alfabot.spec.ts)
   parent: [
     { en: "Does this match my child's CBSE syllabus?", hi: 'क्या यह मेरे बच्चे की CBSE पाठ्यक्रम से मेल खाता है?' },
-    { en: "What's included for ₹699/month?", hi: '₹699 प्रति माह में क्या मिलता है?' },
-    { en: 'Does it work in Hindi?', hi: 'क्या यह हिन्दी में काम करता है?' },
-    { en: 'How do I cancel?', hi: 'रद्द कैसे करूँ?' },
+    { en: 'Is ₹699/month worth it vs tuition?', hi: 'क्या ₹699/माह tuition के मुक़ाबले सही है?' },
+    { en: 'Is AI safe for my child?', hi: 'क्या AI मेरे बच्चे के लिए सुरक्षित है?' },
+    { en: 'How do I see real progress?', hi: 'असली प्रगति कैसे देखूँ?' },
   ],
   student: [
     { en: 'What is Foxy?', hi: 'Foxy क्या है?' },
-    { en: 'How do XP and levels work?', hi: 'XP और लेवल कैसे काम करते हैं?' },
+    { en: 'Can this help with boards and JEE/NEET?', hi: 'क्या यह boards और JEE/NEET में मदद करेगा?' },
+    { en: 'How do I fix my weak chapters?', hi: 'अपने कमज़ोर चैप्टर कैसे सुधारूँ?' },
     { en: 'How long is a quiz?', hi: 'क्विज़ कितनी देर का होता है?' },
-    { en: "What's in it for Class 9?", hi: 'Class 9 के लिए क्या है?' },
   ],
   teacher: [
-    { en: 'What does my section dashboard show?', hi: 'मेरे सेक्शन डैशबोर्ड में क्या दिखता है?' },
+    { en: 'How much time can this save me each week?', hi: 'यह हर हफ़्ते मेरा कितना समय बचा सकता है?' },
     { en: "How do Bloom's diagnostics work?", hi: "Bloom's डायग्नॉस्टिक्स कैसे काम करते हैं?" },
     { en: 'What does the worksheet generator do?', hi: 'वर्कशीट जेनरेटर क्या करता है?' },
     { en: 'Is there a teacher free trial?', hi: 'क्या टीचर के लिए मुफ़्त ट्रायल है?' },
@@ -46,7 +52,7 @@ const STARTER_CHIPS: Record<AlfabotAudience, Array<{ en: string; hi: string }>> 
     { en: "What's pricing for 30–3,000 seats?", hi: '30–3,000 सीटों की क़ीमत क्या है?' },
     { en: 'How do NEP-aligned reports work?', hi: 'NEP-aligned रिपोर्ट्स कैसे काम करती हैं?' },
     { en: 'How long does onboarding take?', hi: 'ऑनबोर्डिंग में कितना समय लगता है?' },
-    { en: "What's in the principal dashboard?", hi: 'Principal डैशबोर्ड में क्या है?' },
+    { en: 'How do you protect student data?', hi: 'आप छात्र data की सुरक्षा कैसे करते हैं?' },
   ],
 };
 
