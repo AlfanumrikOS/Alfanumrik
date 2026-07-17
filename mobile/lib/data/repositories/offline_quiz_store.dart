@@ -4,15 +4,11 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/offline_quiz_models.dart';
 
-/// Hive-backed persistence for the Wave 2.5.2 offline quiz path.
+/// Hive-backed persistence for the Wave 2.5.2 offline quiz-submission queue.
 ///
-/// Two boxes, both storing JSON-encoded strings (reusing the project's
-/// existing Hive-JSON convention from `CacheManager` — no typed
-/// `hive_generator` adapter, so the records stay pure-Dart testable):
-///
-///   * **bundle box** (`offline_quiz_bundles`) — the prefetched today bundle,
-///     keyed by `subject`. Overwritten on each successful online prefetch so a
-///     student always has the freshest attemptable session for that subject.
+/// One box storing JSON-encoded strings (reusing the project's existing
+/// Hive-JSON convention from `CacheManager` — no typed `hive_generator`
+/// adapter, so the records stay pure-Dart testable):
 ///
 ///   * **queue box** (`offline_quiz_queue`) — the FIFO submission queue, keyed
 ///     by `QueuedQuizAttempt.localId`. FIFO order is the box's natural
@@ -24,62 +20,25 @@ import '../models/offline_quiz_models.dart';
 /// Drain orchestration + the discard-vs-retry matrix live in
 /// [OfflineDrainService].
 class OfflineQuizStore {
-  static const String bundleBoxName = 'offline_quiz_bundles';
   static const String queueBoxName = 'offline_quiz_queue';
 
-  final Box<String> _bundleBox;
   final Box<String> _queueBox;
 
   OfflineQuizStore({
-    required Box<String> bundleBox,
     required Box<String> queueBox,
-  })  : _bundleBox = bundleBox,
-        _queueBox = queueBox;
+    // Accepted-and-ignored. The dormant prefetch-bundle box was removed; this
+    // optional param is retained ONLY so the existing offline-drain-service
+    // test's store construction keeps compiling unchanged. Production `open()`
+    // never passes it and no bundle box is ever opened.
+    Box<String>? bundleBox,
+  }) : _queueBox = queueBox;
 
-  /// Open the two boxes and construct the store. Call once at app start (after
+  /// Open the queue box and construct the store. Call once at app start (after
   /// `Hive.initFlutter()` in `main.dart`).
   static Future<OfflineQuizStore> open() async {
-    final bundleBox = await Hive.openBox<String>(bundleBoxName);
     final queueBox = await Hive.openBox<String>(queueBoxName);
-    return OfflineQuizStore(bundleBox: bundleBox, queueBox: queueBox);
+    return OfflineQuizStore(queueBox: queueBox);
   }
-
-  // ── Today bundle ─────────────────────────────────────────────────────────
-
-  /// Cache (or overwrite) the today bundle for [bundle].subject.
-  Future<void> putBundle(OfflineTodayBundle bundle) async {
-    await _bundleBox.put(bundle.subject, jsonEncode(bundle.toJson()));
-  }
-
-  /// Read the cached bundle for [subject], or null if none / malformed.
-  OfflineTodayBundle? getBundle(String subject) {
-    final raw = _bundleBox.get(subject);
-    if (raw == null) return null;
-    try {
-      final json = jsonDecode(raw) as Map<String, dynamic>;
-      return OfflineTodayBundle.fromJson(json);
-    } catch (_) {
-      // Corrupt entry — drop it so a fresh prefetch can repopulate.
-      _bundleBox.delete(subject);
-      return null;
-    }
-  }
-
-  /// All cached bundles (for any subject). Skips malformed entries.
-  List<OfflineTodayBundle> allBundles() {
-    final out = <OfflineTodayBundle>[];
-    for (final raw in _bundleBox.values) {
-      try {
-        out.add(OfflineTodayBundle.fromJson(
-            jsonDecode(raw) as Map<String, dynamic>));
-      } catch (_) {
-        // skip
-      }
-    }
-    return out;
-  }
-
-  Future<void> clearBundles() => _bundleBox.clear();
 
   // ── Submission queue ─────────────────────────────────────────────────────
 

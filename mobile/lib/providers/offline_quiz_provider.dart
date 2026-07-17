@@ -84,8 +84,8 @@ final offlineQueueCountProvider = Provider<int>((ref) {
 
 /// The drain coordinator. Owns the [OfflineDrainService], installs the
 /// connectivity listener that drains on reconnect, and exposes imperative
-/// [drain] / [prefetchTodayBundle] / [enqueueCompletedAttempt] entry points
-/// for the foreground / today-load / quiz-completion call sites.
+/// [drain] / [enqueueCompletedAttempt] entry points for the foreground /
+/// quiz-completion call sites.
 final offlineQuizCoordinatorProvider =
     Provider<OfflineQuizCoordinator?>((ref) {
   if (!ref.watch(oneExperienceRuntimeEnabledProvider)) return null;
@@ -115,11 +115,10 @@ final offlineQuizCoordinatorProvider =
   return coordinator;
 });
 
-/// Coordinates offline prefetch, enqueue, and drain. The connectivity listener
-/// lives in [offlineQuizCoordinatorProvider]; this class holds the imperative
-/// methods the app calls on foreground / today-load / quiz completion.
+/// Coordinates offline enqueue and drain. The connectivity listener lives in
+/// [offlineQuizCoordinatorProvider]; this class holds the imperative methods
+/// the app calls on foreground / quiz completion.
 class OfflineQuizCoordinator {
-  final Ref _ref;
   final OfflineQuizStore _store;
   final OfflineDrainService _drainService;
 
@@ -127,8 +126,7 @@ class OfflineQuizCoordinator {
     required Ref ref,
     required OfflineQuizStore store,
     required OfflineQuizSubmitter submitter,
-  })  : _ref = ref,
-        _store = store,
+  })  : _store = store,
         _drainService = OfflineDrainService(
           store: store,
           submitter: submitter,
@@ -164,62 +162,6 @@ class OfflineQuizCoordinator {
   /// Drain the queue once (FIFO). Safe to call from the connectivity listener
   /// AND on app foreground — the drain serializes internally.
   Future<void> drain() => _drainService.drain();
-
-  /// Cache the day's quiz session so a student can attempt it OFFLINE. Call on
-  /// app foreground / today-load when connected. Persists the server-shuffled
-  /// session + display-ordered questions (no correct answers — P6) keyed by
-  /// subject. No-op on any soft failure (the student just won't have an offline
-  /// bundle for that subject).
-  Future<void> prefetchTodayBundle({
-    required String studentId,
-    required String subject,
-    required String grade,
-    String? chapterTitle,
-    int count = 10,
-  }) async {
-    if (!await hasConnection()) return; // only prefetch while online
-    final repo = _ref.read(quizRepositoryProvider);
-
-    final fetch = await repo.getQuestions(
-      subject: subject,
-      grade: grade,
-      count: count,
-      chapterTitle: chapterTitle,
-    );
-    final raw = fetch.dataOrNull;
-    if (raw == null || raw.isEmpty) return;
-
-    final session = await repo.startSessionForQuestions(
-      studentId: studentId,
-      questionIds: raw.map((q) => q.id).toList(growable: false),
-      subject: subject,
-      grade: grade,
-    );
-    // A bundle without a server session id can't be graded offline — skip.
-    if (session == null || session.questions.isEmpty) return;
-
-    await _store.putBundle(
-      OfflineTodayBundle(
-        sessionId: session.sessionId,
-        subject: subject,
-        grade: grade,
-        questions: session.questions,
-        // Shuffle maps are NOT exposed by start_quiz_session (server keeps the
-        // map server-side — P6), so the bundle stores none. The drain then
-        // omits shuffleMapsClientGradedAgainst and the server verifies
-        // integrity against its own snapshot.
-        shuffleMaps: const {},
-        cachedAtMillis: DateTime.now().millisecondsSinceEpoch,
-      ),
-    );
-  }
-
-  /// Read the cached offline bundle for a subject (null if none / not
-  /// attemptable).
-  OfflineTodayBundle? bundleFor(String subject) {
-    final b = _store.getBundle(subject);
-    return (b != null && b.isAttemptable) ? b : null;
-  }
 
   /// Enqueue a completed-OFFLINE attempt for later drain.
   ///

@@ -4,78 +4,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alfanumrik/data/models/offline_quiz_models.dart';
-import 'package:alfanumrik/data/models/quiz_question.dart';
-
-QuizQuestion _q(String id) => QuizQuestion(
-      id: id,
-      questionText: 'Q $id',
-      options: const ['a', 'b', 'c', 'd'],
-      // P6: offline questions never carry the correct index.
-      correctIndex: -1,
-      subject: 'math',
-      grade: '7',
-    );
 
 void main() {
-  group('OfflineTodayBundle', () {
-    test('round-trips through JSON and re-pins correctIndex to -1 (P6)', () {
-      final bundle = OfflineTodayBundle(
-        sessionId: 'sess-1',
-        subject: 'math',
-        grade: '7',
-        questions: [_q('q1'), _q('q2')],
-        shuffleMaps: const {
-          'q1': [2, 0, 3, 1],
-        },
-        cachedAtMillis: 1234567890,
-      );
-
-      final decoded = OfflineTodayBundle.fromJson(bundle.toJson());
-
-      expect(decoded.sessionId, 'sess-1');
-      expect(decoded.subject, 'math');
-      expect(decoded.grade, '7');
-      expect(decoded.questions, hasLength(2));
-      expect(decoded.questions[0].id, 'q1');
-      expect(decoded.questions[0].options, ['a', 'b', 'c', 'd']);
-      // CRITICAL P6: even if a stored bundle were tampered to carry a correct
-      // index, read-back re-pins it to -1.
-      expect(decoded.questions[0].correctIndex, -1);
-      expect(decoded.shuffleMaps['q1'], [2, 0, 3, 1]);
-      expect(decoded.cachedAtMillis, 1234567890);
-    });
-
-    test('isAttemptable requires a session id and at least one question', () {
-      final ok = OfflineTodayBundle(
-        sessionId: 'sess-1',
-        subject: 'math',
-        grade: '7',
-        questions: [_q('q1')],
-        cachedAtMillis: 0,
-      );
-      expect(ok.isAttemptable, isTrue);
-
-      final noSession = OfflineTodayBundle(
-        sessionId: null,
-        subject: 'math',
-        grade: '7',
-        questions: [_q('q1')],
-        cachedAtMillis: 0,
-      );
-      expect(noSession.isAttemptable, isFalse,
-          reason: 'without a server session the server cannot grade offline');
-
-      const noQuestions = OfflineTodayBundle(
-        sessionId: 'sess-1',
-        subject: 'math',
-        grade: '7',
-        questions: [],
-        cachedAtMillis: 0,
-      );
-      expect(noQuestions.isAttemptable, isFalse);
-    });
-  });
-
   group('QueuedQuizAttempt', () {
     QueuedQuizAttempt sample({int drainAttempt = 0}) => QueuedQuizAttempt(
           localId: 'local-1',
