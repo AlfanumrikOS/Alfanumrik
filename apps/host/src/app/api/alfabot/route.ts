@@ -407,17 +407,47 @@ interface EdgeFunctionJsonResponse {
 }
 
 /**
+ * Read the structured error code from a non-200 Edge Function response body.
+ * Bounded to the first 500 chars; accepts `{ error }` or `{ code }`. Returns
+ * the code enum only — NEVER message text (P13: the code is not PII, free-form
+ * text could be). Non-JSON / oversized / free-form bodies yield null.
+ */
+async function readUpstreamErrorCode(res: Response): Promise<string | null> {
+  try {
+    const text = (await res.text()).slice(0, 500);
+    if (!text) return null;
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const code =
+      typeof parsed.error === 'string'
+        ? parsed.error
+        : typeof parsed.code === 'string'
+          ? parsed.code
+          : null;
+    // Enum-shaped codes only (e.g. deny_signature, deny_auth) — reject
+    // anything that looks like prose so free-form text can't reach audit_logs.
+    if (code && /^[a-z0-9_.:-]{1,64}$/i.test(code)) return code;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Call the alfabot-answer Edge Function. Two transport modes:
  *   - JSON: blocking, returns the parsed response (or null on failure).
  *   - SSE:  streaming, returns the raw Response.
  *
  * Timeout: 25s. On any failure (network, 5xx, parse error), returns null
- * and lets the caller fall back to a canned abstain.
+ * and lets the caller fall back to a canned abstain. Non-200 failures carry
+ * the upstream structured error code (enum only) as `upstreamErrorCode`.
  */
 async function callEdgeFunction(
   req: EdgeFunctionRequest,
   accept: 'application/json' | 'text/event-stream',
-): Promise<{ ok: true; jsonBody?: EdgeFunctionJsonResponse; rawResponse?: Response } | { ok: false; reason: string }> {
+): Promise<
+  | { ok: true; jsonBody?: EdgeFunctionJsonResponse; rawResponse?: Response }
+  | { ok: false; reason: string; upstreamErrorCode?: string }
+> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) {
@@ -426,6 +456,21 @@ async function callEdgeFunction(
   const bodyStr = JSON.stringify(req);
   const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/alfabot-answer', bodyStr, 'alfabot-answer');
   if (!signingHeaders) {
+    // In production an unsigned call is a GUARANTEED 401 (deny_signature)
+    // from the Edge Function's security layer. Fail fast so the audit row
+    // says 'signing_not_configured' instead of 'http_401' — ops can then
+    // distinguish a config outage from an upstream outage instantly.
+    // (Root cause of the 2026-07-11 outage: this condition was warn-only.)
+    const isProduction =
+      process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+    if (isProduction) {
+      logger.error('alfabot.internal_signing_not_configured', {
+        detail:
+          'INTERNAL_CALLER_SIGNING_SECRET is not set in production — failing fast without calling alfabot-answer',
+      });
+      return { ok: false, reason: 'signing_not_configured' };
+    }
+    // Non-production stays tolerant: local dev may run unsigned.
     logger.warn('alfabot.internal_signing_not_configured', {
       detail: 'INTERNAL_CALLER_SIGNING_SECRET is not set — alfabot-answer will reject unsigned calls',
     });
@@ -448,8 +493,15 @@ async function callEdgeFunction(
     });
     clearTimeout(timer);
     if (!res.ok) {
-      try { await res.text(); } catch { /* drain */ }
-      return { ok: false, reason: `http_${res.status}` };
+      // Read the structured error code (deny_signature vs deny_auth etc.) so
+      // audit_logs can distinguish failure modes — reason:"http_401" alone
+      // hid the 2026-07-11 signing outage for 6 days.
+      const upstreamErrorCode = await readUpstreamErrorCode(res);
+      return {
+        ok: false,
+        reason: `http_${res.status}`,
+        ...(upstreamErrorCode ? { upstreamErrorCode } : {}),
+      };
     }
     if (accept === 'text/event-stream') {
       return { ok: true, rawResponse: res };
@@ -686,7 +738,12 @@ export async function POST(request: NextRequest): Promise<NextResponse | Respons
   // 13. Blocking (JSON) path.
   const upstream = await callEdgeFunction(edgeReq, 'application/json');
   if (!upstream.ok) {
-    logger.error('alfabot.upstream_failed', { reason: upstream.reason });
+    logger.error('alfabot.upstream_failed', {
+      reason: upstream.reason,
+      // Structured code enum only (deny_signature / deny_auth / …) — no
+      // message text (P13).
+      ...(upstream.upstreamErrorCode ? { upstream_error_code: upstream.upstreamErrorCode } : {}),
+    });
     try {
       await logAudit(null, {
         action: 'alfabot.upstream_failed',
@@ -697,6 +754,9 @@ export async function POST(request: NextRequest): Promise<NextResponse | Respons
           audience,
           lang,
           reason: upstream.reason,
+          ...(upstream.upstreamErrorCode
+            ? { upstream_error_code: upstream.upstreamErrorCode }
+            : {}),
           model: MODEL_ID,
         },
         status: 'failure',
@@ -841,7 +901,14 @@ async function handleStreamingTurn(args: StreamingTurnArgs): Promise<Response> {
   const requestTraceId = traceId();
 
   if (!upstream.ok || !upstream.rawResponse?.body) {
-    logger.error('alfabot.streaming_upstream_failed', { reason: upstream.ok ? 'no_body' : upstream.reason });
+    const failReason = upstream.ok ? 'no_body' : upstream.reason;
+    // Structured code enum only (deny_signature / deny_auth / …) — no
+    // message text (P13).
+    const upstreamErrorCode = upstream.ok ? undefined : upstream.upstreamErrorCode;
+    logger.error('alfabot.streaming_upstream_failed', {
+      reason: failReason,
+      ...(upstreamErrorCode ? { upstream_error_code: upstreamErrorCode } : {}),
+    });
     try {
       await logAudit(null, {
         action: 'alfabot.upstream_failed',
@@ -851,7 +918,8 @@ async function handleStreamingTurn(args: StreamingTurnArgs): Promise<Response> {
           anonId: args.anonId,
           audience: args.audience,
           lang: args.lang,
-          reason: upstream.ok ? 'no_body' : upstream.reason,
+          reason: failReason,
+          ...(upstreamErrorCode ? { upstream_error_code: upstreamErrorCode } : {}),
           model: MODEL_ID,
         },
         status: 'failure',

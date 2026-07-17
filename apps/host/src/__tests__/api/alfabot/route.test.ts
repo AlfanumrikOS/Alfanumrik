@@ -30,6 +30,11 @@ beforeEach(() => {
   // limiters (deterministic).
   delete process.env.UPSTASH_REDIS_REST_URL;
   delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  // Signing determinism: unsigned + non-production by default. Individual
+  // tests opt into "production" via VERCEL_ENV (NODE_ENV stays 'test' so the
+  // rest of the route behaves normally).
+  delete process.env.INTERNAL_CALLER_SIGNING_SECRET;
+  delete process.env.VERCEL_ENV;
 });
 
 // ─── next/headers mock — cookies() requires a request scope at runtime ──────
@@ -521,5 +526,76 @@ describe('/api/alfabot POST', () => {
     expect(details.lang).toBe('en');
     expect(details.model).toBe('gpt-4o-mini');
     expect(typeof details.tokensUsed).toBe('number');
+  });
+
+  it('fails fast in production when signing is not configured: no upstream fetch, audit reason signing_not_configured', async () => {
+    // Simulate production without touching NODE_ENV (which would change
+    // unrelated behavior like cookie Secure flags in this test bench).
+    process.env.VERCEL_ENV = 'production';
+    try {
+      const { POST } = await import('@/app/api/alfabot/route');
+      const res = await POST(
+        makeRequest({
+          body: { message: 'How do plans work?', audience: 'parent', lang: 'en' },
+          anonCookie: 'anon-unsigned-prod',
+        }),
+      );
+      // Same user-visible behavior as any upstream failure: 200 + canned abstain.
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.abstainReason).toBe('upstream_failed');
+      // CRITICAL: the guaranteed-401 unsigned call was NEVER made.
+      expect(_edgeFetchMock).not.toHaveBeenCalled();
+      // Severity escalated to error in production (2026-07-11 outage fix).
+      const signingError = loggerError.mock.calls.find(
+        (c: unknown[]) => c[0] === 'alfabot.internal_signing_not_configured',
+      );
+      expect(signingError).toBeTruthy();
+      // Audit row distinguishes config outage from upstream outage.
+      const failLog = _logAudit.mock.calls.find(
+        (c: unknown[]) => (c[1] as Record<string, unknown>).action === 'alfabot.upstream_failed',
+      );
+      expect(failLog).toBeTruthy();
+      const details = (failLog![1] as { details: Record<string, unknown> }).details;
+      expect(details.reason).toBe('signing_not_configured');
+    } finally {
+      delete process.env.VERCEL_ENV;
+    }
+  });
+
+  it('surfaces the upstream structured error code on non-200 (401 deny_signature) in the audit details', async () => {
+    // Non-production (default): the route still calls upstream unsigned.
+    _edgeFetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: 'deny_signature' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const { POST } = await import('@/app/api/alfabot/route');
+    const res = await POST(
+      makeRequest({
+        body: { message: 'How do plans work?', audience: 'parent', lang: 'en' },
+        anonCookie: 'anon-upstream-401',
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.abstainReason).toBe('upstream_failed');
+    // Audit carries BOTH the transport reason and the structured code.
+    const failLog = _logAudit.mock.calls.find(
+      (c: unknown[]) => (c[1] as Record<string, unknown>).action === 'alfabot.upstream_failed',
+    );
+    expect(failLog).toBeTruthy();
+    const details = (failLog![1] as { details: Record<string, unknown> }).details;
+    expect(details.reason).toBe('http_401');
+    expect(details.upstream_error_code).toBe('deny_signature');
+    // Logger carries the code too (code enum only — not PII, REG-68).
+    const upstreamError = loggerError.mock.calls.find(
+      (c: unknown[]) => c[0] === 'alfabot.upstream_failed',
+    );
+    expect(upstreamError).toBeTruthy();
+    expect((upstreamError![1] as Record<string, unknown>).upstream_error_code).toBe(
+      'deny_signature',
+    );
   });
 });

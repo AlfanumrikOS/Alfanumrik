@@ -108,6 +108,16 @@ describe('AlfaBotPanel — empty state', () => {
     expect(screen.getByText(/₹699\/month/i)).toBeTruthy();
   });
 
+  it('parent chips lead with counseling intents (v2 refresh, 2026-07-17)', () => {
+    renderPanelDirect();
+    // Deliberate pins for the counseling-v2 chip copy. The ₹699 chip keeps
+    // the literal "₹699/month" (REG-65-adjacent) while reframing toward the
+    // underlying parent concern (value vs tuition, AI trust, honest progress).
+    expect(screen.getByText("Is ₹699/month worth it vs tuition?")).toBeTruthy();
+    expect(screen.getByText('Is AI safe for my child?')).toBeTruthy();
+    expect(screen.getByText('How do I see real progress?')).toBeTruthy();
+  });
+
   it('clicking a starter chip calls sendMessage with the chip text', () => {
     mockAskAlfabot.mockResolvedValue(undefined);
     renderPanelDirect();
