@@ -216,6 +216,72 @@ describe('OpenAI configuration', () => {
   });
 });
 
+describe('buildAlfaBotPrompt — counseling rules (v2, 2026-07-17)', () => {
+  it('rule 8 sets the counseling posture (concern → acknowledge → answer → next step)', () => {
+    const out = buildAlfaBotPrompt(baseArgs());
+    expect(out.systemPrompt).toContain('COUNSELING POSTURE');
+    expect(out.systemPrompt).toContain('underlying concern');
+    expect(out.systemPrompt).toContain('guide to the next step');
+  });
+
+  it('rule 9 forbids recommending, naming, or endorsing other platforms', () => {
+    const out = buildAlfaBotPrompt(baseArgs());
+    expect(out.systemPrompt).toContain(
+      'never recommend, name, or endorse other learning platforms, apps,',
+    );
+    expect(out.systemPrompt).toContain('Never disparage');
+    expect(out.systemPrompt).toContain('never fabricate claims about them');
+  });
+
+  it('rule 9 routes leavers to cancellation/refund facts without pressure', () => {
+    const out = buildAlfaBotPrompt(baseArgs());
+    expect(out.systemPrompt).toContain('never pressure a user');
+    expect(out.systemPrompt).toContain('refunds-cancellation');
+    expect(out.systemPrompt).toContain('choosing-a-platform');
+  });
+
+  it('rule 10 asks one short clarifying question when the role is ambiguous', () => {
+    const out = buildAlfaBotPrompt(baseArgs());
+    expect(out.systemPrompt).toContain('ROLE-SENSING');
+    expect(out.systemPrompt).toContain('Are you a parent, teacher, or student?');
+  });
+
+  it('counseling rules did NOT touch the four pinned refusal strings (REG-66)', () => {
+    // Exact-equality pins — these strings are canned and verbatim (P12).
+    expect(ALFABOT_REFUSALS.not_a_tutor.en).toBe(
+      "I help with questions about Alfanumrik. I'm not a tutor — Foxy is, but you need to sign up first.",
+    );
+    expect(ALFABOT_REFUSALS.unknown_info.en).toBe(
+      "I don't have that info — would you like to talk to our team? hello@alfanumrik.com",
+    );
+    expect(ALFABOT_REFUSALS.off_topic.en).toBe(
+      'I only answer questions about Alfanumrik — not medical, legal, news, or politics.',
+    );
+    expect(ALFABOT_REFUSALS.other_student_data.en).toBe(
+      "I never share other students' data.",
+    );
+    expect(ALFABOT_REFUSALS.not_a_tutor.hi).toBe(
+      'मैं Alfanumrik के बारे में सवालों में मदद करता हूँ। मैं tutor नहीं हूँ — Foxy है, पर पहले sign-up करना होगा।',
+    );
+    expect(ALFABOT_REFUSALS.unknown_info.hi).toBe(
+      'मेरे पास यह जानकारी नहीं है — क्या हमारी टीम से बात करना चाहेंगे? hello@alfanumrik.com',
+    );
+    expect(ALFABOT_REFUSALS.off_topic.hi).toBe(
+      'मैं केवल Alfanumrik के बारे में जवाब देता हूँ — चिकित्सा, कानून, समाचार या राजनीति के नहीं।',
+    );
+    expect(ALFABOT_REFUSALS.other_student_data.hi).toBe(
+      'मैं कभी किसी और छात्र का data साझा नहीं करता।',
+    );
+    // There are still exactly 4 hard-refusal pattern entries (no category drift).
+    expect(ALFABOT_HARD_REFUSAL_PATTERNS).toHaveLength(4);
+  });
+
+  it('counseling rules kept the ≤100-words reply rule intact', () => {
+    const out = buildAlfaBotPrompt(baseArgs());
+    expect(out.systemPrompt).toContain('Keep replies under 100 words');
+  });
+});
+
 describe('buildAlfaBotPrompt — rules section', () => {
   it('rule 2 forbids paraphrasing ₹699/month', () => {
     const out = buildAlfaBotPrompt(baseArgs());
