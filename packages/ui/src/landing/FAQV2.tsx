@@ -34,8 +34,13 @@ const FAQS = [
   {
     qEn: 'What plans are available? Are there hidden fees?',
     qHi: 'कौन-कौन सी योजनाएँ हैं? क्या कोई छुपे हुए शुल्क हैं?',
-    aEn: 'Four plans. Explorer is free forever — 5 Foxy chats and 5 quizzes a day across 2 subjects, no card required. Starter is ₹299/month — 30 chats, 20 quizzes, 4 subjects, STEM Lab. Pro is ₹699/month — 100 chats, unlimited quizzes, all subjects, STEM Lab, parent and teacher dashboards. Unlimited is ₹1,499/month — everything in Pro with no daily caps. All paid plans come with a **7-day money-back guarantee**. No hidden fees, no franchise costs, no premium-content tier. Cancel anytime, one tap, no questions asked.',
-    aHi: 'चार योजनाएँ। Explorer हमेशा मुफ्त है — प्रतिदिन 5 Foxy चैट और 5 क्विज़ (2 विषय), कोई कार्ड नहीं चाहिए। Starter ₹299/माह — 30 चैट, 20 क्विज़, 4 विषय, STEM लैब। Pro ₹699/माह — 100 चैट, असीमित क्विज़, सभी विषय, STEM लैब, अभिभावक और शिक्षक डैशबोर्ड। Unlimited ₹1,499/माह — Pro की सब सुविधाएँ, कोई दैनिक सीमा नहीं। सभी सशुल्क योजनाओं पर **7-दिन की मनी-बैक गारंटी**। कोई छुपे शुल्क नहीं, कोई अतिरिक्त बिक्री नहीं।',
+    // REG-65 pins "₹699" verbatim (apps/host/src/__tests__/contract/
+    // alfabot-kb-pricing-drift.test.ts). Unlimited corrected ₹1,499 → ₹1,099
+    // to match packages/lib/src/plans.ts PRICING.unlimited.monthly, and the
+    // "no premium-content tier" claim softened to the honest ladder framing
+    // (same fix as v3/FAQV3.tsx).
+    aEn: 'Four plans. Explorer is free forever — 5 Foxy chats and 5 quizzes a day across 2 subjects, no card required. Starter is ₹299/month — 30 chats, 20 quizzes, 4 subjects, STEM Lab. Pro is ₹699/month — 100 chats, unlimited quizzes, all subjects, STEM Lab, parent and teacher dashboards. Unlimited is ₹1,099/month — everything in Pro with no daily caps. All paid plans come with a **7-day money-back guarantee**. No hidden fees and no franchise costs — the ladder is exactly what you see: plans from ₹299, most families choose Pro at ₹699/month, and Unlimited is ₹1,099/month. Cancel anytime, one tap, no questions asked.',
+    aHi: 'चार योजनाएँ। Explorer हमेशा मुफ्त है — प्रतिदिन 5 Foxy चैट और 5 क्विज़ (2 विषय), कोई कार्ड नहीं चाहिए। Starter ₹299/माह — 30 चैट, 20 क्विज़, 4 विषय, STEM लैब। Pro ₹699/माह — 100 चैट, असीमित क्विज़, सभी विषय, STEM लैब, अभिभावक और शिक्षक डैशबोर्ड। Unlimited ₹1,099/माह — Pro की सब सुविधाएँ, कोई दैनिक सीमा नहीं। सभी सशुल्क योजनाओं पर **7-दिन की मनी-बैक गारंटी**। कोई छुपे शुल्क नहीं, कोई फ़्रैंचाइज़ी लागत नहीं — योजनाएँ ₹299 से शुरू, अधिकांश परिवार ₹699/माह वाला Pro चुनते हैं, और Unlimited ₹1,099/माह।',
   },
   {
     qEn: 'Does Foxy work in Hindi? My child is more comfortable in Hindi than English.',
