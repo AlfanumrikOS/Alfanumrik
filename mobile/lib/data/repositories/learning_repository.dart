@@ -103,6 +103,38 @@ class LearningRepository {
   static String _scopeKey(String subjectCode, String grade) =>
       '$subjectCode-$grade';
 
+  /// Cache key for a single concept/topic content payload.
+  ///
+  /// The subject+grade MUST be in the key. [getConceptV2] identifies a chapter by
+  /// its NUMBER (the v2 curriculum tree carries no row id, so `_fetchChaptersV2`
+  /// sets `id: number.toString()`), and chapter numbers restart at 1 for every
+  /// subject and grade. A bare `topic_<id>` key therefore collides across scopes:
+  /// math-8 ch3 and science-8 ch3 both map to `topic_3`, so one subject would
+  /// serve the other subject's prose.
+  ///
+  /// This is the first of two independent guards. The second — the
+  /// `cached.scope == scope` check in [_serveVersioned] — catches the same class
+  /// of bug even if an entry is somehow written under a colliding key, because
+  /// the version stamp ALONE cannot distinguish scopes: after a bulk content
+  /// operation the watermark stamps the same `now()` across every scope, so
+  /// equal versions across subjects is the NORMAL case, not a rare one.
+  static String _contentCacheKey(
+    String subjectCode,
+    String grade,
+    String id,
+  ) =>
+      'topic_${subjectCode}_${grade}_$id';
+
+  /// Test-visible view of [_contentCacheKey]. The invariant worth pinning is
+  /// format-independent: two different scopes must never produce the same key
+  /// for the same chapter id.
+  static String contentCacheKeyForTest(
+    String subjectCode,
+    String grade,
+    String id,
+  ) =>
+      _contentCacheKey(subjectCode, grade, id);
+
   // ── Chapters ───────────────────────────────────────────────────────────────
 
   /// Fetch chapters for a subject + grade (version-anchored).
@@ -232,7 +264,9 @@ class LearningRepository {
     required String grade,
     required String chapterId,
   }) async {
-    final cacheKey = 'topic_$chapterId';
+    // Scope-namespaced: `chapterId` is a chapter NUMBER, which repeats across
+    // every subject+grade (see [_contentCacheKey]).
+    final cacheKey = _contentCacheKey(subjectCode, grade, chapterId);
 
     Future<(Topic?, dynamic)> fetchFresh() async {
       final topic = await _fetchConceptV2(
@@ -306,7 +340,12 @@ class LearningRepository {
     required String subjectCode,
     required String grade,
   }) async {
-    final cacheKey = 'topic_$topicId';
+    // `topicId` is a row UUID here, so it is already globally unique and cannot
+    // collide the way [getConceptV2]'s chapter number does. Namespaced anyway:
+    // both paths share the `topic_` prefix, and keeping the key scope-shaped
+    // keeps it consistent with the `cached.scope == scope` guard in
+    // [_serveVersioned].
+    final cacheKey = _contentCacheKey(subjectCode, grade, topicId);
 
     Future<(Topic?, dynamic)> fetchFresh() async {
       final topic = await _fetchTopicContentLegacy(topicId);
@@ -347,6 +386,13 @@ class LearningRepository {
   /// 5-minute TTL via the volatile cache surface. If a topics-list screen is
   /// added, thread subject+grade through and route it via [_serveVersioned] like
   /// chapters/concept.
+  ///
+  /// CACHE-KEY COLLISION (audit finding — latent, not live). `topics_$chapterId`
+  /// has the same defect [_contentCacheKey] fixes: if [chapterId] is ever a
+  /// chapter NUMBER (as `_fetchChaptersV2` produces) rather than a row UUID, then
+  /// math-8 ch3 and science-8 ch3 both key `topics_3` and cross-serve for up to
+  /// 5 minutes. It is only latent because no screen calls this. Do NOT wire a
+  /// topics-list screen to this method without scope-namespacing the key first.
   Future<ApiResult<List<Topic>>> getTopics(String chapterId) async {
     try {
       final cacheKey = 'topics_$chapterId';
@@ -376,9 +422,11 @@ class LearningRepository {
 
   /// The version-anchored serve/refetch/refuse decision for one content key.
   ///
-  ///   * server version KNOWN and == stored → serve cache instantly (no fetch).
-  ///   * server version KNOWN and newer / no cache → fetch fresh, then ATOMICALLY
-  ///     replace the scope (purge stale siblings + write the new version).
+  ///   * server version KNOWN and == stored AND the entry belongs to this scope
+  ///     → serve cache instantly (no fetch).
+  ///   * server version KNOWN and newer / no cache / wrong scope → fetch fresh,
+  ///     then ATOMICALLY replace the scope (purge stale siblings + write the new
+  ///     version).
   ///   * server version UNKNOWN (offline / poll failed) → serve cache while
   ///     within [ApiConstants.learnCacheStaleTtl] (staleOffline), else refuse
   ///     with [LearnOfflineException].
@@ -393,8 +441,21 @@ class LearningRepository {
 
     if (serverVersion != null) {
       // Online with a known version.
-      if (cached != null && cached.version == serverVersion) {
-        // Cache confirmed current — serve instantly, spend zero data.
+      //
+      // The scope check is NOT redundant with the version check. Versions are
+      // not unique per scope: the watermark stamps the transaction's `now()`
+      // across every scope a bulk content operation touched, so two subjects
+      // sharing a version is the NORMAL post-bulk-op state. Matching on version
+      // alone would let any entry that lands on this key — a colliding key, or a
+      // `_blindTtl` entry written with the overloaded `scope: ''` / `version: 0`
+      // sentinel against a server `0` ("scope never had content") — be served as
+      // live content for the WRONG subject. Requiring the scope to match makes
+      // the identity of the entry, not just its age, part of the decision.
+      if (cached != null &&
+          cached.version == serverVersion &&
+          cached.scope == scope) {
+        // Cache confirmed current AND known to belong to this scope — serve
+        // instantly, spend zero data.
         return LearnData<T>(cached.data);
       }
       // No cache, or the server has newer content. Fetch fresh, THEN atomically
