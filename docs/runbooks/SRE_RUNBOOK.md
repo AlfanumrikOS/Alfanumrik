@@ -1,6 +1,6 @@
 # Alfanumrik SRE Runbook — Wave 1 Production
 
-**Last updated:** 2026-04-08  
+**Last updated:** 2026-07-17 (added §13: Vercel build OOM / webpackBuildWorker)  
 **On-call:** ceo@alfanumrik.com  
 **Stack:** Next.js (Vercel) · Supabase (ap-south-1) · Edge Functions · Razorpay
 
@@ -293,3 +293,45 @@ SELECT snapshot_at, dau, quiz_sessions_24h, avg_score_24h,
 FROM platform_health_snapshots
 ORDER BY snapshot_at DESC LIMIT 7;
 ```
+
+---
+
+## 13. Runbook: Vercel Build OOM (webpackBuildWorker)
+
+**Incident signature** (first seen 2026-07-16, e.g. `dpl_D3QM6VDKj1u1f7GTwaBEzoF1n6QZ`):
+- Preview deploys fail mid-compile with **SIGKILL** — the 8 GB build container OOMs while
+  webpack compiles the entire app (280+ routes, mermaid, recharts, katex) in a single process.
+- Build log prints **`⨯ webpackBuildWorker`** in the experiments line. That `⨯` is the tell:
+  Next.js auto-disables the build worker when a custom webpack function is present
+  (`withSentryConfig` injects one on Vercel/CI) unless explicitly opted in.
+
+**Fix** (two parts — BOTH required):
+1. Code (shipped 2026-07-17): `apps/host/next.config.js` sets
+   `experimental.webpackBuildWorker: true` by default, so compilation runs in a separate
+   worker process. Verified locally: identical bundle output, Sentry-wrapped build 28% faster.
+2. **REQUIRED operator dashboard step** — the fix is INERT on Vercel until this is done:
+   Vercel Dashboard → project → Settings → Environment Variables →
+   **DELETE `NEXT_DISABLE_WEBPACK_BUILD_WORKER` (value `1`)**.
+   It was a 2026-07-10 local-Windows-only workaround
+   (engineering-audit/PRODUCT_READINESS_EXECUTION_2026-07-09.md, item 36) that leaked into
+   the Vercel project env; while set, it forces the worker off and the OOM persists.
+   **Keep `NEXT_WEBPACK_MEMORY_OPTIMIZATIONS=1`** — do not delete that one.
+
+**Verify:** trigger a fresh preview deploy; the build log must now print
+**`✓ webpackBuildWorker`** (checkmark, not `⨯`) and the build must complete without SIGKILL.
+
+**Kill switch / rollback** (env-only, no code revert): re-add
+`NEXT_DISABLE_WEBPACK_BUILD_WORKER=1` to the Vercel project env and redeploy. This restores
+the pre-fix single-process behavior instantly.
+
+**Escalation if the worker alone is insufficient:**
+1. Enable **Enhanced Builds** (16 GB build machine): project Settings → Build & Deployment.
+2. Or set Preview-scoped `NODE_OPTIONS=--max-old-space-size=6144` (matches the local
+   release-gate build path; scope to Preview only).
+
+**Not this incident:** the `Sentry instrumentation.ts` build warning is a separate known
+issue and is not fixed by any step above.
+
+**Lesson:** local-shell workaround env vars must NEVER be set in the Vercel project env
+without an expiry note (owner + removal condition in the var's comment/notes field). A
+local-only workaround silently changed production build behavior for 6 days.
