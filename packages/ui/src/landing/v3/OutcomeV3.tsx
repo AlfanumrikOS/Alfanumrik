@@ -2,11 +2,17 @@
 
 import { useWelcomeV2 } from '../WelcomeV2Context';
 import { useReveal } from '../useReveal';
+import { CountUp, MasteryRing, ThinkingGlyph } from './MotionPrimitives';
 import s from './welcome-v3.module.css';
 
 /**
  * V3 outcome band — "You'll know every Sunday." copy beside a sample Sunday
  * parent-letter card. Carries id="results" (nav anchor).
+ *
+ * 2026-07-17 intelligence layer: the letter's mastery evidence is now LIVE —
+ * a self-drawing mastery ring (stroke-dashoffset on reveal) with a count-up
+ * percentage beside it. Values mirror the first letter bullet (62% → 78%,
+ * Combustion & Flame). Reduced motion renders both at their final state.
  */
 export default function OutcomeV3() {
   const { isHi, t } = useWelcomeV2();
@@ -17,7 +23,10 @@ export default function OutcomeV3() {
       <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
         <div className={s.outcomeGrid}>
           <div className={`${s.outcomeCopy} ${s.revealUp}`} data-reveal>
-            <span className={s.eyebrow}>{t('The outcome', 'परिणाम')}</span>
+            <span className={s.eyebrow}>
+              <ThinkingGlyph />
+              {t('The outcome', 'परिणाम')}
+            </span>
             <h2 id="outcome-v3-title">
               {t('You’ll know every Sunday.', 'हर रविवार आपको पता होगा।')}
             </h2>
@@ -43,6 +52,20 @@ export default function OutcomeV3() {
               {t('Sunday, 12 July 2026', 'रविवार, 12 जुलाई 2026')}
             </div>
             <h3>{t('This week, Aarav…', 'इस सप्ताह, आरव…')}</h3>
+            <div className={s.letterMastery}>
+              <MasteryRing value={78} size={56} />
+              <div>
+                <div className={s.letterMasteryValue}>
+                  <CountUp to={78} suffix="%" />
+                </div>
+                <div className={s.letterMasteryLabel}>
+                  {t(
+                    'Combustion & Flame — mastery now',
+                    'दहन और ज्वाला — अब महारत',
+                  )}
+                </div>
+              </div>
+            </div>
             <ul>
               <li>
                 <span className={`${s.mark} ${s.markOk}`} aria-hidden="true">

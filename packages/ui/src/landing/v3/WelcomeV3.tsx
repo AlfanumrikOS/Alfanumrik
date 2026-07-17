@@ -7,6 +7,7 @@ import NavV3 from './NavV3';
 import HeroV3 from './HeroV3';
 import TrustStripV3 from './TrustStripV3';
 import FeaturesV3 from './FeaturesV3';
+import HowFoxyThinksV3 from './HowFoxyThinksV3';
 import LadderV3 from './LadderV3';
 import OutcomeV3 from './OutcomeV3';
 import TestimonialsV3 from './TestimonialsV3';
@@ -94,6 +95,7 @@ function ThemedShell() {
         <HeroV3 />
         <TrustStripV3 />
         <FeaturesV3 />
+        <HowFoxyThinksV3 />
         <LadderV3 />
         <OutcomeV3 />
         <TestimonialsV3 />
