@@ -1,6 +1,6 @@
 # Alfanumrik SRE Runbook — Wave 1 Production
 
-**Last updated:** 2026-07-17 (§13 escalation: prod OOM, kill switch renamed to `_V2`)  
+**Last updated:** 2026-07-17 (§13 second escalation: worker active but still OOM; V8 heap capped at 6144 MB in `vercel-build`)  
 **On-call:** ceo@alfanumrik.com  
 **Stack:** Next.js (Vercel) · Supabase (ap-south-1) · Edge Functions · Razorpay
 
@@ -344,6 +344,30 @@ longer does anything as of 2026-07-17.)
 1. Enable **Enhanced Builds** (16 GB build machine): project Settings → Build & Deployment.
 2. Or set Preview-scoped `NODE_OPTIONS=--max-old-space-size=6144` (matches the local
    release-gate build path; scope to Preview only).
+
+**Second escalation 2026-07-17 — worker active, 8 GB still exceeded; heap capped in code:**
+The `_V2` rename worked (build logs show **`✓ webpackBuildWorker`**), but preview AND
+production builds still hit the 8 GB container OOM-killer — they now grind ~40+ minutes
+before dying instead of dying at ~4.5 min, meaning V8 was growing its heap unbounded until
+the container killed it before GC ever came under pressure. Mitigation (branch
+`fix/vercel-build-heap-cap`): `NODE_OPTIONS=--max-old-space-size=6144` is now set **in the
+`vercel-build` scripts themselves** — BOTH the root `package.json` (the active entrypoint:
+the Vercel project directory is `.`, so Vercel runs root `vercel-build` → `npm run build -w
+apps/host`) AND `apps/host/package.json` (defense-in-depth if the project root ever moves to
+`apps/host`). Rationale for code-side rather than dashboard env: dashboard access is the
+exact bottleneck this incident chain keeps hitting (see the `_V2` rename above), and
+package.json cannot carry comments — this section is the canonical rationale. The cap makes
+V8 GC aggressively at 6 GB old-space instead of expanding until the 8 GB container
+OOM-killer fires; 6144 matches the proven local release-gate build value. The inline
+`KEY=value` prefix is Linux-only-safe, which is fine: `vercel-build` only runs on Vercel's
+Linux containers; local Windows `npm run build` is a separate, untouched script. GH Actions
+workflows were deliberately NOT touched — runners pass today.
+- **Verify:** fresh deploy completes without SIGKILL; `✓ webpackBuildWorker` still present.
+- **If THIS fails** (build dies with JS-heap-out-of-memory instead of SIGKILL, or still
+  SIGKILLs): **Enhanced Builds (16 GB build machine) is the only remaining option** —
+  operator dashboard step, project Settings → Build & Deployment, paid feature.
+- **Rollback:** revert the `NODE_OPTIONS=` prefix in both `vercel-build` scripts (no env
+  var involved; this one is code-only by design).
 
 **Not this incident:** the `Sentry instrumentation.ts` build warning is a separate known
 issue and is not fixed by any step above.
