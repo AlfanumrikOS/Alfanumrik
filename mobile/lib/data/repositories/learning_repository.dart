@@ -3,25 +3,85 @@ import 'package:dio/dio.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/cache/cache_manager.dart';
+import '../../core/constants/api_constants.dart';
 import '../../core/constants/coin_rules.dart';
 import '../../core/network/api_result.dart';
 import '../../core/network/v2_api_client.dart';
 import '../models/chapter.dart';
+import 'curriculum_version_repository.dart';
+
+/// How a Learn content payload was served, so the UI can render the correct
+/// state (live vs a non-blocking "content as of {date}" offline chip).
+enum LearnServe {
+  /// Fresh from network, or cache confirmed current by the version poll.
+  live,
+
+  /// Served from cache while offline (or the version poll failed) and still
+  /// inside the STALE_TTL grace window. The UI shows the "as of {date}" chip.
+  staleOffline,
+}
+
+/// Envelope for version-anchored Learn content. Carries the payload plus how it
+/// was served so the screen can pick the right state without recomputing
+/// anything.
+class LearnData<T> {
+  final T data;
+  final LearnServe serve;
+
+  /// When [staleOffline], the timestamp the cached content was fetched.
+  final DateTime? asOf;
+
+  const LearnData(this.data, {this.serve = LearnServe.live, this.asOf});
+
+  bool get isStaleOffline => serve == LearnServe.staleOffline;
+}
+
+/// Thrown when the app is offline (or the version poll failed) AND there is no
+/// cached content within the STALE_TTL grace window. The Learn screens catch
+/// this to render the dedicated Offline state — NEVER a silent stale serve and
+/// NEVER a static fallback.
+class LearnOfflineException implements Exception {
+  const LearnOfflineException();
+  @override
+  String toString() => 'offline';
+}
+
+/// Thrown by a network fetch with an already-cleaned, user-facing message
+/// (message text only — never PII, P13). Rendered directly in the Error state.
+class LearnFetchException implements Exception {
+  final String message;
+  const LearnFetchException(this.message);
+  @override
+  String toString() => message;
+}
 
 /// Learning repository — chapters / topics / concept content + topic
 /// completion.
 ///
 /// Gated by server-assigned generated-client injection:
-///   * OFF (default) — BYTE-IDENTICAL legacy path: reads the `chapters` /
-///     `topics` tables directly and awards completion via the `add_xp` RPC.
-///     The generated `/v2` client is never constructed or called.
+///   * OFF (default) — legacy path: reads the `chapters` / `topics` tables
+///     directly and awards completion via the `add_xp` RPC. The generated `/v2`
+///     client is never constructed or called.
 ///   * ON — chapters come from `GET /v2/learn/curriculum` and concept prose
 ///     from `GET /v2/learn/concept` via the generated [LearnApi]. Completion
-///     still flows through the same legacy write path (no `/v2` write surface
-///     exists yet for topic progress).
+///     still flows through the same legacy write path.
+///
+/// ── Version-anchored content cache ──────────────────────────────────────────
+/// The near-static Learn content (chapters / concept prose) is cached with a
+/// per-scope version stamp instead of a blind 5-minute TTL. On each read the
+/// repository polls [CurriculumVersionRepository] for the `<subject>-<grade>`
+/// scope version and:
+///   * version matches stored  → serve cache instantly (no network),
+///   * server newer / no cache → refetch, then ATOMICALLY purge+replace the
+///     scope so a partial purge can never resurface old syllabus,
+///   * offline / poll failed   → serve cache within [ApiConstants.learnCacheStaleTtl]
+///     (with the "as of {date}" chip) else REFUSE via [LearnOfflineException].
+/// Set `--dart-define=VERSION_ANCHORED_LEARN_CACHE=false` to revert to the
+/// previous blind-TTL behaviour.
 class LearningRepository {
   final SupabaseClient _client;
   final CacheManager _cache;
+  final CurriculumVersionRepository _versions;
 
   /// Generated `/v2` client. Null on the flag-OFF path so the legacy build
   /// never constructs the dart-dio client.
@@ -30,57 +90,91 @@ class LearningRepository {
   LearningRepository({
     SupabaseClient? client,
     CacheManager? cache,
+    CurriculumVersionRepository? versions,
     V2ApiClient? v2Client,
   })  : _client = client ?? Supabase.instance.client,
         _cache = cache ?? CacheManager(),
+        _versions = versions ?? CurriculumVersionRepository(),
         _v2 = v2Client;
 
-  /// Fetch chapters for a subject + grade.
+  /// `<subject_code>-<grade>` scope key — matches the server's curriculum-version
+  /// scope keying. Every cached content entry for a subject+grade is tagged with
+  /// this so purge-by-scope removes them together.
+  static String _scopeKey(String subjectCode, String grade) =>
+      '$subjectCode-$grade';
+
+  // ── Chapters ───────────────────────────────────────────────────────────────
+
+  /// Fetch chapters for a subject + grade (version-anchored).
   ///
-  /// When a generated client is present this maps `GET /v2/learn/curriculum`
-  /// tree onto the [Chapter] model (synthesising the navigation `id` from the
-  /// chapter number so the concept route can resolve it). When OFF it reads
-  /// the `chapters` table verbatim (legacy path).
-  Future<ApiResult<List<Chapter>>> getChapters({
+  /// Source depends on the generated-client flag (v2 curriculum tree vs the
+  /// `chapters` table), but both flow through the same version-anchored cache
+  /// decision.
+  Future<LearnData<List<Chapter>>> getChapters({
     required String subjectCode,
     required String grade,
   }) async {
-    if (_v2 != null) {
-      return _getChaptersV2(subjectCode: subjectCode, grade: grade);
+    final cacheKey = 'chapters_${subjectCode}_$grade';
+
+    Future<(List<Chapter>, dynamic)> fetchFresh() async {
+      final chapters = _v2 != null
+          ? await _fetchChaptersV2(subjectCode: subjectCode, grade: grade)
+          : await _fetchChaptersLegacy(subjectCode: subjectCode, grade: grade);
+      return (chapters, chapters.map(_chapterToCacheJson).toList());
     }
 
-    try {
-      final cacheKey = 'chapters_${subjectCode}_$grade';
-      final cached = _cache.getList<Chapter>(cacheKey, Chapter.fromJson);
-      if (cached != null) return ApiSuccess(cached);
+    List<Chapter> decode(dynamic d) => (d as List)
+        .cast<Map<String, dynamic>>()
+        .map(Chapter.fromJson)
+        .toList(growable: false);
 
+    if (!ApiConstants.versionAnchoredLearnCache) {
+      return _blindTtl<List<Chapter>>(
+        cacheKey: cacheKey,
+        decodeCache: decode,
+        fetchFresh: fetchFresh,
+      );
+    }
+    return _serveVersioned<List<Chapter>>(
+      scope: _scopeKey(subjectCode, grade),
+      cacheKey: cacheKey,
+      decodeCache: decode,
+      fetchFresh: fetchFresh,
+    );
+  }
+
+  /// Legacy `chapters`-table read (flag OFF, or v2 client absent). Throws
+  /// [LearnFetchException] on failure so the Error state renders a clean message.
+  Future<List<Chapter>> _fetchChaptersLegacy({
+    required String subjectCode,
+    required String grade,
+  }) async {
+    try {
       final res = await _client
           .from('chapters')
-          .select('id, title, title_hi, chapter_number, subject_code, grade, description')
+          .select(
+              'id, title, title_hi, chapter_number, subject_code, grade, description')
           .eq('subject_code', subjectCode)
           .eq('grade', grade)
           .eq('is_active', true)
           .order('chapter_number');
 
-      final chapters = (res as List<dynamic>)
+      return (res as List<dynamic>)
           .map((e) => Chapter.fromJson(e as Map<String, dynamic>))
           .toList(growable: false);
-
-      await _cache.put(cacheKey, res);
-      return ApiSuccess(chapters);
     } catch (e) {
-      return ApiFailure('Failed to load chapters: ${e.toString()}');
+      throw LearnFetchException('Failed to load chapters: ${_describe(e)}');
     }
   }
 
   /// `useV2`-ON chapters via `GET /v2/learn/curriculum`.
   ///
-  /// The route returns the plan-gated subjects→chapters→topics tree. We pick
-  /// the requested subject and map its chapters onto the [Chapter] model. The
-  /// curriculum chapter carries no row id, so the navigation `id` is the
-  /// chapter NUMBER as a string — the concept screen parses it back to fetch
+  /// The route returns the plan-gated subjects→chapters→topics tree. We pick the
+  /// requested subject and map its chapters onto the [Chapter] model. The
+  /// curriculum chapter carries no row id, so the navigation `id` is the chapter
+  /// NUMBER as a string — the concept screen parses it back to fetch
   /// `GET /v2/learn/concept?chapter=<n>`.
-  Future<ApiResult<List<Chapter>>> _getChaptersV2({
+  Future<List<Chapter>> _fetchChaptersV2({
     required String subjectCode,
     required String grade,
   }) async {
@@ -88,11 +182,12 @@ class LearningRepository {
       final resp = await _v2!.learnApi.getLearnCurriculum(subject: subjectCode);
       final body = resp.data;
       if (body == null) {
-        return const ApiFailure('Failed to load chapters: empty response');
+        throw const LearnFetchException(
+            'Failed to load chapters: empty response');
       }
 
-      // Find the matching subject (the route may echo the whole tree). Match
-      // on code; fall back to the first subject if only one was returned.
+      // Find the matching subject (the route may echo the whole tree). Match on
+      // code; fall back to the first subject if only one was returned.
       CurriculumSubject? subj;
       for (final s in body.subjects) {
         if (s.code == subjectCode) {
@@ -101,7 +196,7 @@ class LearningRepository {
         }
       }
       subj ??= body.subjects.isNotEmpty ? body.subjects.first : null;
-      if (subj == null) return const ApiSuccess(<Chapter>[]);
+      if (subj == null) return const <Chapter>[];
 
       final chapters = <Chapter>[];
       for (final c in subj.chapters) {
@@ -117,29 +212,65 @@ class LearningRepository {
           topicCount: c.topics.length,
         ));
       }
-      return ApiSuccess(chapters);
+      return chapters;
+    } on LearnFetchException {
+      rethrow;
     } catch (e) {
-      return ApiFailure('Failed to load chapters: ${_describe(e)}');
+      throw LearnFetchException('Failed to load chapters: ${_describe(e)}');
     }
   }
 
-  /// `useV2`-ON concept content via `GET /v2/learn/concept`.
+  // ── Concept content (v2 + legacy) ────────────────────────────────────────────
+
+  /// `useV2`-ON concept content via `GET /v2/learn/concept` (version-anchored).
   ///
   /// Maps the NCERT chapter markdown onto a [Topic] so the existing concept
   /// screen renders unchanged. [chapterId] is the chapter NUMBER string the
-  /// curriculum mapping produced; on the legacy path concept content comes
-  /// from [getTopicContent] instead (gated by the provider).
-  Future<ApiResult<Topic>> getConceptV2({
+  /// curriculum mapping produced.
+  Future<LearnData<Topic?>> getConceptV2({
+    required String subjectCode,
+    required String grade,
+    required String chapterId,
+  }) async {
+    final cacheKey = 'topic_$chapterId';
+
+    Future<(Topic?, dynamic)> fetchFresh() async {
+      final topic = await _fetchConceptV2(
+        subjectCode: subjectCode,
+        grade: grade,
+        chapterId: chapterId,
+      );
+      return (topic, _topicToCacheJson(topic));
+    }
+
+    Topic? decode(dynamic d) => Topic.fromJson(d as Map<String, dynamic>);
+
+    if (!ApiConstants.versionAnchoredLearnCache) {
+      return _blindTtl<Topic?>(
+        cacheKey: cacheKey,
+        decodeCache: decode,
+        fetchFresh: fetchFresh,
+      );
+    }
+    return _serveVersioned<Topic?>(
+      scope: _scopeKey(subjectCode, grade),
+      cacheKey: cacheKey,
+      decodeCache: decode,
+      fetchFresh: fetchFresh,
+    );
+  }
+
+  Future<Topic> _fetchConceptV2({
     required String subjectCode,
     required String grade,
     required String chapterId,
   }) async {
     if (_v2 == null) {
-      return const ApiFailure('Concept v2 client unavailable');
+      throw const LearnFetchException('Concept v2 client unavailable');
     }
     final chapterNum = int.tryParse(chapterId.trim());
     if (chapterNum == null) {
-      return const ApiFailure('Invalid chapter reference');
+      throw const LearnFetchException('Invalid chapter reference');
     }
     try {
       final resp = await _v2.learnApi.getLearnConcept(
@@ -149,10 +280,10 @@ class LearningRepository {
       );
       final body = resp.data;
       if (body == null) {
-        return const ApiFailure('Failed to load content: empty response');
+        throw const LearnFetchException(
+            'Failed to load content: empty response');
       }
-
-      final topic = Topic(
+      return Topic(
         id: chapterId,
         chapterId: chapterId,
         title: body.subject,
@@ -161,13 +292,61 @@ class LearningRepository {
         conceptText: body.markdown,
         conceptTextHi: null,
       );
-      return ApiSuccess(topic);
+    } on LearnFetchException {
+      rethrow;
     } catch (e) {
-      return ApiFailure('Failed to load content: ${_describe(e)}');
+      throw LearnFetchException('Failed to load content: ${_describe(e)}');
     }
   }
 
-  /// Fetch topics for a chapter
+  /// Get concept content for a specific topic (legacy `topics`-table path,
+  /// version-anchored). [subjectCode] + [grade] scope the cache/version check.
+  Future<LearnData<Topic?>> getTopicContent({
+    required String topicId,
+    required String subjectCode,
+    required String grade,
+  }) async {
+    final cacheKey = 'topic_$topicId';
+
+    Future<(Topic?, dynamic)> fetchFresh() async {
+      final topic = await _fetchTopicContentLegacy(topicId);
+      return (topic, _topicToCacheJson(topic));
+    }
+
+    Topic? decode(dynamic d) => Topic.fromJson(d as Map<String, dynamic>);
+
+    if (!ApiConstants.versionAnchoredLearnCache) {
+      return _blindTtl<Topic?>(
+        cacheKey: cacheKey,
+        decodeCache: decode,
+        fetchFresh: fetchFresh,
+      );
+    }
+    return _serveVersioned<Topic?>(
+      scope: _scopeKey(subjectCode, grade),
+      cacheKey: cacheKey,
+      decodeCache: decode,
+      fetchFresh: fetchFresh,
+    );
+  }
+
+  Future<Topic> _fetchTopicContentLegacy(String topicId) async {
+    try {
+      final res =
+          await _client.from('topics').select().eq('id', topicId).single();
+      return Topic.fromJson(res);
+    } catch (e) {
+      throw LearnFetchException('Failed to load content: ${_describe(e)}');
+    }
+  }
+
+  // ── Topics list (legacy blind-TTL; not wired to any screen) ──────────────────
+
+  /// Fetch topics for a chapter. This path is not currently rendered by any
+  /// screen and lacks a subject+grade scope, so it retains the legacy blind
+  /// 5-minute TTL via the volatile cache surface. If a topics-list screen is
+  /// added, thread subject+grade through and route it via [_serveVersioned] like
+  /// chapters/concept.
   Future<ApiResult<List<Topic>>> getTopics(String chapterId) async {
     try {
       final cacheKey = 'topics_$chapterId';
@@ -176,7 +355,8 @@ class LearningRepository {
 
       final res = await _client
           .from('topics')
-          .select('id, chapter_id, title, title_hi, topic_order, concept_text, concept_text_hi')
+          .select(
+              'id, chapter_id, title, title_hi, topic_order, concept_text, concept_text_hi')
           .eq('chapter_id', chapterId)
           .eq('is_active', true)
           .order('topic_order');
@@ -192,26 +372,84 @@ class LearningRepository {
     }
   }
 
-  /// Get concept content for a specific topic
-  Future<ApiResult<Topic>> getTopicContent(String topicId) async {
-    try {
-      final cacheKey = 'topic_$topicId';
-      final cached = _cache.get<Topic>(cacheKey, Topic.fromJson);
-      if (cached != null) return ApiSuccess(cached);
+  // ── Version-anchored decision core ───────────────────────────────────────────
 
-      final res = await _client
-          .from('topics')
-          .select()
-          .eq('id', topicId)
-          .single();
+  /// The version-anchored serve/refetch/refuse decision for one content key.
+  ///
+  ///   * server version KNOWN and == stored → serve cache instantly (no fetch).
+  ///   * server version KNOWN and newer / no cache → fetch fresh, then ATOMICALLY
+  ///     replace the scope (purge stale siblings + write the new version).
+  ///   * server version UNKNOWN (offline / poll failed) → serve cache while
+  ///     within [ApiConstants.learnCacheStaleTtl] (staleOffline), else refuse
+  ///     with [LearnOfflineException].
+  Future<LearnData<T>> _serveVersioned<T>({
+    required String scope,
+    required String cacheKey,
+    required T Function(dynamic decoded) decodeCache,
+    required Future<(T, dynamic)> Function() fetchFresh,
+  }) async {
+    final serverVersion = await _versions.versionForScope(scope);
+    final cached = await _cache.getContent<T>(cacheKey, decodeCache);
 
-      final topic = Topic.fromJson(res);
-      await _cache.put(cacheKey, res);
-      return ApiSuccess(topic);
-    } catch (e) {
-      return ApiFailure('Failed to load content: ${e.toString()}');
+    if (serverVersion != null) {
+      // Online with a known version.
+      if (cached != null && cached.version == serverVersion) {
+        // Cache confirmed current — serve instantly, spend zero data.
+        return LearnData<T>(cached.data);
+      }
+      // No cache, or the server has newer content. Fetch fresh, THEN atomically
+      // purge+replace the whole scope so a partial purge can never leave a mix
+      // of old + new syllabus. If the fetch fails we do NOT purge and do NOT
+      // serve the known-stale cache (that would be a silent stale serve) — the
+      // error propagates to the Error state.
+      final (value, cacheJson) = await fetchFresh();
+      await _cache.replaceScope(
+        scopeKey: scope,
+        key: cacheKey,
+        data: cacheJson,
+        version: serverVersion,
+      );
+      return LearnData<T>(value);
     }
+
+    // Version unknown → offline or the poll failed.
+    if (cached != null &&
+        DateTime.now().difference(cached.fetchedAt) <=
+            ApiConstants.learnCacheStaleTtl) {
+      return LearnData<T>(
+        cached.data,
+        serve: LearnServe.staleOffline,
+        asOf: cached.fetchedAt,
+      );
+    }
+    // No cache, or the cache is older than STALE_TTL → refuse.
+    throw const LearnOfflineException();
   }
+
+  /// Blind 5-minute TTL fallback (flag OFF / revert path). No version poll, no
+  /// scope purge — mirrors the pre-change caching behaviour.
+  Future<LearnData<T>> _blindTtl<T>({
+    required String cacheKey,
+    required T Function(dynamic decoded) decodeCache,
+    required Future<(T, dynamic)> Function() fetchFresh,
+  }) async {
+    final cached = await _cache.getContent<T>(cacheKey, decodeCache);
+    if (cached != null &&
+        DateTime.now().difference(cached.fetchedAt) <=
+            ApiConstants.cacheMaxAge) {
+      return LearnData<T>(cached.data);
+    }
+    final (value, cacheJson) = await fetchFresh();
+    await _cache.putContent(
+      key: cacheKey,
+      scopeKey: '',
+      data: cacheJson,
+      version: 0,
+    );
+    return LearnData<T>(value);
+  }
+
+  // ── Completion ───────────────────────────────────────────────────────────────
 
   /// Mark topic as completed and award Foxy Coins.
   ///
@@ -252,6 +490,33 @@ class LearningRepository {
       return ApiFailure('Failed to save progress: ${e.toString()}');
     }
   }
+
+  // ── Cache serialization ──────────────────────────────────────────────────────
+
+  /// Chapter → cache JSON (keys mirror [Chapter.fromJson]).
+  static Map<String, dynamic> _chapterToCacheJson(Chapter c) => {
+        'id': c.id,
+        'title': c.title,
+        'title_hi': c.titleHi,
+        'chapter_number': c.chapterNumber,
+        'subject_code': c.subjectCode,
+        'grade': c.grade,
+        'topic_count': c.topicCount,
+        'completed_topics': c.completedTopics,
+        'description': c.description,
+      };
+
+  /// Topic → cache JSON (keys mirror [Topic.fromJson]).
+  static Map<String, dynamic> _topicToCacheJson(Topic t) => {
+        'id': t.id,
+        'chapter_id': t.chapterId,
+        'title': t.title,
+        'title_hi': t.titleHi,
+        'topic_order': t.topicOrder,
+        'concept_text': t.conceptText,
+        'concept_text_hi': t.conceptTextHi,
+        'is_completed': t.isCompleted,
+      };
 
   /// Extract a useful message from a thrown error. DioException server bodies
   /// carry a structured `{ error: ... }` payload; everything else falls back

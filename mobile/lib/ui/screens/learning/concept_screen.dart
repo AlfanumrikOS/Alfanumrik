@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/coin_rules.dart';
+import '../../../data/repositories/learning_repository.dart';
 import '../../../providers/learning_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/experience_provider.dart';
+import '../../widgets/learn_states.dart';
 import '../../widgets/loading_widget.dart';
 import '../../widgets/error_widget.dart';
 
@@ -23,13 +25,20 @@ class ConceptScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Flag-gated source: ON → `GET /v2/learn/concept` (keyed by subject +
-    // chapter); OFF → the byte-identical legacy `topics`-table provider.
+    // chapter); OFF → the legacy `topics`-table provider (keyed by topic +
+    // subject). Both return a [LearnData] envelope with the same five states.
     final useV2 = ref.watch(oneExperienceRuntimeEnabledProvider);
-    final conceptArgs = (subjectCode: subjectCode, chapterId: topicId);
-    final topicAsync = useV2
-        ? ref.watch(conceptV2Provider(conceptArgs))
-        : ref.watch(topicContentProvider(topicId));
+    final isHi = Localizations.localeOf(context).languageCode == 'hi';
+    final v2Args = (subjectCode: subjectCode, chapterId: topicId);
+    final legacyArgs = (topicId: topicId, subjectCode: subjectCode);
+    final contentAsync = useV2
+        ? ref.watch(conceptV2Provider(v2Args))
+        : ref.watch(topicContentProvider(legacyArgs));
     final color = AppColors.subjectColor(subjectCode);
+
+    void retry() => useV2
+        ? ref.invalidate(conceptV2Provider(v2Args))
+        : ref.invalidate(topicContentProvider(legacyArgs));
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -47,21 +56,26 @@ class ConceptScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: topicAsync.when(
+      body: contentAsync.when(
         loading: () => const LoadingScreen(message: 'Loading concept...'),
-        error: (e, _) => AppErrorWidget(
-          message: e.toString(),
-          onRetry: () => useV2
-              ? ref.invalidate(conceptV2Provider(conceptArgs))
-              : ref.invalidate(topicContentProvider(topicId)),
-        ),
-        data: (topic) {
+        error: (e, _) => e is LearnOfflineException
+            ? LearnOfflineState(isHi: isHi, onRetry: retry)
+            : AppErrorWidget(message: e.toString(), onRetry: retry),
+        data: (result) {
+          final topic = result.data;
           if (topic == null) {
-            return const AppErrorWidget(message: 'Topic not found.');
+            return AppErrorWidget(
+              message: isHi ? 'विषय नहीं मिला।' : 'Topic not found.',
+            );
           }
 
           return Column(
             children: [
+              // Non-blocking "content as of {date}" chip when served from
+              // cache while offline.
+              if (result.isStaleOffline && result.asOf != null)
+                OfflineAsOfChip(asOf: result.asOf!, isHi: isHi),
+
               // Content area
               Expanded(
                 child: SingleChildScrollView(
