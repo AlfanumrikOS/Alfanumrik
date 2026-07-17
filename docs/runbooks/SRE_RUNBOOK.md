@@ -1,6 +1,6 @@
 # Alfanumrik SRE Runbook — Wave 1 Production
 
-**Last updated:** 2026-07-17 (added §13: Vercel build OOM / webpackBuildWorker)  
+**Last updated:** 2026-07-17 (§13 escalation: prod OOM, kill switch renamed to `_V2`)  
 **On-call:** ceo@alfanumrik.com  
 **Stack:** Next.js (Vercel) · Supabase (ap-south-1) · Edge Functions · Razorpay
 
@@ -317,12 +317,28 @@ ORDER BY snapshot_at DESC LIMIT 7;
    the Vercel project env; while set, it forces the worker off and the OOM persists.
    **Keep `NEXT_WEBPACK_MEMORY_OPTIMIZATIONS=1`** — do not delete that one.
 
-**Verify:** trigger a fresh preview deploy; the build log must now print
+**Escalation 2026-07-17 — production deploys OOMing too; kill switch renamed to `_V2`:**
+Production deploys began failing with the same OOM signature (3× consecutive), freezing
+production on an old build, because step 2 above had not been executed — the leaked
+`NEXT_DISABLE_WEBPACK_BUILD_WORKER=1` was still overriding the #1313 code fix.
+Since dashboard access could not be obtained in time, the code-side kill switch was
+**renamed to `NEXT_DISABLE_WEBPACK_BUILD_WORKER_V2`** (branch `fix/oom-killswitch-rename`),
+which neutralizes the leaked legacy var without dashboard access: the config now
+deliberately ignores the legacy name. Pinned by
+`apps/host/src/__tests__/product-readiness-release-gate.test.ts` (the config must read the
+`_V2` name and must NOT read the legacy expression).
+- **Operator cleanup (when dashboard access is available):** delete BOTH the legacy
+  `NEXT_DISABLE_WEBPACK_BUILD_WORKER` var AND (if it was ever set) the
+  `NEXT_DISABLE_WEBPACK_BUILD_WORKER_V2` var from the Vercel project env.
+  Still keep `NEXT_WEBPACK_MEMORY_OPTIMIZATIONS=1`.
+
+**Verify** (unchanged by the rename): trigger a fresh deploy; the build log must now print
 **`✓ webpackBuildWorker`** (checkmark, not `⨯`) and the build must complete without SIGKILL.
 
-**Kill switch / rollback** (env-only, no code revert): re-add
-`NEXT_DISABLE_WEBPACK_BUILD_WORKER=1` to the Vercel project env and redeploy. This restores
-the pre-fix single-process behavior instantly.
+**Kill switch / rollback** (env-only, no code revert): set
+`NEXT_DISABLE_WEBPACK_BUILD_WORKER_V2=1` in the Vercel project env and redeploy. This
+restores the pre-fix single-process behavior instantly. (The legacy un-suffixed name no
+longer does anything as of 2026-07-17.)
 
 **Escalation if the worker alone is insufficient:**
 1. Enable **Enhanced Builds** (16 GB build machine): project Settings → Build & Deployment.
