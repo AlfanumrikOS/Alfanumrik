@@ -325,6 +325,7 @@ import {
   isBareOpen,
   FOXY_SAFETY_RAILS,
   buildSystemPrompt,
+  buildColdStartPromptSection,
   type CoachDirective,
   type CoachFeedbackSignal,
 } from '@alfanumrik/lib/foxy/prompt-sections';
@@ -1769,9 +1770,63 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     }
   }
 
+  // ── Response-cache v2: personalization sections + cache_scope ────────────
+  // The six per-student prompt sections are computed ONCE here so the same
+  // values feed BOTH the template_variables below and the cache_scope
+  // eligibility check (they can never drift apart).
+  const academicGoalSectionValue = buildAcademicGoalSection(academicGoal, mode, {
+    useExpandedPersona,
+  });
+  const baseCognitiveSection = buildCognitivePromptSection(cognitiveCtx);
+  const cognitiveContextSectionValue =
+    baseCognitiveSection +
+    twinPromptSection +
+    (teachingDirectorSection ? `\n\n${teachingDirectorSection}` : '');
+  const misconceptionSectionValue = buildMisconceptionPromptSection(
+    cognitiveCtx.recentMisconceptions,
+  );
+  const pendingExpectationValue = buildExpectationPromptSection(openExpectation);
+  const previousSessionContextValue = buildPriorSessionPromptSection(priorSessionTurns);
+  const learnerMemorySectionValue = buildLongMemoryPromptSection(longMemory);
+
+  // cache_scope declaration (fail-closed): 'shared' ONLY when this turn is
+  // personalization-free —
+  //   1. no conversation history (covers both the native conversation_turns
+  //      array AND the deprecated history_messages alias), AND
+  //   2. every per-student template section is empty. The cognitive section
+  //      counts as empty when it is '' OR the generic cold-start section
+  //      (buildColdStartPromptSection() — identical for every student with
+  //      no learning data, so it carries nothing personal), with no twin /
+  //      teaching-director addition, AND
+  //   3. no white-label tenant AI overrides (tenant-specific persona/tone/
+  //      pedagogy content must never be served outside that tenant).
+  // Everything else that varies per turn (mode, mode_directive, coach_mode,
+  // next_topic, foxy_system_prompt, max_tokens, …) is folded into the
+  // service-side gen_ctx hash, so a cached response can only ever be served
+  // to a byte-identical generation context. 'none' = no cache read/write.
+  const hasTenantAiOverride = Boolean(
+    tenantAi.tenantPersonality || tenantAi.tenantTone || tenantAi.tenantPedagogy,
+  );
+  const cognitiveSectionIsPersonal =
+    !(baseCognitiveSection === '' || baseCognitiveSection === buildColdStartPromptSection()) ||
+    twinPromptSection !== '' ||
+    teachingDirectorSection !== '';
+  const foxyCacheScope: 'shared' | 'none' =
+    history.length === 0 &&
+    !hasTenantAiOverride &&
+    !cognitiveSectionIsPersonal &&
+    academicGoalSectionValue === '' &&
+    misconceptionSectionValue === '' &&
+    pendingExpectationValue === '' &&
+    previousSessionContextValue === '' &&
+    learnerMemorySectionValue === ''
+      ? 'shared'
+      : 'none';
+
   const groundedRequest: GroundedRequest = {
     caller: 'foxy',
     student_id: studentId,
+    cache_scope: foxyCacheScope,
     // FOX-2: send the injection-neutralized message to the model (the original
     // `message` is still persisted + shown in the student's chat bubble).
     query: safeQuery,
@@ -1856,9 +1911,9 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // Phase 1: when `ff_goal_aware_foxy` is on AND the goal resolves,
         // this swaps the legacy single-line section for the multi-paragraph
         // expanded persona block. Off → byte-identical legacy output.
-        academic_goal_section: buildAcademicGoalSection(academicGoal, mode, {
-          useExpandedPersona,
-        }),
+        // (Hoisted above so the cache_scope eligibility check sees the SAME
+        // value — response-cache v2.)
+        academic_goal_section: academicGoalSectionValue,
         // Digital Twin Slice 1: when ff_digital_twin_v1 is ON and a snapshot
         // exists, `twinPromptSection` carries the LONGITUDINAL LEARNING SIGNALS
         // block appended to the cognitive context. When OFF (default) it is ''
@@ -1873,27 +1928,24 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // `teachingDirectorSection` is '' when ff_foxy_teaching_director_v1 is
         // OFF, on a non-teaching (quiz_me/practice) turn, or on ANY Director
         // failure → appends nothing → byte-identical to today.
-        cognitive_context_section:
-          buildCognitivePromptSection(cognitiveCtx) +
-          twinPromptSection +
-          (teachingDirectorSection ? `\n\n${teachingDirectorSection}` : ''),
+        cognitive_context_section: cognitiveContextSectionValue,
         // Phase 2: curated misconception ontology — fires the
         // MISCONCEPTION_REPAIR branch in foxy_tutor_v1 with real data.
         // Empty string when no misconceptions observed (template-safe).
-        misconception_section: buildMisconceptionPromptSection(cognitiveCtx.recentMisconceptions),
+        misconception_section: misconceptionSectionValue,
         // Phase 3 of Foxy continuity (2026-05-18): if Foxy asked a question
         // on the prior turn and the row is still OPEN, this renders an
         // ANSWERING_NOW block so the model evaluates the student's current
         // message AS THE ANSWER. Empty string when flag is OFF or no open
         // expectation exists (template-safe; missing vars resolve to '').
-        pending_expectation: buildExpectationPromptSection(openExpectation),
+        pending_expectation: pendingExpectationValue,
         // Task 1.3: cross-session memory. Empty string when no prior sessions
         // (template handles missing variables as empty by design).
-        previous_session_context: buildPriorSessionPromptSection(priorSessionTurns),
+        previous_session_context: previousSessionContextValue,
         // Phase 4 continuity: cross-session pedagogical memory. Empty string
         // when ff_foxy_long_memory_v1 is OFF or no synthesis/mastery data
         // exists yet (e.g. brand-new student). PII-scrubbed before injection.
-        learner_memory_section: buildLongMemoryPromptSection(longMemory),
+        learner_memory_section: learnerMemorySectionValue,
         // Part 2B: the EXACT next topic in the chapter ladder (or '' when the
         // chapter is complete / no ordered ladder exists). The foxy_tutor_v1
         // template accepts {{next_topic}}; empty string is template-safe. Never

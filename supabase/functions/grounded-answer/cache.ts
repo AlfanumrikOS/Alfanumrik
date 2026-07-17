@@ -57,12 +57,21 @@ export function normalizeQuery(query: string): string {
  * entry, or one caller's contract-shaped response leaks into another's
  * parser (e.g. Foxy's structured-JSON consumer receiving a plain-text
  * concept-engine-shaped answer).
+ *
+ * Response-cache v2: `genCtxHash` (the full sha256 of the canonical
+ * gen_ctx tuple — see gen-ctx.ts) is folded into the key so requests that
+ * share query text + scope + mode + caller but differ in template
+ * variables / generation params / content version get DISTINCT L1 entries.
+ * This is the L1 half of the v1 mode-collision fix (Foxy learn/practice/
+ * quiz_me turns previously collided on one key). Optional so legacy
+ * callers/tests keep byte-identical keys when they don't pass it.
  */
 export async function buildCacheKey(
   query: string,
   scope: { grade: string; subject_code: string; chapter_number: number | null },
   mode: 'strict' | 'soft',
   caller: Caller,
+  genCtxHash?: string,
 ): Promise<string> {
   const normalized = normalizeQuery(query);
   const payload = JSON.stringify({
@@ -72,6 +81,7 @@ export async function buildCacheKey(
     c: scope.chapter_number,
     m: mode,
     caller,
+    ...(genCtxHash ? { gc: genCtxHash } : {}),
   });
   const bytes = new TextEncoder().encode(payload);
   const digest = await crypto.subtle.digest('SHA-256', bytes);

@@ -68,3 +68,10 @@ export const REGISTERED_PROMPT_TEMPLATES = [
   'quiz_answer_verifier_v1',
   'ncert_solver_v1',
 ] as const;
+
+// ── Response-cache v2 generation-context revisions ───────────────────────────
+// Mirror of supabase/functions/grounded-answer/config.ts (CI parity check).
+// See that file for the authoritative bump rules. Bumping either constant
+// invalidates every cached grounded-answer response (L1/L2/L3).
+export const PROMPT_REV = 1;
+export const MODEL_ROUTE_REV = 1;

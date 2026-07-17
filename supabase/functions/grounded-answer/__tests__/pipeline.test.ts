@@ -34,7 +34,36 @@ import {
   __resetRedisClientForTests,
 } from '../cache-redis.ts';
 import { __resetL2CacheFlagCacheForTests } from '../_l2-cache-flags.ts';
+// Response-cache v2: tests derive the SAME gen_ctx hash the pipeline
+// computes so seeded L2 entries are findable + servable.
+import { buildGenCtx, genCtxKeyFragment, hashGenCtx } from '../gen-ctx.ts';
+import { __resetContentVersionCacheForTests } from '../_content-version.ts';
 import type { GroundedRequest } from '../types.ts';
+
+// Fixture content version used by buildSbStub's rag_content_versions table.
+const STUB_CONTENT_VERSION = 0;
+
+/** v2 helper: derive the L2 key + tuple exactly as the pipeline does. */
+async function deriveV2KeyAndTuple(req: GroundedRequest) {
+  const genCtxHash = await hashGenCtx(buildGenCtx(req, STUB_CONTENT_VERSION));
+  const redisKey = await buildRedisCacheKey(
+    req.query,
+    req.scope,
+    req.mode,
+    req.caller,
+    genCtxKeyFragment(genCtxHash),
+  );
+  const tuple = buildCacheTuple({
+    caller: req.caller,
+    mode: req.mode,
+    grade: req.scope.grade,
+    subject_code: req.scope.subject_code,
+    chapter_number: req.scope.chapter_number,
+    query: req.query,
+    gen_ctx_hash: genCtxHash,
+  });
+  return { genCtxHash, redisKey, tuple };
+}
 
 // ── Upstream fetch stub ──────────────────────────────────────────────────────
 const originalFetch = globalThis.fetch;
@@ -224,6 +253,18 @@ function buildSbStub(fx: SbFixtures): any {
           }),
         };
       }
+      if (table === 'rag_content_versions') {
+        // Response-cache v2: gen_ctx content_version read (cache_scope:
+        // 'shared' requests only). Missing-row semantics → version 0,
+        // matching STUB_CONTENT_VERSION used by deriveV2KeyAndTuple.
+        return {
+          select: () =>
+            chainEq(2, () => ({
+              maybeSingle: () =>
+                Promise.resolve({ data: { version: STUB_CONTENT_VERSION }, error: null }),
+            })),
+        };
+      }
       throw new Error(`unexpected table: ${table}`);
     },
     rpc(_name: string) {
@@ -377,8 +418,8 @@ Deno.test('L2 write occurs when shadow flag is ON and serving flag is OFF (write
   // fail (l2Entry === null) against the pre-fix `if (await
   // isL2CacheServingEnabled(sb))`-only gate.
   const fakeUpstashHost = 'http://fake-upstash-l2-shadow-write-test.example';
-  Deno.env.set('UPSTASH_REDIS_REST_URL', fakeUpstashHost);
-  Deno.env.set('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_URL', fakeUpstashHost);
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_TOKEN', 'test-token');
   __resetRedisClientForTests();
 
   __setSupabaseClientForTests(
@@ -395,6 +436,7 @@ Deno.test('L2 write occurs when shadow flag is ON and serving flag is OFF (write
   );
   __resetFeatureFlagCacheForTests();
   __resetL2CacheFlagCacheForTests();
+  __resetContentVersionCacheForTests();
   __clearCacheForTests();
   __resetCircuitsForTests();
 
@@ -418,22 +460,16 @@ Deno.test('L2 write occurs when shadow flag is ON and serving flag is OFF (write
   );
 
   try {
-    const req = makeRequest();
+    // v2: the cache stack only engages when the caller declared
+    // cache_scope: 'shared' (fail-closed default is 'none').
+    const req = makeRequest({ cache_scope: 'shared' });
     const resp = await runPipeline(req, Date.now(), 'anthropic-key', 'voyage-key');
     assertEquals(resp.grounded, true);
 
     // Verify the write actually landed in L2 by performing the SAME lookup
     // a subsequent request would perform — this is the "a subsequent lookup
     // would find the entry" assertion, not just an internal-state check.
-    const redisKey = await buildRedisCacheKey(req.query, req.scope, req.mode, req.caller);
-    const tuple = buildCacheTuple({
-      caller: req.caller,
-      mode: req.mode,
-      grade: req.scope.grade,
-      subject_code: req.scope.subject_code,
-      chapter_number: req.scope.chapter_number,
-      query: req.query,
-    });
+    const { redisKey, tuple } = await deriveV2KeyAndTuple(req);
     const l2Entry = await getFromRedisL2(redisKey, tuple);
     assert(
       l2Entry !== null,
@@ -444,10 +480,369 @@ Deno.test('L2 write occurs when shadow flag is ON and serving flag is OFF (write
     }
   } finally {
     restoreFetch();
-    Deno.env.delete('UPSTASH_REDIS_REST_URL');
-    Deno.env.delete('UPSTASH_REDIS_REST_TOKEN');
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_URL');
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_TOKEN');
     __resetRedisClientForTests();
     __resetL2CacheFlagCacheForTests();
+    __resetContentVersionCacheForTests();
+  }
+});
+
+Deno.test('cache_scope absent → fail-closed: no L2 write even with serving + shadow flags ON', async () => {
+  // v2 design item 3: 'none' (or absent) means NO cache read and NO cache
+  // write, regardless of operator flags. Pins the fail-closed default so a
+  // caller that never declares personalization-freedom can never populate
+  // the shared cache.
+  const fakeUpstashHost = 'http://fake-upstash-scope-none-test.example';
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_URL', fakeUpstashHost);
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_TOKEN', 'test-token');
+  __resetRedisClientForTests();
+
+  __setSupabaseClientForTests(
+    buildSbStub({
+      chapter_ready: true,
+      flag_map: {
+        ff_grounded_ai_enabled: true,
+        ff_foxy_response_cache_l2_v1: true, // serving ON
+        ff_foxy_response_cache_l2_shadow_v1: true, // shadow ON
+      },
+      chunks: fiveChunks(),
+      trace_insert_id: 'trace-scope-none',
+    }),
+  );
+  __resetFeatureFlagCacheForTests();
+  __resetL2CacheFlagCacheForTests();
+  __resetContentVersionCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  const upstashStore = new Map<string, string>();
+  installFetchStubWithFakeUpstash(
+    {
+      voyage: voyageOk,
+      claude: [
+        () => claudeOk('Photosynthesis is the process where plants make food [1].'),
+        () => claudeOk(JSON.stringify({ verdict: 'pass', unsupported_sentences: [] })),
+      ],
+    },
+    upstashStore,
+    fakeUpstashHost,
+  );
+
+  try {
+    const req = makeRequest(); // NO cache_scope
+    const resp = await runPipeline(req, Date.now(), 'anthropic-key', 'voyage-key');
+    assertEquals(resp.grounded, true);
+    assertEquals(
+      upstashStore.size,
+      0,
+      'a request without cache_scope: shared must never write to the shared cache',
+    );
+    // L1 must also stay empty (write skipped end-to-end, not just L2).
+    const { genCtxHash } = await deriveV2KeyAndTuple(req);
+    const l1Key = await buildCacheKey(req.query, req.scope, req.mode, req.caller, genCtxHash);
+    assertEquals(getFromCache(l1Key), null, 'L1 write must also be skipped for cache_scope none');
+  } finally {
+    restoreFetch();
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_URL');
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_TOKEN');
+    __resetRedisClientForTests();
+    __resetL2CacheFlagCacheForTests();
+    __resetContentVersionCacheForTests();
+    __clearCacheForTests();
+  }
+});
+
+Deno.test('safe-merge pin: all four cache flags OFF + cache_scope absent → zero cache-tier I/O, pre-v2 DB/upstream call sequence', async () => {
+  // The response-cache v2 merge guarantee: a request that does NOT declare
+  // cache_scope, running with all four cache flags OFF
+  // (ff_foxy_response_cache_l2_v1, ff_foxy_response_cache_l2_shadow_v1,
+  // ff_response_cache_serve_ncert_v1, ff_ncert_solver_solution_store_v1),
+  // must exercise NONE of the v2 machinery:
+  //   - zero Upstash I/O (even with valid cache secrets configured),
+  //   - zero rag_content_versions / ncert_solver_solutions table reads,
+  //   - zero cache-flag lookups (the scope gate short-circuits BEFORE the
+  //     flag reads — only ff_grounded_ai_enabled + non-cache flags are read),
+  //   - the pre-v2 external call sequence: coverage → kill-switch flag →
+  //     retrieval rpc → retrieval_traces → grounded_ai_traces,
+  //   - a normal grounded response.
+  // Intentional v2 deviation (fail-closed, design item 3): the in-process
+  // L1 tier also stays EMPTY for undeclared-scope requests (pre-v2 it was
+  // populated unconditionally). Pinned below so the deviation is explicit.
+  const fakeUpstashHost = 'http://fake-upstash-safe-merge-test.example';
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_URL', fakeUpstashHost);
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_TOKEN', 'test-token');
+  __resetRedisClientForTests();
+
+  const tableTouches: string[] = [];
+  const flagReads: string[] = [];
+  let upstashRequests = 0;
+
+  const inner = buildSbStub({
+    chapter_ready: true,
+    flag_map: {
+      ff_grounded_ai_enabled: true,
+      ff_foxy_response_cache_l2_v1: false,
+      ff_foxy_response_cache_l2_shadow_v1: false,
+      ff_response_cache_serve_ncert_v1: false,
+      ff_ncert_solver_solution_store_v1: false,
+    },
+    chunks: fiveChunks(),
+    trace_insert_id: 'trace-safe-merge',
+  });
+  // deno-lint-ignore no-explicit-any
+  const sb: any = {
+    from(table: string) {
+      tableTouches.push(table);
+      if (table === 'feature_flags') {
+        return {
+          select: () => ({
+            eq: (_col: string, flagName: string) => {
+              flagReads.push(flagName);
+              return {
+                single: () =>
+                  Promise.resolve({
+                    data: { is_enabled: flagName === 'ff_grounded_ai_enabled' },
+                    error: null,
+                  }),
+              };
+            },
+          }),
+        };
+      }
+      if (table === 'retrieval_traces') {
+        return { insert: () => Promise.resolve({ error: null }) };
+      }
+      return inner.from(table);
+    },
+    rpc(name: string) {
+      tableTouches.push(`rpc:${name}`);
+      return inner.rpc(name);
+    },
+  };
+  __setSupabaseClientForTests(sb);
+  __resetFeatureFlagCacheForTests();
+  __resetL2CacheFlagCacheForTests();
+  __resetContentVersionCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  let claudeIdx = 0;
+  const claudeHandlers = [
+    () => claudeOk('Photosynthesis is the process where plants make food [1].'),
+    () => claudeOk(JSON.stringify({ verdict: 'pass', unsupported_sentences: [] })),
+  ];
+  globalThis.fetch = ((url: string | URL) => {
+    const u = String(url);
+    if (u.startsWith(fakeUpstashHost)) {
+      upstashRequests++;
+      return Promise.resolve(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
+    if (u.includes('voyageai.com')) return Promise.resolve(voyageOk());
+    if (u.includes('anthropic.com') || u.includes('openai.com')) {
+      const handler = claudeHandlers[claudeIdx++];
+      if (!handler) throw new Error('unexpected extra Claude call');
+      return Promise.resolve(handler()(u));
+    }
+    throw new Error(`unexpected fetch to ${u}`);
+  }) as typeof fetch;
+
+  try {
+    const req = makeRequest(); // NO cache_scope — the fail-closed default
+    const resp = await runPipeline(req, Date.now(), 'anthropic-key', 'voyage-key');
+    assertEquals(resp.grounded, true);
+
+    // Zero v2 machinery engaged.
+    assertEquals(upstashRequests, 0, 'no Upstash I/O may happen without cache_scope: shared');
+    assert(!tableTouches.includes('rag_content_versions'), 'content-version read must be skipped');
+    assert(!tableTouches.includes('ncert_solver_solutions'), 'L3 must never be touched');
+    const cacheFlags = [
+      'ff_foxy_response_cache_l2_v1',
+      'ff_foxy_response_cache_l2_shadow_v1',
+      'ff_response_cache_serve_ncert_v1',
+      'ff_ncert_solver_solution_store_v1',
+    ];
+    for (const f of cacheFlags) {
+      assert(!flagReads.includes(f), `cache flag ${f} must not even be read when cache_scope is absent`);
+    }
+    assert(flagReads.includes('ff_grounded_ai_enabled'), 'the kill switch is still consulted');
+
+    // Pre-v2 external call sequence (first-occurrence ordering).
+    const firstIdx = (t: string) => tableTouches.indexOf(t);
+    assert(firstIdx('cbse_syllabus') !== -1, 'strict coverage precheck still runs');
+    assert(firstIdx('cbse_syllabus') < firstIdx('feature_flags'));
+    assert(firstIdx('feature_flags') < firstIdx('rpc:match_rag_chunks_ncert'));
+    assert(firstIdx('rpc:match_rag_chunks_ncert') < firstIdx('grounded_ai_traces'));
+
+    // The intentional fail-closed deviation: L1 stays empty for
+    // undeclared-scope requests (both the legacy v1 key and the v2 key).
+    const legacyKey = await buildCacheKey(req.query, req.scope, req.mode, req.caller);
+    assertEquals(getFromCache(legacyKey), null, 'L1 (legacy key) must not be populated');
+    const { genCtxHash } = await deriveV2KeyAndTuple(req);
+    const v2Key = await buildCacheKey(req.query, req.scope, req.mode, req.caller, genCtxHash);
+    assertEquals(getFromCache(v2Key), null, 'L1 (v2 key) must not be populated');
+  } finally {
+    restoreFetch();
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_URL');
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_TOKEN');
+    __resetRedisClientForTests();
+    __resetL2CacheFlagCacheForTests();
+    __resetContentVersionCacheForTests();
+    __clearCacheForTests();
+  }
+});
+
+Deno.test('content-version read ERROR → request is cache-INELIGIBLE: no cache read/write on ANY tier, pipeline still answers', async () => {
+  // Hardening fix (assessment condition 2): a rag_content_versions read
+  // ERROR (as opposed to a missing row, which correctly stays version 0)
+  // must demote the request to scope 'none' — zero L1/L2/L3 reads AND
+  // writes — instead of defaulting to version 0. Pre-fix, a transient read
+  // error after an ingestion bump rebuilt version-0 gen_ctx keys and could
+  // resurrect stale pre-bump entries. All cache flags are ON here so any
+  // surviving cache I/O is the failure signal; the ncert-solver caller is
+  // used so the L3 tier is also armed and must stay untouched.
+  const fakeUpstashHost = 'http://fake-upstash-version-error-test.example';
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_URL', fakeUpstashHost);
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_TOKEN', 'test-token');
+  __resetRedisClientForTests();
+
+  const tableTouches: string[] = [];
+  let upstashRequests = 0;
+  let versionReads = 0;
+
+  const inner = buildSbStub({
+    chapter_ready: true,
+    chunks: fiveChunks(),
+    trace_insert_id: 'trace-version-error',
+  });
+  // Kill switch ON + EVERY cache flag ON; all other flags (digital twin,
+  // MMR, continuation, …) explicitly OFF so only the cache machinery is
+  // under test.
+  const flagMap: Record<string, boolean> = {
+    ff_grounded_ai_enabled: true,
+    ff_foxy_response_cache_l2_v1: true,
+    ff_foxy_response_cache_l2_shadow_v1: true,
+    ff_response_cache_serve_ncert_v1: true,
+    ff_ncert_solver_solution_store_v1: true,
+  };
+  // deno-lint-ignore no-explicit-any
+  const sb: any = {
+    from(table: string) {
+      tableTouches.push(table);
+      if (table === 'feature_flags') {
+        return {
+          select: () => ({
+            eq: (_col: string, flagName: string) => ({
+              single: () =>
+                Promise.resolve({
+                  data: { is_enabled: flagMap[flagName] === true },
+                  error: null,
+                }),
+            }),
+          }),
+        };
+      }
+      if (table === 'rag_content_versions') {
+        // Read ERROR — supabase-js returns { data: null, error }, it does
+        // NOT throw. Pre-fix this shape was indistinguishable from a
+        // missing row and silently became version 0.
+        versionReads++;
+        return {
+          select: () =>
+            chainEq(2, () => ({
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: null,
+                  error: { message: 'simulated: connection reset mid-read' },
+                }),
+            })),
+        };
+      }
+      if (table === 'retrieval_traces') {
+        return { insert: () => Promise.resolve({ error: null }) };
+      }
+      return inner.from(table);
+    },
+    rpc(name: string) {
+      tableTouches.push(`rpc:${name}`);
+      return inner.rpc(name);
+    },
+  };
+  __setSupabaseClientForTests(sb);
+  __resetFeatureFlagCacheForTests();
+  __resetL2CacheFlagCacheForTests();
+  __resetContentVersionCacheForTests();
+  __clearCacheForTests();
+  __resetCircuitsForTests();
+
+  const upstashStore = new Map<string, string>();
+  installFetchStubWithFakeUpstash(
+    {
+      voyage: voyageOk,
+      claude: [
+        // mode: 'soft' → single Claude call, no grounding check.
+        () => claudeOk('A rational number is p/q with q not zero [1].'),
+      ],
+    },
+    upstashStore,
+    fakeUpstashHost,
+  );
+  // Count every Upstash roundtrip (reads AND writes) — the store-only check
+  // would miss a GET that returns null.
+  const withStubs = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL, init?: RequestInit) => {
+    if (String(url).startsWith(fakeUpstashHost)) upstashRequests++;
+    return withStubs(url, init);
+  }) as typeof fetch;
+
+  const warns: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warns.push(args);
+  };
+
+  try {
+    const req = makeRequest({ caller: 'ncert-solver', mode: 'soft', cache_scope: 'shared' });
+    const resp = await runPipeline(req, Date.now(), 'anthropic-key', 'voyage-key');
+
+    // The pipeline still answers — ineligibility only skips caching.
+    assertEquals(resp.grounded, true);
+    assertEquals(versionReads, 1, 'the content-version read was attempted');
+
+    // Zero cache I/O on every tier.
+    assertEquals(upstashRequests, 0, 'no L2 (Upstash) read or write on a version-read error');
+    assertEquals(upstashStore.size, 0);
+    assert(
+      !tableTouches.includes('ncert_solver_solutions'),
+      'no L3 read or write on a version-read error',
+    );
+    const { genCtxHash } = await deriveV2KeyAndTuple(req); // hash under version 0
+    const v2Key = await buildCacheKey(req.query, req.scope, req.mode, req.caller, genCtxHash);
+    assertEquals(getFromCache(v2Key), null, 'L1 must not be populated (v2 key, version 0)');
+    const legacyKey = await buildCacheKey(req.query, req.scope, req.mode, req.caller);
+    assertEquals(getFromCache(legacyKey), null, 'L1 must not be populated (legacy key)');
+
+    // The demotion is observable: a structured PII-free warn fired.
+    const signal = warns.filter((c) => c[0] === 'cache_ineligible_content_version_error');
+    assertEquals(signal.length, 1, 'expected the cache-ineligible structured warn');
+    const dims = signal[0][1] as Record<string, unknown>;
+    assertEquals(dims.caller, 'ncert-solver');
+    assertEquals(dims.grade, '10');
+    assertEquals(dims.subject, 'science');
+  } finally {
+    console.warn = originalWarn;
+    restoreFetch();
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_URL');
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_TOKEN');
+    __resetRedisClientForTests();
+    __resetL2CacheFlagCacheForTests();
+    __resetContentVersionCacheForTests();
+    __clearCacheForTests();
   }
 });
 
@@ -461,17 +856,18 @@ Deno.test('L2 hit (serving flag ON) → served without retrieveChunks call or ne
   // l2Hit directly) would silently double the retrieval cost / trace volume
   // this cache tier exists to avoid.
   const fakeUpstashHost = 'http://fake-upstash-l2-hit-reg50-test.example';
-  Deno.env.set('UPSTASH_REDIS_REST_URL', fakeUpstashHost);
-  Deno.env.set('UPSTASH_REDIS_REST_TOKEN', 'test-token');
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_URL', fakeUpstashHost);
+  Deno.env.set('UPSTASH_CACHE_REDIS_REST_TOKEN', 'test-token');
   __resetRedisClientForTests();
 
   const upstashStore = new Map<string, string>();
   let rpcCalls = 0;
   let traceInserts = 0;
   // mode: 'soft' skips the Step-1 coverage precheck entirely so the ONLY
-  // table this test needs to stub is feature_flags — any other table
-  // access (or an rpc call) is itself the failure signal.
-  const req = makeRequest({ mode: 'soft' });
+  // tables this test needs to stub are feature_flags + rag_content_versions
+  // (the v2 gen_ctx content-version read) — any other table access (or an
+  // rpc call) is itself the failure signal.
+  const req = makeRequest({ mode: 'soft', cache_scope: 'shared' });
 
   installFetchStubWithFakeUpstash({}, upstashStore, fakeUpstashHost);
 
@@ -484,15 +880,7 @@ Deno.test('L2 hit (serving flag ON) → served without retrieveChunks call or ne
     trace_id: 'seeded-trace-must-be-the-one-returned',
     meta: { claude_model: 'haiku', tokens_used: 42, latency_ms: 10 },
   };
-  const redisKey = await buildRedisCacheKey(req.query, req.scope, req.mode, req.caller);
-  const tuple = buildCacheTuple({
-    caller: req.caller,
-    mode: req.mode,
-    grade: req.scope.grade,
-    subject_code: req.scope.subject_code,
-    chapter_number: req.scope.chapter_number,
-    query: req.query,
-  });
+  const { genCtxHash, redisKey, tuple } = await deriveV2KeyAndTuple(req);
   await putInRedisL2(redisKey, seededResponse, tuple);
 
   // deno-lint-ignore no-explicit-any
@@ -511,6 +899,20 @@ Deno.test('L2 hit (serving flag ON) → served without retrieveChunks call or ne
           }),
         };
       }
+      if (table === 'rag_content_versions') {
+        // v2 gen_ctx content-version read — must match STUB_CONTENT_VERSION
+        // used when seeding via deriveV2KeyAndTuple.
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: () =>
+                  Promise.resolve({ data: { version: STUB_CONTENT_VERSION }, error: null }),
+              }),
+            }),
+          }),
+        };
+      }
       if (table === 'grounded_ai_traces') {
         traceInserts++;
         throw new Error('L2 hit must never write a new grounded_ai_traces row');
@@ -525,6 +927,7 @@ Deno.test('L2 hit (serving flag ON) → served without retrieveChunks call or ne
   __setSupabaseClientForTests(sb);
   __resetFeatureFlagCacheForTests();
   __resetL2CacheFlagCacheForTests();
+  __resetContentVersionCacheForTests();
   __clearCacheForTests(); // ensure L1 is empty so the pipeline actually reaches the L2 lookup
 
   try {
@@ -539,15 +942,16 @@ Deno.test('L2 hit (serving flag ON) → served without retrieveChunks call or ne
 
     // Bonus: confirm L1 backfill happened, so a subsequent request on this
     // same instance would hit L1 without touching Redis at all.
-    const l1Key = await buildCacheKey(req.query, req.scope, req.mode, req.caller);
+    const l1Key = await buildCacheKey(req.query, req.scope, req.mode, req.caller, genCtxHash);
     const l1Entry = getFromCache(l1Key);
     assert(l1Entry !== null, 'expected an L2 hit to backfill L1');
   } finally {
     restoreFetch();
-    Deno.env.delete('UPSTASH_REDIS_REST_URL');
-    Deno.env.delete('UPSTASH_REDIS_REST_TOKEN');
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_URL');
+    Deno.env.delete('UPSTASH_CACHE_REDIS_REST_TOKEN');
     __resetRedisClientForTests();
     __resetL2CacheFlagCacheForTests();
+    __resetContentVersionCacheForTests();
     __clearCacheForTests();
   }
 });

@@ -8694,6 +8694,89 @@ Unlimited-price correction ₹1,499→₹1,099 + REG-65 ₹699 verbatim survival
 prices-from-SoT on /welcome and /pricing).
 **Total catalog: 227 entries (target: 35 — TARGET EXCEEDED).**
 
+---
+
+## REG-264..REG-269 — Response-cache v2 (gen_ctx full-context keys + fail-closed cache_scope + per-caller serving + durable L3 + env-pair split + PII-free telemetry) (2026-07-16)
+
+Source: response-cache v2 (CEO-approved decisions 1-3, 2026-07-16). Supersedes
+the v1 L2 tier pinned by REG-240 (whose enforcing tests were EDITED, not
+weakened, in the same PR — the shadow-flag write-gating, fail-open-on-Redis-error,
+no-abstain-caching, tuple re-validation, and REG-50 zero-retrieval/zero-trace
+L2-hit pins all survive with v2 keys). Root production bug fixed: the v1 key
+(grade/subject/mode/caller/query-hash) collapsed Foxy learn/practice/quiz_me
+turns that share query text — a practice-shaped MCQ response was served to a
+learn turn. v2 folds EVERYTHING that changes generation for the same text into
+a hashed gen_ctx tuple (prompt template + PROMPT_REV/MODEL_ROUTE_REV, model
+preference, max_tokens, temperature, template_variables, conversation_turns,
+per-scope content_version), moves the cache to a DEDICATED Upstash instance
+(env-pair split), adds a fail-closed caller-declared `cache_scope`, per-caller
+serving flags, and a durable L3 solution store for ncert-solver.
+
+New flags (both seeded OFF: `20260716090200` / `20260716090300`, REG-125-conformant
+— verified by the seed-shape canary, which scans every root migration):
+`ff_response_cache_serve_ncert_v1`, `ff_ncert_solver_solution_store_v1`.
+New tables (architect): `rag_content_versions` (`20260716090000`),
+`ncert_solver_solutions` (`20260716090100`).
+
+Files: `supabase/functions/grounded-answer/{gen-ctx.ts,cache-redis.ts,cache.ts,
+cache-durable.ts,cache-telemetry.ts,_content-version.ts,_l2-cache-flags.ts,
+pipeline.ts,types.ts,validators.ts}`, `supabase/functions/_shared/rag-content-version.ts`,
+`supabase/functions/ncert-solver/index.ts`, `apps/host/src/app/api/foxy/route.ts`,
+`packages/lib/src/ai/grounded-client.ts`, `supabase/functions/_shared/grounded-client.ts`,
+the four ingestion writers (`embed-ncert-qa`, `embed-questions`,
+`generate-embeddings`, `extract-ncert-questions`).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-264 | `response_cache_key_v2_full_context_tuple` | (a) The L2 key is the 9-segment `rag:cache:v2:<grade>:<subject>:<mode>:<caller>:<sha256(normalized query)>:<12-hex gen_ctx fragment>` — distinct from every live Redis prefix INCLUDING the retired `rag:cache:v1`; deterministic, case/whitespace-insensitive, punctuation-preserving. (b) The v1 mode-collision fix at BOTH halves: identical text/scope/mode/caller with different gen_ctx (learn vs practice template_variables, max_tokens, temperature, model_preference, conversation_turns, content_version — each component individually) produce DIFFERENT keys, and even at a colliding key the stored tuple's FULL 64-char `gen_ctx_hash` is re-validated on read — any mismatch is a miss, never served (L2 read-time enforcement). (c) `canonicalJson` is key-order independent so semantically identical contexts can never fork the cache. (d) L1 folds the same full gen_ctx hash into `buildCacheKey` (optional param — legacy callers keep byte-identical keys). (e) The pre-existing REG-240 guarantees survive the v2 edit: shadow-flag write-gating (write happens with shadow ON / serving OFF), fail-open on absent secrets AND on a reachable-but-erroring Redis, abstains never cached, and the REG-50 L2-hit contract (zero `retrieveChunks` rpc calls, zero new trace rows, seeded `trace_id` returned verbatim, L1 backfilled). Per-caller TTLs pinned: foxy 20 min, ncert-solver 24 h, unknown callers fall back to the shorter foxy TTL. | `supabase/functions/grounded-answer/__tests__/gen-ctx.test.ts` (5 Deno tests); `__tests__/cache-redis.test.ts` (v2-updated: key shape, gen_ctx-mismatch read rejection, per-caller TTL, tuple carries full hash); `__tests__/pipeline.test.ts` (v2-updated shadow-write + L2-hit REG-50 tests) | E | P12 (response-contract integrity), P13 |
+| REG-265 | `cache_hit_still_decrements_quota` | Static-source pin (P12: a cache hit can never bypass daily limits because the quota unit is consumed BEFORE the possibly-cached answer is fetched): in `apps/host/src/app/api/foxy/route.ts` the `await checkAndIncrementQuota(` call site precedes `await callGroundedAnswer(groundedRequest`, with the `if (!allowed)` → 429 deny early-return between them; in `supabase/functions/ncert-solver/index.ts` the `rpc('check_and_record_usage'` call site precedes `await callGroundedAnswer(`, with the `if (!usageRow?.allowed)` → `daily_limit_reached` deny between them. | `apps/host/src/__tests__/regressions/response-cache-v2-callers.test.ts` (quota-before-grounded describe, 2 tests) | E | P12 |
+| REG-266 | `personalized_foxy_turns_never_written_to_shared_cache` | (a) Service-side fail-closed gate (behavioral): a request WITHOUT `cache_scope: 'shared'` engages NO cache tier even with serving+shadow flags ON — zero Upstash writes AND an empty L1 after a full grounded run. (b) Safe-merge pin (behavioral): with all four cache flags OFF and `cache_scope` absent, the pipeline performs zero Upstash I/O, never reads `rag_content_versions`/`ncert_solver_solutions`, never even READS the four cache flags (only `ff_grounded_ai_enabled`), preserves the pre-v2 external call order (coverage → kill-switch → retrieval rpc → traces), and returns a normal grounded response; the ONE intentional deviation — L1 no longer populates for undeclared-scope requests (fail-closed beats caching) — is pinned explicitly on both the legacy and v2 L1 keys. (c) Caller-side (static): ncert-solver declares `cache_scope: 'shared'` (personalization-free by construction); the Foxy route computes `foxyCacheScope` as the fail-closed conjunction — 'shared' ONLY when `history.length === 0` AND no tenant AI override AND the cognitive section is empty/cold-start with no twin/teaching-director addition AND all of academic-goal/misconception/pending-expectation/previous-session/learner-memory sections are `''` — defaulting to `'none'`; every conjunct is individually pinned, and the six sections feeding the conjunction are the SAME hoisted values wired into template_variables (cannot drift). Both GroundedRequest client mirrors + the service type carry `cache_scope?: 'shared' | 'none'`. | `supabase/functions/grounded-answer/__tests__/pipeline.test.ts` (`cache_scope absent → fail-closed` + `safe-merge pin` tests); `apps/host/src/__tests__/regressions/response-cache-v2-callers.test.ts` (cache_scope describe, 4 tests) | E | P13, P12 |
+| REG-267 | `cache_redis_isolated_from_rate_limiter_db` | The cache client reads ONLY `UPSTASH_CACHE_REDIS_REST_URL`/`_TOKEN` with deliberately NO fallback to `UPSTASH_REDIS_REST_URL`/`_TOKEN` (the security-critical noeviction instance backing rl:*/sess:valid:* — a cache filling it would fail rate-limiter WRITES): behaviorally, with ONLY the legacy pair set the client stays unconfigured — get→null miss, put→no-op, and ZERO fetch calls reach the legacy host; statically, the legacy env names appear in cache-redis.ts comments only, never in executable source. Fail-open preserved: absent cache pair degrades to a miss, never a throw. | `supabase/functions/grounded-answer/__tests__/cache-redis.test.ts` (`env-pair split pin` test); `apps/host/src/__tests__/regressions/response-cache-v2-callers.test.ts` (env-pair-split describe) | E | Operational integrity (rate-limiter/session availability), P12-adjacent |
+| REG-268 | `content_version_bump_rotates_cache_keys` | (a) All four ingestion writers (embed-ncert-qa, embed-questions, generate-embeddings, extract-ncert-questions) import and `await bumpRagContentVersion(` after successful content writes (static pin). (b) `content_version` is a gen_ctx component: bumping it alone changes the hash (unit). (c) End-to-end stale-grounding kill (behavioral, pipeline-level): an L3 solution stored under version N is a MISS at version N+1 — the pipeline consults L3 under the NEW gen_ctx hash, runs full retrieval + generation, and re-stores the fresh solution under the new hash + `content_version: N+1`; the stale answer (built on pre-ingestion chunks) is never served. Missing `rag_content_versions` row / read error → version 0 (safe: affects freshness windows only, never cross-scope serving — that stays guarded by full-tuple re-validation). | `apps/host/src/__tests__/regressions/response-cache-v2-callers.test.ts` (content-version describe, 4 tests); `supabase/functions/grounded-answer/__tests__/gen-ctx.test.ts` (component test); `__tests__/cache-durable-l3.test.ts` (version-mismatch pipeline test); `__tests__/rag-content-version-bump.test.ts` (6 Deno unit tests — increment/seed semantics, P5 grade + subject-code normalization, unresolvable-scope skip, never-throws) | E | P12 (stale-grounding) |
+| REG-269 | `durable_l3_reg50_position_flag_gate_pii_free` + `cache_telemetry_pii_free` | **L3 (ncert-solver only; write gated by `ff_ncert_solver_solution_store_v1`, read gated by the serve×store conjunct — see c2):** (a) REG-50 position — L3 is consulted only AFTER an L2 miss (the L2 get precedes the L3 select in the observed call order) and strictly BEFORE retrieval: an L3 hit performs ZERO `retrieveChunks` rpc calls, ZERO new grounded_ai_traces/retrieval_traces rows, ZERO model calls, and returns the STORED trace_id verbatim. (b) An L3 hit backfills BOTH L1 and L2. (c) Flag OFF → the table is fully inert (never read, never written) even for cache_scope:'shared' solver requests. (c2) Serve-flag conjunct (post-review fix) — the L3 READ/SERVE path requires BOTH `ff_response_cache_serve_ncert_v1` AND `ff_ncert_solver_solution_store_v1`: serve OFF + store ON → L3 is NEVER read/served (zero `l3:select`, full retrieval + fresh generation runs, a pre-seeded matching row's answer/`trace_id` never leak into the response) BUT exactly one write-back lands under the correct question_hash/gen_ctx_hash/content_version — write-back is store-flag-only, so the warm-the-store-before-serving ramp works. (d) P13 — the upserted row's columns are EXACTLY {grade, subject_code, question_hash, gen_ctx_hash, content_version, model, tokens_used, created_at, response} (migration `20260716090100`'s DO-UPDATE column set; the three provenance columns carry only a model name, a token count, and an explicit ISO timestamp — still student-identifier-free); the serialized payload contains no `student_id`/`user_id`/`email`/`phone`-shaped keys and never carries the request's student_id value even when a (misbehaving) caller passes one. (e) Defense-in-depth mirrors L2: stored-tuple mismatch → miss; abstains never written. **Telemetry (design item 8):** `logCacheMetric` emits ONLY the whitelisted dims (caller/grade/subject/optional tokens_avoided) — properties smuggled onto the dims object are DROPPED; the serialized emission never matches `/name|email|phone|message|answer/i`; all four metric names are `cache_l2_*`/`cache_l3_*` enums. | `supabase/functions/grounded-answer/__tests__/cache-durable-l3.test.ts` (7 Deno tests); `__tests__/cache-telemetry.test.ts` (3 Deno tests) | E | P13, P12, REG-50 continuity |
+
+### REG-50 canary hardening (same PR)
+
+`apps/host/src/__tests__/foxy-single-retrieval-contract.test.ts` counted
+`retrieveChunks(` on RAW pipeline.ts source; the v2 PR's L3 comment
+("…strictly BEFORE retrieveChunks (REG-50 position)…") false-positived it.
+The call-count assertion now runs on comment-stripped executable source and
+additionally re-asserts the single call is the awaited `retrieveChunks(sb…)`
+invocation — enforcement is unchanged (any second REAL call still fails);
+comments may reference the function freely.
+
+### Invariants covered by this section
+
+- P12 (AI safety / response-contract + retrieval-cost integrity) — REG-264
+  kills the learn/practice cross-serving bug at both the key and the
+  read-validation layer; REG-265 pins quota-before-cache in both callers;
+  REG-268 guarantees re-ingested NCERT content invalidates cached answers;
+  REG-269 extends the REG-50 zero-retrieval/zero-trace contract to the L3 tier.
+- P13 (data privacy) — REG-266: a personalized Foxy turn (history, twin,
+  misconception, goal, memory, tenant-override, prior-session sections) can
+  never be written to or served from the shared cache; REG-269: the durable
+  L3 payload and the cache telemetry channel are pinned identifier-free.
+- Operational integrity — REG-267: cache traffic can never land on (or fall
+  back to) the security-critical rate-limiter/session Redis instance.
+- Safe merge / rollback readiness — REG-266(b): with all four flags OFF and
+  no caller declarations, the pipeline's external behavior is the pre-v2
+  sequence, so the merge itself is a zero-behavior change (both new flags
+  seeded OFF, REG-125-conformant).
+
+### Catalog total
+
+Pre-REG-264: 227 entries (through REG-260, landing V3 + pricing pins).
+Adds REG-264 (v2 full-context cache keys + read-time gen_ctx re-validation +
+REG-240 continuity), REG-265 (quota-before-cache in both callers), REG-266
+(fail-closed cache_scope — personalized turns never shared + safe-merge pin),
+REG-267 (cache/rate-limiter Redis env-pair split), REG-268 (content-version
+bump rotates keys — stale-grounding kill), REG-269 (durable L3 REG-50
+position + flag gates: store-only write / serve×store read conjunct + P13
+payload/telemetry).
+**Total catalog: 233 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
 ## REG-261 — Curriculum-version source: per-scope monotonicity + delete-safety (insert / edit / soft-delete / hard-delete) and the never-500s version-poll route (2026-07-17)
 
 Source: curriculum-version feature, steps 4-5. Migration + RPC
@@ -8941,12 +9024,19 @@ UNKNOWN + no servable cache → `LearnOfflineException`" was corrected on
 
 ### Catalog total
 
-Pre-REG-261: 227 entries (through REG-260, landing V3 default + `?v=2` rollback
-hatch). Adds REG-261 (curriculum-version source — per-scope monotonicity across
+Pre-REG-261: 233 entries. Merge note (2026-07-17): this curriculum-version
+section (REG-261..REG-263) was integrated in the same merge as the
+response-cache-v2 section (REG-264..REG-269) that appears just above it. The
+shared base before both sections was 227 entries (through REG-260). Although
+REG-261..263 are lower-numbered than REG-264..269, they carry a later date
+(2026-07-17 vs 2026-07-16), so they append after the response-cache section and
+the running total continues 227 → 233 → 236. No REG id from either side was
+dropped or renumbered (the id ranges did not collide). Adds REG-261
+(curriculum-version source — per-scope monotonicity across
 insert/edit/soft-delete/hard-delete, watermark delete-safety, and the
 never-500s verbatim-passthrough version-poll route), REG-262 (mobile
 no-silent-stale-serve — the `_serveVersioned` serve/refetch/refuse matrix and
 `replaceScope` write-new-first/no-masquerade atomicity) and REG-263 (mobile
 cache degrades to no-cache never to no-content — the poll-failed-online vs
 offline split and the `kVersionUnverified` re-validation stamp).
-**Total catalog: 230 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 236 entries (target: 35 — TARGET EXCEEDED).**

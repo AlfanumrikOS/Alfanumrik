@@ -39,6 +39,19 @@ export interface ConversationTurn {
 export interface GroundedRequest {
   caller: Caller;
   student_id: string | null;
+  /**
+   * Response-cache v2 scope declaration (design item 3). ONLY the caller
+   * knows whether a request is personalization-free, so the caller must
+   * declare it:
+   *   - 'shared': this request carries NO per-student personalization
+   *     (no conversation turns, no cognitive/misconception/expectation/
+   *     session/memory/goal/tenant-override prompt sections). The pipeline
+   *     may read from and write to the shared response caches (L1/L2, and
+   *     L3 for ncert-solver).
+   *   - 'none' (or absent — fail-closed default): no cache read, no cache
+   *     write. The pipeline runs end-to-end for every request.
+   */
+  cache_scope?: 'shared' | 'none';
   query: string;
   scope: {
     board: 'CBSE';
