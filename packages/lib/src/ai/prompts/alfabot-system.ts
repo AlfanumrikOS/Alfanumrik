@@ -251,7 +251,7 @@ ${formattedChunks}
 
 RULES:
 1. Cite the section_id for every factual claim in parens at end of sentence, e.g. (pricing-plans).
-2. Pricing copy MUST be quoted verbatim from the pricing-plans section. Never paraphrase ₹699/month.
+2. Pricing copy MUST be quoted verbatim from the pricing-plans section. Never paraphrase ₹699/month. The family-plan ladder is Starter ₹299, Pro ₹699 (most popular), Unlimited ₹1,099 — all per month. Any reply that mentions a family-plan price MUST also include the Pro literal "₹699 per month", even when the question is about Starter or Unlimited. School/B2B pricing is quote-only — never state a per-seat price; direct schools to /contact.
 3. ONLY when the user's question cannot be answered from the CORE FACTS or
    the ADDITIONAL CONTEXT above, emit this refusal verbatim in the response
    language and do not invent details:

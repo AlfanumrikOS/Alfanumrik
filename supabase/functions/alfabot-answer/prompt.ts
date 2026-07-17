@@ -144,16 +144,24 @@ export const ALFABOT_OPENAI_CONFIG = {
  *   - contact (informational)
  */
 export const ALFABOT_CORE_CONTEXT = `[PRICING — pricing-plans, canonical, quote verbatim]
-EN: ₹699 per month — everything included. Covers Foxy, mastery x-ray, all
-seven subjects, unlimited quizzes, the Sunday parent letter, bilingual
-experience. No franchise fees, no upsells, no premium-content tier. Free
-trial — no credit card required. Cancel anytime, one tap, no questions.
-Cancellation takes effect at end of current billing month, access until that
-date. School/B2B plans: 30 to 3,000 seats — contact for quote.
-HI: ₹699 per month — everything included. यह सब शामिल — Foxy, महारत-नक़्शा,
-सातों विषय, असीमित quizzes, रविवार का अभिभावक पत्र, द्विभाषी अनुभव।
-No franchise fees, no upsells, no premium-content tier. Free trial — no credit
-card required. Cancel anytime, one tap, no questions.
+EN: Three transparent tiers. Pro: ₹699 per month — our most popular family
+plan. Covers Foxy (100 chats/day), unlimited quizzes, all seven subjects,
+STEM Lab, advanced analytics, the Sunday parent letter, bilingual experience.
+Starter: ₹299 per month — 4 subjects, 30 Foxy chats/day, 20 quizzes/day,
+STEM Lab. Unlimited: ₹1,099 per month — unlimited Foxy chats and quizzes,
+all subjects, priority support. Every plan starts free on the Explorer tier
+(5 Foxy chats/day, 5 quizzes/day, 2 subjects) — no credit card required.
+No franchise fees, no ads. Cancel anytime, one tap, no questions. Cancellation takes effect at end of current billing month,
+access until that date. School/B2B plans: 30 to 3,000 seats — contact for
+quote.
+HI: तीन पारदर्शी tiers। Pro: ₹699 per month — सबसे लोकप्रिय पारिवारिक योजना।
+इसमें Foxy (रोज़ 100 chats), असीमित quizzes, सातों विषय, STEM Lab, advanced
+analytics, रविवार का अभिभावक पत्र, द्विभाषी अनुभव शामिल हैं। Starter: ₹299
+per month — 4 विषय, रोज़ 30 Foxy chats और 20 quizzes, STEM Lab। Unlimited:
+₹1,099 per month — असीमित Foxy chats और quizzes, सभी विषय, priority support।
+हर योजना की शुरुआत मुफ़्त Explorer से (रोज़ 5 Foxy chats, 5 quizzes, 2 विषय) —
+no credit card required। कोई franchise fees नहीं, कोई विज्ञापन नहीं। Cancel
+anytime, one tap, no questions.
 School/B2B plans: 30 to 3,000 seats — contact for quote.
 
 [SAFETY/DPDPA — safety-privacy-dpdpa, canonical]
@@ -235,7 +243,7 @@ ${formattedChunks}
 
 RULES:
 1. Cite the section_id for every factual claim in parens at end of sentence, e.g. (pricing-plans).
-2. Pricing copy MUST be quoted verbatim from the pricing-plans section. Never paraphrase ₹699/month.
+2. Pricing copy MUST be quoted verbatim from the pricing-plans section. Never paraphrase ₹699/month. The family-plan ladder is Starter ₹299, Pro ₹699 (most popular), Unlimited ₹1,099 — all per month. Any reply that mentions a family-plan price MUST also include the Pro literal "₹699 per month", even when the question is about Starter or Unlimited. School/B2B pricing is quote-only — never state a per-seat price; direct schools to /contact.
 3. ONLY when the user's question cannot be answered from the CORE FACTS or
    the ADDITIONAL CONTEXT above, emit this refusal verbatim in the response
    language and do not invent details:

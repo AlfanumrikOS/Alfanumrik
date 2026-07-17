@@ -23,10 +23,14 @@ import {
   type BuildPromptArgs,
 } from './alfabot-system';
 
+// Fixture updated 2026-07-17 (pricing-framing fix): mirrors the truthful
+// tier-ladder canonical copy. The previous "everything included / no upsells /
+// no premium-content tier" framing contradicted the live product (in-app
+// "Upgrade to Unlimited" CTAs exist) and was removed from the KB.
 const CORE_CONTEXT_FIXTURE = `Pricing (pricing-plans, canonical):
-- ₹699 per month — everything included
-- No franchise fees, no upsells, no premium-content tier
-- Free trial — no credit card required
+- Pro: ₹699 per month — our most popular family plan
+- Starter: ₹299 per month; Unlimited: ₹1,099 per month
+- Every plan starts free on the Explorer tier — no credit card required
 - Cancel anytime, one tap, no questions
 - Cancellation takes effect at end of current billing month
 - School/B2B plans: 30 to 3,000 seats — contact for quote
@@ -38,7 +42,7 @@ const PRICING_CHUNK: KbChunk = {
   section_id: 'pricing-plans',
   title: 'Pricing Plans',
   content:
-    '₹699 per month — everything included. Free trial — no credit card required. Cancel anytime, one tap, no questions.',
+    'Pro: ₹699 per month — our most popular family plan. Starter: ₹299 per month. Unlimited: ₹1,099 per month. Every plan starts free on the Explorer tier — no credit card required. Cancel anytime, one tap, no questions.',
   canonical: true,
 };
 
@@ -129,7 +133,7 @@ describe('buildAlfaBotPrompt — core context + RAG chunks', () => {
 
   it('the prompt mentions ₹699 verbatim when pricing-plans is in retrievedChunks', () => {
     const out = buildAlfaBotPrompt(baseArgs({ retrievedChunks: [PRICING_CHUNK] }));
-    expect(out.systemPrompt).toContain('₹699 per month — everything included');
+    expect(out.systemPrompt).toContain('₹699 per month — our most popular family plan');
   });
 
   it('empty retrievedChunks renders a placeholder, not a crash', () => {

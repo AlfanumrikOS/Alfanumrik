@@ -137,9 +137,12 @@ function makeJsonRequest(body: unknown): Request {
 
 Deno.test('happy path: parent asks pricing → response contains ₹699 + cites (pricing-plans)', async () => {
   resetCircuit();
+  // Fixture updated 2026-07-17 (pricing-framing fix): mirrors the truthful
+  // tier-ladder canonical copy — the old "everything included / no upsells"
+  // framing contradicted the live 3-tier product and was removed from the KB.
   installFetchStub({
     openAiText:
-      'Alfanumrik for families: ₹699 per month — everything included. That covers Foxy, the mastery x-ray, all seven subjects, unlimited quizzes, and the Sunday parent letter (pricing-plans). Want to try Foxy free? Sign up at /.',
+      'Pro, at ₹699 per month, is our most popular family plan — Foxy with 100 chats a day, unlimited quizzes, all seven subjects, and the Sunday parent letter. Starter is ₹299 per month and Unlimited is ₹1,099 per month (pricing-plans). Want to try Foxy free? Sign up at /.',
   });
   stubSupabase([
     {
@@ -147,7 +150,7 @@ Deno.test('happy path: parent asks pricing → response contains ₹699 + cites 
       section_id: 'pricing-plans',
       title: 'Pricing Plans',
       content:
-        'Alfanumrik for families: ₹699 per month — everything included. Cancel anytime, one tap, no questions.',
+        'Pro: ₹699 per month — our most popular family plan. Starter: ₹299 per month. Unlimited: ₹1,099 per month. Every plan starts free on the Explorer tier — no credit card required. Cancel anytime, one tap, no questions.',
       canonical: true,
       similarity: 0.85,
     },
