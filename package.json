@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "npm run dev -w apps/host",
     "build": "npm run build -w apps/host",
-    "vercel-build": "npm run build -w apps/host && node -e \"require('fs').cpSync('apps/host/.next', '.next', {recursive: true})\"",
+    "vercel-build": "NODE_OPTIONS=--max-old-space-size=6144 npm run build -w apps/host && node -e \"require('fs').cpSync('apps/host/.next', '.next', {recursive: true})\"",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "lint:migrations": "node scripts/lint-migrations.js",
     "lint": "npm run lint --workspaces --if-present",
