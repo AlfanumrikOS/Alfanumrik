@@ -2722,6 +2722,13 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/v2/curriculum-version",
+      "file": "apps/host/src/app/api/v2/curriculum-version/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Mobile Learn cache-freshness poll; returns per-scope curriculum content versions. Student-authenticated via authorizeRequest('study_plan.view'), same boundary as /api/v2/learn/curriculum."
+    },
+    {
       "path": "/api/v2/learn/concept",
       "file": "apps/host/src/app/api/v2/learn/concept/route.ts",
       "access": "auth",
