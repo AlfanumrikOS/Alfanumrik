@@ -108,13 +108,11 @@ class _Driver {
     required this.repo,
     required this.freshTitle,
     this.fetchThrows = false,
-    this.key = kKey,
   });
 
   final LearningRepository repo;
   final String freshTitle;
   final bool fetchThrows;
-  final String key;
 
   /// How many times `fetchFresh` was invoked. `0` proves the network was never
   /// touched — the load-bearing assertion on the offline branch.
@@ -122,7 +120,7 @@ class _Driver {
 
   Future<LearnData<Topic?>> serve() => repo.serveVersionedForTest<Topic?>(
         scope: kScope,
-        cacheKey: key,
+        cacheKey: kKey,
         decodeCache: (dynamic d) => Topic.fromJson(d as Map<String, dynamic>),
         fetchFresh: () async {
           calls++;
