@@ -20,7 +20,8 @@ export default function FinalCtaV3() {
       <div className={s.finalGlow} aria-hidden="true"></div>
       <div className={s.finalGlowInner} aria-hidden="true"></div>
       <div className={`${s.wrap} ${s.finalInner}`}>
-        <FoxyMascot className={s.finalFox} waveOnView />
+        {/* waves once on intersection, then idles; tap → celebrate */}
+        <FoxyMascot className={s.finalFox} waveOnView interactive />
         <h2 id="final-cta-v3-title" lang={isHi ? 'hi' : undefined}>
           {t('Tonight’s homework can be different.', 'आज का गृहकार्य अलग हो सकता है।')}
         </h2>

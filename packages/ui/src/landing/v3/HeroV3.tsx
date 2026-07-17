@@ -6,7 +6,8 @@ import { useWelcomeV2 } from '../WelcomeV2Context';
 import { usePrefersReducedMotion } from '@alfanumrik/ui/cosmic/usePrefersReducedMotion';
 import { track } from '@alfanumrik/lib/posthog/client';
 import { useReveal } from '../useReveal';
-import FoxyMascot from './FoxyMascot';
+import FoxyMascot, { type FoxyGesture } from './FoxyMascot';
+import { CountUp } from './MotionPrimitives';
 import { V3_ACTIVE_ROLE } from './NavV3';
 import s from './welcome-v3.module.css';
 
@@ -90,54 +91,131 @@ function Rotor() {
   );
 }
 
-/** Scripted Foxy exchange — plays once when ~35% of the panel is visible. */
-function ChatDemo() {
+/** Chat-demo phases the hero fox reacts to. */
+export type ChatDemoPhase = 'typing' | 'answered';
+
+const PLAY_THRESHOLD = 0.35;
+/** Never leave the panel blank: force-complete if playback hasn't begun. */
+const FAILSAFE_MS = 2500;
+
+/**
+ * Scripted Foxy exchange — plays once when ~35% of the panel is visible.
+ *
+ * 2026-07-17 blank-demo fix (production bug): the previous implementation
+ * kept the play-once guard in React STATE and in the effect's dependency
+ * array. The moment the IntersectionObserver fired, `setPlayed(true)`
+ * re-ran the effect — whose CLEANUP cleared the four just-scheduled script
+ * timers before any could fire. The demo stayed at step 0 forever and the
+ * message area (everything `msgPending`, opacity 0) rendered blank.
+ *
+ * The guard is now a ref (`startedRef`) so starting playback never re-runs
+ * the effect, plus three independent safety nets:
+ *  (a) an immediate mount-time rect check — if the panel is already >= 35%
+ *      visible at hydration, play without waiting for IO;
+ *  (b) the IntersectionObserver (normal scroll-into-view path);
+ *  (c) a 2.5s failsafe that force-completes the conversation if playback
+ *      has not begun (IO quirks in embeds/scroll containers).
+ * Reduced motion renders the COMPLETED conversation statically (never an
+ * empty panel).
+ */
+function ChatDemo({ onPhase }: { onPhase?: (phase: ChatDemoPhase) => void }) {
   const { isHi, t } = useWelcomeV2();
   const reduced = usePrefersReducedMotion();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const startedRef = useRef(false);
+  const onPhaseRef = useRef(onPhase);
+  onPhaseRef.current = onPhase;
   // step: 0 nothing · 1 student msg · 2 foxy typing · 3 foxy text · 4 quick chip
   const [step, setStep] = useState(0);
-  const [played, setPlayed] = useState(false);
 
   useEffect(() => {
-    if (reduced) {
-      // Static final state — the full exchange, no playback.
-      setStep(4);
-      setPlayed(true);
-      return;
-    }
-    if (played) return;
-    const el = bodyRef.current;
-    if (el === null) return;
-    if (typeof IntersectionObserver === 'undefined') {
-      setStep(4);
-      setPlayed(true);
-      return;
-    }
+    // Stable array identity; captured so the cleanup clears the same timers
+    // this effect run scheduled (react-hooks/exhaustive-deps hygiene).
     const timers = timersRef.current;
+
+    /** Schedule the scripted playback exactly once per effect lifetime. */
+    const play = () => {
+      if (startedRef.current) return;
+      startedRef.current = true;
+      // Calm timing lifted from the approved preview.
+      timers.push(setTimeout(() => setStep(1), 600));
+      timers.push(
+        setTimeout(() => {
+          setStep(2);
+          onPhaseRef.current?.('typing');
+        }, 1700),
+      );
+      timers.push(
+        setTimeout(() => {
+          setStep(3);
+          onPhaseRef.current?.('answered');
+        }, 3400),
+      );
+      timers.push(setTimeout(() => setStep(4), 4200));
+    };
+
+    /** Jump straight to the completed conversation. */
+    const finishNow = () => {
+      startedRef.current = true;
+      setStep(4);
+      onPhaseRef.current?.('answered');
+    };
+
+    if (reduced) {
+      finishNow();
+      return;
+    }
+    const el = bodyRef.current;
+    if (el === null || typeof IntersectionObserver === 'undefined') {
+      finishNow();
+      return;
+    }
+
+    // (a) already sufficiently visible at mount — IO can fire late or, in
+    // some embed/scroll containers, never with this threshold.
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    const rect = el.getBoundingClientRect();
+    const visiblePx = Math.min(rect.bottom, vh) - Math.max(rect.top, 0);
+    if (rect.height > 0 && visiblePx / rect.height >= PLAY_THRESHOLD) {
+      play();
+    }
+
+    // (b) normal path: play when the panel scrolls into view.
     const obs = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (!entry.isIntersecting) return;
           obs.disconnect();
-          setPlayed(true);
-          // Calm timing lifted from the approved preview.
-          timers.push(setTimeout(() => setStep(1), 600));
-          timers.push(setTimeout(() => setStep(2), 1700));
-          timers.push(setTimeout(() => setStep(3), 3400));
-          timers.push(setTimeout(() => setStep(4), 4200));
+          play();
         });
       },
-      { threshold: 0.35 },
+      { threshold: PLAY_THRESHOLD },
     );
     obs.observe(el);
+
+    // (c) failsafe: the panel must NEVER stay blank.
+    const failsafe = setTimeout(() => {
+      if (!startedRef.current) {
+        obs.disconnect();
+        finishNow();
+      }
+    }, FAILSAFE_MS);
+
     return () => {
       obs.disconnect();
+      clearTimeout(failsafe);
       timers.forEach(clearTimeout);
       timers.length = 0;
+      // Full reset: the cleanup cancelled any in-flight playback, so the
+      // guard must open again or a re-run (React StrictMode's dev
+      // mount→cleanup→remount, or a reduced-motion flip) would early-return
+      // with the timers gone — the exact shape of the original blank-panel
+      // bug. A re-run either replays or (reduced) force-completes; both are
+      // idempotent.
+      startedRef.current = false;
     };
-  }, [reduced, played]);
+  }, [reduced]);
 
   return (
     <div className={s.chat} aria-label={t('Foxy chat preview', 'फ़ॉक्सी चैट पूर्वावलोकन')}>
@@ -154,7 +232,7 @@ function ChatDemo() {
         <span>{t('✏️ Practice', '✏️ अभ्यास')}</span>
         <span>{t('⚡ Quiz', '⚡ क्विज़')}</span>
       </div>
-      <div className={s.chatBody} ref={bodyRef}>
+      <div className={s.chatBody} ref={bodyRef} data-chat-step={step}>
         <div className={`${s.msg} ${s.msgStudent} ${step < 1 ? s.msgPending : ''}`}>
           <div className={s.bubble}>
             {t(
@@ -216,6 +294,30 @@ function ChatDemo() {
 export default function HeroV3() {
   const { isHi, t } = useWelcomeV2();
   const revealRef = useReveal(50);
+  // The panel fox reacts to the chat demo: thinks while the typing indicator
+  // shows, celebrates (happy hop) when the answer lands, then settles.
+  const [foxGesture, setFoxGesture] = useState<FoxyGesture>('idle');
+  const foxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (foxTimerRef.current) clearTimeout(foxTimerRef.current);
+    };
+  }, []);
+
+  const onDemoPhase = (phase: ChatDemoPhase) => {
+    if (foxTimerRef.current) {
+      clearTimeout(foxTimerRef.current);
+      foxTimerRef.current = null;
+    }
+    if (phase === 'typing') {
+      setFoxGesture('think');
+      return;
+    }
+    // answered → brief happy hop, then back to idle life.
+    setFoxGesture('happy');
+    foxTimerRef.current = setTimeout(() => setFoxGesture('idle'), 1900);
+  };
 
   return (
     <section className={s.hero} aria-labelledby="welcome-v3-hero-title">
@@ -306,7 +408,13 @@ export default function HeroV3() {
           <span>·</span>
           {t('Cancel anytime', 'कभी भी रद्द करें')}
           <span>·</span>
-          {t('12,000+ learners', '12,000+ विद्यार्थी')}
+          <CountUp
+            to={12000}
+            suffix="+"
+            format={(n) => n.toLocaleString('en-IN')}
+            className={s.heroNum}
+          />{' '}
+          {t('learners', 'विद्यार्थी')}
         </p>
       </div>
 
@@ -315,8 +423,8 @@ export default function HeroV3() {
       <div className={s.heroStage} id="demo">
         <div className={s.heroGlow} aria-hidden="true"></div>
         <div className={s.panelFrame}>
-          <FoxyMascot className={s.panelFox} />
-          <ChatDemo />
+          <FoxyMascot className={s.panelFox} gesture={foxGesture} interactive followCursor />
+          <ChatDemo onPhase={onDemoPhase} />
           <div className={s.panelFade} aria-hidden="true"></div>
         </div>
       </div>

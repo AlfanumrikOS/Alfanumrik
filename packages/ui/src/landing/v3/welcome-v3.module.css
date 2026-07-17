@@ -401,6 +401,12 @@
   margin: 0 6px;
 }
 
+/* the count-up numeral is copy, not a separator dot */
+.heroTrust .heroNum {
+  color: inherit;
+  margin: 0;
+}
+
 /* Product panel (hero-section-1 screenshot frame) */
 .heroStage {
   position: relative;
@@ -1500,10 +1506,36 @@
   font-weight: 600;
 }
 
-/* ── Foxy mascot SVG behaviors (FoxyMascot.tsx) ──────────────── */
+/* ── Foxy mascot v2 — parts, idle life, gesture system ────────
+   (FoxyMascot.tsx). All motion transform/opacity only; every
+   animation collapses in the reduced-motion block below. ────── */
+.fx {
+  overflow: visible;
+}
+
+.fxAll {
+  transition: transform 0.45s ease;
+}
+
+/* idle: breathing (body), tail sway, blink, occasional ear twitch */
+.fxBody {
+  transform-origin: 58px 106px;
+  animation: v3breathe 3.6s ease-in-out infinite;
+}
+
+@keyframes v3breathe {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.02);
+  }
+}
+
 .fxEyes {
-  transform-origin: center 46px;
+  transform-origin: 58px 40px;
   animation: v3blink 6s infinite;
+  transition: opacity 0.15s ease;
 }
 
 @keyframes v3blink {
@@ -1515,8 +1547,13 @@
   }
 }
 
+.fxEyesHappy {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
 .fxTail {
-  transform-origin: 76px 88px;
+  transform-origin: 76px 94px;
   animation: v3sway 4.5s ease-in-out infinite alternate;
 }
 
@@ -1529,31 +1566,430 @@
   }
 }
 
-.fxArm {
-  transform-origin: 83px 78px;
-  transform: rotate(0deg);
+.fxEarL {
+  transform-origin: 42px 30px;
+  transition: transform 0.35s ease;
 }
 
-.isWaving .fxArm {
-  animation: v3wave 1.8s ease-in-out 1;
+.fxEarR {
+  transform-origin: 74px 30px;
+  transition: transform 0.35s ease;
+  animation: v3twitch 7s ease-in-out infinite;
 }
 
-@keyframes v3wave {
+@keyframes v3twitch {
+  0%, 88%, 100% {
+    transform: rotate(0);
+  }
+  91% {
+    transform: rotate(-9deg);
+  }
+  94% {
+    transform: rotate(4deg);
+  }
+}
+
+.fxHead {
+  transform-origin: 58px 60px;
+  transition: transform 0.4s ease;
+}
+
+.fxArmL {
+  transform-origin: 47.5px 78px;
+  transition: transform 0.4s ease;
+}
+
+.fxArmR {
+  transform-origin: 68.5px 78px;
+  transition: transform 0.4s ease;
+}
+
+/* wave: right arm arcs up, two oscillations, one-shot */
+.gWave .fxArmR {
+  animation: v3wave2 1.8s ease-in-out 1;
+}
+
+@keyframes v3wave2 {
   0%, 100% {
     transform: rotate(0);
   }
-  20% {
-    transform: rotate(-42deg);
+  22% {
+    transform: rotate(-140deg);
   }
   40% {
-    transform: rotate(-18deg);
+    transform: rotate(-108deg);
   }
-  60% {
-    transform: rotate(-42deg);
+  58% {
+    transform: rotate(-140deg);
   }
-  80% {
-    transform: rotate(-10deg);
+  76% {
+    transform: rotate(-108deg);
   }
+}
+
+/* think: head tilt + paw toward chin + ear up (posed) */
+.gThink .fxHead {
+  transform: rotate(-6deg);
+}
+
+.gThink .fxArmR {
+  transform: rotate(125deg);
+}
+
+.gThink .fxEarL {
+  transform: rotate(-8deg);
+}
+
+/* happy: squint-smile + double hop (one-shot) */
+.gHappy .fxEyes,
+.gCelebrate .fxEyes {
+  opacity: 0;
+}
+
+.gHappy .fxEyesHappy,
+.gCelebrate .fxEyesHappy {
+  opacity: 1;
+}
+
+.gHappy .fxAll {
+  animation: v3hop 0.9s ease 1;
+}
+
+@keyframes v3hop {
+  0%, 50%, 85%, 100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-7px);
+  }
+  68% {
+    transform: translateY(-4px);
+  }
+}
+
+/* celebrate: both arms up + hop loop */
+.gCelebrate .fxArmL {
+  transform: rotate(135deg);
+}
+
+.gCelebrate .fxArmR {
+  transform: rotate(-135deg);
+}
+
+.gCelebrate .fxAll {
+  animation: v3hopLoop 0.7s ease-in-out infinite;
+}
+
+@keyframes v3hopLoop {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-6px);
+  }
+}
+
+/* peek: body mostly hidden below the frame, eyes visible */
+.gPeek .fxAll {
+  transform: translateY(50px);
+}
+
+.gPeek .fxTail,
+.gPeek .fxArmL,
+.gPeek .fxArmR {
+  opacity: 0;
+}
+
+/* ── Intelligence layer — thinking glyph (section eyebrows) ──── */
+.glyph {
+  width: 18px;
+  height: 13px;
+  margin-right: 7px;
+  vertical-align: -2px;
+  display: inline-block;
+}
+
+.glyph line {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.45;
+}
+
+.glyph circle {
+  fill: currentColor;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: v3glyph 2.2s ease-in-out infinite;
+}
+
+.glyph circle:nth-of-type(2) {
+  animation-delay: 0.35s;
+}
+
+.glyph circle:nth-of-type(3) {
+  animation-delay: 0.7s;
+}
+
+@keyframes v3glyph {
+  0%, 60%, 100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+}
+
+/* ── "How Foxy thinks" pipeline (HowFoxyThinksV3) ────────────── */
+.pipe {
+  background: var(--cream-soft);
+}
+
+.pipeFlow {
+  display: grid;
+  grid-template-columns: 1fr;
+  --pipe-cycle: 2.4s;
+}
+
+.pipeNode {
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: #fff;
+  padding: 28px 20px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(26, 29, 33, 0.04);
+}
+
+/* pulse ring — fires as a travelling dot arrives */
+.pipeNode::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: var(--r-card);
+  border: 2px solid rgba(232, 88, 28, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  animation: v3nodePulse var(--pipe-cycle) ease-in-out infinite;
+  animation-delay: var(--pulse-delay, 0s);
+}
+
+@keyframes v3nodePulse {
+  0%, 30%, 100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  8% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+.pipeNode h3 {
+  margin: 16px 0 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.pipeNode p {
+  margin: 6px auto 0;
+  font-size: 13.5px;
+  color: var(--sec);
+  max-width: 30ch;
+}
+
+/* connector — fixed-length track the dots travel along */
+.pipeLink {
+  position: relative;
+  height: 44px;
+  width: 8px;
+  margin: 0 auto;
+}
+
+.pipeLink::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 3px;
+  border-left: 2px dashed #F0B98A;
+}
+
+.pipeDot {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--orange);
+  opacity: 0;
+  animation: v3dotY var(--pipe-cycle) linear infinite;
+  animation-delay: var(--pipe-delay, 0s);
+}
+
+.pipeDot:nth-of-type(2) {
+  animation-delay: calc(var(--pipe-delay, 0s) + 1.2s);
+}
+
+@keyframes v3dotY {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  52% {
+    opacity: 1;
+  }
+  64%, 100% {
+    transform: translateY(34px);
+    opacity: 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pipeFlow {
+    grid-template-columns: 1fr 56px 1fr 56px 1fr 56px 1fr;
+    align-items: stretch;
+  }
+
+  .pipeLink {
+    align-self: center;
+    width: 56px;
+    height: 8px;
+    margin: 0;
+  }
+
+  .pipeLink::before {
+    top: 3px;
+    bottom: auto;
+    left: 4px;
+    right: 4px;
+    border-left: 0;
+    border-top: 2px dashed #F0B98A;
+  }
+
+  .pipeDot {
+    top: 0;
+    left: 2px;
+    animation-name: v3dotX;
+  }
+
+  @keyframes v3dotX {
+    0% {
+      transform: translateX(0);
+      opacity: 0;
+    }
+    12% {
+      opacity: 1;
+    }
+    52% {
+      opacity: 1;
+    }
+    64%, 100% {
+      transform: translateX(44px);
+      opacity: 0;
+    }
+  }
+}
+
+/* ── Mastery ring + count-up (OutcomeV3 letter) ──────────────── */
+.letterMastery {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--cream-soft);
+}
+
+.ring {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+
+.ringTrack {
+  fill: none;
+  stroke: #F8E8CE;
+}
+
+.ringValue {
+  fill: none;
+  stroke: var(--orange);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1.3s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+
+.letterMasteryValue {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.letterMasteryLabel {
+  font-size: 12.5px;
+  color: var(--sec);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* ── Ladder self-drawing connector path ──────────────────────── */
+.ladderFlow {
+  position: relative;
+}
+
+.ladderPath {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .ladderPath {
+    display: block;
+    position: absolute;
+    left: 3%;
+    right: 3%;
+    top: 42%;
+    height: 56px;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .ladderPath svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* cream sweep uncovers the dashed path left→right on reveal */
+  .ladderPath::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--cream);
+    transform-origin: right center;
+    transform: scaleX(1);
+    transition: transform 1.4s ease 0.25s;
+  }
+
+  .ladderPath:global(.is-revealed)::after {
+    transform: scaleX(0);
+  }
+}
+
+.ladderGrid {
+  position: relative;
+  z-index: 1;
 }
 
 /* ============================================================
@@ -1818,9 +2254,50 @@
 
   .fxEyes,
   .fxTail,
-  .isWaving .fxArm,
+  .fxBody,
+  .fxEarR,
+  .gWave .fxArmR,
+  .gHappy .fxAll,
+  .gCelebrate .fxAll,
+  .glyph circle,
+  .pipeNode::after,
+  .pipeDot,
   .typing i {
     animation: none;
+  }
+
+  .fxAll,
+  .fxHead,
+  .fxEarL,
+  .fxEarR,
+  .fxArmL,
+  .fxArmR,
+  .fxEyes,
+  .fxEyesHappy,
+  .ringValue {
+    transition: none;
+  }
+
+  /* still portrait: no posed-gesture transforms (peek keeps placement) */
+  .gThink .fxHead,
+  .gThink .fxArmR,
+  .gThink .fxEarL,
+  .gCelebrate .fxArmL,
+  .gCelebrate .fxArmR {
+    transform: none;
+  }
+
+  .pipeDot {
+    opacity: 0;
+  }
+
+  .glyph circle {
+    opacity: 0.7;
+  }
+
+  .ladderPath::after {
+    transition: none;
+    transform: scaleX(0);
   }
 
   .msgPending {

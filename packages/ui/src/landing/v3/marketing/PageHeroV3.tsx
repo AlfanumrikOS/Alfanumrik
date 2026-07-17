@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { useWelcomeV2 } from '../../WelcomeV2Context';
 import { useReveal } from '../../useReveal';
 import { track } from '@alfanumrik/lib/posthog/client';
+import { ThinkingGlyph } from '../MotionPrimitives';
 import { V3_ACTIVE_ROLE } from '../NavV3';
 import s from '../welcome-v3.module.css';
 
@@ -57,6 +58,7 @@ export default function PageHeroV3({
     <section className={s.phero} aria-labelledby={headingId}>
       <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
         <span className={`${s.eyebrow} ${s.revealUp}`} data-reveal>
+          <ThinkingGlyph />
           {t(eyebrowEn, eyebrowHi)}
         </span>
         <h1 id={headingId} className={`${s.pheroH1} ${s.revealUp}`} data-reveal>
