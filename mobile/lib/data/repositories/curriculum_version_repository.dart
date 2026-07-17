@@ -29,6 +29,12 @@ sealed class VersionResult {
 /// scope has never had content (an absent scope is reported as `0`, not as an
 /// unknown). A KNOWN version is the only thing that can authorise skipping the
 /// network.
+///
+/// Non-negativity is ENFORCED HERE, by [CurriculumVersionRepository.parseScopesEnvelope]
+/// dropping negative wire values — it is not merely inherited from the server's
+/// SQL floor. That matters: `kVersionUnverified` (-1) is only unforgeable if no
+/// [VersionKnown] can ever carry a negative, and this client is the only place
+/// that can hold itself to that.
 final class VersionKnown extends VersionResult {
   final int version;
 
@@ -170,6 +176,28 @@ class CurriculumVersionRepository {
   /// online, so [_ensureScopes] maps it to [_ScopesUnknown] → [VersionUnknownOnline],
   /// and the caller still fetches content. Only the connectivity probe can
   /// produce [VersionOffline].
+  ///
+  /// NEGATIVE SCOPE VALUES ARE DROPPED, exactly like unparseable ones. This is a
+  /// range check on untrusted wire data, not a restatement of the server's own
+  /// `GREATEST(COALESCE(...,0), ...)` floor. That floor lives in SQL, in another
+  /// deploy unit, behind an HTTP route this client does not own — it is an
+  /// assumption, not a guarantee this code can make. And this very function is
+  /// written to tolerate an unwrapped/proxied body, i.e. it already concedes the
+  /// envelope can be rewritten in transit; defending the SHAPE while trusting the
+  /// RANGE would be internally inconsistent.
+  ///
+  /// The specific hole this closes: `kVersionUnverified` (-1) is the sentinel the
+  /// Learn cache stamps on content fetched with NO version evidence, and its
+  /// entire safety rests on the server never reporting a negative. A wire `-1`
+  /// would parse to `VersionKnown(-1)`, satisfy `cached.version == serverVersion`
+  /// against a -1-stamped entry whose `scope` was written honestly, and serve an
+  /// UNVERIFIED entry as version-confirmed `live` with no chip — forging the
+  /// sentinel the constant exists to make unforgeable.
+  ///
+  /// Dropping (rather than clamping to 0) is the safe direction: an absent key is
+  /// reported as [VersionKnown] `0` by [versionForScope], which no valid cache
+  /// entry matches unless it was honestly stamped 0 for this same scope, so the
+  /// worst case is a refetch. Never a forged sentinel.
   static Map<String, int>? parseScopesEnvelope(dynamic body) {
     if (body is! Map) return null;
 
@@ -185,7 +213,10 @@ class CurriculumVersionRepository {
     final parsed = <String, int>{};
     rawScopes.forEach((key, value) {
       final v = value is num ? value.toInt() : int.tryParse('$value');
-      if (v != null) parsed['$key'] = v;
+      // `v >= 0` is the range half of the same rule the null check is the shape
+      // half of: a value we cannot honestly turn into a version is DROPPED, so
+      // the key reads as absent → VersionKnown(0) → refetch. Never forge -1.
+      if (v != null && v >= 0) parsed['$key'] = v;
     });
     return parsed;
   }

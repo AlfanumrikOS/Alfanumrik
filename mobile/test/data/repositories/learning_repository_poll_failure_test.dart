@@ -37,13 +37,23 @@
 // THE -1 STAMP
 // ============
 // The poll-failed fetch is written with `version: kVersionUnverified` (-1) via
-// putContent. Server scope values are unix-epoch seconds floored by
-// `GREATEST(..., 0)`, so no server value is EVER negative → `cached.version ==
+// putContent. No VersionKnown can ever carry a negative → `cached.version ==
 // serverVersion` can never match a -1 entry → the next successful poll is always
 // forced to re-validate it. That is what stops an unverified write from later
 // being served as version-confirmed `live`. `putContent` (not `replaceScope`) is
 // used because purging a scope's siblings needs version evidence to justify, and
 // a failed poll has none.
+//
+// "No VersionKnown can carry a negative" is enforced CLIENT-SIDE, by
+// `parseScopesEnvelope` dropping negative wire values — it is NOT inherited from
+// the RPC's `GREATEST(COALESCE(...,0), ...)` floor. That floor is real, but it is
+// a SQL file in another deploy unit, behind an HTTP route this client does not
+// own; trusting it would make the sentinel's safety a cross-repo assumption
+// asserted in a Dart comment. `parseScopesEnvelope` is also explicitly written to
+// tolerate unwrapped/proxied bodies, so it already concedes the envelope can be
+// rewritten in transit — defending the shape while trusting the range would be
+// internally inconsistent. See the forged-sentinel group at the bottom of this
+// file, and the range tests in curriculum_version_repository_test.dart.
 //
 // TEST SEAMS
 // ==========
@@ -124,6 +134,19 @@ class _Driver {
         },
       );
 }
+
+/// The REAL success body of `GET /api/v2/curriculum-version`: the RPC's
+/// `{ as_of, scopes }` jsonb returned verbatim inside the `/v2` envelope. Used by
+/// the forged-sentinel group, which drives a REAL [CurriculumVersionRepository]
+/// so the parse and the serve decision are wired together rather than stubbed —
+/// the defect lives in the seam BETWEEN them, so stubbing the poll would hide it.
+Map<String, dynamic> versionEnvelope(Map<String, dynamic> scopes) => {
+      'success': true,
+      'data': {
+        'as_of': '2026-07-17T10:00:00.000Z',
+        'scopes': scopes,
+      },
+    };
 
 Map<String, dynamic> topicJson(String title) => {
       'id': kChapter,
@@ -395,11 +418,13 @@ void main() {
 
   group('the kVersionUnverified (-1) stamp is self-limiting', () {
     test('kVersionUnverified is negative — the whole safety rests on this', () {
-      // Server scope values are unix-epoch seconds floored by GREATEST(..., 0),
-      // so no server value is ever negative. A negative stamp is therefore
-      // unmatchable by construction. If this ever became >= 0 it could collide
-      // with a real server version and an unverified entry would be served as
-      // version-confirmed live content.
+      // Half of the safety argument. A negative stamp is unmatchable only
+      // because no VersionKnown can carry a negative — which is enforced by
+      // `parseScopesEnvelope` dropping negative wire values (the other half,
+      // pinned in curriculum_version_repository_test.dart and, end-to-end, in
+      // the forged-sentinel group below). If this ever became >= 0 it could
+      // collide with a real server version and an unverified entry would be
+      // served as version-confirmed live content.
       expect(kVersionUnverified, lessThan(0));
     });
 
@@ -494,6 +519,122 @@ void main() {
       expect(res.data!.title, 'UNVERIFIED');
       expect(res.serve, LearnServe.staleOffline);
       expect(d.calls, 0, reason: 'a servable cache still spends zero data');
+    });
+  });
+
+  // THE SENTINEL CANNOT BE FORGED FROM THE WIRE.
+  //
+  // Every test in the group above stubs `versionForScope` and so takes "no
+  // VersionKnown can carry a negative" as GIVEN. This group removes that
+  // assumption: it drives a REAL CurriculumVersionRepository over a real wire
+  // body, so the parse and the serve decision are joined — which is where the
+  // defect lived.
+  //
+  // THE BUG: `parseScopesEnvelope` did no range validation, so a wire `-1`
+  // became `VersionKnown(-1)`. Against a -1-stamped cache entry BOTH guards then
+  // passed — version equality (-1 == -1) and the scope check (putContent wrote
+  // the real scope honestly) — and the UNVERIFIED entry was served as
+  // version-confirmed `live`, no chip, no fetch. That is precisely the hole
+  // kVersionUnverified was introduced to prevent, reopened one layer down.
+  group('a WIRE -1 cannot forge the kVersionUnverified sentinel', () {
+    // A driver whose version poll is REAL and reads `body` off the "wire" —
+    // no _FixedVersionRepo, so parseScopesEnvelope actually runs.
+    _Driver wireDriver(dynamic body, {required String freshTitle}) => _Driver(
+          repo: LearningRepository(
+            client: stubClient,
+            cache: cache,
+            versions: CurriculumVersionRepository(
+              fetchBody: () async => body,
+              connectivity: () async => true,
+            ),
+            v2Client: null,
+          ),
+          freshTitle: freshTitle,
+        );
+
+    test('an UNVERIFIED entry is NOT served as version-confirmed when the wire '
+        'reports -1 for its scope', () async {
+      // THE HEADLINE ASSERTION. Pre-fix this returned 'UNVERIFIED' with
+      // calls == 0 and LearnServe.live: unverified content served as confirmed.
+      await seed(
+        key: kKey,
+        scope: kScope,
+        version: kVersionUnverified,
+        title: 'UNVERIFIED',
+      );
+
+      final d = wireDriver(
+        versionEnvelope({kScope: -1}),
+        freshTitle: 'REVALIDATED',
+      );
+      final res = await d.serve();
+
+      expect(res.data!.title, 'REVALIDATED',
+          reason: 'the wire -1 must be dropped, so the scope reads as a KNOWN 0 '
+              'that the -1 entry cannot match → re-validate by refetching');
+      expect(d.calls, 1,
+          reason: 'the network must NOT be skipped on forged evidence');
+    });
+
+    test('re-validation stamps the honest server 0, never the forged -1',
+        () async {
+      // The entry must not merely dodge one serve — it must stop being
+      // unverified, so the next read can serve it instantly on real evidence.
+      await seed(
+        key: kKey,
+        scope: kScope,
+        version: kVersionUnverified,
+        title: 'UNVERIFIED',
+      );
+
+      await wireDriver(versionEnvelope({kScope: -1}), freshTitle: 'REVALIDATED')
+          .serve();
+
+      expect(metaFor(kKey)!['version'], 0,
+          reason: 'the dropped key reads as absent → KNOWN 0, and 0 is what gets '
+              'written; a -1 here would mean the wire re-armed the sentinel');
+    });
+
+    test('a NORMAL wire version still serves the cache instantly (no '
+        'over-reach)', () async {
+      // The control. The drop must cost nothing on the happy path: a real
+      // epoch version matching a real entry still skips the network. If this
+      // goes red the clamp is refetching on legitimate versions.
+      await seed(
+        key: kKey,
+        scope: kScope,
+        version: 1784000000,
+        title: 'CONFIRMED',
+      );
+
+      final d = wireDriver(
+        versionEnvelope({kScope: 1784000000}),
+        freshTitle: 'never',
+      );
+      final res = await d.serve();
+
+      expect(res.data!.title, 'CONFIRMED');
+      expect(res.serve, LearnServe.live);
+      expect(d.calls, 0, reason: 'a version-confirmed cache spends zero data');
+    });
+
+    test('an honest version-0 scope still serves the cache instantly', () async {
+      // The boundary the clamp must not swallow. `0` is a legitimate KNOWN
+      // version ("this scope never had content"); only NEGATIVES are dropped. A
+      // `> 0` check would force a needless refetch here on every read.
+      await seed(
+        key: kKey,
+        scope: kScope,
+        version: 0,
+        title: 'EMPTY_SCOPE_CONTENT',
+      );
+
+      final d = wireDriver(versionEnvelope({kScope: 0}), freshTitle: 'never');
+      final res = await d.serve();
+
+      expect(res.data!.title, 'EMPTY_SCOPE_CONTENT');
+      expect(res.serve, LearnServe.live);
+      expect(d.calls, 0);
     });
   });
 }

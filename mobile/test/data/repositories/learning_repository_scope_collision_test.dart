@@ -23,11 +23,15 @@
 //   (b) `_serveVersioned` additionally requires `cached.scope == scope`, so an
 //       entry that lands on a key by any other route still cannot be served for
 //       the wrong scope. This also disarms the overloaded `version: 0` sentinel
-//       (a `_blindTtl` entry writes `scope: ''` / `version: 0`, which would
-//       otherwise match a server `0` meaning "scope never had content").
+//       carried by blind-TTL entries from OLDER BUILDS (`_blindTtl` wrote
+//       `scope: ''` / `version: 0`, which would otherwise match a server `0`
+//       meaning "scope never had content"). Current builds stamp `_blindTtl`
+//       writes kVersionUnverified instead, but the Hive cache outlives the build
+//       that wrote it, so the version-0 entries are real and guard (b) is what
+//       disarms them.
 //
-// TEST SEAMS (mirroring learning_repository_serve_versioned_test.dart)
-// ===================================================================
+// TEST SEAMS
+// ==========
 //  * `v2Client: null` makes any refetch throw `LearnFetchException` BEFORE any
 //    network — so "did it serve the cache?" is decidable with zero I/O: reaching
 //    a returned value proves a cache hit; a throw proves a cache miss.
@@ -294,12 +298,15 @@ void main() {
       );
     });
 
-    test('the version-0 sentinel from a flag-OFF _blindTtl entry is not served',
+    test('the version-0 sentinel from a legacy _blindTtl entry is not served',
         () async {
-      // `_blindTtl` writes `scope: ''` / `version: 0`. The server reports 0 for
-      // "this scope never had content". Without the scope check those two
-      // unrelated zeroes compare equal and the blind-TTL entry is served as
-      // version-anchored live content.
+      // A blind-TTL entry written by an OLDER BUILD carries `scope: ''` /
+      // `version: 0` (current builds stamp kVersionUnverified — but Hive
+      // persists across app upgrades, so these entries are still on real
+      // devices). The server reports 0 for "this scope never had content".
+      // Without the scope check those two unrelated zeroes compare equal and the
+      // blind-TTL entry is served as version-anchored live content. This is why
+      // the -1 stamp is a second line of defense, not a replacement for (b).
       await seed(
         key: 'topic_math_${kGrade}_$kChapter',
         scope: '',
@@ -342,7 +349,9 @@ void main() {
     // would be actively wrong: the one non-matching scope reachable on a
     // namespaced key is `''`, written by the flag-OFF `_blindTtl` path, and that
     // entry IS this subject's own content — refusing it would strand offline
-    // users who last read on a flag-OFF build.)
+    // users who last read on a flag-OFF build. Note this is also why `_blindTtl`
+    // stamping kVersionUnverified is inert rather than protective HERE: the
+    // offline branch never looks at the version at all.)
 
     test('offline: science does NOT pick up math ch3 as its own stale content',
         () async {

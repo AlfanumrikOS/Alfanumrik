@@ -1,5 +1,6 @@
 import 'package:alfanumrik_api_v2/alfanumrik_api_v2.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/cache/cache_manager.dart';
@@ -39,13 +40,20 @@ class LearnData<T> {
 /// Version stamp written when content is fetched with NO version evidence — the
 /// online-but-poll-failed path in [LearningRepository._serveVersioned].
 ///
-/// THE ENTIRE SAFETY OF THAT WRITE RESTS ON THIS BEING NEGATIVE. Server scope
-/// values are unix-epoch seconds and `0` means "never had content", so the
-/// server can never report a negative version (the source RPC floors every
-/// scope with `GREATEST(..., 0)`). Therefore `cached.version == serverVersion`
-/// can NEVER match an entry stamped with this value, and the next SUCCESSFUL
-/// poll is always forced to re-validate it by refetching. That is what stops an
-/// unverified entry from later being served as version-confirmed `live`.
+/// THE ENTIRE SAFETY OF THAT WRITE RESTS ON THIS BEING NEGATIVE — and on no
+/// [VersionKnown] ever being able to carry a negative. Server scope values are
+/// unix-epoch seconds where `0` means "never had content", and the source RPC
+/// does floor every scope with `GREATEST(COALESCE(...,0), ...)` — but that is a
+/// fact about a SQL file in another deploy unit, behind an HTTP route this
+/// client does not own. It is not a guarantee this code can make, so this code
+/// does not rely on it: [CurriculumVersionRepository.parseScopesEnvelope] DROPS
+/// negative wire values, which is what actually makes this sentinel unforgeable
+/// from the wire.
+///
+/// Given that, `cached.version == serverVersion` can NEVER match an entry
+/// stamped with this value, and the next SUCCESSFUL poll is always forced to
+/// re-validate it by refetching. That is what stops an unverified entry from
+/// later being served as version-confirmed `live`.
 ///
 /// It stays servable on the OFFLINE branch, which decides on age + key identity
 /// rather than version equality — an unverified entry is still this scope's own
@@ -483,14 +491,21 @@ class LearningRepository {
       // across every scope a bulk content operation touched, so two subjects
       // sharing a version is the NORMAL post-bulk-op state. Matching on version
       // alone would let any entry that lands on this key — a colliding key, or a
-      // `_blindTtl` entry written with the overloaded `scope: ''` / `version: 0`
-      // sentinel against a server `0` ("scope never had content") — be served as
-      // live content for the WRONG subject. Requiring the scope to match makes
-      // the identity of the entry, not just its age, part of the decision.
+      // blind-TTL entry (`scope: ''`) whose version happens to equal the server's
+      // — be served as live content for the WRONG subject. Requiring the scope to
+      // match makes the identity of the entry, not just its age, part of the
+      // decision. This guard is load-bearing for blind-TTL entries WRITTEN BY
+      // OLDER BUILDS, which carry the overloaded `version: 0` and so still
+      // compare equal to a server `0` ("scope never had content"); the Hive cache
+      // survives app upgrades, so those entries outlive the build that wrote them
+      // and the scope check is what disarms them. Current builds additionally
+      // stamp them kVersionUnverified — see [_blindTtl].
       //
-      // A kVersionUnverified (-1) entry can never match here: the server never
-      // reports a negative version, so the first successful poll after an
-      // unverified write always falls through and re-validates by refetching.
+      // A kVersionUnverified (-1) entry can never match here: no VersionKnown can
+      // carry a negative — `parseScopesEnvelope` DROPS negative wire values, so
+      // this holds even against a rewritten/proxied body and does not rest on the
+      // server's SQL floor alone. The first successful poll after an unverified
+      // write therefore always falls through and re-validates by refetching.
       if (cached != null &&
           cached.version == serverVersion &&
           cached.scope == scope) {
@@ -572,7 +587,14 @@ class LearningRepository {
   /// makes a SUCCEEDING fetch untestable).
   ///
   /// Mirrors [contentCacheKeyForTest]: a narrow, behaviour-preserving window
-  /// onto private logic, never called by production code.
+  /// onto private logic, never called by production code — and, unlike that one,
+  /// annotated so the analyzer enforces the "never called by production code"
+  /// half of that sentence rather than leaving it to reviewer vigilance. (The
+  /// annotation is deliberately NOT retrofitted onto [contentCacheKeyForTest]:
+  /// that is a pure static key formatter with no side effects and no decision in
+  /// it, so a production call would be harmless, whereas this seam runs the whole
+  /// serve/fetch/refuse core and bypasses the public read's own fetch wiring.)
+  @visibleForTesting
   Future<LearnData<T>> serveVersionedForTest<T>({
     required String scope,
     required String cacheKey,
@@ -588,6 +610,16 @@ class LearningRepository {
 
   /// Blind 5-minute TTL fallback (flag OFF / revert path). No version poll, no
   /// scope purge — mirrors the pre-change caching behaviour.
+  ///
+  /// The write stamps `scope: ''` + [kVersionUnverified]. Both fields then say
+  /// the same true thing independently — "no evidence" — which is the whole
+  /// point: this path never polled, so it HAS no version evidence. The previous
+  /// `version: 0` was inert (this path reads only `fetchedAt`, and `scope: ''`
+  /// can never equal a real scope, so [_serveVersioned]'s scope guard already
+  /// rejected these entries) but it was a false statement: `0` positively claims
+  /// "this scope never had content" about an entry that demonstrably CONTAINS
+  /// content. Inert-but-false is a bad thing to leave lying next to a sentinel
+  /// whose safety is a range argument.
   Future<LearnData<T>> _blindTtl<T>({
     required String cacheKey,
     required T Function(dynamic decoded) decodeCache,
@@ -604,7 +636,7 @@ class LearningRepository {
       key: cacheKey,
       scopeKey: '',
       data: cacheJson,
-      version: 0,
+      version: kVersionUnverified,
     );
     return LearnData<T>(value);
   }

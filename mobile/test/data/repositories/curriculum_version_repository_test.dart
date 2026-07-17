@@ -31,6 +31,11 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:alfanumrik/data/repositories/curriculum_version_repository.dart';
+// Imported for `kVersionUnverified` alone. The coupling is the point: the range
+// rule this file pins exists ONLY to keep that constant unforgeable, so the test
+// should name it rather than restate `-1` and let the two drift apart.
+import 'package:alfanumrik/data/repositories/learning_repository.dart'
+    show kVersionUnverified;
 
 /// The REAL success body of GET /api/v2/curriculum-version: the RPC jsonb
 /// (`{ as_of, scopes }`) returned VERBATIM inside the `/v2` envelope.
@@ -77,6 +82,88 @@ void main() {
         realEnvelope({'math-8': 123, 'junk-8': 'not-a-number'}),
       );
       expect(parsed, {'math-8': 123});
+    });
+
+    // A NEGATIVE WIRE VERSION MUST NOT FORGE THE UNVERIFIED SENTINEL.
+    //
+    // `kVersionUnverified` (-1) is what the Learn cache stamps on content
+    // fetched with NO version evidence, and its entire safety is a RANGE
+    // argument: no server version can ever be negative, so `cached.version ==
+    // serverVersion` can never match a -1 entry and the next successful poll is
+    // forced to re-validate it.
+    //
+    // Pre-fix, `parseScopesEnvelope` did zero range validation, so a wire `-1`
+    // became `VersionKnown(-1)` and that argument collapsed: against a -1-stamped
+    // cache entry, version equality (-1 == -1) AND the scope check (putContent
+    // wrote the real scope) both passed, and the UNVERIFIED entry served as
+    // version-confirmed `live` with no chip. Exactly the hole the sentinel exists
+    // to prevent.
+    //
+    // The RPC does floor every scope at 0 via `GREATEST(COALESCE(...,0), ...)`,
+    // so there is no live path today — but that is a SQL file in another deploy
+    // unit, behind an HTTP route this client does not own, asserted in a Dart
+    // comment. This function is already written to tolerate an unwrapped/proxied
+    // body, i.e. it already concedes the envelope can be rewritten in transit.
+    // Defending the shape while trusting the range is internally inconsistent, so
+    // the range is checked here, client-side, where the sentinel actually lives.
+    group('negative scope values are DROPPED (the -1 sentinel is unforgeable)',
+        () {
+      test('a negative value is dropped, exactly like an unparseable one', () {
+        // THE REGRESSION. Pre-fix: {'math-8': 123, 'evil-8': -1}.
+        final parsed = CurriculumVersionRepository.parseScopesEnvelope(
+          realEnvelope({'math-8': 123, 'evil-8': -1}),
+        );
+
+        expect(parsed, isNotNull,
+            reason: 'one bad value must not fail the whole poll — same '
+                'precedent as the unparseable-value drop above');
+        expect(parsed!.containsKey('evil-8'), isFalse,
+            reason: 'DROPPED, not clamped: the key must read as ABSENT so '
+                'versionForScope reports a KNOWN 0 and the caller refetches');
+        expect(parsed, {'math-8': 123},
+            reason: 'the sibling scope must be unaffected');
+      });
+
+      test('the exact kVersionUnverified value can never come off the wire', () {
+        // Named rather than hardcoded: if the sentinel ever changed, this test
+        // must follow it, not silently keep testing a stale literal.
+        final parsed = CurriculumVersionRepository.parseScopesEnvelope(
+          realEnvelope({'math-8': kVersionUnverified}),
+        );
+
+        expect(parsed, isEmpty,
+            reason: 'the one value whose absence the whole cache-safety '
+                'argument rests on must be unrepresentable as a VersionKnown');
+      });
+
+      test('drops negatives in EVERY wire encoding (int, double, string)', () {
+        // The coercion above accepts nums and numeric strings, so the range
+        // check has to sit AFTER coercion or these three slip past it.
+        final parsed = CurriculumVersionRepository.parseScopesEnvelope(
+          realEnvelope({
+            'int-8': -1,
+            'double-8': -1.0,
+            'string-8': '-1',
+            'big-negative-8': -1784000000,
+            'ok-8': 123,
+          }),
+        );
+
+        expect(parsed, {'ok-8': 123},
+            reason: 'no encoding of a negative may survive coercion');
+      });
+
+      test('ZERO is NOT dropped — the clamp must not over-reach', () {
+        // 0 is a legitimate, KNOWN version meaning "this scope never had
+        // content", and a correctly-scoped version-0 cache entry must still
+        // serve without a refetch. A `> 0` check here would silently force a
+        // refetch on every empty scope, every read.
+        final parsed = CurriculumVersionRepository.parseScopesEnvelope(
+          realEnvelope({'empty-8': 0}),
+        );
+
+        expect(parsed, {'empty-8': 0});
+      });
     });
 
     test('parses the degraded-but-successful body (empty scopes)', () {
@@ -182,6 +269,30 @@ void main() {
     test('every scope is a KNOWN 0 on the degraded empty-scopes body', () async {
       final repo = repoServing(realEnvelope({}));
       expect(await repo.versionForScope('math-8'), const VersionKnown(0));
+    });
+
+    test('a negative wire version reads as absent → KNOWN 0, never KNOWN(-1)',
+        () async {
+      // The drop composes with the existing absent-scope rule to land on the
+      // safe outcome for free: dropped key → absent → VersionKnown(0). No cache
+      // entry matches 0 unless it was HONESTLY stamped 0 for this same scope, so
+      // the worst case is a refetch. Pre-fix this was VersionKnown(-1).
+      final repo = repoServing(realEnvelope({'math-8': -1}));
+      final res = await repo.versionForScope('math-8');
+
+      expect(res, const VersionKnown(0));
+      expect(res, isNot(const VersionKnown(kVersionUnverified)),
+          reason: 'the wire must never be able to hand the cache back its own '
+              '"no evidence" sentinel as if it were evidence');
+    });
+
+    test('a negative version does not poison its SIBLING scopes', () async {
+      // The drop is per-key. A single hostile/garbled value must not degrade the
+      // rest of the poll into a refetch storm.
+      final repo = repoServing(realEnvelope({'math-8': -1, 'science-8': 456}));
+
+      expect(await repo.versionForScope('math-8'), const VersionKnown(0));
+      expect(await repo.versionForScope('science-8'), const VersionKnown(456));
     });
 
     test('offline → VersionOffline WITHOUT issuing a request', () async {
