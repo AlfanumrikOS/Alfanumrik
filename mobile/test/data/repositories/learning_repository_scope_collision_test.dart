@@ -65,17 +65,20 @@ const String kChapter = '3';
 /// after a bulk content operation — this is the case the old code got wrong.
 const int kSharedVersion = 555;
 
-/// Version poll stub reporting the SAME version for EVERY scope.
+/// Version poll stub reporting the SAME outcome for EVERY scope.
 class _FlatVersionRepo extends CurriculumVersionRepository {
-  _FlatVersionRepo(this.version);
+  _FlatVersionRepo(this.result);
 
-  final int? version;
+  /// The common case: the poll succeeded with [version] for every scope.
+  _FlatVersionRepo.known(int version) : result = VersionKnown(version);
+
+  final VersionResult result;
   final List<String> scopesPolled = <String>[];
 
   @override
-  Future<int?> versionForScope(String scopeKey) async {
+  Future<VersionResult> versionForScope(String scopeKey) async {
     scopesPolled.add(scopeKey);
-    return version;
+    return result;
   }
 }
 
@@ -194,7 +197,7 @@ void main() {
         title: 'MATH_CH3',
       );
 
-      final versions = _FlatVersionRepo(kSharedVersion);
+      final versions = _FlatVersionRepo.known(kSharedVersion);
       final repo = repoWith(versions);
 
       // Math reads its own entry: a cache hit (no fetch → no throw).
@@ -214,7 +217,7 @@ void main() {
     });
 
     test('the two subjects poll their own scopes', () async {
-      final versions = _FlatVersionRepo(kSharedVersion);
+      final versions = _FlatVersionRepo.known(kSharedVersion);
       final repo = repoWith(versions);
 
       await seed(
@@ -242,7 +245,7 @@ void main() {
         title: 'SCIENCE_CH3',
       );
 
-      final repo = repoWith(_FlatVersionRepo(kSharedVersion));
+      final repo = repoWith(_FlatVersionRepo.known(kSharedVersion));
 
       expect((await serveConcept(repo, subject: 'math')).data!.title,
           'MATH_CH3');
@@ -262,7 +265,7 @@ void main() {
         title: 'LEGACY_TOPIC',
       );
 
-      final res = await repoWith(_FlatVersionRepo(kSharedVersion))
+      final res = await repoWith(_FlatVersionRepo.known(kSharedVersion))
           .getTopicContent(topicId: uuid, subjectCode: 'math', grade: kGrade);
 
       expect(res.data!.title, 'LEGACY_TOPIC');
@@ -283,7 +286,7 @@ void main() {
       );
 
       await expectLater(
-        serveConcept(repoWith(_FlatVersionRepo(kSharedVersion)),
+        serveConcept(repoWith(_FlatVersionRepo.known(kSharedVersion)),
             subject: 'science'),
         throwsA(isA<LearnFetchException>()),
         reason: 'version equality alone must never authorise a serve — the '
@@ -305,7 +308,7 @@ void main() {
       );
 
       await expectLater(
-        serveConcept(repoWith(_FlatVersionRepo(0)), subject: 'math'),
+        serveConcept(repoWith(_FlatVersionRepo.known(0)), subject: 'math'),
         throwsA(isA<LearnFetchException>()),
         reason: 'the overloaded version-0 sentinel must not authorise a serve',
       );
@@ -321,7 +324,7 @@ void main() {
         title: 'EMPTY_SCOPE_CONTENT',
       );
 
-      final res = await serveConcept(repoWith(_FlatVersionRepo(0)),
+      final res = await serveConcept(repoWith(_FlatVersionRepo.known(0)),
           subject: 'math');
 
       expect(res.data!.title, 'EMPTY_SCOPE_CONTENT');
@@ -354,7 +357,8 @@ void main() {
       );
 
       await expectLater(
-        serveConcept(repoWith(_FlatVersionRepo(null)), subject: 'science'),
+        serveConcept(repoWith(_FlatVersionRepo(const VersionOffline())),
+            subject: 'science'),
         throwsA(isA<LearnOfflineException>()),
         reason: 'refusing is correct: there is no SCIENCE content cached, and '
             'math ch3 is not a substitute for it',
@@ -370,8 +374,9 @@ void main() {
         title: 'MATH_CH3',
       );
 
-      final res =
-          await serveConcept(repoWith(_FlatVersionRepo(null)), subject: 'math');
+      final res = await serveConcept(
+          repoWith(_FlatVersionRepo(const VersionOffline())),
+          subject: 'math');
 
       expect(res.data!.title, 'MATH_CH3');
       expect(res.serve, LearnServe.staleOffline);
@@ -380,7 +385,8 @@ void main() {
 
     test('offline with NO cache at all refuses', () async {
       await expectLater(
-        serveConcept(repoWith(_FlatVersionRepo(null)), subject: 'science'),
+        serveConcept(repoWith(_FlatVersionRepo(const VersionOffline())),
+            subject: 'science'),
         throwsA(isA<LearnOfflineException>()),
       );
     });

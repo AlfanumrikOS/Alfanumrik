@@ -167,23 +167,24 @@ void main() {
       // THE HEADLINE REGRESSION: pre-fix this was null, not 123.
       final repo = repoServing(realEnvelope({'math-8': 123, 'science-8': 456}));
 
-      expect(await repo.versionForScope('math-8'), 123);
-      expect(await repo.versionForScope('science-8'), 456);
+      expect(await repo.versionForScope('math-8'), const VersionKnown(123));
+      expect(await repo.versionForScope('science-8'), const VersionKnown(456));
     });
 
-    test('an absent scope is 0 ("never had content"), NOT null', () async {
-      // The distinction matters: 0 is a KNOWN version (online, no content), null
-      // means UNKNOWN (offline / failed) and routes to the refuse branch.
+    test('an absent scope is a KNOWN 0 ("never had content"), not an unknown',
+        () async {
+      // The distinction matters: 0 is a KNOWN version (online, no content) and
+      // can authorise a cache serve; the unknowns cannot.
       final repo = repoServing(realEnvelope({'math-8': 123}));
-      expect(await repo.versionForScope('history-8'), 0);
+      expect(await repo.versionForScope('history-8'), const VersionKnown(0));
     });
 
-    test('every scope is 0 on the degraded empty-scopes body', () async {
+    test('every scope is a KNOWN 0 on the degraded empty-scopes body', () async {
       final repo = repoServing(realEnvelope({}));
-      expect(await repo.versionForScope('math-8'), 0);
+      expect(await repo.versionForScope('math-8'), const VersionKnown(0));
     });
 
-    test('offline → null WITHOUT issuing a request', () async {
+    test('offline → VersionOffline WITHOUT issuing a request', () async {
       var fetched = false;
       final repo = CurriculumVersionRepository(
         fetchBody: () async {
@@ -193,31 +194,53 @@ void main() {
         connectivity: () async => false,
       );
 
-      expect(await repo.versionForScope('math-8'), isNull);
+      expect(await repo.versionForScope('math-8'), isA<VersionOffline>());
       expect(fetched, isFalse,
           reason: 'offline short-circuits BEFORE the request so the fallback '
               'is instant (no Dio retry/backoff wait)');
     });
+  });
 
-    test('success:false envelope → null', () async {
+  // The poll can fail for reasons that have NOTHING to do with connectivity.
+  // Every case below is a device that is demonstrably ONLINE, so it must report
+  // VersionUnknownOnline — never VersionOffline. Collapsing these into "offline"
+  // is precisely the defect that rendered the Offline state on Learn for online
+  // users during a transient server blip.
+  group('versionForScope — an ONLINE poll failure is NOT offline', () {
+    test('success:false envelope → VersionUnknownOnline', () async {
       final repo = repoServing({'success': false, 'error': 'Unauthorized'});
-      expect(await repo.versionForScope('math-8'), isNull);
+      final res = await repo.versionForScope('math-8');
+
+      expect(res, isA<VersionUnknownOnline>());
+      expect(res, isNot(isA<VersionOffline>()),
+          reason: 'the server answered — the device is plainly online');
     });
 
-    test('missing data → null', () async {
+    test('missing data → VersionUnknownOnline', () async {
       final repo = repoServing({'success': true});
-      expect(await repo.versionForScope('math-8'), isNull);
+      expect(await repo.versionForScope('math-8'), isA<VersionUnknownOnline>());
     });
 
-    test('a throwing transport → null rather than an escaping exception',
-        () async {
-      // A version poll must never surface an error to the caller; null routes to
-      // the STALE_TTL grace path.
+    test('a malformed/HTML body → VersionUnknownOnline', () async {
+      final repo = repoServing('<html>502 Bad Gateway</html>');
+      expect(await repo.versionForScope('math-8'), isA<VersionUnknownOnline>());
+    });
+
+    test(
+        'a throwing transport (500 / timeout) → VersionUnknownOnline, not an '
+        'escaping exception', () async {
+      // A version poll must never surface an error to the caller. Connectivity
+      // said YES, so this is a server-side/transport blip on an online device.
       final repo = CurriculumVersionRepository(
         fetchBody: () async => throw Exception('timeout'),
         connectivity: () async => true,
       );
-      expect(await repo.versionForScope('math-8'), isNull);
+      final res = await repo.versionForScope('math-8');
+
+      expect(res, isA<VersionUnknownOnline>());
+      expect(res, isNot(isA<VersionOffline>()),
+          reason: 'a 500/timeout while online must never be reported as '
+              'offline — the caller can still fetch content');
     });
   });
 
@@ -252,8 +275,8 @@ void main() {
         connectivity: () async => true,
       );
 
-      expect(await repo.versionForScope('math-8'), isNull);
-      expect(await repo.versionForScope('math-8'), 123,
+      expect(await repo.versionForScope('math-8'), isA<VersionUnknownOnline>());
+      expect(await repo.versionForScope('math-8'), const VersionKnown(123),
           reason: 'a transient blip must not poison the whole session');
       expect(calls, 2);
     });
@@ -268,9 +291,9 @@ void main() {
         connectivity: () async => true,
       );
 
-      expect(await repo.versionForScope('math-8'), 123);
+      expect(await repo.versionForScope('math-8'), const VersionKnown(123));
       repo.invalidate();
-      expect(await repo.versionForScope('math-8'), 999);
+      expect(await repo.versionForScope('math-8'), const VersionKnown(999));
       expect(calls, 2);
     });
   });

@@ -36,10 +36,30 @@ class LearnData<T> {
   bool get isStaleOffline => serve == LearnServe.staleOffline;
 }
 
-/// Thrown when the app is offline (or the version poll failed) AND there is no
-/// cached content within the STALE_TTL grace window. The Learn screens catch
-/// this to render the dedicated Offline state — NEVER a silent stale serve and
-/// NEVER a static fallback.
+/// Version stamp written when content is fetched with NO version evidence — the
+/// online-but-poll-failed path in [LearningRepository._serveVersioned].
+///
+/// THE ENTIRE SAFETY OF THAT WRITE RESTS ON THIS BEING NEGATIVE. Server scope
+/// values are unix-epoch seconds and `0` means "never had content", so the
+/// server can never report a negative version (the source RPC floors every
+/// scope with `GREATEST(..., 0)`). Therefore `cached.version == serverVersion`
+/// can NEVER match an entry stamped with this value, and the next SUCCESSFUL
+/// poll is always forced to re-validate it by refetching. That is what stops an
+/// unverified entry from later being served as version-confirmed `live`.
+///
+/// It stays servable on the OFFLINE branch, which decides on age + key identity
+/// rather than version equality — an unverified entry is still this scope's own
+/// real content, so refusing it offline would strand the user for no benefit.
+const int kVersionUnverified = -1;
+
+/// Thrown ONLY when the app is offline (connectivity says there is no network)
+/// AND there is no cached content within the STALE_TTL grace window. The Learn
+/// screens catch this to render the dedicated Offline state — NEVER a silent
+/// stale serve and NEVER a static fallback.
+///
+/// A FAILED version poll on an ONLINE device is NOT this: there is a network, so
+/// the repository fetches fresh content instead of claiming to be offline. See
+/// [VersionUnknownOnline].
 class LearnOfflineException implements Exception {
   const LearnOfflineException();
   @override
@@ -74,8 +94,11 @@ class LearnFetchException implements Exception {
 ///   * version matches stored  → serve cache instantly (no network),
 ///   * server newer / no cache → refetch, then ATOMICALLY purge+replace the
 ///     scope so a partial purge can never resurface old syllabus,
-///   * offline / poll failed   → serve cache within [ApiConstants.learnCacheStaleTtl]
-///     (with the "as of {date}" chip) else REFUSE via [LearnOfflineException].
+///   * version unknown, cache within [ApiConstants.learnCacheStaleTtl] → serve
+///     it with the "as of {date}" chip (both offline AND poll-failed),
+///   * poll failed while ONLINE, no servable cache → fetch fresh and serve it
+///     `live`; the cache degrades to NO CACHE, never to NO CONTENT,
+///   * OFFLINE, no servable cache → REFUSE via [LearnOfflineException].
 /// Set `--dart-define=VERSION_ANCHORED_LEARN_CACHE=false` to revert to the
 /// previous blind-TTL behaviour.
 class LearningRepository {
@@ -422,24 +445,37 @@ class LearningRepository {
 
   /// The version-anchored serve/refetch/refuse decision for one content key.
   ///
-  ///   * server version KNOWN and == stored AND the entry belongs to this scope
+  ///   * version KNOWN and == stored AND the entry belongs to this scope
   ///     → serve cache instantly (no fetch).
-  ///   * server version KNOWN and newer / no cache / wrong scope → fetch fresh,
-  ///     then ATOMICALLY replace the scope (purge stale siblings + write the new
+  ///   * version KNOWN and newer / no cache / wrong scope → fetch fresh, then
+  ///     ATOMICALLY replace the scope (purge stale siblings + write the new
   ///     version).
-  ///   * server version UNKNOWN (offline / poll failed) → serve cache while
-  ///     within [ApiConstants.learnCacheStaleTtl] (staleOffline), else refuse
-  ///     with [LearnOfflineException].
+  ///   * version UNKNOWN (offline OR poll failed) WITH cache inside
+  ///     [ApiConstants.learnCacheStaleTtl] → serve it as staleOffline + chip.
+  ///     Identical for both unknowns: with no version evidence either way, a
+  ///     chipped serve of this scope's own recent content is honest.
+  ///   * poll FAILED while ONLINE, no servable cache → fetch fresh (`live`, no
+  ///     chip), stamped [kVersionUnverified].
+  ///   * OFFLINE, no servable cache → [LearnOfflineException].
+  ///
+  /// WHY THE LAST TWO DIFFER — the version is NOT a freshness gate, only a cache
+  /// stamp: the known-version branch below serves whatever `fetchFresh()`
+  /// returns without ever validating it against `serverVersion`. The version's
+  /// only question is "can I skip the network?", so when it is unknown the
+  /// correct fail direction is DON'T SKIP THE NETWORK → fetch. A cache layer
+  /// must degrade to NO CACHE, never to NO CONTENT. Fetching fresh cannot
+  /// violate "no silent stale serve" — you cannot serve stale by not serving
+  /// cache. Offline is the one unknown fetch cannot fix, so it alone refuses.
   Future<LearnData<T>> _serveVersioned<T>({
     required String scope,
     required String cacheKey,
     required T Function(dynamic decoded) decodeCache,
     required Future<(T, dynamic)> Function() fetchFresh,
   }) async {
-    final serverVersion = await _versions.versionForScope(scope);
+    final polled = await _versions.versionForScope(scope);
     final cached = await _cache.getContent<T>(cacheKey, decodeCache);
 
-    if (serverVersion != null) {
+    if (polled case VersionKnown(version: final serverVersion)) {
       // Online with a known version.
       //
       // The scope check is NOT redundant with the version check. Versions are
@@ -451,6 +487,10 @@ class LearningRepository {
       // sentinel against a server `0` ("scope never had content") — be served as
       // live content for the WRONG subject. Requiring the scope to match makes
       // the identity of the entry, not just its age, part of the decision.
+      //
+      // A kVersionUnverified (-1) entry can never match here: the server never
+      // reports a negative version, so the first successful poll after an
+      // unverified write always falls through and re-validates by refetching.
       if (cached != null &&
           cached.version == serverVersion &&
           cached.scope == scope) {
@@ -473,7 +513,11 @@ class LearningRepository {
       return LearnData<T>(value);
     }
 
-    // Version unknown → offline or the poll failed.
+    // ── Version unknown: offline OR the poll failed. ──────────────────────────
+    // Recent cache for this key serves with the "as of {date}" chip on BOTH
+    // unknowns. Unchanged behaviour: with no version evidence in either
+    // direction, a chipped serve is the honest answer, and the invariant
+    // explicitly blesses it on poll-failure too.
     if (cached != null &&
         DateTime.now().difference(cached.fetchedAt) <=
             ApiConstants.learnCacheStaleTtl) {
@@ -483,9 +527,64 @@ class LearningRepository {
         asOf: cached.fetchedAt,
       );
     }
-    // No cache, or the cache is older than STALE_TTL → refuse.
-    throw const LearnOfflineException();
+
+    // No cache, or the cache is older than STALE_TTL. Here the two unknowns
+    // finally diverge.
+    if (polled is VersionOffline) {
+      // Genuinely offline: no network to fetch from, and the connectivity
+      // short-circuit already spared us the Dio retry/backoff wait. Refuse —
+      // deliberately WITHOUT calling fetchFresh(), which would reintroduce
+      // exactly that wait before failing anyway.
+      throw const LearnOfflineException();
+    }
+
+    // ONLINE, but the version poll failed → we merely lost the ability to SKIP
+    // the network, not the network itself. Fetch. Serving this as `live` with
+    // no chip is correct: it came off the wire this instant, so it is not stale.
+    //
+    // Written with putContent, NOT replaceScope: purging this scope's siblings
+    // is an act that needs version evidence to justify, and we have none. A
+    // failed poll must not be able to destroy a user's offline cache.
+    // `scopeKey: scope` keeps the entry honest for the scope guard above and for
+    // the offline branch. The -1 stamp guarantees re-validation on the next
+    // successful poll (see [kVersionUnverified]).
+    assert(polled is VersionUnknownOnline,
+        'VersionResult must be exhaustively handled: got $polled');
+    final (value, cacheJson) = await fetchFresh();
+    await _cache.putContent(
+      key: cacheKey,
+      scopeKey: scope,
+      data: cacheJson,
+      version: kVersionUnverified,
+    );
+    return LearnData<T>(value);
   }
+
+  /// Test-visible view of the version-anchored decision core ([_serveVersioned]).
+  ///
+  /// The decision core is the unit under test for the serve/fetch/refuse
+  /// branches: it is the ONLY place that makes that decision, and it is
+  /// source-independent by construction — every public read (chapters v2/legacy,
+  /// concept v2, legacy topic) funnels through it with its own `fetchFresh`.
+  /// Exposing it lets each branch be driven with an injected fetch, so a test
+  /// can assert what the cache layer DECIDED without standing up a v2/Supabase
+  /// wire (which would exercise the transport rather than the decision, and
+  /// makes a SUCCEEDING fetch untestable).
+  ///
+  /// Mirrors [contentCacheKeyForTest]: a narrow, behaviour-preserving window
+  /// onto private logic, never called by production code.
+  Future<LearnData<T>> serveVersionedForTest<T>({
+    required String scope,
+    required String cacheKey,
+    required T Function(dynamic decoded) decodeCache,
+    required Future<(T, dynamic)> Function() fetchFresh,
+  }) =>
+      _serveVersioned<T>(
+        scope: scope,
+        cacheKey: cacheKey,
+        decodeCache: decodeCache,
+        fetchFresh: fetchFresh,
+      );
 
   /// Blind 5-minute TTL fallback (flag OFF / revert path). No version poll, no
   /// scope purge — mirrors the pre-change caching behaviour.
