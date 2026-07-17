@@ -59,7 +59,13 @@ describe('RCA-20 product readiness release gate runner', () => {
     expect(nextConfigSource).not.toContain('NEXT_RELEASE_GATE_DIST_DIR');
     expect(nextConfigSource).not.toContain('? false : undefined');
     expect(nextConfigSource).not.toContain('? true : undefined');
-    expect(nextConfigSource).toContain("...(process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER === '1'");
+    // webpackBuildWorker is default-ON (Vercel preview OOM fix, 2026-07-17):
+    // the experiment must be explicitly opted in (Sentry's custom webpack fn
+    // would otherwise auto-disable it), while NEXT_DISABLE_WEBPACK_BUILD_WORKER=1
+    // remains the env kill switch.
+    expect(nextConfigSource).toContain(
+      "webpackBuildWorker: process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER !== '1'"
+    );
     expect(nextConfigSource).toContain("...(process.env.NEXT_WEBPACK_MEMORY_OPTIMIZATIONS === '1'");
   });
 
