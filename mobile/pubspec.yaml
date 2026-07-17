@@ -74,6 +74,25 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Physical-device benchmark harness (Option A gate — see
+  # docs/benchmark-runbook.md). Both are Flutter-SDK dev packages used ONLY by
+  # `flutter drive` timeline capture:
+  #   * integration_test — provides IntegrationTestWidgetsFlutterBinding +
+  #     binding.traceAction() timeline capture for the jank drivers in
+  #     integration_test/.
+  #   * flutter_driver — provides Timeline / TimelineSummary, consumed by
+  #     test_driver/perf_driver.dart to summarize the captured timeline and
+  #     emit the jank JSON.
+  # APK / method-count impact: ZERO. dev_dependencies are never linked into a
+  # `flutter build apk/appbundle --release` artifact — they only exist in the
+  # throwaway `--profile` build that `flutter drive` spins up on the device.
+  # The shipping v1.1.0+2 release AAB is byte-unaffected by adding these.
+  integration_test:
+    sdk: flutter
+  flutter_driver:
+    sdk: flutter
+
   flutter_lints: ^3.0.1
   build_runner: ^2.4.7
   json_serializable: ^6.7.1
