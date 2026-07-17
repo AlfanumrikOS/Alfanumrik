@@ -157,6 +157,17 @@ See `.claude/CLAUDE.md` for the full product constitution:
 
 ## Key File Map
 
+> **MONOREPO PATH CORRECTION — added 2026-07-17 (monorepo migration).** The inline `src/…` paths in the table below (and elsewhere in this doc) are STALE. This repo is now a monorepo (`apps/*` + `packages/*`). The *Area* labels, ownership, and every rule below remain accurate — only the path prefixes moved. Translate as follows (verified via Glob/Read on 2026-07-17):
+>
+> | Doc path (stale) | Actual location |
+> |---|---|
+> | `src/app/…` | `apps/host/src/app/…` — root `src/app/**` no longer exists. Some routes sit under route groups, e.g. the quiz page is `apps/host/src/app/(student)/quiz/page.tsx`. |
+> | `src/app/api/…` | `apps/host/src/app/api/…` (e.g. Foxy route `apps/host/src/app/api/foxy/route.ts`) |
+> | `src/lib/<x>` | source of truth at `packages/lib/src/<x>`; `apps/host/src/lib/<x>.ts` is a thin auto-generated re-export stub (`export * from '…/packages/lib/src/<x>'`). Applies to `xp-rules`, `xp-config`, `cognitive-engine`, `razorpay`, `feature-flags`, `logger`, `analytics`, etc. |
+> | `src/components/<x>` | shared UI moved to `packages/ui/src/<x>` (the `@alfanumrik/ui` package); `apps/host/src/components/<x>` is a thin re-export stub. Quiz components (`QuizSetup`, `QuizResults`, `FeedbackOverlay`) live at `packages/ui/src/quiz/`. |
+> | `src/proxy.ts` | `apps/host/src/proxy.ts` |
+> | `supabase/migrations/`, `supabase/functions/` | **UNCHANGED — still at repo ROOT.** They did NOT move under `apps/host/` (`apps/host/supabase/**` does not exist). |
+
 | Area | Location |
 |---|---|
 | Quiz engine | `src/app/quiz/page.tsx`, `src/components/quiz/` |

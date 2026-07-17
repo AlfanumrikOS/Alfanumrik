@@ -8693,3 +8693,260 @@ integrity pins) and REG-260 (landing V3 default + `?v=2` rollback hatch + FAQ
 Unlimited-price correction ₹1,499→₹1,099 + REG-65 ₹699 verbatim survival +
 prices-from-SoT on /welcome and /pricing).
 **Total catalog: 227 entries (target: 35 — TARGET EXCEEDED).**
+
+## REG-261 — Curriculum-version source: per-scope monotonicity + delete-safety (insert / edit / soft-delete / hard-delete) and the never-500s version-poll route (2026-07-17)
+
+Source: curriculum-version feature, steps 4-5. Migration + RPC
+`supabase/migrations/20260717120000_curriculum_version_source.sql`
+(`get_curriculum_versions(p_grade text, p_subject_codes text[] DEFAULT NULL)
+RETURNS jsonb` → `{ as_of, scopes: { "<subject_code>-<grade>": <unix_epoch_int> } }`,
+built over `curriculum_topics` + `rag_content_chunks`, guarded by the
+`curriculum_version_watermark` delete high-water table). Route
+`apps/host/src/app/api/v2/curriculum-version/route.ts`.
+
+**Why this is a regression pin.** The mobile Learn cache treats
+`server_version == stored_version` as "my cache is current — serve it with no
+network and no chip". That equality is only a safe serve decision if the value
+is **monotonic**: a version that ever moves BACKWARD lets a device hold NEW
+content stamped HIGH, watch the server report LOW, and — once the stamps
+collide again — serve retired syllabus as if it were current. Two paths have
+already been shown to break it: (1) **soft delete** — `UPDATE curriculum_topics
+SET is_active = false` (the internal-admin content route) did NOT set
+`updated_at`, so with an `is_active = true`-filtered aggregation, retiring the
+max-holder row moved `max(updated_at)` backward; closed by a BEFORE UPDATE
+`updated_at` trigger **plus** an is_active-AGNOSTIC aggregation. (2) **hard
+delete** — removing the max-holder genuinely lowers `max(updated_at)` and no
+trigger on the survivors can prevent it; closed by an AFTER DELETE per-scope
+watermark folded in via `GREATEST(ct_max, rag_max, watermark)`. Without it the
+scope collapses to 0 and every device believes its cache is newer than the
+server, forever. Monotonicity + delete-safety were made a REQUIRED condition of
+architect approval, hence the live-DB pin. Separately, the route is the only
+thing between a poll failure and the fleet: the client maps ANY non-parse to
+`null` → "version unknown" → stale-within-TTL / refuse, so a 5xx here pushes
+every device onto the offline path — the route must degrade to
+`{ as_of, scopes: {} }` + 200 + `no-store` on every failure branch instead.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-261a | `curriculum_version_monotonicity_and_delete_safety` | **LIVE DB.** For an isolated synthetic scope, the version is NON-DECREASING across the full lifecycle. `curriculum_topics`: never-had-content reads 0 → INSERT moves it above 0 → EDIT is `>= vInsert` **and** `> vInsert` (BEFORE UPDATE `updated_at` trigger) → SOFT DELETE (`is_active=false`, the historically-broken path) is `>= vEdit` **and** `> vEdit` → HARD DELETE is `>= vSoft` **and** above 0 (watermark floors it; without the AFTER DELETE trigger this collapses to 0). `rag_content_chunks`: INSERT (with `is_active=false`, proving the aggregation is is_active-AGNOSTIC) → EDIT → HARD DELETE, same non-decrease chain, plus the `curriculum_version_watermark` row is asserted to materialise for the scope with `hw_epoch` above 0. Contract: out-of-range / absent / whitespace grade → empty scope map plus an `as_of`, never an error (P5); an explicitly-requested code with no content echoes 0; `p_subject_codes` omitted (SQL DEFAULT NULL) omits empty scopes entirely; `as_of` is ISO-8601 UTC. | `apps/host/src/__tests__/migrations/curriculum-version-monotonicity.test.ts` (5 tests) | E | P5, P8 (watermark table is service_role-only; only the SECURITY DEFINER RPC reads it), no-old-syllabus |
+| REG-261b | `v2_curriculum_version_route_never_500s_and_passes_rpc_through_verbatim` | Auth (P9): `study_plan.view` + `requireStudentId: true`; 401 unauthenticated, 403 permission-denied returned as the RBAC `errorResponse` VERBATIM, authorized-but-no-userId fails closed — and a denied caller NEVER reaches the RPC. Happy path: the RPC jsonb is returned byte-for-byte inside the /v2 envelope (`toEqual`, key set exactly `['as_of','scopes']`), **no `schemaVersion` is injected** (frozen contract — the mobile parser reads `scopes` directly), `Cache-Control: private, max-age=30, stale-while-revalidate=60`, and the RPC is called EXACTLY once with `{ p_grade }` only so `p_subject_codes` takes the SQL DEFAULT (what keeps the poll under 1 KB). P5: grade reaches the RPC as a string, incl. coercing a drifted integer row. Never-500s: no studentId / absent student row / null grade / empty-string grade / RPC error / empty RPC result / RPC throws / `authorizeRequest` throws → ALL degrade to `{ as_of, scopes:{} }` + 200 + `no-store` (and the four grade-absent branches never call the RPC). An RPC-returned empty scope map is a SUCCESS and passes through with the OK cache header, not `no-store`. P13: `logger.error` fields are the exact key set `['error','route']` — never the studentId, the grade, or a PII-shaped key. | `apps/host/src/__tests__/api/v2/curriculum-version.test.ts` (23 tests) | E | P5, P9, P13 |
+
+### Lanes
+
+- REG-261a runs **only** in the CI `integration-tests` job (`npm run test:integration`,
+  `RUN_INTEGRATION_TESTS=1`, live STAGING Supabase). It self-skips without real
+  creds via `hasSupabaseIntegrationEnv()`, like every sibling under
+  `__tests__/migrations/`. It cannot run in the unit lane — the invariant is
+  produced by real triggers, a real transition-table statement trigger and a real
+  SECURITY DEFINER aggregation, none of which exist in a mock.
+- REG-261b runs in the CI unit step (`npm test` → vitest). Fully mocked.
+
+### Fixture isolation (load-bearing — do not "tidy" away)
+
+The live-DB fixture uses a dedicated synthetic subject (`cvz_version_test`,
+seeded `is_active=false`) and a scope-per-test grade. The `curriculum_topics`
+fixture leaves `chapter_number` NULL so it is EXCLUDED from
+`curriculum-taxonomy-parity.test.ts` (which scans `chapter_number IS NOT NULL`)
+and cannot masquerade as an old-syllabus orphan; the `rag_content_chunks`
+fixture is `is_active=false` so it is EXCLUDED from
+`rag-chunk-syllabus-orphans.test.ts` (which scans `is_active <> false`) — and
+that flag doubles as the proof that the RPC aggregation really is
+is_active-agnostic. Teardown order is content rows → the watermark rows their
+AFTER DELETE triggers just wrote → the subject (FK parent).
+
+### Invariants covered by this section
+
+- P5 (grade format) — grades are strings "6".."12" through the RPC signature,
+  the route's `String(...)` coercion, and the RPC's own P5 membership guard.
+- P8 (RLS boundary) — `curriculum_version_watermark` carries RLS with a
+  service_role-only policy in the same migration; clients only ever receive
+  integer versions from the SECURITY DEFINER RPC.
+- P9 (RBAC enforcement) — the auth boundary is the ONLY thing that may produce a
+  non-200 on the poll route.
+- P13 (data privacy) — the version poll logs an opaque event + message + route
+  only; the RPC returns scope keys + epoch ints with no PII and no per-user rows.
+
+## REG-262 — Mobile "no silent stale serve": the version-anchored serve/refetch/refuse decision core + atomic scope materialisation (2026-07-17)
+
+Source: curriculum-version feature, step 5 (mobile). `_serveVersioned` in
+`mobile/lib/data/repositories/learning_repository.dart` and `replaceScope` in
+`mobile/lib/core/cache/cache_manager.dart`, anchored on the REG-261 contract.
+
+**Why this is a regression pin.** Learn content may reach a student in exactly
+two states, and the state must always be HONEST: `LearnServe.live` (fresh off
+the wire, or a cache the server CONFIRMED is current) or `LearnServe.staleOffline`
+(served while the version is UNKNOWN, inside the 7-day grace window, with an
+"as of {date}" chip). Otherwise the app must REFUSE (`LearnOfflineException` —
+genuinely offline with no servable cache; NOT merely a failed poll, see REG-263)
+or surface the error (`LearnFetchException`). The forbidden outcome is serving
+content the app has POSITIVE EVIDENCE is out of date with no chip and no error —
+that is how retired syllabus reaches a student who then studies the wrong
+chapter for an exam. The sharpest edge is **known-newer server + failed
+refetch**: the app KNOWS its cache is stale (stored < server) and the network
+then fails; falling back to the cache is tempting and is exactly the bug — it is
+materially different from the offline case, where the app has no evidence either
+way and the chip tells the truth. The second half is materialisation: the version
+stamp is what the serve decision trusts, so `replaceScope` must never let an
+entry carry the NEW version while holding OLD content. It writes the fresh entry
+FIRST and only ever DELETES siblings (never re-stamps them), so any survivor of a
+mid-batch kill still carries its OLD version and re-triggers its own refetch.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-262a | `serve_versioned_no_silent_stale_serve_matrix` | **server == stored** → cache served as `LearnServe.live`, `asOf` null, exactly one version poll, and NO fetch attempted — including when the cache is a YEAR old (version, not age, decides; the grace window is an offline-only concept and must not leak into this branch). **server > stored + refetch FAILS** (the sharpest edge, and the branch no sibling suite covers) → throws `LearnFetchException`, is NOT a `LearnOfflineException` (the device is online — routing to the Offline state would misreport why), does NOT return the known-stale cache, and does NOT purge it (purge is atomic with a SUCCESSFUL fetch; purging on failure strands an offline-bound device). **no cache + fetch FAILS** → `LearnFetchException`, not offline. **version UNKNOWN — the SHARED half**: within the grace window BOTH unknowns (`VersionOffline` and `VersionUnknownOnline`) serve `LearnServe.staleOffline` with `asOf` equal to the real `fetchedAt` — the exact value, which is what makes the stale serve honest. **The STALE_TTL boundary (±1 minute around exactly 7 days, i.e. the `<=` off-by-one)**: just inside → still chipped, for both unknowns; just past → the two DIVERGE, and that divergence is pinned here at the boundary with age held constant and connectivity the only variable — `VersionOffline` refuses with `LearnOfflineException`, `VersionUnknownOnline` attempts the fetch instead of refusing (the split; see REG-263). Flag guard: `ApiConstants.versionAnchoredLearnCache` defaults ON (else this file AND both sibling suites silently exercise `_blindTtl` and the invariant goes untested) and `learnCacheStaleTtl` is 7 days. | `mobile/test/data/repositories/learning_repository_serve_versioned_test.dart` (13 tests — 11 `test()` calls, two parametrised across both unknowns) | E | no-old-syllabus, offline honesty |
+| REG-262b | `cache_manager_replace_scope_atomicity_no_masquerade` | `putContent`/`getContent` round-trip scope + version + `fetchedAt`, and the content surface applies NO TTL of its own (a year-old entry still reads back — freshness is the caller's policy, or a cold-start device would lose content it may serve within the grace window). Corrupt entries drop BOTH halves and read null. `replaceScope`: writes the fresh entry and purges every stale sibling in the scope; leaves other scopes untouched; **ORDER** — observed through Hive's box event stream, the first event is `put:<key>` and every subsequent event is a `del:` of a sibling, and it never deletes the entry it just wrote (a purge-first implementation can be killed leaving the scope with NO content); **KILL MID-BATCH** — reproducing the exact on-disk state between step 1 and step 2, every surviving sibling still carries the OLD version (never the new one), which is what forces its own refetch; **post-condition sweep** — after a full `replaceScope` the ONLY entry in the metadata box stamped with the new version is the one whose payload was actually rewritten. `purgeScope` removes payload + metadata for the scope, leaves other scopes, and sweeps un-attributable corrupt metadata. | `mobile/test/core/cache/cache_manager_test.dart` (14 tests) | E | no-old-syllabus, cache integrity |
+
+### Lane
+
+Both run in the CI `flutter test` job (`.github/workflows/mobile-ci.yml` — the
+REG-90 mobile gate). Real temp-dir Hive; no Supabase, no network, no mock
+package (mockito/mocktail are deliberately absent from `mobile/pubspec.yaml`).
+
+### Scope of REG-262a after the 2026-07-17 reconciliation
+
+Two fixes landed on this code after REG-262a was authored, each with its own
+suite, and REG-262a was narrowed to what those suites do not cover. Coverage that
+MOVED (deduped, not dropped):
+
+- **Scope-key contract** — "the polled scope key is `<subject_code>-<grade>`"
+  (byte-parity with the REG-261 server keying; drift → every scope reads absent →
+  refetch storm) now lives in `learning_repository_scope_collision_test.dart`
+  ("the two subjects poll their own scopes"), which asserts the exact polled-scope
+  list across two scopes rather than one. That suite also owns the scope
+  namespacing of the cache key itself and the `cached.scope == scope` guard —
+  the fix for a silent cross-subject serve (`topic_3` collided between math-8 and
+  science-8 because chapter numbers restart per scope, and equal versions across
+  scopes is the NORMAL post-bulk-op state).
+- **"UNKNOWN + no servable cache → refuse"** — REG-262a's original blanket claim
+  is now FALSE as stated and is superseded by REG-263: only `VersionOffline`
+  refuses. The offline half (including the load-bearing "and `fetchFresh` is
+  never invoked") is owned by REG-263's suite; REG-262a keeps only the ±1-minute
+  boundary statement of it, which REG-263 does not test at the boundary.
+
+REG-262a's retained subject is the KNOWN-newer-server + FAILED-refetch branch,
+"version not age decides", exact-`asOf` chip honesty, the STALE_TTL boundary, and
+the two config guards that keep all three suites honest.
+
+### Test seams (deliberate)
+
+Fetch failure is induced with ZERO network by constructing the repository with
+`v2Client: null` — `_fetchConceptV2` short-circuits to `LearnFetchException`
+before touching any client. That seam is what lets every "refetch fails" branch
+be driven through the PUBLIC `getConceptV2` api, and it is also why a SUCCEEDING
+fetch is not expressible in REG-262a (see below). The version poll is stubbed by
+subclassing `CurriculumVersionRepository` and overriding `versionForScope`, which
+is the whole poll seam; it returns the sealed `VersionResult` — `VersionKnown(int)`
+(the poll answered), `VersionOffline` (no network; the ONLY outcome permitted to
+refuse), or `VersionUnknownOnline` (online, poll failed; must still fetch). The
+`SupabaseClient` passed to the repository is a never-used stub required only
+because the constructor initialiser is `client ?? Supabase.instance.client` and
+`Supabase.instance` throws without a full app boot — no branch asserted here
+touches `_client`. Cache entries are seeded straight into the Hive boxes when a
+specific `fetchedAt` is needed, because `putContent` always stamps now and the
+grace-window branch is precisely about age.
+
+### Closed gap (why REG-262a is now `E`, not `P`)
+
+REG-262a was `P` for one reason: the **successful** refetch+replace branch
+(server > stored → fetch OK → atomic scope replace) was unreachable, because it
+needs a network fake and no mock package is in `mobile/pubspec.yaml`. The entry
+named its own remedy — "either a mock package added to the pubspec or a
+`@visibleForTesting` fetch seam on `LearningRepository`". **That seam now exists**:
+the poll-failure fix added `LearningRepository.serveVersionedForTest`, which
+drives the decision core with an INJECTED `fetchFresh`. REG-263's suite uses it
+to exercise the succeeding-fetch path directly (a `-1` entry re-validated against
+a later successful poll refetches and re-stamps at the real server version — the
+observable half of `replaceScope`). With the branch pinned there, REG-262b
+covering its cache half and REG-261 its server half, every assertion REG-262a
+still makes is covered by its own file, so it reads `E`.
+
+REG-262a deliberately keeps the `v2Client: null` seam rather than migrating to
+`serveVersionedForTest`: its subject is the branches that must NOT serve, and a
+seam where every fetch throws is the sharper instrument for proving a refusal.
+
+### Invariants covered by this section
+
+- No-old-syllabus / offline honesty — a student is never served content the app
+  knows is retired, and any stale serve is always chip-labelled with its real
+  "as of" date.
+- Cache integrity — the version stamp the serve decision trusts can never be
+  attached to content it does not describe, under any interleaving including a
+  mid-batch process kill.
+
+## REG-263 — Mobile: a cache degrades to NO CACHE, never to NO CONTENT — poll-failed-online FETCHES, only offline REFUSES (2026-07-17)
+
+Source: fix `98fa214a` on the version-anchored Learn cache. `versionForScope` in
+`mobile/lib/data/repositories/curriculum_version_repository.dart` and the unknown
+tail of `_serveVersioned` in
+`mobile/lib/data/repositories/learning_repository.dart`.
+
+**Why this is a regression pin.** `versionForScope` returned `null` for BOTH
+"offline" AND "the poll failed", and `_serveVersioned` treated the two
+identically, so a transient 500 / timeout / malformed body from the version
+endpoint — on a FULLY ONLINE device with a working network and no cache — threw
+`LearnOfflineException` and rendered "You're offline" on Learn. The student was
+not offline; the content was one reachable HTTP call away. This is a bug INSIDE
+the REG-262 invariant, not a policy change against it: `serverVersion` is never a
+freshness gate, only a cache stamp — the known-version branch serves whatever
+`fetchFresh()` returns and never validates it against `serverVersion`. The
+version's only question is "can I skip the network?", so when the answer is
+unknown the correct fail direction is DON'T SKIP THE NETWORK → fetch. Fetching
+fresh cannot violate "no silent stale serve": you cannot serve stale content by
+declining to serve the cache. Offline is the one unknown a fetch cannot fix, so
+it alone still refuses — and it must NOT call `fetchFresh()`, which would
+reintroduce the very Dio retry/backoff wait the connectivity short-circuit exists
+to eliminate. The two unknowns are different FACTS and the caller acts on them
+differently; the sealed `VersionResult` exists to stop them being collapsed again.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-263a | `version_result_two_unknowns_never_collapse` | `versionForScope` returns a three-way sealed `VersionResult`, never `int?`. A poll that ANSWERS → `VersionKnown` (an ABSENT scope is a KNOWN `0` = "never had content", NOT an unknown; every scope on a degraded empty-scopes body is likewise a known 0). An ONLINE poll failure → `VersionUnknownOnline`, NEVER `VersionOffline`, for every failure shape: `success:false` envelope, missing `data`, malformed/HTML body, throwing transport. Only the connectivity probe produces `VersionOffline`, and it short-circuits WITHOUT issuing a request (proving the offline fallback never waits on Dio retry/backoff). `parseScopesEnvelope` reads the REAL `/v2` envelope byte-for-byte (`body["data"]["scopes"]`, not `body["scopes"]` — REG-261b's frozen contract), tolerates a bare `{scopes}` body defensively, coerces numeric-string/double values, drops unparseable values rather than failing the whole poll, and returns null (never throws) on every malformed shape. Memoisation: a successful poll is reused for the session TTL (one request per session); a FAILED poll is NEVER memoised, so a transient blip self-heals on the next read; `invalidate()` forces a re-poll. | `mobile/test/data/repositories/curriculum_version_repository_test.dart` (22 tests) | E | offline honesty, REG-261b contract parity |
+| REG-263b | `poll_failed_online_fetches_offline_refuses` | **THE SPLIT.** online + poll failed + NO servable cache → `fetchFresh()` IS invoked and the result is served as `LearnServe.live` with NO chip (it came off the wire this instant, so it is not stale) — never `LearnOfflineException`. The write is `putContent`, NOT `replaceScope` (purging a scope's siblings needs version evidence to justify, and a failed poll has none — a server blip must not be able to destroy a user's offline cache; a seeded sibling's payload AND metadata both survive), stamped `version: kVersionUnverified` and tagged with this scope. Expired cache (older than STALE_TTL) behaves as no cache → the fetch wins; cache INSIDE STALE_TTL still wins with the chip and zero fetches (the deliberately UNCHANGED half — the invariant blesses the chipped serve on poll-failure too). The fetch ALSO failing → `LearnFetchException` (Error state with a real message), never `LearnOfflineException` — asserted both through the decision core and END-TO-END through the PUBLIC `getConceptV2` with a REAL `CurriculumVersionRepository` whose transport throws while connectivity reports ONLINE (the one case expressible against the pre-fix code, and RED on it). **OFFLINE is unchanged**: no servable cache → `LearnOfflineException` AND `fetchFresh` is NEVER invoked (`calls == 0`), including with a cache older than STALE_TTL. **The `-1` stamp is self-limiting**: `kVersionUnverified < 0` (the whole safety rests on this — server scope values are unix-epoch seconds floored by `GREATEST(..., 0)`, so no server value is ever negative ⇒ `cached.version == serverVersion` can never match a `-1` entry); a `-1` entry never serves as version-confirmed live on a later successful poll — including against a server `0`, the LOWEST value the server can report — and re-validation REPLACES the `-1` with the real server version; yet a `-1` entry IS still served offline within STALE_TTL with the chip (the offline branch decides on age + key identity, not version equality — an unverified entry is still this scope's own real content), and likewise on a later failed poll within TTL. | `mobile/test/data/repositories/learning_repository_poll_failure_test.dart` (16 tests) | E | offline honesty, no-old-syllabus |
+
+### Lane
+
+Both run in the CI `flutter test` job (`.github/workflows/mobile-ci.yml` — the
+REG-90 mobile gate). Real temp-dir Hive; no Supabase, no network, no mock package.
+
+### Test seams (deliberate)
+
+REG-263b drives the decision core through `LearningRepository.serveVersionedForTest`
+with an INJECTED, CALL-COUNTING `fetchFresh`. This is the seam REG-262a's known
+gap called for: it makes a SUCCEEDING fetch expressible (the `v2Client: null` seam
+used by REG-262a can only ever prove a refusal, because every fetch throws by
+construction) and makes "did it hit the network?" decidable — `calls == 0` is the
+load-bearing assertion on the offline branch, and no assertion that the offline
+path refuses is meaningful without it. The version poll is stubbed by subclassing
+`CurriculumVersionRepository`; REG-263a instead injects `fetchBody` +
+`connectivity` seams so the REAL parse and the REAL offline short-circuit run.
+
+### Relationship to REG-262
+
+REG-262a owns the branches that must NOT serve (known-newer server + failed
+refetch) and the STALE_TTL boundary; REG-263 owns the unknown tail where the two
+unknowns diverge. The one claim they share — "offline + no servable cache →
+refuse" — is stated at the ±1-minute boundary in REG-262a and with the
+`fetchFresh`-never-invoked proof here. REG-262a's original blanket "version
+UNKNOWN + no servable cache → `LearnOfflineException`" was corrected on
+2026-07-17: it is true only for `VersionOffline`.
+
+### Invariants covered by this section
+
+- Offline honesty — the app claims to be offline ONLY when it is. A failed poll
+  is a lost optimisation (the network-skip), never a lost feature; the Offline
+  state is never shown to a user with a working network.
+- No-old-syllabus — the split cannot reintroduce a stale serve: the poll-failed
+  path FETCHES (fresh by definition), and the `-1` stamp guarantees the next
+  successful poll re-validates anything written without version evidence.
+
+### Catalog total
+
+Pre-REG-261: 227 entries (through REG-260, landing V3 default + `?v=2` rollback
+hatch). Adds REG-261 (curriculum-version source — per-scope monotonicity across
+insert/edit/soft-delete/hard-delete, watermark delete-safety, and the
+never-500s verbatim-passthrough version-poll route), REG-262 (mobile
+no-silent-stale-serve — the `_serveVersioned` serve/refetch/refuse matrix and
+`replaceScope` write-new-first/no-masquerade atomicity) and REG-263 (mobile
+cache degrades to no-cache never to no-content — the poll-failed-online vs
+offline split and the `kVersionUnverified` re-validation stamp).
+**Total catalog: 230 entries (target: 35 — TARGET EXCEEDED).**

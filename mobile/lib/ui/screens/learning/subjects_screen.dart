@@ -17,6 +17,7 @@ class SubjectsScreen extends ConsumerWidget {
     if (student == null) return const SizedBox.shrink();
 
     final subjectsAsync = ref.watch(subjectsProvider);
+    final isHi = Localizations.localeOf(context).languageCode == 'hi';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -27,7 +28,19 @@ class SubjectsScreen extends ConsumerWidget {
           message: e.toString(),
           onRetry: () => ref.invalidate(subjectsProvider),
         ),
-        data: (subjects) => ListView.separated(
+        data: (subjects) {
+          // Empty / Coming-soon state — never leave the screen blank.
+          if (subjects.isEmpty) {
+            return Center(
+              child: Text(
+                isHi
+                    ? 'अभी कोई विषय उपलब्ध नहीं है।'
+                    : 'No subjects available yet.',
+                style: const TextStyle(color: AppColors.textTertiary),
+              ),
+            );
+          }
+          return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: subjects.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -91,7 +104,8 @@ class SubjectsScreen extends ConsumerWidget {
               ),
             );
           },
-        ),
+          );
+        },
       ),
     );
   }
