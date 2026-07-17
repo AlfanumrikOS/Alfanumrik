@@ -28,13 +28,22 @@
  * this route re-checks. P13: no PII logged (opaque event names + error messages
  * only — never student identifiers or the grade value).
  *
+ * P8: this route reads through an RLS-SCOPED client (`_scoped-client.ts`), NOT
+ * the service-role client. It does not need RLS-bypassing rights: the grade read
+ * is the caller's OWN `students` row (permitted by `students_select_merged`), and
+ * `get_curriculum_versions` is SECURITY DEFINER + GRANTed to `authenticated`, so
+ * it reads the service_role-only watermark table on the caller's behalf. RLS is
+ * therefore a free second line of defense behind authorizeRequest. See
+ * `_scoped-client.ts` for why the cookie-only `createSupabaseServerClient()`
+ * would silently break the (bearer-authenticated) mobile poll.
+ *
  * Auth: study_plan.view (student-scoped read; same as /api/v2/learn/curriculum).
  */
 import { NextRequest } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
-import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success } from '@alfanumrik/lib/api/v2/envelope';
+import { createCurriculumVersionClient } from './_scoped-client';
 
 /** Verbatim shape of the get_curriculum_versions RPC jsonb. */
 interface CurriculumVersions {
@@ -71,11 +80,15 @@ export async function GET(request: NextRequest) {
     // is still mid-onboarding) → degrade to empty scopes. Never break the poll.
     if (!auth.studentId) return degraded();
 
-    const admin = getSupabaseAdmin();
+    // RLS-scoped (P8): carries the caller's own JWT — bearer for mobile, cookie
+    // session for web. Never the service-role key.
+    const db = await createCurriculumVersionClient(request);
 
-    // Resolve the caller's grade (P5 string). Same source/shape as the sibling
-    // /api/v2/learn/curriculum. A missing grade degrades to empty scopes.
-    const { data: student } = await admin
+    // Resolve the caller's grade (P5 string). This reads the caller's OWN row,
+    // which `students_select_merged` permits via `auth_user_id = auth.uid()`.
+    // A missing grade — or an RLS-invisible row — degrades to empty scopes
+    // rather than 500ing the poll.
+    const { data: student } = await db
       .from('students')
       .select('grade')
       .eq('id', auth.studentId)
@@ -86,7 +99,9 @@ export async function GET(request: NextRequest) {
     // Call the frozen RPC with p_subject_codes = NULL (omitted → SQL DEFAULT):
     // returns every subject-with-content for this grade, empties omitted (<1 KB).
     // An out-of-range grade returns `{ as_of, scopes: {} }` from the RPC itself.
-    const { data: versions, error } = await admin.rpc('get_curriculum_versions', {
+    // SECURITY DEFINER + GRANT EXECUTE TO authenticated → the RLS-scoped caller
+    // gets the identical answer the service-role client got.
+    const { data: versions, error } = await db.rpc('get_curriculum_versions', {
       p_grade: grade,
     });
     if (error || !versions) {

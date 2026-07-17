@@ -50,16 +50,25 @@ const STUDENT_A = '11111111-1111-4111-8111-111111111111';
 let _student: { data: { grade: unknown } | null } = { data: { grade: '9' } };
 const _rpcImpl = vi.fn();
 
-vi.mock('@alfanumrik/lib/supabase-admin', () => ({
-  getSupabaseAdmin: () => ({
-    from: () => {
-      const chain: Record<string, unknown> = {};
-      for (const m of ['select', 'eq']) chain[m] = () => chain;
-      chain.maybeSingle = () => Promise.resolve(_student);
-      return chain;
-    },
-    rpc: (...a: unknown[]) => _rpcImpl(...a),
-  }),
+// P8: the route reads through the RLS-SCOPED client, NOT the service-role
+// client (`@alfanumrik/lib/supabase-admin`). The admin-client footprint is frozen
+// by `api-admin-client-allowlist.test.ts` and may only ratchet down, and this
+// route provably doesn't need RLS-bypassing rights: the grade read is the
+// caller's OWN students row (`students_select_merged`), and
+// `get_curriculum_versions` is SECURITY DEFINER + GRANTed to `authenticated`.
+// Mocking the scoped client keeps this suite fully offline (no DB, no network)
+// while pinning the same behavioural contract as before.
+vi.mock('@/app/api/v2/curriculum-version/_scoped-client', () => ({
+  createCurriculumVersionClient: () =>
+    Promise.resolve({
+      from: () => {
+        const chain: Record<string, unknown> = {};
+        for (const m of ['select', 'eq']) chain[m] = () => chain;
+        chain.maybeSingle = () => Promise.resolve(_student);
+        return chain;
+      },
+      rpc: (...a: unknown[]) => _rpcImpl(...a),
+    }),
 }));
 
 /** The exact header literals the route ships. Pinned, not recomputed. */
