@@ -30,6 +30,20 @@ class ApiConstants {
   static const String paymentsCreateOrder = '$apiBase/payments/create-order';
   static const String paymentsVerify = '$apiBase/payments/verify';
 
+  // ─── Curriculum-version anchor (Learn cache invalidation) ────────────────────
+  //
+  // FROZEN server contract:
+  //   GET /api/v2/curriculum-version →
+  //     { "as_of": "<ISO8601>",
+  //       "scopes": { "<subject_code>-<grade>": <unix_epoch_int>, ... } }
+  //
+  // A higher int means newer content for that subject+grade scope; `0` means the
+  // scope has never had content. The Learn cache stores this per-scope version
+  // alongside each cached content entry and refetches ONLY when the server
+  // reports a newer version (see [learning_repository]/[CacheManager]). This is
+  // the anchor that replaces the blind 5-minute content TTL.
+  static const String curriculumVersion = '$apiBase/v2/curriculum-version';
+
   // ─── /v2 contract switch (Wave 2.3 mobile-parity) ───────────────────────────
   //
   // This is an emergency BUILD-TIME kill switch only. When ON, the app still
@@ -94,7 +108,41 @@ class ApiConstants {
   // Timeouts
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 15);
+
+  // Short TTL for VOLATILE per-student state (dashboard / quiz usage / auth
+  // profile). These change frequently and must stay fresh — do NOT weaken this.
+  // Near-static curriculum/concept content NO LONGER uses this TTL; it is
+  // version-anchored instead (see [learnCacheStaleTtl] below).
   static const Duration cacheMaxAge = Duration(minutes: 5);
+
+  // ─── Version-anchored Learn content cache (replaces the blind content TTL) ───
+  //
+  // The Learn reference content (chapters / topics / concept prose) is
+  // near-static curriculum data. Instead of expiring it every 5 minutes (which
+  // blocked cold-starts and burned the data budget re-downloading identical
+  // syllabus), it is now invalidated by the per-scope version from
+  // [curriculumVersion]. Content is served instantly when the stored version
+  // matches the server, and only refetched when the server reports newer
+  // content for that subject+grade scope.
+  //
+  // [versionAnchoredLearnCache] is the emergency revert switch. Default ON (the
+  // new safe path). Ship a build with `--dart-define=VERSION_ANCHORED_LEARN_CACHE=false`
+  // to fall back to the previous blind 5-minute TTL for Learn content — no
+  // version poll, no atomic scope purge.
+  static const bool versionAnchoredLearnCache =
+      bool.fromEnvironment('VERSION_ANCHORED_LEARN_CACHE', defaultValue: true);
+
+  // Offline grace window for version-anchored Learn content. When the device is
+  // offline (or the version poll fails), cached content is still served — with a
+  // non-blocking "content as of {date}" chip — ONLY while it is younger than
+  // this window. Past it, the app REFUSES to serve stale content and shows the
+  // Offline state (never a silent stale serve). Config-flagged so ops can tune
+  // it per build: `--dart-define=LEARN_CACHE_STALE_TTL_DAYS=<n>`.
+  static const int learnCacheStaleTtlDays =
+      int.fromEnvironment('LEARN_CACHE_STALE_TTL_DAYS', defaultValue: 7);
+
+  static const Duration learnCacheStaleTtl =
+      Duration(days: learnCacheStaleTtlDays);
 
   // Pagination
   static const int defaultPageSize = 20;

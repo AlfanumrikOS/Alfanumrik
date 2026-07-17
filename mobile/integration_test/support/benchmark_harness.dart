@@ -33,6 +33,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:alfanumrik/data/models/chapter.dart';
 import 'package:alfanumrik/data/models/quiz_question.dart';
 import 'package:alfanumrik/data/models/student.dart';
+import 'package:alfanumrik/data/repositories/learning_repository.dart';
 import 'package:alfanumrik/providers/auth_provider.dart';
 import 'package:alfanumrik/providers/learning_provider.dart';
 import 'package:alfanumrik/providers/quiz_provider.dart';
@@ -183,9 +184,15 @@ Future<void> pumpChapterListBenchmark(
     ProviderScope(
       overrides: <Override>[
         studentProvider.overrideWith(_BenchmarkStudentNotifier.new),
+        // #1322 changed chaptersProvider to return the LearnData envelope
+        // (LearnData<List<Chapter>>) instead of the bare List<Chapter>, so the
+        // override wraps the synthetic list. serve: LearnServe.live = the happy
+        // path (no offline "as of {date}" chip); the fixtures are unchanged.
         chaptersProvider.overrideWith(
-          (ref, code) async =>
-              benchmarkChapters(count: chapterCount, subjectCode: code),
+          (ref, code) async => LearnData<List<Chapter>>(
+            benchmarkChapters(count: chapterCount, subjectCode: code),
+            serve: LearnServe.live,
+          ),
         ),
       ],
       // Plain MaterialApp (no GoRouter): the driver only scrolls; it never taps
