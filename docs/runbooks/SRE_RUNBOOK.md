@@ -395,3 +395,5 @@ issue and is not fixed by any step above.
 **Lesson:** local-shell workaround env vars must NEVER be set in the Vercel project env
 without an expiry note (owner + removal condition in the var's comment/notes field). A
 local-only workaround silently changed production build behavior for 6 days.
+
+> **2026-07-17 resolution:** Enhanced Builds (8 vCPU / 16 GB) enabled by the operator (Option A) after the heap-cap escalation also failed — the build working set has outgrown the standard 8 GB container (evidence: worker active + env override neutralized + 6144 MB heap cap all failed while 16 GB-class GH runners pass). Heap cap left in place (harmless at 16 GB). This merge commit doubles as the redeploy trigger for the first Enhanced build.
