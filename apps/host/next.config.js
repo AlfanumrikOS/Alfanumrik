@@ -85,9 +85,23 @@ const nextConfig = {
   // from `import { x, y } from 'pkg'` into per-symbol imports so unused symbols
   // are dropped from the client bundle. P10 budget enforcement.
   experimental: {
-    ...(process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER === '1'
-      ? { webpackBuildWorker: false }
-      : {}),
+    // Run webpack compilation in a separate worker process (2026-07-17,
+    // Vercel preview OOM fix). Next.js AUTO-DISABLES webpackBuildWorker
+    // whenever a custom webpack function is present — and withSentryConfig
+    // (bottom of this file) injects one on Vercel/CI — unless the experiment
+    // is explicitly opted in here. Without the worker, the entire app
+    // (280+ routes, mermaid, recharts, katex) compiles inside the single
+    // build process and exceeds the 8 GB preview build machine → SIGKILL
+    // (dpl_D3QM6VDKj1u1f7GTwaBEzoF1n6QZ, every preview since #1307).
+    // @sentry/nextjs supports webpackBuildWorker since 7.57.0 (installed:
+    // 10.53.1; verified locally with the Sentry-wrapped CI build path).
+    // Kill switch preserved: NEXT_DISABLE_WEBPACK_BUILD_WORKER=1 forces it
+    // off. NOTE: that var appears to be SET in the Vercel project env (the
+    // preview build log prints an explicit "⨯ webpackBuildWorker"); it was
+    // introduced as a LOCAL-ONLY Windows workaround (see
+    // engineering-audit/PRODUCT_READINESS_EXECUTION_2026-07-09.md #36) and
+    // must be removed from the Vercel env for this fix to take effect there.
+    webpackBuildWorker: process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER !== '1',
     ...(process.env.NEXT_WEBPACK_MEMORY_OPTIMIZATIONS === '1'
       ? { webpackMemoryOptimizations: true }
       : {}),
