@@ -3,6 +3,7 @@
 import { useWelcomeV2 } from '../WelcomeV2Context';
 import { useReveal } from '../useReveal';
 import { track } from '@alfanumrik/lib/posthog/client';
+import { ThinkingGlyph } from './MotionPrimitives';
 import s from './welcome-v3.module.css';
 
 /**
@@ -40,6 +41,7 @@ export default function PricingHeroV3({
     <section className={s.phero} aria-labelledby="pricing-hero-title">
       <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
         <span className={`${s.eyebrow} ${s.revealUp}`} data-reveal>
+          <ThinkingGlyph />
           {t('Pricing', 'मूल्य')}
         </span>
         <h1 id="pricing-hero-title" className={`${s.pheroH1} ${s.revealUp}`} data-reveal>

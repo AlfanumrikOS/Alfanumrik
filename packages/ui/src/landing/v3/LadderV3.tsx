@@ -1,13 +1,22 @@
 'use client';
 
+import { useId } from 'react';
 import { useWelcomeV2 } from '../WelcomeV2Context';
 import { useReveal } from '../useReveal';
+import { CountUp } from './MotionPrimitives';
 import s from './welcome-v3.module.css';
 
 /**
  * V3 "The Ladder" — three-step progression on the warm cream tint.
  * Step 03 (Competition Scale) is the page's ONLY purple accent — hard
- * contract from the approved design.
+ * contract from the approved design (the connector-path gradient below is
+ * therefore strictly orange-family).
+ *
+ * 2026-07-17 intelligence layer: a dashed gradient connector path draws
+ * itself behind the three cards on scroll-reveal (cream sweep uncovers it —
+ * transform-only), and the step numerals tick up 00→01/02/03. Both collapse
+ * to final state under reduced motion. Desktop only (>=768px); the mobile
+ * stack keeps its clean card rhythm.
  */
 
 interface Step {
@@ -66,6 +75,7 @@ const STEPS: Step[] = [
 export default function LadderV3() {
   const { isHi, t } = useWelcomeV2();
   const revealRef = useReveal(50);
+  const gradId = `ladder-grad-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
   return (
     <section className={`${s.section} ${s.ladder}`} id="ladder" aria-labelledby="ladder-v3-title">
@@ -82,25 +92,47 @@ export default function LadderV3() {
             )}
           </p>
         </div>
-        <div className={s.ladderGrid}>
-          {STEPS.map((step) => (
-            <div
-              key={step.num}
-              className={`${s.ladderStep} ${step.purple ? s.isPurple : ''} ${s.revealUp}`}
-              data-reveal
-            >
-              <div className={s.num} aria-hidden="true">
-                {step.num}
+        <div className={s.ladderFlow}>
+          {/* self-drawing connector (decorative, behind the cards) */}
+          <div className={`${s.ladderPath} ${s.revealUp}`} data-reveal aria-hidden="true">
+            <svg viewBox="0 0 1104 56" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stopColor="#F5A623" />
+                  <stop offset="1" stopColor="#E8581C" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M0 38 C180 38 200 18 368 18 C536 18 552 38 736 38 C920 38 940 18 1104 18"
+                fill="none"
+                stroke={`url(#${gradId})`}
+                strokeWidth="2.5"
+                strokeDasharray="8 10"
+                strokeLinecap="round"
+                opacity="0.8"
+              />
+            </svg>
+          </div>
+          <div className={s.ladderGrid}>
+            {STEPS.map((step, i) => (
+              <div
+                key={step.num}
+                className={`${s.ladderStep} ${step.purple ? s.isPurple : ''} ${s.revealUp}`}
+                data-reveal
+              >
+                <div className={s.num} aria-hidden="true">
+                  <CountUp to={i + 1} durationMs={900} format={(n) => String(n).padStart(2, '0')} />
+                </div>
+                <h3>{isHi ? step.titleHi : step.titleEn}</h3>
+                <p>{isHi ? step.bodyHi : step.bodyEn}</p>
+                <div className={s.tags}>
+                  {step.tags.map((tag) => (
+                    <span key={tag.en}>{t(tag.en, tag.hi)}</span>
+                  ))}
+                </div>
               </div>
-              <h3>{isHi ? step.titleHi : step.titleEn}</h3>
-              <p>{isHi ? step.bodyHi : step.bodyEn}</p>
-              <div className={s.tags}>
-                {step.tags.map((tag) => (
-                  <span key={tag.en}>{t(tag.en, tag.hi)}</span>
-                ))}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </section>

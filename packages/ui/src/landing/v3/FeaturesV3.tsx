@@ -2,6 +2,7 @@
 
 import { useWelcomeV2 } from '../WelcomeV2Context';
 import { useReveal } from '../useReveal';
+import { ThinkingGlyph } from './MotionPrimitives';
 import s from './welcome-v3.module.css';
 
 /**
@@ -135,7 +136,10 @@ export default function FeaturesV3() {
     <section className={s.section} id="how" aria-labelledby="features-v3-title">
       <div className={s.wrap} ref={revealRef as React.RefObject<HTMLDivElement>}>
         <div className={`${s.sectionHead} ${s.revealUp}`} data-reveal>
-          <span className={s.eyebrow}>{t('What you get', 'आपको क्या मिलता है')}</span>
+          <span className={s.eyebrow}>
+            <ThinkingGlyph />
+            {t('What you get', 'आपको क्या मिलता है')}
+          </span>
           <h2 id="features-v3-title">
             {t(
               'Built for the way CBSE actually examines',
