@@ -41,6 +41,27 @@
  * job (`npm run test:integration`, RUN_INTEGRATION_TESTS=1, live STAGING Supabase);
  * self-skips without real creds like every sibling under __tests__/migrations/.
  *
+ * TWO GATES — CREDS *AND* CAPABILITY (do not collapse these into one)
+ * ==================================================================
+ * `hasSupabaseIntegrationEnv()` only proves CREDS. It cannot know whether the object
+ * under test EXISTS. This suite and the migration that creates its RPC land in the
+ * SAME PR, so on first CI run the lane has creds and points at a staging DB where
+ * `20260717120000` is NOT applied yet: the RPC 404s, all 5 tests go red, and the PR
+ * cannot merge — but the migration only reaches staging BY merging. Deadlock.
+ *
+ * So a second, CAPABILITY gate runs in beforeAll: `rpcIsDeployed()` probes the RPC
+ * once with a benign read-only grade. Absent ⇒ every test SKIPs loudly, naming the
+ * migration. Present ⇒ every assertion below runs UNCHANGED and at FULL strength.
+ *
+ * The distinction is the whole safety property, and it is deliberately asymmetric:
+ *   RPC ABSENT (not deployed here)      -> SKIP  (never a pass)
+ *   RPC PRESENT but misbehaving         -> FAIL  (loudly — this is the point)
+ * `isMissingRpcError()` is therefore much narrower than the repo's fail-soft
+ * `isMissingObjectError()`: a half-applied migration (RPC present, watermark table
+ * missing) raises 42P01 and MUST fail here, not skip. See the helper's header.
+ * Nothing self-heals into green: once the migration is applied the probe passes and
+ * the suite arms itself with no code change.
+ *
  * FIXTURE ISOLATION (deliberate — do not "tidy" these away)
  * ========================================================
  *  * A dedicated synthetic subject (`cvz_version_test`, seeded `is_active=false`)
@@ -59,9 +80,23 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
-import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import {
+  hasSupabaseIntegrationEnv,
+  rpcIsDeployed,
+  skipIfRpcNotDeployed,
+} from '../helpers/integration';
 
 const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
+
+/** The RPC under test, and the migration that creates it. */
+const RPC_NAME = 'get_curriculum_versions';
+const RPC_MIGRATION = '20260717120000_curriculum_version_source.sql';
+
+/**
+ * Set ONCE in beforeAll by the capability probe. False ⇒ the RPC is not on this
+ * DB yet ⇒ every test SKIPs (never passes). True ⇒ every test runs in full.
+ */
+let rpcDeployed = false;
 
 /** Synthetic, namespaced subject — never collides with real CBSE content. */
 const SUBJECT_CODE = 'cvz_version_test';
@@ -151,6 +186,28 @@ describeIntegration('get_curriculum_versions — monotonicity + delete-safety', 
   let subjectId: string;
 
   beforeAll(async () => {
+    // ── CAPABILITY GATE (see the file header) ────────────────────────────────
+    // Probe BEFORE seeding: on a DB without the migration there is nothing to
+    // test, so don't write fixture rows there. A benign, read-only grade — the
+    // fixture does not exist yet, so the value is irrelevant; only whether the
+    // FUNCTION RESOLVES is.
+    rpcDeployed = await rpcIsDeployed(supabaseAdmin, RPC_NAME, { p_grade: '6' });
+    if (!rpcDeployed) {
+      // Loud on purpose: a silent skip is how a suite rots into permanent green.
+      console.warn(
+        `\n[SKIPPED] curriculum-version monotonicity suite — RPC ${RPC_NAME}() is NOT ` +
+          `deployed to this database.\n` +
+          `  Cause : migration ${RPC_MIGRATION} has not been applied to this environment.\n` +
+          `  Effect: all tests in this file SKIP (they are NOT passing, and NOTHING here is ` +
+          `weakened).\n` +
+          `  Arming: the suite re-arms itself automatically on the next run after that ` +
+          `migration is applied — no code change needed.\n` +
+          `  NOTE  : this gate covers RPC ABSENCE only. A DEPLOYED-but-misbehaving RPC ` +
+          `still FAILS.\n`,
+      );
+      return; // no fixture on a DB that cannot run the suite
+    }
+
     // Pollution guard: a previously-crashed run would otherwise trip the UNIQUE
     // subjects.code constraint and kill the whole suite.
     await purgeFixture();
@@ -188,12 +245,17 @@ describeIntegration('get_curriculum_versions — monotonicity + delete-safety', 
   }, 30_000);
 
   afterAll(async () => {
+    // Nothing was seeded when the RPC is absent (and the watermark table the purge
+    // touches ships in the same unapplied migration) — so there is nothing to clean.
+    if (!rpcDeployed) return;
     await purgeFixture();
   }, 30_000);
 
   it(
     'curriculum_topics: version never decreases across insert → edit → soft-delete → hard-delete',
-    async () => {
+    async (ctx) => {
+      skipIfRpcNotDeployed(ctx, rpcDeployed, RPC_NAME, RPC_MIGRATION);
+
       // ── 0. Baseline ──────────────────────────────────────────────────────
       // A scope that has never held content reads 0. This is the ONLY time a
       // scope may read 0: once content exists, deletes bump the watermark and it
@@ -292,7 +354,9 @@ describeIntegration('get_curriculum_versions — monotonicity + delete-safety', 
 
   it(
     'rag_content_chunks: version never decreases across insert → edit → hard-delete',
-    async () => {
+    async (ctx) => {
+      skipIfRpcNotDeployed(ctx, rpcDeployed, RPC_NAME, RPC_MIGRATION);
+
       // The second content source the mobile Learn cache reflects (NCERT concept
       // prose). Hard deletes genuinely happen here (re-ingest pipeline), which is
       // precisely why the watermark exists.
@@ -385,7 +449,9 @@ describeIntegration('get_curriculum_versions — monotonicity + delete-safety', 
     60_000,
   );
 
-  it('never 500s and never leaks a scope for an out-of-range or absent grade (P5)', async () => {
+  it('never 500s and never leaks a scope for an out-of-range or absent grade (P5)', async (ctx) => {
+    skipIfRpcNotDeployed(ctx, rpcDeployed, RPC_NAME, RPC_MIGRATION);
+
     // A version poll must never break the client. The RPC answers an invalid
     // grade with an EMPTY scope map, not an error — the route depends on this.
     // '   ' is included deliberately: the RPC btrim()s p_grade before the P5
@@ -397,7 +463,9 @@ describeIntegration('get_curriculum_versions — monotonicity + delete-safety', 
     }
   });
 
-  it('echoes 0 for an explicitly-requested code that has no content, and omits empties when p_subject_codes is NULL', async () => {
+  it('echoes 0 for an explicitly-requested code that has no content, and omits empties when p_subject_codes is NULL', async (ctx) => {
+    skipIfRpcNotDeployed(ctx, rpcDeployed, RPC_NAME, RPC_MIGRATION);
+
     const NEVER = '__cvz_never_has_content__';
 
     // Explicit request -> definitive per-scope answer, including 0.
@@ -413,7 +481,9 @@ describeIntegration('get_curriculum_versions — monotonicity + delete-safety', 
     }
   });
 
-  it('returns an ISO-8601 UTC as_of alongside the scope map', async () => {
+  it('returns an ISO-8601 UTC as_of alongside the scope map', async (ctx) => {
+    skipIfRpcNotDeployed(ctx, rpcDeployed, RPC_NAME, RPC_MIGRATION);
+
     const res = await callVersions(GRADE_CT, [SUBJECT_CODE]);
     expect(res.as_of).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     expect(Number.isNaN(Date.parse(res.as_of))).toBe(false);
