@@ -95,13 +95,20 @@ const nextConfig = {
     // (dpl_D3QM6VDKj1u1f7GTwaBEzoF1n6QZ, every preview since #1307).
     // @sentry/nextjs supports webpackBuildWorker since 7.57.0 (installed:
     // 10.53.1; verified locally with the Sentry-wrapped CI build path).
-    // Kill switch preserved: NEXT_DISABLE_WEBPACK_BUILD_WORKER=1 forces it
-    // off. NOTE: that var appears to be SET in the Vercel project env (the
-    // preview build log prints an explicit "⨯ webpackBuildWorker"); it was
-    // introduced as a LOCAL-ONLY Windows workaround (see
-    // engineering-audit/PRODUCT_READINESS_EXECUTION_2026-07-09.md #36) and
-    // must be removed from the Vercel env for this fix to take effect there.
-    webpackBuildWorker: process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER !== '1',
+    //
+    // Kill switch RENAMED to NEXT_DISABLE_WEBPACK_BUILD_WORKER_V2 (2026-07-17):
+    // the legacy name NEXT_DISABLE_WEBPACK_BUILD_WORKER=1 — a 2026-07-10
+    // LOCAL-ONLY Windows workaround (see engineering-audit/
+    // PRODUCT_READINESS_EXECUTION_2026-07-09.md #36) — leaked into the Vercel
+    // project env, forced the worker OFF despite the #1313 fix, and froze
+    // production on an old build after 3 consecutive OOM deploy failures.
+    // The legacy name is now DELIBERATELY IGNORED by this config so the
+    // leaked var is inert without needing dashboard access.
+    // Rollback (env-only, no code revert): set
+    // NEXT_DISABLE_WEBPACK_BUILD_WORKER_V2=1 in the Vercel project env.
+    // Operator cleanup: delete BOTH vars (legacy and, if ever set, _V2) from
+    // the Vercel env when convenient. Runbook: docs/runbooks/SRE_RUNBOOK.md §13.
+    webpackBuildWorker: process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER_V2 !== '1',
     ...(process.env.NEXT_WEBPACK_MEMORY_OPTIMIZATIONS === '1'
       ? { webpackMemoryOptimizations: true }
       : {}),

@@ -61,10 +61,23 @@ describe('RCA-20 product readiness release gate runner', () => {
     expect(nextConfigSource).not.toContain('? true : undefined');
     // webpackBuildWorker is default-ON (Vercel preview OOM fix, 2026-07-17):
     // the experiment must be explicitly opted in (Sentry's custom webpack fn
-    // would otherwise auto-disable it), while NEXT_DISABLE_WEBPACK_BUILD_WORKER=1
-    // remains the env kill switch.
+    // would otherwise auto-disable it). The env kill switch was RENAMED to
+    // NEXT_DISABLE_WEBPACK_BUILD_WORKER_V2 (2026-07-17, prod OOM escalation):
+    // the legacy NEXT_DISABLE_WEBPACK_BUILD_WORKER=1 leaked into the Vercel
+    // project env (2026-07-10 local Windows workaround), overrode the fix,
+    // and froze production deploys. Renaming makes the leaked var inert
+    // without dashboard access while keeping an env-only rollback path.
+    // See docs/runbooks/SRE_RUNBOOK.md §13.
     expect(nextConfigSource).toContain(
-      "webpackBuildWorker: process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER !== '1'"
+      "webpackBuildWorker: process.env.NEXT_DISABLE_WEBPACK_BUILD_WORKER_V2 !== '1'"
+    );
+    // Pin the mitigation: the config must NEVER read the legacy var name as a
+    // kill switch again — the leaked Vercel env value must stay inert. (The
+    // legacy name may still appear in comments; only the live expression
+    // `NEXT_DISABLE_WEBPACK_BUILD_WORKER !== '1'` is forbidden. `_V2` does not
+    // match this substring because of the `_V2` suffix before ` !== '1'`.)
+    expect(nextConfigSource).not.toContain(
+      "NEXT_DISABLE_WEBPACK_BUILD_WORKER !== '1'"
     );
     expect(nextConfigSource).toContain("...(process.env.NEXT_WEBPACK_MEMORY_OPTIMIZATIONS === '1'");
   });
