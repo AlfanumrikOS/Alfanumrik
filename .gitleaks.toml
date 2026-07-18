@@ -14,6 +14,12 @@ paths = [
     'src/__tests__/sentry-pii-redaction\.test\.ts',
     'src/__tests__/sentry/.*\.test\.ts',
     'apps/host/src/__tests__/audit\.test\.ts',
+    # Analytics P13 redactor spec — injects fake JWT / card-number /
+    # Razorpay-signature sentinels into a funnel payload to prove the two-pass
+    # redactor scrubs the VALUES before either analytics backend sees them.
+    # No real credential; the scrub assertions depend on these exact fake
+    # strings, so they cannot be changed. Path-scoped, single-file only.
+    'apps/host/src/__tests__/analytics/posthog-identity-p13\.test\.ts',
     '\.agents/skills/upstash-qstash-js/fundamentals/local-development\.md',
     '\.agents/skills/upstash/upstash-qstash-js/fundamentals/local-development\.md',
     # Keyless Vercel-OIDC -> Workload Identity Federation invoker-token client.
