@@ -71,7 +71,11 @@ function getApiKey(): string | null {
 }
 
 function getHost(): string {
-  return process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com';
+  // EU project 159341 lives on eu.i.posthog.com. Default to EU so the
+  // server-side posthog-node client targets the SAME project as the browser
+  // paths (posthog-client.ts / PostHogProvider.tsx) when the env var is unset —
+  // an EU project key sent to a US host is region-mismatched.
+  return process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com';
 }
 
 function getEnvironment(): string {

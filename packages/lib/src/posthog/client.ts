@@ -9,35 +9,25 @@
  *    until the flag is on (P10 budget).
  *  - Fail-soft: returns null in dev when key is unset; never throws.
  *
- * Privacy posture (P13):
- *  - autocapture: true            — see "Autocapture rationale" below
- *  - mask_all_text: true          — autocaptured DOM text is masked at source
- *  - mask_all_element_attributes: true — DOM attributes (alt, value, etc.) masked
- *  - disable_session_recording: true — defer until post P13 masking review
- *  - process_person_profile: 'identified_only' — no anonymous person profiles
- *  - api_host: '/ingest'          — same-origin proxy in next.config.js
- *  - ui_host: 'https://us.posthog.com' — so deep-links from PostHog UI work
+ * Privacy posture (P13 — minors' product, autocapture OFF everywhere):
+ *  - autocapture: false           — no implicit DOM/click capture; every event
+ *                                   is an explicit, structured `track()` call we
+ *                                   control end-to-end. Matches posthog-client.ts
+ *                                   and PostHogProvider.tsx (all three inits agree).
+ *  - disable_session_recording: true — never record sessions for grades 6-12.
+ *  - person_profiles: 'identified_only' — no anonymous person profiles.
+ *  - api_host: '/ingest'          — same-origin reverse proxy (next.config.js)
+ *                                   that forwards to the EU project
+ *                                   (eu.i.posthog.com). Bypasses ad-blockers on
+ *                                   Indian 4G; keeps cookies + referer in-origin.
+ *  - ui_host: 'https://eu.posthog.com' — EU project 159341, so deep-links from
+ *                                   the PostHog UI resolve.
  *
- * Autocapture rationale (2026-05-19, mobile-first redesign Phase 1.5):
- *   The ops inventory before the AppShell migration found we had zero
- *   ground-truth data on viewport widths, device class, or which dashboard
- *   surfaces drive clicks. Explicit `track()` events alone can't answer
- *   "what fraction of dashboard taps land on the streak chip vs the
- *   continue card" because every chip would need bespoke instrumentation.
- *
- *   Enabling autocapture closes that gap. To stay P13-safe we pair it with
- *   `mask_all_text: true` + `mask_all_element_attributes: true` so the
- *   payload PostHog ships from the browser is the DOM SHAPE (tag names,
- *   class hierarchy, css-selector path) without any text content or
- *   attribute values. Student names, plan badges, XP totals, streak counts,
- *   subject titles, etc. are masked at source — they never leave the
- *   browser.
- *
- *   The whole autocapture surface is still gated by
- *   `NEXT_PUBLIC_POSTHOG_ENABLED === 'true'`. Setting that env var to
- *   anything other than the literal "true" disables PostHog entirely
- *   (init() short-circuits before the dynamic import). That is the
- *   operational kill-switch for autocapture.
+ * Autocapture was ON here historically (paired with mask_all_text) but was
+ * turned OFF (2026-07, EU analytics turn-on) so this init matches the other two
+ * paths and the product ships zero implicit DOM capture for minors. PostHog
+ * remains gated by `NEXT_PUBLIC_POSTHOG_ENABLED === 'true'` — any other value
+ * disables it entirely (init() short-circuits before the dynamic import).
  *
  * Bundle target: this module is small (< 4 kB minified) because posthog-js
  * itself is loaded via dynamic import inside init() — only when the flag is on.
@@ -48,6 +38,9 @@ import {
   type PostHogEventName,
   type PersonPropertiesAllowlist,
 } from './types';
+// P13: the raw auth UUID must never reach posthog.identify — hash it first,
+// reusing the SAME SHA-256/16-hex derivation as analytics.ts + PostHogProvider.
+import { hashUserIdForAnalytics } from '../posthog-client';
 
 /**
  * Filter an arbitrary object down to allowlisted person properties.
@@ -108,33 +101,34 @@ export async function init(): Promise<PosthogModule | null> {
     try {
       const mod = await import('posthog-js');
       const posthog = mod.default;
+      // NOTE (first-init-wins): posthog-js exposes ONE global singleton. Both
+      // this init and posthog-client.ts's ensurePosthog() can call
+      // posthog.init() on it in the same session (analytics.ts fans every
+      // track() out to both paths). posthog-js keeps the FIRST init and ignores
+      // later ones — non-destructive. Both paths now target the SAME EU project
+      // (159341) with identical privacy flags (autocapture:false,
+      // disable_session_recording:true, person_profiles:'identified_only'), so
+      // whichever wins is safe; the only difference is proxy (/ingest here) vs
+      // direct EU host (posthog-client.ts), both of which reach the same project.
+      //
       // Init options — keep options minimal; everything not listed defaults
       // to posthog-js's safer choice.
       posthog.init(key, {
-        // Same-origin reverse proxy (next.config.js → /ingest/* → us.i.posthog.com).
-        // Bypasses ad-blockers on Indian 4G; preserves cookies.
+        // Same-origin reverse proxy (next.config.js → /ingest/* →
+        // eu.i.posthog.com / eu-assets.i.posthog.com). Bypasses ad-blockers on
+        // Indian 4G; preserves cookies. The proxy targets the EU project so the
+        // EU key (project 159341) is neither region-mismatched nor CSP-blocked.
         api_host: '/ingest',
-        // So deep-links from the PostHog UI back to events work.
-        ui_host: 'https://us.posthog.com',
+        // So deep-links from the PostHog UI back to events work (EU project).
+        ui_host: 'https://eu.posthog.com',
 
-        // Autocapture is ON to close the dashboard-CTA visibility gap (see
-        // header comment "Autocapture rationale"). PII protection is enforced
-        // by the next two options so the DOM text + attribute values never
-        // leave the browser. The master kill-switch is the
-        // NEXT_PUBLIC_POSTHOG_ENABLED env var read by `readKey()` above.
-        autocapture: true,
-        // P13: mask every text node in autocaptured events. PostHog records
-        // the DOM hierarchy + css-selector path but not the visible text —
-        // so student names, XP totals, streak counts, plan badges, subject
-        // titles, chapter names, foxy chat snippets, etc. are redacted at
-        // source. The `track()` API in this file is unaffected; it still
-        // accepts explicit, structured properties that we control end-to-end.
-        mask_all_text: true,
-        // P13: mask DOM attributes (alt, value, placeholder, aria-label,
-        // data-*) on autocaptured events too. These can leak the same kind
-        // of identity / progress data the visible text would. Defence-in-
-        // depth with `mask_all_text`.
-        mask_all_element_attributes: true,
+        // P13 (minors' product): autocapture OFF. Every event is an explicit,
+        // structured `track()` call we control end-to-end — no implicit DOM or
+        // click capture. This matches posthog-client.ts and PostHogProvider.tsx
+        // so whichever init wins the posthog-js singleton uses identical, safe
+        // config. The master kill-switch remains NEXT_PUBLIC_POSTHOG_ENABLED
+        // (read by `readKey()` above).
+        autocapture: false,
 
         // Pageviews are OK — they're useful and PII-free at the URL level.
         // App Router doesn't auto-emit on client-side nav; we wire route changes
@@ -215,14 +209,18 @@ export function track(
 /**
  * Identify the current user with allowlisted person properties.
  *
- * - `userId` is the OPAQUE Supabase auth UUID. PostHog stores it as
- *   `distinct_id`; it never leaves first-party storage and is not joined
- *   with PII. (Architect: if you want a hashed-id surface, swap this to
- *   the `hashUserIdForAnalytics()` flow used in `analytics.ts`.)
+ * - `userId` MAY be the raw Supabase auth UUID. P13: it is hashed HERE via
+ *   `hashUserIdForAnalytics()` (SHA-256, 16-hex-char prefix — the SAME
+ *   distinct_id derivation used by analytics.ts and PostHogProvider.tsx)
+ *   BEFORE it reaches `posthog.identify`. The raw UUID NEVER leaves the
+ *   browser. If Web Crypto is unavailable we skip identify rather than fall
+ *   back to the raw id. Hashing internally means every caller of this wrapper
+ *   is protected, not just the current AuthContext call site.
  * - `properties` is filtered through `PersonPropertiesAllowlist` — extra
  *   keys (email, phone, full_name) are dropped before the SDK call.
  *
- * Idempotent: repeating with the same `userId` is a no-op.
+ * Idempotent: repeating with the same `userId` is a no-op. The in-memory dedup
+ * key is the raw id, which is only ever compared locally — never transmitted.
  */
 export function identify(
   userId: string,
@@ -232,14 +230,18 @@ export function identify(
   if (_identifiedId === userId) return;
   _identifiedId = userId;
   const safeProps = filterPersonProperties(properties as Record<string, unknown>);
-  void init().then((ph) => {
+  void (async () => {
+    // P13: hash BEFORE any SDK call — the raw UUID must never reach PostHog.
+    const distinctId = await hashUserIdForAnalytics(userId);
+    if (!distinctId) return; // no Web Crypto → skip; never leak the raw id
+    const ph = await init();
     if (!ph) return;
     try {
-      ph.identify(userId, safeProps);
+      ph.identify(distinctId, safeProps);
     } catch {
       // Never throw from analytics.
     }
-  });
+  })();
 }
 
 /**

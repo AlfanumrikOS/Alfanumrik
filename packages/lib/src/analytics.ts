@@ -24,9 +24,33 @@
 
 import { posthogCapture, posthogIdentify, posthogReset, hashUserIdForAnalytics, isPosthogEnabled } from './posthog-client';
 import { track as posthogTypedTrack } from './posthog/client';
-import type { PostHogEventName } from './posthog/types';
+import { EVENT_PROPERTY_PII_KEYS, type PostHogEventName } from './posthog/types';
 import { redactPII } from './ops-events-redactor';
 import { logger } from './logger';
+
+/**
+ * Second-pass redactor over the PostHog-specific PII key set
+ * (EVENT_PROPERTY_PII_KEYS). The base `redactPII` (SENSITIVE_KEYS in
+ * redact-pii.ts) deliberately OMITS bare `name` / `ip` because they collide
+ * with legitimate fields in general server logging (event_name, ip-metrics).
+ * On the analytics path the event taxonomy is a closed, known set, so we can
+ * safely apply the narrower PostHog deny list (name, ip, ip_address,
+ * user_agent, address, …) here — parity with posthog/server.ts's
+ * walkAndRedactExtras. P13 defense-in-depth. Never mutates the input.
+ */
+function redactEventPropertyPII(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value as object)) return '[Circular]';
+  seen.add(value as object);
+  if (Array.isArray(value)) return value.map((v) => redactEventPropertyPII(v, seen));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = EVENT_PROPERTY_PII_KEYS.has(k.toLowerCase())
+      ? '[REDACTED]'
+      : redactEventPropertyPII(v, seen);
+  }
+  return out;
+}
 
 /**
  * Architect's allowlist of canonical PostHog event names. Only events that
@@ -147,9 +171,20 @@ export function track<K extends keyof AnalyticsEvent>(
   logger.debug(`[Analytics] ${event}`, properties as Record<string, unknown>);
 
   // P13 defense-in-depth: scrub PII from event properties BEFORE either
-  // backend sees them. The server-side ingestion has its own redactor; this
-  // ensures we don't even put PII over the wire from the browser.
-  const safeProps = (redactPII(properties as Record<string, unknown>) ?? {}) as Record<string, unknown>;
+  // backend sees them, in TWO passes:
+  //   1. redactPII — the shared by-key redactor (SENSITIVE_KEYS: email, phone,
+  //      full_name, card_*, tokens, …). Same set the logger + Sentry use.
+  //   2. redactEventPropertyPII — the narrower PostHog-payload deny list
+  //      (EVENT_PROPERTY_PII_KEYS: adds name, ip, ip_address, user_agent,
+  //      address). This gives the CLIENT track() the same coverage the server
+  //      path (posthog/server.ts) already had. NOTE: client-side IP is NOT
+  //      dropped by code here — the browser doesn't attach its own IP; the
+  //      IP that PostHog sees is set at ingest and must be discarded via the
+  //      EU project's "Discard client IP data" setting (operator action). The
+  //      server path additionally sets disableGeoip:true in posthog-node.
+  const safeProps = redactEventPropertyPII(
+    (redactPII(properties as Record<string, unknown>) ?? {}) as Record<string, unknown>,
+  ) as Record<string, unknown>;
 
   // ── Vercel Analytics (custom events) ──
   // Kept as the source-of-truth for pageview metrics surfaced in Vercel's UI.

@@ -674,6 +674,12 @@ export default function QuizPage() {
       setTimer(0);
       setCogLoad(initialCognitiveLoad());
       setReflection(null);
+      // B2C funnel: quiz-start activation event. Fires exactly once per
+      // successfully-assembled quiz (after the P6 quality gate, before render).
+      // PII-free — only the subject code + grade string (P5). Matches the
+      // quiz_started taxonomy in analytics.ts. subj/student are non-null here
+      // (guarded at the top of startQuiz).
+      track('quiz_started', { subject: subj, grade: student.grade });
       setScreen('quiz');
     } catch (e) {
       console.error('Quiz load error:', e);

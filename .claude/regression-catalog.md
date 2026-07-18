@@ -9040,3 +9040,71 @@ no-silent-stale-serve — the `_serveVersioned` serve/refetch/refuse matrix and
 cache degrades to no-cache never to no-content — the poll-failed-online vs
 offline split and the `kVersionUnverified` re-validation stamp).
 **Total catalog: 236 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## EU PostHog analytics turn-on — identity + funnel-event PII boundary (P13) — 2026-07-18 — REG-270
+
+Source: EU-analytics turn-on on branch `feat/instrument-b2c-funnel-analytics`
+(frontend commit `d545287f` + architect commit `e68916f5`). The PostHog clients
+were consolidated onto EU project 159341, all three `identify()` call sites were
+made to hash before dispatch (P13), `autocapture` was set to `false` everywhere,
+a second client-side PII redaction pass was added, and the `quiz_started` funnel
+event was wired.
+
+> **ID note (2026-07-18).** The turn-on task asked for "REG-176", a number
+> chosen from the constitution's then-current claim that REG-175 was the latest
+> id. In this worktree REG-176 was already consumed (Foxy prompt-template
+> routing, 2026-06-26) and the catalog had advanced to REG-269. Following the
+> catalog's own "next free id after the highest" convention, this entry is
+> allocated **REG-270** to avoid an id collision. No existing entry was
+> renumbered or removed.
+
+**Area:** Analytics / PostHog (client-side) — P13 Data Privacy, P5 Grade Format
+**Risk:** HIGH — turning analytics on inception-dark. A raw `student_id` /
+`auth_user_id` UUID reaching `posthog.identify`, or PII leaking through a funnel
+event property, would ship minors' identifiers to a third-party analytics
+backend. Autocapture flipping back on would re-introduce implicit DOM capture.
+
+**What it pins:**
+- **(a) Identity hashing — all three paths.** `posthog.identify` ALWAYS receives
+  the 16-hex SHA-256 prefix from `hashUserIdForAnalytics()`, NEVER a raw
+  UUID (`/^[0-9a-f]{8}-[0-9a-f]{4}-/i`), across `PostHogProvider.tsx`
+  (`posthogIdentify({student_id})`), `packages/lib/src/posthog/client.ts`
+  (`identify(rawUserId)` — hashes internally), and `packages/lib/src/analytics.ts`
+  (`identifyUser(authUserId)`). The person-property `distinct_id_hash` mirror is
+  the hash, not the UUID; the raw UUID never appears in any identify argument.
+- **(b) Funnel-event PII boundary.** The 7 B2C funnel events (`signup_complete`,
+  `onboarding_complete`, `quiz_started`, `quiz_completed`, `foxy_message_sent`,
+  `payment_success`, `daily_return`) emit no property KEY matching
+  `/name|email|phone|token|card|signature/i` and no PII-shaped VALUE (email
+  address, bare 10-digit phone, raw UUID). `foxy_message_sent` carries ONLY
+  `{subject, mode, language}` — no message text. The two-pass redactor
+  (`redactPII` + `redactEventPropertyPII`) scrubs injected PII VALUES
+  (email/phone/full_name/name/card_number/razorpay_signature/token) before
+  either backend sees them.
+- **(c) `quiz_started` fan-out + P5.** `track('quiz_started', {subject, grade})`
+  fans out to BOTH Vercel Analytics (`window.va`) and PostHog `capture`, and
+  `grade` stays a STRING (`'8'`, `'12'` — never coerced to a number).
+- **Autocapture posture (updated pin).** `posthog/client.ts` init passes
+  `autocapture: false` (zero implicit DOM capture for minors), `api_host: '/ingest'`
+  (same-origin EU reverse proxy), `ui_host: 'https://eu.posthog.com'` (EU project
+  159341), `person_profiles: 'identified_only'`, and `disable_session_recording: true`.
+  The obsolete `mask_all_text` / `mask_all_element_attributes` guards are gone
+  (moot with autocapture off) and their absence is asserted so the drop is not silent.
+
+**Tests:**
+- `src/__tests__/analytics/posthog-identity-p13.test.ts` (15 tests — identity across 3 paths, 7-event PII sweep, foxy no-message-text, injected-PII scrub, quiz_started fan-out + P5 grade string)
+- `src/__tests__/analytics/posthog-autocapture-config.test.ts` (7 tests — updated to the new EU-host + `autocapture:false` contract)
+
+### Invariants covered by this section
+
+- P13 (data privacy — no raw UUID to `identify`; no PII in funnel event properties; autocapture off for a minors' product)
+- P5 (grade format — `quiz_started.grade` stays a string end-to-end)
+
+### Catalog total
+
+Pre-REG-270: 236 entries (through the curriculum-version + response-cache-v2
+merge, REG-269). The EU PostHog analytics turn-on adds REG-270: the identity
+hashing + funnel-event PII boundary + `autocapture:false` EU-host posture.
+**Total catalog: 237 entries (target: 35 — TARGET EXCEEDED).**
