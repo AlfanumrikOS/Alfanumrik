@@ -220,12 +220,12 @@ describe('OpenAI configuration', () => {
   });
 });
 
-describe('buildAlfaBotPrompt — counseling rules (v3, 2026-07-18)', () => {
-  it('rule 9 sets the counseling posture (concern → acknowledge → answer → next step)', () => {
+describe('buildAlfaBotPrompt — counseling rules (v4, 2026-07-19)', () => {
+  it('rule 9 sets the sales counselor posture (acknowledge → answer → qualify → CTA)', () => {
     const out = buildAlfaBotPrompt(baseArgs());
-    expect(out.systemPrompt).toContain('COUNSELING POSTURE');
+    expect(out.systemPrompt).toContain('SALES COUNSELOR POSTURE');
     expect(out.systemPrompt).toContain('underlying concern');
-    expect(out.systemPrompt).toContain('Guide to a clear next step');
+    expect(out.systemPrompt).toContain('qualifying question');
   });
 
   it('rule 11 forbids recommending, naming, or endorsing other platforms', () => {
@@ -248,6 +248,13 @@ describe('buildAlfaBotPrompt — counseling rules (v3, 2026-07-18)', () => {
     const out = buildAlfaBotPrompt(baseArgs());
     expect(out.systemPrompt).toContain('ROLE-SENSING');
     expect(out.systemPrompt).toContain('Are you a parent, teacher, or student?');
+  });
+
+  it('rule 13 enforces data integrity — no fabricated claims', () => {
+    const out = buildAlfaBotPrompt(baseArgs());
+    expect(out.systemPrompt).toContain('DATA INTEGRITY');
+    expect(out.systemPrompt).toContain('Never invent features, statistics');
+    expect(out.systemPrompt).toContain('unknown_info refusal');
   });
 
   it('counseling rules did NOT touch the four pinned refusal strings (REG-66)', () => {
