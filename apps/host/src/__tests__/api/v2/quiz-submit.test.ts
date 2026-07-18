@@ -38,9 +38,17 @@ vi.mock('@alfanumrik/lib/ops-events', () => ({ logOpsEvent: (...a: unknown[]) =>
 // We mock those leaf modules so the REAL side-effects orchestration runs and
 // we can assert the same args the web route emits.
 const posthogCaptureMock = vi.fn().mockResolvedValue(undefined);
-vi.mock('@alfanumrik/lib/posthog/server', () => ({
-  capture: (...a: unknown[]) => posthogCaptureMock(...a),
-}));
+// Partial mock: keep the REAL hashDistinctId (submit-side-effects imports it
+// for the quiz_graded auth.uid stitch — Wave 2, commit 4e2288fa). A
+// `() => ({ capture })` factory that omits it makes every fresh-grade path
+// throw "No hashDistinctId export is defined on the mock".
+vi.mock('@alfanumrik/lib/posthog/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@alfanumrik/lib/posthog/server')>();
+  return { ...actual, capture: (...a: unknown[]) => posthogCaptureMock(...a) };
+});
+// Real hashDistinctId (preserved by the partial mock above) — used to assert the
+// quiz_graded distinctId is the hashed AUTH uid, not the raw students.id.
+import { hashDistinctId } from '@alfanumrik/lib/posthog/server';
 
 const publishEventMock = vi.fn().mockResolvedValue({ published: false, reason: 'flag_off' });
 vi.mock('@alfanumrik/lib/state/events/publish', () => ({
@@ -363,8 +371,14 @@ describe('POST /api/v2/quiz/submit — post-submit side-effect parity (Wave 2.3)
     const gradedCalls = posthogCaptureMock.mock.calls.filter((c) => c[0] === 'quiz_graded');
     expect(gradedCalls).toHaveLength(1);
     // event, distinctId, properties, $insert_id — identical to /api/quiz/submit.
+    // Wave 2 (commit 4e2288fa): quiz_graded distinctId is hashDistinctId(authUserId)
+    // — the hashed AUTH uid ('auth-user-1' here; see the spine-emit test below) —
+    // NOT the raw students.id (STUDENT_A). Keying by students.id would stitch the
+    // activation funnel to a PHANTOM person and read a false 0%. Both routes call
+    // the same runQuizSubmitSideEffects, so this value is identical across them.
     const [, distinctId, props, insertId] = gradedCalls[0];
-    expect(distinctId).toBe(STUDENT_A);
+    expect(distinctId).toBe(hashDistinctId('auth-user-1'));
+    expect(distinctId).not.toBe(STUDENT_A);
     expect(props).toMatchObject({
       session_id: SESSION_ID,
       score_percent: 80,

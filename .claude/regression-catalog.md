@@ -9108,3 +9108,85 @@ Pre-REG-270: 236 entries (through the curriculum-version + response-cache-v2
 merge, REG-269). The EU PostHog analytics turn-on adds REG-270: the identity
 hashing + funnel-event PII boundary + `autocapture:false` EU-host posture.
 **Total catalog: 237 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## B2C funnel completion — email_verified + client→server hash stitch + role segmentation (P13/P15/P5) — 2026-07-18 — REG-271
+
+Source: B2C analytics Wave 2 on branch `feat/analytics-wave2-funnel-completion`
+(architect `6d9f5d69` — server `email_verified` emit + `hashDistinctId` + role
+allowlist + `QuizGradedPayload` subject/grade type; frontend `45d1c3cf` — role
+person-prop on the live identify; ai-engineer `4e2288fa` — `quiz_graded` hashes
+`authUserId` + emits subject/grade). Wave 2 completes the acquisition→activation
+funnel: the browser step and the server step must stitch to ONE PostHog person.
+
+**Area:** Analytics / PostHog — P13 Data Privacy, P15 Onboarding Integrity, P5 Grade Format
+**Risk:** HIGH — a silent, invisible failure mode. If the client (Web-Crypto) and
+server (Node-crypto) distinct-id derivations ever diverge, every client→server
+funnel reads a FALSE 0% with nothing red in CI. A `quiz_graded` keyed by
+`students.id` instead of the hashed `auth.uid` stitches activation to a PHANTOM
+person (same false-0%). A first-time `email_verified` payload leaking a
+name/email/phone/UUID would ship minors' identifiers to a third-party backend.
+
+**What it pins:**
+- **(a) Client↔server hash parity — THE anti-0%-funnel pin.** The server
+  `hashDistinctId(uuid)` (`packages/lib/src/posthog/server.ts`, Node-crypto)
+  byte-equals the client `hashUserIdForAnalytics(uuid)`
+  (`packages/lib/src/posthog-client.ts`, Web-Crypto) for every fixture: SHA-256
+  over the utf-8 UUID → first 8 bytes → 16 lowercase hex, UNSALTED, across the
+  runtime boundary. A hardcoded digest anchor catches an identical-drift on BOTH
+  sides; an independent bare-`createHash` recompute catches a salt.
+- **(b) `email_verified` — first-time-only + fail-soft + PII boundary.** Fires
+  EXACTLY ONCE on first verification (`!hasProfile`) from the shared
+  `completeSignupBootstrap` (covers both `/auth/callback` PKCE and `/auth/confirm`
+  token_hash), NEVER on a repeat. Payload is EXACTLY `{ role, method:'email' }` —
+  no name/email/phone/raw UUID (P13). Role is normalized to the signup_complete
+  vocabulary (teacher→'teacher', parent→'guardian', student→'student',
+  institution_admin→SKIPPED, no emit — B2B). distinctId is the 16-hex hash of the
+  auth uid, never raw. idempotencyKey is timestamp-free (`email_verified:<hash>`)
+  → forever-dedup on a re-clicked link. The emit is fail-soft (P15): a throw in
+  `after()`/capture never breaks `completeSignupBootstrap`'s return/redirect.
+- **(c) `quiz_graded` auth.uid stitch + subject/grade facets.** distinctId is
+  `hashDistinctId(authUserId)` — asserted to equal the hash of the AUTH uid and
+  to be NEITHER `input.studentId` NOR its hash (the phantom-person guard).
+  `subject` and `grade` are present; `grade` is a STRING (P5). `$insert_id` stays
+  session-keyed. No scoring/XP value is recomputed — the payload re-broadcasts the
+  RPC's authoritative score/xp/correct/total verbatim (measurement-only).
+- **(d) Role person-prop on the live identify path.** The real `identify()` in
+  `packages/lib/src/posthog/client.ts` (the function AuthContext calls) stamps a
+  resolved funnel role (student|teacher|guardian) on the person; the allowlist
+  filter DROPS `role: undefined` (the institution_admin outcome AuthContext maps
+  to undefined) and every non-allowlisted PII key (email/full_name/phone/raw id);
+  the distinctId reaching `posthog.identify` is the hash, never the raw uid. `role`
+  is confirmed present in `PERSON_PROPERTY_ALLOWLIST`.
+
+**Tests:**
+- `src/__tests__/analytics/wave2-hash-parity.test.ts` (10 tests — per-fixture parity, digest anchor, unsalted recompute, determinism/collision-distinctness)
+- `src/__tests__/lib/identity/complete-signup-email-verified.test.ts` (10 tests — once/never, exact `{role,method}` payload, hashed distinctId, role vocabulary incl. institution_admin skip, fail-soft on after()/capture throw)
+- `src/__tests__/lib/quiz/submit-side-effects-quiz-graded-stitch.test.ts` (7 tests — auth.uid stitch + not-studentId, subject/grade string, session-keyed insert_id, no recompute, replay short-circuit)
+- `src/__tests__/analytics/wave2-role-person-prop.test.ts` (7 tests — allowlist has role, funnel role stamped, undefined dropped, PII keys dropped, hashed distinctId)
+
+**Regression note (2026-07-18, testing verification gate):** the ai-engineer
+commit `4e2288fa` added `hashDistinctId(authUserId)` to `emitPostHogEvents` but
+did NOT run the suite — every existing test whose `@alfanumrik/lib/posthog/server`
+mock exported only `capture` threw `No "hashDistinctId" export is defined on the
+mock` on the fresh-grade path (5 files: `submit-side-effects-offline`,
+`api/v2/quiz-submit`, `api/quiz-submit-idempotency`, `api/quiz-submit-authz`,
+`api/quiz-active-student-gate`). Additionally `api/v2/quiz-submit.test.ts`
+asserted the OLD phantom-person value (`quiz_graded` distinctId === `students.id`).
+All were repaired here (partial-mock via `importOriginal` to keep the real
+`hashDistinctId`; the stale distinctId assertion updated to the hashed auth uid) —
+no production code changed.
+
+### Invariants covered by this section
+
+- P13 (data privacy — hashed distinct ids only; `email_verified`/`quiz_graded` payloads carry no PII; role is a coarse enum, not PII)
+- P15 (onboarding integrity — the `email_verified` emit is fail-soft and never breaks the verify→profile→dashboard funnel)
+- P5 (grade format — `quiz_graded.grade` stays a string)
+
+### Catalog total
+
+Pre-REG-271: 237 entries (through the EU PostHog analytics turn-on, REG-270).
+B2C funnel completion adds REG-271: client↔server hash parity + `email_verified`
+first-time/fail-soft/PII boundary + `quiz_graded` auth.uid stitch + role person-prop.
+**Total catalog: 238 entries (target: 35 — TARGET EXCEEDED).**

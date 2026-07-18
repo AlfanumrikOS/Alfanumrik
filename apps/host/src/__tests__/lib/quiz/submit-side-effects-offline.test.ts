@@ -19,9 +19,18 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 }));
 
 const posthogCaptureMock = vi.fn().mockResolvedValue(undefined);
-vi.mock('@alfanumrik/lib/posthog/server', () => ({
-  capture: (...a: unknown[]) => posthogCaptureMock(...a),
-}));
+// Keep the REAL hashDistinctId (submit-side-effects imports it for the
+// quiz_graded auth.uid stitch — Wave 2, commit 4e2288fa). A `() => ({ capture })`
+// factory that omits it makes every fresh-grade path throw
+// "No hashDistinctId export is defined on the mock". Partial-mock via
+// importOriginal so only `capture` is spied and hashDistinctId stays real.
+vi.mock('@alfanumrik/lib/posthog/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@alfanumrik/lib/posthog/server')>();
+  return {
+    ...actual,
+    capture: (...a: unknown[]) => posthogCaptureMock(...a),
+  };
+});
 
 const publishEventMock = vi.fn().mockResolvedValue({ published: false, reason: 'flag_off' });
 vi.mock('@alfanumrik/lib/state/events/publish', () => ({
