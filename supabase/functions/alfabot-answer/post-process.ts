@@ -202,10 +202,14 @@ export function validateResponse(
 }
 
 /**
- * Convenience: directly produce an abstain envelope for a hard refusal that
- * happened BEFORE we ever called the model. The entry point uses this when
- * the upstream is dead (circuit open, fetch failed, timeout).
+ * Build a user-friendly degraded reply when the upstream is dead (circuit
+ * open, fetch failed, timeout). Instead of the generic "I don't have that
+ * info" refusal, give a warm response that acknowledges the issue and still
+ * provides a useful path forward.
  */
 export function buildDegradedReply(lang: AlfaBotLang): string {
-  return abstainFor(lang);
+  if (lang === 'hi') {
+    return 'मुझे अभी जवाब देने में थोड़ी दिक्कत हो रही है। आप हमारी टीम से hello@alfanumrik.com पर बात कर सकते हैं, या कुछ देर बाद फिर कोशिश करें।';
+  }
+  return "I'm having a little trouble right now. You can reach our team at hello@alfanumrik.com, or try again in a moment.";
 }

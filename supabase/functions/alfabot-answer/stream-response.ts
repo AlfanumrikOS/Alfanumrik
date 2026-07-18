@@ -32,6 +32,7 @@ import {
   recordSuccess,
 } from './circuit.ts';
 import {
+  detectGreeting,
   detectHardRefusal,
   logTurn,
   type AlfabotRequest,
@@ -67,6 +68,24 @@ export function buildStreamingResponse(
       let streamStatusCode = 200;
 
       try {
+        // Greeting — instant warm welcome, no RAG or OpenAI needed.
+        const greeting = detectGreeting(req.message, req.audience, req.lang);
+        if (greeting) {
+          send('token', { delta: greeting.reply });
+          const done: DoneEnvelope = {
+            latency_ms: Date.now() - startedAt,
+            tokens_used: 0,
+            model: 'greeting',
+            degradedMode: false,
+            abstainReason: greeting.reason,
+            sourcesUsed: [],
+          };
+          send('done', done);
+          logTurn(req, done);
+          controller.close();
+          return;
+        }
+
         // Hard refusal — emit canned reply as a single token + done.
         const hard = detectHardRefusal(req.message, req.lang);
         if (hard) {

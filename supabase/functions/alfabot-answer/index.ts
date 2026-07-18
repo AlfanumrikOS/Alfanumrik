@@ -51,6 +51,7 @@ import {
   recordSuccess,
 } from './circuit.ts';
 import {
+  detectGreeting,
   detectHardRefusal,
   logTurn,
   validateBody,
@@ -130,6 +131,20 @@ async function runTurnNonStream(
   req: AlfabotRequest,
   startedAt: number,
 ): Promise<NonStreamResult> {
+  // Greetings get an instant, reliable welcome — no RAG or OpenAI needed.
+  const greeting = detectGreeting(req.message, req.audience, req.lang);
+  if (greeting) {
+    return {
+      response: greeting.reply,
+      sourcesUsed: [],
+      model: 'greeting',
+      tokensUsed: 0,
+      latencyMs: Date.now() - startedAt,
+      degradedMode: false,
+      abstainReason: greeting.reason,
+    };
+  }
+
   const hard = detectHardRefusal(req.message, req.lang);
   if (hard) {
     return {

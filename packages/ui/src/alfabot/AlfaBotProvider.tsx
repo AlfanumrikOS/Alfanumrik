@@ -438,13 +438,24 @@ export function AlfaBotProvider({ children }: { children: ReactNode }) {
           onError: (err: AlfabotErrorResponse | { error: 'network_error'; detail?: string }) => {
             setIsStreaming(false);
             const errKey = err.error;
-            // Drop the optimistic empty assistant message so the user sees a
-            // clean error / system banner instead of a blank bubble.
+            // Replace the empty streaming assistant bubble with a friendly
+            // error message so the user never sees a blank bubble. Previously
+            // we just popped it, leaving the user confused about what happened.
             setMessages((prev) => {
               const next = [...prev];
               const last = next[next.length - 1];
               if (last && last.id === assistantMsgId && last.isStreaming) {
-                next.pop();
+                const fallbackContent = last.content.trim().length > 0
+                  ? last.content // Keep partial text if any tokens arrived
+                  : lang === 'hi'
+                    ? 'मुझे अभी जवाब देने में दिक्कत हो रही है। कृपया फिर से कोशिश करें, या hello@alfanumrik.com पर हमसे संपर्क करें।'
+                    : 'I had trouble responding just now. Please try again, or reach us at hello@alfanumrik.com.';
+                next[next.length - 1] = {
+                  ...last,
+                  content: fallbackContent,
+                  isStreaming: false,
+                  abstainReason: 'upstream_failed' as AlfabotResponse['abstainReason'],
+                };
               }
               return next;
             });
