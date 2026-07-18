@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildCanonicalInternalRequest,
   buildInternalCallerHeaders,
+  canonicalizeInternalPath,
   sha256Hex,
   signInternalRequest,
 } from '@alfanumrik/lib/security/internal-caller-signing';
@@ -45,8 +46,44 @@ describe('sha256Hex', () => {
 
 // ── buildCanonicalInternalRequest ────────────────────────────────────────────
 
+describe('canonicalizeInternalPath', () => {
+  it('strips a leading /functions/v1 gateway prefix', () => {
+    expect(canonicalizeInternalPath('/functions/v1/alfabot-answer')).toBe('/alfabot-answer');
+  });
+
+  it('leaves an already-stripped path unchanged (idempotent)', () => {
+    expect(canonicalizeInternalPath('/alfabot-answer')).toBe('/alfabot-answer');
+    expect(canonicalizeInternalPath(canonicalizeInternalPath('/functions/v1/alfabot-answer'))).toBe(
+      '/alfabot-answer',
+    );
+  });
+
+  it('converges both environment forms onto the same bare function path', () => {
+    // Deployed edge (prefix stripped by platform) and local/tests (full gateway
+    // path) MUST canonicalize to the identical string — this is the property
+    // that makes signer and verifier agree.
+    const deployedForm = canonicalizeInternalPath('/alfabot-answer');
+    const localForm = canonicalizeInternalPath('/functions/v1/alfabot-answer');
+    expect(deployedForm).toBe(localForm);
+    expect(deployedForm).toBe('/alfabot-answer');
+  });
+
+  it('does not strip a look-alike segment that is not exactly /functions/v1/', () => {
+    expect(canonicalizeInternalPath('/functions/v1foo/bar')).toBe('/functions/v1foo/bar');
+    expect(canonicalizeInternalPath('/functions/v2/x')).toBe('/functions/v2/x');
+  });
+
+  it('drops query string and hash fragments', () => {
+    expect(canonicalizeInternalPath('/functions/v1/alfabot-answer?x=1#y')).toBe('/alfabot-answer');
+  });
+
+  it('ensures the result starts with a slash', () => {
+    expect(canonicalizeInternalPath('alfabot-answer')).toBe('/alfabot-answer');
+  });
+});
+
 describe('buildCanonicalInternalRequest', () => {
-  it('joins fields with newlines in the correct order', () => {
+  it('joins fields with newlines in the correct order and canonicalizes the path', () => {
     const args = {
       method: 'post',
       path: '/functions/v1/alfabot-answer',
@@ -62,11 +99,27 @@ describe('buildCanonicalInternalRequest', () => {
     expect(parts).toHaveLength(6);
     // method is uppercased
     expect(parts[0]).toBe('POST');
-    expect(parts[1]).toBe('/functions/v1/alfabot-answer');
+    // path is canonicalized: gateway prefix stripped to the bare function path
+    expect(parts[1]).toBe('/alfabot-answer');
     expect(parts[2]).toBe('req-123');
     expect(parts[3]).toBe('1718800000');
     expect(parts[4]).toBe('abc123');
     expect(parts[5]).toBe('alfabot-next');
+  });
+
+  it('produces an identical canonical for stripped and full gateway paths (signer↔verifier parity)', () => {
+    const common = {
+      method: 'POST',
+      requestId: 'req-123',
+      timestamp: '1718800000',
+      bodyHash: 'abc123',
+      caller: 'alfabot-answer',
+    };
+    // Signer passes the full gateway path; the deployed verifier sees the
+    // stripped pathname. Both must yield byte-identical canonical strings.
+    const signerCanonical = buildCanonicalInternalRequest({ ...common, path: '/functions/v1/alfabot-answer' });
+    const verifierCanonical = buildCanonicalInternalRequest({ ...common, path: '/alfabot-answer' });
+    expect(signerCanonical).toBe(verifierCanonical);
   });
 
   it('uppercases the method regardless of input case', () => {
@@ -164,9 +217,13 @@ describe('buildInternalCallerHeaders', () => {
     const timestamp = headers!['x-internal-timestamp'];
     const signature = headers!['x-internal-signature'];
 
-    // Reconstruct the canonical string the same way the module does.
+    // Reconstruct the canonical string the same way the module does. The module
+    // canonicalizes the path (strips the `/functions/v1` gateway prefix), so the
+    // reconstruction must use the bare function path to match the signature.
+    const canonicalPath = canonicalizeInternalPath(urlPath);
+    expect(canonicalPath).toBe('/ncert-solver');
     const bodyHash = createHash('sha256').update(body, 'utf8').digest('hex');
-    const canonical = [method.toUpperCase(), urlPath, requestId, timestamp, bodyHash, caller].join('\n');
+    const canonical = [method.toUpperCase(), canonicalPath, requestId, timestamp, bodyHash, caller].join('\n');
     const expectedRaw = createHmac('sha256', secret).update(canonical, 'utf8').digest('base64');
     const expectedSig = expectedRaw.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 

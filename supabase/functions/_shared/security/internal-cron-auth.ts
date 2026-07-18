@@ -104,6 +104,10 @@ export async function verifyInternalCronRequest(args: {
   const bodyHash = await sha256Hex(args.bodyText ?? '')
   const canonical = buildCanonicalInternalRequest({
     method: args.req.method,
+    // Deployed edge functions have the `/functions/v1` prefix stripped by the
+    // platform; buildCanonicalInternalRequest canonicalizes to the bare
+    // function path so signer and verifier converge (masked today because crons
+    // take the cron-secret short-circuit above, but fixed for correctness).
     path: new URL(args.req.url).pathname,
     requestId,
     timestamp,

@@ -22,6 +22,32 @@ export function sha256Hex(data: string): string {
   return createHash('sha256').update(data, 'utf8').digest('hex');
 }
 
+/**
+ * Canonicalize a request path so the signer (Vercel/Node) and the verifier
+ * (Supabase Edge/Deno) always HMAC over the SAME string, regardless of whether
+ * the platform strips the gateway prefix.
+ *
+ * On a DEPLOYED edge function Supabase strips the `/functions/v1` prefix, so the
+ * verifier sees `/alfabot-answer` while the Node signer hardcodes the full
+ * gateway path `/functions/v1/alfabot-answer`. Applying this normalization on
+ * BOTH sides converges every environment onto the bare function path:
+ *   - deployed edge:   `/alfabot-answer`                 -> `/alfabot-answer`
+ *   - local / tests:   `/functions/v1/alfabot-answer`    -> `/alfabot-answer`
+ *
+ * The transform is total and idempotent, so it is safe to apply centrally.
+ */
+export function canonicalizeInternalPath(path: string): string {
+  // Drop any query string / hash fragment before signing.
+  let p = path.split('#')[0].split('?')[0];
+  // Remove a single leading `/functions/v1` gateway segment if present.
+  // The `(?=\/)` lookahead requires the next char to be `/`, so paths like
+  // `/functions/v1foo` are left untouched.
+  p = p.replace(/^\/functions\/v1(?=\/)/, '');
+  // Guarantee the canonical path still starts with a slash.
+  if (!p.startsWith('/')) p = `/${p}`;
+  return p;
+}
+
 export function buildCanonicalInternalRequest(args: {
   method: string;
   path: string;
@@ -32,7 +58,7 @@ export function buildCanonicalInternalRequest(args: {
 }): string {
   return [
     args.method.toUpperCase(),
-    args.path,
+    canonicalizeInternalPath(args.path),
     args.requestId,
     args.timestamp,
     args.bodyHash,

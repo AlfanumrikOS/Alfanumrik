@@ -121,6 +121,10 @@ export async function resolveSecurityPrincipal(args: {
     }
     const canonical = buildCanonicalInternalRequest({
       method: args.req.method,
+      // Raw pathname: on deployed edge functions Supabase strips the
+      // `/functions/v1` prefix, so this is `/alfabot-answer` in prod but
+      // `/functions/v1/alfabot-answer` in local/tests. buildCanonicalInternalRequest
+      // canonicalizes it to the bare function path to match the Node signer.
       path: new URL(args.req.url).pathname,
       requestId: args.requestId,
       timestamp,
