@@ -220,15 +220,15 @@ describe('OpenAI configuration', () => {
   });
 });
 
-describe('buildAlfaBotPrompt — counseling rules (v2, 2026-07-17)', () => {
-  it('rule 8 sets the counseling posture (concern → acknowledge → answer → next step)', () => {
+describe('buildAlfaBotPrompt — counseling rules (v3, 2026-07-18)', () => {
+  it('rule 9 sets the counseling posture (concern → acknowledge → answer → next step)', () => {
     const out = buildAlfaBotPrompt(baseArgs());
     expect(out.systemPrompt).toContain('COUNSELING POSTURE');
     expect(out.systemPrompt).toContain('underlying concern');
-    expect(out.systemPrompt).toContain('guide to the next step');
+    expect(out.systemPrompt).toContain('Guide to a clear next step');
   });
 
-  it('rule 9 forbids recommending, naming, or endorsing other platforms', () => {
+  it('rule 11 forbids recommending, naming, or endorsing other platforms', () => {
     const out = buildAlfaBotPrompt(baseArgs());
     expect(out.systemPrompt).toContain(
       'never recommend, name, or endorse other learning platforms, apps,',
@@ -237,14 +237,14 @@ describe('buildAlfaBotPrompt — counseling rules (v2, 2026-07-17)', () => {
     expect(out.systemPrompt).toContain('never fabricate claims about them');
   });
 
-  it('rule 9 routes leavers to cancellation/refund facts without pressure', () => {
+  it('rule 11 routes leavers to cancellation/refund facts without pressure', () => {
     const out = buildAlfaBotPrompt(baseArgs());
     expect(out.systemPrompt).toContain('never pressure a user');
     expect(out.systemPrompt).toContain('refunds-cancellation');
     expect(out.systemPrompt).toContain('choosing-a-platform');
   });
 
-  it('rule 10 asks one short clarifying question when the role is ambiguous', () => {
+  it('rule 12 asks one short clarifying question when the role is ambiguous', () => {
     const out = buildAlfaBotPrompt(baseArgs());
     expect(out.systemPrompt).toContain('ROLE-SENSING');
     expect(out.systemPrompt).toContain('Are you a parent, teacher, or student?');
