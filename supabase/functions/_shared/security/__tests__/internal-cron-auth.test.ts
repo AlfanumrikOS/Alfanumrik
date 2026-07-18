@@ -78,6 +78,40 @@ Deno.test('internal cron auth accepts valid signatures', async () => {
   assert(result.authMethod === 'signed_internal', `expected signed_internal, got ${result.authMethod}`)
 })
 
+// Regression: production path-strip mismatch. The Node signer HMACs over the
+// FULL gateway path `/functions/v1/daily-cron`, but on a deployed edge function
+// Supabase strips the `/functions/v1` prefix, so the incoming Request URL is
+// `/daily-cron`. Before path canonicalization these disagreed and every signed
+// call 401'd with deny_signature in production while tests (which used the full
+// path on both sides) stayed green. The shared buildCanonicalInternalRequest now
+// normalizes both onto the bare function path, so this must ADMIT.
+Deno.test('internal cron auth admits when the platform stripped the /functions/v1 prefix from the request URL', async () => {
+  // Signature computed over the FULL gateway path, exactly as the Node signer does.
+  const canonical = buildCanonicalInternalRequest({
+    method: 'POST',
+    path: `/functions/v1/${route}`,
+    requestId,
+    timestamp,
+    bodyHash: await sha256Hex(''),
+    caller: route,
+  })
+  const signature = await signInternalRequest(signingSecret, canonical)
+  // Request arrives with the STRIPPED pathname, as production edge functions see it.
+  const req = new Request(`https://example.test/${route}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`,
+      'x-request-id': requestId,
+      'x-internal-caller': route,
+      'x-internal-timestamp': timestamp,
+      'x-internal-signature': signature,
+    },
+  })
+  const result = await verifyInternalCronRequest({ req, route, sb: sb(), requestId, bodyText: '', nowMs, cronSecret: '', serviceRoleKey, signingSecret })
+  assert(result.ok, `expected success across the prefix boundary, got ${result.ok ? 'ok' : result.code}`)
+  assert(result.authMethod === 'signed_internal', `expected signed_internal, got ${result.ok ? result.authMethod : 'n/a'}`)
+})
+
 Deno.test('internal cron auth accepts approved CRON_SECRET without service-role bearer', async () => {
   const req = new Request(`https://example.test/functions/v1/${route}`, { method: 'POST', headers: { 'x-cron-secret': 'cron' } })
   const result = await verifyInternalCronRequest({ req, route, sb: sb(), requestId, bodyText: '', nowMs, cronSecret: 'cron', serviceRoleKey, signingSecret })

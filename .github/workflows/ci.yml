@@ -1207,6 +1207,7 @@ jobs:
             supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
             supabase/functions/send-auth-email/__tests__/always-200.test.ts \
             supabase/functions/_shared/__tests__/gmail-transport.test.ts \
+            supabase/functions/_shared/security/__tests__/internal-cron-auth.test.ts \
             supabase/functions/grounded-answer/__tests__/cache.test.ts \
             supabase/functions/grounded-answer/__tests__/circuit.test.ts \
             supabase/functions/grounded-answer/__tests__/citations.test.ts \

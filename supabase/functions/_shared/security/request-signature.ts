@@ -15,6 +15,29 @@ function base64UrlDecode(text: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * Canonicalize a request path so the verifier (Supabase Edge/Deno) and the
+ * signer (Vercel/Node, packages/lib/src/security/internal-caller-signing.ts)
+ * always HMAC over the SAME string. Byte-identical to the Node twin.
+ *
+ * On a DEPLOYED edge function Supabase strips the `/functions/v1` prefix, so the
+ * verifier's `new URL(req.url).pathname` is `/alfabot-answer` while the Node
+ * signer hardcodes `/functions/v1/alfabot-answer`. Applying this on BOTH sides
+ * converges every environment onto the bare function path:
+ *   - deployed edge: `/alfabot-answer`              -> `/alfabot-answer`
+ *   - local / tests: `/functions/v1/alfabot-answer` -> `/alfabot-answer`
+ *
+ * The transform is total and idempotent, so it is safe to apply centrally here
+ * (covers resolveSecurityPrincipal in auth.ts AND verifyInternalCronRequest in
+ * internal-cron-auth.ts, both of which build the canonical through this fn).
+ */
+export function canonicalizeInternalPath(path: string): string {
+  let p = path.split('#')[0].split('?')[0];
+  p = p.replace(/^\/functions\/v1(?=\/)/, '');
+  if (!p.startsWith('/')) p = `/${p}`;
+  return p;
+}
+
 export function buildCanonicalInternalRequest(args: {
   method: string;
   path: string;
@@ -25,7 +48,7 @@ export function buildCanonicalInternalRequest(args: {
 }): string {
   return [
     args.method.toUpperCase(),
-    args.path,
+    canonicalizeInternalPath(args.path),
     args.requestId,
     args.timestamp,
     args.bodyHash,
