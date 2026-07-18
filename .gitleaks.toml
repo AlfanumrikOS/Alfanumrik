@@ -31,4 +31,15 @@ paths = [
     # Path-scoped (commit-independent) because fingerprint suppression re-breaks
     # whenever the finding's commit SHA moves. Single-file scope only.
     'packages/lib/src/ai/clients/python-mol\.ts',
+    # Analytics Wave 2 funnel-completion specs — fake fixtures for the
+    # redactor / distinct-id hash-parity tests. These inject secret-shaped
+    # sentinels (fake auth UUIDs like 3f2504e0-…, a `phc_test_key` PostHog
+    # placeholder, and a precomputed 16-hex SHA-256 truncation anchor) precisely
+    # BECAUSE the suites prove our hashing + person-property allowlist scrub the
+    # VALUES. No real credential; the assertions depend on these exact fake
+    # strings, so they cannot be changed. Path-scoped, single-file each.
+    'apps/host/src/__tests__/analytics/wave2-role-person-prop\.test\.ts',
+    'apps/host/src/__tests__/analytics/wave2-hash-parity\.test\.ts',
+    'apps/host/src/__tests__/lib/identity/complete-signup-email-verified\.test\.ts',
+    'apps/host/src/__tests__/lib/quiz/submit-side-effects-quiz-graded-stitch\.test\.ts',
 ]
