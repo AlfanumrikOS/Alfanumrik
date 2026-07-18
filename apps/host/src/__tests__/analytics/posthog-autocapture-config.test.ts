@@ -1,16 +1,26 @@
 /**
  * posthog-autocapture-config — pins the autocapture privacy posture (P13).
  *
- * When `NEXT_PUBLIC_POSTHOG_ENABLED === 'true'` and the key is set, the
- * PostHog browser SDK is initialized with autocapture ON. To keep the
- * autocaptured payload PII-free, the init options MUST include:
- *   - autocapture: true
- *   - mask_all_text: true
- *   - mask_all_element_attributes: true
+ * NEW CONTRACT (2026-07, EU analytics turn-on — branch
+ * feat/instrument-b2c-funnel-analytics): autocapture is OFF everywhere. This
+ * is a STRONGER P13 posture than the previous "autocapture ON + mask_all_text"
+ * arrangement: for a minors' product (grades 6-12) we ship ZERO implicit
+ * DOM/click capture — every event is an explicit, structured `track()` call we
+ * control end-to-end. Because nothing is autocaptured, the old
+ * `mask_all_text` / `mask_all_element_attributes` guards are moot and have been
+ * removed; the honest new pin is `autocapture: false` plus the EU region wiring.
  *
- * If a future patch flips `mask_all_text` to false (or removes it), this
- * test fails so the reviewer is forced to re-do a P13 audit. This is the
- * regression guard for the 2026-05-19 "enable autocapture" change.
+ * When `NEXT_PUBLIC_POSTHOG_ENABLED === 'true'` and the key is set, the
+ * PostHog browser SDK (packages/lib/src/posthog/client.ts) is initialized with:
+ *   - autocapture: false                 — zero implicit DOM capture (P13)
+ *   - api_host: '/ingest'                — same-origin reverse proxy → EU project
+ *   - ui_host: 'https://eu.posthog.com'  — EU project 159341 deep-links resolve
+ *   - person_profiles: 'identified_only' — no anonymous person rows
+ *   - disable_session_recording: true    — recordings deferred
+ *
+ * If a future patch flips `autocapture` back to true (or repoints the host off
+ * the EU proxy) this test fails so the reviewer is forced to re-do a P13 /
+ * region audit.
  *
  * Strategy: mock posthog-js's `default.init`, drive `init()` in the
  * browser-shaped environment (vitest's JSDOM), and inspect the options
@@ -56,30 +66,39 @@ describe('posthog/client.init — autocapture privacy posture (P13)', () => {
       delete (process.env as Record<string, string>).NEXT_PUBLIC_POSTHOG_KEY;
   });
 
-  it('passes autocapture: true to posthog.init', async () => {
+  it('passes autocapture: false to posthog.init (P13 — zero implicit DOM capture for minors)', async () => {
     const { init } = await import('@alfanumrik/lib/posthog/client');
     await init();
     expect(initSpy).toHaveBeenCalledTimes(1);
     const [key, options] = initSpy.mock.calls[0]!;
     expect(key).toBe('phc_test_key');
-    expect((options as { autocapture: boolean }).autocapture).toBe(true);
+    expect((options as { autocapture: boolean }).autocapture).toBe(false);
   });
 
-  it('passes mask_all_text: true to posthog.init (P13)', async () => {
+  it('does NOT set mask_all_text (autocapture is off, so DOM masking is moot — the stronger posture is no capture at all)', async () => {
     const { init } = await import('@alfanumrik/lib/posthog/client');
     await init();
     const [, options] = initSpy.mock.calls[0]!;
-    expect((options as { mask_all_text: boolean }).mask_all_text).toBe(true);
+    // The old contract guarded autocaptured text with mask_all_text. With
+    // autocapture OFF there is nothing to mask, so the flag is intentionally
+    // absent — asserting its absence keeps this pin honest rather than dropping
+    // it silently.
+    expect((options as Record<string, unknown>).mask_all_text).toBeUndefined();
+    expect((options as { autocapture: boolean }).autocapture).toBe(false);
   });
 
-  it('passes mask_all_element_attributes: true to posthog.init (P13)', async () => {
+  it('routes through the same-origin EU proxy: api_host === "/ingest" (US→EU host change)', async () => {
     const { init } = await import('@alfanumrik/lib/posthog/client');
     await init();
     const [, options] = initSpy.mock.calls[0]!;
-    expect(
-      (options as { mask_all_element_attributes: boolean })
-        .mask_all_element_attributes,
-    ).toBe(true);
+    expect((options as { api_host: string }).api_host).toBe('/ingest');
+  });
+
+  it('points ui_host at the EU project (deep-links resolve): ui_host === "https://eu.posthog.com"', async () => {
+    const { init } = await import('@alfanumrik/lib/posthog/client');
+    await init();
+    const [, options] = initSpy.mock.calls[0]!;
+    expect((options as { ui_host: string }).ui_host).toBe('https://eu.posthog.com');
   });
 
   it('keeps disable_session_recording: true (recordings deferred)', async () => {
