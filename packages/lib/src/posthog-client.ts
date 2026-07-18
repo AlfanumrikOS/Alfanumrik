@@ -34,7 +34,9 @@ function getKey(): string | null {
 }
 
 function getHost(): string {
-  return process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com';
+  // EU project 159341 lives on eu.i.posthog.com. Default to EU so both this
+  // client and PostHogProvider.tsx target ONE project when the env var is unset.
+  return process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com';
 }
 
 /**

@@ -13,15 +13,23 @@
 import posthog from 'posthog-js';
 import { PostHogProvider as PHProvider } from 'posthog-js/react';
 import { useEffect } from 'react';
+import { hashUserIdForAnalytics } from './posthog-client';
 
+// Single, explicit enable gate — matches posthog-client.ts / posthog/client.ts.
+// PostHog initialises ONLY when the operator flips NEXT_PUBLIC_POSTHOG_ENABLED
+// to the literal "true" AND a non-empty browser key is present. Default OFF.
+const PH_ENABLED = process.env.NEXT_PUBLIC_POSTHOG_ENABLED === 'true';
 const PH_KEY    = process.env.NEXT_PUBLIC_POSTHOG_KEY   ?? '';
 const PH_HOST   = process.env.NEXT_PUBLIC_POSTHOG_HOST  ?? 'https://eu.i.posthog.com';
+
+/** True iff the deliberate enable gate is satisfied (flag on AND key present). */
+const phEnabled = (): boolean => PH_ENABLED && PH_KEY.length > 0;
 
 let initialised = false;
 
 function PostHogInit() {
   useEffect(() => {
-    if (initialised || !PH_KEY || typeof window === 'undefined') return;
+    if (initialised || !phEnabled() || typeof window === 'undefined') return;
     posthog.init(PH_KEY, {
       api_host:             PH_HOST,
       capture_pageview:     true,      // auto page views
@@ -48,23 +56,33 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Call after successful login to link PostHog anonymous ID to student record.
- * Properties become available for cohort analysis in PostHog.
+ * Call after successful login to link PostHog to the student record.
+ *
+ * P13: the raw `student_id` (a Supabase auth UUID) MUST NEVER reach PostHog.
+ * We hash it via `hashUserIdForAnalytics()` (SHA-256, 16-hex-char prefix) —
+ * the SAME distinct_id derivation the funnel path in `analytics.ts` uses — so
+ * both code paths agree on identity. Async because Web Crypto is async.
+ * No-op unless the deliberate enable gate is satisfied.
  */
-export function posthogIdentify(params: {
+export async function posthogIdentify(params: {
   student_id: string;
   grade: string;
   plan: string;
   language: string;
   board?: string;
-}) {
-  if (!PH_KEY || typeof window === 'undefined') return;
-  posthog.identify(params.student_id, {
-    grade:    params.grade,
-    plan:     params.plan,
-    language: params.language,
-    board:    params.board ?? 'CBSE',
-    app:      'alfanumrik',
+}): Promise<void> {
+  if (!phEnabled() || typeof window === 'undefined') return;
+  const distinctId = await hashUserIdForAnalytics(params.student_id);
+  // If hashing is unavailable (no Web Crypto) we DO NOT fall back to the raw
+  // id — better to skip identify than leak a UUID into PostHog.
+  if (!distinctId) return;
+  posthog.identify(distinctId, {
+    grade:            params.grade,
+    plan:             params.plan,
+    language:         params.language,
+    board:            params.board ?? 'CBSE',
+    app:              'alfanumrik',
+    distinct_id_hash: distinctId,
   });
 }
 
