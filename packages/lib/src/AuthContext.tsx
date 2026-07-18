@@ -631,25 +631,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [student]);
 
   // ── PostHog identify on auth + language change (Marking-Authenticity Wave 2) ──
-  // Fires on:
-  //  - SIGNED_IN / initial session load (when authUserId resolves)
+  // Fires once the role has resolved on:
+  //  - SIGNED_IN / initial session load (when authUserId + activeRole resolve)
   //  - Profile load (so grade/board/plan land on the person profile)
   //  - Language toggle (so the preferred_language person property updates live)
   // Reset is handled in signOut() below.
   //
+  // Why gate on a resolved role (B2C funnel Wave 2b): the typed identify() in
+  // ./posthog/client is idempotent — it dedups on the raw user id, so ONLY the
+  // FIRST call per user actually stamps person properties. authUserId is set
+  // (line ~273) BEFORE the get_user_role RPC awaits, and activeRole is set
+  // AFTER it. Firing at authUserId-resolve would lock in the dedup with role
+  // still 'none', and the later role-driven re-fire would be a silent no-op —
+  // so `role` would never reach the person. Deferring the first identify until
+  // `activeRole !== 'none'` guarantees the role facet lands. A persistent
+  // 'none' means role resolution failed entirely (no role to segment on), so we
+  // skip identify in that rare path rather than stamp a useless profile.
+  //
   // Allowlist enforced inside posthogIdentify() — only fields in
-  // PERSON_PROPERTY_ALLOWLIST (grade, board, plan, preferred_language,
+  // PERSON_PROPERTY_ALLOWLIST (role, grade, board, plan, preferred_language,
   // signup_date) make it onto the person profile. P13: NEVER include
   // email, full_name, phone, parent_phone — and the wrapper drops them
   // even if a future edit accidentally passes them.
   useEffect(() => {
     if (!authUserId) return;
+    if (activeRole === 'none') return;
     try {
       // We re-read the auth user (already cached by Supabase) to pull
       // created_at without threading it through provider state.
       void supabase.auth.getUser().then(({ data }) => {
         const signupDate = data?.user?.created_at?.split('T')[0];
         posthogIdentify(authUserId, {
+          // Coarse role enum (P13 — 4 low-cardinality values, NOT PII). Reuses
+          // the already-normalized activeRole (parent is internally 'guardian'),
+          // so it shares ONE vocabulary with the funnel events signup_complete +
+          // email_verified. Only the three B2C funnel roles are stamped;
+          // institution_admin (B2B) is omitted so the person `role` facet matches
+          // the funnel events exactly. undefined is dropped by the allowlist filter.
+          role:
+            activeRole === 'student' || activeRole === 'teacher' || activeRole === 'guardian'
+              ? activeRole
+              : undefined,
           grade: student?.grade,
           board: student?.board ?? undefined,
           plan: student?.subscription_plan ?? 'free',
@@ -660,7 +682,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Non-fatal — analytics never breaks auth.
     }
-  }, [authUserId, student?.grade, student?.board, student?.subscription_plan, language]);
+  }, [authUserId, activeRole, student?.grade, student?.board, student?.subscription_plan, language]);
 
   // ── School invite-code redemption (P15 day-1 B2B path) ──
   // A fresh student/teacher who signed up via /join?code=… → /login?code=…
