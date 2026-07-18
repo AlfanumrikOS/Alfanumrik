@@ -1497,10 +1497,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: nextjs-build
-          path: |
-            .next/
-            !.next/cache/
-          retention-days: 3
+          path: apps/host/.next/
+          retention-days: 7
 
   # ── Step 2b: E2E Tests (PRs only) ──
   e2e:
@@ -1522,11 +1520,6 @@ jobs:
       - name: Install dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
-      - name: Download build artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: nextjs-build
-          path: .next/
       - run: npx playwright install --with-deps chromium
       - name: Run E2E tests
         run: npx playwright test --project=chromium
@@ -1581,11 +1574,6 @@ jobs:
       - name: Install dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
-      - name: Download build artifact
-        uses: actions/download-artifact@v7
-        with:
-          name: nextjs-build
-          path: .next/
       - run: npx playwright install --with-deps chromium
 
       - name: Run critical-path E2E specs
