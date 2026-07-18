@@ -403,3 +403,5 @@ local-only workaround silently changed production build behavior for 6 days.
 > **2026-07-18:** Fresh deployment triggered to apply re-pasted `INTERNAL_CALLER_SIGNING_SECRET` (prior value was a Vercel/Supabase mismatch → edge `deny_signature`). Note: a Vercel *redeploy* of a prebuilt (GitHub-Actions-built) deployment reuses the old build env — a NEW git push is required to bake in changed env vars. This commit is that push.
 
 > **2026-07-18 (2nd):** Fresh deploy after operator re-pasted the signing secret (single value, both sides, Vercel Production scope) to resolve the prior `deny_signature` value mismatch.
+
+> **2026-07-18 (resolved):** signing secret set from a single generated file on both sides (Vercel via `vercel env add < file`, Supabase via dashboard) — eliminates the paste-mismatch that caused repeated `deny_signature`. This commit is the fresh deploy that bakes the matched Vercel value into the runtime.
