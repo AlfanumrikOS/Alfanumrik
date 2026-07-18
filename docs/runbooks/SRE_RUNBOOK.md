@@ -401,3 +401,5 @@ local-only workaround silently changed production build behavior for 6 days.
 > **2026-07-17 (later):** `INTERNAL_CALLER_SIGNING_SECRET` re-provisioned on both sides + `ALFABOT_IP_SALT` added (values minted by operator; the original was dropped during the July secret rotation — see the platform-security handoff doc for the pairing rule). This merge commit doubles as the production redeploy trigger so the new env reaches the runtime.
 
 > **2026-07-18:** Fresh deployment triggered to apply re-pasted `INTERNAL_CALLER_SIGNING_SECRET` (prior value was a Vercel/Supabase mismatch → edge `deny_signature`). Note: a Vercel *redeploy* of a prebuilt (GitHub-Actions-built) deployment reuses the old build env — a NEW git push is required to bake in changed env vars. This commit is that push.
+
+> **2026-07-18 (2nd):** Fresh deploy after operator re-pasted the signing secret (single value, both sides, Vercel Production scope) to resolve the prior `deny_signature` value mismatch.
