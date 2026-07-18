@@ -92,6 +92,49 @@ export function validateBody(
   };
 }
 
+// ─── Greeting detection ───────────────────────────────────────────────────
+
+const GREETING_RE = /^(hi|hello|hey|hii+|hola|namaste|namaskar|नमस्ते|नमस्कार|हाय|हैलो)\s*[.!?]*$/i;
+
+const GREETING_REPLIES: Record<AlfaBotAudience, Record<AlfaBotLang, string>> = {
+  parent: {
+    en: "Hi there! I'm AlfaBot, your guide to Alfanumrik. I can help with pricing, how our AI tutor Foxy works, safety, and anything about our platform. What would you like to know — maybe how ₹699/month compares to tuition coaching?",
+    hi: "नमस्ते! मैं AlfaBot हूँ, Alfanumrik के बारे में आपका गाइड। मैं pricing, AI tutor Foxy, सुरक्षा, और प्लेटफ़ॉर्म से जुड़े सवालों में मदद कर सकता हूँ। क्या जानना चाहेंगे — शायद ₹699/माह tuition से कैसे अलग है?",
+  },
+  student: {
+    en: "Hey! I'm AlfaBot. I can tell you about Foxy (your AI study buddy), how quizzes work, and how to ace your boards. What's on your mind?",
+    hi: "हाय! मैं AlfaBot हूँ। मैं Foxy (तुम्हारा AI study buddy), क्विज़, और boards की तैयारी के बारे में बता सकता हूँ। क्या पूछना है?",
+  },
+  teacher: {
+    en: "Hello! I'm AlfaBot. I can help with how Alfanumrik saves teacher time — Bloom's diagnostics, worksheet generation, and class dashboards. What would you like to know?",
+    hi: "नमस्ते! मैं AlfaBot हूँ। मैं Bloom's diagnostics, worksheet generation, और class dashboards के बारे में बता सकता हूँ। क्या जानना चाहेंगे?",
+  },
+  school: {
+    en: "Hello! I'm AlfaBot. I can help with bulk pricing, NEP-aligned reporting, onboarding timelines, and data governance. What would you like to explore?",
+    hi: "नमस्ते! मैं AlfaBot हूँ। मैं bulk pricing, NEP-aligned reporting, onboarding, और data governance के बारे में बता सकता हूँ। क्या जानना चाहेंगे?",
+  },
+};
+
+/**
+ * Detect simple greetings ("hi", "hello", "namaste", etc.) and return an
+ * audience-aware warm welcome. Returns null for non-greetings. This short-
+ * circuits before the RAG + OpenAI pipeline to give instant, reliable
+ * responses for the most common first message.
+ */
+export function detectGreeting(
+  message: string,
+  audience: AlfaBotAudience,
+  lang: AlfaBotLang,
+): { reply: string; reason: string } | null {
+  if (GREETING_RE.test(message.trim())) {
+    return {
+      reply: GREETING_REPLIES[audience][lang],
+      reason: 'greeting',
+    };
+  }
+  return null;
+}
+
 // ─── Hard refusals ─────────────────────────────────────────────────────────
 
 export function detectHardRefusal(

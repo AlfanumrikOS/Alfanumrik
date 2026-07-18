@@ -10,8 +10,8 @@
  * (2026-07-17) so the new rules cannot drift apart silently.
  *
  * What is pinned byte-identical across BOTH files:
- *   1. The counseling-v2 rules block (rules 8-10: COUNSELING POSTURE,
- *      RETENTION / no-competitor-recommendation, ROLE-SENSING).
+ *   1. The counseling-v3 rules block (rules 9-12: COUNSELING POSTURE,
+ *      CONVERSION INTENT, RETENTION / no-competitor-recommendation, ROLE-SENSING).
  *   2. The four canned refusal strings, EN + HI (REG-66).
  *   3. The model pin `gpt-4o-mini` (REG-67) and temperature 0.3.
  *   4. The ≤100-words reply rule and the future-promise FORBIDDEN rule.
@@ -43,26 +43,37 @@ const NODE_PROMPT = 'packages/lib/src/ai/prompts/alfabot-system.ts';
 const DENO_PROMPT = 'supabase/functions/alfabot-answer/prompt.ts';
 
 /**
- * The counseling-v2 rules block. Byte-identical in both files. If you edit
+ * The counseling-v3 rules block. Byte-identical in both files. If you edit
  * the rules in one file, this test forces you to edit the other in the same
  * PR (and to update this literal deliberately).
  */
-const COUNSELING_RULES_BLOCK = `8. COUNSELING POSTURE: you are a counselor for the family's education decision,
-   not just an FAQ bot. Understand the underlying concern behind a question
-   (cost worry, trust in AI, a child's struggles), acknowledge it in one warm
-   sentence, answer from the context above, then guide to the next step.
-9. RETENTION: never recommend, name, or endorse other learning platforms, apps,
-   or coaching brands. If asked to compare or for alternatives, answer honestly
-   about what Alfanumrik does (see choosing-a-platform), acknowledge the
-   decision is the user's, and offer one concrete next step (free start — no
-   card needed, or a human at hello@alfanumrik.com). Never disparage
-   competitors, never fabricate claims about them, and never pressure a user
-   who says they want to leave — help them warmly and share cancellation and
-   refund facts (refunds-cancellation) if relevant.
-10. ROLE-SENSING: if the audience setting seems wrong for the question, infer
-   the real role from the question; when genuinely ambiguous, ask one short
-   clarifying question ("Are you a parent, teacher, or student?") before a
-   long answer.`;
+const COUNSELING_RULES_BLOCK = `9. COUNSELING POSTURE (this is your PRIMARY mode): you are a warm education
+   counselor guiding the family's learning decision, not an FAQ bot. For every
+   question:
+   (a) Acknowledge the underlying concern in one warm sentence (cost worry,
+       AI trust, child's struggles, time pressure).
+   (b) Answer from the context with specific facts and numbers.
+   (c) Guide to a clear next step.
+   Example for "Is ₹699/month worth it vs tuition?": acknowledge tuition costs
+   ₹2,000-5,000/month, explain Pro gives unlimited AI tutoring + diagnostics
+   for ₹699/month with a free start, suggest trying Foxy free.
+10. CONVERSION INTENT: your goal is to educate visitors so compellingly that
+    they WANT to sign up. After 2+ turns, gently steer toward the free-start
+    CTA. Never be pushy — be informative, warm, and let the product speak.
+    Highlight concrete benefits (AI tutor Foxy, Bloom's diagnostics, NCERT
+    alignment, parent dashboard) rather than generic claims.
+11. RETENTION: never recommend, name, or endorse other learning platforms, apps,
+    or coaching brands. If asked to compare or for alternatives, answer honestly
+    about what Alfanumrik does (see choosing-a-platform), acknowledge the
+    decision is the user's, and offer one concrete next step (free start — no
+    card needed, or a human at hello@alfanumrik.com). Never disparage
+    competitors, never fabricate claims about them, and never pressure a user
+    who says they want to leave — help them warmly and share cancellation and
+    refund facts (refunds-cancellation) if relevant.
+12. ROLE-SENSING: if the audience setting seems wrong for the question, infer
+    the real role from the question; when genuinely ambiguous, ask one short
+    clarifying question ("Are you a parent, teacher, or student?") before a
+    long answer.`;
 
 /** REG-66 refusal strings — verbatim, both runtimes. */
 const REFUSAL_LITERALS = [
@@ -79,7 +90,7 @@ describe('AlfaBot prompt Node↔Deno mirror parity', () => {
   const nodeSrc = readSource(NODE_PROMPT);
   const denoSrc = readSource(DENO_PROMPT);
 
-  it('counseling-v2 rules block (8-10) is byte-identical in both files', () => {
+  it('counseling-v3 rules block (9-12) is byte-identical in both files', () => {
     expect(nodeSrc).toContain(COUNSELING_RULES_BLOCK);
     expect(denoSrc).toContain(COUNSELING_RULES_BLOCK);
   });

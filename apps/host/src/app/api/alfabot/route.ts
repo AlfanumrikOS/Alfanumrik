@@ -92,8 +92,8 @@ const ABSTAIN_COPY: Record<string, Record<AlfabotLang, string>> = {
     hi: "यह संदेश बहुत लंबा है। कृपया 1000 अक्षरों के अंदर रखें।",
   },
   upstream_failed: {
-    en: "Something went wrong on my end. Please try again in a moment.",
-    hi: "मेरी ओर से कुछ गड़बड़ हुई है। कृपया एक पल में फिर कोशिश करें।",
+    en: "I'm having a little trouble right now. You can reach our team at hello@alfanumrik.com, or try again in a moment.",
+    hi: "मुझे अभी जवाब देने में थोड़ी दिक्कत हो रही है। आप हमारी टीम से hello@alfanumrik.com पर बात कर सकते हैं, या कुछ देर बाद फिर कोशिश करें।",
   },
   budget_exhausted: {
     en: "I'm a little busy today — I'll keep my answer short. For full details, please visit the pricing or contact page.",
