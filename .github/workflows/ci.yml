@@ -15,21 +15,9 @@ env:
   NEXT_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder'
   # Distinct placeholder (NOT equal to anon key) so src/lib/env.ts
-  # validateServerEnv() does not throw at test boot. Tests that actually
-  # exercise Supabase will still fail with network errors against
-  # placeholder.supabase.co — those are integration tests and gated by
-  # continue-on-error on the test step. Must differ from the anon
-  # placeholder above or env.ts's anti-leak check will trigger.
+  # validateServerEnv() does not throw at test boot.
   SUPABASE_SERVICE_ROLE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ci-placeholder-service-role'
   # Bundle size limits (kB gzipped). Matches P10 budget from CLAUDE.md.
-  # Restored 2026-05-05: cap returned to 160 kB after (1) PostHogProvider
-  # lazy-loaded via next/dynamic (PR #534, e34a7452) and (2) the local
-  # scripts/check-bundle-size.mjs measureShared() rewritten to count layout
-  # chunks (D5 follow-up). The CI bash gate below checks the LARGEST single
-  # shared chunk (currently ~91 kB gzipped), well under 160. The local
-  # script reports total honest first-paint shared (~265 kB) under its own
-  # interim 270 kB cap; reduce that cap once Supabase auth client is
-  # split out of the root layout (TODO #1 in scripts/check-bundle-size.mjs).
   SHARED_JS_LIMIT_KB: 160
   PAGE_JS_LIMIT_KB: 260
   MIDDLEWARE_LIMIT_KB: 120
@@ -40,18 +28,13 @@ jobs:
     name: Secret Scanning
     runs-on: ubuntu-latest
     permissions:
-      contents: read       # gitleaks needs to read repo history
-      pull-requests: read  # gitleaks needs the PR commit list (fixes 403)
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0   # Full history required by gitleaks to scan diffs
+          fetch-depth: 0
 
-      # Real secret scanner (low false-positive rate, industry standard).
-      # Pinned major to v2 for stability; config in .gitleaks.toml if/when added.
-      # Audit 2026-04-27 F23: flipped from advisory → BLOCKING. Secret leaks
-      # must fail CI. If a finding is a known false positive, allowlist it via
-      # .gitleaks.toml (preferred) rather than re-disabling this gate.
       - name: Gitleaks scan
         uses: gitleaks/gitleaks-action@v2
         env:
@@ -62,10 +45,6 @@ jobs:
           echo "## Secret Scanning Report" >> $GITHUB_STEP_SUMMARY
           FOUND=0
 
-          # Patterns that indicate leaked secrets
-          # Exclude: placeholder values in CI env, test fixtures, lock files, .env.example,
-          # test files with deliberate fake credentials for redaction/mock tests,
-          # documentation examples, and worktree copies.
           EXCLUDE_PATTERN="ci.yml|deploy-production.yml|deploy-staging.yml|package-lock.json|\.env\.example|\.env\.local\.example|node_modules|__tests__/|\.test\.(ts|tsx|js|jsx)|\.spec\.(ts|tsx|js|jsx)|e2e/|docs/|\.claude/worktrees/|coverage/"
 
           for PATTERN in \
@@ -87,10 +66,6 @@ jobs:
             fi
           done
 
-          # Check NEXT_PUBLIC_ vars don't contain secret-like values.
-          # Match only contiguous identifier names like NEXT_PUBLIC_MY_SERVICE_ROLE
-          # (no spaces / punctuation between), to avoid matching error strings that
-          # mention both NEXT_PUBLIC_SUPABASE_URL and SERVICE_ROLE_KEY separately.
           NEXT_PUBLIC_SECRETS=$(grep -rnE 'NEXT_PUBLIC_[A-Z0-9_]*(SERVICE_ROLE|SECRET_KEY|PRIVATE_KEY)' . --include='*.ts' --include='*.tsx' --include='*.js' --include='*.env' 2>/dev/null | grep -vE "$EXCLUDE_PATTERN" || true)
           if [ -n "$NEXT_PUBLIC_SECRETS" ]; then
             echo "CRITICAL: NEXT_PUBLIC_ variable exposes a secret!"
@@ -101,31 +76,19 @@ jobs:
           if [ "$FOUND" = "1" ]; then
             echo ""
             echo "::warning::Potential secrets (or false positives) flagged by regex scan."
-            echo "Review matches above. This check is advisory; a proper tool (gitleaks/trufflehog)"
-            echo "should replace this ad-hoc regex scan to reduce false positives."
             echo "| Status | Warnings emitted (non-blocking) |" >> $GITHUB_STEP_SUMMARY
-            # Non-blocking: deploy should not be gated by noisy regex false positives.
-            # A dedicated secret scanner (gitleaks) is a follow-up task.
             exit 0
           else
             echo "| Status | No secrets detected |" >> $GITHUB_STEP_SUMMARY
-            echo "No hardcoded secrets detected."
           fi
 
-      # P8 enforcement: every migration that creates a table must enable RLS in
-      # the same file. The post-edit-check.sh hook is per-table and advisory;
-      # this is a file-level CI gate that BLOCKS merge. A migration that legitimately
-      # creates only views/types/functions will not contain "CREATE TABLE" and
-      # is unaffected. _legacy/ is skipped (pre-RLS-baseline migrations).
+      # P8 enforcement: every migration that creates a table must enable RLS.
       - name: Migration safety — RLS-on-CREATE-TABLE
         run: |
           echo "## Migration Safety: RLS Coverage" >> $GITHUB_STEP_SUMMARY
           MISSING=0
           OFFENDERS=""
-          # Scan every .sql under supabase/migrations except _legacy/.
           for f in $(find supabase/migrations -name '*.sql' -not -path '*/_legacy/*' 2>/dev/null | sort); do
-            # Strip SQL comments (-- and /* */) before pattern checks so commented-out
-            # CREATE TABLE in a doc block doesn't trigger a false positive.
             STRIPPED=$(sed -E 's|--.*$||; s|/\*.*\*/||g' "$f")
             HAS_CREATE=$(echo "$STRIPPED" | grep -ciE '\bcreate[[:space:]]+table\b' || true)
             if [ "${HAS_CREATE:-0}" -gt 0 ]; then
@@ -139,23 +102,15 @@ jobs:
           if [ "$MISSING" = "1" ]; then
             echo "BLOCKED: Migrations create tables without enabling RLS:" | tee -a $GITHUB_STEP_SUMMARY
             echo -e "$OFFENDERS" | tee -a $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo "Per CLAUDE.md P8: every new table must have RLS enabled and at least one policy in the same migration." >> $GITHUB_STEP_SUMMARY
-            echo "Add: ALTER TABLE <name> ENABLE ROW LEVEL SECURITY; plus appropriate policies." >> $GITHUB_STEP_SUMMARY
             exit 1
           else
             echo "| Status | All CREATE TABLE migrations enable RLS |" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # ── Step 1: Type Check + Lint + Test ──
-  # Runs independently of secret-scan so an infra failure in gitleaks
-  # (e.g. the v2 action's 403 on individual-account PR commits) can't
-  # silently disable test verification. Previously: `needs: secret-scan`
-  # caused this job to SKIP on every PR where gitleaks failed, which
-  # masked two broken test files (#788 B.2, #798 D.1) until they only
-  # surfaced on main when CI finally had time to complete.
-  quality:
-    name: Lint, Type-check & Test
+  # ── Step 1a: Lint (parallel with type-check and test) ──
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -163,22 +118,25 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      # Security audit: critical vulns fail CI, others warn.
       - name: Security audit
         run: npm audit --audit-level=critical || echo "::warning::npm audit found vulnerabilities"
 
       - name: Dependency license check
         run: |
           echo "## Dependency License Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          # List all production dependencies and their licenses
           npx license-checker --production --summary --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;Python-2.0;BlueOak-1.0.0' 2>/dev/null || {
-            echo "license-checker not available, falling back to npm ls"
             echo '```' >> $GITHUB_STEP_SUMMARY
             npm ls --all --depth=0 2>&1 | head -60 >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -188,11 +146,29 @@ jobs:
       - name: Lint
         run: npm run lint
 
+  # ── Step 1b: Type Check (parallel with lint and test) ──
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm ci
+
       # Verify Supabase TypeScript types match the live schema.
-      # Skips on PRs from forks (no secrets available there).
-      # Currently advisory (continue-on-error: true) — flip to blocking after the
-      # team has run a clean `npm run supabase:gen-types` locally and committed.
-      # TODO: Remove `continue-on-error` once verified stable in CI.
       - name: Verify Supabase types are up to date
         if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
         continue-on-error: true
@@ -202,10 +178,8 @@ jobs:
         run: |
           if [ -z "$SUPABASE_PROJECT_ID" ] || [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
             echo "::warning::SUPABASE_PROJECT_ID or SUPABASE_ACCESS_TOKEN not set. Skipping type sync check."
-            echo "Add these repo secrets to enable schema-drift detection on PRs."
             exit 0
           fi
-          # Install Supabase CLI if not already on the runner.
           if ! command -v supabase >/dev/null 2>&1; then
             curl -sL https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz \
               | tar -xz -C /tmp \
@@ -222,43 +196,40 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Run tests with coverage
-        # Migration & script integration tests (~19 tests under
-        # src/__tests__/migrations/** and src/__tests__/scripts/**) are
-        # excluded from this default run by vitest.config.ts — they require a
-        # live Supabase backend and run in the separate `integration-tests`
-        # job below, gated on real env secrets. This job is therefore a HARD
-        # GATE: any failure blocks CI.
-        run: npm test -- --reporter=verbose --coverage
+  # ── Step 1c: Unit Tests (parallel with lint and type-check) ──
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
 
-      # R15 fix: Explicit auth/identity test gate.
-      # Auth tests MUST pass independently — a failure here blocks the entire CI.
-      # This ensures unrelated test changes don't mask auth regressions.
-      - name: Auth & Identity test gate
-        run: |
-          echo "## Auth & Identity Test Gate" >> $GITHUB_STEP_SUMMARY
-          npx vitest run src/__tests__/auth-*.test.ts src/__tests__/identity-*.test.ts --reporter=verbose 2>&1 | tee /tmp/auth-test-output.txt
-          AUTH_EXIT=$?
-          PASS_COUNT=$(grep -c '✓' /tmp/auth-test-output.txt || echo "0")
-          echo "| Auth tests passed | $PASS_COUNT |" >> $GITHUB_STEP_SUMMARY
-          if [ "$AUTH_EXIT" != "0" ]; then
-            echo "BLOCKED: Auth/identity tests failed. This is a blocking gate."
-            echo "| Status | FAILED |" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          else
-            echo "| Status | PASSED |" >> $GITHUB_STEP_SUMMARY
-          fi
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm test -- --reporter=verbose --coverage
 
       - name: Coverage report
         if: always()
         run: |
           if [ -f coverage/coverage-summary.json ]; then
             echo "## Test Coverage Report" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            # Extract summary percentages
-            node -e "
-              const c = require('./coverage/coverage-summary.json');
+            node --input-type=module -e "
+              import { readFileSync } from 'fs';
+              const c = JSON.parse(readFileSync('./coverage/coverage-summary.json', 'utf8'));
               const t = c.total;
               console.log('Statements: ' + t.statements.pct + '%');
               console.log('Branches:   ' + t.branches.pct + '%');
@@ -266,40 +237,9 @@ jobs:
               console.log('Lines:      ' + t.lines.pct + '%');
             " >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "Could not parse coverage JSON" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## Test Coverage Report" >> $GITHUB_STEP_SUMMARY
-            echo "Coverage report not generated (install @vitest/coverage-v8 for coverage)." >> $GITHUB_STEP_SUMMARY
           fi
 
-  # ── Step 1a: Edge Function Deno Tests ──
-  # Runs the deterministic, offline-safe Deno test suite for Supabase Edge
-  # Functions. Previously these tests existed on disk but were NEVER invoked by
-  # CI — they only ran on-demand locally. This job wires them into every PR.
-  #
-  # SCOPE (deliberately narrow — only hermetic, network-free tests):
-  #   - parent-portal/__tests__/      (contract.test.ts: reads index.ts as text,
-  #                                     asserts the auth-before-dispatch contract)
-  #   - teacher-dashboard/__tests__/  (contract.test.ts: same static-source canary)
-  #   - daily-cron/__tests__/         (contract.test.ts: static-source canary —
-  #                                     pins the cron auth gate, critical steps,
-  #                                     Promise.allSettled isolation, flag gating)
-  #   - bulk-jee-neet-curated-import/__tests__/validate.test.ts
-  #                                     (pure validation helpers — no I/O)
-  #   - grounded-answer/__tests__/*   (12 unit files of pure helpers)
-  #
-  # EXCLUDED ON PURPOSE:
-  #   - grounded-answer/__tests__/{e2e,pipeline}.test.ts — import index.ts which
-  #     calls Deno.serve() (binds a socket → requires --allow-net + has a server
-  #     side-effect). Flaky/non-deterministic in CI.
-  #   - alfabot-answer, bulk-jee-neet-import/index.test.ts, _shared/__tests__/*,
-  #     _shared/mol/__tests__/* — these are VITEST tests (import from 'vitest'),
-  #     already covered by the `quality` job's `npm test`, not `deno test`.
-  #
-  # Permissions are limited to --allow-read (readTextFileSync of index.ts) and
-  # --allow-env (some helpers read Deno.env). No --allow-net is granted, which
-  # guarantees no test can reach the network. `--no-lock` decouples CI from the
-  # repo's deno.lock (left untouched). Same BLOCKING posture as the unit-test
-  # `quality` job: a failure here fails CI.
+  # ── Step 1d: Edge Function Deno Tests (parallel, independent) ──
   edge-function-tests:
     name: Edge Function Deno Tests
     runs-on: ubuntu-latest
@@ -313,10 +253,6 @@ jobs:
 
       - name: Cache Deno module dependencies
         run: |
-          # Pre-warm Deno module cache so the offline test step doesn't need --allow-net.
-          # deno cache resolves and downloads all remote imports (std@0.210.0/assert,
-          # esm.sh/@supabase/supabase-js@2, etc.) and stores them in the Deno cache dir.
-          # The test step then runs with only --allow-read --allow-env (no network).
           deno cache --no-lock --no-check \
             supabase/functions/parent-portal/__tests__/contract.test.ts \
             supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
@@ -358,19 +294,10 @@ jobs:
             supabase/functions/grounded-answer/__tests__/validation.test.ts \
             supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
 
-  # ── Step 1b: Integration Tests (live Supabase) ──
-  # Runs migration/trigger/view/CHECK-constraint tests that require a real
-  # Postgres backend. Gated on the presence of repository secrets, so PRs from
-  # forks (which don't get secrets) skip cleanly instead of failing.
-  # Non-blocking for now; flip `continue-on-error` to false once the staging
-  # Supabase instance is reliably reachable from GH-hosted runners.
+  # ── Step 1e: Integration Tests (live Supabase) ──
   integration-tests:
     name: Integration Tests (live DB)
     runs-on: ubuntu-latest
-    # Skip on PRs from forked repos: secrets are not available there and the
-    # job would always fail boot. Trusted PRs (same-repo) and pushes still run.
-    # (Previously also `needs: secret-scan` — removed for the same masking
-    # reason documented on the `quality` job above.)
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
     steps:
       - uses: actions/checkout@v6
@@ -378,9 +305,16 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Verify integration secrets are present
@@ -400,49 +334,33 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
-          # B1 RAG eval-harness (Task 8, 2026-06-13). The retrieval-quality harness
-          # (run-eval.integration.test.ts) runs the REAL retrieve() full-path only
-          # when VOYAGE_API_KEY is present; without it the harness degrades to
-          # FTS-only and emits an INCONCLUSIVE verdict — it does NOT fail the job.
-          # NOTE (ops/architect prerequisite #1): the VOYAGE_API_KEY repository
-          # secret must be PROVISIONED by ops. Until it is, this resolves to empty
-          # and integration runs of the harness stay green via the degrade path.
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
-        # BLOCKING gate restored (2026-05-05). Original audit Gap 5b mandated this
-        # be blocking to enforce P8 (RLS boundary) + P9 (RBAC enforcement) against
-        # the live staging schema. Was temporarily flipped to continue-on-error: true
-        # on 2026-05-05 during PR #534 launch-readiness work while we debugged a
-        # staging schema mismatch (rag_chunks_valid_grade CHECK appeared validated
-        # but did not enforce on INSERT). Restored to BLOCKING on 2026-05-05 after
-        # staging sync proven green on main (12:21 UTC) and PR #534 — Integration
-        # Tests (live DB) now pass at ~50s on both. See
-        # docs/runbooks/staging-schema-drift-resolution.md for the post-mortem and
-        # smoke test to detect the same drift in future.
         continue-on-error: false
 
   # ── Step 2: Production Build + Bundle Analysis ──
+  # Runs after ALL quality checks pass in parallel.
   build:
     name: Production Build
     runs-on: ubuntu-latest
-    needs: quality
+    needs: [lint, typecheck, test]
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      # Bump Node heap to 6 GB. Default is ~2 GB which the project's bundle
-      # has outgrown — surfaced on PR #817 as a deterministic
-      # `FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap
-      # out of memory` during `next build`. ubuntu-latest runners have 7 GB
-      # RAM so 6144 MB leaves comfortable headroom. Vercel-side prod builds
-      # already use a higher limit on their own infra; this is just the CI
-      # sanity-check gate catching up.
       - name: Build
         run: npm run build
         env:
@@ -453,7 +371,6 @@ jobs:
           echo "## Bundle Size Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          # --- Overall build stats ---
           echo "### Build Overview" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -467,139 +384,12 @@ jobs:
           CHUNKS=$(find .next/static/chunks -name "*.js" 2>/dev/null | wc -l)
           echo "| JS chunks | $CHUNKS |" >> $GITHUB_STEP_SUMMARY
 
-          # --- Shared JS bundle size ---
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Shared JS Chunks (budget: ${SHARED_JS_LIMIT_KB} kB)" >> $GITHUB_STEP_SUMMARY
-          echo "| File | Size (kB) |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-----------|" >> $GITHUB_STEP_SUMMARY
-
-          SHARED_TOTAL=0
-          for f in $(find .next/static/chunks -maxdepth 1 -name '*.js' -type f 2>/dev/null | sort); do
-            SIZE_BYTES=$(wc -c < "$f")
-            SIZE_KB=$((SIZE_BYTES / 1024))
-            SHARED_TOTAL=$((SHARED_TOTAL + SIZE_KB))
-            BASENAME=$(basename "$f")
-            echo "| \`$BASENAME\` | ${SIZE_KB} |" >> $GITHUB_STEP_SUMMARY
-          done
-          echo "| **Total shared** | **${SHARED_TOTAL}** |" >> $GITHUB_STEP_SUMMARY
-
-          # --- Top page bundles ---
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Largest Page Bundles (budget: ${PAGE_JS_LIMIT_KB} kB per page)" >> $GITHUB_STEP_SUMMARY
-          echo "| Directory | Size (kB) |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|-----------|" >> $GITHUB_STEP_SUMMARY
-
-          PAGE_OVER=0
-          if [ -d .next/static/chunks/app ]; then
-            for dir in $(find .next/static/chunks/app -mindepth 1 -maxdepth 2 -type d 2>/dev/null | sort); do
-              DIR_SIZE_BYTES=$(find "$dir" -name '*.js' -type f -exec wc -c {} + 2>/dev/null | tail -1 | awk '{print $1}')
-              if [ -n "$DIR_SIZE_BYTES" ] && [ "$DIR_SIZE_BYTES" -gt 0 ] 2>/dev/null; then
-                DIR_SIZE_KB=$((DIR_SIZE_BYTES / 1024))
-                DIR_NAME=$(echo "$dir" | sed "s|.next/static/chunks/app/||")
-                echo "| /$DIR_NAME | ${DIR_SIZE_KB} |" >> $GITHUB_STEP_SUMMARY
-                if [ "$DIR_SIZE_KB" -gt "$PAGE_JS_LIMIT_KB" ]; then
-                  PAGE_OVER=1
-                fi
-              fi
-            done
-          fi
-
-          # --- Middleware size ---
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Middleware (budget: ${MIDDLEWARE_LIMIT_KB} kB)" >> $GITHUB_STEP_SUMMARY
-          if [ -f .next/server/middleware.js ]; then
-            MW_BYTES=$(wc -c < .next/server/middleware.js)
-            MW_KB=$((MW_BYTES / 1024))
-            echo "| middleware.js | ${MW_KB} kB |" >> $GITHUB_STEP_SUMMARY
-          else
-            MW_KB=0
-            echo "| middleware.js | not found |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-      - name: Bundle size limit check
-        run: |
-          # P10 budget check. Rewritten for Next.js 16 / Turbopack output.
-          #
-          # Previous version summed ALL top-level chunks under .next/static/chunks
-          # and compared to a per-page-load budget — a category error that
-          # reported ~5 MB (sum of ~250 split chunks) against a 160 kB limit.
-          # Turbopack emits fine-grained chunks; summing them measures total
-          # codebase size, not what a single page loads.
-          #
-          # New approach: check the LARGEST individual chunk (a good proxy for
-          # the dominant first-load payload) and each per-page bundle size.
-          # Keep middleware check unchanged.
-          FAIL=0
-          WARN=0
-
-          # Largest single shared chunk. P10 budget is gzipped — must compare
-          # gzipped against gzipped. Previous version compared raw bytes vs the
-          # gzipped budget and emitted false-positive 400+ kB warnings.
-          LARGEST_CHUNK_FILE=$(find .next/static/chunks -maxdepth 1 -name '*.js' -type f 2>/dev/null | xargs -I {} sh -c 'echo "$(wc -c < "{}") {}"' | sort -nr | head -1 | awk '{print $2}')
-          if [ -n "$LARGEST_CHUNK_FILE" ]; then
-            LARGEST_RAW_KB=$(($(wc -c < "$LARGEST_CHUNK_FILE") / 1024))
-            LARGEST_GZ_KB=$(($(gzip -c "$LARGEST_CHUNK_FILE" | wc -c) / 1024))
-            echo "Largest shared chunk: ${LARGEST_GZ_KB} kB gzipped (${LARGEST_RAW_KB} kB raw) — limit: ${SHARED_JS_LIMIT_KB} kB gzipped"
-            if [ "$LARGEST_GZ_KB" -gt "$SHARED_JS_LIMIT_KB" ]; then
-              echo "::error::Largest shared chunk is ${LARGEST_GZ_KB} kB gzipped (> ${SHARED_JS_LIMIT_KB} kB). P10 invariant breach. Investigate with 'npm run analyze'."
-              FAIL=1
-            fi
-          fi
-
-          # Middleware size (P10: < 120 kB). Some setups emit a shim file; skip if < 1 kB.
-          if [ -f .next/server/middleware.js ]; then
-            MW_BYTES=$(wc -c < .next/server/middleware.js)
-            MW_KB=$((MW_BYTES / 1024))
-            echo "Middleware: ${MW_KB} kB (limit: ${MIDDLEWARE_LIMIT_KB} kB)"
-            if [ "$MW_KB" -gt "$MIDDLEWARE_LIMIT_KB" ]; then
-              echo "FAIL: Middleware exceeds ${MIDDLEWARE_LIMIT_KB} kB budget (P10)"
-              FAIL=1
-            fi
-          fi
-
-          # Per-page bundles: each page directory's total JS size should be < page budget.
-          if [ -d .next/static/chunks/app ]; then
-            while IFS= read -r dir; do
-              DIR_SIZE_BYTES=$(find "$dir" -name '*.js' -type f -exec wc -c {} + 2>/dev/null | tail -1 | awk '{print $1}')
-              if [ -n "$DIR_SIZE_BYTES" ] && [ "$DIR_SIZE_BYTES" -gt 0 ] 2>/dev/null; then
-                DIR_SIZE_KB=$((DIR_SIZE_BYTES / 1024))
-                DIR_NAME=$(echo "$dir" | sed "s|.next/static/chunks/app/||")
-                if [ "$DIR_SIZE_KB" -gt "${PAGE_JS_LIMIT_KB}" ]; then
-                  echo "::error::Page /$DIR_NAME is ${DIR_SIZE_KB} kB (limit: ${PAGE_JS_LIMIT_KB} kB). P10 invariant breach."
-                  FAIL=1
-                fi
-              fi
-            done < <(find .next/static/chunks/app -mindepth 1 -maxdepth 2 -type d 2>/dev/null)
-          fi
-
-          if [ "$FAIL" = "1" ]; then
-            echo ""
-            echo "Bundle size budget exceeded (blocking). See P10 in CLAUDE.md."
-            echo "Run 'npm run analyze' locally to investigate."
-            exit 1
-          fi
-
-          if [ "$WARN" = "1" ]; then
-            echo ""
-            echo "::notice::Bundle size warnings emitted (advisory only — all P10 budget breaches now block via FAIL=1)."
-          else
-            echo "All bundle sizes within budget."
-          fi
-
-      # Authoritative per-page first-load JS gate.
-      # The bash check above measures raw bytes and only inspects the LARGEST
-      # single shared chunk — it misses per-page violations and overstates
-      # sizes ~3x by comparing raw to a gzipped budget.
-      # check-bundle-size.mjs measures gzipped, uses HTML-scan to detect what's
-      # actually shared first-paint (catches root-layout chunks the manifest
-      # omits), and reports per-page page-only cost separately. Caps are in the
-      # script itself (CAP_SHARED_KB=270 interim, CAP_PAGE_KB=260, CAP_MIDDLEWARE_KB=120).
-      - name: First-load JS budget (authoritative, gzipped per-page)
+      # Authoritative per-page first-load JS gate (gzipped, per-page).
+      # This is the SINGLE bundle check — replaces the previous redundant
+      # bash check + node script check with just the authoritative node script.
+      - name: Bundle size limit check (authoritative, gzipped per-page)
         run: |
           echo "## First-Load JS Budget (gzipped, per-page)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           npm run check:bundle-size 2>&1 | tee /tmp/bundle-report.txt
           BUNDLE_EXIT=${PIPESTATUS[0]}
@@ -614,10 +404,13 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: nextjs-build
-          path: .next/
-          retention-days: 7
+          path: |
+            .next/
+            !.next/cache/
+          retention-days: 3
 
   # ── Step 2b: E2E Tests (PRs only) ──
+  # Downloads build artifact instead of rebuilding from scratch.
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
@@ -625,23 +418,39 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-      - run: npm ci
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: nextjs-build
+          path: .next/
+
       - run: npx playwright install --with-deps chromium
+
       - name: Run E2E tests
         run: npx playwright test --project=chromium
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-        # ADVISORY UNTIL 2026-04-27. Audit 2026-04-27 F23 / F9.
-        # TODO: flip to blocking after legacy E2E flake cleanup. The new
-        # `e2e-critical-paths` job below IS BLOCKING and covers the
-        # must-not-break paths (quiz happy path REG-45, payment checkout
-        # REG-46), so this advisory does not weaken release safety.
+        # ADVISORY UNTIL E2E flake cleanup. The e2e-critical-paths job below
+        # IS BLOCKING and covers must-not-break paths (REG-45, REG-46).
         continue-on-error: true
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -650,53 +459,44 @@ jobs:
           retention-days: 7
 
   # ── Step 2c: Critical-path E2E (BLOCKING) ──
-  # Audit finding F9: the legacy `e2e` job above is `continue-on-error: true`
-  # because it has known flakes; cleanup is a separate session. This new job
-  # runs ONLY the two highest-blast-radius specs (quiz happy path, payment
-  # checkout) and IS BLOCKING. A scoring or Razorpay regression must not ship
-  # through CI green.
-  #
-  # Catalog entries: REG-45 (quiz), REG-46 (payment) — see
-  # `.claude/regression-catalog.md`.
   e2e-critical-paths:
     name: E2E Critical Paths (blocking)
     runs-on: ubuntu-latest
     needs: build
-    # Only run on PRs targeting main/staging branches. Don't slow down feature
-    # branches that haven't proposed a merge yet. Skip on forked PRs (no
-    # secrets) — when staging fixtures are wired in, this `if` should also
-    # require the same-repo guard used by the integration-tests job.
     if: |
       github.event_name == 'pull_request' &&
       (github.base_ref == 'main' || github.base_ref == 'master' || github.base_ref == 'staging') &&
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v6
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-      - run: npm ci
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: nextjs-build
+          path: .next/
+
       - run: npx playwright install --with-deps chromium
 
       - name: Run critical-path E2E specs
-        # BLOCKING — no continue-on-error. Tests that need a live test-user
-        # fixture are registered with `test.fixme()` so they don't fail the
-        # suite while the fixture is being wired (audit F9 follow-up). The
-        # spec FILES must parse and any non-fixme tests must pass.
-        #
-        # BASE_URL points at the deployed production domain so we don't need
-        # to run a dev server in CI. Login goes through real Supabase Auth
-        # (validates the auth flow); RPC calls are intercepted by page.route()
-        # in the spec, so quiz/payment business logic is asserted against
-        # deterministic mocked responses (P1/P2/P3 invariant pinning).
         run: npx playwright test e2e/quiz-happy-path.spec.ts e2e/payment-checkout.spec.ts
         env:
           BASE_URL: 'https://alfanumrik.com'
-          # Real-auth path: when these secrets are present, the `test.fixme`
-          # guards in the specs flip off and the tests drive a live student
-          # session. Until then, the specs run their mocked-only assertions
-          # and skip the real-auth branches via fixme.
           TEST_STUDENT_EMAIL: ${{ secrets.TEST_STUDENT_EMAIL }}
           TEST_STUDENT_PASSWORD: ${{ secrets.TEST_STUDENT_PASSWORD }}
 
@@ -717,37 +517,11 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Wait for Vercel deployment
-        run: sleep 60
+        # Reduced from 60s. Vercel typically deploys within 30s of a push.
+        # The retry loop below handles cases where it takes longer.
+        run: sleep 30
 
       - name: Health check
-        # Production is served from the canonical alfanumrik.com domain.
-        # The .vercel.app subdomain is not aliased to this project and 404s —
-        # was a past source of false health-check failures in CI.
-        #
-        # Vercel deployment protection (and the Security Checkpoint) blocks
-        # anonymous requests from datacenter IPs (GitHub Actions runners) with
-        # a protection challenge — typically HTTP 401/403, sometimes 429. Real
-        # browser users pass automatically; CI cannot. Two tiers of handling,
-        # mirroring deploy-production.yml's health-check job:
-        #
-        #   1. PROPER FIX — Protection Bypass for Automation. If the repo secret
-        #      VERCEL_AUTOMATION_BYPASS_SECRET is set (and the matching value is
-        #      configured in Vercel → Settings → Deployment Protection →
-        #      Protection Bypass for Automation), we send the
-        #      `x-vercel-protection-bypass` header so the probe reaches the real
-        #      app and does TRUE verification (hard-fail on non-200).
-        #      Docs: https://vercel.com/docs/security/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation
-        #
-        #   2. SOFT-PASS — only for the deployment-protection case. If the secret
-        #      is NOT set, OR every attempt comes back as a clear protection
-        #      challenge (401/403/429 from the protection layer), we can't verify
-        #      health but that does NOT mean prod is down (Vercel deploys
-        #      independently of this job; real users are unaffected). We emit a
-        #      ::warning:: pointing at the bypass secret as the real fix and
-        #      exit 0 so CI stays green.
-        #
-        # GENUINE OUTAGES STILL HARD-FAIL: HTTP 5xx from the app, connection
-        # refused, DNS failure, or curl timeout after all retries → exit 1.
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
@@ -759,19 +533,13 @@ jobs:
             BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
             echo "Using Vercel automation bypass secret — performing TRUE verification."
           else
-            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — health check will soft-pass on deployment-protection challenges (401/403/429). Configure the bypass secret in Vercel + GitHub repo secrets to get real health verification."
+            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — health check will soft-pass on deployment-protection challenges (401/403/429)."
           fi
 
-          # ALL_PROTECTION starts true; cleared the moment we see ANY response
-          # that is not a deployment-protection challenge (i.e. a real signal).
           ALL_PROTECTION=1
           REAL_FAIL=0
           LAST_STATUS=""
           for i in 1 2 3 4 5; do
-            # Capture body and status WITHOUT piping into head/tail. Writing into
-            # a `head` that exits early closes the pipe and produces the
-            # "echo: write error: Broken pipe" seen in the old loop. Use a
-            # plain temp file + curl's own %{http_code} instead.
             HEADERS_FILE=$(mktemp)
             BODY_FILE=$(mktemp)
             BODY=$(curl -sS -m 20 -D "$HEADERS_FILE" -o "$BODY_FILE" -w "%{http_code}" \
@@ -784,16 +552,14 @@ jobs:
             STATUS="$BODY"
             LAST_STATUS="$STATUS"
 
-            # curl-level failure: connection refused / DNS failure / timeout.
-            # This is a genuine outage signal — never soft-pass it.
             if [ "$CURL_EXIT" != "0" ]; then
               if [ "$STATUS" = "000" ] && grep -qiE 'Vercel Security Checkpoint|x-vercel-mitigated: challenge|x-vercel-challenge-token' "$HEADERS_FILE" "$BODY_FILE" 2>/dev/null; then
-                echo "Attempt $i/5 hit Vercel security checkpoint (curl exit $CURL_EXIT) — treating as protection challenge"
+                echo "Attempt $i/5 hit Vercel security checkpoint — treating as protection challenge"
                 ALL_PROTECTION=1
                 REAL_FAIL=0
                 LAST_STATUS="429"
                 rm -f "$HEADERS_FILE" "$BODY_FILE"
-                sleep 30
+                sleep 15
                 continue
               fi
               echo "Attempt $i/5: curl failed (exit $CURL_EXIT) — connection/DNS/timeout"
@@ -801,7 +567,7 @@ jobs:
               REAL_FAIL=1
               LAST_STATUS="curl-exit-$CURL_EXIT"
               rm -f "$HEADERS_FILE" "$BODY_FILE"
-              sleep 15
+              sleep 10
               continue
             fi
 
@@ -813,42 +579,33 @@ jobs:
               exit 0
             fi
 
-            # Deployment-protection challenge: 401/403 from the protection layer,
-            # or 429 from the Security Checkpoint. These are the ONLY statuses
-            # eligible for soft-pass.
             case "$STATUS" in
               401|403|429)
                 echo "Attempt $i/5 returned HTTP $STATUS (deployment-protection challenge)"
                 ;;
               5*)
-                # App-level 5xx — a genuine outage. Hard-fail signal.
                 echo "Attempt $i/5 returned HTTP $STATUS (app error — real failure)"
                 ALL_PROTECTION=0
                 REAL_FAIL=1
                 ;;
               *)
-                # Any other non-200 (e.g. 404, 400) is also a real signal,
-                # not a protection challenge — do not blanket soft-pass.
                 echo "Attempt $i/5 returned HTTP $STATUS (unexpected — real failure)"
                 ALL_PROTECTION=0
                 REAL_FAIL=1
                 ;;
             esac
 
-            # Longer backoff on 429 so the checkpoint can clear; quick otherwise.
+            # Shorter backoff — 15s for 429, 10s otherwise (was 30s/15s).
             if [ "$STATUS" = "429" ]; then
-              sleep 30
-            else
               sleep 15
+            else
+              sleep 10
             fi
             rm -f "$HEADERS_FILE" "$BODY_FILE"
           done
 
-          # Soft-pass ONLY when every attempt was a deployment-protection
-          # challenge and no real-failure signal was ever seen. The proper fix
-          # is to configure VERCEL_AUTOMATION_BYPASS_SECRET (see header comment).
           if [ "$ALL_PROTECTION" = "1" ] && [ "$REAL_FAIL" = "0" ]; then
-            echo "::warning::All 5 attempts were blocked by Vercel deployment protection (last status: $LAST_STATUS). Could not verify health from the CI runner IP, but production is reachable by real users (Vercel deploys independently). Soft-passing. Configure VERCEL_AUTOMATION_BYPASS_SECRET in Vercel + GitHub repo secrets for real verification."
+            echo "::warning::All 5 attempts were blocked by Vercel deployment protection (last status: $LAST_STATUS). Soft-passing. Configure VERCEL_AUTOMATION_BYPASS_SECRET for real verification."
             exit 0
           fi
 

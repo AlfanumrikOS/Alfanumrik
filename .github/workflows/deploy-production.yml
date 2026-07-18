@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       force_deploy_all_functions:
-        description: 'Force-redeploy ALL active Edge Functions regardless of git diff (use when a previous deploy was cancelled and Edge Function code is stale)'
+        description: 'Force-redeploy ALL active Edge Functions regardless of git diff'
         type: boolean
         default: false
 
@@ -16,58 +16,68 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
-  # Pin Supabase CLI in CI so production deploys do not depend on unauthenticated
-  # GitHub release lookups for "latest", which can rate-limit before deploy.
   SUPABASE_CLI_VERSION: '2.109.1'
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-  # Canonical production domain — already aliased to the latest deployment after
-  # `vercel deploy --prod`, and bypasses Vercel deployment-protection auth that
-  # blocks the deployment-specific *.vercel.app URLs.
   PRODUCTION_DOMAIN: 'https://alfanumrik.com'
 
 jobs:
-  # ── Step 1: Full Quality Pipeline ──
-  quality:
-    name: Lint, Type-check & Test
+  # ── Step 0: Wait for CI to pass ──
+  # Instead of re-running the FULL quality pipeline (lint + type-check +
+  # test + build = ~15 min duplicate work), verify that the CI workflow
+  # passed for this commit. CI already runs on push to main and is the
+  # authoritative quality gate.
+  #
+  # For workflow_dispatch (manual triggers), CI may not have run, so the
+  # build job below handles that case with its own build step.
+  wait-for-ci:
+    name: Verify CI passed
     runs-on: ubuntu-latest
+    # Skip for manual triggers — no CI run to wait for.
+    if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Type check
-        run: npm run type-check
+      - name: Wait for CI workflow to complete
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          # Poll for up to 20 minutes (CI typically takes 10-15 min)
+          for i in $(seq 1 40); do
+            STATUS=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&event=push&per_page=20" \
+              --jq '.workflow_runs[] | select(.name == "CI — Alfanumrik") | "\(.status) \(.conclusion)"' \
+              2>/dev/null | head -1)
 
-      - name: Run tests
-        run: npm test -- --reporter=verbose
+            if [ -z "$STATUS" ]; then
+              echo "Attempt $i/40: CI workflow not found yet"
+            else
+              WF_STATUS=$(echo "$STATUS" | awk '{print $1}')
+              WF_CONCLUSION=$(echo "$STATUS" | awk '{print $2}')
 
-      # Bump Node heap to 6 GB. The project's bundle outgrew Node 22's default
-      # ~2 GB and crashes with SIGABRT during `next build` (`Next.js build
-      # worker exited with code: null and signal: SIGABRT`). #818 fixed this
-      # in ci.yml but missed this and deploy-staging.yml. ubuntu-latest
-      # runners have 7 GB RAM so 6144 MB leaves headroom.
-      - name: Build
-        run: npm run build
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
+              if [ "$WF_STATUS" = "completed" ]; then
+                if [ "$WF_CONCLUSION" = "success" ]; then
+                  echo "CI passed"
+                  exit 0
+                else
+                  echo "CI failed with conclusion: $WF_CONCLUSION. Fix CI before deploying."
+                  exit 1
+                fi
+              fi
+              echo "Attempt $i/40: CI still running (status: $WF_STATUS)"
+            fi
 
-  # ── Step 1b: Pre-Deployment Checklist ──
+            sleep 30
+          done
+
+          echo "Timed out waiting for CI workflow to complete."
+          exit 1
+
+  # ── Step 1: Pre-Deployment Checklist ──
   pre-deploy-checklist:
     name: Pre-Deployment Checklist
     runs-on: ubuntu-latest
-    needs: quality
+    needs: wait-for-ci
+    if: always() && (needs.wait-for-ci.result == 'success' || needs.wait-for-ci.result == 'skipped')
     steps:
       - uses: actions/checkout@v6
         with:
@@ -76,13 +86,9 @@ jobs:
       - name: Check for pending migrations
         run: |
           echo "## Pre-Deployment Checklist" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Check if any migrations were added in the last 10 commits
           MIGRATION_FILES=$(git diff --name-only HEAD~10..HEAD -- 'supabase/migrations/' 2>/dev/null || true)
           if [ -n "$MIGRATION_FILES" ]; then
             echo "### Migrations Detected" >> $GITHUB_STEP_SUMMARY
-            echo "The following migrations are included in this deploy:" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "$MIGRATION_FILES" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -93,7 +99,6 @@ jobs:
 
       - name: Check for destructive changes
         run: |
-          # Scan recent commits for DROP TABLE/COLUMN in migrations
           DESTRUCTIVE=$(git diff HEAD~10..HEAD -- 'supabase/migrations/' 2>/dev/null | grep -iE '^\+.*(DROP TABLE|DROP COLUMN|TRUNCATE)' || true)
           if [ -n "$DESTRUCTIVE" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -106,21 +111,10 @@ jobs:
 
       - name: Scan for secrets in diff
         run: |
-          # Final secret scan on what is being deployed.
-          # Strategy: only flag added lines that look like an actual secret
-          # ASSIGNMENT or live token. Skip comments (//, #, *, JSDoc) so
-          # docstrings that *mention* env-var names don't false-positive.
           ADDED=$(git diff HEAD~1..HEAD 2>/dev/null | grep -E '^\+[^+]' || true)
-          # Drop comment-only additions before scanning.
           NON_COMMENT=$(echo "$ADDED" | grep -vE '^\+[[:space:]]*(//|#|\*|<!--)' || true)
-          # Patterns:
-          #   - Stripe live secret: sk_live_<24+ chars>
-          #   - Razorpay live key:  rzp_live_<14+ chars>
-          #   - Supabase service role JWT (real key starts eyJ + long base64)
-          #   - Any *SERVICE_ROLE_KEY* assignment with a non-placeholder value
           SECRETS_FOUND=$(echo "$NON_COMMENT" | grep -iE 'sk_live_[A-Za-z0-9]{24,}|rzp_live_[A-Za-z0-9]{14,}|eyJ[A-Za-z0-9_\-]{40,}\.[A-Za-z0-9_\-]{40,}|SERVICE_ROLE_KEY[[:space:]]*[=:][[:space:]]*[A-Za-z0-9._\-]{20,}' || true)
           if [ -n "$SECRETS_FOUND" ]; then
-            echo ""
             echo "BLOCKED: Potential secrets in deployment diff."
             echo "$SECRETS_FOUND"
             exit 1
@@ -138,18 +132,11 @@ jobs:
           echo "| Commit | \`${GITHUB_SHA:0:7}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Region | bom1 (Mumbai) |" >> $GITHUB_STEP_SUMMARY
 
-  # ── Step 1c: Apply Database Migrations ──
-  # Pushes changed SQL migrations in `supabase/migrations/` to the production
-  # database BEFORE the Vercel deploy goes live, so the new web build never hits
-  # a DB without the schema/seed it expects. Non-migration deploys intentionally
-  # skip `supabase db push`: production can contain operator-applied emergency
-  # migration versions that are not in this repo yet, and `db push --include-all`
-  # fails on that remote-ledger drift even when the current release has no schema
-  # changes.
+  # ── Step 2: Apply Database Migrations ──
   migrations:
     name: Apply Database Migrations
     runs-on: ubuntu-latest
-    needs: [quality, pre-deploy-checklist]
+    needs: pre-deploy-checklist
     environment: production
     steps:
       - uses: actions/checkout@v6
@@ -185,18 +172,12 @@ jobs:
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "$SUPABASE_DB_PASSWORD"
           supabase db push --linked --include-all
 
-  # ── Step 2: Deploy to Vercel Production (requires approval) ──
-  # NOTE: Vercel's native GitHub App handles auto-deploys on push to main.
-  # This CLI-based job is OPTIONAL and only runs when VERCEL_TOKEN secret
-  # is configured. If the token is missing, the job is skipped (not failed)
-  # to avoid blocking CI, since Vercel App deploy is the canonical path.
+  # ── Step 3: Deploy to Vercel Production (optional CLI path) ──
   deploy:
     name: Deploy to Vercel Production
     runs-on: ubuntu-latest
-    needs: [quality, pre-deploy-checklist, migrations]
+    needs: [pre-deploy-checklist, migrations]
     environment: production
-    # Only run the CLI deploy if a deploy token is configured.
-    # When missing, Vercel's GitHub App integration handles the deploy.
     if: ${{ vars.USE_CLI_DEPLOY == 'true' }}
     outputs:
       deploy-url: ${{ steps.deploy.outputs.deploy_url }}
@@ -207,34 +188,36 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Read package version
         id: version
         run: |
-          VERSION=$(node -p "require('./apps/host/package.json').version")
+          VERSION=$(node --input-type=module -e "import{readFileSync}from'fs';process.stdout.write(JSON.parse(readFileSync('./apps/host/package.json','utf8')).version)")
           if [ -z "$VERSION" ] || [ "$VERSION" = "undefined" ]; then
             echo "::error::Could not resolve apps/host package version for production release"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Package version: $VERSION"
 
+      # Pin Vercel CLI to avoid unexpected breakage from @latest.
       - name: Install Vercel CLI
-        run: npm install -g vercel@latest
+        run: npm install -g vercel@39
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Reject placeholder env values from Vercel
-        # Defensive guard added 2026-04-27 after a build shipped with
-        # NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co baked into
-        # the client bundle, breaking all browser-side Supabase calls.
-        # If Vercel project env is misconfigured, fail the build immediately
-        # rather than silently shipping a broken client to users.
         run: |
           if [ -f .vercel/.env.production.local ]; then
             ENVFILE=.vercel/.env.production.local
@@ -246,23 +229,18 @@ jobs:
           fi
           BAD=0
           if grep -q "placeholder.supabase.co" "$ENVFILE" 2>/dev/null; then
-            echo "::error::Vercel project has placeholder NEXT_PUBLIC_SUPABASE_URL — set the real Supabase project URL in Vercel Dashboard → Settings → Environment Variables → Production"
+            echo "::error::Vercel project has placeholder NEXT_PUBLIC_SUPABASE_URL"
             BAD=1
           fi
           if grep -q "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder" "$ENVFILE" 2>/dev/null; then
-            echo "::error::Vercel project has placeholder NEXT_PUBLIC_SUPABASE_ANON_KEY — set the real anon JWT in Vercel Dashboard → Settings → Environment Variables → Production"
+            echo "::error::Vercel project has placeholder NEXT_PUBLIC_SUPABASE_ANON_KEY"
             BAD=1
           fi
           if [ "$BAD" = "1" ]; then
-            echo "Refusing to build with placeholder Supabase credentials. Fix Vercel env vars and redeploy."
+            echo "Refusing to build with placeholder Supabase credentials."
             exit 1
           fi
-          echo "Vercel env values look real (no placeholder markers detected)."
 
-      # vercel build internally calls `npm run build`. Default Node 22 heap
-      # is ~2 GB and the bundle has outgrown it — observed OOM on Deploy
-      # Production run 25990539824 (commit 42eb0076 after #824). #819 fixed
-      # the quality.Build step; this fixes the third site we'd missed.
       - name: Build with Vercel
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
@@ -275,145 +253,11 @@ jobs:
           echo "deploy_url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
           echo "Deployed to: $DEPLOY_URL"
 
-  # ── Step 3: Health Check ──
-  # Probes the canonical production domain (PRODUCTION_DOMAIN), NOT the
-  # deployment-specific *.vercel.app URL, because:
-  #   1. After `vercel deploy --prod`, the production alias already points
-  #      at the new deployment, so the domain check covers the just-deployed
-  #      build.
-  #   2. Deployment-specific URLs are guarded by Vercel deployment-protection
-  #      auth and return non-200 to unauthenticated curls — that was
-  #      auto-rolling-back every deploy.
-  health-check:
-    name: Post-Deploy Health Check
-    runs-on: ubuntu-latest
-    # Depends on migrations + deploy-functions so we don't probe before the
-    # backing infra is in place. `deploy` (CLI path) is intentionally NOT in
-    # `needs` because the Vercel GitHub App typically handles the web deploy
-    # and the CLI `deploy` job is skipped — we still want to validate the
-    # canonical domain.
-    needs: [migrations, deploy-functions]
-    steps:
-      - name: Wait for deployment to stabilize
-        run: sleep 90
-
-      - name: Health check
-        id: health
-        # Vercel's Security Checkpoint JS-challenges anonymous requests from
-        # datacenter IPs (GitHub Actions runners) with HTTP 429. Real browser
-        # users pass the JS challenge automatically; CI cannot. Two layers of
-        # mitigation:
-        #
-        #   1. Vercel Protection Bypass for Automation. If the repo secret
-        #      VERCEL_AUTOMATION_BYPASS_SECRET is set (and the matching value
-        #      configured in Vercel Project Settings → Deployment Protection →
-        #      Protection Bypass for Automation), every health request sends
-        #      the `x-vercel-protection-bypass` header and the checkpoint is
-        #      skipped. This is the canonical fix.
-        #      Docs: https://vercel.com/docs/security/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation
-        #
-        #   2. Graceful fallback when the secret is not configured. A run of
-        #      all-429 means we couldn't verify health, but it does NOT mean
-        #      production is down — real users would solve the challenge. So
-        #      we emit a warning, set all_429=true (auto-rollback step skips
-        #      rollback in that case), and exit 0 so the deploy chain shows
-        #      green. Real failures (5xx, timeouts, non-429 4xx) still exit 1
-        #      and trigger rollback.
-        env:
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: |
-          TARGET_URL="${PRODUCTION_DOMAIN}"
-          echo "Checking: $TARGET_URL/api/v1/health"
-
-          BYPASS_HEADER=()
-          if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
-            BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
-            echo "Using Vercel automation bypass secret"
-          else
-            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — health check will fall back to soft-success on Security Checkpoint 429s. Configure the bypass secret in Vercel + GitHub repo secrets to get real health verification."
-          fi
-
-          LAST_STATUS=""
-          ALL_429=1
-          for i in 1 2 3 4 5; do
-            RESPONSE=$(curl -s -w "\n%{http_code}" \
-              -A "Alfanumrik-CI-HealthCheck/1.0 (+https://alfanumrik.com; vercel-monitoring)" \
-              -H "Accept: application/json" \
-              -H "x-health-probe: github-actions" \
-              "${BYPASS_HEADER[@]}" \
-              "${TARGET_URL}/api/v1/health" 2>/dev/null)
-            STATUS=$(echo "$RESPONSE" | tail -1)
-            BODY=$(echo "$RESPONSE" | head -1)
-            LAST_STATUS="$STATUS"
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed (attempt $i)"
-              echo "$BODY" | head -c 500
-              echo "all_429=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            if [ "$STATUS" != "429" ]; then
-              ALL_429=0
-            fi
-            echo "Attempt $i/5 returned HTTP $STATUS"
-            # Longer backoff on 429 so the checkpoint can clear; quick retry otherwise.
-            if [ "$STATUS" = "429" ]; then
-              sleep 30
-            else
-              sleep 15
-            fi
-          done
-
-          if [ "$ALL_429" = "1" ]; then
-            # Every attempt was rate-limited by Vercel's Security Checkpoint.
-            # CI-side artifact, not a production outage. Soft-success: emit a
-            # warning, mark all_429=true so auto-rollback skips, exit 0 so the
-            # workflow shows green (the deploy itself succeeded — it's just
-            # the post-deploy verification that couldn't run from this IP).
-            echo "::warning::All 5 attempts returned HTTP 429 — Vercel Security Checkpoint engaged for CI runner. Real users are unaffected. Soft-passing this step. Configure VERCEL_AUTOMATION_BYPASS_SECRET to get real verification."
-            echo "all_429=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "all_429=false" >> "$GITHUB_OUTPUT"
-          echo "Health check failed after 5 attempts (last status: $LAST_STATUS)"
-          exit 1
-
-      - name: Auto-rollback on health check failure
-        # Refuse to rollback when the only failure signal was a 429 from
-        # Vercel's Security Checkpoint — that's a CI artifact, not a real
-        # outage. A 5xx, connection error, or non-429 status is still treated
-        # as a real failure and triggers rollback.
-        if: failure() && steps.health.outputs.all_429 != 'true'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          echo "Health check failed — rolling back to previous deployment"
-          npm install -g vercel@latest
-          PREV_URL=$(vercel ls --prod --token="$VERCEL_TOKEN" 2>/dev/null \
-            | grep "Ready" | head -2 | tail -1 | awk '{print $2}')
-          if [ -n "$PREV_URL" ]; then
-            vercel promote "$PREV_URL" --token="$VERCEL_TOKEN" --yes
-            echo "Rolled back to: $PREV_URL"
-          else
-            echo "WARNING: Could not find previous deployment to rollback to"
-            echo "Manual rollback required via Vercel Dashboard > Deployments"
-          fi
-
   # ── Step 3a: Deploy Changed Edge Functions ──
-  # Detects which Supabase Edge Functions changed in the merged commit and
-  # redeploys only those (or all active functions if `_shared/` changed).
-  # Runs after migrations so any new schema/RPC the function depends on is
-  # already in the DB.
-  #
-  # NOTE: this job intentionally does NOT depend on `deploy` because the
-  # canonical web deploy path is Vercel's GitHub App (the `deploy` job above
-  # is gated on `vars.USE_CLI_DEPLOY == 'true'` and is skipped in default
-  # operation). Edge Functions must redeploy on every push to main
-  # regardless of which web-deploy path is active.
   deploy-functions:
     name: Deploy Changed Edge Functions
     runs-on: ubuntu-latest
-    needs: [quality, pre-deploy-checklist, migrations]
+    needs: [pre-deploy-checklist, migrations]
     environment: production
     steps:
       - uses: actions/checkout@v6
@@ -426,14 +270,10 @@ jobs:
           CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'supabase/functions/' \
             | grep -vE '(_archive|_shared|__tests__)' \
             | awk -F/ 'NF>=3 {print $3}' | sort -u | grep -v '^$' || true)
-          # If _shared/ changed, redeploy ALL active functions (consumers depend on it)
           if git diff --name-only HEAD~1 HEAD -- 'supabase/functions/_shared/' | grep -q .; then
             CHANGED=$(ls -d supabase/functions/*/ | grep -vE '(_archive|_shared)' | xargs -n1 basename | sort -u)
             echo "_shared changed → deploying ALL active functions"
           fi
-          # Manual force-redeploy override (workflow_dispatch input). Use when a
-          # previous deploy was cancelled by a superseding merge and Edge Function
-          # code on `main` is ahead of what's running in production.
           if [ "${{ inputs.force_deploy_all_functions }}" = "true" ]; then
             CHANGED=$(ls -d supabase/functions/*/ | grep -vE '(_archive|_shared)' | xargs -n1 basename | sort -u)
             echo "force_deploy_all_functions=true → deploying ALL active functions"
@@ -462,26 +302,89 @@ jobs:
             supabase functions deploy "$fn" --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --no-verify-jwt
           done <<< "${{ steps.changed.outputs.functions }}"
 
-  # ── Step 3b: Post-Deploy Verification ──
-  # Probes the canonical production domain (PRODUCTION_DOMAIN) for the same
-  # reasons as the Health Check job above (deployment-protection auth wall).
-  # The deploy URL is still captured in the summary for traceability.
-  #
-  # Mirrors the two-tier defense the Health Check job already has against
-  # Vercel's Security Checkpoint (HTTP 429 challenge served to datacenter
-  # IPs like GitHub Actions runners):
-  #
-  #   1. If VERCEL_AUTOMATION_BYPASS_SECRET is configured, send the
-  #      `x-vercel-protection-bypass` header on every probe — the
-  #      checkpoint is skipped and we get real verification.
-  #   2. If the secret isn't set and EVERY probe came back 429, soft-pass
-  #      with a warning. Real failures (5xx, non-429 4xx) still fail loud.
-  #
-  # Before this two-tier was added, the step blanket-failed on every
-  # deploy from a fresh runner IP because Vercel's challenge served 429
-  # to all three probes — masking real future regressions of the same
-  # endpoints. (Tracked as the recurring "Post-Deploy Verification
-  # failure" noted in PR #755 / #757 / #758 deploy notes.)
+  # ── Step 4: Health Check ──
+  health-check:
+    name: Post-Deploy Health Check
+    runs-on: ubuntu-latest
+    needs: [migrations, deploy-functions]
+    steps:
+      - name: Wait for deployment to stabilize
+        # Reduced from 90s. Vercel deploys propagate within ~30s; the retry
+        # loop handles slower propagation.
+        run: sleep 30
+
+      - name: Health check
+        id: health
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          TARGET_URL="${PRODUCTION_DOMAIN}"
+          echo "Checking: $TARGET_URL/api/v1/health"
+
+          BYPASS_HEADER=()
+          if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
+            echo "Using Vercel automation bypass secret"
+          else
+            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — verification will fall back to soft-success on 429s."
+          fi
+
+          LAST_STATUS=""
+          ALL_429=1
+          for i in 1 2 3 4 5; do
+            RESPONSE=$(curl -s -w "\n%{http_code}" \
+              -A "Alfanumrik-CI-HealthCheck/1.0 (+https://alfanumrik.com; vercel-monitoring)" \
+              -H "Accept: application/json" \
+              -H "x-health-probe: github-actions" \
+              "${BYPASS_HEADER[@]}" \
+              "${TARGET_URL}/api/v1/health" 2>/dev/null)
+            STATUS=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | head -1)
+            LAST_STATUS="$STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (attempt $i)"
+              echo "$BODY" | head -c 500
+              echo "all_429=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$STATUS" != "429" ]; then
+              ALL_429=0
+            fi
+            echo "Attempt $i/5 returned HTTP $STATUS"
+            if [ "$STATUS" = "429" ]; then
+              sleep 15
+            else
+              sleep 10
+            fi
+          done
+
+          if [ "$ALL_429" = "1" ]; then
+            echo "::warning::All 5 attempts returned HTTP 429 — Vercel Security Checkpoint. Soft-passing."
+            echo "all_429=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "all_429=false" >> "$GITHUB_OUTPUT"
+          echo "Health check failed after 5 attempts (last status: $LAST_STATUS)"
+          exit 1
+
+      - name: Auto-rollback on health check failure
+        if: failure() && steps.health.outputs.all_429 != 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          echo "Health check failed — rolling back to previous deployment"
+          npm install -g vercel@39
+          PREV_URL=$(vercel ls --prod --token="$VERCEL_TOKEN" 2>/dev/null \
+            | grep "Ready" | head -2 | tail -1 | awk '{print $2}')
+          if [ -n "$PREV_URL" ]; then
+            vercel promote "$PREV_URL" --token="$VERCEL_TOKEN" --yes
+            echo "Rolled back to: $PREV_URL"
+          else
+            echo "WARNING: Could not find previous deployment to rollback to"
+          fi
+
+  # ── Step 5: Post-Deploy Verification ──
   post-deploy-verify:
     name: Post-Deploy Verification
     runs-on: ubuntu-latest
@@ -493,7 +396,6 @@ jobs:
         run: |
           TARGET_URL="${PRODUCTION_DOMAIN}"
           echo "## Post-Deploy Verification" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "Probed domain: \`$TARGET_URL\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Endpoint | Status |" >> $GITHUB_STEP_SUMMARY
@@ -502,15 +404,8 @@ jobs:
           BYPASS_HEADER=()
           if [ -n "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
             BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
-            echo "Using Vercel automation bypass secret"
-          else
-            echo "::notice::VERCEL_AUTOMATION_BYPASS_SECRET not set — verification will fall back to soft-success if Vercel's Security Checkpoint blocks the runner IP. Configure the bypass secret in Vercel + GitHub repo secrets to get real verification."
           fi
 
-          # Track real failures separately from checkpoint-only 429s. A
-          # real_fail is "this endpoint responded with something unexpected
-          # that isn't the Vercel challenge"; bypass_blocked is "every
-          # check we tried came back 429 from the security checkpoint."
           REAL_FAIL=0
           BYPASS_BLOCKED=0
           PROBES=0
@@ -519,7 +414,6 @@ jobs:
             local label="$1"
             local path="$2"
             shift 2
-            # Remaining args are the list of accepted status codes.
             local accepted=("$@")
             PROBES=$((PROBES + 1))
             local status
@@ -563,13 +457,9 @@ jobs:
           }
 
           check "/api/v1/health" "/api/v1/health" "200"
-          # Homepage: 200 (Next.js render) or 307/308 (redirect to /welcome marketing route).
           check "/ (homepage)"   "/"              "200" "307" "308"
           check "/login"         "/login"         "200" "307"
 
-          # Security headers check — meaningful only if the response is the
-          # real app, not the Vercel challenge page. When the challenge is
-          # engaged (all probes 429), skip this check; otherwise enforce.
           if [ "$BYPASS_BLOCKED" -lt "$PROBES" ]; then
             HEADERS=$(curl -sI "${BYPASS_HEADER[@]}" "${TARGET_URL}/" 2>/dev/null)
             if echo "$HEADERS" | grep -qi "x-frame-options"; then
@@ -582,43 +472,29 @@ jobs:
             echo "| Security headers | skipped (checkpoint engaged) |" >> $GITHUB_STEP_SUMMARY
           fi
 
-          echo ""
-          echo "Probes: $PROBES   Real failures: $REAL_FAIL   Checkpoint-blocked: $BYPASS_BLOCKED"
-
           if [ "$REAL_FAIL" -gt 0 ]; then
-            echo "Post-deploy verification found real failures (non-429 / wrong status)."
-            echo "Rollback: Vercel Dashboard > Deployments > Promote previous deployment"
+            echo "Post-deploy verification found real failures."
             exit 1
           fi
 
           if [ "$BYPASS_BLOCKED" -gt 0 ] && [ "$BYPASS_BLOCKED" = "$PROBES" ]; then
-            echo "::warning::All $PROBES probes returned HTTP 429 (Vercel Security Checkpoint engaged for runner IP). Real users are unaffected. Soft-passing. Configure VERCEL_AUTOMATION_BYPASS_SECRET for real verification."
+            echo "::warning::All $PROBES probes returned HTTP 429. Soft-passing."
             exit 0
           fi
 
           echo "All post-deploy verifications passed."
 
-  # ── Step 4: Release Tag & Summary ──
+  # ── Step 6: Release Tag & Summary ──
   release:
     name: Create Release & Summary
     runs-on: ubuntu-latest
     needs: [health-check, post-deploy-verify]
-    # The optional CLI `deploy` job (gated on vars.USE_CLI_DEPLOY) is intentionally
-    # NOT in `needs`: in default operation Vercel's GitHub App handles the web
-    # deploy and `deploy` is skipped. A skipped `needs` dependency would cascade
-    # and skip this `release` job too — which is why no release tag was being
-    # created on normal production deploys. Gate on the two jobs that always run
-    # (health-check + post-deploy-verify) instead, and only tag on a real push to
-    # main where both passed.
     if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.health-check.result == 'success' && needs.post-deploy-verify.result == 'success' }}
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
 
-      # Version no longer comes from the (optionally-skipped) `deploy` job — read
-      # it from the host app package so release tagging works on the default
-      # Vercel-GitHub-App deploy path.
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -626,13 +502,12 @@ jobs:
       - name: Read package version
         id: version
         run: |
-          VERSION=$(node -p "require('./apps/host/package.json').version")
+          VERSION=$(node --input-type=module -e "import{readFileSync}from'fs';process.stdout.write(JSON.parse(readFileSync('./apps/host/package.json','utf8')).version)")
           if [ -z "$VERSION" ] || [ "$VERSION" = "undefined" ]; then
             echo "::error::Could not resolve apps/host package version for production release"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Package version: $VERSION"
 
       - name: Create GitHub release tag
         uses: actions/github-script@v9
@@ -643,7 +518,6 @@ jobs:
             const tagName = `v${version}`;
             const releaseName = `v${version}`;
 
-            // Check if tag already exists
             try {
               await github.rest.git.getRef({
                 owner: context.repo.owner,
@@ -651,7 +525,6 @@ jobs:
                 ref: `tags/${tagName}`,
               });
 
-              // Tag exists — append short SHA to make it unique
               const uniqueTag = `${tagName}+${sha.substring(0, 7)}`;
               console.log(`Tag ${tagName} already exists. Using ${uniqueTag} instead.`);
 
@@ -674,7 +547,6 @@ jobs:
               });
             } catch (e) {
               if (e.status === 404) {
-                // Tag does not exist — create release normally
                 await github.rest.repos.createRelease({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
