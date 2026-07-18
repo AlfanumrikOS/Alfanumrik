@@ -35,7 +35,7 @@ import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
-import { capture as posthogCapture } from '@alfanumrik/lib/posthog/server';
+import { capture as posthogCapture, hashDistinctId } from '@alfanumrik/lib/posthog/server';
 import { maybeDispatchQuizCompletion } from '@alfanumrik/lib/state/quiz-orchestrator-bridge';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
 import { bktUpdate } from '@alfanumrik/lib/state/services/quiz-completion-service';
@@ -135,7 +135,7 @@ export function runQuizSubmitSideEffects(
   // GUARD: replays must not double-count / double-publish / double-dispatch.
   if (result.idempotent_replay) return;
 
-  emitPostHogEvents(input, result);
+  emitPostHogEvents(authUserId, input, result);
   emitSpineEvents(admin, authUserId, input, result);
   dispatchOrchestratorBridge(authUserId, input, result);
 
@@ -202,24 +202,37 @@ function emitOfflineSyncEvent(
 // Only emit when this is a fresh grading event. Replays already short-circuited.
 
 function emitPostHogEvents(
+  authUserId: string,
   input: QuizSubmitSideEffectInput,
   result: QuizSubmitSideEffectResult,
 ): void {
-  // quiz_graded — primary funnel event.
+  // quiz_graded — primary funnel ACTIVATION anchor (retention cohorts anchor
+  // on it). distinctId MUST be the hashed AUTH user id (auth.uid), NOT
+  // input.studentId (= students.id): the browser identifies the PostHog person
+  // as hashUserIdForAnalytics(auth.uid) (AuthContext.tsx → posthog/client
+  // identify()), and hashDistinctId() byte-matches that derivation (SHA-256
+  // over the utf-8 UUID, first 8 bytes / 16 lowercase hex). Keying by
+  // students.id would stitch this event to a PHANTOM person and the activation
+  // funnel would read a false 0%.
   void posthogCapture(
     'quiz_graded',
-    input.studentId,
+    hashDistinctId(authUserId),
     {
       session_id: result.session_id ?? input.sessionId,
       score_percent: result.score_percent,
       xp_earned: result.xp_earned,
       correct: result.correct,
       total: result.total,
+      // Coarse, PII-free cohorting facets (assessment-approved, additive).
+      subject: input.subject,
+      // Enrolled grade as a STRING (P5) — never an integer.
+      grade: input.grade,
       marking_authenticity_path: 'oracle_v2',
       anti_cheat_flagged: !!result.flagged,
       idempotent_replay: false,
     },
     // $insert_id keyed by session — second emission for same session is dropped.
+    // Dedup keying UNCHANGED (session-scoped, not distinctId-scoped).
     `quiz_graded:${result.session_id ?? input.sessionId}`,
   ).catch(() => { /* swallow */ });
 
