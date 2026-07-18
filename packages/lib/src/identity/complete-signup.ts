@@ -33,11 +33,13 @@
  * P13: no PII is logged — only auth_user_id-free error messages.
  */
 
+import { after } from 'next/server';
 import type { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { profileParamsFromMetadata } from '@alfanumrik/lib/identity/bootstrap-profile';
 import { ensureSchoolAdminOnboarding } from '@alfanumrik/lib/identity/school-admin-bootstrap';
+import { capture, hashDistinctId } from '@alfanumrik/lib/posthog/server';
 
 // ── Session registration (2-device limit) ────────────────────────
 const SESSION_COOKIE = 'alfanumrik_sid';
@@ -153,6 +155,28 @@ async function sendSignupWelcomeEmail(
     }
   } catch {
     // Welcome-email errors are non-fatal (P15).
+  }
+}
+
+/**
+ * Map the resolved redirect role to the B2C funnel role vocabulary.
+ *
+ * Matches the client `signup_complete` emit (AuthContext.tsx maps parent →
+ * 'guardian'), so the acquisition funnel's two steps share one role facet.
+ * institution_admin is a B2B path and is intentionally skipped (returns null →
+ * no `email_verified` emit) — it is not part of the B2C acquisition funnel.
+ */
+function normalizeFunnelRole(role: string): 'student' | 'teacher' | 'guardian' | null {
+  switch (role) {
+    case 'teacher':
+      return 'teacher';
+    case 'parent':
+      return 'guardian';
+    case 'student':
+      return 'student';
+    default:
+      // institution_admin (and any unexpected value) → skip the emit.
+      return null;
   }
 }
 
@@ -278,6 +302,41 @@ export async function completeSignupBootstrap(
       else if (existingTeacher) redirectRole = 'teacher';
       else if (existingGuardian) redirectRole = 'parent';
       else redirectRole = 'student';
+    }
+
+    // ── B2C acquisition funnel (Wave 2) — server-side `email_verified` ──────
+    // Fire ONCE, on first-time verification only (!hasProfile). This is the
+    // server stitch point that joins the client `signup_complete` step to the
+    // SAME PostHog person via the hashed distinct id.
+    //
+    // P15 / REG-117 — telemetry MUST NEVER delay or break the auth funnel:
+    //   - after() defers the capture until AFTER the redirect response is sent,
+    //     so the 3xx is never blocked by PostHog ingest latency.
+    //   - the whole block is wrapped in its own try/catch, so a missing request
+    //     context (unit tests, cron) or an after() throw is swallowed and can
+    //     never bubble into the flow.
+    // P13 — distinctId is the hashed UUID prefix (byte-matches the client
+    //   hashUserIdForAnalytics); the payload carries only a coarse role enum +
+    //   method. No email, name, phone, or raw auth_user_id.
+    if (!hasProfile) {
+      try {
+        const funnelRole = normalizeFunnelRole(redirectRole);
+        if (funnelRole) {
+          const distinctId = hashDistinctId(user.id);
+          after(async () => {
+            await capture(
+              'email_verified',
+              distinctId,
+              { role: funnelRole, method: 'email' },
+              // Stable, timestamp-free $insert_id → forever-dedup: a re-clicked
+              // verification link can never double-count this funnel step.
+              `email_verified:${distinctId}`,
+            );
+          });
+        }
+      } catch {
+        // Best-effort telemetry — never break the funnel (P15).
+      }
     }
 
     // Fire-and-forget welcome email (best-effort).

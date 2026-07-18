@@ -155,7 +155,17 @@ export type PostHogEventName =
   // action key (closed enum per section), and the destination route name.
   // NEVER includes student name, email, phone, grade, raw IDs, or any
   // chapter / subject metadata that could fingerprint a learner.
-  | 'dashboard_cta_clicked';
+  | 'dashboard_cta_clicked'
+  // Funnel — B2C acquisition. Server-side capture() from the shared
+  // email-verification choke point (packages/lib/src/identity/complete-signup.ts),
+  // which covers BOTH /auth/callback (PKCE `code`) and /auth/confirm
+  // (token_hash) flows. Fired once, on first-time verification only. PII-free —
+  // only a coarse role enum + the verification method. This is the server-side
+  // stitch point for the client-hashed funnel: the distinctId is the SAME
+  // hashUserIdForAnalytics() prefix the browser identifies with, so the
+  // signup → email_verified step joins on one person. NOT a client track()
+  // event (do not add to analytics.ts AnalyticsEvent).
+  | 'email_verified';
 
 // ─── Base properties auto-attached by `capture()` ──────────────────────────
 
@@ -179,6 +189,12 @@ export interface QuizGradedPayload {
   marking_authenticity_path: 'oracle_v2' | 'legacy_v1' | 'fallback_atomic';
   anti_cheat_flagged: boolean;
   idempotent_replay: boolean;
+  /** Subject code of the graded quiz (closed set per SUBJECT_META). Optional —
+   *  ai-engineer populates it at the emit site. PII-free coarse cohorting. */
+  subject?: string;
+  /** CBSE grade as a STRING ("6"-"12", P5 — never an integer). Optional —
+   *  ai-engineer populates it at the emit site. PII-free coarse cohorting. */
+  grade?: string;
 }
 
 export interface QuizStartedPayload {
@@ -691,6 +707,24 @@ export interface LearnerNext404Payload {
   reason: 'flag_off' | 'no_profile';
 }
 
+// ─── Funnel — B2C acquisition payloads ─────────────────────────────────────
+//
+// Emitted server-side from the shared email-verification choke point. PII-free
+// by design: only a coarse role enum + method. The distinctId carried alongside
+// is the hashed UUID prefix (hashDistinctId), never the raw auth_user_id (P13).
+
+export interface EmailVerifiedPayload {
+  /**
+   * Coarse funnel role. Matches the `signup_complete` role vocabulary
+   * (AuthContext.tsx maps parent → 'guardian'), so the two funnel steps join
+   * on the same role facet. institution_admin is a B2B path and is NOT emitted
+   * (the emit site returns null for it — see normalizeFunnelRole).
+   */
+  role: 'student' | 'teacher' | 'parent' | 'guardian';
+  /** Verification channel. Email/PKCE + token_hash both resolve to 'email'. */
+  method: 'email';
+}
+
 // Discriminated union of all event payloads, keyed by event name.
 export type EventPayloadByName = {
   quiz_started: QuizStartedPayload;
@@ -768,6 +802,7 @@ export type EventPayloadByName = {
   alfabot_inquiry_submitted: AlfabotInquirySubmittedPayload;
   alfabot_inquiry_failed: AlfabotInquiryFailedPayload;
   dashboard_cta_clicked: DashboardCtaClickedPayload;
+  email_verified: EmailVerifiedPayload;
 };
 
 // ── Adaptive Tutor payloads (ADR-004) ──────────────────────────────────
@@ -1046,6 +1081,10 @@ export interface PersonPropertiesAllowlist {
   plan?: string;         // free | starter | pro | unlimited
   preferred_language?: string; // 'en' | 'hi'
   signup_date?: string;  // ISO date (no time)
+  /** Coarse role enum for role-segmentable funnels (student | teacher | parent
+   *  | guardian | institution_admin). P13-approved: a low-cardinality enum,
+   *  NOT PII. Lets funnels slice acquisition/activation by role on the person. */
+  role?: string;
   /** Hashed UUID prefix — see hashUserIdForAnalytics(). NEVER raw auth_user_id. */
   distinct_id_hash?: string;
 }
@@ -1057,6 +1096,7 @@ export const PERSON_PROPERTY_ALLOWLIST: ReadonlySet<string> = new Set<string>([
   'plan',
   'preferred_language',
   'signup_date',
+  'role',
   'distinct_id_hash',
 ]);
 

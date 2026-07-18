@@ -24,6 +24,7 @@
  *   - Mirrors the Sentry posture: telemetry is best-effort, never load-bearing.
  */
 
+import { createHash } from 'node:crypto';
 import { redactPII as baseRedactPII } from '@alfanumrik/lib/ops-events-redactor';
 import { logger } from '@alfanumrik/lib/logger';
 import {
@@ -213,14 +214,42 @@ async function readRequestId(): Promise<string | undefined> {
 }
 
 /**
+ * Hash a Supabase auth UUID into the stable PostHog distinct id.
+ *
+ * MUST byte-match the client-side `hashUserIdForAnalytics()` in
+ * packages/lib/src/posthog-client.ts (SHA-256 over the utf-8 UUID, first 8
+ * bytes rendered as 16 lowercase hex chars). Because the browser identifies
+ * the person under that same 16-hex prefix, server events captured with this
+ * id join the SAME person — that is what stitches the client→server funnel
+ * (e.g. client `signup_complete` → server `email_verified`). Passing a raw
+ * UUID instead would create a SECOND person and split the funnel.
+ *
+ * Parity proof:
+ *   client: Array.from(new Uint8Array(sha256(utf8)).slice(0,8))
+ *             .map(b => b.toString(16).padStart(2,'0')).join('')
+ *   server: createHash('sha256').update(id,'utf8').digest('hex').slice(0,16)
+ *   digest('hex') is the lowercase hex of all 32 bytes; slice(0,16) == first
+ *   8 bytes == the client's 16-char prefix. Byte-identical.
+ *
+ * Synchronous and dependency-light — safe to call inline at any emit site.
+ */
+export function hashDistinctId(authUserId: string): string {
+  return createHash('sha256').update(authUserId, 'utf8').digest('hex').slice(0, 16);
+}
+
+/**
  * Capture a server-side event.
  *
  * @param event       Canonical event name from PostHogEventName union.
- * @param distinctId  Stable per-user id. Prefer the hashed UUID prefix; the
- *                    raw Supabase auth UUID is acceptable server-side because
- *                    server logs are not P13-restricted (logger redacts before
- *                    they leave the server). See src/lib/posthog-client.ts for
- *                    the client-side hashing rule.
+ * @param distinctId  Stable per-user id. Callers MUST pass
+ *                    `hashDistinctId(authUserId)` — the hashed UUID prefix that
+ *                    byte-matches the client `hashUserIdForAnalytics()` — so the
+ *                    server event joins the SAME PostHog person the browser
+ *                    identified. NEVER pass a raw Supabase auth UUID: it creates
+ *                    a second person and splits the funnel. NOTE: capture() does
+ *                    NOT hash for you (auto-hashing would double-hash the
+ *                    existing raw-UUID call sites; migrating those is a separate
+ *                    audited PR).
  * @param properties  Event-specific payload merged with BaseEventProperties.
  * @param idempotencyKey
  *                    Optional — sets PostHog's $insert_id so duplicate calls
