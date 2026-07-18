@@ -13,10 +13,11 @@
  * Privacy posture (P13):
  *   The function signature is `Pick<DashboardCtaClickedPayload, ...>`.
  *   A caller cannot pass `email`, `phone`, `student_name`, etc. — those
- *   keys are not in the type. This is layer-1 privacy enforcement;
- *   `redactPII` in src/lib/posthog/server.ts and the
- *   `mask_all_text`/`mask_all_element_attributes` options in
- *   src/lib/posthog/client.ts are defence-in-depth.
+ *   keys are not in the type. This is layer-1 privacy enforcement.
+ *   Defence-in-depth: `redactPII` + the EVENT_PROPERTY_PII_KEYS second pass
+ *   (posthog/server.ts for server events, analytics.ts for client events),
+ *   plus `autocapture:false` across all three init paths — there is no
+ *   implicit DOM/click capture at all, so no masked-text surface remains.
  *
  * Bundle: this file is < 1 kB minified. It imports nothing beyond
  * `track` (already on the dashboard payload via PostHogProvider) and a

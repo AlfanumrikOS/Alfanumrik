@@ -30,12 +30,21 @@ let initialised = false;
 function PostHogInit() {
   useEffect(() => {
     if (initialised || !phEnabled() || typeof window === 'undefined') return;
+    // first-init-wins: posthog-js is a single global singleton. If another init
+    // path (posthog/client.ts or posthog-client.ts) already ran this session,
+    // this call is a no-op. All three paths now share the SAME safe config
+    // below (EU host, autocapture:false, disable_session_recording:true,
+    // person_profiles:'identified_only'), so whichever wins is P13-safe.
     posthog.init(PH_KEY, {
       api_host:             PH_HOST,
       capture_pageview:     true,      // auto page views
       capture_pageleave:    true,      // bounce detection
       persistence:          'localStorage',
       autocapture:          false,     // manual events only — avoid PII in DOM
+      // P13 (minors' product): never record sessions; only materialize person
+      // profiles after identify() — parity with the other two init paths.
+      disable_session_recording: true,
+      person_profiles:      'identified_only',
       sanitize_properties:  (props) => { delete props['$current_url']; return props; },
       loaded: (ph) => {
         if (process.env.NODE_ENV === 'development') ph.debug();

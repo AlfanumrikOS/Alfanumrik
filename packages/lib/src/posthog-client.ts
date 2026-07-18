@@ -59,6 +59,12 @@ async function ensurePosthog(): Promise<PosthogModule | null> {
       // If the package is not installed, this throws and we silently no-op.
       const mod = await import('posthog-js');
       const posthog = mod.default;
+      // first-init-wins: posthog-js is one global singleton. This path and
+      // posthog/client.ts's init() can both call posthog.init() in the same
+      // session (analytics.ts fans track() out to both); posthog-js keeps the
+      // FIRST and ignores the rest. Both target EU project 159341 with the SAME
+      // safe flags (autocapture:false, disable_session_recording:true,
+      // person_profiles:'identified_only'), so whichever wins is P13-safe.
       posthog.init(key, {
         api_host: getHost(),
         capture_pageview: true,
