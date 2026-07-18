@@ -372,8 +372,10 @@ export interface QuizQuestionServedPayload {
 // All landing events are fired client-side. They carry the active role, the
 // destination href / label, and (for CTA) the UI language at click time.
 // PII-free by design — no email, phone, full_name, raw user IDs. The
-// EVENT_PROPERTY_PII_KEYS redactor in `src/lib/analytics.ts` provides defence
-// in depth.
+// EVENT_PROPERTY_PII_KEYS redactor provides defence in depth: it runs as a
+// second redaction pass on BOTH the server path (posthog/server.ts's
+// walkAndRedactExtras) and the client path (analytics.ts's
+// redactEventPropertyPII), so any PII-shaped KEY is scrubbed before dispatch.
 
 export interface LandingNavClickPayload {
   /** Where in the nav: 'primary' = desktop top bar; 'mobile_pages' = burger Pages group; 'mobile_sections' = burger Sections group. */

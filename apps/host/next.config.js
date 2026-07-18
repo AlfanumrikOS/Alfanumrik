@@ -155,11 +155,12 @@ const nextConfig = {
       { source: '/study-plan', destination: '/exam-prep',              permanent: true },
     ];
   },
-  // PostHog reverse-proxy. /ingest/static/* → PostHog static assets (JS SDK,
-  // session-recording bundle); /ingest/* → ingestion endpoints (capture,
-  // decide, identify). Path-based (not domain-based) to keep cookies +
-  // referer in-origin and to avoid CORS preflights for the ingest POST.
-  // Marking-Authenticity Phase 0 — sets up infra for Wave 2 PostHog SDK init.
+  // PostHog reverse-proxy → EU project 159341 (eu.i.posthog.com). /ingest/static/*
+  // → PostHog static assets (JS SDK, session-recording bundle); /ingest/* →
+  // ingestion endpoints (capture, decide, identify). Path-based (not
+  // domain-based) to keep cookies + referer in-origin and to avoid CORS
+  // preflights for the ingest POST. Targets the EU host so the EU key's region
+  // matches (US endpoints would reject/mis-route an EU project key).
   async rewrites() {
     return [
       {
@@ -168,11 +169,11 @@ const nextConfig = {
       },
       {
         source: '/ingest/static/:path*',
-        destination: 'https://us-assets.i.posthog.com/static/:path*',
+        destination: 'https://eu-assets.i.posthog.com/static/:path*',
       },
       {
         source: '/ingest/:path*',
-        destination: 'https://us.i.posthog.com/:path*',
+        destination: 'https://eu.i.posthog.com/:path*',
       },
     ];
   },
@@ -196,16 +197,18 @@ const nextConfig = {
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.supabase.co https://lh3.googleusercontent.com",
               // connect-src additions:
-              //  - PostHog (us.i.posthog.com, us-assets.i.posthog.com) for the
-              //    SDK ingestion + asset fetch path. Same-origin proxy via
-              //    /ingest/* covers the primary path; these hosts are listed
-              //    so the SDK's direct-host fallback (used when the proxy is
-              //    unreachable, e.g. dev) still works without a CSP block.
+              //  - PostHog EU project 159341 (eu.i.posthog.com,
+              //    eu-assets.i.posthog.com) for the SDK ingestion + asset fetch
+              //    path. Same-origin proxy via /ingest/* covers the primary
+              //    path; these hosts are listed so the SDK's direct-host
+              //    fallback (used when the proxy is unreachable, e.g. dev) still
+              //    works without a CSP block. US hosts removed — the project is
+              //    EU-only, so no consumer needs us.i.posthog.com.
               //  - fonts.googleapis.com (CSS), fonts.gstatic.com (font files),
               //    and cdn.jsdelivr.net remain for current main-thread runtime
               //    consumers. public/sw.js is now a no-fetch retirement
               //    tombstone and does not require connect-src access.
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://us.i.posthog.com https://us-assets.i.posthog.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.ingest.sentry.io https://checkout.razorpay.com https://api.razorpay.com https://prod.spline.design https://eu.i.posthog.com https://eu-assets.i.posthog.com https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net",
               "media-src 'self' blob:",
               "worker-src 'self'",
               "frame-src https://api.razorpay.com https://checkout.razorpay.com",

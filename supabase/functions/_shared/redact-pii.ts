@@ -61,7 +61,13 @@ const SENSITIVE_KEYS: ReadonlySet<string> = new Set([
   // exception to the in-flight redaction posture. The vectors we care about
   // are handled at the surface layer:
   //   - Sentry: user.ip_address is dropped in beforeSend (sentry.server/edge)
-  //   - PostHog: disableGeoip + EVENT_PROPERTY_PII_KEYS includes ip_address
+  //   - PostHog (server path, posthog/server.ts): disableGeoip:true in code
+  //     AND EVENT_PROPERTY_PII_KEYS redacts any `ip_address` key in the payload.
+  //   - PostHog (client path, analytics.ts): EVENT_PROPERTY_PII_KEYS is applied
+  //     as a second redaction pass, so an `ip_address`/`ip` KEY in a payload is
+  //     scrubbed. The browser does NOT attach its own IP; the IP PostHog sees
+  //     is derived at ingest and must be discarded via the EU project's
+  //     "Discard client IP data" setting (an operator action, NOT code here).
   //   - Anthropic: never sent (no IP fields in AI prompt construction)
 ]);
 
