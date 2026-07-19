@@ -70,6 +70,10 @@ scripts/knowledge-audit/output/
 __pycache__/
 *.pyc
 
+# Stop-hook claim-verification audit trail (verify_before_stop.py) —
+# per-session operational output, not source
+.claude/verification-log.jsonl
+
 # Binary documents (tracked going forward only — no history rewrite)
 Alfanumrik_PreSeed_Investor_Deck.pdf
 Alfanumrik_PreSeed_Investor_Deck.pptx
