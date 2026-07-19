@@ -198,8 +198,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Guard against recursive fetchUser calls after bootstrap.
-  // Reset to false on each fresh fetchUser invocation; set to true after bootstrap attempt.
+  // Reset to false on each fresh fetchUser invocation; set to true after 3 consecutive
+  // bootstrap failures (not after the first failure) to handle transient DB errors.
   const bootstrapAttemptedRef = useRef(false);
+  const bootstrapRetryCountRef = useRef(0);
+  const MAX_BOOTSTRAP_RETRIES = 3;
 
   // P15 (school invite-code redemption): guard so the pending-invite POST to
   // /api/schools/join fires at most once per signed-in session. A transient
@@ -472,9 +475,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // B10: Route through /api/auth/bootstrap (server-side, admin client, idempotent)
             // instead of inserting directly via browser client (which bypasses RLS, triggers,
             // and onboarding_state creation).
-            // Guard: only attempt bootstrap once to prevent infinite recursion if
-            // bootstrap succeeds but the subsequent profile query still fails.
-            bootstrapAttemptedRef.current = true;
+            // Guard: only mark as attempted after MAX_BOOTSTRAP_RETRIES consecutive failures
+            // to handle transient errors (e.g. FK violations from stale defaults).
             const metaRole = user.user_metadata?.role as string | undefined;
             const metaName = user.user_metadata?.name as string || user.email?.split('@')[0] || 'Student';
             // R2: normalizeGrade is the canonical grade coercion (defaults to '9',
@@ -484,109 +486,106 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const metaBoard = user.user_metadata?.board as string || 'CBSE';
 
             let bootstrapSucceeded = false;
+            let parsedSubjects: string[] | null = null;
+            let parsedGrades: string[] | null = null;
             try {
-              let parsedSubjects: string[] | null = null;
-              let parsedGrades: string[] | null = null;
+              if (user.user_metadata?.subjects_taught) parsedSubjects = JSON.parse(user.user_metadata.subjects_taught);
+              if (user.user_metadata?.grades_taught) parsedGrades = JSON.parse(user.user_metadata.grades_taught);
+            } catch { /* malformed JSON */ }
+
+            const payload: Record<string, unknown> = {
+              role: metaRole || 'student',
+              name: metaName,
+              grade: metaGrade,
+              board: metaBoard,
+            };
+            if (metaRole === 'teacher') {
+              payload.school_name = user.user_metadata?.school_name || null;
+              payload.subjects_taught = parsedSubjects;
+              payload.grades_taught = parsedGrades;
+            }
+
+            // Retry bootstrap up to MAX_BOOTSTRAP_RETRIES times with 2s delays.
+            // Transient DB errors (e.g. FK violations from stale defaults, replica
+            // lag) resolve within seconds — retrying prevents permanent stuck state.
+            for (let attempt = 1; attempt <= MAX_BOOTSTRAP_RETRIES; attempt++) {
               try {
-                if (user.user_metadata?.subjects_taught) parsedSubjects = JSON.parse(user.user_metadata.subjects_taught);
-                if (user.user_metadata?.grades_taught) parsedGrades = JSON.parse(user.user_metadata.grades_taught);
-              } catch { /* malformed JSON */ }
-
-              const payload: Record<string, unknown> = {
-                role: metaRole || 'student',
-                name: metaName,
-                grade: metaGrade,
-                board: metaBoard,
-              };
-              if (metaRole === 'teacher') {
-                payload.school_name = user.user_metadata?.school_name || null;
-                payload.subjects_taught = parsedSubjects;
-                payload.grades_taught = parsedGrades;
-              }
-
-              // M3: attach the session access token as a Bearer header so
-              // localStorage-session users (password logins, no auth cookie)
-              // don't 401 — the bootstrap route accepts `Authorization: Bearer`
-              // as a fallback when no cookie session is present. Cookie
-              // behavior is unchanged (same-origin fetch still sends cookies).
-              // The session was already resolved by the getSession() call at
-              // the top of fetchUser, so this re-read hits the in-memory cache;
-              // the 3s race is a safety net so a stalled refresh can't burn
-              // the outer 12s budget. If no token is available, send the
-              // request exactly as before (graceful degradation).
-              let bootstrapToken: string | null = null;
-              try {
-                bootstrapToken = await Promise.race([
-                  supabase.auth.getSession().then((r) => r.data.session?.access_token ?? null),
-                  new Promise<null>((resolve) => { setTimeout(() => resolve(null), 3_000); }),
-                ]);
-              } catch { /* degrade gracefully — request goes out without Authorization */ }
-
-              const res = await fetch('/api/auth/bootstrap', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(bootstrapToken ? { Authorization: `Bearer ${bootstrapToken}` } : {}),
-                },
-                body: JSON.stringify(payload),
-              });
-              if (res.ok) {
-                bootstrapSucceeded = true;
-                // Analytics: F16 — see audit 2026-04-27.
-                // Bootstrap is the first successful server-side write of a profile,
-                // gated by Redis idempotency lock — fires exactly once per new user.
+                // M3: attach the session access token as a Bearer header so
+                // localStorage-session users (password logins, no auth cookie)
+                // don't 401.
+                let bootstrapToken: string | null = null;
                 try {
-                  // AO-9: fire `signup_complete` AT MOST ONCE per user.
-                  // `bootstrapAttemptedRef` only dedupes within a single session —
-                  // it is reset to false on every SIGNED_IN and on signOut. So if a
-                  // user's profile row stays missing (e.g. a silent bootstrap
-                  // failure, or a fresh sign-in racing profile creation), this block
-                  // re-enters on each new session, sees res.ok, and re-fires the
-                  // event — over-counting activation. A durable per-user key makes
-                  // the emission idempotent across re-mounts, reloads, and repeated
-                  // sign-ins. The key uses the auth UUID only; the event payload
-                  // carries no PII (P13) and a storage failure must never break the
-                  // funnel (P15) — on storage error we degrade to the prior
-                  // fire-each-time behavior rather than throwing.
-                  const signupFlagKey = `alfanumrik_signup_complete:${user.id}`;
-                  let alreadyFired = false;
-                  try {
-                    alreadyFired = typeof window !== 'undefined'
-                      && window.localStorage.getItem(signupFlagKey) === '1';
-                  } catch { /* storage unavailable — fall through and fire */ }
-                  if (!alreadyFired) {
-                    const role: 'student' | 'teacher' | 'parent' | 'guardian' =
-                      metaRole === 'teacher' ? 'teacher'
-                        : metaRole === 'parent' || metaRole === 'guardian' ? 'guardian'
-                        : 'student';
-                    track('signup_complete', { role, method: 'email' });
-                    try {
-                      if (typeof window !== 'undefined') {
-                        window.localStorage.setItem(signupFlagKey, '1');
-                      }
-                    } catch { /* best-effort: persistence is non-critical */ }
-                  }
-                } catch { /* analytics is non-critical */ }
-                // Re-run fetchUser ONE MORE TIME to pick up newly created profile.
-                // bootstrapAttemptedRef.current is already true, so the recursive call
-                // will skip this bootstrap block — preventing infinite recursion.
-                await fetchUser();
-                return; // fetchUser will set all state; don't double-set below
+                  bootstrapToken = await Promise.race([
+                    supabase.auth.getSession().then((r) => r.data.session?.access_token ?? null),
+                    new Promise<null>((resolve) => { setTimeout(() => resolve(null), 3_000); }),
+                  ]);
+                } catch { /* degrade gracefully */ }
+
+                const res = await fetch('/api/auth/bootstrap', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(bootstrapToken ? { Authorization: `Bearer ${bootstrapToken}` } : {}),
+                  },
+                  body: JSON.stringify(payload),
+                });
+                if (res.ok) {
+                  bootstrapSucceeded = true;
+                  bootstrapRetryCountRef.current = 0;
+                  break;
+                }
+                // Non-ok response — retry after delay (unless last attempt)
+                if (attempt < MAX_BOOTSTRAP_RETRIES) {
+                  await new Promise((resolve) => { setTimeout(resolve, 2_000); });
+                }
+              } catch (bootstrapErr) {
+                console.warn(`[Auth] Bootstrap attempt ${attempt}/${MAX_BOOTSTRAP_RETRIES} failed:`, bootstrapErr);
+                if (attempt < MAX_BOOTSTRAP_RETRIES) {
+                  await new Promise((resolve) => { setTimeout(resolve, 2_000); });
+                }
               }
-            } catch (bootstrapErr) {
-              console.warn('[Auth] Bootstrap via API failed, using direct insert fallback:', bootstrapErr);
             }
 
-            // If bootstrap failed, set role from metadata so UI shows something
-            // (user will be prompted to retry on next page load)
-            if (!bootstrapSucceeded) {
-              console.warn('[Auth] Bootstrap API unreachable — will retry on next load');
-              const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher'
-                : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian'
-                : 'student';
-              setRoles([fallbackRole]);
-              setActiveRoleState(fallbackRole);
+            if (bootstrapSucceeded) {
+              // Mark as attempted so recursive fetchUser won't re-enter bootstrap
+              bootstrapAttemptedRef.current = true;
+              // Analytics: F16 — fire signup_complete AT MOST ONCE per user (AO-9).
+              try {
+                const signupFlagKey = `alfanumrik_signup_complete:${user.id}`;
+                let alreadyFired = false;
+                try {
+                  alreadyFired = typeof window !== 'undefined'
+                    && window.localStorage.getItem(signupFlagKey) === '1';
+                } catch { /* storage unavailable — fall through and fire */ }
+                if (!alreadyFired) {
+                  const role: 'student' | 'teacher' | 'parent' | 'guardian' =
+                    metaRole === 'teacher' ? 'teacher'
+                      : metaRole === 'parent' || metaRole === 'guardian' ? 'guardian'
+                      : 'student';
+                  track('signup_complete', { role, method: 'email' });
+                  try {
+                    if (typeof window !== 'undefined') {
+                      window.localStorage.setItem(signupFlagKey, '1');
+                    }
+                  } catch { /* best-effort: persistence is non-critical */ }
+                }
+              } catch { /* analytics is non-critical */ }
+              // Re-run fetchUser ONE MORE TIME to pick up newly created profile.
+              // bootstrapAttemptedRef.current is already true, so the recursive call
+              // will skip this bootstrap block — preventing infinite recursion.
+              await fetchUser();
+              return; // fetchUser will set all state; don't double-set below
             }
+
+            // All retries exhausted — mark as attempted so we don't infinite-loop
+            bootstrapAttemptedRef.current = true;
+            bootstrapRetryCountRef.current += 1;
+            console.warn(`[Auth] Bootstrap failed after ${MAX_BOOTSTRAP_RETRIES} attempts — falling back to metadata`);
+            const fallbackRole: UserRole = metaRole === 'teacher' ? 'teacher'
+              : (metaRole === 'parent' || metaRole === 'guardian') ? 'guardian'
+              : 'student';
+            setRoles([fallbackRole]);
+            setActiveRoleState(fallbackRole);
           } else {
             // Bootstrap was already attempted but profile still not found.
             // Fall through to metadata-based fallback to avoid infinite loop.
