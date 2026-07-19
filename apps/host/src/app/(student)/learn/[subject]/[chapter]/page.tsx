@@ -533,16 +533,19 @@ function ChapterConceptPageContent() {
   useEffect(() => {
     if (subject && chapterNum && !loading) {
       try {
+        const title = chapterMeta
+          ? (isHi && chapterMeta.title_hi ? chapterMeta.title_hi : chapterMeta.title)
+          : null;
         localStorage.setItem('alfanumrik_last_studied', JSON.stringify({
           subject,
           chapter: chapterNum,
-          chapterTitle: subMeta?.name ? `${subMeta.name} · Chapter ${chapterNum}` : `Chapter ${chapterNum}`,
+          chapterTitle: title || (subMeta?.name ? `${subMeta.name} · Ch. ${chapterNum}` : `Chapter ${chapterNum}`),
           concept: currentIdx,
           timestamp: Date.now(),
         }));
       } catch {}
     }
-  }, [subject, chapterNum, currentIdx, subMeta?.name, loading]);
+  }, [subject, chapterNum, currentIdx, subMeta?.name, chapterMeta, isHi, loading]);
 
   // Save chapter completion to database when student achieves >= 60%
   useEffect(() => {
