@@ -89,14 +89,18 @@ export async function logOpsEvent(input: OpsEventInput): Promise<void> {
 
       const { error } = await admin.from('ops_events').insert(row);
       if (error) {
-        console.warn('[ops-events] insert failed', {
-          error: error.message,
-          category: input.category,
-          source: input.source,
-        });
+        if (process.env.NODE_ENV !== 'test') {
+          console.warn('[ops-events] insert failed', {
+            error: error.message,
+            category: input.category,
+            source: input.source,
+          });
+        }
       }
     } catch (err) {
-      console.warn('[ops-events] writer threw', { err: String(err) });
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn('[ops-events] writer threw', { err: String(err) });
+      }
     }
   };
 
