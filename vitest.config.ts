@@ -65,7 +65,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
-    setupFiles: ['./src/__tests__/setup.ts'],
+    setupFiles: [path.resolve(__dirname, 'apps/host/src/__tests__/setup.ts')],
     include: isIntegrationRun
       ? [
           ...INTEGRATION_TEST_PATTERNS.map((p) => `${p}/**/*.{test,spec}.{ts,tsx}`),

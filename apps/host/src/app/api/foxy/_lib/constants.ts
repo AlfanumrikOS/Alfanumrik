@@ -37,7 +37,7 @@ export const FoxyRequestBodySchema = z
 // reconciliation only — the FOXY_SAFETY_RAILS (CBSE scope, age-appropriateness,
 // grounding) are injected on EVERY path independent of template, so widening the
 // whitelist does not relax safety or scope on any newly-valid mode.
-export const VALID_MODES = ['learn', 'explain', 'practice', 'revise', 'doubt', 'homework', 'explorer'];
+export const VALID_MODES = ['learn', 'explain', 'practice', 'revise', 'doubt', 'homework', 'explorer', 'olympiad', 'lesson'];
 
 // Phase 2.2: coaching modes — distinct from the UI session mode above.
 // 'answer'   → student wants the answer (used when mastery is high).

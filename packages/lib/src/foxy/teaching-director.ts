@@ -651,3 +651,30 @@ export function composeTeachingPlan(input: TeachingDirectorInput): TeachingPlan 
     recommendedNextActions,
   };
 }
+
+/**
+ * Apply olympiad mode overrides to a teaching plan:
+ * - targetBloom clamped to min 'analyze' (index 3)
+ * - depthCeiling forced to 'olympiad'
+ * - suppress 'explain_simpler', add 'show_strategy' button variant
+ *
+ * Gated by ff_foxy_olympiad_mode_v1; caller only invokes when mode='olympiad'.
+ */
+export function applyOlympiadOverrides(plan: TeachingPlan): TeachingPlan {
+  const analyzeIdx = BLOOM_ORDER.analyze;
+  const currentIdx = BLOOM_ORDER[plan.targetBloom];
+  const targetBloom = currentIdx < analyzeIdx
+    ? BLOOM_LEVELS[analyzeIdx]
+    : plan.targetBloom;
+
+  const suggestedButtons = plan.suggestedButtons
+    .filter((b) => b !== 'explain_simpler')
+    .concat('quiz_me') as TeachingPlan['suggestedButtons'];
+
+  return {
+    ...plan,
+    targetBloom,
+    depthCeiling: 'olympiad',
+    suggestedButtons,
+  };
+}

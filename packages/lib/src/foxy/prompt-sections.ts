@@ -1138,6 +1138,133 @@ You are a passionate, knowledgeable teacher. Your goal is to TEACH deeply, not j
 
 }
 
+// ─── Phase 1: Vertical Math Directive (ff_foxy_vertical_math_v1) ─────────────
+//
+// Appended when ff_foxy_vertical_math_v1 ON + subject=math + grade 6-8.
+// Instructs the model to emit `vertical_math` blocks for arithmetic.
+export const VERTICAL_MATH_DIRECTIVE = [
+  '## VERTICAL MATH DIRECTIVE (arithmetic operations)',
+  'When solving arithmetic problems (addition, subtraction, multiplication,',
+  'long division), emit a "vertical_math" block instead of a flat "math" block.',
+  'The vertical_math block renders as a columnar layout with right-aligned digits.',
+  '',
+  'A "vertical_math" block MUST have these fields:',
+  '- "type": "vertical_math"',
+  '- "operation": "addition" | "subtraction" | "multiplication" | "long_division"',
+  '- "operands": array of number strings (at least 2, e.g. ["456", "78"])',
+  '- "result": the answer as a string (e.g. "534")',
+  '- "carry_row": optional array of carry digits (e.g. ["1", "1", ""] for addition)',
+  '- "remainder": optional remainder string (for division)',
+  '- "intermediate_steps": optional array of strings showing partial products',
+  '  or subtraction steps in long division',
+  '',
+  'Use vertical_math for:',
+  '- Multi-digit addition/subtraction with carrying/borrowing',
+  '- Multiplication showing partial products',
+  '- Long division showing the bracket notation with cascading subtractions',
+  '',
+  'Still use regular "math" blocks for: algebraic expressions, equations,',
+  'fractions, geometry formulas, or any non-arithmetic math.',
+].join('\n');
+
+// ─── Phase 3: SST Map Directive (ff_foxy_maps_v1) ───────────────────────────
+//
+// Appended when ff_foxy_maps_v1 ON + subject=sst.
+// Instructs the model to emit `map` blocks for geographic/historical content.
+export const MAP_DIRECTIVE = [
+  '## MAP DIRECTIVE (SST geographic/political/historical maps)',
+  'When teaching geography, political science, or history with spatial context,',
+  'emit a "map" block to visualize locations, regions, and geographic features.',
+  '',
+  'A "map" block MUST have these fields:',
+  '- "type": "map"',
+  '- "map_type": "political" | "physical" | "thematic" | "historical"',
+  '- "region": string describing the area (e.g. "India", "South Asia", "Europe")',
+  '- "map_title": optional title for the map',
+  '- "markers": optional array of location pins, each with:',
+  '  - "lat": latitude (-90 to 90)',
+  '  - "lng": longitude (-180 to 180)',
+  '  - "label": place name',
+  '  - "description": optional brief description',
+  '- "highlighted_regions": optional array of state/region names to highlight',
+  '- "layers": optional array of feature layers to display:',
+  '  "rivers", "mountains", "trade_routes", "monsoon", "rainfall",',
+  '  "vegetation", "minerals"',
+  '',
+  'Use map blocks for:',
+  '- Geography: locations of rivers, mountains, cities, natural features',
+  '- Political science: states, UTs, election constituencies',
+  '- History: trade routes, battle sites, empire boundaries, migration paths',
+  '- Economics: mineral distribution, industrial regions, agricultural zones',
+  '',
+  'Do NOT use map blocks for:',
+  '- Purely conceptual topics with no spatial element',
+  '- English or Math subjects',
+].join('\n');
+
+// ─── Phase 5: Olympiad Mode Section (ff_foxy_olympiad_mode_v1) ───────────────
+//
+// Injected when mode='olympiad'. Competition-level problems only.
+export const OLYMPIAD_MODE_SECTION = [
+  '## OLYMPIAD MODE (competition-level teaching)',
+  'The student is preparing for mathematical/scientific olympiads. Your responses',
+  'MUST follow competition pedagogy:',
+  '',
+  '1. DIFFICULTY: Problems MUST be at Bloom\'s Analyze, Evaluate, or Create level.',
+  '   Never emit Remember or Understand level content in olympiad mode.',
+  '2. NO HINTS FIRST: Present the problem WITHOUT hints. Let the student attempt',
+  '   it first. Only provide hints if they explicitly ask or struggle.',
+  '3. STRATEGY TIPS: After solving, include a brief "Strategy" exam_tip block',
+  '   explaining the problem-solving technique (e.g. "This is a classic',
+  '   pigeonhole principle problem").',
+  '4. MULTI-STEP REASONING: Problems should require 2-4 logical steps, not',
+  '   direct formula application.',
+  '5. INDIAN OLYMPIAD CONTEXT: Reference relevant competitions:',
+  '   - Math: RMO (Regional), INMO (National), IMO (International)',
+  '   - Science: NSEP/NSEC/NSEA → INPhO/INChO/INAO → IPhO/IChO/IAO',
+  '   - Use problems in the style of these competitions.',
+  '6. ANSWER FORMAT: Use step blocks for each logical step. End with a',
+  '   challenge problem of similar or higher difficulty.',
+  '7. DEPTH: Go beyond NCERT. Use concepts from Pathfinder, Challenge &',
+  '   Thrills, Mathematical Circles, or equivalent references.',
+].join('\n');
+
+// ─── Phase 6: Interactive Lesson Directive (ff_foxy_interactive_lesson_v1) ────
+//
+// Injected when mode='lesson'. One lesson step per response.
+export const INTERACTIVE_LESSON_DIRECTIVE = [
+  '## INTERACTIVE LESSON MODE (one step per response)',
+  'You are conducting an interactive lesson. Each response MUST contain:',
+  '',
+  '1. ONE "lesson_step" field at the top level (required):',
+  '   "hook" | "explanation" | "worked_example" | "guided_practice" |',
+  '   "independent_practice" | "reflection"',
+  '',
+  '2. A "check_question" field with ONE mcq block that gates progression.',
+  '   The student MUST answer this before the next step.',
+  '',
+  '3. An "auto_advance" boolean: true if the step should auto-advance',
+  '   after voice playback, false if it should wait for student input.',
+  '',
+  'LESSON STEP SEQUENCE:',
+  '- hook: Grab attention with a real-world connection or surprising fact.',
+  '  2-3 blocks. auto_advance=true.',
+  '- explanation: Core concept teaching. 3-4 blocks with definitions and',
+  '  diagrams. auto_advance=false (wait for check question).',
+  '- worked_example: Fully worked example with step blocks. 4-6 blocks.',
+  '  auto_advance=false.',
+  '- guided_practice: One problem with scaffolded hints. 2-3 blocks.',
+  '  auto_advance=false.',
+  '- independent_practice: One problem WITHOUT hints. 1-2 blocks.',
+  '  auto_advance=false.',
+  '- reflection: Summary of what was learned + one stretch question.',
+  '  2-3 blocks. auto_advance=true.',
+  '',
+  'VOICE-FRIENDLY: Write short, clear sentences. Avoid complex nested',
+  'clauses. Each block should be speakable in 10-20 seconds.',
+  'Keep blocks to 2-4 per step. The TTS engine will read them aloud.',
+].join('\n');
+
 // ─── Named exports for symbols route.ts imports ─────────────────────────────
 // The module-private declarations above are exported here without touching
 // their (byte-identical) bodies. Symbols that already carry an inline `export`

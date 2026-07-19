@@ -28,12 +28,30 @@
 import React, { memo, useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import dynamic from 'next/dynamic';
 import type {
   FoxyBlock,
   FoxyResponse,
   FoxyMermaidBlock,
+  FoxyVerticalMathBlock,
+  FoxyMapBlock,
 } from '@alfanumrik/lib/foxy/schema';
-import { isFoxyMcqBlock, isFoxyMermaidBlock } from '@alfanumrik/lib/foxy/schema';
+import {
+  isFoxyMcqBlock,
+  isFoxyMermaidBlock,
+  isFoxyVerticalMathBlock,
+  isFoxyMapBlock,
+} from '@alfanumrik/lib/foxy/schema';
+
+// Lazy-loaded block renderers (P10 bundle budget)
+const VerticalMathBlock = dynamic(
+  () => import('./VerticalMathBlock').then((m) => m.VerticalMathBlock),
+  { ssr: false }
+);
+const MapBlock = dynamic(
+  () => import('./MapBlock').then((m) => m.MapBlock),
+  { ssr: false }
+);
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useSubjectLookup } from '@alfanumrik/lib/useSubjectLookup';
 import { DiagramViewer } from '@alfanumrik/ui/DiagramViewer';
@@ -1264,10 +1282,19 @@ function BlockRouter({
       return <MermaidBlock block={block} chrome={chrome} />;
     case 'code':
       return <CodeBlock block={block} />;
+    case 'vertical_math':
+      if (isFoxyVerticalMathBlock(block)) {
+        return <VerticalMathBlock block={block} />;
+      }
+      return null;
+    case 'map':
+      if (isFoxyMapBlock(block)) {
+        return <MapBlock block={block} />;
+      }
+      return null;
     default:
-      // Defensive: should never hit due to schema enum, but if a future
-      // block type is added without updating this switch, render the text
-      // (or latex) as a plain paragraph so the user still sees something.
+      // Defensive (P12 fail-safe): render text/latex as plain paragraph
+      // so the user still sees something for unknown block types.
       return (
         <p className="my-2 leading-relaxed text-sm text-slate-700">
           {(block as FoxyBlock).text || (block as FoxyBlock).latex || ''}
