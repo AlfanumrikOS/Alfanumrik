@@ -202,7 +202,7 @@ Deno.test('banned phrase: model says "coming soon" → post-process rewrites to 
       id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
       section_id: 'product-features',
       title: 'Product Features',
-      content: 'Foxy is the AI tutor.',
+      content: 'Foxy is your study buddy.',
       canonical: false,
       similarity: 0.7,
     },

@@ -98,20 +98,20 @@ const GREETING_RE = /^(hi|hello|hey|hii+|hola|namaste|namaskar|नमस्त�
 
 const GREETING_REPLIES: Record<AlfaBotAudience, Record<AlfaBotLang, string>> = {
   parent: {
-    en: "Hi there! I'm AlfaBot, your guide to Alfanumrik. I can help with pricing, how our AI tutor Foxy works, safety, and anything about our platform. What would you like to know — maybe how ₹699/month compares to tuition coaching?",
-    hi: "नमस्ते! मैं AlfaBot हूँ, Alfanumrik के बारे में आपका गाइड। मैं pricing, AI tutor Foxy, सुरक्षा, और प्लेटफ़ॉर्म से जुड़े सवालों में मदद कर सकता हूँ। क्या जानना चाहेंगे — शायद ₹699/माह tuition से कैसे अलग है?",
+    en: "Hi! I'm AlfaBot, your guide to Alfanumrik. I help parents find the right learning plan for their child. To give you the best answer — which grade is your child in, and which subject do they find toughest?",
+    hi: "नमस्ते! मैं AlfaBot हूँ। मैं अभिभावकों को उनके बच्चे के लिए सही learning plan खोजने में मदद करता हूँ। सबसे सटीक जवाब देने के लिए — आपका बच्चा किस कक्षा में है, और कौन-सा विषय सबसे कठिन लगता है?",
   },
   student: {
-    en: "Hey! I'm AlfaBot. I can tell you about Foxy (your AI study buddy), how quizzes work, and how to ace your boards. What's on your mind?",
-    hi: "हाय! मैं AlfaBot हूँ। मैं Foxy (तुम्हारा AI study buddy), क्विज़, और boards की तैयारी के बारे में बता सकता हूँ। क्या पूछना है?",
+    en: "Hey! I'm AlfaBot. I can tell you about Foxy — your study buddy who knows your NCERT syllabus inside out. What grade are you in and which subject bugs you the most?",
+    hi: "हाय! मैं AlfaBot हूँ। मैं Foxy के बारे में बता सकता हूँ — तुम्हारा study buddy जो NCERT पूरा जानता है। तुम किस class में हो और कौन-सा subject सबसे मुश्किल लगता है?",
   },
   teacher: {
-    en: "Hello! I'm AlfaBot. I can help with how Alfanumrik saves teacher time — Bloom's diagnostics, worksheet generation, and class dashboards. What would you like to know?",
-    hi: "नमस्ते! मैं AlfaBot हूँ। मैं Bloom's diagnostics, worksheet generation, और class dashboards के बारे में बता सकता हूँ। क्या जानना चाहेंगे?",
+    en: "Hello! I'm AlfaBot. I help teachers discover how Alfanumrik saves grading time and reveals exactly where students are stuck. How many students do you teach, and which subjects?",
+    hi: "नमस्ते! मैं AlfaBot हूँ। मैं शिक्षकों को बताता हूँ कि Alfanumrik कैसे grading का समय बचाता है और दिखाता है कि छात्र कहाँ अटके हैं। आप कितने छात्रों को पढ़ाते हैं, और कौन-से विषय?",
   },
   school: {
-    en: "Hello! I'm AlfaBot. I can help with bulk pricing, NEP-aligned reporting, onboarding timelines, and data governance. What would you like to explore?",
-    hi: "नमस्ते! मैं AlfaBot हूँ। मैं bulk pricing, NEP-aligned reporting, onboarding, और data governance के बारे में बता सकता हूँ। क्या जानना चाहेंगे?",
+    en: "Hello! I'm AlfaBot. I help schools explore our NEP-aligned platform. To give you relevant details — how many students does your school serve, and which grades?",
+    hi: "नमस्ते! मैं AlfaBot हूँ। मैं स्कूलों को हमारा NEP-aligned platform दिखाता हूँ। सही जानकारी देने के लिए — आपके स्कूल में कितने छात्र हैं, और कौन-सी कक्षाएँ?",
   },
 };
 
