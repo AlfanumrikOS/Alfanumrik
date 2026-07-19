@@ -128,6 +128,14 @@ export default function ResetPasswordPage() {
     setLoading(false);
   };
 
+  /* Auto-redirect to login after success */
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => router.replace('/login'), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [success, router]);
+
   if (checking) return <LoadingFoxy />;
 
   return (
@@ -156,8 +164,8 @@ export default function ResetPasswordPage() {
             </h2>
             <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 20 }}>
               {isHi
-                ? 'आपका पासवर्ड सफलतापूर्वक बदल दिया गया है। अब आप नए पासवर्ड से लॉगिन कर सकते हैं।'
-                : 'Your password has been changed successfully. You can now log in with your new password.'}
+                ? 'आपका पासवर्ड सफलतापूर्वक बदल दिया गया है। 3 सेकंड में लॉगिन पर जा रहे हैं...'
+                : 'Your password has been changed successfully. Redirecting to login in 3 seconds...'}
             </p>
             <Button fullWidth onClick={() => router.replace('/login')}>
               {isHi ? 'लॉगिन करें' : 'Log In'} &rarr;

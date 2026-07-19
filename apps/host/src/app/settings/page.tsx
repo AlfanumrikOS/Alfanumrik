@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { validatePassword, PASSWORD_MIN_LENGTH } from '@alfanumrik/lib/sanitize';
 import { LoadingFoxy } from '@alfanumrik/ui/ui';
 
 /* ── Notification preference keys ── */
@@ -152,6 +153,14 @@ export default function SettingsPage() {
   const [pwLoading, setPwLoading] = useState(false);
   const [signOutLoading, setSignOutLoading] = useState(false);
 
+  /* Inline password change form state */
+  const [showPwForm, setShowPwForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [pwError, setPwError] = useState('');
+  const [showPwFields, setShowPwFields] = useState(false);
+
   /* Load notification prefs from localStorage on mount */
   useEffect(() => {
     setNotifPrefs(loadNotifPrefs());
@@ -183,8 +192,51 @@ export default function SettingsPage() {
     setLanguage(lang);
   };
 
-  /* ── Password reset ── */
-  const handleChangePassword = async () => {
+  /* ── Inline password change ── */
+  const handleInlinePasswordChange = async () => {
+    if (!student?.email) return;
+    setPwError('');
+    if (!currentPassword) {
+      setPwError(isHi ? 'वर्तमान पासवर्ड दर्ज करें' : 'Enter current password');
+      return;
+    }
+    const pwCheck = validatePassword(newPassword);
+    if (!pwCheck.valid) {
+      setPwError(pwCheck.error);
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPwError(isHi ? 'पासवर्ड मेल नहीं खा रहे' : 'Passwords do not match');
+      return;
+    }
+
+    setPwLoading(true);
+    // Step 1: Verify current password
+    const { error: signInErr } = await supabase.auth.signInWithPassword({
+      email: student.email,
+      password: currentPassword,
+    });
+    if (signInErr) {
+      setPwError(isHi ? 'वर्तमान पासवर्ड गलत है' : 'Current password is incorrect');
+      setPwLoading(false);
+      return;
+    }
+    // Step 2: Update to new password
+    const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+    if (updateErr) {
+      setPwError(updateErr.message);
+      setPwLoading(false);
+      return;
+    }
+    // Step 3: Success — sign out and redirect
+    setPwLoading(false);
+    showToast(isHi ? 'पासवर्ड अपडेट हो गया! लॉगिन पर जा रहे हैं...' : 'Password updated! Redirecting to login...', true);
+    await supabase.auth.signOut();
+    setTimeout(() => router.replace('/login'), 2000);
+  };
+
+  /* ── Forgot password (email link fallback) ── */
+  const handleForgotPassword = async () => {
     if (!student?.email) return;
     setPwLoading(true);
     try {
@@ -392,15 +444,114 @@ export default function SettingsPage() {
             ════════════════════════════════════════ */}
         <SettingsSection title={isHi ? 'खाता' : 'Account'}>
           <SettingsRow
-            label={pwLoading ? (isHi ? 'भेजा जा रहा है…' : 'Sending…') : (isHi ? 'पासवर्ड बदलें' : 'Change Password')}
-            sublabel={isHi ? 'रीसेट लिंक email पर भेजा जाएगा' : 'A reset link will be sent to your email'}
+            label={isHi ? 'पासवर्ड बदलें' : 'Change Password'}
+            sublabel={isHi ? 'वर्तमान पासवर्ड से सत्यापित करें' : 'Verify with your current password'}
             right={
               <span className="text-[var(--text-3)] text-sm" aria-hidden="true">
-                →
+                {showPwForm ? '↑' : '→'}
               </span>
             }
-            onClick={pwLoading ? undefined : handleChangePassword}
+            onClick={() => { setShowPwForm(!showPwForm); setPwError(''); }}
           />
+          {showPwForm && (
+            <div className="px-4 py-3 space-y-3" style={{ background: 'var(--surface-2, #f9fafb)' }}>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPwFields ? 'text' : 'password'}
+                  placeholder={isHi ? 'वर्तमान पासवर्ड' : 'Current password'}
+                  aria-label={isHi ? 'वर्तमान पासवर्ड' : 'Current password'}
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={e => setCurrentPassword(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2"
+                  style={{ borderColor: 'var(--border, #e5e7eb)', background: 'var(--surface-1, #fff)' }}
+                />
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPwFields ? 'text' : 'password'}
+                  placeholder={isHi ? `नया पासवर्ड (कम से कम ${PASSWORD_MIN_LENGTH} अक्षर)` : `New password (min ${PASSWORD_MIN_LENGTH} chars)`}
+                  aria-label={isHi ? 'नया पासवर्ड' : 'New password'}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2"
+                  style={{ borderColor: 'var(--border, #e5e7eb)', background: 'var(--surface-1, #fff)' }}
+                />
+              </div>
+              <input
+                type={showPwFields ? 'text' : 'password'}
+                placeholder={isHi ? 'नया पासवर्ड पुष्टि करें' : 'Confirm new password'}
+                aria-label={isHi ? 'नया पासवर्ड पुष्टि करें' : 'Confirm new password'}
+                autoComplete="new-password"
+                value={confirmNewPassword}
+                onChange={e => setConfirmNewPassword(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleInlinePasswordChange()}
+                className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:ring-2"
+                style={{ borderColor: 'var(--border, #e5e7eb)', background: 'var(--surface-1, #fff)' }}
+              />
+              {/* Password strength indicator */}
+              {newPassword && (
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {[1, 2, 3, 4].map(i => {
+                    const hasLower = /[a-z]/.test(newPassword);
+                    const hasUpper = /[A-Z]/.test(newPassword);
+                    const hasDigit = /\d/.test(newPassword);
+                    const score = (newPassword.length >= PASSWORD_MIN_LENGTH ? 1 : 0) + (hasLower ? 1 : 0) + (hasUpper ? 1 : 0) + (hasDigit ? 1 : 0);
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          flex: 1, height: 4, borderRadius: 2,
+                          background: i <= score
+                            ? score === 4 ? '#16A34A' : score >= 3 ? '#F5A623' : '#DC2626'
+                            : 'var(--surface-2, #e5e7eb)',
+                          transition: 'background 0.3s',
+                        }}
+                      />
+                    );
+                  })}
+                  <span style={{ fontSize: 10, color: 'var(--text-3)', marginLeft: 4, whiteSpace: 'nowrap' }}>
+                    {newPassword.length < PASSWORD_MIN_LENGTH
+                      ? (isHi ? 'बहुत छोटा' : 'Too short')
+                      : validatePassword(newPassword).valid
+                        ? (isHi ? 'मज़बूत' : 'Strong')
+                        : (isHi ? 'अधिक विविधता चाहिए' : 'Needs more variety')}
+                  </span>
+                </div>
+              )}
+              {/* Show/hide toggle */}
+              <button
+                onClick={() => setShowPwFields(!showPwFields)}
+                className="text-xs font-medium"
+                style={{ color: 'var(--text-3)' }}
+                type="button"
+              >
+                {showPwFields ? (isHi ? 'पासवर्ड छिपाएँ' : 'Hide passwords') : (isHi ? 'पासवर्ड दिखाएँ' : 'Show passwords')}
+              </button>
+              {pwError && <p style={{ color: '#DC2626', fontSize: 13 }} role="alert">{pwError}</p>}
+              <button
+                onClick={handleInlinePasswordChange}
+                disabled={pwLoading || !currentPassword || !newPassword || !confirmNewPassword}
+                className="w-full rounded-lg py-2.5 text-sm font-bold text-white transition-opacity disabled:opacity-50"
+                style={{ background: 'var(--orange, #E8581C)' }}
+              >
+                {pwLoading
+                  ? (isHi ? 'अपडेट हो रहा है…' : 'Updating…')
+                  : (isHi ? 'पासवर्ड अपडेट करें' : 'Update Password')}
+              </button>
+              {/* Forgot password fallback */}
+              <button
+                onClick={handleForgotPassword}
+                disabled={pwLoading}
+                className="w-full text-xs font-medium py-1"
+                style={{ color: 'var(--text-3)' }}
+                type="button"
+              >
+                {isHi ? 'पासवर्ड भूल गए? रीसेट लिंक भेजें' : 'Forgot your password? Send reset link'}
+              </button>
+            </div>
+          )}
           <SettingsRow
             label={isHi ? 'खाता हटाएं' : 'Delete Account'}
             sublabel={isHi ? 'स्थायी रूप से डेटा मिटाएं' : 'Permanently erase your data'}
