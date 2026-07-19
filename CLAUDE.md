@@ -127,7 +127,7 @@ These are commonly violated and cause bugs:
   - `src/lib/exam-engine.ts`: 80% all metrics → 80% all metrics (at target)
   - Authoritative source: `vitest.config.ts`. If the table above disagrees with the config, the config wins and this doc is stale.
 - **E2E tests**: Playwright, specs in `e2e/`. 30s timeout, 1 retry, trace on first retry.
-- **CI pipeline** (`.github/workflows/ci.yml`): secret scan → type-check → lint → test → auth gate → build → bundle size check → E2E (PRs) → post-deploy health check (main).
+- **CI pipeline** (`.github/workflows/ci.yml`): parallel jobs at t=0 — secret scan; lint + type-check + auth gate; 4 unit-test shards → coverage-merge fan-in; edge-function Deno tests; integration tests; build + bundle size gates; E2E (PRs) — all fanned into the CI Gate, then post-deploy health check (main).
 
 ## Environment Variables
 
