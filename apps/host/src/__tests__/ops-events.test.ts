@@ -70,15 +70,27 @@ describe('logOpsEvent', () => {
   });
 
   it('never throws on DB error — logs console.warn instead', async () => {
-    insertMock.mockResolvedValue({ error: { message: 'connection refused' } });
-    await expect(logOpsEvent({ category: 'ai', source: 'claude.ts', severity: 'error', message: 'fail' })).resolves.toBeUndefined();
-    expect(warnSpy).toHaveBeenCalledWith('[ops-events] insert failed', expect.objectContaining({ error: 'connection refused' }));
+    const origEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    try {
+      insertMock.mockResolvedValue({ error: { message: 'connection refused' } });
+      await expect(logOpsEvent({ category: 'ai', source: 'claude.ts', severity: 'error', message: 'fail' })).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith('[ops-events] insert failed', expect.objectContaining({ error: 'connection refused' }));
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
   });
 
   it('never throws on writer exception', async () => {
-    insertMock.mockImplementation(() => { throw new Error('boom'); });
-    await expect(logOpsEvent({ category: 'ai', source: 'claude.ts', severity: 'error', message: 'fail' })).resolves.toBeUndefined();
-    expect(warnSpy).toHaveBeenCalled();
+    const origEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    try {
+      insertMock.mockImplementation(() => { throw new Error('boom'); });
+      await expect(logOpsEvent({ category: 'ai', source: 'claude.ts', severity: 'error', message: 'fail' })).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalled();
+    } finally {
+      process.env.NODE_ENV = origEnv;
+    }
   });
 
   it('uses provided occurredAt when given', async () => {

@@ -28,17 +28,21 @@ export async function recordCronJobHealth(input: CronJobHealthInput): Promise<bo
     });
 
     if (error) {
-      console.warn('[cron-job-health] insert failed', {
-        error: error.message,
-        source: input.source,
-        metric: input.metric,
-      });
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn('[cron-job-health] insert failed', {
+          error: error.message,
+          source: input.source,
+          metric: input.metric,
+        });
+      }
       return false;
     }
 
     return true;
   } catch (error) {
-    console.warn('[cron-job-health] writer threw', { error: String(error) });
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[cron-job-health] writer threw', { error: String(error) });
+    }
     return false;
   }
 }
