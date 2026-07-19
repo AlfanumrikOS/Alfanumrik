@@ -129,7 +129,7 @@ Think step by step BEFORE answering (this reasoning is private — do not put it
 
 Then output ONLY the FoxyResponse JSON described in the system prompt:
 - state the method first,
-- numbered "step" blocks (one operation each) with "math" blocks for formulas,
+- numbered "step" blocks (one operation each) with "math" blocks showing the COMPLETE equation/expression at each stage (both sides for equations, full expression for simplification — never just a fragment or the RHS alone),
 - EXACTLY ONE terminal "answer" block whose final value is machine-extractable (a bare number, \\( \\frac{a}{b} \\) or a/b, a simplified expression, or "x = p or x = q"),
 - end with ONE Socratic "question" block.
 Return the JSON object and nothing else.`;

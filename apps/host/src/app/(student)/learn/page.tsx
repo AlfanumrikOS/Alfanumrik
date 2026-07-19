@@ -62,7 +62,7 @@ function LegacyLearnPage() {
   const subjectsOsOn = useSubjectsOsFlag();
 
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
-  const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string; verified_question_count?: number }>>([]);
+  const [chapters, setChapters] = useState<Array<{ chapter_number: number; title: string; title_hi?: string | null; verified_question_count?: number }>>([]);
   const [chaptersLoading, setChaptersLoading] = useState(false);
   const [lastStudied, setLastStudied] = useState<{ subject: string; chapter: number; chapterTitle: string; concept: number; timestamp: number } | null>(null);
   const [progressRows, setProgressRows] = useState<Array<{ subject: string; chapter_number: number; is_completed: boolean }>>([]);
@@ -436,7 +436,7 @@ function LegacyLearnPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <div className="text-base font-semibold" style={{ color: 'var(--text-1)' }}>
-                              {ch.title}
+                              {isHi && ch.title_hi ? ch.title_hi : ch.title}
                             </div>
                             {/* Phase 3 of Exam-Ready 360°: per-chapter badge.
                                 Falls back to null when the subject-readiness

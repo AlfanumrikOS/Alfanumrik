@@ -54,6 +54,7 @@ export default function DivePage() {
   const router = useRouter();
   const { isHi, isLoggedIn, isLoading } = useAuth();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
+  const [pickerError, setPickerError] = useState(false);
 
   useEffect(() => {
     if (isLoading) return;
@@ -99,7 +100,11 @@ export default function DivePage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!res.ok) return; // picker stays mounted; the parent could surface a toast
+    if (!res.ok) {
+      setPickerError(true);
+      setTimeout(() => setPickerError(false), 4000);
+      return;
+    }
     const resolved = (await res.json()) as Omit<ResolvedDive, 'pickerOption'> & { phenomenonSlug: string | null };
     setPhase({
       kind: 'dive_active',
@@ -179,6 +184,11 @@ export default function DivePage() {
               : 'Pick a topic, talk to Foxy, save a short artifact.'}
           </p>
         </header>
+        {pickerError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 mb-4 text-sm text-red-800" role="alert">
+            {isHi ? 'कुछ गलत हो गया — फिर से कोशिश करो।' : 'Something went wrong — please try again.'}
+          </div>
+        )}
         <Picker
           defaultPicker={phase.state.defaultPicker}
           showPhenomenonOption={phase.state.showPhenomenonOption}
