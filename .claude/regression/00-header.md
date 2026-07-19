@@ -1,12 +1,17 @@
 # Regression Catalog
 
-**This file has been split to reduce context cost.**
+Authoritative list of regression tests that MUST exist and pass before release.
+Each entry links to the asserting test(s). Removing an entry requires explicit
+user approval.
 
-The full catalog (238 entries) now lives in `.claude/regression/`:
+Status key: `E` = exists and passing | `P` = partial | `M` = missing.
+
+**Total catalog: 238 entries (target: 35 — TARGET EXCEEDED).**
+
+## Split Files
 
 | File | Feature area |
 |---|---|
-| `00-header.md` | Index and status key |
 | `01-subject-governance.md` | Subject Governance (SG-1..SG-6) |
 | `02-foxy-ai.md` | Foxy AI tutor, AlfaBot, structured rendering, prompt routing, diagrams, math |
 | `03-quiz-integrity.md` | Quiz scoring, server-shuffle, authenticity, marking, offline replay, E2E critical paths |
@@ -22,6 +27,3 @@ The full catalog (238 entries) now lives in `.claude/regression/`:
 | `13-rag-cache.md` | RAG eval harness, Voyage rerank, grounded-answer cache, response-cache, Knowledge Intelligence |
 | `14-audit-remediation.md` | Engineering audit cycles 1-8, tier-2 PRs |
 | `15-cross-cutting.md` | Cross-cutting, schema reproducibility, event-sourced migration |
-
-To read the full catalog, read the files in `.claude/regression/`.
-To add a new entry, append to the appropriate feature-area file.

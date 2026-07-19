@@ -1,0 +1,1137 @@
+## Foxy Moat Plan — Phases 0-3 (2026-04-26)
+
+Source: Foxy moat plan Phases 0-3 — NCERT-link removal, Voyage rerank,
+RRF retrieval, pedagogy prompt rewrite with coachMode, /api/foxy/remediation
+endpoint, misconception ontology schema.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-36 | `foxy_api_no_sources_or_diagrams` | `/api/foxy` POST/GET responses (grounded path, hard-abstain, legacy intent-router fallback, history) never expose `sources` or `diagrams` fields. Closes the moat-leak vector where competitors could scrape NCERT chapter URLs from prod traffic. | `src/__tests__/foxy-api-no-sources.test.ts` | E |
+| REG-37 | `foxy_voyage_rerank_fallback` | When `VOYAGE_API_KEY` is unset, fetch throws, returns non-2xx, or returns malformed JSON, the rerank step is bypassed and similarity-ranked top-N is returned. Voyage rerank is a single-point-of-failure on top of RRF — student traffic must continue to flow on outage. | `src/__tests__/foxy-rerank-fallback.test.ts` (parity) + `supabase/functions/grounded-answer/__tests__/` (Deno) | E |
+| REG-38 | `foxy_coach_mode_default_is_mastery_driven` | `resolveCoachMode(requested, mastery)` picks 'socratic' for mastery < 0.6, 'answer' for ≥ 0.6 when no explicit mode is requested. Explicit valid mode (`socratic` / `answer` / `review`) wins. Invalid mode falls back to mastery default. NaN/Infinity/out-of-range mastery clamps safely. | `src/__tests__/foxy-coach-mode.test.ts` | E |
+| REG-39 | `foxy_remediation_cache_prevents_duplicate_anthropic_calls` | `/api/foxy/remediation`: cache hit on `wrong_answer_remediations(question_id, distractor_index)` returns cached text without invoking Anthropic. Cache miss calls Anthropic exactly once and persists. `distractor_index` outside 0..3 → 400 (P6). `ai_usage_global=false` → 503, no Anthropic call. | `src/__tests__/foxy-remediation-cache.test.ts` | E |
+| REG-40 | `/api/foxy/remediation oracle shape uniform — P3 anti-cheat defense-in-depth` | Every non-eligible request to `/api/foxy/remediation` (distractor==correct, never attempted, different distractor than submitted, answered correctly, attestation DB error) returns BYTE-IDENTICAL `403 { success:false, error:'remediation_unavailable' }`. Cache table, question table, and Anthropic are NEVER touched on the failure path so timing and DB-load patterns cannot leak which branch failed. | `src/__tests__/foxy-remediation-oracle-shape.test.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety — kill switch enforced before generation; cache prevents
+  unbounded Anthropic spend)
+- P6 (question quality — distractor index validated as 0..3 only)
+- P10 (bundle/cost budget — rerank fallback keeps the worker hot path
+  deterministic when Voyage degrades)
+- Moat protection — sources/diagrams stripped from the student-facing
+  envelope on every code path
+
+### Notes on test strategy
+
+Three of the four files are **contract/parity tests** following the same
+pattern as `foxy-plan-normalization.test.ts` and `foxy-grounded-gate.test.ts`:
+they replicate the function logic locally and assert on the contract. This
+is deliberate — `/api/foxy/remediation` (Phase 3) and the rerank logic
+(Deno-side) cannot be mounted in Vitest without re-mocking 6+ modules
+that already have integration coverage at the E2E layer. If the
+implementation in `src/app/api/foxy/route.ts`,
+`src/app/api/foxy/remediation/route.ts`, or
+`supabase/functions/grounded-answer/` diverges from the parity copy
+in these tests, quality review must reject and the parity copy must be
+re-synced.
+
+## Foxy Phase 2 — Skill State + Misconception Context Wiring (2026-04-28)
+
+Source: Foxy moat plan Phase 2 — wires per-LO BKT mastery (`student_skill_state` join `learning_objectives`) and curated misconception ontology (`quiz_responses` join `question_misconceptions`) into the Foxy pedagogy decision tree. Pre-Phase 2 the MISCONCEPTION_REPAIR pedagogy branch had no real signal because `cme_error_log` only stored generic `error_type` strings.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-41 | `foxy_skill_state_and_misconception_context_wired` | `loadCognitiveContext()` populates `loSkills` from `student_skill_state` join `learning_objectives` (top-10 weakest by `p_know` ASC) and `recentMisconceptions` from `quiz_responses` join `question_misconceptions` (top-3 by count, distractor_index match, 30-day window); `buildLoSkillsSubsection` and `buildMisconceptionPromptSection` emit empty string on no-data and template substitutes cleanly into `{{misconception_section}}`. P12 dosage caps: LO subsection caps at 10 lines, misconception subsection caps at 3 entries, remediation text truncates to ≤ 400 chars. P13: formatter signature contains no PII identifiers (studentId/email/phone). | `src/__tests__/foxy-skill-state-misconception-context.test.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety — dosage caps prevent prompt-injection / token-spend
+  blowup; LO and misconception sections bounded; remediation truncated)
+- P13 (data privacy — formatter signature pinned to misconception data
+  only; no studentId / email / phone reach the prompt or logs)
+
+## Foxy Phase 2.B — RAG Strengthening (2026-04-28)
+
+Source: Foxy moat plan Phase 2.B — diversification and prompt-injection
+hardening of the NCERT-grounded RAG pipeline. Adds MMR diversification
+between Voyage rerank and prompt assembly, and sanitization of every
+chunk's content before it is injected into Claude's system prompt.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-42 | `foxy_mmr_diversity_contract` | `applyMMR(chunks, lambda)` preserves the original top-1 unconditionally (slot-1 is taken before any redundancy comparison runs), never drops chunks (output length === input length, no duplicate ids), is deterministic across repeat calls and idempotent (`applyMMR(applyMMR(x)) === applyMMR(x)`), breaks ties by original input order (stable), and at default λ=0.7 demotes near-duplicates behind diverse near-tied chunks (so the prompt-token budget is not burned on redundant NCERT paragraphs). Lambda extremes: λ=1.0 preserves original ranking; λ=0.0 picks the most-different chunk in slot 2. Defensive shape: empty input → `[]`, non-array input → `[]`, no input mutation. | `src/__tests__/rag/mmr-diversity.test.ts` | E |
+| REG-43 | `foxy_chunk_sanitization_strips_injection_prefixes` | `sanitizeChunkForPrompt(text)` strips leading attack prefixes (case-insensitive `Ignore previous`, `Disregard`, `Forget`; role tokens `System:`/`Assistant:`/`Human:`/`User:`; chat-template specials `<\|im_start\|>`, `<\|im_end\|>`, `[INST]`, `[/INST]`; stacked combos like `Ignore previous. System: ...`). Length cap: content > 1500 chars truncates to exactly 1500 (off-by-one boundary verified at MAX+1 → MAX). Idempotent (`sanitize(sanitize(x)) === sanitize(x)`). Defensive: `''`/`null`/`undefined`/non-string → `''`. Audit trail: emits a `[rag/sanitize]` `console.warn` with `prefix=true` / `truncate=true` flags whenever sanitization fires; clean short input emits NO warn (P13 — no PII / spam in logs). Anchoring contract: prefix matchers are anchored at the start of the chunk, so an attack phrase appearing mid-chunk is treated as data and preserved. Preserves clean NCERT content untouched. | `src/__tests__/rag/chunk-sanitization.test.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety — indirect prompt-injection defense at the NCERT-chunk
+  boundary; MMR diversity bounds prompt-token spend so a crafted
+  near-duplicate cluster cannot crowd out diverse pedagogical material
+  and inflate Anthropic cost)
+- P13 (data privacy — sanitize warn-log signature contains only
+  `prefix`/`truncate`/`originalLen` flags, no chunk content / studentId /
+  document_id, so audit trail does not leak PII or NCERT chapter URLs)
+
+### Notes on test strategy
+
+Both files import the Edge Function source directly via dynamic import
+(`../../../supabase/functions/_shared/rag/{mmr,sanitize}`). The modules
+are pure TS with no Deno globals, so Vitest exercises the same code path
+that `deno test` runs on the Edge side. If the implementation diverges
+(e.g. someone changes the prefix matcher to global instead of anchored,
+or swaps the MMR greedy loop for a probabilistic tie-breaker), these
+specs MUST fail and quality MUST reject — the contract here is the
+moat-protection guarantee that competitor scrapes and prompt-injection
+attempts cannot leak Foxy's behaviour.
+
+## Foxy Structured Rendering Envelope (2026-05-02)
+
+Source: Foxy structured-rendering workstream — `/api/foxy` and the
+`grounded-answer` Edge Function now emit a structured `lines[]` payload
+conforming to `src/lib/foxy/schema.ts`. The Next.js renderer
+(`FoxyStructuredRenderer.tsx`) consumes it; the `is-foxy-response.ts`
+guard ensures the renderer degrades gracefully when an upstream payload
+fails schema validation. The streaming `done` event persists both the
+structured JSONB and the denormalized `content` text atomically, and
+Hindi i18n uses NCERT-standard terms (`परीक्षा सुझाव`, never the
+non-standard `परीक्षा टिप`).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-55 | `foxy_structured_rendering_envelope` | Foxy `/api/foxy` and `grounded-answer` Edge Function streaming responses produce a structured payload (lines[]) conforming to `src/lib/foxy/schema.ts`; renderer (`FoxyStructuredRenderer.tsx`) gracefully degrades on schema-invalid payloads via `is-foxy-response.ts` guard; streaming-done event persists both `structured` JSONB and denormalized `content` text atomically (no orphaned messages with one-but-not-the-other); Hindi i18n uses NCERT-standard terms (परीक्षा सुझाव, not परीक्षा टिप). | `src/__tests__/api/foxy/streaming-structured-persistence.test.ts`, `src/__tests__/api/foxy/structured-abstain-and-history.test.ts`, `src/__tests__/api/foxy/structured-persistence.test.ts`, `src/__tests__/components/FoxyStructuredRenderer.test.tsx` | E |
+
+### Invariants covered by this section
+
+- P7 (bilingual UI — Hindi rendering uses NCERT-standard terminology;
+  no `परीक्षा टिप` fallback)
+- P12 (AI safety — schema-invalid LLM output never reaches students; the
+  guard short-circuits to a safe degraded render)
+- P13 (data privacy — persistence path writes structured JSONB + content
+  in a single atomic transaction so the chat history cannot end up with
+  half-rendered messages that would later be re-fetched and re-shipped
+  to Sentry)
+
+## AlfaBot Landing-Page Widget (2026-05-19) — REG-65..REG-68
+
+Source: AlfaBot v1 rollout — PRs 1-4 (migration, Edge Function + Next
+routes, frontend widget, super-admin dashboard). AlfaBot is the
+landing-page chat surface on `/welcome?v=2` that answers anonymous
+visitors' product/pricing/school/parent/teacher questions before
+sign-up. It is NOT Foxy — it explicitly refuses tutoring requests.
+
+Model: OpenAI gpt-4o-mini (CEO directive 2026-05-19, cost-efficient).
+The model swap from Claude to OpenAI is the reason REG-67 below is
+catalogued — any future provider/model change needs a documented human
+review and a catalog update in the same PR.
+
+Concomitant work in this PR series: shared SSE event-name constants
+shipped to `src/lib/alfabot/sse-events.ts` to prevent the drift between
+Edge Function producer (`event: token`) and Next route / client lib
+parsers (which historically used `event: text`). The drift is currently
+non-fatal because the route's `done` frame carries `response` as a
+fallback, but the contract test in
+`src/__tests__/contract/alfabot-route-edge-contract.test.ts` pins the
+expected names and includes a `.fails` assertion that surfaces the
+remaining drift in the consumer surfaces.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-65 | `alfabot_pricing_verbatim_guard` | (1) `docs/alfabot/knowledge-base.md` contains the canonical literal `₹699` in the `pricing-plans` section, with the per-month framing alongside (so the post-processor's ₹-adjacency banned-phrase check has the full string to match). (2) `src/components/landing-v2/FAQV2.tsx` contains the same literal in the pricing FAQ row, with English `month` or Hindi `माह` adjacent. (3) Cross-file drift detector: extract the first `₹\d{2,5}` from both files and assert the digits are identical AND equal to `699`. Edge Function side — pricing-unbacked rejections live in the Deno integration test at `supabase/functions/alfabot-answer/__tests__/integration.test.ts` (banned-phrase + pricing-banned check). | `src/__tests__/contract/alfabot-kb-pricing-drift.test.ts` | E |
+| REG-66 | `alfabot_scope_lock_no_tutoring` | (1) `ALFABOT_HARD_REFUSAL_PATTERNS` in `src/lib/ai/prompts/alfabot-system.ts` enumerates 4 hard-refusal categories: math/homework (routes to `not_a_tutor`), medical/legal/mental-health (routes to `off_topic`), politics/religion/news (routes to `off_topic`), other students' data (routes to `other_student_data`). (2) `ALFABOT_REFUSALS` has both `en` and `hi` strings for each refusal id. (3) Server-side mirror: `supabase/functions/alfabot-answer/shared.ts` `detectHardRefusal()` matches the same patterns and emits the canned `ALFABOT_REFUSALS[id][lang]` string WITHOUT calling OpenAI (defense-in-depth at the Edge Function boundary). (4) Pre-LLM regex filter in `src/app/api/alfabot/route.ts` (`PROMPT_INJECTION_PATTERNS`) is an independent abuse short-circuit (prompt injection / URLs / base64 runs) on the route path — different surface, same defense-in-depth posture. (5) Existing prompt-module unit tests cover ALFABOT_REFUSALS / ALFABOT_HARD_REFUSAL_PATTERNS / ALFABOT_BANNED_PHRASES at the data layer; the route-level abuse path is covered by `src/__tests__/api/alfabot/route.test.ts:321` ("abstains on prompt injection without calling Edge Function"). | `src/lib/ai/prompts/alfabot-system.test.ts` (prompt module) + `src/__tests__/api/alfabot/route.test.ts` (route abuse abstain) + `supabase/functions/alfabot-answer/__tests__/integration.test.ts` (Deno, refusal flow) | P |
+| REG-67 | `alfabot_model_provenance` | Every `alfabot.respond` audit row, every `alfabot_messages.model` value on assistant rows, AND every response envelope's `body.model` field must equal `'gpt-4o-mini'` (or the configured fallback returned by the Edge Function). Drift cases asserted: (a) upstream returns `gpt-4o` fallback → all three places reflect `gpt-4o`; (b) upstream omits `model` field → route falls back to the `MODEL_ID` constant (`gpt-4o-mini`); (c) upstream failure path's `alfabot.upstream_failed` audit row also stamps `model=gpt-4o-mini` for forensic continuity. User rows in `alfabot_messages` MUST NOT carry a model field (per route documentation). Because user approval is required for AI model changes (`.claude/CLAUDE.md`), this regression's failure forces an explicit catalog update in the same PR. | `src/__tests__/api/alfabot/model-provenance.test.ts` | E |
+| REG-68 | `alfabot_pii_boundary_in_audit` | `audit_logs.details` for the `alfabot.respond`, `alfabot.upstream_failed`, and `alfabot.abuse_blocked` actions MAY contain: anonId, sessionId, audience, lang, tokensUsed, latencyMs, degradedMode, sourcesCount, model, abuseReason, traceId. MUST NEVER contain: message text, assistant text, email, phone, name, school_name, raw IP. Hashed IP (`ip_hash`) is permitted ONLY in `alfabot_sessions` rows, never in audit details. Existing happy-path test in `src/__tests__/api/alfabot/route.test.ts` (line 484) and lead-capture test in `src/__tests__/api/alfabot/lead.test.ts` already pin the negative shape via `JSON.stringify(details).not.toContain(message)`; REG-68 catalogues that pattern as the regression contract. | `src/__tests__/api/alfabot/route.test.ts` (happy + abuse + upstream fail audits) + `src/__tests__/api/alfabot/lead.test.ts` (lead audit) | E |
+
+### Invariants covered by this section
+
+- P11-adjacent (pricing brand/legal risk — REG-65) — hallucinated price
+  on the landing page is a chargeback / consumer-protection vector
+  even though no payment flows through AlfaBot.
+- P12 (AI safety — REG-66 scope-lock; REG-67 model provenance gate)
+- P13 (data privacy — REG-68 audit-log PII boundary; matches the
+  `audit_logs.details` policy stated in `src/app/api/alfabot/route.ts`
+  module header)
+
+### Notes on test strategy
+
+REG-65 and the SSE-event contract test are static-source drift detectors
+in the same family as REG-51, REG-54, REG-57: they read the relevant
+files via `node:fs` and assert on string contracts without booting
+runtime infrastructure. This is the only way to enforce drift between
+two source-of-truth files (the KB markdown and the FAQ TSX, in REG-65's
+case) without an end-to-end harness.
+
+REG-67 exercises the `/api/alfabot` route handler with the same
+supabase-admin + logAudit mocking pattern as `route.test.ts` (the
+existing PR-2 test fixture). It runs the route end-to-end for four
+cases: happy-path gpt-4o-mini, upstream gpt-4o fallback, upstream
+omits-model, and upstream-failure audit-row stamping.
+
+REG-66 is currently `P` (partial) because the canonical hard-refusal
+test lives in the prompt-module unit suite (PR 1 ai-engineer) and the
+server-side mirror lives in the Deno integration suite (PR 2). Neither
+file is duplicated here; the catalog entry references both and surfaces
+the dual-surface contract.
+
+REG-68 is also `E` via reference rather than a new dedicated file —
+the existing route + lead tests already JSON.stringify the audit
+payload and assert no PII strings survive. Promoting that pattern into
+the catalog makes it block-on-removal under orchestrator Gate 5 and
+quality veto.
+
+### Catalog total
+
+Pre-AlfaBot: 35 entries (target reached as of 2026-05-04, Marking-
+Authenticity Wave 5). AlfaBot v1 adds REG-65, REG-66, REG-67, REG-68.
+
+**Total: 39 entries.**
+
+### Contract drift surfaced during this work
+
+The SSE event-name contract between the Edge Function (`event: token`)
+and the Next route + client lib consumers (`event: text`) is currently
+drifted. The drift is documented in
+`src/__tests__/contract/alfabot-route-edge-contract.test.ts` with a
+`.fails` test that flips to passing when both consumer surfaces adopt
+the canonical `token` name. The new shared module
+`src/lib/alfabot/sse-events.ts` is the single source of truth that the
+follow-up PR will import in all three places. Catalogue this here so
+the orchestrator knows there's a known deferred contract bug.
+
+## Foxy AI Tutor Mobile Redesign — Phase 0+1 (2026-06-12)
+
+Source: Foxy mobile-first redesign (compact top bar + Study sheet), flag-gated
+behind `ff_foxy_os_v1` (default OFF, `<lg` only). `/foxy` is the highest-traffic
+AI surface and sits near the P10 bundle ceiling, so the OFF-path-byte-identity
+property is load-bearing.
+
+> **ID note (2026-06-12):** this entry was originally drafted as REG-120 but
+> collided with the RBAC/Pulse FOUNDATION spec
+> (`docs/superpowers/specs/2026-06-12-rbac-conformance-and-student-pulse-design.md`
+> §7/§12), which reserved **REG-120 for RBAC matrix conformance**. The RBAC
+> reservation predates this entry and is anchored in the design doc, so this
+> Foxy-OS entry was renumbered to **REG-123**. No test code referenced the REG
+> number (test files are named `foxy_os_*`), so the renumber is catalog-only.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-123 | `foxy_os_flag_default_off_and_header_gating_identity` | `ff_foxy_os_v1` resolves DEFAULT-OFF (no cache/override → false; `FLAG_DEFAULTS` false); `devForcedOn` localStorage override (`alfanumrik_force_foxy_os`) is a strict no-op in production NODE_ENV; cache TTL honored under `alfanumrik_foxy_os_flag_v1`. Header-gating predicate selects the new mobile surface in EXACTLY 1 of 4 states (flag ON and viewport `<lg`); all other states render the legacy 5-row header verbatim (OFF-path byte-identity). | `src/__tests__/lib/foxy-os-flag-off-identity.test.ts`, `src/__tests__/lib/foxy-os-header-gate.test.ts` | E |
+
+### Invariants covered by this section
+
+- P10 (bundle budget — new components `dynamic()`-lazy-loaded; OFF path adds 0 bytes to the near-ceiling `/foxy` page)
+- OFF-path safety — the redesign cannot leak onto prod/desktop until an operator flips the DB flag
+
+### Catalog total
+
+Pre-foxy-os: 87 entries. Adds REG-123 (Foxy-OS flag DEFAULT-OFF + header gating
+identity — P10 + OFF-path safety). Running total after Foxy-OS: 88 entries.
+
+## Foxy P12 grade-spoof hard block — unconditional, all subjects, audit row (2026-06-15) — REG-142
+
+Source: CEO Decision D2 (2026-06-15). The `/api/foxy` route previously trusted
+the client-supplied `grade` field for prompt assembly, RAG scope, and curriculum
+selection — so a Grade 7 student could send `grade:'12'` and receive senior-grade
+content (a P12 AI-safety violation: AI must stay within the student's enrolled
+CBSE scope). The flag-gated `validateCurriculumScope` STEM pre-gate (REG —
+curriculum-guard-pregate) catches this for math/physics/chemistry/biology when
+`ff_foxy_curriculum_guard_v1` is ON, but it does NOT cover non-STEM subjects
+(english, hindi, history, etc.) and it is OFF by design as a kill switch — so
+a determined spoofer could simply request `subject:'english'` or wait for an
+incident-flag-off window. This entry pins a SECOND, UNCONDITIONAL, subject-
+independent defense layer.
+
+> **ID note:** REG-135..REG-141 are taken by the MOL Python-unification cluster
+> (REG-135..REG-139), the B1 RAG eval-harness (REG-140), and the Voyage rerank
+> model-id hotfix (REG-141). REG-142 is the next free id at the time this
+> entry was written (2026-06-15).
+
+The wire (three layers, in order, before any LLM call):
+
+1. **Zod 400** at `route.ts:2641-2658`. `FoxyRequestBodySchema` requires
+   `grade ∈ z.enum(['6','7','8','9','10','11','12'])`. Any out-of-range string
+   OR wrong type (integer, missing) returns 400 with `code:'INVALID_GRADE'`
+   BEFORE the students fetch, studentId resolution, governance check, prompt
+   build, RAG retrieval, or LLM call. (P5: grades are strings.)
+2. **DB-authoritative compare** at `route.ts:2802-2849`. The students row's
+   `grade` column is loaded server-side and compared to the (Zod-validated)
+   body grade. If `dbGrade !== null` AND `dbGrade !== grade` the route returns
+   `403 {code:'GRADE_MISMATCH', message:'Request grade does not match
+   enrollment'}`, writes an `audit_logs` row via `logAudit` with
+   `action:'foxy.grade_spoof_attempt'` +
+   `details:{claimed_grade, actual_grade, route:'/api/foxy'}` + `status:'denied'`,
+   and SKIPS every downstream call — no Claude, no grounded answer, no quota
+   spend.
+3. **Null-grade warn-and-proceed** at `route.ts:2850-2856`. A `dbGrade === null`
+   row (legitimately-onboarding student) is NOT 403'd — the route logs a
+   `logger.warn` and continues. The flag-gated STEM curriculum guard still
+   acts as a second layer downstream.
+
+The block runs **independent of `ff_foxy_curriculum_guard_v1`** and fires for
+**ALL subjects including non-STEM** (english, hindi, history, etc.). The flag
+only gates the existing STEM-only `validateCurriculumScope` pre-gate, which
+remains in place as a defense-in-depth second layer for STEM topics.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-142 | `foxy_p12_grade_spoof_hard_block` | (A) Out-of-range `grade:'5'` → 400 `{code:'INVALID_GRADE'}`, no students-fetch, no Claude / grounded-answer / routeIntent call, no `foxy.grade_spoof_attempt` audit. (B) Wrong-type `grade:12` (integer) → same 400 + same downstream silence (P5 enforced via Zod). (C) Happy path `grade:'8'` / `dbGrade:'8'` → no 400/403, grounded path called exactly once, no spoof audit row. (D) Spoof `grade:'12'` / `dbGrade:'8'` → exact body `{code:'GRADE_MISMATCH', message:'Request grade does not match enrollment'}` at HTTP 403; exactly ONE `logAudit` call with `action:'foxy.grade_spoof_attempt'`, `resourceType:'students'`, `resourceId:'student-uuid-1'`, `status:'denied'`, and `details:{claimed_grade:'12', actual_grade:'8', route:'/api/foxy'}`; NO Claude / grounded-answer / routeIntent call; NO foxy quota RPC invoked (no quota spend on the 403 branch). (E) Null-grade onboarding (`dbGrade:null`, body `grade:'6'`) → NOT 403'd, grounded path called, `logger.warn` for the null-grade marker, NO spoof audit row. (F) Subject independence — `subject:'english'` (non-STEM) with `grade:'12'` / `dbGrade:'8'` still returns 403 GRADE_MISMATCH + writes the audit row + does NOT call grounded; explicitly with `ff_foxy_curriculum_guard_v1=false` to prove the gate is independent of the curriculum guard. **Deferred:** the inline `TODO(monitoring)` comment in `route.ts` flags that the per-request `logger.info('foxy.request', ...)` marker is intended to swap to `logSystemMetric` once the monitoring substrate lands; that swap is NOT in this entry's scope (no monitoring infra to assert against yet). | `src/__tests__/api/foxy/grade-spoof-hard-block.test.ts` (17 tests, 6 scenarios A–F) | E |
+
+### Invariants covered by this section
+
+- P12 AI safety / curriculum scope — REG-142 (an out-of-grade client claim
+  CANNOT reach prompt-assembly, RAG scope, or any LLM call; the block is
+  subject-independent so non-STEM topics are covered too; the block is
+  independent of `ff_foxy_curriculum_guard_v1` so an OFF-flag window does
+  NOT open a spoof vector).
+- P5 Grade format — REG-142 (Zod enforces `grade ∈ z.enum(['6'..'12'])` at
+  the API boundary; integer 12 is rejected as a P5 violation alongside the
+  out-of-range string '5').
+- P9 RBAC enforcement / audit completeness — REG-142 (every spoof attempt
+  writes an `audit_logs` row with `action:'foxy.grade_spoof_attempt'` and
+  the claimed/actual grade pair, giving ops the forensic trail to detect
+  scaled abuse).
+- P13 Data privacy — REG-142 (the audit details payload carries only the
+  two grade strings + the route name — no message text, no PII).
+
+### Catalog total
+
+Pre-REG-142: 109 entries (through the Voyage rerank model-id hotfix,
+REG-141). The Foxy P12 grade-spoof hard-block adds REG-142 (unconditional
+all-subject grade-spoof defense — Zod 400, DB-compare 403 with audit row,
+null-grade warn-and-proceed, subject-independent). **Total catalog: 110
+entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 110 entries.**
+
+## Foxy event-logging FK-safety + telemetry hygiene — fire-and-forget observability never corrupts state or leaks PII (2026-06-15) — REG-148
+
+Source: the Foxy event-logging instrumentation on `/api/foxy`. The route now
+fires ADDITIVE, non-blocking observability on every turn: `logLearningEvent →
+learning_events` (a `foxy_ask` row) and `logSystemMetric → system_metrics` (the
+`foxy_request` / `edge_fn_latency_ms` success metrics + an `error_rate` metric
+from the top-level catch). These are telemetry only — they move NO XP, mastery,
+or business state. Two silent-failure traps make this worth pinning:
+- **FK silent-drop:** `learning_events.student_id` is `uuid NOT NULL REFERENCES
+  auth.users(id)`. The route resolves TWO distinct ids — `auth.userId`
+  (= `auth.uid()`, the `auth.users` PK) and `auth.studentId` (the `students`-table
+  PK). The event FK targets `auth.users`, so `student_id` MUST be `auth.userId`.
+  A refactor that swaps in `studentId` makes EVERY event silently fail the FK and
+  be swallowed by fire-and-forget (`logLearningEvent` never throws) — no test, no
+  alert, no data.
+- **Telemetry-pollution / PII trap:** business early-returns (429 quota, 400
+  invalid-grade) are EXPECTED outcomes, not errors — they must emit neither
+  `error_rate` nor a `foxy_ask` event. The `error_rate` metric carries an
+  `error_code` tag ONLY (no message text, no PII).
+
+Files under test:
+- `src/app/api/foxy/route.ts` — the `logFoxyAsk` closure (success-terminal event +
+  latency/request metrics) and the top-level catch (`error_rate`).
+- `src/lib/monitoring/log-event.ts` — `logLearningEvent` / `logSystemMetric`
+  (mocked at the boundary so the loggers are observable, not Supabase-bound).
+
+The math-turn no-mastery guard (`src/__tests__/api/foxy/math-solve-no-xp-no-mastery.test.ts`)
+acknowledges `system_metrics` + `learning_events` on its `ALLOWED_WRITE_TABLES`
+allow-side as INTENDED, benign telemetry; its `FORBIDDEN_MASTERY_TABLES` +
+`FORBIDDEN_RPCS` assertions stay exactly as strict (a math turn still grants 0 XP
+and moves 0 mastery — P2/P4-adjacent).
+
+> **ID note:** REG-147 is the previous entry (per-school deal-driven
+> entitlements, 2026-06-15). REG-148 is the next free id at the time this entry
+> was written.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-148 | `foxy_event_logging_fk_safety_and_telemetry_hygiene` | **(1) FK-safe identity (silent-drop guard):** on the grounded-default SUCCESS path the route logs exactly one `foxy_ask` `learning_event` whose `student_id === auth.userId` (the `auth.uid()` / `auth.users` PK) and NOT `auth.studentId` (the `students`-table PK) — asserted by exact equality against two DELIBERATELY-distinct sentinel ids; `topic_id === null` (no verified `curriculum_topics.id` in scope); `session_id === resolvedSessionId` (the `foxy_sessions` row id, not the fallback); `event_type === 'foxy_ask'`, `verb === 'asked'`, `object_type === 'foxy'`, `result.response_tokens` from `grounded.meta`, and a PII-free `context` (no `email`/`phone`/`name` keys). **(2) Success metrics:** the same turn emits both a `foxy_request` and an `edge_fn_latency_ms` `system_metric` (`route === '/api/foxy'`, numeric `value`, `grade` tag) and does NOT emit `error_rate`. **(3) Error path:** when a downstream collaborator (`callGroundedAnswer`) rejects, the top-level catch returns 503 and emits exactly one `error_rate` metric (`route === '/api/foxy'`, `value === 1`, an `error_code` tag ONLY — the exception message text never rides along — P13); a thrown turn never reached `logFoxyAsk`, so NO `foxy_ask` event. **(4) Business early-returns do not pollute telemetry:** a 429 quota exhaustion (`check_and_record_usage` → `allowed:false`) emits NO `error_rate` and NO `foxy_ask`; a 400 invalid-grade (`grade:'5'`, below CBSE 6-12) emits NO `error_rate` and NO `foxy_ask`. **(5) Compile-time/shape guards:** `'foxy_ask'` is a member of `LearningEventType`; the verbatim `logFoxyAsk` event payload is assignable to `LearningEvent`; and the three route metrics (`error_rate`, `edge_fn_latency_ms`, `foxy_request`) are assignable to `SystemMetric` — a field/type drift breaks `npm run type-check`, not just the assertion. | `src/__tests__/monitoring/foxy-event-logging.test.ts` (13) | U (unit; drives the REAL `POST` handler with the heavy-mock surface, `@/lib/monitoring/log-event` mocked so the loggers are observable) |
+
+### Invariants covered by this section
+
+- P12 AI safety — REG-148 (the `foxy_ask` event + the success/latency metrics are
+  fire-and-forget observability on the Foxy turn; they never block, alter, or gate
+  the AI response, and the business early-returns that protect the per-plan daily
+  cap emit no spurious error telemetry).
+- P13 Data privacy — REG-148 (the `foxy_ask` event `context` carries no
+  `email`/`phone`/`name`; the `error_rate` metric carries an `error_code` tag only,
+  never the exception message text or any PII; the FK-safe `student_id` pin keeps
+  the event stream from silently dropping into a swallowed-write hole).
+
+### Catalog total
+
+Pre-REG-148: 115 entries (through the per-school deal-driven entitlements pin,
+REG-147). The Foxy event-logging telemetry-hygiene pin adds REG-148: the
+fire-and-forget `learning_events`/`system_metrics` instrumentation on `/api/foxy`
+is FK-safe (`student_id === auth.userId`, never the `students` PK — else every
+event silently fails the `auth.users` FK under fire-and-forget), emits the
+success `foxy_request`/`edge_fn_latency_ms` metrics and a catch-only `error_rate`
+(error_code tag only, no PII), and keeps business early-returns (429 quota / 400
+invalid-grade) out of the error/event telemetry entirely. 13 tests in 1 file.
+**Total catalog: 116 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 116 entries.**
+
+## Portal RBAC/SaaS remediation Phase 2 — guardian Foxy-transcript boundary + parent support/calendar + bulk-parent broadcast (2026-06-16) — REG-149..REG-151
+
+Source: Phase 2 of `feat/portal-rbac-saas-remediation`. This wave wired three
+previously-stubbed parent surfaces to live, RLS/RBAC-gated server data:
+- **Parent Foxy chat view** — `GET /api/parent/children/[student_id]/chat` lets
+  an APPROVED guardian read (read-only, keyset-paginated) their linked child's
+  Foxy AI-tutor transcript. Backed by migration `20260620000200` which adds a
+  SELECT-only, `is_guardian_of()`-scoped RLS policy on `foxy_chat_messages` (+
+  `foxy_sessions`). This is the most sensitive surface in the wave: it exposes a
+  child's chat to a parent (CEO-approved P13 widening), so the boundary is the
+  whole point of the test.
+- **Parent calendar** — `GET /api/parent/calendar` aggregates a linked child's
+  upcoming `assignments` + `school_exams` + recent `quiz_sessions` into one
+  sorted `events[]`.
+- **Parent support tickets** — `POST/GET /api/support/tickets` gained a guardian
+  path (parent holds `child.view_progress`, not `foxy.chat`): create + list-own,
+  anchored to a linked child, role-tagged `parent`, rate-limited 5/24h.
+- **Bulk parent broadcast** — `POST /api/school-admin/parents` now routes the
+  EMAIL channel through `send-transactional-email` (new `school-parent-broadcast`
+  template) and standardised the response to `{ sent_count, failed_count,
+  channel }`.
+
+Two traps make these worth pinning:
+- **The chat boundary is a P13 cliff edge.** `canAccessStudent(authUserId,
+  childId)` is the single app-layer data boundary; the migration RLS policy is
+  the defense-in-depth DB boundary (`is_guardian_of()` is true ONLY for
+  status IN ('active','approved'), so an UNLINKED or PENDING guardian gets zero
+  rows). If either gate weakened — or a write path were ever added — a parent
+  could read (or worse, alter) an arbitrary child's private tutoring chat.
+- **The bulk-broadcast + support paths handle PII at scale.** Email addresses,
+  message bodies, and phone numbers must never reach the logger or the audit
+  metadata; the audit row carries counts/channel/target only.
+
+Files under test:
+- `src/__tests__/api/parent/children-chat-boundary.test.ts` — the architect's
+  priority P13 regression (auth gate, boundary deny = 403 + no read + denied
+  audit + no payload, approved-child scope pin, read-only/no-write, keyset
+  pagination, source + migration SELECT-only contract).
+- `src/__tests__/api/support/support-tickets-guardian.test.ts` — guardian create
+  + list-own + 403 NO_LINKED_CHILD + 429 rate-limit + P13 redaction.
+- `src/__tests__/api/parent/parent-calendar.test.ts` — aggregation shape +
+  403-not-linked-no-payload + 400/404 + P5 grade-string + no-PII-logged.
+- `src/__tests__/api/school-admin/parents-broadcast.test.ts` — `{message,target,
+  channel}` → `{sent_count,failed_count,channel}` contract, per-guardian Edge
+  Function dispatch via the `school-parent-broadcast` template, authz, P13.
+
+> **ID note:** REG-148 is the previous entry (Foxy event-logging telemetry
+> hygiene, 2026-06-15). REG-149..REG-151 are the next free ids. (The originating
+> task brief referenced "after REG-134"; that was stale — the live catalog had
+> already grown to REG-148.)
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-149 | `parent_foxy_chat_p13_boundary_read_only_keyset` | **THE P13 CHAT BOUNDARY (architect priority).** **(1) Own-approved-child only:** with `canAccessStudent(callerAuthId, pathChildId)` true the route reads `foxy_chat_messages` on the RLS-scoped SSR client with EXACTLY one `student_id` eq filter equal to the path child id (asserted via a filter-recording in-memory `@supabase/ssr` client), newest-first on `created_at`, and returns only those rows mapped to `{id,role,text,created_at,session_id}`; the boundary call is keyed `(callerAuthId, pathChildId)`. **(2) Unlinked OR pending guardian → 403, zero rows:** when `canAccessStudent` is false the route returns 403, the transcript read is NEVER issued (a `readReached` sentinel stays false — no transcript is ever assembled), and a `parent.child_chat_viewed` audit row with `status:'denied'` + `resourceId=childId` is written. Pending links surface identically (`is_guardian_of()` requires status IN active/approved). **(3) No guardian write path:** the route module exports GET only (no POST/PUT/PATCH/DELETE), and the RLS client records ZERO insert/update/delete/upsert/rpc calls on the happy path; the migration `20260620000200` is FOR-SELECT-only (`foxy_chat_messages_guardian_select`, `is_guardian_of`), introduces no guardian INSERT/UPDATE/DELETE/ALL policy, and contains no executable DROP-other-than-POLICY / TRUNCATE / DROP TABLE (DDL checked with `--` comments stripped). **(4) No payload on any deny:** 401/400/403/500 bodies carry only `{success:false,error}` — no `data`, no `messages`, no `page`, and no chat text/role markers anywhere in the serialized body; a 500 from an RLS read error also leaks nothing. **(5) Keyset pagination:** the route over-fetches `limit+1`, returns only `limit` rows with `page.has_more=true` and `page.next_before` = the oldest returned row's `created_at`; passing `?before=<iso>` applies a `.lt('created_at', iso)` keyset filter; an over-large `?limit` is capped at 100 (over-fetch 101); the last page reports `has_more:false`/`next_before:null`. **(6) Audit hygiene:** the success audit `details` carries only `{message_count}` — never the message body. | `src/__tests__/api/parent/children-chat-boundary.test.ts` (17) | U (unit; drives the real `GET` handler with `@/lib/rbac` + `@supabase/ssr` + `next/headers` mocked; the SSR client records filters/mutations) |
+| REG-150 | `parent_support_tickets_guardian_path` | The Phase 2 guardian support path. **(1) Create:** a logged-in guardian (holds `child.view_progress`, fails `foxy.chat`) `POST`s a ticket → persisted to `support_tickets` anchored to the FIRST linked child's `student_id`, `user_role='parent'`, `status='open'`, returning the new `ticket_id`. **(2) No linked child:** a guardian with zero links → `403 NO_LINKED_CHILD` on create (no row inserted) and an EMPTY list on `GET` (no DB list query issued, never another family's tickets). **(3) List-own scope:** `GET` filters `student_id IN (linked children)` AND `user_role='parent'`, so a guardian never sees the child's own `student`-role tickets. **(4) Rate limit:** the 6th create inside the in-memory 24h/5 window → `429 RATE_LIMITED` with a numeric `retry_after_ms`, and no 6th row is inserted. **(5) P13:** the persisted `email` column is the redacted sentinel `authenticated@redacted`, and the `logOpsEvent` context carries ids/role/category only — the serialized payload contains neither the message body nor a phone number. **(6) Unauthenticated `GET` → 401 verbatim.** (Per-test distinct auth ids isolate the module-level rate-limit Map — no shared mutable state across tests.) | `src/__tests__/api/support/support-tickets-guardian.test.ts` (8) | U (unit; real POST/GET with `@/lib/rbac`, identity/relationship domains, ops-events, and an in-memory `support_tickets` admin client mocked) |
+| REG-151 | `parent_calendar_aggregation_and_school_broadcast_contract` | Two Phase-2 parent-facing wirings. **PARENT CALENDAR** (`GET /api/parent/calendar`): RBAC gate uses `child.view_progress`; `canAccessStudent` is the single boundary — a NOT-LINKED guardian → 403 with the source queries (assignments/exams/quiz) NEVER run (an `anySourceQueried` sentinel stays false) and NO `events` payload (P13); 401 when unauthenticated (no boundary call); 400 on a non-UUID `student_id`; 404 when the child can't be resolved (no payload); the happy path merges `assignments`+`school_exams`+`quiz_sessions` into one `events[]` (each tagged `type`), sorted ascending by date, with the quiz event carrying a rounded `NN%` subtitle and `data.grade` a STRING (P5); the student name is never logged. **SCHOOL→PARENT BROADCAST** (`POST /api/school-admin/parents`): the corrected `{message,target,channel}` → `{success,data:{sent_count,failed_count,channel}}` contract — missing `message`/invalid `target`/invalid `channel` → 400, a `grade` target with a non-CBSE grade `'5'` → 400 (P5); `authorizeSchoolAdmin('school.manage_settings')` rejects an unauthorized caller verbatim with NO email/audit fired; the EMAIL channel dispatches one `send-transactional-email` call per approved guardian-with-email using the `school-parent-broadcast` template, counting `json.sent===true` as sent and the rest as failed; a no-match target short-circuits to zero counts with no fetch; P13 — neither the logger nor the `logSchoolAudit` metadata carries a guardian email or the message body (audit records counts/channel/target only, `action='parent_message.sent'`). | `src/__tests__/api/parent/parent-calendar.test.ts` (7), `src/__tests__/api/school-admin/parents-broadcast.test.ts` (7) | U (unit; real GET/POST handlers with rbac/identity/school-admin-auth/audit + table-aware in-memory admin clients + stubbed global `fetch` for the Edge Function) |
+
+### Invariants covered by this section
+
+- P8 RLS boundary — REG-149 (the guardian Foxy-transcript read rides the
+  RLS-scoped SSR client, not `supabase-admin`; migration `20260620000200` adds a
+  SELECT-only `is_guardian_of()`-scoped policy on `foxy_chat_messages`/
+  `foxy_sessions` — the DB boundary beneath the `canAccessStudent` app gate).
+- P9 RBAC enforcement — REG-149/REG-150/REG-151 (`child.view_progress` gates the
+  chat + calendar surfaces; the support route falls back to `child.view_progress`
+  for the guardian path; `school.manage_settings` gates the bulk broadcast).
+- P5 Grade format — REG-151 (calendar `grade` is a string; the broadcast rejects
+  a non-CBSE grade `'5'`).
+- P13 Data privacy — REG-149 (no transcript payload on any deny path; success
+  audit carries `message_count` only, never the chat body; read-only, no guardian
+  write path), REG-150 (redacted email column; ops-event context carries no
+  message body / phone), REG-151 (no `events` payload on a calendar deny; the
+  broadcast logger + audit carry counts/channel/target only — never a guardian
+  email or the message body; the student name is never logged).
+
+### Catalog total
+
+Pre-REG-149: 116 entries (through the Foxy event-logging telemetry-hygiene pin,
+REG-148). Portal-remediation Phase 2 adds REG-149..REG-151: the guardian
+Foxy-transcript P13 boundary (own-approved-child only, unlinked/pending → 403 +
+zero rows + no payload, read-only/no-write, keyset pagination, SELECT-only RLS
+migration), the parent support-ticket guardian path (create + list-own + 403
+NO_LINKED_CHILD + 429 + PII redaction), and the parent-calendar aggregation +
+school→parent broadcast request/response contract. 39 tests across 4 files.
+**Total catalog: 119 entries (target: 35 — TARGET EXCEEDED).**
+
+**Total: 119 entries.**
+
+---
+
+## REG-176: Foxy prompt-template routing invariant (RC-1 fix) + buildStarters personalisation + suggest-prompts bloomHint
+
+**Date:** 2026-06-26
+**Area:** AI / Foxy AI Tutor
+**Risk:** HIGH — Routing back to monolithic `foxy_tutor_v1` would re-introduce 3 competing output format sections, causing random persona switching per response (RC-1). Incorrect bloomHint derivation thresholds would pitch Bloom's complexity at the wrong level for the student's mastery zone.
+**What it pins:**
+- `selectFoxyPromptTemplate()` routing: `practice`→`foxy_tutor_exam_v1`, `doubt`/`homework`→`foxy_tutor_doubt_v1`, all other modes→`foxy_tutor_teach_v1`. NEVER returns `foxy_tutor_v1`.
+- `buildStarters()` MasteryHints personalisation: nextAction chip prepends with "Continue:" prefix; overdueTopics chip includes title + days-overdue text; weakTopics chip includes title + mastery%; priority order nextAction > overdueTopics > weakTopics; soft ceiling 12 chips; byte-identical to static output when hints are absent.
+- `suggest-prompts` bloomHint derivation: avg >= 0.8 → analyze, >= 0.65 → apply, >= 0.4 → understand, else → remember. Static fallback bloomHint is `'understand'`.
+- `daysOverdue` calculation: `Math.max(1, Math.round(ms/86400000))` — never 0, never negative.
+**Tests:**
+- `src/__tests__/api/foxy/select-prompt-template.test.ts` (17 tests)
+- `src/__tests__/lib/foxy/starter-intents.test.ts` (13 tests)
+- `src/__tests__/api/foxy/suggest-prompts-bloom.test.ts` (20 tests)
+**Related RCA:** RC-1 (three competing output format contracts in one monolithic prompt), RC-17/RC-18 (IRT-driven suggest-prompts + buildStarters personalisation)
+
+---
+
+## Engineering-Audit Cycle 4 — Foxy AI Tutor & RAG (P12) — 2026-06-29
+
+Source: engineering-audit program, Cycle 4 (Foxy AI & RAG). P12 requires that no
+unfiltered LLM output reaches a student and that hostile student input cannot
+re-steer the model. This cycle gave both guarantees executable, cross-layer
+coverage. The output side is screened at every student-facing grounded exit
+(non-streaming return, persisted structured content, streaming completion frame +
+persisted record) by `screenStudentFacingText` — a hard-blocked answer collapses
+to a safe hard-abstain envelope, refunds the quota, never persists the unsafe
+text, and emits category-only (PII-free) telemetry; the `HARD_BLOCK_PATTERNS`
+list is pinned byte-identical between the TS site and the Deno
+`grounded-answer` Edge Function (22 patterns). The input side strips
+assistant-directed prompt-injection overrides from the student message before
+model assembly while preserving legitimate questions, fails open on non-string
+input, and pins the assembled Foxy prompt to scope + UUID only (no PII).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-182 | `foxy_output_content_backstop` | P12: every student-facing grounded Foxy exit (non-streaming return, persisted structured content, streaming completion frame + persisted record) is screened by `screenStudentFacingText` before the student/store sees it; a hard-blocked answer → safe hard-abstain envelope + quota refund + no unsafe persist + category-only (PII-free) telemetry; legitimate CBSE 6-12 curriculum (class/mass/shell/"sexual reproduction"/alcohols/weapons/retardation/assassination + bare `<system>`/`[inst]` CS markup) is NOT over-blocked; real chat-template injections (`<<SYS>>`, `<|im_start|>`, `<s>[INST]…[/INST]</s>`) BLOCK; fail-safe (validator throw → safe-abstain); TS↔Deno HARD_BLOCK_PATTERNS byte-identical (22 patterns). | `src/__tests__/lib/ai/validation/output-screen*.test.ts`, `src/__tests__/api/foxy/output-safety-backstop.test.ts`, `src/__tests__/api/foxy/mode-acceptance-fox3.test.ts`, `supabase/functions/grounded-answer/__tests__/output-screen.test.ts` | E |
+| REG-183 | `foxy_input_injection_neutralizer` | P12/P13: `neutralizeInjectionAttempt` strips assistant-directed prompt-injection overrides ("ignore previous instructions"/"you are now…"/role tokens) from the student message before model assembly while preserving legitimate questions ("ignore the friction…", "explain photosynthesis"); fail-open on non-string; the assembled Foxy prompt carries only scope + UUID (no studentName/email/phone) — P13 prompt-assembly contract. | `src/__tests__/lib/ai/validation/input-guard.test.ts`, `src/__tests__/api/foxy/output-safety-backstop.test.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety — no unfiltered LLM output to students: every student-facing
+  grounded Foxy exit is screened by `screenStudentFacingText`; hard-block →
+  safe hard-abstain + quota refund + no unsafe persist; TS↔Deno
+  `HARD_BLOCK_PATTERNS` byte-identical; hostile student input is neutralized
+  before model assembly while legitimate curriculum questions pass)
+- P13 (data privacy — output-backstop telemetry is category-only/PII-free; the
+  assembled Foxy prompt carries only scope + UUID, never studentName/email/phone)
+
+### Catalog total
+
+Pre-REG-182: 148 entries (through Engineering-Audit Cycle 3's REG-180/REG-181
+score-formula + XP-literal parity pins). Engineering-Audit Cycle 4 adds REG-182
+(Foxy output content backstop — every student-facing grounded exit screened,
+hard-block → safe abstain + refund + no unsafe persist + PII-free telemetry,
+TS↔Deno pattern parity) and REG-183 (Foxy input injection neutralizer +
+P13 prompt-assembly contract).
+**Total catalog: 150 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-241 — academic-vocabulary NO-MASK on the legacy/fallback Foxy path (P12, both directions) (2026-07-14)
+
+Source: Foxy Phase-0 output-guard word-masking fix. `validateOutput`'s substring
+BLOCKLIST (`packages/lib/src/ai/validation/output-guard.ts`) is now
+WARN/FLAG-ONLY and NON-DESTRUCTIVE (a match records an advisory `errors` entry so
+`valid` goes false, but `sanitizedContent` is NO LONGER rewritten to `***`), a
+new bilingual `SAFE_ABSTAIN_MESSAGE` was added, and the three legacy
+intent-router workflows (`explain.ts`, `revision.ts`, `doubt-solve.ts`) now route
+the student-facing text through the word-boundary-safe `screenStudentFacingText`
+(serve-original-or-abstain) instead of assigning `validateOutput().sanitizedContent`.
+
+**Why.** The old bare-substring BLOCKLIST rewrote any match to `***`, censoring
+legitimate CBSE vocabulary that merely CONTAINS a token — `assertive`→`***ertive`,
+`class`→`cl***`, `passage`→`p***age`, `assess`, `potassium`, `Assam`, `assembly`,
+`sexual reproduction`→`***ual reproduction`, `shell`→`s***`. That masked text
+reached students on the legacy/fallback Foxy path (`ff_grounded_ai_foxy` OFF, or
+the grounded-service abstain fallback). Over-masking is a P12 violation in the
+OTHER direction from unfiltered output: it silently breaks real lessons, so the
+PASS set is as load-bearing as the BLOCK set. The real student-facing safety
+decision now belongs solely to the word-boundary-safe `screenStudentFacingText`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-241 | `foxy_legacy_path_academic_vocab_served_unmasked_genuine_abuse_still_blocked` | (a) **No-mask PASS set**: `validateOutput` returns `sanitizedContent` byte-identical to the input (no `***`) for all 41 realistic CBSE sentences whose curriculum word collides with an `ass`/`hell`/`sex` BLOCKLIST substring (`assertive`, `assertion`, `assert`, `class`, `classify`, `classroom`, `pass`, `passage`, `passive`, `assess`, `assessment`, `mass`, `brass`, `grass`, `compass`, `embarrass`, `associate`, `essay`, `hello`, `shell`, `sexual reproduction`, `therapist`, `analysis`, `potassium`, `molasses`, `glass`, `biomass`, `landmass`, `sextant`, `Assam`, `Sussex`, `Essex`, `assembly`, `ambassador`, `harassment`, `association`, `assassination`, `assassinate`, `assume`, `assumption`, `classical`); each exact word survives verbatim; the three named incident cases (`assertive`/`class`/`passage`) never emit `***ertive`/`cl***`/`p***age`. (b) `screenStudentFacingText` passes every one of those sentences (`safe:true`, no `blocklist` category). (c) **BLOCK set still fires**: genuine profanity/slurs/self-harm (`fuck`, `shit`, the n-word, `faggot`, `kill yourself`, `kys`, `go die`, Hindi Devanagari abuse, Hinglish abuse) are STILL hard-blocked by `screenStudentFacingText` (`safe:false`, category `blocklist`); `validateOutput` still records an advisory flag (`valid:false`, `errors.length>0`) for blocklisted profanity but does NOT mutate `sanitizedContent`. (d) **Workflow boundary** (the value flowing into `persistLegacyFoxyResponse`): all three legacy workflows serve SAFE model text ORIGINAL-and-unmodified (curriculum survives, no `***`), and replace UNSAFE model text with the clean bilingual `SAFE_ABSTAIN_MESSAGE` — never the raw unsafe text, never a `***`-masked variant. (e) `SAFE_ABSTAIN_MESSAGE` is itself bilingual (EN + Devanagari, P7) and self-screening (re-screening it is a no-op). | `src/__tests__/lib/ai/validation/output-guard-no-mask.test.ts` (95 tests — 41-term PASS set × validateOutput + screen, the 3 incident pins, 9 UNSAFE hard-blocks, the advisory-flag-without-mask pin, the SAFE_ABSTAIN_MESSAGE bilingual + self-screen pins); `src/__tests__/lib/ai/workflows/legacy-workflows-no-mask.test.ts` (6 tests — explain/revision/doubt-solve × {safe→original, unsafe→SAFE_ABSTAIN_MESSAGE}) | E | P12, P7 |
+
+### Invariants covered by this section
+
+- P12 (AI safety — BOTH directions). The BLOCK set proves genuinely unsafe
+  content is still hard-refused by the word-boundary `screenStudentFacingText`
+  backstop; the PASS set proves the coarse substring BLOCKLIST can no longer
+  censor legitimate CBSE curriculum — the over-masking regression that shipped
+  `***`-mangled lessons to students on the legacy/fallback path is pinned closed.
+- P7 (bilingual) — the safe-abstain fallback is EN + Devanagari and re-screens
+  clean.
+
+### Catalog total
+
+Pre-REG-241: 207 entries (through REG-240, grounded-answer L2 Redis cache tier).
+Adds REG-241 (academic-vocabulary NO-MASK on the legacy/fallback Foxy path —
+non-destructive advisory BLOCKLIST + word-boundary `screenStudentFacingText` as
+the sole student-facing blocker + serve-original-or-`SAFE_ABSTAIN_MESSAGE` at the
+legacy-workflow boundary).
+**Total catalog: 208 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-242 — Foxy quota-remaining is DB-authoritative + unlimited-for-paid; no spurious upgrade prompt (P2-adjacent / P11-adjacent) (2026-07-14)
+
+Source: Foxy Phase-0 quota fix. `apps/host/src/app/api/foxy/_lib/quota.ts` now reads
+the RPC's real `used_count` column (NOT the never-existent `current_count`) from
+`check_and_record_usage` and derives `remaining` against the SAME DB authority the
+RPC enforced with, via a `get_plan_limit` call. `_lib/constants.ts` DELETED the
+misleading Node-side `DAILY_QUOTA` map (free:10 / starter:30 / pro:100 /
+unlimited:999999) and added the `UNLIMITED_QUOTA = 999999` sentinel + a `free`-only
+`UPGRADE_PROMPTS` entry. `route.ts` gates the soft upgrade prompt on
+`limit < UNLIMITED_QUOTA`. Migration `20260714120000_foxy_unlimited_for_paid_plans.sql`
+sets the paid plan codes' `subscription_plans.foxy_chats_per_day = -1` (unlimited;
+`get_plan_limit` maps -1 → 999999), leaving `free` finite. `packages/lib/src/usage.ts`
++ `packages/ui/src/foxy/mobile/FoxyToolsSheet.tsx` render "Unlimited" via
+`isUnlimitedUsage`.
+
+**Why.** The `check_and_record_usage` return column is `used_count`; the route read
+a column named `current_count` that never existed in the return shape, so
+`remaining` ALWAYS resolved to the full limit — a wrong countdown. Worse, a stale
+Node-side `DAILY_QUOTA` map implied a false local authority the DB never consulted
+(enforcement is DB-authoritative: `check_and_record_usage` → `get_plan_limit` →
+`subscription_plans.foxy_chats_per_day`). Together they showed paid students a
+finite "30 left" / "100 left" countdown and could surface a spurious upgrade
+prompt, even though paid plans are entitled to UNLIMITED Foxy chats. The fix makes
+both enforcement and the displayed `remaining` DB-authoritative and unlimited-for-paid.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-242 | `foxy_quota_remaining_db_authoritative_unlimited_paid_no_spurious_upgrade` | (a) **No Node-side cap**: the route does NOT pass `p_limit` to `check_and_record_usage` (the RPC derives its own cap); it calls `get_plan_limit` and computes `quotaRemaining = max(0, planLimit − used_count)`, pinned at limit-1 (`used_count=9`, limit 10 → 1), at-limit (`used_count=10` → 0), over-limit clamp (`used_count=15` → 0, never negative), and `allowed:false → HTTP 429` with no LLM call. (b) **Unlimited paid → no upsell**: with `get_plan_limit → 999999` (i.e. `foxy_chats_per_day = -1`) and `used_count=500` on a `pro` plan, `quotaRemaining = 999499` (large, non-negative) and `upgradePrompt` is UNDEFINED. (c) **Prompt gating**: a prompt is shown ONLY when the plan has an `UPGRADE_PROMPTS` entry AND `limit < UNLIMITED_QUOTA` AND `remaining ≤ showAtRemaining` — only the finite `free` tier can nudge; `starter`/`pro`/`unlimited` (and their `basic`/`premium`/`ultimate` aliases via `normalizePlan`) never prompt, even at `remaining 0`. (d) **Client display parity**: `checkDailyUsage`/`getDailyUsageSummary` mirror the DB sentinel — `free` foxy_chat = finite 5; paid tiers (`starter`/`pro`/`unlimited` + `basic`/`premium` aliases + `_monthly`/`_yearly` suffixes) = 999999 → `isUnlimitedUsage` true; `remaining` clamps at 0. (e) **`subscription_plans` contract**: the migration is idempotent (`foxy_chats_per_day IS DISTINCT FROM -1` UPDATE keyed by plan_code) and touches only paid codes (`starter`/`pro`/`unlimited`), leaving `free` finite (verify block WARNs if free went -1). | `src/__tests__/api/foxy/route-characterization.test.ts` (GAP 1 quota-boundary matrix — used_count/get_plan_limit/no-p_limit/unlimited-no-prompt/429); `src/__tests__/lib/usage.test.ts` (unlimited-paid display + alias/suffix normalization + clamp); `src/__tests__/foxy-plan-normalization.test.ts` (UNLIMITED_QUOTA + free-only UPGRADE_PROMPTS + gating parity) | E | P2-adjacent, P11-adjacent, P7 |
+
+### Invariants covered by this section
+
+- P2-adjacent (usage-economy correctness) — the displayed `remaining` is honest
+  (derived from the same DB cap the RPC enforced), never negative, and never
+  understates a paid plan's unlimited entitlement.
+- P11-adjacent (payment entitlement integrity) — the paid-plan Foxy entitlement
+  flows from the `subscription_plans` catalog through `get_plan_limit`, not a
+  stale Node-side table; the migration changes ONLY the per-day chat entitlement
+  (not pricing, subscription status, or payment records), so verified-payment
+  gating and atomic status+payment writes are untouched.
+- P7 (bilingual) — the free-tier upgrade copy carries EN + Devanagari.
+
+### Catalog total
+
+Pre-REG-242: 208 entries (through REG-241, Foxy legacy-path NO-MASK).
+Adds REG-242 (Foxy quota-remaining DB-authoritative correctness — `used_count`
+read, `get_plan_limit`-derived remaining, unlimited-for-paid with no spurious
+upgrade prompt, and the `subscription_plans` paid=-1 / free-finite contract).
+**Total catalog: 209 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-243..REG-246 — Foxy Learning OS Phase 0.2 / 0.3 / 0.4 (durable thread + long-answer integrity + real practice + teach-then-stop) (2026-07-15)
+
+Source: Foxy Learning OS Phase 0.2 (durable conversation thread + Deno bounded
+continuation + pending-row hygiene), Phase 0.3 (real gradable practice), Phase 0.4
+(teach-then-stop + post-answer action bar). All four behaviors are gated behind
+SEPARATE default-OFF feature flags (`ff_foxy_durable_thread_v1`,
+`ff_foxy_answer_continuation_v1`, `ff_foxy_real_practice_v1`,
+`ff_foxy_learning_actions_v1`; seeds `20260715000000` / `20260715000100` /
+`20260715000200` + the existing learning-actions flag) and every entry pins its
+own flag-OFF byte-identical path against a mirror/characterization test.
+
+Files: `apps/host/src/app/foxy/_hooks/useFoxyChat.ts`, `apps/host/src/app/foxy/page.tsx`,
+`apps/host/src/lib/use-foxy-durable-thread-flag.ts`, `packages/lib/src/use-foxy-durable-thread-flag.ts`,
+`apps/host/src/app/api/foxy/_lib/session.ts`, `apps/host/src/app/api/foxy/route.ts`,
+`supabase/functions/grounded-answer/{claude.ts,pipeline.ts,_continuation-flag.ts}`,
+`packages/lib/src/foxy/{prompt-sections.ts,quiz-me-oracle-gate.ts}`,
+`packages/ui/src/foxy/ChatBubble.tsx`.
+
+**Why.** Foxy's context "broke" (students had to re-type the question) because a rapid
+second send — or a reload — before the server session frame returned minted a second,
+empty session; a topic change silently forked a new thread. Long answers were truncated
+at `max_tokens` and the tail was lost to the JSON-rescue net, while empty/pending
+assistant rows (from a hard-abstain or a dead LLM call) leaked into cross-session prompt
+assembly as empty `[previous · Foxy]` snippets that poisoned later turns. Practice mode
+emitted 5 markdown pseudo-MCQs that render as un-answerable text yet claimed "Generated 5
+questions" (a fake-action bug). And Foxy re-narrated its own menu of next actions in prose
+even though the on-screen action bar already offered them. These four flag-gated fixes
+address each, additively and reversibly.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-243 | `foxy_durable_conversation_thread_continuity` | **Client (`useFoxyChat`)**: with `ff_foxy_durable_thread_v1` ON the client mints ONE durable conversation id synchronously (ref-based) so two rapid sends fired before the first resolves carry the SAME `session_id` (the race fix), persisted to BOTH `localStorage.foxy_thread` and the `?c=` URL param; `readStoredThreadId` prefers `?c=` over localStorage then falls back; `adoptConversationId` mirrors id→state+URL+localStorage (reload continuity); `startNewConversation` mints a fresh distinct id. Flag OFF (default) is byte-identical: a send writes NO `foxy_thread`/`?c=`, the first send carries `sessionId:null`, and `startNewConversation` clears the id touching no storage. **Server (`resolveSession`)**: flag ON, the client id is authoritative — an existing row is UPDATEd IN PLACE on a subject/chapter/mode change (same id, no fork, reactivate/idle path never consulted); a well-formed id with no row is INSERTed WITH that id + a `foxy_session_started:<clientId>` event; a `23505` collision with ANOTHER student's id falls back to a server-generated id (never reads/returns the other tenant's row) and warns `foxy.session.thread_id_collision` with `studentId` ONLY (P13); a malformed uuid falls straight through to a server id with no lookup on the bad id. | `apps/host/src/__tests__/foxy/use-foxy-chat.test.ts` (durable-thread describe); `apps/host/src/__tests__/foxy-resolve-session.test.ts` (Phase 0.2 durable-thread describe) | E | P8, P13 |
+| REG-244 | `foxy_long_answer_bounded_continuation_and_pending_row_hygiene` | **(a) Bounded ONE-round continuation** (`ff_foxy_answer_continuation_v1`): a Foxy structured turn that stops at `stop_reason='max_tokens'` with the flag ON issues EXACTLY ONE continuation call (2 Claude fetches total, never 3 even if the continuation ALSO truncates); the merged payload is preferred ONLY if it round-trips validation, else it falls back to the EXISTING rescue on the primary — never regress (`structured` always defined, no raw JSON leaks into any paragraph). Flag OFF → NO continuation, byte-identical rescue (1 salvaged block, no `answer` block). A complete `end_turn` answer never fires a continuation (the flag read is short-circuited on the happy path). `stopReason` is normalized for both providers (Anthropic `stop_reason`; OpenAI `finish_reason='length'`→`max_tokens`; absent→`other`, never spuriously `max_tokens`). **(b) Pending-row hygiene**: `loadPriorSessionContext(excludePending=true)` filters pending assistant rows so an empty `[previous · Foxy]` snippet can never leak; `excludePending=false` (default) is byte-identical (pending row still flows); a missing `pending` column → defensive fallback to the legacy unfiltered query + a category-only warn (`foxy_prior_session_pending_filter_failed`, no email/phone/name). On a safety hard-abstain the route UPDATEs the pre-inserted pending assistant row to `SAFE_ABSTAIN_MESSAGE` with `pending=false` (flag ON) / leaves it untouched (flag OFF); the abstain response shape+status (200, `response:''`, `groundingStatus:'hard-abstain'`) is never altered. | `supabase/functions/grounded-answer/__tests__/foxy-answer-continuation.test.ts` + `.../__tests__/claude.test.ts` (Deno, stopReason normalization); `apps/host/src/__tests__/api/foxy/prior-session-context-pending.test.ts`; `apps/host/src/__tests__/api/foxy/foxy-safety-block-pending-cleanup.test.ts` | E | P12, P13 |
+| REG-245 | `foxy_real_gradable_practice_oracle_gated_single_binding_anti_fake` | **(`ff_foxy_real_practice_v1`)** EVERY practice mcq is oracle-gated through the SAME machinery that gates `question_bank` inserts (REG-54): `gatePracticeMcqs` runs deterministic P6 checks first (a duplicate-options mcq is dropped with reason `p6_options_not_distinct` and NO LLM call), then the LLM grader, failing CLOSED per mcq on a grader throw (`llm_grader_unavailable`, drops that mcq, never aborts the batch); survivors are capped at `PRACTICE_MCQ_MAX_KEEP` (3) with a bounded oracle-attempt ceiling (LLM-cost cap). **Anti-fake guardrail**: `buildGatedPracticeResponse` rebuilds the turn to contain ONLY oracle-passed `mcq` blocks — any prose ("I generated 5 questions!") is STRIPPED so a turn can never CLAIM questions it didn't emit; returns null when nothing survives → the route serves the graceful bilingual fallback (never an ungated/garbage mcq); title+subject preserved, mcq order preserved, round-trips `FoxyResponseSchema`. **Single evidential binding (served-items invariant)**: the ONE server-held answer key is derived from `kept[0]`, which is the FIRST rendered mcq — so the key grades exactly the question shown, and only one evidential serve happens per turn. Flag OFF → directive selector returns the LEGACY `MODE_DIRECTIVES.practice` (5 pseudo-MCQ paragraphs) byte-identically; flag ON → the interactive `PRACTICE_MCQ_DIRECTIVE` (EXACTLY 3 mcq blocks, mastery-aware/ZPD-bounded difficulty, "do not claim to have created a quiz"); `quiz_me` still wins with `SINGLE_MCQ_DIRECTIVE`. | `apps/host/src/__tests__/lib/foxy/real-practice-gate.test.ts` | E | P6, P1, P2, P3 |
+| REG-246 | `foxy_teach_then_stop_meta_offer_suppressed_socratic_check_preserved` | **(`ff_foxy_learning_actions_v1`)** `TEACH_THEN_STOP_DIRECTIVE` bans the ASSISTANT'S own menu of next actions (forbids "Would you like…", "I can give you an example", "Shall I quiz…", "just let me know", "menu of next actions") because the on-screen action bar already offers them, while KEEPING exactly ONE substantive Socratic check-for-understanding question that asks the STUDENT to apply/restate/reason — its shape set by pedagogy mode (CHECK / SCAFFOLD / STRETCH) and never a yes/no "did you understand?". Bilingual (Hindi/Hinglish, technical terms — CBSE/NCERT/Bloom's — in English). It is threaded ONLY through the `mode_directive` channel (via `composeModeDirective`) on prose-teaching turns (mode ≠ practice) when the flag is ON; `quiz_me`/real-practice MCQ shapes still win; flag OFF is byte-identical to the legacy selector for every mode (no teach-then-stop text leaks). `FOXY_SAFETY_RAILS` (P12) and the `buildSystemPrompt` base persona are UNCHANGED — the directive is never baked into the rails/persona (verified for every valid mode). **ChatBubble UI**: flag OFF renders the legacy thumbs/Report bar byte-identically; flag ON renders the learning-action bar (Got it / Explain simpler / Show example / Quiz me + overflow Save/Report) dispatching `got_it`/`explain_simpler`/`show_example`/`quiz_me`/`save`, with NO bar on error-fallback or hard-abstain bubbles, bilingual labels, and ≥44px tap targets. | `apps/host/src/__tests__/api/foxy/teach-then-stop-directive.test.ts`; `apps/host/src/__tests__/foxy/learning-action-chat-bubble.test.tsx` | E | P7, P12 |
+
+### Invariants covered by this section
+
+- P8 (RLS / tenant boundary) — REG-243: a durable client-supplied thread id that
+  collides with another student's session (`23505`) NEVER reads or returns the
+  other tenant's row; the caller always gets a fresh server-generated id.
+- P13 (data privacy) — REG-243 collision warn carries `studentId` only; REG-244's
+  pending-filter fallback warn is category-only (no email/phone/name) and the
+  safety-abstain audit/response never leaks answer text.
+- P12 (AI safety) — REG-244: `structured` is always defined and the bounded
+  continuation can only improve, never regress, the existing safety net; REG-246:
+  `FOXY_SAFETY_RAILS` + the base persona are byte-identical, and no learning-action
+  bar renders on abstain/error surfaces.
+- P6 / P1 / P2 / P3 (question quality + scoring/anti-fake integrity) — REG-245:
+  every served practice mcq passes the P6 + REG-54 oracle, the single evidential
+  key grades exactly the question shown, and a turn can never fabricate a quiz claim.
+- P7 (bilingual) — REG-246: the teach-then-stop directive and the action-bar chips
+  carry EN + Devanagari, technical terms kept in English.
+
+### Catalog total
+
+Pre-REG-243: 209 entries (through REG-242, Foxy quota-remaining DB-authoritative).
+Adds REG-243 (durable conversation-thread continuity — client race fix + server
+upsert-by-client-id + cross-tenant 23505 isolation + no-reset-on-topic-change),
+REG-244 (long-answer integrity — bounded ONE-round max_tokens continuation +
+pending/empty assistant-row hygiene), REG-245 (real gradable practice — oracle-gated
+interactive MCQs + single evidential binding + anti-fake guardrail), REG-246
+(teach-then-stop — meta-offer suppressed, Socratic check preserved, FOXY_SAFETY_RAILS
+unchanged). All four flag-gated default-OFF and byte-identical on the OFF path.
+**Total catalog: 213 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-247 — Foxy Perception + event-data-layer: observability-only `learner.turn_classified` + fire-and-forget/fail-safe classifier (flag `ff_foxy_perception_v1`, default OFF) (2026-07-15)
+
+Source: Foxy Intelligent Learning OS, Phase 1C ("Perception classifier"). After
+building the reply, `/api/foxy` fires a per-turn PERCEPTION classifier that turns
+each tutoring turn into structured, PII-free signal (topic → chapter_concepts uuid,
+Bloom level, misconception code, struggle signal, learner intent) and publishes a
+`learner.turn_classified` OBSERVABILITY event. The LLM classification runs ONLY on
+the Python MOL service (`POST /v1/classify`, cheap gpt-4o-mini evaluation task); the
+Node route calls it FIRE-AND-FORGET (a `void`ed async IIFE in the post-response
+phase) so the student's answer is returned with ZERO added latency and a classifier
+failure can never affect the turn.
+
+Files: `packages/lib/src/ai/clients/python-mol.ts` (Node fail-closed client to the
+Python MOL service), `packages/lib/src/foxy/perception.ts` (`classifyTurn` — a PURE
+orchestrator around the Python call; parse/validate → codes/ids/enums; reuses the
+EXISTING `resolveLeadConceptId` topic resolver + `MISCONCEPTION_CODE_REGEX` ontology
+gate; NEVER calls an LLM itself), `apps/host/src/app/api/foxy/route.ts` (post-response
+fire-and-forget block), `python/services/ai/api/v1/classify.py` +
+`python/services/ai/business/foxy_perception/*` + `python/services/ai/api/main.py`
+(the classify endpoint + models/classifier), migration
+`20260715130000_seed_ff_foxy_perception_v1.sql` (seeds `ff_foxy_perception_v1`
+is_enabled=false / rollout=0). Committed foundation this rests on:
+`learner.turn_classified` event kind (`packages/lib/src/state/events/registry.ts` +
+Deno `supabase/functions/_shared/state-runtime/events-registry.ts`), the journey
+projector's `null` mapping (`packages/lib/src/state/journey/journey.ts`), and
+`learning_events.student_pk`.
+
+**Why.** Perception is the first "sensor" of the Foxy Learning OS: it must generate
+rich in-turn signal WITHOUT ever putting student text on the bus or in logs (P13),
+WITHOUT writing any mastery/p_know/error surface (the binding assessment learner-state
+contract — P1/P2/P3 must stay byte-identical), and WITHOUT adding any latency or
+failure surface to the tutoring turn. It is doubly dark in production: the
+`ff_foxy_perception_v1` flag is default-OFF AND the Node client no-ops until
+`PYTHON_AI_BASE_URL` is wired in — so even a flipped flag is a no-op without infra.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-247 | `foxy_perception_observability_only_fire_and_forget_pii_free` | **(a) Observability-only — NO mastery write, journey→null, zero subscribers**: `learner.turn_classified` is OBSERVABILITY-ONLY per the binding assessment learner-state contract — the journey projector maps it to `null` (off the timeline, never a milestone) and NO subscriber consumes it (it appears only in the event registry + journey projector, never in `mastery-state-writer` / `concept-mastery-projector` / `scheduled-actions-writer` / any projector), so it can never feed a mastery / p_know / error surface. P1/P2/P3 are byte-identical (perception never scores, awards XP, or runs anti-cheat). **(b) Fire-and-forget + fail-safe (flag OFF / no infra → byte-identical, no publish, no latency)**: the whole step (flag read → Python classify → publish) lives in a single `void`ed post-response async block; the reply is never awaited on it. Flag OFF → `classifyTurn` is NEVER called and NO `learner.turn_classified` is published, and the turn still returns a clean 200 (byte-identical to today). `PYTHON_AI_BASE_URL` empty/unset → `callPythonMol` returns null unconditionally with NO fetch attempted (architect kill switch), so `classifyTurn` returns null and nothing publishes. A null/garbage/non-object Python body, a non-2xx / network error / AbortController timeout, a throwing classifier, or a throwing topic-resolver all resolve to null (or a best-effort classification with `topicId:null`) and NEVER throw / NEVER affect the 200 reply / NEVER publish an invalid event; a missing assistant message id also skips the publish (the registry requires a UUID `messageId`). **(c) P13 — codes/ids/enums only, no student text on the bus or in logs**: the returned `TurnClassification` and the published event payload carry CODES/IDS/ENUMS ONLY (studentId/foxySessionId/messageId/subjectCode/grade/chapterNumber/topicId/bloomLevel/misconceptionCode/struggleSignal/intent) — the student's message text is sent ONLY to the internal Python classifier (same trust boundary as the tutor LLM call) and is never placed on the object, the event, or a log; the event schema strips unknown PII-shaped keys (messageText/email/phone/name) and Bloom is normalized to the canonical LOWERCASE taxonomy; a hallucinated free-text misconception is dropped by the ontology regex; the Node client + route log status/enums/booleans only. **(d) Node↔Deno registry parity (CI-enforced)**: `learner.turn_classified` is present in BOTH the Node event registry and the Deno mirror (`extractDenoAllEventKinds` + `extractDenoLiteralKinds`), pinned by the Deno-parity suite. **(e) Python classify contract**: the `/v1/classify` models + classifier + endpoint accept a scoped body and return the snake_case classification shape (33 Python tests: 9 models + 19 classifier + 5 integration). | `apps/host/src/__tests__/api/foxy/perception.test.ts` (classifyTurn orchestration + validation + fail-safe + P13); `apps/host/src/__tests__/api/foxy/python-mol-client.test.ts` (fail-closed client — empty `PYTHON_AI_BASE_URL`→null/no-fetch, header forwarding, non-2xx/network/timeout→null); `apps/host/src/__tests__/api/foxy/perception-fire-and-forget.test.ts` (route wiring — flag ON publishes, flag OFF byte-identical, null/throwing classifier no-op, P13 payload); `apps/host/src/__tests__/state/events-registry-turn-classified.test.ts` (schema codes/ids/enums-only + P5 grade-string + P13 key-stripping); `apps/host/src/__tests__/state/events-registry-deno-parity.test.ts` (Node↔Deno parity); `python/tests/unit/test_foxy_perception_models.py`, `python/tests/unit/test_foxy_perception_classifier.py`, `python/tests/integration/test_classify_endpoint.py` | E | P13, P12, P5, P1/P2/P3 (untouched — observability-only) |
+
+### Invariants covered by this section
+
+- P13 (data privacy) — the raw turn text is sent ONLY to the internal Python
+  classifier; the returned `TurnClassification`, the `learner.turn_classified`
+  event payload, and every Node/route log carry codes/ids/enums ONLY. The event
+  schema strips unknown PII-shaped keys, and a hallucinated free-text misconception
+  is dropped by the ontology regex before it can be emitted.
+- P12 (AI safety) — classification is internal (CBSE-scoped, age-appropriate by the
+  Python classifier's prompt + model) and publishes NOTHING to students; it is a
+  pure post-response observability telemetry step, doubly dark (flag OFF +
+  `PYTHON_AI_BASE_URL` unset) until deliberately enabled.
+- P5 (grade format) — the event schema requires a grade STRING "6".."12" (integer /
+  out-of-range grades rejected).
+- P1 / P2 / P3 (scoring / XP / anti-cheat) — UNTOUCHED. `learner.turn_classified`
+  is observability-only: journey→null, zero subscribers, no mastery write. Flag OFF
+  and no-infra paths render `/api/foxy` byte-identical to today with no added latency.
+
+### Catalog total
+
+Pre-REG-247: 213 entries (through REG-243..REG-246, Foxy Learning OS Phase 0.2/0.3/0.4).
+Adds REG-247 (Foxy Perception + event-data-layer — `learner.turn_classified`
+observability-only [journey→null, zero subscribers, no mastery write] + fire-and-forget/
+fail-safe classifier [flag OFF or empty `PYTHON_AI_BASE_URL` → byte-identical, no
+publish, no added latency] + P13 codes/ids/enums-only + CI-enforced Node↔Deno registry
+parity; flag `ff_foxy_perception_v1`, default OFF).
+**Total catalog: 214 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-252 — unconditional, FLAG-INDEPENDENT anti-fake-quiz-claim backstop: Foxy never ships "Generated N quiz questions." with no questions (2026-07-15)
+
+Source: Foxy "fake action" fix. A quiz/practice turn could surface the
+student-facing sentence "Generated 5 quiz questions." while the actual validated
+questions lived in `metadata.questions` — which the legacy persist path drops.
+The student saw a CLAIM of a quiz with ZERO questions to answer. REG-245 closed
+this ONLY on the flag-ON real-practice oracle path (`ff_foxy_real_practice_v1`);
+this entry pins the NEW UNCONDITIONAL backstop that runs on the flag-OFF / legacy
+paths regardless of ANY feature flag. Assessment gave APPROVE-WITH-CONDITIONS on
+the fix; these tests are the conditions.
+
+Files: `packages/lib/src/foxy/anti-fake-quiz-claim.ts` (`stripFakeQuizClaim(text)
+→ {claimOnly, text}` + `QUIZ_CLAIM_FALLBACK_TEXT` — pure, deterministic,
+never-throws detector: `claimOnly` is true only when the text matches a
+"generated/created/prepared/here-are N questions"-style claim [EN + Hindi/
+Devanagari, danda-aware] AND carries < 3 MCQ option markers [`A)`/`(a)`/`1.`] AND
+< 2 question marks), `packages/lib/src/ai/workflows/quiz-generate.ts`
+(`renderQuizQuestionsText()` renders real `QuizQuestion[]` — bilingual header, 4
+lettered options, inline `Answers / उत्तर` key — or returns `QUIZ_CLAIM_FALLBACK_TEXT`
+when 0 survive P6 validation; assessment fixed the n===1 singular grammar),
+`apps/host/src/app/api/foxy/_lib/legacy-flow.ts` (`persistLegacyFoxyResponse`
+strips a claim-only turn to the bilingual fallback in BOTH the wire `response` and
+the persisted `foxy_chat_messages.content`, flag-independent — the one gate BOTH
+legacy call sites flow through), `apps/host/src/app/api/foxy/route.ts` (new
+`else if (isPracticeTurn)` branch ~:2380 strips a claim-only flag-OFF practice turn
+→ `buildQuizMeFallbackResponse(subject)`).
+
+**Why.** A tutor asserting it did something it did NOT surface is a "fake action":
+it erodes trust and, for a quiz, means the student is handed a phantom
+assessment (P6 "question quality" — a served quiz turn must actually carry
+answerable questions; P1-adjacent — a claimed-but-absent quiz cannot be graded).
+The fix is DEFENSE-IN-DEPTH across 4 layers so a claim-with-no-questions can never
+reach a student on ANY path: (1) the render layer never emits a bare claim, (2)
+the legacy persist gate strips it, (3) the flag-OFF practice route branch strips
+it, (4) the pure detector under all three is EN+Hindi and passes real questions
+through untouched. The fallback (`QUIZ_CLAIM_FALLBACK_TEXT`) is bilingual (P7).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-252 | `foxy_unconditional_anti_fake_quiz_claim_backstop_flag_independent` | **(a) Pure detector** (`stripFakeQuizClaim`): EN "Generated 5 quiz questions." (and "I have created a quiz with 5 questions") with no options → `claimOnly:true`, `text === QUIZ_CLAIM_FALLBACK_TEXT`; the SAME "Here are N questions" claim BACKED by real A)/B)/C)/D) options → `claimOnly:false`, passes through byte-identical; Hindi "5 प्रश्न बनाए।" (danda-aware) claim-only → stripped; normal teaching prose → not stripped; empty/whitespace/non-string (undefined/null/number) → defensively `claimOnly:false`, never throws; `QUIZ_CLAIM_FALLBACK_TEXT` is bilingual (EN + Devanagari) and self-stable (feeding it back → `claimOnly:false`, no strip loop). **Two INTENTIONAL narrow false-positive boundaries assessment flagged, PINNED as documented:** a claim + exactly TWO numbered imperative questions with no "?" (2 option markers < the 3-marker floor) is STILL stripped; a Hindi claim + Devanagari-lettered options (क)/ख)/ग)/घ), which the Latin-only `[A-Da-d1-4]` evidence detector doesn't recognize) is STILL stripped — over-stripping here is strictly safer than shipping a phantom quiz, and pinning them makes any future widening of the evidence detector a deliberate reviewed change. **(b) Render/workflow** (`renderQuizQuestionsText` via `runQuizGenerateWorkflow`, real `validateQuizQuestions`): a validated multi-question set renders REAL questions (bilingual plural header "Here are 4 practice questions" + "(4 अभ्यास प्रश्न", 4 lettered options, "Answers / उत्तर:" key) that passes the backstop (`claimOnly:false`) and is never a bare "Generated N" claim; the n===1 degraded path (1 survives P6) renders SINGULAR grammar ("Here is 1 practice question … attempt it … check the answer below", no plural leak, "(1 अभ्यास प्रश्न"); 0 survivors → `response === QUIZ_CLAIM_FALLBACK_TEXT` with `metadata.questions` empty and `validationErrors` non-empty. **(c) Legacy persist** (`persistLegacyFoxyResponse`, flag-independent): a claim-only `legacy.response` → the returned wire `response` AND the persisted `foxy_chat_messages.content` assistant row are BOTH `QUIZ_CLAIM_FALLBACK_TEXT` (never the claim); a real-question turn (A)/B)/C)/D)) passes through UNTOUCHED in both surfaces; NO feature flag is consulted on this path (`isFeatureEnabled` never called). **(d) Route flag-OFF practice branch** (`else if (isPracticeTurn)`, mirrored with the real `denormalizeFoxyResponse` + `stripFakeQuizClaim` + `buildQuizMeFallbackResponse`): a claim-only STRUCTURED turn AND a claim-only GROUNDED answer (structured null) are both swapped for `buildQuizMeFallbackResponse(subject)` (mcq-free, `FoxyResponseSchema`-valid, bilingual EN+Hinglish, and itself not a claim); a real practice structured turn (claim paragraph + 3 real mcq blocks → denormalizes with A)…D) markers) passes through UNTOUCHED (same payload reference flows on). | `apps/host/src/__tests__/lib/foxy/anti-fake-quiz-claim.test.ts` (detector unit + the 2 intentional-FP boundary pins + fallback bilingual/self-stable); `apps/host/src/__tests__/lib/ai/workflows/quiz-generate-anti-fake-render.test.ts` (multi-question real render + n===1 singular grammar + 0-survivors fallback); `apps/host/src/__tests__/api/foxy/legacy-flow-anti-fake.test.ts` (wire+persisted content both fallback, real-turn passthrough, flag-independence); `apps/host/src/__tests__/api/foxy/foxy-practice-flag-off-anti-fake.test.ts` (route branch — structured+grounded claim-only → fallback, real (A)-(D) turn passthrough) | E | P6, P1-adjacent, P7 |
+
+### Invariants covered by this section
+
+- P6 (question quality) — a served quiz/practice turn must actually CARRY
+  answerable questions. The backstop guarantees a "Generated N questions." claim
+  with no rendered questions is replaced by a graceful fallback on EVERY
+  non-oracle path (render, legacy persist, flag-OFF practice route branch), so a
+  phantom quiz can never reach a student. REG-245 covers the flag-ON oracle path;
+  REG-252 covers the unconditional flag-independent backstop underneath it.
+- P1-adjacent (score accuracy) — a claimed-but-absent quiz cannot be graded; by
+  refusing to surface a phantom quiz the platform never presents an ungradable
+  "assessment" to a student.
+- P7 (bilingual) — `QUIZ_CLAIM_FALLBACK_TEXT` (EN + Devanagari) and the route's
+  `buildQuizMeFallbackResponse` (EN + Hinglish CTA) are both bilingual, and the
+  n===1 render preserves correct singular grammar in both EN and Hindi.
+
+### Catalog total
+
+Pre-REG-252: 218 entries (through REG-251, RBI pre-debit notice audit-evidence).
+Adds REG-252 (unconditional flag-independent anti-fake-quiz-claim backstop — the
+4-layer defense [pure EN+Hindi detector + real-question render + legacy-persist
+strip in wire+persisted content + flag-OFF practice route branch] that guarantees
+Foxy never ships a "Generated N quiz questions." claim with no questions, plus the
+two intentional narrow false-positive boundaries assessment flagged; complements
+REG-245's flag-ON oracle path).
+**Total catalog: 219 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-253 — Foxy Mermaid diagram block (Wave 2): drawable structured block, grammar-allowlist + XSS-reject validation, lazy strict renderer, ASCII-ban directive flag-gated by `ff_foxy_diagrams_v1` (2026-07-15)
+
+Source: Foxy Pedagogy Wave 2 "real diagrams, never text-art". Foxy used to "draw"
+diagrams as ASCII / box-drawing text-art inside paragraph/step text — unreadable
+on a 4G phone and un-teacherly. Wave 2 adds a NEW drawable structured block
+`{ type:'mermaid', code:string(1..2000), title?:string(<=120) }` that renders as a
+real, colorful SVG diagram, plus a flag-gated prompt directive that BANS ASCII art
+and routes each visual need to the right block (drawable → `mermaid`, real figure →
+`diagram` retrieval, equation → `math`). The ai-engineer added the schema/prompt
+(prompt parity already green) and the frontend added the renderer; neither had
+dedicated mermaid tests. This entry pins the block end-to-end.
+
+Files under test: `packages/lib/src/foxy/schema.ts` (`mermaid` block in
+`FoxyBlockSchema`/`FoxyResponseSchema` superRefine + `validateMermaidCode` +
+`MERMAID_ALLOWED_HEADERS` [13 headers] + `isFoxyMermaidBlock`/`FoxyMermaidBlock`),
+`supabase/functions/grounded-answer/structured-schema.ts` (Deno mirror
+`validateFoxyResponse` + `denormalizeFoxyResponse`),
+`packages/lib/src/foxy/denormalize.ts` (Node denormalize → title or "[diagram]",
+never raw source), `packages/ui/src/foxy/FoxyStructuredRenderer.tsx` (`MermaidBlock`
+— lazy `import('mermaid')`, `securityLevel:'strict'`, `mermaid.parse(code,
+{suppressErrors:true})` guard, loading/ready/error states, bilingual
+`chrome.diagramFailed`/`diagramLoading`), `packages/lib/src/foxy/prompt-sections.ts`
+(`DIAGRAM_DIRECTIVE` + `composeModeDirective`), `apps/host/src/app/api/foxy/route.ts`
+(mode_directive selector; diagram flag read scoped to `mode !== 'practice'`).
+
+**Why.** The `mermaid` block is the ONLY structured block whose `code` is a diagram
+PROGRAM a client renderer executes, so it needs two independent gates: (1) a hard
+grammar-allowlist + XSS-reject at the schema layer (an unknown/hostile diagram type,
+`<script`, `javascript:`, a line-anchored `click ` interaction callback, or a
+`%%{init ...}` override of `htmlLabels`/`securityLevel` is REJECTED before it can
+reach a renderer — P6 output quality + P12 AI safety), and (2) a lazy, strict
+renderer (mermaid pulled via dynamic `import()` so it never enters the shared/first-
+load bundle — P10; run with `securityLevel:'strict'` and `parse`-guarded so a bad
+spec degrades to a quiet bilingual note — P7/P12, never a thrown exception or raw
+diagram source shown to a student). The ASCII-ban `DIAGRAM_DIRECTIVE` is additive
+and flag-gated (`ff_foxy_diagrams_v1`, default OFF): flag OFF → mode_directive is
+byte-identical to today; the directive lives OUTSIDE the parity-locked
+`FOXY_STRUCTURED_OUTPUT_PROMPT` and outside `FOXY_SAFETY_RAILS`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-253 | `foxy_mermaid_block_grammar_allowlist_xss_reject_lazy_strict_renderer_ascii_ban_flag_gated` | **(a) Schema accept/reject matrix** (`FoxyBlockSchema`/`FoxyResponseSchema` + `validateMermaidCode` + `isFoxyMermaidBlock`): a valid mermaid block of EACH of the 13 allowlisted headers (flowchart/graph/sequenceDiagram/classDiagram/stateDiagram/stateDiagram-v2/erDiagram/mindmap/pie/timeline/journey/quadrantChart/gitGraph) is accepted (with/without title, Hindi labels, benign `%%{init theme}`, a `[Click here]` LABEL that is NOT a line-anchored callback, code at the 2000 cap, title at the 120 cap); REJECTS empty/whitespace/oversize(>2000) code, a non-allowlisted first token, `<script`, `javascript:`, a line-anchored `click ` callback, `%%{init ... htmlLabels}` and `... securityLevel` overrides, title>120, `text`/`latex`/mcq-fields on a mermaid block, and `code`/`title` on a non-mermaid (paragraph/math) block; `isFoxyMermaidBlock` narrows a valid block true and returns false for empty/absent code or a non-mermaid block. The Deno mirror `validateFoxyResponse` re-runs the same accept + mermaid-specific reject matrix and AGREES (allowlist + `<script`/`javascript:`/`click`/`%%{init}` + text/latex-on-mermaid + oversize). **KNOWN, PINNED Node↔Deno drift (reported to ai-engineer):** the Deno mirror does NOT forbid mermaid-only fields (`code`/`title`) on a non-mermaid block while Zod does — inert at render time (only mermaid-typed blocks reach MermaidBlock), pinned so a future mirror fix flips the pin. **(b) Denormalize** (Node `denormalizeFoxyResponse` + Deno mirror): a mermaid block WITH a title → the legacy TEXT line is the title verbatim; WITHOUT a title (or whitespace-only) → the literal "[diagram]"; NEVER the raw mermaid `code` (no `flowchart`/`Evaporation`/source leak into the resume TEXT column). **(c) Renderer smoke** (`MermaidBlock` via `FoxyStructuredRenderer`, dynamic `import('mermaid')` mocked): valid code → loading (`Drawing diagram…`) then ready — the SVG returned by `mermaid.render` is injected, `role="img"` aria-label = title (or the generic "Diagram" label), title becomes the figcaption, render called with the exact validated code; `parse` returns false → 'error' shows the bilingual `diagramFailed` fallback (EN "Diagram couldn't be drawn"; Hindi "डायग्राम नहीं बन पाया" under `isHi`, no EN leak) and `render` is NOT called; empty code → error WITHOUT loading mermaid (`parse`/`render` never called); a mermaid block missing `code` routes through the guard's null branch → safe fallback, never throws, the rest of the renderer (response title) is unharmed; a `render()` throw also degrades to the error fallback. **(d) Flag gate** (`ff_foxy_diagrams_v1`, mode_directive selector mirror): flag OFF → mode_directive is BYTE-IDENTICAL to the pre-Wave-2 selector for every mode (with learning-actions flag both OFF and ON), no `DIAGRAM DIRECTIVE` marker leaks; flag ON on a prose-teaching turn (learn/explain/revise/doubt/homework/explorer) → `DIAGRAM_DIRECTIVE` is injected (verbatim when learning-actions OFF; composed `TEACH_THEN_STOP_DIRECTIVE\n\nDIAGRAM_DIRECTIVE` when both ON); a `practice` turn / `quiz_me` / real-practice NEVER get the directive (MCQ shapes win, and the route skips the flag read on practice); `DIAGRAM_DIRECTIVE` bans ASCII/text-art, routes to mermaid/diagram/math blocks, lists the 13 headers, states the 1..2000 bound, forbids `<script`/`javascript:`/`click`/`%%{init`, is bilingual (Hindi/Hinglish/CBSE), and is NOT baked into `FOXY_STRUCTURED_OUTPUT_PROMPT` / `FOXY_SAFETY_RAILS` / the `buildSystemPrompt` base persona for any mode. | `apps/host/src/__tests__/lib/foxy/mermaid-schema.test.ts` (schema accept/reject matrix + guard + `validateMermaidCode` + Deno mirror parity + pinned drift); `apps/host/src/__tests__/lib/foxy/mermaid-denormalize.test.ts` (Node + Deno denormalize → title/"[diagram]", never raw source); `apps/host/src/__tests__/foxy/mermaid-block.test.tsx` (renderer smoke — loading/ready/error, bilingual fallback, guard null-safety); `apps/host/src/__tests__/api/foxy/diagram-directive.test.ts` (flag gate — byte-identical OFF, injected ON, practice/quiz_me/real-practice unaffected, directive content + parity-lock exclusion) | E | P6, P12, P7 |
+
+### Invariants covered by this section
+
+- P6 (question/output quality) — the drawable `mermaid` block passes a hard
+  grammar-allowlist (first token must be one of 13 diagram headers) + XSS/interaction
+  reject (`<script`/`javascript:`/line-anchored `click `/`%%{init}` override) at the
+  schema layer, so a malformed or hostile diagram program is never served.
+- P12 (AI safety) — defense-in-depth: the schema gate refuses hostile constructs
+  regardless, AND the renderer runs mermaid lazily with `securityLevel:'strict'` and
+  a `parse`-guard, degrading a bad spec to a quiet note rather than executing it or
+  showing raw diagram source. The ASCII-ban `DIAGRAM_DIRECTIVE` is additive and
+  flag-gated (default OFF) and never mutates the parity-locked prompt or safety rails.
+- P7 (bilingual) — the renderer's `diagramLoading`/`diagramFailed` chrome and the
+  `DIAGRAM_DIRECTIVE` label guidance are bilingual (EN + Devanagari), technical terms
+  (CBSE/NCERT/Bloom's) untranslated.
+
+### Catalog total
+
+Pre-REG-253: 219 entries (through REG-252, unconditional anti-fake-quiz-claim backstop).
+Adds REG-253 (Foxy Mermaid diagram block — drawable structured block with
+grammar-allowlist + XSS-reject validation [Node Zod + Deno mirror], title/"[diagram]"
+denormalize that never leaks raw source, lazy strict `securityLevel:'strict'` renderer
+with bilingual failure fallback, and the ASCII-ban `DIAGRAM_DIRECTIVE` flag-gated by
+`ff_foxy_diagrams_v1` [byte-identical when OFF]; documents one pinned Node↔Deno mirror
+parity gap on mermaid-only-fields-on-other-blocks reported to ai-engineer).
+**Total catalog: 220 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-254 — Foxy Perception keyless Cloud Run invoker-token mint (Vercel-OIDC → GCP Workload Identity Federation): fail-closed/dormant, header separation, P13 no-token-in-logs (2026-07-15)
+
+Source: Foxy Perception (Phase 1C) armed-auth follow-up. The Python MOL
+classifier now runs on Cloud Run with Invoker IAM enforced, so the Next.js-side
+Node client `packages/lib/src/ai/clients/python-mol.ts` must attach a
+Google-signed ID token (aud = the service URL) in `X-Serverless-Authorization`.
+architect added a KEYLESS mint — Vercel OIDC → Google STS (Workload Identity
+Federation) → SA impersonation → `iamcredentials:generateIdToken` — with no JSON
+service-account key on Vercel. It is ADDITIVE and gated on four NON-SECRET env
+vars (`GCP_PROJECT_NUMBER`, `GCP_SERVICE_ACCOUNT_EMAIL`,
+`GCP_WORKLOAD_IDENTITY_POOL_ID`, `GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID`). This
+is the P14 testing-review condition on that auth change: before REG-254 only the
+DORMANT path was covered (empty `PYTHON_AI_BASE_URL` / no GCP_* → null, no
+fetch); the ARMED path was untested.
+
+Files under test: `packages/lib/src/ai/clients/python-mol.ts` (`callPythonMol` +
+the internal `readGcpWifConfig`/`mintCloudRunIdToken` — the four-var arm gate,
+`await import()` of `@vercel/oidc` + `google-auth-library` on the armed path
+ONLY, `ExternalAccountClient.fromJSON` STS/impersonation, explicit
+`generateIdToken` second hop, the independent `MINT_TIMEOUT_MS` (3s) race, and
+the `X-Serverless-Authorization` vs `Authorization` header separation).
+
+**Why.** The target service enforces Invoker IAM, so an unauthenticated request
+is a hard 403 — but perception is fire-and-forget best-effort, so a mint that
+cannot run must degrade to a silent no-op, NEVER a throw and NEVER an
+unauthenticated call. Three failure surfaces are load-bearing: (1) running
+off-Vercel (e.g. the DEFERRED AWS ECS path) where `getVercelOidcToken` throws /
+the OIDC header is absent; (2) STS/impersonation or `generateIdToken` non-2xx;
+(3) a slow Google auth hop that must be bounded independently of the request
+timeout. All three must return `null` with no fetch. The student JWT in
+`Authorization` must be byte-for-byte untouched (the Google token rides a
+SEPARATE header). P13: a mint failure must log a static scope code + path only —
+never the token, the request body, or the failure detail. And the dormant path
+(GCP_* absent) must be byte-identical to before — the heavy deps must never be
+dynamic-imported, so they can never enter the dormant path, the existing tests,
+or any client bundle (P10).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-254 | `foxy_python_mol_keyless_wif_invoker_mint_fail_closed_header_separation_p13` | **(a) Armed happy path**: with `PYTHON_AI_BASE_URL`-equivalent (`baseUrlOverride`) set AND all four `GCP_*` present, `getVercelOidcToken` resolves + `ExternalAccountClient.fromJSON` returns a client whose `request` (the explicit `generateIdToken` hop) resolves `{data:{token}}` → the SINGLE outbound `fetch` carries BOTH `X-Serverless-Authorization: Bearer <idToken>` AND the UNTOUCHED student `Authorization: Bearer student-jwt`; the `audience` passed to `generateIdToken` == the service ORIGIN (`https://py.example.com`, derived via `new URL(baseUrl).origin`, NOT base+path), the hop URL contains `:generateIdToken`, and the Vercel-OIDC subject-token supplier is actually consumed. **(b) Fail-closed — OIDC absent** (simulates off-Vercel/AWS ECS where `getVercelOidcToken` throws): `callPythonMol` returns `null`, NEVER throws, and NO `fetch` is sent to Cloud Run. **(c) Fail-closed — STS/impersonation or generateIdToken rejects (non-2xx)** → `null`, no fetch; **and generateIdToken 2xx but empty/absent token** → `null`, no fetch. **(d) Fail-closed — mint timeout**: the `generateIdToken` hop hangs → only the mint's internal 3s `MINT_TIMEOUT_MS` race can settle (fake timers advance 3000ms) → `null`, never throws, no fetch. **(e) Dormant unchanged**: `GCP_*` absent → the mint block is skipped, NO dynamic import is attempted (`getVercelOidcToken` and `ExternalAccountClient.fromJSON` mocks are never called), NO `X-Serverless-Authorization` header is set, and the student `Authorization` is forwarded — byte-identical to the pre-change legacy behavior (keeps the existing 7 dormant/forwarding/fail-safe tests green). **(f) P13**: on a mint failure whose thrown reason carries token- and body-shaped secrets, only `logger.warn('python_mol.mint_unavailable', { path })` is emitted — the aggregate of ALL logger calls (info/warn/error/debug) contains neither the leaked token string, the student body note, nor the student JWT. | `apps/host/src/__tests__/api/foxy/python-mol-client.test.ts` (dormant suite [pre-existing 7] + `keyless WIF Cloud Run invoker mint (REG-254)` describe: armed happy-path header-separation + aud=origin, OIDC-absent, STS/generateIdToken reject, empty-token, mint-timeout via fake timers, P13 no-token/body-in-logs, and the dormant no-dynamic-import pin) | E | P13, P12, P9-adjacent (Invoker-IAM fail-closed), P10 (armed deps dynamic-imported only) |
+
+### Invariants covered by this section
+
+- P13 (data privacy) — a mint failure logs a STATIC scope code + non-PII path
+  only; the token, the request body, and the raw failure detail never reach the
+  logger (asserted over the union of all four logger levels).
+- P12 (AI safety, fail-closed posture) — a down/absent/slow Google auth hop, an
+  off-Vercel runtime, or an Invoker-IAM-enforced service the client cannot
+  authenticate to is a SILENT no-op (`null`, no fetch), never a degraded turn
+  and never an unauthenticated request; the whole mint is bounded by an
+  independent 3s timeout so it can never wedge perception.
+- Header separation — the Google-signed Cloud Run invoker token rides
+  `X-Serverless-Authorization`; the student Supabase JWT on `Authorization` is
+  byte-for-byte untouched, so the Python service still runs its own
+  `require_active_student` verification on the real student identity.
+- P10 (bundle budget) — `@vercel/oidc` + `google-auth-library` are
+  `await import()`-ed on the armed path ONLY; the dormant path never touches
+  them (pinned by the "no dynamic import attempted" assertion), so they cannot
+  enter the dormant path or any client bundle.
+
+### Catalog total
+
+Pre-REG-254: 220 entries (through REG-253, Foxy Mermaid diagram block).
+Adds REG-254 (Foxy Perception keyless Vercel-OIDC → GCP-WIF Cloud Run
+invoker-token mint — armed happy-path header separation [`X-Serverless-
+Authorization` vs untouched `Authorization`] + aud=service-origin, fail-closed on
+OIDC-absent / STS+generateIdToken failure / empty-token / mint-timeout, dormant
+no-dynamic-import byte-identity, and P13 no-token/body-in-logs).
+**Total catalog: 221 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-255 — quiz-generator RAG retrieval single-source pin: unified `_shared/rag/retrieve.ts` only (deprecated `_shared/retrieval.ts` banned) + selectRAGQuestions P6 dormancy tombstone (2026-07-15)
+
+Static import-contract canary on the 2026-07-15 quiz-generator RAG
+consolidation. quiz-generator previously imported `retrieveChunks` from the
+deprecated `_shared/retrieval.ts`, whose primary RPC `match_rag_chunks_v2` was
+never applied to production — the Q&A source silently degraded to the legacy
+`match_rag_chunks` fallback (no Q&A columns) and yielded zero questions.
+
+Pins: (1) no import of `_shared/retrieval.ts` anywhere under
+`supabase/functions/quiz-generator/`; (2) `index.ts` consumes only the local
+adapter `./retrieval.ts` → unified `retrieve()` with caller `'quiz-generator'`,
+rerank false; (3) qa-only TS filter (`question_text` present,
+`content_type !== 'qa'` dropped) compensating for the missing `contentType`
+passthrough; (4) adapter never-throws (`{chunks: [], error}` degradation);
+(5) `selectRAGQuestions()` call site stays commented out — RAG Q&A rows carry
+options `'[]'` / `correct_answer_index` 0, so re-enabling without a non-MCQ
+`question_mode` gate violates P6; re-enablement requires assessment-approved
+grading oracle (or oracle-gated QA→MCQ transform) + full quiz-generation review
+chain (ai-engineer, assessment, testing).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-255 | `quiz_generator_rag_single_source_pin_and_selectRAGQuestions_p6_dormancy` | (1) No file under `supabase/functions/quiz-generator/` imports the deprecated `_shared/retrieval.ts`; (2) `index.ts` consumes only the local adapter `./retrieval.ts`, which delegates to the unified `_shared/rag/retrieve.ts` `retrieve()` with caller `'quiz-generator'` and rerank false; (3) the qa-only TS filter drops chunks without `question_text` / with `content_type !== 'qa'`; (4) the adapter never throws — retrieval failure degrades to `{chunks: [], error}`; (5) the `selectRAGQuestions()` call site remains commented out (P6 dormancy tombstone). | `apps/host/src/__tests__/edge-functions/quiz-generator-rag-consolidation.test.ts` (7 tests) | E | P6, P12-adjacent; REG-50/REG-140-adjacent |
+
+### Invariants covered by this section
+
+- P6 (question quality) — the dormant `selectRAGQuestions()` tombstone pins that
+  RAG Q&A rows (options `'[]'`, `correct_answer_index` 0) cannot re-enter the
+  MCQ quiz path without a non-MCQ `question_mode` gate and an
+  assessment-approved grading oracle; the qa-only filter keeps non-Q&A chunks
+  from feeding P6-violating rows upstream.
+- P12-adjacent (single audited retrieval path for AI content) — quiz-generator
+  retrieval flows only through the unified `retrieve()` with caller
+  attribution; the deprecated silent-zero path cannot be reintroduced without
+  failing this canary. REG-50/REG-140-adjacent (unified retrieval contract).
+
+### Catalog total
+
+Pre-REG-255: 221 entries (through REG-254, Foxy Perception keyless WIF Cloud
+Run invoker-token mint).
+Adds REG-255 (quiz-generator RAG retrieval single-source pin — unified
+`_shared/rag/retrieve.ts` only via the local adapter with caller attribution +
+rerank false, deprecated `_shared/retrieval.ts` banned under quiz-generator/,
+qa-only TS filter, adapter never-throws degradation, and the
+`selectRAGQuestions()` P6 dormancy tombstone).
+**Total catalog: 222 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-257 — Foxy undelimited-LaTeX math normalization — explicit-command-triggered render-time correction + production canary-corpus immutability (2026-07-16)
+
+Source: math-format #1 (2026-07 production screenshots). The Foxy model
+sometimes emits inline math WITHOUT the required delimiters — e.g.
+`Example: (\frac{14}{15} \times \frac{25}{42})` instead of
+`\(\frac{14}{15} \times \frac{25}{42}\)` — so students saw raw LaTeX. The fix
+is a PURE render-time post-pass (`packages/ui/src/foxy/math-normalization.ts`:
+`containsAllowlistedMathCommand` trigger predicate + `splitUndelimitedMath` +
+`normalizeMathSegments`), wired into `InlineContent` in
+`packages/ui/src/foxy/FoxyStructuredRenderer.tsx` as
+`normalizeMathSegments(tokenizeInline(text))`.
+
+**Why this is a regression pin.** The pass runs over EVERY text span Foxy
+renders, so the binding CEO constraint is a NEGATIVE one: **no non-math
+production message may be altered by the pass.** The trigger fires ONLY on an
+explicit allowlisted backslash LaTeX command with a word boundary (`\frac`
+yes, `\franchise` never); bare `^`, `_`, `$`, brackets, `°`/`∠`/`÷`/`₹`
+symbols, ASCII-art underscores, and Devanagari prose must NEVER trigger it.
+The canary corpus (`apps/host/src/__tests__/fixtures/foxy-math-canary-corpus.json`
+— real sanitized production Foxy messages, P13: `{ provenance, math: [16],
+nonMath: [25] }`; `nonMath` contains zero backslashes by construction) pins
+that constraint against production reality, and iterates the fixture so
+future corpus additions are covered automatically. If a nonMath excerpt is
+ever altered, that is a REAL defect in the trigger — fix the pass, never the
+fixture.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-257a | `undelimited_math_normalization_trigger_span_acceptance_failsafe` | (1) TRIGGER: fires only on allowlisted backslash commands with a word boundary; NEVER on bare `^`/`_`/`$`/brackets (`snake_case_name`, `x^2 …`, `price is $5`, `array[i]_index`) or non-allowlisted commands (`\franchise`/`\fraction`/`\lefty`). (2) SPAN: paren pseudo-delimiters stripped; maximal contiguous math run captured; adjacent prose/bare numbers/trailing sentence punctuation never swallowed; `(a+b)(c+d)`-style non-wrapping parens preserved. (3) ACCEPTANCE: the 5 exact production screenshot strings (incl. `(\frac{14}{15} \times \frac{25}{42})`) render `.katex` + `.mfrac` stacked fractions with zero `<code>` fallback, no raw `\frac`/`\times` in visible text, prose byte-exact — across paragraph/example/step/answer/exam_tip/definition/question/mcq blocks; code blocks stay raw. (4) BYTE-IDENTITY: properly-delimited math (`\(..\)`, `$..$`, `$$..$$`, `\[..\]`) and command-free prose pass through reference-equal. (5) FAIL-SAFE (P12): a malformed undelimited span (`\frac{1}{`) degrades to the existing `<code>` fallback — never throws, never blanks the chat. | `apps/host/src/__tests__/foxy/undelimited-math-normalization.test.tsx` (39 tests) | E | P12, P6-adjacent, P7-neutral (no user-facing strings) |
+| REG-257b | `math_canary_corpus_nonmath_immutability_and_math_detection` | (1) NON-MATH IMMUTABILITY (the load-bearing pin): for EVERY `nonMath` excerpt — `containsAllowlistedMathCommand(excerpt) === false` AND `normalizeMathSegments(tokenizeInline(excerpt))` returns the ORIGINAL segment array (reference-equal untouched fast-path) with no in-place mutation (deep-equal to an independent tokenization); `splitUndelimitedMath` is likewise a single-text-segment no-op. Iterated over the fixture — future corpus additions are auto-covered. (2) MATH DETECTION: every `math` excerpt yields >=1 math segment through the full pipeline; excerpts carrying an allowlisted command OUTSIDE proper delimiters (>=2 pinned, incl. the named `3.5 \times 100 = 350` and `\frac{1}{4} + \frac{1}{2}` cases) gain strictly MORE math segments while every tokenizer-extracted delimited math segment passes through by object reference; properly-delimited-only excerpts return reference-equal (no double conversion, segment counts stable). (3) FIXTURE INTEGRITY GUARDS: JSON parses into `{ provenance, math[], nonMath[] }` of non-empty strings; provenance records sanitization (P13); size floors >=15 math / >=25 nonMath; every nonMath excerpt contains ZERO backslash characters; the two named undelimited cases remain present — all fail loudly if the fixture is gutted. | `apps/host/src/__tests__/foxy/math-canary-corpus.test.ts` (64 tests) + `apps/host/src/__tests__/fixtures/foxy-math-canary-corpus.json` | E | P12, P13, P6-adjacent |
+
+### Invariants covered by this section
+
+- P12 (AI safety, fail-safe rendering) — the produced math segments render
+  through the existing KaTeX path (`throwOnError: false` + `<code>` fallback):
+  a bad or malformed undelimited span can degrade but can never throw or blank
+  the student chat; the trigger is deliberately narrow (explicit allowlisted
+  command only) so model prose can never be mangled into math.
+- P13 (data privacy) — the canary corpus is built from sanitized production
+  Foxy messages; the provenance string records the sanitization and the test
+  pins that record, so an unsanitized fixture swap fails the guard.
+- P6-adjacent (display correctness) — served math content must DISPLAY as
+  math: the screenshot strings render stacked fractions (`.mfrac`), raw
+  LaTeX never leaks to visible text, and already-delimited math is never
+  double-converted.
+- CEO negative constraint — bare `^`, `_`, `$` never trigger; no non-math
+  production message is altered by the pass (reference-equality pinned over
+  all 25 real prod nonMath excerpts, auto-extending to corpus additions).
+
+### Catalog total
+
+Pre-REG-257: 223 entries (through REG-256, teacher-skills eval harness pins).
+Adds REG-257 (Foxy undelimited-LaTeX math normalization —
+explicit-command-triggered render-time correction + production canary-corpus
+immutability: screenshot fixture `14/15 × 25/42` renders stacked fractions,
+no non-math prod message altered [reference-equal untouched fast-path over
+the whole nonMath corpus], bare `^`/`_`/`$` never trigger, delimited math
+never double-converted, and loud fixture-integrity guards).
+**Total catalog: 224 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-258 — Foxy math-format house style (Wave B): flag-OFF byte-identity, band-uniformity-until-harness-scores, rubric v2 math criteria, seed OFF (2026-07-16)
+
+Source: math-format #2/#3 (Wave B, branch `feat/foxy-math-format-v2`). Wave A
+(REG-257) fixed the RENDERER; Wave B improves what the model EMITS.
+`MATH_FORMAT_DIRECTIVE` (`packages/lib/src/foxy/prompt-sections.ts`) pins the
+CEO-approved house style — worked examples/derivations as numbered "step"
+blocks (one transformation each) alternating with display "math" blocks;
+tall/stacked math never inline; inline `\( ... \)` properly delimited;
+undelimited LaTeX and plain-parentheses pseudo-delimiters banned; bilingual P7
+note. Injected via the `mode_directive` channel in
+`apps/host/src/app/api/foxy/route.ts` (~:1839) as a THIRD compose, LAST after
+teach-then-stop + diagram, ONLY when `ff_foxy_math_format_v2` is ON and the
+turn is prose-teaching. The scoring side: `quality-eval.ts` RUBRIC_VERSION
+v1→v2 — scaffold_fidelity gains 3 math-format criteria + an explicit
+skip-if-no-math instruction (the 4-key judge JSON contract is UNCHANGED).
+
+**Why this is a regression pin.** (1) The flag is seeded OFF: until an
+operator flips it, every Foxy prompt must be BYTE-IDENTICAL to the pre-Wave-B
+double-composed selector — any drift is a silent prompt change to every
+student turn. (2) CEO constraint (2026-07-16): the '6-8' and '9-12' grade
+bands return IDENTICAL directive text until the eval harness can score
+variants — a premature band divergence would ship an unscored pedagogy change.
+(3) The rubric bump re-opens recent messages for v2 scoring; if the criteria
+or the 4-key contract drift, the nightly judge harness silently mis-scores.
+(4) The seed must keep the REG-125 canonical shape or it walls staging.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-258 | `foxy_math_format_v2_flag_off_byte_identity_band_uniformity_rubric_v2_seed_off` | **(a) Flag-OFF byte-identity** (triple-compose route-selector mirror, kept in sync with route.ts ~:1839): with `ff_foxy_math_format_v2` OFF, the composed `mode_directive` equals the pre-Wave-B double-composed selector (base → teach-then-stop → diagram) for EVERY mode × learning-actions × diagrams flag state (7×2×2), and for quiz_me / real-practice; no `MATH FORMAT DIRECTIVE` marker leaks. **(b) Flag-ON injection, composed LAST**: prose-teaching modes (learn/explain/revise/doubt/homework/explorer) get `MATH_FORMAT_DIRECTIVE` verbatim when other flags are OFF, and the exact `TEACH_THEN_STOP_DIRECTIVE\n\nDIAGRAM_DIRECTIVE\n\nMATH_FORMAT_DIRECTIVE` order when all three are ON (endsWith the math directive); `quiz_me`, real-practice, and legacy `practice` turns NEVER get it (the route skips the flag read on practice). **(c) Band uniformity (CEO 2026-07-16)**: `buildMathFormatDirective('6-8') === buildMathFormatDirective('9-12') === MATH_FORMAT_DIRECTIVE`; `resolveGradeBand` consumes P5 grade STRINGS — "6"/"7"/"8"→'6-8', "9".."12"→'9-12', ""/garbage/"5"/"13"→'6-8'; grade "6" and "12" produce byte-identical directives through the selector. **(d) Directive content**: 14/15 × 25/42 worked-cancellation few-shot ending in 5/9 (structured step/math block shapes); undelimited-LaTeX ban; plain-parentheses pseudo-delimiter ban ("( x = 2 )" is NOT math formatting); one-transformation-per-step structure; bilingual P7 note (Hindi/Hinglish; CBSE/NCERT/Bloom's stay English) — and ABSENT from the parity-locked `FOXY_STRUCTURED_OUTPUT_PROMPT`, `FOXY_SAFETY_RAILS`, and `buildSystemPrompt` output for every mode. **(e) Rubric v2**: `RUBRIC_VERSION === 'v2'`; `buildJudgeSystemPrompt()` carries the 3 math-format criteria under scaffold_fidelity (before age_appropriateness) — (i) derivations + tall/stacked math as standalone display equations not prose, with the flat-inline-equation non-penalise guard, (ii) proper `\( ... \)` delimiters penalising bare `\frac{1}{2}` and `( x = 2 )` pseudo-math, (iii) numbered short steps / one transformation per step / never a dense inline chain — plus skip-checks-(a)-(c)-entirely for non-math answers; judge JSON contract UNCHANGED (exactly the 4 score keys + notes in the prompt; `parseJudgeJson` accepts the 4-key object and nulls on a missing dimension). **(f) Seed OFF** (`20260716120000_seed_ff_foxy_math_format_v2.sql`, comment-stripped/string-blanked static scan): `to_regclass` fresh-DB guard; canonical REG-125 column shape (explicit list, `flag_name` first, `is_enabled`, `rollout_percentage`; never name/enabled); positional `'ff_foxy_math_format_v2', false, 0`; no `true` literal in executable SQL; `ON CONFLICT (flag_name) DO NOTHING` — never `DO UPDATE`, never `(name)`. | `apps/host/src/__tests__/api/foxy/math-format-directive.test.ts` (82 tests) | E | P12 (additive prompt directive only — rails/grounding untouched), P7 (bilingual note), P5 (grade-string band resolution), P6-adjacent (emitted math displays correctly), REG-125-adjacent (seed shape) |
+
+### Invariants covered by this section
+
+- Flag-OFF byte-identity — merging Wave B is a zero-behavior change: the
+  triple compose collapses to the pre-Wave-B selector for every mode and
+  upstream-flag state until an operator flips `ff_foxy_math_format_v2`.
+- CEO band-uniformity constraint — '6-8' and '9-12' return identical text;
+  bands may diverge ONLY once the eval harness can score variants. A failing
+  uniformity pin means someone shipped an unscored per-band pedagogy change.
+- P12 (AI safety) — the directive is additive via mode_directive only; the
+  parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT, FOXY_SAFETY_RAILS, and the base
+  persona are pinned clean of it.
+- Rubric v2 measurement integrity — the nightly judge scores the house style
+  under scaffold_fidelity without penalising non-math answers, and the 4-key
+  JSON contract (DB columns, composite weights) is unchanged.
+- REG-125 (seed shape) — the flag row seeds OFF in the canonical
+  flag_name/is_enabled shape with DO NOTHING conflict resolution.
+
+### Catalog total
+
+Pre-REG-258: 224 entries (through REG-257, Foxy undelimited-LaTeX math
+normalization). Adds REG-258 (Foxy math-format house style Wave B —
+flag-OFF byte-identity of the triple-composed mode_directive selector,
+MATH_FORMAT_DIRECTIVE composed LAST on prose-teaching turns only,
+band-uniformity-until-harness-scores, directive content + parity-lock
+exclusion, rubric v2 scaffold_fidelity math criteria with unchanged 4-key
+judge contract, and the default-OFF canonical seed).
+**Total catalog: 225 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
