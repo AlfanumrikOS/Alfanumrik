@@ -20,13 +20,18 @@ Install: registered as a Stop hook in `.claude/settings.json`.
 Runbook: `docs/runbooks/verify-before-stop-hook.md`.
 Requires no third-party packages. Windows-safe (explicit utf-8 I/O).
 """
+import io
 import json
 import sys
 import os
 import re
 import time
 
-LOG_PATH = os.path.join(".claude", "verification-log.jsonl")
+# Anchor the log under the project root — the hook's cwd is not guaranteed
+# to be the repo root, so a bare relative path could scatter logs anywhere.
+LOG_PATH = os.path.join(
+    os.environ.get("CLAUDE_PROJECT_DIR", "."), ".claude", "verification-log.jsonl"
+)
 
 # Distinctive Compact Report Format markers (see .claude/CLAUDE.md,
 # "Compact Report Format"). Chosen to be unlikely in ordinary prose.
@@ -40,7 +45,16 @@ REPORT_MARKERS = [
 
 def read_stdin_json():
     try:
-        return json.loads(sys.stdin.read())
+        # Read stdin as utf-8 explicitly (Windows consoles default to cp1252);
+        # fall back to the default stream if .buffer is unavailable in some
+        # exotic harness — fail open either way.
+        try:
+            stream = io.TextIOWrapper(
+                sys.stdin.buffer, encoding="utf-8", errors="replace"
+            )
+        except Exception:
+            stream = sys.stdin
+        return json.loads(stream.read())
     except Exception:
         return {}
 
@@ -66,9 +80,14 @@ def load_transcript_entries(transcript_path):
                 if not line:
                     continue
                 try:
-                    entries.append(json.loads(line))
+                    parsed = json.loads(line)
                 except Exception:
                     continue
+                # Valid JSON that isn't an object (string/number/null/array)
+                # would crash dict-consumers downstream — skip it here so
+                # every consumer sees dicts only.
+                if isinstance(parsed, dict):
+                    entries.append(parsed)
     except Exception:
         pass
     return entries
