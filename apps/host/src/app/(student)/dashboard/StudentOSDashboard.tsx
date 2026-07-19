@@ -33,7 +33,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { getNextTopics, getPendingParentLinks } from '@alfanumrik/lib/supabase';
+import { supabase, getNextTopics, getPendingParentLinks } from '@alfanumrik/lib/supabase';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { useCosmicLightSurface } from '@alfanumrik/lib/use-cosmic-light-surface';
 import { DashboardSkeleton } from '@alfanumrik/ui/Skeleton';
@@ -75,6 +75,28 @@ export default function StudentOSDashboard() {
   const handleRetry = useCallback(async () => {
     setRetrying(true);
     try {
+      // Re-trigger bootstrap to create the missing profile (not just re-fetch).
+      // The bootstrap route is idempotent — safe to call even if profile exists.
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (token && authUserId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const meta = user?.user_metadata ?? {};
+        await fetch('/api/auth/bootstrap', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            role: meta.role || 'student',
+            name: meta.name || 'Student',
+            grade: meta.grade || '9',
+            board: meta.board || 'CBSE',
+          }),
+        });
+      }
+      // Then refresh student data from DB
       if (typeof refreshStudent === 'function') {
         await refreshStudent();
       } else {
@@ -85,7 +107,7 @@ export default function StudentOSDashboard() {
     } finally {
       setRetrying(false);
     }
-  }, [refreshStudent]);
+  }, [refreshStudent, authUserId]);
 
   // Pending guardian-link requests awaiting this student's consent. The card
   // self-hides when the list is empty (PendingLinkApproval returns null), so

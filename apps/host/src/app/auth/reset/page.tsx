@@ -24,47 +24,67 @@ export default function ResetPasswordPage() {
     // 1. URL hash tokens (set by /auth/confirm or /auth/callback) — detectSessionInUrl picks these up
     // 2. localStorage (if SDK already stored a session)
     // 3. Network call to Supabase (if cookies are set by middleware)
+    //
+    // On slow Indian 4G (2-5 Mbps, per P10), the Supabase SDK's detectSessionInUrl
+    // may take several seconds to process the URL hash. We poll every 500ms for up
+    // to 8s to give it sufficient headroom.
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let resolved = false;
+
+    const resolve = () => {
+      if (resolved) return;
+      resolved = true;
+      if (pollTimer) clearInterval(pollTimer);
+      setHasSession(true);
+      setChecking(false);
+    };
+
     const checkSession = async () => {
       // Method 1: Check if client SDK already has a session (from localStorage)
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        setHasSession(true);
-        setChecking(false);
-        return;
-      }
+      if (session) { resolve(); return; }
 
       // Method 2: Try to get user via network call (authenticates using token if available)
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setHasSession(true);
-          setChecking(false);
-          return;
-        }
+        if (user) { resolve(); return; }
       } catch {
         // getUser failed — no session available via this method
       }
 
-      // No session found yet — wait briefly for onAuthStateChange to fire
-      // (detectSessionInUrl processes the URL hash asynchronously)
-      setTimeout(() => {
-        setChecking(false);
-      }, 2000);
+      // No session found yet — poll every 500ms for up to 8s while
+      // detectSessionInUrl processes the URL hash asynchronously.
+      const MAX_WAIT_MS = 8000;
+      const POLL_INTERVAL_MS = 500;
+      let elapsed = 0;
+      pollTimer = setInterval(async () => {
+        if (resolved) return;
+        elapsed += POLL_INTERVAL_MS;
+        try {
+          const { data: { session: s } } = await supabase.auth.getSession();
+          if (s) { resolve(); return; }
+        } catch { /* ignore — keep polling */ }
+        if (elapsed >= MAX_WAIT_MS) {
+          if (pollTimer) clearInterval(pollTimer);
+          if (!resolved) setChecking(false); // Shows "Invalid or Expired Link"
+        }
+      }, POLL_INTERVAL_MS);
     };
 
     // Listen for auth state change — INITIAL_SESSION fires when detectSessionInUrl
     // processes the hash tokens, PASSWORD_RECOVERY and SIGNED_IN cover other paths
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (session) {
-          setHasSession(true);
-          setChecking(false);
-        }
+        if (session) resolve();
       }
     });
 
     checkSession();
-    return () => subscription.unsubscribe();
+    return () => {
+      resolved = true;
+      if (pollTimer) clearInterval(pollTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const resetPassword = async () => {
@@ -108,6 +128,14 @@ export default function ResetPasswordPage() {
     setLoading(false);
   };
 
+  /* Auto-redirect to login after success */
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => router.replace('/login'), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [success, router]);
+
   if (checking) return <LoadingFoxy />;
 
   return (
@@ -136,8 +164,8 @@ export default function ResetPasswordPage() {
             </h2>
             <p style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, marginBottom: 20 }}>
               {isHi
-                ? 'आपका पासवर्ड सफलतापूर्वक बदल दिया गया है। अब आप नए पासवर्ड से लॉगिन कर सकते हैं।'
-                : 'Your password has been changed successfully. You can now log in with your new password.'}
+                ? 'आपका पासवर्ड सफलतापूर्वक बदल दिया गया है। 3 सेकंड में लॉगिन पर जा रहे हैं...'
+                : 'Your password has been changed successfully. Redirecting to login in 3 seconds...'}
             </p>
             <Button fullWidth onClick={() => router.replace('/login')}>
               {isHi ? 'लॉगिन करें' : 'Log In'} &rarr;
