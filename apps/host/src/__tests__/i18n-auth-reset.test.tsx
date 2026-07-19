@@ -42,15 +42,17 @@ describe('/auth/reset — i18n (P7)', () => {
     vi.resetModules();
     const { default: ResetPasswordPage } = await import('@/app/auth/reset/page');
     render(<ResetPasswordPage />);
+    // The page polls for a session for up to 8s before showing the invalid-link
+    // state. waitFor timeout must exceed the poll duration.
     await waitFor(
       () => expect(screen.getByText(/invalid or expired link/i)).toBeTruthy(),
-      { timeout: 3500 },
+      { timeout: 9500 },
     );
     expect(screen.getByText(/this password reset link has expired/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /go to login/i })).toBeTruthy();
     // No Hindi string should appear
     expect(screen.queryByText(/अमान्य/)).toBeNull();
-  }, 10000);
+  }, 15000);
 
   it('renders Hindi copy when isHi = true', async () => {
     mockIsHi.value = true;
@@ -59,11 +61,11 @@ describe('/auth/reset — i18n (P7)', () => {
     render(<ResetPasswordPage />);
     await waitFor(
       () => expect(screen.getByText(/अमान्य या समाप्त लिंक/)).toBeTruthy(),
-      { timeout: 3500 },
+      { timeout: 9500 },
     );
     expect(screen.getByText(/यह पासवर्ड रीसेट लिंक समाप्त हो चुका है/)).toBeTruthy();
     expect(screen.getByRole('button', { name: /लॉगिन पर जाएँ/ })).toBeTruthy();
     // No English string should appear for the localized copy
     expect(screen.queryByText(/invalid or expired link/i)).toBeNull();
-  }, 10000);
+  }, 15000);
 });
