@@ -65,3 +65,11 @@ scripts/_tmp_*.ts
 # scripts/knowledge-audit/run-audit.ts for contaminated chapters. Operational
 # output, not source.
 scripts/knowledge-audit/output/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Binary documents (tracked going forward only — no history rewrite)
+Alfanumrik_PreSeed_Investor_Deck.pdf
+Alfanumrik_PreSeed_Investor_Deck.pptx
