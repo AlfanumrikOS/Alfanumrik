@@ -139,3 +139,65 @@ export const FOXY_RESPONSE_CACHE_L2_FLAGS = {
   /** Foxy grounded-answer shared Redis L2 cache — shadow/observability-only mode. Default off. */
   SHADOW_V1: 'ff_foxy_response_cache_l2_shadow_v1',
 } as const;
+
+/**
+ * Foxy Vertical Math rendering flag (2026-07-18).
+ *
+ *  ff_foxy_vertical_math_v1 — master switch for vertical math block rendering.
+ *    When ON, the VERTICAL_MATH_DIRECTIVE is appended to Foxy prompts for
+ *    math subjects (grades 6-8), instructing the model to emit `vertical_math`
+ *    blocks for arithmetic operations. When OFF, no vertical math blocks are
+ *    emitted and the model uses flat LaTeX (byte-identical to today). Default: false.
+ */
+export const FOXY_VERTICAL_MATH_FLAGS = {
+  V1: 'ff_foxy_vertical_math_v1',
+} as const;
+
+/**
+ * Foxy SST Maps rendering flag (2026-07-18).
+ *
+ *  ff_foxy_maps_v1 — master switch for geographic/political map blocks in SST.
+ *    When ON, the MAP_DIRECTIVE is appended to Foxy prompts for SST subjects,
+ *    instructing the model to emit `map` blocks for geography and historical
+ *    events with spatial context. When OFF, no map blocks are emitted and
+ *    SST renders text-only (byte-identical to today). Default: false.
+ */
+export const FOXY_MAPS_FLAGS = {
+  V1: 'ff_foxy_maps_v1',
+} as const;
+
+/**
+ * Foxy Engagement Dashboard flag (2026-07-18).
+ *
+ *  ff_engagement_dashboard_v1 — master switch for the student-facing progress
+ *    dashboard at /progress/dashboard. When OFF, the page is not accessible
+ *    (byte-identical to today). Default: false.
+ */
+export const FOXY_ENGAGEMENT_DASHBOARD_FLAGS = {
+  V1: 'ff_engagement_dashboard_v1',
+} as const;
+
+/**
+ * Foxy Olympiad Mode flag (2026-07-18).
+ *
+ *  ff_foxy_olympiad_mode_v1 — master switch for the olympiad teaching mode.
+ *    When ON, 'olympiad' is available as a Foxy mode with competition-level
+ *    problems, Bloom analyze+ only, and Indian olympiad context (RMO, INMO,
+ *    NSEP). When OFF, olympiad mode is not available. Default: false.
+ */
+export const FOXY_OLYMPIAD_MODE_FLAGS = {
+  V1: 'ff_foxy_olympiad_mode_v1',
+} as const;
+
+/**
+ * Foxy Interactive Lesson Mode flag (2026-07-18).
+ *
+ *  ff_foxy_interactive_lesson_v1 — master switch for structured step-by-step
+ *    lesson flow with voice narration. Depends on voice playback (Phase 2).
+ *    When ON, 'lesson' is available as a Foxy mode with lesson_step progression,
+ *    check questions, and voice sync. When OFF, lesson mode is not available.
+ *    Default: false.
+ */
+export const FOXY_INTERACTIVE_LESSON_FLAGS = {
+  V1: 'ff_foxy_interactive_lesson_v1',
+} as const;

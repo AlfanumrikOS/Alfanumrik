@@ -86,6 +86,8 @@ export const FoxyBlockTypeEnum = z.enum([
   'diagram',
   'code',
   'mermaid',
+  'vertical_math',
+  'map',
 ]);
 
 /** Block types that require a non-empty `text` field (i.e. not math, not mcq, not diagram). */
@@ -243,6 +245,53 @@ const FoxyBlockBase = z.object({
     .string()
     .max(FOXY_MAX_MERMAID_TITLE_LEN, `title exceeds ${FOXY_MAX_MERMAID_TITLE_LEN} chars`)
     .optional(),
+  // ── Vertical-math-only fields ────────────────────────────────────────────────
+  // Present iff `type === 'vertical_math'`. Renders columnar arithmetic with
+  // right-aligned digits, carry rows, and intermediate steps.
+  operation: z
+    .enum(['addition', 'subtraction', 'multiplication', 'long_division'])
+    .optional(),
+  operands: z
+    .array(z.string().min(1).max(50))
+    .min(2, 'vertical_math requires at least 2 operands')
+    .max(10)
+    .optional(),
+  result: z.string().max(50).optional(),
+  carry_row: z.array(z.string().max(10)).optional(),
+  remainder: z.string().max(50).optional(),
+  intermediate_steps: z.array(z.string().max(100)).max(20).optional(),
+  // ── Map-only fields ──────────────────────────────────────────────────────────
+  // Present iff `type === 'map'`. Renders geographic/political/thematic maps.
+  map_type: z
+    .enum(['political', 'physical', 'thematic', 'historical'])
+    .optional(),
+  region: z.string().max(200).optional(),
+  markers: z
+    .array(
+      z.object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+        label: z.string().max(200),
+        description: z.string().max(500).optional(),
+      })
+    )
+    .max(50)
+    .optional(),
+  highlighted_regions: z.array(z.string().max(100)).max(50).optional(),
+  layers: z
+    .array(
+      z.enum([
+        'rivers',
+        'mountains',
+        'trade_routes',
+        'monsoon',
+        'rainfall',
+        'vegetation',
+        'minerals',
+      ])
+    )
+    .optional(),
+  map_title: z.string().max(200).optional(),
 });
 
 export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
@@ -443,8 +492,118 @@ export const FoxyBlockSchema = FoxyBlockBase.superRefine((block, ctx) => {
     return;
   }
 
-  // Non-math, non-mcq, non-diagram, non-mermaid types: text required; latex
-  // forbidden; mcq-only + mermaid-only fields forbidden.
+  if (type === 'vertical_math') {
+    // Vertical math blocks: operation + operands + result required.
+    // text/latex/mcq/mermaid fields forbidden.
+    if (text !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['text'],
+        message: "blocks of type 'vertical_math' must not include a 'text' field",
+      });
+    }
+    if (latex !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['latex'],
+        message: "blocks of type 'vertical_math' must not include a 'latex' field",
+      });
+    }
+    if (!block.operation) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['operation'],
+        message: "blocks of type 'vertical_math' require an 'operation' field",
+      });
+    }
+    if (!Array.isArray(block.operands) || block.operands.length < 2) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['operands'],
+        message: "blocks of type 'vertical_math' require at least 2 'operands'",
+      });
+    }
+    if (block.result === undefined || block.result.trim() === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['result'],
+        message: "blocks of type 'vertical_math' require a non-empty 'result'",
+      });
+    }
+    for (const f of MCQ_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type 'vertical_math' must not include '${f}'`,
+        });
+      }
+    }
+    for (const f of MERMAID_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type 'vertical_math' must not include '${f}'`,
+        });
+      }
+    }
+    return;
+  }
+
+  if (type === 'map') {
+    // Map blocks: map_type + region required. text/latex/mcq/mermaid forbidden.
+    if (text !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['text'],
+        message: "blocks of type 'map' must not include a 'text' field",
+      });
+    }
+    if (latex !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['latex'],
+        message: "blocks of type 'map' must not include a 'latex' field",
+      });
+    }
+    if (!block.map_type) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['map_type'],
+        message: "blocks of type 'map' require a 'map_type' field",
+      });
+    }
+    if (!block.region || block.region.trim() === '') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['region'],
+        message: "blocks of type 'map' require a non-empty 'region' field",
+      });
+    }
+    for (const f of MCQ_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type 'map' must not include '${f}'`,
+        });
+      }
+    }
+    for (const f of MERMAID_ONLY_FIELDS) {
+      if (block[f] !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [f],
+          message: `blocks of type 'map' must not include '${f}'`,
+        });
+      }
+    }
+    return;
+  }
+
+  // Non-math, non-mcq, non-diagram, non-mermaid, non-vertical_math, non-map
+  // types: text required; latex forbidden; mcq-only + mermaid-only fields forbidden.
   if (TEXT_BEARING_TYPES.has(type)) {
     if (text === undefined || text.trim() === '') {
       ctx.addIssue({
@@ -491,6 +650,16 @@ export const FoxySubjectEnum = z.enum([
   'general',
 ]);
 
+/** Lesson step enum for interactive lesson mode (Phase 6). */
+export const FoxyLessonStepEnum = z.enum([
+  'hook',
+  'explanation',
+  'worked_example',
+  'guided_practice',
+  'independent_practice',
+  'reflection',
+]);
+
 export const FoxyResponseSchema = z
   .object({
     title: z
@@ -502,6 +671,10 @@ export const FoxyResponseSchema = z
       .array(FoxyBlockSchema)
       .min(FOXY_MIN_BLOCKS, `at least ${FOXY_MIN_BLOCKS} block required`)
       .max(FOXY_MAX_BLOCKS, `at most ${FOXY_MAX_BLOCKS} blocks allowed`),
+    // ── Interactive lesson mode fields (Phase 6, optional) ─────────────────
+    lesson_step: FoxyLessonStepEnum.optional(),
+    check_question: FoxyBlockSchema.optional(),
+    auto_advance: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
     // Whole-payload size check. UTF-8 byte length, computed after parse.
@@ -533,6 +706,50 @@ export type FoxyResponse = z.infer<typeof FoxyResponseSchema>;
 export type FoxySubject = z.infer<typeof FoxySubjectEnum>;
 export type FoxyBloomLevel = z.infer<typeof FoxyBloomLevelEnum>;
 export type FoxyDifficulty = z.infer<typeof FoxyDifficultyEnum>;
+export type FoxyLessonStep = z.infer<typeof FoxyLessonStepEnum>;
+
+/** Narrowed type for a vertical math block. */
+export type FoxyVerticalMathBlock = {
+  type: 'vertical_math';
+  operation: 'addition' | 'subtraction' | 'multiplication' | 'long_division';
+  operands: string[];
+  result: string;
+  carry_row?: string[];
+  remainder?: string;
+  intermediate_steps?: string[];
+  label?: string;
+};
+
+/** Type guard: narrows a FoxyBlock to FoxyVerticalMathBlock. */
+export function isFoxyVerticalMathBlock(block: FoxyBlock): block is FoxyVerticalMathBlock {
+  return (
+    block.type === 'vertical_math' &&
+    typeof (block as { operation?: unknown }).operation === 'string' &&
+    Array.isArray((block as { operands?: unknown }).operands) &&
+    typeof (block as { result?: unknown }).result === 'string'
+  );
+}
+
+/** Narrowed type for a map block. */
+export type FoxyMapBlock = {
+  type: 'map';
+  map_type: 'political' | 'physical' | 'thematic' | 'historical';
+  region: string;
+  markers?: Array<{ lat: number; lng: number; label: string; description?: string }>;
+  highlighted_regions?: string[];
+  layers?: Array<'rivers' | 'mountains' | 'trade_routes' | 'monsoon' | 'rainfall' | 'vegetation' | 'minerals'>;
+  map_title?: string;
+  label?: string;
+};
+
+/** Type guard: narrows a FoxyBlock to FoxyMapBlock. */
+export function isFoxyMapBlock(block: FoxyBlock): block is FoxyMapBlock {
+  return (
+    block.type === 'map' &&
+    typeof (block as { map_type?: unknown }).map_type === 'string' &&
+    typeof (block as { region?: unknown }).region === 'string'
+  );
+}
 
 /**
  * Narrowed type for an MCQ block. Useful when a downstream consumer
@@ -954,7 +1171,25 @@ type FoxyResponse = {
         bloom_level?: "Remember"|"Understand"|"Apply"|"Analyze"|"Evaluate"|"Create",
         difficulty?: "easy"|"medium"|"hard",
         label?: string }
-  >
+    | { type: "vertical_math",                    // columnar arithmetic (only when VERTICAL MATH DIRECTIVE is active)
+        operation: "addition"|"subtraction"|"multiplication"|"long_division",
+        operands: string[],                       // at least 2 number strings
+        result: string,                           // answer string
+        carry_row?: string[],                     // carry digits for addition/subtraction
+        remainder?: string,                       // remainder for division
+        intermediate_steps?: string[],            // partial products or division steps
+        label?: string }
+    | { type: "map",                              // geographic/political map (only when MAP DIRECTIVE is active)
+        map_type: "political"|"physical"|"thematic"|"historical",
+        region: string,                           // e.g. "India", "South Asia"
+        map_title?: string,                       // display title
+        markers?: Array<{lat: number, lng: number, label: string, description?: string}>,
+        highlighted_regions?: string[],           // state/region names to highlight
+        layers?: Array<"rivers"|"mountains"|"trade_routes"|"monsoon"|"rainfall"|"vegetation"|"minerals"> }
+  >,
+  lesson_step?: "hook"|"explanation"|"worked_example"|"guided_practice"|"independent_practice"|"reflection",
+  check_question?: /* single block */,            // MCQ gating progression (lesson mode only)
+  auto_advance?: boolean                          // auto-advance after voice (lesson mode only)
 }
 
 Constraints:
