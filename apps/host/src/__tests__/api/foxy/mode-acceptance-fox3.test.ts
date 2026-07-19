@@ -105,6 +105,8 @@ describe('FOX-3 — accepted modes resolve to the intended template', () => {
       doubt: 'foxy_tutor_doubt_v1',
       homework: 'foxy_tutor_doubt_v1',
       explorer: 'foxy_tutor_teach_v1',
+      olympiad: 'foxy_tutor_teach_v1',
+      lesson: 'foxy_tutor_teach_v1',
     };
     for (const mode of VALID_MODES) {
       expect(selectFoxyPromptTemplate(resolveRequestedMode(mode))).toBe(

@@ -398,6 +398,13 @@
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
     },
     {
+      "path": "/api/foxy/voice",
+      "file": "apps/host/src/app/api/foxy/voice/route.ts",
+      "access": "student",
+      "owner": "foxy-backend",
+      "rationale": "Foxy voice TTS synthesis; requires foxy.chat permission (student-scoped)."
+    },
+    {
       "path": "/api/health",
       "file": "apps/host/src/app/api/health/route.ts",
       "access": "system",
@@ -1373,6 +1380,13 @@
       "access": "student",
       "owner": "student-learning-backend",
       "rationale": "Student-owned endpoint; access must derive from the authenticated student/session context."
+    },
+    {
+      "path": "/api/student/engagement",
+      "file": "apps/host/src/app/api/student/engagement/route.ts",
+      "access": "student",
+      "owner": "student-learning-backend",
+      "rationale": "Student engagement dashboard data; requires student.profile.read permission (student-scoped)."
     },
     {
       "path": "/api/student/exam-simulation",

@@ -44,7 +44,25 @@ type FoxyResponse = {
         bloom_level?: "Remember"|"Understand"|"Apply"|"Analyze"|"Evaluate"|"Create",
         difficulty?: "easy"|"medium"|"hard",
         label?: string }
-  >
+    | { type: "vertical_math",                    // columnar arithmetic (only when VERTICAL MATH DIRECTIVE is active)
+        operation: "addition"|"subtraction"|"multiplication"|"long_division",
+        operands: string[],                       // at least 2 number strings
+        result: string,                           // answer string
+        carry_row?: string[],                     // carry digits for addition/subtraction
+        remainder?: string,                       // remainder for division
+        intermediate_steps?: string[],            // partial products or division steps
+        label?: string }
+    | { type: "map",                              // geographic/political map (only when MAP DIRECTIVE is active)
+        map_type: "political"|"physical"|"thematic"|"historical",
+        region: string,                           // e.g. "India", "South Asia"
+        map_title?: string,                       // display title
+        markers?: Array<{lat: number, lng: number, label: string, description?: string}>,
+        highlighted_regions?: string[],           // state/region names to highlight
+        layers?: Array<"rivers"|"mountains"|"trade_routes"|"monsoon"|"rainfall"|"vegetation"|"minerals"> }
+  >,
+  lesson_step?: "hook"|"explanation"|"worked_example"|"guided_practice"|"independent_practice"|"reflection",
+  check_question?: /* single block */,            // MCQ gating progression (lesson mode only)
+  auto_advance?: boolean                          // auto-advance after voice (lesson mode only)
 }
 
 Constraints:
