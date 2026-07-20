@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import AdminShell, { useAdmin } from '../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { DataTable, type Column, DetailDrawer, StatusBadge } from '@alfanumrik/ui/admin-ui';
 import { toast } from '@alfanumrik/ui/ui/toast';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
@@ -54,7 +54,7 @@ function UsersContent() {
       const p = new URLSearchParams({ role: userRole, page: String(userPage), limit: String(PAGE_LIMIT) });
       if (userSearch) p.set('search', userSearch);
       const res = await apiFetch(`/api/super-admin/users?${p}`);
-      if (res.ok) { const d = await res.json(); setUsers(d.data || []); setUserTotal(d.total || 0); }
+      if (res.ok) { const d = await readAdminJson(res); setUsers(d.data || []); setUserTotal(d.total || 0); }
     } catch { /* */ }
     setLoading(false);
   }, [apiFetch, userRole, userPage, userSearch]);
@@ -84,10 +84,14 @@ function UsersContent() {
 
   const assignRole = async () => {
     if (!assignUserId || !assignRoleName) { toast.error('User ID and role name required'); return; }
-    const res = await apiFetch('/api/super-admin/roles', { method: 'POST', body: JSON.stringify({ auth_user_id: assignUserId, role_name: assignRoleName }) });
-    const d = await res.json();
-    if (!res.ok) { toast.error(d.error || 'Assign failed'); return; }
-    setAssignUserId(''); setAssignRoleName(''); fetchRoles();
+    try {
+      const res = await apiFetch('/api/super-admin/roles', { method: 'POST', body: JSON.stringify({ auth_user_id: assignUserId, role_name: assignRoleName }) });
+      const d = await readAdminJson(res);
+      if (!res.ok) { toast.error(d.error || 'Assign failed'); return; }
+      setAssignUserId(''); setAssignRoleName(''); fetchRoles();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Request failed');
+    }
   };
 
   const revokeRole = async (userRoleId: string) => {
@@ -104,7 +108,7 @@ function UsersContent() {
         method: 'POST',
         body: JSON.stringify({ role: testRole, name: testName, email: testEmail }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) {
         setTestResult(`Created! Password: ${d.password || 'Check email'}`);
         setTestName(''); setTestEmail('');

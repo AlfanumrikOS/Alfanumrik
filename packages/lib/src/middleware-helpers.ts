@@ -15,7 +15,10 @@
  *   - getUserRoleFromCache(userId) — cached primary role lookup for the
  *     server-side role-based route protection added in Layer 0.65 of the
  *     proxy. Short TTL (60s) so role changes take effect quickly after
- *     onboarding or admin grants.
+ *     onboarding or admin grants. Resolution consults admin_users (via the
+ *     get_admin_level RPC, migration 20260720150000) with precedence over
+ *     student/teacher/guardian, and returns the uncached ROLE_UNKNOWN
+ *     sentinel on transient probe failure (2026-07-20 super-admin RCA).
  */
 import type { Redis as RedisType } from '@upstash/redis';
 
@@ -30,6 +33,25 @@ export type MiddlewareRole =
   | 'admin'
   | 'super_admin'
   | 'none';
+
+/**
+ * Sentinel returned when role resolution could not produce a DEFINITIVE
+ * answer (any probe/RPC returned a transient error). Distinct from:
+ *   - a real MiddlewareRole (definitive, cacheable),
+ *   - 'none' (definitive "authenticated but not onboarded"),
+ *   - null (deterministic misconfig — Supabase env vars missing).
+ *
+ * 2026-07-20 super-admin route-gating RCA: previously a transient failure of
+ * the elevated-role probe was indistinguishable from "no elevated role", so
+ * an admin could be resolved (and CACHED for 60s) as 'student'/'none' and get
+ * bounced off /super-admin intermittently. 'unknown' is NEVER written to the
+ * cache — only definitive answers are.
+ */
+export const ROLE_UNKNOWN = 'unknown' as const;
+export type ResolvedMiddlewareRole = MiddlewareRole | typeof ROLE_UNKNOWN;
+
+/** Internal probe result: distinguishes "probe failed" from "definitively empty". */
+type ProbeResult<T> = { ok: true; value: T } | { ok: false };
 
 // ── Cache config ─────────────────────────────────────────────
 // 60s TTL: short enough that role changes (onboarding completion, admin grant)
@@ -95,19 +117,74 @@ function writeLocalRoleCache(userId: string, role: MiddlewareRole): void {
 
 // ── RPC lookup via PostgREST (Edge-safe, no node-only imports) ──────
 /**
- * Fetch the primary role for a user by calling the `get_user_role` RPC
- * through PostgREST with the service-role key. The RPC already considers
- * students, teachers, and guardians tables; it returns a JSONB object with
- * `primary_role` ("student" | "teacher" | "guardian" | "none").
+ * Resolve the effective role for a user by combining THREE probes (run in
+ * parallel — same latency as the old two-probe sequential path):
  *
- * Returns 'none' if the user has no role (e.g., not yet onboarded).
- * Returns null on network/DB errors so callers can fail-open.
+ *   1. `get_admin_level` RPC → `admin_users` (operational admin roster read
+ *      by `authorizeAdmin()`). HIGHEST precedence: an active admin row yields
+ *      'super_admin' (admin_level = 'super_admin') or 'admin' (any other
+ *      active admin_level) — even if the same auth user ALSO has a students/
+ *      teachers/guardians row. (2026-07-20 super-admin route-gating RCA: an
+ *      admin with a students row used to resolve to 'student' and get bounced
+ *      off /super-admin.)
+ *   2. `user_roles` probe → RBAC elevated roles (admin / super_admin /
+ *      institution_admin).
+ *   3. `get_user_role` RPC → primary role (student / teacher / guardian).
+ *
+ * Transient-failure discipline (RCA fix, half 2): if any probe needed for a
+ * definitive answer fails, return ROLE_UNKNOWN — never a demoted role. The
+ * caller MUST NOT cache 'unknown'. A definitive admin_users hit (probe 1)
+ * short-circuits: it cannot be demoted by a failure of the lower-precedence
+ * probes ('admin' and 'super_admin' are gating-equivalent under every
+ * ROUTE_ROLE_RULES entry and share the same destination).
+ *
+ * Returns 'none' if the user definitively has no role (not yet onboarded).
+ * Returns null only on deterministic misconfig (Supabase env vars missing)
+ * so callers can fail-open.
  */
-async function fetchPrimaryRole(userId: string): Promise<MiddlewareRole | null> {
+async function fetchPrimaryRole(userId: string): Promise<ResolvedMiddlewareRole | null> {
   const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!sbUrl || !serviceKey) return null;
 
+  const [adminProbe, elevatedProbe, primaryProbe] = await Promise.all([
+    fetchAdminLevel(userId, sbUrl, serviceKey),
+    fetchElevatedRole(userId, sbUrl, serviceKey),
+    fetchGetUserRolePrimary(userId, sbUrl, serviceKey),
+  ]);
+
+  // Precedence 1: active admin_users row (definitive, highest privilege).
+  if (adminProbe.ok && adminProbe.value !== null) {
+    return adminProbe.value === 'super_admin' ? 'super_admin' : 'admin';
+  }
+  // No definitive admin hit — if the admin probe FAILED we cannot rule out
+  // an admin row; do not demote. Uncached sentinel, retried next request.
+  if (!adminProbe.ok) return ROLE_UNKNOWN;
+
+  // Precedence 2: RBAC user_roles elevated role.
+  if (elevatedProbe.ok && elevatedProbe.value !== null) return elevatedProbe.value;
+  if (!elevatedProbe.ok) return ROLE_UNKNOWN;
+
+  // Precedence 3: primary role from get_user_role.
+  if (!primaryProbe.ok) return ROLE_UNKNOWN;
+  const primary = primaryProbe.value;
+  if (primary === 'student' || primary === 'teacher' || primary === 'guardian') {
+    return primary;
+  }
+  return 'none';
+}
+
+/**
+ * Call the `get_user_role` RPC through PostgREST with the service-role key.
+ * The RPC considers the students, teachers, and guardians tables; it returns
+ * a JSONB object with `primary_role` ("student" | "teacher" | "guardian" |
+ * "none"). ok:false on any transport/HTTP error (transient — do not cache).
+ */
+async function fetchGetUserRolePrimary(
+  userId: string,
+  sbUrl: string,
+  serviceKey: string
+): Promise<ProbeResult<string | undefined>> {
   try {
     const res = await fetch(`${sbUrl}/rest/v1/rpc/get_user_role`, {
       method: 'POST',
@@ -118,28 +195,57 @@ async function fetchPrimaryRole(userId: string): Promise<MiddlewareRole | null> 
       },
       body: JSON.stringify({ p_auth_user_id: userId }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { ok: false };
 
     const payload = (await res.json()) as {
       primary_role?: string;
       roles?: string[];
     } | null;
 
-    const primary = payload?.primary_role;
-
-    // Check for elevated roles (admin / super_admin / institution_admin).
-    // get_user_role does not currently return these — they live in the RBAC
-    // user_roles table. If the caller needs them, we probe the user_roles
-    // table and promote the result.
-    const elevated = await fetchElevatedRole(userId, sbUrl, serviceKey);
-    if (elevated) return elevated;
-
-    if (primary === 'student' || primary === 'teacher' || primary === 'guardian') {
-      return primary;
-    }
-    return 'none';
+    return { ok: true, value: payload?.primary_role };
   } catch {
-    return null;
+    return { ok: false };
+  }
+}
+
+/**
+ * Probe the `admin_users` table via the additive `get_admin_level` RPC
+ * (migration 20260720150000). Returns the active `admin_level` string, or
+ * null when the user definitively has no active admin row.
+ *
+ * Special case — RPC not yet deployed: PostgREST answers 404 (PGRST202) for
+ * a missing function. We treat that as a DEFINITIVE "no admin_users signal"
+ * (ok:true, value:null) rather than a transient error, so shipping this code
+ * ahead of the migration degrades gracefully to the legacy user_roles-based
+ * resolution instead of turning Layer 0.65 into a permanent 'unknown' no-op.
+ */
+async function fetchAdminLevel(
+  userId: string,
+  sbUrl: string,
+  serviceKey: string
+): Promise<ProbeResult<string | null>> {
+  try {
+    const res = await fetch(`${sbUrl}/rest/v1/rpc/get_admin_level`, {
+      method: 'POST',
+      headers: {
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_user_id: userId }),
+    });
+    if (res.status === 404) return { ok: true, value: null }; // RPC not deployed yet — legacy fallback.
+    if (!res.ok) return { ok: false };
+
+    // PostgREST returns a scalar-returning RPC's result as a bare JSON value
+    // ("admin_level string" or null).
+    const payload = (await res.json()) as unknown;
+    return {
+      ok: true,
+      value: typeof payload === 'string' && payload.length > 0 ? payload : null,
+    };
+  } catch {
+    return { ok: false };
   }
 }
 
@@ -148,12 +254,13 @@ async function fetchPrimaryRole(userId: string): Promise<MiddlewareRole | null> 
  * institution_admin). These roles are assigned via the RBAC system and
  * are NOT returned by get_user_role.  We check them explicitly so that
  * middleware can enforce /super-admin and /school-admin role gates.
+ * ok:false on any transport/HTTP error (transient — do not cache).
  */
 async function fetchElevatedRole(
   userId: string,
   sbUrl: string,
   serviceKey: string
-): Promise<MiddlewareRole | null> {
+): Promise<ProbeResult<MiddlewareRole | null>> {
   try {
     // Query: SELECT roles.name FROM user_roles JOIN roles ON roles.id = user_roles.role_id
     //        WHERE user_roles.auth_user_id = $1 AND user_roles.is_active = true
@@ -165,22 +272,22 @@ async function fetchElevatedRole(
         'Authorization': `Bearer ${serviceKey}`,
       },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { ok: false };
     const rows = (await res.json()) as Array<{ role?: { name?: string } | null }>;
-    if (!Array.isArray(rows) || rows.length === 0) return null;
+    if (!Array.isArray(rows) || rows.length === 0) return { ok: true, value: null };
 
     // Prefer highest-privilege role if user has multiple.
     const names = rows
       .map(r => r?.role?.name)
       .filter((n): n is string => typeof n === 'string');
 
-    if (names.includes('super_admin')) return 'super_admin';
-    if (names.includes('admin')) return 'admin';
-    if (names.includes('institution_admin')) return 'institution_admin';
-    // Fall through — no elevated role.
-    return null;
+    if (names.includes('super_admin')) return { ok: true, value: 'super_admin' };
+    if (names.includes('admin')) return { ok: true, value: 'admin' };
+    if (names.includes('institution_admin')) return { ok: true, value: 'institution_admin' };
+    // Fall through — definitively no elevated role.
+    return { ok: true, value: null };
   } catch {
-    return null;
+    return { ok: false };
   }
 }
 
@@ -191,11 +298,15 @@ async function fetchElevatedRole(
  *
  * @returns
  *   - 'student' | 'teacher' | 'guardian' | 'institution_admin' | 'admin' | 'super_admin'
- *     for authenticated users with a role,
- *   - 'none' for authenticated users who are not yet onboarded,
- *   - null on lookup errors (caller should fail-open — never lock out on infra error).
+ *     for authenticated users with a role (definitive — cached 60s),
+ *   - 'none' for authenticated users who are not yet onboarded (definitive — cached 60s),
+ *   - ROLE_UNKNOWN ('unknown') when any probe/RPC failed transiently — NEVER
+ *     cached, so the very next request re-resolves (caller must fail-open;
+ *     2026-07-20 RCA: caching transient failures caused 60s of intermittent
+ *     /super-admin bouncing),
+ *   - null on deterministic misconfig (env vars missing) — caller fails open.
  */
-export async function getUserRoleFromCache(userId: string): Promise<MiddlewareRole | null> {
+export async function getUserRoleFromCache(userId: string): Promise<ResolvedMiddlewareRole | null> {
   if (!userId) return null;
 
   // Tier 1: in-memory cache on this Vercel instance.
@@ -219,11 +330,17 @@ export async function getUserRoleFromCache(userId: string): Promise<MiddlewareRo
   // Tier 3: source of truth (PostgREST).
   const role = await fetchPrimaryRole(userId);
   if (role === null) {
-    // Lookup failed entirely — do NOT cache; propagate null so caller fails open.
+    // Deterministic misconfig (env missing) — do NOT cache; caller fails open.
     return null;
   }
+  if (role === ROLE_UNKNOWN) {
+    // Transient probe failure — do NOT cache (cache only definitive answers);
+    // propagate the sentinel so the caller fails open and the next request
+    // retries immediately instead of serving a stale/demoted role for 60s.
+    return ROLE_UNKNOWN;
+  }
 
-  // Write through both caches.
+  // Definitive answer — write through both caches.
   writeLocalRoleCache(userId, role);
   if (redis) {
     try {

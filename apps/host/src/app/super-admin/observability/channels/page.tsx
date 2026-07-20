@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import useSWR from 'swr';
-import AdminShell, { useAdmin } from '../../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../../_components/AdminShell';
 
 const colors = {
   bg: '#FFFFFF',
@@ -162,7 +162,7 @@ function ChannelsContent() {
       const res = await apiFetch(`/api/super-admin/observability/channels/${channelId}/test`, {
         method: 'POST',
       });
-      const json = await res.json();
+      const json = await readAdminJson(res);
       if (json.error) {
         setTestResults(prev => ({ ...prev, [channelId]: { ok: false, detail: json.error } }));
       } else {
@@ -183,7 +183,7 @@ function ChannelsContent() {
         body: JSON.stringify({ enabled: !channel.enabled }),
       });
       if (!res.ok) {
-        const json = await res.json();
+        const json = await readAdminJson(res);
         setActionError(json.error || 'Toggle failed');
         return;
       }
@@ -199,7 +199,7 @@ function ChannelsContent() {
         method: 'DELETE',
       });
       if (!res.ok) {
-        const json = await res.json();
+        const json = await readAdminJson(res);
         setActionError(json.error || 'Delete failed');
         return;
       }
@@ -232,7 +232,7 @@ function ChannelsContent() {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      const json = await res.json();
+      const json = await readAdminJson(res);
 
       if (!res.ok) {
         setFormError(json.error || 'Create failed');

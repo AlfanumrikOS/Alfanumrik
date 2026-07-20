@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import AdminShell, { useAdmin } from '../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { StatusBadge, DataTable, type Column, DetailDrawer } from '@alfanumrik/ui/admin-ui';
 
 /* ── Types ── */
@@ -87,7 +87,7 @@ function OAuthAppsContent() {
     try {
       const res = await apiFetch('/api/super-admin/oauth-apps?action=list');
       if (res.ok) {
-        const d = await res.json();
+        const d = await readAdminJson(res);
         setApps(d.data || []);
       }
     } catch { /* */ }
@@ -98,7 +98,7 @@ function OAuthAppsContent() {
     try {
       const res = await apiFetch('/api/super-admin/oauth-apps?action=list&status=pending');
       if (res.ok) {
-        const d = await res.json();
+        const d = await readAdminJson(res);
         setPendingApps(d.data || []);
       }
     } catch { /* */ }
@@ -116,7 +116,7 @@ function OAuthAppsContent() {
         method: 'POST',
         body: JSON.stringify({ action: 'approve_app', appId }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) {
         showMsg('App approved', 'success');
         fetchApps();
@@ -135,7 +135,7 @@ function OAuthAppsContent() {
         method: 'POST',
         body: JSON.stringify({ action: 'reject_app', appId, reason: rejectReason.trim() }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) {
         showMsg('App rejected', 'success');
         setRejectingId(null);
@@ -152,7 +152,7 @@ function OAuthAppsContent() {
         method: 'POST',
         body: JSON.stringify({ action: 'suspend_app', appId }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) {
         showMsg('App suspended', 'success');
         fetchApps();

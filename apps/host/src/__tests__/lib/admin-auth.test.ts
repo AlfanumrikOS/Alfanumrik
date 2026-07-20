@@ -20,7 +20,10 @@
  *     GoTrue failure, 401 when /auth/v1/user has no id, 403 when admin lookup
  *     returns empty (after fallback), 200 happy path with Bearer token,
  *     fallback path when service role returns empty but user-token retry
- *     succeeds, 500 on admin_users HTTP failure, 500 on uncaught throw
+ *     succeeds, 500 on admin_users HTTP failure, 500 on uncaught throw,
+ *     stale-Bearer → valid-cookie fallback (2026-07-20 RCA fix: cookie is the
+ *     single reliable source; deny only when every candidate fails GoTrue,
+ *     identical Bearer/cookie tokens deduped to one verification)
  *   - logAdminAction: silently succeeds; never throws on Supabase errors
  *   - logAdminAudit: no-op when env missing; sends POST when configured
  */
@@ -489,5 +492,83 @@ describe('authorizeAdmin', () => {
 
     const r = await authorizeAdmin(reqWith({ Cookie: cookie }), 'support');
     expect(r.authorized).toBe(true);
+  });
+
+  // ── 2026-07-20 RCA fix: stale-Bearer → cookie fallback ──────────────────
+  // The httpOnly sb-* cookie is the single reliable session source; a stale
+  // Bearer header (stranded localStorage copy) must not deny a request whose
+  // cookie session is still valid.
+
+  function reqWithBearerAndCookie(bearer: string, cookieAccessToken: string): NextRequest {
+    const cookieValue = encodeURIComponent(
+      JSON.stringify({ access_token: cookieAccessToken, token_type: 'bearer' }),
+    );
+    return reqWith({
+      Authorization: `Bearer ${bearer}`,
+      Cookie: `sb-test-auth-token=${cookieValue}`,
+    });
+  }
+
+  it('authorizes via the cookie session when the Bearer token is stale (GoTrue 401)', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      // GoTrue rejects the stale Bearer
+      .mockResolvedValueOnce(new Response('expired', { status: 401 }))
+      // GoTrue accepts the cookie token
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'u-4', email: 'd@x.com' }), { status: 200 }))
+      // admin_users lookup succeeds
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: 'admin-4', name: 'Dee', email: 'd@x.com', admin_level: 'super_admin',
+      }]), { status: 200 }));
+
+    const r = await authorizeAdmin(reqWithBearerAndCookie('stale-bearer', 'valid-cookie-token'), 'support');
+    expect(r.authorized).toBe(true);
+    if (r.authorized) {
+      expect(r.userId).toBe('u-4');
+      expect(r.adminLevel).toBe('super_admin');
+    }
+    // 3 fetches: failed Bearer verify, cookie verify, admin lookup.
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    // The second GoTrue call carried the cookie token.
+    const secondCallHeaders = (fetchSpy.mock.calls[1][1] as RequestInit).headers as Record<string, string>;
+    expect(secondCallHeaders['Authorization']).toBe('Bearer valid-cookie-token');
+  });
+
+  it('returns 401 ADMIN_SESSION_EXPIRED when BOTH Bearer and cookie tokens are stale', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('expired', { status: 401 }))
+      .mockResolvedValueOnce(new Response('expired', { status: 401 }));
+
+    const r = await authorizeAdmin(reqWithBearerAndCookie('stale-bearer', 'stale-cookie-token'), 'support');
+    expect(r.authorized).toBe(false);
+    if (!r.authorized) {
+      expect(r.response.status).toBe(401);
+      const body = await r.response.json();
+      expect(body.code).toBe('ADMIN_SESSION_EXPIRED');
+    }
+    // Both candidates verified against GoTrue; no admin lookup.
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not re-verify the cookie token when it is identical to the Bearer token', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('expired', { status: 401 }));
+
+    const r = await authorizeAdmin(reqWithBearerAndCookie('same-token', 'same-token'), 'support');
+    expect(r.authorized).toBe(false);
+    if (!r.authorized) {
+      const body = await r.response.json();
+      expect(body.code).toBe('ADMIN_SESSION_EXPIRED');
+    }
+    // Deduped: exactly one GoTrue verification for the identical token.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

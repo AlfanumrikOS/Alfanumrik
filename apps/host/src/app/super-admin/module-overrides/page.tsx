@@ -20,7 +20,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import AdminShell from '../_components/AdminShell';
+import AdminShell, { readAdminJson } from '../_components/AdminShell';
 import { adminHeaders, getAdminSecretFromSession } from '@alfanumrik/lib/admin-session';
 
 const colors = {
@@ -76,7 +76,7 @@ export default function ModuleOverridesPage() {
       const res = await fetch('/api/super-admin/module-overrides', {
         headers: adminHeaders(getAdminSecretFromSession()),
       });
-      const body = await res.json();
+      const body = await readAdminJson(res);
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
       }
@@ -122,7 +122,7 @@ export default function ModuleOverridesPage() {
           reason: nextState ? reason.trim() : null,
         }),
       });
-      const j = await res.json();
+      const j = await readAdminJson(res);
       if (!res.ok || !j.success) {
         throw new Error(j.error || `HTTP ${res.status}`);
       }

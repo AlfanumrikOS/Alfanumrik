@@ -91,6 +91,45 @@ function getSupabaseConfig() {
 // ─── Session-based admin auth (used by /api/super-admin/* routes) ─────────────
 
 /**
+ * Extract the access token from the httpOnly `sb-*-auth-token` cookie set by
+ * /api/super-admin/login (and refreshed by the proxy). Handles both the
+ * single-cookie JSON shape and the chunked `sb-...-auth-token.0/.1/...` shape.
+ * Returns null when no parseable session cookie is present.
+ */
+function extractCookieAccessToken(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null;
+  const cookies = Object.fromEntries(
+    cookieHeader.split(';').map(c => {
+      const [k, ...v] = c.trim().split('=');
+      return [k, v.join('=')];
+    })
+  );
+  const authCookieKey = Object.keys(cookies).find(k => /^sb-.+-auth-token/.test(k));
+  if (!authCookieKey) return null;
+  try {
+    const decoded = decodeURIComponent(cookies[authCookieKey]);
+    const parsed = JSON.parse(decoded);
+    return parsed?.access_token || parsed?.[0]?.access_token || null;
+  } catch {
+    const prefix = authCookieKey.replace(/\.\d+$/, '');
+    const chunks: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const chunk = cookies[`${prefix}.${i}`];
+      if (chunk) chunks.push(chunk);
+      else break;
+    }
+    if (chunks.length > 0) {
+      try {
+        const decoded = decodeURIComponent(chunks.join(''));
+        const parsed = JSON.parse(decoded);
+        return parsed?.access_token || null;
+      } catch { /* invalid cookie data */ }
+    }
+  }
+  return null;
+}
+
+/**
  * Verify that the request comes from an authenticated admin user.
  *
  * Phase G.1 (2026-05-17): accepts a `requiredLevel` argument. The caller's
@@ -127,66 +166,57 @@ export async function authorizeAdmin(
   }
 
   try {
-    // Extract token from Authorization header or session cookie
-    let accessToken: string | null = null;
+    // Collect candidate access tokens in priority order: Bearer header first
+    // (explicit caller intent), then the httpOnly sb-* session cookie.
+    //
+    // 2026-07-20 RCA fix (admin session split-brain): the httpOnly cookie is
+    // the single reliable session source; the Bearer header is an optional
+    // optimization the client attaches when it happens to hold a session.
+    // Previously a STALE Bearer short-circuited to 401 even when the request
+    // carried a VALID cookie session. Now each candidate is verified with
+    // GoTrue in order and we deny only when EVERY candidate fails. Deny codes
+    // and shapes are unchanged: ADMIN_NO_TOKEN when no candidate exists,
+    // otherwise the failure produced by the LAST candidate tried (the cookie,
+    // when both are present).
+    const candidates: string[] = [];
     const authHeader = request.headers.get('Authorization');
     if (authHeader?.startsWith('Bearer ')) {
-      accessToken = authHeader.slice(7);
+      candidates.push(authHeader.slice(7));
+    }
+    const cookieToken = extractCookieAccessToken(request.headers.get('Cookie'));
+    if (cookieToken && !candidates.includes(cookieToken)) {
+      candidates.push(cookieToken);
     }
 
-    if (!accessToken) {
-      const cookieHeader = request.headers.get('Cookie');
-      if (cookieHeader) {
-        const cookies = Object.fromEntries(
-          cookieHeader.split(';').map(c => {
-            const [k, ...v] = c.trim().split('=');
-            return [k, v.join('=')];
-          })
-        );
-        const authCookieKey = Object.keys(cookies).find(k => /^sb-.+-auth-token/.test(k));
-        if (authCookieKey) {
-          try {
-            const decoded = decodeURIComponent(cookies[authCookieKey]);
-            const parsed = JSON.parse(decoded);
-            accessToken = parsed?.access_token || parsed?.[0]?.access_token || null;
-          } catch {
-            const prefix = authCookieKey.replace(/\.\d+$/, '');
-            const chunks: string[] = [];
-            for (let i = 0; i < 10; i++) {
-              const chunk = cookies[`${prefix}.${i}`];
-              if (chunk) chunks.push(chunk);
-              else break;
-            }
-            if (chunks.length > 0) {
-              try {
-                const decoded = decodeURIComponent(chunks.join(''));
-                const parsed = JSON.parse(decoded);
-                accessToken = parsed?.access_token || null;
-              } catch { /* invalid cookie data */ }
-            }
-          }
-        }
-      }
-    }
-
-    if (!accessToken) {
+    if (candidates.length === 0) {
       return { authorized: false, response: NextResponse.json({ error: 'Please log in.', code: 'ADMIN_NO_TOKEN' }, { status: 401 }) };
     }
 
-    // Verify token with Supabase GoTrue
-    const userRes = await fetch(`${url}/auth/v1/user`, {
-      headers: { 'apikey': key, 'Authorization': `Bearer ${accessToken}` },
-    });
+    // Verify candidates with Supabase GoTrue; first valid one wins.
+    let userData: { id?: string; email?: string } | null = null;
+    let denial: AdminAuthFailure | null = null;
+    for (const candidate of candidates) {
+      const userRes = await fetch(`${url}/auth/v1/user`, {
+        headers: { 'apikey': key, 'Authorization': `Bearer ${candidate}` },
+      });
 
-    if (!userRes.ok) {
-      return { authorized: false, response: NextResponse.json({ error: 'Session expired. Please log in again.', code: 'ADMIN_SESSION_EXPIRED' }, { status: 401 }) };
+      if (!userRes.ok) {
+        denial = { authorized: false, response: NextResponse.json({ error: 'Session expired. Please log in again.', code: 'ADMIN_SESSION_EXPIRED' }, { status: 401 }) };
+        continue;
+      }
+
+      const parsed = await userRes.json();
+      if (!parsed?.id) {
+        denial = { authorized: false, response: NextResponse.json({ error: 'Invalid session.', code: 'ADMIN_INVALID_SESSION' }, { status: 401 }) };
+        continue;
+      }
+
+      userData = parsed;
+      break;
     }
 
-    const userData = await userRes.json();
-    const userId = userData.id;
-    if (!userId) {
-      return { authorized: false, response: NextResponse.json({ error: 'Invalid session.', code: 'ADMIN_INVALID_SESSION' }, { status: 401 }) };
-    }
+    if (!userData) return denial as AdminAuthFailure;
+    const userId = userData.id as string;
 
     // Look up admin_users table
     const adminQuery = `${url}/rest/v1/admin_users?select=id,name,email,admin_level&auth_user_id=eq.${userId}&is_active=eq.true&limit=1`;

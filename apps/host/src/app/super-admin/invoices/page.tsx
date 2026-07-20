@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import AdminShell, { useAdmin } from '../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { StatCard, StatusBadge, DataTable, type Column } from '@alfanumrik/ui/admin-ui';
 
 /* ─────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ function InvoicesContent() {
           period_end: genPeriodEnd,
         }),
       });
-      const json = await res.json();
+      const json = await readAdminJson(res);
       if (res.ok && json.success) {
         setGenMsg({ ok: true, text: `Invoice generated. Amount: ${Number(json.data?.amount_inr || 0).toLocaleString('en-IN')} INR` });
         fetchInvoices();

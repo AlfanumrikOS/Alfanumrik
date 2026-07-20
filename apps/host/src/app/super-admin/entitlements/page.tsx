@@ -27,7 +27,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import AdminShell, { useAdmin } from '../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { StatusBadge } from '@alfanumrik/ui/admin-ui';
 import {
@@ -256,7 +256,7 @@ function EntitlementsContent() {
       setAttachToContract(false);
       try {
         const res = await apiFetch(`/api/super-admin/entitlements?school_id=${encodeURIComponent(id)}`);
-        const body = await res.json();
+        const body = await readAdminJson(res);
         if (!res.ok || !body.success) {
           throw new Error(body.error || `HTTP ${res.status}`);
         }
@@ -401,7 +401,7 @@ function EntitlementsContent() {
           changes,
         }),
       });
-      const body = await res.json();
+      const body = await readAdminJson(res);
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
       }

@@ -11,7 +11,10 @@
  *       • Redis hit (env vars set, dynamic Redis import returns cached value)
  *       • PostgREST primary-role fetch (student / teacher / guardian / none)
  *       • PostgREST elevated-role probe (super_admin > admin > institution_admin)
- *       • RPC failure → null (fail-open)
+ *       • admin_users precedence via get_admin_level RPC (2026-07-20 RCA):
+ *         active admin row > user_roles elevated > primary; 404 = legacy fallback
+ *       • transient probe/RPC failure → ROLE_UNKNOWN sentinel, NEVER cached
+ *       • env vars missing → null (deterministic misconfig, fail-open)
  *   - invalidateUserRoleCache clears local + Redis entries
  */
 
@@ -215,14 +218,19 @@ describe('getUserRoleFromCache', () => {
     fetchSpy.mockRestore();
   });
 
-  it('returns null when the get_user_role RPC fails (fail-open)', async () => {
+  // INTENTIONAL BEHAVIOR CHANGE (2026-07-20 super-admin route-gating RCA):
+  // probe/RPC failures now return the ROLE_UNKNOWN sentinel instead of null.
+  // null is reserved for deterministic misconfig (env vars missing). Both are
+  // fail-open in the proxy; 'unknown' additionally guarantees the answer is
+  // NEVER cached, so transient failures cannot demote an admin for 60s.
+  it('returns ROLE_UNKNOWN when the role probes fail transiently (fail-open, uncached)', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       return new Response('{}', { status: 500 });
     });
 
-    const { getUserRoleFromCache } = await import('@alfanumrik/lib/middleware-helpers');
+    const { getUserRoleFromCache, ROLE_UNKNOWN } = await import('@alfanumrik/lib/middleware-helpers');
     const r = await getUserRoleFromCache('user-fail');
-    expect(r).toBeNull();
+    expect(r).toBe(ROLE_UNKNOWN);
     fetchSpy.mockRestore();
   });
 
@@ -253,6 +261,126 @@ describe('getUserRoleFromCache', () => {
     expect(r2).toBe('teacher');
     // Second call must not hit fetch — cached.
     expect(fetchSpy.mock.calls.length).toBe(fetchCallsAfterFirst);
+    fetchSpy.mockRestore();
+  });
+
+  // ── 2026-07-20 super-admin route-gating RCA — new coverage ─────────────
+  // admin_users precedence via the get_admin_level RPC + uncached 'unknown'.
+
+  it('promotes an active admin_users super_admin row over a students row (RCA repro)', async () => {
+    // The RCA case: auth user has BOTH an admin_users row and a students row.
+    // Pre-fix, resolution never consulted admin_users → 'student' → bounced
+    // off /super-admin. Post-fix, admin_users wins with top precedence.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      const u = String(url);
+      if (u.includes('/rpc/get_admin_level')) {
+        return new Response(JSON.stringify('super_admin'), { status: 200 });
+      }
+      if (u.includes('/rpc/get_user_role')) {
+        return new Response(JSON.stringify({ primary_role: 'student' }), { status: 200 });
+      }
+      if (u.includes('/user_roles?')) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    const { getUserRoleFromCache } = await import('@alfanumrik/lib/middleware-helpers');
+    const r = await getUserRoleFromCache('user-admin-with-student-row');
+    expect(r).toBe('super_admin');
+    fetchSpy.mockRestore();
+  });
+
+  it('maps any non-super_admin admin_users level (e.g. "support") to "admin"', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      const u = String(url);
+      if (u.includes('/rpc/get_admin_level')) {
+        return new Response(JSON.stringify('support'), { status: 200 });
+      }
+      if (u.includes('/rpc/get_user_role')) {
+        return new Response(JSON.stringify({ primary_role: 'teacher' }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { getUserRoleFromCache } = await import('@alfanumrik/lib/middleware-helpers');
+    const r = await getUserRoleFromCache('user-support-admin');
+    expect(r).toBe('admin');
+    fetchSpy.mockRestore();
+  });
+
+  it('treats a 404 from get_admin_level (RPC not deployed) as legacy fallback, not an error', async () => {
+    // File-only migration discipline: code can ship before the migration is
+    // applied. PostgREST answers 404 (PGRST202) for a missing function — that
+    // must resolve via the legacy get_user_role + user_roles path, NOT turn
+    // every lookup into 'unknown'.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      const u = String(url);
+      if (u.includes('/rpc/get_admin_level')) {
+        return new Response(JSON.stringify({ message: 'function not found' }), { status: 404 });
+      }
+      if (u.includes('/rpc/get_user_role')) {
+        return new Response(JSON.stringify({ primary_role: 'student' }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { getUserRoleFromCache } = await import('@alfanumrik/lib/middleware-helpers');
+    const r = await getUserRoleFromCache('user-rpc-not-deployed');
+    expect(r).toBe('student');
+    fetchSpy.mockRestore();
+  });
+
+  it('returns ROLE_UNKNOWN when only the user_roles probe fails (no silent demotion)', async () => {
+    // Pre-fix bug: a failed user_roles probe was indistinguishable from "no
+    // elevated role", so the primary role ('student') was returned AND cached
+    // for 60s — the intermittent-bounce half of the RCA.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      const u = String(url);
+      if (u.includes('/rpc/get_admin_level')) {
+        return new Response(JSON.stringify(null), { status: 200 });
+      }
+      if (u.includes('/rpc/get_user_role')) {
+        return new Response(JSON.stringify({ primary_role: 'student' }), { status: 200 });
+      }
+      if (u.includes('/user_roles?')) {
+        return new Response('error', { status: 503 });
+      }
+      return new Response('{}', { status: 200 });
+    });
+
+    const { getUserRoleFromCache, ROLE_UNKNOWN } = await import('@alfanumrik/lib/middleware-helpers');
+    const r = await getUserRoleFromCache('user-probe-flaky');
+    expect(r).toBe(ROLE_UNKNOWN);
+    fetchSpy.mockRestore();
+  });
+
+  it('does NOT cache ROLE_UNKNOWN: next call re-fetches and can return the real role', async () => {
+    let failFirst = true;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any) => {
+      const u = String(url);
+      if (u.includes('/rpc/get_admin_level')) {
+        if (failFirst) {
+          return new Response('error', { status: 503 });
+        }
+        return new Response(JSON.stringify('super_admin'), { status: 200 });
+      }
+      if (u.includes('/rpc/get_user_role')) {
+        return new Response(JSON.stringify({ primary_role: 'student' }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    const { getUserRoleFromCache, ROLE_UNKNOWN } = await import('@alfanumrik/lib/middleware-helpers');
+
+    const r1 = await getUserRoleFromCache('user-transient-then-ok');
+    expect(r1).toBe(ROLE_UNKNOWN);
+
+    // The transient failure clears; the very next call must NOT serve a
+    // cached 'unknown' (or a cached demoted role) — it re-resolves.
+    failFirst = false;
+    const r2 = await getUserRoleFromCache('user-transient-then-ok');
+    expect(r2).toBe('super_admin');
     fetchSpy.mockRestore();
   });
 

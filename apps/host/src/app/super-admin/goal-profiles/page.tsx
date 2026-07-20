@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { readAdminJson } from '../_components/AdminShell';
 import {
   buildExpandedPersona,
   type FoxyMode,
@@ -261,7 +262,7 @@ export default function GoalProfilesPage() {
     setError(null);
     try {
       const res = await fetch('/api/super-admin/goal-profiles');
-      const j: ApiResponse = await res.json();
+      const j = await readAdminJson<ApiResponse>(res);
       if (!res.ok || !j.success || !j.data) {
         setError(j.error ?? `request_failed_${res.status}`);
       } else {

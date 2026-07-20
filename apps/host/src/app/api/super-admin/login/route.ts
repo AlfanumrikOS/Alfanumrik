@@ -17,8 +17,16 @@
  * (for the lockout check) and audit_logs (for forensics, Phase G.4).
  *
  * NOT a server action — kept as POST route so the existing client login form
- * can submit to it via fetch without React-Server-Actions overhead. Returns
- * a Supabase session payload that the client sets on its supabase-js instance.
+ * can submit to it via fetch without React-Server-Actions overhead.
+ *
+ * 2026-07-20 RCA fix (admin session split-brain): this route previously ALSO
+ * returned the raw session tokens in the JSON body, which the login page fed
+ * to supabase.auth.setSession → a second localStorage copy of the SAME
+ * refresh-token family. Both stores auto-refreshed independently; refresh-token
+ * rotation stranded whichever store refreshed second (~2.5-min observed
+ * session life). The httpOnly sb-* cookie set below is now the SINGLE session
+ * source: the success body carries no tokens, the login page no longer calls
+ * setSession, and authorizeAdmin falls back from a stale Bearer to the cookie.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -292,20 +300,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 6. Establish the standard Supabase SSR cookie. The admin login page
-  // also hydrates its local supabase-js client, but localStorage is invisible
-  // to server component gates. The proxy refreshes this cookie on subsequent
-  // requests, so server authorization and client API calls share one session.
+  // ── 6. Establish the standard Supabase SSR cookie — the SINGLE session
+  // source for the super-admin console. The proxy refreshes this cookie on
+  // subsequent requests; AdminShell sends credentials: 'same-origin' and
+  // authorizeAdmin accepts the cookie, so no client-side session is needed.
+  // Deliberately NO tokens in the response body (see header comment): raw
+  // access/refresh tokens in JSON would let a client re-prime localStorage
+  // and recreate the dual-refresh split-brain this fix removes.
   const response = NextResponse.json({
     success: true,
-    session: {
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
-      expires_at: session.expires_at,
-      expires_in: session.expires_in,
-      token_type: session.token_type,
-      user: { id: userId, email: session.user?.email },
-    },
+    user: { id: userId, email: session.user?.email },
   });
   try {
     const ssr = createServerClient(url, anonKey, {

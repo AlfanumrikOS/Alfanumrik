@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@alfanumrik/lib/supabase';
 
 const colors = {
   bg: '#FFFFFF', surface: '#F9FAFB', border: '#E5E7EB', borderStrong: '#D1D5DB',
@@ -50,15 +49,16 @@ export default function AdminLoginPage() {
         return;
       }
 
-      // Hydrate the supabase-js client with the server-issued session so
-      // existing code (AdminShell, apiFetch) keeps working unchanged.
-      if (loginPayload?.session?.access_token && loginPayload?.session?.refresh_token) {
-        await supabase.auth.setSession({
-          access_token: loginPayload.session.access_token,
-          refresh_token: loginPayload.session.refresh_token,
-        });
-      }
-
+      // 2026-07-20 RCA fix (admin session split-brain): do NOT hydrate the
+      // browser supabase-js client here. Previously this page called
+      // supabase.auth.setSession with tokens from the login response, creating
+      // a localStorage copy of the SAME refresh-token family as the httpOnly
+      // sb-* cookie the server just set. Both stores auto-refreshed and
+      // stranded each other on rotation (~2.5-min observed session life).
+      // The httpOnly cookie is now the single session source: the login route
+      // no longer returns tokens, AdminShell probes a cookie-authenticated
+      // endpoint at bootstrap, and every apiFetch sends
+      // credentials: 'same-origin'. No client-side session is required.
       window.location.href = '/super-admin';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');

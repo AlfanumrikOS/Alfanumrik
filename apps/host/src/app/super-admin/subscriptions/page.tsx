@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import AdminShell, { useAdmin } from '../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { StatCard, StatusBadge, DetailDrawer } from '@alfanumrik/ui/admin-ui';
 import { PRICING, yearlyPerMonth } from '@alfanumrik/lib/plans';
 import PaymentOpsTab from './_components/PaymentOpsTab';
@@ -72,7 +72,7 @@ function SubscriptionsContent() {
         method: 'PATCH',
         body: JSON.stringify({ user_id: user.id, table: 'students', updates: { subscription_plan: newPlan } }),
       });
-      const json = await res.json();
+      const json = await readAdminJson(res);
       if (!res.ok) {
         if (isLookupOverride) setOverrideMsg({ ok: false, text: json.error || 'Override failed' });
       } else {

@@ -95,7 +95,18 @@ function FoxyQualityPageInner() {
     return <p className="text-muted-foreground">Loading quality scores…</p>;
   }
   if (error || !data) {
-    return <p className="text-danger">{error ?? 'No data'}</p>;
+    return (
+      <div>
+        <p className="text-danger">{error ?? 'No data'}</p>
+        <button
+          type="button"
+          onClick={fetchDashboard}
+          className="mt-3 rounded-md border border-surface-3 bg-surface-2 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-3"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   const deltaClass =
