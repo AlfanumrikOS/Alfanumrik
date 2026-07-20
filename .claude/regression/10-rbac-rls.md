@@ -850,3 +850,47 @@ flags list completeness — no silent truncation).
 **Total catalog: 250 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Protected-flag console guardrail + posture canary (2026-07-20 console bulk-enable incident) — REG-285..REG-286
+
+Source: 2026-07-20 console bulk-enable incident (branch
+`Alfanumrik/feature-flags-rca-repair-99efe1`). Minutes after the CEO-approved
+posture repair (migration 20260720110000) landed, an operator console
+bulk-enable re-armed 49 of the 52 forced-OFF flags at rollout 100 — including
+the P0 quiz-submit hardening pair and the four constitution-pinned Group A
+flags. Restored by migration 20260720130000_restore_approved_flag_posture.sql.
+These entries pin the two guardrails that make the incident class structurally
+non-repeatable: a typed-confirmation gate at the console API boundary
+(prevention) and a nightly posture-drift canary (detection).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-285 | `protected_flag_typed_confirmation_gate` | The super-admin feature-flags console API can never re-arm a protected flag by accident. Registry (`packages/lib/src/flags/protected-flags.ts`): exactly 72 enumerated flags across exactly 6 tiers (`p0_outage`, `p11_payment`, `ai_provider`, `constitution_pinned`, `staged_rollout`, `special_do_not_touch`); the P0 quiz-submit pair (`ff_server_only_quiz_submit`, `ff_v1_quiz_rpc_web_blocked`), the 4 constitution Group A flags (REG-124/126/131/175), and the 5 MoL program flags pinned to their tiers; every entry carries an EN reason + Devanagari `reasonHi` (P7 house shape); `EXPECTED_OFF_FLAGS` is exactly 53 unique names equal to migration 20260720110000 block (ii) ∪ {`ff_irt_question_selection`} PARSED FROM THE MIGRATION SQL (the TS list cannot drift from the CEO-approved SQL), disjoint from the 25-flag block-(i) ACTIVATE list (also parsed — must-be-OFF ∩ must-be-live = ∅), excluding the hard-exclusion names (`ff_atomic_subscription_activation`, `ff_board_score_v1`, `reconcile_stuck_subscriptions_enabled`, all `ff_python_*`); the `ff_python_` PREFIX rule protects un-enumerated names (trailing underscore included — `ff_pythonish` is NOT protected) and activation-list flags (e.g. `ff_foxy_maps_v1`) return null. Route contract: PATCH making a protected flag MORE enabled (`enabled:true` OR `rollout_percentage>0`) without `body.confirm === flag_name` → 409 `{ code:'FLAG_PROTECTED', tier, reason, confirm_required }` BEFORE any DB write / audit row / ops event (near-miss confirm typo also 409); correct confirm → write proceeds and the audit row carries `protected_confirmed:true`; disabling is confirm-free (kill switches stay fast) EXCEPT the `special_do_not_touch` / `p11_payment` tiers (disabling `ff_atomic_subscription_activation` — the P11 payment kill-switch — is ALSO gated); DELETE of a protected flag requires the same confirm (409 after the read-only name lookup, before the DELETE write — closes delete→recreate-unprotected); POST under a protected NAME requires confirm BEFORE ANY I/O (even the uniqueness check), and the `ff_python_` prefix rule fires at the POST boundary; unprotected flags are entirely unaffected in every direction (no confirm, never `protected_confirmed`). Documented seam pinned honestly: a failed previous-state read hides the flag name so the PATCH gate cannot fire — the REG-286 canary is the backstop for that path. | `src/__tests__/lib/flags/protected-flags-registry.test.ts` (registry + migration-parse pins), `src/__tests__/api/super-admin/feature-flags-protected-guardrail.test.ts` (PATCH/DELETE/POST matrix), `src/__tests__/api/super-admin/feature-flags-rollout-promotion.test.ts` (POST protected-name 409 + confirm-passthrough regex cases) | E | P9-adjacent (super_admin-gated mutations gain a second explicit-intent factor), P11-adjacent (payment kill-switch + ₹999 SKU flag cannot be flipped without typed intent), P7 (bilingual reasons), operational integrity (the 2026-07-20 incident shape — console bulk-enable re-arming P0/constitution flags — is structurally blocked) |
+| REG-286 | `flag_posture_canary_fail_closed_drift_detection` | The nightly `/api/cron/flag-posture-canary` route detects any deviation from the CEO-approved flag posture within 24h. Auth: fail-closed CRON_SECRET gate BEFORE any DB I/O (REG-118/REG-127 posture) — missing carrier, wrong secret, or unset env → 401 with ZERO `feature_flags` reads and zero ops/audit writes; carrier precedence first-PRESENT-wins (Bearer > x-cron-secret > ?token= — a wrong Bearer is NOT rescued by a correct lower carrier); GET (Vercel cron) and POST (manual/ops) parity. Query shape: one read of `feature_flags` selecting `flag_name,is_enabled,rollout_percentage,metadata`, `.in()` over the de-duped 54-name watched set (53 `EXPECTED_OFF_FLAGS` — NOT mocked — + the P11 kill-switch). Drift matrix: any EXPECTED_OFF row with `is_enabled=true` OR `rollout>0` → drift (including the half-off `enabled=false/rollout>0` shape; rollout NULL coalesces to 0 = clean); absent EXPECTED_OFF rows are NOT drift (unseeded envs); `ff_atomic_subscription_activation` disabled OR missing → drift (missing reported as `state:'missing'`); MoL shadow flags with `metadata->>'enabled'='true'` (string or boolean) → drift even when columns read OFF; compound drift all reported with accurate count; clean state → `{ drift: [], count: 0 }` with NO ops event and NO audit row. Drift side-effects: exactly one `ops_events` row (severity `error`, source `cron/flag-posture-canary`) + one `audit_logs` row (`feature_flag.posture_drift_detected`, actor_role `system`, status `failure`, metadata-only). P13 payload posture: response body is exactly `{drift,count}`; every drift-entry key on the fixed whitelist {flag_name, expected, is_enabled, rollout_percentage, metadata_enabled, state}; serialized body never matches PII-shaped keys (email/phone/student/actor/user_id/updated_by); DB failure → generic 500 `internal_error` (exact-body pin — internals never echoed). Cron registration pinned statically: exactly one `25 3 * * *` entry in BOTH root `vercel.json` and the `apps/host` mirror, all 13 pre-existing cron entries untouched verbatim (incl. REG-44's irt-calibrate `50 2 * * *`), no same-slot collision, `scripts/job-registry.json` entry with matching schedule (RCA-17), route exports GET and documents the schedule. | `src/__tests__/api/cron/flag-posture-canary.test.ts` (auth + drift matrix + side-effects + P13), `src/__tests__/regressions/flag-posture-canary-cron-pin.test.ts` (vercel.json/job-registry static pins) | E | P9 (fail-closed cron auth before I/O), P11-adjacent (kill-switch posture watched nightly), P13 (state-only payload, metadata-only audit), operational integrity (a repeat of the 2026-07-20 re-arm is detected within one nightly cycle) |
+
+### Invariants covered by this section
+
+- Operational integrity — the console cannot silently re-arm the CEO-approved
+  forced-OFF posture (prevention: typed confirm at the API boundary), and any
+  drift that slips past the console (SQL edits, the documented
+  unreadable-previous-state seam) is surfaced within one nightly canary cycle
+  (detection).
+- P9-adjacent — the super_admin level gate (pinned by the sibling
+  mutation-gate suite) is now layered with an explicit-intent factor for
+  protected flags; the canary route itself is fail-closed CRON_SECRET-gated
+  before any I/O.
+- P11-adjacent — `ff_atomic_subscription_activation` (payment kill-switch) is
+  double-covered: disable requires typed confirm, and disabled/missing state
+  is nightly-detected drift.
+- P13 — canary responses and audit rows carry flag names + state only; no
+  operator identity, no PII-shaped keys.
+- P7 — every protection reason ships EN + Devanagari Hindi for the console UI.
+
+### Catalog total
+
+Protected-flag guardrail package adds REG-285 (typed-confirmation gate — the
+incident pin: console bulk-enable cannot re-arm P0/constitution/payment flags)
+and REG-286 (posture canary — fail-closed + drift matrix + static cron pins).
+**Total catalog: 253 entries (target: 35 — TARGET EXCEEDED).**
+
+---

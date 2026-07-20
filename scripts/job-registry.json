@@ -117,6 +117,15 @@
       "idempotencyKey": "streak-guardian:student_id:yyyy-mm-dd",
       "lastSuccessMetric": "ops.cron.streak_guardian.last_success_at",
       "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/flag-posture-canary",
+      "platform": "vercel",
+      "owner": "ops",
+      "schedule": "25 3 * * *",
+      "idempotencyKey": "flag-posture-canary:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.flag_posture_canary.last_success_at",
+      "alertThreshold": "no success for 26h"
     }
   ]
 }

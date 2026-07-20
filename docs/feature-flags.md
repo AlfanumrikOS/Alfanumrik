@@ -34,6 +34,44 @@ requires setting an explicit rollout value *before* enabling. The column
 DEFAULT is also now 100, so new rows omitting `rollout_percentage` are
 governed by `is_enabled` alone; an explicit 0 still means "seeded dark".
 
+## Protected flags & posture canary (ops — 2026-07-20 incident)
+
+Guardrail after the 2026-07-20 console bulk-enable incident (49 of the 52
+CEO-approved forced-OFF flags re-armed; restored by migration
+`20260720130000_restore_approved_flag_posture.sql`). Registry (source of
+truth): `packages/lib/src/flags/protected-flags.ts` — 72 flags, 6 tiers.
+
+**Confirm contract** (`/api/super-admin/feature-flags`): any mutation that
+makes a protected flag MORE enabled (`enabled=true` or `rollout_percentage>0`
+via PATCH), creates a flag under a protected name (POST), or deletes one
+(DELETE) requires body field `confirm` === the exact `flag_name`. Otherwise
+the API returns **409 `{ code: 'FLAG_PROTECTED', tier, reason,
+confirm_required }`** before any DB write or audit row. Disabling stays
+one-click (kill-switch speed) EXCEPT tiers `special_do_not_touch` and
+`p11_payment` (e.g. disabling `ff_atomic_subscription_activation` 503s
+subscription activation). Confirmed mutations audit with
+`protected_confirmed: true`. The gate is console-boundary only: SQL and
+migrations (the documented break-glass + runbook paths) are unaffected.
+
+**Tiers**: `p0_outage` (quiz-submit hardening pair), `p11_payment`
+(`ff_competitive_exams_v1`), `ai_provider` (5 MoL flags),
+`constitution_pinned` (4 default-OFF loop/pulse/twin flags), `staged_rollout`
+(41 unbuilt/retired/dormant flags incl. `ff_irt_question_selection`),
+`special_do_not_touch` (managed outside the console: the P11 kill-switch, 2
+hard-excluded flags, and every `ff_python_*` flag via prefix rule).
+
+**Posture canary**: `/api/cron/flag-posture-canary`, nightly `25 3 * * *`
+(03:25 UTC, Vercel cron, CRON_SECRET-gated). Verifies EXPECTED_OFF_FLAGS (53)
+read `is_enabled=false AND rollout_percentage=0`, that
+`ff_atomic_subscription_activation` exists and is enabled, and that the two
+MoL shadow flags' `metadata->>'enabled'` is not `'true'`. Drift → `ops_events`
+(`category=deploy`, `severity=error`, flag names + state only) + `audit_logs`
+row `feature_flag.posture_drift_detected`. On alert: compare against the
+registry, restore via the `20260720130000` pattern, then find the operator in
+`admin_audit_log`. **Legitimately ramping a protected flag** requires removing
+it from `EXPECTED_OFF_FLAGS` (and its registry entry) in the approving PR —
+otherwise the canary alerts nightly, including on staging Stage-1 ramps.
+
 ---
 
 ## Grounded-AI rollout (ai-engineer)

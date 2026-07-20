@@ -317,10 +317,25 @@ describe('feature-flags — flag-name regex /^[a-z][a-z0-9_]*$/ (route boundary)
     'POST accepts the real flag name %s (digits are legal)',
     async (name) => {
       const { POST } = await import('@/app/api/super-admin/feature-flags/route');
-      const res = await POST(req('POST', { name, enabled: false }));
+      // ff_school_pulse_v1 is a PROTECTED name (constitution_pinned — see
+      // @alfanumrik/lib/flags/protected-flags): creating it requires the typed
+      // confirmation body field. Sending confirm=name is a no-op for the
+      // non-protected name, so both cases exercise the regex boundary.
+      const res = await POST(req('POST', { name, enabled: false, confirm: name }));
       expect(res.status).toBe(201);
     },
   );
+
+  it('POST with a protected name and NO confirm → 409 FLAG_PROTECTED before any DB write', async () => {
+    const { POST } = await import('@/app/api/super-admin/feature-flags/route');
+    const res = await POST(req('POST', { name: 'ff_school_pulse_v1', enabled: false }));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe('FLAG_PROTECTED');
+    expect(body.confirm_required).toBe('ff_school_pulse_v1');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(logAdminAudit).not.toHaveBeenCalled();
+  });
 
   it.each(['1bad', 'Bad_Flag', 'bad-flag', ''])(
     'POST rejects invalid flag name %j with 400 and no DB write',

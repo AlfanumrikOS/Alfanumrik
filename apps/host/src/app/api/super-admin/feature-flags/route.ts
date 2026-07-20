@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 import { invalidateFlagCache } from '../../../../lib/feature-flags';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
+import { getProtection, type FlagProtection } from '@alfanumrik/lib/flags/protected-flags';
 import { featureFlagSchema, validateBody, zUuid } from '../../../../lib/validation';
 import { z } from 'zod';
 
@@ -11,7 +12,32 @@ import { z } from 'zod';
  * DB columns: id, flag_name, is_enabled, rollout_percentage, target_grades,
  *             target_institutions, target_roles, target_environments,
  *             description, updated_by, created_at, updated_at
+ *
+ * Protected-flag guardrail (2026-07-20 console bulk-enable incident):
+ * flags listed in @alfanumrik/lib/flags/protected-flags require an explicit
+ * typed confirmation (body.confirm === the exact flag_name) before any
+ * mutation that makes them MORE enabled (PATCH), before deletion (DELETE),
+ * and before re-creation under a protected name (POST — prevents the
+ * delete-recreate bypass). Missing/mismatched confirm → 409 FLAG_PROTECTED
+ * BEFORE any DB write or audit row. Disabling stays confirm-free (kill
+ * switches must stay fast) EXCEPT the special_do_not_touch / p11_payment
+ * tiers (e.g. ff_atomic_subscription_activation is a payment safety device —
+ * disabling it also requires confirm).
  */
+
+/** 409 body for a protected-flag mutation attempted without typed confirmation. */
+function protectedFlagResponse(flagName: string, protection: FlagProtection): NextResponse {
+  return NextResponse.json(
+    {
+      error: `"${flagName}" is a protected flag (${protection.tier}). To proceed, resend the request with body field "confirm" set to the exact flag name.`,
+      code: 'FLAG_PROTECTED',
+      tier: protection.tier,
+      reason: protection.reason,
+      confirm_required: flagName,
+    },
+    { status: 409 },
+  );
+}
 
 // GET — list all flags
 export async function GET(request: NextRequest) {
@@ -84,12 +110,22 @@ export async function POST(request: NextRequest) {
       name: z.string().min(1).max(100).regex(/^[a-z][a-z0-9_]*$/, 'Flag name must start with a lowercase letter and contain only lowercase letters, digits, and underscores'),
       enabled: z.boolean().optional(),
       description: z.string().max(500).nullable().optional(),
+      // Protected-flag guardrail: typed confirmation (must equal the flag name).
+      confirm: z.string().optional(),
     }).omit({ flag_name: true, is_enabled: true });
 
     const validation = validateBody(createSchema, body);
     if (!validation.success) return validation.error;
 
-    const { name, enabled, description, rollout_percentage, target_institutions, target_roles, target_environments } = validation.data;
+    const { name, enabled, description, rollout_percentage, target_institutions, target_roles, target_environments, confirm } = validation.data;
+
+    // Protected-flag guardrail: creating a flag under a protected NAME requires
+    // the typed confirmation (prevents the delete-recreate bypass). Checked
+    // BEFORE any DB I/O or audit.
+    const createProtection = getProtection(name);
+    if (createProtection && confirm !== name) {
+      return protectedFlagResponse(name, createProtection);
+    }
 
     // Check uniqueness
     const checkRes = await fetch(supabaseAdminUrl('feature_flags', `select=id&flag_name=eq.${encodeURIComponent(name)}&limit=1`), {
@@ -131,7 +167,11 @@ export async function POST(request: NextRequest) {
 
     const created = await res.json();
     const flagId = Array.isArray(created) ? created[0]?.id : created?.id;
-    await logAdminAudit(auth, 'feature_flag.created', 'feature_flags', flagId || '', { name, enabled });
+    await logAdminAudit(auth, 'feature_flag.created', 'feature_flags', flagId || '', {
+      name,
+      enabled,
+      ...(createProtection ? { protected_confirmed: true } : {}),
+    });
     invalidateFlagCache();
 
     logOpsEvent({
@@ -172,12 +212,14 @@ export async function PATCH(request: NextRequest) {
         target_roles: z.array(z.string()).nullable().optional(),
         target_environments: z.array(z.string()).nullable().optional(),
       }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one field must be provided in updates' }),
+      // Protected-flag guardrail: typed confirmation (must equal the flag name).
+      confirm: z.string().optional(),
     });
 
     const validation = validateBody(patchSchema, body);
     if (!validation.success) return validation.error;
 
-    const { id, updates } = validation.data;
+    const { id, updates, confirm } = validation.data;
 
     // Map friendly names to DB columns
     const FIELD_MAP: Record<string, string> = {
@@ -212,6 +254,37 @@ export async function PATCH(request: NextRequest) {
         if (Array.isArray(prevData) && prevData.length > 0) previousState = prevData[0];
       }
     } catch { /* best-effort: audit still proceeds without previous state */ }
+
+    // ── Protected-flag guardrail (2026-07-20 incident) ──────────────────────
+    // If the target flag is protected and this update would make it MORE
+    // enabled (enabled=true, or a rollout_percentage > 0), require the typed
+    // confirmation body.confirm === the exact flag_name. Disabling stays
+    // confirm-free (kill switches must stay fast) EXCEPT the
+    // special_do_not_touch / p11_payment tiers, where disabling is ALSO gated
+    // (ff_atomic_subscription_activation is a payment safety device).
+    // 409 is returned BEFORE any DB write or audit row.
+    // Known seam: if the previous-state read above failed, the flag name is
+    // unknown and this gate cannot fire — the nightly flag-posture-canary cron
+    // is the drift backstop for that path.
+    let protectedConfirmed = false;
+    const patchFlagName = typeof previousState?.flag_name === 'string' ? previousState.flag_name : null;
+    if (patchFlagName) {
+      const protection = getProtection(patchFlagName);
+      if (protection) {
+        const makingMoreEnabled =
+          updates.enabled === true ||
+          (typeof updates.rollout_percentage === 'number' && updates.rollout_percentage > 0);
+        const disableGated =
+          updates.enabled === false &&
+          (protection.tier === 'special_do_not_touch' || protection.tier === 'p11_payment');
+        if (makingMoreEnabled || disableGated) {
+          if (confirm !== patchFlagName) {
+            return protectedFlagResponse(patchFlagName, protection);
+          }
+          protectedConfirmed = true;
+        }
+      }
+    }
 
     // 0-rollout landmine: rollout_percentage has a DB DEFAULT of 0, and the web
     // evaluator (packages/lib/src/feature-flags.ts) returns FALSE whenever
@@ -259,6 +332,7 @@ export async function PATCH(request: NextRequest) {
       rollout_promoted: rolloutPromoted,
       previous_state: previousState,
       flag_name: previousState?.flag_name || null,
+      ...(protectedConfirmed ? { protected_confirmed: true } : {}),
     });
     invalidateFlagCache();
 
@@ -291,11 +365,40 @@ export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const deleteSchema = z.object({ id: zUuid });
+    const deleteSchema = z.object({
+      id: zUuid,
+      // Protected-flag guardrail: typed confirmation (must equal the flag name).
+      confirm: z.string().optional(),
+    });
     const validation = validateBody(deleteSchema, body);
     if (!validation.success) return validation.error;
 
-    const { id } = validation.data;
+    const { id, confirm } = validation.data;
+
+    // ── Protected-flag guardrail (2026-07-20 incident) ──────────────────────
+    // Deleting a protected flag requires the same typed confirmation as
+    // enabling it (a deleted row could otherwise be re-created unprotected, or
+    // its absence could change evaluator behavior). Read-only name lookup
+    // first; 409 BEFORE the DELETE write or audit row.
+    let deleteProtectedConfirmed = false;
+    try {
+      const nameRes = await fetch(supabaseAdminUrl('feature_flags', `select=flag_name&id=eq.${encodeURIComponent(id)}&limit=1`), {
+        headers: supabaseAdminHeaders(),
+      });
+      if (nameRes.ok) {
+        const rows = await nameRes.json();
+        const flagName = Array.isArray(rows) && rows.length > 0 ? rows[0]?.flag_name : null;
+        if (typeof flagName === 'string') {
+          const protection = getProtection(flagName);
+          if (protection) {
+            if (confirm !== flagName) {
+              return protectedFlagResponse(flagName, protection);
+            }
+            deleteProtectedConfirmed = true;
+          }
+        }
+      }
+    } catch { /* name lookup best-effort; the posture canary is the drift backstop */ }
 
     const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
       method: 'DELETE',
@@ -309,7 +412,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Flag not found.' }, { status: 404 });
     }
 
-    await logAdminAudit(auth, 'feature_flag.deleted', 'feature_flags', id, { deleted: deleted[0] });
+    await logAdminAudit(auth, 'feature_flag.deleted', 'feature_flags', id, {
+      deleted: deleted[0],
+      ...(deleteProtectedConfirmed ? { protected_confirmed: true } : {}),
+    });
     invalidateFlagCache();
     return NextResponse.json({ success: true });
   } catch (err) {
