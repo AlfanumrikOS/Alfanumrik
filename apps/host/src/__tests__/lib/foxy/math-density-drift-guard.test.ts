@@ -26,6 +26,7 @@
 // Owner: ai-engineer. Review: assessment (density definition), testing.
 
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
@@ -33,8 +34,13 @@ import {
   resolveGradeBand,
 } from '@alfanumrik/lib/foxy/math-step-density';
 import type { GradeBand } from '@alfanumrik/lib/foxy/math-step-density';
-import { buildMathFormatDirective } from '@alfanumrik/lib/foxy/prompt-sections';
+import {
+  buildMathFormatDirective,
+  MATH_FORMAT_DIRECTIVE,
+  VERTICAL_MATH_DIRECTIVE,
+} from '@alfanumrik/lib/foxy/prompt-sections';
 import { getNcertSystemPrompt, getDefaultMathPrompt } from '@alfanumrik/lib/math/ncert-prompts';
+import { buildFoxySystemPrompt } from '@alfanumrik/lib/ai/prompts/foxy-system';
 
 const ALL_BANDS: GradeBand[] = ['6-8', '9-10', '11-12'];
 
@@ -378,5 +384,203 @@ describe('delimiter-contract closure — retired absolute lines are gone', () =>
 
   it('ncert_solver_v1: the under-specified "Use LaTeX for math" line is retired', () => {
     expect(closureTemplates.ncert_solver_v1).not.toContain('- Use LaTeX for math,');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// foxy-system.ts alignment (2026-07-20, CEO-approved ff_foxy_math_format_v2
+// 100% ramp prerequisite): buildFoxySystemPrompt is the base prompt of the
+// legacy intent-router path under /api/foxy (explain / revision / doubt-solve
+// workflows via runLegacyFoxyFlow — the `ff_grounded_ai_foxy` kill-switch and
+// grounded-failure fallback). This surface has NO band-directive injection
+// channel: the legacy workflows never compose buildMathFormatDirective onto
+// it, so the conservative no-directive default governs every turn there, and
+// on the flag-ON grounded path the band directive rides `mode_directive` into
+// foxy_tutor_v1 — a different prompt — so the two can never stack or
+// contradict. These canaries assert on the RUNTIME output (what the model
+// actually receives), pinning:
+//   - the retired boxing / Unicode-superscript / 6-8-absolute lines cannot
+//     return,
+//   - the deferential §4/§8 references are present,
+//   - no band density text is copy-pasted (spec §6),
+//   - the 2026-07-20 template-literal escape fix holds (the served bytes
+//     carry real LaTeX backslashes, no control characters, no `( ... )`
+//     pseudo-paren delimiter instruction).
+// Owner: ai-engineer. Review: assessment (spec conformance), testing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FOXY_SYSTEM_RUNTIME_CASES: Array<[string, string]> = [
+  [
+    'grade 7 learn',
+    buildFoxySystemPrompt({
+      grade: '7', subject: 'math', board: 'CBSE', chapter: null,
+      mode: 'learn', ragContext: '', academicGoal: 'board_topper',
+    }),
+  ],
+  [
+    'grade 11 doubt',
+    buildFoxySystemPrompt({
+      grade: '11', subject: 'math', board: 'CBSE', chapter: 'Straight Lines',
+      mode: 'doubt', ragContext: '',
+    }),
+  ],
+];
+
+describe('foxy-system.ts (legacy intent-router base prompt) — retired strings cannot return', () => {
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: pre-spec boxing/density lines are gone', (_name, prompt) => {
+    expect(prompt).not.toContain('box/highlight the final answer');
+    expect(prompt).not.toContain('Box/emphasize');
+    expect(prompt).not.toContain('never skip intermediate steps');
+    // The retired ABSOLUTE density line ("separated. Never compress …") is
+    // gone; the deferential default legitimately keeps the lowercase
+    // "never compress multiple operations into one line" clause.
+    expect(prompt).not.toContain('separated. Never compress');
+  });
+
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: the "or x²" Unicode-superscript allowance is gone (no ² anywhere)', (_name, prompt) => {
+    expect(prompt).not.toContain('or x²');
+    expect(prompt).not.toContain('²');
+  });
+});
+
+describe('foxy-system.ts — deferential §4/§8 house pattern present (mirrors foxy_tutor_v1)', () => {
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: §4 stage completeness + density/boxing deferral to section 8', (_name, prompt) => {
+    expect(prompt).toContain(
+      'never skip a stage (formula -> substitution -> calculation -> final answer)',
+    );
+    expect(prompt).toContain(
+      'Step DENSITY within the working (how many operations one line may carry) follows the Mathematical Formatting Rules in section 8',
+    );
+    expect(prompt).toContain(
+      "final-answer boxing follows section 8's answer-block vs \\boxed{} rule",
+    );
+    expect(prompt).toContain('Final Answer: [emphasize with correct units]');
+  });
+
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: §8 density defers to the single source + conservative default', (_name, prompt) => {
+    expect(prompt).toContain('docs/math-rendering-spec.md section 3');
+    expect(prompt).toContain('buildMathFormatDirective');
+    expect(prompt).toContain('When no band directive is present');
+    expect(prompt).toContain('never compress multiple operations into one line');
+  });
+
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: §8 boxing disambiguation (spec §4) present', (_name, prompt) => {
+    expect(prompt).toContain('"answer" block IS the boxed-answer convention');
+    expect(prompt).toContain('do NOT additionally wrap the value in \\boxed{}');
+    expect(prompt).toContain('\\boxed{...}');
+  });
+
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: LaTeX ^{...} superscripts + prose-scoped programming-syntax ban', (_name, prompt) => {
+    expect(prompt).toContain('true superscripts written with LaTeX ^{...} inside math delimiters');
+    expect(prompt).toContain('never plain Unicode superscript characters');
+    expect(prompt).toContain('in prose OUTSIDE math delimiters');
+  });
+
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: does NOT copy-paste any band density text (spec §6)', (_name, prompt) => {
+    for (const band of ALL_BANDS) {
+      expect(
+        prompt.includes(MATH_STEP_DENSITY_RULES[band]),
+        `foxy-system prompt must not restate the ${band} density text`,
+      ).toBe(false);
+    }
+    for (const marker of ['2-3 ROUTINE operations', 'justified equation chains', 'FOIL']) {
+      expect(prompt.includes(marker), `foxy-system prompt must not contain "${marker}"`).toBe(false);
+    }
+  });
+});
+
+describe('foxy-system.ts — 2026-07-20 escape fix: served bytes are real LaTeX', () => {
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: delimiter convention carries real backslashes at runtime', (_name, prompt) => {
+    // Before the fix the template literal emitted "( ... )" (spec §2
+    // pseudo-paren violation) and "sqrt{x}" / "pi" for these tokens.
+    expect(prompt).toContain('\\( ... \\)');
+    expect(prompt).toContain('\\[ ... \\]');
+    expect(prompt).toContain('\\frac{numerator}{denominator}');
+    expect(prompt).toContain('\\sqrt{x}');
+    expect(prompt).toContain('\\pi instead of pi');
+    expect(prompt).toContain('\\theta instead of theta');
+    expect(prompt).not.toContain('delimited by ( ... )');
+  });
+
+  it.each(FOXY_SYSTEM_RUNTIME_CASES)('%s: no control characters (the old escape mangling) in the served prompt', (_name, prompt) => {
+    // Only \n is a legal control character in the prompt. U+0008 (backspace),
+    // U+000C (form feed), and U+0009 (tab) were what "\\boxed", "\\frac", and
+    // "\\theta" mangled into before the escape fix.
+    expect(prompt).not.toMatch(/[\u0000-\u0009\u000B-\u001F]/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §9.1 precedence carve-out (2026-07-20, assessment ruling — spec §9.1.4):
+// vertical_math vs the §3 step-density rule. The carve-out text ships in
+// VERTICAL_MATH_DIRECTIVE ONLY (ff_foxy_vertical_math_v1, rollout 0 → dark
+// text today). Three pins per §9.1.4:
+//   1. Flag-OFF byte-identity untouched — the 6-8 math-format directive is
+//      still byte-identical to the pre-band-split MATH_FORMAT_DIRECTIVE
+//      literal (primary pin: math-format-directive.test.ts "spec §7.2" test;
+//      re-asserted here so the §9.1 ruling is self-contained).
+//   2. VERTICAL_MATH_DIRECTIVE carries the exemption / no-duplicate /
+//      single-labeling-step clauses (plus scope + precedence).
+//   3. math-step-density.ts is BYTE-UNCHANGED vs its committed state — the
+//      density module is not edited at all; byte-unchanged is part of the
+//      ruling (§9.1.4a byte-pin + §9.1.4b flag-leakage rationale).
+// Owner: ai-engineer. Review: assessment (ruling), testing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('§9.1 vertical_math precedence carve-out (spec §9.1.4 pins)', () => {
+  it('pin 1 — flag-OFF byte-identity: the 6-8 band directive IS the historical MATH_FORMAT_DIRECTIVE, untouched by the carve-out', () => {
+    // Primary pin lives in math-format-directive.test.ts (spec §7.2).
+    // Re-asserted here: the §9.1 carve-out must not leak one byte into the
+    // band density directives while ff_foxy_vertical_math_v1 is at rollout 0.
+    expect(buildMathFormatDirective('6-8')).toBe(MATH_FORMAT_DIRECTIVE);
+    // And the carve-out text must NOT appear in ANY band directive (spec
+    // §9.1.4b — mentioning vertical_math there would teach an ungated block
+    // type on every math turn).
+    for (const band of ALL_BANDS) {
+      expect(buildMathFormatDirective(band)).not.toContain('vertical_math');
+    }
+  });
+
+  it('pin 2 — VERTICAL_MATH_DIRECTIVE carries the five §9.1.1 normative clauses', () => {
+    // 1. Exemption / single visual unit / no fragmentation.
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('EXEMPT');
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('one-transformation-per-math-block split');
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('VISUAL UNIT');
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('NEVER fragment one computation');
+    // 2. No duplication — the block REPLACES the flat math block.
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('REPLACES the flat "math" block');
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('NEVER emit both');
+    // 3. Exactly one labeling step before, in the student's language (P7).
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('exactly ONE labeling "step" block comes BEFORE');
+    expect(VERTICAL_MATH_DIRECTIVE).toContain("student's language");
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('Hinglish');
+    // 4. Scope containment — the rest of the turn keeps band density.
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('covers ONLY the computation inside the');
+    expect(VERTICAL_MATH_DIRECTIVE).toContain("keeps the band's step density");
+    // 5. Specific over general.
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('SPECIFIC OVER GENERAL');
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('THIS directive governs the computations it covers');
+    // The ruling's source of truth is named.
+    expect(VERTICAL_MATH_DIRECTIVE).toContain('docs/math-rendering-spec.md section 9.1');
+  });
+
+  it('pin 3 — math-step-density.ts is byte-unchanged vs its committed state (HEAD)', () => {
+    const REL = 'packages/lib/src/foxy/math-step-density.ts';
+    // NOTE: findRepoRoot() can resolve to apps/host under the vitest harness
+    // (setup.ts remaps supabase/** asset paths, satisfying the walker early),
+    // so anchor this pin on the actual git toplevel instead.
+    const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    }).trim();
+    const committed = execFileSync('git', ['show', `HEAD:${REL}`], {
+      cwd: gitRoot,
+      encoding: 'utf8',
+    });
+    const onDisk = readFileSync(join(gitRoot, REL), 'utf8');
+    // Normalize line endings only (core.autocrlf checkouts hold CRLF on disk
+    // while the git blob stores LF); every other byte must match exactly.
+    const lf = (s: string) => s.replace(/\r\n/g, '\n');
+    expect(lf(onDisk)).toBe(lf(committed));
   });
 });

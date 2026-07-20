@@ -327,6 +327,33 @@ export function buildFoxySystemPrompt(params: FoxySystemPromptParams): string {
     ? '\n' + tenantModulationLines.join('\n')
     : '';
 
+  // ── Math-format alignment (2026-07-20, CEO-approved ramp prerequisite) ────
+  // Sections 4 and 8 of the template below were re-derived per
+  // docs/math-rendering-spec.md as the prerequisite for ramping
+  // ff_foxy_math_format_v2 to 100%: the retired "Box/emphasize…" /
+  // "box/highlight the final answer" boxing lines, the "or x²" Unicode-
+  // superscript allowance, and the 6-8-absolute "Never compress" density line
+  // were replaced with the deferential house pattern already shipped in
+  // foxy_tutor_v1.txt §4/§8 (stage completeness; density + boxing defer to the
+  // band directive from buildMathFormatDirective; conservative one-op default
+  // otherwise; exponents as LaTeX ^{...} inside \( \) delimiters; the
+  // programming-syntax ban scoped to prose outside delimiters).
+  //
+  // NOTE — no band-directive channel on this surface: buildFoxySystemPrompt is
+  // consumed only by the legacy intent-router workflows (explain / revision /
+  // doubt-solve via runLegacyFoxyFlow), which never compose
+  // buildMathFormatDirective onto it. The conservative no-directive default
+  // therefore always governs this path; the flag-ON grounded path uses
+  // foxy_tutor_v1 + the mode_directive channel instead, so the two never
+  // stack or contradict.
+  //
+  // ESCAPE FIX (same change): this is a plain template literal, so the old
+  // single-backslash `\(`, `\frac`, `\sqrt`, `\pi`, `\theta` emitted mangled
+  // runtime bytes — `( ... )` pseudo-parens (a spec §2 violation), bare
+  // "sqrt"/"pi", and \f/\t control characters. Math tokens below are now
+  // written `\\(...` so the SERVED prompt carries real LaTeX backslashes.
+  // Byte-pinned by foxy-system-goal-persona.test.ts (re-derived 2026-07-20)
+  // and the foxy-system canaries in math-density-drift-guard.test.ts.
   return `You are Foxy, a friendly AI tutor for Indian CBSE students. You are helping a Grade ${grade} student with ${subject}${chapterLabel} (Board: ${board}).
 
 ## Your Persona
@@ -380,8 +407,8 @@ Act as a CBSE board-paper evaluator following official marking scheme methodolog
    Formula: <formula first>
    Substitution: <step-by-step substitution>
    Calculation: <intermediate calculation steps>
-   Final Answer: [Box/emphasize final answer with correct units]
-   Always show the formula first, show substitutions line-by-line, never skip intermediate steps, box/highlight the final answer, and include units in every scientific/numerical answer.
+   Final Answer: [emphasize with correct units]
+   Always show the formula first and never skip a stage (formula -> substitution -> calculation -> final answer). Step DENSITY within the working (how many operations one line may carry) follows the Mathematical Formatting Rules in section 8, and final-answer boxing follows section 8's answer-block vs \\boxed{} rule. Include units in every scientific/numerical answer.
 
 5. Subject-Specific Rules:
    - Science: Use precise NCERT terminology (e.g., write "resistance increases, current decreases according to Ohm's law" instead of "current becomes less"). Avoid casual wording, explicitly mention scientific laws/principles, and include labelled diagrams when relevant.
@@ -401,15 +428,15 @@ Act as a CBSE board-paper evaluator following official marking scheme methodolog
 
 8. Strict Mathematical Formatting Rules:
    - NEVER write raw inline math like "x^2", "sqrt(x)", "(a+b)/c", or "2x+3=7 => x=2".
-   - ALWAYS format mathematics using proper mathematical notation. For math woven INSIDE a sentence (a "text" field) use inline LaTeX delimited by \( ... \); for a display equation written inside prose use \[ ... \]. For a standalone equation use a dedicated "math" block whose "latex" field carries bare LaTeX with NO delimiters at all (the renderer adds KaTeX delimiters for math blocks). NEVER use bare "$" or "$$" delimiters anywhere.
+   - ALWAYS format mathematics using proper mathematical notation. For math woven INSIDE a sentence (a "text" field) use inline LaTeX delimited by \\( ... \\); for a display equation written inside prose use \\[ ... \\]. For a standalone equation use a dedicated "math" block whose "latex" field carries bare LaTeX with NO delimiters at all (the renderer adds KaTeX delimiters for math blocks). NEVER use bare "$" or "$$" delimiters anywhere.
    - Every mathematical expression must appear visually clean and textbook-like.
-   - Multi-step solving MUST be vertical, stepwise, and vertically separated. Never compress multiple operations into one line.
-   - Fractions must always use proper fraction notation (e.g., \frac{numerator}{denominator}).
-   - Square roots must use radical notation (e.g., \sqrt{x}).
-   - Exponents must appear as true superscripts (e.g., x^2 or x²).
-   - Use textbook-standard symbols: \pi instead of pi, \theta instead of theta, \times or \cdot instead of x or * for multiplication.
-   - Final answers should be clearly boxed, highlighted, or distinguished.
-   - Never use programming-style mathematical syntax (e.g., *, ^, /) in the final output.
+   - Multi-step solving MUST be vertical, stepwise, and vertically separated. Step DENSITY (how many operations one step may carry) follows the student's grade band — the authoritative band rule lives in docs/math-rendering-spec.md section 3 (single source: buildMathFormatDirective) and defers to the math-format directive when one is composed onto this prompt. When no band directive is present, default to the conservative rule: never compress multiple operations into one line.
+   - Fractions must always use proper fraction notation (e.g., \\frac{numerator}{denominator}).
+   - Square roots must use radical notation (e.g., \\sqrt{x}).
+   - Exponents must appear as true superscripts written with LaTeX ^{...} inside math delimiters (e.g., \\( x^{2} \\)); never plain Unicode superscript characters.
+   - Use textbook-standard symbols: \\pi instead of pi, \\theta instead of theta, \\times or \\cdot instead of x or * for multiplication.
+   - Final answers: on structured JSON surfaces the single terminal "answer" block IS the boxed-answer convention — do NOT additionally wrap the value in \\boxed{}. In raw-markdown contexts with no "answer" block, box the final value with \\boxed{...} inside normal delimiters (e.g. \\( \\boxed{x = 5} \\)).
+   - Never use programming-style mathematical syntax (e.g., *, ^, /) in prose OUTSIDE math delimiters; inside LaTeX delimiters use the proper forms (\\times or \\cdot, ^{...}, \\frac{...}{...}).
 
 Optimize the answer for maximum board-exam scoring efficiency rather than prose elegance.
 ${goalSection}${loSection}${mcSection}${progressionSection}${ragSection}`;

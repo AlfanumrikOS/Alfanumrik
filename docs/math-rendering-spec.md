@@ -62,6 +62,8 @@ Band resolution is from the session grade **string** (P5: `"6"`–`"12"`, never 
 
 Unparseable grades default to the **6-8** band (pedagogically conservative fallback, matching `resolveGradeBand`).
 
+> **Carve-out (see §9.1):** columnar arithmetic rendered by a `vertical_math` structured block (§9) is **EXEMPT** from the one-transformation-per-math-block split above — the block is a single visual unit whose carry/partial-product/remainder rows ARE the step display, so the density rule does not fragment it. This precedence ruling changes **no text in this section**: the `MATH_STEP_DENSITY_RULES` band texts stay **byte-pinned** exactly as shipped (the same byte-identity discipline as §8), and the carve-out ships only inside `VERTICAL_MATH_DIRECTIVE` (§9.1.4). Everything outside a `vertical_math` block keeps the band density defined here.
+
 ### 3.3 Worked example per band
 
 The JSON below shows wire-format blocks; backslashes are JSON-escaped (`\\frac` on the wire renders `\frac`).
@@ -219,3 +221,114 @@ Constraints going forward:
 2. The dispatch site in `FoxyStructuredRenderer.tsx` carries a comment pinning
    this rule; keep the comment adjacent to the `case 'vertical_math':` branch.
 3. Both components stay lazy-loaded via `next/dynamic` (P10).
+
+### 9.1 Precedence: vertical_math vs the §3 step-density rule (2026-07-20)
+
+The §3 step-density rule ("one transformation per step/math pair" at band 6-8)
+and the `vertical_math` block (§9) can both apply to the same turn. This
+section is the normative precedence ruling — assessment-owned, like the rest
+of this spec.
+
+#### 9.1.1 Normative carve-out
+
+1. **EXEMPTION.** Columnar arithmetic handled by a `vertical_math` block is
+   **EXEMPT** from the one-transformation-per-math-block split. The block is a
+   **single visual unit** — the digital equivalent of CBSE blackboard practice
+   for columnar working — and its `carry_row`, `intermediate_steps`, and
+   `remainder` fields ARE the step display for that computation. Fragmenting
+   one computation across multiple `vertical_math` blocks is a violation
+   symmetrical to chaining multiple transformations into one flat math block.
+2. **NO DUPLICATION.** The `vertical_math` block **REPLACES** the flat `math`
+   block in its step/math pair — never both for the same computation. The
+   schema grounds this: `vertical_math` blocks forbid `text`/`latex` fields,
+   so there is no flat restatement channel inside the block.
+3. **SURROUNDING STEPS.** Exactly **ONE** labeling `step` block comes before
+   the `vertical_math` block, in the student's language (P7 — English, Hindi,
+   or Hinglish per session). An optional short prose reading-guide `step`
+   may follow the block.
+4. **SCOPE CONTAINMENT.** The exemption covers only the computation **inside**
+   the `vertical_math` block. The rest of the turn — setup, interpretation,
+   any other working — keeps the band's §3.2 density unchanged.
+5. **PRECEDENCE.** Specific over general: when both flags are ON,
+   `VERTICAL_MATH_DIRECTIVE` governs the computations it covers; the band
+   density directive governs everything else in the turn. Algebra, fractions,
+   and equation-solving stay flat (step/math pairs per §3) — they never route
+   through `vertical_math`.
+
+#### 9.1.2 Per-operation rationale
+
+- **addition / subtraction** — carry and borrow rows are **positional
+  annotations** on a single columnar computation, not an equation sequence.
+  There is no meaningful "one operation per pair" decomposition of a carry row;
+  splitting it produces pedagogically wrong artifacts.
+- **multiplication** — the partial-product rows **ARE the steps**. A flat
+  step/math restatement of each partial product would duplicate the block's own
+  content, violating rule 2 (NO DUPLICATION).
+- **long_division** — the strongest case for the exemption: the cascading
+  subtractions are **inherent to the division bracket** and are NEVER unrolled
+  into flat `math` blocks. Unrolling a long division into a step/math chain
+  destroys the very layout the block exists to teach.
+
+#### 9.1.3 Per-band rationale
+
+- **6-8 (primary band).** The density directive's append gate is exactly
+  `math` + band `6-8` today, so this is the band where both directives
+  actually co-occur. The exemption **fully applies**: `vertical_math` is the
+  **correct display class** for columnar arithmetic at this band, not a
+  relaxation of the band's rigor — every carry, partial product, and remainder
+  is still shown, just in the columnar form CBSE classrooms use.
+- **9-10 / 11-12.** The density directive is **not appended** for these bands
+  today. If the gate ever widens, the exemption applies **as-is** — it is a
+  property of the **block type**, not of the band. Widening the gate requires
+  a spec revision here first, per the §6 flow (doc → `buildMathFormatDirective`
+  → static prompts, in that order).
+
+#### 9.1.4 Implementation decision
+
+The carve-out text ships in **`VERTICAL_MATH_DIRECTIVE` ONLY**
+(`packages/lib/src/foxy/prompt-sections.ts`, ~lines 1282-1305) — **NOT** in
+`MATH_STEP_DENSITY_RULES`, and not in both. Two reasons:
+
+- **(a) Byte-pin.** The 6-8 density text is byte-pinned to the pre-split
+  `MATH_FORMAT_DIRECTIVE` literal and test-enforced (§8). Mid-ramp edits to
+  the density text are unacceptable while `ff_foxy_math_format_v2` is ramping.
+- **(b) Flag leakage.** The density directive rides **every** math turn
+  post-ramp. Mentioning `vertical_math` there would teach the model an
+  **ungated block type** — `FoxyResponseSchema` accepts `vertical_math`
+  unconditionally — while `ff_foxy_vertical_math_v1` sits at rollout 0.
+
+Truth table:
+
+| `ff_foxy_vertical_math_v1` | Prompt effect |
+|---|---|
+| OFF | **Zero prompt-text delta anywhere** — the `math_format_v2` ramp is unaffected. |
+| ON | The later-appended, more-specific `VERTICAL_MATH_DIRECTIVE` carries its own exemption text. |
+
+The amended `VERTICAL_MATH_DIRECTIVE` must contain these **FIVE normative
+bullets** (mirroring §9.1.1):
+
+1. Columnar arithmetic inside a `vertical_math` block is exempt from the
+   one-transformation-per-math-block split; the block is one visual unit and
+   must not be fragmented across multiple `vertical_math` blocks.
+2. The `vertical_math` block replaces the flat `math` block for that
+   computation — never emit both.
+3. Exactly one labeling `step` block precedes the block, in the student's
+   language; an optional short reading-guide `step` may follow.
+4. The exemption covers only the computation inside the block; all other
+   working in the turn keeps the band's step density.
+5. When both directives are present, this directive governs the computations
+   it covers; the band density directive governs everything else; algebra,
+   fractions, and equations stay flat.
+
+Testing pins (three):
+
+1. **Flag-OFF byte-identity untouched** — with `ff_foxy_vertical_math_v1`
+   OFF, no prompt text changes anywhere.
+2. **Directive content** — `VERTICAL_MATH_DIRECTIVE` contains the exemption,
+   no-duplicate, and single-label-step clauses.
+3. **`math-step-density.ts` byte-unchanged** — the density module is not
+   edited at all; byte-unchanged is part of this ruling.
+
+Review chain (P14): assessment (this ruling — done) → ai-engineer (amend
+`VERTICAL_MATH_DIRECTIVE`) → testing (the three pins above) → frontend only if
+`VerticalMathBlock.tsx` changes (none expected).

@@ -1279,6 +1279,12 @@ You are a passionate, knowledgeable teacher. Your goal is to TEACH deeply, not j
 //
 // Appended when ff_foxy_vertical_math_v1 ON + subject=math + grade 6-8.
 // Instructs the model to emit `vertical_math` blocks for arithmetic.
+//
+// PRECEDENCE (docs/math-rendering-spec.md §9.1, assessment ruling 2026-07-20):
+// the carve-out from the §3 step-density split ships HERE ONLY — never in
+// MATH_STEP_DENSITY_RULES (byte-pinned, §9.1.4a) and never in the band
+// density directives (flag-leakage, §9.1.4b). While ff_foxy_vertical_math_v1
+// sits at rollout 0 this entire directive is dark text: zero prompt delta.
 export const VERTICAL_MATH_DIRECTIVE = [
   '## VERTICAL MATH DIRECTIVE (arithmetic operations)',
   'When solving arithmetic problems (addition, subtraction, multiplication,',
@@ -1302,6 +1308,29 @@ export const VERTICAL_MATH_DIRECTIVE = [
   '',
   'Still use regular "math" blocks for: algebraic expressions, equations,',
   'fractions, geometry formulas, or any non-arithmetic math.',
+  '',
+  'PRECEDENCE vs the step-density rule (docs/math-rendering-spec.md section 9.1):',
+  '1. EXEMPTION: columnar arithmetic inside a "vertical_math" block is EXEMPT',
+  '   from the one-transformation-per-math-block split. The block is a SINGLE',
+  '   VISUAL UNIT — its carry_row, intermediate_steps, and remainder fields ARE',
+  '   the step display for that computation. NEVER fragment one computation',
+  '   across multiple "vertical_math" blocks.',
+  '2. NO DUPLICATION: the "vertical_math" block REPLACES the flat "math" block',
+  '   for that computation — NEVER emit both a vertical_math block and a flat',
+  '   math block for the same computation.',
+  '3. LABELING: exactly ONE labeling "step" block comes BEFORE the',
+  "   \"vertical_math\" block, in the student's language (English, Hindi, or",
+  '   Hinglish per session). An optional short reading-guide "step" may follow',
+  '   the block.',
+  '4. SCOPE: the exemption covers ONLY the computation inside the',
+  '   "vertical_math" block. All other working in the turn — setup,',
+  "   interpretation, any other math — keeps the band's step density rules",
+  '   unchanged.',
+  '5. SPECIFIC OVER GENERAL: when a band step-density directive is also',
+  '   present, THIS directive governs the computations it covers; the band',
+  '   density directive governs everything else in the turn. Algebra,',
+  '   fractions, and equation-solving stay flat step/math pairs — they never',
+  '   route through "vertical_math".',
 ].join('\n');
 
 // ─── Phase 3: SST Map Directive (ff_foxy_maps_v1) ───────────────────────────
