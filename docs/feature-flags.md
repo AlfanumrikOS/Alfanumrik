@@ -19,6 +19,21 @@ exists AND `is_enabled` AND `target_environments` AND `target_roles` AND
 Default flip pattern: `UPDATE feature_flags SET is_enabled = <bool> WHERE flag_name = '<name>';`
 (or use `/super-admin/flags`). Cache invalidates via `invalidateFlagCache()` on next request.
 
+## Data exposure rule (anon read — governance, ops)
+
+As of migration `20260720100000` the `feature_flags` table is world-readable
+(anon SELECT policy `feature_flags_read_anon`). No PII, secrets, tokens, or
+internal URLs may EVER be placed in flag `description` or `metadata` — they
+are visible to any logged-out visitor. Flag names, booleans, and scoping
+arrays are considered public operational metadata.
+
+**Enable semantics change** (same repair): enabling a flag via the super-admin
+console auto-promotes `rollout_percentage` 0→100 (explicit values are never
+overridden); the previous double-gate (enable + separate rollout ramp) now
+requires setting an explicit rollout value *before* enabling. The column
+DEFAULT is also now 100, so new rows omitting `rollout_percentage` are
+governed by `is_enabled` alone; an explicit 0 still means "seeded dark".
+
 ---
 
 ## Grounded-AI rollout (ai-engineer)

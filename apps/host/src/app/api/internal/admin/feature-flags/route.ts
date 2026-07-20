@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+import { invalidateFlagCache } from '@alfanumrik/lib/feature-flags';
 
 export const runtime = 'nodejs';
 
@@ -10,10 +11,12 @@ export async function GET(request: NextRequest) {
   if (denied) return denied;
 
   const supabase = getSupabaseAdmin();
+  // NB: the column is flag_name — ordering by the nonexistent `name` column
+  // made this query error for every caller.
   const { data, error } = await supabase
     .from('feature_flags')
     .select('*')
-    .order('name');
+    .order('flag_name');
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ data });
@@ -33,8 +36,11 @@ export async function POST(request: NextRequest) {
 
     if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
 
+    // Column is flag_name, not `name` — inserting `name` failed on the live
+    // schema. rollout_percentage is set explicitly (defaulting to 100) because
+    // the DB default is 0 and the evaluator treats 0% as OFF even when enabled.
     const { data, error } = await supabase.from('feature_flags').insert({
-      name,
+      flag_name: name,
       description: description || '',
       is_enabled: is_enabled ?? false,
       rollout_percentage: rollout_percentage ?? 100,
@@ -44,6 +50,7 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
+    invalidateFlagCache();
     await logAdminAction({ action: 'create_feature_flag', entity_type: 'feature_flag', entity_id: data.id, details: { name }, ip });
     return NextResponse.json({ success: true, data });
   } catch (err) {
@@ -72,6 +79,7 @@ export async function PATCH(request: NextRequest) {
     const { error } = await supabase.from('feature_flags').update(safe).eq('id', id);
     if (error) throw error;
 
+    invalidateFlagCache();
     await logAdminAction({ action: 'update_feature_flag', entity_type: 'feature_flag', entity_id: id, details: safe, ip });
     return NextResponse.json({ success: true });
   } catch (err) {

@@ -12,6 +12,44 @@ interface FeatureFlag {
   description: string | null; created_at: string; updated_at: string | null;
 }
 
+/**
+ * Parse an API error body ({ error } or { code, details }) into a human
+ * message. Special-cases ADMIN_INSUFFICIENT_LEVEL so an under-leveled admin
+ * learns their writes are being rejected instead of silently swallowed.
+ */
+async function parseApiError(res: Response, isHi: boolean): Promise<string> {
+  let body: { error?: string; code?: string; details?: unknown } | null = null;
+  try { body = await res.json(); } catch { /* non-JSON error body */ }
+  if (body?.code === 'ADMIN_INSUFFICIENT_LEVEL') {
+    return isHi
+      ? 'आपका एडमिन स्तर super_admin से नीचे है — बदलाव सहेजे नहीं जा रहे हैं।'
+      : 'Your admin level is below super_admin — changes are not being saved.';
+  }
+  let detail = typeof body?.error === 'string' ? body.error : '';
+  if (Array.isArray(body?.details)) {
+    const issues = (body!.details as Array<{ path?: string; message?: string }>)
+      .map(d => [d.path, d.message].filter(Boolean).join(': '))
+      .filter(Boolean)
+      .join('; ');
+    if (issues) detail = detail ? `${detail} — ${issues}` : issues;
+  }
+  const prefix = isHi ? `सहेजना विफल (HTTP ${res.status})` : `Save failed (HTTP ${res.status})`;
+  return detail ? `${prefix}: ${detail}` : prefix;
+}
+
+/**
+ * The honesty fix: mirrors the server evaluator — a flag is effective in
+ * production ONLY if enabled AND rollout_percentage !== 0 AND
+ * (target_environments empty OR includes 'production').
+ */
+function effectiveInProduction(flag: FeatureFlag): { state: 'effective' | 'ineffective' | 'disabled'; reason: 'rollout_zero' | 'env_scope' | null } {
+  if (!flag.enabled) return { state: 'disabled', reason: null };
+  if (flag.rollout_percentage === 0) return { state: 'ineffective', reason: 'rollout_zero' };
+  const envs = flag.target_environments || [];
+  if (envs.length > 0 && !envs.includes('production')) return { state: 'ineffective', reason: 'env_scope' };
+  return { state: 'effective', reason: null };
+}
+
 function FlagsContent() {
   const { apiFetch } = useAdmin();
   const { isHi } = useAuth();
@@ -23,12 +61,18 @@ function FlagsContent() {
   const [flagScopeRoles, setFlagScopeRoles] = useState('');
   const [flagScopeEnvs, setFlagScopeEnvs] = useState('');
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  // Mutation failures were previously swallowed (403/400/500 looked like
+  // success). Any failed write now lands here and renders a dismissible banner.
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [rolloutEditId, setRolloutEditId] = useState<string | null>(null);
+  const [rolloutDraft, setRolloutDraft] = useState('100');
 
   const fetchFlags = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch('/api/super-admin/feature-flags');
+      // limit=500 so all ~180 flags render (older API deployments ignore it harmlessly).
+      const res = await apiFetch('/api/super-admin/feature-flags?limit=500');
       // Without this branch a failed fetch left an empty list that was
       // indistinguishable from "no flags configured" — a silent-null defect.
       if (!res.ok) throw new Error(isHi ? 'फ़्लैग लोड नहीं हो सके' : 'Feature flags could not be loaded');
@@ -43,14 +87,23 @@ function FlagsContent() {
 
   useEffect(() => { fetchFlags(); }, [fetchFlags]);
 
+  const networkErrorMsg = () => (isHi ? 'नेटवर्क त्रुटि — बदलाव सहेजा नहीं गया।' : 'Network error — the change was not saved.');
+
   const toggleFlag = async (flag: FeatureFlag) => {
     if (togglingId === flag.id) return;
     setTogglingId(flag.id);
     try {
-      await apiFetch('/api/super-admin/feature-flags', {
+      const res = await apiFetch('/api/super-admin/feature-flags', {
         method: 'PATCH', body: JSON.stringify({ id: flag.id, updates: { enabled: !flag.enabled } }),
       });
+      if (!res.ok) {
+        setMutationError(await parseApiError(res, isHi));
+        return;
+      }
+      setMutationError(null);
       await fetchFlags();
+    } catch {
+      setMutationError(networkErrorMsg());
     } finally {
       setTogglingId(null);
     }
@@ -58,29 +111,78 @@ function FlagsContent() {
 
   const createFlag = async () => {
     if (!newFlagName.trim()) return;
-    await apiFetch('/api/super-admin/feature-flags', {
-      method: 'POST', body: JSON.stringify({ name: newFlagName.trim(), enabled: false }),
-    });
-    setNewFlagName('');
-    fetchFlags();
+    try {
+      const res = await apiFetch('/api/super-admin/feature-flags', {
+        method: 'POST', body: JSON.stringify({ name: newFlagName.trim(), enabled: false }),
+      });
+      if (!res.ok) {
+        setMutationError(await parseApiError(res, isHi));
+        return;
+      }
+      setMutationError(null);
+      setNewFlagName('');
+      fetchFlags();
+    } catch {
+      setMutationError(networkErrorMsg());
+    }
   };
 
   const saveFlagScoping = async (flagId: string) => {
     const roles = flagScopeRoles.split(',').map(s => s.trim()).filter(Boolean);
     const envs = flagScopeEnvs.split(',').map(s => s.trim()).filter(Boolean);
-    await apiFetch('/api/super-admin/feature-flags', {
-      method: 'PATCH', body: JSON.stringify({ id: flagId, updates: { target_roles: roles, target_environments: envs } }),
-    });
-    setEditingFlagId(null);
-    fetchFlags();
+    try {
+      const res = await apiFetch('/api/super-admin/feature-flags', {
+        method: 'PATCH', body: JSON.stringify({ id: flagId, updates: { target_roles: roles, target_environments: envs } }),
+      });
+      if (!res.ok) {
+        setMutationError(await parseApiError(res, isHi));
+        return;
+      }
+      setMutationError(null);
+      setEditingFlagId(null);
+      fetchFlags();
+    } catch {
+      setMutationError(networkErrorMsg());
+    }
   };
 
   const deleteFlag = async (flag: FeatureFlag) => {
     if (!confirm(`Delete flag "${flag.name}"?`)) return;
-    await apiFetch('/api/super-admin/feature-flags', {
-      method: 'DELETE', body: JSON.stringify({ id: flag.id }),
-    });
-    fetchFlags();
+    try {
+      const res = await apiFetch('/api/super-admin/feature-flags', {
+        method: 'DELETE', body: JSON.stringify({ id: flag.id }),
+      });
+      if (!res.ok) {
+        setMutationError(await parseApiError(res, isHi));
+        return;
+      }
+      setMutationError(null);
+      fetchFlags();
+    } catch {
+      setMutationError(networkErrorMsg());
+    }
+  };
+
+  const saveRollout = async (flagId: string) => {
+    const parsed = Number(rolloutDraft);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+      setMutationError(isHi ? 'रोलआउट 0 से 100 के बीच की संख्या होनी चाहिए।' : 'Rollout must be a number between 0 and 100.');
+      return;
+    }
+    try {
+      const res = await apiFetch('/api/super-admin/feature-flags', {
+        method: 'PATCH', body: JSON.stringify({ id: flagId, updates: { rollout_percentage: Math.round(parsed) } }),
+      });
+      if (!res.ok) {
+        setMutationError(await parseApiError(res, isHi));
+        return;
+      }
+      setMutationError(null);
+      setRolloutEditId(null);
+      fetchFlags();
+    } catch {
+      setMutationError(networkErrorMsg());
+    }
   };
 
   const recommended = ['foxy_ai_enabled', 'razorpay_payments', 'quiz_module', 'simulations', 'parent_portal', 'teacher_portal', 'leaderboard', 'push_notifications', 'onboarding_flow', 'beta_features'];
@@ -100,6 +202,28 @@ function FlagsContent() {
       {/* Partial-failure banner — a later refresh failed but flags are still shown. */}
       {error && flags.length > 0 && (
         <AdminErrorState compact onRetry={fetchFlags} message={error} isHi={isHi} />
+      )}
+
+      {/* Mutation-failure banner — visible + dismissible. Failed writes must never look like success. */}
+      {mutationError && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+            marginBottom: 16, padding: '10px 14px', borderRadius: 8,
+            border: '1px solid var(--danger)', background: 'rgba(220, 38, 38, 0.08)',
+            color: 'var(--danger)', fontSize: 13, fontWeight: 600,
+          }}
+        >
+          <span>{mutationError}</span>
+          <button
+            onClick={() => setMutationError(null)}
+            aria-label={isHi ? 'बंद करें' : 'Dismiss'}
+            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16, fontWeight: 700, lineHeight: 1, padding: 4 }}
+          >
+            ×
+          </button>
+        </div>
       )}
 
       {/* Create Flag */}
@@ -140,18 +264,75 @@ function FlagsContent() {
             message={isHi ? 'ऊपर एक फ़्लैग जोड़ें।' : 'Add one above to get started.'}
           />
         )}
-        {flags.map(flag => (
+        {flags.map(flag => {
+          const eff = effectiveInProduction(flag);
+          const effLabel = eff.state === 'effective'
+            ? (isHi ? 'प्रोडक्शन में प्रभावी' : 'Effective in production')
+            : eff.state === 'disabled'
+              ? (isHi ? 'अक्षम' : 'Disabled')
+              : `${isHi ? 'सक्षम पर प्रभावी नहीं' : 'Enabled but NOT effective'} — ${
+                  eff.reason === 'rollout_zero'
+                    ? (isHi ? 'रोलआउट 0%' : 'rollout 0%')
+                    : (isHi ? 'प्रोडक्शन के लिए स्कोप नहीं' : 'not scoped to production')
+                }`;
+          const effColors = eff.state === 'effective'
+            ? { bg: '#ECFDF5', fg: '#059669' } // green
+            : eff.state === 'ineffective'
+              ? { bg: '#FFFBEB', fg: '#B45309' } // amber
+              : { bg: 'var(--surface-2)', fg: 'var(--text-3)' }; // grey
+          return (
           <div
             key={flag.id}
             className="rounded-lg border border-surface-3 bg-surface-1 p-4"
-            style={{ borderLeft: `3px solid ${flag.enabled ? 'var(--success)' : 'var(--surface-3)'}` }}
+            style={{ borderLeft: `3px solid ${eff.state === 'effective' ? 'var(--success)' : eff.state === 'ineffective' ? '#D97706' : 'var(--surface-3)'}` }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <code style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{flag.name}</code>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <code style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-1)' }}>{flag.name}</code>
+                  {/* Honesty badge: 'ON' alone lies when rollout=0% or env-scoped away from production */}
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: effColors.bg, color: effColors.fg }}>
+                    {effLabel}
+                  </span>
+                </div>
                 {flag.description && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{flag.description}</div>}
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {rolloutEditId === flag.id ? (
+                  <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={rolloutDraft}
+                      onChange={e => setRolloutDraft(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveRollout(flag.id); if (e.key === 'Escape') setRolloutEditId(null); }}
+                      aria-label={isHi ? 'रोलआउट प्रतिशत' : 'Rollout percentage'}
+                      className="w-16 rounded-md border border-surface-3 bg-surface-1 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <button
+                      onClick={() => saveRollout(flag.id)}
+                      className="rounded-md bg-foreground px-2.5 py-1 text-[11px] font-semibold text-surface-1 hover:opacity-90"
+                    >
+                      {isHi ? 'सहेजें' : 'Save'}
+                    </button>
+                    <button
+                      onClick={() => setRolloutEditId(null)}
+                      className="rounded-md border border-surface-3 bg-transparent px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
+                    >
+                      {isHi ? 'रद्द' : 'Cancel'}
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => { setRolloutEditId(flag.id); setRolloutDraft(String(flag.rollout_percentage ?? 100)); }}
+                    title={isHi ? 'रोलआउट प्रतिशत संपादित करें' : 'Edit rollout percentage'}
+                    className="rounded-md border border-surface-3 bg-transparent px-2.5 py-1 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
+                    style={flag.rollout_percentage === 0 ? { color: '#B45309', borderColor: '#D97706' } : undefined}
+                  >
+                    {isHi ? 'रोलआउट' : 'Rollout'} {flag.rollout_percentage ?? 100}%
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (editingFlagId === flag.id) { setEditingFlagId(null); }
@@ -231,7 +412,8 @@ function FlagsContent() {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Recommended Flags */}

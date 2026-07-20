@@ -21,7 +21,7 @@
  *     (DEFAULT_OFF) — the very first paint omits the Pulse section, which is
  *     exactly what "byte-identical when OFF" requires. There is no first-paint
  *     flash for production users (flag absent ⇒ stays false).
- *   - A small localStorage cache (1-hour TTL) lets an admin who HAS the flag
+ *   - A small localStorage cache (5-minute TTL) lets an admin who HAS the flag
  *     on (post-rollout) skip the OFF→ON flash on repeat visits: the cached
  *     `true` is read synchronously on mount.
  *   - The async `getFeatureFlags` fetch then confirms/corrects and re-caches.
@@ -38,7 +38,7 @@ import { SCHOOL_PULSE_FLAGS } from './feature-flags';
 
 // gitleaks:allow — localStorage key, not a secret.
 const CACHE_KEY = 'alfanumrik_school_pulse_flag_v1'; // gitleaks:allow
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches the server flag cache (feature-flag RCA)
 const DEFAULT_OFF = false; // flag unseeded ⇒ resolves OFF; no-Pulse is the safe paint
 
 interface CachedFlag {

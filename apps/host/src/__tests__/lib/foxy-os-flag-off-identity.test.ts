@@ -78,7 +78,7 @@ describe('Foxy-OS sync reader — DEFAULT_OFF (production first-paint truth)', (
 
   it('an expired cached { on:true } is ignored → FALSE', () => {
     setNodeEnv('production');
-    // ts older than the 1-hour TTL.
+    // ts older than the 5-minute TTL (feature-flag RCA: TTL cut from 1h to 5min).
     const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
     localStorage.setItem(CACHE_KEY, JSON.stringify({ on: true, ts: twoHoursAgo }));
     expect(getFoxyOsFlagSync()).toBe(false);

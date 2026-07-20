@@ -15,7 +15,7 @@
  *   page load.
  *
  * Fix:
- *   - LocalStorage caches the resolved flag per role with a 1-hour TTL.
+ *   - LocalStorage caches the resolved flag per role with a 5-minute TTL.
  *   - The hook initializes synchronously from cache, so the very first
  *     paint matches the user's actual flag state on every repeat visit.
  *   - First-ever visit (no cache): default to `true` because the master
@@ -36,7 +36,7 @@
  *   }
  *
  * Cache invalidation:
- *   - Implicit TTL after 1 hour.
+ *   - Implicit TTL after 5 minutes.
  *   - Explicit: call `clearAtlasFlagCache()` on sign-out / role-switch.
  */
 
@@ -49,7 +49,9 @@ export type AtlasRole = 'student' | 'parent' | 'teacher' | 'school';
 // gitleaks:allow — the constant below is a localStorage key, not a secret.
 // gitleaks' generic-api-key rule flags it on entropy alone.
 const CACHE_KEY = 'alfanumrik_atlas_flags_v1'; // gitleaks:allow
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches the server flag cache (feature-flag RCA)
+// DEFAULT_ON masks the prod flag being env-scoped off — see feature-flag RCA;
+// pending CEO decision.
 const DEFAULT_ON = true; // master flag is enabled globally; safest assumption
 
 interface CachedFlags {

@@ -191,7 +191,7 @@ export const paymentCancelSchema = z.object({
 // ── Feature Flag ────────────────────────────────────────
 
 export const featureFlagSchema = z.object({
-  flag_name: z.string().min(1).max(100).regex(/^[a-z_]+$/, 'Flag name must be lowercase with underscores only'),
+  flag_name: z.string().min(1).max(100).regex(/^[a-z][a-z0-9_]*$/, 'Flag name must start with a lowercase letter and contain only lowercase letters, digits, and underscores'),
   is_enabled: z.boolean(),
   target_roles: z.array(z.string()).nullable().optional(),
   target_environments: z.array(z.string()).nullable().optional(),

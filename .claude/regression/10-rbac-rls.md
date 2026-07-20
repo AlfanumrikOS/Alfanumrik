@@ -799,3 +799,54 @@ mobile Bearer caller now RLS-enforced; admin-client allowlist ratcheted 271 → 
 
 ---
 
+## Feature-flag RCA repair — "enabled ⇒ effective", app-code column contract, list completeness (2026-07-20) — REG-277..REG-279
+
+Source: feature-flag RCA (branch `Alfanumrik/feature-flags-rca-repair-99efe1`).
+Root causes repaired and pinned here:
+
+1. **The 0-rollout landmine.** `feature_flags.rollout_percentage` has a DB
+   DEFAULT of 0 and the web evaluator (`packages/lib/src/feature-flags.ts`)
+   returns FALSE for `rollout_percentage=0` even when `is_enabled=true`. New
+   flags created via the super-admin route inherited the default, and
+   toggling a 0%-flag "on" silently kept it OFF for every user — an operator
+   saw "enabled" in the UI while production behavior never changed.
+2. **App-code column drift (the REG-125 gap).** REG-125 pinned the SEED
+   (migration SQL) shape only. App code had the same failure mode live: the
+   internal admin route ordered by the nonexistent `name` column (GET 500'd
+   for every caller) and the `identity` Edge Function selected the
+   nonexistent `target_plans` column, which nulled the whole flags query so
+   EVERY user resolved with ALL flags OFF. The identity function also used
+   an ad-hoc rollout hash that disagreed with the canonical
+   `hashForRollout`, so web and mobile disagreed on N%-rollout membership.
+3. **Silent list truncation.** The super-admin GET hard-coded `limit=100`
+   while the table holds ~180 rows — flags past the first page were
+   invisible in the admin UI, indistinguishable from not existing.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-277 | `feature_flag_enabled_implies_effective_rollout_promotion` | The super-admin feature-flags route can never produce an "enabled but 0%-rollout" dead flag by accident. POST: every insert writes `rollout_percentage` explicitly (validated caller value — including an explicit 0 — else 100), so a new flag never inherits the DB DEFAULT 0. PATCH promotion matrix: enable with previous rollout 0 and no explicit rollout in the body → the route promotes `rollout_percentage` to 100 in the same write; enable with a non-zero previous rollout (deliberate ramp, e.g. 10%) → rollout NOT touched; an explicit `rollout_percentage` in the body (including 0) always wins and suppresses promotion; disable / non-enable updates never promote; unreadable or missing previous state → no promotion. Rollout MEMBERSHIP parity: the identity Edge Function's duplicated Deno `hashForRollout` produces byte-identical buckets (0..99) to the canonical `packages/lib/src/feature-flags.ts` export across a uuid × flag matrix, and the identity source is pinned to the three load-bearing expressions of the canonical algorithm (`` `${userId}:${flagName}` `` seed, `((hash << 5) - hash + str.charCodeAt(i)) \| 0` accumulator, `Math.abs(hash) % 100` bucket) plus its application `hashForRollout(student.id, flag.flag_name) < flag.rollout_percentage` — the pre-repair ad-hoc hash (web/mobile rollout disagreement) cannot silently return. Route flag-name regex `/^[a-z][a-z0-9_]*$/` pinned at the POST/PATCH boundary: real versioned names with digits (`ff_school_pulse_v1`, `ff_foxy_math_format_v2`) accepted; leading digit / uppercase / hyphen / empty → 400 with no DB write and no audit row. | `src/__tests__/api/super-admin/feature-flags-rollout-promotion.test.ts` (promotion matrix + POST + regex), `src/__tests__/lib/feature-flags-rollout-hash-parity.test.ts` (hash parity + identity source pin), `src/__tests__/validation.test.ts` (`featureFlagSchema` regex cases) | E | Operational integrity (flag flips must take effect), P9-adjacent (super_admin-gated mutations — level gate itself pinned by the sibling mutation-gate suite) |
+| REG-278 | `feature_flags_app_code_column_contract` | Static-source canary closing the REG-125 gap for APP CODE: every column list used against `feature_flags` in the three call sites — `src/app/api/internal/admin/feature-flags/route.ts` (supabase-js `.select`/`.insert` keys/`.order` targets/PATCH `ALLOWED` allow-list), `supabase/functions/identity/index.ts` (`.from('feature_flags').select(...)`), and `src/app/api/super-admin/feature-flags/route.ts` (PostgREST-URL `select=` tokens + the GET `fields` const) — must be a member of the known live column set {id, flag_name, is_enabled, rollout_percentage, target_grades, description, updated_by, created_at, updated_at, target_institutions, target_roles, target_environments, wave, target_subjects, target_languages, launch_date, metadata}. Specific pre-repair bugs pinned individually: the internal route orders by `flag_name` and never by the nonexistent `name`; its insert carries `flag_name` + explicit `rollout_percentage` and never a `name` key; the identity select includes `flag_name` + `rollout_percentage` and `target_plans` can never come back (the column whose selection nulled the flags query and turned every flag OFF for every user). Extraction is regex-over-source (chain-scoped to `.from('feature_flags')` segments), deterministic, non-vacuous-guarded (minimum column counts), no DB, no network. If a migration adds a feature_flags column, extend the set in the same PR. | `src/__tests__/regressions/feature-flags-app-code-column-contract.test.ts` | E | Operational integrity (42703-class outages become PR-CI failures, not production walls), REG-125 companion (seed shape + app-code shape now both pinned) |
+| REG-279 | `admin_flags_list_completeness_no_silent_truncation` | The super-admin feature-flags GET uses query-param pagination instead of a hard cap: default `limit=500` (returns the entire ~180-row table) with `offset=0`; caller-supplied `limit` clamped to 1..1000 (`?limit=5000` → 1000, `?limit=0` → 1); non-numeric limit falls back to 500; `offset` honoured, negative offset falls back to 0; and the pre-repair hard-coded `limit=100` (which silently hid every flag past the first 100 from the admin UI — an invisible flag is indistinguishable from a nonexistent one) is pinned gone from the default request. | `src/__tests__/api/super-admin/feature-flags-rollout-promotion.test.ts` (GET pagination describe) | E | Operational integrity (admin console must show the complete flag inventory), P9-adjacent (GET stays at the `support` level per the sibling mutation-gate pins) |
+
+### Invariants covered by this section
+
+- Operational integrity — a flag an operator enables actually takes effect
+  ("enabled ⇒ effective"); a schema/column typo in app code is a PR-CI
+  failure, not a silent all-flags-OFF production outage; the admin console
+  shows the complete flag inventory.
+- Cross-surface consistency — web (`packages/lib`) and mobile (`identity`
+  Edge Function) agree on per-user N%-rollout membership via the pinned
+  canonical hash.
+- P9-adjacent — the level gates on this route are pinned by the sibling
+  `feature-flags-mutation-gate` suite; these entries pin the payload/effect
+  contracts behind those gates.
+
+### Catalog total
+
+Feature-flag RCA repair adds REG-277 ("enabled ⇒ effective" rollout
+promotion + rollout-hash parity + flag-name regex), REG-278 (app-code
+feature_flags column contract — the REG-125 companion), REG-279 (admin
+flags list completeness — no silent truncation).
+**Total catalog: 246 entries (target: 35 — TARGET EXCEEDED).**
+
+---
