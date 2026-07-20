@@ -161,8 +161,11 @@ export const TEST_IDS = {
  * (AuthScreen's #auth-error alert shows the Supabase message), we skip with
  * the named missing precondition instead of burning the 15s navigation wait
  * twice per test — but ONLY when the job opts in by setting
- * `E2E_SKIP_ON_UNPROVISIONED_STUDENT=1` (set exclusively in the ADVISORY
- * `e2e` job in .github/workflows/ci.yml). Without that opt-in, every
+ * `E2E_SKIP_ON_UNPROVISIONED_STUDENT=1` (set exclusively by the reusable
+ * .github/workflows/e2e-suite.yml in ADVISORY mode — the label-gated PR
+ * caller in ci.yml; the NIGHTLY caller runs advisory=false, which leaves
+ * the flag unset so a missing fixture reddens the nightly). Without that
+ * opt-in, every
  * auth-error alert THROWS: the BLOCKING e2e-critical-paths job also flows
  * through this helper (quiz-happy-path.spec.ts, payment-checkout.spec.ts
  * against production), and a rotated/deleted prod student or a client

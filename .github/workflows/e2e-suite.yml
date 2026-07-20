@@ -1,0 +1,214 @@
+# Reusable full E2E suite — single source of truth for the ~342-test
+# playwright suite (staging build + standalone prod server + playwright run +
+# report upload + server-log dump).
+#
+# Extracted from ci.yml's inline `e2e` job on 2026-07-20 (user-approved
+# "label opt-in + nightly safety net" change) so the SAME ~70 step lines run
+# from two callers without duplication:
+#   * ci.yml `e2e` job — PR opt-in via the `e2e-full` label,
+#     advisory: true  (suite failures are visible but never fail the job)
+#   * e2e-nightly.yml  — nightly schedule + workflow_dispatch against main,
+#     advisory: false (a red suite FAILS the run so pipeline-alert.yml can
+#     open the pipeline-failure issue)
+#
+# Caller contract:
+#   * Call with `secrets: inherit`. This workflow reads STAGING_SUPABASE_URL,
+#     STAGING_SUPABASE_ANON_KEY, STAGING_SUPABASE_SERVICE_ROLE_KEY,
+#     TEST_STUDENT_EMAIL and TEST_STUDENT_PASSWORD from the caller's secret
+#     context. Callers MUST guard against fork-PR contexts (no secrets there);
+#     the "Verify staging secrets" step below still fails loudly if a caller
+#     slips through with empty secrets.
+#   * The `advisory` input toggles `continue-on-error` on the "Run E2E
+#     tests" step AND the E2E_SKIP_ON_UNPROVISIONED_STUDENT opt-in (skip on
+#     a missing staging student fixture in advisory mode; RED in nightly
+#     mode — see the env comment on the test step). Build failures,
+#     server-boot failures and missing secrets fail the job in BOTH modes.
+#   * Reusable-workflow constraints honored here: a caller's job-level `uses:`
+#     cannot carry `steps`/`timeout-minutes`, and the caller's workflow-level
+#     `env:` is NOT inherited — so NODE_VERSION and the job timeout live in
+#     THIS file.
+name: E2E Suite (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      advisory:
+        description: >-
+          true = the "Run E2E tests" step keeps continue-on-error (historical
+          PR semantics: failures visible, job stays green) and a missing
+          staging student fixture skips with a named reason. false = a suite
+          failure FAILS the job AND the missing-fixture skip opt-in is unset
+          (nightly semantics: a red run must be visible/alertable, including
+          fixture gaps).
+        type: boolean
+        required: false
+        default: true
+
+env:
+  # ci.yml's workflow-level env does not cross the workflow_call boundary.
+  # Keep in sync with ci.yml's NODE_VERSION.
+  NODE_VERSION: '22'
+
+jobs:
+  e2e:
+    name: E2E Suite
+    runs-on: ubuntu-latest
+    # Budget (2026-07-20 triage of run 29716158705): fixed overhead ≈ 9 min
+    # (checkout + npm ci restore + playwright install ~3 min, staging build
+    # ~5-6 min, server boot <1 min). Suite target ≈ 8-11 min at 4 workers
+    # (playwright.config.ts) with the 60s in-job-server test timeout: ~230
+    # passing tests are seconds each; known failure classes were converted to
+    # fast named skips (missing staging student) or fixed (consent-banner
+    # click interception, stale V3 pins). Expected total ≈ 20 min; 30 gives
+    # ~50% headroom without re-opening a 40+ min hang budget.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # Same incremental-build cache pattern as ci.yml's `build` job, but with
+      # a DIFFERENT key prefix (`nextjs-e2e-` vs `nextjs-`): this job bakes
+      # STAGING NEXT_PUBLIC_* values into the bundle while the build job bakes
+      # placeholders — different env produces different output, so the two
+      # caches must never cross-restore. (No prefix collision either way: the
+      # build job's restore-key is `<os>-nextjs-<lockhash>-`, and a lockfile
+      # hash can never equal the literal `e2e`.) The nightly caller shares
+      # this cache with PR-label runs — same key space, same content.
+      - name: Cache Next.js build cache (e2e staging build)
+        uses: actions/cache@v4
+        with:
+          path: apps/host/.next/cache
+          key: ${{ runner.os }}-nextjs-e2e-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/host/src/**/*.ts', 'apps/host/src/**/*.tsx', 'packages/**/*.ts', 'packages/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-e2e-${{ hashFiles('package-lock.json') }}-
+
+      - run: npx playwright install --with-deps chromium
+
+      # Fail loudly in BOTH modes instead of silently baking empty strings
+      # into the client bundle.
+      - name: Verify staging secrets are present
+        run: |
+          if [ -z "${{ secrets.STAGING_SUPABASE_URL }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_ANON_KEY }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "::error::E2E suite requires STAGING_SUPABASE_URL, STAGING_SUPABASE_ANON_KEY and STAGING_SUPABASE_SERVICE_ROLE_KEY (call with secrets: inherit from a non-fork context)."
+            exit 1
+          fi
+
+      # NEXT_PUBLIC_* vars are baked into the client bundle AT BUILD TIME, so
+      # the placeholder-env `nextjs-build` artifact from ci.yml's build job
+      # cannot be reused here — a staging-env build is unavoidable.
+      # Heap bump mirrors ci.yml's `build` job (see its comment).
+      - name: Build app (staging env)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      # Asset layout mirrors Dockerfile stage 3: the standalone server resolves
+      # static assets and public/ relative to its own apps/host directory.
+      # Background process survives step exit and is reaped at job end.
+      # Readiness probe accepts ANY HTTP response (curl exit 0), matching the
+      # TCP-probe philosophy of the config's V3 branch — "/" may legitimately
+      # redirect.
+      - name: Start production server and wait for readiness
+        env:
+          PORT: 3000
+          # 0.0.0.0 (as in the Dockerfile) so both `127.0.0.1` (BASE_URL) and
+          # any spec helper that says `localhost` (which may resolve to ::1
+          # first) reach the server.
+          HOSTNAME: 0.0.0.0
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          cp -r apps/host/public apps/host/.next/standalone/apps/host/public
+          cp -r apps/host/.next/static apps/host/.next/standalone/apps/host/.next/static
+          nohup node apps/host/.next/standalone/apps/host/server.js > /tmp/next-e2e-server.log 2>&1 &
+          echo $! > /tmp/next-e2e-server.pid
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null http://127.0.0.1:3000/; then
+              echo "Production server ready after ~$((i * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Production server did not become ready within 120s."
+          tail -50 /tmp/next-e2e-server.log
+          exit 1
+
+      # BASE_URL short-circuits playwright.config.ts's webServer block — the
+      # suite targets the prod-mode server started above, never `npm run dev`.
+      # TEST_STUDENT_* lets the real-auth spec branches run (same secrets as
+      # e2e-critical-paths). NEXT_PUBLIC_*/service-role are the SAME staging
+      # values the server was built/booted with, so spec-side Supabase clients
+      # (e.g. pulse-rls fixtures) agree with the app.
+      - name: Run E2E tests
+        run: npx playwright test --project=chromium
+        env:
+          BASE_URL: 'http://127.0.0.1:3000'
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          TEST_STUDENT_EMAIL: ${{ secrets.TEST_STUDENT_EMAIL }}
+          TEST_STUDENT_PASSWORD: ${{ secrets.TEST_STUDENT_PASSWORD }}
+          # e2e/synthetic/prod-health.spec.ts defaults its 16 rows to
+          # https://alfanumrik.com — without this override the advisory PR job
+          # was probing LIVE PRODUCTION over the network on every PR (run
+          # 29716158705). Point the rows at the in-job server via the spec's
+          # own documented env hook: same assertions, no cross-environment
+          # traffic, faster. The real prod monitor stays in
+          # synthetic-monitor.yml (which leaves the default). This holds for
+          # the nightly caller too — it must not hammer prod either.
+          SYNTHETIC_TARGET_URL: 'http://127.0.0.1:3000'
+          # Opt-in for e2e/helpers/auth.ts loginViaUI: when the target
+          # Supabase affirmatively rejects TEST_STUDENT_* (student not
+          # provisioned in STAGING), skip with a named missing-fixture reason
+          # instead of failing. ADVISORY MODE ONLY (testing-agent decision
+          # 2026-07-20, overruling "keep in both modes"): on label-gated PR
+          # runs a fixture gap skips — an environment gap should not redden
+          # every labeled PR. In NIGHTLY mode (advisory=false) the flag is
+          # UNSET so an unprovisioned fixture REDDENS the nightly. Rationale:
+          # the nightly is the ONLY scheduled full-suite run; a
+          # green-with-skips nightly silently drops every real-auth branch
+          # until someone happens to open the report artifact — the same
+          # fail-OPEN mode REG-130 exists to prevent. It also matches this
+          # suite's own posture for missing SECRETS (red in both modes): an
+          # unprovisioned fixture is the same class of env gap. Recovery is
+          # cheap and self-healing: dispatch the idempotent
+          # seed-staging-test-student.yml workflow, re-run the nightly, the
+          # pipeline-failure issue auto-closes. The BLOCKING
+          # e2e-critical-paths job in ci.yml targets PROD and must NOT set
+          # it: there, a rotated/deleted prod student or a
+          # credential-mangling regression must fail the gate loudly, never
+          # go green-with-skip.
+          E2E_SKIP_ON_UNPROVISIONED_STUDENT: ${{ inputs.advisory && '1' || '' }}
+        # advisory=true  (ci.yml PR label opt-in): historical PR semantics —
+        #   failures are visible in the report artifact but never fail the
+        #   job. Audit 2026-04-27 F23/F9 posture preserved; the BLOCKING
+        #   e2e-critical-paths job in ci.yml covers the must-not-break paths
+        #   (REG-45 quiz, REG-46 payment).
+        # advisory=false (e2e-nightly.yml): a suite failure FAILS the job and
+        #   run so pipeline-alert.yml can open the pipeline-failure issue.
+        continue-on-error: ${{ inputs.advisory }}
+      - name: Dump server log on completion
+        if: always()
+        run: tail -100 /tmp/next-e2e-server.log || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
