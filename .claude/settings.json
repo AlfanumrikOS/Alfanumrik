@@ -43,6 +43,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/verify_before_stop.py",
+            "timeout": 30,
+            "statusMessage": "Verifying report claims against tool history..."
+          }
+        ]
+      }
     ]
   }
 }
