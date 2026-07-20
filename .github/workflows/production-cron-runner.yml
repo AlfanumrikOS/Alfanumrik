@@ -23,6 +23,7 @@ on:
           - /api/cron/foxy-quality-sample
           - /api/internal/cron/fix-failed-questions
           - /api/cron/streak-guardian
+          - /api/cron/flag-posture-canary
       reason:
         description: 'Incident/change reference and reason'
         type: string
@@ -77,7 +78,7 @@ jobs:
             exit 1
           fi
           case "$JOB_PATH" in
-            /api/cron/school-operations|/api/cron/daily-cron|/api/cron/irt-calibrate|/api/cron/reconcile-payments|/api/cron/payments-health|/api/cron/expired-subscriptions|/api/cron/account-purge|/api/cron/pre-debit-notice|/api/cron/board-score|/api/cron/reverify-domains|/api/cron/foxy-quality-sample|/api/internal/cron/fix-failed-questions|/api/cron/streak-guardian) ;;
+            /api/cron/school-operations|/api/cron/daily-cron|/api/cron/irt-calibrate|/api/cron/reconcile-payments|/api/cron/payments-health|/api/cron/expired-subscriptions|/api/cron/account-purge|/api/cron/pre-debit-notice|/api/cron/board-score|/api/cron/reverify-domains|/api/cron/foxy-quality-sample|/api/internal/cron/fix-failed-questions|/api/cron/streak-guardian|/api/cron/flag-posture-canary) ;;
             *) echo "::error::JOB_PATH is not one allowlisted production cron route."; exit 1 ;;
           esac
   run:

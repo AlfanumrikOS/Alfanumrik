@@ -174,7 +174,14 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // experience-v3 rollout/capability route (src/app/api/experience-v3/route.ts)
 // was deleted along with the One Experience V3 feature; its ledger entry is
 // pruned in the SAME PR so the guard ratchets DOWN, not drifts.
-const EXPECTED_COUNT = 250;
+// Flag-posture drift canary (2026-07-20): 250 -> 251 for the new cron route
+// src/app/api/cron/flag-posture-canary/route.ts. Service-role is
+// cron-by-design here: the nightly posture canary reads feature_flags via the
+// admin client to compare live flag state against the CEO-approved posture
+// (protected-flags.ts) — no user session exists on a scheduled invocation.
+// Fail-closed CRON_SECRET gate (constant-time compare) runs BEFORE any DB
+// I/O; output is counts/flag-names-only (no PII, no operator identity).
+const EXPECTED_COUNT = 251;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -249,7 +256,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 250 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 251 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);
