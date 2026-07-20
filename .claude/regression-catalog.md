@@ -2,7 +2,7 @@
 
 **This file has been split to reduce context cost.**
 
-The full catalog (238 entries) now lives in `.claude/regression/`:
+The full catalog (247 entries) now lives in `.claude/regression/`:
 
 | File | Feature area |
 |---|---|
@@ -17,7 +17,7 @@ The full catalog (238 entries) now lives in `.claude/regression/`:
 | `08-parent-portal.md` | Consumer Minimalism waves, parent portal, consent |
 | `09-adaptive-program.md` | Adaptive remediation loops A/B/C/D, digital twin |
 | `10-rbac-rls.md` | RBAC matrix, RLS policies, Student Pulse, XC-3 phases, mutation gates |
-| `11-infrastructure.md` | Python AI ports, Voice, Mobile parity, CI alerting, PWA, curriculum versioning, design system |
+| `11-infrastructure.md` | Python AI ports, Voice, Mobile parity, CI alerting + sharded-CI fan-in contract, PWA, curriculum versioning, design system |
 | `12-observability.md` | Monitoring data boundary, PostHog analytics |
 | `13-rag-cache.md` | RAG eval harness, Voyage rerank, grounded-answer cache, response-cache, Knowledge Intelligence |
 | `14-audit-remediation.md` | Engineering audit cycles 1-8, tier-2 PRs |

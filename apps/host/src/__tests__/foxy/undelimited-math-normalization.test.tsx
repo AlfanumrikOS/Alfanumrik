@@ -138,6 +138,29 @@ describe('containsAllowlistedMathCommand — trigger predicate', () => {
     expect(containsAllowlistedMathCommand('\\frac{1}{2}')).toBe(true);
     expect(containsAllowlistedMathCommand('\\frac12')).toBe(true);
   });
+
+  it('\\not (C1, Class 11 Sets): fires on \\not\\subset, never on prose "not"', () => {
+    expect(containsAllowlistedMathCommand('A \\not\\subset B')).toBe(true);
+    expect(containsAllowlistedMathCommand('x \\notin A')).toBe(true);
+    // Prose "not" has no backslash — never a trigger.
+    expect(containsAllowlistedMathCommand('do not worry, it is not math')).toBe(
+      false,
+    );
+    // Word boundary: `not` inside a longer letter run never matches.
+    expect(containsAllowlistedMathCommand('\\notation issue')).toBe(false);
+    expect(containsAllowlistedMathCommand('\\nothing here')).toBe(false);
+  });
+
+  it('alternation ordering: notin is not shadowed by not, nu unaffected', () => {
+    // `\notin` must resolve as the single command `notin` (longest-first
+    // alternation + word boundary), not as `not` + prose "in".
+    expect(splitUndelimitedMath('x \\notin A means x is not in A')).toEqual([
+      { kind: 'math', latex: 'x \\notin A', display: false },
+      { kind: 'text', value: ' means x is not in A' },
+    ]);
+    // Greek \nu still triggers on its own.
+    expect(containsAllowlistedMathCommand('frequency \\nu = 5')).toBe(true);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -221,6 +244,14 @@ describe('splitUndelimitedMath — span detection', () => {
   it('returns command-free input as a single untouched text segment', () => {
     expect(splitUndelimitedMath('x^2 in plain prose without commands')).toEqual([
       { kind: 'text', value: 'x^2 in plain prose without commands' },
+    ]);
+  });
+
+  it('\\not\\subset (C1, Class 11 Sets) converts as one math span', () => {
+    expect(splitUndelimitedMath('Here A \\not\\subset B holds')).toEqual([
+      { kind: 'text', value: 'Here ' },
+      { kind: 'math', latex: 'A \\not\\subset B', display: false },
+      { kind: 'text', value: ' holds' },
     ]);
   });
 });

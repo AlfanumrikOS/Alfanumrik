@@ -36,6 +36,9 @@ import { loadChapterContent } from './actions';
 import type { ChapterContent } from '@alfanumrik/lib/learn/fetchChapterContent';
 import { resolvePedagogyRule } from '@alfanumrik/lib/learn/pedagogy-content-rules';
 import { useChapterReadiness } from '@alfanumrik/lib/useChapterReadiness';
+// Canonical math renderer — replaces the legacy raw-monospace LaTeX box in
+// the AlfaTutor cards (KaTeX lazily loaded only when math is on screen).
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 
 // Lazy-loaded so the markdown + KaTeX bundle stays out of first paint.
 // Only pulled when the student opens Read mode.
@@ -1555,8 +1558,13 @@ function ChapterConceptPageContent() {
                                         {isHi && block.contentHi ? block.contentHi : block.content}
                                       </p>
                                       {block.mathExpression && (
-                                        <div className="mt-3 p-3.5 bg-gray-50 rounded-xl font-mono text-center text-xs font-bold text-gray-900 border border-gray-100/80">
-                                          {block.mathExpression}
+                                        <div className="mt-3 p-3.5 bg-gray-50 rounded-xl text-center text-sm font-bold text-gray-900 border border-gray-100/80 max-w-full overflow-x-auto">
+                                          {/* mathExpression is a bare LaTeX string (no
+                                              delimiters) — wrap in $$..$$ so the canonical
+                                              renderer typesets it in display mode. KaTeX
+                                              failure degrades to the code fallback, never
+                                              raw-monospace-only (old behaviour) or blank. */}
+                                          <MathRenderer content={`$$${block.mathExpression}$$`} />
                                         </div>
                                       )}
                                     </div>
@@ -2827,7 +2835,13 @@ const getCbseCustomTutorCard = (text: string, title: string, isHi: boolean): Cbs
   return null;
 };
 
-/** Detect if a paragraph is primarily a mathematical expression or formula */
+/**
+ * Detect if a paragraph is primarily a mathematical expression or formula.
+ * CLASSIFICATION ONLY — used to pick the card type/theme. The actual math
+ * RENDERING is routed through the canonical `<MathRenderer>` (see the
+ * `block.mathExpression` box in the card renderer); no raw LaTeX reaches
+ * the screen from this heuristic.
+ */
 function isMathParagraph(p: string): boolean {
   // Count math-like characters vs total
   const mathChars = (p.match(/[0-9=+\-×÷²³√∑∫πΔ><≥≤≠∞±∝∴∵→←⇒⇐αβγθλμσφψω]/g) || []).length;

@@ -23,6 +23,10 @@ import NextActionCard from '@alfanumrik/ui/quiz/NextActionCard';
 import CelebrationOverlay from '@alfanumrik/ui/quiz/CelebrationOverlay';
 import GoalScorecardSentence from '@alfanumrik/ui/quiz/GoalScorecardSentence';
 import MisconceptionExplainer from '@alfanumrik/ui/quiz/MisconceptionExplainer';
+// Canonical math renderer — fail-safe (raw-text fallback, never blank; P6),
+// lazy KaTeX (P10). NOTE: the collapsed row header renders a `.substring(0,90)`
+// slice — that stays PLAIN text (never KaTeX a truncated LaTeX fragment).
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 import { isKnownGoalCode } from '@alfanumrik/lib/goals/goal-profile';
 import type { ErrorType } from '@alfanumrik/lib/cognitive-engine';
 
@@ -680,7 +684,7 @@ export default function QuizResults({
                       <span className="text-[10px] uppercase tracking-wider text-[var(--text-3)] mr-1">
                         Q{idx + 1}
                       </span>
-                      {w.questionText}
+                      <MathRenderer inline content={w.questionText} />
                     </p>
                     <p className="text-[10px] text-[var(--text-3)]">
                       {isHi ? 'तुम्हारा जवाब' : 'You picked'}
@@ -1186,7 +1190,7 @@ export default function QuizResults({
                               <span className="font-semibold" style={{ color: 'var(--teal)' }}>
                                 {isHi ? 'आदर्श उत्तर: ' : 'Model Answer: '}
                               </span>
-                              {explanation}
+                              <MathRenderer content={explanation} />
                             </div>
                           )}
                         </>
@@ -1230,7 +1234,7 @@ export default function QuizResults({
                                     style={{ background: bg, border: `1px solid ${borderColor}`, color: textColor }}
                                   >
                                     <span className="font-bold w-4 flex-shrink-0">{OPTION_LETTERS[oi]}.</span>
-                                    <span className="flex-1">{opt}</span>
+                                    <span className="flex-1"><MathRenderer inline content={opt} /></span>
                                     {isCorrectOpt && <span className="flex-shrink-0">✓</span>}
                                     {isSelected && !correct && <span className="flex-shrink-0">✗</span>}
                                   </div>
@@ -1245,7 +1249,7 @@ export default function QuizResults({
                               <span className="font-semibold" style={{ color: 'var(--text-2)' }}>
                                 {isHi ? 'व्याख्या: ' : 'Explanation: '}
                               </span>
-                              {explanation}
+                              <MathRenderer content={explanation} />
                             </div>
                           )}
                         </>

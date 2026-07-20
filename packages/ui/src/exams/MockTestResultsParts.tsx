@@ -15,6 +15,7 @@
 
 import { useState } from 'react';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 import type { ReviewItem, SubmitResult } from './mock-test-types';
 
 // TODO(assessment): set to true and add onClick when /api/review/mark ships — REG candidate.
@@ -220,7 +221,7 @@ export function ReviewCard({ item, isHi }: { item: ReviewItem; isHi: boolean }) 
       {open && (
         <div className="px-3 pb-3 space-y-3 border-t border-[var(--border)]">
           <p className="text-sm leading-relaxed pt-3" style={{ color: 'var(--text-1)' }}>
-            {item.question_text}
+            <MathRenderer content={item.question_text} />
           </p>
           <div className="space-y-1">
             {item.options.map((opt, i) => {
@@ -243,7 +244,7 @@ export function ReviewCard({ item, isHi }: { item: ReviewItem; isHi: boolean }) 
                   style={{ background: bg, border }}
                 >
                   <span className="font-bold text-[var(--text-3)]">{String.fromCharCode(65 + i)}.</span>
-                  <span className="flex-1" style={{ color: 'var(--text-1)' }}>{opt}</span>
+                  <span className="flex-1" style={{ color: 'var(--text-1)' }}><MathRenderer inline content={opt} /></span>
                   {correct && <span style={{ color: '#16A34A' }} aria-label={isHi ? 'सही उत्तर' : 'correct answer'}>✓</span>}
                   {chosen && !correct && <span style={{ color: '#DC2626' }} aria-label={isHi ? 'आपका उत्तर' : 'your answer'}>✗</span>}
                 </div>
@@ -258,7 +259,7 @@ export function ReviewCard({ item, isHi }: { item: ReviewItem; isHi: boolean }) 
               <p className="font-bold mb-1" style={{ color: '#7C3AED' }}>
                 {isHi ? 'व्याख्या' : 'Explanation'}
               </p>
-              <p style={{ color: 'var(--text-1)' }}>{item.explanation}</p>
+              <p style={{ color: 'var(--text-1)' }}><MathRenderer content={item.explanation} /></p>
             </div>
           )}
           {/* TODO(assessment): re-enable when /api/review/mark endpoint ships — REG candidate */}

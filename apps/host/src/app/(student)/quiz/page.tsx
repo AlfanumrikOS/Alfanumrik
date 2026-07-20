@@ -16,6 +16,9 @@ import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import QuizSetup from '@alfanumrik/ui/quiz/QuizSetup';
 import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
 import WrittenAnswerInput from '@alfanumrik/ui/quiz/ncert/WrittenAnswerInput';
+// Canonical math renderer (P6/P12 fail-safe; P10: KaTeX loads lazily and
+// only when the text actually contains math — plain questions cost nothing).
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 
 // Lazy-load QuizResults — only shown after quiz completion (results screen)
 const QuizResults = dynamic(() => import('@alfanumrik/ui/quiz/QuizResults'), {
@@ -1531,7 +1534,7 @@ export default function QuizPage() {
                   })()}
                 </div>
                 <div className="text-lg md:text-xl font-semibold leading-relaxed" style={{ whiteSpace: 'pre-wrap' }}>
-                  {isHi && q.question_hi ? q.question_hi : q.question_text}
+                  <MathRenderer content={isHi && q.question_hi ? q.question_hi : q.question_text} />
                 </div>
               </Card>
 
@@ -1604,7 +1607,9 @@ export default function QuizPage() {
                         {letter}
                       </span>
                       <span className="text-sm md:text-base font-medium leading-snug flex-1" style={{ color: textColor }}>
-                        {optText}
+                        {/* Label already stripped above; inline-only — an
+                            option must never contain display math. */}
+                        <MathRenderer inline content={optText} />
                       </span>
                       {isAnswered && isCorrectOpt && <span className="ml-auto text-xl flex-shrink-0">✓</span>}
                       {isAnswered && isSelected && !isCorrectOpt && <span className="ml-auto text-xl flex-shrink-0">✗</span>}
@@ -1645,7 +1650,11 @@ export default function QuizPage() {
                       ? (isHi
                           ? 'क्विज़ ख़त्म होने पर सही जवाब और व्याख्या देखोगे।'
                           : "You'll see the correct answer and explanation at the end of the quiz.")
-                      : (isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'कोई व्याख्या उपलब्ध नहीं' : 'No explanation available'))}
+                      : (
+                        <MathRenderer
+                          content={isHi && q.explanation_hi ? q.explanation_hi : q.explanation || (isHi ? 'कोई व्याख्या उपलब्ध नहीं' : 'No explanation available')}
+                        />
+                      )}
                   </p>
                 </div>
               )}

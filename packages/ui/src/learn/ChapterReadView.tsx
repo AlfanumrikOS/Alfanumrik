@@ -1,12 +1,10 @@
 'use client';
 
 import { memo } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
-import rehypeKatex from 'rehype-katex';
-import 'katex/dist/katex.min.css';
+// Canonical markdown+math pipeline (2026-07 consolidation) — this view no
+// longer carries its own react-markdown config. `breaks` preserves the
+// prior remark-breaks behaviour (single newline → <br> in NCERT prose).
+import { MathMarkdown } from '../math/MathMarkdown';
 import { Card, Button, LoadingFoxy } from '@alfanumrik/ui/ui';
 import type { ChapterContent } from '@alfanumrik/lib/learn/fetchChapterContent';
 
@@ -110,16 +108,13 @@ function ChapterReadViewImpl({
               </div>
             )}
             <article
-              className="prose prose-sm max-w-none px-1"
+              // Narrow-viewport safety: long display equations scroll inside
+              // the article instead of clipping at 360px.
+              className="prose prose-sm max-w-none px-1 [&_.katex-display]:max-w-full [&_.katex-display]:overflow-x-auto"
               data-testid="learn-chapter-read-body"
               lang={content.language}
             >
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-                rehypePlugins={[rehypeKatex]}
-              >
-                {content.markdown}
-              </ReactMarkdown>
+              <MathMarkdown content={content.markdown} variant="plain" breaks />
             </article>
 
             {content.truncated && (

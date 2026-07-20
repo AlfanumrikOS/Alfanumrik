@@ -26,35 +26,151 @@ env:
 
 jobs:
   # ── Step 1: Quality Checks ──
+  # 2026-07-20 de-duplication (user-approved): on push to `develop`, the
+  # "CI — Alfanumrik" workflow (`ci.yml` triggers on push to main/master/
+  # develop) already runs lint + type-check + all unit tests + build (plus
+  # secret scan, Edge Function Deno tests, live-DB integration tests, and
+  # P10 bundle budgets) on the SAME commit. Re-running lint/type-check/test/
+  # build here duplicated ~12-15 runner-minutes per develop push. On that
+  # path this job now waits, FAIL-CLOSED, for that CI run's "CI Gate"
+  # fan-in job to conclude success for the exact head SHA.
+  #
+  # The inline checks are KEPT (fail-closed) for every path where NO ci.yml
+  # run exists for the SHA:
+  #   - push to the `staging` branch (ci.yml does not trigger on `staging`)
+  #   - `workflow_dispatch` (manual re-runs; ci.yml has no dispatch trigger,
+  #     and the dispatched SHA may never have had a push-triggered CI run)
+  # For those paths the original lint/type-check/test/build steps run
+  # unchanged — the quality bar is never skipped, only de-duplicated where
+  # CI provably covers the identical SHA.
+  #
+  # Fail-closed wait semantics (develop-push path): poll every 30s, bounded
+  # at 20 min (CI critical path ~5-8 min; bound absorbs the simultaneous-
+  # start race). Missing run, cancelled/skipped/failed/timed-out gate, or
+  # timeout → this job fails and nothing downstream (migrations, deploy)
+  # runs. Keys on the "CI Gate" JOB (aggregates all pre-merge quality jobs,
+  # nothing deploy-coupled), not the whole-run conclusion.
+  #
+  # NOTE: the poll script below is intentionally duplicated in
+  # deploy-production.yml (quality job). Keep both copies in sync.
   quality:
     name: Lint, Type-check & Build
     runs-on: ubuntu-latest
+    # Symmetry with deploy-production.yml's quality job (keep-in-sync
+    # contract): bounds the 20-min fail-closed CI-Gate poll on Path A and
+    # the inline lint/type-check/test/build on Path B.
+    timeout-minutes: 25
     environment: staging
+    permissions:
+      contents: read
+      actions: read
     steps:
+      # ── Path A: push to develop → verify CI green for this exact SHA ──
+      - name: Wait for "CI — Alfanumrik" CI Gate success on this SHA
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_WORKFLOW_NAME: 'CI — Alfanumrik'
+          GATE_JOB_NAME: 'CI Gate'
+          POLL_INTERVAL_SECONDS: '30'
+          POLL_WINDOW_SECONDS: '1200'
+        run: |
+          set -euo pipefail
+          DEADLINE=$((SECONDS + POLL_WINDOW_SECONDS))
+          RUNS_FILE=$(mktemp)
+          JOBS_FILE=$(mktemp)
+          trap 'rm -f "$RUNS_FILE" "$JOBS_FILE"' EXIT
+          echo "Gating deploy on '${EXPECTED_WORKFLOW_NAME}' / '${GATE_JOB_NAME}' == success for ${GITHUB_SHA} (bound ${POLL_WINDOW_SECONDS}s, interval ${POLL_INTERVAL_SECONDS}s)."
+          while :; do
+            RUN_ID=""
+            RUN_STATUS=""
+            RUN_CONCLUSION=""
+            if gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=10" > "$RUNS_FILE" 2>/dev/null; then
+              mapfile -t RUN_FIELDS < <(jq -r --arg wf "$EXPECTED_WORKFLOW_NAME" --arg sha "$GITHUB_SHA" '
+                ([.workflow_runs[]? | select(.name == $wf and .head_sha == $sha)] | sort_by(.id) | last) as $r
+                | if $r == null then "", "", "" else ($r.id | tostring), $r.status, ($r.conclusion // "") end
+              ' "$RUNS_FILE")
+              RUN_ID="${RUN_FIELDS[0]:-}"
+              RUN_STATUS="${RUN_FIELDS[1]:-}"
+              RUN_CONCLUSION="${RUN_FIELDS[2]:-}"
+            else
+              echo "::warning::Could not list CI runs (transient API error); retrying."
+            fi
+            if [ -n "$RUN_ID" ]; then
+              GATE_FOUND="false"
+              GATE_STATUS=""
+              GATE_CONCLUSION=""
+              if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?filter=latest&per_page=100" > "$JOBS_FILE" 2>/dev/null; then
+                mapfile -t GATE_FIELDS < <(jq -r --arg j "$GATE_JOB_NAME" '
+                  ([.jobs[]? | select(.name == $j)] | last) as $g
+                  | if $g == null then "false", "", "" else "true", $g.status, ($g.conclusion // "") end
+                ' "$JOBS_FILE")
+                GATE_FOUND="${GATE_FIELDS[0]:-false}"
+                GATE_STATUS="${GATE_FIELDS[1]:-}"
+                GATE_CONCLUSION="${GATE_FIELDS[2]:-}"
+              else
+                echo "::warning::Could not list jobs for CI run ${RUN_ID}; retrying."
+              fi
+              if [ "$GATE_FOUND" = "true" ] && [ "$GATE_STATUS" = "completed" ]; then
+                if [ "$GATE_CONCLUSION" = "success" ]; then
+                  echo "'${GATE_JOB_NAME}' succeeded for ${GITHUB_SHA} (CI run ${RUN_ID})."
+                  exit 0
+                fi
+                echo "::error::'${GATE_JOB_NAME}' concluded '${GATE_CONCLUSION}' on CI run ${RUN_ID} for ${GITHUB_SHA}; refusing to deploy (cancelled/skipped/failed all fail this gate)."
+                exit 1
+              fi
+              if [ "$RUN_STATUS" = "completed" ] && [ "$GATE_FOUND" != "true" ]; then
+                echo "::error::CI run ${RUN_ID} completed ('${RUN_CONCLUSION}') without a '${GATE_JOB_NAME}' job; refusing to deploy."
+                exit 1
+              fi
+              echo "CI run ${RUN_ID}: run status=${RUN_STATUS:-unknown}, gate status=${GATE_STATUS:-pending}; waiting."
+            else
+              echo "No '${EXPECTED_WORKFLOW_NAME}' push run found yet for ${GITHUB_SHA}; waiting."
+            fi
+            REMAINING=$((DEADLINE - SECONDS))
+            if [ "$REMAINING" -le 0 ]; then
+              echo "::error::Timed out after ${POLL_WINDOW_SECONDS}s without a successful '${GATE_JOB_NAME}' for ${GITHUB_SHA}; refusing to deploy."
+              exit 1
+            fi
+            SLEEP_SECONDS="$POLL_INTERVAL_SECONDS"
+            if [ "$REMAINING" -lt "$SLEEP_SECONDS" ]; then SLEEP_SECONDS="$REMAINING"; fi
+            sleep "$SLEEP_SECONDS"
+          done
+
+      # ── Path B: staging-branch push / manual dispatch → inline checks ──
+      # (No ci.yml run exists for these SHAs; the original steps run
+      # unchanged, fail-closed.)
       - uses: actions/checkout@v6
+        if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
 
       - uses: actions/setup-node@v6
+        if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
       - name: Install dependencies
+        if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         run: npm ci
 
       - name: Lint
+        if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         run: npm run lint
 
       - name: Type check
+        if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         run: npm run type-check
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Run unit tests
+        if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         run: npm run test -- --run
 
       # Heap bump matches ci.yml + deploy-production.yml. See PR #818 / this PR
       # for the SIGABRT-during-next-build root cause.
       - name: Build
+        if: github.event_name != 'push' || github.ref != 'refs/heads/develop'
         run: npm run build
         env:
           NODE_OPTIONS: --max-old-space-size=6144

@@ -14,6 +14,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 
 interface Remediation {
   questionId: string;
@@ -76,7 +77,7 @@ export default function MisconceptionExplainer({ questionId, distractorIndex }: 
           {isHi ? 'यहाँ अक्सर गलती होती है' : 'A common slip-up here'}
         </span>
       </div>
-      <p className="text-sm leading-relaxed text-[var(--text-2)] mb-3">{text}</p>
+      <p className="text-sm leading-relaxed text-[var(--text-2)] mb-3"><MathRenderer content={text} /></p>
       <a
         href={`/foxy?mode=doubt&q=${encodeURIComponent(remediation.questionId)}`}
         className="inline-block text-xs font-semibold underline"

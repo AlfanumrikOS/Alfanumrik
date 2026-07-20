@@ -1077,6 +1077,20 @@ never double-converted, and loud fixture-integrity guards).
 
 ## REG-258 — Foxy math-format house style (Wave B): flag-OFF byte-identity, band-uniformity-until-harness-scores, rubric v2 math criteria, seed OFF (2026-07-16)
 
+> **PARTIALLY SUPERSEDED (2026-07-20, canonical-math-rendering change):** pin
+> **(c) band uniformity** — `buildMathFormatDirective('6-8') ===
+> buildMathFormatDirective('9-12')` under the 2026-07-16 CEO holding
+> constraint — is SUPERSEDED by `docs/math-rendering-spec.md` §3 (CEO-approved
+> 2026-07-20), which splits THREE bands `'6-8' | '9-10' | '11-12'` with
+> distinct density rules. The enforcing suite
+> `apps/host/src/__tests__/api/foxy/math-format-directive.test.ts` was
+> rewritten to the 3-band contract and is now pinned by **REG-276** (which
+> also preserves this entry's pins (a) flag-OFF byte-identity and the
+> `buildMathFormatDirective('6-8') === MATH_FORMAT_DIRECTIVE` byte-identity —
+> spec §7.2/§8). Pins (b), (d), (e), (f) remain in force unchanged. Do NOT
+> re-add the two-band uniformity assertion; history preserved per catalog
+> convention.
+
 Source: math-format #2/#3 (Wave B, branch `feat/foxy-math-format-v2`). Wave A
 (REG-257) fixed the RENDERER; Wave B improves what the model EMITS.
 `MATH_FORMAT_DIRECTIVE` (`packages/lib/src/foxy/prompt-sections.ts`) pins the
@@ -1132,6 +1146,168 @@ band-uniformity-until-harness-scores, directive content + parity-lock
 exclusion, rubric v2 scaffold_fidelity math criteria with unchanged 4-key
 judge contract, and the default-OFF canonical seed).
 **Total catalog: 225 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-273..REG-276 — Canonical math rendering (docs/math-rendering-spec.md): single normalizer/pipeline, MathRenderer fail-safe + truncated-preview canary, prompt density single-source + twin byte-parity, 3-band resolveGradeBand + flag-OFF byte-identity (2026-07-20)
+
+Source: the canonical-math-rendering change (spec `docs/math-rendering-spec.md`,
+CEO-approved 2026-07-20; assessment definition → ai-engineer prompts →
+frontend surfaces → testing). The 2026-07 consolidation created ONE math
+pipeline for the whole platform: normalizer primitives in
+`packages/ui/src/math/normalize.ts`, the KaTeX-direct segment renderer in
+`packages/ui/src/math/katex-segments.tsx`, the lazy fail-safe wrapper
+`packages/ui/src/math/MathRenderer.tsx` (question-bank surfaces: quiz page,
+QuizResults, MockTestRunner, MisconceptionExplainer, admin detail views), and
+the single markdown+math config `packages/ui/src/math/MathMarkdown.tsx`.
+`packages/ui/src/foxy/math-normalization.ts` became an export-only
+compatibility shim. On the prompt side, the grade-band step-density rule got
+ONE in-code source (`MATH_STEP_DENSITY_RULES` in
+`packages/lib/src/foxy/math-step-density.ts`), composed by
+`buildMathFormatDirective(gradeBand)` and derived — never copy-pasted — by
+every generator prompt (spec §6).
+
+**Why these are regression pins.** (1) Spec §5 forbids a second frontend
+regex patch — a duplicated normalizer/tokenizer silently forks rendering
+between surfaces. (2) A math question must NEVER render blank: the lazy KaTeX
+chunk failing on flaky 4G must degrade to raw text (P6/P12), and a string
+sliced mid-LaTeX (`.slice(0, 80)` list cells) must never reach KaTeX. (3) A
+copy-pasted density rule drifts — two students at the same grade would get
+different formatting contracts; and the runtime serves the INLINE prompt twin
+preferentially, so a .txt-only edit silently forks the served prompt. (4) The
+3-band split is a scored, CEO-approved pedagogy change gated by
+`ff_foxy_math_format_v2`; with the flag OFF every Foxy prompt must stay
+byte-identical to the pre-Wave-B selector, and the '6-8' directive must stay
+byte-identical to the pre-split `MATH_FORMAT_DIRECTIVE` (spec §7.2/§8).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-273 | `math_pipeline_single_normalizer_single_definition_sites` | Every normalization primitive (`normalizeLatexDelimiters`, `tokenizeInline`, `containsAllowlistedMathCommand`, `containsRenderableMath`, `splitUndelimitedMath`, `normalizeMathSegments`) is DEFINED exactly once across all of `packages/ui/src` — in `math/normalize.ts` (walk + per-function definition-site equality); `renderKatex`/`renderInlineSegments` defined only in `math/katex-segments.tsx`; `from 'katex'` and `katex.renderToString(` appear ONLY in `math/katex-segments.tsx`; the react-markdown+math config exists ONLY in `math/MathMarkdown.tsx`; `foxy/math-normalization.ts` is an export-only shim over `../math/normalize` (comment-stripped scan: no function/const/class/arrow — zero logic); consumer wiring: FoxyStructuredRenderer imports from `../math/normalize` + `../math/katex-segments`, RichContent pre-normalizes via the canonical `normalizeLatexDelimiters` and renders via MathMarkdown, and QuizResults / quiz page / MockTestRunner all render through MathRenderer with the spec invocation shapes (`inline` on option rows — an option never carries display math). | `apps/host/src/__tests__/math/math-pipeline-single-source.test.ts` (21 tests, shared with REG-274's preview canaries) | E | Spec §5/§6 (rescue singular, no second regex patch), P6-adjacent, P10 (single KaTeX site keeps the lazy-chunk strategy honest) |
+| REG-274 | `math_renderer_failsafe_raw_text_never_blank_plus_truncated_preview_plain` | **(a) Error boundary → RAW TEXT (P6: never blank):** a throwing/failed katex-segments chunk render degrades to the byte-exact raw question text (container.textContent === content, non-empty), never a blank or a crash; className wrapper survives the fallback. **(b) Suspense fallback:** raw text is visible immediately on first render and stays visible while the chunk is loading/suspended. **(c) Fast path (P10):** plain question text (no delimiter, no allowlisted command) renders synchronously with ZERO invocations of the lazy katex-segments component; `containsRenderableMath` predicate pinned (plain/`\franchise` → false; `\(`/`\[`/`$`/allowlisted command → true, errs permissive on `$`). **(d) Spec §2 render cases through the NEW surfaces** (Foxy structured layer NOT duplicated — REG-257 owns it): `\( \frac{3}{4} \)`, `\( x^{2} \)`, `\[ \sum_{k=1}^{n} k \]`, and a band-11-12 multi-step justified chain (`\because`, `\boxed{}`) each render KaTeX (`.katex`/`.mfrac` present) with NO raw delimiter text leaking to visible text, via the exact QuizResults/quiz-page invocation shapes AND a real `<MockTestRunner />` mount (question text + options); display math gets `.katex-display` INSIDE the `block max-w-full overflow-x-auto` scroll wrapper (360px containment); `inline` forces option-row math inline (never `.katex-display`, never the scroll wrapper); markdown emphasis OFF by default (`2*3*4` never becomes `<em>`); nullish content renders nothing. **(e) Truncated-preview canary:** sliced strings NEVER reach MathRenderer — the QuizResults collapsed row header `substring(0, 90)` line, and the super-admin cms + workbench `slice(0, 80)` list cells stay PLAIN text with `title=` hover (cms/workbench pages import no MathRenderer at all). | `apps/host/src/__tests__/math/math-renderer-failsafe.test.tsx` (8 tests) + `apps/host/src/__tests__/math/math-renderer.test.tsx` (13 tests) + the 3 truncated-preview canaries in `math-pipeline-single-source.test.ts` | E | P6 (never a blank question), P12-adjacent (fail-safe degradation), P10 (lazy KaTeX, zero cost for plain text), spec §2 (delimiter contract at render time) |
+| REG-275 | `math_density_single_source_derivation_and_prompt_twin_byte_parity` | The step-density rule has exactly ONE in-code source (`MATH_STEP_DENSITY_RULES`): `foxy_tutor_v1.txt` §8 DEFERS to `docs/math-rendering-spec.md` + `buildMathFormatDirective` and names the mode-directive injection channel + the conservative no-directive default; NO band-specific density text is copy-pasted into any static template (per-band body + distinctive markers `2-3 ROUTINE operations` / `justified equation chains` / `FOIL` pinned ABSENT); §8 carries the spec §4 answer-block-vs-`\boxed{}` disambiguation; §4 (stepwise numericals) defers density AND boxing to §8 with the retired absolute lines (`never skip intermediate steps`, `box/highlight the final answer`) pinned gone; the runtime-preferred `inline.ts` twin contains the .txt §8 AND §4 blocks VERBATIM (byte-parity — an edit to one without the other silently forks the served prompt), extended to all 5 closure templates (quiz_question_generator / quiz_answer_verifier / ncert_solver / foxy_tutor_doubt / foxy_tutor_exam: full-template verbatim-in-inline.ts); every closure template carries the spec §2 delimiter contract (`\( ... \)` mandated, `$`/`$$` forbidden, ASCII math banned) and the per-surface §4 boxing rule (raw-markdown → `\boxed{...}` + NO answer block; structured → answer-block-IS-the-box, no double-boxing); NCERT solver prompts embed EXACTLY their band's density text and no other band's, the retired 6-8-absolute solver line is gone, and solver text is stable WITHIN a band (prompt-cache: one prefix per band); Unicode `²` pinned absent from both twins. | `apps/host/src/__tests__/lib/foxy/math-density-drift-guard.test.ts` (57 tests) | E | Spec §6 (single source — duplicates drift), P12 (prompt-layer fix, not frontend regex), P7-adjacent (density constrains structure only), operational integrity (inline twin is what the runtime serves) |
+| REG-276 | `three_band_resolveGradeBand_boundaries_and_flag_off_byte_identity` | **(a) 3-band resolution (P5 grade STRINGS):** `resolveGradeBand` maps "6"/"7"/"8" → '6-8', "9"/"10" → '9-10', "11"/"12" → '11-12'; the split boundaries at grade 8/9 and 10/11 are pinned per-grade; ""/garbage/"5"/"13"/out-of-range fall back to the pedagogically conservative '6-8'. **(b) Per-band directive content:** '9-10' carries the 2-3-routine-operations rule, '11-12' carries justified chains + NCERT theorem naming + LaTeX-only `\because`/`\therefore` + no foreign mnemonics; rules 2-3 (display-vs-inline + delimiter contract) stay band-invariant; same band → byte-identical directive (one stable prompt-cache prefix per band). **(c) 6-8 byte-identity (spec §7.2/§8):** `buildMathFormatDirective('6-8') === MATH_FORMAT_DIRECTIVE` including the fraction-cancellation few-shot content pins — the pre-split directive text IS the 6-8 band text; a "conformance fix" swapping the few-shot to the spec §3.3 illustration is a rejectable change without an assessment-approved spec revision. **(d) Flag-OFF byte-identity (supersedes REG-258 pin (c)):** with `ff_foxy_math_format_v2` OFF the composed `mode_directive` equals the pre-Wave-B double-composed selector for every mode × upstream-flag state; flag-ON injection composes the BAND directive LAST on prose-teaching turns only (quiz_me / practice never get it). | `apps/host/src/__tests__/api/foxy/math-format-directive.test.ts` (99 tests — rewritten from the REG-258 two-band suite; runtime count re-verified 2026-07-20, the "87" quoted at entry time was a stale draft count) | E | P5 (grade-string band resolution), P12 (additive directive; rails/parity locks untouched), P7 (bilingual note), spec §3/§7/§8, REG-258 continuity (pins a/b/d/e/f carried forward) |
+
+### Invariants covered by this section
+
+- **Spec §5/§6 single-source discipline** — one normalizer, one KaTeX-direct
+  site, one markdown+math config, one density-rule source; shims are
+  export-only. Duplicates are the failure mode this section exists to catch.
+- **P6 (never a blank question)** — chunk failure, slow load, malformed LaTeX,
+  and truncated previews all degrade to visible raw/plain text.
+- **P10 (bundle posture)** — plain question text provably never invokes the
+  lazy KaTeX chunk; the single KaTeX import site keeps that guarantee honest.
+- **P5 (grade format)** — band resolution consumes grade STRINGS only, with a
+  conservative fallback.
+- **P12 (AI safety / prompt integrity)** — formatting violations are fixed at
+  the prompt layer; the served inline prompt twins cannot silently fork from
+  the canonical .txt templates; flag-OFF keeps every student prompt
+  byte-identical to the pre-change selector.
+- **REG-257/REG-258 continuity** — the Foxy structured-layer canary corpus is
+  untouched (not duplicated); REG-258's surviving pins are carried by REG-276
+  and its superseded band-uniformity pin is documented in place.
+
+### Catalog total
+
+Pre-REG-273: 239 entries (through REG-272, CI sharded-topology fan-in contract). Adds
+REG-273 (canonical math pipeline single source — definition
+sites, shim purity, single KaTeX/react-markdown sites, consumer wiring),
+REG-274 (MathRenderer fail-safe raw-text-never-blank + Suspense fallback +
+fast-path no-lazy-import + spec §2 render cases through quiz/mock-exam
+surfaces + truncated-preview plain-text canary), REG-275 (prompt step-density
+single-source derivation + .txt/inline.ts twin byte-parity across all
+generator templates), REG-276 (3-band `resolveGradeBand` boundaries +
+per-band directive content + 6-8 byte-identity + `ff_foxy_math_format_v2`
+flag-OFF byte-identity; supersedes REG-258 pin (c)).
+**Total catalog: 243 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-277..REG-280 — Foxy LaTeX-in-JSON ramp package (branch fix/foxy-latex-json-escaping): few-shot JSON validity + doubling rule, escape-repair backstop with Node/Deno + renderer-allowlist parity, foxy-system.ts legacy-path alignment (deliberate re-pin), §9.1 vertical_math precedence carve-out (2026-07-20)
+
+Source: the 2026-07-20 LaTeX-in-JSON escaping incident + CEO-approved
+`ff_foxy_math_format_v2` 100%-ramp package (3 commits: 771412ee escaping fix,
+8ac77c0c foxy-system re-pin + spec §9.1, 981b6ed7 C1 `\not` allowlist).
+Incident shape: the few-shot examples in FOXY_STRUCTURED_OUTPUT_PROMPT showed
+LaTeX inside JSON strings with SINGLE backslashes — illegal JSON escapes. The
+model imitated them, `JSON.parse` threw at the first math-bearing block, and
+the truncation-rescue path silently dropped every block after it while
+telemetry recorded success (19/29 math turns degraded in 48h; worst case: math
+in the FIRST block → Tier-3 "answer got cut off" apology on a complete
+answer). The fix is two-layered — prompt-side (doubling rule + doubled
+few-shots) and backstop-side (string-literal-scoped pre-parse escape repair) —
+plus the foxy-system.ts legacy-path alignment and the §9.1 precedence ruling
+that were prerequisites for the ramp.
+
+**Why these are regression pins.** (1) A single under-escaped few-shot
+re-teaches the model illegal JSON on every structured turn — the incident
+recurs silently because rescue reports ok=true. (2) The repair backstop sits
+in front of `JSON.parse` on EVERY Foxy structured turn: if it ever touches
+legal escapes, leaks outside string literals, or masks true truncation, it
+corrupts student-visible content platform-wide; and if the Node/Deno copies or
+the repair-vs-renderer allowlists fork, the two runtimes disagree about what
+math survives. (3) foxy-system.ts is the base prompt of the legacy
+intent-router path (`runLegacyFoxyFlow` — the `ff_grounded_ai_foxy`
+kill-switch and grounded-failure fallback) with NO band-directive injection
+channel: retired absolute lines returning there would contradict the spec on
+exactly the path that serves students when grounded is down. (4) The §9.1
+carve-out must stay dark (rollout 0) and isolated: one byte leaking into the
+band directives would teach an ungated block type on every math turn and break
+the flag-OFF byte-identity that REG-276 guarantees.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-277 | `foxy_fewshot_json_validity_and_doubling_rule` | Every few-shot example in the RENDERED `FOXY_STRUCTURED_OUTPUT_PROMPT` (all 10, extracted by the `{"title"` … `]}` block walk — the count itself is pinned) parses as STRICT JSON and validates against `FoxyResponseSchema` (the model imitates these verbatim); math-bearing examples decode to single-backslash LaTeX (`\( ax^2 + bx + c = 0 \)`, `\neq`, `x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}`) — proof the doubling is right and not over-escaped; the explicit `JSON ESCAPING FOR MATH (CRITICAL)` rule with the `\\frac not \frac` contrast is present in the constraints. Cross-copy discipline for the 3 prompt copies: the Deno copy (`structured-prompt.ts`) rides the existing GUARD #4 byte-compare and the Python copy (`foxy_structured_prompt.py`) rides the schema-parity byte-compare, whose PREMISE pin flipped to the doubled form (rendered TS carries `\\frac{-b \\pm \\sqrt`, never the quadrupled over-escape) — so all 3 served copies carry the same doubled few-shots + rule. The doubling rule also ships on the six JSON-surface templates (foxy_tutor_v1 / teach / doubt / exam + quiz_question_generator / quiz_answer_verifier, each +1 `JSON escaping (CRITICAL)` line, mirrored in `inline.ts`): held today TRANSITIVELY by REG-275's .txt↔inline.ts full-template byte-parity (an edit to one side fails); a DIRECT presence assertion per template is a named follow-up gap (see below). | `apps/host/src/__tests__/lib/foxy/prompt-fewshot-json-validity.test.ts` (23 tests) + premise pins in `schema-parity-python.test.ts` and `delimiter-parity.test.ts` | E | P12 (prompt integrity — the few-shots ARE the behavior), P6-adjacent (student math renders instead of vanishing), REG-275 continuity |
+| REG-278 | `json_escape_repair_backstop_scoped_conservative_parity` | **(a) Legal escapes byte-preserved:** all 8 legal forms (`\n \t \b \f \r \" \\ \/ \uXXXX`) + already-doubled LaTeX pass through untouched with `repairCount === 0`; genuine control escapes with non-command tails (`\tcell`, `\name`, `\notime`, `\notebook`, `\franchise`, `\fracXY`) stay control escapes (word-bounded arbiter). **(b) Illegal escapes doubled inside string literals only:** `\( \) \[ \]`, illegal-head commands (`\pi \sqrt \cdot \lambda`), legal-escape-HEADED commands via the allowlist arbiter (`\times \neq \frac \theta \boxed`), `\u` not followed by 4 hex (`\underline`) repaired while `A` survives; C1: `\not\subset` (repairCount 2) and `\notin` (longest-first alternation, never not+in) repair correctly, `\nu` unshadowed. **(c) Purity:** backslashes OUTSIDE string literals never touched; idempotent (second pass repairCount 0); never throws on garbage/truncated input; no-backslash input returned by reference. **(d) Incident regression:** the 2026-07-20 failure shape (complete envelope, under-escaped block 2) repairs to a FULL parse + schema validation — 4/4 blocks, no loss; `rescueFromTruncatedJson` recovers the full envelope (repair runs before the truncation walk); first-block math no longer collapses to the Tier-3 apology (`wrapAsParagraph` output contains the math, not "answer got cut off"); TRUE truncation still throws post-repair and routes to rescue, which salvages the complete blocks — repair does not mask truncation. **(e) Telemetry:** in the Deno pipeline `structured_parse_repaired` (complete payload, repairCount > 0, warning + ok=true) is a DISTINCT signal from `structured_parse_rescued` — reaching rescue means genuinely truncated/structurally broken, never merely under-escaped. **(f) Parity:** Node source `packages/lib/src/foxy/json-escape-repair.ts` and Deno mirror `supabase/functions/grounded-answer/json-escape-repair.ts` byte-identical (LF-normalized) AND runtime-neutral (no imports, no `Deno.`, no `require`); `JSON_REPAIR_MATH_COMMANDS` set-equals the renderer's `MATH_COMMAND_ALLOWLIST` (order-insensitive) so repair and render can never disagree about what is math; extras exactly `['boxed', 'rightleftharpoons']` and strictly additive (never shadow a renderer command); `begin` deliberately absent from BOTH lists (documented span-rule deferral — matrix environments need an environment-aware rule, not an allowlist entry). | `apps/host/src/__tests__/lib/foxy/json-escape-repair.test.ts` (31 tests) + `json-escape-repair-parity.test.ts` (4 tests) + `apps/host/src/__tests__/foxy/undelimited-math-normalization.test.tsx` (42 tests — `\not` renderer allowlist + alternation-ordering pins) + `supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts` (Deno — rescue/extract with repair) | E | P12 (no silent block loss on student turns), P6-adjacent (math renders), operational integrity (repaired-vs-rescued telemetry distinct — the ops alert threshold rides it) |
+| REG-279 | `foxy_system_legacy_path_alignment_re_pin` | `buildFoxySystemPrompt` (base prompt of the legacy intent-router path under /api/foxy — `runLegacyFoxyFlow`, the `ff_grounded_ai_foxy` kill-switch + grounded-failure fallback; NO band-directive injection channel, so it can never stack with the flag-ON grounded band directive), asserted on RUNTIME output for grade-7-learn and grade-11-doubt: **(a) retired strings cannot return** — `box/highlight the final answer`, `Box/emphasize`, `never skip intermediate steps`, the absolute `separated. Never compress` density line, and the `or x²` Unicode-superscript allowance (no `²` anywhere); **(b) deferential §4/§8 house pattern present** (mirrors foxy_tutor_v1): stage completeness (`never skip a stage (formula -> substitution -> calculation -> final answer)`), step DENSITY defers to `docs/math-rendering-spec.md section 3` / `buildMathFormatDirective` with the conservative no-directive default, spec §4 boxing disambiguation (`"answer" block IS the boxed-answer convention` / `do NOT additionally wrap the value in \boxed{}`), LaTeX `^{...}` superscripts + prose-scoped programming-syntax ban; **(c) no band density text copy-pasted** (spec §6 — all 3 `MATH_STEP_DENSITY_RULES` bodies + the `2-3 ROUTINE operations` / `justified equation chains` / `FOIL` markers pinned absent); **(d) escape fix holds** — served bytes carry REAL LaTeX (`\( ... \)`, `\[ ... \]`, `\frac{numerator}{denominator}`, `\sqrt{x}`, `\pi instead of pi`, `\theta instead of theta`), never the pre-fix `delimited by ( ... )` pseudo-paren instruction, and NO control characters besides newline (the pre-fix mangling turned `\b`/`\f`/`\t` command heads into backspace/formfeed/tab bytes); **(e) snapshot re-derivation discipline** — the `LEGACY_BOARD_TOPPER_PROMPT` byte-pin was deliberately re-derived (2026-07-20, CEO-approved ramp prerequisite) with an in-file rationale block naming the change, scope, and reviewers; that documented-re-derivation pattern is the ONE legitimate way to move this pin, and the flag-OFF safety contract now pins THESE bytes (delimiter-parity GUARD #4 flipped to the escaped source form with runtime bytes pinned in the drift guard). | `apps/host/src/__tests__/lib/ai/prompts/foxy-system-goal-persona.test.ts` (re-derived snapshot + preserved non-snapshot assertions) + the foxy-system runtime canaries in `apps/host/src/__tests__/lib/foxy/math-density-drift-guard.test.ts` (78 tests, shared with REG-275/REG-280) + `delimiter-parity.test.ts` GUARD #4 | E | P12 (the legacy fallback path serves spec-conformant math exactly when grounded is down), spec §2/§4/§6, REG-275/REG-276 continuity |
+| REG-280 | `vertical_math_precedence_carveout_isolated` | §9.1 precedence ruling (assessment, spec §9.1.4): the vertical_math-vs-step-density carve-out lives ONLY in `VERTICAL_MATH_DIRECTIVE` (`ff_foxy_vertical_math_v1` at rollout 0 — dark text today). **Pin 1 — flag-OFF byte-identity untouched:** `buildMathFormatDirective('6-8') === MATH_FORMAT_DIRECTIVE` (re-asserting REG-276 pin (c) so the ruling is self-contained) AND no band directive for ANY band contains `vertical_math` — mentioning it there would teach an ungated block type on every math turn. **Pin 2 — the five §9.1.1 normative clauses present in VERTICAL_MATH_DIRECTIVE:** (i) EXEMPT from the one-transformation-per-math-block split / single VISUAL UNIT / NEVER fragment one computation, (ii) REPLACES the flat "math" block / NEVER emit both, (iii) exactly ONE labeling "step" block BEFORE, in the student's language incl. Hinglish (P7), (iv) scope containment — covers ONLY the computation inside the block, the rest of the turn keeps the band's step density, (v) SPECIFIC OVER GENERAL — this directive governs the computations it covers; the ruling names `docs/math-rendering-spec.md section 9.1` as source of truth. **Pin 3 — `packages/lib/src/foxy/math-step-density.ts` byte-unchanged vs committed HEAD** (git-anchored `git show HEAD:` compare, CRLF-normalized only) — the density module is not edited at all; byte-unchanged is part of the ruling (§9.1.4a byte-pin + §9.1.4b flag-leakage rationale). The 6-8 directive identity and the full REG-276 flag-OFF contract stay intact. | The `§9.1 vertical_math precedence carve-out` describe block in `apps/host/src/__tests__/lib/foxy/math-density-drift-guard.test.ts` (78 tests total in file) + primary 6-8 byte-identity pin in `math-format-directive.test.ts` (99 tests, REG-276) | E | P12 (dark directive cannot leak into live prompts), P7 (labeling-step language), spec §9.1, REG-276 continuity (flag-OFF byte-identity re-asserted, not superseded) |
+
+### Invariants covered by this section
+
+- **Prompt-teaches-what-parses** — every few-shot the model imitates must
+  itself survive JSON.parse + the schema it teaches, in all 3 served copies
+  (TS/Deno/Python byte-parity chains), with the doubling rule stated
+  explicitly on every JSON-emitting surface.
+- **Backstop conservatism** — the pre-parse repair is string-literal-scoped,
+  legal-escape-preserving, allowlist-arbitrated, idempotent, and never masks
+  true truncation; repaired and rescued are DISTINCT telemetry signals so a
+  prompt-side regression is visible, not silently absorbed.
+- **Runtime-parity discipline** — the repair module is runtime-neutral and
+  byte-pinned Node↔Deno; its arbiter allowlist set-equals the renderer
+  allowlist so repair and render never disagree about what is math.
+- **Legacy-path spec conformance (P12)** — the kill-switch/fallback prompt
+  path carries real LaTeX bytes and the deferential density/boxing pattern;
+  retired absolute lines are pinned gone at runtime.
+- **Byte-pin change discipline** — snapshot re-derivation is legitimate ONLY
+  with an in-file documented rationale naming scope and reviewers (the
+  2026-07-20 re-pin is the exemplar); silent drift still fails.
+- **Dark-directive isolation** — §9.1 carve-out text exists only behind a
+  rollout-0 flag; band directives and math-step-density.ts are byte-pinned
+  against leakage, preserving REG-276's flag-OFF byte-identity.
+
+### Known gaps (named follow-ups)
+
+- REG-277 sub-pin: a DIRECT per-template assertion that each of the six
+  JSON-surface .txt templates carries the `JSON escaping (CRITICAL)` line
+  (today held transitively via REG-275 twin byte-parity). Low risk, cheap add
+  to math-density-drift-guard.test.ts.
+- E2E: no Playwright spec exercises a structured MATH turn end-to-end —
+  `e2e/foxy-structured-rendering.spec.ts` fixtures are science prose only (no
+  math block, no KaTeX assertion). Follow-up: add a math-bearing fixture
+  (inline `\( \frac{3}{4} \)` in a text field + a `math` block) asserting
+  `.katex` paints and no raw delimiter/JSON leaks to visible text.
+
+### Catalog total
+
+Pre-REG-277: 243 entries (through REG-276, canonical math rendering). Adds
+REG-277 (few-shot JSON validity + doubling rule across the 3 prompt copies),
+REG-278 (escape-repair backstop — scoped/conservative/idempotent, incident
+regression, repaired-vs-rescued telemetry, Node/Deno byte-parity + renderer
+allowlist set-equality, `\not` C1, `begin` deferred), REG-279 (foxy-system.ts
+legacy-path alignment — retired strings pinned gone, real-LaTeX runtime bytes,
+deliberate snapshot re-derivation discipline), REG-280 (§9.1 vertical_math
+precedence carve-out isolated to VERTICAL_MATH_DIRECTIVE, band directives +
+math-step-density.ts byte-pinned).
+**Total catalog: 247 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 

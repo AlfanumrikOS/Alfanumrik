@@ -1789,3 +1789,46 @@ offline split and the `kVersionUnverified` re-validation stamp).
 
 ---
 
+## CI sharded-topology fan-in contract — required-check context preserved through fan-in + skip-cannot-satisfy enforcement + shard-config collection identity (2026-07-20, PR #1349) — REG-272
+
+Source: PR #1349 (CI pipeline speed-up). The pre-shard single "Lint, Type-check
+& Test" job was split into `quality` (lint + type-check + the blocking Auth &
+Identity gate) plus a 4-way sharded `unit-tests` matrix, with the
+`unit-tests-merge` fan-in job merging blob reports and enforcing coverage
+thresholds once against the combined coverage. Companion to REG-130: like the
+pipeline-alert watcher, this is a CI-only contract — there is no
+Vitest/Playwright asserting test; the "test" is the workflow contract itself,
+audited by reading `.github/workflows/ci.yml`. Logged as status `C`
+(CI-enforced, no unit harness), same convention as REG-130.
+
+**Why this is a regression pin.** All three failure modes below are SILENT and
+GREEN: a renamed fan-in job, a skipped-but-satisfying required check, or a
+diverged shard config each leave every visible CI signal passing while the
+merge gate stops guarding what it claims to guard.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-272 | `ci_shard_fanin_context_skip_and_collection_contract` | Three invariants of the sharded CI topology. **(1) REQUIRED-CHECK CONTEXT BYTE-EQUALITY (job-name analog of REG-130's workflow-name invariant):** the `unit-tests-merge` job's display name stays byte-identical to the branch-protection required status-check context `Lint, Type-check & Test` (`name:` on the `unit-tests-merge` job, ci.yml ~1205-1206; the intent comment at ~1200-1204 pins that the fan-in DELIBERATELY carries the pre-shard job's name so the ruleset keeps green-gating merges with identical semantics). A silent rename means the required context never reports again — and the operational "fix" for the resulting wedge is removing the required check, at which point merges stop being gated on unit tests at all. **(2) SKIP-CANNOT-SATISFY:** every fan-in job carrying merge-blocking semantics — `unit-tests-merge` (ci.yml ~1208-1227) and `ci-gate` (ci.yml ~1794-1834) — keeps `if: always()` PLUS an explicit per-upstream re-assertion that each `needs[job].result === 'success'` (the node-script pattern). This pairing is load-bearing because GitHub treats a SKIPPED job's check as SATISFYING a required status check: without `if: always()`, an upstream failure cascades the fan-in to `skipped`, its required check is satisfied, and the gate fails OPEN on the exact commit that broke the build. Conversely `if: always()` WITHOUT the re-assertion would run-and-pass over failed upstreams — both halves must survive together. The `=== 'success'` comparison (not merely "not failure") also refuses `skipped`/`cancelled` upstreams; `ci-gate`'s fork-PR branch additionally pins that secrets-gated jobs (`integration-tests`, `e2e-critical-paths`) must be EXACTLY `skipped` on fork PRs — a fork PR cannot pass the gate with one of them silently failed. **(3) SHARD-CONFIG COLLECTION IDENTITY:** the CI-generated wrapper `vitest.ci-shard.config.mts` (heredoc at ci.yml ~1163-1176) imports the ROOT `./vitest.config` and its ONLY delta is `delete shardConfig.test.coverage.thresholds` — no `include`/`exclude`/collection override of any kind, so each shard collects from the identical file universe as the root config and `--shard=N/4` partitions ALL of it. If the wrapper ever grew its own collection scope, test files would silently drop out of CI while every job stays green. The thresholds-only strip exists because Vitest 4.1.8 enforces coverage thresholds on EVERY coverage-reporting run including partial shards (where per-file/global floors fail spuriously); the REAL root config — thresholds included — is enforced exactly once in `unit-tests-merge` via `--merge-reports --coverage` against the combined coverage of all 4 shards (ci.yml ~1253-1260), preserving the pre-shard blocking posture. | `.github/workflows/ci.yml` (`unit-tests-merge` name + fan-in step; `ci-gate` step; `Generate threshold-free shard config` + `Merge shard reports and enforce coverage thresholds` steps). CI-only; no unit harness. | C |
+
+### Invariants covered by this section
+
+- P14-adjacent / operational integrity (same family as REG-118 and REG-130) —
+  the merge gate must actually gate: the required context keeps reporting from
+  the job that carries the semantics (1), a cascaded skip can never satisfy it
+  (2), and the sharded run executes the same test collection the root config
+  declares (3).
+- Fail-open prevention — invariants (1) and (2) both close paths where the
+  pipeline goes green/silent while unit tests stop blocking merges; (3) closes
+  the path where tests stop RUNNING while coverage still reports.
+
+### Catalog total
+
+Pre-REG-272: 238 entries (through the B2C funnel completion, REG-271).
+The CI sharded-topology fan-in contract adds REG-272: required-check context
+byte-equality on `unit-tests-merge`, `if: always()` + explicit per-upstream
+success re-assertion on both merge-blocking fan-ins, and thresholds-only
+collection identity for the CI-generated shard wrapper config.
+**Total catalog: 239 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

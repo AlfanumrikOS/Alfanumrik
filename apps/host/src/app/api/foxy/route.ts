@@ -1664,17 +1664,18 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // ── Wave B: math-format house style (ff_foxy_math_format_v2) ──────────────
   // On a prose-teaching turn, inject the math-format directive so worked
   // examples come out as numbered step blocks alternating with display `math`
-  // blocks (one transformation per step), derivations and tall/stacked
+  // blocks (step density per grade band), derivations and tall/stacked
   // expressions are never inline (short flat equations may stay inline),
   // and LaTeX is never emitted undelimited / pseudo-parenthesised. Scoped to
   // mode !== 'practice' — the MCQ-emitting practice / quiz_me / real-practice
   // turns don't work examples, so the flag read is skipped there (no extra DB
   // roundtrip, byte-identical). Flag OFF (default) → mathFormatDirective = ''
   // → composeModeDirective returns the base verbatim → byte-identical to
-  // today. The grade band ('6-8' | '9-12') is derived from the session grade
-  // string (P5); both bands produce IDENTICAL text today — see
-  // buildMathFormatDirective (bands diverge only when the eval harness can
-  // score variants, CEO 2026-07-16).
+  // today. The grade band ('6-8' | '9-10' | '11-12') is derived from the
+  // session grade string (P5); each band gets its own density variant per
+  // docs/math-rendering-spec.md §3 (the 2026-07-16 "bands identical"
+  // constraint was superseded 2026-07-20 with CEO approval — see
+  // buildMathFormatDirective). Unparseable grades fall back to '6-8'.
   const mathFormatEnabled =
     mode !== 'practice'
       ? await isFeatureEnabled('ff_foxy_math_format_v2', {
@@ -1886,13 +1887,14 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
         // practice/quiz_me turn, and composeModeDirective returns the base
         // verbatim in that case → byte-identical to today.
         // Wave B (ff_foxy_math_format_v2): the math-format house-style
-        // directive (numbered step blocks + display math blocks, one
-        // transformation per step; derivations/stacked expressions in display
-        // math blocks; inline \( ... \) for single symbols/values and short
-        // flat equations; no undelimited LaTeX) is composed LAST, after the
-        // diagram directive. mathFormatDirective is '' when the flag is OFF
-        // or on a practice/quiz_me turn, and composeModeDirective returns the
-        // base verbatim in that case → byte-identical to today.
+        // directive (numbered step blocks + display math blocks, step density
+        // per grade band — docs/math-rendering-spec.md §3; derivations/stacked
+        // expressions in display math blocks; inline \( ... \) for single
+        // symbols/values and short flat equations; no undelimited LaTeX) is
+        // composed LAST, after the diagram directive. mathFormatDirective is
+        // '' when the flag is OFF or on a practice/quiz_me turn, and
+        // composeModeDirective returns the base verbatim in that case →
+        // byte-identical to today.
         mode_directive: isQuizMe
           ? SINGLE_MCQ_DIRECTIVE
           : isRealPractice

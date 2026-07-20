@@ -86,6 +86,35 @@ export const FOXY_MATH_PIPELINE_FLAGS = {
 } as const;
 
 /**
+ * Foxy math-format house style — Wave B of the math-rendering work (2026-07-16,
+ * band variants 2026-07-20).
+ *
+ *  ff_foxy_math_format_v2 — master switch for injecting the math-format
+ *    directive (buildMathFormatDirective in foxy/prompt-sections.ts) into the
+ *    Foxy prose-teaching turns via the ADDITIVE `mode_directive` channel.
+ *    When ON, worked examples are steered into numbered "step" blocks
+ *    alternating with display "math" blocks at the student's grade-band step
+ *    density ('6-8' | '9-10' | '11-12' — docs/math-rendering-spec.md §3, the
+ *    CEO-approved single source), with the delimiter contract (\( .. \) /
+ *    \[ .. \] / bare LaTeX in math blocks; $ and $$ forbidden) unchanged.
+ *    When OFF (default), the directive is never built or injected and the
+ *    grounded request is BYTE-IDENTICAL to today (mathFormatDirective = '' →
+ *    composeModeDirective returns the base verbatim). MCQ-emitting turns
+ *    (practice / quiz_me / real-practice) never receive it — the route skips
+ *    the flag read entirely on mode === 'practice'. Default: false.
+ *
+ *    Seeded OFF (is_enabled=false, rollout=0) by migration
+ *    20260716120000_seed_ff_foxy_math_format_v2.sql — REG-125 canonical shape
+ *    (to_regclass guard + explicit column list + ON CONFLICT (flag_name)
+ *    DO NOTHING). Flipping it is a separate operator decision gated on the
+ *    mobile-degradation memo — this registry entry only names the flag.
+ */
+export const FOXY_MATH_FORMAT_FLAGS = {
+  /** Foxy grade-band math-format directive injection (mode_directive channel). Default off. */
+  V2: 'ff_foxy_math_format_v2',
+} as const;
+
+/**
  * Foxy Curriculum Guard — deterministic (no-LLM) curriculum-authenticity gate on
  * the EXISTING /api/foxy STEM path. Two purely-mechanical tiers run when ON:
  *   (T1) Enrolled-grade authenticity — the student's enrolled grade is the only
