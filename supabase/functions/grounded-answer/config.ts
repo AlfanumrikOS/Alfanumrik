@@ -83,7 +83,23 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // assembly changes what the model sees for the same request (e.g. new
 // service-computed template variable, reference-material formatting change,
 // FOXY_STRUCTURED_OUTPUT_PROMPT edit, mode_instruction wording change).
-export const PROMPT_REV = 1;
+// PROMPT_REV=2 (2026-07-20): foxy_tutor_v1 §8 rewritten per
+// docs/math-rendering-spec.md — grade-band step-density deferral (density text
+// injected via mode_directive; single source buildMathFormatDirective) + the
+// answer-block vs \boxed{} disambiguation (spec §4). Text changed in BOTH
+// prompts/foxy_tutor_v1.txt and prompts/inline.ts (kept byte-identical).
+// Same deploy (2026-07-20, delimiter-contract closure): the math-notation
+// contract (spec §2) + deferential step-density + §4 boxing rules were
+// extended to quiz_question_generator_v1, quiz_answer_verifier_v1,
+// ncert_solver_v1, foxy_tutor_doubt_v1, and foxy_tutor_exam_v1 (.txt +
+// inline.ts twins, byte-identical). Same deploy (2026-07-20, assessment
+// review conditions): foxy_tutor_v1 §4 made deferential (never skip a stage;
+// density + boxing follow §8, mirroring foxy_tutor_exam_v1 §4) and §8 tightened
+// (exponents via LaTeX ^{...} only — the "or x²" Unicode allowance removed per
+// spec §2; programming-syntax ban scoped to prose OUTSIDE delimiters). Rev 2
+// has never shipped, so the single 1→2 bump covers ALL of these template
+// changes — no cache entry was ever written under rev 2 with the older text.
+export const PROMPT_REV = 2;
 // MODEL_ROUTE_REV bump rule: bump whenever model routing changes what model
 // (or generation params) a given model_preference resolves to — e.g. a model
 // id upgrade in claude.ts (HAIKU_MODEL / SONNET_MODEL / GPT_* constants), a

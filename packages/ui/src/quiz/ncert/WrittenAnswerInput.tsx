@@ -6,6 +6,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 
 interface Props {
   questionText: string;
@@ -136,7 +137,7 @@ export default function WrittenAnswerInput({
       <div className="p-4 rounded-2xl mb-4"
         style={{ background: 'var(--surface-1)', border: '1.5px solid var(--border)' }}>
         <p className="text-sm leading-relaxed font-medium" style={{ color: 'var(--text-1)' }}>
-          {questionText}
+          <MathRenderer content={questionText} />
         </p>
         <div className="flex items-center gap-3 mt-2">
           <span className="text-xs" style={{ color: 'var(--text-3)' }}>

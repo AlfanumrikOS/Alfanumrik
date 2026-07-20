@@ -14,7 +14,14 @@
  * What each prompt encodes (the SOLVER contract from assessment):
  *   - Foxy persona + grade scope (CBSE).
  *   - The NCERT method / key theorems for the chapter (state method FIRST).
- *   - Numbered-working rule: one operation per `step` block.
+ *   - Numbered-working rule: BAND-AWARE step density (docs/math-rendering-spec.md
+ *     §3 — one operation per `step` at grades 6-8; 2-3 routine operations may
+ *     combine at 9-10; justified chains at 11-12), derived from the single
+ *     source MATH_STEP_DENSITY_RULES in foxy/math-step-density.ts — never
+ *     restated here. Prompt-cache note: the shared rules text varies ONLY by
+ *     band (band is a pure function of the grade, which already keys prompt
+ *     selection), so there is exactly one stable cached prefix per band and
+ *     the text NEVER varies within a band.
  *   - Structured-block rules: FoxyResponse blocks only (step / math / answer /
  *     definition / question), EXACTLY ONE terminal `answer` block whose final
  *     value is machine-extractable, end with a Socratic `question` block.
@@ -41,18 +48,39 @@
 
 // ─── Shared prefix: persona + structured-block + delimiter + self-check rules ─
 //
-// This block is identical across every chapter, so it sits at the very top of
-// every prompt to MAXIMISE the cacheable common prefix. The only per-chapter
-// variation is the trailing NCERT-method section appended by getNcertSystemPrompt.
+// This block is identical across every chapter WITHIN a grade band, so it sits
+// at the very top of every prompt to MAXIMISE the cacheable common prefix.
+// Band-aware since 2026-07-20 (docs/math-rendering-spec.md §3/§7.3): the step-
+// density rule is embedded from MATH_STEP_DENSITY_RULES (the single source in
+// foxy/math-step-density.ts — never copy-pasted). One stable cached prefix
+// per band; the per-chapter variation stays in the trailing NCERT-method
+// section appended by getNcertSystemPrompt.
 
-const SHARED_SOLVER_RULES = `You are Foxy, a friendly CBSE math/STEM tutor for Indian students. You are solving ONE concrete problem with a single determinable answer, step by step, the way the NCERT textbook teaches it.
+import {
+  MATH_STEP_DENSITY_RULES,
+  resolveGradeBand,
+  type GradeBand,
+} from '@alfanumrik/lib/foxy/math-step-density';
+
+// Memoised per band so the returned string is REFERENTIALLY stable per band —
+// belt-and-braces for the prompt-cache constraint (never vary within a band).
+const SHARED_SOLVER_RULES_CACHE = new Map<GradeBand, string>();
+
+function buildSharedSolverRules(band: GradeBand): string {
+  const cached = SHARED_SOLVER_RULES_CACHE.get(band);
+  if (cached) return cached;
+  const built = `You are Foxy, a friendly CBSE math/STEM tutor for Indian students. You are solving ONE concrete problem with a single determinable answer, step by step, the way the NCERT textbook teaches it.
 
 # HOW TO SOLVE (read carefully)
 1. STATE THE METHOD FIRST. Name the NCERT method / theorem / formula you will use before any arithmetic.
-2. SHOW NUMBERED WORKING. One operation per "step" block — never combine two operations in one step. Put each formula or equation in its own "math" block.
+2. SHOW NUMBERED WORKING at the grade-band STEP DENSITY below. Put each formula or equation in its own "math" block.
 3. SELF-CHECK BEFORE ANSWERING. Reason through a substitute-back / sanity check INTERNALLY (this chain-of-thought is your private reasoning — do NOT emit it as a block). Only after the check passes do you write the final answer.
 4. EXACTLY ONE terminal "answer" block. Its text must contain the final value in a machine-extractable form: a bare number (e.g. "5/4" or "1.5"), a fraction (\\( \\frac{a}{b} \\) or a/b), a simplified expression, or roots written as "x = 3 or x = 2".
 5. END with ONE Socratic "question" block — a short follow-up that makes the student apply the idea, never "did you understand?".
+
+# STEP DENSITY (grade band ${band})
+How many operations one "step" + "math" pair may carry follows the student's grade band:
+${MATH_STEP_DENSITY_RULES[band]}
 
 # OUTPUT FORMAT (STRICT)
 Return ONLY a valid JSON FoxyResponse. No prose outside JSON, no markdown fences, no commentary.
@@ -68,7 +96,7 @@ type FoxyResponse = {
 
 Block rules:
 - subject="math" MUST include at least one "math" block.
-- "step" blocks: exactly one operation each. Do NOT write the word "Step" or a step number inside text/label — the UI numbers them. Use "label" only for short context ("Given", "Formula", "Substitution", "Simplify") or omit it.
+- "step" blocks: follow the STEP DENSITY rule above. Do NOT write the word "Step" or a step number inside text/label — the UI numbers them. Use "label" only for short context ("Given", "Formula", "Substitution", "Simplify") or omit it.
 - "math" blocks: "latex" field carries BARE LaTeX with NO delimiters and NO "text" field. The renderer adds the KaTeX delimiters.
 - Exactly ONE "answer" block, and it MUST be the LAST content block before the closing "question" block.
 - Exactly ONE trailing "question" block (Socratic check).
@@ -86,6 +114,9 @@ Block rules:
 
 # BILINGUAL
 - Reply in the student's language (English / Hindi / Hinglish). Keep technical terms (NCERT, theorem names, units) in English. Never translate defined terms or formulas.`;
+  SHARED_SOLVER_RULES_CACHE.set(band, built);
+  return built;
+}
 
 /**
  * Per-chapter NCERT method/theorem block. Appended after SHARED_SOLVER_RULES.
@@ -151,7 +182,7 @@ export function getDefaultMathPrompt(grade: string): string {
   const g = (grade ?? '').trim() || 'X';
   const methodSection = `# THIS CHAPTER: Class ${g} (CBSE / NCERT)
 Use the STANDARD NCERT method for the relevant chapter at this grade. Name the specific formula / theorem / procedure the NCERT textbook prescribes BEFORE you compute. Do not invent non-NCERT shortcuts. If the topic is outside the Class ${g} CBSE scope, say so in a "definition" block and ask one clarifying "question" instead of guessing.`;
-  return `${SHARED_SOLVER_RULES}\n\n${methodSection}`;
+  return `${buildSharedSolverRules(resolveGradeBand(grade))}\n\n${methodSection}`;
 }
 
 /**
@@ -220,7 +251,7 @@ export function getNcertSystemPrompt(
   for (const key of candidates) {
     const methodSection = CHAPTER_PROMPTS[key];
     if (methodSection) {
-      return `${SHARED_SOLVER_RULES}\n\n${methodSection}`;
+      return `${buildSharedSolverRules(resolveGradeBand(grade))}\n\n${methodSection}`;
     }
   }
 

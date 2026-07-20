@@ -12,6 +12,10 @@
 // correctness + P12/P7 invariants.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { CognitiveContext, CoachMode } from '@/app/api/foxy/_lib/constants';
+import {
+  MATH_STEP_DENSITY_RULES as BAND_STEP_DENSITY,
+  type GradeBand,
+} from '@alfanumrik/lib/foxy/math-step-density';
 import { buildExpandedGoalSection } from '@alfanumrik/lib/goals/goal-personas';
 import { buildTenantOverrideSection } from '@alfanumrik/lib/ai/prompts/tenant-overrides';
 import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
@@ -780,6 +784,14 @@ export const DIAGRAM_DIRECTIVE = [
 
 // ─── Wave B: math-format house style (ff_foxy_math_format_v2) ───────────────
 //
+// SOURCE OF TRUTH: docs/math-rendering-spec.md (assessment-authored, CEO-
+// approved 2026-07-20). This file is THE single in-code source of the grade-
+// band step-density rule (spec §3/§6): every prompt that needs it — the Foxy
+// mode directives here, SHARED_SOLVER_RULES in
+// packages/lib/src/math/ncert-prompts.ts, and the static density phrasing of
+// foxy_tutor_v1.txt §8 — derives from buildMathFormatDirective /
+// MATH_STEP_DENSITY_RULES, never copy-pastes it.
+//
 // Wave A fixed the RENDERER (undelimited LaTeX is now rescued at display time).
 // Wave B improves what the model EMITS. The structured-output contract already
 // mandates \( ... \) inline + "math" blocks for standalone equations, but
@@ -795,6 +807,13 @@ export const DIAGRAM_DIRECTIVE = [
 // few-shots model exactly that, and banning it both over-fragments short
 // algebra and contradicts the base prompt).
 //
+// BAND VARIANTS (2026-07-20): the 2026-07-16 CEO constraint that "both bands
+// produce identical text" was SUPERSEDED on 2026-07-20 with CEO approval via
+// docs/math-rendering-spec.md. buildMathFormatDirective now emits THREE
+// distinct band directives ('6-8' | '9-10' | '11-12', spec §3.2). Rules 2
+// (display vs inline) and 3 (delimiters) stay VERBATIM across all bands —
+// only rule 1 (step density) and the worked example vary by band.
+//
 // DELIBERATELY NOT inside the parity-locked FOXY_STRUCTURED_OUTPUT_PROMPT
 // (that constant stays byte-identical Node<->Deno<->Python). This is an
 // ADDITIVE section injected via the `mode_directive` channel — the SAME
@@ -805,21 +824,38 @@ export const DIAGRAM_DIRECTIVE = [
 // P7 (bilingual): step text/labels follow the student's language; the
 // mathematics itself is universal notation; technical terms stay in English.
 // P12: this only constrains FORMAT — it does not widen scope, relax the
-// safety rails, or touch the RAG/grounding/abstain path.
-export const MATH_FORMAT_DIRECTIVE = [
+// safety rails, or touch the RAG/grounding/abstain path. Band variants change
+// step DENSITY only; age-appropriateness and curriculum scope are unchanged.
+
+// GradeBand, resolveGradeBand, and the per-band density texts live in the
+// zero-import module foxy/math-step-density.ts (so ncert-prompts.ts can share
+// them without inheriting this file's heavier import graph). Re-exported here
+// for backward compatibility — route.ts and the directive tests import them
+// from this module.
+export type { GradeBand } from '@alfanumrik/lib/foxy/math-step-density';
+export {
+  resolveGradeBand,
+  MATH_STEP_DENSITY_RULES,
+} from '@alfanumrik/lib/foxy/math-step-density';
+
+// ── Shared directive pieces (band-invariant, spec §7.2) ─────────────────────
+
+const MATH_DIRECTIVE_HEADER_LINES = [
   '## MATH FORMAT DIRECTIVE — steps + display math, never inline soup',
   'How you format mathematics is part of teaching it. A worked example written',
   'as one dense paragraph of chained expressions is WRONG. Follow these rules in',
   'EVERY response that contains math:',
-  '',
-  '1. WORKED EXAMPLES & DERIVATIONS — numbered steps, ONE transformation each:',
-  '- Use a sequence of "step" blocks. Each "step" block\'s text is ONE short',
-  '  action line stating what you do (e.g. "Cancel 14 and 42 (divide both by',
-  '  14)."), optionally followed by ONE short "why" sentence. Nothing else.',
-  '- Immediately after each action step, emit the RESULTING expression as its',
-  '  own "math" block (display equation; "latex" field, no delimiters).',
-  '- NEVER chain multiple transformations inside one paragraph, one step, or one',
-  '  math block. One transformation = one step block + one math block.',
+] as const;
+
+// COMPLETENESS + ALGEBRAIC FLOW bullets — appended to rule 1 by PR #1344
+// (merged 2026-07-19, after the band split was authored). Composed into the
+// 6-8 band directive so MATH_FORMAT_DIRECTIVE stays byte-identical to the
+// historical (current-main) literal the tests pin. DELIBERATELY NOT composed
+// into the 9-10 / 11-12 bands yet: "NEVER omit intermediate equations" read
+// strictly contradicts those bands' combine-routine-operations density rules
+// (spec §3.2) — assessment must author band-adjusted completeness wording
+// before extending. Do not extend silently.
+const MATH_RULE1_COMPLETENESS_LINES = [
   '- COMPLETENESS: every "math" block must show the FULL equation or expression',
   '  being worked on — BOTH SIDES for an equation (e.g. "3x = 9", then "x = 3"),',
   '  the FULL expression for a simplification (not just the numerator or one term).',
@@ -828,7 +864,11 @@ export const MATH_FORMAT_DIRECTIVE = [
   '- ALGEBRAIC FLOW: for equations, show the COMPLETE equation at every stage.',
   '  e.g. "3x + 5 = 14" then "3x = 9" then "x = 3". NEVER skip to the answer.',
   '  NEVER show just the RHS fragment. NEVER omit intermediate equations.',
-  '',
+] as const;
+
+// Rules 2 (display vs inline) + 3 (delimiters) — VERBATIM across all bands
+// (spec §7.2; the delimiter contract of spec §2 never varies by band).
+const MATH_DIRECTIVE_RULES_2_3_LINES = [
   '2. WHERE MATH GOES — display vs inline:',
   '- Every transformation in a worked example or derivation gets its own',
   '  display "math" block (rule 1). NEVER run a derivation — two or more',
@@ -847,8 +887,18 @@ export const MATH_FORMAT_DIRECTIVE = [
   '  text field is forbidden — wrap inline math in \\( ... \\).',
   '- NEVER wrap math in plain parentheses as pseudo-delimiters: "(3/4)" or',
   '  "( x = 2 )" is NOT math formatting. Use \\( ... \\) or a "math" block.',
-  '',
-  'Example — the correct step + math-block shape for a worked cancellation:',
+] as const;
+
+const MATH_DIRECTIVE_FOOTER_LINES = [
+  'Keep each step SHORT — one idea per line, readable on a phone. Bilingual:',
+  'write step text and labels in the student\'s language (English, Hindi, or',
+  'Hinglish); the mathematics itself is universal notation. Technical terms',
+  '(CBSE, NCERT, Bloom\'s) stay in English.',
+] as const;
+
+// ── Per-band worked examples (spec §3.3, directive few-shot shape) ──────────
+
+const EXAMPLE_6_8_LINES = [
   '  {"type":"step","label":"Given","text":"Multiply \\( \\frac{14}{15} \\) by \\( \\frac{25}{42} \\)."}',
   '  {"type":"math","latex":"\\frac{14}{15} \\times \\frac{25}{42} = \\frac{14 \\times 25}{15 \\times 42}"}',
   '  {"type":"step","text":"Cancel 14 and 42 (divide both by 14). A common factor above and below cancels."}',
@@ -858,7 +908,17 @@ export const MATH_FORMAT_DIRECTIVE = [
   '  {"type":"step","text":"Multiply what is left on top and bottom."}',
   '  {"type":"math","latex":"\\frac{5}{9}"}',
   '  {"type":"answer","text":"The product is \\( \\frac{5}{9} \\)."}',
-  '',
+] as const;
+
+// Second 6-8 example added by PR #1344 (2026-07-19): a linear equation showing
+// the FULL equation at every stage — the few-shot companion of the
+// COMPLETENESS/ALGEBRAIC FLOW rule-1 bullets above. Composed into the 6-8
+// band only (after the cancellation example), keeping MATH_FORMAT_DIRECTIVE
+// byte-identical to main's literal. NOTE: the double-escaped `\\\\frac` /
+// `\\\\(` in the last two lines reproduce PR #1344 byte-for-byte (pinned by
+// math-format-directive.test.ts, "linear equation example" pin) — do not
+// "fix" the escaping without assessment + testing sign-off.
+const EXAMPLE_6_8_LINEAR_LINES = [
   'Example — solving a linear equation (show FULL equation at every stage):',
   '  {"type":"step","label":"Given","text":"Solve for \\( x \\)."}',
   '  {"type":"math","latex":"3x + 5 = 14"}',
@@ -867,36 +927,96 @@ export const MATH_FORMAT_DIRECTIVE = [
   '  {"type":"step","text":"Divide both sides by 3."}',
   '  {"type":"math","latex":"x = \\\\frac{9}{3} = 3"}',
   '  {"type":"answer","text":"\\\\( x = 3 \\\\)"}',
-  '',
-  'Keep each step SHORT — one idea per line, readable on a phone. Bilingual:',
-  'write step text and labels in the student\'s language (English, Hindi, or',
-  'Hinglish); the mathematics itself is universal notation. Technical terms',
-  '(CBSE, NCERT, Bloom\'s) stay in English.',
-].join('\n');
+] as const;
 
-// Grade band for math-format layout. Derived from the session grade STRING
-// (P5: grades are strings "6".."12", never integers). "6".."8" → '6-8',
-// "9".."12" → '9-12'. Anything unparseable defaults to '6-8' — the simpler,
-// shorter-steps layout is the pedagogically conservative fallback.
-export type GradeBand = '6-8' | '9-12';
+const EXAMPLE_9_10_LINES = [
+  '  {"type":"step","label":"Given","text":"Solve \\( x^2 - 5x + 6 = 0 \\) by splitting the middle term."}',
+  '  {"type":"math","latex":"x^2 - 5x + 6 = 0"}',
+  '  {"type":"step","text":"Split the middle term: two numbers with product \\( 6 \\) and sum \\( -5 \\) are \\( -2 \\) and \\( -3 \\)."}',
+  '  {"type":"math","latex":"x^2 - 2x - 3x + 6 = 0"}',
+  '  {"type":"step","text":"Group the terms and take the common factor out of each pair."}',
+  '  {"type":"math","latex":"x(x - 2) - 3(x - 2) = 0"}',
+  '  {"type":"step","text":"Factor out \\( (x - 2) \\) and set each factor equal to zero."}',
+  '  {"type":"math","latex":"(x - 2)(x - 3) = 0"}',
+  '  {"type":"step","text":"Solve each factor."}',
+  '  {"type":"math","latex":"x = 2 \\quad \\text{or} \\quad x = 3"}',
+  '  {"type":"answer","text":"\\( x = 2 \\) or \\( x = 3 \\)"}',
+] as const;
 
-export function resolveGradeBand(grade: string): GradeBand {
-  const n = Number.parseInt(grade, 10);
-  if (Number.isFinite(n) && n >= 9 && n <= 12) return '9-12';
-  return '6-8';
+const EXAMPLE_11_12_LINES = [
+  '  {"type":"step","label":"Given","text":"Differentiate \\( y = x^2 \\sin x \\) with respect to \\( x \\)."}',
+  '  {"type":"math","latex":"y = x^2 \\sin x"}',
+  '  {"type":"step","text":"Apply the product rule with \\( u = x^2 \\), \\( v = \\sin x \\) — by the product rule of differentiation (NCERT Class 12)."}',
+  '  {"type":"math","latex":"\\frac{dy}{dx} = x^2 \\, \\frac{d}{dx}(\\sin x) + \\sin x \\, \\frac{d}{dx}(x^2)"}',
+  '  {"type":"step","text":"Differentiate each factor and simplify, using the standard NCERT results for \\( \\sin x \\) and \\( x^n \\)."}',
+  '  {"type":"math","latex":"\\frac{dy}{dx} = x^2 \\cos x + 2x \\sin x \\quad \\left[ \\because \\tfrac{d}{dx}\\sin x = \\cos x,\\ \\tfrac{d}{dx}x^n = nx^{n-1} \\right]"}',
+  '  {"type":"answer","text":"\\( \\frac{dy}{dx} = x^2 \\cos x + 2x \\sin x \\)"}',
+] as const;
+
+// Compose header + band rule 1 + shared rules 2-3 + band example + footer.
+// Only rule 1's header/body (from MATH_STEP_DENSITY_RULES — the single
+// source in foxy/math-step-density.ts) and the example vary by band (§7.2).
+// The 6-8 band additionally carries PR #1344's COMPLETENESS/ALGEBRAIC FLOW
+// bullets and linear-equation example (see MATH_RULE1_COMPLETENESS_LINES /
+// EXAMPLE_6_8_LINEAR_LINES above — 6-8-only pending assessment review).
+function composeMathFormatDirective(
+  rule1Header: string,
+  densityText: string,
+  exampleHeader: string,
+  exampleLines: readonly string[],
+): string {
+  return [
+    ...MATH_DIRECTIVE_HEADER_LINES,
+    '',
+    rule1Header,
+    densityText,
+    '',
+    ...MATH_DIRECTIVE_RULES_2_3_LINES,
+    '',
+    exampleHeader,
+    ...exampleLines,
+    '',
+    ...MATH_DIRECTIVE_FOOTER_LINES,
+  ].join('\n');
 }
 
-// Band-aware builder for the math-format directive. CEO constraint
-// (2026-07-16): BOTH bands produce IDENTICAL directive text for now,
-// defaulting to the 6-8 layout (shorter steps, one idea per line). The band
-// switch exists so per-band variants can land later WITHOUT re-threading the
-// signature through the route — bands diverge only when the eval harness can
-// score variants (CEO 2026-07-16).
+// The 6-8 band directive. Exported under the historical name — this composed
+// string is BYTE-IDENTICAL to the pre-band-split MATH_FORMAT_DIRECTIVE
+// literal (spec §7.2: "the current MATH_FORMAT_DIRECTIVE text is the 6-8 band
+// text"), so the flag-ON prose-teaching path for grades 6-8 is unchanged.
+export const MATH_FORMAT_DIRECTIVE = composeMathFormatDirective(
+  '1. WORKED EXAMPLES & DERIVATIONS — numbered steps, ONE transformation each:',
+  [BAND_STEP_DENSITY['6-8'], ...MATH_RULE1_COMPLETENESS_LINES].join('\n'),
+  'Example — the correct step + math-block shape for a worked cancellation:',
+  [...EXAMPLE_6_8_LINES, '', ...EXAMPLE_6_8_LINEAR_LINES],
+);
+
+const MATH_FORMAT_DIRECTIVE_9_10 = composeMathFormatDirective(
+  '1. WORKED EXAMPLES & DERIVATIONS — numbered steps, 2-3 ROUTINE operations max:',
+  BAND_STEP_DENSITY['9-10'],
+  'Example — 9-10 density: routine operations may combine, still labeled:',
+  EXAMPLE_9_10_LINES,
+);
+
+const MATH_FORMAT_DIRECTIVE_11_12 = composeMathFormatDirective(
+  '1. WORKED EXAMPLES & DERIVATIONS — justified equation chains (board-exam density):',
+  BAND_STEP_DENSITY['11-12'],
+  'Example — 11-12 density: a justified chain compressing routine manipulations:',
+  EXAMPLE_11_12_LINES,
+);
+
+// Band-aware builder for the math-format directive (docs/math-rendering-spec.md
+// §3/§6 — the single in-code source of the step-density rule). Three distinct
+// band variants since 2026-07-20 (CEO-approved spec); the earlier 2026-07-16
+// "both bands identical" constraint is superseded. Rules 2-3 and the bilingual
+// footer are byte-identical across bands; only rule 1 and the example vary.
+// Unparseable grades resolve (via resolveGradeBand) to the conservative '6-8'.
 export function buildMathFormatDirective(gradeBand: GradeBand): string {
   switch (gradeBand) {
-    case '9-12':
-      // Intentionally identical to '6-8' today — see the CEO note above.
-      return MATH_FORMAT_DIRECTIVE;
+    case '9-10':
+      return MATH_FORMAT_DIRECTIVE_9_10;
+    case '11-12':
+      return MATH_FORMAT_DIRECTIVE_11_12;
     case '6-8':
     default:
       return MATH_FORMAT_DIRECTIVE;

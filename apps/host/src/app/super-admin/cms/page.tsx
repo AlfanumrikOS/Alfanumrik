@@ -654,7 +654,9 @@ function CmsContent() {
                   {questions.length === 0 && <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: '#9CA3AF', padding: 24 }}>No questions found</td></tr>}
                   {questions.map(q => (
                     <tr key={q.id}>
-                      <td style={{ ...tdStyle, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.question_text.slice(0, 80)}{q.question_text.length > 80 ? '...' : ''}</td>
+                      {/* Sliced preview stays PLAIN text (never KaTeX-render a
+                          truncated LaTeX fragment) — full text on hover. */}
+                      <td title={q.question_text} style={{ ...tdStyle, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.question_text.slice(0, 80)}{q.question_text.length > 80 ? '...' : ''}</td>
                       <td style={tdStyle}>{q.grade}</td>
                       <td style={tdStyle}>{q.subject}</td>
                       <td style={tdStyle}><span style={{ fontSize: 10 }}>{q.question_type || 'mcq'}</span></td>

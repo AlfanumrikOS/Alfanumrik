@@ -16,6 +16,9 @@
 // disproportionate Foxy-quality wins.
 
 import { useEffect, useState, useCallback } from 'react';
+// Canonical math renderer — question/option text can carry LaTeX. Fail-safe
+// (raw-text fallback) so a malformed formula never blanks a curator row.
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 
 interface Candidate {
   question_id: string;
@@ -90,17 +93,17 @@ function Row({ c, onCurated }: { c: Candidate; onCurated: () => void }) {
         {c.times_wrong}/{c.total_responses} wrong ({(c.wrong_rate * 100).toFixed(1)}%)
       </div>
       <div className="font-medium text-gray-900 mb-2 whitespace-pre-wrap">
-        {c.question_text}
+        <MathRenderer content={c.question_text} />
       </div>
       <div className="text-sm mb-3 space-y-0.5">
         <div className="text-red-700">
           <span className="font-mono mr-2">[{c.distractor_index}]</span>
-          <span className="line-through">{distractor}</span>
+          <span className="line-through"><MathRenderer inline content={distractor} /></span>
           <span className="ml-2 text-xs">← students pick this</span>
         </div>
         <div className="text-green-700">
           <span className="font-mono mr-2">[{c.correct_answer_index}]</span>
-          {correct}
+          <MathRenderer inline content={correct} />
           <span className="ml-2 text-xs">← correct</span>
         </div>
       </div>

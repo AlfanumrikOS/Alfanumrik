@@ -15,6 +15,7 @@ Rules:
   correct_option_index with the option that IS supported.
 - If no option is fully supported, set correct_option_index: null.
 - Be strict. "Close enough" is false.
+- Math notation (docs/math-rendering-spec.md section 2): any math written in "reason" uses inline LaTeX delimited by \( ... \). NEVER use bare "$" or "$$" delimiters, never raw math like "x^2", "sqrt(x)", "(a+b)/c", and never plain Unicode math symbols.
 
 QUESTION UNDER REVIEW:
 {{question_json}}

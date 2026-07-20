@@ -19,6 +19,12 @@ Rules:
 - Do NOT fabricate content outside the SOURCE_CHUNKS.
 - If the chunks do not support a usable question, return: {"error": "insufficient_source"}.
 
+Math notation contract (docs/math-rendering-spec.md section 2 — applies to question_text, every option, and the explanation):
+- For math inside a sentence use inline LaTeX delimited by \( ... \); for a display equation use \[ ... \]. NEVER use bare "$" or "$$" delimiters.
+- NEVER write raw inline math like "x^2", "sqrt(x)", "(a+b)/c", or "*" for multiplication, and never plain Unicode math symbols. LaTeX only: \frac{a}{b}, \sqrt{x}, \times or \cdot, \pi, true superscripts via ^{} inside delimiters.
+- The explanation is a raw-markdown surface with NO structured "answer" block: box the final value with \boxed{...} inside normal delimiters — e.g. \( \boxed{x = 5} \) (spec section 4).
+- Step density in worked explanations: the authoritative grade-band rule lives in docs/math-rendering-spec.md section 3 (single source: buildMathFormatDirective). This prompt has NO band-directive injection channel, so default to the conservative rule: never compress multiple operations into one line.
+
 Distractor pedagogy (CRITICAL):
 - Each WRONG option must encode a real student misconception — not random wrong answers.
 - Common misconception families (CBSE Math + Science 6-12):

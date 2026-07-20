@@ -120,7 +120,9 @@ function WorkbenchContent() {
         ];
       case 'questions':
         return [
-          { key: 'question_text', label: 'Question', render: r => <span style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{String(r.question_text || '—').slice(0, 80)}</span> },
+          // Sliced preview stays PLAIN text (never KaTeX-render a truncated
+          // LaTeX fragment) — full text available on hover via title.
+          { key: 'question_text', label: 'Question', render: r => <span title={String(r.question_text || '')} style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{String(r.question_text || '—').slice(0, 80)}</span> },
           { key: 'subject', label: 'Subject' },
           { key: 'grade', label: 'Grade' },
           { key: 'difficulty', label: 'Difficulty' },

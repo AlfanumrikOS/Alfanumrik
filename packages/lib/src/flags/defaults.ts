@@ -39,6 +39,7 @@ import {
   FOXY_OS_FLAGS,
   FOXY_LEARNING_ACTIONS_FLAGS,
   FOXY_MATH_PIPELINE_FLAGS,
+  FOXY_MATH_FORMAT_FLAGS,
   FOXY_CURRICULUM_GUARD_FLAGS,
   FOXY_RESPONSE_CACHE_L2_FLAGS,
 } from './registries/foxy';
@@ -102,6 +103,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [DIGITAL_TWIN_FLAGS.V1]: false, // seeded OFF by 20260702000700_seed_ff_digital_twin_v1.sql
   [FOXY_LEARNING_ACTIONS_FLAGS.V1]: false, // seeded OFF by 20260619000700_seed_ff_foxy_learning_actions_v1.sql
   [FOXY_MATH_PIPELINE_FLAGS.V1]: false, // seeded OFF by 20260619000800_seed_ff_foxy_math_pipeline_v1.sql
+  [FOXY_MATH_FORMAT_FLAGS.V2]: false, // seeded OFF by 20260716120000_seed_ff_foxy_math_format_v2.sql
   [FOXY_CURRICULUM_GUARD_FLAGS.V1]: false, // seeded OFF by 20260619001000_seed_ff_foxy_curriculum_guard_v1.sql
   [FOXY_RESPONSE_CACHE_L2_FLAGS.V1]: false, // seeded OFF by 20260705000000_seed_ff_foxy_response_cache_l2.sql
   [FOXY_RESPONSE_CACHE_L2_FLAGS.SHADOW_V1]: false, // seeded OFF by 20260705000000_seed_ff_foxy_response_cache_l2.sql

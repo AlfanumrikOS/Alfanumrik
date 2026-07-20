@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 import AdminShell, { useAdmin } from '../../_components/AdminShell';
 import { StatCard } from '@alfanumrik/ui/admin-ui';
 import { toast } from '@alfanumrik/ui/ui/toast';
@@ -296,8 +297,13 @@ function VerificationQueueContent() {
                       <span className="mr-1 text-muted-foreground">Ch {f.chapter_number}</span>
                       {f.chapter_title}
                     </td>
-                    <td className={`${TD} max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap`}>
-                      {f.question_text}
+                    <td
+                      className={`${TD} max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap`}
+                      title={f.question_text}
+                    >
+                      {/* Full string is in the DOM (CSS-truncated, not sliced),
+                          so inline math rendering is safe here. */}
+                      <MathRenderer inline content={f.question_text} />
                     </td>
                     <td className={TD}>
                       <code className="text-[11px] text-muted-foreground">

@@ -26,8 +26,10 @@
  */
 
 import React, { memo, useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
+// NOTE: no direct `katex` import here — all KaTeX/normalizer/markdown logic
+// is delegated to the canonical math module (../math/, see imports below).
+// `katex/dist/katex.min.css` is imported by math/katex-segments, so the
+// stylesheet still ships with this component (P10: no new bytes).
 import dynamic from 'next/dynamic';
 import type {
   FoxyBlock,
@@ -61,24 +63,30 @@ import { supabase } from '@alfanumrik/lib/supabase-client';
 // callers can import the discriminator without pulling KaTeX into the
 // synchronous bundle (P10).
 import { isFoxyResponse as isFoxyResponseImpl } from '@alfanumrik/lib/foxy/is-foxy-response';
-// Render-time correction for UNDELIMITED inline LaTeX (the model sometimes
-// emits `(\frac{14}{15} \times \frac{25}{42})` with no `\(..\)` delimiters).
-// Pure post-pass over `tokenizeInline` output; fires only on an explicit
-// allowlisted backslash command — see math-normalization.ts for the contract.
+// Canonical math pipeline (packages/ui/src/math/ — 2026-07 consolidation):
+// tokenizer + undelimited-LaTeX rescue live in math/normalize; the KaTeX
+// segment renderer (fail-safe `<code>` fallback, P12) lives in
+// math/katex-segments. This module imports them statically — /foxy already
+// ships KaTeX, so no new bytes (P10).
 import {
   normalizeMathSegments,
-  type InlineSegment,
-} from './math-normalization';
+  tokenizeInline,
+} from '../math/normalize';
+import {
+  renderKatex,
+  renderInlineSegments,
+} from '../math/katex-segments';
 
-// Re-export the normalization primitives (incl. the trigger predicate) so
-// tests and the production canary corpus can pin them directly.
+// Re-export the normalization primitives (incl. the trigger predicate and the
+// tokenizer) so tests and the production canary corpus can pin them directly.
 export {
   containsAllowlistedMathCommand,
   splitUndelimitedMath,
   normalizeMathSegments,
+  tokenizeInline,
   MATH_COMMAND_ALLOWLIST,
-} from './math-normalization';
-export type { InlineSegment } from './math-normalization';
+} from '../math/normalize';
+export type { InlineSegment } from '../math/normalize';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -240,41 +248,11 @@ const DEFAULT_CFG = { icon: '⚛', color: '#10B981' }; // green atom
 export const isFoxyResponse = isFoxyResponseImpl;
 
 // ── KaTeX rendering ──────────────────────────────────────────────────────────
-
-interface KatexRender {
-  ok: boolean;
-  html: string;
-}
-
-/**
- * Sync KaTeX render. With `throwOnError: false`, KaTeX returns an error span
- * for malformed input rather than throwing — but defensively we wrap in
- * try/catch so any unexpected runtime error (e.g. KaTeX internal asserts)
- * still degrades to the fallback.
- *
- * `displayMode` selects block (centred, larger) vs inline rendering. The
- * dedicated `math` block uses display mode; inline LaTeX inside prose text
- * (`\( … \)`, `$ … $`) uses inline mode via `renderInline` below.
- */
-function renderMath(latex: string, displayMode = true): KatexRender {
-  try {
-    const html = katex.renderToString(latex, {
-      throwOnError: false,
-      displayMode,
-      output: 'html',
-      strict: 'ignore',
-    });
-    // KaTeX with throwOnError:false emits a span with class
-    // "katex-error" for malformed input. Treat that as a soft failure so the
-    // caller can surface the report-issue button.
-    if (html.includes('katex-error')) {
-      return { ok: false, html };
-    }
-    return { ok: true, html };
-  } catch {
-    return { ok: false, html: '' };
-  }
-}
+//
+// `renderMath` is now the canonical `renderKatex` from math/katex-segments
+// (same signature, same katex-error soft-failure contract). Kept as a local
+// alias so the block renderers below read unchanged.
+const renderMath = renderKatex;
 
 // ── Inline content rendering (math + markdown emphasis inside prose) ──────────
 //
@@ -297,221 +275,22 @@ function renderMath(latex: string, displayMode = true): KatexRender {
 // P10: no new dependency — KaTeX is already imported above. The markdown
 // parser is a few regexes, zero bytes of new deps.
 
-// `InlineSegment` is imported from ./math-normalization (shared with the
-// undelimited-math post-pass) — same shape this tokenizer always produced.
-
-/**
- * Split a prose string into ordered text / math segments.
- *
- * Recognised math delimiters (longest/most-specific matched first so `$$`
- * wins over `$` and `\[`/`\(` are not mistaken for stray backslashes):
- *   - `\[ … \]`  → display math
- *   - `$$ … $$`  → display math
- *   - `\( … \)`  → inline math
- *   - `$ … $`    → inline math (single, non-greedy; ignores escaped `\$`)
- *
- * Escaped `\$` is treated as a literal dollar and never opens/closes a `$`
- * math span. Only the INNER LaTeX (delimiters stripped) is handed to KaTeX.
- * Unterminated delimiters are left as literal text (no crash, no swallow).
- */
-export function tokenizeInline(input: string): InlineSegment[] {
-  const segments: InlineSegment[] = [];
-  let buf = '';
-  let i = 0;
-  const n = input.length;
-
-  const flushText = () => {
-    if (buf) {
-      segments.push({ kind: 'text', value: buf });
-      buf = '';
-    }
-  };
-
-  while (i < n) {
-    const ch = input[i];
-    const next = input[i + 1];
-
-    // Escaped dollar: literal `$`, consume both chars, never a delimiter.
-    if (ch === '\\' && next === '$') {
-      buf += '$';
-      i += 2;
-      continue;
-    }
-
-    // Display math: \[ … \]
-    if (ch === '\\' && next === '[') {
-      const close = input.indexOf('\\]', i + 2);
-      if (close !== -1) {
-        flushText();
-        segments.push({
-          kind: 'math',
-          latex: input.slice(i + 2, close).trim(),
-          display: true,
-        });
-        i = close + 2;
-        continue;
-      }
-    }
-
-    // Inline math: \( … \)
-    if (ch === '\\' && next === '(') {
-      const close = input.indexOf('\\)', i + 2);
-      if (close !== -1) {
-        flushText();
-        segments.push({
-          kind: 'math',
-          latex: input.slice(i + 2, close).trim(),
-          display: false,
-        });
-        i = close + 2;
-        continue;
-      }
-    }
-
-    // Display math: $$ … $$
-    if (ch === '$' && next === '$') {
-      const close = input.indexOf('$$', i + 2);
-      if (close !== -1) {
-        flushText();
-        segments.push({
-          kind: 'math',
-          latex: input.slice(i + 2, close).trim(),
-          display: true,
-        });
-        i = close + 2;
-        continue;
-      }
-    }
-
-    // Inline math: $ … $ (single). Scan for the next unescaped `$`.
-    if (ch === '$') {
-      let j = i + 1;
-      let found = -1;
-      while (j < n) {
-        if (input[j] === '\\' && input[j + 1] === '$') {
-          j += 2;
-          continue;
-        }
-        if (input[j] === '$') {
-          found = j;
-          break;
-        }
-        j += 1;
-      }
-      if (found !== -1 && found > i + 1) {
-        const inner = input.slice(i + 1, found).replace(/\\\$/g, '$').trim();
-        flushText();
-        segments.push({ kind: 'math', latex: inner, display: false });
-        i = found + 1;
-        continue;
-      }
-    }
-
-    buf += ch;
-    i += 1;
-  }
-
-  flushText();
-  return segments;
-}
-
-/**
- * Parse a plain-text (non-math) segment into React nodes, applying inline
- * markdown emphasis. Only `**bold**`/`__bold__` → <strong> and
- * `*italic*`/`_italic_` → <em> are recognised. No raw `**`/`__`/`*`/`_` may
- * leak through for well-formed markers. Output is a flat list of strings and
- * <strong>/<em> elements — never arbitrary HTML (XSS-safe).
- *
- * Bold is matched before italic so `**x**` is not mis-parsed as nested
- * italics. Markers must wrap non-empty, non-whitespace-only content.
- */
-function renderMarkdownInline(text: string, keyPrefix: string): React.ReactNode[] {
-  // Single pass over the four marker styles. `**`/`__` (bold) before `*`/`_`
-  // (italic) so the greedier bold delimiter wins.
-  //
-  // A FRESH RegExp is instantiated per call (not a shared module-level
-  // constant) because this function recurses into matched bodies. A shared
-  // /g regex carries `lastIndex` across calls, so a recursive inner call would
-  // corrupt the outer loop's cursor — an infinite-growth bug. Per-call
-  // instances each own their `lastIndex`.
-  const TOKEN = /(\*\*|__)(?=\S)(.+?)(?<=\S)\1|(\*|_)(?=\S)(.+?)(?<=\S)\3/g;
-  const out: React.ReactNode[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  let k = 0;
-
-  while ((m = TOKEN.exec(text)) !== null) {
-    if (m.index > last) {
-      out.push(text.slice(last, m.index));
-    }
-    if (m[1] !== undefined) {
-      // Bold: recurse so `**a *b* c**` keeps inner italics.
-      out.push(
-        <strong key={`${keyPrefix}-b${k}`}>
-          {renderMarkdownInline(m[2], `${keyPrefix}-b${k}`)}
-        </strong>,
-      );
-    } else {
-      out.push(
-        <em key={`${keyPrefix}-i${k}`}>
-          {renderMarkdownInline(m[4], `${keyPrefix}-i${k}`)}
-        </em>,
-      );
-    }
-    last = m.index + m[0].length;
-    k += 1;
-  }
-  if (last < text.length) {
-    out.push(text.slice(last));
-  }
-  return out;
-}
-
 /**
  * `InlineContent` — render a prose string with inline math + markdown emphasis.
  *
- * Used by every text-bearing block (and block labels). Plain text passes
- * through React (escaped). Math segments render via KaTeX; a KaTeX failure
- * degrades to a `<code>` span so a malformed `\( \frac{1}{ \)` never crashes
- * the chat list (P12).
+ * Used by every text-bearing block (and block labels). Delegates to the
+ * canonical pipeline: `tokenizeInline` (math/normalize) ->
+ * `normalizeMathSegments` (undelimited-LaTeX rescue) ->
+ * `renderInlineSegments` (math/katex-segments) whose DEFAULTS reproduce this
+ * component's historical DOM exactly: plain text passes through React
+ * (escaped) with bold/italic emphasis; math renders via KaTeX; a KaTeX
+ * failure degrades to a `<code>` span so a malformed `\( \frac{1}{ \)`
+ * never crashes the chat list (P12).
  */
 function InlineContent({ text }: { text: string | undefined }) {
   const nodes = useMemo<React.ReactNode[]>(() => {
     if (!text) return [];
-    // Post-pass: expand UNDELIMITED LaTeX (`(\frac{1}{2} \times \frac{3}{4})`
-    // with no `\(..\)`) inside text segments into math segments. Delimited
-    // math was already extracted by tokenizeInline and passes through
-    // untouched; text with no allowlisted command is returned byte-identical.
-    const segments = normalizeMathSegments(tokenizeInline(text));
-    return segments.map((seg, idx) => {
-      if (seg.kind === 'math') {
-        const rendered = renderMath(seg.latex, seg.display);
-        if (!rendered.ok) {
-          // Graceful degradation — show the raw inner expression as code.
-          return (
-            <code
-              key={`m${idx}`}
-              className="px-1 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[0.85em] text-slate-700"
-            >
-              {seg.latex}
-            </code>
-          );
-        }
-        return (
-          <span
-            key={`m${idx}`}
-            // KaTeX output is a fixed, sanitised span/MathML tree — no script
-            // or event handlers. Safe to inject.
-            dangerouslySetInnerHTML={{ __html: rendered.html }}
-          />
-        );
-      }
-      return (
-        <React.Fragment key={`t${idx}`}>
-          {renderMarkdownInline(seg.value, `t${idx}`)}
-        </React.Fragment>
-      );
-    });
+    return renderInlineSegments(normalizeMathSegments(tokenizeInline(text)));
   }, [text]);
 
   return <>{nodes}</>;
@@ -1283,6 +1062,12 @@ function BlockRouter({
     case 'code':
       return <CodeBlock block={block} />;
     case 'vertical_math':
+      // One-math-pipeline rule (docs/math-rendering-spec.md): VerticalMathBlock
+      // is a sanctioned SIBLING structured-block renderer (like mermaid) for
+      // columnar arithmetic layout only. Audited 2026-07-20: it carries NO
+      // KaTeX/markdown/normalizer logic of its own. Any LaTeX rendering must
+      // stay in the canonical packages/ui/src/math/ module — do not add math
+      // string-processing to VerticalMathBlock.
       if (isFoxyVerticalMathBlock(block)) {
         return <VerticalMathBlock block={block} />;
       }
