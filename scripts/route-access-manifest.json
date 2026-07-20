@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 365,
+  "routeCount": 366,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -153,6 +153,14 @@
     {
       "path": "/api/cron/expired-subscriptions",
       "file": "apps/host/src/app/api/cron/expired-subscriptions/route.ts",
+      "access": "cron",
+      "owner": "platform-ops",
+      "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/cron/flag-posture-canary",
+      "file": "apps/host/src/app/api/cron/flag-posture-canary/route.ts",
       "access": "cron",
       "owner": "platform-ops",
       "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",

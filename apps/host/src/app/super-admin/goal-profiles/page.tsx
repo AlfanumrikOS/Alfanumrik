@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import AdminShell, { readAdminJson } from '../_components/AdminShell';
 import {
   buildExpandedPersona,
   type FoxyMode,
@@ -102,13 +103,13 @@ function ProfileCard({ profile }: ProfileCardProps) {
 
   return (
     <section
-      className="rounded-2xl border border-gray-200 bg-white p-5 mb-5"
+      className="rounded-2xl border border-surface-3 bg-surface-1 p-5 mb-5"
       data-testid={`goal-profile-card-${profile.code}`}
     >
       <header className="mb-4">
-        <h2 className="text-lg font-bold text-gray-900">{profile.labelEn}</h2>
-        <p className="text-sm text-gray-500 mt-0.5">{profile.labelHi}</p>
-        <code className="text-[11px] text-gray-400 mt-1 inline-block">{profile.code}</code>
+        <h2 className="text-lg font-bold text-foreground">{profile.labelEn}</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">{profile.labelHi}</p>
+        <code className="text-[11px] text-muted-foreground mt-1 inline-block">{profile.code}</code>
       </header>
 
       {/* Config table */}
@@ -251,7 +252,7 @@ function ProfileCard({ profile }: ProfileCardProps) {
   );
 }
 
-export default function GoalProfilesPage() {
+function GoalProfilesContent() {
   const [data, setData] = useState<ApiResponse['data'] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -261,7 +262,7 @@ export default function GoalProfilesPage() {
     setError(null);
     try {
       const res = await fetch('/api/super-admin/goal-profiles');
-      const j: ApiResponse = await res.json();
+      const j = await readAdminJson<ApiResponse>(res);
       if (!res.ok || !j.success || !j.data) {
         setError(j.error ?? `request_failed_${res.status}`);
       } else {
@@ -279,11 +280,11 @@ export default function GoalProfilesPage() {
   }, [load]);
 
   return (
-    <main className="max-w-5xl mx-auto px-4 py-6">
+    <div className="max-w-5xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Goal Profile Preview</h1>
-        <p className="text-sm text-gray-500 mt-0.5">लक्ष्य प्रोफ़ाइल पूर्वावलोकन</p>
-        <p className="text-sm text-gray-600 mt-3 max-w-2xl">
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Goal Profile Preview</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">लक्ष्य प्रोफ़ाइल पूर्वावलोकन</p>
+        <p className="text-sm text-muted-foreground mt-3 max-w-2xl">
           Phase 0 of the Goal-Adaptive Learning Layers spec. Each card below
           shows exactly what students mapped to that goal will experience —
           difficulty mix, Bloom band, source priority, scorecard tone, and the
@@ -292,7 +293,7 @@ export default function GoalProfilesPage() {
       </header>
 
       {loading && (
-        <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+        <div className="rounded-xl border border-surface-3 bg-surface-1 p-6 text-center text-sm text-muted-foreground">
           Loading… / लोड हो रहा है…
         </div>
       )}
@@ -300,7 +301,7 @@ export default function GoalProfilesPage() {
       {error && !loading && (
         <div
           role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 mb-4"
+          className="rounded-xl border border-danger bg-[color-mix(in_srgb,var(--danger)_8%,transparent)] p-4 text-sm text-danger mb-4"
         >
           <div className="font-bold">Failed to load goal profiles</div>
           <div className="font-mono text-xs mt-1">{error}</div>
@@ -344,6 +345,17 @@ export default function GoalProfilesPage() {
           ))}
         </div>
       )}
-    </main>
+    </div>
+  );
+}
+
+// Phase 3 super-admin IA repair (2026-07-20): this page previously rendered
+// shell-less (no sidebar, no admin session context). It is now wrapped in the
+// AdminShell chrome like every sibling super-admin page.
+export default function GoalProfilesPage() {
+  return (
+    <AdminShell>
+      <GoalProfilesContent />
+    </AdminShell>
   );
 }

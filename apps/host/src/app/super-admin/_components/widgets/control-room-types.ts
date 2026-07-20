@@ -65,3 +65,19 @@ export interface AnalyticsData {
 export interface FeatureFlag {
   id: string; name: string; enabled: boolean; description: string | null;
 }
+
+// Phase 3 Master Control (2026-07-20): AI-health tile data. Mirrors the
+// existing GET /api/super-admin/grounding/health response `data` payload —
+// read-only reuse, no new endpoint.
+export interface AiHealthData {
+  callsPerMin: Record<string, number>;
+  groundedRate: Record<string, number>;
+  abstainBreakdown: Record<string, number>;
+  latency: { p50: number; p95: number; p99: number };
+  circuitStates: Record<string, Record<string, number>>;
+  circuitState: 'live' | 'pending_instrumentation';
+  voyageErrorRate: number;
+  claudeErrorRate: number;
+  studyPathFallback: { totalLastHour: number; subjectsLastHour: number; chaptersLastHour: number };
+  generated_at: string;
+}

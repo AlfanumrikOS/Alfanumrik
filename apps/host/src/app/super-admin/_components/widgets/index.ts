@@ -7,6 +7,8 @@ export { default as DeployHistory } from './DeployHistory';
 export { default as LearnerHealth } from './LearnerHealth';
 export { default as PlatformHealth } from './PlatformHealth';
 export { default as ContentEngagement } from './ContentEngagement';
+export { default as RevenueSnapshot } from './RevenueSnapshot';
+export { default as AiHealth } from './AiHealth';
 export type {
   SystemStats,
   ObsData,
@@ -16,4 +18,5 @@ export type {
   AuditEntry,
   AnalyticsData,
   FeatureFlag,
+  AiHealthData,
 } from './control-room-types';

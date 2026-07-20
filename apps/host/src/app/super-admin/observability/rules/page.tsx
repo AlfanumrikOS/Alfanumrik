@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import useSWR from 'swr';
-import AdminShell, { useAdmin } from '../../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../../_components/AdminShell';
 
 const colors = {
   bg: '#FFFFFF',
@@ -207,7 +207,7 @@ function RulesContent() {
       const res = await apiFetch(`/api/super-admin/observability/rules/${ruleId}/test`, {
         method: 'POST',
       });
-      const json = await res.json();
+      const json = await readAdminJson(res);
       if (!res.ok) {
         setActionError(json.error || 'Test failed');
         return;
@@ -232,7 +232,7 @@ function RulesContent() {
         method: 'PATCH',
         body: JSON.stringify({ enabled: newEnabled }),
       });
-      const json = await res.json();
+      const json = await readAdminJson(res);
       if (!res.ok) {
         setActionError(json.error || 'Toggle failed');
         return;
@@ -249,7 +249,7 @@ function RulesContent() {
         method: 'DELETE',
       });
       if (!res.ok) {
-        const json = await res.json();
+        const json = await readAdminJson(res);
         setActionError(json.error || 'Delete failed');
         return;
       }
@@ -308,7 +308,7 @@ function RulesContent() {
       };
 
       const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
-      const json = await res.json();
+      const json = await readAdminJson(res);
 
       if (!res.ok) {
         setFormError(json.error || 'Save failed');

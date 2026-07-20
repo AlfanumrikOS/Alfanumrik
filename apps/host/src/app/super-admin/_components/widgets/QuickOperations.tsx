@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { StatusBadge } from '@alfanumrik/ui/admin-ui';
+import { readAdminJson } from '../AdminShell';
 
 interface QuickOperationsProps {
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
@@ -28,7 +29,7 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
       const res = await apiFetch('/api/super-admin/test-accounts', {
         method: 'POST', body: JSON.stringify({ role: testRole, name: testName, email: testEmail }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) { setTestResult(`Done. Password: ${d.password}`); setTestName(''); setTestEmail(''); }
       else setTestResult(d.error || 'Failed');
     } catch { setTestResult('Request failed'); }
@@ -37,7 +38,7 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
   const lookupUser = async () => {
     if (!lookupSearch.trim()) return;
     const res = await apiFetch(`/api/super-admin/users?role=student&search=${encodeURIComponent(lookupSearch)}&limit=5`);
-    if (res.ok) { const d = await res.json(); setLookupResults(d.data || []); }
+    if (res.ok) { const d = await readAdminJson(res); setLookupResults(d.data || []); }
   };
 
   const sendPasswordReset = async () => {
@@ -47,7 +48,7 @@ export default function QuickOperations({ apiFetch }: QuickOperationsProps) {
       const res = await apiFetch(`/api/super-admin/support?action=reset_password`, {
         method: 'POST', body: JSON.stringify({ email: supportEmail }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       setSupportStatus(res.ok ? (d.message || 'Sent') : (d.error || 'Failed'));
     } catch { setSupportStatus('Failed'); }
   };

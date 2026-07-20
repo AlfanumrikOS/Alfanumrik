@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useAdmin } from '../../_components/AdminShell';
+import { useAdmin, readAdminJson } from '../../_components/AdminShell';
 import StatCard from '../../_components/StatCard';
 import StatusBadge from '../../_components/StatusBadge';
 import useSWR, { mutate as globalMutate } from 'swr';
@@ -226,7 +226,7 @@ export default function PaymentOpsTab() {
         method: 'POST',
         body: JSON.stringify({ studentId, paymentId }),
       });
-      const json: ReconcileResult = await res.json();
+      const json = await readAdminJson<ReconcileResult>(res);
 
       if (json.success) {
         setReconcileResults(prev => ({ ...prev, [paymentId]: { ok: true, text: 'Reconciled' } }));
@@ -259,7 +259,7 @@ export default function PaymentOpsTab() {
         method: 'POST',
         body: JSON.stringify({ all: true }),
       });
-      const json: ReconcileResult = await res.json();
+      const json = await readAdminJson<ReconcileResult>(res);
 
       if (json.success && json.data) {
         const failed = json.data.failed ?? 0;

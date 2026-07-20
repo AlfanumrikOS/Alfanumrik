@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAdmin } from '../../_components/AdminShell';
+import { useAdmin, readAdminJson } from '../../_components/AdminShell';
 import StatusBadge from '../../_components/StatusBadge';
 
 interface BulkResult {
@@ -55,7 +55,7 @@ export default function PlanChangeAction({ selectedIds }: PlanChangeActionProps)
           action,
         }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (d.success) {
         setResult(d.data);
       } else {

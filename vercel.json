@@ -81,6 +81,10 @@
     {
       "path": "/api/cron/streak-guardian",
       "schedule": "30 16 * * *"
+    },
+    {
+      "path": "/api/cron/flag-posture-canary",
+      "schedule": "25 3 * * *"
     }
   ],
   "cleanUrls": true,

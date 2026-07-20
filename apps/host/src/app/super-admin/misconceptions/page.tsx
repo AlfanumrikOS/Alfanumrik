@@ -19,6 +19,10 @@ import { useEffect, useState, useCallback } from 'react';
 // Canonical math renderer — question/option text can carry LaTeX. Fail-safe
 // (raw-text fallback) so a malformed formula never blanks a curator row.
 import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
+// Structured response guard (Phase 2 client hardening): classifies Vercel
+// security-checkpoint 429 HTML / non-JSON bodies instead of letting
+// res.json() throw `Unexpected token '<'` at the curator.
+import { classifyJsonResponse } from '../_components/AdminShell';
 
 interface Candidate {
   question_id: string;
@@ -61,6 +65,7 @@ function Row({ c, onCurated }: { c: Candidate; onCurated: () => void }) {
     try {
       const res = await fetch('/api/super-admin/misconceptions', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question_id: c.question_id,
@@ -70,9 +75,9 @@ function Row({ c, onCurated }: { c: Candidate; onCurated: () => void }) {
           misconception_label_hi: labelHi.trim() || undefined,
         }),
       });
-      const j = await res.json();
-      if (!res.ok) {
-        setError(j.error ?? 'submit_failed');
+      const r = await classifyJsonResponse<unknown>(res);
+      if (!r.ok) {
+        setError(r.error.message);
       } else {
         setDone(true);
         onCurated();
@@ -166,14 +171,14 @@ export default function MisconceptionsPage() {
       const params = new URLSearchParams({ status, limit: '50' });
       if (grade) params.set('grade', grade);
       if (subject) params.set('subject', subject);
-      const res = await fetch(`/api/super-admin/misconceptions?${params}`);
-      const j: ListResponse = await res.json();
-      if (!res.ok) {
-        setError((j as unknown as { error?: string }).error ?? 'list_failed');
+      const res = await fetch(`/api/super-admin/misconceptions?${params}`, { credentials: 'same-origin' });
+      const r = await classifyJsonResponse<ListResponse>(res);
+      if (!r.ok) {
+        setError(r.error.message);
         setItems([]);
       } else {
-        setItems(j.items);
-        setTotal(j.total);
+        setItems(r.data.items);
+        setTotal(r.data.total);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'unknown');
@@ -242,8 +247,15 @@ export default function MisconceptionsPage() {
       </div>
 
       {error && (
-        <div className="mb-3 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-          Error: {error}
+        <div className="mb-3 flex items-center justify-between gap-3 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          <span>Error: {error}</span>
+          <button
+            type="button"
+            onClick={fetchList}
+            className="shrink-0 rounded border border-red-400 bg-white px-3 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
+          >
+            Retry
+          </button>
         </div>
       )}
 

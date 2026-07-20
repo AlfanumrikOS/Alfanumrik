@@ -26,7 +26,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import AdminShell, { useAdmin } from '../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 
 const colors = {
@@ -96,7 +96,7 @@ function SubscribersInner() {
     setError(null);
     try {
       const res = await apiFetch('/api/super-admin/subscribers');
-      const body = await res.json();
+      const body = await readAdminJson(res);
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
       }
@@ -372,7 +372,7 @@ function ReplayModal({
           }),
         },
       );
-      const body = await res.json();
+      const body = await readAdminJson(res);
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
       }
@@ -575,7 +575,7 @@ function DeadLetterDrawer({
       const res = await apiFetch(
         `/api/super-admin/subscribers/${encodeURIComponent(subscriber.subscriber_name)}/dead-letters`,
       );
-      const body = await res.json();
+      const body = await readAdminJson(res);
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
       }
@@ -606,7 +606,7 @@ function DeadLetterDrawer({
         `/api/super-admin/subscribers/${encodeURIComponent(subscriber.subscriber_name)}/dead-letters/${encodeURIComponent(eventId)}/retry`,
         { method: 'POST' },
       );
-      const body = await res.json();
+      const body = await readAdminJson(res);
       if (!res.ok || !body.success) {
         throw new Error(body.error || `HTTP ${res.status}`);
       }

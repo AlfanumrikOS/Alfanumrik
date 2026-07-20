@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import AdminShell, { useAdmin } from '../_components/AdminShell';
+import AdminShell, { useAdmin, readAdminJson } from '../_components/AdminShell';
 import { StatCard, StatusBadge, DataTable, type Column } from '@alfanumrik/ui/admin-ui';
 
 /* ── Types ── */
@@ -116,7 +116,7 @@ function RBACContent() {
     try {
       const res = await apiFetch('/api/super-admin/rbac?action=dashboard_stats');
       if (res.ok) {
-        const d = await res.json();
+        const d = await readAdminJson(res);
         setStats(d.data || { activeElevations: 0, activeSessions: 0, activeTokens: 0 });
       }
     } catch { /* */ }
@@ -127,7 +127,7 @@ function RBACContent() {
     setLoading(true);
     try {
       const res = await apiFetch('/api/super-admin/rbac?action=elevations');
-      if (res.ok) { const d = await res.json(); setElevations(d.data || []); }
+      if (res.ok) { const d = await readAdminJson(res); setElevations(d.data || []); }
     } catch { /* */ }
     setLoading(false);
   }, [apiFetch]);
@@ -136,7 +136,7 @@ function RBACContent() {
     setLoading(true);
     try {
       const res = await apiFetch('/api/super-admin/rbac?action=impersonation_sessions');
-      if (res.ok) { const d = await res.json(); setSessions(d.data || []); }
+      if (res.ok) { const d = await readAdminJson(res); setSessions(d.data || []); }
     } catch { /* */ }
     setLoading(false);
   }, [apiFetch]);
@@ -145,7 +145,7 @@ function RBACContent() {
     setLoading(true);
     try {
       const res = await apiFetch('/api/super-admin/rbac?action=delegation_tokens');
-      if (res.ok) { const d = await res.json(); setTokens(d.data || []); }
+      if (res.ok) { const d = await readAdminJson(res); setTokens(d.data || []); }
     } catch { /* */ }
     setLoading(false);
   }, [apiFetch]);
@@ -166,7 +166,7 @@ function RBACContent() {
         method: 'POST',
         body: JSON.stringify({ action: 'revoke_elevation', elevationId }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) { showMsg('Elevation revoked', 'success'); fetchElevations(); }
       else showMsg(d.error || 'Failed to revoke', 'error');
     } catch { showMsg('Request failed', 'error'); }
@@ -188,7 +188,7 @@ function RBACContent() {
           reason: elevReason,
         }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) {
         showMsg('Elevation granted', 'success');
         setElevUserId(''); setElevRoleId(''); setElevDuration('24'); setElevReason('');
@@ -204,7 +204,7 @@ function RBACContent() {
         method: 'POST',
         body: JSON.stringify({ action: 'end_impersonation', sessionId }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) { showMsg('Session ended', 'success'); fetchSessions(); }
       else showMsg(d.error || 'Failed to end session', 'error');
     } catch { showMsg('Request failed', 'error'); }
@@ -225,7 +225,7 @@ function RBACContent() {
           maxMinutes: Number(impMaxMinutes) || 30,
         }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) {
         showMsg('Impersonation started', 'success');
         setImpTargetId(''); setImpReason(''); setImpMaxMinutes('30');
@@ -241,7 +241,7 @@ function RBACContent() {
         method: 'POST',
         body: JSON.stringify({ action: 'revoke_delegation', tokenId }),
       });
-      const d = await res.json();
+      const d = await readAdminJson(res);
       if (res.ok) { showMsg('Delegation revoked', 'success'); fetchTokens(); }
       else showMsg(d.error || 'Failed to revoke', 'error');
     } catch { showMsg('Request failed', 'error'); }

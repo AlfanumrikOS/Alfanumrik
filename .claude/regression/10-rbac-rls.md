@@ -850,3 +850,99 @@ flags list completeness — no silent truncation).
 **Total catalog: 250 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Protected-flag console guardrail + posture canary (2026-07-20 console bulk-enable incident) — REG-285..REG-286
+
+Source: 2026-07-20 console bulk-enable incident (branch
+`Alfanumrik/feature-flags-rca-repair-99efe1`). Minutes after the CEO-approved
+posture repair (migration 20260720110000) landed, an operator console
+bulk-enable re-armed 49 of the 52 forced-OFF flags at rollout 100 — including
+the P0 quiz-submit hardening pair and the four constitution-pinned Group A
+flags. Restored by migration 20260720130000_restore_approved_flag_posture.sql.
+These entries pin the two guardrails that make the incident class structurally
+non-repeatable: a typed-confirmation gate at the console API boundary
+(prevention) and a nightly posture-drift canary (detection).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-285 | `protected_flag_typed_confirmation_gate` | The super-admin feature-flags console API can never re-arm a protected flag by accident. Registry (`packages/lib/src/flags/protected-flags.ts`): exactly 72 enumerated flags across exactly 6 tiers (`p0_outage`, `p11_payment`, `ai_provider`, `constitution_pinned`, `staged_rollout`, `special_do_not_touch`); the P0 quiz-submit pair (`ff_server_only_quiz_submit`, `ff_v1_quiz_rpc_web_blocked`), the 4 constitution Group A flags (REG-124/126/131/175), and the 5 MoL program flags pinned to their tiers; every entry carries an EN reason + Devanagari `reasonHi` (P7 house shape); `EXPECTED_OFF_FLAGS` is exactly 53 unique names equal to migration 20260720110000 block (ii) ∪ {`ff_irt_question_selection`} PARSED FROM THE MIGRATION SQL (the TS list cannot drift from the CEO-approved SQL), disjoint from the 25-flag block-(i) ACTIVATE list (also parsed — must-be-OFF ∩ must-be-live = ∅), excluding the hard-exclusion names (`ff_atomic_subscription_activation`, `ff_board_score_v1`, `reconcile_stuck_subscriptions_enabled`, all `ff_python_*`); the `ff_python_` PREFIX rule protects un-enumerated names (trailing underscore included — `ff_pythonish` is NOT protected) and activation-list flags (e.g. `ff_foxy_maps_v1`) return null. Route contract: PATCH making a protected flag MORE enabled (`enabled:true` OR `rollout_percentage>0`) without `body.confirm === flag_name` → 409 `{ code:'FLAG_PROTECTED', tier, reason, confirm_required }` BEFORE any DB write / audit row / ops event (near-miss confirm typo also 409); correct confirm → write proceeds and the audit row carries `protected_confirmed:true`; disabling is confirm-free (kill switches stay fast) EXCEPT the `special_do_not_touch` / `p11_payment` tiers (disabling `ff_atomic_subscription_activation` — the P11 payment kill-switch — is ALSO gated); DELETE of a protected flag requires the same confirm (409 after the read-only name lookup, before the DELETE write — closes delete→recreate-unprotected); POST under a protected NAME requires confirm BEFORE ANY I/O (even the uniqueness check), and the `ff_python_` prefix rule fires at the POST boundary; unprotected flags are entirely unaffected in every direction (no confirm, never `protected_confirmed`). Documented seam pinned honestly: a failed previous-state read hides the flag name so the PATCH gate cannot fire — the REG-286 canary is the backstop for that path. | `src/__tests__/lib/flags/protected-flags-registry.test.ts` (registry + migration-parse pins), `src/__tests__/api/super-admin/feature-flags-protected-guardrail.test.ts` (PATCH/DELETE/POST matrix), `src/__tests__/api/super-admin/feature-flags-rollout-promotion.test.ts` (POST protected-name 409 + confirm-passthrough regex cases) | E | P9-adjacent (super_admin-gated mutations gain a second explicit-intent factor), P11-adjacent (payment kill-switch + ₹999 SKU flag cannot be flipped without typed intent), P7 (bilingual reasons), operational integrity (the 2026-07-20 incident shape — console bulk-enable re-arming P0/constitution flags — is structurally blocked) |
+| REG-286 | `flag_posture_canary_fail_closed_drift_detection` | The nightly `/api/cron/flag-posture-canary` route detects any deviation from the CEO-approved flag posture within 24h. Auth: fail-closed CRON_SECRET gate BEFORE any DB I/O (REG-118/REG-127 posture) — missing carrier, wrong secret, or unset env → 401 with ZERO `feature_flags` reads and zero ops/audit writes; carrier precedence first-PRESENT-wins (Bearer > x-cron-secret > ?token= — a wrong Bearer is NOT rescued by a correct lower carrier); GET (Vercel cron) and POST (manual/ops) parity. Query shape: one read of `feature_flags` selecting `flag_name,is_enabled,rollout_percentage,metadata`, `.in()` over the de-duped 54-name watched set (53 `EXPECTED_OFF_FLAGS` — NOT mocked — + the P11 kill-switch). Drift matrix: any EXPECTED_OFF row with `is_enabled=true` OR `rollout>0` → drift (including the half-off `enabled=false/rollout>0` shape; rollout NULL coalesces to 0 = clean); absent EXPECTED_OFF rows are NOT drift (unseeded envs); `ff_atomic_subscription_activation` disabled OR missing → drift (missing reported as `state:'missing'`); MoL shadow flags with `metadata->>'enabled'='true'` (string or boolean) → drift even when columns read OFF; compound drift all reported with accurate count; clean state → `{ drift: [], count: 0 }` with NO ops event and NO audit row. Drift side-effects: exactly one `ops_events` row (severity `error`, source `cron/flag-posture-canary`) + one `audit_logs` row (`feature_flag.posture_drift_detected`, actor_role `system`, status `failure`, metadata-only). P13 payload posture: response body is exactly `{drift,count}`; every drift-entry key on the fixed whitelist {flag_name, expected, is_enabled, rollout_percentage, metadata_enabled, state}; serialized body never matches PII-shaped keys (email/phone/student/actor/user_id/updated_by); DB failure → generic 500 `internal_error` (exact-body pin — internals never echoed). Cron registration pinned statically: exactly one `25 3 * * *` entry in BOTH root `vercel.json` and the `apps/host` mirror, all 13 pre-existing cron entries untouched verbatim (incl. REG-44's irt-calibrate `50 2 * * *`), no same-slot collision, `scripts/job-registry.json` entry with matching schedule (RCA-17), route exports GET and documents the schedule. | `src/__tests__/api/cron/flag-posture-canary.test.ts` (auth + drift matrix + side-effects + P13), `src/__tests__/regressions/flag-posture-canary-cron-pin.test.ts` (vercel.json/job-registry static pins) | E | P9 (fail-closed cron auth before I/O), P11-adjacent (kill-switch posture watched nightly), P13 (state-only payload, metadata-only audit), operational integrity (a repeat of the 2026-07-20 re-arm is detected within one nightly cycle) |
+
+### Invariants covered by this section
+
+- Operational integrity — the console cannot silently re-arm the CEO-approved
+  forced-OFF posture (prevention: typed confirm at the API boundary), and any
+  drift that slips past the console (SQL edits, the documented
+  unreadable-previous-state seam) is surfaced within one nightly canary cycle
+  (detection).
+- P9-adjacent — the super_admin level gate (pinned by the sibling
+  mutation-gate suite) is now layered with an explicit-intent factor for
+  protected flags; the canary route itself is fail-closed CRON_SECRET-gated
+  before any I/O.
+- P11-adjacent — `ff_atomic_subscription_activation` (payment kill-switch) is
+  double-covered: disable requires typed confirm, and disabled/missing state
+  is nightly-detected drift.
+- P13 — canary responses and audit rows carry flag names + state only; no
+  operator identity, no PII-shaped keys.
+- P7 — every protection reason ships EN + Devanagari Hindi for the console UI.
+
+### Catalog total
+
+Protected-flag guardrail package adds REG-285 (typed-confirmation gate — the
+incident pin: console bulk-enable cannot re-arm P0/constitution/payment flags)
+and REG-286 (posture canary — fail-closed + drift matrix + static cron pins).
+**Total catalog: 253 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Super-admin session/routing/error-contract repair (2026-07-20 super-admin RCA) — REG-287..REG-289
+
+Source: 2026-07-20 super-admin RCA (branch
+`Alfanumrik/feature-flags-rca-repair-99efe1`, Phases 1-3). Three coupled
+operator-console failures: (1) the **~2.5-minute session death** — the login
+route returned the raw Supabase session in its JSON body, the login page fed it
+to `supabase.auth.setSession`, and the resulting localStorage twin of the
+httpOnly sb-* cookie's refresh-token family stranded each other on rotation;
+(2) the **student-bounce** — middleware Layer 0.65 resolved roles from
+`get_user_role` + `user_roles` only and never consulted `admin_users`, so an
+admin who also had a `students` row resolved to 'student' and every
+/super-admin navigation bounced to /dashboard, with transient probe failures
+CACHED as demoted roles for 60s; (3) the **opaque `Unexpected token '<'`** —
+Vercel's DDoS challenge intermittently serves 429 text/html "Security
+Checkpoint" pages that raw `res.json()` turned into an unexplained SyntaxError
+at the operator.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-287 | `admin_session_single_source_and_ordered_credential_fallback` | The httpOnly sb-* cookie is the single admin session source and a stale Bearer can never mask a valid cookie session. Login route (`/api/super-admin/login`): success body is exactly `{ success: true, user: { id, email } }` — NO access_token / refresh_token / session object anywhere in the body (the pre-repair body fed `setSession` and created the localStorage refresh-token twin behind the ~2.5-min session death); the httpOnly sb-* session cookie IS set on the success response; if the SSR cookie write fails the route returns 500 `SESSION_COOKIE_FAILED` (no cookie ⇒ no half-authenticated state). `authorizeAdmin` (packages/lib/src/admin-auth.ts): candidate access tokens are collected in priority order — Bearer header first (explicit caller intent), then the httpOnly `sb-*-auth-token` cookie (both the single-cookie JSON shape and the chunked `.0/.1/...` shape parsed) — and each candidate is verified in order with first-success-wins; a STALE Bearer no longer short-circuits to 401 when the request carries a VALID cookie session; the failure reported is the LAST candidate's. Logout (`/api/super-admin/logout`) destroys the cookie server-side and the shell signs out with `scope: 'local'` before replacing to login (AdminShell footer), so logout cannot revoke another tab's family. AdminShell bootstrap never hard-redirects on the FIRST null client session: it probes one authorizeAdmin-gated endpoint with cookies and redirects only when the probe returns 401/403; `onAuthStateChange` redirects only on an explicit `SIGNED_OUT`. | `src/__tests__/api/super-admin/login-cookie-single-source.test.ts` (3), `src/__tests__/api/super-admin/login-standard-redirect.test.ts` (3), `src/__tests__/lib/admin-auth.test.ts` (36 — ordered fallback + cookie-shape parsing), `src/__tests__/api/super-admin/admin-route-auth-gate-sweep.test.ts` (logout posture) | E | P9 (admin credential verification order cannot demote a valid session), operational integrity (operator sessions survive token rotation — the 2.5-min session-death shape is pinned gone) |
+| REG-288 | `middleware_admin_precedence_and_role_unknown_never_cached` | Layer 0.65 role resolution is admin-aware and fail-open on ambiguity. Resolution order (packages/lib/src/middleware-helpers.ts): (1) `get_admin_level` RPC → `admin_users` (the roster `authorizeAdmin()` reads) with HIGHEST precedence — an active admin row yields 'super_admin'/'admin' even when the same auth user also has a students/teachers/guardians row (the student-bounce fix); (2) `user_roles` elevated-role probe; (3) legacy primary-role probe. Any failed probe that could hide an admin row returns the `ROLE_UNKNOWN` sentinel — NEVER a demoted role — and `ROLE_UNKNOWN` is NEVER written to the 60s role cache, so a transient probe failure costs one request, not 60s of /super-admin bounces. Migration `20260720150000_get_admin_level_rpc.sql` pinned by static SQL parse: SECURITY DEFINER with `SET search_path = public` (definer hygiene), STABLE, EXECUTE REVOKEd from PUBLIC and `anon` with grants only to `authenticated` + `service_role`, and the in-body self-or-service anti-enumeration guard (`COALESCE(auth.role(),'') = 'service_role' OR p_user_id = auth.uid()`) lives in the SAME predicate as the `is_active = true` roster lookup; fresh-DB `to_regclass` no-op guard; the middleware helper is pinned as the consumer (`rpc/get_admin_level` + the exported `ROLE_UNKNOWN` sentinel — a dropped RPC degrades to legacy resolution, never 500s). Companion migration `20260720160000_deactivate_orphaned_admin_users.sql` pinned as data-only hygiene: the UPDATE predicate requires `auth_user_id IS NOT NULL` (a bare NOT EXISTS is TRUE for NULL and would sweep never-linked pre-provisioned rows) AND the `NOT EXISTS (SELECT 1 FROM auth.users …)` anti-join, with the `is_active = true` idempotence filter; executable SQL contains exactly one UPDATE (admin_users only) and NO DDL / DELETE / GRANT / REVOKE; fresh-DB guards on BOTH `public.admin_users` and `auth.users`; row count surfaced via GET DIAGNOSTICS + RAISE NOTICE. | `src/__tests__/lib/middleware-helpers.test.ts` (26 — admin precedence + ROLE_UNKNOWN never-cached), `src/__tests__/middleware/layer-065.test.ts` (11), `src/__tests__/middleware.test.ts` (101), `src/__tests__/auth-callback-role-redirect.test.ts` (15), `src/__tests__/admin-session-repair-migrations.test.ts` (9 — migration content pins) | E | P9 (role gates consult the real admin roster; ambiguity fails open to retry, never to demotion), P8-adjacent (RPC is anti-enumeration-guarded + anon-revoked; admin_users RLS posture untouched), operational integrity (admins are never bounced off /super-admin by a transient probe failure) |
+| REG-289 | `admin_shell_structured_error_classification_with_checkpoint_detection` | Every super-admin fetch resolves to a structured `ApiResult` instead of an opaque SyntaxError. `classifyJsonResponse` (pure, never throws — exported from `AdminShell.tsx`): 200+application/json → `{ ok: true, data, status }`; 429+text/html (the Vercel DDoS challenge shape) → `{ kind: 'security_checkpoint' }`; 429+JSON (a real rate-limit) → `http`, NOT checkpoint; any other non-JSON body (including 200+text/html) → `non_json` with the status in the message; JSON content-type with a malformed body → `non_json`; 401+JSON → `session_expired` (callers reach the classifier only after apiFetch's refresh+retry); other non-2xx JSON → `http` carrying the server's `error` string when present, else `HTTP <status>`. `readAdminJson` (drop-in guard for the 20-file legacy `res.json()` sweep): preserves legacy semantics — JSON bodies are RETURNED even on non-2xx so caller `d.error` handling keeps working; only non-JSON throws, with a readable message (429 → security-checkpoint wording, never the raw `Unexpected token '<'`). `apiFetchJson`/`apiFetch` (AdminShell context): network throw → `{ kind: 'network', status: 0 }` (no unhandled rejection); 401 → ONE `supabase.auth.refreshSession()` then ONE retry carrying the refreshed Bearer (accessTokenRef, not stale state) + `credentials: 'same-origin'` so the httpOnly cookie rides along — recovered 401 shows NO banner; a second 401 → `session_expired` + the role=alert banner (preserves in-progress operator work; manual sign-in + 10s auto-redirect); a checkpoint 429 sets the dismissible role=status banner ("data may be stale"), is NOT a session error, and never burns the single refresh+retry. | `src/__tests__/admin-shell-api-error-contract.test.tsx` (17 — classifier matrix + readAdminJson + rendered refresh-retry/banner flows), `src/__tests__/super-admin-ia-relabel.test.ts` (AdminShell source pins) | E | Operational integrity (the 2026-07-20 `Unexpected token '<'` operator-facing failure shape is structurally classified: checkpoint vs session-expiry vs server error are distinguishable at a glance), P9-adjacent (401 handling is retry-once-then-surface — never a silent loop, never a spurious logout), P7 (both banners ship EN + Devanagari Hindi) |
+
+### Invariants covered by this section
+
+- Operational integrity — operator sessions survive refresh-token rotation
+  (single session source); admins reach /super-admin deterministically
+  (roster-aware routing, fail-open on ambiguity); console API failures are
+  classified and explained, never opaque SyntaxErrors.
+- P9 — credential verification is ordered first-success-wins (a stale Bearer
+  cannot mask a valid cookie session); middleware role gates consult
+  `admin_users` with precedence; transient probe failures return an uncached
+  sentinel instead of a demoted, cached role.
+- P8-adjacent — `get_admin_level` is SECURITY DEFINER with pinned
+  search_path, anon/PUBLIC-revoked, and self-or-service guarded against
+  admin-roster enumeration; the orphan-deactivation migration is data-only
+  (no DDL, no DELETE, RLS posture untouched).
+- P7 — the session-expired and security-checkpoint banners render EN +
+  Devanagari Hindi.
+
+### Catalog total
+
+Super-admin repair adds REG-287 (session single-source + ordered
+credential fallback — the 2.5-min session-death pin), REG-288 (admin-aware
+middleware routing with the uncached ROLE_UNKNOWN sentinel + the two repair
+migrations' content pins — the student-bounce pin), REG-289 (AdminShell
+structured error classification incl. security-checkpoint detection — the
+`Unexpected token '<'` pin).
+**Total catalog: 256 entries (target: 35 — TARGET EXCEEDED).**
+
+---

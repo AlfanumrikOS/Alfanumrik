@@ -20,7 +20,8 @@ import {
   getUserRoleFromCache,
   findRouteRule,
   destinationForRole,
-  type MiddlewareRole,
+  ROLE_UNKNOWN,
+  type ResolvedMiddlewareRole,
 } from '@alfanumrik/lib/middleware-helpers';
 import {
   ANON_ID_COOKIE,
@@ -935,12 +936,34 @@ export async function proxy(request: NextRequest) {
   if (layer065Enabled && authUserId && !authDegraded) {
     const rule = findRouteRule(path);
     if (rule) {
-      const role: MiddlewareRole | null = await getUserRoleFromCache(authUserId);
-      // role === null → cache + lookup both failed → fail open.
+      const role: ResolvedMiddlewareRole | null = await getUserRoleFromCache(authUserId);
+      // role === null → deterministic misconfig (env vars missing) → fail open.
+      // role === ROLE_UNKNOWN → a role probe/RPC failed TRANSIENTLY → fail
+      //   open (pass through, no redirect) and never cached, so the next
+      //   request re-resolves. 2026-07-20 super-admin route-gating RCA: for
+      //   /super-admin (and /api/super-admin, which never matches a rule
+      //   here) passing through on 'unknown' is SAFE because every
+      //   /api/super-admin route is authorizeAdmin()-gated server-side and
+      //   the /super-admin pages render nothing without that API data — the
+      //   redirect here is UX defense-in-depth, not the security boundary.
+      //   The same fail-open discipline applies to all other route families
+      //   (identical to the pre-RCA behavior on lookup failure, which
+      //   returned null); RLS + authorizeRequest() remain the real gates.
       // role === 'none' → authenticated but not yet onboarded → /onboarding.
       // role in rule.allowed → allow.
       // role NOT in rule.allowed → redirect to that role's home portal.
-      if (role !== null) {
+      if (role === ROLE_UNKNOWN) {
+        // Observability: sampled breadcrumb so we can see how often role
+        // resolution is inconclusive in prod (PII-free — path only).
+        if (Math.random() < 0.05) {
+          console.warn(JSON.stringify({
+            level: 'warn',
+            message: 'layer_0_65_role_unknown_pass_through',
+            from: path,
+            rulePrefix: rule.prefix,
+          }));
+        }
+      } else if (role !== null) {
         let redirectTo: string | null = null;
         if (role === 'none') {
           redirectTo = '/onboarding';

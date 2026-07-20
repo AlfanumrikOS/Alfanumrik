@@ -45,6 +45,27 @@ Navigate to `/super-admin/diagnostics` for system diagnostics including:
 - Server errors: Same dashboard, server-side events
 - Session replay: Available for 1% of sessions, 100% of errored sessions
 
+## Obtaining an Admin API Token (`<admin_token>`)
+
+**Changed 2026-07-20 (cookie single-source session):** `POST /api/super-admin/login` no longer returns access/refresh tokens in its JSON body — it only sets an httpOnly `sb-*` cookie. Any procedure that previously copied `session.access_token` from the login response no longer works. `Bearer` auth on the API routes themselves is still accepted (`authorizeAdmin` falls back cookie-ward only when the Bearer is stale).
+
+To get a token for the `Bearer <admin_token>` curl commands below:
+
+```bash
+# Mint a token directly from Supabase Auth (password grant) with your admin
+# credentials. Requires the project URL + anon key (both NEXT_PUBLIC_*).
+curl -s -X POST "$NEXT_PUBLIC_SUPABASE_URL/auth/v1/token?grant_type=password" \
+  -H "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"<admin email>","password":"<admin password>"}' \
+  | jq -r '.access_token'
+```
+
+Notes:
+- The account must exist in `admin_users` with `is_active = true` — the token alone does not grant admin access.
+- Tokens expire (~1 hour). Re-mint rather than storing them; never commit or log a token.
+- This mints a *separate* session from the console's cookie session; admin logout in the browser does not revoke it (it ages out on its own).
+
 ## 2. Toggle Feature Flags
 
 ### Via Super Admin Panel
@@ -262,3 +283,45 @@ Navigate to `/super-admin/cms` to see:
 - Questions per subject per grade (target: minimum 50 per topic)
 - Bloom's taxonomy distribution per topic (target: at least 3 levels represented)
 - Difficulty distribution (target: roughly even easy/medium/hard)
+
+## 10. Manage School-Scoped Alert Rules (API-only — interim)
+
+**Interim state (2026-07-20 IA repair):** the `/super-admin/alerts` page was a
+school-scoped alert-rule CRUD UI; it now redirects to
+`/super-admin/observability/rules` (a *different* system — platform ops-event
+alerting over `alert_rules`). The school-scoped rules live in
+`school_alert_rules`, are **still actively evaluated** by
+`POST /api/cron/evaluate-alerts` (CRON_SECRET-gated; 24h cooldown per rule;
+creates `notifications` rows), and are managed **only via the API** until the
+planned "School Alert Rules" tab lands in observability/rules.
+
+Rule types: `error_rate`, `engagement_drop`, `payment_failure`, `ai_budget`,
+`seat_limit` — each optionally scoped to a `school_id` (null = platform-wide).
+API: `/api/super-admin/alerts` (GET/POST/PATCH/DELETE), `authorizeAdmin`
+level `support`, audit-logged.
+
+```bash
+# List rules (see "Obtaining an Admin API Token" above)
+curl -H "Authorization: Bearer <admin_token>" \
+  https://alfanumrik.vercel.app/api/super-admin/alerts
+
+# Mute a misfiring rule (most common on-call action)
+curl -X PATCH \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"id": "<rule_id>", "is_active": false}' \
+  https://alfanumrik.vercel.app/api/super-admin/alerts
+
+# Adjust a threshold
+curl -X PATCH \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"id": "<rule_id>", "threshold": 25}' \
+  https://alfanumrik.vercel.app/api/super-admin/alerts
+```
+
+Blast-radius note: a misconfigured rule can at worst notify once per 24h per
+rule (cooldown), so muting via PATCH is sufficient on-call mitigation — no
+cron change needed. The old full UI is recoverable from git history at
+`apps/host/src/app/super-admin/alerts/page.tsx` (pre-2026-07-20) if ever
+needed before the tab ships.
