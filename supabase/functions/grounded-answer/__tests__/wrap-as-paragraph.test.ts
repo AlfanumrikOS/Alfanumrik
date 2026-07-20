@@ -18,6 +18,7 @@ import {
   rescueFromTruncatedJson,
   wrapAsParagraph,
 } from '../structured-schema.ts';
+import { repairIllegalJsonEscapes } from '../json-escape-repair.ts';
 
 const validResponse = {
   title: 'Onion as Olfactory Indicator',
@@ -215,4 +216,99 @@ Deno.test('extractTextFieldsFromBrokenJson: returns empty array for non-string i
   // @ts-expect-error: testing runtime guard
   assertEquals(extractTextFieldsFromBrokenJson(null), []);
   assertEquals(extractTextFieldsFromBrokenJson(''), []);
+});
+
+// ── 2026-07-20 LaTeX-in-JSON escape repair (Deno mirror) ─────────────────
+//
+// Production incident: the model imitated single-backslash LaTeX from the
+// few-shot prompts inside JSON strings (`\( 9 \times 4 \)`), an illegal JSON
+// escape. JSON.parse threw at the first math-bearing block; rescue salvaged
+// only the blocks BEFORE it and telemetry recorded ok=true. These tests pin
+// the Deno-side behavior: repair runs before parse AND inside rescue/extract.
+
+const UNDER_ESCAPED_ENVELOPE =
+  '{"title":"Multiplying Numbers","subject":"math","blocks":[' +
+  '{"type":"paragraph","text":"Chalo, let us multiply step by step."},' +
+  '{"type":"step","label":"Calculation","text":"We compute \\( 9 \\times 4 \\) = 36."},' +
+  '{"type":"math","label":"Result","latex":"9 \\times 4 = 36"},' +
+  '{"type":"answer","text":"The product is 36."}' +
+  ']}';
+
+Deno.test('repairIllegalJsonEscapes: makes the incident envelope parse — no block loss', () => {
+  // Premise: raw payload is NOT valid JSON.
+  let threw = false;
+  try {
+    JSON.parse(UNDER_ESCAPED_ENVELOPE);
+  } catch {
+    threw = true;
+  }
+  assert(threw, 'premise: raw under-escaped payload must fail JSON.parse');
+
+  const { repaired, repairCount } = repairIllegalJsonEscapes(UNDER_ESCAPED_ENVELOPE);
+  assert(repairCount > 0, 'expected repairs');
+  const parsed = JSON.parse(repaired) as { blocks: Array<{ text?: string; latex?: string }> };
+  assertEquals(parsed.blocks.length, 4);
+  assertStringIncludes(parsed.blocks[1].text!, '\\( 9 \\times 4 \\)');
+  assertEquals(parsed.blocks[2].latex, '9 \\times 4 = 36');
+});
+
+Deno.test('repairIllegalJsonEscapes: preserves legal escapes and is idempotent', () => {
+  const legal = '{"a":"line1\\nline2\\t\\"q\\" \\\\ \\u0041"}';
+  const first = repairIllegalJsonEscapes(legal);
+  assertEquals(first.repaired, legal);
+  assertEquals(first.repairCount, 0);
+
+  const once = repairIllegalJsonEscapes(UNDER_ESCAPED_ENVELOPE);
+  const twice = repairIllegalJsonEscapes(once.repaired);
+  assertEquals(twice.repaired, once.repaired);
+  assertEquals(twice.repairCount, 0);
+});
+
+Deno.test('rescueFromTruncatedJson: recovers the FULL under-escaped envelope (repair-before-walk)', () => {
+  const result = rescueFromTruncatedJson(UNDER_ESCAPED_ENVELOPE);
+  assert(result !== null, 'rescue must succeed after internal repair');
+  assertEquals(result!.blocks.length, 4, 'no blocks may be dropped');
+  assertStringIncludes(result!.blocks[3].text!, 'The product is 36.');
+});
+
+Deno.test('wrapAsParagraph: math in the FIRST block no longer yields the Tier-3 apology', () => {
+  const firstBlockMath =
+    '{"title":"Fractions","subject":"math","blocks":[' +
+    '{"type":"definition","text":"In \\( \\frac{3}{4} \\), 3 is the numerator."},' +
+    '{"type":"math","latex":"\\frac{3}{4} = 0.75"}' +
+    ']}';
+  const result = wrapAsParagraph(firstBlockMath, { subject: 'math' });
+  assertEquals(result.blocks.length, 2);
+  assertStringIncludes(result.blocks[0].text!, '\\( \\frac{3}{4} \\)');
+  assertFalse(
+    JSON.stringify(result).includes('cut off'),
+    'must not fall through to the truncation apology',
+  );
+});
+
+Deno.test('rescueFromTruncatedJson: TRUE truncation still trims the partial tail (repair does not mask it)', () => {
+  const truncated =
+    '{"title":"Multiplying Numbers","subject":"math","blocks":[' +
+    '{"type":"paragraph","text":"Chalo, let us multiply step by step."},' +
+    '{"type":"step","text":"We compute \\( 9 \\times 4 \\) = 36."},' +
+    '{"type":"math","latex":"9 \\ti';
+  const result = rescueFromTruncatedJson(truncated);
+  assert(result !== null);
+  assertEquals(result!.blocks.length, 2, 'complete (repaired) blocks kept, partial tail dropped');
+  assertStringIncludes(result!.blocks[1].text!, '\\( 9 \\times 4 \\)');
+});
+
+Deno.test('extractTextFieldsFromBrokenJson: recovers sentences containing under-escaped LaTeX', () => {
+  // So severely broken that rescue fails, but the text fields must survive
+  // INCLUDING the math (pre-fix these captures failed JSON.parse and were
+  // silently skipped -> student lost exactly the math-bearing sentences).
+  const broken =
+    '{"title":"Q","subject":"math","blocks":[' +
+    '{"type":"paragraph","text":"Compute \\( 9 \\times 4 \\) first."},' +
+    '{"type":"paragraph","text":"Then halve it: \\frac{36}{2}."},' +
+    '{"type":"paragraph","text":"Cut mid';
+  const fields = extractTextFieldsFromBrokenJson(broken);
+  assertEquals(fields.length, 2);
+  assertStringIncludes(fields[0], '\\( 9 \\times 4 \\)');
+  assertStringIncludes(fields[1], '\\frac{36}{2}');
 });

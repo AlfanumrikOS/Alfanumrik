@@ -99,7 +99,18 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // spec §2; programming-syntax ban scoped to prose OUTSIDE delimiters). Rev 2
 // has never shipped, so the single 1→2 bump covers ALL of these template
 // changes — no cache entry was ever written under rev 2 with the older text.
-export const PROMPT_REV = 2;
+// PROMPT_REV=3 (2026-07-20, LaTeX-in-JSON escaping fix): rev 2 shipped earlier
+// today, so this NEW deploy gets its own bump. The structured-output few-shot
+// examples (FOXY_STRUCTURED_OUTPUT_PROMPT — schema.ts / structured-prompt.ts /
+// foxy_structured_prompt.py) previously showed LaTeX inside JSON strings with
+// SINGLE backslashes ("\(", "\frac") — illegal JSON escapes the model imitated,
+// crashing JSON.parse on math-bearing blocks. All few-shot JSON examples now
+// carry correctly DOUBLED backslashes, an explicit "JSON ESCAPING FOR MATH"
+// rule was added, and a per-surface JSON-escaping bullet was added to the six
+// JSON-output templates (foxy_tutor_v1/teach/exam/doubt, quiz generator,
+// quiz verifier — .txt + inline.ts twins; ncert_solver_v1 is raw-markdown and
+// untouched).
+export const PROMPT_REV = 3;
 // MODEL_ROUTE_REV bump rule: bump whenever model routing changes what model
 // (or generation params) a given model_preference resolves to — e.g. a model
 // id upgrade in claude.ts (HAIKU_MODEL / SONNET_MODEL / GPT_* constants), a

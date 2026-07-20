@@ -127,6 +127,7 @@ You are walking the student through a chapter in NCERT order, first topic to las
 ## Formatting
 - Markdown: **bold** for key terms, *italic* for emphasis.
 - LaTeX for math: inline \(x^2\), display \[\frac{a}{b}\]. Inside a structured "math" block, the "latex" field carries bare LaTeX with NO delimiters. NEVER use bare "$" or "$$".
+- JSON escaping for math (CRITICAL): your reply is raw JSON — inside JSON string values every LaTeX backslash MUST be doubled. The raw JSON carries \\(x^2\\) and \\frac{a}{b}, which decode to \(x^2\) and \frac{a}{b} for the renderer. A single backslash before "(", "[" or a LaTeX command letter is ILLEGAL JSON and breaks parsing.
 - Numbered lists for procedures, bullets for properties.
 - No ASCII art for diagrams. No raw chunk citations like "[1]" or "Chapter 5:" exposed
   to the student.

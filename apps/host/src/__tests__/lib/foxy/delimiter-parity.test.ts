@@ -93,16 +93,27 @@ describe('GUARD #4 — schema FOXY_STRUCTURED_OUTPUT_PROMPT', () => {
 });
 
 describe('GUARD #4 — foxy-system.ts safety rails', () => {
+  // 2026-07-20 (math-format ramp alignment): foxy-system.ts builds its prompt
+  // in a plain template literal, so math tokens are now written with DOUBLED
+  // backslashes in source (`\\( ... \\)`) to emit real `\( ... \)` bytes at
+  // runtime — the old single-backslash form emitted mangled `( ... )`
+  // pseudo-parens. These source assertions therefore look for the escaped
+  // form; the RUNTIME bytes are pinned in math-density-drift-guard.test.ts.
   it('instructs the \\( \\) / \\[ \\] convention and bans bare $/$$', () => {
-    expect(FOXY_SYSTEM_SRC).toContain('\\( ... \\)');
-    expect(FOXY_SYSTEM_SRC).toContain('\\[ ... \\]');
+    expect(FOXY_SYSTEM_SRC).toContain('\\\\( ... \\\\)');
+    expect(FOXY_SYSTEM_SRC).toContain('\\\\[ ... \\\\]');
     expect(FOXY_SYSTEM_SRC).toMatch(/NEVER use bare "\$" or "\$\$"/);
   });
 
   it('agrees with schema.ts on the delimiter convention (both name \\( \\) and \\[ \\])', () => {
-    for (const token of ['\\( ... \\)', '\\[ ... \\]']) {
-      expect(FOXY_SYSTEM_SRC, `foxy-system missing ${token}`).toContain(token);
-      expect(FOXY_STRUCTURED_OUTPUT_PROMPT, `schema prompt missing ${token}`).toContain(token);
+    const tokens: Array<[string, string]> = [
+      // [escaped source form in foxy-system.ts, runtime form in schema prompt]
+      ['\\\\( ... \\\\)', '\\( ... \\)'],
+      ['\\\\[ ... \\\\]', '\\[ ... \\]'],
+    ];
+    for (const [srcToken, schemaToken] of tokens) {
+      expect(FOXY_SYSTEM_SRC, `foxy-system missing ${srcToken}`).toContain(srcToken);
+      expect(FOXY_STRUCTURED_OUTPUT_PROMPT, `schema prompt missing ${schemaToken}`).toContain(schemaToken);
     }
   });
 });

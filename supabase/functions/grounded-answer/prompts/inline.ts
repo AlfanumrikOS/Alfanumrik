@@ -159,6 +159,7 @@ You are walking the student through a chapter in NCERT order, first topic to las
 ## Formatting
 - Markdown: **bold** for key terms, *italic* for emphasis.
 - LaTeX for math: inline \(x^2\), display \[\frac{a}{b}\]. Inside a structured "math" block, the "latex" field carries bare LaTeX with NO delimiters. NEVER use bare "$" or "$$".
+- JSON escaping for math (CRITICAL): your reply is raw JSON — inside JSON string values every LaTeX backslash MUST be doubled. The raw JSON carries \\(x^2\\) and \\frac{a}{b}, which decode to \(x^2\) and \frac{a}{b} for the renderer. A single backslash before "(", "[" or a LaTeX command letter is ILLEGAL JSON and breaks parsing.
 - Numbered lists for procedures, bullets for properties.
 - No ASCII art for diagrams. No raw chunk citations like "[1]" or "Chapter 5:" exposed
   to the student.
@@ -388,6 +389,7 @@ You are walking the student through a chapter in NCERT order, first topic to las
 ## Formatting
 - Markdown: **bold** for key terms, *italic* for emphasis.
 - LaTeX for math: inline \(x^2\), display \[\frac{a}{b}\]. Inside a structured "math" block, the "latex" field carries bare LaTeX with NO delimiters. NEVER use bare "$" or "$$".
+- JSON escaping for math (CRITICAL): your reply is raw JSON — inside JSON string values every LaTeX backslash MUST be doubled. The raw JSON carries \\(x^2\\) and \\frac{a}{b}, which decode to \(x^2\) and \frac{a}{b} for the renderer. A single backslash before "(", "[" or a LaTeX command letter is ILLEGAL JSON and breaks parsing.
 - Numbered lists for procedures, bullets for properties.
 - No ASCII art for diagrams. No raw chunk citations like "[1]" or "Chapter 5:" exposed
   to the student.
@@ -475,6 +477,7 @@ Act as a CBSE board-paper evaluator following official marking scheme methodolog
 8. Strict Mathematical Formatting Rules:
    - NEVER write raw inline math like "x^2", "sqrt(x)", "(a+b)/c".
    - For math inside a sentence use inline LaTeX delimited by \( ... \); for a display equation inside prose use \[ ... \]. For standalone equations use a dedicated "math" block whose "latex" field carries bare LaTeX with NO delimiters. NEVER use bare "$" or "$$" delimiters anywhere.
+   - JSON escaping (CRITICAL): your reply is raw JSON — inside JSON string values every LaTeX backslash MUST be doubled (\\frac not \frac, \\( not \( ). A single backslash before "(", "[" or a LaTeX command letter is ILLEGAL JSON and breaks parsing; the doubled form decodes to the single-backslash LaTeX above.
    - Step DENSITY (how many operations one step may carry) follows the student's grade band — the authoritative band rule lives in docs/math-rendering-spec.md section 3 (single source: buildMathFormatDirective) and is injected into this prompt through the mode directive below when active. When no band directive is present, default to the conservative rule: never compress multiple operations into one line.
    - Final answers: on structured JSON surfaces the single terminal "answer" block IS the boxed-answer convention — do NOT additionally wrap the value in \boxed{}. In raw-markdown contexts with no "answer" block, box the final value with \boxed{...} inside normal delimiters (e.g. \( \boxed{x = 5} \)).
 
@@ -543,6 +546,7 @@ For DOUBT CLEARING and HOMEWORK HELP:
 ## Strict Mathematical Formatting Rules
 - NEVER write raw inline math like "x^2", "sqrt(x)", "(a+b)/c".
 - For math inside a sentence use inline LaTeX delimited by \( ... \); for a display equation inside prose use \[ ... \]. For standalone equations use a dedicated "math" block whose "latex" field carries bare LaTeX with NO delimiters. NEVER use bare "$" or "$$" delimiters anywhere.
+- JSON escaping (CRITICAL): your reply is raw JSON — inside JSON string values every LaTeX backslash MUST be doubled (\\frac not \frac, \\( not \( ). A single backslash before "(", "[" or a LaTeX command letter is ILLEGAL JSON and breaks parsing; the doubled form decodes to the single-backslash LaTeX above.
 - Show all working steps for numericals. Step DENSITY (how many operations one step may carry) follows the student's grade band — the authoritative band rule lives in docs/math-rendering-spec.md section 3 (single source: buildMathFormatDirective) and is injected into this prompt through the mode directive below when active. When no band directive is present, default to the conservative rule: never compress multiple operations into one line.
 - Final answers: on structured JSON surfaces the single terminal "answer" block IS the boxed-answer convention — do NOT additionally wrap the value in \boxed{}. In raw-markdown contexts with no "answer" block, box the final value with \boxed{...} inside normal delimiters (e.g. \( \boxed{x = 5} \)).
 
@@ -623,6 +627,7 @@ Rules:
 
 Math notation contract (docs/math-rendering-spec.md section 2 — applies to question_text, every option, and the explanation):
 - For math inside a sentence use inline LaTeX delimited by \( ... \); for a display equation use \[ ... \]. NEVER use bare "$" or "$$" delimiters.
+- JSON escaping (CRITICAL): question_text, every option, and the explanation are JSON string values — every LaTeX backslash MUST be doubled in the raw JSON (\\frac not \frac, \\( not \(, \\boxed not \boxed). The doubled form decodes to the single-backslash LaTeX the renderer expects.
 - NEVER write raw inline math like "x^2", "sqrt(x)", "(a+b)/c", or "*" for multiplication, and never plain Unicode math symbols. LaTeX only: \frac{a}{b}, \sqrt{x}, \times or \cdot, \pi, true superscripts via ^{} inside delimiters.
 - The explanation is a raw-markdown surface with NO structured "answer" block: box the final value with \boxed{...} inside normal delimiters — e.g. \( \boxed{x = 5} \) (spec section 4).
 - Step density in worked explanations: the authoritative grade-band rule lives in docs/math-rendering-spec.md section 3 (single source: buildMathFormatDirective). This prompt has NO band-directive injection channel, so default to the conservative rule: never compress multiple operations into one line.
@@ -663,6 +668,7 @@ Rules:
 - If no option is fully supported, set correct_option_index: null.
 - Be strict. "Close enough" is false.
 - Math notation (docs/math-rendering-spec.md section 2): any math written in "reason" uses inline LaTeX delimited by \( ... \). NEVER use bare "$" or "$$" delimiters, never raw math like "x^2", "sqrt(x)", "(a+b)/c", and never plain Unicode math symbols.
+- JSON escaping (CRITICAL): "reason" is a JSON string value — every LaTeX backslash MUST be doubled in the raw JSON (\\( not \(, \\frac not \frac); it decodes to the single-backslash LaTeX form.
 
 QUESTION UNDER REVIEW:
 {{question_json}}
