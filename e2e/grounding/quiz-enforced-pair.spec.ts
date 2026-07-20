@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { loginViaUI } from '../helpers/auth';
 
 /**
  * E2E @grounding: Quiz enforced-pair filters to verified questions only.
@@ -16,15 +17,15 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Grounding @grounding quiz-enforced-pair', () => {
   test.beforeEach(async ({ page }) => {
-    const email = process.env.TEST_STUDENT_EMAIL;
-    const password = process.env.TEST_STUDENT_PASSWORD;
-    if (!email || !password) test.skip();
-
-    await page.goto('/login');
-    await page.getByLabel(/email/i).fill(email!);
-    await page.getByLabel(/password/i).fill(password!);
-    await page.getByRole('button', { name: /log in|sign in/i }).click();
-    await expect(page).toHaveURL(/dashboard|foxy|learn|quiz/);
+    // Shared login helper (2026-07-20, CI run 29716158705 triage):
+    //  - skips with a named precondition when TEST_STUDENT_* are absent, OR
+    //    when the target Supabase affirmatively rejects them (staging test
+    //    student not seeded -- run .github/workflows/seed-staging-test-student.yml);
+    //  - replaces the previous inline login, whose getByLabel(/password/i)
+    //    strict-mode-throws against the live login form (3 elements match:
+    //    input + "Show password" toggle + "Forgot password?" link).
+    const ok = await loginViaUI(page);
+    test.skip(!ok, 'requires TEST_STUDENT_EMAIL + TEST_STUDENT_PASSWORD secrets');
   });
 
   test('only verified questions appear when flag is ON for the pair', async ({ page }) => {

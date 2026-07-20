@@ -215,7 +215,11 @@ test.describe('Pricing Page Accessibility', () => {
 
     const h1 = page.locator('h1');
     await expect(h1).toBeVisible();
-    await expect(h1).toContainText('Pricing');
+    // Landing-v3 makeover (2026-07-16): the pricing hero H1 is the
+    // tuition-class line; "Pricing" moved to the eyebrow. Same pin as
+    // e2e/smoke.spec.ts "pricing page loads with correct title" — this file
+    // was missed in the V3 pin sweep (caught by CI run 29716158705 triage).
+    await expect(h1).toContainText('Less than a single tuition class');
 
     // h2 elements should exist for subsections
     const h2Count = await page.locator('h2').count();

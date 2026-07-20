@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { seedCookieConsent } from './helpers/auth';
 
 /**
  * E2E spec — AlfaBot landing-page widget (PR 3 + PR 4 surfaces).
@@ -91,6 +92,12 @@ async function installBaseMocks(
   opts: { alfabotFlagEnabled?: boolean } = {},
 ) {
   const enabled = opts.alfabotFlagEnabled ?? true;
+
+  // The DPDP cookie-consent bar overlays the bottom-right AlfaBot launcher and
+  // intercepted every launcher click for the full test timeout (root cause of
+  // the alfabot ×/T failures in CI run 29716158705, reproduced locally). Seed
+  // consent before page scripts run so the banner never mounts.
+  await seedCookieConsent(page);
 
   // Feature-flag probe — controls whether the widget mounts at all.
   await page.route('**/api/feature-flags/check**', async (route: Route) => {
@@ -324,6 +331,10 @@ test.describe('AlfaBot — FAQ deep link', () => {
 
 test.describe('AlfaBot — lead capture', () => {
   test('school audience submits lead and sees success state', async ({ page }) => {
+    // This test installs its own flag route instead of installBaseMocks, so it
+    // must seed cookie consent itself (same banner-interception fix as the
+    // rest of the file).
+    await seedCookieConsent(page);
     // Override the feature-flag mock so ff_alfabot_lead_capture_v1 = true.
     await page.route('**/api/feature-flags/check**', async (route: Route) => {
       const url = new URL(route.request().url());

@@ -66,7 +66,12 @@ test.describe('Public pages accessible without auth', () => {
     const response = await page.goto('/pricing');
     expect(response?.status()).toBe(200);
     await expect(page.locator('h1')).toBeVisible();
-    await expect(page.locator('text=Simple, Transparent Pricing')).toBeVisible();
+    // Landing-v3 makeover (2026-07-16) removed the "Simple, Transparent
+    // Pricing" headline. Pin the actual pricing cards instead (same plan-name
+    // pins as e2e/smoke.spec.ts "displays all four plan cards") — this file
+    // was missed in the V3 pin sweep (caught by CI run 29716158705 triage).
+    await expect(page.getByRole('heading', { name: 'Explorer', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Pro', exact: true })).toBeVisible();
   });
 
   test('/help renders help content without auth', async ({ page }) => {
