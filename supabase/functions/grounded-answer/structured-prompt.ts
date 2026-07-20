@@ -80,7 +80,8 @@ Constraints:
 - 1 to 50 blocks total.
 - Whole payload <= 16 KB.
 - Markdown emphasis is FORBIDDEN anywhere in any field. No "**", no "__", no "#", no ">", no markdown lists. Rely on the block structure (definition, example, step, exam_tip) to organise content — never markdown.
-- INLINE MATH inside "text" fields IS ALLOWED and ENCOURAGED for fractions, symbols, exponents, and short expressions that sit inside a sentence. Use \\( ... \\) for inline math and \\[ ... \\] for a display equation within prose. Example: "In \\( \\frac{3}{4} \\), 3 is the numerator and 4 is the denominator." Do NOT use "$" or "$$" delimiters — use the backslash-parenthesis / backslash-bracket form only.
+- INLINE MATH inside "text" fields IS ALLOWED and ENCOURAGED for fractions, symbols, exponents, and short expressions that sit inside a sentence. Use \\( ... \\) for inline math and \\[ ... \\] for a display equation within prose. Example (raw JSON, backslashes doubled per the JSON ESCAPING rule below): "In \\\\( \\\\frac{3}{4} \\\\), 3 is the numerator and 4 is the denominator." Do NOT use "$" or "$$" delimiters — use the backslash-parenthesis / backslash-bracket form only.
+- JSON ESCAPING FOR MATH (CRITICAL): inside JSON string values, every LaTeX backslash MUST be doubled (\\\\frac not \\frac, \\\\( not \\( ). A single backslash before "(", ")", "[", "]" or a LaTeX command letter is an ILLEGAL JSON escape — it breaks JSON.parse and the student sees nothing. Write "\\\\( \\\\frac{1}{2} \\\\)" in the raw JSON; after JSON decoding the renderer receives \\( \\frac{1}{2} \\). The FEW-SHOT EXAMPLES below show correctly doubled raw JSON.
 - STANDALONE display equations still use a dedicated "math" block (latex field, no delimiters). Use a "math" block when the equation is the focus of its own line; use inline \\( ... \\) when math is woven into a sentence.
 - The "latex" field of a "math" block must NOT contain "$" or "$$" delimiters and must NOT contain \\( \\) / \\[ \\] wrappers — the renderer adds the KaTeX delimiters for math blocks. (The \\( \\) / \\[ \\] wrappers are ONLY for inline math written inside a "text" field.)
 - "text" must be non-empty after trim.
@@ -101,23 +102,23 @@ Constraints:
 
 # FEW-SHOT EXAMPLES
 
-## Math (Class 10, Quadratic numerical) — note inline math inside text fields
+## Math (Class 10, Quadratic numerical) — note inline math inside text fields, with every LaTeX backslash DOUBLED for JSON
 {"title":"Solving a Quadratic Equation","subject":"math","blocks":[
-  {"type":"definition","text":"A quadratic equation has the form \\( ax^2 + bx + c = 0 \\), where \\( a \\neq 0 \\)."},
-  {"type":"step","label":"Given","text":"The equation is \\( x^2 - 5x + 6 = 0 \\)."},
-  {"type":"math","label":"Formula","latex":"x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"},
-  {"type":"step","label":"Substitution","text":"Here \\( a = 1 \\), \\( b = -5 \\), \\( c = 6 \\)."},
-  {"type":"math","label":"Calculation","latex":"x = \\frac{5 \\pm \\sqrt{25 - 24}}{2}"},
-  {"type":"answer","text":"\\( x = 3 \\) or \\( x = 2 \\)."},
+  {"type":"definition","text":"A quadratic equation has the form \\\\( ax^2 + bx + c = 0 \\\\), where \\\\( a \\\\neq 0 \\\\)."},
+  {"type":"step","label":"Given","text":"The equation is \\\\( x^2 - 5x + 6 = 0 \\\\)."},
+  {"type":"math","label":"Formula","latex":"x = \\\\frac{-b \\\\pm \\\\sqrt{b^2 - 4ac}}{2a}"},
+  {"type":"step","label":"Substitution","text":"Here \\\\( a = 1 \\\\), \\\\( b = -5 \\\\), \\\\( c = 6 \\\\)."},
+  {"type":"math","label":"Calculation","latex":"x = \\\\frac{5 \\\\pm \\\\sqrt{25 - 24}}{2}"},
+  {"type":"answer","text":"\\\\( x = 3 \\\\) or \\\\( x = 2 \\\\)."},
   {"type":"exam_tip","text":"Always write the final values clearly, examiners look for it."},
-  {"type":"question","text":"Now try solving \\( x^2 - 4x + 4 = 0 \\)."}
+  {"type":"question","text":"Now try solving \\\\( x^2 - 4x + 4 = 0 \\\\)."}
 ]}
 
-## Math (Class 6, Fractions) — inline fractions woven into a sentence
+## Math (Class 6, Fractions) — inline fractions woven into a sentence (JSON-doubled backslashes)
 {"title":"Understanding Fractions","subject":"math","blocks":[
-  {"type":"definition","text":"A fraction shows a part of a whole. In \\( \\frac{3}{4} \\), 3 is the numerator and 4 is the denominator."},
-  {"type":"example","label":"Equivalent Fractions","text":"Multiply numerator and denominator by the same number to get an equivalent fraction: \\( \\frac{1}{2} = \\frac{2}{4} = \\frac{4}{8} \\)."},
-  {"type":"question","text":"Is \\( \\frac{3}{6} \\) equivalent to \\( \\frac{1}{2} \\)? Why?"}
+  {"type":"definition","text":"A fraction shows a part of a whole. In \\\\( \\\\frac{3}{4} \\\\), 3 is the numerator and 4 is the denominator."},
+  {"type":"example","label":"Equivalent Fractions","text":"Multiply numerator and denominator by the same number to get an equivalent fraction: \\\\( \\\\frac{1}{2} = \\\\frac{2}{4} = \\\\frac{4}{8} \\\\)."},
+  {"type":"question","text":"Is \\\\( \\\\frac{3}{6} \\\\) equivalent to \\\\( \\\\frac{1}{2} \\\\)? Why?"}
 ]}
 
 ## Biology (Class 10, Process with diagram)
@@ -134,7 +135,7 @@ Constraints:
 ## Chemistry (Class 11, Reaction)
 {"title":"Haber Process","subject":"science","blocks":[
   {"type":"paragraph","label":"Reaction Overview","text":"The Haber process is the industrial implementation of the reaction of nitrogen gas with hydrogen gas to produce ammonia."},
-  {"type":"math","latex":"N_2(g) + 3H_2(g) \\rightleftharpoons 2NH_3(g)"},
+  {"type":"math","latex":"N_2(g) + 3H_2(g) \\\\rightleftharpoons 2NH_3(g)"},
   {"type":"paragraph","label":"Reactants & Conditions","text":"It requires an iron catalyst, a temperature of about 450 degrees Celsius, and a pressure of 200 atmospheres."},
   {"type":"paragraph","label":"Uses","text":"Ammonia is primarily used to make agricultural fertilizers."},
   {"type":"question","text":"Why is a high pressure used in this specific reaction according to Le Chatelier's principle?"}
@@ -143,10 +144,10 @@ Constraints:
 ## Physics (Class 9, Numerical)
 {"title":"Finding Deceleration of a Car","subject":"science","blocks":[
   {"type":"step","label":"Given","text":"Initial velocity u = 20 m/s, final velocity v = 0 m/s (car stops), time t = 4 s."},
-  {"type":"math","label":"Formula","latex":"a = \\frac{v - u}{t}"},
+  {"type":"math","label":"Formula","latex":"a = \\\\frac{v - u}{t}"},
   {"type":"exam_tip","text":"Always check units — velocity in m/s and time in s gives acceleration in m/s squared."},
   {"type":"step","label":"Substitution","text":"Put values: a = (0 - 20) / 4"},
-  {"type":"math","label":"Calculation","latex":"a = \\frac{-20}{4} = -5 \\text{ m/s}^2"},
+  {"type":"math","label":"Calculation","latex":"a = \\\\frac{-20}{4} = -5 \\\\text{ m/s}^2"},
   {"type":"answer","text":"The deceleration is 5 m/s squared (negative sign shows the car is slowing down)."},
   {"type":"question","text":"A bike moving at 15 m/s stops in 3 seconds. What is its deceleration?"}
 ]}

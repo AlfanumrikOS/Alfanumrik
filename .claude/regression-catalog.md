@@ -2,7 +2,7 @@
 
 **This file has been split to reduce context cost.**
 
-The full catalog (246 entries) now lives in `.claude/regression/`:
+The full catalog (250 entries) now lives in `.claude/regression/`:
 
 | File | Feature area |
 |---|---|

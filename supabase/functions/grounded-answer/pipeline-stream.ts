@@ -67,6 +67,7 @@ import {
   type PromptSegment,
 } from './prompts/index.ts';
 import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
+import { repairIllegalJsonEscapes } from './json-escape-repair.ts';
 import {
   rescueFromTruncatedJson,
   validateFoxyResponse,
@@ -948,9 +949,14 @@ function parseStreamingFoxy(rawAnswer: string): FoxyResponse {
     stripped = stripped.trim();
   }
 
+  // Pre-parse repair of illegal JSON escapes (under-escaped LaTeX like `\(` /
+  // `\frac` inside string values). Mirrors parseFoxyStructured in pipeline.ts
+  // — see json-escape-repair.ts for the policy.
+  const { repaired, repairCount } = repairIllegalJsonEscapes(stripped);
+
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stripped);
+    parsed = JSON.parse(repaired);
   } catch (err) {
     // Truncation rescue: max_tokens cuts mid-block in production. Try to
     // recover the complete blocks emitted before the cutoff before falling
@@ -984,6 +990,16 @@ function parseStreamingFoxy(rawAnswer: string): FoxyResponse {
       `foxy(stream): structured_parse_failed reason=subject_rules detail="${subjectCheck.reason}"`,
     );
     return wrapAsParagraph(rawAnswer);
+  }
+
+  if (repairCount > 0) {
+    // Distinct from `structured_parse_rescued`: payload was complete but
+    // carried illegal escapes fixed by the pre-parse repair. No content lost.
+    // TODO(ops): same alert-threshold note as parseFoxyStructured in
+    // pipeline.ts (suggested: >20% repaired-rate over 1h).
+    console.warn(
+      `foxy(stream): structured_parse_repaired count=${repairCount}`,
+    );
   }
 
   return validation.value;

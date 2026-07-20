@@ -66,10 +66,14 @@ def test_constant_carries_the_foxyresponse_block_schema():
     assert "# FEW-SHOT EXAMPLES" in p
     # Bilingual instruction (P7) survived the port.
     assert "English, Hindi, or Hinglish" in p
-    # LaTeX escapes are LITERAL single backslashes (the rendered contract), not
-    # doubled — i.e. the port did not accidentally re-escape.
-    assert r"\frac" in p
-    assert r"\( " in p or r"\(" in p
+    # LaTeX inside the few-shot JSON string values is JSON-escaped with DOUBLED
+    # backslashes (2026-07-20 LaTeX-in-JSON escaping fix) — the port must carry
+    # the doubled form plus the explicit doubling rule. Conceptual delimiter
+    # mentions in the constraints prose remain single-backslash.
+    assert r"\\frac" in p
+    assert r"\\( " in p
+    assert "JSON ESCAPING FOR MATH (CRITICAL)" in p
+    assert r"\( ... \)" in p
     assert p.strip().endswith("Return ONLY the JSON object. Nothing else.")
 
 

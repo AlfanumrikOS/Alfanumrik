@@ -15,6 +15,8 @@
 // import, no async work. Whole-payload UTF-8 byte cap is computed once via
 // TextEncoder.
 
+import { repairIllegalJsonEscapes } from './json-escape-repair.ts';
+
 // ── Constants (mirrors src/lib/foxy/schema.ts) ──────────────────────────────
 
 export const FOXY_MAX_PAYLOAD_BYTES = 16 * 1024; // 16 KB
@@ -672,8 +674,14 @@ function closeUnbalancedJson(s: string): string {
  */
 export function rescueFromTruncatedJson(rawText: string): FoxyResponse | null {
   if (typeof rawText !== 'string' || rawText.length === 0) return null;
-  const candidate = stripFences(rawText);
-  if (!candidate.startsWith('{')) return null;
+  const stripped = stripFences(rawText);
+  if (!stripped.startsWith('{')) return null;
+
+  // Pre-repair illegal JSON escapes (e.g. under-escaped LaTeX like `\(` /
+  // `\frac` inside string values) BEFORE the truncation walk, so rescue only
+  // fires for TRUE truncation and never drops blocks because of an escaping
+  // artefact. Idempotent + conservative — see json-escape-repair.ts.
+  const candidate = repairIllegalJsonEscapes(stripped).repaired;
 
   // First try the candidate verbatim (covers the case where the JSON is
   // intact but parseStreamingFoxy failed for some other reason).
@@ -705,10 +713,13 @@ export function rescueFromTruncatedJson(rawText: string): FoxyResponse | null {
  */
 export function extractTextFieldsFromBrokenJson(rawText: string): string[] {
   if (typeof rawText !== 'string' || rawText.length === 0) return [];
+  // Repair illegal escapes first so `JSON.parse` of each captured value does
+  // not silently drop sentences containing under-escaped LaTeX (`\(`, `\frac`).
+  const repairedText = repairIllegalJsonEscapes(rawText).repaired;
   const result: string[] = [];
   const re = /"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(rawText)) !== null) {
+  while ((m = re.exec(repairedText)) !== null) {
     try {
       const decoded = JSON.parse(`"${m[1]}"`);
       if (typeof decoded === 'string' && decoded.trim().length > 0) {

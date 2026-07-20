@@ -55,6 +55,28 @@ const BASE_PARAMS = {
 // Re-derive only after assessment + ai-engineer agree the legacy path is
 // formally retired (i.e. when `ff_goal_aware_foxy` ships at 100% and the
 // legacy GOAL_PROMPT_MAP is being deleted).
+//
+// DELIBERATE RE-DERIVATION — 2026-07-20 (CEO-approved math-format ramp).
+// This snapshot was re-derived as the prerequisite for ramping
+// `ff_foxy_math_format_v2` to 100% for ALL users (CEO decision, 2026-07-20),
+// superseding the previous pin. Sections 4 and 8 of the template were aligned
+// to docs/math-rendering-spec.md (the canonical math spec): the retired
+// "Box/emphasize…" / "box/highlight the final answer" boxing lines, the
+// "or x²" Unicode-superscript allowance, and the 6-8-absolute "Never
+// compress" density line were replaced with the deferential house pattern
+// already shipped in foxy_tutor_v1.txt §4/§8 (stage completeness; density +
+// boxing defer to the buildMathFormatDirective band rule when present;
+// conservative one-op default otherwise; exponents as LaTeX ^{...} inside
+// \( \) delimiters; programming-syntax ban scoped to prose outside
+// delimiters). The same change fixed the template-literal escaping so the
+// SERVED bytes carry real LaTeX backslashes (`\\(` in source → `\(` at
+// runtime) instead of the previous mangled `( ... )` / control characters.
+// Every other line of this constant is byte-identical to the prior pin, and
+// all non-snapshot assertions in this file are preserved unchanged. This is
+// the one legitimate way to change this byte-pin; the flag-OFF safety
+// contract now pins THESE bytes. Reviewers: assessment (spec §2/§3/§4
+// conformance), testing (drift-guard extension in
+// math-density-drift-guard.test.ts).
 
 const LEGACY_BOARD_TOPPER_PROMPT = `You are Foxy, a friendly AI tutor for Indian CBSE students. You are helping a Grade 7 student with math (Board: CBSE).
 
@@ -115,8 +137,8 @@ Act as a CBSE board-paper evaluator following official marking scheme methodolog
    Formula: <formula first>
    Substitution: <step-by-step substitution>
    Calculation: <intermediate calculation steps>
-   Final Answer: [Box/emphasize final answer with correct units]
-   Always show the formula first, show substitutions line-by-line, never skip intermediate steps, box/highlight the final answer, and include units in every scientific/numerical answer.
+   Final Answer: [emphasize with correct units]
+   Always show the formula first and never skip a stage (formula -> substitution -> calculation -> final answer). Step DENSITY within the working (how many operations one line may carry) follows the Mathematical Formatting Rules in section 8, and final-answer boxing follows section 8's answer-block vs \\boxed{} rule. Include units in every scientific/numerical answer.
 
 5. Subject-Specific Rules:
    - Science: Use precise NCERT terminology (e.g., write "resistance increases, current decreases according to Ohm's law" instead of "current becomes less"). Avoid casual wording, explicitly mention scientific laws/principles, and include labelled diagrams when relevant.
@@ -136,15 +158,15 @@ Act as a CBSE board-paper evaluator following official marking scheme methodolog
 
 8. Strict Mathematical Formatting Rules:
    - NEVER write raw inline math like "x^2", "sqrt(x)", "(a+b)/c", or "2x+3=7 => x=2".
-   - ALWAYS format mathematics using proper mathematical notation. For math woven INSIDE a sentence (a "text" field) use inline LaTeX delimited by \( ... \); for a display equation written inside prose use \[ ... \]. For a standalone equation use a dedicated "math" block whose "latex" field carries bare LaTeX with NO delimiters at all (the renderer adds KaTeX delimiters for math blocks). NEVER use bare "$" or "$$" delimiters anywhere.
+   - ALWAYS format mathematics using proper mathematical notation. For math woven INSIDE a sentence (a "text" field) use inline LaTeX delimited by \\( ... \\); for a display equation written inside prose use \\[ ... \\]. For a standalone equation use a dedicated "math" block whose "latex" field carries bare LaTeX with NO delimiters at all (the renderer adds KaTeX delimiters for math blocks). NEVER use bare "$" or "$$" delimiters anywhere.
    - Every mathematical expression must appear visually clean and textbook-like.
-   - Multi-step solving MUST be vertical, stepwise, and vertically separated. Never compress multiple operations into one line.
-   - Fractions must always use proper fraction notation (e.g., \frac{numerator}{denominator}).
-   - Square roots must use radical notation (e.g., \sqrt{x}).
-   - Exponents must appear as true superscripts (e.g., x^2 or x²).
-   - Use textbook-standard symbols: \pi instead of pi, \theta instead of theta, \times or \cdot instead of x or * for multiplication.
-   - Final answers should be clearly boxed, highlighted, or distinguished.
-   - Never use programming-style mathematical syntax (e.g., *, ^, /) in the final output.
+   - Multi-step solving MUST be vertical, stepwise, and vertically separated. Step DENSITY (how many operations one step may carry) follows the student's grade band — the authoritative band rule lives in docs/math-rendering-spec.md section 3 (single source: buildMathFormatDirective) and defers to the math-format directive when one is composed onto this prompt. When no band directive is present, default to the conservative rule: never compress multiple operations into one line.
+   - Fractions must always use proper fraction notation (e.g., \\frac{numerator}{denominator}).
+   - Square roots must use radical notation (e.g., \\sqrt{x}).
+   - Exponents must appear as true superscripts written with LaTeX ^{...} inside math delimiters (e.g., \\( x^{2} \\)); never plain Unicode superscript characters.
+   - Use textbook-standard symbols: \\pi instead of pi, \\theta instead of theta, \\times or \\cdot instead of x or * for multiplication.
+   - Final answers: on structured JSON surfaces the single terminal "answer" block IS the boxed-answer convention — do NOT additionally wrap the value in \\boxed{}. In raw-markdown contexts with no "answer" block, box the final value with \\boxed{...} inside normal delimiters (e.g. \\( \\boxed{x = 5} \\)).
+   - Never use programming-style mathematical syntax (e.g., *, ^, /) in prose OUTSIDE math delimiters; inside LaTeX delimiters use the proper forms (\\times or \\cdot, ^{...}, \\frac{...}{...}).
 
 Optimize the answer for maximum board-exam scoring efficiency rather than prose elegance.
 

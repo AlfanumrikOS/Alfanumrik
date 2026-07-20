@@ -105,13 +105,18 @@ describe('FOXY_STRUCTURED_OUTPUT_PROMPT parity (TypeScript <-> Python port)', ()
     expect(() => extractPythonRawPrompt(pySource, PY_PATH)).not.toThrow();
   });
 
-  it('renders the TS constant to literal single-backslash math escapes', () => {
-    // Guards the compare's premise: TS_PROMPT is the RENDERED value, so the
-    // math escapes must be single backslashes (`\frac`, `\( `), NOT the doubled
-    // source form (`\\frac`). If this ever changes, the byte-compare below
-    // becomes meaningless.
-    expect(TS_PROMPT).toContain('\\frac{-b \\pm \\sqrt');
-    expect(TS_PROMPT).not.toContain('\\\\frac');
+  it('renders the TS constant with JSON-doubled math escapes in few-shot examples', () => {
+    // Guards the compare's premise: TS_PROMPT is the RENDERED value. Since the
+    // 2026-07-20 LaTeX-in-JSON escaping fix, the few-shot JSON string values
+    // carry DOUBLED backslashes (`\\frac`) — the legal JSON encoding of the
+    // decoded `\frac` the renderer receives. The TS source therefore writes
+    // QUADRUPLED backslashes inside the template literal; if the rendered
+    // value ever shows quadrupled backslashes the source was over-escaped and
+    // the byte-compare below becomes meaningless.
+    expect(TS_PROMPT).toContain('\\\\frac{-b \\\\pm \\\\sqrt');
+    expect(TS_PROMPT).not.toContain('\\\\\\\\frac');
+    // The prompt must also carry the explicit doubling rule.
+    expect(TS_PROMPT).toContain('JSON ESCAPING FOR MATH (CRITICAL)');
   });
 
   it('keeps the Python port byte-identical to the rendered TS constant', () => {
