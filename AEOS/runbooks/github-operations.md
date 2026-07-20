@@ -115,7 +115,7 @@ Per core docs 09, 11, and 20, secrets live only in GitHub Actions encrypted secr
 
 ## deploy-production.yml (push to `main` + manual dispatch)
 Canonical web deploy is **Vercel's GitHub App** (the CLI `deploy` job is optional, gated on `vars.USE_CLI_DEPLOY`). Stages in order:
-1. **quality** (lint/type-check/test/build),
+1. **quality** — job name "Quality Gate (verify CI green for exact SHA)". Since 2026-07-20 this job no longer re-runs lint/type-check/test/build. It is a fail-closed wait: it polls the Actions API (every 30s, bounded at 20 min) until the "CI — Alfanumrik" workflow's "CI Gate" job concludes `success` for the exact deploy SHA. No ci.yml run found for the SHA, a "CI Gate" conclusion of failure/cancelled/skipped/timed_out, or the 20-min bound expiring → the gate fails and nothing downstream (checklist, migrations, deploys) runs. **Operator note:** a deploy run that fails at "Quality Gate" with a *cancelled* CI run usually means the push was superseded — ci.yml's per-ref concurrency cancelled the older CI run, so the superseded push's deploy fails BY DESIGN and the newer push's deploy is the one that matters; only the newest green SHA deploys. If you genuinely need to redeploy that exact SHA, re-run its "CI — Alfanumrik" run to green first, then re-run the deploy.
 2. **pre-deploy-checklist** (pending-migration list, destructive-change scan for `DROP`/`TRUNCATE`, secret-in-diff scan, env summary incl. region `bom1`),
 3. **migrations** — `supabase db push --linked --include-all` to prod (`environment: production`),
 4. **deploy-functions** — only changed Edge Functions (all active if `_shared/` changed),
@@ -126,7 +126,7 @@ Canonical web deploy is **Vercel's GitHub App** (the CLI `deploy` job is optiona
 Order matters: **schema first, then Edge Functions, then web.** Migrations are idempotent, so re-runs are safe. A skipped optional job (CLI `deploy`) must not cascade-skip `release` — `release` gates on the always-run jobs (health-check + post-deploy-verify).
 
 ## deploy-staging.yml (push to `develop`/`staging` + manual dispatch)
-quality → migrations to staging (dedicated staging org token) → Vercel preview deploy (comments preview URL on PRs) → deploy-functions (staging) → health-check against the preview URL.
+quality → migrations to staging (dedicated staging org token) → Vercel preview deploy (comments preview URL on PRs) → deploy-functions (staging) → health-check against the preview URL. The quality job is split by trigger: on **push to `develop`** it uses the same fail-closed "CI Gate" wait as deploy-production (ci.yml also runs on develop pushes; the poll script is intentionally duplicated between the two workflows — keep both copies in sync); on **push to `staging`** and **workflow_dispatch** it keeps the full inline lint/type-check/test/build steps, because no ci.yml run exists for those refs.
 
 ## deploy-aws.yml (DORMANT)
 Gated behind `vars.ENABLE_AWS_DEPLOY` (default `false`); the `Cutover Gate` no-ops the run otherwise. When enabled: OIDC auth → Docker build + SHA tag to ECR → ECS Fargate rolling deploy with circuit breaker → smoke test with auto-rollback. Operating this is the subject of the aws-operations runbook; do not flip the flag outside a planned cutover.
