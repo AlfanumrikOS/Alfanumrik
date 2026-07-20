@@ -108,61 +108,100 @@ export function useAdmin() {
   return ctx;
 }
 
+// ── 7-section task-ordered IA (Phase 3 super-admin repair, 2026-07-20) ──────
+// Order = operator task frequency (CEO-approved). Replaces the old 6 flat
+// sections. Every live dashboard page is mapped — the IA audit found 17
+// orphan pages reachable only by URL; all are now in the nav. EI items stay
+// gated by ff_education_intelligence (filtered out of this list when the flag
+// is OFF — see EI_NAV_HREFS + the navItems memo below).
 const NAV_ITEMS: SidebarItem[] = [
-  // ── Platform ────────────────────────────────────────────────────────────
-  { type: 'section', label: 'Platform', labelHi: 'प्लेटफॉर्म' },
+  // ── 1. Home ─────────────────────────────────────────────────────────────
+  { type: 'section', label: 'Home', labelHi: 'होम' },
   { href: '/super-admin', label: 'Overview', labelHi: 'अवलोकन', icon: '▦' },
-  { href: '/super-admin/analytics', label: 'Analytics', labelHi: 'विश्लेषण', icon: '◍' },
-  { href: '/super-admin/learning', label: 'Learning Intel', labelHi: 'लर्निंग इंटेल', icon: '◉' },
-  { href: '/super-admin/mol-shadow', label: 'MOL Shadow', labelHi: 'MOL शैडो', icon: '◑' },
-  // ── Users ───────────────────────────────────────────────────────────────
-  { type: 'section', label: 'Users', labelHi: 'उपयोगकर्ता' },
+  // ── 2. People & Support ─────────────────────────────────────────────────
+  { type: 'section', label: 'People & Support', labelHi: 'लोग और सहायता' },
   { href: '/super-admin/users', label: 'Users & Roles', labelHi: 'उपयोगकर्ता और भूमिकाएँ', icon: '⊕' },
+  { href: '/super-admin/support', label: 'Support Center', labelHi: 'सहायता केंद्र', icon: '⊛' },
+  { href: '/super-admin/bulk-actions', label: 'Bulk Actions', labelHi: 'बल्क क्रियाएँ', icon: '⊞' },
+  { href: '/super-admin/bulk-upload', label: 'Bulk Upload', labelHi: 'बल्क अपलोड', icon: '⊼' },
+  { href: '/super-admin/demo', label: 'Demo Accounts', labelHi: 'डेमो खाते', icon: '⊜' },
+  // ── 3. Revenue & Billing ────────────────────────────────────────────────
+  { type: 'section', label: 'Revenue & Billing', labelHi: 'राजस्व और बिलिंग' },
+  { href: '/super-admin/subscriptions', label: 'Subscriptions', labelHi: 'सदस्यता', icon: '◈' },
+  { href: '/super-admin/invoices', label: 'Invoices', labelHi: 'चालान', icon: '⊓' },
+  { href: '/super-admin/intelligence/revenue', label: 'EI Revenue', labelHi: 'EI राजस्व', icon: '◆' },
+  // ── 4. Content & AI Quality ─────────────────────────────────────────────
+  { type: 'section', label: 'Content & AI Quality', labelHi: 'सामग्री और AI गुणवत्ता' },
+  { href: '/super-admin/cms', label: 'CMS', labelHi: 'CMS', icon: '⊠' },
+  { href: '/super-admin/content', label: 'Content Coverage', labelHi: 'सामग्री कवरेज', icon: '◫' },
+  { href: '/super-admin/grounding/health', label: 'Grounding Health', labelHi: 'ग्राउंडिंग स्वास्थ्य', icon: '◎' },
+  { href: '/super-admin/grounding/coverage', label: 'Grounding Coverage', labelHi: 'ग्राउंडिंग कवरेज', icon: '◍' },
+  { href: '/super-admin/grounding/verification-queue', label: 'Verification Queue', labelHi: 'सत्यापन कतार', icon: '⊙' },
+  { href: '/super-admin/grounding/ai-issues', label: 'AI Issues', labelHi: 'AI समस्याएँ', icon: '⊘' },
+  { href: '/super-admin/grounding/traces', label: 'Traces', labelHi: 'ट्रेसेस', icon: '⊳' },
+  { href: '/super-admin/foxy-quality', label: 'Foxy Quality', labelHi: 'Foxy गुणवत्ता', icon: '◓' },
+  { href: '/super-admin/misconceptions', label: 'Misconceptions', labelHi: 'भ्रांतियाँ', icon: '◔' },
+  { href: '/super-admin/readiness-rubric', label: 'Readiness Rubric', labelHi: 'तैयारी रूब्रिक', icon: '⊏' },
+  { href: '/super-admin/goal-profiles', label: 'Goal Profiles', labelHi: 'लक्ष्य प्रोफ़ाइल', icon: '◉' },
+  { href: '/super-admin/subjects', label: 'Subjects', labelHi: 'विषय', icon: '⊟' },
+  // ── 5. Flags & Config ───────────────────────────────────────────────────
+  { type: 'section', label: 'Flags & Config', labelHi: 'फ़्लैग और कॉन्फ़िग' },
+  { href: '/super-admin/flags', label: 'Feature Flags', labelHi: 'फ़ीचर फ़्लैग्स', icon: '⊡' },
+  { href: '/super-admin/module-overrides', label: 'Module Overrides', labelHi: 'मॉड्यूल ओवरराइड', icon: '⊞' },
+  // ── 6. System Health ────────────────────────────────────────────────────
+  { type: 'section', label: 'System Health', labelHi: 'सिस्टम स्वास्थ्य' },
+  { href: '/super-admin/observability', label: 'Observability', labelHi: 'अवलोकनीयता', icon: '◎' },
+  // Canonical Alert Rules page (ops-event alerting). The old duplicate-titled
+  // /super-admin/alerts (school-scoped alert rules) now redirects here.
+  { href: '/super-admin/observability/rules', label: 'Alert Rules', labelHi: 'अलर्ट नियम', icon: '⊚' },
+  { href: '/super-admin/sla', label: 'SLA', labelHi: 'SLA', icon: '⊗' },
+  { href: '/super-admin/diagnostics', label: 'Diagnostics', labelHi: 'डायग्नोस्टिक्स', icon: '⊘' },
+  { href: '/super-admin/oracle-health', label: 'Oracle Health', labelHi: 'ओरेकल स्वास्थ्य', icon: '◐' },
+  // Marking Integrity was in the pre-Phase-3 nav but missing from the approved
+  // 7-section enumeration — kept mapped (dropping it would create a new
+  // orphan) next to its sibling forensic tool, Oracle Health.
+  { href: '/super-admin/marking-integrity', label: 'Marking Integrity', labelHi: 'अंकन सत्यनिष्ठा', icon: '⛉' },
+  // Event Runtime = the state-event dead-letter / replay console
+  // (/super-admin/subscribers). Runtime-ops tool, NOT customer-subscriber
+  // management.
+  { href: '/super-admin/subscribers', label: 'Event Runtime', labelHi: 'इवेंट रनटाइम', icon: '⊳' },
+  { href: '/super-admin/health', label: 'School Health', labelHi: 'स्कूल स्वास्थ्य', icon: '♥' },
+  { href: '/super-admin/command-center', label: 'Improvement Console', labelHi: 'सुधार कंसोल', icon: '◑' },
+  // ── 7. Access & Institutions ────────────────────────────────────────────
+  { type: 'section', label: 'Access & Institutions', labelHi: 'एक्सेस और संस्थान' },
   { href: '/super-admin/rbac', label: 'RBAC', labelHi: 'RBAC', icon: '⛊' },
   { href: '/super-admin/oauth-apps', label: 'OAuth Apps', labelHi: 'OAuth ऐप्स', icon: '⊚' },
   { href: '/super-admin/entitlements', label: 'Entitlements', labelHi: 'एंटाइटलमेंट', icon: '⊞' },
-  // ── Institutions ─────────────────────────────────────────────────────────
-  { type: 'section', label: 'Institutions', labelHi: 'संस्थाएं' },
   { href: '/super-admin/institutions', label: 'Institutions', labelHi: 'संस्थान', icon: '⊟' },
-  { href: '/super-admin/diagnostics', label: 'Diagnostics', labelHi: 'डायग्नोस्टिक्स', icon: '⊘' },
-  { href: '/super-admin/marking-integrity', label: 'Marking Integrity', labelHi: 'अंकन सत्यनिष्ठा', icon: '⛉' },
-  { href: '/super-admin/oracle-health', label: 'Oracle Health', labelHi: 'ओरेकल स्वास्थ्य', icon: '◐' },
   { href: '/super-admin/analytics-b2b', label: 'B2B Analytics', labelHi: 'B2B विश्लेषण', icon: '⊿' },
-  // ── Health ───────────────────────────────────────────────────────────────
-  { type: 'section', label: 'Health', labelHi: 'स्वास्थ्य' },
-  { href: '/super-admin/health', label: 'Health', labelHi: 'स्वास्थ्य', icon: '♥' },
-  { href: '/super-admin/observability', label: 'Observability', labelHi: 'अवलोकनीयता', icon: '◎' },
-  { href: '/super-admin/sla', label: 'SLA Monitor', labelHi: 'SLA मॉनिटर', icon: '⊗' },
-  { href: '/super-admin/alerts', label: 'Alerts', labelHi: 'अलर्ट', icon: '⊚' },
-  // Event Runtime = the state-event dead-letter / replay console
-  // (/super-admin/subscribers). Lives here with observability/SLA/alerts as a
-  // runtime-ops tool — NOT in Users (it is not customer-subscriber management).
-  { href: '/super-admin/subscribers', label: 'Event Runtime', labelHi: 'इवेंट रनटाइम', icon: '⊳' },
-  // ── Operations ──────────────────────────────────────────────────────────
-  { type: 'section', label: 'Operations', labelHi: 'संचालन' },
-  { href: '/super-admin/subscriptions', label: 'Subscriptions', labelHi: 'सदस्यता', icon: '◈' },
-  { href: '/super-admin/invoices', label: 'Invoices', labelHi: 'चालान', icon: '⊓' },
-  { href: '/super-admin/cms', label: 'CMS', labelHi: 'CMS', icon: '⊠' },
-  { href: '/super-admin/flags', label: 'Feature Flags', labelHi: 'फ़ीचर फ़्लैग्स', icon: '⊡' },
+  { href: '/super-admin/learning', label: 'Learning Intel', labelHi: 'लर्निंग इंटेल', icon: '◉' },
+  { href: '/super-admin/analytics', label: 'Analytics', labelHi: 'विश्लेषण', icon: '◍' },
+  { href: '/super-admin/intelligence', label: 'EI Overview', labelHi: 'EI अवलोकन', icon: '◆' },
+  // EI Schools/Geography were in the old flag-gated EI group but missing from
+  // the approved enumeration — kept mapped (flag-gated) to avoid new orphans.
+  { href: '/super-admin/intelligence/schools', label: 'EI Schools', labelHi: 'EI स्कूल', icon: '◇' },
+  { href: '/super-admin/intelligence/geography', label: 'EI Geography', labelHi: 'EI भूगोल', icon: '◊' },
+  { href: '/super-admin/mol-shadow', label: 'MOL Shadow', labelHi: 'MOL शैडो', icon: '◑' },
+  // Data Workbench was in the pre-Phase-3 nav but missing from the approved
+  // enumeration — kept mapped next to Reports/Audit Logs.
   { href: '/super-admin/workbench', label: 'Data Workbench', labelHi: 'डेटा वर्कबेंच', icon: '⊞' },
-  { href: '/super-admin/bulk-actions', label: 'Bulk Actions', labelHi: 'बल्क क्रियाएँ', icon: '⊞' },
-  { href: '/super-admin/demo', label: 'Demo Accounts', labelHi: 'डेमो खाते', icon: '⊜' },
-  { href: '/super-admin/alfabot', label: 'AlfaBot', labelHi: 'AlfaBot', icon: '◓' },
   { href: '/super-admin/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊏' },
   { href: '/super-admin/logs', label: 'Audit Logs', labelHi: 'ऑडिट लॉग', icon: '⊙' },
-  { href: '/super-admin/support', label: 'Support Center', labelHi: 'सहायता केंद्र', icon: '⊛' },
+  { href: '/super-admin/alfabot', label: 'AlfaBot', labelHi: 'AlfaBot', icon: '◓' },
 ];
 
-// Education Intelligence Cloud nav group — appended only when the
-// `ff_education_intelligence` flag resolves ON. Additive: never alters the
-// base NAV_ITEMS above. Pages stay behind super-admin auth regardless.
-const EDUCATION_INTELLIGENCE_NAV: SidebarItem[] = [
-  { type: 'section', label: 'Education Intelligence', labelHi: 'एजुकेशन इंटेलिजेंस' },
-  { href: '/super-admin/intelligence', label: 'EI · Overview', labelHi: 'EI · अवलोकन', icon: '◆' },
-  { href: '/super-admin/intelligence/schools', label: 'EI · Schools', labelHi: 'EI · स्कूल', icon: '◇' },
-  { href: '/super-admin/intelligence/revenue', label: 'EI · Revenue', labelHi: 'EI · राजस्व', icon: '◈' },
-  { href: '/super-admin/intelligence/geography', label: 'EI · Geography', labelHi: 'EI · भूगोल', icon: '◊' },
-];
+// Education Intelligence Cloud pages — visible only when the
+// `ff_education_intelligence` flag resolves ON. With the Phase 3 IA the EI
+// items live inline in their task sections (Revenue & Billing / Access &
+// Institutions) instead of a separate appended group, so gating is now a
+// filter over NAV_ITEMS rather than an append. Pages stay behind super-admin
+// auth regardless of the flag.
+const EI_NAV_HREFS = new Set<string>([
+  '/super-admin/intelligence',
+  '/super-admin/intelligence/schools',
+  '/super-admin/intelligence/revenue',
+  '/super-admin/intelligence/geography',
+]);
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -218,7 +257,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }, []);
 
   const navItems = useMemo<SidebarItem[]>(
-    () => (eiEnabled ? [...NAV_ITEMS, ...EDUCATION_INTELLIGENCE_NAV] : NAV_ITEMS),
+    () =>
+      eiEnabled
+        ? NAV_ITEMS
+        : NAV_ITEMS.filter(
+            (item) => !('href' in item) || !EI_NAV_HREFS.has(item.href),
+          ),
     [eiEnabled],
   );
 
@@ -294,13 +338,24 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     return () => clearTimeout(timer);
   }, [sessionExpired]);
 
-  // Fetch admin name once auth is ready
+  // Fetch admin name once auth is ready. For cookie-only sessions (httpOnly
+  // sb-* cookie, no client-side session object) getUser() resolves null, so
+  // fall back to a static "Admin" label instead of an empty footer.
+  // TODO(backend): no cookie-auth endpoint currently returns the admin's own
+  // identity (/api/super-admin/stats is totals-only; authorizeAdmin knows
+  // name/email server-side but never exposes it). Expose it — e.g. a small
+  // /api/super-admin/me or an identity block on stats — then use it here
+  // with getUser() as fallback.
   useEffect(() => {
     if (!authReady) return;
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.user_metadata?.name) setAdminName(user.user_metadata.name);
-      else if (user?.email) setAdminName(user.email.split('@')[0]);
-    });
+    supabase.auth
+      .getUser()
+      .then(({ data: { user } }) => {
+        if (user?.user_metadata?.name) setAdminName(user.user_metadata.name);
+        else if (user?.email) setAdminName(user.email.split('@')[0]);
+        else setAdminName('Admin');
+      })
+      .catch(() => setAdminName('Admin'));
   }, [authReady]);
 
   const headers = useCallback(() => {

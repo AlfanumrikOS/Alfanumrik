@@ -6,6 +6,15 @@ The Super Admin is located at the `/super-admin` route. Authentication is via Su
 
 No query-param secrets are used. Access requires logging in with a valid admin account.
 
+### Session Model (changed 2026-07-20 — split-brain RCA fix)
+
+The admin session is **cookie single-source**:
+
+- `POST /api/super-admin/login` sets an httpOnly `sb-*` cookie and returns `{ success, user }` — the response body **no longer contains access/refresh tokens**. Do not expect tokens in the login JSON; any tooling or procedure that parsed `session.access_token` out of the login response must switch to the methods in `docs/ops/runbooks.md` → "Obtaining an admin API token".
+- The console (AdminShell) calls APIs with `credentials: 'same-origin'`; `authorizeAdmin()` accepts the cookie, and falls back from a stale `Bearer` header to a valid cookie. Direct `Bearer <token>` calls (curl runbooks) still work.
+- `POST /api/super-admin/logout` revokes **only the cookie session** (`scope: 'local'`). A student/teacher session from a *different* login in the same browser is untouched; admin sessions on other devices are untouched.
+- Rationale: the pre-fix login primed a second localStorage copy of the same refresh-token family; both stores auto-refreshed independently and refresh-token rotation killed the session in ~2.5 minutes.
+
 ## Admin Dashboard Tabs
 
 ### 1. Dashboard
@@ -180,6 +189,36 @@ The route's structured logs (`parent_email_bulk_sent`,
   (`all` | `grade` | `class`) and one `target_value`. A multi-grade /
   multi-class broadcast requires multiple calls. Acceptable v1 limitation;
   tracked as a frontend/backend follow-up if multi-select is requested.
+
+### Recovering a Deactivated (Orphaned) Admin Account
+
+Migration `20260720160000_deactivate_orphaned_admin_users.sql` set `is_active = false` on every `admin_users` row whose `auth_user_id` points at a deleted `auth.users` row (predicate-based — it re-applies to any future orphan, and deliberately skips rows with `auth_user_id IS NULL`). At apply time this included the founder's dead `099pradeepsharma` row. These accounts could not authenticate anyway (Supabase Auth has no matching identity); the deactivation only makes the roster honest.
+
+To recover such an account (deliberate, manual, per-row — never bulk):
+
+1. Create or identify a **live** `auth.users` account for the person (normal signup or Supabase dashboard invite).
+2. Repoint the admin row: `UPDATE public.admin_users SET auth_user_id = '<live auth user id>' WHERE id = '<admin row id>';`
+3. Reactivate: `UPDATE public.admin_users SET is_active = true, updated_at = NOW() WHERE id = '<admin row id>';`
+4. Verify login at `/super-admin/login` and confirm an `audit_logs` entry for the change.
+
+Do **not** blanket-reactivate: a row reactivated without step 2 still cannot log in and will be re-deactivated if the migration predicate ever runs again.
+
+## Pending Operator Action — Vercel Firewall Challenge on `/api/*`
+
+**Status: OPEN (2026-07-20).** The Vercel firewall security checkpoint can serve an HTML challenge to `/api/*` requests. Browser `fetch()` calls from the admin console cannot solve the challenge, so affected admin API calls fail; since the 2026-07-20 repair the console detects this (`security_checkpoint` error class) and shows a checkpoint banner instead of white-screening — degraded, not broken.
+
+The fix is a firewall bypass rule so `/api/` paths are never served the interactive challenge (agents could not mutate firewall rules; this requires a human operator with Vercel access):
+
+```bash
+vercel firewall rules add "api-json-no-challenge" \
+  --action bypass \
+  --condition '{"type":"path","op":"pre","value":"/api/"}' \
+  && vercel firewall publish
+```
+
+- **Rationale:** API clients are JSON-only and can never complete an HTML checkpoint; challenging them produces failures without security benefit.
+- **Risk note:** the bypass skips only the checkpoint challenge, not authentication or authorization — every `/api/*` route keeps its own auth (`authorizeAdmin` / `authorizeRequest` / webhook signatures), and app-level rate limiting in `apps/host/src/proxy.ts` (Upstash) remains fully active. Residual exposure is volumetric abuse of `/api/*` beyond what proxy rate limits absorb; if that materializes, replace the bypass with a rate-limit firewall action rather than re-enabling the challenge.
+- After running, verify: admin console loads without the checkpoint banner, and `curl -s -o /dev/null -w "%{content_type}" https://alfanumrik.com/api/v1/health` returns a JSON content type.
 
 ## Environment Variables Required
 

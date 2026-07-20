@@ -1,5 +1,13 @@
 'use client';
 
+/**
+ * ControlRoomPage — the Master Control dashboard at /super-admin.
+ *
+ * (File path kept as LegacySuperAdminPage.tsx to minimize churn; the "Legacy"
+ * name predates the Phase 3 IA repair — this is the canonical Control Room,
+ * not a legacy surface.)
+ */
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AdminShell, { useAdmin } from './AdminShell';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
@@ -15,6 +23,8 @@ import {
   LearnerHealth,
   PlatformHealth,
   ContentEngagement,
+  RevenueSnapshot,
+  AiHealth,
 } from './widgets';
 import type {
   SystemStats,
@@ -25,11 +35,12 @@ import type {
   AuditEntry,
   AnalyticsData,
   FeatureFlag,
+  AiHealthData,
 } from './widgets';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 
 function ControlRoom() {
-  const { apiFetch } = useAdmin();
+  const { apiFetch, apiFetchJson } = useAdmin();
   const { isHi } = useAuth();
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [obsData, setObsData] = useState<ObsData | null>(null);
@@ -39,6 +50,7 @@ function ControlRoom() {
   const [recentLogs, setRecentLogs] = useState<AuditEntry[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
+  const [aiHealth, setAiHealth] = useState<AiHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +59,7 @@ function ControlRoom() {
   const [obsUpdated, setObsUpdated] = useState<Date | null>(null);
   const [deployUpdated, setDeployUpdated] = useState<Date | null>(null);
   const [analyticsUpdated, setAnalyticsUpdated] = useState<Date | null>(null);
+  const [aiHealthUpdated, setAiHealthUpdated] = useState<Date | null>(null);
 
   // Auto-revalidation interval ref
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -56,7 +69,7 @@ function ControlRoom() {
     setError(null);
     const now = new Date();
     try {
-      const [statsRes, deployRes, obsRes, backupRes, deployHistRes, logsRes, analyticsRes, flagsRes] = await Promise.all([
+      const [statsRes, deployRes, obsRes, backupRes, deployHistRes, logsRes, analyticsRes, flagsRes, aiHealthRes] = await Promise.all([
         apiFetch('/api/super-admin/stats'),
         apiFetch('/api/super-admin/deploy'),
         apiFetch('/api/super-admin/observability'),
@@ -65,6 +78,9 @@ function ControlRoom() {
         apiFetch('/api/super-admin/logs?limit=10'),
         apiFetch('/api/super-admin/analytics'),
         apiFetch('/api/super-admin/feature-flags'),
+        // Phase 3 AI-health tile — reuses the existing grounding-health
+        // endpoint via the Phase-2 structured-JSON helper.
+        apiFetchJson<{ success: boolean; data?: AiHealthData }>('/api/super-admin/grounding/health'),
       ]);
       if (statsRes.ok) { setStats(await statsRes.json()); setStatsUpdated(now); }
       if (deployRes.ok) { setDeployInfo(await deployRes.json()); setDeployUpdated(now); }
@@ -74,9 +90,13 @@ function ControlRoom() {
       if (logsRes.ok) { const d = await logsRes.json(); setRecentLogs(d.data || []); }
       if (analyticsRes.ok) { setAnalytics(await analyticsRes.json()); setAnalyticsUpdated(now); }
       if (flagsRes.ok) { const d = await flagsRes.json(); setFlags(d.data || []); }
+      if (aiHealthRes.ok && aiHealthRes.data.success && aiHealthRes.data.data) {
+        setAiHealth(aiHealthRes.data.data);
+        setAiHealthUpdated(now);
+      }
     } catch (e) { console.error('ControlRoom fetch error:', e); setError(e instanceof Error ? e.message : 'Failed to load dashboard data'); }
     setLoading(false);
-  }, [apiFetch]);
+  }, [apiFetch, apiFetchJson]);
 
   useEffect(() => {
     fetchAll();
@@ -140,6 +160,18 @@ function ControlRoom() {
         </SectionErrorBoundary>
       )}
 
+      {/* Phase 3 tiles: Revenue snapshot + AI health (reuse existing endpoints) */}
+      {analytics && (
+        <SectionErrorBoundary section="Revenue Snapshot">
+          <RevenueSnapshot analytics={analytics} lastUpdated={analyticsUpdated} />
+        </SectionErrorBoundary>
+      )}
+      {aiHealth && (
+        <SectionErrorBoundary section="AI Health">
+          <AiHealth aiHealth={aiHealth} lastUpdated={aiHealthUpdated} />
+        </SectionErrorBoundary>
+      )}
+
       {/* Two-Column: Operations + Status */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
         <SectionErrorBoundary section="Quick Operations">
@@ -158,7 +190,7 @@ function ControlRoom() {
 
       {/* Pending Actions */}
       <SectionErrorBoundary section="Pending Actions">
-        <PendingActions obsData={obsData} analytics={analytics} flags={flags} />
+        <PendingActions obsData={obsData} flags={flags} aiHealth={aiHealth} />
       </SectionErrorBoundary>
 
       {/* Deploy + Audit + Backups */}
@@ -210,7 +242,7 @@ function ControlRoom() {
   );
 }
 
-export default function LegacySuperAdminPage() {
+export default function ControlRoomPage() {
   return (
     <AdminShell>
       <ControlRoom />

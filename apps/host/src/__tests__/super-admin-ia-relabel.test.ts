@@ -42,26 +42,87 @@ describe('Tier 1 super-admin IA relabel — AdminShell nav', () => {
     expect(shell).toContain("href: '/super-admin/subscribers'");
   });
 
-  it('places Event Runtime in the Health section, not Users', () => {
-    const usersIdx = shell.indexOf("{ type: 'section', label: 'Users'");
-    const institutionsIdx = shell.indexOf("{ type: 'section', label: 'Institutions'");
-    const healthIdx = shell.indexOf("{ type: 'section', label: 'Health'");
-    const operationsIdx = shell.indexOf("{ type: 'section', label: 'Operations'");
+  // Phase 3 super-admin IA redesign (2026-07-20, CEO-approved): the 6 flat
+  // sections (Platform/Users/Institutions/Health/Operations + appended EI
+  // group) were replaced with a 7-section task-ordered IA. The original
+  // assertion here ("Event Runtime in the Health section") is updated to its
+  // Phase-3 equivalent: Event Runtime lives in System Health, still a
+  // runtime-ops placement, still not people-management.
+  it('pins the Phase 3 seven-section IA in task-frequency order', () => {
+    const sections = [
+      "{ type: 'section', label: 'Home'",
+      "{ type: 'section', label: 'People & Support'",
+      "{ type: 'section', label: 'Revenue & Billing'",
+      "{ type: 'section', label: 'Content & AI Quality'",
+      "{ type: 'section', label: 'Flags & Config'",
+      "{ type: 'section', label: 'System Health'",
+      "{ type: 'section', label: 'Access & Institutions'",
+    ];
+    const indices = sections.map(s => shell.indexOf(s));
+    for (const [i, idx] of indices.entries()) {
+      expect(idx, `section marker missing: ${sections[i]}`).toBeGreaterThan(-1);
+      if (i > 0) expect(idx).toBeGreaterThan(indices[i - 1]);
+    }
+    // The old flat sections are gone.
+    expect(shell).not.toContain("{ type: 'section', label: 'Platform'");
+    expect(shell).not.toContain("{ type: 'section', label: 'Operations'");
+    expect(shell).not.toContain("{ type: 'section', label: 'Education Intelligence'");
+  });
+
+  it('places Event Runtime in the System Health section, not People & Support', () => {
+    const peopleIdx = shell.indexOf("{ type: 'section', label: 'People & Support'");
+    const systemHealthIdx = shell.indexOf("{ type: 'section', label: 'System Health'");
+    const accessIdx = shell.indexOf("{ type: 'section', label: 'Access & Institutions'");
     const eventRuntimeIdx = shell.indexOf("label: 'Event Runtime'");
 
-    // Sanity: the four section markers exist in canonical order.
-    expect(usersIdx).toBeGreaterThan(-1);
-    expect(institutionsIdx).toBeGreaterThan(usersIdx);
-    expect(healthIdx).toBeGreaterThan(institutionsIdx);
-    expect(operationsIdx).toBeGreaterThan(healthIdx);
+    expect(peopleIdx).toBeGreaterThan(-1);
+    expect(systemHealthIdx).toBeGreaterThan(peopleIdx);
+    expect(accessIdx).toBeGreaterThan(systemHealthIdx);
 
-    // Event Runtime sits AFTER the Health marker and BEFORE Operations →
-    // it belongs to the Health section.
-    expect(eventRuntimeIdx).toBeGreaterThan(healthIdx);
-    expect(eventRuntimeIdx).toBeLessThan(operationsIdx);
+    // Event Runtime sits AFTER the System Health marker and BEFORE the next
+    // section → it belongs to System Health.
+    expect(eventRuntimeIdx).toBeGreaterThan(systemHealthIdx);
+    expect(eventRuntimeIdx).toBeLessThan(accessIdx);
+  });
 
-    // And it is NOT in the Users section (Users spans usersIdx..institutionsIdx).
-    expect(eventRuntimeIdx).toBeGreaterThan(institutionsIdx);
+  it('maps the 17 formerly-orphaned dashboards into the nav', () => {
+    const orphanHrefs = [
+      '/super-admin/bulk-upload',
+      '/super-admin/content',
+      '/super-admin/grounding/health',
+      '/super-admin/grounding/coverage',
+      '/super-admin/grounding/verification-queue',
+      '/super-admin/grounding/ai-issues',
+      '/super-admin/grounding/traces',
+      '/super-admin/foxy-quality',
+      '/super-admin/misconceptions',
+      '/super-admin/readiness-rubric',
+      '/super-admin/goal-profiles',
+      '/super-admin/subjects',
+      '/super-admin/module-overrides',
+      '/super-admin/observability/rules',
+      '/super-admin/health',
+      '/super-admin/command-center',
+      '/super-admin/intelligence/revenue',
+    ];
+    for (const href of orphanHrefs) {
+      expect(shell, `nav missing formerly-orphaned page ${href}`).toContain(`href: '${href}'`);
+    }
+    // The duplicate-titled /super-admin/alerts page is no longer a nav item
+    // (it is now a redirect to /super-admin/observability/rules).
+    expect(shell).not.toContain("href: '/super-admin/alerts'");
+  });
+
+  it('keeps EI items flag-gated via the EI_NAV_HREFS filter', () => {
+    expect(shell).toContain('EI_NAV_HREFS');
+    for (const href of [
+      '/super-admin/intelligence',
+      '/super-admin/intelligence/schools',
+      '/super-admin/intelligence/revenue',
+      '/super-admin/intelligence/geography',
+    ]) {
+      expect(shell).toContain(`'${href}',`);
+    }
   });
 });
 
