@@ -227,6 +227,21 @@ describe('/auth/callback — PKCE code flow (P15 rule 3)', () => {
     expect(res.status).toBeGreaterThanOrEqual(300);
     expect(res.status).toBeLessThan(400);
   });
+
+  // P15 fix (2026-07-20, admin-user-invite-flow incident): Supabase-Dashboard
+  // invited users (type=invite) MUST land on /auth/reset to set a password —
+  // NOT silently fall through to /dashboard with a registered session.
+  it('redirects type=invite to /auth/reset (not /dashboard)', async () => {
+    const { GET } = await import('@/app/auth/callback/route');
+    holders.exchangeCodeForSession.mockResolvedValue({ error: null });
+
+    const res = await GET(makeReq('/auth/callback?code=valid-code&type=invite'));
+
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(location(res)).toContain('/auth/reset');
+    expect(location(res)).not.toContain('/dashboard');
+  });
 });
 
 // ───────────────────────── /auth/confirm (token_hash flow) ─────────────────────────
@@ -284,6 +299,22 @@ describe('/auth/confirm — token_hash flow (P15 rule 3)', () => {
     expect(res.status).toBeLessThan(400);
     expect(location(res)).toContain('/teacher');
   });
+
+  // P15 fix (2026-07-20, admin-user-invite-flow incident): Supabase-Dashboard
+  // invited users (type=invite) MUST land on /auth/reset to set a password —
+  // NOT silently fall through to /dashboard with a registered session.
+  it('redirects type=invite to /auth/reset (not /dashboard)', async () => {
+    const { GET } = await import('@/app/auth/confirm/route');
+    holders.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await GET(makeReq('/auth/confirm?token_hash=invite-token&type=invite'));
+
+    expect(holders.verifyOtp).toHaveBeenCalledWith({ token_hash: 'invite-token', type: 'invite' });
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(location(res)).toContain('/auth/reset');
+    expect(location(res)).not.toContain('/dashboard');
+  });
 });
 
 describe('/auth/confirm — legacy token flow', () => {
@@ -301,5 +332,27 @@ describe('/auth/confirm — legacy token flow', () => {
     expect(res.status).toBeGreaterThanOrEqual(300);
     expect(res.status).toBeLessThan(400);
     expect(location(res)).toContain('/dashboard');
+  });
+
+  // P15 fix (2026-07-20, admin-user-invite-flow incident, fast-follow): the
+  // LEGACY token+email+type flow must handle type=invite with the same
+  // /auth/reset routing as the token_hash flow above — previously it fell
+  // through to the generic default branch and silently registered a session
+  // on /dashboard with no way to ever set a password.
+  it('redirects type=invite to /auth/reset (not /dashboard)', async () => {
+    const { GET } = await import('@/app/auth/confirm/route');
+    holders.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await GET(makeReq('/auth/confirm?token=legacy-invite-token&email=user%40example.com&type=invite'));
+
+    expect(holders.verifyOtp).toHaveBeenCalledWith({
+      token: 'legacy-invite-token',
+      email: 'user@example.com',
+      type: 'invite',
+    });
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(location(res)).toContain('/auth/reset');
+    expect(location(res)).not.toContain('/dashboard');
   });
 });

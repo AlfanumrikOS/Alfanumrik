@@ -72,6 +72,28 @@ export async function GET(request: NextRequest) {
         }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
+      if (type === 'invite') {
+        // Supabase-Dashboard-invited users (type=invite) must set a password
+        // before they can use the account — there is no existing password to
+        // log in with. Route to the SAME /auth/reset flow as 'recovery': that
+        // page only cares that a live session exists and calls
+        // supabase.auth.updateUser({ password }); it does not care WHY the
+        // user needs to set one. Falling through to the generic default
+        // branch below would silently register a session and drop the user
+        // on /dashboard with no way to ever set a password.
+        // P15 gap fixed 2026-07-20 — see admin-user-invite-flow incident.
+        const { data: { session: inviteSession } } = await supabase.auth.getSession();
+        if (inviteSession) {
+          const hashParams = new URLSearchParams({
+            access_token: inviteSession.access_token,
+            refresh_token: inviteSession.refresh_token,
+            token_type: 'bearer',
+            type: 'invite',
+          });
+          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+        }
+        return NextResponse.redirect(`${origin}/auth/reset`);
+      }
       if (type === 'signup') {
         // Email confirmation — bootstrap profile (if not already done) then redirect.
         // This handles the case where signup required email confirmation before

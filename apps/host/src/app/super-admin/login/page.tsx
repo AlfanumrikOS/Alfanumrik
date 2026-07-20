@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { supabase } from '@alfanumrik/lib/supabase';
 
 const colors = {
   bg: '#FFFFFF', surface: '#F9FAFB', border: '#E5E7EB', borderStrong: '#D1D5DB',
@@ -13,6 +14,35 @@ export default function AdminLoginPage() {
   const [error, setError] = useState('');
   const [suggestedLoginUrl, setSuggestedLoginUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  // P15 fix (2026-07-20, admin-user-invite-flow incident): this page had no
+  // forgot-password path at all. Mirrors AuthScreen.tsx's handleForgot —
+  // same supabase.auth.resetPasswordForEmail call signature — redirecting
+  // through /auth/callback?type=recovery, which (as of this same incident
+  // fix) correctly routes to /auth/reset instead of falling through to
+  // /dashboard.
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetEmail = (forgotEmail || email).trim();
+    if (!targetEmail) return;
+    setForgotLoading(true);
+    try {
+      await supabase.auth.resetPasswordForEmail(targetEmail, {
+        redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+      });
+    } catch {
+      // Deliberately swallow — never leak whether the email/account exists.
+    }
+    // Always show the same generic confirmation regardless of outcome so the
+    // response can't be used to enumerate valid admin accounts.
+    setForgotSent(true);
+    setForgotLoading(false);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -175,6 +205,61 @@ export default function AdminLoginPage() {
             {loading ? 'Verifying...' : 'Sign In'}
           </button>
         </form>
+
+        <div style={{ marginTop: 12, textAlign: 'center' }}>
+          <button
+            type="button"
+            onClick={() => { setForgotOpen(o => !o); setForgotSent(false); setForgotEmail(email); }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: colors.text2, fontSize: 12, fontWeight: 600,
+              textDecoration: 'underline', fontFamily: 'inherit', padding: 0,
+            }}
+          >
+            Forgot password?
+          </button>
+        </div>
+
+        {forgotOpen && (
+          <div style={{
+            marginTop: 12, padding: 14, borderRadius: 8,
+            background: colors.surface, border: `1px solid ${colors.border}`,
+          }}>
+            {forgotSent ? (
+              <p style={{ fontSize: 12, color: colors.text2, margin: 0, lineHeight: 1.5 }}>
+                If that email has an account, a reset link was sent.
+              </p>
+            ) : (
+              <form onSubmit={handleForgotPassword}>
+                <label style={{ fontSize: 12, color: colors.text2, display: 'block', marginBottom: 6, fontWeight: 600 }}>
+                  Enter your email to reset your password
+                </label>
+                <input
+                  type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)}
+                  style={{
+                    width: '100%', padding: '8px 12px', borderRadius: 8,
+                    border: `1px solid ${colors.border}`, background: colors.bg,
+                    color: colors.text1, fontSize: 13, outline: 'none', boxSizing: 'border-box',
+                    fontFamily: 'inherit', marginBottom: 10,
+                  }}
+                  placeholder="admin@alfanumrik.com"
+                />
+                <button
+                  type="submit" disabled={forgotLoading}
+                  style={{
+                    width: '100%', padding: '8px 0', borderRadius: 8,
+                    border: 'none', cursor: forgotLoading ? 'not-allowed' : 'pointer',
+                    background: forgotLoading ? colors.borderStrong : colors.text1,
+                    color: colors.bg, fontSize: 12, fontWeight: 700,
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {forgotLoading ? 'Sending...' : 'Send reset link'}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
 
         <div style={{
           marginTop: 24, textAlign: 'center', fontSize: 11, color: colors.text3, lineHeight: 1.5,
