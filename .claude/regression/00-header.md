@@ -6,8 +6,8 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 250 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-281..REG-283 (2026-07-20, feature-flag RCA repair — see `10-rbac-rls.md`; renumbered from REG-277..279 after ID collision with the Foxy ramp package, which holds REG-277..REG-280 — see `02-foxy-ai.md`).
+**Total catalog: 251 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-284 (2026-07-20, E2E full-suite topology — label-gated advisory PR run + watched blocking nightly — see `11-infrastructure.md`). Prior: REG-281..REG-283 (2026-07-20, feature-flag RCA repair — see `10-rbac-rls.md`; renumbered from REG-277..279 after ID collision with the Foxy ramp package, which holds REG-277..REG-280 — see `02-foxy-ai.md`).
 
 ## Split Files
 
@@ -23,7 +23,7 @@ Latest: REG-281..REG-283 (2026-07-20, feature-flag RCA repair — see `10-rbac-r
 | `08-parent-portal.md` | Consumer Minimalism waves, parent portal, consent |
 | `09-adaptive-program.md` | Adaptive remediation loops A/B/C/D, digital twin |
 | `10-rbac-rls.md` | RBAC matrix, RLS policies, Student Pulse, XC-3 phases, mutation gates |
-| `11-infrastructure.md` | Python AI ports, Voice, Mobile parity, CI alerting + sharded-CI fan-in contract, PWA, curriculum versioning, design system |
+| `11-infrastructure.md` | Python AI ports, Voice, Mobile parity, CI alerting + sharded-CI fan-in contract + E2E label-gated/nightly topology, PWA, curriculum versioning, design system |
 | `12-observability.md` | Monitoring data boundary, PostHog analytics |
 | `13-rag-cache.md` | RAG eval harness, Voyage rerank, grounded-answer cache, response-cache, Knowledge Intelligence |
 | `14-audit-remediation.md` | Engineering audit cycles 1-8, tier-2 PRs |

@@ -1832,3 +1832,30 @@ collection identity for the CI-generated shard wrapper config.
 
 ---
 
+## E2E full-suite topology — label-gated advisory PR run + watched blocking nightly (2026-07-20) — REG-284
+
+Source: CI pipeline audit/speed-up (branch `e2e-nightly-label-optin`,
+user-approved "label opt-in + nightly safety net"). The full ~342-test/38-file
+Playwright suite left default PR runs: it is now PR opt-in via the `e2e-full`
+label and runs nightly against main as the ONLY scheduled full-suite execution.
+Like REG-130, this is a CI-topology contract with no Vitest/Playwright asserting
+test — the "test" is the workflow wiring itself, audited by reading the four
+files. Logged as status `C`. REG-130 itself needed NO text amendment: its
+watched-name byte-equality / dedupe / self-heal invariants are stated
+name-agnostically and now simply cover one more watched entry (byte-verified
+2026-07-20: `od -c` shows the em dash U+2014 identical in both files).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-284 | `e2e_full_suite_label_optin_plus_watched_nightly` | The full-suite E2E topology stays fail-CLOSED after leaving default PR CI. (1) SINGLE SOURCE OF TRUTH: both callers (ci.yml label-gated `e2e` job, e2e-nightly.yml) invoke the reusable `e2e-suite.yml` — the exact playwright invocation (`npx playwright test --project=chromium`), staging build + standalone-server boot, env set (BASE_URL, staging NEXT_PUBLIC_*/service-role, TEST_STUDENT_*, `SYNTHETIC_TARGET_URL=http://127.0.0.1:3000` so neither caller hammers live prod), report-artifact upload and server-log dump are never duplicated/drifted between callers. (2) WATCHED NIGHTLY: e2e-nightly.yml runs on `schedule` (21:30 UTC) + `workflow_dispatch`, calls the suite with `advisory: false` so a red suite concludes `failure`, and its `name:` ("E2E Nightly — Alfanumrik") appears BYTE-IDENTICAL in pipeline-alert.yml's `on.workflow_run.workflows` list (extends REG-130's byte-equality invariant — renaming either side without the other fails OPEN). The nightly is NEVER dropped from the schedule while the PR run stays label-gated. (3) SKIP SEMANTICS (testing-agent ruling 2026-07-20): `E2E_SKIP_ON_UNPROVISIONED_STUDENT` is set ONLY in advisory mode (`${{ inputs.advisory && '1' \|\| '' }}`) — an unprovisioned staging TEST_STUDENT_* fixture skips-with-named-reason on labeled PRs but REDDENS the nightly, matching the suite's red-in-both-modes posture for missing secrets; a green-with-skips nightly must never silently drop the real-auth branches. The BLOCKING e2e-critical-paths job in ci.yml never sets the flag. (4) MERGE-GATE SAFETY: the label-gated `e2e` job stays advisory (`advisory: true`) and stays OUT of ci-gate's `needs` (a usually-skipped need would poison the required-check accounting), and ci.yml's `pull_request.types` explicitly retains `[opened, synchronize, reopened]` alongside `labeled` (specifying `types` REPLACES the defaults — dropping them would stop CI on ordinary pushes). | `.github/workflows/e2e-suite.yml`, `.github/workflows/e2e-nightly.yml`, `.github/workflows/ci.yml` (`e2e` job + `pull_request.types` + ci-gate needs), `.github/workflows/pipeline-alert.yml` (watched list + HINT), `e2e/helpers/auth.ts` (skip gate) (CI-only; no unit harness) | C |
+
+### Catalog total
+
+Pre-REG-284: 250 entries (current highest/latest on main: REG-281..REG-283,
+the 2026-07-20 feature-flag RCA repair in `10-rbac-rls.md`; REG-277..REG-280
+are held by the Foxy ramp package in `02-foxy-ai.md`). This topology pin adds
+REG-284.
+**Total catalog: 251 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

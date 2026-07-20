@@ -1,0 +1,62 @@
+# Nightly full-suite E2E safety net.
+#
+# 2026-07-20 (user-approved): the full ~342-test E2E suite no longer runs on
+# default PR pushes — on PRs it is opt-in via the `e2e-full` label (see the
+# `e2e` job in ci.yml). NON-NEGOTIABLE COMPENSATION: the full suite still
+# runs EVERY NIGHT here against main, plus on-demand via workflow_dispatch.
+# It is never dropped from the schedule. The BLOCKING e2e-critical-paths job
+# in ci.yml (REG-45 quiz / REG-46 payment) is untouched by this split.
+#
+# advisory: false — a suite failure FAILS this run. pipeline-alert.yml
+# watches this workflow's exact `name:` string, so a red nightly opens (or
+# comments on) the `pipeline-failure` issue and the issue auto-closes on the
+# next green run.
+#
+# RENAME WARNING (REG-130 — watched-name byte-equality): if you rename this
+# workflow you MUST update the byte-identical entry in pipeline-alert.yml's
+# `on.workflow_run.workflows` list in the same PR. A rename that breaks
+# byte-equality fails OPEN — the watcher silently never alerts.
+#
+# Schedule slot: 21:30 UTC (03:00 IST) — inside the 21:00-22:30 window,
+# avoiding the existing nightly slots 22:00 (rag-eval.yml) and 22:30
+# (edge-auth-sweep.yml). synthetic-monitor runs */15 around the clock and is
+# unavoidable background. GitHub cron is best-effort and may start late;
+# that is acceptable for a nightly safety net.
+name: E2E Nightly — Alfanumrik
+
+on:
+  schedule:
+    # 21:30 UTC nightly = 03:00 IST (slot rationale above).
+    - cron: '30 21 * * *'
+  # On-demand full-suite run. Scheduled runs always execute on the default
+  # branch (main); manual dispatches should also be run from main so the
+  # nightly signal stays a statement about main.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A scheduled run overlapping a manual dispatch should queue, not cancel —
+# both results are meaningful signals about main.
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+jobs:
+  # Thin caller — all steps live in the reusable e2e-suite.yml (single source
+  # of truth shared with ci.yml's label-gated PR job). Job-level `uses:`
+  # cannot carry `steps`/`timeout-minutes`; the 30-min timeout lives in the
+  # called workflow.
+  e2e-full-suite:
+    name: Full E2E Suite (blocking)
+    uses: ./.github/workflows/e2e-suite.yml
+    with:
+      # A red nightly must fail the run so pipeline-alert.yml sees a
+      # `failure` conclusion — never green-with-hidden-failures here. This
+      # INCLUDES the missing-staging-fixture case: e2e-suite.yml sets
+      # E2E_SKIP_ON_UNPROVISIONED_STUDENT only in advisory mode, so an
+      # unprovisioned TEST_STUDENT_* student reddens the nightly instead of
+      # silently skipping every real-auth branch (testing-agent decision,
+      # 2026-07-20). Fix: dispatch seed-staging-test-student.yml, re-run.
+      advisory: false
+    secrets: inherit
