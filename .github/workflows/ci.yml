@@ -1597,11 +1597,10 @@ jobs:
           # Turbopack emits fine-grained chunks; summing them measures total
           # codebase size, not what a single page loads.
           #
-          # New approach: check the LARGEST individual chunk (a good proxy for
-          # the dominant first-load payload) and each per-page bundle size.
-          # Keep middleware check unchanged.
+          # This step now checks ONLY the largest individual chunk (a good
+          # proxy for the dominant first-load payload) — the one sub-check
+          # NOT covered by the authoritative script step below.
           FAIL=0
-          WARN=0
 
           # Largest single shared chunk. P10 budget is gzipped — must compare
           # gzipped against gzipped. Previous version compared raw bytes vs the
@@ -1617,31 +1616,18 @@ jobs:
             fi
           fi
 
-          # Middleware size (P10: < 120 kB). Some setups emit a shim file; skip if < 1 kB.
-          if [ -f apps/host/.next/server/middleware.js ]; then
-            MW_BYTES=$(wc -c < apps/host/.next/server/middleware.js)
-            MW_KB=$((MW_BYTES / 1024))
-            echo "Middleware: ${MW_KB} kB (limit: ${MIDDLEWARE_LIMIT_KB} kB)"
-            if [ "$MW_KB" -gt "$MIDDLEWARE_LIMIT_KB" ]; then
-              echo "FAIL: Middleware exceeds ${MIDDLEWARE_LIMIT_KB} kB budget (P10)"
-              FAIL=1
-            fi
-          fi
-
-          # Per-page bundles: each page directory's total JS size should be < page budget.
-          if [ -d apps/host/.next/static/chunks/app ]; then
-            while IFS= read -r dir; do
-              DIR_SIZE_BYTES=$(find "$dir" -name '*.js' -type f -exec wc -c {} + 2>/dev/null | tail -1 | awk '{print $1}')
-              if [ -n "$DIR_SIZE_BYTES" ] && [ "$DIR_SIZE_BYTES" -gt 0 ] 2>/dev/null; then
-                DIR_SIZE_KB=$((DIR_SIZE_BYTES / 1024))
-                DIR_NAME=$(echo "$dir" | sed "s|apps/host/.next/static/chunks/app/||")
-                if [ "$DIR_SIZE_KB" -gt "${PAGE_JS_LIMIT_KB}" ]; then
-                  echo "::error::Page /$DIR_NAME is ${DIR_SIZE_KB} kB (limit: ${PAGE_JS_LIMIT_KB} kB). P10 invariant breach."
-                  FAIL=1
-                fi
-              fi
-            done < <(find apps/host/.next/static/chunks/app -mindepth 1 -maxdepth 2 -type d 2>/dev/null)
-          fi
+          # 2026-07-20 — user-approved (Option A, CI speed-up PR #1349):
+          # middleware + per-page P10 enforcement is delegated to the BLOCKING
+          # "First-load JS budget (authoritative, gzipped per-page)" step below
+          # (scripts/check-bundle-size.mjs — gzipped, HTML-scan,
+          # CAP_MIDDLEWARE_KB=120, CAP_PAGE_KB=260), which measures the same
+          # budgets correctly. The bash sub-checks removed here compared raw
+          # bytes / whole-route-group directory sums (e.g. all of /super-admin,
+          # or /api server-route chunks) against the gzipped PER-PAGE budgets —
+          # a category error documented in the pre-existing comment above the
+          # authoritative step — and had been passing vacuously since the
+          # monorepo migration anyway. NOT a budget change: P10 limits are
+          # unchanged and still blocking.
 
           if [ "$FAIL" = "1" ]; then
             echo ""
@@ -1650,12 +1636,7 @@ jobs:
             exit 1
           fi
 
-          if [ "$WARN" = "1" ]; then
-            echo ""
-            echo "::notice::Bundle size warnings emitted (advisory only — all P10 budget breaches now block via FAIL=1)."
-          else
-            echo "All bundle sizes within budget."
-          fi
+          echo "All bundle sizes within budget."
 
       # Authoritative per-page first-load JS gate.
       # The bash check above measures raw bytes and only inspects the LARGEST
