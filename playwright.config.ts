@@ -6,6 +6,14 @@ const certificationBaseURL =
     : undefined;
 const configuredBaseURL = process.env.BASE_URL || certificationBaseURL;
 const localBaseURL = 'http://localhost:3000';
+// CI run against an in-job server (the advisory `e2e` job sets
+// BASE_URL=http://127.0.0.1:3000 and serves the built standalone artifact).
+// Distinct from (a) local dev runs (no BASE_URL → dev server, slow cold
+// compiles) and (b) CI runs against a deployed target
+// (e2e-critical-paths → https://alfanumrik.com, network latency), both of
+// which keep the historical 90s budget.
+const isCiLocalServerRun =
+  !!process.env.CI && /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(configuredBaseURL || '');
 const expectV3ProductionDenial = process.env.V3_EXPECT_PREVIEW_404 === 'true';
 const localWebServerProbe = expectV3ProductionDenial
   ? { port: 3000 }
@@ -13,9 +21,26 @@ const localWebServerProbe = expectV3ProductionDenial
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 90_000,
+  // 90s was sized for dev-server cold compiles and deployed-target latency.
+  // Against the in-job production server a healthy test finishes in seconds,
+  // so there the timeout exists only to absorb failure hangs — run
+  // 29716158705 burned ~21 worker-minutes on 14 timeout attempts alone. 60s
+  // caps that hang budget without touching local dev or deployed-target runs.
+  // Per-test test.setTimeout() overrides (e.g. navigation crawl 120s,
+  // account-deletion redirect 150s) are unaffected.
+  timeout: isCiLocalServerRun ? 60_000 : 90_000,
   retries: 1,
-  workers: process.env.CI ? undefined : 1,
+  // CI runners are 4-core; Playwright's CI default (50% of cores = 2 workers)
+  // left half the machine idle in run 29716158705 while the suite is
+  // network-wait-bound and the app server is a separate lightweight process.
+  // 4 workers ONLY for the in-job-server run (advisory `e2e` job) — fixed 4
+  // (not '100%') so a future larger runner can't oversubscribe the co-located
+  // Next.js server. CI runs against a DEPLOYED target (e2e-critical-paths →
+  // https://alfanumrik.com, synthetic-monitor) keep their previous 2-worker
+  // profile (the old CI default, now explicit) so this speed-up doesn't
+  // quadruple concurrent load on production. Local behavior unchanged
+  // (1 worker).
+  workers: isCiLocalServerRun ? 4 : (process.env.CI ? 2 : 1),
   // Certification journey specs (e2e/certification/**, added 2026-07-02) are
   // PREPARATION ONLY for the certification program's Stage 2/3 — see
   // e2e/certification/helpers/cert-gate.ts. They are excluded from

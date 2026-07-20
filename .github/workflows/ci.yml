@@ -1676,10 +1676,46 @@ jobs:
   # 2026-07-20 CI speed-up: `needs: build` removed — this job never consumed
   # the build artifact (playwright boots its own dev server), so the
   # dependency only delayed its start.
+  #
+  # 2026-07-20 RE-PLATFORM (CI audit follow-up #1): this job used to run the
+  # suite against `npm run dev` with PLACEHOLDER Supabase env — every route
+  # compiled on first hit and every Supabase call hit placeholder.supabase.co,
+  # producing ~27 environmental failures (goto/waitForURL 90s×retry timeouts)
+  # and ~34 min of churn per run. It now:
+  #   1. builds the app IN-JOB with STAGING env. NEXT_PUBLIC_* vars are baked
+  #      into the client bundle AT BUILD TIME, so the shared `nextjs-build`
+  #      artifact (built with the workflow-level placeholders) CANNOT be
+  #      reused here — a staging-env build is unavoidable.
+  #   2. serves the built artifact with the production standalone server
+  #      (`node apps/host/.next/standalone/apps/host/server.js` — the exact
+  #      wiring playwright.config.ts's V3_EXPECT_PREVIEW_404 branch and the
+  #      Dockerfile already use; `next start` does not support
+  #      output:'standalone', see apps/host/next.config.js). Setting BASE_URL
+  #      makes playwright.config.ts skip its webServer block entirely, so
+  #      NO playwright.config.ts change is needed and local dev behavior is
+  #      untouched.
+  # Job posture is UNCHANGED: advisory (continue-on-error on the test step)
+  # and NOT in the ci-gate needs list.
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # Same-repo guard (same expression as integration-tests, minus the push
+    # branch since this job is PR-only): fork PRs receive no secrets, so the
+    # staging-env build below is impossible there. The job is ADVISORY, so
+    # skip-on-fork loses nothing — preferred over falling back to the old
+    # placeholder+dev path, which only produced 27 known-environmental
+    # failures of pure noise.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # Budget (2026-07-20 triage of run 29716158705): fixed overhead ≈ 9 min
+    # (checkout + npm ci restore + playwright install ~3 min, staging build
+    # ~5-6 min, server boot <1 min). Suite target ≈ 8-11 min at 4 workers
+    # (playwright.config.ts) with the 60s in-job-server test timeout: ~230
+    # passing tests are seconds each; known failure classes were converted to
+    # fast named skips (missing staging student) or fixed (consent-banner
+    # click interception, stale V3 pins). Expected total ≈ 20 min; 30 gives
+    # ~50% headroom without re-opening a 40+ min hang budget. Advisory job —
+    # a timeout here blocks nothing.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -1694,18 +1730,116 @@ jobs:
       - name: Install dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
+
+      # Same incremental-build cache pattern as the `build` job, but with a
+      # DIFFERENT key prefix (`nextjs-e2e-` vs `nextjs-`): this job bakes
+      # STAGING NEXT_PUBLIC_* values into the bundle while the build job bakes
+      # placeholders — different env produces different output, so the two
+      # caches must never cross-restore. (No prefix collision either way: the
+      # build job's restore-key is `<os>-nextjs-<lockhash>-`, and a lockfile
+      # hash can never equal the literal `e2e`.)
+      - name: Cache Next.js build cache (e2e staging build)
+        uses: actions/cache@v4
+        with:
+          path: apps/host/.next/cache
+          key: ${{ runner.os }}-nextjs-e2e-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/host/src/**/*.ts', 'apps/host/src/**/*.tsx', 'packages/**/*.ts', 'packages/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-e2e-${{ hashFiles('package-lock.json') }}-
+
       - run: npx playwright install --with-deps chromium
+
+      # Fail loudly (advisory job — visible red, blocks nothing) instead of
+      # silently baking empty strings into the client bundle.
+      - name: Verify staging secrets are present
+        run: |
+          if [ -z "${{ secrets.STAGING_SUPABASE_URL }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_ANON_KEY }}" ] || [ -z "${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+            echo "::error::E2E job requires STAGING_SUPABASE_URL, STAGING_SUPABASE_ANON_KEY and STAGING_SUPABASE_SERVICE_ROLE_KEY."
+            exit 1
+          fi
+
+      # Step-level env OVERRIDES the workflow-level placeholder env block.
+      # Heap bump mirrors the `build` job (see its comment).
+      - name: Build app (staging env)
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          NODE_OPTIONS: --max-old-space-size=6144
+
+      # Asset layout mirrors Dockerfile stage 3: the standalone server resolves
+      # static assets and public/ relative to its own apps/host directory.
+      # Background process survives step exit and is reaped at job end.
+      # Readiness probe accepts ANY HTTP response (curl exit 0), matching the
+      # TCP-probe philosophy of the config's V3 branch — "/" may legitimately
+      # redirect.
+      - name: Start production server and wait for readiness
+        env:
+          PORT: 3000
+          # 0.0.0.0 (as in the Dockerfile) so both `127.0.0.1` (BASE_URL) and
+          # any spec helper that says `localhost` (which may resolve to ::1
+          # first) reach the server.
+          HOSTNAME: 0.0.0.0
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          cp -r apps/host/public apps/host/.next/standalone/apps/host/public
+          cp -r apps/host/.next/static apps/host/.next/standalone/apps/host/.next/static
+          nohup node apps/host/.next/standalone/apps/host/server.js > /tmp/next-e2e-server.log 2>&1 &
+          echo $! > /tmp/next-e2e-server.pid
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null http://127.0.0.1:3000/; then
+              echo "Production server ready after ~$((i * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Production server did not become ready within 120s."
+          tail -50 /tmp/next-e2e-server.log
+          exit 1
+
+      # BASE_URL short-circuits playwright.config.ts's webServer block — the
+      # suite targets the prod-mode server started above, never `npm run dev`.
+      # TEST_STUDENT_* lets the real-auth spec branches run (same secrets as
+      # e2e-critical-paths). NEXT_PUBLIC_*/service-role are the SAME staging
+      # values the server was built/booted with, so spec-side Supabase clients
+      # (e.g. pulse-rls fixtures) agree with the app.
       - name: Run E2E tests
         run: npx playwright test --project=chromium
         env:
-          NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          BASE_URL: 'http://127.0.0.1:3000'
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          TEST_STUDENT_EMAIL: ${{ secrets.TEST_STUDENT_EMAIL }}
+          TEST_STUDENT_PASSWORD: ${{ secrets.TEST_STUDENT_PASSWORD }}
+          # e2e/synthetic/prod-health.spec.ts defaults its 16 rows to
+          # https://alfanumrik.com — without this override the advisory PR job
+          # was probing LIVE PRODUCTION over the network on every PR (run
+          # 29716158705). Point the rows at the in-job server via the spec's
+          # own documented env hook: same assertions, no cross-environment
+          # traffic, faster. The real prod monitor stays in
+          # synthetic-monitor.yml (which leaves the default).
+          SYNTHETIC_TARGET_URL: 'http://127.0.0.1:3000'
+          # Opt-in for e2e/helpers/auth.ts loginViaUI: when the target
+          # Supabase affirmatively rejects TEST_STUDENT_* (student not
+          # provisioned in staging), skip with a named missing-fixture reason
+          # instead of failing. Set ONLY here — this job is ADVISORY. The
+          # BLOCKING e2e-critical-paths job below must NOT set it: there, a
+          # rotated/deleted prod student or a credential-mangling regression
+          # must fail the gate loudly, never go green-with-skip.
+          E2E_SKIP_ON_UNPROVISIONED_STUDENT: '1'
         # ADVISORY UNTIL 2026-04-27. Audit 2026-04-27 F23 / F9.
         # TODO: flip to blocking after legacy E2E flake cleanup. The new
         # `e2e-critical-paths` job below IS BLOCKING and covers the
         # must-not-break paths (quiz happy path REG-45, payment checkout
         # REG-46), so this advisory does not weaken release safety.
         continue-on-error: true
+      - name: Dump server log on completion
+        if: always()
+        run: tail -100 /tmp/next-e2e-server.log || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
