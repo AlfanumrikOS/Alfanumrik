@@ -6,7 +6,8 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 243 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 247 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-277..REG-280 (2026-07-20, Foxy LaTeX-in-JSON ramp package — see `02-foxy-ai.md`).
 
 ## Split Files
 
