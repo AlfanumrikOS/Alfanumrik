@@ -71,9 +71,12 @@ export const JSON_REPAIR_MATH_COMMANDS: readonly string[] = [
   // Relations
   'le', 'leq', 'ge', 'geq', 'ne', 'neq', 'approx', 'equiv', 'sim', 'simeq',
   'cong', 'propto', 'parallel', 'perp',
-  // Sets (class 11-12)
-  'subset', 'supset', 'subseteq', 'supseteq', 'in', 'notin', 'cup', 'cap',
-  'forall', 'exists', 'emptyset', 'varnothing',
+  // Sets (class 11-12). `not` = negation slash (`\not\subset`, NCERT Class 11
+  // Sets); its `\n` head needs arbitration. `\notin` is unaffected: `not`
+  // inside "notin" fails the (?![a-zA-Z]) boundary on the following `i`, and
+  // the alternation is longest-first anyway.
+  'subset', 'supset', 'subseteq', 'supseteq', 'in', 'notin', 'not', 'cup',
+  'cap', 'forall', 'exists', 'emptyset', 'varnothing',
   // Arrows / logic (therefore & because are everywhere in CBSE geometry proofs)
   'to', 'rightarrow', 'leftarrow', 'Rightarrow', 'Leftarrow', 'leftrightarrow',
   'implies', 'iff', 'therefore', 'because',
@@ -108,6 +111,17 @@ export const JSON_REPAIR_MATH_COMMANDS: readonly string[] = [
  *                          and starts with the legal escape `\b`.
  *   - 'rightleftharpoons': the chemistry equilibrium arrow used in the
  *                          few-shot Haber-process example; starts with `\r`.
+ *
+ * DELIBERATELY ABSENT (evaluated 2026-07-20): 'begin' (Class 12 matrices,
+ * `\begin{bmatrix}`, `\b` head). Deferred because repairing only the `\begin`
+ * head cannot save an under-escaped matrix: the interior `\\` row separators
+ * arrive as the LEGAL escape `\\` (parsing to ONE backslash -- row breaks
+ * already lost, correctly untouched by this conservative repair), so the
+ * environment stays unrenderable either way, and no under-escaped matrix
+ * payload has been observed in production. Revisit with an environment-aware
+ * renderer rule if incidents appear -- add it HERE (extras), never to the
+ * parity-pinned JSON_REPAIR_MATH_COMMANDS. See the matching decision note in
+ * packages/ui/src/math/normalize.ts.
  */
 export const JSON_REPAIR_EXTRA_COMMANDS: readonly string[] = [
   'boxed',

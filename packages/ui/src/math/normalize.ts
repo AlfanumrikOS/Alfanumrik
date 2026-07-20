@@ -231,6 +231,14 @@ export const MATH_COMMAND_ALLOWLIST: readonly string[] = [
   // Sets (class 11-12)
   'subset', 'supset', 'subseteq', 'supseteq', 'in', 'notin', 'cup', 'cap',
   'forall', 'exists', 'emptyset', 'varnothing',
+  // Negation slash — NCERT Class 11 Sets writes `\not\subset` (KaTeX renders
+  // `\not` as a combining negation). Safe as a trigger: matching requires the
+  // literal backslash AND the (?![a-zA-Z]) word boundary, so prose "not" never
+  // fires and `\notin` is unaffected (`not` inside `\notin` fails the boundary
+  // on the following `i`; the alternation is also longest-first so `notin` is
+  // tried before `not` before `nu` — see the ordering pins in
+  // apps/host/src/__tests__/foxy/undelimited-math-normalization.test.tsx).
+  'not',
   // Arrows / logic (therefore & because are everywhere in CBSE geometry proofs)
   'to', 'rightarrow', 'leftarrow', 'Rightarrow', 'Leftarrow', 'leftrightarrow',
   'implies', 'iff', 'therefore', 'because',
@@ -254,6 +262,21 @@ export const MATH_COMMAND_ALLOWLIST: readonly string[] = [
   // Structure / text-in-math / ellipses
   'infty', 'left', 'right', 'text', 'mathrm', 'mathbf',
   'ldots', 'cdots', 'dots',
+  //
+  // DECISION (2026-07-20, evaluated with assessment — Class 12 matrices):
+  // `begin` (`\begin{bmatrix}...\end{bmatrix}`) is DEFERRED, not added.
+  //   (a) Trigger safety is NOT the blocker: `\begin` needs a literal
+  //       backslash + word boundary, so it can never false-positive on prose.
+  //   (b) The SPAN RULE is the blocker: a matrix environment contains `&`
+  //       column separators (outside MATH_SAFE), `\\` row breaks, and `\end`
+  //       (not allowlisted) — the token-run capture would truncate the
+  //       environment at the first `&`, hand KaTeX an unclosed `\begin{...}`
+  //       head, and degrade to the <code> fallback where today the raw text
+  //       at least stays readable. Rescuing environments needs a dedicated
+  //       environment-aware span rule (match `\begin{X}...\end{X}` as one
+  //       unit), not an allowlist entry. Repair-side `begin` is likewise
+  //       deferred — see JSON_REPAIR_EXTRA_COMMANDS in
+  //       packages/lib/src/foxy/json-escape-repair.ts.
 ];
 
 // Alternation sorted longest-first so more specific commands are preferred

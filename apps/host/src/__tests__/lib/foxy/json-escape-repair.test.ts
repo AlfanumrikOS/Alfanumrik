@@ -112,6 +112,44 @@ describe('repairIllegalJsonEscapes — illegal LaTeX escapes repaired inside str
   });
 });
 
+describe('repairIllegalJsonEscapes — \\not (C1, NCERT Class 11 Sets)', () => {
+  it('repairs under-escaped \\not\\subset inside a JSON string', () => {
+    // Payload as the model emits it: {"latex":"A \not\subset B"} — the `\n`
+    // head is a legal escape (arbitrated via `not`), the `\s` is illegal.
+    const input = '{"latex":"A \\not\\subset B"}';
+    const { repaired, repairCount } = repairIllegalJsonEscapes(input);
+    expect(repairCount).toBe(2);
+    const decoded = JSON.parse(repaired);
+    expect(decoded.latex).toBe('A \\not\\subset B');
+  });
+
+  it('\\notin still resolves as notin, not not+in (alternation ordering)', () => {
+    const input = '{"latex":"x \\notin A"}';
+    const { repaired, repairCount } = repairIllegalJsonEscapes(input);
+    expect(repairCount).toBe(1);
+    const decoded = JSON.parse(repaired);
+    expect(decoded.latex).toBe('x \\notin A');
+  });
+
+  it('word boundary: \\notime / \\notebook stay genuine newlines (no arbiter match)', () => {
+    // "not" inside "notime"/"notebook" is followed by a letter → the boundary
+    // rejects it; "notin" does not complete either. Preserved byte-for-byte.
+    const input = '{"a":"line\\notime","b":"see\\notebook"}';
+    const { repaired, repairCount } = repairIllegalJsonEscapes(input);
+    expect(repaired).toBe(input);
+    expect(repairCount).toBe(0);
+    const decoded = JSON.parse(repaired);
+    expect(decoded.a).toBe('line\notime');
+    expect(decoded.b).toBe('see\notebook');
+  });
+
+  it('\\nu (Greek) is not shadowed by not/notin', () => {
+    const input = '{"latex":"frequency \\nu = 5"}';
+    const decoded = JSON.parse(repairIllegalJsonEscapes(input).repaired);
+    expect(decoded.latex).toBe('frequency \\nu = 5');
+  });
+});
+
 describe('repairIllegalJsonEscapes — scope and purity', () => {
   it('never touches backslashes OUTSIDE string literals', () => {
     const input = '{\\frac "a": "ok"} \\times';
@@ -214,8 +252,13 @@ describe('arbiter list sanity', () => {
   });
 
   it('math-command list is non-trivial and contains the incident commands', () => {
-    for (const cmd of ['frac', 'times', 'neq', 'sqrt', 'pi', 'text']) {
+    for (const cmd of ['frac', 'times', 'neq', 'sqrt', 'pi', 'text', 'not', 'notin']) {
       expect(JSON_REPAIR_MATH_COMMANDS).toContain(cmd);
     }
+  });
+
+  it('begin is deliberately absent everywhere (deferred — see module comment)', () => {
+    expect(JSON_REPAIR_MATH_COMMANDS).not.toContain('begin');
+    expect(JSON_REPAIR_EXTRA_COMMANDS).not.toContain('begin');
   });
 });
