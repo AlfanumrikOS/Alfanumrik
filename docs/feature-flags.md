@@ -19,6 +19,21 @@ exists AND `is_enabled` AND `target_environments` AND `target_roles` AND
 Default flip pattern: `UPDATE feature_flags SET is_enabled = <bool> WHERE flag_name = '<name>';`
 (or use `/super-admin/flags`). Cache invalidates via `invalidateFlagCache()` on next request.
 
+## Data exposure rule (anon read — governance, ops)
+
+As of migration `20260720100000` the `feature_flags` table is world-readable
+(anon SELECT policy `feature_flags_read_anon`). No PII, secrets, tokens, or
+internal URLs may EVER be placed in flag `description` or `metadata` — they
+are visible to any logged-out visitor. Flag names, booleans, and scoping
+arrays are considered public operational metadata.
+
+**Enable semantics change** (same repair): enabling a flag via the super-admin
+console auto-promotes `rollout_percentage` 0→100 (explicit values are never
+overridden); the previous double-gate (enable + separate rollout ramp) now
+requires setting an explicit rollout value *before* enabling. The column
+DEFAULT is also now 100, so new rows omitting `rollout_percentage` are
+governed by `is_enabled` alone; an explicit 0 still means "seeded dark".
+
 ---
 
 ## Grounded-AI rollout (ai-engineer)
@@ -211,3 +226,49 @@ Default flip pattern: `UPDATE feature_flags SET is_enabled = <bool> WHERE flag_n
    (`category=deploy`) from
    `src/app/api/super-admin/feature-flags/route.ts`. Cache invalidates via
    `invalidateFlagCache()` on next request — no redeploy required.
+
+---
+
+## Migration B deploy checklist (one-time data repair, 2026-07-20 — ops)
+
+Applies `20260720110000_feature_flags_data_repair_ceo_approved.sql` (CEO-approved
+repair of existing rows: 25 activate → rollout 100, 52 honesty-fix → OFF,
+9 env additions → +'production'). Companion to structural fix `20260720100000`.
+
+**Deploy order (do not reorder):**
+1. Merge to main.
+2. `supabase db push` — applies `20260720100000` then `20260720110000` in
+   timestamp order.
+3. `supabase functions deploy identity`.
+4. Vercel deploy.
+5. Cache propagation: flag values land within ≤5 min server-side (in-process
+   flag cache) + ≤5 min client-side after that. Do not judge success/failure
+   from behavior observed inside that window.
+
+**At-deploy checks:**
+- [ ] **MoL metadata envelope (backend condition):** run
+  `SELECT flag_name, metadata FROM feature_flags WHERE flag_name IN ('ff_grounded_answer_mol_shadow_v1','ff_mol_shadow_text_capture_v1');`
+  If `metadata->>'enabled' = 'true'`, the metadata envelope OVERRIDES the
+  column — Migration B's `is_enabled=false` alone does NOT pause the MoL
+  shadow. Also set `metadata.enabled=false` on those rows to truly pause it.
+- [ ] **Row-count audit record:** capture the three `RAISE NOTICE` counts from
+  the `db push` output (expected on prod: activate 25, honesty-fix 52, env 9)
+  and file them with the deploy record. The migration file + CEO approval +
+  the pre-migration 180-row snapshot (2026-07-20 RCA export) are the audit
+  trail for this repair — no console flips, so no `admin_audit_log` rows.
+- [ ] **Verify queries:** run the four commented verification queries at the
+  bottom of `20260720110000` (activate=25, honesty=52, env=9, and
+  `ff_atomic_subscription_activation` still `is_enabled=true`).
+
+**Expected — NOT regressions (do not roll back for these):**
+- Grounded-answer Edge retrieval metrics shift when `ff_digital_twin_v1` goes
+  OFF on the edge path. Expected consequence of the honesty-fix.
+- Visible UI changes: School Pulse shell and learner-loop / compete / scan
+  affordances disappear (those flags are now honestly OFF; frontend acked
+  separately).
+
+**Rollback:** no automatic DOWN. Restore a specific flag's prior
+(`is_enabled`, `rollout_percentage`, `target_environments`) from the
+pre-migration snapshot or `audit_logs`. Never touch the hard-excluded flags
+(`ff_atomic_subscription_activation`, `ff_board_score_v1`,
+`reconcile_stuck_subscriptions_enabled`, `ff_python_*`).

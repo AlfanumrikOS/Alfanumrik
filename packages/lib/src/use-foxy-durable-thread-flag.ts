@@ -29,7 +29,7 @@
  *
  * Cache shape (localStorage key `alfanumrik_foxy_durable_thread_flag_v1`):
  *   { on: boolean, ts: number }
- * 1-hour TTL.
+ * 5-minute TTL.
  */
 
 import { useEffect, useState } from 'react';
@@ -40,7 +40,7 @@ export const FF_FOXY_DURABLE_THREAD_V1 = 'ff_foxy_durable_thread_v1';
 
 // gitleaks:allow — localStorage key, not a secret.
 const CACHE_KEY = 'alfanumrik_foxy_durable_thread_flag_v1'; // gitleaks:allow
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches the server flag cache (feature-flag RCA)
 const DEFAULT_OFF = false; // production truth: durable thread is OFF until explicitly flagged on
 
 interface Cached {

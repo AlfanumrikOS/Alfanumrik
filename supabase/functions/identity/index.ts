@@ -37,6 +37,22 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SUPABASE_ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
 
+/**
+ * Deterministic per-user rollout bucket (0-99).
+ * must match hashForRollout in packages/lib/src/feature-flags.ts
+ * (duplicated here because Deno Edge Functions cannot import from packages/lib).
+ * Same userId + flagName always yields the same bucket, so web and identity
+ * agree on who is inside an N% rollout.
+ */
+function hashForRollout(userId: string, flagName: string): number {
+  let hash = 0;
+  const str = `${userId}:${flagName}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % 100;
+}
+
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
@@ -110,9 +126,14 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── 4. Evaluate feature flags ─────────────────────────────────────────────
+  // Schema note: `feature_flags` has no `target_plans` column on the live
+  // schema — selecting it made this whole query error out, so `flags` came
+  // back null and EVERY user resolved with all flags OFF. Plan targeting was
+  // never a real column; it has been removed from both the select and the
+  // evaluation below.
   const { data: flags } = await admin
     .from('feature_flags')
-    .select('flag_name, is_enabled, target_grades, target_plans, rollout_percentage, target_institutions')
+    .select('flag_name, is_enabled, target_grades, rollout_percentage, target_institutions')
     .eq('is_enabled', true);
 
   const features: Record<string, boolean> = {};
@@ -124,11 +145,6 @@ Deno.serve(async (req: Request) => {
       enabled = false;
     }
 
-    // Plan targeting
-    if (enabled && flag.target_plans?.length && !flag.target_plans.includes(student.subscription_plan)) {
-      enabled = false;
-    }
-
     // Institution targeting — keyed on the student's school_id (the tenant FK).
     if (enabled && flag.target_institutions?.length && student.school_id) {
       if (!flag.target_institutions.includes(student.school_id)) {
@@ -136,13 +152,11 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Rollout percentage (deterministic hash — same student always gets same result)
+    // Rollout percentage — deterministic per-user bucket via the canonical
+    // algorithm (must match hashForRollout in packages/lib/src/feature-flags.ts)
+    // so web and identity agree on rollout membership. rollout 0 → always false.
     if (enabled && flag.rollout_percentage != null && flag.rollout_percentage < 100) {
-      const hash = (flag.flag_name + student.id).split('').reduce(
-        (acc: number, c: string) => acc + c.charCodeAt(0),
-        0,
-      );
-      enabled = (hash % 100) < flag.rollout_percentage;
+      enabled = hashForRollout(student.id, flag.flag_name) < flag.rollout_percentage;
     }
 
     features[flag.flag_name] = enabled;

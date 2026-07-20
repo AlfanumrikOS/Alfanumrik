@@ -191,6 +191,30 @@ const MODES = [
   },
 ] as const;
 
+/**
+ * The operating mode is persisted on the `improvement_loop_mode` feature
+ * flag's `description` field. Rationale (feature-flag RCA, 2026-07-20):
+ * the legacy payload `{ flags: { improvement_loop_mode: newMode } }` never
+ * matched the PATCH contract `{ id, updates }` and always 400'd while the UI
+ * optimistically showed the new mode. The mode is a 3-valued string
+ * ('observe' | 'suggest' | 'controlled_act'), so it cannot map to the boolean
+ * `enabled` column; `description` is the only PATCH-settable string field
+ * that can carry it. Nothing else in the codebase reads this value yet — the
+ * improvement engine must read the same location when it consumes the mode.
+ */
+const MODE_FLAG_NAME = 'improvement_loop_mode';
+
+/** Parse an API error body ({ error } or { code, details }) into a human message. */
+async function parseApiError(res: Response): Promise<string> {
+  let body: { error?: string; code?: string; details?: unknown } | null = null;
+  try { body = await res.json(); } catch { /* non-JSON error body */ }
+  if (body?.code === 'ADMIN_INSUFFICIENT_LEVEL') {
+    return 'Your admin level is below super_admin — changes are not being saved.';
+  }
+  const detail = typeof body?.error === 'string' ? body.error : '';
+  return detail ? `Save failed (HTTP ${res.status}): ${detail}` : `Save failed (HTTP ${res.status})`;
+}
+
 const THRESHOLDS = [
   { label: 'Quiz wrong rate', value: '30%' },
   { label: 'AI error rate', value: '10%' },
@@ -247,6 +271,7 @@ function CommandCenterContent() {
 
   // Mode persistence loading
   const [modeLoading, setModeLoading] = useState(false);
+  const [modeError, setModeError] = useState<string | null>(null);
 
   // Filters (Issues tab)
   const [filterStatus, setFilterStatus] = useState('');
@@ -512,23 +537,64 @@ function CommandCenterContent() {
 
   /* ---- Mode persistence ---- */
 
-  const handleModeChange = async (newMode: string) => {
-    setModeLoading(true);
-    const prevMode = mode;
-    setMode(newMode);
+  // Resolve the improvement_loop_mode flag row (id + stored mode) via the
+  // normalized GET contract. Returns null when the flag does not exist yet.
+  const resolveModeFlag = useCallback(async (): Promise<{ id: string; description: string | null } | null> => {
+    const res = await apiFetch(`/api/super-admin/feature-flags?search=${MODE_FLAG_NAME}&limit=10`);
+    if (!res.ok) throw new Error(await parseApiError(res));
+    const json = await res.json();
+    const rows: Array<{ id: string; name: string; description: string | null }> = json.data || [];
+    return rows.find(f => f.name === MODE_FLAG_NAME) || null;
+  }, [apiFetch]);
+
+  // Load the persisted mode on mount — previously the mode silently reset to
+  // 'suggest' on every reload because nothing ever read it back.
+  const fetchMode = useCallback(async () => {
     try {
-      await apiFetch('/api/super-admin/feature-flags', {
-        method: 'PATCH',
-        body: JSON.stringify({
-          flags: { improvement_loop_mode: newMode },
-        }),
-      });
+      const flag = await resolveModeFlag();
+      const stored = flag?.description;
+      if (stored && MODES.some(m => m.key === stored)) setMode(stored);
     } catch {
+      /* non-fatal: keep the default; a failed WRITE still surfaces via modeError */
+    }
+  }, [resolveModeFlag]);
+
+  const handleModeChange = async (newMode: string) => {
+    if (modeLoading) return;
+    setModeLoading(true);
+    setModeError(null);
+    const prevMode = mode;
+    setMode(newMode); // optimistic — reverted on ANY failure below
+    try {
+      const flag = await resolveModeFlag();
+      if (flag) {
+        // Persist the mode in the flag's description (see MODE_FLAG_NAME note).
+        const res = await apiFetch('/api/super-admin/feature-flags', {
+          method: 'PATCH',
+          body: JSON.stringify({ id: flag.id, updates: { description: newMode } }),
+        });
+        if (!res.ok) throw new Error(await parseApiError(res));
+      } else {
+        // Flag missing — create it carrying the mode. enabled:false by house
+        // convention (mode semantics live entirely in description).
+        const res = await apiFetch('/api/super-admin/feature-flags', {
+          method: 'POST',
+          body: JSON.stringify({ name: MODE_FLAG_NAME, enabled: false, description: newMode }),
+        });
+        if (!res.ok) throw new Error(await parseApiError(res));
+      }
+    } catch (e) {
+      // Never leave the optimistic update in place on failure.
       setMode(prevMode);
+      setModeError(e instanceof Error ? e.message : 'Mode change failed');
     } finally {
       setModeLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchMode();
+  }, [fetchMode]);
 
   /* ---- Drawer openers ---- */
 
@@ -1243,6 +1309,26 @@ function CommandCenterContent() {
         <div>
           <div className="rounded-lg border border-surface-3 bg-surface-1 p-4" style={{ marginBottom: 24 }}>
             <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Operating Mode</h2>
+            {modeError && (
+              <div
+                role="alert"
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+                  marginBottom: 12, padding: '10px 14px', borderRadius: 8,
+                  border: '1px solid var(--danger)', background: 'rgba(220, 38, 38, 0.08)',
+                  color: 'var(--danger)', fontSize: 13, fontWeight: 600,
+                }}
+              >
+                <span>{modeError}</span>
+                <button
+                  onClick={() => setModeError(null)}
+                  aria-label="Dismiss"
+                  style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16, fontWeight: 700, lineHeight: 1, padding: 4 }}
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {MODES.map(m => {
                 const selected = mode === m.key;

@@ -103,10 +103,9 @@
 7. Record rollback in admin dashboard → Support tools
 
 ### Emergency Kill Switches
-- Foxy AI overloaded → toggle `foxy_ai_enabled` OFF
-- Payment issues → toggle `razorpay_payments` OFF
-- Quiz problems → toggle `quiz_module` OFF
-- Full lockdown → toggle all flags OFF from Flags tab
+- Payment issues → toggle `razorpay_payments` OFF — **WIRED (verified in-source 2026-07-20):** `api/payments/webhook` and `api/payments/verify` both 503 (Razorpay retries) when `is_enabled=false`. These readers check `is_enabled` only, so `rollout_percentage` does not affect this kill switch.
+- ⚠️ **INOPERATIVE (verified in-source 2026-07-20):** `foxy_ai_enabled` and `quiz_module` are not read by any runtime code — toggling them changes nothing. Do NOT rely on them in an incident; use application rollback (above) instead. Follow-up tracked: wire these flags into the Foxy route / quiz APIs or delete them and these lines.
+- Full lockdown → toggle all flags OFF from Flags tab (only affects features that actually read their flag — see the caveat above)
 
 ## Health Inspection Order
 

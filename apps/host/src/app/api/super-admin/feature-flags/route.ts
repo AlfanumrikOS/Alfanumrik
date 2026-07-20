@@ -23,8 +23,16 @@ export async function GET(request: NextRequest) {
     const params = new URL(request.url).searchParams;
     const search = params.get('search');
 
+    // Query-param pagination. Default limit 500 (the table currently holds ~180
+    // rows, so the default returns everything); hard cap 1000. The previous
+    // hard-coded limit=100 silently truncated the flag list in the UI.
+    const rawLimit = parseInt(params.get('limit') || '', 10);
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(rawLimit, 1), 1000) : 500;
+    const rawOffset = parseInt(params.get('offset') || '', 10);
+    const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+
     const fields = 'id,flag_name,is_enabled,rollout_percentage,target_grades,target_institutions,target_roles,target_environments,description,created_at,updated_at';
-    const queryParts = [`select=${fields}`, 'order=created_at.desc', 'limit=100'];
+    const queryParts = [`select=${fields}`, 'order=created_at.desc', `limit=${limit}`, `offset=${offset}`];
     if (search) queryParts.push(`flag_name=ilike.*${encodeURIComponent(search)}*`);
 
     const res = await fetch(supabaseAdminUrl('feature_flags', queryParts.join('&')), {
@@ -70,8 +78,10 @@ export async function POST(request: NextRequest) {
 
     // Validate with Zod schema — structured 400 errors for invalid input
     const createSchema = featureFlagSchema.extend({
-      // POST uses 'name' in body, map to flag_name for validation
-      name: z.string().min(1).max(100).regex(/^[a-z_]+$/, 'Flag name must be lowercase with underscores only'),
+      // POST uses 'name' in body, map to flag_name for validation.
+      // Real flags look like ff_school_pulse_v1 — digits are legal, but the
+      // name must start with a letter.
+      name: z.string().min(1).max(100).regex(/^[a-z][a-z0-9_]*$/, 'Flag name must start with a lowercase letter and contain only lowercase letters, digits, and underscores'),
       enabled: z.boolean().optional(),
       description: z.string().max(500).nullable().optional(),
     }).omit({ flag_name: true, is_enabled: true });
@@ -79,7 +89,7 @@ export async function POST(request: NextRequest) {
     const validation = validateBody(createSchema, body);
     if (!validation.success) return validation.error;
 
-    const { name, enabled, description, target_institutions, target_roles, target_environments } = validation.data;
+    const { name, enabled, description, rollout_percentage, target_institutions, target_roles, target_environments } = validation.data;
 
     // Check uniqueness
     const checkRes = await fetch(supabaseAdminUrl('feature_flags', `select=id&flag_name=eq.${encodeURIComponent(name)}&limit=1`), {
@@ -95,6 +105,12 @@ export async function POST(request: NextRequest) {
     const payload: Record<string, unknown> = {
       flag_name: name,
       is_enabled: enabled === true,
+      // 0-rollout landmine: the DB column defaults rollout_percentage to 0, and
+      // the web evaluator (packages/lib/src/feature-flags.ts) returns FALSE for
+      // rollout_percentage=0 even when is_enabled=true. Always set it explicitly
+      // (100 unless the caller provided a validated 0-100 value) so a newly
+      // created flag can actually turn on when enabled.
+      rollout_percentage: typeof rollout_percentage === 'number' ? rollout_percentage : 100,
       description: description || null,
       updated_by: auth.userId,
     };
@@ -148,7 +164,7 @@ export async function PATCH(request: NextRequest) {
       id: zUuid,
       updates: z.object({
         enabled: z.boolean().optional(),
-        name: z.string().min(1).max(100).regex(/^[a-z_]+$/, 'Flag name must be lowercase with underscores only').optional(),
+        name: z.string().min(1).max(100).regex(/^[a-z][a-z0-9_]*$/, 'Flag name must start with a lowercase letter and contain only lowercase letters, digits, and underscores').optional(),
         description: z.string().max(500).nullable().optional(),
         rollout_percentage: z.number().int().min(0).max(100).nullable().optional(),
         target_grades: z.array(z.string()).nullable().optional(),
@@ -197,6 +213,25 @@ export async function PATCH(request: NextRequest) {
       }
     } catch { /* best-effort: audit still proceeds without previous state */ }
 
+    // 0-rollout landmine: rollout_percentage has a DB DEFAULT of 0, and the web
+    // evaluator (packages/lib/src/feature-flags.ts) returns FALSE whenever
+    // rollout_percentage is 0 — even with is_enabled=true. So toggling a flag
+    // "on" while it still sits at 0% would silently keep it OFF for everyone.
+    // When the caller enables a flag WITHOUT explicitly sending a
+    // rollout_percentage and the current value is 0, promote it to 100.
+    // A non-zero rollout (e.g. an intentional 10% ramp) is NEVER touched.
+    // C1 (ops review): track whether the promotion fired so the audit trail
+    // reflects what was ACTUALLY written, not just what the caller sent.
+    let rolloutPromoted = false;
+    if (
+      updates.enabled === true &&
+      updates.rollout_percentage === undefined &&
+      previousState?.rollout_percentage === 0
+    ) {
+      safe.rollout_percentage = 100;
+      rolloutPromoted = true;
+    }
+
     const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
       method: 'PATCH',
       headers: supabaseAdminHeaders('return=representation'),
@@ -210,8 +245,18 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Flag not found.' }, { status: 404 });
     }
 
+    // C1 (ops review): `updates` is what the caller SENT; `effective_updates`
+    // is what was actually WRITTEN (the mapped payload minus the updated_by/
+    // updated_at bookkeeping columns) — the two differ when the 0→100 rollout
+    // auto-promotion fires. Additive keys only; existing keys unchanged.
+    const effectiveUpdates = Object.fromEntries(
+      Object.entries(safe).filter(([k]) => k !== 'updated_by' && k !== 'updated_at'),
+    );
+
     await logAdminAudit(auth, 'feature_flag.updated', 'feature_flags', id, {
       updates,
+      effective_updates: effectiveUpdates,
+      rollout_promoted: rolloutPromoted,
       previous_state: previousState,
       flag_name: previousState?.flag_name || null,
     });
@@ -222,7 +267,13 @@ export async function PATCH(request: NextRequest) {
       source: 'feature-flags/route.ts',
       severity: 'info',
       message: `Feature flag updated: ${previousState?.flag_name || id}`,
-      context: { flag_id: id, updates, admin_user_id: auth.userId },
+      context: {
+        flag_id: id,
+        updates,
+        effective_updates: effectiveUpdates,
+        rollout_promoted: rolloutPromoted,
+        admin_user_id: auth.userId,
+      },
     });
 
     return NextResponse.json({ success: true, data: updated });

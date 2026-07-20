@@ -68,6 +68,11 @@ export async function isFlagEnabled(
   }
 
   if (typeof f.rollout_percentage === 'number' && f.rollout_percentage < 100) {
+    // INTENTIONAL divergence from the web evaluator
+    // (packages/lib/src/feature-flags.ts): without a student_id this edge
+    // reader fails CLOSED (kill-switch semantics — a partially rolled-out flag
+    // must never fire for an unidentified caller), while the web evaluator
+    // fails OPEN without a userId (backward compat). Do not "align" the two.
     if (!ctx.student_id) return false
     return inRolloutBucket(ctx.student_id, f.rollout_percentage)
   }

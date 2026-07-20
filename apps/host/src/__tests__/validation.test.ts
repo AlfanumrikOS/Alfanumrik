@@ -593,6 +593,25 @@ describe('featureFlagSchema', () => {
     expect(featureFlagSchema.safeParse(withNulls).success).toBe(true);
   });
 
+  // Regex is /^[a-z][a-z0-9_]*$/ — digits are legal (real flags are versioned
+  // like ff_school_pulse_v1), but the name must start with a lowercase letter.
+  it('accepts real versioned flag names with digits', () => {
+    expect(featureFlagSchema.safeParse({ flag_name: 'ff_school_pulse_v1', is_enabled: true }).success).toBe(true);
+    expect(featureFlagSchema.safeParse({ flag_name: 'ff_foxy_math_format_v2', is_enabled: true }).success).toBe(true);
+  });
+
+  it('rejects flag_name starting with a digit', () => {
+    expect(featureFlagSchema.safeParse({ flag_name: '1bad', is_enabled: true }).success).toBe(false);
+  });
+
+  it('rejects mixed-case flag_name', () => {
+    expect(featureFlagSchema.safeParse({ flag_name: 'Bad_Flag', is_enabled: true }).success).toBe(false);
+  });
+
+  it('rejects hyphenated flag_name', () => {
+    expect(featureFlagSchema.safeParse({ flag_name: 'bad-flag', is_enabled: true }).success).toBe(false);
+  });
+
   it('rejects flag_name with uppercase', () => {
     expect(featureFlagSchema.safeParse({ flag_name: 'Enable_Quiz', is_enabled: true }).success).toBe(false);
   });

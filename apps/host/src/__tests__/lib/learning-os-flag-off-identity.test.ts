@@ -126,7 +126,7 @@ describe('Learning-OS sync readers — DEFAULT_OFF (production first-paint truth
 
     it(`${r.name}: an expired cached { on:true } is ignored → FALSE`, () => {
       setNodeEnv('production');
-      // ts older than the 1-hour TTL.
+      // ts older than the 5-minute TTL (feature-flag RCA: TTL cut from 1h to 5min).
       const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
       localStorage.setItem(r.cacheKey, JSON.stringify({ on: true, ts: twoHoursAgo }));
       expect(r.read()).toBe(false);
