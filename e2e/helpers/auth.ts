@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { test, type Page } from '@playwright/test';
 
 /**
  * Shared E2E auth helpers.
@@ -18,6 +18,23 @@ import type { Page } from '@playwright/test';
 
 const MOCK_USER_ID = 'mock-user-uuid-0000-0000-0000-000000000001';
 const MOCK_STUDENT_ID = 'mock-student-id-0000-0000-0000-000000000001';
+
+/**
+ * The DPDP cookie-consent banner (packages/ui/src/CookieConsent.tsx) renders a
+ * fixed full-width bottom bar (z-index 9999) until a consent level is stored
+ * under `alfanumrik_cookie_consent`. In headless runs it overlays every
+ * bottom-anchored control (AlfaBot launcher, modal submit buttons, footer
+ * accordions) and its "Accept All" button intercepts their pointer events —
+ * observed as 90s click timeouts in CI run 29716158705 and reproduced locally
+ * (alfabot + account-deletion specs). Seed 'essential' BEFORE any page script
+ * runs so the banner never mounts. 'essential' (not 'all') also keeps Vercel
+ * Analytics/SpeedInsights out of test traffic.
+ */
+export async function seedCookieConsent(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('alfanumrik_cookie_consent', 'essential');
+  });
+}
 
 function supabaseStorageKey(): string {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
@@ -70,6 +87,7 @@ export async function mockStudentSession(page: Page, opts?: {
     streak_days: opts?.streakDays ?? 0,
   };
   const storageKeys = Array.from(new Set([supabaseStorageKey(), 'sb-placeholder-auth-token']));
+  await seedCookieConsent(page);
   await page.addInitScript(
     ({ keys, value }) => {
       for (const key of keys) {
@@ -136,12 +154,29 @@ export const TEST_IDS = {
 /**
  * Real-login path. Returns true on success, false if env vars are missing
  * (caller should test.skip() in that case).
+ *
+ * Missing-fixture detection (CI run 29716158705 triage): a job may supply
+ * TEST_STUDENT_* against a Supabase project where the test student is not
+ * provisioned. When the target Supabase AFFIRMATIVELY rejects the credentials
+ * (AuthScreen's #auth-error alert shows the Supabase message), we skip with
+ * the named missing precondition instead of burning the 15s navigation wait
+ * twice per test — but ONLY when the job opts in by setting
+ * `E2E_SKIP_ON_UNPROVISIONED_STUDENT=1` (set exclusively in the ADVISORY
+ * `e2e` job in .github/workflows/ci.yml). Without that opt-in, every
+ * auth-error alert THROWS: the BLOCKING e2e-critical-paths job also flows
+ * through this helper (quiz-happy-path.spec.ts, payment-checkout.spec.ts
+ * against production), and a rotated/deleted prod student or a client
+ * regression that mangles credentials must turn that gate red, never
+ * green-with-skip. Any OTHER login failure (broken form, no error surfaced,
+ * timeout) always fails loudly — this is precondition detection, not
+ * failure suppression.
  */
 export async function loginViaUI(page: Page): Promise<boolean> {
   const email = process.env.TEST_STUDENT_EMAIL;
   const password = process.env.TEST_STUDENT_PASSWORD;
   if (!email || !password) return false;
 
+  await seedCookieConsent(page);
   await page.goto('/login');
   // The login form has 3 elements matching /password/i (the input itself
   // plus "Show password" toggle + "Forgot password?" link). Use exact label
@@ -150,8 +185,48 @@ export async function loginViaUI(page: Page): Promise<boolean> {
   await page.getByLabel(/^email/i).fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /^log in$|^sign in$/i }).click();
-  await page.waitForURL(/dashboard|foxy|learn|quiz|onboarding/, { timeout: 15_000 });
-  return true;
+
+  // AuthScreen renders sign-in errors in <div id="auth-error" role="alert">.
+  const authError = page.locator('#auth-error');
+  const outcome = await Promise.race([
+    page
+      .waitForURL(/dashboard|foxy|learn|quiz|onboarding/, { timeout: 15_000 })
+      .then(() => 'navigated' as const, () => 'nav-timeout' as const),
+    // The alert waiter can only win this race by becoming VISIBLE: its 20s
+    // timeout fires after the 15s nav-timeout above has already settled the
+    // race, so its rejection is unreachable as a race outcome — fold it into
+    // 'nav-timeout' instead of inventing a dead branch.
+    authError
+      .waitFor({ state: 'visible', timeout: 20_000 })
+      .then(() => 'auth-error' as const, () => 'nav-timeout' as const),
+  ]);
+
+  if (outcome === 'navigated') return true;
+
+  const errorVisible =
+    outcome === 'auth-error' || (await authError.isVisible().catch(() => false));
+  if (errorVisible) {
+    const message = ((await authError.textContent()) ?? '').trim();
+    if (
+      process.env.E2E_SKIP_ON_UNPROVISIONED_STUDENT === '1' &&
+      /invalid login credentials|invalid email|email not confirmed|user not found/i.test(message)
+    ) {
+      test.skip(
+        true,
+        `Missing fixture: the TEST_STUDENT_EMAIL/TEST_STUDENT_PASSWORD student is not ` +
+          `provisioned in the Supabase project this run authenticates against ` +
+          `(sign-in rejected with "${message}"). Skipped because ` +
+          'E2E_SKIP_ON_UNPROVISIONED_STUDENT=1 opted this job into skip-on-unprovisioned. ' +
+          'Provision the fixture with the idempotent ' +
+          '.github/workflows/seed-staging-test-student.yml dispatch workflow.',
+      );
+    }
+    throw new Error(`loginViaUI: sign-in surfaced an auth error: "${message}"`);
+  }
+  throw new Error(
+    'loginViaUI: no post-auth navigation within 15s and no #auth-error alert shown — ' +
+      'login flow itself may be broken (this is NOT the missing-staging-student case).',
+  );
 }
 
 /**
