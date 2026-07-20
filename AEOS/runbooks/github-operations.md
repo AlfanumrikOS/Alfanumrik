@@ -43,21 +43,23 @@ Working branches follow the convention `feature/*`, `bugfix/*`, `hotfix/*`, `ref
 
 # The CI Pipeline (`ci.yml`)
 
-`ci.yml` runs on push to `main`/`master`/`develop` and on PRs to `main`/`master`. Node 22. Concurrency cancels in-progress runs per ref. Stages, in dependency order:
+`ci.yml` runs on push to `main`/`master`/`develop` and on PRs to `main`/`master`. Node 22. Concurrency cancels in-progress runs per ref. Since 2026-07-20 the topology is **parallel**: every root job (secret-scan, quality, the 4 unit-test shards, edge-function-tests, integration-tests, build, e2e, e2e-critical-paths) starts at t=0 with no cross-job `needs`; the only fan-ins are `unit-tests-merge` (over quality + the shards) and the aggregate `ci-gate`. Jobs:
 
 ## 1. secret-scan (BLOCKING)
 - **Gitleaks** scan over full history (BLOCKING — a leak fails CI; allowlist false positives via `.gitleaks.toml`, never by disabling the gate).
 - An advisory regex secret scan (warns, does not block) catches `sk_live_*`, `rzp_live_*`, service-role JWTs, and `NEXT_PUBLIC_*` secret exposure.
 - **Migration safety — RLS-on-CREATE-TABLE (BLOCKING):** any migration that `CREATE TABLE`s without `ENABLE ROW LEVEL SECURITY` in the same file fails the run. This is the mechanical enforcement of product invariant **P8**. `_legacy/` is skipped; view/type/function-only migrations are unaffected.
 
-## 2. quality (BLOCKING)
-Runs independently of secret-scan (so an infra flake in gitleaks cannot silently skip tests):
+## 2. quality — display name "Lint & Type-check" (BLOCKING)
+Runs independently of secret-scan (so an infra flake in gitleaks cannot silently skip lint/type-check):
 - `npm ci`, `npm audit` (critical vulns fail), dependency license check,
 - **lint** (`npm run lint`),
 - Supabase type-drift check (advisory, `continue-on-error`),
 - **type-check** (`npm run type-check`, 6 GB heap),
-- **tests with coverage** (`npm test`, hard gate; live-DB migration/script tests are excluded here and run in `integration-tests`),
-- **Auth & Identity test gate (BLOCKING, separate step):** `auth-*` and `identity-*` specs must pass independently so unrelated test churn cannot mask an auth regression (product invariant **P15**).
+- **Auth & Identity test gate (BLOCKING, separate step):** `auth-*` and `identity-*` specs must pass independently so unrelated test churn cannot mask an auth regression (product invariant **P15**). This gate lives here (not in the shards) and is enforced on the merge gate via the `unit-tests-merge` fan-in below.
+
+## 2b. unit-tests (matrix "Unit Tests (shard N/4)") + unit-tests-merge fan-in — display name "Lint, Type-check & Test" (BLOCKING)
+The unit-test suite runs as **4 parallel shards**; each uploads a Vitest blob report artifact (`vitest-blob-shard-N`, `retention-days: 1`, `overwrite: true`). The `unit-tests-merge` fan-in (`if: always()` + explicit re-assertion that `quality` and all 4 shards concluded `success`, so a failed/skipped upstream can never satisfy the check) downloads the blobs, runs `--merge-reports`, and enforces the coverage thresholds from the root `vitest.config.ts` against the merged coverage. Its display name is deliberately kept as **"Lint, Type-check & Test"** so the branch-protection context is unchanged. Live-DB migration/script tests are still excluded here and run in `integration-tests`.
 
 ## 3. edge-function-tests (BLOCKING)
 Hermetic, offline Deno tests (`--allow-read --allow-env`, **no `--allow-net`**) for contract canaries (`parent-portal`, `teacher-dashboard`, `daily-cron`) and pure helpers (`grounded-answer`, `bulk-jee-neet-curated-import`). The module cache is pre-warmed so the test step never touches the network.
@@ -66,12 +68,14 @@ Hermetic, offline Deno tests (`--allow-read --allow-env`, **no `--allow-net`**) 
 Live-DB Vitest against the staging Supabase project. Skips cleanly on forked PRs (no secrets). Enforces P8/P9 against the real staging schema.
 
 ## 5. build (BLOCKING)
+Starts at t=0 (since 2026-07-20 it no longer `needs: quality` — the `ci-gate` fan-in still requires both):
 - `npm run build` (6 GB heap),
 - bundle-size report and **P10 budget gates**: largest shared chunk vs `SHARED_JS_LIMIT_KB=160` (gzipped), middleware vs `120`, per-page vs `260`, plus the authoritative `npm run check:bundle-size` gate,
 - uploads the build artifact.
 
 ## 6. e2e (ADVISORY) and e2e-critical-paths (BLOCKING)
-- `e2e` runs the full Playwright suite with `continue-on-error: true` (advisory only — never rely on it as a gate).
+Both start at t=0 (2026-07-20: `e2e-critical-paths` no longer `needs: build`).
+- `e2e` runs the full Playwright suite on PRs only, with `continue-on-error: true` (advisory only — never rely on it as a gate; `ci-gate` does not wait on it).
 - `e2e-critical-paths` is **BLOCKING** on PRs to `main`/`master`/`staging`: it runs the two highest-blast-radius specs — quiz happy path (REG-45) and payment checkout (REG-46) — against `https://alfanumrik.com` with mocked RPCs pinning P1/P2/P3.
 
 ## 7. health-check (main push only)
@@ -84,13 +88,13 @@ Probes `https://alfanumrik.com/api/v1/health` with retry/backoff. Soft-passes ON
 Mark these as **required** status checks on `main`:
 
 - `Secret Scanning` (gitleaks + RLS-on-CREATE-TABLE)
-- `Lint, Type-check & Test` (includes the Auth & Identity gate)
+- `Lint, Type-check & Test` (2026-07-20: this is the `unit-tests-merge` fan-in over `Lint & Type-check` + the 4 unit-test shards; the Auth & Identity gate runs in `Lint & Type-check` and is enforced through this fan-in — context name unchanged)
 - `Edge Function Deno Tests`
 - `Integration Tests (live DB)` (when staging secrets are configured)
 - `Production Build` (includes P10 budgets)
 - `E2E Critical Paths (blocking)`
 
-Do **not** require `E2E Tests` (advisory) or `Post-Deploy Health Check` (post-merge). Never weaken a gate to make a red pipeline green — fix the change instead.
+Do **not** require `E2E Tests` (advisory — `ci-gate` does not wait on it either) or `Post-Deploy Health Check` (post-merge). Never weaken a gate to make a red pipeline green — fix the change instead.
 
 ---
 

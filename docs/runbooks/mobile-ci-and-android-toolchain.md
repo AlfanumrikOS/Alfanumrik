@@ -88,7 +88,7 @@ When you have Pro/Team (or go public), add a **Ruleset** (Settings → Rules →
 | `Production Build` | `CI — Alfanumrik` (`.github/workflows/ci.yml`) | Web production build + bundle-size budgets (P10). |
 
 Notes for whoever configures this:
-- The check **name** is the job's `name:` field, not the workflow name. `Mobile CI`'s job is named `Flutter analyze + test + build` (see `mobile-ci.yml`); `ci.yml`'s jobs are named `Lint, Type-check & Test` and `Production Build`.
+- The check **name** is the job's `name:` field, not the workflow name. `Mobile CI`'s job is named `Flutter analyze + test + build` (see `mobile-ci.yml`); in `ci.yml`, `Lint, Type-check & Test` is the `unit-tests-merge` fan-in job (fans in over the `Lint & Type-check` job — which runs lint/type-check — plus the 4 unit-test shards), and `Production Build` is the build job.
 - Also enable **"Require branches to be up to date before merging"** so a green check can't be stale relative to `main`.
 - A required status check only appears in the picker **after it has run at least once** on a PR/commit — push a `mobile/**` change first so `Flutter analyze + test + build` is selectable.
 - Until this is configured, **Section 4's process enforcement is the only thing standing between a broken APK and `main`.** Do not skip the manual check.

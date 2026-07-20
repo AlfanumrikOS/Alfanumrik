@@ -120,6 +120,22 @@ returns `true`.
 - **Emergency override** (e.g. a required check is wedged and a hotfix must land): temporarily
   set `enforce_admins:false`, merge the hotfix, then **immediately restore `enforce_admins:true`**.
   Treat the window as open until restored.
+- **2026-07-20 (CI speed-up — context name deliberately preserved):** the check named
+  `Lint, Type-check & Test` is now produced by the `unit-tests-merge` **fan-in** job in
+  `ci.yml`, which fans in over `Lint & Type-check` (the renamed `quality` job) plus the 4
+  `Unit Tests (shard N/4)` matrix jobs, re-merges shard reports (`--merge-reports`), and
+  enforces the coverage thresholds from the root `vitest.config.ts`. The context name was
+  kept byte-identical on purpose and its semantics are unchanged (it is green iff
+  lint + type-check + all unit tests + coverage floors pass), so **no branch-protection
+  PUT is needed** for this change. The fan-in runs with `if: always()` and re-asserts
+  `needs` success explicitly, so a failed/skipped shard can never satisfy the check.
+- **Re-run semantics (2026-07-20):** the shard blob artifacts (`vitest-blob-shard-N`) are
+  uploaded with `retention-days: 1`. Using **"Re-run failed jobs"** on `unit-tests-merge`
+  more than ~24h after the original run will fail at the blob-download step because the
+  artifacts have expired — the remedy is **"Re-run all jobs"** (which regenerates the
+  shards). Same-day shard re-runs are safe: `overwrite: true` on the upload prevents 409
+  artifact-name conflicts. The fan-in cannot merge partial blobs — its first step requires
+  every shard (and `quality`) to have concluded `success` before any download/merge happens.
 
 ---
 

@@ -258,13 +258,20 @@ E2E tests are unauthenticated except `observability-timeline.spec.ts` and `obser
 ### Current State
 ```
 ci.yml:
-  quality job:
+  quality job ("Lint & Type-check"):
     npm run lint          --> ESLint
     npm run type-check    --> TypeScript compilation
-    npm test              --> Vitest (722 tests)
+  unit-tests jobs ("Unit Tests (shard N/4)", x4 in parallel):
+    npm test -- --shard=N/4    --> Vitest blob reports
+  unit-tests-merge job ("Lint, Type-check & Test", fan-in):
+    npm test -- --merge-reports --coverage   --> coverage thresholds enforced
   build job:
     npm run build         --> Next.js production build
 ```
+Update 2026-07-20 (CI speed-up): the per-PR unit run is now 4 sharded jobs plus a
+merge job that fans in over lint/type-check and all shards, merges the blob
+reports, and enforces the same coverage thresholds from the root
+`vitest.config.ts` against the merged coverage.
 
 ### Target State
 ```

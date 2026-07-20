@@ -22,6 +22,10 @@ blob-report/
 playwright/.cache/
 /coverage/
 
+# CI shard artifacts — generated when reproducing CI's sharded vitest commands locally
+vitest.ci-shard.config.mts
+apps/host/.vitest-reports/
+
 # Orchestrator quarantine area — files preserved from abandoned
 # branches during Option C-style cleanups. Physical preservation
 # outside git history; do not track.

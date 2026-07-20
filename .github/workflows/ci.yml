@@ -981,15 +981,21 @@ jobs:
           fi
           rm -rf -- "$workdir"
 
-  # ── Step 1: Type Check + Lint + Test ──
+  # ── Step 1: Type Check + Lint ──
   # Runs independently of secret-scan so an infra failure in gitleaks
   # (e.g. the v2 action's 403 on individual-account PR commits) can't
   # silently disable test verification. Previously: `needs: secret-scan`
   # caused this job to SKIP on every PR where gitleaks failed, which
   # masked two broken test files (#788 B.2, #798 D.1) until they only
   # surfaced on main when CI finally had time to complete.
+  #
+  # 2026-07-20 CI speed-up: the full unit-test run moved out of this job into
+  # the sharded `unit-tests` matrix below; the `unit-tests-merge` fan-in job
+  # carries the old "Lint, Type-check & Test" required-status-check name.
+  # Beyond lint + type-check, this job also still contains the BLOCKING
+  # Auth & Identity test gate and the (advisory) Supabase type-sync check.
   quality:
-    name: Lint, Type-check & Test
+    name: Lint & Type-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -1069,43 +1075,200 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
-      - name: Run tests with coverage
-        # Migration & script integration tests (~19 tests under
-        # src/__tests__/migrations/** and src/__tests__/scripts/**) are
-        # excluded from this default run by vitest.config.ts — they require a
-        # live Supabase backend and run in the separate `integration-tests`
-        # job below, gated on real env secrets. This job is therefore a HARD
-        # GATE: any failure blocks CI.
-        run: npm test -- --reporter=verbose --coverage
-
       # R15 fix: Explicit auth/identity test gate.
       # Auth tests MUST pass independently — a failure here blocks the entire CI.
       # This ensures unrelated test changes don't mask auth regressions.
+      #
+      # FIXED 2026-07-20: this gate had been a SILENT NO-OP. Two independent
+      # breaks: (1) the monorepo migration removed the root src/ directory, so
+      # `npx vitest run src/__tests__/auth-*.test.ts …` from the repo root had
+      # nothing to glob — the unexpanded pattern matched zero test files; and
+      # (2) `AUTH_EXIT=$?` captured `tee`'s exit code (always 0), not vitest's,
+      # so even vitest's "no test files found" failure was swallowed. Now runs
+      # through the apps/host workspace (positional args are vitest filename
+      # substring filters matching the auth-*.test.ts* and identity-*.test.ts
+      # files under apps/host/src/__tests__/), captures vitest's real exit code
+      # via PIPESTATUS[0], and additionally fails if zero tests passed —
+      # belt-and-braces against any future silent no-op.
       - name: Auth & Identity test gate
         run: |
           echo "## Auth & Identity Test Gate" >> $GITHUB_STEP_SUMMARY
-          npx vitest run src/__tests__/auth-*.test.ts src/__tests__/identity-*.test.ts --reporter=verbose 2>&1 | tee /tmp/auth-test-output.txt
-          AUTH_EXIT=$?
-          PASS_COUNT=$(grep -c '✓' /tmp/auth-test-output.txt || echo "0")
+          npm test -w apps/host -- src/__tests__/auth- src/__tests__/identity- --reporter=verbose 2>&1 | tee /tmp/auth-test-output.txt
+          AUTH_EXIT=${PIPESTATUS[0]}
+          PASS_COUNT=$(grep -c '✓' /tmp/auth-test-output.txt || true)
+          PASS_COUNT=${PASS_COUNT:-0}
           echo "| Auth tests passed | $PASS_COUNT |" >> $GITHUB_STEP_SUMMARY
           if [ "$AUTH_EXIT" != "0" ]; then
             echo "BLOCKED: Auth/identity tests failed. This is a blocking gate."
             echo "| Status | FAILED |" >> $GITHUB_STEP_SUMMARY
             exit 1
-          else
-            echo "| Status | PASSED |" >> $GITHUB_STEP_SUMMARY
           fi
+          if [ "$PASS_COUNT" -eq 0 ]; then
+            echo "BLOCKED: Auth/identity gate ran zero passing tests — silent no-op detected."
+            echo "| Status | FAILED (0 tests passed) |" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "| Status | PASSED |" >> $GITHUB_STEP_SUMMARY
+
+  # ── Step 1c: Unit tests (sharded 4×, 2026-07-20 CI speed-up) ──
+  # The full-suite `npm test -- --coverage` run (previously a single ~long step
+  # inside the quality job) is split across 4 parallel shards. Vitest shards by
+  # TEST FILE (--shard=N/4), each shard emits a blob report (test results +
+  # raw V8 coverage) into .vitest-reports/, and the `unit-tests-merge` job
+  # below merges all blobs and enforces the coverage thresholds from
+  # vitest.config.ts against the COMBINED coverage — same tests, same
+  # thresholds, same blocking posture as before.
+  #
+  # Migration & script integration tests (~19 tests under
+  # src/__tests__/migrations/** and src/__tests__/scripts/**) are excluded
+  # from this default run by vitest.config.ts — they require a live Supabase
+  # backend and run in the separate `integration-tests` job below, gated on
+  # real env secrets. These shards are therefore a HARD GATE: any failure
+  # blocks CI (enforced via the unit-tests-merge fan-in).
+  unit-tests:
+    name: Unit Tests (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # Vitest 4.1.8 enforces coverage thresholds on EVERY run that reports
+      # coverage — including partial shard runs, where the global and per-file
+      # floors would fail spuriously (verified against the installed package:
+      # BaseCoverageProvider.generateReports → reportThresholds runs
+      # unconditionally, with no shard/blob special-casing). So each shard runs
+      # with a CI-generated wrapper config that is identical to the root
+      # vitest.config.ts except coverage.thresholds is stripped. The
+      # unit-tests-merge job runs --merge-reports with the REAL root config,
+      # enforcing the identical thresholds exactly once against the combined
+      # coverage of all 4 shards. The wrapper exists only on the runner.
+      - name: Generate threshold-free shard config
+        run: |
+          cat > vitest.ci-shard.config.mts <<'EOF'
+          // Generated by CI (.github/workflows/ci.yml) — DO NOT COMMIT.
+          // Identical to the root vitest.config.ts except coverage thresholds
+          // are stripped: per-shard coverage is partial by definition, so
+          // floors are only meaningful on MERGED coverage (enforced by the
+          // unit-tests-merge job via --merge-reports + the real root config).
+          import config from './vitest.config';
+
+          const shardConfig = config as Record<string, any>;
+          delete shardConfig.test.coverage.thresholds;
+          export default shardConfig;
+          EOF
+
+      # Runs through the apps/host workspace (the only workspace with a test
+      # script; packages/lib, packages/ui and eslint-plugin-alfanumrik define
+      # none). cwd is apps/host, so the blob lands in apps/host/.vitest-reports/
+      # (verified empirically with vitest 4.1.8). --coverage puts the raw V8
+      # coverage into the blob for the merge job.
+      - name: Run test shard with blob report + coverage
+        run: npm test -w apps/host -- --config ../../vitest.ci-shard.config.mts --reporter=blob --coverage --shard=${{ matrix.shard }}/4
+
+      - name: Upload blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-blob-shard-${{ matrix.shard }}
+          path: apps/host/.vitest-reports/
+          # The blob dir is dot-prefixed; upload-artifact excludes hidden
+          # files by default and would upload nothing without this.
+          include-hidden-files: true
+          # v4+ artifacts are immutable by name; without this, "Re-run failed
+          # jobs" would fail the re-upload with a name-conflict error.
+          overwrite: true
+          retention-days: 1
+
+  # Fan-in for the 4 unit-test shards + the lint/type-check job. This job
+  # deliberately carries the display name of the pre-shard job so the branch
+  # ruleset's required status-check context "Lint, Type-check & Test" keeps
+  # green-gating merges with identical semantics (lint + type-check + all unit
+  # tests + coverage thresholds).
+  unit-tests-merge:
+    name: Lint, Type-check & Test
+    runs-on: ubuntu-latest
+    # `if: always()` so this job is never SKIPPED when a shard or quality
+    # fails — a skipped job would otherwise satisfy the required status check.
+    # The first step re-asserts success explicitly instead (same node-script
+    # pattern as ci-gate).
+    if: always()
+    needs: [quality, unit-tests]
+    steps:
+      - name: Enforce upstream lint/type-check and shard success
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          node <<'NODE'
+          const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
+          const failures = ['quality', 'unit-tests'].filter((job) => needs[job]?.result !== 'success');
+          if (failures.length) {
+            console.error('Unit-test fan-in failed: ' + failures.map((job) => job + '=' + (needs[job]?.result || 'missing')).join(', '));
+            process.exit(1);
+          }
+          console.log('Lint/type-check and all 4 unit-test shards succeeded.');
+          NODE
+
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Download shard blob reports
+        uses: actions/download-artifact@v8
+        with:
+          pattern: vitest-blob-shard-*
+          path: apps/host/.vitest-reports
+          merge-multiple: true
+
+      # Merges the 4 blob reports and regenerates coverage from the combined
+      # raw V8 data. Coverage thresholds from vitest.config.ts are enforced
+      # HERE, against merged coverage — a drop below any global or per-file
+      # floor fails this job (and therefore the required status check).
+      # json-summary is added so the Coverage report step below can render the
+      # totals into the step summary.
+      - name: Merge shard reports and enforce coverage thresholds
+        run: npm test -w apps/host -- --merge-reports --coverage --coverage.reporter=text --coverage.reporter=json --coverage.reporter=json-summary
 
       - name: Coverage report
         if: always()
         run: |
-          if [ -f coverage/coverage-summary.json ]; then
+          if [ -f apps/host/coverage/coverage-summary.json ]; then
             echo "## Test Coverage Report" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             # Extract summary percentages
             node -e "
-              const c = require('./coverage/coverage-summary.json');
+              const c = require('./apps/host/coverage/coverage-summary.json');
               const t = c.total;
               console.log('Statements: ' + t.statements.pct + '%');
               console.log('Branches:   ' + t.branches.pct + '%');
@@ -1145,7 +1308,7 @@ jobs:
   #   - alfabot-answer, bulk-jee-neet-import/index.test.ts, _shared/__tests__/*
   #     (EXCEPT gmail-transport.test.ts, a Deno test — see SCOPE above),
   #     _shared/mol/__tests__/* — these are VITEST tests (import from 'vitest'),
-  #     already covered by the `quality` job's `npm test`, not `deno test`.
+  #     already covered by the sharded `unit-tests` job's `npm test`, not `deno test`.
   #
   # Permissions are limited to --allow-read (readTextFileSync of index.ts) and
   # --allow-env (some helpers read Deno.env). No --allow-net is granted, which
@@ -1297,10 +1460,12 @@ jobs:
         continue-on-error: false
 
   # ── Step 2: Production Build + Bundle Analysis ──
+  # 2026-07-20 CI speed-up: `needs: quality` removed. The build consumes
+  # nothing from the lint/type-check or test jobs, so serializing it added
+  # pure wall-clock time. ci-gate still requires BOTH to be green before merge.
   build:
     name: Production Build
     runs-on: ubuntu-latest
-    needs: quality
     steps:
       - uses: actions/checkout@v6
 
@@ -1319,6 +1484,22 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      # Next.js incremental build cache (per Next.js CI-caching guidance:
+      # https://nextjs.org/docs/app/guides/ci-build-caching#github-actions).
+      # Restores apps/host/.next/cache across runs so webpack reuses
+      # compilation artifacts instead of building cold every time. Keyed on
+      # lockfile + source hash; when sources change, restore-keys falls back
+      # to the newest cache for the same lockfile. NOTE: hashFiles() does NOT
+      # support {ts,tsx} brace expansion (patterns use @actions/glob), so the
+      # ts/tsx globs are listed separately.
+      - name: Cache Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/host/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('apps/host/src/**/*.ts', 'apps/host/src/**/*.tsx', 'packages/**/*.ts', 'packages/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
+
       # Bump Node heap to 6 GB. Default is ~2 GB which the project's bundle
       # has outgrown — surfaced on PR #817 as a deterministic
       # `FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap
@@ -1331,6 +1512,11 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
+      # PATH FIX 2026-07-20: `next build` runs via the apps/host workspace and
+      # emits to apps/host/.next/ — the root .next/ these two bash steps used
+      # to scan does not exist in the monorepo, so every check passed
+      # VACUOUSLY. All .next/ references below now point at apps/host/.next/.
+      # No limit values or gating logic changed.
       - name: Bundle size report
         run: |
           echo "## Bundle Size Report" >> $GITHUB_STEP_SUMMARY
@@ -1341,13 +1527,13 @@ jobs:
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
 
-          BUILD_SIZE=$(du -sh .next/ 2>/dev/null | cut -f1)
+          BUILD_SIZE=$(du -sh apps/host/.next/ 2>/dev/null | cut -f1)
           echo "| Total build | $BUILD_SIZE |" >> $GITHUB_STEP_SUMMARY
 
-          PAGES=$(find .next/server -name "*.html" 2>/dev/null | wc -l)
+          PAGES=$(find apps/host/.next/server -name "*.html" 2>/dev/null | wc -l)
           echo "| Static pages | $PAGES |" >> $GITHUB_STEP_SUMMARY
 
-          CHUNKS=$(find .next/static/chunks -name "*.js" 2>/dev/null | wc -l)
+          CHUNKS=$(find apps/host/.next/static/chunks -name "*.js" 2>/dev/null | wc -l)
           echo "| JS chunks | $CHUNKS |" >> $GITHUB_STEP_SUMMARY
 
           # --- Shared JS bundle size ---
@@ -1357,7 +1543,7 @@ jobs:
           echo "|------|-----------|" >> $GITHUB_STEP_SUMMARY
 
           SHARED_TOTAL=0
-          for f in $(find .next/static/chunks -maxdepth 1 -name '*.js' -type f 2>/dev/null | sort); do
+          for f in $(find apps/host/.next/static/chunks -maxdepth 1 -name '*.js' -type f 2>/dev/null | sort); do
             SIZE_BYTES=$(wc -c < "$f")
             SIZE_KB=$((SIZE_BYTES / 1024))
             SHARED_TOTAL=$((SHARED_TOTAL + SIZE_KB))
@@ -1373,12 +1559,12 @@ jobs:
           echo "|-----------|-----------|" >> $GITHUB_STEP_SUMMARY
 
           PAGE_OVER=0
-          if [ -d .next/static/chunks/app ]; then
-            for dir in $(find .next/static/chunks/app -mindepth 1 -maxdepth 2 -type d 2>/dev/null | sort); do
+          if [ -d apps/host/.next/static/chunks/app ]; then
+            for dir in $(find apps/host/.next/static/chunks/app -mindepth 1 -maxdepth 2 -type d 2>/dev/null | sort); do
               DIR_SIZE_BYTES=$(find "$dir" -name '*.js' -type f -exec wc -c {} + 2>/dev/null | tail -1 | awk '{print $1}')
               if [ -n "$DIR_SIZE_BYTES" ] && [ "$DIR_SIZE_BYTES" -gt 0 ] 2>/dev/null; then
                 DIR_SIZE_KB=$((DIR_SIZE_BYTES / 1024))
-                DIR_NAME=$(echo "$dir" | sed "s|.next/static/chunks/app/||")
+                DIR_NAME=$(echo "$dir" | sed "s|apps/host/.next/static/chunks/app/||")
                 echo "| /$DIR_NAME | ${DIR_SIZE_KB} |" >> $GITHUB_STEP_SUMMARY
                 if [ "$DIR_SIZE_KB" -gt "$PAGE_JS_LIMIT_KB" ]; then
                   PAGE_OVER=1
@@ -1390,8 +1576,8 @@ jobs:
           # --- Middleware size ---
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Middleware (budget: ${MIDDLEWARE_LIMIT_KB} kB)" >> $GITHUB_STEP_SUMMARY
-          if [ -f .next/server/middleware.js ]; then
-            MW_BYTES=$(wc -c < .next/server/middleware.js)
+          if [ -f apps/host/.next/server/middleware.js ]; then
+            MW_BYTES=$(wc -c < apps/host/.next/server/middleware.js)
             MW_KB=$((MW_BYTES / 1024))
             echo "| middleware.js | ${MW_KB} kB |" >> $GITHUB_STEP_SUMMARY
           else
@@ -1411,16 +1597,15 @@ jobs:
           # Turbopack emits fine-grained chunks; summing them measures total
           # codebase size, not what a single page loads.
           #
-          # New approach: check the LARGEST individual chunk (a good proxy for
-          # the dominant first-load payload) and each per-page bundle size.
-          # Keep middleware check unchanged.
+          # This step now checks ONLY the largest individual chunk (a good
+          # proxy for the dominant first-load payload) — the one sub-check
+          # NOT covered by the authoritative script step below.
           FAIL=0
-          WARN=0
 
           # Largest single shared chunk. P10 budget is gzipped — must compare
           # gzipped against gzipped. Previous version compared raw bytes vs the
           # gzipped budget and emitted false-positive 400+ kB warnings.
-          LARGEST_CHUNK_FILE=$(find .next/static/chunks -maxdepth 1 -name '*.js' -type f 2>/dev/null | xargs -I {} sh -c 'echo "$(wc -c < "{}") {}"' | sort -nr | head -1 | awk '{print $2}')
+          LARGEST_CHUNK_FILE=$(find apps/host/.next/static/chunks -maxdepth 1 -name '*.js' -type f 2>/dev/null | xargs -I {} sh -c 'echo "$(wc -c < "{}") {}"' | sort -nr | head -1 | awk '{print $2}')
           if [ -n "$LARGEST_CHUNK_FILE" ]; then
             LARGEST_RAW_KB=$(($(wc -c < "$LARGEST_CHUNK_FILE") / 1024))
             LARGEST_GZ_KB=$(($(gzip -c "$LARGEST_CHUNK_FILE" | wc -c) / 1024))
@@ -1431,31 +1616,18 @@ jobs:
             fi
           fi
 
-          # Middleware size (P10: < 120 kB). Some setups emit a shim file; skip if < 1 kB.
-          if [ -f .next/server/middleware.js ]; then
-            MW_BYTES=$(wc -c < .next/server/middleware.js)
-            MW_KB=$((MW_BYTES / 1024))
-            echo "Middleware: ${MW_KB} kB (limit: ${MIDDLEWARE_LIMIT_KB} kB)"
-            if [ "$MW_KB" -gt "$MIDDLEWARE_LIMIT_KB" ]; then
-              echo "FAIL: Middleware exceeds ${MIDDLEWARE_LIMIT_KB} kB budget (P10)"
-              FAIL=1
-            fi
-          fi
-
-          # Per-page bundles: each page directory's total JS size should be < page budget.
-          if [ -d .next/static/chunks/app ]; then
-            while IFS= read -r dir; do
-              DIR_SIZE_BYTES=$(find "$dir" -name '*.js' -type f -exec wc -c {} + 2>/dev/null | tail -1 | awk '{print $1}')
-              if [ -n "$DIR_SIZE_BYTES" ] && [ "$DIR_SIZE_BYTES" -gt 0 ] 2>/dev/null; then
-                DIR_SIZE_KB=$((DIR_SIZE_BYTES / 1024))
-                DIR_NAME=$(echo "$dir" | sed "s|.next/static/chunks/app/||")
-                if [ "$DIR_SIZE_KB" -gt "${PAGE_JS_LIMIT_KB}" ]; then
-                  echo "::error::Page /$DIR_NAME is ${DIR_SIZE_KB} kB (limit: ${PAGE_JS_LIMIT_KB} kB). P10 invariant breach."
-                  FAIL=1
-                fi
-              fi
-            done < <(find .next/static/chunks/app -mindepth 1 -maxdepth 2 -type d 2>/dev/null)
-          fi
+          # 2026-07-20 — user-approved (Option A, CI speed-up PR #1349):
+          # middleware + per-page P10 enforcement is delegated to the BLOCKING
+          # "First-load JS budget (authoritative, gzipped per-page)" step below
+          # (scripts/check-bundle-size.mjs — gzipped, HTML-scan,
+          # CAP_MIDDLEWARE_KB=120, CAP_PAGE_KB=260), which measures the same
+          # budgets correctly. The bash sub-checks removed here compared raw
+          # bytes / whole-route-group directory sums (e.g. all of /super-admin,
+          # or /api server-route chunks) against the gzipped PER-PAGE budgets —
+          # a category error documented in the pre-existing comment above the
+          # authoritative step — and had been passing vacuously since the
+          # monorepo migration anyway. NOT a budget change: P10 limits are
+          # unchanged and still blocking.
 
           if [ "$FAIL" = "1" ]; then
             echo ""
@@ -1464,12 +1636,7 @@ jobs:
             exit 1
           fi
 
-          if [ "$WARN" = "1" ]; then
-            echo ""
-            echo "::notice::Bundle size warnings emitted (advisory only — all P10 budget breaches now block via FAIL=1)."
-          else
-            echo "All bundle sizes within budget."
-          fi
+          echo "All bundle sizes within budget."
 
       # Authoritative per-page first-load JS gate.
       # The bash check above measures raw bytes and only inspects the LARGEST
@@ -1498,13 +1665,20 @@ jobs:
         with:
           name: nextjs-build
           path: apps/host/.next/
+          # FIX 2026-07-20: upload-artifact excludes hidden files by default,
+          # and .next is a dot-directory — every prior run silently uploaded
+          # NOTHING ("No files found" warning). Opt hidden files in so the
+          # artifact actually contains the build.
+          include-hidden-files: true
           retention-days: 7
 
   # ── Step 2b: E2E Tests (PRs only) ──
+  # 2026-07-20 CI speed-up: `needs: build` removed — this job never consumed
+  # the build artifact (playwright boots its own dev server), so the
+  # dependency only delayed its start.
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
-    needs: build
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v6
@@ -1548,10 +1722,11 @@ jobs:
   #
   # Catalog entries: REG-45 (quiz), REG-46 (payment) — see
   # `.claude/regression-catalog.md`.
+  # 2026-07-20 CI speed-up: `needs: build` removed — this job targets the
+  # deployed https://alfanumrik.com and never consumed the CI build artifact.
   e2e-critical-paths:
     name: E2E Critical Paths (blocking)
     runs-on: ubuntu-latest
-    needs: build
     # Only run on PRs targeting main/staging branches. Don't slow down feature
     # branches that haven't proposed a merge yet. Skip on forked PRs (no
     # secrets) — when staging fixtures are wired in, this `if` should also
@@ -1607,6 +1782,15 @@ jobs:
           retention-days: 14
 
   # ── Step 3: Post-deploy health check (main branch only) ──
+  # 2026-07-20 CI speed-up: the advisory `e2e` job was removed from this gate.
+  # Its TEST verdict was ALREADY ignored (the job's test STEP runs with
+  # continue-on-error: true, so a test failure never fails the job). Infra
+  # failures (npm ci / playwright install) could still fail the job, but that
+  # infra path is exercised BLOCKING by e2e-critical-paths on main-bound PRs.
+  # Waiting on `e2e` only delayed the gate by the job's ~35 min runtime. The
+  # job itself is unchanged: it still runs on every PR and still uploads
+  # playwright-report. The sharded unit-test jobs (unit-tests +
+  # unit-tests-merge) are required in its place.
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
@@ -1615,10 +1799,11 @@ jobs:
       - secret-scan
       - selected-school-rpc-integration
       - quality
+      - unit-tests
+      - unit-tests-merge
       - edge-function-tests
       - integration-tests
       - build
-      - e2e
       - e2e-critical-paths
     steps:
       - name: Enforce required CI outcomes
@@ -1629,10 +1814,9 @@ jobs:
         run: |
           node <<'NODE'
           const needs = JSON.parse(process.env.NEEDS_JSON || '{}');
-          const required = ['secret-scan','selected-school-rpc-integration','quality','edge-function-tests','integration-tests','build'];
+          const required = ['secret-scan','selected-school-rpc-integration','quality','unit-tests','unit-tests-merge','edge-function-tests','integration-tests','build'];
           const forkSkips = [];
           if (process.env.EVENT_NAME === 'pull_request') {
-            required.push('e2e');
             if (process.env.SAME_REPOSITORY_PR === 'true') {
               required.push('e2e-critical-paths');
             } else {
