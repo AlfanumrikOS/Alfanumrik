@@ -59,6 +59,7 @@ import {
   logAdminAction,
   logAdminAudit,
   authorizeAdmin,
+  extractCookieAccessToken,
   type AdminAuth,
 } from '@alfanumrik/lib/admin-auth';
 
@@ -570,5 +571,154 @@ describe('authorizeAdmin', () => {
     }
     // Deduped: exactly one GoTrue verification for the identical token.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── extractCookieAccessToken (2026-07-20 RCA: @supabase/ssr cookie formats) ──
+//
+// Production writes the session cookie via @supabase/ssr v0.12 createServerClient
+// with the DEFAULT cookieEncoding ('base64url'): the value is
+// `base64-<base64url(JSON.stringify(session))>`, CHUNKED into
+// `sb-<ref>-auth-token.0`, `.1`, ... when the URI-encoded value exceeds 3180
+// bytes (utils/chunker.js MAX_CHUNK_SIZE). The old parser only understood
+// plain JSON — these tests pin every real-world shape.
+
+describe('extractCookieAccessToken', () => {
+  /** Mirror @supabase/ssr cookies.js: BASE64_PREFIX + stringToBase64URL(json). */
+  function ssrEncode(session: object): string {
+    return 'base64-' + Buffer.from(JSON.stringify(session), 'utf-8').toString('base64url');
+  }
+
+  /**
+   * Mirror @supabase/ssr utils/chunker.js createChunks: chunk when the
+   * URI-encoded value exceeds MAX_CHUNK_SIZE (3180). base64url payloads have
+   * no URI-escaped characters, so chunks are plain 3180-char slices.
+   */
+  function ssrChunk(name: string, value: string): Array<{ name: string; value: string }> {
+    const MAX = 3180;
+    if (encodeURIComponent(value).length <= MAX) return [{ name, value }];
+    const out: Array<{ name: string; value: string }> = [];
+    for (let i = 0; i * MAX < value.length; i++) {
+      out.push({ name: `${name}.${i}`, value: value.slice(i * MAX, (i + 1) * MAX) });
+    }
+    return out;
+  }
+
+  /** A session JSON large enough that its ssr encoding always chunks (>3180). */
+  function bigSession(accessToken: string) {
+    return {
+      access_token: accessToken,
+      token_type: 'bearer',
+      expires_at: 1999999999,
+      refresh_token: 'r'.repeat(200),
+      provider_token: 'p'.repeat(2000),
+      user: { id: '99999999-9999-4999-8999-999999999999', email: 'ceo@alfanumrik.com', app_metadata: { blob: 'x'.repeat(3000) } },
+    };
+  }
+
+  it('parses the unchunked plain-JSON cookie (URI-encoded)', () => {
+    const header = `sb-test-auth-token=${encodeURIComponent(JSON.stringify({ access_token: 'plain-tok', token_type: 'bearer' }))}`;
+    expect(extractCookieAccessToken(header)).toBe('plain-tok');
+  });
+
+  it('parses the unchunked base64- prefixed cookie (ssr v0.12 default encoding)', () => {
+    const header = `sb-test-auth-token=${ssrEncode({ access_token: 'b64-tok', token_type: 'bearer' })}`;
+    expect(extractCookieAccessToken(header)).toBe('b64-tok');
+  });
+
+  it('reassembles a chunked base64- cookie (.0/.1) built from a >3180-byte session', () => {
+    const encoded = ssrEncode(bigSession('chunked-access-token'));
+    const chunks = ssrChunk('sb-test-auth-token', encoded);
+    expect(chunks.length).toBeGreaterThanOrEqual(2); // the production shape
+    expect(chunks[0].name).toBe('sb-test-auth-token.0');
+    const header = chunks.map((c) => `${c.name}=${c.value}`).join('; ');
+    expect(extractCookieAccessToken(header)).toBe('chunked-access-token');
+  });
+
+  it('reassembles chunks in numeric order even when the header lists .1 before .0', () => {
+    const encoded = ssrEncode(bigSession('order-independent-token'));
+    const chunks = ssrChunk('sb-test-auth-token', encoded);
+    const header = [...chunks].reverse().map((c) => `${c.name}=${c.value}`).join('; ');
+    expect(extractCookieAccessToken(header)).toBe('order-independent-token');
+  });
+
+  it('tolerates URI-encoded chunk values (decodeURIComponent per chunk)', () => {
+    const encoded = ssrEncode(bigSession('uri-encoded-chunk-token'));
+    const chunks = ssrChunk('sb-test-auth-token', encoded);
+    const header = chunks.map((c) => `${c.name}=${encodeURIComponent(c.value)}`).join('; ');
+    expect(extractCookieAccessToken(header)).toBe('uri-encoded-chunk-token');
+  });
+
+  it('parses a chunked plain-JSON cookie (pre-base64url encoding)', () => {
+    const json = JSON.stringify(bigSession('legacy-chunked-json-token'));
+    const chunks = ssrChunk('sb-test-auth-token', json);
+    const header = chunks.map((c) => `${c.name}=${c.value}`).join('; ');
+    expect(extractCookieAccessToken(header)).toBe('legacy-chunked-json-token');
+  });
+
+  it('parses the legacy auth-helpers array shape', () => {
+    const jwtish = 'aaa.bbb.ccc';
+    const header = `sb-test-auth-token=${encodeURIComponent(JSON.stringify([jwtish, 'refresh', null, null, null]))}`;
+    expect(extractCookieAccessToken(header)).toBe(jwtish);
+  });
+
+  it('ignores the PKCE code-verifier cookie (not a session)', () => {
+    expect(extractCookieAccessToken('sb-test-auth-token-code-verifier=base64-abc')).toBeNull();
+  });
+
+  it('returns null (never throws) on garbage: malformed base64, truncated JSON, empty header', () => {
+    expect(extractCookieAccessToken(null)).toBeNull();
+    expect(extractCookieAccessToken('')).toBeNull();
+    expect(extractCookieAccessToken('other=1; unrelated=2')).toBeNull();
+    expect(extractCookieAccessToken('sb-test-auth-token=base64-%%%not-base64%%%')).toBeNull();
+    expect(extractCookieAccessToken('sb-test-auth-token={"access_token": truncated')).toBeNull();
+    // Missing .0 chunk (gap) → no reassembly candidate.
+    expect(extractCookieAccessToken('sb-test-auth-token.1=base64-abc')).toBeNull();
+  });
+
+  it('garbage cookie with no Bearer header falls through to 401 ADMIN_NO_TOKEN', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const r = await authorizeAdmin(
+      new NextRequest('https://example.com/api/super-admin/foo', {
+        headers: { Cookie: 'sb-test-auth-token=base64-!!!corrupt!!!' },
+      }),
+      'support',
+    );
+    expect(r.authorized).toBe(false);
+    if (!r.authorized) {
+      expect(r.response.status).toBe(401);
+      const body = await r.response.json();
+      expect(body.code).toBe('ADMIN_NO_TOKEN');
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('authorizes end-to-end from a chunked base64- cookie (the production lockout shape)', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'svc-key';
+
+    const encoded = ssrEncode(bigSession('prod-shape-token'));
+    const chunks = ssrChunk('sb-test-auth-token', encoded);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    const cookieHeader = chunks.map((c) => `${c.name}=${c.value}`).join('; ');
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'u-5', email: 'ceo@x.com' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{
+        id: 'admin-5', name: 'Prad', email: 'ceo@x.com', admin_level: 'super_admin',
+      }]), { status: 200 }));
+
+    const r = await authorizeAdmin(
+      new NextRequest('https://example.com/api/super-admin/stats', { headers: { Cookie: cookieHeader } }),
+      'support',
+    );
+    expect(r.authorized).toBe(true);
+    if (r.authorized) expect(r.userId).toBe('u-5');
+    // GoTrue verification carried the token recovered from the chunked cookie.
+    const gotrueHeaders = (fetchSpy.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    expect(gotrueHeaders['Authorization']).toBe('Bearer prod-shape-token');
   });
 });

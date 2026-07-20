@@ -91,39 +91,130 @@ function getSupabaseConfig() {
 // ─── Session-based admin auth (used by /api/super-admin/* routes) ─────────────
 
 /**
- * Extract the access token from the httpOnly `sb-*-auth-token` cookie set by
- * /api/super-admin/login (and refreshed by the proxy). Handles both the
- * single-cookie JSON shape and the chunked `sb-...-auth-token.0/.1/...` shape.
- * Returns null when no parseable session cookie is present.
+ * Matches the @supabase/ssr session cookie name, unchunked
+ * (`sb-<ref>-auth-token`) or chunked (`sb-<ref>-auth-token.0`, `.1`, ...).
+ * Anchored so `sb-<ref>-auth-token-code-verifier` (PKCE verifier, not a
+ * session) can never match.
  */
-function extractCookieAccessToken(cookieHeader: string | null): string | null {
-  if (!cookieHeader) return null;
-  const cookies = Object.fromEntries(
-    cookieHeader.split(';').map(c => {
-      const [k, ...v] = c.trim().split('=');
-      return [k, v.join('=')];
-    })
-  );
-  const authCookieKey = Object.keys(cookies).find(k => /^sb-.+-auth-token/.test(k));
-  if (!authCookieKey) return null;
+const AUTH_TOKEN_COOKIE_RE = /^(sb-.+-auth-token)(?:\.(\d+))?$/;
+
+const BASE64_COOKIE_PREFIX = 'base64-';
+
+function safeDecodeURIComponent(value: string): string {
   try {
-    const decoded = decodeURIComponent(cookies[authCookieKey]);
-    const parsed = JSON.parse(decoded);
-    return parsed?.access_token || parsed?.[0]?.access_token || null;
+    return decodeURIComponent(value);
   } catch {
-    const prefix = authCookieKey.replace(/\.\d+$/, '');
-    const chunks: string[] = [];
-    for (let i = 0; i < 10; i++) {
-      const chunk = cookies[`${prefix}.${i}`];
-      if (chunk) chunks.push(chunk);
-      else break;
+    return value; // not URI-encoded (e.g. raw base64url payload) — use as-is
+  }
+}
+
+/** Decode a base64url (RFC 4648 §5, unpadded) string to UTF-8, or null. */
+function base64UrlToUtf8(value: string): string | null {
+  try {
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    if (typeof Buffer !== 'undefined') {
+      return Buffer.from(padded, 'base64').toString('utf-8');
     }
-    if (chunks.length > 0) {
-      try {
-        const decoded = decodeURIComponent(chunks.join(''));
-        const parsed = JSON.parse(decoded);
-        return parsed?.access_token || null;
-      } catch { /* invalid cookie data */ }
+    // Edge-runtime fallback (no Buffer): atob + TextDecoder.
+    const binary = atob(padded);
+    return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Given a reassembled cookie payload, return the session's access_token.
+ * Handles the @supabase/ssr >= 0.4 `base64-<base64url(json)>` encoding
+ * (the DEFAULT `cookieEncoding: 'base64url'` in v0.12 — what production
+ * writes), plain-JSON payloads, and legacy auth-helpers array shapes.
+ */
+function accessTokenFromSessionPayload(raw: string): string | null {
+  let payload = raw;
+  if (payload.startsWith(BASE64_COOKIE_PREFIX)) {
+    const decoded = base64UrlToUtf8(payload.slice(BASE64_COOKIE_PREFIX.length));
+    if (decoded === null) return null;
+    payload = decoded;
+  }
+  try {
+    const parsed = JSON.parse(payload);
+    if (typeof parsed?.access_token === 'string') return parsed.access_token;
+    // Legacy @supabase/auth-helpers shapes.
+    if (typeof parsed?.[0]?.access_token === 'string') return parsed[0].access_token;
+    if (Array.isArray(parsed) && typeof parsed[0] === 'string' && parsed[0].split('.').length === 3) {
+      return parsed[0];
+    }
+  } catch {
+    /* not a parseable session payload */
+  }
+  return null;
+}
+
+/**
+ * Extract the access token from the httpOnly `sb-*-auth-token` cookie set by
+ * /api/super-admin/login (and refreshed by the proxy).
+ *
+ * 2026-07-20 RCA fix (super-admin lockout): @supabase/ssr v0.12 writes the
+ * session cookie as `base64-<base64url(JSON.stringify(session))>` (default
+ * `cookieEncoding: 'base64url'`) and CHUNKS it into `sb-<ref>-auth-token.0`,
+ * `.1`, ... whenever the URI-encoded value exceeds 3180 bytes — which our
+ * session JSON always does. The previous parser only understood plain-JSON
+ * values, so both the chunked and unchunked base64 shapes returned null,
+ * authorizeAdmin saw no cookie candidate, and every post-login request 401'd
+ * back to the login page. This version handles all four combinations
+ * (chunked/unchunked × base64-/plain-JSON), tolerates URI-encoded chunk
+ * values, reassembles chunks in numeric order regardless of header order,
+ * and returns null (never throws) on malformed input.
+ */
+export function extractCookieAccessToken(cookieHeader: string | null): string | null {
+  if (!cookieHeader) return null;
+
+  const cookies: Record<string, string> = {};
+  for (const part of cookieHeader.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const k = part.slice(0, eq).trim();
+    if (k) cookies[k] = part.slice(eq + 1).trim();
+  }
+
+  // Group auth cookies by base name: unchunked value and/or numbered chunks.
+  const unchunked = new Map<string, string>();
+  const chunked = new Map<string, Map<number, string>>();
+  for (const [name, value] of Object.entries(cookies)) {
+    const m = name.match(AUTH_TOKEN_COOKIE_RE);
+    if (!m) continue;
+    const base = m[1];
+    if (m[2] === undefined) {
+      unchunked.set(base, value);
+    } else {
+      let chunkMap = chunked.get(base);
+      if (!chunkMap) {
+        chunkMap = new Map<number, string>();
+        chunked.set(base, chunkMap);
+      }
+      chunkMap.set(Number(m[2]), value);
+    }
+  }
+
+  for (const base of new Set([...unchunked.keys(), ...chunked.keys()])) {
+    const candidates: string[] = [];
+    // Mirror @supabase/ssr combineChunks precedence: unchunked value first.
+    const whole = unchunked.get(base);
+    if (whole) candidates.push(safeDecodeURIComponent(whole));
+    const chunkMap = chunked.get(base);
+    if (chunkMap) {
+      // Reassemble strictly by chunk index (.0, .1, ...) — header order is
+      // not guaranteed. Stop at the first gap, as the ssr chunker does.
+      const parts: string[] = [];
+      for (let i = 0; chunkMap.has(i); i++) {
+        parts.push(safeDecodeURIComponent(chunkMap.get(i) as string));
+      }
+      if (parts.length > 0) candidates.push(parts.join(''));
+    }
+    for (const candidate of candidates) {
+      const token = accessTokenFromSessionPayload(candidate);
+      if (token) return token;
     }
   }
   return null;

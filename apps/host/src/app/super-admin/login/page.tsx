@@ -29,7 +29,16 @@ export default function AdminLoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const loginPayload = await loginRes.json().catch(() => ({}));
+      // 2026-07-20: classify non-JSON responses BEFORE assuming a login
+      // failure. The Vercel firewall checkpoint intercepts the POST with a
+      // 429 text/html challenge page; the old `.json().catch(() => ({}))`
+      // swallowed it into a generic "Login failed", which reads as "my
+      // password stopped working". Mirrors AdminShell's classifyJsonResponse
+      // (429 + text/html ⇒ security_checkpoint, other non-JSON ⇒ non_json)
+      // but kept self-contained to avoid import churn on this page.
+      const contentType = (loginRes.headers.get('content-type') ?? '').toLowerCase();
+      const isJson = contentType.includes('application/json');
+      const loginPayload = isJson ? await loginRes.json().catch(() => ({})) : {};
 
       if (!loginRes.ok) {
         const code = loginPayload?.code;
@@ -43,6 +52,13 @@ export default function AdminLoginPage() {
           // Backend already provided a human-readable message; expose the
           // suggested URL as a clickable link below. No auto-redirect.
           setSuggestedLoginUrl(loginPayload.suggested_login_url);
+        } else if (!isJson && loginRes.status === 429 && contentType.includes('text/html')) {
+          // Vercel firewall / DDoS challenge page — NOT a credentials problem.
+          message =
+            'A security checkpoint is blocking the login request — your password was not checked. ' +
+            'Open the site in a new tab, wait for the checkpoint to clear, then try again here within a few minutes.';
+        } else if (!isJson) {
+          message = `Server returned an unexpected response (HTTP ${loginRes.status}) — wait a moment and try again.`;
         }
         setError(message);
         setLoading(false);
