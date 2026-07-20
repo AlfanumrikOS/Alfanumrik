@@ -790,9 +790,25 @@ describe('Auth callback bootstrap integration', () => {
       error: null,
     });
 
-    // Default: session with token
+    // Default: session with token. A REAL Supabase Session always carries
+    // refresh_token/expires_in/expires_at/token_type — this mock previously
+    // supplied only access_token, which hid the 2026-07-20 "Invalid or
+    // Expired Link" bug (the recovery/invite hash-builders in
+    // auth/callback/route.ts and auth/confirm/route.ts silently omitted
+    // expires_in, which @supabase/auth-js's implicit-grant hash parser
+    // requires to build a client session — see
+    // packages/lib/src/identity/recovery-session-hash.ts). Do not shrink
+    // this back down without also relaxing the recovery-hash assertion below.
     mockGetSession.mockResolvedValue({
-      data: { session: { access_token: 'mock-token' } },
+      data: {
+        session: {
+          access_token: 'mock-token',
+          refresh_token: 'mock-refresh-token',
+          expires_in: 3600,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          token_type: 'bearer',
+        },
+      },
       error: null,
     });
 
@@ -901,12 +917,29 @@ describe('Auth callback bootstrap integration', () => {
     expect(response.status).toBeLessThan(400);
   });
 
-  it('redirects to /auth/reset for recovery type', async () => {
+  it('redirects to /auth/reset for recovery type with a hash the real @supabase/auth-js parser can consume', async () => {
     const request = createCallbackRequest({ code: 'valid-code', type: 'recovery' });
     const response = await GET(request);
 
     const location = response.headers.get('location') || '';
     expect(location).toContain('/auth/reset');
+
+    // Genuine regression check (2026-07-20 "Invalid or Expired Link" RCA): the
+    // OLD version of this test only checked the path, which a hash missing
+    // `expires_in` would still pass — @supabase/auth-js's
+    // `_getSessionFromURL()` throws `AuthImplicitGrantRedirectError` and never
+    // creates a client session when `!access_token || !expires_in ||
+    // !refresh_token || !token_type` (verified against the installed
+    // @supabase/auth-js@2.108.2 source, GoTrueClient.ts). Assert every
+    // required field is present in the redirect's hash fragment.
+    const hashIndex = location.indexOf('#');
+    expect(hashIndex).toBeGreaterThan(-1);
+    const hash = new URLSearchParams(location.slice(hashIndex + 1));
+    for (const field of ['access_token', 'refresh_token', 'expires_in', 'token_type']) {
+      expect(hash.get(field), `hash missing required field "${field}"`).toBeTruthy();
+    }
+    expect(Number(hash.get('expires_in'))).toBeGreaterThan(0);
+    expect(hash.get('type')).toBe('recovery');
   });
 
   it('redirects to root when no code provided', async () => {

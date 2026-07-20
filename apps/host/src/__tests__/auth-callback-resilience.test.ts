@@ -142,6 +142,66 @@ function location(res: Response): string {
   return res.headers.get('location') ?? '';
 }
 
+/**
+ * The exact set of URL-hash fields @supabase/auth-js's implicit-grant parser
+ * requires to hydrate a client-side session, sourced directly from the
+ * INSTALLED @supabase/auth-js@2.108.2 GoTrueClient.ts `_getSessionFromURL()`:
+ *
+ *   const { provider_token, provider_refresh_token, access_token, refresh_token,
+ *           expires_in, expires_at, token_type } = params
+ *   if (!access_token || !expires_in || !refresh_token || !token_type) {
+ *     throw new AuthImplicitGrantRedirectError('No session defined in URL')
+ *   }
+ *
+ * `expires_in` is the field the original bug omitted — its absence makes the
+ * SDK throw inside detectSessionInUrl, so no client session is ever created
+ * and /auth/reset shows "Invalid or Expired Link" even though the token was
+ * already correctly verified server-side. This constant intentionally
+ * duplicates that requirement (not sourced from the app's own hash-builder
+ * code) so a regression in the builder can't silently satisfy its own test.
+ */
+const REQUIRED_IMPLICIT_GRANT_HASH_FIELDS = [
+  'access_token',
+  'refresh_token',
+  'expires_in',
+  'token_type',
+] as const;
+
+/** Parse the `#...` fragment of a redirect Location into a URLSearchParams. */
+function hashParams(loc: string): URLSearchParams {
+  const hashIndex = loc.indexOf('#');
+  expect(hashIndex).toBeGreaterThan(-1); // must actually carry a hash fragment
+  return new URLSearchParams(loc.slice(hashIndex + 1));
+}
+
+/**
+ * Asserts a redirect Location to /auth/reset carries every field the real,
+ * installed @supabase/auth-js hash parser requires to build a session — and
+ * that the values round-trip correctly. This is the genuine regression test
+ * for the 2026-07-20 "Invalid or Expired Link" incident: the OLD test only
+ * asserted `location(res)).toContain('/auth/reset')`, which a hash missing
+ * `expires_in` would still pass.
+ */
+function expectValidRecoverySessionHash(
+  loc: string,
+  expected: { access_token: string; refresh_token: string; type: string }
+) {
+  const params = hashParams(loc);
+  for (const field of REQUIRED_IMPLICIT_GRANT_HASH_FIELDS) {
+    expect(params.get(field), `hash is missing required field "${field}"`).toBeTruthy();
+  }
+  expect(params.get('access_token')).toBe(expected.access_token);
+  expect(params.get('refresh_token')).toBe(expected.refresh_token);
+  expect(params.get('type')).toBe(expected.type);
+  expect(params.get('token_type')).toBe('bearer');
+  // expires_in must parse to a positive integer — a non-numeric or missing
+  // value is exactly what let the SDK's `!expires_in` guard fail.
+  expect(Number(params.get('expires_in'))).toBeGreaterThan(0);
+  // expires_at is optional per the SDK (falls back to now + expires_in) but
+  // the route always has it available from the server session, so require it.
+  expect(Number(params.get('expires_at'))).toBeGreaterThan(0);
+}
+
 // Phase 3b unification: both auth routes now delegate the signup branch to
 // completeSignupBootstrap, which fires a best-effort, UNAWAITED fetch() to the
 // send-welcome-email Edge Function whenever a session token exists (the default
@@ -163,7 +223,24 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal('fetch', fetchSpy);
   holders.profileExists.value = true;
-  holders.getSession.mockResolvedValue({ data: { session: { access_token: 'a', refresh_token: 'r' } } });
+  // Realistic session shape — a REAL Supabase Session always carries
+  // expires_in/expires_at/token_type alongside the tokens. The original bug
+  // (2026-07-20 RCA) was invisible to these tests specifically because this
+  // mock previously omitted expires_in/expires_at/token_type, so a hash
+  // builder that dropped those fields still "looked" correct here. Do not
+  // shrink this mock back down without also removing
+  // expectValidRecoverySessionHash() below.
+  holders.getSession.mockResolvedValue({
+    data: {
+      session: {
+        access_token: 'a',
+        refresh_token: 'r',
+        expires_in: 3600,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        token_type: 'bearer',
+      },
+    },
+  });
   holders.getUser.mockResolvedValue({ data: { user: { id: 'auth-1', email: 'x@y.com', user_metadata: { role: 'student' } } } });
 });
 
@@ -231,7 +308,7 @@ describe('/auth/callback — PKCE code flow (P15 rule 3)', () => {
   // P15 fix (2026-07-20, admin-user-invite-flow incident): Supabase-Dashboard
   // invited users (type=invite) MUST land on /auth/reset to set a password —
   // NOT silently fall through to /dashboard with a registered session.
-  it('redirects type=invite to /auth/reset (not /dashboard)', async () => {
+  it('redirects type=invite to /auth/reset (not /dashboard) with a complete session hash', async () => {
     const { GET } = await import('@/app/auth/callback/route');
     holders.exchangeCodeForSession.mockResolvedValue({ error: null });
 
@@ -241,6 +318,32 @@ describe('/auth/callback — PKCE code flow (P15 rule 3)', () => {
     expect(res.status).toBeLessThan(400);
     expect(location(res)).toContain('/auth/reset');
     expect(location(res)).not.toContain('/dashboard');
+    // Genuine regression check for the 2026-07-20 "Invalid or Expired Link"
+    // incident — the hash must carry every field the real, installed
+    // @supabase/auth-js hash parser requires (expires_in was the one missing).
+    expectValidRecoverySessionHash(location(res), {
+      access_token: 'a',
+      refresh_token: 'r',
+      type: 'invite',
+    });
+  });
+
+  // Password-reset ('recovery') follows the SAME hash-building path as
+  // 'invite'. Prior to the 2026-07-20 fix, both were missing expires_in.
+  it('redirects type=recovery to /auth/reset with a complete session hash', async () => {
+    const { GET } = await import('@/app/auth/callback/route');
+    holders.exchangeCodeForSession.mockResolvedValue({ error: null });
+
+    const res = await GET(makeReq('/auth/callback?code=valid-code&type=recovery'));
+
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(location(res)).toContain('/auth/reset');
+    expectValidRecoverySessionHash(location(res), {
+      access_token: 'a',
+      refresh_token: 'r',
+      type: 'recovery',
+    });
   });
 });
 
@@ -303,7 +406,7 @@ describe('/auth/confirm — token_hash flow (P15 rule 3)', () => {
   // P15 fix (2026-07-20, admin-user-invite-flow incident): Supabase-Dashboard
   // invited users (type=invite) MUST land on /auth/reset to set a password —
   // NOT silently fall through to /dashboard with a registered session.
-  it('redirects type=invite to /auth/reset (not /dashboard)', async () => {
+  it('redirects type=invite to /auth/reset (not /dashboard) with a complete session hash', async () => {
     const { GET } = await import('@/app/auth/confirm/route');
     holders.verifyOtp.mockResolvedValue({ error: null });
 
@@ -314,6 +417,28 @@ describe('/auth/confirm — token_hash flow (P15 rule 3)', () => {
     expect(res.status).toBeLessThan(400);
     expect(location(res)).toContain('/auth/reset');
     expect(location(res)).not.toContain('/dashboard');
+    expectValidRecoverySessionHash(location(res), {
+      access_token: 'a',
+      refresh_token: 'r',
+      type: 'invite',
+    });
+  });
+
+  it('redirects type=recovery (token_hash flow) to /auth/reset with a complete session hash', async () => {
+    const { GET } = await import('@/app/auth/confirm/route');
+    holders.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await GET(makeReq('/auth/confirm?token_hash=recovery-token&type=recovery'));
+
+    expect(holders.verifyOtp).toHaveBeenCalledWith({ token_hash: 'recovery-token', type: 'recovery' });
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(location(res)).toContain('/auth/reset');
+    expectValidRecoverySessionHash(location(res), {
+      access_token: 'a',
+      refresh_token: 'r',
+      type: 'recovery',
+    });
   });
 });
 
@@ -339,7 +464,7 @@ describe('/auth/confirm — legacy token flow', () => {
   // /auth/reset routing as the token_hash flow above — previously it fell
   // through to the generic default branch and silently registered a session
   // on /dashboard with no way to ever set a password.
-  it('redirects type=invite to /auth/reset (not /dashboard)', async () => {
+  it('redirects type=invite to /auth/reset (not /dashboard) with a complete session hash', async () => {
     const { GET } = await import('@/app/auth/confirm/route');
     holders.verifyOtp.mockResolvedValue({ error: null });
 
@@ -354,5 +479,31 @@ describe('/auth/confirm — legacy token flow', () => {
     expect(res.status).toBeLessThan(400);
     expect(location(res)).toContain('/auth/reset');
     expect(location(res)).not.toContain('/dashboard');
+    expectValidRecoverySessionHash(location(res), {
+      access_token: 'a',
+      refresh_token: 'r',
+      type: 'invite',
+    });
+  });
+
+  it('redirects type=recovery (legacy token flow) to /auth/reset with a complete session hash', async () => {
+    const { GET } = await import('@/app/auth/confirm/route');
+    holders.verifyOtp.mockResolvedValue({ error: null });
+
+    const res = await GET(makeReq('/auth/confirm?token=legacy-recovery-token&email=user%40example.com&type=recovery'));
+
+    expect(holders.verifyOtp).toHaveBeenCalledWith({
+      token: 'legacy-recovery-token',
+      email: 'user@example.com',
+      type: 'recovery',
+    });
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(location(res)).toContain('/auth/reset');
+    expectValidRecoverySessionHash(location(res), {
+      access_token: 'a',
+      refresh_token: 'r',
+      type: 'recovery',
+    });
   });
 });

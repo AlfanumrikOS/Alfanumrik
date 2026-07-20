@@ -31,6 +31,7 @@ import {
   completeSignupBootstrap,
   registerSessionOnResponse,
 } from '@alfanumrik/lib/identity/complete-signup';
+import { buildRecoverySessionHash } from '@alfanumrik/lib/identity/recovery-session-hash';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -68,13 +69,8 @@ export async function GET(request: NextRequest) {
         // uses localStorage) sees no session → "Invalid or Expired Link".
         const { data: { session: recoverySession } } = await supabase.auth.getSession();
         if (recoverySession) {
-          const hashParams = new URLSearchParams({
-            access_token: recoverySession.access_token,
-            refresh_token: recoverySession.refresh_token,
-            token_type: 'bearer',
-            type: 'recovery',
-          });
-          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+          const hash = buildRecoverySessionHash(recoverySession, 'recovery');
+          return NextResponse.redirect(`${origin}/auth/reset#${hash}`);
         }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
@@ -90,13 +86,8 @@ export async function GET(request: NextRequest) {
         // P15 gap fixed 2026-07-20 — see admin-user-invite-flow incident.
         const { data: { session: inviteSession } } = await supabase.auth.getSession();
         if (inviteSession) {
-          const hashParams = new URLSearchParams({
-            access_token: inviteSession.access_token,
-            refresh_token: inviteSession.refresh_token,
-            token_type: 'bearer',
-            type: 'invite',
-          });
-          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+          const hash = buildRecoverySessionHash(inviteSession, 'invite');
+          return NextResponse.redirect(`${origin}/auth/reset#${hash}`);
         }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
@@ -152,13 +143,8 @@ export async function GET(request: NextRequest) {
         // uses localStorage) sees no session → "Invalid or Expired Link".
         const { data: { session: recoverySession } } = await supabase.auth.getSession();
         if (recoverySession) {
-          const hashParams = new URLSearchParams({
-            access_token: recoverySession.access_token,
-            refresh_token: recoverySession.refresh_token,
-            token_type: 'bearer',
-            type: 'recovery',
-          });
-          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+          const hash = buildRecoverySessionHash(recoverySession, 'recovery');
+          return NextResponse.redirect(`${origin}/auth/reset#${hash}`);
         }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
@@ -175,13 +161,8 @@ export async function GET(request: NextRequest) {
         // Legacy token+email+type flow mirror of the token_hash branch above.
         const { data: { session: inviteSession } } = await supabase.auth.getSession();
         if (inviteSession) {
-          const hashParams = new URLSearchParams({
-            access_token: inviteSession.access_token,
-            refresh_token: inviteSession.refresh_token,
-            token_type: 'bearer',
-            type: 'invite',
-          });
-          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+          const hash = buildRecoverySessionHash(inviteSession, 'invite');
+          return NextResponse.redirect(`${origin}/auth/reset#${hash}`);
         }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
