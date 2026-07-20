@@ -79,6 +79,7 @@ import {
   type PromptSegment,
 } from './prompts/index.ts';
 import { FOXY_STRUCTURED_OUTPUT_PROMPT } from './structured-prompt.ts';
+import { repairIllegalJsonEscapes } from './json-escape-repair.ts';
 import {
   rescueFromTruncatedJson,
   validateFoxyResponse,
@@ -588,13 +589,27 @@ function parseFoxyStructured(args: {
   const { rawAnswer, subjectHint } = args;
   const stripped = stripCodeFence(rawAnswer);
 
+  // Pre-parse repair of illegal JSON escapes (2026-07-20 incident): the model
+  // sometimes imitates single-backslash LaTeX inside JSON strings (`\(`,
+  // `\frac`) which is an illegal escape — JSON.parse throws at the FIRST
+  // math-bearing block and the rescue path silently drops everything after
+  // it. The repair pass doubles only escapes that cannot be legal JSON (plus
+  // allowlist-arbitrated LaTeX heads like `\times`/`\neq`/`\frac`), applied
+  // strictly inside string literals. See json-escape-repair.ts for the policy
+  // and its residual ambiguity.
+  const { repaired, repairCount } = repairIllegalJsonEscapes(stripped);
+
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stripped);
+    parsed = JSON.parse(repaired);
   } catch (err) {
     // Truncation rescue: salvage all complete blocks before max_tokens cut.
     // When successful we report ok=true so adoption telemetry counts these
-    // as structured renders rather than fallbacks.
+    // as structured renders rather than fallbacks. Note: rescue applies the
+    // same escape repair internally, so reaching this branch means the
+    // payload is genuinely truncated/structurally broken — NOT merely
+    // under-escaped (those parse successfully above and are counted as
+    // `structured_parse_repaired`, a DISTINCT signal).
     const rescued = rescueFromTruncatedJson(rawAnswer);
     if (rescued) {
       const preview = redactPreview(rawAnswer).slice(0, 200);
@@ -643,6 +658,23 @@ function parseFoxyStructured(args: {
       structured: wrapAsParagraph(rawAnswer, { subject: subjectHint }),
       ok: false,
       reason: 'subject_rules',
+    };
+  }
+
+  if (repairCount > 0) {
+    // Distinct telemetry from `structured_parse_rescued`: the payload was
+    // COMPLETE but carried illegal JSON escapes (under-escaped LaTeX) that
+    // the pre-parse repair fixed. No content was lost.
+    // TODO(ops): alert when the repaired-rate climbs (suggested starting
+    // threshold: >20% of Foxy structured turns over 1h) — a sustained rise
+    // means the prompt-side fix (PROMPT_REV 3 doubling rule) regressed.
+    console.warn(
+      `foxy: structured_parse_repaired count=${repairCount}`,
+    );
+    return {
+      structured: validation.value,
+      ok: true,
+      warnings: [...(subjectCheck.warnings ?? []), 'structured_parse_repaired'],
     };
   }
 

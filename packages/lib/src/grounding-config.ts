@@ -73,9 +73,10 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // Mirror of supabase/functions/grounded-answer/config.ts (CI parity check).
 // See that file for the authoritative bump rules. Bumping either constant
 // invalidates every cached grounded-answer response (L1/L2/L3).
-// PROMPT_REV=2 (2026-07-20): math-format prompt change — foxy_tutor_v1 §8
-// rewritten per docs/math-rendering-spec.md (grade-band step-density deferral
-// + answer-block vs \boxed{} disambiguation). Kept in sync with the
-// authoritative bump in supabase/functions/grounded-answer/config.ts.
-export const PROMPT_REV = 2;
+// PROMPT_REV=3 (2026-07-20): LaTeX-in-JSON escaping fix — few-shot JSON
+// examples in FOXY_STRUCTURED_OUTPUT_PROMPT now carry doubled backslashes plus
+// an explicit JSON-escaping rule; per-surface bullets added to the six
+// JSON-output templates. Kept in sync with the authoritative bump in
+// supabase/functions/grounded-answer/config.ts.
+export const PROMPT_REV = 3;
 export const MODEL_ROUTE_REV = 1;
