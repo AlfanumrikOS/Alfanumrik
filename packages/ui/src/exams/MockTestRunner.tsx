@@ -17,6 +17,7 @@
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 import type { MockTestPaper, MockTestQuestion, ResponseEntry } from './mock-test-types';
 import { deriveStatus, useMockTestState } from './useMockTestState';
 
@@ -234,7 +235,7 @@ export default function MockTestRunner({ paper, questions, isHi }: Props) {
             </button>
           </div>
 
-          <p className="text-sm leading-relaxed text-[var(--text-1)] whitespace-pre-line">{questionText}</p>
+          <p className="text-sm leading-relaxed text-[var(--text-1)] whitespace-pre-line"><MathRenderer content={questionText} /></p>
 
           <div className="space-y-2" role={isMulti ? 'group' : 'radiogroup'}>
             {current.options.map((opt, i) => {
@@ -260,7 +261,7 @@ export default function MockTestRunner({ paper, questions, isHi }: Props) {
                   >
                     {String.fromCharCode(65 + i)}
                   </span>
-                  <span className="text-sm text-[var(--text-1)] flex-1">{opt}</span>
+                  <span className="text-sm text-[var(--text-1)] flex-1"><MathRenderer inline content={opt} /></span>
                 </button>
               );
             })}

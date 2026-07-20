@@ -228,6 +228,35 @@ If any phase requires touching the enforcing tests, that is a review-chain event
 4. **Flag-row removal** (documented manual DOWN in both seeds): `DELETE FROM feature_flags WHERE flag_name = '<flag>';` — a missing row resolves OFF.
 5. Migrations stay in place — both tables are additive, service-role-only, and inert while their flags are OFF. Never DROP in a panic.
 
+## Deploy-time operator notes
+
+### 2026-07-20 — math-format change (PROMPT_REV 1→2) vs the Phase 1 shadow window
+
+Before/at deploy of the 2026-07-20 math-format change: verify the 4 response-cache flags are still OFF:
+
+```sql
+SELECT flag_name, is_enabled FROM feature_flags
+WHERE flag_name IN ('ff_foxy_response_cache_l2_shadow_v1','ff_foxy_response_cache_l2_v1',
+                    'ff_response_cache_serve_ncert_v1','ff_ncert_solver_solution_store_v1');
+-- expect: 4 rows, all is_enabled = false
+```
+
+If the shadow flag (`ff_foxy_response_cache_l2_shadow_v1`) was enabled at any point after 2026-07-16, **restart the Phase 1 shadow-measurement window at the deploy timestamp**. Rationale: `PROMPT_REV` is a `gen_ctx` component, so the 1→2 bump rotates every cache key and invalidates all cached responses — a shadow window spanning the bump mixes pre- and post-bump keyspaces and artificially depresses the measured hit-rate against the Phase 3 <5% kill criterion. Do not evaluate the kill criterion on a window that straddles the bump. (See `docs/math-rendering-spec.md` for the change itself.)
+
+## Known operational gaps (follow-up register)
+
+### 2026-07-20 — `scripts/check-config-parity.sh` monorepo path drift (grounding-config parity guard is dead)
+
+Logged by ops during the math-rendering consolidation; found by architect. **Follow-up only — do NOT fix from this runbook; the script and CI wiring are architect-owned.**
+
+`scripts/check-config-parity.sh` (repo root) is the only mechanical guard keeping `packages/lib/src/grounding-config.ts` in sync with `supabase/functions/grounded-answer/config.ts`. It is currently non-functional in every invocation path (verified 2026-07-20):
+
+1. **Declared in the wrong package**: `apps/host/package.json:24` (`check:config-parity`) and `:25` (`lint:ai-boundary` chains it) run `bash scripts/check-config-parity.sh` with cwd `apps/host/`, where no `scripts/check-config-parity.sh` exists — the script lives only at the repo root.
+2. **Pre-monorepo paths inside the script**: even from the repo root, `WEB="src/lib/grounding-config.ts"` (line 6) no longer exists — the canonical file moved to `packages/lib/src/grounding-config.ts` (the `apps/host/src/lib/grounding-config.ts` twin is a 2-line re-export stub with no `export const` lines, so pointing at it would also break the comparison). `DENO="supabase/functions/grounded-answer/config.ts"` resolves only from the repo root.
+3. **Silent failure mode**: the existence check (lines 9-11) does `exit 1` with **no error message**, so a wired-up CI run would fail opaquely; today it isn't wired at all — zero matches for `config-parity` in `.github/workflows/`.
+
+Net effect: `packages/lib/src/grounding-config.ts` and `supabase/functions/grounded-answer/config.ts` can drift with no mechanical detection — this includes the `PROMPT_REV`-adjacent constants this runbook's invalidation contract depends on. Fix (architect): repoint the script's `WEB` path to `packages/lib/src/grounding-config.ts`, move/redeclare the npm script so cwd and file locations agree, add an error message to the missing-file branch, and wire it into a CI job.
+
 ## References
 
 - Regression catalog: `.claude/regression-catalog.md` (REG-264..REG-269)

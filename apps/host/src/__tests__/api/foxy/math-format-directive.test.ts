@@ -17,10 +17,13 @@
 //      LAST (after teach-then-stop and the diagram directive). quiz_me /
 //      real-practice / legacy-practice turns NEVER get it (the route skips
 //      the flag read on mode === 'practice').
-//   3. Band uniformity (CEO 2026-07-16): buildMathFormatDirective('6-8') and
-//      ('9-12') return IDENTICAL text — bands diverge only when the eval
-//      harness can score variants. resolveGradeBand consumes P5 grade
-//      STRINGS: "6"/"7"/"8" → '6-8', "9".."12" → '9-12', garbage → '6-8'.
+//   3. Grade bands (docs/math-rendering-spec.md §3, CEO-approved 2026-07-20 —
+//      supersedes the 2026-07-16 "bands identical" constraint):
+//      buildMathFormatDirective emits THREE distinct band variants
+//      ('6-8' | '9-10' | '11-12'); rules 2-3 (display-vs-inline + delimiters)
+//      stay VERBATIM across bands, only rule 1's density + the worked example
+//      vary. resolveGradeBand consumes P5 grade STRINGS: "6"/"7"/"8" → '6-8',
+//      "9"/"10" → '9-10', "11"/"12" → '11-12', garbage/out-of-range → '6-8'.
 //   4. Directive content: 14/15 × 25/42 few-shot, undelimited-LaTeX ban,
 //      paren pseudo-delimiter ban, step + math-block structure, bilingual P7
 //      note — and it lives OUTSIDE the parity-locked
@@ -46,6 +49,7 @@ import {
   TEACH_THEN_STOP_DIRECTIVE,
   DIAGRAM_DIRECTIVE,
   MATH_FORMAT_DIRECTIVE,
+  MATH_STEP_DENSITY_RULES,
   buildMathFormatDirective,
   resolveGradeBand,
   composeModeDirective,
@@ -293,26 +297,74 @@ describe('mode_directive — math-format flag ON injects MATH_FORMAT_DIRECTIVE L
   });
 });
 
-describe('grade band — uniform directive text until the eval harness can score variants (CEO 2026-07-16)', () => {
-  it("buildMathFormatDirective('6-8') === buildMathFormatDirective('9-12'), both ARE the directive", () => {
-    const junior = buildMathFormatDirective('6-8');
-    const senior = buildMathFormatDirective('9-12');
-    expect(junior).toBe(senior);
-    expect(junior).toBe(MATH_FORMAT_DIRECTIVE);
-    expect(junior).toContain(DIRECTIVE_MARKER);
-    expect(senior).toContain(DIRECTIVE_MARKER);
+// NOTE (2026-07-20): this block previously pinned the two-band ('6-8'|'9-12')
+// UNIFORM-text behavior (CEO 2026-07-16). That constraint was SUPERSEDED by
+// docs/math-rendering-spec.md (CEO-approved 2026-07-20): three distinct bands,
+// split at grade 10/11, with per-band density text. Updated to the spec.
+describe('grade band — three distinct band variants (docs/math-rendering-spec.md §3, CEO 2026-07-20)', () => {
+  const ALL_BANDS: GradeBand[] = ['6-8', '9-10', '11-12'];
+
+  it("buildMathFormatDirective('6-8') IS the historical MATH_FORMAT_DIRECTIVE (spec §7.2)", () => {
+    expect(buildMathFormatDirective('6-8')).toBe(MATH_FORMAT_DIRECTIVE);
+  });
+
+  it('the three band directives are pairwise DISTINCT and all carry the directive marker', () => {
+    const texts = ALL_BANDS.map((b) => buildMathFormatDirective(b));
+    expect(new Set(texts).size).toBe(3);
+    for (const t of texts) expect(t).toContain(DIRECTIVE_MARKER);
+  });
+
+  it('each band directive embeds ITS band density text from MATH_STEP_DENSITY_RULES (single source)', () => {
+    for (const band of ALL_BANDS) {
+      expect(buildMathFormatDirective(band)).toContain(MATH_STEP_DENSITY_RULES[band]);
+    }
+  });
+
+  it('rules 2-3 (display-vs-inline + delimiters) are VERBATIM across all bands (spec §7.2)', () => {
+    // Extract rule 2..3 from the 6-8 directive (from the rule-2 header up to
+    // the example header) and require the identical substring in every band.
+    const base = buildMathFormatDirective('6-8');
+    const start = base.indexOf('2. WHERE MATH GOES');
+    const end = base.indexOf('\n\nExample —');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const rules23 = base.slice(start, end);
+    // The inline-flat-equation allowance stays legal at ALL bands (spec §7.2).
+    expect(rules23).toContain('\\( 2x + 3 = 7 \\)');
+    for (const band of ALL_BANDS) {
+      expect(buildMathFormatDirective(band)).toContain(rules23);
+    }
+  });
+
+  it('9-10 density: 2-3 routine operations may combine; non-routine moves stay separate', () => {
+    const d = buildMathFormatDirective('9-10');
+    expect(d).toContain('MAY combine 2-3 ROUTINE operations');
+    expect(d).toContain('Non-routine or error-prone moves still get their OWN step/math pair');
+    // Spec §3.3 worked example: quadratic by splitting the middle term.
+    expect(d).toContain('splitting the middle term');
+    expect(d).toContain('x^2 - 5x + 6 = 0');
+  });
+
+  it('11-12 density: justified chains, NCERT theorem names, LaTeX-only \\because, no foreign mnemonics', () => {
+    const d = buildMathFormatDirective('11-12');
+    expect(d).toContain('justified equation chains');
+    expect(d).toContain('NCERT theorem/result names');
+    expect(d).toContain('\\because');
+    expect(d).toContain('no "FOIL"');
+    // Spec §3.3 worked example: product-rule differentiation.
+    expect(d).toContain('product rule of differentiation (NCERT Class 12)');
   });
 
   it.each([
     ['6', '6-8'],
     ['7', '6-8'],
     ['8', '6-8'],
-    ['9', '9-12'],
-    ['10', '9-12'],
-    ['11', '9-12'],
-    ['12', '9-12'],
+    ['9', '9-10'],
+    ['10', '9-10'],
+    ['11', '11-12'],
+    ['12', '11-12'],
   ] as Array<[string, GradeBand]>)(
-    'resolveGradeBand(%j) → %s (P5 grade strings)',
+    'resolveGradeBand(%j) → %s (P5 grade strings; split at grade 10/11)',
     (grade, band) => {
       expect(resolveGradeBand(grade)).toBe(band);
     },
@@ -325,7 +377,7 @@ describe('grade band — uniform directive text until the eval harness can score
     },
   );
 
-  it('through the route selector, grade "6" and grade "12" produce byte-identical directives', () => {
+  it('through the route selector, grades in DIFFERENT bands produce different directives; same band identical', () => {
     const opts = {
       isQuizMe: false,
       isRealPractice: false,
@@ -334,7 +386,18 @@ describe('grade band — uniform directive text until the eval harness can score
       diagramsFlagOn: false,
       mathFormatFlagOn: true,
     };
+    // Same band → byte-identical (one stable directive per band).
     expect(resolveModeDirective({ ...opts, grade: '6' })).toBe(
+      resolveModeDirective({ ...opts, grade: '8' }),
+    );
+    expect(resolveModeDirective({ ...opts, grade: '11' })).toBe(
+      resolveModeDirective({ ...opts, grade: '12' }),
+    );
+    // Different bands → different density text.
+    expect(resolveModeDirective({ ...opts, grade: '6' })).not.toBe(
+      resolveModeDirective({ ...opts, grade: '10' }),
+    );
+    expect(resolveModeDirective({ ...opts, grade: '10' })).not.toBe(
       resolveModeDirective({ ...opts, grade: '12' }),
     );
   });
