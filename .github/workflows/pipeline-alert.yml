@@ -45,6 +45,14 @@ on:
       - "Deploy Production — Alfanumrik"
       - "Sync Migrations to Staging"
       - "CI — Alfanumrik"
+      # Added 2026-07-20: the full E2E suite left default PR runs (label
+      # opt-in) — this nightly is its ONLY scheduled run, and it calls
+      # e2e-suite.yml with advisory:false precisely so a red suite concludes
+      # `failure` and lands here. Scheduled runs execute on the default
+      # branch, so head_branch == 'main' and the branches filter below match.
+      # REG-130: this string must byte-match e2e-nightly.yml's `name:`
+      # (em dash included).
+      - "E2E Nightly — Alfanumrik"
     types: [completed]
     branches: [main]
 
@@ -91,6 +99,8 @@ jobs:
               HINT="Prod deploy pipeline is DEAD: DB migrations, Edge Function deploys, post-deploy health check, and auto-rollback all stop running until this is green. Prod keeps serving the LAST successful deploy — the synthetic monitor will NOT catch this." ;;
             "Sync Migrations to Staging")
               HINT="Staging schema is drifting from main — PR integration tests now validate against a stale schema and will fail or, worse, pass against the wrong schema." ;;
+            "E2E Nightly — Alfanumrik")
+              HINT="The nightly full E2E suite (~342 tests) is RED on main. PR CI no longer runs this suite by default (opt-in via the e2e-full label), so this nightly is the ONLY scheduled full-suite safety net — a user-facing flow may be broken on main, or the staging build/fixtures drifted. Triage before further regressions accumulate unseen; re-run on demand via workflow_dispatch." ;;
             "CI — Alfanumrik")
               HINT="Main is red: the merge quality gate is broken and Deploy Production will not get a green build to ship." ;;
             *)

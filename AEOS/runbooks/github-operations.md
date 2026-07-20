@@ -20,7 +20,7 @@ The governing principle (core doc 20): *the pipeline is the single sanctioned pa
 
 # Scope
 
-In scope: `ci.yml`, `deploy-production.yml`, `deploy-staging.yml`, the dormant `deploy-aws.yml`, the `pipeline-alert.yml` watcher, and the `synthetic-monitor.yml` external probe. Branch protection on `main`, required status checks, and the GitHub Actions secrets/variables posture.
+In scope: `ci.yml`, `deploy-production.yml`, `deploy-staging.yml`, the dormant `deploy-aws.yml`, the `pipeline-alert.yml` watcher, the nightly `e2e-nightly.yml` safety net (thin caller of the reusable `e2e-suite.yml`; added 2026-07-20), and the `synthetic-monitor.yml` external probe. Branch protection on `main`, required status checks, and the GitHub Actions secrets/variables posture.
 
 Out of scope: provider mechanics covered elsewhere — Vercel (`extensions/vercel.md`), AWS/ECS/CloudFront (the aws-operations runbook), and SLO/incident response (the SRE runbook).
 
@@ -43,7 +43,7 @@ Working branches follow the convention `feature/*`, `bugfix/*`, `hotfix/*`, `ref
 
 # The CI Pipeline (`ci.yml`)
 
-`ci.yml` runs on push to `main`/`master`/`develop` and on PRs to `main`/`master`. Node 22. Concurrency cancels in-progress runs per ref. Since 2026-07-20 the topology is **parallel**: every root job (secret-scan, quality, the 4 unit-test shards, edge-function-tests, integration-tests, build, e2e, e2e-critical-paths) starts at t=0 with no cross-job `needs`; the only fan-ins are `unit-tests-merge` (over quality + the shards) and the aggregate `ci-gate`. Jobs:
+`ci.yml` runs on push to `main`/`master`/`develop` and on PRs to `main`/`master`. Node 22. Concurrency cancels in-progress runs per ref. Since 2026-07-20 the topology is **parallel**: every root job (secret-scan, quality, the 4 unit-test shards, edge-function-tests, integration-tests, build, e2e-critical-paths — plus the advisory `e2e` job, which since 2026-07-20 runs only on PRs carrying the `e2e-full` label; see job 6) starts at t=0 with no cross-job `needs`; the only fan-ins are `unit-tests-merge` (over quality + the shards) and the aggregate `ci-gate`. Jobs:
 
 ## 1. secret-scan (BLOCKING)
 - **Gitleaks** scan over full history (BLOCKING — a leak fails CI; allowlist false positives via `.gitleaks.toml`, never by disabling the gate).
@@ -73,10 +73,11 @@ Starts at t=0 (since 2026-07-20 it no longer `needs: quality` — the `ci-gate` 
 - bundle-size report and **P10 budget gates**: largest shared chunk vs `SHARED_JS_LIMIT_KB=160` (gzipped), middleware vs `120`, per-page vs `260`, plus the authoritative `npm run check:bundle-size` gate,
 - uploads the build artifact.
 
-## 6. e2e (ADVISORY) and e2e-critical-paths (BLOCKING)
-Both start at t=0 (2026-07-20: `e2e-critical-paths` no longer `needs: build`).
-- `e2e` runs the full Playwright suite on PRs only, with `continue-on-error: true` (advisory only — never rely on it as a gate; `ci-gate` does not wait on it).
-- `e2e-critical-paths` is **BLOCKING** on PRs to `main`/`master`/`staging`: it runs the two highest-blast-radius specs — quiz happy path (REG-45) and payment checkout (REG-46) — against `https://alfanumrik.com` with mocked RPCs pinning P1/P2/P3.
+## 6. e2e (ADVISORY, label opt-in since 2026-07-20) and e2e-critical-paths (BLOCKING)
+`e2e-critical-paths` starts at t=0 (2026-07-20: it no longer `needs: build`).
+- `e2e` (check context "E2E Tests / E2E Suite") **no longer runs on default PR pushes** (2026-07-20). It runs the full advisory Playwright suite, via the reusable `e2e-suite.yml`, ONLY when the PR carries the **`e2e-full`** label (the label exists — purple, description set). Trigger mechanics: `labeled` is a `pull_request` trigger type on the whole workflow, so applying ANY label re-triggers CI (~5-7 min warm) — label early or expect a re-run. Still advisory only — never rely on it as a gate; `ci-gate` does not wait on it.
+- The full suite's scheduled safety net is the **"E2E Nightly — Alfanumrik"** workflow (`e2e-nightly.yml`, added 2026-07-20): every night at **21:30 UTC** (03:00 IST) against `main`, plus on-demand via `workflow_dispatch`. Unlike the PR job it is NOT advisory — a suite failure **FAILS the run red**, and `pipeline-alert.yml` watches it (red nightly → auto-opened `pipeline-failure` issue; auto-closes on the next green run). Remediation note: a red nightly with missing-staging-fixture symptoms ("student not provisioned" auth errors) is fixed by dispatching `seed-staging-test-student.yml` (idempotent; re-enabled 2026-07-20 after being found disabled), then re-running the nightly.
+- `e2e-critical-paths` is **BLOCKING** on PRs to `main`/`master`/`staging` (unchanged by the 2026-07-20 split — ~49s): it runs the two highest-blast-radius specs — quiz happy path (REG-45) and payment checkout (REG-46) — against `https://alfanumrik.com` with mocked RPCs pinning P1/P2/P3.
 
 ## 7. health-check (main push only)
 Probes `https://alfanumrik.com/api/v1/health` with retry/backoff. Soft-passes ONLY on Vercel deployment-protection challenges (401/403/429); genuine 5xx / connection / DNS / timeout hard-fail. Configure `VERCEL_AUTOMATION_BYPASS_SECRET` for true verification.
@@ -94,7 +95,7 @@ Mark these as **required** status checks on `main`:
 - `Production Build` (includes P10 budgets)
 - `E2E Critical Paths (blocking)`
 
-Do **not** require `E2E Tests` (advisory — `ci-gate` does not wait on it either) or `Post-Deploy Health Check` (post-merge). Never weaken a gate to make a red pipeline green — fix the change instead.
+Do **not** require `E2E Tests` (advisory — `ci-gate` does not wait on it either; since 2026-07-20 the context appears only on PRs carrying the `e2e-full` label, so requiring it would deadlock every unlabeled PR — verified NOT a required context) or `Post-Deploy Health Check` (post-merge). Never weaken a gate to make a red pipeline green — fix the change instead.
 
 ---
 
@@ -137,7 +138,7 @@ Gated behind `vars.ENABLE_AWS_DEPLOY` (default `false`); the `Cutover Gate` no-o
 
 A failed pipeline is invisible unless something watches the pipeline itself. This watcher exists because of a real incident (2026-06-12): `Deploy Production — Alfanumrik` was red for 26 days on a broken `SUPABASE_ACCESS_TOKEN` while the synthetic monitor stayed green (the last good prod build kept serving). It is `workflow_run`-triggered on completion of the watched workflows on `main`:
 
-- Watched (byte-exact names): `Deploy Production — Alfanumrik`, `Sync Migrations to Staging`, `CI — Alfanumrik`.
+- Watched (byte-exact names): `Deploy Production — Alfanumrik`, `Sync Migrations to Staging`, `CI — Alfanumrik`, `E2E Nightly — Alfanumrik` (added 2026-07-20 — the nightly is the only scheduled full-E2E safety net now that the suite left default PR runs, so a red nightly must be impossible to miss).
 - On `conclusion == 'failure'` for `main`: opens a `pipeline-failure` GitHub issue (guaranteed channel, no secrets needed), deduped to at-most-one open issue per workflow (repeated failures add a comment); best-effort Slack via `PIPELINE_ALERT_SLACK_WEBHOOK` (falls back to `SYNTHETIC_MONITOR_SLACK_WEBHOOK`).
 - On the next green `main` run: **auto-closes** the matching issue, so an open `pipeline-failure` issue ALWAYS means "currently broken."
 
@@ -181,7 +182,7 @@ Extensions:
 - `extensions/aws.md` — the dormant `deploy-aws.yml` gate.
 
 Repo:
-- `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml`, `deploy-aws.yml`, `pipeline-alert.yml`, `synthetic-monitor.yml`.
+- `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml`, `deploy-aws.yml`, `pipeline-alert.yml`, `synthetic-monitor.yml`, `e2e-nightly.yml` + `e2e-suite.yml` (2026-07-20), `seed-staging-test-student.yml` (staging E2E fixture seeder — idempotent, dispatch on "student not provisioned" nightly failures).
 
 Related runbooks: aws-operations (operating `deploy-aws.yml`), sre (SLOs and incident response).
 

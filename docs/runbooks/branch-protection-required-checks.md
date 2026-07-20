@@ -87,6 +87,12 @@ Adding a non-deterministic, advisory, or push-only check as *required* would per
 deadlock PRs (they can never reach "all required checks green"):
 
 - **`E2E Tests`** — runs `continue-on-error`; flaky by design, not a merge gate.
+  **2026-07-20 update:** the full advisory suite is now **label opt-in** — this context
+  (reported as "E2E Tests / E2E Suite" via the reusable `e2e-suite.yml`) appears **only on
+  PRs carrying the `e2e-full` label**, so requiring it would deadlock every unlabeled PR.
+  Verified NOT a required context. The suite's scheduled safety net moved to the
+  "E2E Nightly — Alfanumrik" workflow (21:30 UTC nightly + `workflow_dispatch`, fails red,
+  watched by `pipeline-alert.yml`).
 - **`Post-Deploy Health Check`** — runs on push to `main`, **after** merge; can never be
   green on a PR.
 - **`Vercel`, `Supabase Preview`, `Vercel Agent Review`** — preview/advisory bots, not
