@@ -9,6 +9,23 @@ useDefault = true
 
 [allowlist]
 description = "PII test sentinels — intentional fake values for redactor verification"
+# 2026-07-20 (PR #1352): CI placeholder JWT used in workflow env blocks
+# (ci.yml + deploy-staging.yml line 19 as NEXT_PUBLIC_SUPABASE_ANON_KEY;
+# deploy-production.yml line 524 references it in a grep guard, and a JSDoc
+# in apps/host/src/__tests__/helpers/integration.ts quotes it verbatim).
+# It is a JWT *header* segment plus the literal
+# ".placeholder" — NOT a credential (a real Supabase key has base64 payload +
+# signature segments). generic-api-key flagged it only because a CRLF→LF
+# normalization rewrote deploy-staging.yml, making the pre-existing line
+# appear newly added. VALUE-scoped (not path-scoped: path-allowlisting
+# workflow files could hide future real leaks) and anchored ^…$ so a real
+# token that merely shares the standard JWT-header prefix cannot hide behind
+# it. A fingerprint ignore was rejected — it would not survive
+# squash-merge SHA changes. regexTarget is intentionally unset: the default
+# target is the captured SECRET (gitleaks v8.24.3 detect.go).
+regexes = [
+    '^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.placeholder$',
+]
 paths = [
     'src/__tests__/ai-prompt-pii\.test\.ts',
     'src/__tests__/sentry-pii-redaction\.test\.ts',
