@@ -23,6 +23,7 @@
  *   7. On failure: status='failed', log the reason.
  */
 import { NextResponse } from 'next/server';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@alfanumrik/lib/feature-flags';
@@ -34,6 +35,15 @@ export const dynamic = 'force-dynamic';
 interface RequestBody { synthesisRunId?: string }
 
 export async function POST(request: Request) {
+  // House RBAC gate (added 2026-07-20, RCA fix Task 1.5). This is a
+  // student-initiated action (share own monthly synthesis to a linked
+  // guardian) so the closest existing permission code is used. The
+  // pre-existing inline ownership check below (row.students.auth_user_id
+  // !== userId) is kept as defense-in-depth -- this gate runs first so an
+  // unauthorized caller is rejected before any DB access.
+  const rbacAuth = await authorizeRequest(request, 'report.download_own');
+  if (!rbacAuth.authorized) return rbacAuth.errorResponse!;
+
   const supabase = await createSupabaseServerClient();
 
   const { data: userResult, error: userErr } = await supabase.auth.getUser();

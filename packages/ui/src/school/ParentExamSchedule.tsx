@@ -26,44 +26,73 @@ export default function ParentExamSchedule() {
   const [childName, setChildName] = useState('');
 
   useEffect(() => {
-    if (!authUserId) return;
-    (async () => {
-      // Get linked child's school
-      const { data: guardian } = await supabase
-        .from('guardians')
-        .select('id')
-        .eq('auth_user_id', authUserId)
-        .single();
+    // Every path through this effect (including the early-return when
+    // signed out, and any unexpected error) must resolve `loading` to
+    // false exactly once, or the component gets stuck rendering its
+    // loading skeleton forever. A try/catch/finally also ensures a
+    // failure here never becomes an unhandled promise rejection that
+    // could surface as noise in an unrelated part of the app/tests.
+    let cancelled = false;
 
-      if (!guardian) { setLoading(false); return; }
-
-      const { data: link } = await supabase
-        .from('guardian_student_links')
-        .select('student_id, students(name, school_id)')
-        .eq('guardian_id', guardian.id)
-        .eq('status', 'approved')
-        .limit(1)
-        .single();
-
-      if (!link?.students) { setLoading(false); return; }
-
-      const student = link.students as unknown as { name: string; school_id: string | null };
-      if (!student.school_id) { setLoading(false); return; }
-
-      setChildName(student.name);
-
-      const { data } = await supabase
-        .from('school_exams')
-        .select('id, title, subject, start_time, duration_minutes')
-        .eq('school_id', student.school_id)
-        .in('status', ['scheduled', 'active'])
-        .gt('start_time', new Date().toISOString())
-        .order('start_time', { ascending: true })
-        .limit(5);
-
-      setExams(data || []);
+    if (!authUserId) {
       setLoading(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        // Get linked child's school
+        const { data: guardian } = await supabase
+          .from('guardians')
+          .select('id')
+          .eq('auth_user_id', authUserId)
+          .single();
+
+        if (cancelled) return;
+        if (!guardian) return;
+
+        // Matches both terminal link statuses ('active' from the self-service
+        // OTP flow, 'approved' from the signup-time bootstrap flow) -- see
+        // parent-dashboard RCA Finding A / migration
+        // 20260720170000_parent_dashboard_rca_fixes.sql. A bare
+        // .eq('status', 'approved') here would silently show no exams for a
+        // guardian linked via the OTP flow, the same class of bug fixed
+        // elsewhere in this migration.
+        const { data: link } = await supabase
+          .from('guardian_student_links')
+          .select('student_id, students(name, school_id)')
+          .eq('guardian_id', guardian.id)
+          .in('status', ['active', 'approved'])
+          .limit(1)
+          .single();
+
+        if (cancelled) return;
+        if (!link?.students) return;
+
+        const student = link.students as unknown as { name: string; school_id: string | null };
+        if (!student.school_id) return;
+
+        setChildName(student.name);
+
+        const { data } = await supabase
+          .from('school_exams')
+          .select('id, title, subject, start_time, duration_minutes')
+          .eq('school_id', student.school_id)
+          .in('status', ['scheduled', 'active'])
+          .gt('start_time', new Date().toISOString())
+          .order('start_time', { ascending: true })
+          .limit(5);
+
+        if (cancelled) return;
+        setExams(data || []);
+      } catch {
+        // Fail closed: no exams shown, no crash, no unhandled rejection.
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
+
+    return () => { cancelled = true; };
   }, [authUserId]);
 
   if (loading) return <div style={{ padding: 16, background: '#f9fafb', borderRadius: 12, height: 80 }} />;

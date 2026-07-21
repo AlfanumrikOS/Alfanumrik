@@ -23,6 +23,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { toast } from '@alfanumrik/ui/ui/toast';
 import { ResponsiveTable, type ResponsiveColumn } from '@alfanumrik/ui/ui';
+import { withParentChildId } from '../_components/parent-child-scope';
 
 const t = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -463,7 +464,7 @@ export default function ParentBillingPage() {
                     <div className="flex gap-2 sm:flex-col sm:items-end">
                       <button
                         onClick={() =>
-                          router.push(`/parent?child=${encodeURIComponent(child.student_id)}`)
+                          router.push(withParentChildId('/parent', child.student_id))
                         }
                         className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                       >

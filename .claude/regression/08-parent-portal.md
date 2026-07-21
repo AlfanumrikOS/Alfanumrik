@@ -604,3 +604,125 @@ dashboard-wiring pins).
 
 ---
 
+
+---
+
+## Remediation — Parent Dashboard RCA: data-access correctness + presentational refactor — 2026-07-20
+
+A 3-agent RCA (frontend/backend/architect, read-only audit) of the full parent
+portal found the platform's dashboard was silently empty for a real subset of
+parents: 11 RLS policies gated parent SELECT access on
+`guardian_student_links.status = 'approved'` only, while the live self-service
+link-code OTP flow (`parent_redeem_link_code_otp` ->
+`link_guardian_to_student_via_code`) sets `status = 'active'`. A parent who
+linked via that flow got a real, "linked"-looking row but XP, coin balance,
+score history, quiz sessions, skill state, exam configs, and monthly reports
+all silently returned zero rows under RLS -- no error, just empty data. A
+related bug in the same RPC matched `students.invite_code` only (not
+`students.link_code`), so a parent whose code lived in the second column
+passed the OTP challenge and then got "Invalid invite code" at the final
+redeem step. `teacher_parent_threads` had no INSERT RLS policy (app-layer-only
+trust boundary). Migration
+`supabase/migrations/20260720170000_parent_dashboard_rca_fixes.sql` re-points
+the 11 policies at the existing `is_guardian_of()` helper (already correctly
+treats `active`/`approved` as linked -- this closes the drift between the
+older inline-status policies and the newer helper-based convention), widens
+the RPC's code match to `(invite_code OR link_code)`, and adds a
+guardian-scoped INSERT policy on `teacher_parent_threads` for defense-in-depth.
+Separately, `/parent/billing`'s "View progress" deep link used the wrong query
+param (`?child=` instead of the shared `PARENT_CHILD_ID_PARAM` `?childId=`),
+silently landing multi-child households on the wrong child's dashboard. The
+parent-portal login lockout messages (`recordFailedAttempt`/`isLockedOut`)
+were the one hardcoded-English gap on an otherwise fully bilingual surface.
+`/parent/reports`, `ParentGlanceHome`, and `/parent/profile` were also
+refactored onto the canonical design-system primitives (`admin-ui/StatCard`,
+`ui/primitives/ProgressBar`, `ui/primitives/ProgressRing`,
+`admin-ui/charts/BarChart`) in place of hand-rolled inline-styled markup that
+had drifted from the platform's card visual language and re-implemented
+progress bars/rings the design system already provides.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-290 | `parent_dashboard_rca_fixes_migration` | P8/P9: the 11 parent-select RLS policies (score_history, xp_transactions, coin_balances, coin_transactions, challenge_attempts, challenge_streaks, quiz_session_shuffles, student_skill_state, performance_scores, exam_configs, monthly_reports) are re-pointed at `is_guardian_of(student_id)` (not a bare `status = 'approved'` literal) so an `active`-status guardian link (the live OTP flow's terminal status) is no longer silently excluded from every one of these tables; `link_guardian_to_student_via_code` matches `invite_code OR link_code` (not `invite_code` only); `teacher_parent_threads` gets a guardian-scoped INSERT RLS policy; `synthesis/parent-share` gates on `authorizeRequest(request,'report.download_own')` before any DB access (house RBAC convention parity), with the pre-existing inline ownership check kept as defense-in-depth. | `apps/host/src/__tests__/parent-dashboard-rca-fixes-migration.test.ts` | E | P8,P9 |
+| REG-291 | `parent_billing_child_scope_deep_link` | P13/UX: `/parent/billing`'s "View progress" action navigates via the shared `withParentChildId()` helper (`?childId=`), not a bespoke `?child=` param the dashboard page never reads -- closes a bug where clicking "View progress" for a non-primary child in a multi-child household silently landed on the primary/default child's data instead. | `apps/host/src/app/parent/billing/page.tsx` (fix; enforced via `withParentChildId` reuse -- see `apps/host/src/__tests__/parent/parent-child-scope.test.ts` for the shared helper's own contract) | E | P13 |
+| REG-292 | `parent_lockout_messages_bilingual` | P7: `recordFailedAttempt(isHi)` / `isLockedOut(isHi)` render Hindi Devanagari lockout copy when `isHi=true` and English when omitted/false (backward-compatible default), closing the one hardcoded-English gap on an otherwise fully bilingual parent login screen; lockout STATE (attempt count, lockedUntil, escalating 3->5->15->60 min durations) is unchanged and independently verified by the pre-existing `parent-children-link.test.ts` suite. | `apps/host/src/__tests__/parent-lockout-bilingual.test.ts` | E | P7 |
+| REG-293 | `parent_reports_design_system_refactor` | UX/consistency: `/parent/reports`'s SummaryCard, SubjectCard mastery bar, and CircularProgressRing now delegate to the canonical `admin-ui/StatCard`, `ui/primitives/ProgressBar`, and `ui/primitives/ProgressRing` (recharts-backed `admin-ui/charts/BarChart` replaces the hand-rolled CSS weekly-accuracy bar chart in the monthly report) instead of duplicating bespoke inline-styled markup; a realistic `get_child_dashboard` payload renders correct StatCard values and `role=progressbar` elements with the right `aria-valuenow`, proving the presentational swap did not drop or corrupt any report data. | `apps/host/src/__tests__/parent/parent-reports-design-system-refactor.test.tsx` | E | — |
+| REG-294 | `parent_glance_home_statcard_refactor` | UX/consistency: `ParentGlanceHome`'s snapshot `StatPill` delegates to the canonical `admin-ui/StatCard` (same rationale as REG-293); the full pre-existing REG-84/REG-85 read-only-contract and Wave-D Encourage-gate suite (15 tests, exact-text assertions on stat values) continues to pass unmodified, proving byte-for-byte data fidelity through the swap. | `apps/host/src/__tests__/components/parent/parent-glance-home.test.tsx` (pre-existing, unmodified, re-verified) | E | — |
+| REG-295 | `parent_profile_page_tailwind_refactor` | P7/UX: `/parent/profile` (previously 100% inline `style={{}}` with an undocumented green `#16A34A` header color) rebuilt on Tailwind + semantic tokens (brand orange, `surface-*`, `success`/`danger`) with byte-identical business logic -- name/phone validation (2-100 chars, phone regex), the exact `supabase.from('guardians').update({name,phone}).eq('id',guardian.id)` write, sign-out flow, and Hindi copy all independently verified (no render test previously existed for this page). | `apps/host/src/__tests__/parent/parent-profile-page.test.tsx` | E | P7 |
+
+### Catalog total
+
+Pre-remediation: 289 entries (through the 2026-07-20 super-admin session/
+routing/error-contract repair, REG-287..REG-289). This remediation adds
+REG-290..REG-295 (parent-dashboard RCA: the 11-policy `active`/`approved` RLS
+mismatch + OTP redeem code-column fix + `teacher_parent_threads` INSERT policy
++ `synthesis/parent-share` RBAC-gate parity, the billing child-scope deep-link
+fix, the P7 lockout-message bilingual fix, and three design-system
+presentational refactors on `/parent/reports`, `ParentGlanceHome`, and
+`/parent/profile`).
+**Total catalog: 295 entries (target: 35 — TARGET EXCEEDED).**
+
+### Phase 4 verification findings (2026-07-20/21, same remediation)
+
+Running the full test suite as a final gate (not just the new test files in
+isolation) surfaced three real issues the initial implementation missed,
+all fixed and re-verified before this remediation was considered complete:
+
+1. `src/__tests__/api/synthesis/synthesis-routes.test.ts` (23 pre-existing
+   tests) broke: Task 1.5's new `authorizeRequest()` gate runs before the
+   route's own `supabase.auth.getUser()` check, and the test file had no
+   mock for `@alfanumrik/lib/rbac`. Fixed by mocking `authorizeRequest` and
+   wiring it into the existing `authedAs()` test helper so both auth checks
+   stay in lockstep; the "returns 401 when not authenticated" test now
+   correctly expects the RBAC gate's own error shape
+   (`error:'Unauthorized', code:'AUTH_REQUIRED'`), and a new test covers the
+   route's own defense-in-depth `unauthenticated` check for the theoretical
+   case where the two auth mechanisms disagree. 24/24 tests pass
+   (23 original + 1 new).
+2. `src/__tests__/design-system/no-dead-opacity-on-var.test.ts` (REG-238)
+   caught 3 real violations in the new `/parent/profile` page: Tailwind's
+   `/NN` opacity modifier emits no alpha for CSS-var-valued semantic tokens
+   (`bg-danger/10`, `bg-success/10`), so the toast/sign-out backgrounds
+   would have rendered at the wrong (effectively opaque) color in
+   production despite looking correct in a quick visual scan. Fixed by
+   switching to the `bg-[color-mix(in_srgb,var(--danger)_10%,transparent)]`
+   pattern the design system requires for var()-valued tokens.
+3. Wiring the previously-dead `ParentExamSchedule.tsx` into a live page
+   (Task 2.4) exposed two pre-existing latent bugs in that component,
+   invisible while it had zero call sites: (a) the `if (!authUserId) return`
+   early-exit never called `setLoading(false)`, so a signed-out render
+   would show the loading skeleton forever; (b) the effect had no
+   try/catch, so any Supabase error would become an unhandled promise
+   rejection. Both fixed with a `cancelled` guard + try/catch/finally so
+   every path resolves `loading` exactly once and no error can escape as
+   an unhandled rejection.
+
+**Separately identified, NOT part of this remediation (pre-existing,
+out of scope):** `src/__tests__/parent/parent-calendar-live-events.test.tsx`
+fails intermittently when run in the same process as
+`src/__tests__/parent/parent-messages-states.test.tsx` plus one or more
+other files (reproduces with as few as 3 files present, with or without
+`--no-file-parallelism`). Confirmed via `git stash` bisection that this
+reproduces IDENTICALLY on the pre-remediation code -- i.e. it is a
+pre-existing cross-file test-isolation issue (likely module-level mock/
+state pollution between the two files), not a regression from this
+remediation. Flagged here for the testing/architect owners to investigate
+separately; not fixed as part of this remediation since it is unrelated to
+the parent-dashboard RCA scope.
+
+### Phase 4 verification, round 2 (2026-07-21): RLS recursion-guard ledger
+
+The full suite also caught a 4th real issue in
+`src/__tests__/rls-no-cross-table-recursion.test.ts` (a frozen-blast-radius
+canary, unrelated to this remediation's own new test files): (a) Task 1.1's
+11 policy rewrites onto `is_guardian_of()` correctly stopped being detected
+as inline cross-table risks -- exactly the intended architectural
+improvement -- but the guard's frozen ledger still listed them, failing its
+"no stale entries" check; (b) Task 1.3's `teacher_parent_threads` INSERT
+policy inlined a `guardians` subquery instead of using the existing
+`public.get_my_guardian_id()` SECURITY DEFINER helper, tripping the guard's
+"no NEW inline cross-table policy" check. Fixed by (a) pruning the 11 stale
+ledger entries with a dated drain comment (matching the file's existing
+`at_risk_alerts` drain precedent) and (b) rewriting the INSERT policy to
+`guardian_id = public.get_my_guardian_id()`, which needed no grandfathering
+at all. Net ledger count: 234 -> 223. All 23 tests in this file pass.
