@@ -370,6 +370,248 @@ export async function canAccessStudent(authUserId: string, studentId: string): P
   return false;
 }
 
+// ─── Canonical Teacher Roster Resolution ─────────────────────
+//
+// SINGLE SOURCE OF TRUTH for "which classes/students can this teacher see"
+// on the Next.js server side. Reuses the EXACT tables and fail-closed
+// semantics as canAccessStudent's teacher branch above:
+//   teachers(auth_user_id, is_active) → class_teachers(teacher_id, class_id, is_active)
+//     → class_enrollments(class_id, student_id, is_active)
+//
+// Background (teacher-dashboard deep RCA, 2026-07-20): three independent
+// re-implementations of this join pattern had drifted from canAccessStudent
+// and from each other — most notably a missing `is_active` filter on
+// `class_teachers` and a missing `is_active` filter on the `teachers` lookup
+// itself in one route. Any NEW Next.js server route that needs to answer
+// "is this teacher allowed to see this class/student" MUST call
+// `resolveTeacherIdentity` + `resolveTeacherRosterScope` below instead of
+// re-querying class_teachers/class_enrollments directly.
+//
+// The Deno Edge Function `supabase/functions/teacher-dashboard/index.ts`
+// (`resolveStudentsForTeacher`) cannot import this module (different
+// runtime) and intentionally keeps an ADDITIONAL grade-level fallback path
+// documented inline as an accepted architectural exception — see the
+// TODO(TSB-3 convergence) comment there.
+
+export interface TeacherIdentity {
+  id: string;
+  schoolId: string | null;
+}
+
+export interface TeacherRosterClass {
+  classId: string;
+  schoolId: string;
+  grade: string;
+  subject: string | null;
+}
+
+export interface TeacherRosterEnrollment {
+  classId: string;
+  studentId: string;
+}
+
+export interface TeacherRosterScope {
+  teacher: TeacherIdentity;
+  /** Active class ids the teacher is assigned to (post classId filter, if any). */
+  classIds: string[];
+  /** Populated only when `includeClassDetails` is requested. */
+  classes: TeacherRosterClass[];
+  /** Active (class_id, student_id) enrollment pairs within `classIds`. */
+  enrollments: TeacherRosterEnrollment[];
+}
+
+export interface ResolveTeacherRosterOptions {
+  /** Restrict resolution to this single class (still re-verified against the teacher's roster). */
+  classId?: string;
+  /** Restrict enrollment resolution to this single student. */
+  studentId?: string;
+  /** Skip the teacher lookup when the caller already resolved it. */
+  teacher?: TeacherIdentity;
+  /**
+   * Also look up `classes` (school_id/grade/subject), enforcing is_active,
+   * deleted_at IS NULL, and an exact match against the teacher's own
+   * school_id. Off by default — canAccessStudent's teacher branch never
+   * queries `classes` at all. Turn this on for routes that need class
+   * metadata or school-scoped guarantees (e.g. curriculum-topic matching).
+   * Fails closed (returns null) when the teacher has no school_id.
+   */
+  includeClassDetails?: boolean;
+}
+
+/**
+ * Resolve the internal teacher identity for an authenticated user.
+ * Returns null when the caller has no ACTIVE teacher profile (fail-closed).
+ * Mirrors the teacher lookup in canAccessStudent's teacher branch
+ * (is_active = true). Throws on unexpected DB errors (fail-closed via the
+ * caller's try/catch — never silently treats a lookup error as "not a teacher").
+ */
+export async function resolveTeacherIdentity(authUserId: string): Promise<TeacherIdentity | null> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from('teachers')
+    .select('id, school_id')
+    .eq('auth_user_id', authUserId)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (error) throw new Error(`teacher_identity_lookup_failed: ${error.message}`);
+  if (!data) return null;
+  const row = data as { id: string; school_id: string | null };
+  return { id: row.id, schoolId: row.school_id ?? null };
+}
+
+/**
+ * Canonical roster resolver — the single source of truth for all Next.js
+ * server-side teacher routes. Given a teacher's auth_user_id, resolves the
+ * exact set of active classes and active student enrollments they can see,
+ * optionally scoped to one class and/or one student.
+ *
+ * Fail-closed: any lookup error throws (caller must treat as 500). Returns
+ * null when a specifically REQUESTED classId or studentId does not resolve
+ * (the caller has no visibility into that resource). Returns a valid result
+ * with empty arrays when no classId/studentId was requested and the teacher
+ * simply has no active classes/enrollments (list-mode "nothing to show").
+ */
+export async function resolveTeacherRosterScope(
+  authUserId: string,
+  options: ResolveTeacherRosterOptions = {},
+): Promise<TeacherRosterScope | null> {
+  const supabase = getServiceClient();
+  const teacher = options.teacher ?? (await resolveTeacherIdentity(authUserId));
+  if (!teacher) return null;
+
+  let classIds: string[];
+  let classes: TeacherRosterClass[] = [];
+
+  if (options.classId) {
+    // Single-class mode (e.g. remediation POST): resolve class metadata
+    // FIRST when requested, exactly mirroring the historical single-class
+    // resolver's query order, then re-verify the teacher's active
+    // assignment to that exact class.
+    if (options.includeClassDetails) {
+      if (!teacher.schoolId) return null;
+
+      const { data: classRow, error: classErr } = await supabase
+        .from('classes')
+        .select('id, school_id, grade, subject')
+        .eq('id', options.classId)
+        .eq('school_id', teacher.schoolId)
+        .eq('is_active', true)
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle();
+      if (classErr) throw new Error(`roster_lookup_failed: ${classErr.message}`);
+      const row = classRow as { id: string; school_id: string | null; grade: string; subject: string | null } | null;
+      if (!row?.school_id) return null;
+      classes = [{ classId: row.id, schoolId: row.school_id, grade: row.grade, subject: row.subject ?? null }];
+    }
+
+    const { data: teacherClassRow, error: teacherClassErr } = await supabase
+      .from('class_teachers')
+      .select('class_id')
+      .eq('teacher_id', teacher.id)
+      .eq('class_id', options.classId)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+    if (teacherClassErr) throw new Error(`roster_lookup_failed: ${teacherClassErr.message}`);
+    if (!teacherClassRow) return null;
+
+    classIds = [options.classId];
+  } else {
+    // List mode (e.g. remediation GET with no class_id filter): discover the
+    // teacher's active class assignments first, THEN look up class metadata.
+    const { data: classTeacherRows, error: classTeachersErr } = await supabase
+      .from('class_teachers')
+      .select('class_id')
+      .eq('teacher_id', teacher.id)
+      .eq('is_active', true);
+    if (classTeachersErr) throw new Error(`roster_lookup_failed: ${classTeachersErr.message}`);
+
+    classIds = Array.from(
+      new Set(((classTeacherRows ?? []) as Array<{ class_id: string | null }>)
+        .map((r) => r.class_id)
+        .filter((id): id is string => !!id)),
+    );
+    if (classIds.length === 0) {
+      return { teacher, classIds: [], classes: [], enrollments: [] };
+    }
+
+    if (options.includeClassDetails) {
+      if (!teacher.schoolId) return null;
+
+      const { data: classRows, error: classesErr } = await supabase
+        .from('classes')
+        .select('id, school_id, grade, subject')
+        .in('id', classIds)
+        .eq('school_id', teacher.schoolId)
+        .eq('is_active', true)
+        .is('deleted_at', null);
+      if (classesErr) throw new Error(`roster_lookup_failed: ${classesErr.message}`);
+
+      classes = ((classRows ?? []) as Array<{
+        id: string; school_id: string | null; grade: string; subject: string | null;
+      }>)
+        .filter((c) => !!c.school_id)
+        .map((c) => ({ classId: c.id, schoolId: c.school_id as string, grade: c.grade, subject: c.subject ?? null }));
+      classIds = classes.map((c) => c.classId);
+
+      if (classIds.length === 0) {
+        return { teacher, classIds: [], classes: [], enrollments: [] };
+      }
+    }
+  }
+
+  // Enrollments — the exact join canAccessStudent uses. Each branch below is
+  // written as a single complete chain (rather than a base query mutated
+  // after a semicolon) so every enrollment read visibly carries BOTH the
+  // is_active boundary and class scoping in one static chain — this is
+  // deliberate, not stylistic: source-level regression pins (REG-201) parse
+  // exactly this chain shape to guard the P8 boundary on this admin-client read.
+  let enrollmentsQuery;
+  if (options.classId && options.studentId) {
+    enrollmentsQuery = supabase
+      .from('class_enrollments')
+      .select('class_id, student_id')
+      .eq('is_active', true)
+      .eq('class_id', options.classId)
+      .eq('student_id', options.studentId);
+  } else if (options.classId) {
+    enrollmentsQuery = supabase
+      .from('class_enrollments')
+      .select('class_id, student_id')
+      .eq('is_active', true)
+      .eq('class_id', options.classId);
+  } else if (options.studentId) {
+    enrollmentsQuery = supabase
+      .from('class_enrollments')
+      .select('class_id, student_id')
+      .eq('is_active', true)
+      .in('class_id', classIds)
+      .eq('student_id', options.studentId);
+  } else {
+    enrollmentsQuery = supabase
+      .from('class_enrollments')
+      .select('class_id, student_id')
+      .eq('is_active', true)
+      .in('class_id', classIds);
+  }
+
+  const { data: enrollRows, error: enrollErr } = await enrollmentsQuery;
+  // class_enrollments is the Phase-2 canonical join table for teacher roster
+  // reachability (TSB-4 cutover) — keep this error tag substring-stable for
+  // the cutover-readiness audit trail (scripts/tsb4-canonical-membership-cutover.json).
+  if (enrollErr) throw new Error(`class_enrollments_lookup_failed: ${enrollErr.message}`);
+
+  const enrollments = ((enrollRows ?? []) as Array<{ class_id: string; student_id: string }>).map((r) => ({
+    classId: r.class_id,
+    studentId: r.student_id,
+  }));
+
+  if (options.studentId && enrollments.length === 0) return null;
+
+  return { teacher, classIds, classes, enrollments };
+}
+
 /**
  * Check if user can access an image upload.
  */

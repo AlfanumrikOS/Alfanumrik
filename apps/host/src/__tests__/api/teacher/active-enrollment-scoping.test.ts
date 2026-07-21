@@ -41,9 +41,16 @@ import { resolve } from 'node:path';
  */
 
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
+// Monorepo root (one level above `apps/host`) — needed to resolve
+// `packages/lib/src/rbac.ts`, which lives outside the `apps/host` app root.
+const MONOREPO_ROOT = resolve(REPO_ROOT, '..', '..');
 
 function resolveRepo(rel: string): string {
-  for (const c of [resolve(REPO_ROOT, rel), resolve(process.cwd(), rel)]) {
+  for (const c of [
+    resolve(REPO_ROOT, rel),
+    resolve(process.cwd(), rel),
+    resolve(MONOREPO_ROOT, rel),
+  ]) {
     if (existsSync(c)) return c;
   }
   return resolve(REPO_ROOT, rel);
@@ -115,58 +122,100 @@ function fromChains(src: string, table: string): string[] {
 const REMEDIATION = 'src/app/api/teacher/remediation/route.ts';
 const PARENT_NOTIFY = 'src/app/api/teacher/parent-notify/route.ts';
 const ENROLL = 'src/app/api/schools/enroll/route.ts';
+const RBAC = 'packages/lib/src/rbac.ts';
 
 const TEACHER_ROUTES: Array<[string, string]> = [
   ['remediation', REMEDIATION],
   ['parent-notify', PARENT_NOTIFY],
 ];
 
+// ─── 2026-07-20 update (teacher-dashboard deep RCA canonicalization) ───────
+// Both teacher/remediation and teacher/parent-notify no longer inline their
+// own class_teachers/class_enrollments roster queries — they delegate to the
+// SINGLE canonical resolver `resolveTeacherIdentity` + `resolveTeacherRosterScope`
+// in `packages/lib/src/rbac.ts` (the same module `canAccessStudent` lives in).
+// The is_active-scoping INVARIANT this file pins is therefore now enforced
+// at the canonical-resolver level, not per-route. This file is updated to:
+//   (a) assert both routes DELEGATE (import + call the canonical resolver,
+//       and no longer contain their own class_teachers/class_enrollments chain)
+//   (b) assert the canonical resolver itself carries the is_active boundary
+//       on every class_teachers/class_enrollments chain (the invariant, now
+//       centralized rather than duplicated).
+// This is a stronger guarantee than the original per-route pin: drift can no
+// longer happen independently per-route, because there is only one place
+// left to drift.
 describe('Tier-2 PR A — teacher/enrollment is_active scoping (P8) — REG-201', () => {
-  // ── Assertion 1: EVERY class_enrollments read is boundary-scoped ──────────
-  // 2026-07-13 (canary repair, see fromChains docstring): the remediation route
-  // now has TWO enrollment reads — a bulk teacher-classes roster builder (GET
-  // list scope) and the student-scoped membership check (POST assign path).
-  // Both must carry the P8 boundary: is_active=true AND class scoping to the
-  // teacher's classes. At least one chain must additionally be student-scoped
-  // (the membership check that gates assignment).
+  // ── Assertion 1: both routes delegate to the canonical resolver ──────────
   describe.each(TEACHER_ROUTES)(
-    'teacher/%s — every class_enrollments read is is_active + class scoped',
+    'teacher/%s — delegates to the canonical roster resolver (no local re-implementation)',
     (_name, rel) => {
       const src = readSource(rel);
-      const enrollmentChains = fromChains(src, 'class_enrollments');
 
-      it('queries class_enrollments (non-vacuous: at least one chain with select present)', () => {
-        expect(enrollmentChains.length).toBeGreaterThan(0);
-        for (const chain of enrollmentChains) {
-          expect(chain).toContain(".from('class_enrollments')");
-          expect(chain).toContain('.select(');
-        }
+      it('imports resolveTeacherIdentity and resolveTeacherRosterScope from @alfanumrik/lib/rbac', () => {
+        expect(src).toContain('resolveTeacherIdentity');
+        expect(src).toContain('resolveTeacherRosterScope');
+        expect(src).toContain("from '@alfanumrik/lib/rbac'");
       });
 
-      it("EVERY class_enrollments chain includes .eq('is_active', true) — the only boundary on an admin-client read", () => {
-        for (const chain of enrollmentChains) {
-          expect(chain).toContain(".eq('is_active', true)");
-        }
-      });
-
-      it("EVERY class_enrollments chain is scoped to the teacher's classes (.in('class_id' or .eq('class_id')", () => {
-        for (const chain of enrollmentChains) {
-          const classScoped = chain.includes(".in('class_id'") || chain.includes(".eq('class_id'");
-          expect(classScoped, `chain missing class scoping: ${chain}`).toBe(true);
-        }
-      });
-
-      it('at least one chain is the student-scoped membership check (.eq(\'student_id\')', () => {
-        const studentScoped = enrollmentChains.filter((c) => c.includes(".eq('student_id'"));
-        expect(studentScoped.length).toBeGreaterThan(0);
-        for (const chain of studentScoped) {
-          expect(chain).toContain(".eq('is_active', true)");
-        }
+      it('does NOT inline its own class_enrollments or class_teachers roster query', () => {
+        expect(fromChains(src, 'class_enrollments').length).toBe(0);
+        expect(fromChains(src, 'class_teachers').length).toBe(0);
       });
     },
   );
 
-  // ── Assertion 2: schools/enroll upsert restores is_active on re-enroll ────
+  // ── Assertion 2: the canonical resolver carries the is_active boundary ───
+  // on EVERY class_enrollments / class_teachers chain (canAccessStudent's
+  // teacher branch + resolveTeacherRosterScope both live in this file).
+  describe('packages/lib/src/rbac.ts (canonical resolver) — class_enrollments reads are is_active + class scoped', () => {
+    const src = readSource(RBAC);
+    const enrollmentChains = fromChains(src, 'class_enrollments');
+
+    it('queries class_enrollments (non-vacuous: at least one chain with select present)', () => {
+      expect(enrollmentChains.length).toBeGreaterThan(0);
+      for (const chain of enrollmentChains) {
+        expect(chain).toContain(".from('class_enrollments')");
+        expect(chain).toContain('.select(');
+      }
+    });
+
+    it("EVERY class_enrollments chain includes .eq('is_active', true) — the only boundary on an admin-client read", () => {
+      for (const chain of enrollmentChains) {
+        expect(chain).toContain(".eq('is_active', true)");
+      }
+    });
+
+    it("EVERY class_enrollments chain is scoped to a class (.in('class_id' or .eq('class_id')", () => {
+      for (const chain of enrollmentChains) {
+        const classScoped = chain.includes(".in('class_id'") || chain.includes(".eq('class_id'");
+        expect(classScoped, `chain missing class scoping: ${chain}`).toBe(true);
+      }
+    });
+
+    it('at least one chain is the student-scoped membership check (.eq(\'student_id\')', () => {
+      const studentScoped = enrollmentChains.filter((c) => c.includes(".eq('student_id'"));
+      expect(studentScoped.length).toBeGreaterThan(0);
+      for (const chain of studentScoped) {
+        expect(chain).toContain(".eq('is_active', true)");
+      }
+    });
+  });
+
+  describe('packages/lib/src/rbac.ts (canonical resolver) — class_teachers reads are is_active-scoped (fail-closed teacher auth)', () => {
+    const src = readSource(RBAC);
+    const teacherChains = fromChains(src, 'class_teachers');
+
+    it('performs the class_teachers teacher-auth lookup on every chain, is_active-scoped', () => {
+      expect(teacherChains.length).toBeGreaterThan(0);
+      for (const chain of teacherChains) {
+        expect(chain).toContain(".from('class_teachers')");
+        expect(chain).toContain(".eq('teacher_id'");
+        expect(chain).toContain(".eq('is_active', true)");
+      }
+    });
+  });
+
+  // ── Assertion 3: schools/enroll upsert restores is_active on re-enroll ────
   describe('schools/enroll — class_enrollments upsert restores is_active', () => {
     const src = readSource(ENROLL);
     const chain = fromChain(src, 'class_enrollments');
@@ -183,39 +232,4 @@ describe('Tier-2 PR A — teacher/enrollment is_active scoping (P8) — REG-201'
       expect(chain).toContain('is_active: true');
     });
   });
-
-  // ── Assertion 3 (guard): the change is on the STUDENT roster lookup, the ──
-  //    teacher-auth (class_teachers) lookup is untouched. ────────────────────
-  describe.each(TEACHER_ROUTES)(
-    'teacher/%s — guard: class_teachers (teacher-auth) lookup preserved & NOT is_active-narrowed',
-    (_name, rel) => {
-      const src = readSource(rel);
-      const teacherChains = fromChains(src, 'class_teachers');
-
-      it('still performs the class_teachers teacher-auth lookup on every chain', () => {
-        expect(teacherChains.length).toBeGreaterThan(0);
-        for (const chain of teacherChains) {
-          expect(chain).toContain(".from('class_teachers')");
-          expect(chain).toContain(".eq('teacher_id'");
-        }
-      });
-
-      // 2026-07-13 (canary repair): the ORIGINAL guard pinned "did NOT add
-      // is_active to class_teachers" because Tier-2 PR A's change was scoped to
-      // class_enrollments only. The remediation route has since DELIBERATELY
-      // adopted is_active scoping on class_teachers as well — its header doc
-      // requires "active class_teachers and class_enrollments rows", and the
-      // effect is fail-CLOSED (a deactivated teacher loses remediation access),
-      // i.e. strictly tighter than what this guard protected against. The pin
-      // is therefore updated: is_active on class_teachers is ALLOWED everywhere
-      // and REQUIRED on teacher/remediation. Weakening back (removing it from
-      // remediation) turns this red again.
-      it('teacher/remediation class_teachers lookups are is_active-scoped (fail-closed teacher auth)', () => {
-        if (rel !== REMEDIATION) return;
-        for (const chain of teacherChains) {
-          expect(chain).toContain(".eq('is_active', true)");
-        }
-      });
-    },
-  );
 });

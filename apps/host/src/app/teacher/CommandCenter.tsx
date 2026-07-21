@@ -59,8 +59,15 @@ import {
   type TeacherHeatmapData,
   type TeacherHeatmapRow,
 } from '@alfanumrik/lib/teacher/use-teacher-data';
+import { useClassPulse } from '@alfanumrik/lib/pulse/use-pulse';
+import {
+  reconcileAlerts,
+  type ReconciledAlert,
+} from '@alfanumrik/lib/teacher/alert-reconciler';
 import { TeacherDashboardSkeleton } from '@alfanumrik/ui/Skeleton';
 import { StatusBadge, type StatusBadgeVariant } from '@alfanumrik/ui/admin-ui/StatusBadge';
+import { StatCard } from '@alfanumrik/ui/admin-ui/StatCard';
+import { DonutChart } from '@alfanumrik/ui/admin-ui/charts/DonutChart';
 import type {
   HeatmapCell,
   RiskAlert,
@@ -428,22 +435,8 @@ export function ActionBar({
   );
 }
 
-// ─── Today-summary KPI tile (Atlas warm-cream card) ─────────────────────────
-function KpiTile({ label, value, accent }: { label: string; value: string | number; accent: string }) {
-  return (
-    <div
-      className="rounded-xl py-3.5 px-4"
-      style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)' }}
-    >
-      <p className="text-[11px] m-0 uppercase tracking-wide font-semibold" style={{ color: 'var(--text-3)' }}>
-        {label}
-      </p>
-      <p className="text-[26px] font-extrabold mt-1" style={{ color: accent }}>
-        {value}
-      </p>
-    </div>
-  );
-}
+// The Today-summary KPI tiles now render via the shared admin-ui StatCard
+// primitive (see the JSX below) instead of this page-local component.
 
 // ─── Command Center ─────────────────────────────────────────────────────────
 export default function CommandCenter() {
@@ -486,6 +479,14 @@ export default function CommandCenter() {
   // (idempotent-safe). Both surfaces (alert + report panel) read this state.
   const [parentNotifyBusy, setParentNotifyBusy] = useState<Record<string, boolean>>({});
   const [parentNotifyDone, setParentNotifyDone] = useState<Record<string, boolean>>({});
+
+  // Reconciled alerts rail — see mergedAlerts below. `optimisticAssignedStudentIds`
+  // covers Pulse-only rows (no legacy `get_alerts` entry to optimistically flip)
+  // so the "Assign remediation" click looks right immediately regardless of
+  // which system(s) flagged the student. See assignRemediation for detail.
+  const [optimisticAssignedStudentIds, setOptimisticAssignedStudentIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const showToast = useCallback((msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -533,6 +534,36 @@ export default function CommandCenter() {
     if (Array.isArray(raw)) return raw as RiskAlert[];
     return (raw as { alerts?: RiskAlert[] })?.alerts ?? [];
   }, [alertsRes]);
+
+  // Student Pulse — CLASS lens, merged into the SAME primary alerts rail
+  // (see packages/lib/src/teacher/alert-reconciler.ts for the RCA + the
+  // reconciliation rule). The class Pulse endpoint only accepts a real class
+  // UUID (see apps/host/src/app/api/pulse/class/[classId]/route.ts —
+  // `isValidUUID` gate), so a grade-pseudo-class id (`grade-6`, used by the
+  // legacy get_alerts grade-roster fallback) is never sent — the hook simply
+  // stays inert for those classes and the rail degrades to legacy-only,
+  // exactly as it did before this change.
+  const pulseClassId =
+    effectiveClassId && !effectiveClassId.startsWith('grade-') ? effectiveClassId : undefined;
+  const { data: classPulse } = useClassPulse(pulseClassId);
+
+  // ONE at-risk determination per student — the UNION of legacy `get_alerts`
+  // and Pulse's three signals, each contributing a traceable reason string
+  // (never two silently-contradictory verdicts in different rail rows).
+  // Pulse-side merging is intentionally UNCONDITIONAL (no ff_school_pulse_v1
+  // check) to match the two existing teacher-side Pulse panels
+  // (/teacher/classes, /teacher/students), which already render
+  // unconditionally — see the alert-reconciler module header for the
+  // documented flag-gating decision.
+  const mergedAlerts: ReconciledAlert[] = useMemo(() => {
+    const merged = reconcileAlerts(alerts, classPulse?.students ?? []);
+    if (optimisticAssignedStudentIds.size === 0) return merged;
+    return merged.map((a) =>
+      a.remediation_status === 'none' && optimisticAssignedStudentIds.has(a.student_id)
+        ? { ...a, remediation_status: 'assigned' as const }
+        : a,
+    );
+  }, [alerts, classPulse?.students, optimisticAssignedStudentIds]);
 
   // Grading-queue derived view.
   const queueItems: GradingQueueItem[] = Array.isArray(queueRes?.items) ? queueRes.items : [];
@@ -587,6 +618,16 @@ export default function CommandCenter() {
   // (no chapter). The selected class is sent explicitly and re-authorized by
   // the server. The server owns the authoritative status — we reconcile
   // by revalidating the alerts SWR cache on success.
+  //
+  // Pulse-only rows (a student Pulse flags but the legacy `get_alerts` never
+  // produced a row for — see alert-reconciler.ts) have no entry in the legacy
+  // SWR cache to optimistically flip, so `optimisticAssignedStudentIds` (state
+  // declared above) covers them uniformly: reconcileAlerts' output is
+  // overridden to 'assigned' for any student_id in this set whose merged
+  // status would otherwise be 'none'. It only ever helps a Pulse-only row
+  // look right immediately after a click — legacy rows still get their
+  // authoritative status from the next `mutateAlerts()` revalidate, same as
+  // before this change.
   const assignRemediation = useCallback(
     async (alert: RiskAlert) => {
       if (assigning[alert.id] || !effectiveClassId) return;
@@ -599,6 +640,7 @@ export default function CommandCenter() {
         x.student_id === alert.student_id ? { ...x, remediation_status: 'assigned' as const } : x,
       );
       void mutateAlerts(optimistic as unknown as typeof alertsRes, { revalidate: false });
+      setOptimisticAssignedStudentIds((s) => new Set(s).add(alert.student_id));
 
       try {
         const res = await fetch('/api/teacher/remediation', {
@@ -613,6 +655,11 @@ export default function CommandCenter() {
       } catch {
         // Rollback the optimistic flip.
         void mutateAlerts(prev, { revalidate: false });
+        setOptimisticAssignedStudentIds((s) => {
+          const next = new Set(s);
+          next.delete(alert.student_id);
+          return next;
+        });
         showToast(
           tt(isHi, "Couldn't assign — please retry", 'सौंपने में विफल — पुनः प्रयास करें'),
           'error',
@@ -644,11 +691,11 @@ export default function CommandCenter() {
   // match against the heatmap's display name.
   const studentIdByName = useMemo(() => {
     const m = new Map<string, string>();
-    for (const a of alerts) {
+    for (const a of mergedAlerts) {
       if (a.student_id && a.student_name) m.set(a.student_name.trim().toLowerCase(), a.student_id);
     }
     return m;
-  }, [alerts]);
+  }, [mergedAlerts]);
 
   // Wave C — drill-through entry from a heatmap cell/row. When the depth flag is
   // OFF this is never invoked (the heatmap calls goToStudent instead), so
@@ -890,10 +937,23 @@ export default function CommandCenter() {
     );
   }
 
-  const criticalCount = alerts.filter(
+  const criticalCount = mergedAlerts.filter(
     (a) => a.severity === 'critical' || a.severity === 'high',
   ).length;
   const loadingClass = heatmapLoading;
+
+  // At-risk status breakdown for the DonutChart — a display-only bucketing of
+  // ALREADY-reconciled numbers (mergedAlerts.length, criticalCount from T7's
+  // reconcileAlerts, and the roster size from the existing dashboard/heatmap
+  // read paths). No new at-risk determination is computed here (P1/P2/P9
+  // untouched) — this only groups numbers the page already renders elsewhere
+  // into a share-of-roster visualization.
+  const rosterSize = activeClass?.student_count ?? stats?.total_students ?? 0;
+  const riskBreakdownData = [
+    { name: tt(isHi, 'Critical / High', 'गंभीर / उच्च'), value: criticalCount },
+    { name: tt(isHi, 'Medium / Low', 'मध्यम / निम्न'), value: Math.max(0, mergedAlerts.length - criticalCount) },
+    { name: tt(isHi, 'On track', 'सही राह पर'), value: Math.max(0, rosterSize - mergedAlerts.length) },
+  ];
 
   return (
     <Shell>
@@ -949,25 +1009,25 @@ export default function CommandCenter() {
           byte-identical Wave A 4-tile layout). One-tap it to open the queue. */}
       <SectionErrorBoundary section="Today summary">
       <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 mb-4">
-        <KpiTile
+        <StatCard
           label={tt(isHi, 'Students', 'छात्र')}
           value={activeClass?.student_count ?? stats?.total_students ?? '—'}
-          accent="var(--purple)"
+          accentColor="var(--purple)"
         />
-        <KpiTile
+        <StatCard
           label={tt(isHi, 'Avg mastery', 'औसत मास्टरी')}
           value={activeClass?.avg_mastery != null ? `${activeClass.avg_mastery}%` : '—'}
-          accent="var(--purple)"
+          accentColor="var(--purple)"
         />
-        <KpiTile
+        <StatCard
           label={tt(isHi, 'At-risk', 'जोखिम में')}
-          value={alertsLoading || alertsError ? '—' : alerts.length}
-          accent={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #F5A623)'}
+          value={alertsLoading || alertsError ? '—' : mergedAlerts.length}
+          accentColor={criticalCount > 0 ? 'var(--danger, #DC2626)' : 'var(--warning, #F5A623)'}
         />
-        <KpiTile
+        <StatCard
           label={tt(isHi, 'Assignments', 'असाइनमेंट')}
           value={stats?.active_assignments != null ? stats.active_assignments : '\u2014'}
-          accent="var(--success, #16A34A)"
+          accentColor="var(--success, #16A34A)"
         />
 
         {gradingQueueEnabled && (
@@ -1145,9 +1205,17 @@ export default function CommandCenter() {
         <Panel>
           <PanelHead
             title={tt(isHi, 'At-risk alerts', 'जोखिम अलर्ट')}
-            badge={alerts.length > 0 ? String(alerts.length) : undefined}
-            badgeVariant={alerts.length > 0 ? 'danger' : 'neutral'}
+            badge={mergedAlerts.length > 0 ? String(mergedAlerts.length) : undefined}
+            badgeVariant={mergedAlerts.length > 0 ? 'danger' : 'neutral'}
           />
+          {/* Risk breakdown donut — the reconciled (T7) at-risk determination,
+              grouped by severity, against the roster. Rendered only once the
+              alerts rail has resolved (no partial/loading donut). */}
+          {!alertsLoading && !alertsError && rosterSize > 0 && (
+            <div className="mt-3" data-testid="risk-breakdown-donut">
+              <DonutChart data={riskBreakdownData} height={160} />
+            </div>
+          )}
           <div className="mt-3 flex flex-col gap-2.5">
             {alertsLoading ? (
               <div
@@ -1174,7 +1242,7 @@ export default function CommandCenter() {
                   {tt(isHi, 'Try again', 'फिर से कोशिश करें')}
                 </button>
               </div>
-            ) : alerts.length === 0 ? (
+            ) : mergedAlerts.length === 0 ? (
               <div className="py-8 text-center" style={{ color: 'var(--text-3)' }}>
                 <span className="text-2xl block mb-2" style={{ color: 'var(--success, #059669)' }}>
                   &#x2713;
@@ -1188,7 +1256,7 @@ export default function CommandCenter() {
                 </p>
               </div>
             ) : (
-              alerts.map((a) => (
+              mergedAlerts.map((a) => (
                 <AlertRow
                   key={a.id}
                   alert={a}

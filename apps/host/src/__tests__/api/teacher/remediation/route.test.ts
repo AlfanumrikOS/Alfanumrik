@@ -68,9 +68,17 @@ const holders = vi.hoisted(() => ({
   dedupeChapterFilter: { kind: '', value: undefined as unknown },
 }));
 
-vi.mock('@alfanumrik/lib/rbac', () => ({
-  authorizeRequest: (...a: unknown[]) => holders.mockAuthorize(...a),
-}));
+vi.mock('@alfanumrik/lib/rbac', async () => {
+  // Keep the REAL resolveTeacherIdentity / resolveTeacherRosterScope (the
+  // route now delegates its roster-resolution to these canonical helpers,
+  // which read through the SAME mocked `supabaseAdmin` client below) — only
+  // authorizeRequest is stubbed.
+  const actual = await vi.importActual<typeof import('@alfanumrik/lib/rbac')>('@alfanumrik/lib/rbac');
+  return {
+    ...actual,
+    authorizeRequest: (...a: unknown[]) => holders.mockAuthorize(...a),
+  };
+});
 
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -206,42 +214,48 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => {
     };
   }
 
-  return {
-    supabaseAdmin: {
-      from(table: string) {
-        if (table === 'teachers') {
-          return { select: () => singleRowChain(table, holders.mockState.teacher, holders.mockState.teacherError) };
-        }
-        if (table === 'classes') {
-          return { select: () => singleRowChain(table, holders.mockState.classRow, holders.mockState.classError) };
-        }
-        if (table === 'class_teachers') {
-          return { select: () => singleRowChain(table, holders.mockState.teacherClass, holders.mockState.teacherClassError) };
-        }
-        if (table === 'class_enrollments') {
-          return { select: () => singleRowChain(table, holders.mockState.enrolment, holders.mockState.enrolmentError) };
-        }
-        if (table === 'students') {
-          return { select: () => singleRowChain(table, holders.mockState.student, holders.mockState.studentError) };
-        }
-        if (table === 'curriculum_topics') {
-          return { select: () => singleRowChain(table, holders.mockState.topic, holders.mockState.topicError) };
-        }
-        if (table === 'subjects') {
-          return { select: () => singleRowChain(table, holders.mockState.subject, holders.mockState.subjectError) };
-        }
-        if (table === 'at_risk_alerts') {
-          return { select: () => singleRowChain(table, holders.mockState.sourceAlert, holders.mockState.sourceAlertError) };
-        }
-        if (table === 'teacher_remediation_assignments') {
-          return {
-            select: () => remediationSelectChain(),
-            insert: (payload: unknown) => remediationInsertChain(payload),
-          };
-        }
-        throw new Error(`Unexpected table in test mock: ${table}`);
-      },
+  const mockSupabaseAdmin = {
+    from(table: string) {
+      if (table === 'teachers') {
+        return { select: () => singleRowChain(table, holders.mockState.teacher, holders.mockState.teacherError) };
+      }
+      if (table === 'classes') {
+        return { select: () => singleRowChain(table, holders.mockState.classRow, holders.mockState.classError) };
+      }
+      if (table === 'class_teachers') {
+        return { select: () => singleRowChain(table, holders.mockState.teacherClass, holders.mockState.teacherClassError) };
+      }
+      if (table === 'class_enrollments') {
+        return { select: () => singleRowChain(table, holders.mockState.enrolment, holders.mockState.enrolmentError) };
+      }
+      if (table === 'students') {
+        return { select: () => singleRowChain(table, holders.mockState.student, holders.mockState.studentError) };
+      }
+      if (table === 'curriculum_topics') {
+        return { select: () => singleRowChain(table, holders.mockState.topic, holders.mockState.topicError) };
+      }
+      if (table === 'subjects') {
+        return { select: () => singleRowChain(table, holders.mockState.subject, holders.mockState.subjectError) };
+      }
+      if (table === 'at_risk_alerts') {
+        return { select: () => singleRowChain(table, holders.mockState.sourceAlert, holders.mockState.sourceAlertError) };
+      }
+      if (table === 'teacher_remediation_assignments') {
+        return {
+          select: () => remediationSelectChain(),
+          insert: (payload: unknown) => remediationInsertChain(payload),
+        };
+      }
+      throw new Error(`Unexpected table in test mock: ${table}`);
     },
+  };
+
+  return {
+    supabaseAdmin: mockSupabaseAdmin,
+    // The canonical roster resolver (packages/lib/src/rbac.ts) reads through
+    // getSupabaseAdmin() rather than the `supabaseAdmin` proxy export — both
+    // must point at the SAME mock table state.
+    getSupabaseAdmin: () => mockSupabaseAdmin,
   };
 });
 

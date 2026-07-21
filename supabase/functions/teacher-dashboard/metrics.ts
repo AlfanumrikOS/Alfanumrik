@@ -77,6 +77,52 @@ export function averagePercentages(values: readonly unknown[]): number | null {
   return Math.round(observed.reduce((sum, value) => sum + value, 0) / observed.length)
 }
 
+// ─── T8: shared cohort BKT mastery helpers ──────────────────────────────
+// Pure shaping/reconciliation helpers around the shared
+// `calculate_cohort_bkt_mastery` / `get_cohort_bkt_mastery_by_student`
+// Postgres RPC (migration 20260721000200_shared_cohort_bkt_mastery_rpc.sql)
+// — the SAME formula the School-Admin Command Center's get_school_overview
+// and the super-admin B2B analytics route use. Kept pure and Supabase-free
+// so the reconciliation logic (what happens when a student has no BKT
+// signal yet) is directly unit-testable.
+
+export interface CohortBktMasteryRow {
+  student_id: unknown
+  avg_mastery_pct: unknown
+}
+
+/**
+ * Shape raw `get_cohort_bkt_mastery_by_student` RPC rows into a lookup map.
+ * Students absent from `rows` (no concept_mastery data) are simply absent
+ * from the returned map — callers must not default them to 0.
+ */
+export function shapeCohortBktMasteryMap(
+  rows: readonly CohortBktMasteryRow[] | null | undefined,
+): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const row of rows ?? []) {
+    const studentId = normalizedText(row.student_id)
+    const pct = finiteMetricOrNull(row.avg_mastery_pct)
+    if (studentId && pct !== null) out.set(studentId, pct)
+  }
+  return out
+}
+
+/**
+ * Resolve the mastery number the Reports UI should show for one student:
+ * prefer the real BKT mastery (shared formula) when available, otherwise
+ * fall back to the accuracy proxy. This is the ONLY place the fallback
+ * decision is made — callers must not re-derive it inline.
+ */
+export function resolveStudentMastery(
+  bktMasteryPct: number | null | undefined,
+  accuracyPct: number,
+): number {
+  return typeof bktMasteryPct === 'number' && Number.isFinite(bktMasteryPct)
+    ? bktMasteryPct
+    : accuracyPct
+}
+
 export interface ScopedMasterySample {
   student_id: unknown
   topic_id: unknown

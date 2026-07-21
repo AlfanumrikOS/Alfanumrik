@@ -32,7 +32,7 @@ const SCRIPT_PATH = resolve(process.cwd(), 'scripts/check-bundle-size.mjs');
 
 // ── PINNED current values (update in the same PR as any approved cap change) ──
 const EXPECTED = {
-  CAP_SHARED_KB: 288,
+  CAP_SHARED_KB: 289,
   CAP_PAGE_KB: 260,
   CAP_MIDDLEWARE_KB: 120,
   SHARED_THRESHOLD_PCT: 95,

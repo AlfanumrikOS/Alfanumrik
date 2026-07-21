@@ -32,9 +32,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ── Hoisted mocks ─────────────────────────────────────────────────────
 const { mockAuthorize } = vi.hoisted(() => ({ mockAuthorize: vi.fn() }));
 
-vi.mock('@alfanumrik/lib/rbac', () => ({
-  authorizeRequest: (...args: unknown[]) => mockAuthorize(...args),
-}));
+vi.mock('@alfanumrik/lib/rbac', async () => {
+  // Keep the REAL resolveTeacherIdentity / resolveTeacherRosterScope (the
+  // route delegates its roster-resolution to these canonical helpers, which
+  // read through the SAME mocked `supabaseAdmin`/`getSupabaseAdmin` client
+  // below) — only authorizeRequest is stubbed.
+  const actual = await vi.importActual<typeof import('@alfanumrik/lib/rbac')>('@alfanumrik/lib/rbac');
+  return {
+    ...actual,
+    authorizeRequest: (...args: unknown[]) => mockAuthorize(...args),
+  };
+});
 
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -81,9 +89,9 @@ interface MessageRow {
 let threads: ThreadRow[];
 let messages: MessageRow[];
 let notifications: Array<Record<string, unknown>>;
-let teachers: Array<{ id: string; auth_user_id: string; school_id: string | null }>;
+let teachers: Array<{ id: string; auth_user_id: string; school_id: string | null; is_active: boolean }>;
 let students: Array<{ id: string; name: string; grade: string | null }>;
-let classTeachers: Array<{ teacher_id: string; class_id: string }>;
+let classTeachers: Array<{ teacher_id: string; class_id: string; is_active: boolean }>;
 let classEnrollments: Array<{ class_id: string; student_id: string; is_active: boolean }>;
 let links: Array<{ guardian_id: string; student_id: string; status: string; created_at: string }>;
 let remediations: Array<{ id: string; teacher_id: string; student_id: string; chapter_id: string | null; status: string }>;
@@ -96,13 +104,16 @@ const newId = () => `aaaaaaaa-0000-0000-0000-${String(++idCounter).padStart(12, 
 
 function resetStore() {
   idCounter = 0;
-  teachers = [{ id: TEACHER_ID_A, auth_user_id: TEACHER_AUTH_A, school_id: SCHOOL_ID }];
+  teachers = [{ id: TEACHER_ID_A, auth_user_id: TEACHER_AUTH_A, school_id: SCHOOL_ID, is_active: true }];
   students = [
     { id: STUDENT_ID_X, name: 'Aarav Sharma', grade: '7' },
     { id: STUDENT_OFF, name: 'Other Kid', grade: '7' },
     { id: STUDENT_NOLINK, name: 'Riya Verma', grade: '8' },
   ];
-  classTeachers = [{ teacher_id: TEACHER_ID_A, class_id: CLASS_ID }];
+  // is_active: true — resolveTeacherRosterScope's list-mode class_teachers
+  // lookup filters `.eq('is_active', true)` (canonical resolver, same as the
+  // teachers-table filter below).
+  classTeachers = [{ teacher_id: TEACHER_ID_A, class_id: CLASS_ID, is_active: true }];
   // is_active: true — the roster lookup now filters `.eq('is_active', true)`
   // (Tier-2 PR A). An active enrolment must carry the flag to be reachable.
   classEnrollments = [
@@ -206,8 +217,8 @@ function makeBuilder(tableRows: () => Row[], onInsert?: (rows: Row[]) => Row[], 
   };
 }
 
-vi.mock('@alfanumrik/lib/supabase-admin', () => ({
-  supabaseAdmin: {
+vi.mock('@alfanumrik/lib/supabase-admin', () => {
+  const mockSupabaseAdmin = {
     from(table: string) {
       switch (table) {
         case 'teachers':           return makeBuilder(() => teachers as unknown as Row[]);
@@ -286,8 +297,15 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
       }
     },
     rpc: vi.fn(),
-  },
-}));
+  };
+  return {
+    supabaseAdmin: mockSupabaseAdmin,
+    // The canonical roster resolver (packages/lib/src/rbac.ts) reads through
+    // getSupabaseAdmin() rather than the `supabaseAdmin` proxy export — both
+    // must point at the SAME mock table state.
+    getSupabaseAdmin: () => mockSupabaseAdmin,
+  };
+});
 
 // Import the route after the mocks.
 import { POST } from '@/app/api/teacher/parent-notify/route';

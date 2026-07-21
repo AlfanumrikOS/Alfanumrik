@@ -108,7 +108,7 @@ export function getLockoutState(): { attempts: number; lockedUntil: number; lock
   } catch { return { attempts: 0, lockedUntil: 0, lockoutLevel: 0 }; }
 }
 
-export function recordFailedAttempt(): string | null {
+export function recordFailedAttempt(isHi: boolean = false): string | null {
   const state = getLockoutState();
   state.attempts++;
   if (state.attempts >= MAX_ATTEMPTS_BEFORE_LOCKOUT) {
@@ -118,7 +118,9 @@ export function recordFailedAttempt(): string | null {
     state.attempts = 0;
     sessionStorage.setItem(LOCKOUT_KEY, JSON.stringify(state));
     const minutes = Math.ceil(duration / 60_000);
-    return `Too many failed attempts. Locked for ${minutes} minute${minutes > 1 ? 's' : ''}.`;
+    return isHi
+      ? `बहुत सारे गलत प्रयास। ${minutes} मिनट के लिए लॉक किया गया।`
+      : `Too many failed attempts. Locked for ${minutes} minute${minutes > 1 ? 's' : ''}.`;
   }
   sessionStorage.setItem(LOCKOUT_KEY, JSON.stringify(state));
   return null;
@@ -128,11 +130,14 @@ export function clearLockoutAttempts() {
   sessionStorage.removeItem(LOCKOUT_KEY);
 }
 
-export function isLockedOut(): { locked: boolean; message: string } {
+export function isLockedOut(isHi: boolean = false): { locked: boolean; message: string } {
   const state = getLockoutState();
   if (state.lockedUntil > Date.now()) {
     const remaining = Math.ceil((state.lockedUntil - Date.now()) / 60_000);
-    return { locked: true, message: `Account locked. Try again in ${remaining} minute${remaining > 1 ? 's' : ''}.` };
+    const message = isHi
+      ? `खाता लॉक है। ${remaining} मिनट में फिर से प्रयास करें।`
+      : `Account locked. Try again in ${remaining} minute${remaining > 1 ? 's' : ''}.`;
+    return { locked: true, message };
   }
   return { locked: false, message: '' };
 }

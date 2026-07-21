@@ -13,7 +13,7 @@ import { resolve } from 'node:path';
  * a convention: a function that forgets its guard is an open, unauthenticated
  * production endpoint the moment it deploys. Hand-written contract canaries
  * exist for a handful of functions (teacher-dashboard, parent-portal,
- * daily-cron, export-report); the other ~40 relied on review discipline.
+ * daily-cron); the other ~40 relied on review discipline.
  *
  * This sweep makes the guarantee structural:
  *   1. EVERY directory under supabase/functions/ (excluding _shared/_archive)
@@ -110,7 +110,6 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'embed-diagrams': ['ai-admission', 'admin-key'],
   'embed-ncert-qa': ['ai-admission', 'admin-key'],
   'embed-questions': ['ai-admission', 'admin-key'],
-  'export-report': ['jwt-user'],
   'extract-diagrams': ['ai-admission', 'admin-key'],
   'extract-ncert-questions': ['ai-admission', 'admin-key'],
   'generate-answers': ['ai-admission', 'admin-key'],

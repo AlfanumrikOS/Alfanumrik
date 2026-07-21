@@ -267,16 +267,16 @@ export default function TeacherWorksheetsPage() {
   if (authLoading) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ fontSize: 48 }}>📝</div></div>;
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#f8fafc', paddingBottom: 100 }}>
+    <div style={{ minHeight: '100dvh', background: '#FBF8F4', paddingBottom: 100 }}>
       {!isPrintView && (
         <>
           {/* Header */}
-          <div style={{ background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
+          <div style={{ background: 'linear-gradient(135deg, #E8581C 0%, #C2410C 100%)', padding: '32px 20px 28px', color: '#fff', position: 'relative' }}>
             <button
               onClick={() => router.push('/teacher')}
               style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: 8, padding: '6px 12px', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
             >
-              &larr; {tt(isHi, 'डैशबोर्ड', 'Dashboard')}
+              &larr; {tt(isHi, 'Dashboard', 'डैशबोर्ड')}
             </button>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>📝</div>
@@ -287,17 +287,17 @@ export default function TeacherWorksheetsPage() {
 
           {/* Form */}
           <div style={{ padding: '20px', maxWidth: 600, margin: '0 auto' }}>
-            <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb', marginBottom: 16 }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid var(--surface-2)', marginBottom: 16 }}>
               {/* Subject */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Subject', 'विषय')}</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#7D7264', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Subject', 'विषय')}</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {subjects.filter(s => ['math', 'science', 'physics', 'chemistry', 'biology', 'english', 'hindi'].includes(s.code)).map(s => (
                     <button key={s.code} onClick={() => setSubject(s.code)} style={{
                       padding: '7px 14px', borderRadius: 10, border: '1.5px solid',
-                      borderColor: subject === s.code ? '#2563EB' : '#e0e0e0',
-                      background: subject === s.code ? '#2563EB' : '#fff',
-                      color: subject === s.code ? '#fff' : '#555',
+                      borderColor: subject === s.code ? '#E8581C' : 'var(--surface-2)',
+                      background: subject === s.code ? '#E8581C' : '#fff',
+                      color: subject === s.code ? '#fff' : '#7D7264',
                       fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     }}>
                       {s.icon} {s.name}
@@ -308,14 +308,14 @@ export default function TeacherWorksheetsPage() {
 
               {/* Grade */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Grade', 'कक्षा')}</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#7D7264', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Grade', 'कक्षा')}</label>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {GRADES.map(g => (
                     <button key={g} onClick={() => setGrade(g)} style={{
                       padding: '6px 14px', borderRadius: 8, border: '1.5px solid',
-                      borderColor: grade === g ? '#2563EB' : '#e0e0e0',
-                      background: grade === g ? '#EFF6FF' : '#fff',
-                      color: grade === g ? '#2563EB' : '#888',
+                      borderColor: grade === g ? '#E8581C' : 'var(--surface-2)',
+                      background: grade === g ? 'rgba(232,88,28,0.10)' : '#fff',
+                      color: grade === g ? '#E8581C' : '#7D7264',
                       fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     }}>
                       {g}
@@ -326,21 +326,21 @@ export default function TeacherWorksheetsPage() {
 
               {/* Topic */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', display: 'block', marginBottom: 6 }}>{tt(isHi, 'Topic (optional)', 'विषय (वैकल्पिक)')}</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#7D7264', display: 'block', marginBottom: 6 }}>{tt(isHi, 'Topic (optional)', 'विषय (वैकल्पिक)')}</label>
                 <input value={topic} onChange={e => setTopic(e.target.value)} placeholder={tt(isHi, 'e.g., Quadratic Equations, Light and Reflection', 'जैसे, द्विघात समीकरण, प्रकाश और परावर्तन')}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e0e0e0', fontSize: 14, outline: 'none' }} />
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid var(--surface-2)', fontSize: 14, outline: 'none' }} />
               </div>
 
               {/* Difficulty */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Difficulty', 'कठिनाई स्तर')}</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#7D7264', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Difficulty', 'कठिनाई स्तर')}</label>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {DIFFICULTIES.map(d => (
                     <button key={d} onClick={() => setDifficulty(d)} style={{
                       padding: '7px 18px', borderRadius: 10, border: '1.5px solid',
-                      borderColor: difficulty === d ? '#2563EB' : '#e0e0e0',
-                      background: difficulty === d ? '#2563EB' : '#fff',
-                      color: difficulty === d ? '#fff' : '#555',
+                      borderColor: difficulty === d ? '#E8581C' : 'var(--surface-2)',
+                      background: difficulty === d ? '#E8581C' : '#fff',
+                      color: difficulty === d ? '#fff' : '#7D7264',
                       fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     }}>
                       {isHi ? DIFFICULTY_LABELS[d]?.hi || d : d}
@@ -351,23 +351,23 @@ export default function TeacherWorksheetsPage() {
 
               {/* Question Count */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', display: 'block', marginBottom: 6 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#7D7264', display: 'block', marginBottom: 6 }}>
                   {tt(isHi, `Number of Questions: ${questionCount}`, `प्रश्नों की संख्या: ${questionCount}`)}
                 </label>
                 <input type="range" min={5} max={30} step={5} value={questionCount} onChange={e => setQuestionCount(parseInt(e.target.value))}
-                  style={{ width: '100%', accentColor: '#2563EB' }} />
+                  style={{ width: '100%', accentColor: '#E8581C' }} />
               </div>
 
               {/* Question Types */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#555', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Question Types', 'प्रश्न प्रकार')}</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#7D7264', display: 'block', marginBottom: 8 }}>{tt(isHi, 'Question Types', 'प्रश्न प्रकार')}</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {Q_TYPES.map(t => (
                     <button key={t} onClick={() => toggleType(t)} style={{
                       padding: '6px 12px', borderRadius: 8, border: '1.5px solid',
-                      borderColor: selectedTypes.includes(t) ? '#2563EB' : '#e0e0e0',
-                      background: selectedTypes.includes(t) ? '#EFF6FF' : '#fff',
-                      color: selectedTypes.includes(t) ? '#2563EB' : '#888',
+                      borderColor: selectedTypes.includes(t) ? '#E8581C' : 'var(--surface-2)',
+                      background: selectedTypes.includes(t) ? 'rgba(232,88,28,0.10)' : '#fff',
+                      color: selectedTypes.includes(t) ? '#E8581C' : '#7D7264',
                       fontSize: 11, fontWeight: 600, cursor: 'pointer',
                     }}>
                       {selectedTypes.includes(t) ? '✓ ' : ''}{isHi ? QTYPE_LABELS[t]?.hi || t : t}
@@ -380,7 +380,7 @@ export default function TeacherWorksheetsPage() {
               <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <button onClick={() => setIncludeAnswers(!includeAnswers)} style={{
                   width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer',
-                  background: includeAnswers ? '#2563EB' : '#d1d5db', position: 'relative', transition: 'background 0.2s',
+                  background: includeAnswers ? '#E8581C' : '#d1d5db', position: 'relative', transition: 'background 0.2s',
                 }}>
                   <div style={{
                     width: 18, height: 18, borderRadius: '50%', background: '#fff',
@@ -388,14 +388,14 @@ export default function TeacherWorksheetsPage() {
                     boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                   }} />
                 </button>
-                <span style={{ fontSize: 13, color: '#555', fontWeight: 500 }}>{tt(isHi, 'Include Answer Key', 'उत्तर कुंजी शामिल करें')}</span>
+                <span style={{ fontSize: 13, color: '#7D7264', fontWeight: 500 }}>{tt(isHi, 'Include Answer Key', 'उत्तर कुंजी शामिल करें')}</span>
               </div>
 
               {/* Generate Button */}
               <button onClick={generateWorksheet} disabled={selectedTypes.length === 0 || isGenerating}
                 style={{
                   width: '100%', padding: '12px', borderRadius: 12, border: 'none',
-                  background: selectedTypes.length > 0 && !isGenerating ? 'linear-gradient(135deg, #2563EB, #1D4ED8)' : '#d1d5db',
+                  background: selectedTypes.length > 0 && !isGenerating ? 'linear-gradient(135deg, #E8581C, #C2410C)' : '#d1d5db',
                   color: '#fff', fontSize: 14, fontWeight: 700, cursor: selectedTypes.length > 0 && !isGenerating ? 'pointer' : 'not-allowed',
                 }}>
                 {isGenerating ? tt(isHi, 'Generating...', 'बना रहे हैं...') : tt(isHi, 'Generate Worksheet', 'वर्कशीट बनाएं')}
@@ -404,13 +404,13 @@ export default function TeacherWorksheetsPage() {
 
             {/* Recent Worksheets */}
             {savedList.length > 0 && !generated && (
-              <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb' }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 12 }}>{tt(isHi, 'Recent Worksheets', 'हाल की वर्कशीट')}</div>
+              <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid var(--surface-2)' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#1A1207', marginBottom: 12 }}>{tt(isHi, 'Recent Worksheets', 'हाल की वर्कशीट')}</div>
                 {savedList.slice(0, 5).map(ws => (
-                  <div key={ws.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
+                  <div key={ws.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--surface-2)' }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{ws.title}</div>
-                      <div style={{ fontSize: 11, color: '#888' }}>{tt(isHi, 'Class', 'कक्षा')} {ws.grade} · {ws.questionCount} {tt(isHi, 'questions', 'प्रश्न')} · {ws.date}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1207' }}>{ws.title}</div>
+                      <div style={{ fontSize: 11, color: '#7D7264' }}>{tt(isHi, 'Class', 'कक्षा')} {ws.grade} · {ws.questionCount} {tt(isHi, 'questions', 'प्रश्न')} · {ws.date}</div>
                     </div>
                   </div>
                 ))}
@@ -426,14 +426,14 @@ export default function TeacherWorksheetsPage() {
           {!isPrintView && (
             <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
               <button onClick={() => { setGenerated(null); setQuestionSource(null); }} style={{
-                padding: '8px 18px', borderRadius: 10, border: '1px solid #e0e0e0',
-                background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: '#555',
+                padding: '8px 18px', borderRadius: 10, border: '1px solid var(--surface-2)',
+                background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', color: '#7D7264',
               }}>
                 {tt(isHi, '← Back', '← वापस')}
               </button>
               <button onClick={handlePrint} style={{
                 padding: '8px 18px', borderRadius: 10, border: 'none',
-                background: '#2563EB', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: '#E8581C', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
               }}>
                 {tt(isHi, 'Print Worksheet', 'वर्कशीट प्रिंट करें')}
               </button>
@@ -498,20 +498,20 @@ export default function TeacherWorksheetsPage() {
             </div>
           )}
 
-          <div style={{ background: '#fff', borderRadius: isPrintView ? 0 : 16, padding: isPrintView ? '20px 0' : 24, border: isPrintView ? 'none' : '1px solid #e5e7eb' }}>
+          <div style={{ background: '#fff', borderRadius: isPrintView ? 0 : 16, padding: isPrintView ? '20px 0' : 24, border: isPrintView ? 'none' : '1px solid var(--surface-2)' }}>
             {/* Worksheet Header */}
-            <div style={{ textAlign: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '2px solid #1a1a1a' }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '2px solid #1A1207' }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#1A1207' }}>
                 {teacher?.school_name || 'Alfanumrik School'}
               </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: '#555', marginTop: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#7D7264', marginTop: 8 }}>
                 {subjectName} {tt(isHi, 'Worksheet', 'वर्कशीट')} — {tt(isHi, 'Class', 'कक्षा')} {grade}
               </div>
-              {topic && <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>{tt(isHi, 'Topic', 'विषय')}: {topic}</div>}
-              <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+              {topic && <div style={{ fontSize: 13, color: '#7D7264', marginTop: 4 }}>{tt(isHi, 'Topic', 'विषय')}: {topic}</div>}
+              <div style={{ fontSize: 11, color: '#7D7264', marginTop: 4 }}>
                 {tt(isHi, 'Date', 'दिनांक')}: {new Date().toLocaleDateString('en-IN')} · {tt(isHi, 'Difficulty', 'कठिनाई')}: {isHi ? DIFFICULTY_LABELS[difficulty]?.hi || difficulty : difficulty} · {tt(isHi, 'Total Marks', 'कुल अंक')}: {questionCount}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 12, color: '#555' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, fontSize: 12, color: '#7D7264' }}>
                 <span>{tt(isHi, 'Name', 'नाम')}: _________________________</span>
                 <span>{tt(isHi, 'Roll No', 'रोल नंबर')}: ________</span>
               </div>
@@ -528,18 +528,18 @@ export default function TeacherWorksheetsPage() {
               let qNum = 0;
               return Object.entries(grouped).map(([type, questions]) => (
                 <div key={type} style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#2563EB', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#E8581C', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                     {tt(isHi, 'Section', 'खंड')}: {isHi ? QTYPE_LABELS[type]?.hi || type : type}
                   </div>
                   {questions.map((q, i) => {
                     qNum++;
                     return (
                       <div key={i} style={{ marginBottom: 14, paddingLeft: 4 }}>
-                        <div style={{ fontSize: 13, color: '#1a1a1a', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                        <div style={{ fontSize: 13, color: '#1A1207', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
                           <strong>{tt(isHi, 'Q', 'प्र')}{qNum}.</strong> {q.question}
                         </div>
                         {type === 'Short Answer' && (
-                          <div style={{ marginTop: 8, borderBottom: '1px dotted #ccc', height: 60 }} />
+                          <div style={{ marginTop: 8, borderBottom: '1px dotted var(--surface-2)', height: 60 }} />
                         )}
                       </div>
                     );
@@ -550,14 +550,14 @@ export default function TeacherWorksheetsPage() {
 
             {/* Answer Key */}
             {includeAnswers && (
-              <div style={{ marginTop: 30, paddingTop: 16, borderTop: '2px dashed #ccc' }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 10 }}>{tt(isHi, 'Answer Key', 'उत्तर कुंजी')}</div>
+              <div style={{ marginTop: 30, paddingTop: 16, borderTop: '2px dashed var(--surface-2)' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#1A1207', marginBottom: 10 }}>{tt(isHi, 'Answer Key', 'उत्तर कुंजी')}</div>
                 {(() => {
                   let aNum = 0;
                   return generated.map((q, i) => {
                     aNum++;
                     return (
-                      <div key={i} style={{ fontSize: 12, color: '#555', marginBottom: 4 }}>
+                      <div key={i} style={{ fontSize: 12, color: '#7D7264', marginBottom: 4 }}>
                         <strong>{tt(isHi, 'Q', 'प्र')}{aNum}:</strong> {q.answer || tt(isHi, '(See textbook)', '(पाठ्यपुस्तक देखें)')}
                       </div>
                     );
@@ -568,7 +568,7 @@ export default function TeacherWorksheetsPage() {
           </div>
 
           {!isPrintView && (
-            <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: '#888' }}>
+            <div style={{ marginTop: 12, textAlign: 'center', fontSize: 12, color: '#7D7264' }}>
               {tt(isHi, 'Tip: Use your browser\'s Print \u2192 "Save as PDF" to download as PDF', 'सुझाव: PDF डाउनलोड करने के लिए ब्राउज़र का Print \u2192 "Save as PDF" उपयोग करें')}
             </div>
           )}

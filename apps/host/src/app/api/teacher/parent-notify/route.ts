@@ -39,11 +39,35 @@
  *
  * Errors: 400 invalid body · 401/403 auth · 403 non-roster / no teacher row ·
  *   409 no linked guardian · 500 db.
+ *
+ * ROSTER RESOLUTION (2026-07-20 canonicalization): the roster check below
+ * delegates to the SINGLE canonical resolver `resolveTeacherIdentity` +
+ * `resolveTeacherRosterScope` in `@alfanumrik/lib/rbac` (the same module
+ * `canAccessStudent` lives in), instead of a local re-implementation of the
+ * class_teachers/class_enrollments join. This closes two gaps found by the
+ * teacher-dashboard roster-resolution RCA versus the canonical boundary:
+ * the teacher lookup now requires `is_active = true` (previously any teacher
+ * row, active or not, was accepted), and the class_teachers join now
+ * requires `is_active = true` (previously a revoked teacher-class assignment
+ * still counted). Both are SECURITY TIGHTENINGS, not feature changes — no
+ * legitimate caller that was correctly denied/admitted before behaves
+ * differently now, except a teacher deactivated by an admin or removed from a
+ * class, who is now correctly denied instead of incorrectly admitted.
+ *
+ * (TSB-4 cutover-readiness audit trail: class_enrollments is the Phase-2
+ * canonical join table for teacher roster reachability; the shared resolver
+ * throws a `class_enrollments_lookup_failed` error on that read's failure —
+ * see `packages/lib/src/rbac.ts`.)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { authorizeRequest } from '@alfanumrik/lib/rbac';
+import {
+  authorizeRequest,
+  resolveTeacherIdentity,
+  resolveTeacherRosterScope,
+  type TeacherIdentity,
+} from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 
@@ -61,63 +85,45 @@ function err(message: string, status: number) {
   return NextResponse.json({ success: false, error: message }, { status });
 }
 
-/** Resolve the caller's internal teacher row. Null = no teacher profile. */
-async function resolveTeacher(
-  authUserId: string,
-): Promise<{ id: string; school_id: string | null } | null> {
-  const { data, error } = await supabaseAdmin
-    .from('teachers')
-    .select('id, school_id')
-    .eq('auth_user_id', authUserId)
-    .maybeSingle();
-  if (error) {
+/**
+ * Resolve the caller's internal teacher row. Null = no ACTIVE teacher profile.
+ * Delegates to the canonical `resolveTeacherIdentity` in `@alfanumrik/lib/rbac`.
+ */
+async function resolveTeacher(authUserId: string): Promise<TeacherIdentity | null> {
+  try {
+    return await resolveTeacherIdentity(authUserId);
+  } catch (e) {
     logger.error('teacher_parent_notify_teacher_lookup_failed', {
-      error: new Error(error.message),
+      error: e instanceof Error ? e : new Error(String(e)),
       route: 'teacher/parent-notify',
     });
     throw new Error('teacher_lookup_failed');
   }
-  return (data as { id: string; school_id: string | null } | null) ?? null;
 }
 
 /**
  * Roster check (P8) — mirrors /api/teacher/remediation. A teacher "owns" a
  * student iff they share a class via class_teachers × class_enrollments. Returns
  * the shared class_id or null when the student is NOT on the roster.
+ *
+ * Delegates to the canonical `resolveTeacherRosterScope` in
+ * `@alfanumrik/lib/rbac` (no `includeClassDetails` — this route never needs
+ * class metadata, mirroring canAccessStudent's teacher branch, which never
+ * queries `classes` either).
  */
-async function rosterClassId(teacherId: string, studentId: string): Promise<string | null> {
-  const { data: teacherClasses, error: tcErr } = await supabaseAdmin
-    .from('class_teachers')
-    .select('class_id')
-    .eq('teacher_id', teacherId);
-  if (tcErr) {
-    logger.error('teacher_parent_notify_class_teachers_lookup_failed', {
-      error: new Error(tcErr.message),
+async function rosterClassId(teacher: TeacherIdentity, studentId: string): Promise<string | null> {
+  let roster;
+  try {
+    roster = await resolveTeacherRosterScope(teacher.id, { teacher, studentId });
+  } catch (e) {
+    logger.error('teacher_parent_notify_roster_lookup_failed', {
+      error: e instanceof Error ? e : new Error(String(e)),
       route: 'teacher/parent-notify',
     });
     throw new Error('roster_lookup_failed');
   }
-  const classIds = (teacherClasses ?? [])
-    .map((r) => (r as { class_id: string | null }).class_id)
-    .filter((c): c is string => !!c);
-  if (classIds.length === 0) return null;
-
-  const { data: enrolment, error: csErr } = await supabaseAdmin
-    .from('class_enrollments')
-    .select('class_id')
-    .eq('student_id', studentId)
-    .in('class_id', classIds)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
-  if (csErr) {
-    logger.error('teacher_parent_notify_class_enrollments_lookup_failed', {
-      error: new Error(csErr.message),
-      route: 'teacher/parent-notify',
-    });
-    throw new Error('roster_lookup_failed');
-  }
-  return (enrolment as { class_id: string } | null)?.class_id ?? null;
+  if (!roster || roster.enrollments.length === 0) return null;
+  return roster.enrollments[0].classId;
 }
 
 /** First name from a full name (template uses the given name only). */
@@ -215,7 +221,7 @@ export async function POST(request: NextRequest) {
   const { student_id, context, message, remediation_id, include_report } = body;
 
   // Resolve the internal teacher id (NEVER auth.uid()).
-  let teacher: { id: string; school_id: string | null } | null;
+  let teacher: TeacherIdentity | null;
   try {
     teacher = await resolveTeacher(auth.userId!);
   } catch {
@@ -226,7 +232,7 @@ export async function POST(request: NextRequest) {
   // Roster check (P8).
   let classId: string | null;
   try {
-    classId = await rosterClassId(teacher.id, student_id);
+    classId = await rosterClassId(teacher, student_id);
   } catch {
     return err('Failed to verify roster', 500);
   }
@@ -306,7 +312,7 @@ export async function POST(request: NextRequest) {
         teacher_id: teacher.id,
         guardian_id: guardianId,
         student_id: student_id,
-        school_id: teacher.school_id ?? null,
+        school_id: teacher.schoolId ?? null,
         subject: null,
       })
       .select('id')
