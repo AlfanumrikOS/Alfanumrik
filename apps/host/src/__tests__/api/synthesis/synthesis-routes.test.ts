@@ -22,6 +22,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const holders = vi.hoisted(() => ({
   // Auth
   mockGetUser: vi.fn(),
+  mockAuthorizeRequest: vi.fn(),
 
   // Feature flag
   mockIsFeatureEnabled: vi.fn(),
@@ -115,6 +116,15 @@ vi.mock('@alfanumrik/lib/supabase-server', () => ({
   })),
 }));
 
+// ── mock: rbac (authorizeRequest) ─────────────────────────────────────────────
+// parent-share gained a house-convention authorizeRequest() gate (2026-07-20,
+// parent-dashboard RCA Task 1.5) as the FIRST check, ahead of the route's own
+// supabase.auth.getUser() call. Wired via authedAs() below so the two auth
+// checks stay in lockstep for every test scenario.
+vi.mock('@alfanumrik/lib/rbac', () => ({
+  authorizeRequest: (...args: unknown[]) => holders.mockAuthorizeRequest(...args),
+}));
+
 // ── mock: supabase-admin ──────────────────────────────────────────────────────
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   supabaseAdmin: {
@@ -204,8 +214,19 @@ function makePostRequest(body: unknown): Request {
 function authedAs(userId: string | null) {
   if (userId === null) {
     holders.mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    // Mirrors the real authorizeRequest() 401 shape (packages/lib/src/rbac.ts)
+    // for the parent-share route's new RBAC gate.
+    holders.mockAuthorizeRequest.mockResolvedValue({
+      authorized: false,
+      userId: null,
+      errorResponse: new Response(
+        JSON.stringify({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      ),
+    });
   } else {
     holders.mockGetUser.mockResolvedValue({ data: { user: { id: userId } }, error: null });
+    holders.mockAuthorizeRequest.mockResolvedValue({ authorized: true, userId });
   }
 }
 
@@ -488,7 +509,27 @@ describe('POST /api/synthesis/parent-share', () => {
     // Env vars are set by src/__tests__/setup.ts — no overrides needed here.
   });
 
-  it('returns 401 when not authenticated', async () => {
+  it('returns 401 (from the authorizeRequest RBAC gate) when not authenticated', async () => {
+    // Since 2026-07-20 (parent-dashboard RCA Task 1.5), authorizeRequest()
+    // is the FIRST check in this route -- ahead of the route's own
+    // supabase.auth.getUser() call -- so an unauthenticated caller is now
+    // rejected by the RBAC gate's own 401 shape (error:'Unauthorized',
+    // code:'AUTH_REQUIRED'), matching every other parent-portal route's
+    // convention, rather than the route's original bespoke
+    // error:'unauthenticated' shape (which is now unreachable for a truly
+    // unauthenticated caller, though it remains the route's own
+    // defense-in-depth check for the theoretical case where
+    // authorizeRequest and supabase.auth.getUser() disagree).
+    authedAs(null);
+    const res = await POST(makePostRequest({ synthesisRunId: ROW_ID }));
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe('Unauthorized');
+    expect(body.code).toBe('AUTH_REQUIRED');
+  });
+
+  it('returns 401 with the route-own shape when authorizeRequest passes but supabase getUser still reports no session (defense-in-depth, theoretical)', async () => {
+    holders.mockAuthorizeRequest.mockResolvedValue({ authorized: true, userId: USER_ID });
     holders.mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
     const res = await POST(makePostRequest({ synthesisRunId: ROW_ID }));
     expect(res.status).toBe(401);

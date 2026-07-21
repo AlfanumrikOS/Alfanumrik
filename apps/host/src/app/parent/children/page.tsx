@@ -1078,8 +1078,6 @@ export default function ParentChildrenPage() {
     fetchChildren();
   }, [authLoading, isLoggedIn, guardian, fetchChildren]);
 
-  // TODO: /parent/reports needs to consume the `childId` query param to show
-  // the correct child's report (it currently ignores it).
   const handleViewReport = (child: ChildData) => {
     if (typeof window !== 'undefined') {
       window.location.href = `/parent/reports?childId=${encodeURIComponent(child.id)}`;

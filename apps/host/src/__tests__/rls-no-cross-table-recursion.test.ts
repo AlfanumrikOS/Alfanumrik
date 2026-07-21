@@ -204,14 +204,32 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // — its grandfather entry (formerly 'at_risk_alerts::Teachers see own at-risk
   // alerts', sorted just above 'audit_logs::…') is therefore pruned so
   // `detected === allowlist` holds. This is the FIRST Phase 4 drain (241 → 240).
+  // Parent-dashboard RCA drain (migration 20260720170000_parent_dashboard_rca_fixes.sql,
+  // 2026-07-20): 11 parent-select policies (score_history, xp_transactions,
+  // coin_balances, coin_transactions, challenge_attempts, challenge_streaks,
+  // quiz_session_shuffles, student_skill_state, performance_scores,
+  // exam_configs, monthly_reports) were refactored from an inline
+  // guardian_student_links/guardians FROM-subquery onto the SECURITY DEFINER
+  // helper public.is_guardian_of(student_id) -- this was also a functional
+  // fix (Finding A: the inline status='approved' literal silently excluded
+  // guardians linked via the live OTP flow, which sets status='active').
+  // They no longer inline a cross-table FROM/JOIN, so the detector no longer
+  // flags them; their 11 grandfather entries (formerly interspersed
+  // alphabetically below, e.g. 'challenge_attempts::challenge_attempts_parent_select')
+  // are pruned. One new entry was ALSO added and immediately resolved without
+  // a grandfather exception: the new teacher_parent_threads INSERT policy
+  // (tp_threads_guardian_insert) initially inlined a guardians subquery and
+  // was rewritten to use public.get_my_guardian_id() instead, per this same
+  // guard's own instructions -- it required no grandfathering.
+  // Net: 234 - 11 + 0 = 223: this drain removes 11 grandfather entries and
+  // adds 0 (the new teacher_parent_threads policy was fixed, not
+  // grandfathered) = 223, matching the toBe() counts below.
   'backup_status::backup_status_admin',
   'bloom_progression::bloom_own_insert',
   'bloom_progression::bloom_own_select',
   'bloom_progression::bloom_own_update',
   'cbse_syllabus::cbse_syllabus_write_admin',
-  'challenge_attempts::challenge_attempts_parent_select',
   'challenge_attempts::challenge_attempts_student_select',
-  'challenge_streaks::challenge_streaks_parent_select',
   'challenge_streaks::challenge_streaks_student_select',
   'chapter_progress::cp_select_merged',
   'chapter_progress::cp_student_insert',
@@ -254,9 +272,7 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'cms_item_versions::cms_versions_update_admin',
   'cognitive_session_metrics::csm_own_insert',
   'cognitive_session_metrics::csm_own_select',
-  'coin_balances::coin_bal_parent_select',
   'coin_balances::coin_bal_student_select',
-  'coin_transactions::coin_txn_parent_select',
   'coin_transactions::coin_txn_student_select',
   'content_reports::reports_insert',
   'content_reports::reports_select',
@@ -268,7 +284,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'deployment_history::deploy_history_admin',
   'domain_events::domain_events_super_admin_select',
   'exam_chapters::students_own_exam_chapters',
-  'exam_configs::guardians_view_exam_configs',
   'exam_configs::students_own_exam_configs',
   'exam_simulations::students_own_exam_simulations',
   'ff_grounded_ai_enforced_pairs::ff_pairs_write_admin',
@@ -310,7 +325,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'learning_velocity::lv_own_insert',
   'learning_velocity::lv_own_select',
   'legacy_alert_rules::Admin read alert_rules',
-  'monthly_reports::guardians_view_monthly_reports',
   'monthly_reports::students_own_monthly_reports',
   'narrative_progress::Students see own narrative',
   'offline_pending_responses::Students manage own pending',
@@ -318,7 +332,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'parental_consent::Guardians can update own consent',
   'parental_consent::Guardians can view own consent',
   'payment_webhook_events::payment_webhook_events_super_admin_select',
-  'performance_scores::perf_scores_parent_select',
   'performance_scores::perf_scores_student_select',
   'permissions::permissions_admin',
   'platform_health_snapshots::Admin read health snapshots',
@@ -327,7 +340,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'question_misconceptions::qm_super_admin_write',
   'question_responses::qr_own_insert',
   'question_responses::qr_own_select',
-  'quiz_session_shuffles::quiz_session_shuffles_parent_select',
   'quiz_session_shuffles::quiz_session_shuffles_student_select',
   'quiz_session_shuffles::quiz_session_shuffles_teacher_select',
   'rag_ingestion_failures::rag_ingestion_failures_read_admin',
@@ -341,7 +353,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'school_invite_codes::School admins can manage their school codes',
   'school_invite_codes::Teachers can view codes for their school',
   'school_questions::school_questions_student_select',
-  'score_history::score_history_parent_select',
   'score_history::score_history_student_select',
   'smart_nudges::students_own_smart_nudges',
   'student_assessment_attempts::attempts_own',
@@ -359,7 +370,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'student_scans::scans_insert',
   'student_scans::scans_own',
   'student_skill_state::skill_state_teacher_select',
-  'student_skill_state::student_skill_state_parent_select',
   'student_skill_state::student_skill_state_student_select',
   'student_skill_state::student_skill_state_teacher_select',
   // XC-3 Phase 1 ratchet-DOWN #1 (migration 20260702090000): the students policy
@@ -399,7 +409,6 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'user_question_history::uqh_student_update',
   'user_roles::user_roles_admin',
   'user_roles::user_roles_select',
-  'xp_transactions::xp_txn_parent_select',
   'xp_transactions::xp_txn_student_select',
   'xp_transactions::xp_txn_teacher_select',
 ]);
@@ -655,8 +664,8 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // DEFINER helper public.get_my_student_id() (already on the roster — no new
     // helper minted): 236 → 234. This pins the number so any drift (up = new
     // violation, down = un-pruned ledger) trips a guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(234);
-    expect(detectedRiskKeys().length).toBe(234);
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(223);
+    expect(detectedRiskKeys().length).toBe(223);
   });
 });
 
