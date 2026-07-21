@@ -216,13 +216,76 @@ function lintFile(filePath) {
   return { status: 'ok' };
 }
 
+// -- Duplicate-timestamp-version guard -------------------------------------
+//
+// Supabase's "schema_migrations" tracking table uses the migration's leading
+// timestamp (everything before the first underscore in the filename, e.g.
+// 20260720170000 in 20260720170000_some_migration.sql) as its PRIMARY KEY.
+//
+// This repo runs several parallel long-lived feature branches (each its own
+// RCA/redesign workstream) that independently create migrations named after
+// "now" at authoring time. Two branches authored the same day can and DO
+// pick the identical timestamp. Each branch's own CI is green in isolation
+// (its migrations dir has no self-collision) -- the collision only exists
+// once BOTH branches' migrations are combined, e.g. after merging main into
+// a feature branch, or once two PRs land back-to-back.
+//
+// Incident: PR #1363 (teacher-dashboard) and PR #1364 (parent-portal) both
+// shipped a migration timestamped 20260720170000. #1364 merged first; when
+// #1363 merged, "supabase db push" failed AFTER MERGE, IN THE PRODUCTION
+// DEPLOY JOB, with a duplicate-key error on schema_migrations_pkey. All
+// three of #1363's migrations were blocked from applying until a follow-up
+// hotfix renamed the colliding files -- hours of production deploy failure
+// that a 14-second PR-time check would have caught before merge.
+//
+// This function makes that check unconditional and PR-time: it runs against
+// whatever supabase/migrations/*.sql looks like at PR-CI time, which (per
+// GitHub Actions' default pull_request checkout behavior) is the PR branch
+// merged into the current base -- i.e. it sees exactly the combined state
+// that "supabase db push" would see, days before deploy.
+function findDuplicateVersions(files) {
+  const byVersion = new Map();
+  for (const file of files) {
+    const base = path.basename(file);
+    const m = /^(\d{14})_/.exec(base);
+    if (!m) continue; // not our naming convention (e.g. baseline file); skip
+    const version = m[1];
+    if (!byVersion.has(version)) byVersion.set(version, []);
+    byVersion.get(version).push(base);
+  }
+  const duplicates = [];
+  for (const [version, names] of byVersion) {
+    if (names.length > 1) duplicates.push({ version, files: names.sort() });
+  }
+  return duplicates.sort((a, b) => (a.version < b.version ? -1 : 1));
+}
+
 function main() {
   const files = listMigrationFiles(MIGRATIONS_DIR);
   if (files.length === 0) {
     console.log('lint-migrations: no migration files found under supabase/migrations/ — nothing to check.');
     process.exit(0);
   }
-  const failures = [];
+  const duplicateVersions = findDuplicateVersions(files);
+    if (duplicateVersions.length > 0) {
+      console.log('');
+      console.log('FAIL: duplicate migration timestamp(s) detected in schema_migrations key space.');
+      console.log('Applying BOTH of these to the same database will fail with a duplicate-key');
+      console.log('error on schema_migrations_pkey (this exact incident has already happened');
+      console.log('once - see the comment above findDuplicateVersions() in this file).');
+      console.log('');
+      for (const dup of duplicateVersions) {
+        console.log('  version ' + dup.version + ' is used by ' + dup.files.length + ' files:');
+        for (const name of dup.files) console.log('    - ' + name);
+      }
+      console.log('');
+      console.log('Fix: rename all but one of the colliding files to a unique timestamp later');
+      console.log('than every existing migration, and update any other file that references');
+      console.log('the old filename by name.');
+      process.exit(1);
+    }
+  
+    const failures = [];
   let allowedCount = 0;
   for (const file of files) {
     const rel = path.relative(ROOT, file).replace(/\\/g, '/');
@@ -257,6 +320,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  findDuplicateVersions,
   stripComments,
   normalizeBody,
   isPlaceholder,
