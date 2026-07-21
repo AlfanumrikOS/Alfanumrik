@@ -69,9 +69,14 @@ describe('TSB-4 canonical membership cutover readiness manifest', () => {
       'dual-table-divergence-quantification',
       'boundary-reader-repoint',
       'route-helper-repoint',
+      'residual-rls-repoint-landed',
       'live-tenant-smoke',
       'legacy-table-retirement',
     ]);
+
+    expect(
+      manifest.stages.find((stage) => stage.id === 'residual-rls-repoint-landed')?.state,
+    ).toBe('landed');
 
     expect(manifest.stages.find((stage) => stage.id === 'legacy-table-retirement')?.state).toBe(
       'decision_gated',

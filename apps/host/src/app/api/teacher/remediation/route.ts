@@ -36,11 +36,24 @@
  *
  * P9 RBAC (route gate) · P8 exact-class scope (server-verified) · P5 grade
  * normalized only for curriculum matching · P13 no PII in logs.
+ *
+ * ROSTER RESOLUTION (2026-07-20 canonicalization): the teacher/class/student
+ * roster check below delegates to the SINGLE canonical resolver
+ * `resolveTeacherIdentity` + `resolveTeacherRosterScope` in
+ * `@alfanumrik/lib/rbac` (the same module `canAccessStudent` lives in). This
+ * route no longer maintains its own copy of the class_teachers/class_enrollments
+ * join — see the "Canonical Teacher Roster Resolution" section of rbac.ts.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { authorizeRequest } from '@alfanumrik/lib/rbac';
+import {
+  authorizeRequest,
+  resolveTeacherIdentity,
+  resolveTeacherRosterScope,
+  type TeacherIdentity,
+  type TeacherRosterClass,
+} from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 
@@ -77,35 +90,29 @@ function isOpenAssignmentConflict(error: {
 
 /**
  * Resolve the internal teacher row for the authenticated caller.
- * Returns null when the caller has no teacher profile.
+ * Returns null when the caller has no ACTIVE teacher profile.
+ *
+ * Delegates to the canonical `resolveTeacherIdentity` in
+ * `@alfanumrik/lib/rbac` — see the "Canonical Teacher Roster Resolution"
+ * section of that module. This is the SAME query canAccessStudent's teacher
+ * branch uses (is_active = true); it no longer filters on a `deleted_at`
+ * column, because `public.teachers` has no such column (confirmed against
+ * the schema baseline — the prior `.is('deleted_at', null)` filter here was
+ * targeting a column that does not exist).
  */
-async function resolveTeacher(authUserId: string): Promise<
-  { id: string; school_id: string | null } | null
-> {
-  const { data, error } = await supabaseAdmin
-    .from('teachers')
-    .select('id, school_id')
-    .eq('auth_user_id', authUserId)
-    .eq('is_active', true)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (error) {
+async function resolveTeacher(authUserId: string): Promise<TeacherIdentity | null> {
+  try {
+    return await resolveTeacherIdentity(authUserId);
+  } catch (e) {
     logger.error('teacher_remediation_teacher_lookup_failed', {
-      error: new Error(error.message),
+      error: e instanceof Error ? e : new Error(String(e)),
       route: 'teacher/remediation',
     });
     throw new Error('teacher_lookup_failed');
   }
-  return (data as { id: string; school_id: string | null } | null) ?? null;
 }
 
-type TeacherIdentity = { id: string; school_id: string | null };
-type RemediationClassScope = {
-  id: string;
-  school_id: string;
-  grade: string;
-  subject: string | null;
-};
+type RemediationClassScope = TeacherRosterClass;
 type RemediationReadScope = {
   classIds: string[];
   enrollmentKeys: Set<string>;
@@ -120,55 +127,32 @@ function enrollmentKey(classId: string, studentId: string): string {
  * historical assignment is only returned while the teacher still owns an
  * active class in their school and the learner still has an active enrollment
  * in that exact class.
+ *
+ * Delegates to the canonical `resolveTeacherRosterScope` in
+ * `@alfanumrik/lib/rbac` (`includeClassDetails: true` for the school-match
+ * guarantee this route relies on).
  */
 async function resolveRemediationReadScope(
   teacher: TeacherIdentity,
   requestedClassId: string | null,
 ): Promise<RemediationReadScope | null> {
-  if (!teacher.school_id) return null;
-
-  let teacherClassesQuery = supabaseAdmin
-    .from('class_teachers')
-    .select('class_id')
-    .eq('teacher_id', teacher.id)
-    .eq('is_active', true);
-  if (requestedClassId) teacherClassesQuery = teacherClassesQuery.eq('class_id', requestedClassId);
-
-  const { data: teacherClasses, error: teacherClassesError } = await teacherClassesQuery;
-  if (teacherClassesError) throw new Error('read_scope_lookup_failed');
-  const assignedClassIds = Array.from(
-    new Set(((teacherClasses ?? []) as Array<{ class_id: string }>).map((row) => row.class_id)),
-  );
-  if (requestedClassId && !assignedClassIds.includes(requestedClassId)) return null;
-  if (assignedClassIds.length === 0) return { classIds: [], enrollmentKeys: new Set() };
-
-  const { data: classes, error: classesError } = await supabaseAdmin
-    .from('classes')
-    .select('id')
-    .in('id', assignedClassIds)
-    .eq('school_id', teacher.school_id)
-    .eq('is_active', true)
-    .is('deleted_at', null);
-  if (classesError) throw new Error('read_scope_lookup_failed');
-  const classIds = Array.from(
-    new Set(((classes ?? []) as Array<{ id: string }>).map((row) => row.id)),
-  );
-  if (requestedClassId && !classIds.includes(requestedClassId)) return null;
-  if (classIds.length === 0) return { classIds: [], enrollmentKeys: new Set() };
-
-  const { data: enrollments, error: enrollmentsError } = await supabaseAdmin
-    .from('class_enrollments')
-    .select('class_id, student_id')
-    .in('class_id', classIds)
-    .eq('is_active', true);
-  if (enrollmentsError) throw new Error('read_scope_lookup_failed');
+  let roster;
+  try {
+    roster = await resolveTeacherRosterScope(teacher.id, {
+      teacher,
+      classId: requestedClassId ?? undefined,
+      includeClassDetails: true,
+    });
+  } catch {
+    throw new Error('read_scope_lookup_failed');
+  }
+  if (!roster) return null;
+  if (roster.classIds.length === 0) return { classIds: [], enrollmentKeys: new Set() };
 
   return {
-    classIds,
+    classIds: roster.classIds,
     enrollmentKeys: new Set(
-      ((enrollments ?? []) as Array<{ class_id: string; student_id: string }>).map((row) =>
-        enrollmentKey(row.class_id, row.student_id),
-      ),
+      roster.enrollments.map((e) => enrollmentKey(e.classId, e.studentId)),
     ),
   };
 }
@@ -189,77 +173,41 @@ function subjectKey(value: string): string {
  * bypasses RLS, so every relationship is re-checked explicitly here:
  * active teacher-class assignment, active student enrollment, active class,
  * and matching school membership for teacher, class, and student.
+ *
+ * Delegates the teacher/class/enrollment leg to the canonical
+ * `resolveTeacherRosterScope` (`includeClassDetails: true`); the final
+ * `students` row check stays local because it validates the STUDENT record
+ * itself (active, not soft-deleted, same school), which is a
+ * remediation-specific integrity check rather than a roster-membership check.
  */
 async function resolveRemediationClassScope(
   teacher: TeacherIdentity,
   classId: string,
   studentId: string,
 ): Promise<RemediationClassScope | null> {
-  if (!teacher.school_id) return null;
-
-  const { data: classRow, error: classError } = await supabaseAdmin
-    .from('classes')
-    .select('id, school_id, grade, subject')
-    .eq('id', classId)
-    .eq('school_id', teacher.school_id)
-    .eq('is_active', true)
-    .is('deleted_at', null)
-    .limit(1)
-    .maybeSingle();
-  if (classError) {
+  let roster;
+  try {
+    roster = await resolveTeacherRosterScope(teacher.id, {
+      teacher,
+      classId,
+      studentId,
+      includeClassDetails: true,
+    });
+  } catch (e) {
     logger.error('teacher_remediation_class_lookup_failed', {
-      error: new Error(classError.message),
+      error: e instanceof Error ? e : new Error(String(e)),
       route: 'teacher/remediation',
     });
     throw new Error('class_scope_lookup_failed');
   }
-  const selectedClass = classRow as {
-    id: string;
-    school_id: string | null;
-    grade: string;
-    subject: string | null;
-  } | null;
-  if (!selectedClass?.school_id) return null;
-
-  const { data: teacherClass, error: teacherClassError } = await supabaseAdmin
-    .from('class_teachers')
-    .select('class_id')
-    .eq('teacher_id', teacher.id)
-    .eq('class_id', classId)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
-  if (teacherClassError) {
-    logger.error('teacher_remediation_class_teacher_lookup_failed', {
-      error: new Error(teacherClassError.message),
-      route: 'teacher/remediation',
-    });
-    throw new Error('class_scope_lookup_failed');
-  }
-  if (!teacherClass) return null;
-
-  const { data: enrolment, error: enrolmentError } = await supabaseAdmin
-    .from('class_enrollments')
-    .select('class_id')
-    .eq('class_id', classId)
-    .eq('student_id', studentId)
-    .eq('is_active', true)
-    .limit(1)
-    .maybeSingle();
-  if (enrolmentError) {
-    logger.error('teacher_remediation_class_enrollment_lookup_failed', {
-      error: new Error(enrolmentError.message),
-      route: 'teacher/remediation',
-    });
-    throw new Error('class_scope_lookup_failed');
-  }
-  if (!enrolment) return null;
+  if (!roster || roster.classes.length === 0) return null;
+  const selectedClass = roster.classes[0];
 
   const { data: student, error: studentError } = await supabaseAdmin
     .from('students')
     .select('id')
     .eq('id', studentId)
-    .eq('school_id', selectedClass.school_id)
+    .eq('school_id', selectedClass.schoolId)
     .eq('is_active', true)
     .is('deleted_at', null)
     .limit(1)
@@ -273,12 +221,7 @@ async function resolveRemediationClassScope(
   }
   if (!student) return null;
 
-  return {
-    id: selectedClass.id,
-    school_id: selectedClass.school_id,
-    grade: selectedClass.grade,
-    subject: selectedClass.subject,
-  };
+  return selectedClass;
 }
 
 /** Validate that a requested curriculum topic is published for this class. */
@@ -351,7 +294,7 @@ export async function POST(request: NextRequest) {
   const sourceAlertId = body.source_alert_id ?? null;
 
   // Resolve the internal teacher id (NEVER auth.uid()).
-  let teacher: { id: string; school_id: string | null } | null;
+  let teacher: TeacherIdentity | null;
   try {
     teacher = await resolveTeacher(auth.userId!);
   } catch {
@@ -475,7 +418,7 @@ export async function GET(request: NextRequest) {
   if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
   // Resolve the internal teacher id (NEVER auth.uid()).
-  let teacher: { id: string; school_id: string | null } | null;
+  let teacher: TeacherIdentity | null;
   try {
     teacher = await resolveTeacher(auth.userId!);
   } catch {

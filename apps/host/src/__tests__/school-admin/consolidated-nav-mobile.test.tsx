@@ -26,6 +26,7 @@ const ALL_PRINCIPAL_DESTINATIONS = [
   '/school-admin/reports',
   '/school-admin/reports-depth',
   '/school-admin/announcements',
+  '/school-admin/escalations',
   '/school-admin/billing',
   '/school-admin/branding',
   '/school-admin/modules',

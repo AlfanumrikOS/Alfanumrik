@@ -21,11 +21,15 @@ interface NavTab {
   moduleKey?: string;
 }
 
-// 4 primary tabs for Command Center mode (ff_teacher_command_center ON)
+// 4 primary tabs for Command Center mode (ff_teacher_command_center ON).
+// Picked for daily-use frequency: home, the previously-undiscoverable daily
+// roll-call (Attendance — Task T9), the core grading surface (Gradebook),
+// and parent/student messaging. Everything else is one more tap away via
+// "More" (still <=2 taps total from anywhere in the app).
 const SLIM_TABS: NavTab[] = [
   { href: '/teacher', label: 'Command Center', labelHi: 'कमांड सेंटर', icon: '▦', exact: true },
+  { href: '/teacher/attendance', label: 'Attendance', labelHi: 'उपस्थिति', icon: '✓' },
   { href: '/teacher/grade-book', label: 'Gradebook', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },
-  { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
   { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉', isBadge: true },
 ];
 
@@ -37,18 +41,24 @@ const LEGACY_TABS: NavTab[] = [
   { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉', isBadge: true },
 ];
 
-// Overflow items for Command Center mode — mirrors TEACHER_OVERFLOW_ITEMS from TeacherShell.
+// Overflow items for Command Center mode — every remaining real teacher page,
+// grouped in the same Roster → Coursework → Insights → Account order as the
+// desktop sidebar (TeacherShell.tsx TEACHER_PRIMARY_SLIM) so mobile and
+// desktop IA agree.
 const SLIM_MORE_ITEMS: NavTab[] = [
   { href: '/teacher/classes', label: 'Classes', labelHi: 'कक्षाएं', icon: '⊞' },
   { href: '/teacher/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
+  { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
   { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: '⊞', moduleKey: 'assignments' },
   { href: '/teacher/worksheets', label: 'Worksheets', labelHi: 'वर्कशीट', icon: '⊡', moduleKey: 'lms' },
+  { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
   { href: '/teacher/lab-leaderboard', label: 'Lab Leaderboard', labelHi: 'लैब लीडरबोर्ड', icon: '⊙' },
   { href: '/teacher/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
 ];
 
 // Overflow items for legacy mode — remaining NAV_ITEMS not in LEGACY_TABS.
 const LEGACY_MORE_ITEMS: NavTab[] = [
+  { href: '/teacher/attendance', label: 'Attendance', labelHi: 'उपस्थिति', icon: '✓' },
   { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
   { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: '⊞', moduleKey: 'assignments' },
   { href: '/teacher/grade-book', label: 'Grade Book', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },

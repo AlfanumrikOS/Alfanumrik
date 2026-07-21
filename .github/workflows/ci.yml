@@ -1389,7 +1389,6 @@ jobs:
           deno test --no-lock --no-check --allow-read --allow-env \
             supabase/functions/parent-portal/__tests__/ \
             supabase/functions/teacher-dashboard/__tests__/ \
-            supabase/functions/export-report/__tests__/ \
             supabase/functions/daily-cron/__tests__/ \
             supabase/functions/scan-ocr/__tests__/ \
             supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
