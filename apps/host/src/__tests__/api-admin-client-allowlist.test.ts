@@ -181,7 +181,7 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // (protected-flags.ts) — no user session exists on a scheduled invocation.
 // Fail-closed CRON_SECRET gate (constant-time compare) runs BEFORE any DB
 // I/O; output is counts/flag-names-only (no PII, no operator identity).
-const EXPECTED_COUNT = 254;
+const EXPECTED_COUNT = 255;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -256,7 +256,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 254 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 255 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);

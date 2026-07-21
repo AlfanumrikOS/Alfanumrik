@@ -1368,6 +1368,14 @@
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
     },
     {
+      "path": "/api/student/assignments/[id]/complete",
+      "file": "apps/host/src/app/api/student/assignments/[id]/complete/route.ts",
+      "access": "student",
+      "owner": "assessment-backend",
+      "rationale": "Student endpoint; records a completed quiz session against an assignment, scoped to the caller student and their own roster membership.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/student/chapters",
       "file": "apps/host/src/app/api/student/chapters/route.ts",
       "access": "student",

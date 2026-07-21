@@ -10,7 +10,7 @@ import type { Subject } from './subjects.types';
 
 const fetcher = (url: string) => fetch(url).then((r) => {
   if (!r.ok) throw new Error('teacher_subjects.fetch_failed');
-  return r.json() as Promise<{ subjects: Subject[] }>;
+  return r.json() as Promise<{ subjects: Subject[]; allSubjects?: Subject[] }>;
 });
 
 export function useTeacherAllowedSubjects() {
@@ -20,6 +20,10 @@ export function useTeacherAllowedSubjects() {
   });
   return {
     subjects: data?.subjects ?? [],
+    // Full active subjects catalogue, independent of the teacher's current
+    // subjects_taught — used by the teacher-profile "edit subjects" picker so
+    // a teacher with an empty subjects_taught still has a list to pick from.
+    allSubjects: data?.allSubjects ?? [],
     unlocked: (data?.subjects ?? []).filter((s) => !s.isLocked),
     locked:   (data?.subjects ?? []).filter((s) =>  s.isLocked),
     isLoading,

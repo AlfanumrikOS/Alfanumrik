@@ -433,6 +433,43 @@ export default function QuizPage() {
     })();
   }, [screen, results]);
 
+  // Student-facing teacher assignments — completion recording. Fires ONCE
+  // when the results screen renders WITH a real result AND the quiz was
+  // launched from /assignments (deep link carries ?from=assignment&
+  // assignmentId=<id>). Mirrors the teacher-remediation hook above exactly:
+  // the assignment is graded as a NORMAL student quiz first (P1/P2/P3/P4
+  // untouched); this call only RECORDS the already-computed score/session
+  // into assignment_submissions so the teacher's existing grading screen
+  // (/teacher/submissions) sees it. Fire-and-forget, no PII (P13).
+  const assignmentCompletionRecordedRef = useRef(false);
+  useEffect(() => {
+    if (screen !== 'results' || !results) return;
+    if (assignmentCompletionRecordedRef.current) return;
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('from') !== 'assignment') return;
+    const assignmentId = params.get('assignmentId');
+    const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (!assignmentId || !UUID_RE.test(assignmentId) || !results.session_id) return;
+
+    assignmentCompletionRecordedRef.current = true;
+    (async () => {
+      try {
+        await fetch(`/api/student/assignments/${assignmentId}/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+          body: JSON.stringify({ session_id: results.session_id }),
+        });
+        // Best-effort: a failure here only means the teacher's submissions
+        // view won't show this attempt yet — the student's own score/XP
+        // (already recorded via the normal quiz path above) is unaffected.
+      } catch {
+        /* swallow — no PII, no user-facing error for this background write */
+      }
+    })();
+  }, [screen, results]);
+
   // Per-question timer
   useEffect(() => {
     if (screen === 'quiz' && !showExplanation) {
