@@ -1,4 +1,4 @@
--- Migration: 20260720170000_tsb4_close_residual_class_students_rls_refs.sql
+-- Migration: 20260721000000_tsb4_close_residual_class_students_rls_refs.sql
 -- Purpose: TSB-4 cutover follow-up — close the LAST residual RLS references to
 --          the legacy `class_students` table that survived the boundary-reader
 --          repoint. Per scripts/tsb4-canonical-membership-cutover.json, the

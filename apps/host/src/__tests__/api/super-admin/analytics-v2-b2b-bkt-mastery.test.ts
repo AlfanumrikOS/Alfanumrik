@@ -6,7 +6,7 @@ import { NextRequest } from 'next/server';
  *
  * RCA: teacher Reports, the School-Admin Command Center, and super-admin
  * B2B analytics each computed "this cohort's mastery" with a different
- * formula. Migration 20260720190000_shared_cohort_bkt_mastery_rpc.sql
+ * formula. Migration 20260721000200_shared_cohort_bkt_mastery_rpc.sql
  * unifies them onto ONE Postgres primitive:
  *   calculate_cohort_bkt_mastery(uuid[]) / get_cohort_bkt_mastery_by_student(uuid[])
  *   avg_mastery_pct = round(AVG(concept_mastery.p_know) * 100)
@@ -231,7 +231,7 @@ describe('School-Admin Command Center — get_school_overview delegates to the s
     const path = await import('path');
     const migrationPath = path.resolve(
       __dirname,
-      '../../../../../../supabase/migrations/20260720190000_shared_cohort_bkt_mastery_rpc.sql',
+      '../../../../../../supabase/migrations/20260721000200_shared_cohort_bkt_mastery_rpc.sql',
     );
     const sql = fs.readFileSync(migrationPath, 'utf-8');
 

@@ -1,4 +1,4 @@
--- Migration: 20260720190000_shared_cohort_bkt_mastery_rpc.sql
+-- Migration: 20260721000200_shared_cohort_bkt_mastery_rpc.sql
 -- Purpose: T8 (Teacher Dashboard Redesign & Remediation) — unify the mastery
 --          FORMULA used by teacher Reports, the School-Admin Command Center,
 --          and super-admin B2B analytics onto ONE Postgres function, so the

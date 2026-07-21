@@ -1126,7 +1126,7 @@ async function resolveStudentsForTeacher(
 // "mastery" as an accuracy proxy off student_learning_profiles
 // (correct/asked), commented as a stand-in for lacking a true BKT roll-up
 // at this aggregation layer. That roll-up now exists as a shared Postgres
-// RPC (migration 20260720190000_shared_cohort_bkt_mastery_rpc.sql) — the
+// RPC (migration 20260721000200_shared_cohort_bkt_mastery_rpc.sql) — the
 // SAME formula the School-Admin Command Center's get_school_overview and
 // the super-admin B2B analytics route use. Calling it here means all three
 // surfaces trace back to one formula for "this cohort's mastery."
