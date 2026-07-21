@@ -471,6 +471,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setRoles(detectedRoles);
             setActiveRoleState(detectedPrimary);
           } else if (!bootstrapAttemptedRef.current) {
+            // P15 guard (2026-07-20, admin-user-invite-flow incident): before
+            // silently bootstrapping a profile-less authenticated user as
+            // role:'student', check whether this identity has an admin_users
+            // row at all (active OR inactive — any row disqualifies the
+            // student auto-bootstrap). This does NOT change the 3-layer P15
+            // failsafe below, which remains load-bearing for genuine student
+            // signups — it only adds a short-circuit so a profile-less ADMIN
+            // identity is never silently turned into a student account.
+            // Consistent with the existing students/teachers/guardians/
+            // school_admins lookup pattern above (own-row RLS select).
+            let hasAdminUserRow = false;
+            try {
+              const { data: adminUserRow } = await supabase
+                .from('admin_users')
+                .select('id')
+                .eq('auth_user_id', user.id)
+                .maybeSingle();
+              hasAdminUserRow = !!adminUserRow;
+            } catch {
+              // Fail open to the existing failsafe below — this probe must
+              // never itself break the P15 onboarding funnel.
+            }
+
+            if (hasAdminUserRow) {
+              // Leave unclassified rather than defaulting to student. Admin
+              // identities authenticate through /super-admin/login, not the
+              // student/teacher/parent onboarding funnel.
+              bootstrapAttemptedRef.current = true;
+              setRoles([]);
+              setActiveRoleState('none');
+              return;
+            }
+
             // User is authenticated but has no profile yet.
             // B10: Route through /api/auth/bootstrap (server-side, admin client, idempotent)
             // instead of inserting directly via browser client (which bypasses RLS, triggers,

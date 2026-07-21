@@ -31,6 +31,7 @@ import {
   completeSignupBootstrap,
   registerSessionOnResponse,
 } from '@alfanumrik/lib/identity/complete-signup';
+import { buildRecoverySessionHash } from '@alfanumrik/lib/identity/recovery-session-hash';
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -68,13 +69,25 @@ export async function GET(request: NextRequest) {
         // uses localStorage) sees no session → "Invalid or Expired Link".
         const { data: { session: recoverySession } } = await supabase.auth.getSession();
         if (recoverySession) {
-          const hashParams = new URLSearchParams({
-            access_token: recoverySession.access_token,
-            refresh_token: recoverySession.refresh_token,
-            token_type: 'bearer',
-            type: 'recovery',
-          });
-          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+          const hash = buildRecoverySessionHash(recoverySession, 'recovery');
+          return NextResponse.redirect(`${origin}/auth/reset#${hash}`);
+        }
+        return NextResponse.redirect(`${origin}/auth/reset`);
+      }
+      if (type === 'invite') {
+        // Supabase-Dashboard-invited users (type=invite) must set a password
+        // before they can use the account — there is no existing password to
+        // log in with. Route to the SAME /auth/reset flow as 'recovery': that
+        // page only cares that a live session exists and calls
+        // supabase.auth.updateUser({ password }); it does not care WHY the
+        // user needs to set one. Falling through to the generic default
+        // branch below would silently register a session and drop the user
+        // on /dashboard with no way to ever set a password.
+        // P15 gap fixed 2026-07-20 — see admin-user-invite-flow incident.
+        const { data: { session: inviteSession } } = await supabase.auth.getSession();
+        if (inviteSession) {
+          const hash = buildRecoverySessionHash(inviteSession, 'invite');
+          return NextResponse.redirect(`${origin}/auth/reset#${hash}`);
         }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
@@ -101,7 +114,7 @@ export async function GET(request: NextRequest) {
         return signupResponse;
       }
 
-      // Default (non-signup, non-recovery) — register session
+      // Default (non-signup, non-recovery, non-invite) — register session
       const defaultResponse = NextResponse.redirect(`${origin}${safeNext}`);
       try {
         const { data: { user: defaultUser } } = await supabase.auth.getUser();
@@ -130,13 +143,26 @@ export async function GET(request: NextRequest) {
         // uses localStorage) sees no session → "Invalid or Expired Link".
         const { data: { session: recoverySession } } = await supabase.auth.getSession();
         if (recoverySession) {
-          const hashParams = new URLSearchParams({
-            access_token: recoverySession.access_token,
-            refresh_token: recoverySession.refresh_token,
-            token_type: 'bearer',
-            type: 'recovery',
-          });
-          return NextResponse.redirect(`${origin}/auth/reset#${hashParams.toString()}`);
+          const hash = buildRecoverySessionHash(recoverySession, 'recovery');
+          return NextResponse.redirect(`${origin}/auth/reset#${hash}`);
+        }
+        return NextResponse.redirect(`${origin}/auth/reset`);
+      }
+      if (type === 'invite') {
+        // Supabase-Dashboard-invited users (type=invite) must set a password
+        // before they can use the account — there is no existing password to
+        // log in with. Route to the SAME /auth/reset flow as 'recovery': that
+        // page only cares that a live session exists and calls
+        // supabase.auth.updateUser({ password }); it does not care WHY the
+        // user needs to set one. Falling through to the generic default
+        // branch below would silently register a session and drop the user
+        // on /dashboard with no way to ever set a password.
+        // P15 gap fixed 2026-07-20 — see admin-user-invite-flow incident.
+        // Legacy token+email+type flow mirror of the token_hash branch above.
+        const { data: { session: inviteSession } } = await supabase.auth.getSession();
+        if (inviteSession) {
+          const hash = buildRecoverySessionHash(inviteSession, 'invite');
+          return NextResponse.redirect(`${origin}/auth/reset#${hash}`);
         }
         return NextResponse.redirect(`${origin}/auth/reset`);
       }
@@ -163,7 +189,7 @@ export async function GET(request: NextRequest) {
         return signupResponse;
       }
 
-      // Default (non-signup, non-recovery) — register session
+      // Default (non-signup, non-recovery, non-invite) — register session
       const defaultResponse = NextResponse.redirect(`${origin}${safeNext}`);
       try {
         const { data: { user: defaultUser } } = await supabase.auth.getUser();
