@@ -21117,6 +21117,22 @@ CREATE POLICY "grounded_traces_read_admin" ON "public"."grounded_ai_traces" FOR 
 CREATE POLICY "gsl_own_select" ON "public"."guardian_student_links" FOR SELECT USING (("guardian_id" = "public"."get_my_guardian_id"()));
 
 
+-- HISTORICAL NOTE (added 2026-07-20, RCA hygiene fix, no functional change):
+-- This baseline snapshot captures gsl_service_write as WITH CHECK (true) with
+-- no role scope, which meant (absent a later fix) any authenticated caller
+-- could INSERT an arbitrary guardian_student_links row via PostgREST,
+-- bypassing invite codes, OTP, and student approval entirely. This was
+-- flagged CRITICAL and fixed forward by migration
+-- 20260505155635_fix_rls_service_policies_scope_to_service_role.sql, which
+-- rescopes this policy (and the equivalent policy on 13 other tables:
+-- admin_audit_log, ai_governance_log, ncert_book_catalog,
+-- interactive_simulations, class_enrollments, school_announcements,
+-- school_api_keys, school_questions, school_exams, school_audit_log,
+-- school_invoices, school_seat_usage, school_alert_rules,
+-- coverage_audit_snapshots, grounded_ai_traces) to TO service_role.
+-- On a fresh DB the fix migration runs after this baseline and the final
+-- state is secure. Do not read this baseline file alone as current-state
+-- truth for this policy -- always check the fix migration too.
 CREATE POLICY "gsl_service_write" ON "public"."guardian_student_links" FOR INSERT WITH CHECK (true);
 
 

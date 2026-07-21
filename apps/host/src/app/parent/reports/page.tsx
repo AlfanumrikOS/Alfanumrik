@@ -11,6 +11,9 @@ import { getQuizScoreColor } from '@alfanumrik/lib/score-colors';
 import ParentLabReportWidget from '@alfanumrik/ui/parent/ParentLabReportWidget';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
+import { StatCard } from '@alfanumrik/ui/admin-ui';
+import { BarChart } from '@alfanumrik/ui/admin-ui';
+import { ProgressRing, ProgressBar } from '@alfanumrik/ui/ui/primitives';
 import {
   readParentChildId,
   replaceParentChildId,
@@ -277,32 +280,22 @@ const emptyText: React.CSSProperties = {
 // ============================================================
 // PERFORMANCE SUMMARY CARD
 // ============================================================
+// Thin wrapper preserving the original (icon, label, value, sub, ringColor)
+// call-site API used by the 4 call sites below, while delegating actual
+// rendering to the canonical design-system StatCard (parent-dashboard RCA
+// Task 3.1, 2026-07-20) -- previously this duplicated a bespoke card look
+// instead of reusing the app's existing card primitive.
 function SummaryCard({ icon, label, value, sub, ringColor }: {
   icon: string; label: string; value: string; sub?: string; ringColor?: string;
   }) {
   return (
-    <div style={{
-      backgroundColor: '#FFFFFF',
-      borderRadius: 14,
-      padding: '16px 14px',
-      border: '1px solid #E2E8F0',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-      textAlign: 'center',
-      position: 'relative',
-    }}>
-      {ringColor && (
-        <div style={{
-          width: 48, height: 48, borderRadius: '50%',
-          border: `4px solid ${ringColor}`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          margin: '0 auto 8px', fontSize: 20,
-        }}>{icon}</div>
-      )}
-      {!ringColor && <div style={{ fontSize: 24, marginBottom: 6 }}>{icon}</div>}
-      <div style={{ fontSize: 11, color: '#64748B', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 800, color: '#1E293B' }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{sub}</div>}
-    </div>
+    <StatCard
+      label={label}
+      value={value}
+      icon={icon}
+      subtitle={sub}
+      accentColor={ringColor}
+    />
   );
 }
 
@@ -311,7 +304,6 @@ function SummaryCard({ icon, label, value, sub, ringColor }: {
 // ============================================================
 function SubjectCard({ subject, isHi = false }: { subject: SubjectData; isHi?: boolean }) {
   const mastery = subject.mastery ?? 0;
-  const barColor = mastery >= 80 ? '#16A34A' : mastery >= 50 ? '#D97706' : '#EF4444';
   const subjectColors: Record<string, string> = {
     math: '#2563EB', science: '#16A34A', english: '#7C3AED',
     hindi: '#D97706', social: '#EC4899', evs: '#059669',
@@ -341,15 +333,16 @@ function SubjectCard({ subject, isHi = false }: { subject: SubjectData; isHi?: b
         )}
       </div>
 
-      {/* Mastery bar */}
+      {/* Mastery bar (parent-dashboard RCA Task 3.1: canonical ProgressBar
+          primitive replaces a hand-rolled div bar; tone mirrors the same
+          80/50 thresholds the original inline styling used) */}
       <div style={{ marginBottom: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ fontSize: 12, color: '#64748B' }}>{t(isHi, 'Mastery', 'महारत')}</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>{mastery}%</span>
-        </div>
-        <div style={{ height: 10, backgroundColor: '#F1F5F9', borderRadius: 5, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${mastery}%`, backgroundColor: barColor, borderRadius: 5, transition: 'width 0.5s ease' }} />
-        </div>
+        <ProgressBar
+          value={mastery}
+          tone={mastery >= 80 ? 'success' : mastery >= 50 ? 'warning' : 'danger'}
+          label={t(isHi, 'Mastery', 'महारत')}
+          showValue
+        />
       </div>
 
       {/* Topics count */}
@@ -655,15 +648,16 @@ function PerformanceScoreTrends({ trends, isHi = false }: { trends: ScoreTrendEn
                   <span style={{ fontSize: 11, color: '#94A3B8' }}>/100</span>
                 </div>
               </div>
-              {/* Progress bar */}
-              <div style={{ height: 6, backgroundColor: '#E2E8F0', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
-                <div style={{
-                  height: '100%',
-                  width: `${tr.currentScore}%`,
-                  backgroundColor: barColor,
-                  borderRadius: 3,
-                  transition: 'width 0.5s ease',
-                }} />
+              {/* Progress bar (parent-dashboard RCA Task 3.1: canonical
+                  ProgressBar primitive; tone mirrors the same 75/50
+                  thresholds barColor above already encodes) */}
+              <div style={{ marginBottom: 4 }}>
+                <ProgressBar
+                  value={tr.currentScore}
+                  tone={tr.currentScore >= 75 ? 'success' : tr.currentScore >= 50 ? 'warning' : 'danger'}
+                  size="sm"
+                  ariaLabel={`${displaySubject}: ${tr.currentScore}/100`}
+                />
               </div>
               {/* Delta line */}
               {delta != null && (
@@ -899,32 +893,27 @@ function getLastNMonths(n: number): { label: string; value: string }[] {
 // ============================================================
 // CIRCULAR PROGRESS (for monthly report)
 // ============================================================
+// Thin wrapper preserving the original (value, size, color, label)
+// call-site API used by the 2 call sites below, while delegating actual
+// rendering to the canonical design-system ProgressRing primitive
+// (parent-dashboard RCA Task 3.1, 2026-07-20) -- this file previously
+// hand-rolled its own SVG stroke-dasharray ring, near-duplicating
+// packages/ui/src/ui/primitives/ProgressRing.tsx. The two callers in this
+// file only ever pass the success-green or info-cyan brand colors, so the
+// mapping below is exhaustive for current usage; it falls back to the
+// 'brand' tone for any other color value.
+function colorToTone(color?: string): 'success' | 'info' | 'brand' {
+  if (color === '#16A34A') return 'success';
+  if (color === '#0891B2') return 'info';
+  return 'brand';
+}
+
 function CircularProgressRing({ value, size = 72, color = '#16A34A', label }: {
   value: number; size?: number; color?: string; label?: string;
 }) {
-  const pct = Math.min(100, Math.max(0, value));
-  const radius = (size - 8) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (pct / 100) * circumference;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#F1F5F9" strokeWidth={6} />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius} fill="none"
-          stroke={color} strokeWidth={6} strokeLinecap="round"
-          strokeDasharray={circumference} strokeDashoffset={offset}
-          style={{ transition: 'stroke-dashoffset 0.5s ease' }}
-        />
-        <text
-          x={size / 2} y={size / 2}
-          textAnchor="middle" dominantBaseline="central"
-          fill="#1E293B" fontSize={size * 0.22} fontWeight={700}
-          transform={`rotate(90, ${size / 2}, ${size / 2})`}
-        >
-          {Math.round(pct)}%
-        </text>
-      </svg>
+    <div className="flex flex-col items-center gap-1">
+      <ProgressRing value={value} size={size} tone={colorToTone(color)} />
       {label && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{label}</span>}
     </div>
   );
@@ -1096,27 +1085,24 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
               </div>
             </div>
 
-            {/* Accuracy trend bars */}
+            {/* Accuracy trend chart (parent-dashboard RCA Task 3.1: canonical
+                recharts-backed BarChart replaces a hand-rolled CSS bar
+                chart, matching the 'card-based, statistically-visual'
+                reporting goal) */}
             {monthlyData.accuracyTrend && monthlyData.accuracyTrend.length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>{t(isHi, 'Weekly Accuracy', 'साप्ताहिक सटीकता')}</div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 60 }}>
-                  {monthlyData.accuracyTrend.map((val: number, i: number) => {
-                    const h = Math.max(4, (val / 100) * 100);
-                    return (
-                      <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B' }}>{Math.round(val)}%</span>
-                        <div style={{
-                          width: '100%', borderRadius: '4px 4px 0 0',
-                          height: `${h}%`,
-                          backgroundColor: val >= 70 ? '#16A34A' : val >= 40 ? '#F59E0B' : '#EF4444',
-                          transition: 'height 0.4s ease',
-                        }} />
-                        <span style={{ fontSize: 10, color: '#94A3B8' }}>W{i + 1}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                <BarChart
+                  height={140}
+                  series={[{
+                    name: t(isHi, 'सटीकता %', 'Accuracy %'),
+                    data: monthlyData.accuracyTrend.map((val: number, i: number) => ({
+                      x: `${t(isHi, 'सप्ताह', 'W')} ${i + 1}`,
+                      y: Math.round(val),
+                    })),
+                  }]}
+                  emptyLabel={t(isHi, 'कोई डेटा उपलब्ध नहीं', 'No data to display')}
+                />
               </div>
             )}
 

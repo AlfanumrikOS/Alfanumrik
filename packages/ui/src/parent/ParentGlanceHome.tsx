@@ -29,6 +29,7 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Skeleton } from '@alfanumrik/ui/ui';
+import { StatCard } from '@alfanumrik/ui/admin-ui';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { CONSUMER_MINIMALISM_FLAGS } from '@alfanumrik/lib/feature-flags';
 
@@ -158,17 +159,15 @@ function ActivityStrip({ data, t, isHi }: { data: WeeklyDay[]; t: TFn; isHi: boo
   );
 }
 
-// ─── Snapshot stat pill — mirrors the legacy parent Stat card styling. ───
+// ─── Snapshot stat pill — thin wrapper preserving the original
+//     (icon, label, value, color) call-site API used by the 4 call sites
+//     below, delegating actual rendering to the canonical design-system
+//     StatCard (parent-dashboard RCA Task 3.2, 2026-07-20) so the parent
+//     glance home shares one card visual language with the rest of the
+//     app (super-admin, /parent/reports, student progress) instead of a
+//     bespoke one-off pill. ───
 function StatPill({ icon, label, value, color }: { icon: string; label: string; value: string | number; color: string }) {
-  return (
-    <div className="bg-white rounded-xl px-3 py-2.5 border border-orange-200">
-      <div className="flex items-center gap-1.5 mb-0.5">
-        <span className="text-sm">{icon}</span>
-        <span className="text-gray-500 text-[10px] uppercase tracking-[0.5px]">{label}</span>
-      </div>
-      <span className="text-[20px] font-bold" style={{ color }}>{value}</span>
-    </div>
-  );
+  return <StatCard label={label} value={value} icon={icon} accentColor={color} />;
 }
 
 // ─── Timeline row for the Moments feed (read-only). ───

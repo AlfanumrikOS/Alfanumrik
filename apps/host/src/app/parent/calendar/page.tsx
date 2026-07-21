@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
+import ParentExamSchedule from '@alfanumrik/ui/school/ParentExamSchedule';
 import {
   loadParentSession,
   type ParentSession,
@@ -382,6 +383,9 @@ function ParentCalendarContent() {
           </p>
         </div>
       )}
+
+      {/* ── UPCOMING EXAMS (B2B school-linked children only; renders null otherwise) ── */}
+      {!notLinked && <ParentExamSchedule />}
 
       {/* ── CALENDAR CARD ── */}
       <div style={cardStyle}>

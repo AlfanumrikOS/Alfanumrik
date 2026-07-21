@@ -146,7 +146,7 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
     if (!code.trim()) { setError(t(isHi, 'Please enter link code', 'कृपया लिंक कोड दर्ज करें')); return; }
 
     // Check lockout before attempting
-    const lockout = isLockedOut();
+    const lockout = isLockedOut(isHi);
     if (lockout.locked) { setError(lockout.message); return; }
 
     // P15: the parent-portal Edge Function requires a Supabase Bearer JWT on
@@ -173,7 +173,7 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
       setLoading(false);
       if (res.error) {
         // Record failed attempt for lockout
-        const lockMsg = recordFailedAttempt();
+        const lockMsg = recordFailedAttempt(isHi);
         setError(lockMsg || res.error);
         return;
       }
@@ -192,8 +192,8 @@ function LoginScreen({ onLogin, isHi, authUserId, prefillName }: { onLogin: (g: 
       onLogin(res.guardian, res.student);
     } catch (err) {
       setLoading(false);
-      const lockMsg = recordFailedAttempt();
-      setError(lockMsg || 'Connection error. Please try again.');
+      const lockMsg = recordFailedAttempt(isHi);
+      setError(lockMsg || t(isHi, 'Connection error. Please try again.', 'कनेक्शन में त्रुटि। कृपया पुनः प्रयास करें।'));
     }
   };
 
