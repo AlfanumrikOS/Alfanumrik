@@ -1,6 +1,6 @@
 {
   "_comment": "XC-3 Phase 0b ledger of every src/app/api/**/route.ts that imports the RLS-bypassing service-role client (@/lib/supabase-admin or a relative path to lib/supabase-admin). This list RATCHETS DOWN ONLY: as Phase 2/3 migrate read routes onto the RLS-scoped supabase-server client, their entries are pruned here in the same PR. A NEW admin-importing route that is absent from this ledger FAILS src/__tests__/api-admin-client-allowlist.test.ts (which re-derives the detected set from source with the same import matcher). Pinned by REG-213 (P8/P9).",
-  "count": 254,
+  "count": 255,
   "routes": [
     "src/app/api/alfabot/inquiry/route.ts",
     "src/app/api/alfabot/lead/route.ts",
@@ -121,6 +121,7 @@
     "src/app/api/schools/setup/classes/route.ts",
     "src/app/api/schools/setup/invite-codes/route.ts",
     "src/app/api/schools/setup/profile/route.ts",
+    "src/app/api/student/assignments/[id]/complete/route.ts",
     "src/app/api/student/chapters/route.ts",
     "src/app/api/student/daily-lab/claim/route.ts",
     "src/app/api/student/exam-simulation/route.ts",
