@@ -89,7 +89,7 @@
       "state": "landed",
       "action": "Closed the last residual RLS references to class_students: the public.students teacher backstop policy and the public.teacher_remediation_assignments teacher SELECT/INSERT/UPDATE policies now join through canonical class_enrollments instead of legacy class_students. class_students itself is untouched; only RLS join targets changed.",
       "artifacts": [
-        "supabase/migrations/20260720170000_tsb4_close_residual_class_students_rls_refs.sql",
+        "supabase/migrations/20260721000000_tsb4_close_residual_class_students_rls_refs.sql",
         "apps/host/src/__tests__/tsb4-residual-rls-repoint-readiness.test.ts"
       ],
       "evidence": [

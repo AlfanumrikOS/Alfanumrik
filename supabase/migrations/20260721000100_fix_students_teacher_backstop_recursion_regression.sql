@@ -1,5 +1,5 @@
--- Migration: 20260720180000_fix_students_teacher_backstop_recursion_regression.sql
--- Purpose: P8 REGRESSION FIX — 20260720170000_tsb4_close_residual_class_students_rls_refs.sql
+-- Migration: 20260721000100_fix_students_teacher_backstop_recursion_regression.sql
+-- Purpose: P8 REGRESSION FIX — 20260721000000_tsb4_close_residual_class_students_rls_refs.sql
 --          reintroduced the EXACT recursive inline-subquery shape that the
 --          2026-07-02 production-incident fix
 --          (20260702080000_fix_students_rls_infinite_recursion.sql) deliberately

@@ -80,7 +80,7 @@ export function averagePercentages(values: readonly unknown[]): number | null {
 // ─── T8: shared cohort BKT mastery helpers ──────────────────────────────
 // Pure shaping/reconciliation helpers around the shared
 // `calculate_cohort_bkt_mastery` / `get_cohort_bkt_mastery_by_student`
-// Postgres RPC (migration 20260720190000_shared_cohort_bkt_mastery_rpc.sql)
+// Postgres RPC (migration 20260721000200_shared_cohort_bkt_mastery_rpc.sql)
 // — the SAME formula the School-Admin Command Center's get_school_overview
 // and the super-admin B2B analytics route use. Kept pure and Supabase-free
 // so the reconciliation logic (what happens when a student has no BKT

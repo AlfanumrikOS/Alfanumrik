@@ -16,7 +16,7 @@ import { resolve } from 'node:path';
  *
  * THE CHANGE UNDER TEST
  * =====================
- * `supabase/migrations/20260720170000_tsb4_close_residual_class_students_rls_refs.sql`
+ * `supabase/migrations/20260721000000_tsb4_close_residual_class_students_rls_refs.sql`
  * repoints both policy sets' roster join from `class_students` to
  * `class_enrollments`, preserving predicate shape (roster join + is_active
  * guards) exactly. It does NOT touch the `class_students` table itself — that
@@ -32,7 +32,7 @@ import { resolve } from 'node:path';
  */
 
 const MIGRATION_REL =
-  'supabase/migrations/20260720170000_tsb4_close_residual_class_students_rls_refs.sql';
+  'supabase/migrations/20260721000000_tsb4_close_residual_class_students_rls_refs.sql';
 
 function resolveRepo(rel: string): string | null {
   for (const c of [resolve(process.cwd(), rel), resolve(process.cwd(), '..', rel)]) {

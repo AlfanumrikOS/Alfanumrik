@@ -73,7 +73,7 @@ Deno.test('teacher metric provenance: out-of-scope topics never enter class mast
 // apps/host/src/__tests__/api/super-admin/analytics-v2-b2b-bkt-mastery.test.ts
 // for the super-admin B2B route, and mirrors the exact SQL in
 // calculate_cohort_bkt_mastery / get_cohort_bkt_mastery_by_student
-// (migration 20260720190000_shared_cohort_bkt_mastery_rpc.sql):
+// (migration 20260721000200_shared_cohort_bkt_mastery_rpc.sql):
 //   avg_mastery_pct = round(AVG(p_know) * 100)
 // Both tests assert the SAME cohort produces the SAME 50% average, proving
 // teacher Reports and super-admin B2B analytics trace back to one formula.

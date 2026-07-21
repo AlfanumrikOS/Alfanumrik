@@ -31,7 +31,7 @@ async function supabaseRest(table: string, params: string = '') {
 // `calculate_cohort_bkt_mastery(uuid[])` is the SAME Postgres formula the
 // School-Admin Command Center's `get_school_overview` and the
 // teacher-dashboard Edge Function's Reports handlers use (migration
-// 20260720190000_shared_cohort_bkt_mastery_rpc.sql). This route calls it via
+// 20260721000200_shared_cohort_bkt_mastery_rpc.sql). This route calls it via
 // the service-role REST `rpc/` endpoint (the same trust boundary as every
 // other `supabaseRest`/`supabaseAdminUrl` call in this file — service-role
 // key, never exposed client-side).
