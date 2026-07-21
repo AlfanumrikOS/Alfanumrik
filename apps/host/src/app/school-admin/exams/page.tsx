@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { supabase } from '@alfanumrik/lib/supabase';
+import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
+import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
@@ -320,7 +321,7 @@ function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps)
             className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
             style={{
               background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               color: 'var(--text-2)',
               minHeight: 32,
             }}
@@ -404,7 +405,7 @@ function UpcomingExamCard({ exam, isHi, onEdit, onStatusChange }: ExamCardProps)
             className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
             style={{
               background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               color: 'var(--text-2)',
               minHeight: 32,
             }}
@@ -548,7 +549,7 @@ function ExamForm({ isHi, existing, classes, onSave, onClose }: ExamFormProps) {
             style={{
               maxHeight: 130,
               overflowY: 'auto',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               borderRadius: 12,
               padding: '8px 12px',
               background: 'var(--surface-1)',
@@ -729,11 +730,10 @@ function StatusChangeConfirm({ isHi, examTitle, newStatus, onConfirm, onCancel, 
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminExamsPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi } = useAuth();
+  const { isHi } = useAuth();
+  const { schoolId, isLoading: loadingAdmin } = useSchoolAdminAuth();
 
   /* ── State ── */
-  const [schoolId, setSchoolId] = useState<string | null>(null);
-  const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [exams, setExams] = useState<Exam[]>([]);
   const [loadingExams, setLoadingExams] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -758,45 +758,13 @@ export default function SchoolAdminExamsPage() {
   /* Toast */
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  /* ── Auth helper: get session token ── */
-  const getToken = useCallback(async (): Promise<string | null> => {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? null;
-  }, []);
-
-  /* ── Step 1: Auth guard — fetch school_admins record ── */
-  const fetchAdminRecord = useCallback(async () => {
-    if (!authUserId) return;
-    setLoadingAdmin(true);
-
-    const { data, error } = await supabase
-      .from('school_admins')
-      .select('school_id, name')
-      .eq('auth_user_id', authUserId)
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (error || !data) {
-      router.replace('/login');
-      return;
-    }
-
-    setSchoolId(data.school_id as string);
-    setLoadingAdmin(false);
-  }, [authUserId, router]);
-
   /* ── Fetch exams via API ── */
   const fetchExams = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
-
     setLoadingExams(true);
     setApiError(null);
 
     try {
-      const res = await fetch('/api/school-admin/exams', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authedFetch('/api/school-admin/exams');
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -811,17 +779,12 @@ export default function SchoolAdminExamsPage() {
     } finally {
       setLoadingExams(false);
     }
-  }, [getToken, isHi]);
+  }, [isHi]);
 
   /* ── Fetch classes for targeting ── */
   const fetchClasses = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
-
     try {
-      const res = await fetch('/api/school-admin/classes', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authedFetch('/api/school-admin/classes');
       if (res.ok) {
         const json = await res.json();
         setClasses((json.data ?? []) as SchoolClass[]);
@@ -829,20 +792,14 @@ export default function SchoolAdminExamsPage() {
     } catch {
       // Non-critical
     }
-  }, [getToken]);
+  }, []);
 
   /* ── Save exam (create / update) ── */
   const handleSaveExam = useCallback(async (payload: any) => {
-    const token = await getToken();
-    if (!token) throw new Error('Not authenticated');
-
     const method = payload.id ? 'PUT' : 'POST';
-    const res = await fetch('/api/school-admin/exams', {
+    const res = await authedFetch('/api/school-admin/exams', {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -860,22 +817,17 @@ export default function SchoolAdminExamsPage() {
         : t(isHi, 'Exam created!', 'परीक्षा बनाई गई!')
     );
     fetchExams();
-  }, [getToken, isHi, fetchExams]);
+  }, [isHi, fetchExams]);
 
   /* ── Change exam status ── */
   const handleStatusChange = useCallback(async () => {
     if (!statusChangeTarget) return;
-    const token = await getToken();
-    if (!token) return;
 
     setStatusChangeLoading(true);
     try {
-      const res = await fetch('/api/school-admin/exams', {
+      const res = await authedFetch('/api/school-admin/exams', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: statusChangeTarget.exam.id,
           status: statusChangeTarget.newStatus,
@@ -895,21 +847,7 @@ export default function SchoolAdminExamsPage() {
     } finally {
       setStatusChangeLoading(false);
     }
-  }, [statusChangeTarget, getToken, isHi, fetchExams]);
-
-  /* ── Auth redirect guard ── */
-  useEffect(() => {
-    if (!authLoading && !authUserId) {
-      router.replace('/login');
-    }
-  }, [authLoading, authUserId, router]);
-
-  /* ── Fetch admin record once auth is ready ── */
-  useEffect(() => {
-    if (!authLoading && authUserId) {
-      fetchAdminRecord();
-    }
-  }, [authLoading, authUserId, fetchAdminRecord]);
+  }, [statusChangeTarget, isHi, fetchExams]);
 
   /* ── Fetch exams + classes once school_id is known ── */
   useEffect(() => {
@@ -955,7 +893,7 @@ export default function SchoolAdminExamsPage() {
   }, [statusFilter, gradeFilter]);
 
   /* ── Loading states ── */
-  const isPageLoading = authLoading || loadingAdmin;
+  const isPageLoading = loadingAdmin;
 
   const openCreate = () => {
     setEditingExam(null);
@@ -1045,7 +983,7 @@ export default function SchoolAdminExamsPage() {
         {/* ── View toggle ── */}
         <div
           className="flex gap-1 rounded-xl p-1"
-          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+          style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-3)' }}
           role="tablist"
         >
           {(['upcoming', 'list'] as const).map(mode => {
@@ -1217,7 +1155,7 @@ export default function SchoolAdminExamsPage() {
                             className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
                             style={{
                               background: 'var(--surface-2)',
-                              border: '1px solid var(--border)',
+                              border: '1px solid var(--surface-3)',
                               color: 'var(--text-2)',
                               minHeight: 30,
                             }}
@@ -1259,7 +1197,7 @@ export default function SchoolAdminExamsPage() {
                             className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
                             style={{
                               background: 'var(--surface-2)',
-                              border: '1px solid var(--border)',
+                              border: '1px solid var(--surface-3)',
                               color: 'var(--text-2)',
                               minHeight: 30,
                             }}
@@ -1283,7 +1221,7 @@ export default function SchoolAdminExamsPage() {
                   className="px-3 py-2 rounded-lg text-xs font-semibold transition-all"
                   style={{
                     background: 'var(--surface-2)',
-                    border: '1px solid var(--border)',
+                    border: '1px solid var(--surface-3)',
                     color: currentPage === 1 ? 'var(--text-3)' : 'var(--text-1)',
                     opacity: currentPage === 1 ? 0.5 : 1,
                     cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
@@ -1300,7 +1238,7 @@ export default function SchoolAdminExamsPage() {
                   className="px-3 py-2 rounded-lg text-xs font-semibold transition-all"
                   style={{
                     background: 'var(--surface-2)',
-                    border: '1px solid var(--border)',
+                    border: '1px solid var(--surface-3)',
                     color: currentPage === totalPages ? 'var(--text-3)' : 'var(--text-1)',
                     opacity: currentPage === totalPages ? 0.5 : 1,
                     cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',

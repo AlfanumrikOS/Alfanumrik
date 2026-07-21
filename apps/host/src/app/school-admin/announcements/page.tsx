@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { supabase } from '@alfanumrik/lib/supabase';
+import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
+import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
@@ -152,7 +152,7 @@ function AnnouncementCard({ announcement, isHi, onEdit, onTogglePublish, onDelet
           className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
           style={{
             background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--surface-3)',
             color: 'var(--text-2)',
             minHeight: 32,
           }}
@@ -318,7 +318,7 @@ function AnnouncementForm({ isHi, existing, classes, onSave, onClose }: Announce
               width: '100%',
               padding: '10px 12px',
               borderRadius: 12,
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               background: 'var(--surface-1)',
               color: 'var(--text-1)',
               fontSize: 14,
@@ -343,7 +343,7 @@ function AnnouncementForm({ isHi, existing, classes, onSave, onClose }: Announce
               width: '100%',
               padding: '10px 12px',
               borderRadius: 12,
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               background: 'var(--surface-1)',
               color: 'var(--text-1)',
               fontSize: 14,
@@ -398,7 +398,7 @@ function AnnouncementForm({ isHi, existing, classes, onSave, onClose }: Announce
             style={{
               maxHeight: 150,
               overflowY: 'auto',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               borderRadius: 12,
               padding: '8px 12px',
               background: 'var(--surface-1)',
@@ -526,12 +526,10 @@ function DeleteConfirm({ isHi, announcementTitle, onConfirm, onCancel, loading }
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminAnnouncementsPage() {
-  const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi } = useAuth();
+  const { isHi } = useAuth();
+  const { schoolId, isLoading: loadingAdmin } = useSchoolAdminAuth();
 
   /* ── State ── */
-  const [schoolId, setSchoolId] = useState<string | null>(null);
-  const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -547,45 +545,13 @@ export default function SchoolAdminAnnouncementsPage() {
   /* Success toast */
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  /* ── Auth helper: get session token ── */
-  const getToken = useCallback(async (): Promise<string | null> => {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? null;
-  }, []);
-
-  /* ── Step 1: Auth guard — fetch school_admins record ── */
-  const fetchAdminRecord = useCallback(async () => {
-    if (!authUserId) return;
-    setLoadingAdmin(true);
-
-    const { data, error } = await supabase
-      .from('school_admins')
-      .select('school_id, name')
-      .eq('auth_user_id', authUserId)
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (error || !data) {
-      router.replace('/login');
-      return;
-    }
-
-    setSchoolId(data.school_id as string);
-    setLoadingAdmin(false);
-  }, [authUserId, router]);
-
   /* ── Fetch announcements via API ── */
   const fetchAnnouncements = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
-
     setLoadingAnnouncements(true);
     setApiError(null);
 
     try {
-      const res = await fetch('/api/school-admin/announcements', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authedFetch('/api/school-admin/announcements');
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -600,17 +566,12 @@ export default function SchoolAdminAnnouncementsPage() {
     } finally {
       setLoadingAnnouncements(false);
     }
-  }, [getToken, isHi]);
+  }, [isHi]);
 
   /* ── Fetch classes for targeting ── */
   const fetchClasses = useCallback(async () => {
-    const token = await getToken();
-    if (!token) return;
-
     try {
-      const res = await fetch('/api/school-admin/classes', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authedFetch('/api/school-admin/classes');
       if (res.ok) {
         const json = await res.json();
         setClasses((json.data ?? []) as SchoolClass[]);
@@ -618,20 +579,14 @@ export default function SchoolAdminAnnouncementsPage() {
     } catch {
       // Non-critical; class targeting will just be unavailable
     }
-  }, [getToken]);
+  }, []);
 
   /* ── Save announcement (create / update) ── */
   const handleSave = useCallback(async (payload: AnnouncementPayload) => {
-    const token = await getToken();
-    if (!token) throw new Error('Not authenticated');
-
     const method = payload.id ? 'PUT' : 'POST';
-    const res = await fetch('/api/school-admin/announcements', {
+    const res = await authedFetch('/api/school-admin/announcements', {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
@@ -649,20 +604,14 @@ export default function SchoolAdminAnnouncementsPage() {
         : t(isHi, 'Announcement created!', 'घोषणा बनाई गई!')
     );
     fetchAnnouncements();
-  }, [getToken, isHi, fetchAnnouncements]);
+  }, [isHi, fetchAnnouncements]);
 
   /* ── Toggle publish / unpublish ── */
   const handleTogglePublish = useCallback(async (announcement: Announcement) => {
-    const token = await getToken();
-    if (!token) return;
-
     try {
-      const res = await fetch('/api/school-admin/announcements', {
+      const res = await authedFetch('/api/school-admin/announcements', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: announcement.id,
           action: announcement.published_at ? 'unpublish' : 'publish',
@@ -683,22 +632,17 @@ export default function SchoolAdminAnnouncementsPage() {
     } catch (err: any) {
       setApiError(err.message);
     }
-  }, [getToken, isHi, fetchAnnouncements]);
+  }, [isHi, fetchAnnouncements]);
 
   /* ── Delete announcement ── */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
-    const token = await getToken();
-    if (!token) return;
 
     setDeleteLoading(true);
     try {
-      const res = await fetch('/api/school-admin/announcements', {
+      const res = await authedFetch('/api/school-admin/announcements', {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: deleteTarget.id }),
       });
 
@@ -715,21 +659,7 @@ export default function SchoolAdminAnnouncementsPage() {
     } finally {
       setDeleteLoading(false);
     }
-  }, [deleteTarget, getToken, isHi, fetchAnnouncements]);
-
-  /* ── Auth redirect guard ── */
-  useEffect(() => {
-    if (!authLoading && !authUserId) {
-      router.replace('/login');
-    }
-  }, [authLoading, authUserId, router]);
-
-  /* ── Fetch admin record once auth is ready ── */
-  useEffect(() => {
-    if (!authLoading && authUserId) {
-      fetchAdminRecord();
-    }
-  }, [authLoading, authUserId, fetchAdminRecord]);
+  }, [deleteTarget, isHi, fetchAnnouncements]);
 
   /* ── Fetch announcements + classes once school_id is known ── */
   useEffect(() => {
@@ -752,7 +682,7 @@ export default function SchoolAdminAnnouncementsPage() {
   const displayedAnnouncements = activeTab === 'published' ? publishedAnnouncements : draftAnnouncements;
 
   /* ── Loading states ── */
-  const isPageLoading = authLoading || loadingAdmin;
+  const isPageLoading = loadingAdmin;
 
   /* ── Open edit modal ── */
   const openCreate = () => {
@@ -771,7 +701,7 @@ export default function SchoolAdminAnnouncementsPage() {
   const TabBar = (
     <div
       className="flex gap-1 rounded-xl p-1"
-      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-3)' }}
       role="tablist"
     >
       {(['published', 'drafts'] as TabFilter[]).map(tab => {

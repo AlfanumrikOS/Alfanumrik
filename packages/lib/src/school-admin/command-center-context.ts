@@ -99,8 +99,13 @@ function forbidden(message: string): NextResponse {
  * Authorize + resolve the Command Center context for a read route.
  *
  * Order:
- *   1. P9 RBAC gate via authorizeRequest(institution.view_analytics).
- *      On failure, returns its 401/403 response UNCHANGED.
+ *   1. P9 RBAC gate via authorizeRequest(permission). Defaults to
+ *      COMMAND_CENTER_PERMISSION (institution.view_analytics) so every
+ *      pre-existing caller is unaffected; a route may pass an explicit
+ *      `permission` override when its data is an EXPORT (not a view) and
+ *      should gate on `institution.export_reports` instead (see
+ *      reports/export/route.ts). On failure, returns its 401/403 response
+ *      UNCHANGED.
  *   2. Build the user-context client (so the SECURITY DEFINER RPC sees auth.uid()).
  *   3. Resolve active school_admin membership(s) for the caller via that client.
  *   4. Apply optional ?school_id (must match an active membership, else 403).
@@ -110,10 +115,11 @@ function forbidden(message: string): NextResponse {
 export async function resolveCommandCenterContext(
   request: NextRequest,
   routeName: string,
+  permission: string = COMMAND_CENTER_PERMISSION,
 ): Promise<CommandCenterResolution> {
   // 1. P9: permission gate. Reuse the platform RBAC path; pass through its
   //    error response verbatim so 401/403 semantics stay identical to peers.
-  const auth = await authorizeRequest(request, COMMAND_CENTER_PERMISSION);
+  const auth = await authorizeRequest(request, permission);
   if (!auth.authorized) {
     return { ok: false, response: auth.errorResponse as unknown as NextResponse };
   }
@@ -139,9 +145,11 @@ export async function resolveCommandCenterContext(
 
   // 3. Resolve active memberships THROUGH the user-context client (RLS-scoped
   //    to the caller's own rows). We never accept a school_id from the body.
+  //    Additive `schools(name)` join — only consumed by the multi-school 400
+  //    branch below (school_names), so the single-school path is unaffected.
   const { data: memberships, error: membershipErr } = await supabase
     .from('school_admins')
-    .select('school_id')
+    .select('school_id, schools(name)')
     .eq('is_active', true);
 
   if (membershipErr) {
@@ -166,6 +174,21 @@ export async function resolveCommandCenterContext(
         .filter((id): id is string => typeof id === 'string' && id.length > 0),
     ),
   );
+
+  // Additive display-name map (school_id -> name), for the multi-school picker
+  // 400 branch below ONLY — never used for authorization. Supabase's FK join
+  // may return an object or an array depending on the relation shape; handle
+  // both. Falls back gracefully (undefined) if the join is ever unavailable.
+  const schoolNamesById: Record<string, string> = {};
+  for (const m of memberships ?? []) {
+    const row = m as { school_id: string | null; schools?: unknown };
+    if (!row.school_id) continue;
+    const raw = row.schools;
+    const s = Array.isArray(raw) ? raw[0] : raw;
+    if (s && typeof s === 'object' && 'name' in s && typeof (s as { name?: unknown }).name === 'string') {
+      schoolNamesById[row.school_id] = (s as { name: string }).name;
+    }
+  }
 
   if (activeSchoolIds.length === 0) {
     return { ok: false, response: forbidden('Not an active school administrator') };
@@ -193,6 +216,9 @@ export async function resolveCommandCenterContext(
           success: false,
           error: 'Multiple schools — specify ?school_id',
           school_ids: activeSchoolIds,
+          // Additive — id -> display name, so the client picker never has to
+          // render a raw UUID. Absent/undefined entries are handled client-side.
+          school_names: schoolNamesById,
         },
         { status: 400 },
       ),

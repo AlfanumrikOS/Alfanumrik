@@ -15,6 +15,7 @@
 
 import type { TeacherEngagementRow } from '@alfanumrik/lib/school-admin/command-center-types';
 import { ResponsiveTable, type ResponsiveColumn } from '@alfanumrik/ui/ui';
+import { Card } from '@alfanumrik/ui/ui/primitives';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -51,9 +52,10 @@ export default function TeacherEngagementTable({
   const canNext = count >= limit;
 
   return (
-    <section
+    <Card
+      variant="elevated"
       aria-label={tt(isHi, 'Teacher engagement', 'शिक्षक सहभागिता')}
-      className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-4"
+      className="p-4"
     >
       <header className="flex items-center justify-between gap-2 mb-3">
         <h3 className="text-sm font-bold text-[var(--text-1)] font-['Sora',system-ui,sans-serif]">
@@ -145,12 +147,12 @@ export default function TeacherEngagementTable({
       )}
 
       {!loading && !error && rows.length > 0 && (canPrev || canNext) && (
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border)]">
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-surface-3">
           <button
             type="button"
             onClick={onPrev}
             disabled={!canPrev}
-            className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] disabled:opacity-40 disabled:cursor-default min-h-[44px]"
+            className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-surface-3 disabled:opacity-40 disabled:cursor-default min-h-[44px]"
           >
             ← {tt(isHi, 'Previous', 'पिछला')}
           </button>
@@ -158,12 +160,12 @@ export default function TeacherEngagementTable({
             type="button"
             onClick={onNext}
             disabled={!canNext}
-            className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] disabled:opacity-40 disabled:cursor-default min-h-[44px]"
+            className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-surface-3 disabled:opacity-40 disabled:cursor-default min-h-[44px]"
           >
             {tt(isHi, 'Next', 'अगला')} →
           </button>
         </div>
       )}
-    </section>
+    </Card>
   );
 }
