@@ -173,6 +173,39 @@ function StudentCard({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // T13 — Escalate to school admin (RCA follow-up).
+  const [escalating, setEscalating] = useState(false);
+  const [escalateNote, setEscalateNote] = useState('');
+  const [escalateStatus, setEscalateStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [escalateError, setEscalateError] = useState<string | null>(null);
+
+  const sendEscalation = async () => {
+    if (!escalateNote.trim()) return;
+    setEscalateStatus('sending');
+    setEscalateError(null);
+    try {
+      const res = await fetch('/api/teacher/escalate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ student_id: student.id, note: escalateNote.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+      setEscalateStatus('sent');
+      setEscalateNote('');
+      setTimeout(() => {
+        setEscalateStatus('idle');
+        setEscalating(false);
+      }, 2000);
+    } catch (e: any) {
+      setEscalateStatus('error');
+      setEscalateError(e?.message || tt(isHi, 'Failed to escalate', 'एस्केलेट करने में विफल'));
+    }
+  };
+
   const saveNote = async () => {
     setSaving(true);
     try {
@@ -352,6 +385,106 @@ function StudentCard({
             ✉ {tt(isHi, 'Message Parent', 'संदेश भेजें')}
           </button>
         </div>
+
+        {/* Escalate to school admin — only surfaced for flagged/at-risk students (T13) */}
+        {(isStruggling || needsAttention) && (
+          <div style={{ marginTop: 8 }}>
+            {!escalating ? (
+              <button
+                onClick={() => setEscalating(true)}
+                style={{
+                  width: '100%',
+                  padding: '8px 0',
+                  backgroundColor: 'transparent',
+                  color: '#DC2626',
+                  border: '1px solid #DC262666',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                title={tt(isHi, 'Raise this case with your school admin', 'इस मामले को अपने स्कूल एडमिन के पास भेजें')}
+                data-testid={`escalate-cta-${student.id}`}
+              >
+                🚩 {tt(isHi, 'Escalate to school admin', 'स्कूल एडमिन को भेजें')}
+              </button>
+            ) : (
+              <div style={{ padding: '10px', backgroundColor: '#FCEEEE', border: '1px solid #DC262633', borderRadius: 8 }}>
+                <textarea
+                  value={escalateNote}
+                  onChange={(e) => setEscalateNote(e.target.value)}
+                  placeholder={tt(isHi, 'Briefly describe the concern for the school admin...', 'स्कूल एडमिन के लिए संक्षेप में समस्या बताएं...')}
+                  disabled={escalateStatus === 'sending' || escalateStatus === 'sent'}
+                  style={{
+                    width: '100%',
+                    minHeight: 56,
+                    padding: '8px 10px',
+                    backgroundColor: '#fff',
+                    border: '1px solid #EDE6DC',
+                    borderRadius: 8,
+                    color: '#1A1207',
+                    fontSize: 13,
+                    resize: 'vertical',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    fontFamily: "'Sora', system-ui, sans-serif",
+                  }}
+                />
+                {escalateStatus === 'error' && escalateError && (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#DC2626' }}>{escalateError}</p>
+                )}
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button
+                    onClick={sendEscalation}
+                    disabled={escalateStatus === 'sending' || escalateStatus === 'sent' || !escalateNote.trim()}
+                    data-testid={`escalate-send-${student.id}`}
+                    style={{
+                      flex: 1,
+                      padding: '8px 0',
+                      backgroundColor: escalateStatus === 'sent' ? '#059669' : '#DC2626',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: escalateStatus === 'sending' ? 'default' : 'pointer',
+                      opacity: escalateStatus === 'sending' ? 0.6 : 1,
+                    }}
+                  >
+                    {escalateStatus === 'sending'
+                      ? tt(isHi, 'Sending...', 'भेज रहे हैं...')
+                      : escalateStatus === 'sent'
+                        ? tt(isHi, 'Sent!', 'भेज दिया!')
+                        : tt(isHi, 'Send to school admin', 'स्कूल एडमिन को भेजें')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEscalating(false);
+                      setEscalateNote('');
+                      setEscalateStatus('idle');
+                      setEscalateError(null);
+                    }}
+                    disabled={escalateStatus === 'sending'}
+                    style={{
+                      flex: '0 0 auto',
+                      padding: '8px 14px',
+                      backgroundColor: 'transparent',
+                      color: '#7D7264',
+                      border: '1px solid #EDE6DC',
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tt(isHi, 'Cancel', 'रद्द करें')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Expanded Details */}

@@ -240,7 +240,9 @@ describe('CommandCenter — assign remediation', () => {
     expect(screen.queryByText('No mastery data yet')).not.toBeInTheDocument();
     expect(screen.queryByText('No at-risk students detected.')).not.toBeInTheDocument();
 
-    const atRiskTile = screen.getByText('At-risk', { selector: 'p' }).parentElement;
+    // StatCard (shared admin-ui primitive) renders the label in a <div>, not a
+    // <p> — its parentElement is the container holding the value + label pair.
+    const atRiskTile = screen.getByText('At-risk', { selector: 'div' }).parentElement;
     expect(atRiskTile).not.toBeNull();
     expect(within(atRiskTile as HTMLElement).getByText('\u2014')).toBeInTheDocument();
 
@@ -300,7 +302,7 @@ describe('CommandCenter — assign remediation', () => {
     renderCC();
 
     await screen.findByText('Asha');
-    const assignmentsTile = screen.getByText('Assignments', { selector: 'p' }).parentElement;
+    const assignmentsTile = screen.getByText('Assignments', { selector: 'div' }).parentElement;
     expect(assignmentsTile).not.toBeNull();
     expect(within(assignmentsTile as HTMLElement).getByText('\u2014')).toBeInTheDocument();
 

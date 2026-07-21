@@ -4,10 +4,23 @@
  * Updates teacher profile: name, school_name.
  * Replaces direct anon-client write in teacher/profile/page.tsx.
  *
- * Auth: JWT → auth_user_id → teachers.auth_user_id lookup (ownership enforced server-side)
+ * Auth (P9): authorizeRequest(request, 'profile.update_own'). That permission
+ * is already granted to the `teacher` role in the RBAC matrix
+ * (20260612123200_rbac_matrix_conformance.sql) — the same code the sibling
+ * `parent`/`student` profile routes use — so NO new permission code is
+ * introduced. This route previously bypassed authorizeRequest entirely with a
+ * raw hand-rolled Bearer-token check via supabaseAdmin's auth client; it now
+ * follows the same house pattern every other teacher route uses. authorizeRequest accepts both
+ * the Bearer JWT this route previously parsed by hand AND the Supabase cookie
+ * session, so existing callers keep working.
+ *
+ * Self-scope (no IDOR): the update target is the caller's OWN teacher row,
+ * resolved from the authorizeRequest-verified auth.userId via
+ * getTeacherByAuthUserId. No body-supplied id is ever used to select the row.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { getTeacherByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { logger } from '@alfanumrik/lib/logger';
@@ -17,15 +30,11 @@ function err(message: string, status: number) {
 }
 
 export async function PATCH(request: NextRequest) {
-  // Resolve auth user from JWT
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) return err('Unauthorized', 401);
-  const token = authHeader.slice(7);
+  // P9: authenticated session + permission gate (granted to the teacher role).
+  const auth = await authorizeRequest(request, 'profile.update_own');
+  if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
-  const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-  if (authError || !user) return err('Invalid or expired token', 401);
-
-  const teacherResult = await getTeacherByAuthUserId(user.id);
+  const teacherResult = await getTeacherByAuthUserId(auth.userId!);
   if (!teacherResult.ok || !teacherResult.data) {
     return err('Teacher account not found', 404);
   }

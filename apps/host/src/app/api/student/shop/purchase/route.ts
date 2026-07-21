@@ -320,8 +320,8 @@ export async function POST(request: NextRequest) {
 
     // ── certificate ────────────────────────────────────────────────────────
     // Deducts coins and delivers an achievement notification. Certificate PDF
-    // generation is triggered asynchronously by the export-report Edge Function
-    // (tracked as a follow-up; the notification signals readiness in 1-2 min).
+    // generation is not yet wired to any Edge Function (tracked as a
+    // follow-up); the notification here only signals the purchase succeeded.
     certificate: async () => {
       try {
         const { error: deductErr } = await supabaseAdmin.rpc('purchase_streak_freeze', {

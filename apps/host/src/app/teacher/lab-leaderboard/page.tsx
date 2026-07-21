@@ -24,6 +24,13 @@
  *   - ≥1024px: wider container, more padding
  *
  * Bilingual via useAuth().isHi (P7).
+ *
+ * Theming (Task T11): re-themed from the legacy dark-slate "Cosmic" palette
+ * to the Atlas warm-cream theme used by the rest of the teacher portal
+ * (Command Center, classes, students, assignments, gradebook, attendance,
+ * submissions, reports, messages). No dark mode (P10 standards) — cards are
+ * white on a #FBF8F4 canvas, orange is the primary accent, purple is the
+ * secondary accent. Functionality is unchanged.
  */
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
@@ -121,13 +128,13 @@ function sortRows(
 function SkeletonRow({ idx }: { idx: number }) {
   return (
     <div
-      className="flex items-center gap-3 py-3 px-3 border-b border-slate-800 animate-pulse"
-      style={{ animationDelay: `${idx * 80}ms` }}
+      className="flex items-center gap-3 py-3 px-3 border-b animate-pulse"
+      style={{ borderColor: 'var(--surface-2)', animationDelay: `${idx * 80}ms` }}
     >
-      <div className="h-4 bg-slate-800 rounded w-1/3" />
-      <div className="h-4 bg-slate-800 rounded w-12 ml-auto" />
-      <div className="h-4 bg-slate-800 rounded w-16" />
-      <div className="h-4 bg-slate-800 rounded w-12" />
+      <div className="h-4 rounded w-1/3" style={{ background: 'var(--surface-2)' }} />
+      <div className="h-4 rounded w-12 ml-auto" style={{ background: 'var(--surface-2)' }} />
+      <div className="h-4 rounded w-16" style={{ background: 'var(--surface-2)' }} />
+      <div className="h-4 rounded w-12" style={{ background: 'var(--surface-2)' }} />
     </div>
   );
 }
@@ -204,15 +211,15 @@ export default function LabLeaderboardPage() {
   return (
     <div
       className="min-h-dvh font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif]"
-      style={{ background: 'var(--bg)', color: 'var(--text-1)' }}
+      style={{ background: '#FBF8F4', color: '#1A1207' }}
     >
       <div className="max-w-[1100px] mx-auto px-4 sm:px-5 lg:px-8 py-5 lg:py-8 pb-24">
         {/* Header */}
-        <header className="mb-5 sm:mb-6 pb-4 border-b border-slate-800">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-slate-50 m-0">
+        <header className="mb-5 sm:mb-6 pb-4 border-b" style={{ borderColor: 'var(--surface-2)' }}>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold m-0" style={{ color: '#1A1207' }}>
             🔬 {tt(isHi, 'Class Lab Activity', 'कक्षा की लैब गतिविधि')}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm mt-1" style={{ color: '#7D7264' }}>
             {tt(
               isHi,
               'Track which simulations your students have tried and who is on a streak this week.',
@@ -223,14 +230,15 @@ export default function LabLeaderboardPage() {
 
         {/* ─── Error state ─── */}
         {errorMsg && !loading && (
-          <div className="bg-slate-900 border border-red-700 rounded-xl p-4 sm:p-5 mb-4">
-            <p className="text-sm text-red-400 font-semibold m-0">
+          <div className="rounded-xl p-4 sm:p-5 mb-4" style={{ background: 'var(--danger-light)', border: '1px solid var(--danger)' }}>
+            <p className="text-sm font-semibold m-0" style={{ color: 'var(--danger)' }}>
               {tt(isHi, 'Could not load leaderboard', 'लीडरबोर्ड लोड नहीं हो सका')}
             </p>
-            <p className="text-xs text-slate-500 mt-1 mb-3 break-words">{errorMsg}</p>
+            <p className="text-xs mt-1 mb-3 break-words" style={{ color: 'var(--danger)' }}>{errorMsg}</p>
             <button
               onClick={load}
-              className="min-h-[44px] py-2 px-4 bg-orange-500 text-white rounded-lg text-sm font-semibold cursor-pointer hover:bg-orange-600 transition-colors"
+              className="min-h-[44px] py-2 px-4 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors"
+              style={{ background: 'var(--orange)' }}
             >
               {tt(isHi, 'Retry', 'पुनः प्रयास करें')}
             </button>
@@ -243,27 +251,28 @@ export default function LabLeaderboardPage() {
             {
               label: tt(isHi, 'Total Students', 'कुल छात्र'),
               value: totals.students,
-              accent: 'text-indigo-400',
+              accent: '#7C3AED',
             },
             {
               label: tt(isHi, 'Active This Week', 'इस सप्ताह सक्रिय'),
               value: totals.active_this_week,
-              accent: 'text-emerald-400',
+              accent: '#059669',
             },
             {
               label: tt(isHi, 'Experiments This Week', 'इस सप्ताह प्रयोग'),
               value: totals.total_experiments_this_week,
-              accent: 'text-orange-400',
+              accent: 'var(--orange)',
             },
           ].map((s, i) => (
             <div
               key={i}
-              className="bg-slate-900 border border-slate-800 rounded-xl py-3 sm:py-4 px-4"
+              className="rounded-xl py-3 sm:py-4 px-4"
+              style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)' }}
             >
-              <p className="text-[10px] sm:text-[11px] text-slate-500 uppercase tracking-wide m-0">
+              <p className="text-[10px] sm:text-[11px] uppercase tracking-wide m-0" style={{ color: '#7D7264' }}>
                 {s.label}
               </p>
-              <p className={`${s.accent} text-2xl sm:text-3xl font-bold mt-1 m-0`}>
+              <p className="text-2xl sm:text-3xl font-bold mt-1 m-0" style={{ color: s.accent }}>
                 {loading ? '—' : s.value}
               </p>
             </div>
@@ -272,7 +281,7 @@ export default function LabLeaderboardPage() {
 
         {/* ─── Weekly Top 3 podium ─── */}
         <section className="mb-5">
-          <h2 className="text-sm sm:text-base font-semibold text-slate-300 mb-3 m-0">
+          <h2 className="text-sm sm:text-base font-semibold mb-3 m-0" style={{ color: '#3A2E1F' }}>
             {tt(isHi, 'Weekly Top 3', 'सप्ताह के टॉप 3')}
           </h2>
           {loading ? (
@@ -280,13 +289,13 @@ export default function LabLeaderboardPage() {
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
-                  className="h-[88px] bg-slate-900 border border-slate-800 rounded-xl animate-pulse"
-                  style={{ animationDelay: `${i * 80}ms` }}
+                  className="h-[88px] rounded-xl animate-pulse"
+                  style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)', animationDelay: `${i * 80}ms` }}
                 />
               ))}
             </div>
           ) : podium.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center text-slate-500 text-sm italic">
+            <div className="rounded-xl p-4 text-center text-sm italic" style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)', color: '#7D7264' }}>
               {tt(
                 isHi,
                 'No experiments completed in the past 7 days.',
@@ -297,33 +306,34 @@ export default function LabLeaderboardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {podium.map((s, i) => {
                 const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
-                const accent =
+                const accentBorder =
                   i === 0
-                    ? 'border-yellow-600/50'
+                    ? '#F59E0B80'
                     : i === 1
-                      ? 'border-slate-500/50'
-                      : 'border-orange-700/50';
+                      ? '#B5AB9A80'
+                      : '#E8581C80';
                 return (
                   <div
                     key={s.student_id}
-                    className={`bg-slate-900 border ${accent} rounded-xl p-4 flex items-center gap-3`}
+                    className="rounded-xl p-4 flex items-center gap-3"
+                    style={{ background: '#FFFFFF', border: `1px solid ${accentBorder}` }}
                   >
                     <span className="text-3xl shrink-0" aria-hidden="true">
                       {medal}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm sm:text-base font-semibold text-slate-100 m-0 truncate">
+                      <p className="text-sm sm:text-base font-semibold m-0 truncate" style={{ color: '#1A1207' }}>
                         {s.full_name}
                       </p>
-                      <p className="text-xs text-slate-500 m-0 mt-0.5">
+                      <p className="text-xs m-0 mt-0.5" style={{ color: '#7D7264' }}>
                         {tt(isHi, 'Grade', 'कक्षा')} {s.grade}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-lg sm:text-xl font-bold text-orange-400 m-0">
+                      <p className="text-lg sm:text-xl font-bold m-0" style={{ color: 'var(--orange)' }}>
                         {s.week_experiments}
                       </p>
-                      <p className="text-[10px] text-slate-500 m-0 uppercase tracking-wide">
+                      <p className="text-[10px] m-0 uppercase tracking-wide" style={{ color: '#7D7264' }}>
                         {tt(isHi, 'this wk', 'इस सप्ताह')}
                       </p>
                     </div>
@@ -341,14 +351,15 @@ export default function LabLeaderboardPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={tt(isHi, 'Search by name…', 'नाम से खोजें…')}
-            className="w-full min-h-[44px] py-2.5 px-4 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-indigo-500 transition-colors"
+            className="w-full min-h-[44px] py-2.5 px-4 rounded-lg text-sm outline-none transition-colors"
+            style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)', color: '#1A1207' }}
             aria-label={tt(isHi, 'Search students', 'छात्र खोजें')}
           />
         </div>
 
         {/* ─── Loading skeleton ─── */}
         {loading && !errorMsg && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <div className="rounded-xl overflow-hidden" style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)' }}>
             {[0, 1, 2, 3, 4].map((i) => (
               <SkeletonRow key={i} idx={i} />
             ))}
@@ -360,18 +371,18 @@ export default function LabLeaderboardPage() {
           !errorMsg &&
           (data?.students?.length ?? 0) === 0 &&
           totals.students === 0 && (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 sm:p-8 text-center">
+            <div className="rounded-xl p-6 sm:p-8 text-center" style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)' }}>
               <div className="text-5xl mb-3" aria-hidden="true">
                 🏫
               </div>
-              <h3 className="text-base sm:text-lg font-semibold text-slate-100 m-0 mb-2">
+              <h3 className="text-base sm:text-lg font-semibold m-0 mb-2" style={{ color: '#1A1207' }}>
                 {tt(
                   isHi,
                   'No students linked to your class yet',
                   'अभी तक कोई छात्र आपकी कक्षा से नहीं जुड़ा है',
                 )}
               </h3>
-              <p className="text-sm text-slate-500 m-0 mb-4 max-w-[420px] mx-auto">
+              <p className="text-sm m-0 mb-4 max-w-[420px] mx-auto" style={{ color: '#7D7264' }}>
                 {tt(
                   isHi,
                   'Visit Class Setup to add students. Once they start labs, their activity will appear here.',
@@ -380,7 +391,8 @@ export default function LabLeaderboardPage() {
               </p>
               <Link
                 href="/teacher/classes"
-                className="inline-block min-h-[44px] py-2.5 px-5 bg-indigo-500 text-white rounded-lg text-sm font-semibold hover:bg-indigo-600 transition-colors"
+                className="inline-block min-h-[44px] py-2.5 px-5 text-white rounded-lg text-sm font-semibold transition-colors"
+                style={{ background: '#7C3AED' }}
               >
                 {tt(isHi, 'Go to Class Setup', 'कक्षा सेटअप पर जाएं')}
               </Link>
@@ -392,7 +404,7 @@ export default function LabLeaderboardPage() {
           !errorMsg &&
           (data?.students?.length ?? 0) > 0 &&
           filteredSorted.length === 0 && (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 text-center text-sm text-slate-500 italic">
+            <div className="rounded-xl p-5 text-center text-sm italic" style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)', color: '#7D7264' }}>
               {tt(isHi, 'No students match your search.', 'आपकी खोज से कोई छात्र मेल नहीं खाता।')}
             </div>
           )}
@@ -403,35 +415,36 @@ export default function LabLeaderboardPage() {
             {filteredSorted.map((r) => (
               <div
                 key={r.student_id}
-                className="bg-slate-900 border border-slate-800 rounded-xl p-3"
+                className="rounded-xl p-3"
+                style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)' }}
               >
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-slate-100 m-0 truncate">
+                    <p className="text-sm font-semibold m-0 truncate" style={{ color: '#1A1207' }}>
                       {r.full_name}
                     </p>
-                    <p className="text-[11px] text-slate-500 m-0 mt-0.5">
+                    <p className="text-[11px] m-0 mt-0.5" style={{ color: '#7D7264' }}>
                       {tt(isHi, 'Grade', 'कक्षा')} {r.grade}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-base font-bold text-indigo-400 m-0">
+                    <p className="text-base font-bold m-0" style={{ color: '#7C3AED' }}>
                       {r.total_experiments}
                     </p>
-                    <p className="text-[10px] text-slate-500 m-0 uppercase tracking-wide">
+                    <p className="text-[10px] m-0 uppercase tracking-wide" style={{ color: '#7D7264' }}>
                       {tt(isHi, 'labs', 'लैब')}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-orange-400 font-medium">
+                  <span className="font-medium" style={{ color: 'var(--orange)' }}>
                     🔥 {r.lab_streak} {tt(isHi, 'd', 'दि')}
                   </span>
-                  <span className="text-slate-400">
+                  <span style={{ color: '#7D7264' }}>
                     {tt(isHi, 'Viva', 'वाइवा')}:{' '}
                     {r.avg_viva_pct == null ? '—' : `${r.avg_viva_pct}%`}
                   </span>
-                  <span className="text-slate-300 font-medium">
+                  <span className="font-medium" style={{ color: '#3A2E1F' }}>
                     🥇{r.gold} 🥈{r.silver} 🥉{r.bronze}
                   </span>
                 </div>
@@ -442,54 +455,59 @@ export default function LabLeaderboardPage() {
 
         {/* ─── ≥sm: table (with sticky header) ─── */}
         {!loading && !errorMsg && filteredSorted.length > 0 && (
-          <div className="hidden sm:block bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <div className="hidden sm:block rounded-xl overflow-hidden" style={{ background: '#FFFFFF', border: '1px solid var(--surface-2)' }}>
             <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
               <table className="w-full text-sm border-collapse">
-                <thead className="sticky top-0 bg-slate-950/95 backdrop-blur z-10">
+                <thead className="sticky top-0 backdrop-blur z-10" style={{ background: 'rgba(255,255,255,0.95)' }}>
                   <tr>
                     <th
                       onClick={() => handleSort('full_name')}
-                      className="text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide px-3 py-2.5 cursor-pointer hover:text-indigo-400 select-none min-h-[44px]"
+                      className="text-left text-[11px] font-semibold uppercase tracking-wide px-3 py-2.5 cursor-pointer select-none min-h-[44px]"
+                      style={{ color: '#7D7264' }}
                       scope="col"
                     >
                       {tt(isHi, 'Name', 'नाम')}
-                      <span className="text-slate-600">{sortIndicator('full_name')}</span>
+                      <span style={{ color: '#A89B86' }}>{sortIndicator('full_name')}</span>
                     </th>
                     <th
                       onClick={() => handleSort('lab_streak')}
-                      className="text-right text-[11px] font-semibold text-slate-400 uppercase tracking-wide px-3 py-2.5 cursor-pointer hover:text-indigo-400 select-none"
+                      className="text-right text-[11px] font-semibold uppercase tracking-wide px-3 py-2.5 cursor-pointer select-none"
+                      style={{ color: '#7D7264' }}
                       scope="col"
                     >
                       🔥 {tt(isHi, 'Streak', 'स्ट्रीक')}
-                      <span className="text-slate-600">{sortIndicator('lab_streak')}</span>
+                      <span style={{ color: '#A89B86' }}>{sortIndicator('lab_streak')}</span>
                     </th>
                     <th
                       onClick={() => handleSort('total_experiments')}
-                      className="text-right text-[11px] font-semibold text-slate-400 uppercase tracking-wide px-3 py-2.5 cursor-pointer hover:text-indigo-400 select-none"
+                      className="text-right text-[11px] font-semibold uppercase tracking-wide px-3 py-2.5 cursor-pointer select-none"
+                      style={{ color: '#7D7264' }}
                       scope="col"
                     >
                       {tt(isHi, 'Total Labs', 'कुल लैब')}
-                      <span className="text-slate-600">
+                      <span style={{ color: '#A89B86' }}>
                         {sortIndicator('total_experiments')}
                       </span>
                     </th>
                     <th
                       onClick={() => handleSort('avg_viva_pct')}
-                      className="hidden md:table-cell text-right text-[11px] font-semibold text-slate-400 uppercase tracking-wide px-3 py-2.5 cursor-pointer hover:text-indigo-400 select-none"
+                      className="hidden md:table-cell text-right text-[11px] font-semibold uppercase tracking-wide px-3 py-2.5 cursor-pointer select-none"
+                      style={{ color: '#7D7264' }}
                       scope="col"
                     >
                       {tt(isHi, 'Avg Viva %', 'औसत वाइवा %')}
-                      <span className="text-slate-600">
+                      <span style={{ color: '#A89B86' }}>
                         {sortIndicator('avg_viva_pct')}
                       </span>
                     </th>
                     <th
                       onClick={() => handleSort('badges')}
-                      className="hidden md:table-cell text-right text-[11px] font-semibold text-slate-400 uppercase tracking-wide px-3 py-2.5 cursor-pointer hover:text-indigo-400 select-none"
+                      className="hidden md:table-cell text-right text-[11px] font-semibold uppercase tracking-wide px-3 py-2.5 cursor-pointer select-none"
+                      style={{ color: '#7D7264' }}
                       scope="col"
                     >
                       {tt(isHi, 'Badges', 'बैज')}
-                      <span className="text-slate-600">{sortIndicator('badges')}</span>
+                      <span style={{ color: '#A89B86' }}>{sortIndicator('badges')}</span>
                     </th>
                   </tr>
                 </thead>
@@ -497,30 +515,29 @@ export default function LabLeaderboardPage() {
                   {filteredSorted.map((r, i) => (
                     <tr
                       key={r.student_id}
-                      className={`${
-                        i % 2 === 0 ? 'bg-slate-900' : 'bg-slate-900/60'
-                      } hover:bg-slate-800/60 transition-colors`}
+                      className="transition-colors"
+                      style={{ background: i % 2 === 0 ? '#FFFFFF' : '#FBF8F4' }}
                     >
-                      <td className="px-3 py-3 text-slate-100 font-medium">
+                      <td className="px-3 py-3 font-medium" style={{ color: '#1A1207' }}>
                         <div className="flex flex-col">
                           <span className="truncate max-w-[180px] md:max-w-none">
                             {r.full_name}
                           </span>
-                          <span className="text-[11px] text-slate-500">
+                          <span className="text-[11px]" style={{ color: '#7D7264' }}>
                             {tt(isHi, 'Grade', 'कक्षा')} {r.grade}
                           </span>
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-right text-orange-400 font-semibold tabular-nums">
+                      <td className="px-3 py-3 text-right font-semibold tabular-nums" style={{ color: 'var(--orange)' }}>
                         {r.lab_streak}
                       </td>
-                      <td className="px-3 py-3 text-right text-slate-100 font-semibold tabular-nums">
+                      <td className="px-3 py-3 text-right font-semibold tabular-nums" style={{ color: '#1A1207' }}>
                         {r.total_experiments}
                       </td>
-                      <td className="hidden md:table-cell px-3 py-3 text-right text-slate-300 tabular-nums">
+                      <td className="hidden md:table-cell px-3 py-3 text-right tabular-nums" style={{ color: '#3A2E1F' }}>
                         {r.avg_viva_pct == null ? '—' : `${r.avg_viva_pct}%`}
                       </td>
-                      <td className="hidden md:table-cell px-3 py-3 text-right text-slate-200 font-medium whitespace-nowrap">
+                      <td className="hidden md:table-cell px-3 py-3 text-right font-medium whitespace-nowrap" style={{ color: '#3A2E1F' }}>
                         <span title={tt(isHi, 'Gold', 'गोल्ड')}>🥇{r.gold}</span>{' '}
                         <span title={tt(isHi, 'Silver', 'सिल्वर')}>🥈{r.silver}</span>{' '}
                         <span title={tt(isHi, 'Bronze', 'ब्रॉन्ज़')}>🥉{r.bronze}</span>
@@ -537,13 +554,14 @@ export default function LabLeaderboardPage() {
         <div className="mt-6 text-center">
           <Link
             href="/teacher"
-            className="text-xs text-slate-500 hover:text-indigo-400 transition-colors"
+            className="text-xs transition-colors"
+            style={{ color: '#7D7264' }}
           >
             ← {tt(isHi, 'Back to Teacher Dashboard', 'शिक्षक डैशबोर्ड पर वापस')}
           </Link>
         </div>
       </div>
-      
+
     </div>
   );
 }
