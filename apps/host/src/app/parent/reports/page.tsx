@@ -234,7 +234,7 @@ const dayNamesHi = ['रवि', 'सोम', 'मंगल', 'बुध', 'ग�
 // STYLES
 // ============================================================
 const pageStyle: React.CSSProperties = {
-  maxWidth: 700,
+  maxWidth: 'min(1100px, 96vw)',
   margin: '0 auto',
   padding: '0 0 40px',
   fontFamily: "'Plus Jakarta Sans', 'Sora', system-ui, sans-serif",
@@ -1892,7 +1892,7 @@ function ParentReportsPage() {
             <SectionErrorBoundary section="Performance Summary">
             <div style={{ marginBottom: 20 }}>
               <div style={sectionHeading}>{t(isHi, 'Performance Summary', 'प्रदर्शन सारांश')}</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
                 <SummaryCard
                   icon={'\uD83C\uDFAF'}
                   label={t(isHi, 'Overall Mastery', 'कुल महारत')}

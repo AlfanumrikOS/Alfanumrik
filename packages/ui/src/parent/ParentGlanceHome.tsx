@@ -236,9 +236,9 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   // ── Loading state (Skeleton) ──
   if (loading) {
     return (
-      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+      <div className="max-w-[600px] lg:max-w-4xl mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
         <Skeleton className="mb-4" height={28} width="55%" rounded="rounded-lg" />
-        <div className="grid grid-cols-2 gap-2.5 mb-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 mb-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} height={64} rounded="rounded-xl" />
           ))}
@@ -252,7 +252,7 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   // ── Error state ──
   if (error) {
     return (
-      <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+      <div className="max-w-[600px] lg:max-w-4xl mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
         <div className="bg-white rounded-[14px] px-[18px] py-6 border border-orange-200 text-center">
           <div className="text-3xl mb-2" aria-hidden="true">&#x26A0;</div>
           <p className="text-[14px] text-red-500 mb-3">{error}</p>
@@ -337,7 +337,7 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
   const cappedMoments = derivedMoments.slice(0, 5);
 
   return (
-    <div className="max-w-[600px] mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
+    <div className="max-w-[600px] lg:max-w-4xl mx-auto px-4 py-5 font-['Plus_Jakarta_Sans','Sora',system-ui,sans-serif] text-gray-900 bg-[#FFF8F0] min-h-screen">
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4 pb-3.5 border-b border-orange-200">
         <div>
@@ -425,7 +425,7 @@ export default function ParentGlanceHome(props: ParentGlanceHomeProps) {
             </div>
 
             {/* Compact snapshot stats — mirrors legacy Stat styling. */}
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
               <StatPill icon="&#x2B50;" label="XP" value={s.xp || 0} color="#F59E0B" />
               <StatPill icon="&#x1F3AF;" label={t(isHi, 'Accuracy', 'सटीकता')} value={`${s.accuracy || 0}%`} color="#059669" />
               <StatPill icon="&#x1F4DA;" label={t(isHi, 'Quizzes', 'क्विज़')} value={s.totalQuizzes || 0} color="#6366F1" />
