@@ -152,6 +152,33 @@ fi
 rm "$TMP_ROOT/supabase/migrations/20990101000006_real_ddl_with_exists.sql"
 
 echo ""
+# Case 7: two migrations sharing the same 14-digit timestamp version --
+# should fail (this is the exact schema_migrations_pkey collision incident,
+# see the comment above findDuplicateVersions() in lint-migrations.js).
+echo "Case 7: duplicate migration timestamp (schema_migrations_pkey collision)"
+cat > "$TMP_ROOT/supabase/migrations/20990101000007_first_branch.sql" <<'EOF'
+-- Branch A's migration, authored independently of branch B.
+CREATE TABLE IF NOT EXISTS test_dup_a (id uuid PRIMARY KEY);
+ALTER TABLE test_dup_a ENABLE ROW LEVEL SECURITY;
+EOF
+cat > "$TMP_ROOT/supabase/migrations/20990101000007_second_branch.sql" <<'EOF'
+-- Branch B's migration, authored independently, same minute as branch A.
+CREATE TABLE IF NOT EXISTS test_dup_b (id uuid PRIMARY KEY);
+ALTER TABLE test_dup_b ENABLE ROW LEVEL SECURITY;
+EOF
+EXIT_CODE=$(run_linter)
+if [ "$EXIT_CODE" = "1" ]; then
+  pass "duplicate timestamp version is caught"
+else
+  fail "expected exit 1, got $EXIT_CODE"
+  cat /tmp/lint-mig-out.txt
+fi
+grep -q "20990101000007" /tmp/lint-mig-out.txt \
+  && pass "failure message names the colliding version" \
+  || fail "failure message did not name the colliding version"
+rm "$TMP_ROOT/supabase/migrations/20990101000007_first_branch.sql" "$TMP_ROOT/supabase/migrations/20990101000007_second_branch.sql"
+
+
 if [ "$FAIL_COUNT" = "0" ]; then
   echo "All assertions passed."
   exit 0
