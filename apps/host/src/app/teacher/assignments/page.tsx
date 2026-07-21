@@ -116,7 +116,7 @@ const labelStyle: React.CSSProperties = {
 
 function AssignmentsPageContent() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
-  const { subjects } = useTeacherAllowedSubjects();
+  const { subjects, isLoading: subjectsLoading } = useTeacherAllowedSubjects();
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedClass = searchParams.get('class') || '';
@@ -186,6 +186,13 @@ function AssignmentsPageContent() {
   };
 
   const handleCreateAssignment = async () => {
+    if (subjects.length === 0) {
+      showToast(
+        tt(isHi, 'No subjects are set up for your account yet. Add subjects in your profile first.', 'आपके खाते के लिए अभी तक कोई विषय सेट नहीं है। पहले अपनी प्रोफ़ाइल में विषय जोड़ें।'),
+        'error',
+      );
+      return;
+    }
     if (!formTitle.trim()) {
       showToast(tt(isHi, 'Please enter a title', 'कृपया शीर्षक दर्ज करें'), 'error');
       return;
@@ -481,11 +488,51 @@ function AssignmentsPageContent() {
             {/* Subject */}
             <label style={{ display: 'block', marginBottom: 14 }}>
               <span style={labelStyle}>{tt(isHi, 'Subject', 'विषय')}</span>
-              <select value={formSubject} onChange={e => setFormSubject(e.target.value)} style={inputStyle}>
-                {subjects.map(s => (
-                  <option key={s.code} value={s.code}>{s.icon} {s.name}</option>
-                ))}
-              </select>
+              {!subjectsLoading && subjects.length === 0 ? (
+                <div
+                  role="alert"
+                  style={{
+                    padding: '10px 12px',
+                    backgroundColor: '#FEF2F2',
+                    border: '1px solid #FCA5A5',
+                    borderRadius: 8,
+                    color: '#DC2626',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {tt(
+                    isHi,
+                    'No subjects are set up for your account yet. Add your subjects in Profile before creating an assignment.',
+                    'आपके खाते के लिए अभी तक कोई विषय सेट नहीं है। असाइनमेंट बनाने से पहले अपनी प्रोफ़ाइल में विषय जोड़ें।',
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setShowModal(false); router.push('/teacher/profile'); }}
+                    style={{
+                      display: 'block',
+                      marginTop: 8,
+                      padding: '8px 14px',
+                      minHeight: 36,
+                      background: '#DC2626',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {tt(isHi, 'Go to Profile', 'प्रोफ़ाइल पर जाएं')}
+                  </button>
+                </div>
+              ) : (
+                <select value={formSubject} onChange={e => setFormSubject(e.target.value)} style={inputStyle} disabled={subjectsLoading}>
+                  {subjects.map(s => (
+                    <option key={s.code} value={s.code}>{s.icon} {s.name}</option>
+                  ))}
+                </select>
+              )}
             </label>
 
             {/* Grade (auto-filled) */}
@@ -577,13 +624,13 @@ function AssignmentsPageContent() {
               </button>
               <button
                 onClick={handleCreateAssignment}
-                disabled={submitting || !formTitle.trim() || !formClass}
+                disabled={submitting || !formTitle.trim() || !formClass || subjects.length === 0}
                 style={{
                   flex: 1, padding: '11px 16px',
-                  background: submitting || !formTitle.trim() || !formClass ? '#EDE6DC' : 'linear-gradient(135deg, #E8581C, #C2410C)',
+                  background: submitting || !formTitle.trim() || !formClass || subjects.length === 0 ? '#EDE6DC' : 'linear-gradient(135deg, #E8581C, #C2410C)',
                   color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600,
-                  cursor: submitting || !formTitle.trim() || !formClass ? 'default' : 'pointer',
-                  opacity: submitting || !formTitle.trim() || !formClass ? 0.5 : 1,
+                  cursor: submitting || !formTitle.trim() || !formClass || subjects.length === 0 ? 'default' : 'pointer',
+                  opacity: submitting || !formTitle.trim() || !formClass || subjects.length === 0 ? 0.5 : 1,
                 }}
               >
                 {submitting ? tt(isHi, 'Creating...', 'बना रहे हैं...') : tt(isHi, 'Create Assignment', 'असाइनमेंट बनाएं')}

@@ -41,6 +41,7 @@ const holders = vi.hoisted(() => ({
   getTeacherByAuthUserId: vi.fn(),
   updateEq: vi.fn(),
   updateCalls: [] as Array<{ payload: Record<string, unknown> }>,
+  activeSubjectCodes: ['math', 'science', 'english'] as string[],
 }));
 
 vi.mock('@alfanumrik/lib/rbac', () => ({
@@ -53,12 +54,28 @@ vi.mock('@alfanumrik/lib/domains/identity', () => ({
 
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   supabaseAdmin: {
-    from: vi.fn(() => ({
-      update: vi.fn((payload: Record<string, unknown>) => {
-        holders.updateCalls.push({ payload });
-        return { eq: holders.updateEq };
-      }),
-    })),
+    from: vi.fn((table: string) => {
+      if (table === 'subjects') {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              in: vi.fn((_col: string, codes: string[]) => Promise.resolve({
+                data: codes
+                  .filter((c) => holders.activeSubjectCodes.includes(c))
+                  .map((c) => ({ code: c })),
+                error: null,
+              })),
+            })),
+          })),
+        };
+      }
+      return {
+        update: vi.fn((payload: Record<string, unknown>) => {
+          holders.updateCalls.push({ payload });
+          return { eq: holders.updateEq };
+        }),
+      };
+    }),
   },
 }));
 
@@ -150,6 +167,56 @@ describe('PATCH /api/teacher/profile — self-scope (P13, no IDOR)', () => {
     const res = await PATCH(makePatch({ school_name: 'Delhi Public School' }) as never);
     expect(res.status).toBe(200);
     expect(holders.updateCalls[0].payload).toEqual({ school_name: 'Delhi Public School' });
+  });
+});
+
+describe('PATCH /api/teacher/profile — subjects_taught self-serve fix (2026-07-21 RCA)', () => {
+  it('updates subjects_taught when all codes are active', async () => {
+    authAsTeacher();
+    const res = await PATCH(makePatch({ subjects_taught: ['math', 'science'] }) as never);
+    expect(res.status).toBe(200);
+    expect(holders.updateCalls[0].payload).toEqual({ subjects_taught: ['math', 'science'] });
+    expect(holders.updateEq).toHaveBeenCalledWith('id', TEACHER_ID);
+  });
+
+  it('de-duplicates codes', async () => {
+    authAsTeacher();
+    const res = await PATCH(makePatch({ subjects_taught: ['math', 'math', 'science'] }) as never);
+    expect(res.status).toBe(200);
+    expect(holders.updateCalls[0].payload).toEqual({ subjects_taught: ['math', 'science'] });
+  });
+
+  it('rejects an empty array — a teacher must keep at least one subject', async () => {
+    authAsTeacher();
+    const res = await PATCH(makePatch({ subjects_taught: [] }) as never);
+    expect(res.status).toBe(400);
+    expect(holders.updateCalls).toHaveLength(0);
+  });
+
+  it('rejects a non-array subjects_taught', async () => {
+    authAsTeacher();
+    const res = await PATCH(makePatch({ subjects_taught: 'math' }) as never);
+    expect(res.status).toBe(400);
+    expect(holders.updateCalls).toHaveLength(0);
+  });
+
+  it('rejects an unknown/inactive subject code rather than silently dropping it', async () => {
+    authAsTeacher();
+    const res = await PATCH(makePatch({ subjects_taught: ['math', 'retired_subject'] }) as never);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.success).toBe(false);
+    expect(json.error).toMatch(/retired_subject/);
+    expect(holders.updateCalls).toHaveLength(0);
+  });
+
+  it('combines with name/school_name in a single update payload', async () => {
+    authAsTeacher();
+    const res = await PATCH(
+      makePatch({ name: 'Anita Rao', subjects_taught: ['english'] }) as never,
+    );
+    expect(res.status).toBe(200);
+    expect(holders.updateCalls[0].payload).toEqual({ name: 'Anita Rao', subjects_taught: ['english'] });
   });
 });
 

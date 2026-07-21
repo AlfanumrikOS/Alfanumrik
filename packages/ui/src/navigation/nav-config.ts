@@ -12,6 +12,7 @@ export const CORE_TABS = [
 ];
 
 export const MORE_ITEMS = [
+  { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट' },
   { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
   { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
   { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
@@ -38,6 +39,7 @@ export const SIDEBAR_SECTIONS = [
     title: 'Practice', titleHi: 'अभ्यास',
     items: [
       { href: '/quiz', icon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
+      { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट' },
       { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
       { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
       { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },

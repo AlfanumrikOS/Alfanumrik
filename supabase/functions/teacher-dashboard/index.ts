@@ -1604,9 +1604,18 @@ async function teacherOwnsAssignment(
   assignmentId: string,
 ): Promise<{ owns: boolean; assignment: Record<string, unknown> | null }> {
   if (!assignmentId) return { owns: false, assignment: null }
+  // Column-name note (production incident, 2026-07-21): `assignments` has no
+  // `type` column — it has `assignment_type`, aliased to `type` here so the
+  // returned shape (surfaced verbatim as the `assignment` field of
+  // get_assignment_submissions) matches the frontend AssignmentRow contract.
+  // `chapter`/`difficulty` are real columns as of migration
+  // 20260721000300_assignments_add_chapter_difficulty.sql. This SELECT
+  // previously named a non-existent `type` column, which supabase-js does not
+  // throw on — it returns `data: null` — so every call silently fell through
+  // to `{ owns: false, assignment: null }`, 403'ing legitimate owners.
   const { data: a } = await supabase
     .from('assignments')
-    .select('id, class_id, teacher_id, title, subject, grade, chapter, difficulty, question_count, due_date, type, created_at')
+    .select('id, class_id, teacher_id, title, subject, grade, chapter, difficulty, question_count, due_date, type:assignment_type, created_at')
     .eq('id', assignmentId)
     .maybeSingle()
   if (!a) return { owns: false, assignment: null }

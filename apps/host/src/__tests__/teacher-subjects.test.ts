@@ -173,11 +173,25 @@ describe('GET /api/teacher/subjects — empty subjects_taught', () => {
     setAuthorized('auth-teacher-1');
   });
 
+  const activeMaster = [
+    {
+      code: 'math',
+      name: 'Mathematics',
+      name_hi: 'गणित',
+      icon: '🧮',
+      color: '#F97316',
+      subject_kind: 'cbse_core',
+      is_active: true,
+      display_order: 1,
+    },
+  ];
+
   it('returns { subjects: [] } when subjects_taught is empty array', async () => {
     setFromResult('teachers', {
       data: { id: 'teacher-1', subjects_taught: [] },
       error: null,
     });
+    setFromResult('subjects', { data: activeMaster, error: null });
     const { GET } = await import('@/app/api/teacher/subjects/route');
     const res = await GET(makeGetRequest());
     expect(res.status).toBe(200);
@@ -191,12 +205,28 @@ describe('GET /api/teacher/subjects — empty subjects_taught', () => {
       data: { id: 'teacher-1', subjects_taught: null },
       error: null,
     });
+    setFromResult('subjects', { data: activeMaster, error: null });
     const { GET } = await import('@/app/api/teacher/subjects/route');
     const res = await GET(makeGetRequest());
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.subjects).toEqual([]);
+  });
+
+  it('still returns the full active catalogue as allSubjects when subjects_taught is empty (2026-07-21 RCA — profile self-serve picker needs a catalogue even with zero subjects_taught)', async () => {
+    setFromResult('teachers', {
+      data: { id: 'teacher-1', subjects_taught: [] },
+      error: null,
+    });
+    setFromResult('subjects', { data: activeMaster, error: null });
+    const { GET } = await import('@/app/api/teacher/subjects/route');
+    const res = await GET(makeGetRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.subjects).toEqual([]);
+    expect(body.allSubjects).toHaveLength(1);
+    expect(body.allSubjects[0].code).toBe('math');
   });
 });
 

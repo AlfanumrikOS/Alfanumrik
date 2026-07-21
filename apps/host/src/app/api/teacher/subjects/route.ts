@@ -13,11 +13,19 @@
  *   - If a stored code is not in the active master (stale), it is silently
  *     dropped from the response.
  *
+ * `allSubjects` (added for the teacher profile "edit subjects" self-serve UI —
+ * see 2026-07-21 teacher-dashboard-deep-rca incident): the FULL active
+ * subjects master, independent of the teacher's current `subjects_taught`.
+ * A teacher whose `subjects_taught` is empty/null still needs a catalogue to
+ * pick FROM — the existing `subjects` field can't serve that purpose because
+ * it's already intersected with (possibly empty) `subjects_taught`.
+ * Additive field; existing consumers of `subjects` are unaffected.
+ *
  * Auth: authorizeRequest(request, 'class.manage') — the canonical teacher
  * gate used by other teacher routes. Super-admins and admins bypass via RBAC.
  *
  * Response shape:
- *   { success: true, subjects: Subject[] }
+ *   { success: true, subjects: Subject[], allSubjects: Subject[] }
  *   { success: false, error: string }
  */
 
@@ -92,21 +100,18 @@ export async function GET(request: NextRequest) {
         )
       : [];
 
-    if (taught.length === 0) {
-      return NextResponse.json({ success: true, subjects: [] });
-    }
-
-    // 3. Intersect with active subjects master
-    const { data: rows, error: subjErr } = await supabaseAdmin
+    // 3. Always load the full active subjects master — needed for the
+    // teacher-profile "edit subjects" self-serve picker (`allSubjects`) even
+    // when `taught` is empty. See module doc comment above.
+    const { data: allRows, error: allSubjErr } = await supabaseAdmin
       .from('subjects')
       .select('code, name, name_hi, icon, color, subject_kind, is_active, display_order')
       .eq('is_active', true)
-      .in('code', taught)
       .order('display_order', { ascending: true });
 
-    if (subjErr) {
+    if (allSubjErr) {
       logger.error('teacher_subjects_master_fetch_failed', {
-        error: new Error(subjErr.message),
+        error: new Error(allSubjErr.message),
         route: 'teacher/subjects',
       });
       return NextResponse.json(
@@ -115,8 +120,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const subjects: Subject[] = ((rows ?? []) as RawSubject[]).map(toTeacherSubject);
-    return NextResponse.json({ success: true, subjects });
+    const allSubjects: Subject[] = ((allRows ?? []) as RawSubject[]).map(toTeacherSubject);
+
+    if (taught.length === 0) {
+      return NextResponse.json({ success: true, subjects: [], allSubjects });
+    }
+
+    // 4. Intersect with active subjects master
+    const taughtSet = new Set(taught);
+    const subjects: Subject[] = allSubjects.filter((s) => taughtSet.has(s.code));
+    return NextResponse.json({ success: true, subjects, allSubjects });
   } catch (e) {
     logger.error('teacher_subjects_unexpected_error', {
       error: e instanceof Error ? e : new Error(String(e)),
