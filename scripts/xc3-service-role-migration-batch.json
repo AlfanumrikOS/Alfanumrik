@@ -2,7 +2,7 @@
   "generated_at": "2026-07-09",
   "rcaItem": "RCA-01",
   "source": "XC-3 high-sensitivity service-role migration batch",
-  "totalAdminClientRoutesPinned": 251,
+  "totalAdminClientRoutesPinned": 254,
   "objective": "Prioritize high-sensitivity API routes that still use the service-role/admin client so RCA-01 moves from a flat allowlist toward an executable RLS defense-in-depth migration plan.",
   "entries": [
     {

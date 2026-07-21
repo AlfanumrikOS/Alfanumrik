@@ -37,7 +37,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useTenant } from '@alfanumrik/lib/tenant-context';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
-import DashboardSidebar, { type SidebarNavItem } from '@alfanumrik/ui/admin-ui/DashboardSidebar';
+import DashboardSidebar, { type SidebarItem, type SidebarNavItem } from '@alfanumrik/ui/admin-ui/DashboardSidebar';
 import type { ModuleKey } from '@alfanumrik/lib/modules/registry';
 import { useCosmicTheme } from '@alfanumrik/lib/cosmic-theme';
 import { Starfield } from '@alfanumrik/ui/cosmic';
@@ -51,6 +51,15 @@ type TeacherNavItem = {
   /** When set: hide this item if the module is disabled for this tenant. */
   moduleKey?: ModuleKey;
 };
+
+/** Section divider for the grouped sidebar (mirrors SidebarSectionItem). */
+type TeacherSectionItem = {
+  type: 'section';
+  label: string;
+  labelHi: string;
+};
+
+type TeacherPrimaryItem = TeacherNavItem | TeacherSectionItem;
 
 // Polling cadence for the Messages tab unread badge. Conservative (60s) —
 // the /teacher/messages page itself polls thread list at 30s, so the badge
@@ -75,26 +84,42 @@ async function messagesBadgeFetcher(url: string): Promise<TeacherThreadsResponse
   return res.json() as Promise<TeacherThreadsResponse>;
 }
 
-// ─── Slimmed primary nav (Command Center always-on) ───────────────────────────
-// FIVE primary items. The remaining legacy pages move to an account/overflow
-// menu (TEACHER_OVERFLOW_ITEMS) rendered in the sidebar footer so every route
-// stays reachable — no dead links. The "Command Center" entry is the existing
-// /teacher route (the page swaps to the Command Center under the same flag).
-const TEACHER_PRIMARY_SLIM: ReadonlyArray<TeacherNavItem> = [
+// ─── IA (Task T9) ──────────────────────────────────────────────────────────
+// Every real teacher page is a first-class item in the sidebar, grouped by
+// daily workflow so nothing is more than one click away and nothing is
+// buried behind an unlabeled "More" menu. Grouping mirrors how a teacher
+// actually works through their day:
+//   Command Center  — home / daily briefing
+//   Roster          — who's in class + who showed up (Classes, Students,
+//                     Attendance — the last of these previously had NO nav
+//                     entry anywhere and was fully undiscoverable)
+//   Coursework      — assign work, grade it, review submissions, print sheets
+//   Insights        — reports + the STEM-lab engagement leaderboard
+//   Communication   — parent/student messaging
+// Only "Profile" (account settings, not daily workflow) lives in the footer
+// next to Logout — a deliberate, conventional exception, not a dumping
+// ground for pages that don't fit elsewhere.
+const TEACHER_PRIMARY_SLIM: ReadonlyArray<TeacherPrimaryItem> = [
   { href: '/teacher', label: 'Command Center', labelHi: 'कमांड सेंटर', icon: '▦' },
-  { href: '/teacher/grade-book', label: 'Gradebook', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },
-  { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
-  { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
-  { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
-];
-
-// Overflow / account menu — kept reachable in the footer when the slim nav is on.
-const TEACHER_OVERFLOW_ITEMS: ReadonlyArray<TeacherNavItem> = [
+  { type: 'section', label: 'Roster', labelHi: 'रोस्टर' },
   { href: '/teacher/classes', label: 'Classes', labelHi: 'कक्षाएं', icon: '⊞' },
   { href: '/teacher/students', label: 'Students', labelHi: 'छात्र', icon: '⊕' },
+  { href: '/teacher/attendance', label: 'Attendance', labelHi: 'उपस्थिति', icon: '✓' },
+  { type: 'section', label: 'Coursework', labelHi: 'पाठ्यकार्य' },
+  { href: '/teacher/assignments', label: 'Assignments', labelHi: 'असाइनमेंट', icon: '⊠', moduleKey: 'assignments' },
+  { href: '/teacher/grade-book', label: 'Gradebook', labelHi: 'ग्रेड बुक', icon: '⊟', moduleKey: 'assignments' },
   { href: '/teacher/submissions', label: 'Submissions', labelHi: 'सबमिशन', icon: '⊞', moduleKey: 'assignments' },
   { href: '/teacher/worksheets', label: 'Worksheets', labelHi: 'वर्कशीट', icon: '⊡', moduleKey: 'lms' },
+  { type: 'section', label: 'Insights', labelHi: 'इनसाइट्स' },
+  { href: '/teacher/reports', label: 'Reports', labelHi: 'रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
   { href: '/teacher/lab-leaderboard', label: 'Lab Leaderboard', labelHi: 'लैब लीडरबोर्ड', icon: '⊙' },
+  { type: 'section', label: 'Communication', labelHi: 'संचार' },
+  { href: '/teacher/messages', label: 'Messages', labelHi: 'संदेश', icon: '✉' },
+];
+
+// Account/profile — kept out of the workflow groups above; reachable via the
+// sidebar footer (next to Logout) on every page, same as before.
+const TEACHER_OVERFLOW_ITEMS: ReadonlyArray<TeacherNavItem> = [
   { href: '/teacher/profile', label: 'Profile', labelHi: 'प्रोफ़ाइल', icon: '◎' },
 ];
 
@@ -203,9 +228,9 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
     </button>
   );
 
-  // When slim, render the moved pages as an account/overflow menu in the footer
-  // so every route stays reachable. Module-gating mirrors the sidebar's own
-  // fail-open rule (null enablement ⇒ show all).
+  // Account/profile link — kept out of the workflow groups, always reachable
+  // in the footer (one click) next to Logout. Module-gating mirrors the
+  // sidebar's own fail-open rule (null enablement ⇒ show all).
   const overflowItems = TEACHER_OVERFLOW_ITEMS.filter((item) => {
     if (!item.moduleKey) return true;
     if (moduleEnablement === null || moduleEnablement === undefined) return true;
@@ -213,33 +238,29 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
   });
 
   const footerContent = (
-    <div className="flex flex-col gap-2">
-      <details className="group" data-testid="teacher-nav-overflow">
-        <summary
-          className="cursor-pointer list-none rounded-md py-1.5 px-2 text-[11px] font-semibold"
-          style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
-        >
-          {isHi ? 'अधिक' : 'More'}
-        </summary>
-        <nav className="mt-1.5 flex flex-col">
-          {overflowItems.map((item) => {
-            const active =
-              pathname === item.href || (pathname || '').startsWith(item.href + '/');
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? 'page' : undefined}
-                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] no-underline"
-                style={{ color: active ? 'var(--text-1)' : 'var(--text-3)' }}
-              >
-                <span aria-hidden="true">{item.icon}</span>
-                <span className="truncate">{isHi ? item.labelHi : item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-      </details>
+    <div className="flex flex-col gap-2" data-testid="teacher-nav-footer">
+      <nav className="flex flex-col">
+        {overflowItems.map((item) => {
+          const active =
+            pathname === item.href || (pathname || '').startsWith(item.href + '/');
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? 'page' : undefined}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] no-underline"
+              style={{
+                background: 'var(--surface-1)',
+                border: '1px solid var(--border)',
+                color: active ? 'var(--text-1)' : 'var(--text-2)',
+              }}
+            >
+              <span aria-hidden="true">{item.icon}</span>
+              <span className="truncate">{isHi ? item.labelHi : item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
       {logoutButton}
     </div>
   );
@@ -259,11 +280,15 @@ export default function TeacherShell({ children }: { children: React.ReactNode }
         primaryColor={tenant.branding.primaryColor || '#6366F1'}
         disableMobileHamburger={true}
         items={
-          (primaryNav as ReadonlyArray<TeacherNavItem>).map((item) =>
-            item.href === '/teacher/messages'
-              ? ({ ...item, badge: messagesUnread } as unknown as SidebarNavItem)
-              : (item as unknown as SidebarNavItem),
-          )
+          primaryNav.map((item): SidebarItem => {
+            if ('type' in item && item.type === 'section') {
+              return item as SidebarItem;
+            }
+            const navItem = item as TeacherNavItem;
+            return navItem.href === '/teacher/messages'
+              ? ({ ...navItem, badge: messagesUnread } as unknown as SidebarNavItem)
+              : (navItem as unknown as SidebarNavItem);
+          })
         }
         currentPath={pathname || ''}
         isHi={isHi}

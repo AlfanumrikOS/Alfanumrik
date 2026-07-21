@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { Bone, CardListSkeleton, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
+import { StatCard, BarChart, LineChart, DataTable } from '@alfanumrik/ui/admin-ui';
+import type { Column } from '@alfanumrik/ui/admin-ui';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -57,13 +59,6 @@ const cardStyle: React.CSSProperties = {
   padding: '18px 20px',
   border: '1px solid var(--border)',
   marginBottom: 16,
-};
-
-const statCardStyle: React.CSSProperties = {
-  backgroundColor: 'var(--surface-1)',
-  borderRadius: 12,
-  padding: '14px 16px',
-  border: '1px solid var(--border)',
 };
 
 const tabBarStyle: React.CSSProperties = {
@@ -163,26 +158,6 @@ interface TrendsData {
 }
 
 /* ─── Helpers ─── */
-function getMasteryColor(level: string): string {
-  switch (level) {
-    case 'mastered': return '#16A34A';
-    case 'proficient': return '#7C3AED';
-    case 'familiar': return '#E8581C';
-    case 'developing': return '#D97706';
-    default: return '#7D7264';
-  }
-}
-
-function getMasteryLabel(level: string, isHi: boolean): string {
-  switch (level) {
-    case 'mastered': return tt(isHi, 'Mastered', 'माहिर');
-    case 'proficient': return tt(isHi, 'Proficient', 'कुशल');
-    case 'familiar': return tt(isHi, 'Familiar', 'परिचित');
-    case 'developing': return tt(isHi, 'Developing', 'विकासशील');
-    default: return tt(isHi, 'Not Started', 'शुरू नहीं हुआ');
-  }
-}
-
 // Activity heatmap ramp — re-tuned for the warm (light) Atlas bg. The legacy
 // blue ramp went light→dark which is invisible on cream; this accent ramp goes
 // quiet→accent so denser cells read darker against the warm surface. Empty
@@ -219,35 +194,30 @@ function ClassOverviewTab({ data, isHi }: { data: OverviewData | null; isHi: boo
 
   return (
     <div>
-      {/* Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
+      {/* Stats Cards — shared admin-ui StatCard primitive (P10: no new deps, already bundled). */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
         {statItems.map((s, i) => (
-          <div key={i} style={statCardStyle}>
-            <p style={{ color: '#7D7264', fontSize: 11, margin: 0, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</p>
-            <p style={{ color: s.color, fontSize: 26, fontWeight: 700, margin: '4px 0 0' }}>{s.value}</p>
-          </div>
+          <StatCard key={i} label={s.label} value={s.value} accentColor={s.color} />
         ))}
       </div>
 
-      {/* Mastery Distribution */}
+      {/* Mastery Distribution — score-band distribution rendered as a bar chart
+          (shared admin-ui BarChart) instead of ad-hoc progress bars. Values are
+          rendered verbatim from get_class_overview's mastery_distribution
+          (T8 real BKT mastery) — never recomputed client-side. */}
       <div style={cardStyle}>
         <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1A1207', margin: '0 0 14px' }}>{tt(isHi, 'Mastery Distribution', 'मास्टरी वितरण')}</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {masteryLevels.map((lvl) => {
-            const pct = distribution[lvl.key] ?? 0;
-            return (
-              <div key={lvl.key}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>{lvl.label}</span>
-                  <span style={{ fontSize: 13, color: '#7D7264' }}>{pct}%</span>
-                </div>
-                <div style={{ height: 10, backgroundColor: 'var(--surface-2)', borderRadius: 6, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: lvl.color, borderRadius: 6, transition: 'width 0.5s ease' }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <BarChart
+          series={[
+            {
+              name: tt(isHi, 'Students (%)', 'छात्र (%)'),
+              data: masteryLevels.map((lvl) => ({ x: lvl.label, y: distribution[lvl.key] ?? 0 })),
+            },
+          ]}
+          yLabel="%"
+          height={220}
+          emptyLabel={tt(isHi, 'No mastery data yet', 'अभी तक कोई मास्टरी डेटा नहीं')}
+        />
       </div>
 
       {/* Top Performers & Needs Attention */}
@@ -322,6 +292,18 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
     if (selectedId) loadProfile(selectedId);
   }, [selectedId, loadProfile]);
 
+  // Normalized rows for the shared DataTable primitive — the student list has
+  // no mastery/accuracy fields (get_students_list only returns id + name), so
+  // the table is a browsable, sortable drill-in list; per-student numbers are
+  // fetched (and rendered) only after a row is selected, same as before.
+  const tableRows = filtered.map((s: StudentListEntry) => ({
+    id: String(s.id || s.student_id || ''),
+    name: s.name || s.student_name || tt(isHi, 'Student', 'छात्र'),
+  }));
+  const studentColumns: Column<{ id: string; name: string }>[] = [
+    { key: 'name', label: tt(isHi, 'Student', 'छात्र') },
+  ];
+
   return (
     <div>
       {/* Search & Select */}
@@ -334,18 +316,14 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
           onChange={(e) => setSearchTerm(e.target.value)}
           style={{ width: '100%', padding: '10px 12px', backgroundColor: 'var(--surface-2)', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 8 }}
         />
-        <select
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
-          style={{ width: '100%', padding: '10px 12px', backgroundColor: 'var(--surface-2)', border: '1px solid #EDE6DC', borderRadius: 8, color: '#1A1207', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
-        >
-          <option value="">{tt(isHi, '-- Choose a student --', '-- छात्र चुनें --')}</option>
-          {filtered.map((s: StudentListEntry) => (
-            <option key={s.id || s.student_id} value={s.id || s.student_id}>
-              {s.name || s.student_name}
-            </option>
-          ))}
-        </select>
+        <DataTable
+          columns={studentColumns}
+          data={tableRows}
+          keyField="id"
+          onRowClick={(row) => setSelectedId(row.id)}
+          emptyMessage={tt(isHi, 'No students found', 'कोई छात्र नहीं मिला')}
+          className="max-h-[240px] overflow-y-auto"
+        />
       </div>
 
       {loading && (
@@ -363,43 +341,38 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
 
       {!loading && !error && profile && (
         <div>
-          {/* Performance Cards */}
+          {/* Performance Cards — shared StatCard primitive. */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
             {[
               { label: tt(isHi, 'Total XP', 'कुल XP'), value: profile.xp ?? profile.total_xp ?? 0, color: '#E8581C' },
               { label: tt(isHi, 'Streak', 'स्ट्रीक'), value: `${profile.streak ?? profile.current_streak ?? 0} ${tt(isHi, 'days', 'दिन')}`, color: '#D97706' },
               { label: tt(isHi, 'Accuracy', 'सटीकता'), value: `${profile.accuracy ?? profile.avg_accuracy ?? 0}%`, color: '#059669' },
             ].map((s, i) => (
-              <div key={i} style={statCardStyle}>
-                <p style={{ color: '#7D7264', fontSize: 11, margin: 0, textTransform: 'uppercase', letterSpacing: 0.5 }}>{s.label}</p>
-                <p style={{ color: s.color, fontSize: 24, fontWeight: 700, margin: '4px 0 0' }}>{s.value}</p>
-              </div>
+              <StatCard key={i} label={s.label} value={s.value} accentColor={s.color} />
             ))}
           </div>
 
-          {/* Subject-wise Mastery */}
+          {/* Subject-wise Mastery — rendered via the shared BarChart primitive.
+              Values (mastery.percent) come verbatim from get_student_report
+              (T8 real BKT mastery) — never recomputed client-side (P1/P2). */}
           <div style={cardStyle}>
             <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1A1207', margin: '0 0 14px' }}>{tt(isHi, 'Subject-wise Mastery', 'विषयवार मास्टरी')}</h3>
             {(profile.subjects || profile.subject_mastery || []).length === 0 ? (
               <p style={{ color: '#A89B86', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'No subject data available.', 'कोई विषय डेटा उपलब्ध नहीं।')}</p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {(profile.subjects || profile.subject_mastery || []).map((subj: SubjectMastery, i: number) => {
-                  const pct = subj.mastery ?? subj.percent ?? 0;
-                  const level = subj.level || (pct >= 80 ? 'mastered' : pct >= 60 ? 'proficient' : pct >= 40 ? 'familiar' : 'developing');
-                  return (
-                    <div key={i}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                        <span style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>{subj.subject || subj.name}</span>
-                        <span style={{ fontSize: 12, color: getMasteryColor(level), fontWeight: 600 }}>{getMasteryLabel(level, isHi)} ({pct}%)</span>
-                      </div>
-                      <div style={{ height: 8, backgroundColor: 'var(--surface-2)', borderRadius: 6, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: getMasteryColor(level), borderRadius: 6, transition: 'width 0.5s ease' }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <BarChart
+                series={[
+                  {
+                    name: tt(isHi, 'Mastery %', 'मास्टरी %'),
+                    data: (profile.subjects || profile.subject_mastery || []).map((subj: SubjectMastery) => ({
+                      x: subj.subject || subj.name || '',
+                      y: subj.mastery ?? subj.percent ?? 0,
+                    })),
+                  },
+                ]}
+                yLabel="%"
+                height={220}
+              />
             )}
           </div>
 
@@ -487,28 +460,26 @@ function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
 
   return (
     <div>
-      {/* Weekly Progress */}
+      {/* Weekly Progress — rendered via the shared LineChart primitive. Values
+          come verbatim from get_class_trends' weekly_progress rollup. */}
       <div style={cardStyle}>
         <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1A1207', margin: '0 0 14px' }}>{tt(isHi, 'Weekly Progress', 'साप्ताहिक प्रगति')}</h3>
         {weeklyProgress.length === 0 ? (
           <p style={{ color: '#A89B86', fontStyle: 'italic', fontSize: 13 }}>{tt(isHi, 'No weekly progress data yet.', 'अभी तक कोई साप्ताहिक प्रगति डेटा नहीं।')}</p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {weeklyProgress.slice(0, 4).map((w: WeeklyProgressEntry, i: number) => {
-              const pct = w.progress ?? w.percent ?? w.completion ?? 0;
-              return (
-                <div key={i}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>{w.label || w.week || (isHi ? `सप्ताह ${i + 1}` : `Week ${i + 1}`)}</span>
-                    <span style={{ fontSize: 13, color: '#7D7264' }}>{pct}%</span>
-                  </div>
-                  <div style={{ height: 12, backgroundColor: 'var(--surface-2)', borderRadius: 6, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, backgroundColor: 'var(--orange)', borderRadius: 6, transition: 'width 0.5s ease' }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <LineChart
+            series={[
+              {
+                name: tt(isHi, 'Progress %', 'प्रगति %'),
+                data: weeklyProgress.slice(0, 4).map((w: WeeklyProgressEntry, i: number) => ({
+                  x: w.label || w.week || (isHi ? `सप्ताह ${i + 1}` : `Week ${i + 1}`),
+                  y: w.progress ?? w.percent ?? w.completion ?? 0,
+                })),
+              },
+            ]}
+            yLabel="%"
+            height={220}
+          />
         )}
       </div>
 

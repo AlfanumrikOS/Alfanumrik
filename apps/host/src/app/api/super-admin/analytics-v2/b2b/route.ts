@@ -26,6 +26,49 @@ async function supabaseRest(table: string, params: string = '') {
   });
 }
 
+// ── Shared BKT mastery primitive (T8) ───────────────────────────────────
+//
+// `calculate_cohort_bkt_mastery(uuid[])` is the SAME Postgres formula the
+// School-Admin Command Center's `get_school_overview` and the
+// teacher-dashboard Edge Function's Reports handlers use (migration
+// 20260720190000_shared_cohort_bkt_mastery_rpc.sql). This route calls it via
+// the service-role REST `rpc/` endpoint (the same trust boundary as every
+// other `supabaseRest`/`supabaseAdminUrl` call in this file — service-role
+// key, never exposed client-side).
+//
+// This is added as ONE clearly-labeled additional field (`avg_bkt_mastery`)
+// per school, alongside the existing `health_score` — it intentionally does
+// NOT replace `health_score`'s weighted formula. `health_score` legitimately
+// blends non-mastery signals (seat utilization, quiz-score engagement) that
+// don't belong in a pure mastery number; folding a slower BKT read into that
+// weighted blend, or discarding the blend in favor of BKT alone, would lose
+// information this dashboard needs (occupancy/revenue-adjacent signals have
+// no BKT analog). `avg_score` above (quiz `score_percent` average) is ALSO a
+// different metric from `avg_bkt_mastery` — one is exam performance, the
+// other is BKT-estimated concept mastery — both are surfaced, neither is
+// silently reconciled into the other.
+async function fetchCohortBktMasteryByStudent(
+  studentIds: string[],
+): Promise<{ avg_mastery_pct: number | null; scored_count: number }> {
+  if (studentIds.length === 0) return { avg_mastery_pct: null, scored_count: 0 };
+  try {
+    const res = await fetch(supabaseAdminUrl('rpc/calculate_cohort_bkt_mastery'), {
+      method: 'POST',
+      headers: supabaseAdminHeaders(),
+      body: JSON.stringify({ p_student_ids: studentIds }),
+    });
+    if (!res.ok) return { avg_mastery_pct: null, scored_count: 0 };
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row || typeof row.avg_mastery_pct !== 'number') {
+      return { avg_mastery_pct: null, scored_count: Number(row?.scored_count) || 0 };
+    }
+    return { avg_mastery_pct: row.avg_mastery_pct, scored_count: Number(row.scored_count) || 0 };
+  } catch {
+    return { avg_mastery_pct: null, scored_count: 0 };
+  }
+}
+
 // ── Cached fast-path ─────────────────────────────────────────────────
 //
 // When `?source=cached` is passed, read the latest pre-computed B2B metrics
@@ -266,6 +309,17 @@ export async function GET(request: NextRequest) {
       if (sub.status === 'active') subBySchool.set(sub.school_id, sub);
     }
 
+    // ── T8: shared BKT mastery per school (one clearly-labeled field, not
+    // folded into health_score — see fetchCohortBktMasteryByStudent above).
+    // Ran in parallel per school; each call is a single RPC round-trip.
+    const bktMasteryBySchool = new Map<string, { avg_mastery_pct: number | null; scored_count: number }>();
+    await Promise.all(
+      schools.map(async (school) => {
+        const schoolStudentIds = studentsBySchool.get(school.id) || [];
+        bktMasteryBySchool.set(school.id, await fetchCohortBktMasteryByStudent(schoolStudentIds));
+      }),
+    );
+
     // ── Per-school metrics ──
     const schoolMetrics = schools.map(school => {
       const schoolStudentIds = studentsBySchool.get(school.id) || [];
@@ -296,9 +350,14 @@ export async function GET(request: NextRequest) {
       const monthlyRevenue = sub ? (sub.seats || 0) * (sub.price_per_seat || 0) : 0;
 
       // Health score: weighted engagement + score + utilization
+      // (unchanged — T8 adds avg_bkt_mastery as a separate field below rather
+      // than folding it into these weights; see fetchCohortBktMasteryByStudent
+      // comment for why).
       const healthScore = Math.round(
         engagementRate * 0.4 + Math.min(avgScore, 100) * 0.3 + Math.min(seatUtilization, 100) * 0.3
       );
+
+      const bktMastery = bktMasteryBySchool.get(school.id) ?? { avg_mastery_pct: null, scored_count: 0 };
 
       return {
         id: school.id,
@@ -318,6 +377,12 @@ export async function GET(request: NextRequest) {
         seat_utilization: seatUtilization,
         monthly_revenue: monthlyRevenue,
         health_score: healthScore,
+        // T8: shared BKT mastery formula (calculate_cohort_bkt_mastery) — the
+        // SAME number get_school_overview and teacher Reports compute for
+        // this school's roster. `null` when no student in the school has a
+        // concept_mastery row yet. Distinct from avg_score (quiz performance).
+        avg_bkt_mastery: bktMastery.avg_mastery_pct,
+        bkt_scored_count: bktMastery.scored_count,
         created_at: school.created_at,
       };
     });

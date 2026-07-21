@@ -8,7 +8,7 @@
 #   bash scripts/deploy/deploy_functions.sh
 #                             Deploy 7 changed functions only (default)
 #   bash scripts/deploy/deploy_functions.sh --all
-#                             Deploy all 46 active functions (~10 min)
+#                             Deploy all 45 active functions (~10 min)
 #   bash scripts/deploy/deploy_functions.sh --function FNAME
 #                             Deploy a single named function
 #   bash scripts/deploy/deploy_functions.sh --changed-since COMMIT_SHA
@@ -50,7 +50,7 @@ GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 LOG_FILE="$(dirname "$0")/.last_functions_deploy.log"
 
 # ---------------------------------------------------------------------------
-# All 46 active Edge Functions
+# All 45 active Edge Functions
 # ---------------------------------------------------------------------------
 ALL_FUNCTIONS=(
   account-purge
@@ -68,7 +68,6 @@ ALL_FUNCTIONS=(
   embed-diagrams
   embed-ncert-qa
   embed-questions
-  export-report
   extract-diagrams
   extract-ncert-questions
   generate-answers

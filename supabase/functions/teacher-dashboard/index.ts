@@ -43,6 +43,8 @@ import {
   averageScopedMasteryByStudent,
   finiteMetricOrNull,
   resolveClassCurriculumScope,
+  resolveStudentMastery,
+  shapeCohortBktMasteryMap,
 } from './metrics.ts'
 // P12: teachers should only see subjects each student is currently enrolled in
 // (grade-map ∩ plan). See:
@@ -1119,6 +1121,36 @@ async function resolveStudentsForTeacher(
   return out
 }
 
+// ─── Shared BKT mastery primitive (T8) ──────────────────────────────────
+// Reports (get_class_overview, get_student_report) used to compute
+// "mastery" as an accuracy proxy off student_learning_profiles
+// (correct/asked), commented as a stand-in for lacking a true BKT roll-up
+// at this aggregation layer. That roll-up now exists as a shared Postgres
+// RPC (migration 20260720190000_shared_cohort_bkt_mastery_rpc.sql) — the
+// SAME formula the School-Admin Command Center's get_school_overview and
+// the super-admin B2B analytics route use. Calling it here means all three
+// surfaces trace back to one formula for "this cohort's mastery."
+//
+// The RPC trusts the caller to have already resolved an authorized
+// student_id set (exactly like the direct concept_mastery reads elsewhere
+// in this file) — EXECUTE is granted to `service_role` only, which is what
+// this Edge Function's SERVICE_CLIENT authenticates as.
+async function fetchCohortBktMastery(
+  supabase: ReturnType<typeof getServiceClient>,
+  studentIds: string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (studentIds.length === 0) return out
+  try {
+    const { data, error } = await supabase.rpc('get_cohort_bkt_mastery_by_student', {
+      p_student_ids: studentIds,
+    })
+    if (error || !Array.isArray(data)) return out
+    return shapeCohortBktMasteryMap(data)
+  } catch { /* RPC absent on this env — callers fall back to the accuracy proxy */ }
+  return out
+}
+
 /** Bucket a mastery percent (0-100) into the Reports UI's level codes. */
 function masteryLevelFromPercent(pct: number): 'mastered' | 'proficient' | 'familiar' | 'developing' | 'not_started' {
   if (pct >= 80) return 'mastered'
@@ -1192,6 +1224,13 @@ async function handleGetClassOverview(
     activeThisWeek = seen.size
   } catch { /* table may not exist */ }
 
+  // T8: real BKT mastery per student, via the shared cohort-mastery RPC —
+  // the SAME formula the School-Admin Command Center and super-admin B2B
+  // analytics use. Students with no concept_mastery rows are absent from
+  // this map; for them we fall back to the accuracy proxy below so a
+  // sparse-BKT env still gets a reasonable per-student number.
+  const bktMasteryByStudent = await fetchCohortBktMastery(supabase, studentIds)
+
   // Compute mastery distribution + accuracy + top/bottom from agg.
   const dist = { mastered: 0, proficient: 0, familiar: 0, developing: 0, not_started: 0 }
   let totalAccuracySum = 0
@@ -1204,10 +1243,10 @@ async function handleGetClassOverview(
 
   for (const [id, a] of agg.entries()) {
     const accuracy = a.asked > 0 ? Math.round((a.correct / a.asked) * 100) : 0
-    // Without a true BKT roll-up, accuracy is the best proxy for mastery
-    // at this aggregation layer. We bucket via the same thresholds the
-    // UI uses so the donut/bar chart aligns with the per-student card.
-    const mastery = accuracy
+    // T8: prefer the real BKT mastery (shared calculate_cohort_bkt_mastery
+    // formula) when the student has concept_mastery data; fall back to the
+    // accuracy proxy only when no BKT signal exists yet for that student.
+    const mastery = resolveStudentMastery(bktMasteryByStudent.get(id), accuracy)
     const level = masteryLevelFromPercent(mastery)
     dist[level]++
     if (a.asked > 0) {
@@ -1316,6 +1355,14 @@ async function handleGetStudentReport(
 
   const accuracy = totalAsked > 0 ? Math.round((totalCorrect / totalAsked) * 100) : 0
 
+  // T8: single-number BKT mastery for this student, via the shared
+  // calculate_cohort_bkt_mastery formula (same one the School-Admin Command
+  // Center and super-admin B2B analytics use). `null` when the student has
+  // no concept_mastery rows yet — the UI should render "not enough data"
+  // rather than a fake 0%, and MUST NOT recompute this from `accuracy`.
+  const bktMasteryMap = await fetchCohortBktMastery(supabase, [studentId])
+  const bktMastery = bktMasteryMap.get(studentId) ?? null
+
   // Strengths / weaknesses: top 3 and bottom 3 subjects by mastery
   // among those the student has actually attempted.
   const sortedAttempted = [...subjects].filter(s => s.mastery > 0).sort((a, b) => b.mastery - a.mastery)
@@ -1346,6 +1393,11 @@ async function handleGetStudentReport(
     current_streak: totalStreak,
     accuracy,
     avg_accuracy: accuracy,
+    // T8: real BKT mastery (shared formula), separate from the per-subject
+    // accuracy breakdown above — the two are different metrics and must not
+    // be conflated. `null` means no BKT signal yet, not 0%.
+    mastery: bktMastery,
+    bkt_mastery: bktMastery,
     subjects,
     subject_mastery: subjects,
     strengths,
@@ -1358,6 +1410,15 @@ async function handleGetStudentReport(
 // Reports → "Trends" tab. 30-day rolling window over the teacher's
 // student set. Returns daily timeseries, a 4x7 activity heatmap
 // (4 weeks × 7 weekdays), and most-improved learners.
+// NOTE (T8): the `avg_mastery` values this handler produces below are a
+// DAILY QUIZ-SCORE-PERCENT rollup over time (a trend line), not a point-in-
+// time BKT cohort snapshot — they answer "how did scores move day over
+// day," a genuinely different question from "what is this cohort's mastery
+// right now" (answered by calculate_cohort_bkt_mastery, used in
+// get_class_overview / get_student_report / get_school_overview / the
+// super-admin B2B route). Deliberately NOT unified with the shared BKT
+// primitive — forcing a timeseries onto a single-snapshot formula would
+// lose the trend signal this tab exists to show.
 async function handleGetClassTrends(
   body: Record<string, unknown>,
   origin: string | null,
@@ -3705,6 +3766,37 @@ async function handleGetInTheMomentAlerts(
 }
 
 // ─── deploy_intervention ──────────────────────────────────
+// RCA fix (2026-07-20, Task T3): this handler previously wrote directly to
+// `assignments` / `assignment_submissions` with hardcoded question counts
+// (5|10) and a hardcoded 3-day due date — a THIRD, orphaned remediation
+// pathway that completely bypassed:
+//   - `teacher_remediation_assignments` (the canonical table written by
+//     POST /api/teacher/remediation and read by the student daily-queue
+//     resolver — resolve-next-action.ts / today/render.ts — and by Loop A's
+//     escalation logic in remediation-queue-adapter.ts / recovery-evaluation.ts)
+//   - `adaptive_interventions` (the Loop A-D system)
+// Remediation a teacher "deployed" here was therefore invisible to the
+// student. Grep-confirmed (apps/host/src/app/teacher/**, mobile/**): there is
+// NO frontend caller of action 'deploy_intervention' anywhere in the web app
+// or the Flutter app — this action is only reachable via a direct
+// authenticated POST to this Edge Function. It is NOT deleted outright
+// because (a) the static contract canary (__tests__/contract.test.ts) pins
+// actions.ts's teacherDashboardActionNames 1:1 against this switch's case
+// list, so removing the action is a deliberate, separately-reviewable
+// contract change, and (b) the safer fix for an exposed-but-unwired action is
+// to make it write correctly rather than leave a dead write path that could
+// silently reappear behind a future UI button. It now inserts one
+// `teacher_remediation_assignments` row per (student, tier) — chapter_id =
+// topic_id, matching the canonical shape — and respects the same DB dedupe
+// backstop (uq_teacher_remediation_assignments_open_dedupe: 23505 on that
+// index is idempotent-success, not a failure), mirroring
+// apps/host/src/app/api/teacher/remediation/route.ts's pre-check + named-
+// conflict pattern.
+//
+// Response shape note: `deployments.tierN` changed from
+// `{ assignment_id, student_count }` (one shared `assignments` row per tier)
+// to `{ assignment_ids, student_count }` (one canonical row per student) —
+// there is no live caller for this to break.
 async function handleDeployIntervention(
   body: Record<string, unknown>,
   origin: string | null,
@@ -3728,7 +3820,7 @@ async function handleDeployIntervention(
 
   const { data: topic, error: topicErr } = await supabase
     .from('curriculum_topics')
-    .select('title, grade, subject_id')
+    .select('id')
     .eq('id', topicId)
     .maybeSingle()
 
@@ -3736,111 +3828,83 @@ async function handleDeployIntervention(
     return errorResponse('Curriculum topic not found', 404, origin)
   }
 
-  let subjectCode: string | null = null
-  if (topic.subject_id) {
-    const { data: subj } = await supabase
-      .from('subjects')
-      .select('code')
-      .eq('id', topic.subject_id)
-      .maybeSingle()
-    subjectCode = subj?.code ?? null
-  }
+  const OPEN_DEDUPE_INDEX = 'uq_teacher_remediation_assignments_open_dedupe'
+  const OPEN_STATUSES = ['assigned', 'in_progress']
 
-  const results: Record<string, { assignment_id: string; student_count: number }> = {}
-  const now = new Date().toISOString()
-  const dueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+  const results: Record<string, { assignment_ids: string[]; student_count: number }> = {}
 
-  if (Array.isArray(tiers.tier1) && tiers.tier1.length > 0) {
-    const assignmentId = crypto.randomUUID()
-    const { error: insErr } = await supabase.from('assignments').insert({
-      id: assignmentId,
-      class_id: classId,
-      teacher_id: teacherId,
-      title: `Remedial: ${topic.title}`,
-      assignment_type: 'worksheet',
-      topic_id: topicId,
-      subject: subjectCode,
-      grade: topic.grade,
-      due_date: dueDate,
-      question_count: 5,
-      status: 'active',
-      created_at: now,
-      updated_at: now,
-    })
+  for (const tierKey of ['tier1', 'tier2', 'tier3'] as const) {
+    const studentIds = tiers[tierKey]
+    if (!Array.isArray(studentIds) || studentIds.length === 0) continue
 
-    if (!insErr) {
-      const submissions = tiers.tier1.map(sid => ({
-        assignment_id: assignmentId,
-        student_id: sid,
-        status: 'not_started',
-      }))
-      await supabase.from('assignment_submissions').insert(submissions)
-      results.tier1 = { assignment_id: assignmentId, student_count: tiers.tier1.length }
-    } else {
-      console.error('Failed to create Tier 1 assignment:', insErr.message)
+    const assignmentIds: string[] = []
+
+    // Sequential (not Promise.all): duplicate student ids within the same
+    // tier array must still dedupe against each other, not just against
+    // pre-existing rows.
+    for (const rawStudentId of studentIds) {
+      const studentId = String(rawStudentId || '')
+      if (!studentId) continue
+
+      // Idempotency pre-check: an OPEN row for (student, class, chapter)
+      // already covers this. teacher_id is deliberately NOT part of the
+      // lookup — the DB dedupe index is not keyed by teacher either, so a
+      // colleague's open row for the same student x class x chapter also
+      // counts as already covered (matches the teacher route's documented
+      // cross-teacher 23505 handling).
+      const { data: existing, error: existingErr } = await supabase
+        .from('teacher_remediation_assignments')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('class_id', classId)
+        .eq('chapter_id', topicId)
+        .in('status', OPEN_STATUSES)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (existingErr) {
+        console.error(
+          `deploy_intervention idempotency lookup failed (${tierKey}, student ${studentId}):`,
+          existingErr.message,
+        )
+        continue
+      }
+      if (existing) {
+        assignmentIds.push(existing.id as string)
+        continue
+      }
+
+      const { data: inserted, error: insErr } = await supabase
+        .from('teacher_remediation_assignments')
+        .insert({
+          teacher_id: teacherId,
+          student_id: studentId,
+          class_id: classId,
+          chapter_id: topicId,
+          status: 'assigned',
+        })
+        .select('id')
+        .single()
+
+      if (insErr) {
+        const evidence = [insErr.message, insErr.details, insErr.hint].filter(Boolean).join(' ')
+        if (insErr.code === '23505' && evidence.includes(OPEN_DEDUPE_INDEX)) {
+          // Named DB backstop conflict: another writer (a race on this same
+          // request, or a colleague teacher) already created the open row.
+          // Idempotent-success — do not fail the whole tier.
+          continue
+        }
+        console.error(
+          `Failed to deploy ${tierKey} remediation for student ${studentId}:`,
+          insErr.message,
+        )
+        continue
+      }
+      assignmentIds.push(inserted.id as string)
     }
-  }
 
-  if (Array.isArray(tiers.tier2) && tiers.tier2.length > 0) {
-    const assignmentId = crypto.randomUUID()
-    const { error: insErr } = await supabase.from('assignments').insert({
-      id: assignmentId,
-      class_id: classId,
-      teacher_id: teacherId,
-      title: `Practice: ${topic.title}`,
-      assignment_type: 'quiz',
-      topic_id: topicId,
-      subject: subjectCode,
-      grade: topic.grade,
-      due_date: dueDate,
-      question_count: 10,
-      status: 'active',
-      created_at: now,
-      updated_at: now,
-    })
-
-    if (!insErr) {
-      const submissions = tiers.tier2.map(sid => ({
-        assignment_id: assignmentId,
-        student_id: sid,
-        status: 'not_started',
-      }))
-      await supabase.from('assignment_submissions').insert(submissions)
-      results.tier2 = { assignment_id: assignmentId, student_count: tiers.tier2.length }
-    } else {
-      console.error('Failed to create Tier 2 assignment:', insErr.message)
-    }
-  }
-
-  if (Array.isArray(tiers.tier3) && tiers.tier3.length > 0) {
-    const assignmentId = crypto.randomUUID()
-    const { error: insErr } = await supabase.from('assignments').insert({
-      id: assignmentId,
-      class_id: classId,
-      teacher_id: teacherId,
-      title: `Challenge: ${topic.title}`,
-      assignment_type: 'quiz',
-      topic_id: topicId,
-      subject: subjectCode,
-      grade: topic.grade,
-      due_date: dueDate,
-      question_count: 10,
-      status: 'active',
-      created_at: now,
-      updated_at: now,
-    })
-
-    if (!insErr) {
-      const submissions = tiers.tier3.map(sid => ({
-        assignment_id: assignmentId,
-        student_id: sid,
-        status: 'not_started',
-      }))
-      await supabase.from('assignment_submissions').insert(submissions)
-      results.tier3 = { assignment_id: assignmentId, student_count: tiers.tier3.length }
-    } else {
-      console.error('Failed to create Tier 3 assignment:', insErr.message)
-    }
+    results[tierKey] = { assignment_ids: assignmentIds, student_count: studentIds.length }
   }
 
   return jsonResponse({ success: true, deployments: results }, 200, {}, origin)

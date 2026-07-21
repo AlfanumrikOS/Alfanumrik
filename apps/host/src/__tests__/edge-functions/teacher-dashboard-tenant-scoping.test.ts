@@ -11,9 +11,8 @@
  * cannot be imported/executed under Vitest. It is also not structured for
  * dependency injection of a mock Supabase client — every handler calls
  * `getServiceClient()` internally. So, exactly like the sibling
- * `teacher-dashboard-roster-join.test.ts` and the Deno-lane
- * `supabase/functions/export-report/__tests__/tenant-isolation.test.ts`
- * (which ALSO inspects source text rather than executing), we pin the security
+ * `teacher-dashboard-roster-join.test.ts` (which ALSO inspects source text
+ * rather than executing), we pin the security
  * property by parsing the source: every `.from('students')` query that filters
  * by `grade` MUST also filter by `school_id`, and each grade branch MUST be
  * fail-closed when the teacher has no school.

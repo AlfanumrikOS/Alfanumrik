@@ -171,6 +171,10 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
         reportsDepthOnly: true,
       },
       { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜', moduleKey: 'communication' },
+      // T13 — teacher-> school-admin escalation visibility (RCA follow-up).
+      // Read-only list; ungated (no module/rbac restriction) so every admin
+      // role can see cases raised by teachers at their school.
+      { href: '/school-admin/escalations', label: 'Escalations', labelHi: 'एस्केलेशन', icon: '⚑' },
     ],
   },
   {

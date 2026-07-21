@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     // ── 3. Teacher → enrolled students across their classes ───────────
     if (teacherSelfRes.data?.id) {
       // class_students join: only classes the teacher is assigned to
-      // via class_teachers (matching export-report's pattern).
+      // via class_teachers.
       const { data: teacherClasses } = await supabaseAdmin
         .from('class_teachers')
         .select('class_id')

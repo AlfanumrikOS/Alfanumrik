@@ -1099,6 +1099,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/school-admin/escalations",
+      "file": "apps/host/src/app/api/school-admin/escalations/route.ts",
+      "access": "school_admin",
+      "owner": "school-admin-backend",
+      "rationale": "School-admin endpoint; access must derive from school-admin membership and permission checks.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/school-admin/exams",
       "file": "apps/host/src/app/api/school-admin/exams/route.ts",
       "access": "school_admin",
@@ -2490,6 +2498,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/teacher/escalate",
+      "file": "apps/host/src/app/api/teacher/escalate/route.ts",
+      "access": "teacher",
+      "owner": "teacher-backend",
+      "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/teacher/join-class",
       "file": "apps/host/src/app/api/teacher/join-class/route.ts",
       "access": "teacher",
@@ -2555,6 +2571,14 @@
     {
       "path": "/api/teacher/remediation",
       "file": "apps/host/src/app/api/teacher/remediation/route.ts",
+      "access": "teacher",
+      "owner": "teacher-backend",
+      "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/teacher/students",
+      "file": "apps/host/src/app/api/teacher/students/route.ts",
       "access": "teacher",
       "owner": "teacher-backend",
       "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks.",
