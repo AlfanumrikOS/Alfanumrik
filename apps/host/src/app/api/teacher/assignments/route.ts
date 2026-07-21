@@ -128,19 +128,29 @@ export async function POST(request: NextRequest) {
 
   // TODO: extract to projector subscriber. `assignments` is a
   // route-owned operational table today.
+  //
+  // Column-name note (production incident, 2026-07-21): `assignments` has NO
+  // `type` or `is_active` column — it has `assignment_type` (default
+  // 'practice') and `status` (default 'active') instead. This insert
+  // previously wrote `type`/`is_active`/`chapter`/`difficulty`, none of which
+  // existed, so it 500'd on every call ("Failed to create assignment").
+  // `chapter`/`difficulty` are now real columns (migration
+  // 20260721000300_assignments_add_chapter_difficulty.sql); `type` maps onto
+  // the existing `assignment_type` column and `is_active: true` maps onto
+  // `status: 'active'` — no redundant columns added.
   const { error: insertErr } = await supabaseAdmin.from('assignments').insert({
     id: assignmentId,
     teacher_id: teacher.id,
     class_id: body.class_id,
     title: body.title,
-    type,
+    assignment_type: type,
     subject: subjectCode,
     grade,
     chapter,
     difficulty,
     question_count: questionCount,
     due_date: dueAt,
-    is_active: true,
+    status: 'active',
     created_at: now,
     updated_at: now,
   });

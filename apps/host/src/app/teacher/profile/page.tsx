@@ -11,11 +11,12 @@ const tt = (hi: boolean, en: string, hiText: string) => hi ? hiText : en;
 
 export default function TeacherProfilePage() {
   const { teacher, isLoggedIn, isLoading: authLoading, activeRole, signOut, isHi } = useAuth();
-  const { subjects } = useTeacherAllowedSubjects();
+  const { subjects, allSubjects, refresh: refreshSubjects } = useTeacherAllowedSubjects();
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [schoolName, setSchoolName] = useState('');
+  const [editSubjects, setEditSubjects] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -25,7 +26,12 @@ export default function TeacherProfilePage() {
   const startEdit = () => {
     setName(teacher?.name || '');
     setSchoolName(teacher?.school_name || '');
+    setEditSubjects(teacher?.subjects_taught || []);
     setEditing(true);
+  };
+
+  const toggleEditSubject = (code: string) => {
+    setEditSubjects(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   };
 
   const handleSave = async () => {
@@ -38,13 +44,16 @@ export default function TeacherProfilePage() {
     if (trimmedSchool && trimmedSchool.length > 200) {
       setToast(tt(isHi, 'School name too long', 'स्कूल का नाम बहुत लंबा है')); return;
     }
+    if (editSubjects.length === 0) {
+      setToast(tt(isHi, 'Please select at least one subject', 'कृपया कम से कम एक विषय चुनें')); return;
+    }
     setSaving(true);
     try {
       const res = await fetch('/api/teacher/profile', {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-        body: JSON.stringify({ name: trimmedName, school_name: trimmedSchool }),
+        body: JSON.stringify({ name: trimmedName, school_name: trimmedSchool, subjects_taught: editSubjects }),
       });
       const json = await res.json();
       if (!res.ok || !json.success) {
@@ -52,6 +61,7 @@ export default function TeacherProfilePage() {
       }
       setToast(tt(isHi, 'Profile updated!', 'प्रोफ़ाइल अपडेट हो गई!'));
       setEditing(false);
+      refreshSubjects();
       setTimeout(() => setToast(''), 3000);
     } catch { setToast(tt(isHi, 'Failed to save', 'सहेजने में विफल')); }
     setSaving(false);
@@ -135,8 +145,59 @@ export default function TeacherProfilePage() {
               <label htmlFor="teacher-school" style={{ fontSize: 12, fontWeight: 600, color: '#7D7264', display: 'block', marginBottom: 4 }}>{tt(isHi, 'School Name', 'स्कूल का नाम')}</label>
               <input id="teacher-school" value={schoolName} onChange={e => setSchoolName(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid var(--surface-2)', fontSize: 16, outline: 'none' }} />
             </div>
+            <div style={{ marginBottom: 16 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#7D7264', display: 'block', marginBottom: 8 }}>
+                {tt(isHi, 'Subjects You Teach', 'आप जो विषय पढ़ाते हैं')}
+              </span>
+              {allSubjects.length === 0 ? (
+                <p style={{ fontSize: 13, color: '#7D7264', margin: 0 }}>
+                  {tt(isHi, 'Loading subjects…', 'विषय लोड हो रहे हैं…')}
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {allSubjects.map(s => {
+                    const selected = editSubjects.includes(s.code);
+                    return (
+                      <button
+                        key={s.code}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => toggleEditSubject(s.code)}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: 20,
+                          border: selected ? '1.5px solid #7C3AED' : '1.5px solid var(--surface-2)',
+                          background: selected ? 'rgba(124,58,237,0.10)' : '#fff',
+                          color: selected ? '#7C3AED' : '#7D7264',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {s.icon} {isHi ? (s.nameHi || s.name) : s.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {editSubjects.length === 0 && (
+                <p style={{ fontSize: 12, color: '#DC2626', margin: '8px 0 0' }}>
+                  {tt(isHi, 'Select at least one subject to create assignments.', 'असाइनमेंट बनाने के लिए कम से कम एक विषय चुनें।')}
+                </p>
+              )}
+            </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={handleSave} disabled={saving} style={{ padding: '10px 24px', borderRadius: 10, border: 'none', background: 'var(--orange)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <button
+                onClick={handleSave}
+                disabled={saving || editSubjects.length === 0}
+                style={{
+                  padding: '10px 24px', borderRadius: 10, border: 'none',
+                  background: saving || editSubjects.length === 0 ? '#EDE6DC' : 'var(--orange)',
+                  color: '#fff', fontSize: 13, fontWeight: 600,
+                  cursor: saving || editSubjects.length === 0 ? 'default' : 'pointer',
+                  opacity: saving || editSubjects.length === 0 ? 0.6 : 1,
+                }}
+              >
                 {saving ? tt(isHi, 'Saving...', 'सहेज रहे हैं...') : tt(isHi, 'Save', 'सहेजें')}
               </button>
               <button onClick={() => setEditing(false)} style={{ padding: '10px 24px', borderRadius: 10, border: '1.5px solid var(--surface-2)', background: '#fff', color: '#7D7264', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>

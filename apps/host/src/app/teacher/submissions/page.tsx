@@ -591,9 +591,14 @@ function TeacherSubmissionsPageContent() {
     setLoading(true);
     setError('');
     try {
+      // Column-name note (production incident, 2026-07-21): `assignments` has
+      // no `type` column — it has `assignment_type`. Alias it to `type` here
+      // so the AssignmentRow shape below (and the rest of this file) is
+      // unchanged; `chapter`/`difficulty` are real columns as of migration
+      // 20260721000300_assignments_add_chapter_difficulty.sql.
       const { data, error: e } = await supabase
         .from('assignments')
-        .select('id, title, subject, grade, chapter, difficulty, question_count, due_date, class_id, created_at, type')
+        .select('id, title, subject, grade, chapter, difficulty, question_count, due_date, class_id, created_at, type:assignment_type')
         .eq('teacher_id', teacherId)
         .order('created_at', { ascending: false });
       if (e) throw e;

@@ -1,8 +1,17 @@
 /**
  * PATCH /api/teacher/profile
  *
- * Updates teacher profile: name, school_name.
+ * Updates teacher profile: name, school_name, subjects_taught.
  * Replaces direct anon-client write in teacher/profile/page.tsx.
+ *
+ * subjects_taught (added 2026-07-21, teacher-dashboard-deep-rca incident):
+ * self-serve fix for teacher accounts whose `subjects_taught` ended up
+ * empty/null (e.g. created via school-admin bulk-import without subjects, or
+ * pre-fix self-signup bootstrap drift) and could previously only be fixed by
+ * a school admin or support. Validated against the active `subjects` master —
+ * unknown/inactive codes are rejected (400), never silently dropped, since
+ * this is a teacher-initiated write (unlike the read-side GET /api/teacher/subjects
+ * which silently drops stale codes for display purposes).
  *
  * Auth (P9): authorizeRequest(request, 'profile.update_own'). That permission
  * is already granted to the `teacher` role in the RBAC matrix
@@ -43,8 +52,8 @@ export async function PATCH(request: NextRequest) {
   let body: Record<string, unknown>;
   try { body = await request.json(); } catch { return err('Invalid request body', 400); }
 
-  const { name, school_name } = body;
-  const updatePayload: Record<string, string> = {};
+  const { name, school_name, subjects_taught } = body;
+  const updatePayload: Record<string, string | string[]> = {};
 
   if (name !== undefined) {
     if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
@@ -58,6 +67,43 @@ export async function PATCH(request: NextRequest) {
       return err('school_name cannot exceed 200 characters', 400);
     }
     updatePayload.school_name = school_name.trim();
+  }
+
+  if (subjects_taught !== undefined) {
+    if (
+      !Array.isArray(subjects_taught) ||
+      !subjects_taught.every((c) => typeof c === 'string' && c.trim().length > 0)
+    ) {
+      return err('subjects_taught must be an array of non-empty subject codes', 400);
+    }
+    const codes = Array.from(new Set(subjects_taught.map((c) => c.trim())));
+    if (codes.length === 0) {
+      return err('subjects_taught must include at least one subject', 400);
+    }
+    // Validate every code exists in the active subjects master — a
+    // teacher-initiated write must reject unknown/inactive codes, not
+    // silently drop them.
+    const { data: activeRows, error: activeErr } = await supabaseAdmin
+      .from('subjects')
+      .select('code')
+      .eq('is_active', true)
+      .in('code', codes);
+    if (activeErr) {
+      logger.error('teacher_profile_subjects_validation_failed', {
+        error: new Error(activeErr.message),
+        teacherId,
+      });
+      return err('Failed to validate subjects', 500);
+    }
+    const activeSet = new Set((activeRows ?? []).map((r: { code: string }) => r.code));
+    const invalid = codes.filter((c) => !activeSet.has(c));
+    if (invalid.length > 0) {
+      return NextResponse.json(
+        { success: false, error: `Unknown or inactive subject code(s): ${invalid.join(', ')}` },
+        { status: 400 },
+      );
+    }
+    updatePayload.subjects_taught = codes;
   }
 
   if (Object.keys(updatePayload).length === 0) {
