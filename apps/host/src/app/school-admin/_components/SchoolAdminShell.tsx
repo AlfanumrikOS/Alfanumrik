@@ -336,7 +336,7 @@ export default function SchoolAdminShell({ children }: { children: React.ReactNo
               type="button"
               onClick={() => setLanguage(isHi ? 'en' : 'hi')}
               className="text-[11px] font-semibold rounded-lg px-2 py-1 transition-colors hover:bg-surface-2 flex-shrink-0"
-              style={{ color: 'var(--text-3)', border: '1px solid var(--border)' }}
+              style={{ color: 'var(--text-3)', border: '1px solid var(--surface-3)' }}
               aria-label={isHi ? 'Switch to English' : 'हिन्दी में बदलें'}
             >
               {isHi ? 'EN' : 'हि'}

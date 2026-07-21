@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { supabase } from '@alfanumrik/lib/supabase';
 import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
+import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
@@ -152,7 +151,7 @@ function NewKeyDisplay({ fullKey, isHi }: NewKeyDisplayProps) {
           padding: '8px',
           background: 'rgba(255,255,255,0.7)',
           borderRadius: '12px',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--surface-3)',
         }}
       >
         {fullKey}
@@ -163,7 +162,7 @@ function NewKeyDisplay({ fullKey, isHi }: NewKeyDisplayProps) {
         className="mt-3 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
         style={{
           background: copied ? '#16A34A' : 'var(--surface-1)',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--surface-3)',
           color: copied ? '#fff' : 'var(--text-2)',
           minHeight: '42px',
         }}
@@ -274,7 +273,7 @@ function KeyCard({ apiKey, isHi, onRevoke, revokingId }: KeyCardProps) {
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
             style={{
               background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               color: '#DC2626',
               minHeight: '36px',
               opacity: isRevoking ? 0.6 : 1,
@@ -365,7 +364,7 @@ function GenerateForm({ isHi, onSubmit, submitting, newKey }: GenerateFormProps)
                 className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all active:scale-[0.98]"
                 style={{
                   background: checked ? 'rgba(124, 58, 237, 0.08)' : 'var(--surface-2)',
-                  border: checked ? '1.5px solid var(--purple)' : '1px solid var(--border)',
+                  border: checked ? '1.5px solid var(--purple)' : '1px solid var(--surface-3)',
                   minHeight: '44px',
                 }}
                 role="checkbox"
@@ -379,7 +378,7 @@ function GenerateForm({ isHi, onSubmit, submitting, newKey }: GenerateFormProps)
                     width: '20px',
                     height: '20px',
                     background: checked ? 'var(--purple)' : 'transparent',
-                    border: checked ? 'none' : '2px solid var(--border)',
+                    border: checked ? 'none' : '2px solid var(--surface-3)',
                     color: '#fff',
                     fontSize: '12px',
                     fontWeight: 700,
@@ -425,7 +424,7 @@ function GenerateForm({ isHi, onSubmit, submitting, newKey }: GenerateFormProps)
                 className="px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
                 style={{
                   background: selected ? 'var(--purple)' : 'var(--surface-2)',
-                  border: selected ? 'none' : '1px solid var(--border)',
+                  border: selected ? 'none' : '1px solid var(--surface-3)',
                   color: selected ? '#fff' : 'var(--text-2)',
                   minHeight: '36px',
                 }}
@@ -457,11 +456,10 @@ function GenerateForm({ isHi, onSubmit, submitting, newKey }: GenerateFormProps)
    MAIN PAGE
 ----------------------------------------------------------------- */
 export default function SchoolAdminApiKeysPage() {
-  const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi } = useAuth();
+  const { isHi } = useAuth();
+  const { schoolId, isLoading: authLoading } = useSchoolAdminAuth();
 
   /* State */
-  const [schoolId, setSchoolId] = useState<string | null>(null);
   const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
   const [loadingPage, setLoadingPage] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -471,38 +469,12 @@ export default function SchoolAdminApiKeysPage() {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
-  /* Auth guard */
-  useEffect(() => {
-    if (!authLoading && !authUserId) {
-      router.replace('/login');
-    }
-  }, [authLoading, authUserId, router]);
-
-  /* Bootstrap: verify school admin + load keys */
+  /* Bootstrap: load keys once the school admin identity resolves */
   const bootstrap = useCallback(async () => {
-    if (!authUserId) return;
-
     setLoadingPage(true);
     setPageError(null);
 
     try {
-      // Verify this user is a school admin
-      const { data: adminRecord, error: adminErr } = await supabase
-        .from('school_admins')
-        .select('school_id')
-        .eq('auth_user_id', authUserId)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (adminErr) throw new Error(adminErr.message);
-
-      if (!adminRecord) {
-        router.replace('/login');
-        return;
-      }
-
-      setSchoolId(adminRecord.school_id);
-
       // Fetch API keys via the API route (server-side permission check)
       const res = await authedFetch('/api/school-admin/api-keys', {
         headers: { 'Content-Type': 'application/json' },
@@ -520,13 +492,13 @@ export default function SchoolAdminApiKeysPage() {
     } finally {
       setLoadingPage(false);
     }
-  }, [authUserId, router]);
+  }, []);
 
   useEffect(() => {
-    if (!authLoading && authUserId) {
+    if (!authLoading && schoolId) {
       bootstrap();
     }
-  }, [authLoading, authUserId, bootstrap]);
+  }, [authLoading, schoolId, bootstrap]);
 
   /* Generate key handler */
   async function handleGenerate(values: {

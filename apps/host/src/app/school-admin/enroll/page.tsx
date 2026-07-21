@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { supabase } from '@alfanumrik/lib/supabase';
 import { useSchoolProvisioning } from '@alfanumrik/lib/use-school-provisioning';
 import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
+import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import { GraceWarningBanner, SeatCapBlockBanner } from '@alfanumrik/ui/school/SeatPolicyBanners';
 import type { SeatPolicyStatus } from '@alfanumrik/lib/school-admin/seat-enforcement';
 import {
@@ -136,7 +136,8 @@ function PageSkeleton() {
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminEnrollPage() {
   const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi } = useAuth();
+  const { isHi } = useAuth();
+  const { schoolId, isLoading: loading, error: adminError } = useSchoolAdminAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Seat-enforcement UI gate (Phase 3B Wave B). OFF ⇒ this page is byte-identical
@@ -144,8 +145,10 @@ export default function SchoolAdminEnrollPage() {
   const seatUiEnabled = useSchoolProvisioning();
 
   /* ── state ── */
-  const [schoolId, setSchoolId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  // `error` now doubles as the CSV-import error surface (unchanged rendering
+  // below); the hook's own `adminError` (DB-query failure — a rare edge case)
+  // is folded in as an initial value so the same full-page error banner still
+  // renders for that case.
   const [error, setError] = useState<string | null>(null);
 
   const [step, setStep] = useState<Step>('upload');
@@ -158,48 +161,9 @@ export default function SchoolAdminEnrollPage() {
   // 409 seat_cap_violation status from a hard-blocked import (ON path only).
   const [seatBlockStatus, setSeatBlockStatus] = useState<string | null>(null);
 
-  /* ── auth guard ── */
   useEffect(() => {
-    if (!authLoading && !authUserId) {
-      router.replace('/login');
-    }
-  }, [authLoading, authUserId, router]);
-
-  /* ── bootstrap ── */
-  const bootstrap = useCallback(async () => {
-    if (!authUserId) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { data: adminRecord, error: adminErr } = await supabase
-        .from('school_admins')
-        .select('school_id')
-        .eq('auth_user_id', authUserId)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (adminErr) throw new Error(adminErr.message);
-
-      if (!adminRecord) {
-        router.replace('/login');
-        return;
-      }
-
-      setSchoolId(adminRecord.school_id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load');
-    } finally {
-      setLoading(false);
-    }
-  }, [authUserId, router]);
-
-  useEffect(() => {
-    if (!authLoading && authUserId) {
-      bootstrap();
-    }
-  }, [authLoading, authUserId, bootstrap]);
+    if (adminError) setError(adminError);
+  }, [adminError]);
 
   /* ── CSV processing ── */
   function processFile(file: File) {
@@ -328,7 +292,7 @@ export default function SchoolAdminEnrollPage() {
   const totalRows = previewData.length;
 
   /* ── Render ── */
-  if (authLoading || loading) {
+  if (loading) {
     return (
       <div className="space-y-4">
         <PageSkeleton />
@@ -348,7 +312,7 @@ export default function SchoolAdminEnrollPage() {
           <Card className="max-w-xs w-full text-center py-8">
             <div className="text-4xl mb-3">⚠️</div>
             <p className="text-sm text-[var(--text-2)] mb-4">{error}</p>
-            <Button variant="primary" onClick={bootstrap}>
+            <Button variant="primary" onClick={() => window.location.reload()}>
               {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
             </Button>
           </Card>
@@ -422,7 +386,7 @@ export default function SchoolAdminEnrollPage() {
             <div
               className="rounded-2xl p-8 text-center cursor-pointer transition-all"
               style={{
-                border: `2px dashed ${dragOver ? 'var(--purple)' : 'var(--border)'}`,
+                border: `2px dashed ${dragOver ? 'var(--purple)' : 'var(--surface-3)'}`,
                 background: dragOver ? 'rgba(124,58,237,0.05)' : 'var(--surface-1)',
               }}
               onClick={() => fileInputRef.current?.click()}
@@ -523,7 +487,7 @@ export default function SchoolAdminEnrollPage() {
                         key={idx}
                         style={{
                           background: validation?.valid === false ? '#FEF2F2' : 'transparent',
-                          borderBottom: '1px solid var(--border)',
+                          borderBottom: '1px solid var(--surface-3)',
                         }}
                       >
                         <td className="px-3 py-2 text-[var(--text-3)]">{idx + 1}</td>

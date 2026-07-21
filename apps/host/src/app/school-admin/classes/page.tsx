@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
+import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
@@ -145,7 +146,7 @@ function ClassCard({ cls, isHi, onOpenDetail }: ClassCardProps) {
                 style={{
                   background: 'var(--surface-2)',
                   color: 'var(--text-2)',
-                  border: '1px solid var(--border)',
+                  border: '1px solid var(--surface-3)',
                 }}
               >
                 {t(isHi, 'Sec', 'सेक')} {cls.section}
@@ -167,7 +168,7 @@ function ClassCard({ cls, isHi, onOpenDetail }: ClassCardProps) {
             className="text-xs font-mono font-bold px-2 py-1 rounded-lg flex-shrink-0"
             style={{
               background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               color: 'var(--text-2)',
               letterSpacing: '0.05em',
             }}
@@ -255,20 +256,9 @@ function CreateClassForm({ isHi, onSuccess, onClose }: CreateClassFormProps) {
       // is silently blocked. Creation must go through the server route
       // (service role + audit log). school_id is derived server-side from the
       // authenticated admin.
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        throw new Error(
-          t(isHi, 'Session expired. Please log in again.', 'सत्र समाप्त हो गया। कृपया फिर से लॉगिन करें।')
-        );
-      }
-
-      const res = await fetch('/api/school-admin/classes', {
+      const res = await authedFetch('/api/school-admin/classes', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: className.trim(),
           grade, // string "6"–"12" per P5 — never integer
@@ -417,7 +407,7 @@ function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
               style={{
                 background: 'var(--surface-2)',
                 color: 'var(--text-2)',
-                border: '1px solid var(--border)',
+                border: '1px solid var(--surface-3)',
               }}
             >
               {t(isHi, 'Section', 'सेक्शन')} {cls.section}
@@ -489,7 +479,7 @@ function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
             className="flex items-center justify-between rounded-xl px-4 py-3"
             style={{
               background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
             }}
           >
             <span
@@ -503,7 +493,7 @@ function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
               style={{
                 background: copied ? '#16A34A18' : 'var(--surface-1)',
-                border: `1px solid ${copied ? '#16A34A' : 'var(--border)'}`,
+                border: `1px solid ${copied ? '#16A34A' : 'var(--surface-3)'}`,
                 color: copied ? '#16A34A' : 'var(--text-2)',
                 minHeight: 36,
                 minWidth: 64,
@@ -522,7 +512,7 @@ function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
         className="flex items-center justify-center gap-2 w-full rounded-xl py-3.5 text-sm font-semibold transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)] focus-visible:ring-offset-2"
         style={{
           background: 'var(--surface-2)',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--surface-3)',
           color: 'var(--teal)',
           minHeight: 52,
           textDecoration: 'none',
@@ -538,12 +528,10 @@ function ClassDetailPanel({ cls, isHi }: ClassDetailPanelProps) {
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminClassesPage() {
-  const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi } = useAuth();
+  const { isHi } = useAuth();
+  const { schoolId, isLoading: loadingAdmin } = useSchoolAdminAuth();
 
   /* ── State ── */
-  const [schoolId, setSchoolId] = useState<string | null>(null);
-  const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [rpcError, setRpcError] = useState<string | null>(null);
@@ -555,29 +543,7 @@ export default function SchoolAdminClassesPage() {
   /* Success toast */
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  /* ── Step 1: Auth guard — fetch school_admins record ── */
-  const fetchAdminRecord = useCallback(async () => {
-    if (!authUserId) return;
-
-    setLoadingAdmin(true);
-
-    const { data, error } = await supabase
-      .from('school_admins')
-      .select('school_id, name')
-      .eq('auth_user_id', authUserId)
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (error || !data) {
-      router.replace('/login');
-      return;
-    }
-
-    setSchoolId(data.school_id as string);
-    setLoadingAdmin(false);
-  }, [authUserId, router]);
-
-  /* ── Step 2: Fetch classes via RPC ── */
+  /* ── Fetch classes via RPC ── */
   const fetchClasses = useCallback(async (sid: string) => {
     setLoadingClasses(true);
     setRpcError(null);
@@ -617,20 +583,6 @@ export default function SchoolAdminClassesPage() {
     setLoadingClasses(false);
   }, []);
 
-  /* ── Auth redirect guard ── */
-  useEffect(() => {
-    if (!authLoading && !authUserId) {
-      router.replace('/login');
-    }
-  }, [authLoading, authUserId, router]);
-
-  /* ── Fetch admin record once auth is ready ── */
-  useEffect(() => {
-    if (!authLoading && authUserId) {
-      fetchAdminRecord();
-    }
-  }, [authLoading, authUserId, fetchAdminRecord]);
-
   /* ── Fetch classes once school_id is known ── */
   useEffect(() => {
     if (schoolId) {
@@ -654,7 +606,7 @@ export default function SchoolAdminClassesPage() {
   }, [isHi, schoolId, fetchClasses]);
 
   /* ── Loading states ── */
-  const isPageLoading = authLoading || loadingAdmin;
+  const isPageLoading = loadingAdmin;
 
   /* ══════════════════════════════════════════════════════════
      FULL PAGE LOADING SKELETON

@@ -26,6 +26,7 @@ function createChainableMock(resolvedValue: { data: unknown; error: unknown }) {
   const chain: Record<string, unknown> = {};
   chain.select = vi.fn().mockReturnValue(chain);
   chain.eq = vi.fn().mockReturnValue(chain);
+  chain.in = vi.fn().mockReturnValue(chain);
   chain.not = vi.fn().mockReturnValue(chain);
   chain.limit = vi.fn().mockReturnValue(chain);
   chain.maybeSingle = vi.fn().mockResolvedValue(resolvedValue);
@@ -317,6 +318,57 @@ describe('authorizeSchoolAdmin', () => {
       expect(result.authorized).toBe(false);
       expect(result.errorResponse!.status).toBe(400);
       expect((await result.errorResponse!.json()).school_ids).toEqual(['school-a', 'school-b']);
+    });
+
+    it('includes a school_names id->name map in the 400 body so the picker can render real names, not raw UUIDs (RCA fix)', async () => {
+      mockAuthorized('multi-school-admin');
+      schoolAdminsChain = createChainableMock({
+        data: [
+          { id: 'admin-1', school_id: 'school-a', role: 'institution_admin', is_active: true },
+          { id: 'admin-2', school_id: 'school-b', role: 'institution_admin', is_active: true },
+        ],
+        error: null,
+      });
+      // The name lookup queries `schools` with .select('id, name').in('id', ...)
+      // BEFORE any single school is resolved, so it must return an ARRAY shape
+      // (unlike the single-school "verify active" query elsewhere in this file,
+      // which resolves a single object).
+      schoolsChain = createChainableMock({
+        data: [
+          { id: 'school-a', name: 'Alpha Public School' },
+          { id: 'school-b', name: 'Beta International School' },
+        ],
+        error: null,
+      });
+
+      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+      expect(result.authorized).toBe(false);
+      expect(result.errorResponse!.status).toBe(400);
+      const body = await result.errorResponse!.json();
+      expect(body.school_ids).toEqual(['school-a', 'school-b']);
+      expect(body.school_names).toEqual({
+        'school-a': 'Alpha Public School',
+        'school-b': 'Beta International School',
+      });
+    });
+
+    it('falls back to a school_ids-only 400 body (no school_names key) when the name lookup fails, rather than failing the whole request', async () => {
+      mockAuthorized('multi-school-admin');
+      schoolAdminsChain = createChainableMock({
+        data: [
+          { id: 'admin-1', school_id: 'school-a', role: 'institution_admin', is_active: true },
+          { id: 'admin-2', school_id: 'school-b', role: 'institution_admin', is_active: true },
+        ],
+        error: null,
+      });
+      schoolsChain = createChainableMock({ data: null, error: { message: 'boom' } });
+
+      const result = await authorizeSchoolAdmin(makeRequest(), 'class.manage');
+      expect(result.authorized).toBe(false);
+      expect(result.errorResponse!.status).toBe(400);
+      const body = await result.errorResponse!.json();
+      expect(body.school_ids).toEqual(['school-a', 'school-b']);
+      expect(body.school_names).toBeUndefined();
     });
 
     it('selects only a requested active membership and rejects a foreign school', async () => {

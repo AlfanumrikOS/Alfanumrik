@@ -235,7 +235,7 @@ function StaffRow({ member, isSelf, isHi, busy, onChangeRole, onRevoke }: StaffR
               minWidth: '40px',
               minHeight: '40px',
               background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--surface-3)',
               color: 'var(--danger)',
               opacity: busy ? 0.6 : 1,
               cursor: busy ? 'not-allowed' : 'pointer',
@@ -508,7 +508,7 @@ export default function StaffManagement() {
           background: 'rgba(251,248,244,0.92)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--border)',
+          borderBottom: '1px solid var(--surface-3)',
         }}
       >
         <button
@@ -519,7 +519,7 @@ export default function StaffManagement() {
             height: '40px',
             minWidth: '40px',
             background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--surface-3)',
             fontSize: '18px',
           }}
           aria-label={t(isHi, 'Back to dashboard', 'डैशबोर्ड पर वापस जाएं')}
@@ -539,7 +539,7 @@ export default function StaffManagement() {
           className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
           style={{
             background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--surface-3)',
             color: 'var(--text-2)',
             minHeight: '36px',
           }}

@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { supabase } from '@alfanumrik/lib/supabase';
+import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
@@ -14,6 +14,19 @@ import {
   Skeleton,
   EmptyState,
 } from '@alfanumrik/ui/ui';
+// Phase 2 (Task 2.5) — the canonical elevated-variant Card primitive, distinct
+// from the legacy `Card` above (no `variant` prop) already used for this
+// page's error-state callouts. Aliased to avoid a naming collision.
+import { Card as ElevatedCard } from '@alfanumrik/ui/ui/primitives';
+import {
+  StatCard,
+  StatusBadge,
+  ScoreBar,
+  DataTable,
+  type Column,
+  type StatusBadgeVariant,
+} from '@alfanumrik/ui/admin-ui';
+import { LineChart, BarChart, type ChartSeries } from '@alfanumrik/ui/admin-ui/charts';
 
 /* ─────────────────────────────────────────────────────────────
    BILINGUAL HELPER (P7)
@@ -42,6 +55,12 @@ interface GradePerformance {
   quiz_count: number;
 }
 
+interface ScoreTrendPoint {
+  /** YYYY-MM-DD */
+  date: string;
+  avg_score: number;
+}
+
 interface SchoolOverviewData {
   total_quizzes: number;
   avg_score: number;
@@ -49,6 +68,8 @@ interface SchoolOverviewData {
   completion_rate: number;
   subject_performance: SubjectPerformance[];
   grade_performance: GradePerformance[];
+  /** Phase 2 Task 2.2 — additive, optional (older API responses may omit it). */
+  score_trend?: ScoreTrendPoint[];
 }
 
 interface ClassOption {
@@ -125,16 +146,13 @@ const TABS: { key: ReportTab; labelEn: string; labelHi: string }[] = [
 const GRADE_VALUES = ['6', '7', '8', '9', '10', '11', '12'] as const;
 
 /* ─────────────────────────────────────────────────────────────
-   STYLE HELPERS
+   STYLE HELPERS (P10.1.3 — token-driven; StatusBadge owns the actual color)
 ───────────────────────────────────────────────────────────── */
-const SUCCESS_COLOR = '#22C55E';
-const WARNING_COLOR = '#EAB308';
-const DANGER_COLOR = '#EF4444';
-
-function scoreColor(score: number): string {
-  if (score >= 80) return SUCCESS_COLOR;
-  if (score >= 50) return WARNING_COLOR;
-  return DANGER_COLOR;
+/** Score → severity variant. Same 80/50 thresholds the page always used. */
+function scoreVariant(score: number): StatusBadgeVariant {
+  if (score >= 80) return 'success';
+  if (score >= 50) return 'warning';
+  return 'danger';
 }
 
 function gapStatusLabel(status: string, isHi: boolean): string {
@@ -143,10 +161,23 @@ function gapStatusLabel(status: string, isHi: boolean): string {
   return t(isHi, 'Good', 'अच्छा');
 }
 
-function gapStatusColor(status: string): string {
-  if (status === 'critical') return DANGER_COLOR;
-  if (status === 'needs_attention') return WARNING_COLOR;
-  return SUCCESS_COLOR;
+function gapStatusVariant(status: string): StatusBadgeVariant {
+  if (status === 'critical') return 'danger';
+  if (status === 'needs_attention') return 'warning';
+  return 'success';
+}
+
+/** StatusBadgeVariant → CSS token, for chart bar colour-banding (Task 2.3).
+ *  Single source so the BarChart's per-bar fill and the StatusBadge pill
+ *  always agree on the same severity → colour mapping. */
+function variantColor(variant: StatusBadgeVariant): string {
+  return `var(--${variant})`;
+}
+
+/** Numeric rank so gap severity can be sorted in the intended order
+ *  (critical → needs_attention → good) rather than alphabetically. */
+function gapStatusRank(status: string): number {
+  return status === 'critical' ? 0 : status === 'needs_attention' ? 1 : 2;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -174,185 +205,11 @@ function TableSkeleton({ rows = 4 }: { rows?: number }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   STAT CARD (inline for this page)
-───────────────────────────────────────────────────────────── */
-function ReportStatCard({ value, label, color }: { value: string | number; label: string; color: string }) {
-  return (
-    <div
-      style={{
-        background: '#fff',
-        border: '1px solid #e5e7eb',
-        borderRadius: 12,
-        padding: '16px 14px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
-      }}
-    >
-      <span style={{ fontSize: 24, fontWeight: 700, color, fontFamily: 'Sora, system-ui, sans-serif' }}>
-        {value}
-      </span>
-      <span style={{ fontSize: 12, fontWeight: 500, color: '#6b7280' }}>{label}</span>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────
-   SORTABLE TABLE
-───────────────────────────────────────────────────────────── */
-type SortDir = 'asc' | 'desc';
-
-interface TableColumn<T> {
-  key: string;
-  label: string;
-  render: (row: T) => React.ReactNode;
-  sortValue?: (row: T) => number | string;
-  align?: 'left' | 'right' | 'center';
-}
-
-function SortableTable<T>({ columns, data, defaultSort, defaultDir = 'desc' }: {
-  columns: TableColumn<T>[];
-  data: T[];
-  defaultSort?: string;
-  defaultDir?: SortDir;
-}) {
-  const [sortKey, setSortKey] = useState(defaultSort || columns[0]?.key || '');
-  const [sortDir, setSortDir] = useState<SortDir>(defaultDir);
-
-  const sorted = useMemo(() => {
-    const col = columns.find((c) => c.key === sortKey);
-    if (!col?.sortValue) return data;
-    const copy = [...data];
-    copy.sort((a, b) => {
-      const va = col.sortValue!(a);
-      const vb = col.sortValue!(b);
-      if (typeof va === 'number' && typeof vb === 'number') {
-        return sortDir === 'asc' ? va - vb : vb - va;
-      }
-      const sa = String(va);
-      const sb = String(vb);
-      return sortDir === 'asc' ? sa.localeCompare(sb) : sb.localeCompare(sa);
-    });
-    return copy;
-  }, [data, sortKey, sortDir, columns]);
-
-  const handleSort = (key: string) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('desc');
-    }
-  };
-
-  return (
-    <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid #e5e7eb' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ background: '#f9fafb' }}>
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                onClick={() => col.sortValue && handleSort(col.key)}
-                style={{
-                  padding: '10px 12px',
-                  textAlign: col.align || 'left',
-                  fontWeight: 600,
-                  color: '#374151',
-                  cursor: col.sortValue ? 'pointer' : 'default',
-                  userSelect: 'none',
-                  whiteSpace: 'nowrap',
-                  borderBottom: '1px solid #e5e7eb',
-                }}
-              >
-                {col.label}
-                {col.sortValue && sortKey === col.key && (
-                  <span style={{ marginLeft: 4, fontSize: 10 }}>
-                    {sortDir === 'asc' ? '\u25B2' : '\u25BC'}
-                  </span>
-                )}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((row, idx) => (
-            <tr
-              key={idx}
-              style={{
-                background: idx % 2 === 0 ? '#fff' : '#f9fafb',
-                borderBottom: idx < sorted.length - 1 ? '1px solid #f3f4f6' : undefined,
-              }}
-            >
-              {columns.map((col) => (
-                <td
-                  key={col.key}
-                  style={{
-                    padding: '10px 12px',
-                    textAlign: col.align || 'left',
-                    color: '#374151',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {col.render(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────
-   SCORE BAR (simple inline bar for student subject scores)
-───────────────────────────────────────────────────────────── */
-function ScoreBar({ score, label }: { score: number; label: string }) {
-  const color = scoreColor(score);
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-      <span style={{ fontSize: 12, fontWeight: 500, color: '#374151', minWidth: 100, textAlign: 'right' }}>
-        {label}
-      </span>
-      <div style={{ flex: 1, background: '#f3f4f6', borderRadius: 6, height: 18, overflow: 'hidden', position: 'relative' }}>
-        <div
-          style={{
-            width: `${Math.min(100, Math.max(0, score))}%`,
-            height: '100%',
-            background: color,
-            borderRadius: 6,
-            transition: 'width 0.3s ease',
-          }}
-        />
-        <span
-          style={{
-            position: 'absolute',
-            right: 6,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            fontSize: 10,
-            fontWeight: 700,
-            color: score > 30 ? '#fff' : '#374151',
-          }}
-        >
-          {Math.round(score)}%
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminReportsPage() {
-  const router = useRouter();
-  const { authUserId, isLoading: authLoading, isHi } = useAuth();
-
-  /* ── Auth & school state ── */
-  const [schoolId, setSchoolId] = useState<string | null>(null);
-  const [loadingAdmin, setLoadingAdmin] = useState(true);
+  const { schoolId, isLoading: loadingAdmin } = useSchoolAdminAuth();
+  const { isHi } = useAuth();
 
   /* ── Tab state ── */
   const [activeTab, setActiveTab] = useState<ReportTab>('school_overview');
@@ -390,58 +247,12 @@ export default function SchoolAdminReportsPage() {
   const [gapsError, setGapsError] = useState<string | null>(null);
 
   /* ─────────────────────────────────────────────────────────────
-     AUTH HELPERS
-  ───────────────────────────────────────────────────────────── */
-  const getToken = useCallback(async (): Promise<string | null> => {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? null;
-  }, []);
-
-  const fetchAdminRecord = useCallback(async () => {
-    if (!authUserId) return;
-    setLoadingAdmin(true);
-
-    const { data, error } = await supabase
-      .from('school_admins')
-      .select('school_id')
-      .eq('auth_user_id', authUserId)
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (error || !data) {
-      router.replace('/login');
-      return;
-    }
-
-    setSchoolId(data.school_id as string);
-    setLoadingAdmin(false);
-  }, [authUserId, router]);
-
-  /* ── Auth redirect guard ── */
-  useEffect(() => {
-    if (!authLoading && !authUserId) {
-      router.replace('/login');
-    }
-  }, [authLoading, authUserId, router]);
-
-  /* ── Fetch admin record once auth is ready ── */
-  useEffect(() => {
-    if (!authLoading && authUserId) {
-      fetchAdminRecord();
-    }
-  }, [authLoading, authUserId, fetchAdminRecord]);
-
-  /* ─────────────────────────────────────────────────────────────
-     REPORT API HELPER
+     REPORT API HELPER — routed through authedFetch (Task 1.5): forwards the
+     Bearer token itself, so callers no longer manage getToken()/headers.
   ───────────────────────────────────────────────────────────── */
   const fetchReport = useCallback(async (type: string, params: Record<string, string> = {}): Promise<any> => {
-    const token = await getToken();
-    if (!token) throw new Error('Not authenticated');
-
     const qs = new URLSearchParams({ type, ...params });
-    const res = await fetch(`/api/school-admin/reports?${qs.toString()}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await authedFetch(`/api/school-admin/reports?${qs.toString()}`);
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -451,7 +262,7 @@ export default function SchoolAdminReportsPage() {
     const json = await res.json();
     if (!json.success) throw new Error(json.error || 'Unknown error');
     return json.data;
-  }, [getToken]);
+  }, []);
 
   /* ─────────────────────────────────────────────────────────────
      TAB 1: SCHOOL OVERVIEW
@@ -474,17 +285,10 @@ export default function SchoolAdminReportsPage() {
      TAB 2: CLASS PERFORMANCE
   ───────────────────────────────────────────────────────────── */
   const loadClassOptions = useCallback(async () => {
-    const token = await getToken();
-    if (!token) {
-      setClassOptionsError(t(isHi, 'Not authenticated', 'प्रमाणित नहीं'));
-      return;
-    }
     setClassOptionsLoading(true);
     setClassOptionsError(null);
     try {
-      const res = await fetch('/api/school-admin/classes', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authedFetch('/api/school-admin/classes');
       if (!res.ok) {
         // 403 (reports-only admin lacks class.manage) / 500 etc. — surface it
         // instead of silently leaving the dropdown empty.
@@ -501,7 +305,7 @@ export default function SchoolAdminReportsPage() {
     } finally {
       setClassOptionsLoading(false);
     }
-  }, [getToken, isHi]);
+  }, [isHi]);
 
   const loadClassPerformance = useCallback(async (classId: string) => {
     if (!schoolId || !classId) return;
@@ -527,12 +331,8 @@ export default function SchoolAdminReportsPage() {
     }
     setStudentSearchLoading(true);
     try {
-      const token = await getToken();
-      if (!token) return;
       const qs = new URLSearchParams({ type: 'student_search', query: query.trim() });
-      const res = await fetch(`/api/school-admin/reports?${qs.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await authedFetch(`/api/school-admin/reports?${qs.toString()}`);
       if (res.ok) {
         const json = await res.json();
         setStudentSearchResults((json.data ?? []) as StudentSearchResult[]);
@@ -542,7 +342,7 @@ export default function SchoolAdminReportsPage() {
     } finally {
       setStudentSearchLoading(false);
     }
-  }, [schoolId, getToken]);
+  }, [schoolId]);
 
   const loadStudentDetail = useCallback(async (studentId: string) => {
     if (!schoolId) return;
@@ -670,9 +470,7 @@ export default function SchoolAdminReportsPage() {
   /* ─────────────────────────────────────────────────────────────
      LOADING / AUTH STATES
   ───────────────────────────────────────────────────────────── */
-  const isPageLoading = authLoading || loadingAdmin;
-
-  if (isPageLoading) {
+  if (loadingAdmin) {
     return (
       <div className="space-y-4">
         <div style={{ display: 'flex', gap: 8 }}>
@@ -711,7 +509,7 @@ export default function SchoolAdminReportsPage() {
     if (overviewError) {
       return (
         <Card className="text-center py-8">
-          <p style={{ color: DANGER_COLOR, fontSize: 14, marginBottom: 12 }}>{overviewError}</p>
+          <p className="text-danger text-sm mb-3">{overviewError}</p>
           <Button variant="primary" onClick={loadOverview}>
             {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
           </Button>
@@ -723,41 +521,28 @@ export default function SchoolAdminReportsPage() {
 
     const { total_quizzes, avg_score, active_students, completion_rate, subject_performance, grade_performance } = overviewData;
 
-    const subjectCols: TableColumn<SubjectPerformance>[] = [
+    const subjectCols: Column<SubjectPerformance & Record<string, unknown>>[] = [
       {
         key: 'subject',
         label: t(isHi, 'Subject', 'विषय'),
-        render: (r) => <span style={{ fontWeight: 600 }}>{r.subject}</span>,
-        sortValue: (r) => r.subject,
+        render: (r) => <span className="font-semibold">{r.subject}</span>,
       },
       {
         key: 'quiz_count',
         label: t(isHi, 'Quizzes', 'क्विज़'),
-        render: (r) => r.quiz_count,
-        sortValue: (r) => r.quiz_count,
-        align: 'right',
       },
       {
         key: 'avg_score',
         label: t(isHi, 'Avg Score', 'औसत स्कोर'),
-        render: (r) => (
-          <span style={{ fontWeight: 700, color: scoreColor(r.avg_score) }}>
-            {Math.round(r.avg_score)}%
-          </span>
-        ),
-        sortValue: (r) => r.avg_score,
-        align: 'right',
+        render: (r) => <StatusBadge label={`${Math.round(r.avg_score)}%`} variant={scoreVariant(r.avg_score)} />,
       },
       {
         key: 'student_count',
         label: t(isHi, 'Students', 'छात्र'),
-        render: (r) => r.student_count,
-        sortValue: (r) => r.student_count,
-        align: 'right',
       },
     ];
 
-    const gradeCols: TableColumn<GradePerformance>[] = [
+    const gradeCols: Column<GradePerformance & Record<string, unknown>>[] = [
       {
         key: 'grade',
         label: t(isHi, 'Grade', 'कक्षा'),
@@ -766,32 +551,43 @@ export default function SchoolAdminReportsPage() {
             {t(isHi, `Grade ${r.grade}`, `कक्षा ${r.grade}`)}
           </Badge>
         ),
-        sortValue: (r) => r.grade,
       },
       {
         key: 'student_count',
         label: t(isHi, 'Students', 'छात्र'),
-        render: (r) => r.student_count,
-        sortValue: (r) => r.student_count,
-        align: 'right',
       },
       {
         key: 'avg_score',
         label: t(isHi, 'Avg Score', 'औसत स्कोर'),
-        render: (r) => (
-          <span style={{ fontWeight: 700, color: scoreColor(r.avg_score) }}>
-            {Math.round(r.avg_score)}%
-          </span>
-        ),
-        sortValue: (r) => r.avg_score,
-        align: 'right',
+        render: (r) => <StatusBadge label={`${Math.round(r.avg_score)}%`} variant={scoreVariant(r.avg_score)} />,
       },
       {
         key: 'quiz_count',
         label: t(isHi, 'Quizzes', 'क्विज़'),
-        render: (r) => r.quiz_count,
-        sortValue: (r) => r.quiz_count,
-        align: 'right',
+      },
+    ];
+
+    const trendSeries: ChartSeries[] = [
+      {
+        name: t(isHi, 'Avg score %', 'औसत स्कोर %'),
+        data: (overviewData.score_trend ?? []).map((p) => ({ x: p.date, y: p.avg_score })),
+      },
+    ];
+
+    const subjectBarSeries: ChartSeries[] = [
+      {
+        name: t(isHi, 'Avg score %', 'औसत स्कोर %'),
+        data: subject_performance.map((s) => ({ x: s.subject, y: s.avg_score })),
+      },
+    ];
+
+    const gradeBarSeries: ChartSeries[] = [
+      {
+        name: t(isHi, 'Avg score %', 'औसत स्कोर %'),
+        data: grade_performance.map((g) => ({
+          x: t(isHi, `Grade ${g.grade}`, `कक्षा ${g.grade}`),
+          y: g.avg_score,
+        })),
       },
     ];
 
@@ -799,35 +595,62 @@ export default function SchoolAdminReportsPage() {
       <>
         {/* Stat cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          <ReportStatCard
+          <StatCard
             value={total_quizzes.toLocaleString('en-IN')}
             label={t(isHi, 'Total Quizzes', 'कुल क्विज़')}
-            color="var(--color-brand-primary, #7C3AED)"
+            accentColor="var(--color-brand-primary, #7C3AED)"
           />
-          <ReportStatCard
+          <StatCard
             value={`${Math.round(avg_score)}%`}
             label={t(isHi, 'Avg Score', 'औसत स्कोर')}
-            color={scoreColor(avg_score)}
+            accentColor={`var(--${scoreVariant(avg_score)})`}
           />
-          <ReportStatCard
+          <StatCard
             value={active_students.toLocaleString('en-IN')}
             label={t(isHi, 'Active Students', 'सक्रिय छात्र')}
-            color="var(--color-brand-secondary, #E8581C)"
+            accentColor="var(--color-brand-secondary, #E8581C)"
           />
-          <ReportStatCard
+          <StatCard
             value={`${Math.round(completion_rate)}%`}
             label={t(isHi, 'Completion Rate', 'पूर्णता दर')}
-            color={scoreColor(completion_rate)}
+            accentColor={`var(--${scoreVariant(completion_rate)})`}
           />
         </div>
 
-        {/* Subject performance table */}
+        {/* Score trend line (Task 2.2) */}
+        <ElevatedCard variant="elevated" className="p-4" style={{ marginTop: 24 }}>
+          <h3 className="text-sm font-bold text-foreground mb-2.5">
+            {t(isHi, 'Score Trend', 'स्कोर प्रवृत्ति')}
+          </h3>
+          <LineChart
+            series={trendSeries}
+            yLabel={t(isHi, 'Avg score %', 'औसत स्कोर %')}
+            height={220}
+            emptyLabel={t(isHi, 'No score trend data yet', 'अभी कोई स्कोर प्रवृत्ति डेटा नहीं')}
+          />
+        </ElevatedCard>
+
+        {/* Subject performance bar + table */}
         <div style={{ marginTop: 24 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111', marginBottom: 10 }}>
+          <h3 className="text-sm font-bold text-foreground mb-2.5">
             {t(isHi, 'Subject Performance', 'विषय प्रदर्शन')}
           </h3>
           {subject_performance.length > 0 ? (
-            <SortableTable columns={subjectCols} data={subject_performance} defaultSort="avg_score" />
+            <>
+              <ElevatedCard variant="elevated" className="p-4 mb-3">
+                <BarChart
+                  series={subjectBarSeries}
+                  yLabel={t(isHi, 'Avg score %', 'औसत स्कोर %')}
+                  height={220}
+                  emptyLabel={t(isHi, 'No subject data yet', 'अभी कोई विषय डेटा नहीं')}
+                />
+              </ElevatedCard>
+              <DataTable
+                columns={subjectCols}
+                data={subject_performance as (SubjectPerformance & Record<string, unknown>)[]}
+                keyField="subject"
+              />
+            </>
           ) : (
             <EmptyState
               icon="---"
@@ -837,13 +660,27 @@ export default function SchoolAdminReportsPage() {
           )}
         </div>
 
-        {/* Grade performance table */}
+        {/* Grade performance bar + table */}
         <div style={{ marginTop: 24 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#111', marginBottom: 10 }}>
+          <h3 className="text-sm font-bold text-foreground mb-2.5">
             {t(isHi, 'Grade Performance', 'कक्षा प्रदर्शन')}
           </h3>
           {grade_performance.length > 0 ? (
-            <SortableTable columns={gradeCols} data={grade_performance} defaultSort="avg_score" />
+            <>
+              <ElevatedCard variant="elevated" className="p-4 mb-3">
+                <BarChart
+                  series={gradeBarSeries}
+                  yLabel={t(isHi, 'Avg score %', 'औसत स्कोर %')}
+                  height={220}
+                  emptyLabel={t(isHi, 'No grade data yet', 'अभी कोई कक्षा डेटा नहीं')}
+                />
+              </ElevatedCard>
+              <DataTable
+                columns={gradeCols}
+                data={grade_performance as (GradePerformance & Record<string, unknown>)[]}
+                keyField="grade"
+              />
+            </>
           ) : (
             <EmptyState
               icon="---"
@@ -858,6 +695,23 @@ export default function SchoolAdminReportsPage() {
 
   /* ── Tab 2: Class Performance ── */
   function renderClassPerformance() {
+    const breakdownCols: Column<ClassSubjectBreakdown & Record<string, unknown>>[] = [
+      {
+        key: 'subject',
+        label: t(isHi, 'Subject', 'विषय'),
+        render: (r) => <span className="font-semibold">{r.subject}</span>,
+      },
+      {
+        key: 'avg_score',
+        label: t(isHi, 'Avg Score', 'औसत स्कोर'),
+        render: (r) => <StatusBadge label={`${Math.round(r.avg_score)}%`} variant={scoreVariant(r.avg_score)} />,
+      },
+      {
+        key: 'quiz_count',
+        label: t(isHi, 'Quizzes', 'क्विज़'),
+      },
+    ];
+
     return (
       <>
         {/* Class selector */}
@@ -875,35 +729,20 @@ export default function SchoolAdminReportsPage() {
           {classOptionsError && !classOptionsLoading && (
             <div
               role="alert"
+              className="mt-2 flex items-center gap-2.5 flex-wrap rounded-lg px-3 py-2"
               style={{
-                marginTop: 8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                flexWrap: 'wrap',
-                padding: '8px 12px',
-                borderRadius: 8,
-                background: `${DANGER_COLOR}0D`,
-                border: `1px solid ${DANGER_COLOR}40`,
+                background: 'color-mix(in srgb, var(--danger) 5%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
               }}
             >
-              <span style={{ fontSize: 12, color: DANGER_COLOR, flex: 1, minWidth: 160 }}>
+              <span className="text-xs text-danger flex-1" style={{ minWidth: 160 }}>
                 {t(isHi, "Couldn't load classes.", 'कक्षाएं लोड नहीं हो सकीं।')}
               </span>
               <button
                 type="button"
                 onClick={loadClassOptions}
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: DANGER_COLOR,
-                  background: 'transparent',
-                  border: `1px solid ${DANGER_COLOR}`,
-                  borderRadius: 6,
-                  padding: '4px 12px',
-                  cursor: 'pointer',
-                  minHeight: 28,
-                }}
+                className="text-xs font-bold text-danger bg-transparent rounded-md px-3 cursor-pointer"
+                style={{ border: '1px solid var(--danger)', minHeight: 28 }}
               >
                 {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
               </button>
@@ -916,7 +755,7 @@ export default function SchoolAdminReportsPage() {
             !classOptionsLoading &&
             classOptionsLoaded &&
             classOptions.length === 0 && (
-              <p style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
+              <p className="mt-2 text-xs text-muted-foreground">
                 {t(isHi, 'No classes found for this school yet.', 'इस स्कूल के लिए अभी कोई कक्षा नहीं मिली।')}
               </p>
             )}
@@ -950,7 +789,7 @@ export default function SchoolAdminReportsPage() {
         {classError && !classLoading && (
           <div style={{ marginTop: 20 }}>
             <Card className="text-center py-6">
-              <p style={{ color: DANGER_COLOR, fontSize: 14, marginBottom: 12 }}>{classError}</p>
+              <p className="text-danger text-sm mb-3">{classError}</p>
               <Button variant="primary" onClick={() => selectedClassId && loadClassPerformance(selectedClassId)}>
                 {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
               </Button>
@@ -963,44 +802,34 @@ export default function SchoolAdminReportsPage() {
           <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
             {/* Stats */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-              <ReportStatCard
+              <StatCard
                 value={`${Math.round(classData.class_avg_score)}%`}
                 label={t(isHi, 'Class Avg Score', 'कक्षा औसत स्कोर')}
-                color={scoreColor(classData.class_avg_score)}
+                accentColor={`var(--${scoreVariant(classData.class_avg_score)})`}
               />
-              <ReportStatCard
+              <StatCard
                 value={`${Math.round(classData.completion_rate)}%`}
                 label={t(isHi, 'Completion Rate', 'पूर्णता दर')}
-                color={scoreColor(classData.completion_rate)}
+                accentColor={`var(--${scoreVariant(classData.completion_rate)})`}
               />
             </div>
 
             {/* Top 5 */}
             {classData.top_students.length > 0 && (
               <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 8 }}>
+                <h4 className="text-[13px] font-bold text-foreground mb-2">
                   {t(isHi, 'Top 5 Students', 'शीर्ष 5 छात्र')}
                 </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div className="flex flex-col gap-1.5">
                   {classData.top_students.map((s, i) => (
                     <div
                       key={i}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '8px 12px',
-                        background: '#fff',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: 8,
-                      }}
+                      className="flex justify-between items-center px-3 py-2 bg-surface-1 border border-surface-3 rounded-lg"
                     >
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
+                      <span className="text-[13px] font-medium text-foreground">
                         {i + 1}. {s.name}
                       </span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor(s.avg_score) }}>
-                        {Math.round(s.avg_score)}%
-                      </span>
+                      <StatusBadge label={`${Math.round(s.avg_score)}%`} variant={scoreVariant(s.avg_score)} />
                     </div>
                   ))}
                 </div>
@@ -1010,70 +839,48 @@ export default function SchoolAdminReportsPage() {
             {/* Bottom 5 */}
             {classData.bottom_students.length > 0 && (
               <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 8 }}>
+                <h4 className="text-[13px] font-bold text-foreground mb-2">
                   {t(isHi, 'Bottom 5 Students', 'निचले 5 छात्र')}
                 </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div className="flex flex-col gap-1.5">
                   {classData.bottom_students.map((s, i) => (
                     <div
                       key={i}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '8px 12px',
-                        background: '#fff',
-                        border: '1px solid #e5e7eb',
-                        borderRadius: 8,
-                      }}
+                      className="flex justify-between items-center px-3 py-2 bg-surface-1 border border-surface-3 rounded-lg"
                     >
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>
+                      <span className="text-[13px] font-medium text-foreground">
                         {i + 1}. {s.name}
                       </span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor(s.avg_score) }}>
-                        {Math.round(s.avg_score)}%
-                      </span>
+                      <StatusBadge label={`${Math.round(s.avg_score)}%`} variant={scoreVariant(s.avg_score)} />
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Subject breakdown */}
+            {/* Subject breakdown bar + table (Task 2.3) */}
             {classData.subject_breakdown.length > 0 && (
               <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 8 }}>
+                <h4 className="text-[13px] font-bold text-foreground mb-2">
                   {t(isHi, 'Subject Breakdown', 'विषय वार विश्लेषण')}
                 </h4>
-                <SortableTable
-                  columns={[
-                    {
-                      key: 'subject',
-                      label: t(isHi, 'Subject', 'विषय'),
-                      render: (r: ClassSubjectBreakdown) => <span style={{ fontWeight: 600 }}>{r.subject}</span>,
-                      sortValue: (r: ClassSubjectBreakdown) => r.subject,
-                    },
-                    {
-                      key: 'avg_score',
-                      label: t(isHi, 'Avg Score', 'औसत स्कोर'),
-                      render: (r: ClassSubjectBreakdown) => (
-                        <span style={{ fontWeight: 700, color: scoreColor(r.avg_score) }}>
-                          {Math.round(r.avg_score)}%
-                        </span>
-                      ),
-                      sortValue: (r: ClassSubjectBreakdown) => r.avg_score,
-                      align: 'right' as const,
-                    },
-                    {
-                      key: 'quiz_count',
-                      label: t(isHi, 'Quizzes', 'क्विज़'),
-                      render: (r: ClassSubjectBreakdown) => r.quiz_count,
-                      sortValue: (r: ClassSubjectBreakdown) => r.quiz_count,
-                      align: 'right' as const,
-                    },
-                  ]}
-                  data={classData.subject_breakdown}
-                  defaultSort="avg_score"
+                <ElevatedCard variant="elevated" className="p-4 mb-3">
+                  <BarChart
+                    series={[
+                      {
+                        name: t(isHi, 'Avg score %', 'औसत स्कोर %'),
+                        data: classData.subject_breakdown.map((s) => ({ x: s.subject, y: s.avg_score })),
+                      },
+                    ]}
+                    yLabel={t(isHi, 'Avg score %', 'औसत स्कोर %')}
+                    height={220}
+                    emptyLabel={t(isHi, 'No subject data yet', 'अभी कोई विषय डेटा नहीं')}
+                  />
+                </ElevatedCard>
+                <DataTable
+                  columns={breakdownCols}
+                  data={classData.subject_breakdown as (ClassSubjectBreakdown & Record<string, unknown>)[]}
+                  keyField="subject"
                 />
               </div>
             )}
@@ -1105,15 +912,8 @@ export default function SchoolAdminReportsPage() {
         {/* Search results dropdown */}
         {studentSearchQuery.trim().length >= 2 && studentSearchResults.length > 0 && !selectedStudentId && (
           <div
-            style={{
-              background: '#fff',
-              border: '1px solid #e5e7eb',
-              borderRadius: 8,
-              marginTop: 4,
-              maxWidth: 400,
-              maxHeight: 240,
-              overflowY: 'auto',
-            }}
+            className="bg-surface-1 border border-surface-3 rounded-lg mt-1 overflow-y-auto"
+            style={{ maxWidth: 400, maxHeight: 240 }}
           >
             {studentSearchResults.map((s) => (
               <button
@@ -1123,21 +923,9 @@ export default function SchoolAdminReportsPage() {
                   setStudentSearchQuery(s.name);
                   setStudentSearchResults([]);
                 }}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  width: '100%',
-                  padding: '10px 12px',
-                  border: 'none',
-                  borderBottom: '1px solid #f3f4f6',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontSize: 13,
-                }}
+                className="flex justify-between items-center w-full px-3 py-2.5 border-0 border-b border-surface-3 bg-transparent cursor-pointer text-left text-[13px]"
               >
-                <span style={{ fontWeight: 500, color: '#111' }}>{s.name}</span>
+                <span className="font-medium text-foreground">{s.name}</span>
                 <Badge color="var(--color-brand-primary, #7C3AED)" size="sm">
                   {t(isHi, `Grade ${s.grade}`, `कक्षा ${s.grade}`)}
                 </Badge>
@@ -1158,7 +946,7 @@ export default function SchoolAdminReportsPage() {
           !studentSearchLoading &&
           studentSearchResults.length === 0 &&
           !selectedStudentId && (
-            <p style={{ marginTop: 8, fontSize: 13, color: '#6b7280' }}>
+            <p className="mt-2 text-[13px] text-muted-foreground">
               {t(isHi, 'No students found.', 'कोई छात्र नहीं मिला।')}
             </p>
           )}
@@ -1179,7 +967,7 @@ export default function SchoolAdminReportsPage() {
         {studentError && !studentLoading && (
           <div style={{ marginTop: 20 }}>
             <Card className="text-center py-6">
-              <p style={{ color: DANGER_COLOR, fontSize: 14, marginBottom: 12 }}>{studentError}</p>
+              <p className="text-danger text-sm mb-3">{studentError}</p>
               <Button variant="primary" onClick={() => selectedStudentId && loadStudentDetail(selectedStudentId)}>
                 {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
               </Button>
@@ -1190,100 +978,80 @@ export default function SchoolAdminReportsPage() {
         {/* Student detail loaded */}
         {studentData && !studentLoading && !studentError && (
           <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* Student profile card */}
-            <div
-              style={{
-                background: '#fff',
-                border: '1px solid #e5e7eb',
-                borderRadius: 12,
-                padding: 20,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                flexWrap: 'wrap',
-                gap: 16,
-              }}
-            >
+            {/* Student profile card (Task 2.5 — canonical Card primitive) */}
+            <ElevatedCard variant="elevated" className="p-5 flex justify-between items-start flex-wrap gap-4">
               <div>
-                <h4 style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 4 }}>
+                <h4 className="text-base font-bold text-foreground mb-1">
                   {studentData.student.name}
                 </h4>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div className="flex gap-2 flex-wrap items-center">
                   <Badge color="var(--color-brand-primary, #7C3AED)" size="sm">
                     {t(isHi, `Grade ${studentData.student.grade}`, `कक्षा ${studentData.student.grade}`)}
                   </Badge>
-                  <span style={{ fontSize: 12, color: '#6b7280' }}>
+                  <span className="text-xs text-muted-foreground">
                     {studentData.student.xp_total.toLocaleString('en-IN')} XP
                   </span>
                 </div>
                 {studentData.student.last_active && (
-                  <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+                  <p className="text-[11px] text-muted-foreground mt-1.5">
                     {t(isHi, 'Last active:', 'अंतिम सक्रिय:')}{' '}
                     {new Date(studentData.student.last_active).toLocaleDateString(isHi ? 'hi-IN' : 'en-IN')}
                   </p>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-brand-secondary, #E8581C)' }}>
+              <div className="flex gap-4 flex-wrap">
+                <div className="text-center">
+                  <span className="text-[22px] font-bold" style={{ color: 'var(--color-brand-secondary, #E8581C)' }}>
                     {studentData.total_quizzes}
                   </span>
-                  <p style={{ fontSize: 11, color: '#6b7280' }}>{t(isHi, 'Quizzes', 'क्विज़')}</p>
+                  <p className="text-[11px] text-muted-foreground">{t(isHi, 'Quizzes', 'क्विज़')}</p>
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: scoreColor(studentData.avg_score) }}>
-                    {Math.round(studentData.avg_score)}%
-                  </span>
-                  <p style={{ fontSize: 11, color: '#6b7280' }}>{t(isHi, 'Avg Score', 'औसत स्कोर')}</p>
+                <div className="text-center">
+                  <StatusBadge
+                    label={`${Math.round(studentData.avg_score)}%`}
+                    variant={scoreVariant(studentData.avg_score)}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{t(isHi, 'Avg Score', 'औसत स्कोर')}</p>
                 </div>
               </div>
-            </div>
+            </ElevatedCard>
 
-            {/* Best / weakest subjects */}
-            {(studentData.best_subject || studentData.weakest_subject) && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {studentData.best_subject && (
-                  <div
-                    style={{
-                      background: `${SUCCESS_COLOR}0D`,
-                      border: `1px solid ${SUCCESS_COLOR}40`,
-                      borderRadius: 10,
-                      padding: 14,
-                    }}
-                  >
-                    <p style={{ fontSize: 11, fontWeight: 600, color: SUCCESS_COLOR, marginBottom: 4 }}>
-                      {t(isHi, 'Best Subject', 'सबसे अच्छा विषय')}
-                    </p>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{studentData.best_subject}</p>
-                  </div>
-                )}
-                {studentData.weakest_subject && (
-                  <div
-                    style={{
-                      background: `${DANGER_COLOR}0D`,
-                      border: `1px solid ${DANGER_COLOR}40`,
-                      borderRadius: 10,
-                      padding: 14,
-                    }}
-                  >
-                    <p style={{ fontSize: 11, fontWeight: 600, color: DANGER_COLOR, marginBottom: 4 }}>
-                      {t(isHi, 'Weakest Subject', 'सबसे कमज़ोर विषय')}
-                    </p>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{studentData.weakest_subject}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Subject score bars */}
+            {/* Subject score bars (Task 1.4/2.4). Best/weakest is now a caption
+                UNDER the chart rather than two separate colored callout boxes
+                — same data (studentData.best_subject/weakest_subject), single
+                visual, no duplicate severity vocabulary. */}
             {studentData.subject_scores.length > 0 && (
               <div>
-                <h4 style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 10 }}>
+                <h4 className="text-[13px] font-bold text-foreground mb-2.5">
                   {t(isHi, 'Subject Scores', 'विषय अंक')}
                 </h4>
-                {studentData.subject_scores.map((ss) => (
-                  <ScoreBar key={ss.subject} label={ss.subject} score={ss.avg_score} />
-                ))}
+                <div className="flex flex-col gap-2">
+                  {studentData.subject_scores.map((ss) => (
+                    <div key={ss.subject} className="flex items-center gap-2.5">
+                      <span className="text-xs font-medium text-foreground" style={{ minWidth: 100, textAlign: 'right' }}>
+                        {ss.subject}
+                      </span>
+                      <ScoreBar score={ss.avg_score} label={ss.subject} width={160} />
+                    </div>
+                  ))}
+                </div>
+                {(studentData.best_subject || studentData.weakest_subject) && (
+                  <p className="text-[11px] text-muted-foreground mt-2.5">
+                    {studentData.best_subject && (
+                      <>
+                        {t(isHi, 'Best: ', 'सबसे अच्छा: ')}
+                        <span className="font-semibold text-success">{studentData.best_subject}</span>
+                      </>
+                    )}
+                    {studentData.best_subject && studentData.weakest_subject && '  ·  '}
+                    {studentData.weakest_subject && (
+                      <>
+                        {t(isHi, 'Weakest: ', 'सबसे कमज़ोर: ')}
+                        <span className="font-semibold text-danger">{studentData.weakest_subject}</span>
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -1305,52 +1073,32 @@ export default function SchoolAdminReportsPage() {
 
   /* ── Tab 4: Subject Gaps ── */
   function renderSubjectGaps() {
-    const gapCols: TableColumn<SubjectGapEntry>[] = [
+    const gapCols: Column<SubjectGapEntry & { status_rank: number } & Record<string, unknown>>[] = [
       {
         key: 'subject',
         label: t(isHi, 'Subject', 'विषय'),
-        render: (r) => <span style={{ fontWeight: 600 }}>{r.subject}</span>,
-        sortValue: (r) => r.subject,
+        render: (r) => <span className="font-semibold">{r.subject}</span>,
       },
       {
         key: 'avg_score',
         label: t(isHi, 'Avg Score', 'औसत स्कोर'),
-        render: (r) => (
-          <span style={{ fontWeight: 700, color: scoreColor(r.avg_score) }}>
-            {Math.round(r.avg_score)}%
-          </span>
-        ),
-        sortValue: (r) => r.avg_score,
-        align: 'right',
+        render: (r) => <StatusBadge label={`${Math.round(r.avg_score)}%`} variant={scoreVariant(r.avg_score)} />,
       },
       {
         key: 'quiz_count',
         label: t(isHi, 'Quizzes', 'क्विज़'),
-        render: (r) => r.quiz_count,
-        sortValue: (r) => r.quiz_count,
-        align: 'right',
       },
       {
-        key: 'status',
+        // Sorts on the numeric severity rank (critical → needs_attention →
+        // good) rather than the alphabetical `status` string; render still
+        // shows the bilingual label via a StatusBadge (Task 1.3).
+        key: 'status_rank',
         label: t(isHi, 'Status', 'स्थिति'),
-        render: (r) => (
-          <span
-            style={{
-              fontWeight: 700,
-              fontSize: 12,
-              color: gapStatusColor(r.status),
-              padding: '3px 10px',
-              borderRadius: 20,
-              background: `${gapStatusColor(r.status)}15`,
-              display: 'inline-block',
-            }}
-          >
-            {gapStatusLabel(r.status, isHi)}
-          </span>
-        ),
-        sortValue: (r) => (r.status === 'critical' ? 0 : r.status === 'needs_attention' ? 1 : 2),
+        render: (r) => <StatusBadge label={gapStatusLabel(r.status, isHi)} variant={gapStatusVariant(r.status)} />,
       },
     ];
+
+    const gapsRows = (gapsData?.gaps ?? []).map((g) => ({ ...g, status_rank: gapStatusRank(g.status) }));
 
     return (
       <>
@@ -1375,7 +1123,7 @@ export default function SchoolAdminReportsPage() {
         {gapsError && !gapsLoading && (
           <div style={{ marginTop: 16 }}>
             <Card className="text-center py-6">
-              <p style={{ color: DANGER_COLOR, fontSize: 14, marginBottom: 12 }}>{gapsError}</p>
+              <p className="text-danger text-sm mb-3">{gapsError}</p>
               <Button variant="primary" onClick={() => loadSubjectGaps(gapGradeFilter)}>
                 {t(isHi, 'Retry', 'दोबारा कोशिश करें')}
               </Button>
@@ -1387,7 +1135,30 @@ export default function SchoolAdminReportsPage() {
         {gapsData && !gapsLoading && !gapsError && (
           <div style={{ marginTop: 16 }}>
             {gapsData.gaps.length > 0 ? (
-              <SortableTable columns={gapCols} data={gapsData.gaps} defaultSort="status" defaultDir="asc" />
+              <>
+                {/* Severity-banded bar (Task 2.3) — SAME critical/needs_attention/
+                    good → danger/warning/success mapping as the StatusBadge
+                    column below (gapStatusVariant), via the shared variantColor
+                    helper. One consistent severity vocabulary across chart + table. */}
+                <ElevatedCard variant="elevated" className="p-4 mb-3">
+                  <BarChart
+                    series={[
+                      {
+                        name: t(isHi, 'Avg score %', 'औसत स्कोर %'),
+                        data: gapsData.gaps.map((g) => ({ x: g.subject, y: g.avg_score })),
+                      },
+                    ]}
+                    yLabel={t(isHi, 'Avg score %', 'औसत स्कोर %')}
+                    height={220}
+                    emptyLabel={t(isHi, 'No subject data available', 'कोई विषय डेटा उपलब्ध नहीं')}
+                    pointColor={(point) => {
+                      const gap = gapsData.gaps.find((g) => g.subject === point.x);
+                      return gap ? variantColor(gapStatusVariant(gap.status)) : undefined;
+                    }}
+                  />
+                </ElevatedCard>
+                <DataTable columns={gapCols} data={gapsRows} keyField="subject" />
+              </>
             ) : (
               <EmptyState
                 icon="---"
@@ -1416,13 +1187,7 @@ export default function SchoolAdminReportsPage() {
       <div
         role="tablist"
         aria-label={t(isHi, 'Report tabs', 'रिपोर्ट टैब')}
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '2px solid #e5e7eb',
-          marginBottom: 24,
-          overflowX: 'auto',
-        }}
+        className="flex gap-1 border-b-2 border-surface-3 mb-6 overflow-x-auto"
       >
         {TABS.map((tab) => {
           const isActive = activeTab === tab.key;
@@ -1432,18 +1197,14 @@ export default function SchoolAdminReportsPage() {
               role="tab"
               aria-selected={isActive}
               onClick={() => setActiveTab(tab.key)}
+              className="px-4 py-2.5 text-[13px] whitespace-nowrap transition-colors"
               style={{
-                padding: '10px 16px',
-                fontSize: 13,
                 fontWeight: isActive ? 700 : 500,
-                color: isActive ? 'var(--color-brand-primary, #7C3AED)' : '#6b7280',
+                color: isActive ? 'var(--color-brand-primary, #7C3AED)' : 'var(--text-3)',
                 background: 'transparent',
                 border: 'none',
                 borderBottom: isActive ? '2px solid var(--color-brand-primary, #7C3AED)' : '2px solid transparent',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
                 marginBottom: -2,
-                transition: 'color 0.15s, border-color 0.15s',
               }}
             >
               {t(isHi, tab.labelEn, tab.labelHi)}
