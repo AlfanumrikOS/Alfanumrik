@@ -44,7 +44,7 @@ jobs:
     name: OpenAPI contract is in sync with Zod source
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
