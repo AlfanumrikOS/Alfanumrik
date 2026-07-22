@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@alfanumrik/lib/logger';
 import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
 import { invalidateFlagCache } from '../../../../lib/feature-flags';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
@@ -575,12 +576,38 @@ export async function PATCH(request: NextRequest) {
           p_flag_name: patchFlagName,
           p_updates: effectiveUpdates,
           p_confirm: confirm,
-          p_actor_id: auth.userId,
+          // p_actor_id must be admin_users.id (the PK), not the Supabase Auth
+          // user id (auth.userId / admin_users.auth_user_id). The RPC writes
+          // p_actor_id verbatim into admin_audit_log.admin_id, which has an FK
+          // to admin_users.id -- passing auth.userId caused a class-23 FK
+          // violation (Postgres -> PostgREST 409), aborting the whole RPC
+          // transaction (including the flag UPDATE) and surfacing as a
+          // generic 500 because the error text didn't match either substring
+          // rpcErrorStatus() recognizes. Fixed 2026-07-22.
+          p_actor_id: auth.adminId,
         }),
       });
       if (!rpcRes.ok) {
         const text = await rpcRes.text();
-        return NextResponse.json({ error: 'Update failed' }, { status: rpcErrorStatus(text) });
+        const mappedStatus = rpcErrorStatus(text);
+        // Observability (2026-07-22): rpcErrorStatus() only recognizes two
+        // substrings (FLAG_NOT_FOUND, FLAG_CONFIRM_MISMATCH) and defaults
+        // everything else to 500 -- previously that default was silent, so a
+        // genuine, unrecognized Supabase/PostgREST error (e.g. a real
+        // constraint violation distinct from our own FLAG_CONFIRM_MISMATCH
+        // 409) was indistinguishable from an unknown failure in the logs.
+        // Always log the upstream status + response text so an unmapped
+        // error is diagnosable from the first occurrence, not just after a
+        // human happens to check the Vercel Function Invocation log by hand.
+        logger.error('feature_flags_rpc_write_failed', {
+          route: 'super-admin/feature-flags',
+          flag_name: patchFlagName,
+          upstream_status: rpcRes.status,
+          mapped_status: mappedStatus,
+          recognized: mappedStatus !== 500,
+          rpc_error_text: text.slice(0, 2000),
+        });
+        return NextResponse.json({ error: 'Update failed' }, { status: mappedStatus });
       }
       const rpcRow = await rpcRes.json(); // admin_flip_feature_flag RETURNS jsonb (a single object)
       updated = [rpcRow]; // normalize to the same array shape the raw-PATCH path returns
@@ -591,7 +618,16 @@ export async function PATCH(request: NextRequest) {
         body: JSON.stringify(safe),
       });
 
-      if (!res.ok) return NextResponse.json({ error: 'Update failed' }, { status: res.status });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        logger.error('feature_flags_patch_write_failed', {
+          route: 'super-admin/feature-flags',
+          flag_id: id,
+          upstream_status: res.status,
+          error_text: text.slice(0, 2000),
+        });
+        return NextResponse.json({ error: 'Update failed' }, { status: res.status });
+      }
 
       updated = await res.json();
       if (Array.isArray(updated) && updated.length === 0) {
