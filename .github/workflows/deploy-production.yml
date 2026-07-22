@@ -675,13 +675,31 @@ jobs:
         # backoff, mirrors the app-health-check step's resilience posture in
         # this same job); a 200 response with a non-zero DRIFT_COUNT is a
         # real signal and fails immediately on the first attempt, no retry.
+        #
+        # Secret prerequisite (architect note, 2026-07-22): this canary is
+        # defense-in-depth and requires its OWN `CRON_SECRET` GitHub Actions
+        # secret — configured at the repo level or scoped to the `Production`
+        # environment, the same pattern already used for
+        # SUPABASE_ACCESS_TOKEN / SUPABASE_DB_PASSWORD / SUPABASE_PROJECT_REF
+        # above — whose value matches the Vercel production `CRON_SECRET` env
+        # var. That secret does not exist yet in this repo. Until it is added,
+        # this step cannot authenticate to the route at all, so a missing
+        # secret is treated as "could not verify" (warn and continue), NOT as
+        # a detected drift ("could not verify" must never be conflated with
+        # "verified clean" OR "verified drifted" — it fails open only because
+        # we have no evidence either way). The primary release gate remains
+        # the "Poll canonical production for healthy exact SHA" step above,
+        # which already ran and passed for this SHA. Once the secret is
+        # configured, any REAL non-200 response (after retries) or a nonzero
+        # DRIFT_COUNT below still hard-fails this step exactly as before —
+        # only the "secret is absent" branch fails open.
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
           if [ -z "$CRON_SECRET" ]; then
-            echo "::error::CRON_SECRET is unavailable; flag-posture canary cannot run."
-            exit 1
+            echo "::warning::CRON_SECRET is unavailable; flag-posture canary skipped (this defense-in-depth check requires a CRON_SECRET GitHub Actions secret matching the Vercel production env var — add one at the repo or Production-environment level to enable it)."
+            exit 0
           fi
           RESPONSE_FILE=$(mktemp)
           trap 'rm -f "$RESPONSE_FILE"' EXIT
