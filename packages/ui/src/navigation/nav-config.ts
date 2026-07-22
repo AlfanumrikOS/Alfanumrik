@@ -12,13 +12,23 @@ export const CORE_TABS = [
 ];
 
 export const MORE_ITEMS = [
+  { href: '/dashboard', icon: '🏠', label: 'Dashboard', labelHi: 'डैशबोर्ड' },
   { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट' },
-  { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
+  { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
+  // Alfa OS Practice Center — flag-gated (ff_practice_os_v1). A v2 practice hub
+  // over the existing /quiz engine; only appears once its launch flag is ON.
+  { href: '/practice', icon: '⚡', label: 'Practice Center', labelHi: 'अभ्यास केंद्र', flagName: 'ff_practice_os_v1' },
   { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
   { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
+  // Alfa OS pre-test briefing hub — flag-gated (ff_test_os_v1). The single
+  // "Start an exam" front door; hands off to the existing exam runtime.
+  { href: '/exam-briefing', icon: '🧭', label: 'Exam Briefing', labelHi: 'परीक्षा ब्रीफ़िंग', flagName: 'ff_test_os_v1' },
   { href: '/leaderboard', icon: '🏆', label: 'Leaderboard', labelHi: 'लीडरबोर्ड' },
-  { href: '/learn', icon: '📚', label: 'Library', labelHi: 'अध्ययन सामग्री' },
+  { href: '/library', icon: '📚', label: 'Library', labelHi: 'अध्ययन सामग्री' },
   { href: '/refresh', icon: '🔁', label: 'Refresh', labelHi: 'ताज़ा करो' },
+  // Alfa OS Revision Center — flag-gated (ff_revision_os_v1). A v2 spaced-
+  // repetition revision hub; only appears once its launch flag is ON.
+  { href: '/revision', icon: '🧠', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: 'ff_revision_os_v1' },
   { href: '/exam-prep', icon: '🎯', label: 'Exam Sprint', labelHi: 'परीक्षा की तैयारी', requiresUpcomingExam: true },
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
   { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
@@ -38,18 +48,24 @@ export const SIDEBAR_SECTIONS = [
   {
     title: 'Practice', titleHi: 'अभ्यास',
     items: [
+      // Alfa OS Practice Center (flag-gated) — v2 hub above the /quiz engine.
+      { href: '/practice', icon: '⚡', label: 'Practice Center', labelHi: 'अभ्यास केंद्र', flagName: 'ff_practice_os_v1' },
       { href: '/quiz', icon: '✏️', label: 'Practice', labelHi: 'अभ्यास' },
       { href: '/assignments', icon: '📋', label: 'Assignments', labelHi: 'असाइनमेंट' },
-      { href: '/simulations', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
+      { href: '/stem-centre', icon: '🔬', label: 'STEM Lab', labelHi: 'STEM लैब' },
       { href: '/pyq', icon: '📄', label: 'PYQ Papers', labelHi: 'पिछले साल के प्रश्न', gradeMin: 9 },
       { href: '/mock-exam', icon: '📋', label: 'Mock Exam', labelHi: 'मॉक परीक्षा', gradeMin: 9 },
+      // Alfa OS pre-test briefing hub (flag-gated) — the "Start an exam" front door.
+      { href: '/exam-briefing', icon: '🧭', label: 'Exam Briefing', labelHi: 'परीक्षा ब्रीफ़िंग', flagName: 'ff_test_os_v1' },
     ],
   },
   {
     title: 'Study', titleHi: 'पढ़ाई',
     items: [
-      { href: '/learn',     icon: '📚', label: 'Library',     labelHi: 'अध्ययन सामग्री' },
+      { href: '/library',   icon: '📚', label: 'Library',     labelHi: 'अध्ययन सामग्री' },
       { href: '/refresh',   icon: '🔁', label: 'Refresh',     labelHi: 'ताज़ा करो' },
+      // Alfa OS Revision Center (flag-gated) — v2 spaced-repetition revision hub.
+      { href: '/revision',  icon: '🧠', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: 'ff_revision_os_v1' },
       { href: '/exam-prep', icon: '🎯', label: 'Exam Sprint', labelHi: 'परीक्षा की तैयारी', requiresUpcomingExam: true },
     ],
   },

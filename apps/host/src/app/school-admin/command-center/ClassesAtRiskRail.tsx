@@ -16,7 +16,6 @@
  */
 
 import type { ClassAtRiskRow } from '@alfanumrik/lib/school-admin/command-center-types';
-import { Card } from '@alfanumrik/ui/ui/primitives';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -60,10 +59,9 @@ export default function ClassesAtRiskRail({
   const canNext = count >= limit;
 
   return (
-    <Card
-      variant="elevated"
+    <section
       aria-label={tt(isHi, 'Classes at risk', 'जोखिम में कक्षाएँ')}
-      className="p-4"
+      className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-4"
     >
       <header className="flex items-center justify-between gap-2 mb-3">
         <h3 className="text-sm font-bold text-[var(--text-1)] font-['Sora',system-ui,sans-serif]">
@@ -125,7 +123,7 @@ export default function ClassesAtRiskRail({
           {rows.map((row) => (
             <li
               key={row.class_id}
-              className="rounded-xl border border-surface-3 bg-[var(--surface-2)] px-3 py-2.5"
+              className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -161,12 +159,12 @@ export default function ClassesAtRiskRail({
 
       {/* Pagination — only when there's more than one page worth of data */}
       {!loading && !error && rows.length > 0 && (canPrev || canNext) && (
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-surface-3">
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border)]">
           <button
             type="button"
             onClick={onPrev}
             disabled={!canPrev}
-            className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-surface-3 disabled:opacity-40 disabled:cursor-default min-h-[44px]"
+            className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] disabled:opacity-40 disabled:cursor-default min-h-[44px]"
           >
             ← {tt(isHi, 'Previous', 'पिछला')}
           </button>
@@ -174,12 +172,12 @@ export default function ClassesAtRiskRail({
             type="button"
             onClick={onNext}
             disabled={!canNext}
-            className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-surface-3 disabled:opacity-40 disabled:cursor-default min-h-[44px]"
+            className="px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] disabled:opacity-40 disabled:cursor-default min-h-[44px]"
           >
             {tt(isHi, 'Next', 'अगला')} →
           </button>
         </div>
       )}
-    </Card>
+    </section>
   );
 }

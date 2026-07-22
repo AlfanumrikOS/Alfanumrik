@@ -126,6 +126,33 @@
       "idempotencyKey": "flag-posture-canary:yyyy-mm-dd",
       "lastSuccessMetric": "ops.cron.flag_posture_canary.last_success_at",
       "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/adaptive-loops-monitor",
+      "platform": "vercel",
+      "owner": "backend",
+      "schedule": "35 4 * * *",
+      "idempotencyKey": "adaptive-loops-monitor:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.adaptive_loops_monitor.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/synthesis-delivery-monitor",
+      "platform": "vercel",
+      "owner": "backend",
+      "schedule": "20 4 * * *",
+      "idempotencyKey": "synthesis-delivery-monitor:yyyy-mm-dd",
+      "lastSuccessMetric": "ops.cron.synthesis_delivery_monitor.last_success_at",
+      "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/synthesis-quality-sample",
+      "platform": "vercel",
+      "owner": "backend",
+      "schedule": "50 4 * * *",
+      "idempotencyKey": "synthesis-quality-sample:synthesis_run_id:rubric_version",
+      "lastSuccessMetric": "ops.cron.synthesis_quality_sample.last_success_at",
+      "alertThreshold": "no success for 26h"
     }
   ]
 }

@@ -19,6 +19,13 @@ class ChatState {
   final String? subject;
   final String? topic;
 
+  /// Foxy session mode sent with every message in this session. Defaults to
+  /// `'learn'` — the value that was hardcoded in [ChatRepository] before the
+  /// Weekly Curiosity Dive needed `'explorer'`. Set once by [startSession] and
+  /// never changed mid-session (a mode switch means a NEW session, exactly
+  /// like the web, where `/foxy?mode=…` is a fresh page load).
+  final String mode;
+
   const ChatState({
     this.session,
     this.messages = const [],
@@ -26,6 +33,7 @@ class ChatState {
     this.error,
     this.subject,
     this.topic,
+    this.mode = 'learn',
   });
 
   ChatState copyWith({
@@ -35,6 +43,7 @@ class ChatState {
     String? error,
     String? subject,
     String? topic,
+    String? mode,
   }) {
     return ChatState(
       session: session ?? this.session,
@@ -43,6 +52,7 @@ class ChatState {
       error: error,
       subject: subject ?? this.subject,
       topic: topic ?? this.topic,
+      mode: mode ?? this.mode,
     );
   }
 }
@@ -51,12 +61,21 @@ class ChatNotifier extends Notifier<ChatState> {
   @override
   ChatState build() => const ChatState();
 
-  /// Start a new chat session
-  Future<void> startSession({String? subject, String? topic}) async {
+  /// Start a new chat session.
+  ///
+  /// [mode] defaults to `'learn'`, so every pre-existing call site is
+  /// unchanged. The Weekly Curiosity Dive passes `'explorer'` to open Foxy in
+  /// its Socratic exploration persona (mobile parity for the web dive's
+  /// `/foxy?mode=explorer&topic=…` hand-off).
+  Future<void> startSession({
+    String? subject,
+    String? topic,
+    String mode = 'learn',
+  }) async {
     final student = ref.read(studentProvider).valueOrNull;
     if (student == null) return;
 
-    state = ChatState(subject: subject, topic: topic);
+    state = ChatState(subject: subject, topic: topic, mode: mode);
 
     final repo = ref.read(chatRepositoryProvider);
     final result = await repo.createSession(
@@ -91,6 +110,7 @@ class ChatNotifier extends Notifier<ChatState> {
       subject: state.subject,
       topic: state.topic,
       grade: student.grade,
+      mode: state.mode,
     );
 
     result.when(

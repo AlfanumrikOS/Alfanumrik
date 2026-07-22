@@ -202,3 +202,239 @@ see the authoritative running count in the final "Catalog total" block below.)*
 
 ---
 
+## Master Action Plan Phase 3 — Loop D verify evaluator + cron-worker scale hardening (2026-07-22) — REG-297, REG-298
+
+Source: Master Action Plan Phase 3 (backend + assessment). Two related but
+separate fixes to the SAME cron worker
+(`apps/host/src/app/api/cron/adaptive-remediation/route.ts`):
+
+REG-297 closes a real bug assessment found in Loop D's Slice-1-shipped
+verify path: `blocked_prerequisite` rows were unconditionally routed to
+`summary.pending++` with no evaluator wired at all, so they NEVER left
+`active` — a permanent crowding-out risk against the bounded
+`MAX_VERIFY_ROWS_PER_RUN` sweep every single night. The fix is two-layered:
+(a) the new PURE evaluator `packages/lib/src/learn/blocked-prerequisite-verify-evaluation.ts`
+(`evaluateBlockedPrerequisiteResolution`, symmetric with the
+`classifyPrerequisiteBlock` floors that opened the block, 7-day rolling
+window matching Loop A's cadence), and (b) the cron route's verify dispatch
+(`buildBlockedPrerequisiteVerifyObservations` + `verifyBlockedPrerequisiteRow`)
+that actually calls it: ONE batched `subjects`/`curriculum_topics`/
+`concept_mastery` read across every `blocked_prerequisite` row in the sweep,
+then a per-row transition to `recovered` (+ `system.prerequisite_resolved`
+event + metadata-only audit) or `escalated` (+ metadata-only audit; Slice 1
+has no parent/teacher notification channel for Loop D yet, so the state
+transition itself — not a human handoff — is what stops the row from
+crowding future sweeps) or leaves it `active`/pending if still genuinely
+blocked. During assessment's review a second, more subtle bug was caught and
+fixed BEFORE merge: a fully-unreadable observation (`pKnow` AND
+`daysSinceStudy` both null/non-finite) was being fed into
+`classifyPrerequisiteBlock`, which treats "unevaluable" as `blocked: false`
+— correct at INJECT time ("don't fire off no data") but a FALSE-POSITIVE
+CLOSURE at VERIFY time (a data glitch/delayed BKT update/RPC hiccup could
+have silently resolved a still-blocked student). The evaluator now excludes
+fully-unreadable observations from ever becoming the `latest` candidate.
+
+REG-298 covers three separate scale/robustness fixes to the SAME worker,
+Master Action Plan items 3.1/3.3/3.4:
+- **3.1 fairness ordering** — the inject phase's recent-mastery-changed
+  `state_events` scan now sorts `occurred_at` DESCENDING before the
+  `MAX_INJECT_STUDENTS_PER_RUN` (200) truncation, so the nightly cap rotates
+  toward whoever most recently tripped a signal instead of an unordered
+  Postgres result silently starving fresher students in favor of the same
+  cohort of oldest rows every night.
+- **3.3 N+1 batching** — two previously per-student/per-winner query loops
+  are now single batched prefetches for the WHOLE run: `buildEscalationCache`
+  (Loop C's `class_students`/`classes`/`class_teachers` lookup, was one query
+  PER Loop-C-winning student) and `prefetchBlockedPrerequisiteData` /
+  `buildBlockedPrerequisiteVerifyObservations` (Loop D's
+  `curriculum_topics`/`subjects`/`concept_mastery` lookups, was one query set
+  PER student).
+- **3.4 concurrent-run guard TOCTOU race** — paired migration + code fix.
+  Migration `20260722095000_task_queue_run_lock_unique_index.sql` adds a
+  PARTIAL UNIQUE INDEX on `task_queue(queue_name) WHERE status='processing'`,
+  turning a second concurrent run-lock insert into a `23505` instead of a
+  silently-successful duplicate marker; `acquireRunLock` now treats that
+  specific `23505` as a DEFINITIVE "another run already holds the lock"
+  signal (`{ acquired: false }`) rather than falling through the generic
+  fail-open path used for unrelated/transient insert errors (which still
+  fail-open, so a genuine DB hiccup never freezes the pipeline).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-297 | `loop_d_verify_evaluator_route_wiring_and_false_positive_fix` | Pure evaluator (30 tests): resolution delegated entirely to `classifyPrerequisiteBlock` at the LATEST in-window observation; window boundaries (rolling ms, inclusive start/end, `expired` only strictly-after, `resolved` beats a same-instant `expired` sweep); a fully-unreadable observation (`pKnow`+`daysSinceStudy` both unreadable) is EXCLUDED from ever becoming `latest` (the false-positive-resolution regression fix) while a PARTIAL reading (one axis readable) still passes through; defensive degradation on corrupt record/clock/windowDays never falsely resolves. Route-level wiring (this session, 4 tests): `resolved` verdict -> `status='recovered'` + `system.prerequisite_resolved` event + metadata-only audit; `still_blocked` -> row stays active (`pending`), zero DB writes/events/audit; `expired` -> `status='escalated'` + metadata-only `system.blocked_prerequisite_expired` audit, no event (no notification channel wired for Loop D in Slice 1); a row with NO resolvable `concept_mastery` row at all degrades to `still_blocked`, never a false resolve. | `apps/host/src/__tests__/lib/learn/blocked-prerequisite-verify-evaluation.test.ts` (30), `apps/host/src/__tests__/api/cron/adaptive-remediation.test.ts` describe block `verify phase — Loop D blocked_prerequisite dispatch (item 3.2)` (4) | E |
+| REG-298 | `cron_worker_scale_hardening_fairness_batching_toctou` | (3.1) The inject-phase `state_events` recent-scan calls `.order('occurred_at', {ascending:false})` BEFORE `.limit()` — sort precedes truncation, not after. (3.3) A 2-student run where BOTH students win Loop C (B2B, different classes/teachers) fires the `class_students`/`classes`/`class_teachers` batch queries EXACTLY ONCE each — not once per winning student. (3.4) A run-lock insert that hits the new partial unique index and returns `23505` yields a clean `{skipped:'already_running', inject:null, verify:null}` response with ZERO inject/verify DB calls (never fail-open); a DIFFERENT (non-23505) insert error still fails OPEN (a transient DB hiccup must never freeze the whole pipeline) — both branches exercised against the SAME `acquireRunLock` code path so the 23505-specific carve-out cannot regress into blanket fail-open OR blanket fail-closed. | `apps/host/src/__tests__/api/cron/adaptive-remediation.test.ts` describe blocks `inject candidate scan — fairness ordering (item 3.1)` (1), `run-lock overlap guard (acquireRunLock)` (4, pre-existing), `apps/host/src/__tests__/api/cron/adaptive-remediation-loops-bc.test.ts` describe block `Loop C inject — escalation-cache batching (item 3.3)` (1); migration `supabase/migrations/20260722095000_task_queue_run_lock_unique_index.sql` | E |
+
+### Invariants covered by this section
+
+- P4/atomic-transition integrity — every `blocked_prerequisite` verify
+  transition is guarded on `.eq('status','active')` (race-safe optimistic
+  concurrency), matching Loops A/B/C's existing convention.
+- Operational integrity — the fairness-ordering and N+1-batching fixes are
+  scale/cost improvements with no behavioral change to WHICH students are
+  selected or WHICH interventions open, only how fairly/cheaply the run gets
+  there; the run-lock fix closes a genuine double-processing race.
+- P13 data privacy — Loop D's verify observations and audit metadata carry
+  subject codes, chapter numbers, and derived BKT/retention numbers only
+  (`system.blocked_prerequisite_expired` / `system.prerequisite_resolved`
+  audit rows never carry name/email/phone).
+
+### Known gap (documented, not silently dropped)
+
+The escalation-cache and Loop-D-prefetch batching claims are pinned at the
+DB-query-count layer (REG-298), and the Loop D verify DISPATCH is now pinned
+at the route level (REG-297) — closing the prior state where only the pure
+evaluator module had coverage. Not yet separately pinned: a query-count
+assertion for `prefetchBlockedPrerequisiteData`'s inject-time
+`curriculum_topics`/`subjects`/`concept_mastery` batching across >1
+Loop-D-eligible student in one run (mirrors the Loop C escalation-cache test
+in REG-298, but for the inject side of Loop D specifically) — the route code
+is architecturally identical to the already-tested verify-side batching, but
+no test yet exercises 2 concurrent Loop D inject candidates. Flagged here
+rather than silently claimed as covered.
+
+### Catalog total
+
+Pre-REG-297: 296 entries (through REG-296, flag-governance hardening Phase 0).
+Master Action Plan Phase 3 adds REG-297 (Loop D verify evaluator — pure-module
+30-test suite + 4 new route-level dispatch tests, plus the false-positive-
+resolution bug assessment caught and backend fixed before merge) and REG-298
+(cron-worker scale hardening — fairness ordering item 3.1, escalation-cache
+N+1 batching item 3.3, and the run-lock TOCTOU race item 3.4, paired with
+migration `20260722095000`).
+**Total catalog: 298 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Master Action Plan Phase 3 — WhatsApp channel for the 3 adaptive-loop parent escalations (2026-07-22) — REG-300
+
+Source: Master Action Plan Phase 3, item 3.5 (backend). Wires a WhatsApp
+delivery channel onto the 3 highest-stakes parent-facing escalation
+notification producers in `packages/lib/src/notification-triggers.ts` —
+`onRemediationEscalated` (Loop A), `onInactivityEscalated` (Loop B), and
+`onConcentrationEscalated`/`onConcentrationReescalated` (Loop C, which REUSE
+the same `concentration_escalated` Meta template — the message content
+differs at the Meta-template layer, not the type). The new private helper
+`sendWhatsAppEscalation()` mirrors the EXACT call pattern already used by
+`/api/synthesis/parent-share`: signed internal-caller headers
+(`buildInternalCallerHeaders`) + a service-role Bearer POST straight to the
+`whatsapp-notify` Edge Function, which gained 3 new `TEMPLATES` entries
+(`remediation_escalated`, `reengagement_escalated`, `concentration_escalated`,
+each with placeholder Meta template ids pending Business Manager approval —
+tracked separately, not a code gap). The channel is best-effort/fire-and-
+forget in the strict sense that a WhatsApp failure NEVER blocks or throws
+back to the caller — the in-app `notifications` row (written by the SAME
+caller, alongside this) is already the durable, authoritative record; a
+guardian with no `phone` on file, or missing Supabase env configuration,
+short-circuits before any fetch. A migration
+(`20260722094000_whatsapp_notify_register_adaptive_remediation_caller.sql`)
+registers the new internal-caller identity
+(`adaptive-remediation-whatsapp`) in `security_internal_callers` so the
+signed-header verification on the Edge Function side actually recognizes it.
+
+Prior to this session NOTHING exercised the fetch call at all: every existing
+guardian fixture in `notification-triggers-remediation.test.ts` /
+`notification-triggers-loops-bc.test.ts` omitted `phone`, so
+`sendWhatsAppEscalation`'s `if (!guardian.phone) return;` guard always
+short-circuited before any network call — the WhatsApp wiring had ZERO real
+test coverage despite being fully implemented. This entry closes that gap.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-300 | `whatsapp_channel_adaptive_loop_escalations` | A guardian WITH a phone on file (parent path) triggers exactly one POST to `/functions/v1/whatsapp-notify` with `Authorization: Bearer <service-role-key>`, the correct `type` per producer (`remediation_escalated` / `reengagement_escalated` / `concentration_escalated` — including Loop C's reescalation reusing the SAME type), `recipient_phone`, `language` derived from `guardian.preferred_language` (`hi` iff exactly `'hi'`, else `en`), and the documented `data` payload shape per producer (empty `{}` for Loop B; `subject_code`+`chapter_number` for Loop A; `subject_code`+`at_risk_chapter_count` stringified for Loop C) with NO PII keys beyond the required delivery phone. A guardian with NO phone on file never triggers a fetch (in-app row still sent). The teacher-escalation path (no guardian query at all) never triggers a fetch. A non-2xx `whatsapp-notify` response is logged as a warning (`...send failed`, with `templateType`+`status`) and never thrown — the in-app row is unaffected. A network-level fetch rejection is swallowed and logged as a warning (`...send error`, with `templateType`+the error message) and never thrown. Missing `NEXT_PUBLIC_SUPABASE_URL` short-circuits before any fetch (best-effort only). | `apps/host/src/__tests__/lib/notification-triggers-remediation.test.ts` describe block `onRemediationEscalated — WhatsApp channel (item 3.5)` (7 tests), `apps/host/src/__tests__/lib/notification-triggers-loops-bc.test.ts` describe blocks `onInactivityEscalated`/`onConcentrationEscalated`/`onConcentrationReescalated — WhatsApp channel (item 3.5)` (9 tests, 16 total); `supabase/functions/whatsapp-notify/index.ts` (3 new `TEMPLATES` entries); migration `supabase/migrations/20260722094000_whatsapp_notify_register_adaptive_remediation_caller.sql` | E |
+
+### Invariants covered by this section
+
+- P7 bilingual — `language` is derived from the guardian's own
+  `preferred_language`, matching the in-app row's Hindi/English split (though
+  the actual Hindi/English template body text lives in the Meta-approved
+  template, not this payload).
+- P13 data privacy — the WhatsApp payload's `data` object carries only
+  academic codes/counts (subject code, chapter number, at-risk-chapter count)
+  per the P13-adjacent "your child" (never named) convention the in-app rows
+  already use; the phone number itself is the one PII field that MUST be
+  sent to actually deliver the message, and it is never logged (redacted by
+  `whatsapp-notify`'s own `redactPhone` on the Edge Function side).
+- Fire-and-forget safety — neither a non-2xx response nor a thrown/rejected
+  fetch ever propagates to the caller; the durable in-app `notifications` row
+  is written independently and is unaffected by any WhatsApp-side failure.
+
+### Known gap (documented, not silently dropped)
+
+The `whatsapp-notify` Edge Function itself (Deno) has no dedicated test file
+(pre-existing condition, not introduced by this session) — REG-300 pins the
+Next.js-side caller (`sendWhatsAppEscalation`) exhaustively, but the 3 new
+`TEMPLATES` entries' param-validation/missing-params branches inside the Edge
+Function are exercised only implicitly (via the existing generic
+`whatsapp-notify-security.test.ts` suite's coverage of the shared handler
+logic, not the 3 new template shapes specifically). Flagged here rather than
+silently claimed as covered.
+
+### Catalog total
+
+Pre-REG-300: 299 entries (through REG-299, assignment completion hardening).
+Master Action Plan Phase 3 adds REG-300 (WhatsApp channel for the 3
+adaptive-loop parent escalations — 16 new tests across 2 existing
+notification-trigger test files, zero pre-existing coverage of the fetch
+call before this session).
+**Total catalog: 300 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Master Action Plan Phase 8 — adaptive-loops monitoring gate (2026-07-22) — REG-304
+
+Source: Master Action Plan Phase 8, items 8.1 + 8.2 (the rollout-enablement
+prerequisite that MUST be live before any adaptive-loop flag A/B/C/D is
+flipped in production). Before this, the only view into the loops'
+operational health was the ad-hoc SQL a human ran by hand from
+`docs/runbooks/adaptive-program-rollout.md §7`. Phase 8 packages those exact
+queries into an aggregate-only `SECURITY DEFINER` reader
+(`get_adaptive_loops_health`, migration `20260722101000`) that BOTH the
+nightly monitor cron (`/api/cron/adaptive-loops-monitor`, 04:35 UTC — after
+the adaptive-remediation nightly run) and the super-admin dashboard
+(`/api/super-admin/adaptive-loops` → `/super-admin/adaptive-loops`) read, so
+the on-screen numbers and the alert-firing numbers share one source of truth.
+The adaptive-remediation worker now records a `job_health` heartbeat
+(`ops.cron.adaptive_remediation.last_success_at`) on every successful run
+(item 8.2); the monitor reads its freshness. Three ops_events conditions are
+each seeded to a distinct `alert_rules` row → CEO-email channel: ceiling
+violation (`adaptive_ceiling_violation`, critical), escalation storm
+(`adaptive_escalation_storm`, error; migration `20260722102200`), missed
+heartbeat (`adaptive_cron_stale`, critical; migration `20260722101500`).
+
+Every threshold is SOURCED from the rollout runbook, not invented, and pinned
+in `_lib/evaluate-alerts.ts`: `CEILING_VIOLATION_THRESHOLD = 0` (any breach of
+the arbiter's ≤1-new-intervention/student/day guarantee is the runbook's "Top
+alert"), `ESCALATION_STORM_SHARE_THRESHOLD = 0.5` (§5 storm list, verbatim)
+gated by a `ESCALATION_STORM_MIN_SAMPLE = 10` noise floor, and
+`HEARTBEAT_STALE_HOURS = 26` (~2h grace over the nightly cadence).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-304 | `adaptive_loops_monitor_thresholds_p13_and_heartbeat_wiring` | Pure alert evaluator: a `ceiling_violation_count > 0` emits exactly one `adaptive_ceiling_violation` critical alert (0 → none); `escalation_share > 0.5` emits `adaptive_escalation_storm` (error) ONLY once `terminal_total >= 10` (a 1-of-1 100%-escalation sample does NOT page); `hours_since_last_success > 26` OR `null` (never-run) emits `adaptive_cron_stale` critical. Route: fail-closed CRON_SECRET constant-time gate BEFORE any DB I/O (401 on missing/wrong secret, first-present-carrier-wins across Bearer/x-cron-secret/?token), generic `internal_error` 500 body, one `logOpsEvent` per fired condition all sourced `cron/adaptive-loops-monitor`, and its own `job_health` heartbeat (severity `info`, cannot self-trip an error/critical rule). Dashboard API: `super_admin.access` gate, RPC snapshot passed through verbatim. **P13**: the RPC returns counts/ratios/timestamps only — `ceiling_violation_count`/`ceiling_violation_students` are COUNTs, the offending `student_id` never leaves the CTE; the route body, every ops_events context, and the dashboard render (aggregate tiles + truncated nothing — no per-student rows at all) expose no student id, subject/chapter target, name, email, or phone. Heartbeat parity: the adaptive-remediation route writes `ops.cron.adaptive_remediation.last_success_at` (category `job_health`, source `cron/adaptive-remediation`) which is exactly what the RPC's `heartbeat` CTE reads. | `apps/host/src/__tests__/api/cron/adaptive-loops-monitor.test.ts` (20), `apps/host/src/__tests__/api/super-admin/adaptive-loops.test.ts` (6); migrations `supabase/migrations/20260722101000_adaptive_loops_health_rpc.sql`, `20260722101500_seed_alert_rule_adaptive_cron_heartbeat.sql`, `20260722102200_seed_alert_rules_adaptive_loops_monitor.sql` | E |
+
+### Invariants covered by this section
+
+- P13 data privacy — aggregate-only end to end: the `SECURITY DEFINER` RPC
+  never selects a student id into its output (ceiling breaches are COUNTed
+  inside a CTE and only the counts escape), and both consumers (cron ops_event
+  + dashboard) carry counts/ratios/timestamps only.
+- P8/P9 — the RPC is `REVOKE`d from PUBLIC/anon/authenticated and `GRANT`ed to
+  `service_role` only; the dashboard route is `super_admin.access`-gated; the
+  cron is fail-closed CRON_SECRET before any DB I/O.
+- Operational integrity — the monitor is itself observable (records its own
+  heartbeat) and NOT flag-gated, so it reports honestly whether or not any
+  adaptive-loop flag is enabled (the whole point of a pre-flip gate).
+- Threshold provenance — ceiling=0 / storm>50% / heartbeat>26h are pinned to
+  named runbook sources in `_lib/evaluate-alerts.ts`, not invented.
+
+### Catalog total
+
+Pre-REG-304: 303 entries (through REG-303, the revise-stack dead-flag-gate
+fix). Master Action Plan Phase 8 adds REG-304 (adaptive-loops monitoring
+gate — aggregate-only health RPC + fail-closed nightly monitor cron +
+super-admin dashboard + 3 runbook-sourced alert rules + the
+adaptive-remediation heartbeat it reads).
+**Total catalog: 304 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

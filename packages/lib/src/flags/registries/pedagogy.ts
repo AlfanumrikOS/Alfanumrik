@@ -166,7 +166,11 @@ export const QUIZ_TELEMETRY_FLAGS = {
  *    call, ladder unchanged).
  *
  *    Deliberately a SEPARATE flag from ff_irt_question_selection (which is
- *    ON @100 in prod and gates the nightly-calibrated SQL-RPC IRT path):
+ *    OFF in prod, by design — see IRT_SELECTION_FLAGS below and the
+ *    2026-07-20 flag-posture-restore migration 20260720130000 — and gates
+ *    the nightly-calibrated SQL-RPC IRT path only once enough live items
+ *    clear the n>=30 calibration floor; see
+ *    /api/super-admin/ai/irt-readiness for current readiness):
  *    reusing it would push this brand-new, unvalidated live-selection path to
  *    100% on merge. A dedicated default-OFF flag gives an independent kill
  *    switch and a clean validation ramp before it touches live quizzes.

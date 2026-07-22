@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
-import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
+import { supabase } from '@alfanumrik/lib/supabase';
 import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
@@ -275,7 +275,7 @@ function parseCsv(text: string): CsvRow[] {
 ───────────────────────────────────────────────────────────── */
 function QuestionRowSkeleton() {
   return (
-    <div className="flex items-center gap-3 py-3" style={{ borderBottom: '1px solid var(--surface-3)' }}>
+    <div className="flex items-center gap-3 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
       <Skeleton variant="text" height={14} width="35%" />
       <Skeleton variant="rect" height={20} width={60} rounded="rounded-full" />
       <Skeleton variant="rect" height={20} width={40} rounded="rounded-full" />
@@ -428,7 +428,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
             width: '100%',
             padding: '10px 12px',
             borderRadius: 12,
-            border: errors.question_text ? '1px solid #DC2626' : '1px solid var(--surface-3)',
+            border: errors.question_text ? '1px solid #DC2626' : '1px solid var(--border)',
             background: 'var(--surface-1)',
             color: 'var(--text-1)',
             fontSize: 14,
@@ -518,7 +518,7 @@ function QuestionForm({ isHi, existing, onSave, onClose }: QuestionFormProps) {
             width: '100%',
             padding: '10px 12px',
             borderRadius: 12,
-            border: errors.explanation ? '1px solid #DC2626' : '1px solid var(--surface-3)',
+            border: errors.explanation ? '1px solid #DC2626' : '1px solid var(--border)',
             background: 'var(--surface-1)',
             color: 'var(--text-1)',
             fontSize: 14,
@@ -669,7 +669,7 @@ function BulkUploadForm({ isHi, onUpload, onClose }: BulkUploadProps) {
               maxHeight: 300,
               overflowY: 'auto',
               overflowX: 'auto',
-              border: '1px solid var(--surface-3)',
+              border: '1px solid var(--border)',
               borderRadius: 12,
             }}
           >
@@ -689,7 +689,7 @@ function BulkUploadForm({ isHi, onUpload, onClose }: BulkUploadProps) {
                   <tr
                     key={idx}
                     style={{
-                      borderBottom: '1px solid var(--surface-3)',
+                      borderBottom: '1px solid var(--border)',
                       background: row.valid ? 'transparent' : 'rgba(239,68,68,0.04)',
                     }}
                   >
@@ -791,10 +791,12 @@ function DeleteConfirm({ isHi, questionText, onConfirm, onCancel, loading }: Del
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminContentPage() {
-  const { isHi } = useAuth();
-  const { schoolId, isLoading: loadingAdmin } = useSchoolAdminAuth();
+  const router = useRouter();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── State ── */
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -818,15 +820,47 @@ export default function SchoolAdminContentPage() {
   /* Toast */
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  /* ── Auth helper: get session token ── */
+  const getToken = useCallback(async (): Promise<string | null> => {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  }, []);
+
+  /* ── Step 1: Auth guard — fetch school_admins record ── */
+  const fetchAdminRecord = useCallback(async () => {
+    if (!authUserId) return;
+    setLoadingAdmin(true);
+
+    const { data, error } = await supabase
+      .from('school_admins')
+      .select('school_id, name')
+      .eq('auth_user_id', authUserId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error || !data) {
+      router.replace('/login');
+      return;
+    }
+
+    setSchoolId(data.school_id as string);
+    setLoadingAdmin(false);
+  }, [authUserId, router]);
+
   /* ── Fetch questions via API ── */
   const fetchQuestions = useCallback(async () => {
+    const token = await getToken();
+    if (!token) return;
+
     setLoadingQuestions(true);
     setApiError(null);
 
     try {
       // limit=100 is the route's max page size; this page filters/paginates
       // client-side, so fetch the largest page the API allows.
-      const res = await authedFetch('/api/school-admin/content?limit=100');
+      const res = await fetch('/api/school-admin/content?limit=100', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -849,17 +883,23 @@ export default function SchoolAdminContentPage() {
     } finally {
       setLoadingQuestions(false);
     }
-  }, [isHi]);
+  }, [getToken, isHi]);
 
   /* ── Save question (create / update) ── */
   const handleSaveQuestion = useCallback(async (payload: any) => {
+    const token = await getToken();
+    if (!token) throw new Error('Not authenticated');
+
     // The route exposes POST (create) and PATCH (update) — there is no PUT.
     // PATCH expects { id, updates } and only whitelists content fields
     // (subject/grade/topic are immutable server-side).
     const isUpdate = Boolean(payload.id);
-    const res = await authedFetch('/api/school-admin/content', {
+    const res = await fetch('/api/school-admin/content', {
       method: isUpdate ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify(
         isUpdate
           ? {
@@ -891,10 +931,13 @@ export default function SchoolAdminContentPage() {
         : t(isHi, 'Question added!', 'प्रश्न जोड़ दिया गया!')
     );
     fetchQuestions();
-  }, [isHi, fetchQuestions]);
+  }, [getToken, isHi, fetchQuestions]);
 
   /* ── Bulk upload ── */
   const handleBulkUpload = useCallback(async (rows: CsvRow[]) => {
+    const token = await getToken();
+    if (!token) throw new Error('Not authenticated');
+
     const payload = rows.map(r => ({
       subject: r.subject,
       grade: r.grade, // P5: string
@@ -907,9 +950,12 @@ export default function SchoolAdminContentPage() {
       bloom_level: r.bloom_level,
     }));
 
-    const res = await authedFetch('/api/school-admin/content/bulk', {
+    const res = await fetch('/api/school-admin/content/bulk', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({ questions: payload }),
     });
 
@@ -923,14 +969,20 @@ export default function SchoolAdminContentPage() {
 
     setSuccessMsg(t(isHi, `${rows.length} questions uploaded!`, `${rows.length} प्रश्न अपलोड हो गए!`));
     fetchQuestions();
-  }, [isHi, fetchQuestions]);
+  }, [getToken, isHi, fetchQuestions]);
 
   /* ── Toggle approval status ── */
   const handleToggleApproval = useCallback(async (question: Question) => {
+    const token = await getToken();
+    if (!token) return;
+
     try {
-      const res = await authedFetch('/api/school-admin/content', {
+      const res = await fetch('/api/school-admin/content', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         // PATCH expects { id, updates } and the table stores `approved` as a
         // boolean — not the `status` string this page renders.
         body: JSON.stringify({
@@ -953,17 +1005,22 @@ export default function SchoolAdminContentPage() {
     } catch (err: any) {
       setApiError(err.message);
     }
-  }, [isHi, fetchQuestions]);
+  }, [getToken, isHi, fetchQuestions]);
 
   /* ── Delete question ── */
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return;
+    const token = await getToken();
+    if (!token) return;
 
     setDeleteLoading(true);
     try {
-      const res = await authedFetch('/api/school-admin/content', {
+      const res = await fetch('/api/school-admin/content', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ id: deleteTarget.id }),
       });
 
@@ -980,7 +1037,21 @@ export default function SchoolAdminContentPage() {
     } finally {
       setDeleteLoading(false);
     }
-  }, [deleteTarget, isHi, fetchQuestions]);
+  }, [deleteTarget, getToken, isHi, fetchQuestions]);
+
+  /* ── Auth redirect guard ── */
+  useEffect(() => {
+    if (!authLoading && !authUserId) {
+      router.replace('/login');
+    }
+  }, [authLoading, authUserId, router]);
+
+  /* ── Fetch admin record once auth is ready ── */
+  useEffect(() => {
+    if (!authLoading && authUserId) {
+      fetchAdminRecord();
+    }
+  }, [authLoading, authUserId, fetchAdminRecord]);
 
   /* ── Fetch questions once school_id is known ── */
   useEffect(() => {
@@ -1032,7 +1103,7 @@ export default function SchoolAdminContentPage() {
   }, [questions]);
 
   /* ── Loading states ── */
-  const isPageLoading = loadingAdmin;
+  const isPageLoading = authLoading || loadingAdmin;
 
   const openCreate = () => {
     setEditingQuestion(null);
@@ -1153,28 +1224,28 @@ export default function SchoolAdminContentPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div
               className="rounded-xl py-3 px-4 text-center"
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
             >
               <div className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>{stats.total}</div>
               <div className="text-xs text-[var(--text-3)] font-medium mt-0.5">{t(isHi, 'Total', 'कुल')}</div>
             </div>
             <div
               className="rounded-xl py-3 px-4 text-center"
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
             >
               <div className="text-xl font-bold" style={{ color: '#22C55E' }}>{stats.approved}</div>
               <div className="text-xs text-[var(--text-3)] font-medium mt-0.5">{t(isHi, 'Approved', 'स्वीकृत')}</div>
             </div>
             <div
               className="rounded-xl py-3 px-4 text-center"
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
             >
               <div className="text-xl font-bold" style={{ color: '#EAB308' }}>{stats.pending}</div>
               <div className="text-xs text-[var(--text-3)] font-medium mt-0.5">{t(isHi, 'Pending', 'लंबित')}</div>
             </div>
             <div
               className="rounded-xl py-3 px-4 text-center"
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--surface-3)' }}
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border)' }}
             >
               <div className="text-xl font-bold" style={{ color: 'var(--purple)' }}>
                 {Object.keys(stats.bySubject).length}
@@ -1308,7 +1379,7 @@ export default function SchoolAdminContentPage() {
                       className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95"
                       style={{
                         background: 'var(--surface-2)',
-                        border: '1px solid var(--surface-3)',
+                        border: '1px solid var(--border)',
                         color: 'var(--text-2)',
                         minHeight: 30,
                       }}
@@ -1357,7 +1428,7 @@ export default function SchoolAdminContentPage() {
               className="px-3 py-2 rounded-lg text-xs font-semibold transition-all"
               style={{
                 background: 'var(--surface-2)',
-                border: '1px solid var(--surface-3)',
+                border: '1px solid var(--border)',
                 color: currentPage === 1 ? 'var(--text-3)' : 'var(--text-1)',
                 opacity: currentPage === 1 ? 0.5 : 1,
                 cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
@@ -1374,7 +1445,7 @@ export default function SchoolAdminContentPage() {
               className="px-3 py-2 rounded-lg text-xs font-semibold transition-all"
               style={{
                 background: 'var(--surface-2)',
-                border: '1px solid var(--surface-3)',
+                border: '1px solid var(--border)',
                 color: currentPage === totalPages ? 'var(--text-3)' : 'var(--text-1)',
                 opacity: currentPage === totalPages ? 0.5 : 1,
                 cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',

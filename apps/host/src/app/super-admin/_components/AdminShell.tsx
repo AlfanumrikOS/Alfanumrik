@@ -140,6 +140,7 @@ const NAV_ITEMS: SidebarItem[] = [
   { href: '/super-admin/grounding/ai-issues', label: 'AI Issues', labelHi: 'AI समस्याएँ', icon: '⊘' },
   { href: '/super-admin/grounding/traces', label: 'Traces', labelHi: 'ट्रेसेस', icon: '⊳' },
   { href: '/super-admin/foxy-quality', label: 'Foxy Quality', labelHi: 'Foxy गुणवत्ता', icon: '◓' },
+  { href: '/super-admin/synthesis-quality', label: 'Synthesis Quality', labelHi: 'संश्लेषण गुणवत्ता', icon: '◒' },
   { href: '/super-admin/misconceptions', label: 'Misconceptions', labelHi: 'भ्रांतियाँ', icon: '◔' },
   { href: '/super-admin/readiness-rubric', label: 'Readiness Rubric', labelHi: 'तैयारी रूब्रिक', icon: '⊏' },
   { href: '/super-admin/goal-profiles', label: 'Goal Profiles', labelHi: 'लक्ष्य प्रोफ़ाइल', icon: '◉' },
@@ -156,7 +157,9 @@ const NAV_ITEMS: SidebarItem[] = [
   { href: '/super-admin/observability/rules', label: 'Alert Rules', labelHi: 'अलर्ट नियम', icon: '⊚' },
   { href: '/super-admin/sla', label: 'SLA', labelHi: 'SLA', icon: '⊗' },
   { href: '/super-admin/diagnostics', label: 'Diagnostics', labelHi: 'डायग्नोस्टिक्स', icon: '⊘' },
+  { href: '/super-admin/adaptive-loops', label: 'Adaptive Loops', labelHi: 'अनुकूली लूप', icon: '⟳' },
   { href: '/super-admin/oracle-health', label: 'Oracle Health', labelHi: 'ओरेकल स्वास्थ्य', icon: '◐' },
+  { href: '/super-admin/synthesis-health', label: 'Synthesis Delivery', labelHi: 'संश्लेषण डिलीवरी', icon: '◇' },
   // Marking Integrity was in the pre-Phase-3 nav but missing from the approved
   // 7-section enumeration — kept mapped (dropping it would create a new
   // orphan) next to its sibling forensic tool, Oracle Health.

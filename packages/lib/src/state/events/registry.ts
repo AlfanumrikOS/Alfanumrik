@@ -828,6 +828,51 @@ export const SystemConcentrationReescalatedSchema = EventBaseSchema.extend({
   }),
 });
 
+// ── System — Loop D (blocked-prerequisite, Digital Twin + Knowledge Graph
+// Slice 1) autonomous tiered-authority events ───────────────────────────────
+//
+// Loop D detects a prerequisite chapter that is NOT solid enough (mastery
+// and/or decay below the platform's shared floors, see
+// `classifyPrerequisiteBlock` in packages/lib/src/learn/adaptive-loops-rules.ts)
+// to support a DEPENDENT (advanced) chapter the student is actively
+// attempting/scheduled on. It rides the SAME `system` actor + the SAME
+// `adaptive_interventions` substrate as Loops A/B/C (spec: Digital Twin +
+// Knowledge Graph Slice 1, precedence A > D > C > B). Gated by
+// `ff_digital_twin_v1` — these event kinds are additive/frontend-readiness
+// only; the flag's rollout state is untouched by this change.
+//
+// Envelope: actorAuthUserId = the LEARNER's auth_user_id; tenantId = the
+// school for B2B, null for B2C; idempotencyKey =
+// `blocked_prerequisite:<interventionId>:<phase>` so cron retries dedupe.
+// Payloads are UUIDs + subject codes + chapter numbers + a bounded reason
+// enum only — no PII (P13).
+
+export const SystemPrerequisiteBlockedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.prerequisite_blocked'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    // The DEPENDENT (advanced) chapter the student is blocked on.
+    dependentChapterNumber: z.number().int().positive(),
+    // The upstream PREREQUISITE chapter that is not solid enough.
+    prerequisiteChapterNumber: z.number().int().positive(),
+    // Why the prerequisite blocked — mirrors BlockReason ('none' excluded;
+    // this event only fires when a block was actually detected).
+    reason: z.enum(['mastery', 'decay', 'both']),
+  }),
+});
+
+export const SystemPrerequisiteResolvedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.prerequisite_resolved'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    dependentChapterNumber: z.number().int().positive(),
+    prerequisiteChapterNumber: z.number().int().positive(),
+    daysToResolve: z.number().int().nonnegative(),
+  }),
+});
+
 // ── Mesh (autonomous improvement) events ─────────────────────────────
 
 export const MeshCycleCompletedSchema = EventBaseSchema.extend({
@@ -886,6 +931,8 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   SystemConcentrationEscalatedSchema,
   SystemConcentrationResolvedSchema,
   SystemConcentrationReescalatedSchema,
+  SystemPrerequisiteBlockedSchema,
+  SystemPrerequisiteResolvedSchema,
   MeshCycleCompletedSchema,
 ]);
 
@@ -942,6 +989,8 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'system.concentration_escalated',
   'system.concentration_resolved',
   'system.concentration_reescalated',
+  'system.prerequisite_blocked',
+  'system.prerequisite_resolved',
   'mesh.cycle_completed',
 ] as const;
 

@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
-import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import {
   Card,
   Button,
@@ -177,7 +176,7 @@ function StudentCard({ student, isHi }: StudentCardProps) {
       {expanded && (
         <div
           className="mt-4 pt-4 animate-fade-in"
-          style={{ borderTop: '1px solid var(--surface-3)' }}
+          style={{ borderTop: '1px solid var(--border)' }}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           role="region"
@@ -286,10 +285,11 @@ const GRADE_OPTIONS_HI = [
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminStudentsPage() {
   const router = useRouter();
-  const { isHi } = useAuth();
-  const { schoolId, isLoading: loadingAdmin } = useSchoolAdminAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── State ── */
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [students, setStudents] = useState<SchoolStudent[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [rpcError, setRpcError] = useState<string | null>(null);
@@ -312,7 +312,29 @@ export default function SchoolAdminStudentsPage() {
     ];
   }, [students, isHi]);
 
-  /* ── Fetch students via RPC ── */
+  /* ── Step 1: Auth guard — fetch school_admins record ── */
+  const fetchAdminRecord = useCallback(async () => {
+    if (!authUserId) return;
+
+    setLoadingAdmin(true);
+
+    const { data, error } = await supabase
+      .from('school_admins')
+      .select('school_id, name')
+      .eq('auth_user_id', authUserId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error || !data) {
+      router.replace('/login');
+      return;
+    }
+
+    setSchoolId(data.school_id as string);
+    setLoadingAdmin(false);
+  }, [authUserId, router]);
+
+  /* ── Step 2: Fetch students via RPC ── */
   const fetchStudents = useCallback(async (sid: string) => {
     setLoadingStudents(true);
     setRpcError(null);
@@ -329,6 +351,20 @@ export default function SchoolAdminStudentsPage() {
 
     setLoadingStudents(false);
   }, []);
+
+  /* ── Auth redirect guard ── */
+  useEffect(() => {
+    if (!authLoading && !authUserId) {
+      router.replace('/login');
+    }
+  }, [authLoading, authUserId, router]);
+
+  /* ── Fetch admin record once auth is ready ── */
+  useEffect(() => {
+    if (!authLoading && authUserId) {
+      fetchAdminRecord();
+    }
+  }, [authLoading, authUserId, fetchAdminRecord]);
 
   /* ── Fetch students once school_id is known ── */
   useEffect(() => {
@@ -349,7 +385,7 @@ export default function SchoolAdminStudentsPage() {
   }, [students, gradeFilter, classFilter, searchQuery]);
 
   /* ── Loading states ── */
-  const isPageLoading = loadingAdmin;
+  const isPageLoading = authLoading || loadingAdmin;
 
   /* ── Full page loading skeleton ── */
   if (isPageLoading) {

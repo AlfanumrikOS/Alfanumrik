@@ -181,7 +181,15 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // (protected-flags.ts) — no user session exists on a scheduled invocation.
 // Fail-closed CRON_SECRET gate (constant-time compare) runs BEFORE any DB
 // I/O; output is counts/flag-names-only (no PII, no operator identity).
-const EXPECTED_COUNT = 255;
+// Phase 2.2 mock-exam remediation (2026-07-21): 255 -> 256 for the new
+// route src/app/api/exams/papers/[id]/start/route.ts. Service-role is
+// justified by the same pattern as its siblings [id]/route.ts,
+// [id]/submit/route.ts, and papers/route.ts: it calls the
+// `start_mock_test_attempt` SECURITY DEFINER RPC and writes a new
+// mock_test_attempts row on behalf of the student for the cbse_board
+// dynamic-assembly flow. Subject to the same exam.view authorizeRequest()
+// gate as the sibling routes.
+const EXPECTED_COUNT = 256;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase, getFeatureFlags } from '@alfanumrik/lib/supabase';
-import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
-import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import {
   Card,
   Button,
@@ -104,14 +103,15 @@ function PageSkeleton() {
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
 export default function SchoolBillingPage() {
-  const { isHi } = useAuth();
-  const { schoolId, isLoading: loadingAdmin } = useSchoolAdminAuth();
+  const router = useRouter();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* State */
   const [schoolInfo, setSchoolInfo] = useState<SchoolInfo | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [seatSnapshots, setSeatSnapshots] = useState<SeatSnapshot[]>([]);
   const [currentSeats, setCurrentSeats] = useState({ active: 0, purchased: 0, utilization: 0 });
+  const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -122,12 +122,28 @@ export default function SchoolBillingPage() {
   const [selfServiceFlagOn, setSelfServiceFlagOn] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
 
-  /* ── Fetch school details once the school admin identity resolves ── */
-  const fetchSchoolInfo = useCallback(async (sid: string) => {
+  /* ── Step 1: Auth guard ── */
+  const fetchAdminRecord = useCallback(async () => {
+    if (!authUserId) return;
+    setLoadingAdmin(true);
+
+    const { data, error: dbErr } = await supabase
+      .from('school_admins')
+      .select('school_id, name')
+      .eq('auth_user_id', authUserId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (dbErr || !data) {
+      router.replace('/login');
+      return;
+    }
+
+    // Fetch school details
     const { data: school } = await supabase
       .from('schools')
       .select('id, name, max_students, subscription_plan')
-      .eq('id', sid)
+      .eq('id', data.school_id)
       .maybeSingle();
 
     if (school) {
@@ -138,16 +154,30 @@ export default function SchoolBillingPage() {
         subscription_plan: (school.subscription_plan as string) || 'standard',
       });
     }
-  }, []);
+    setLoadingAdmin(false);
+  }, [authUserId, router]);
 
-  /* ── Fetch billing data ── */
+  /* ── Step 2: Fetch billing data ── */
   const fetchBillingData = useCallback(async (schoolId: string) => {
     setLoadingData(true);
     setError(null);
 
     try {
       // Fetch invoices via the school-admin API
-      const invRes = await authedFetch('/api/school-admin/invoices?limit=50');
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) {
+        router.replace('/login');
+        return;
+      }
+
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+
+      // Fetch invoices
+      const invRes = await fetch('/api/school-admin/invoices?limit=50', { headers });
       if (invRes.ok) {
         const invJson = await invRes.json();
         setInvoices(invJson.data?.invoices || []);
@@ -182,14 +212,21 @@ export default function SchoolBillingPage() {
     }
 
     setLoadingData(false);
-  }, []);
+  }, [router]);
 
-  /* ── Fetch school details once the school admin identity resolves ── */
+  /* ── Auth redirect guard ── */
   useEffect(() => {
-    if (schoolId) {
-      fetchSchoolInfo(schoolId);
+    if (!authLoading && !authUserId) {
+      router.replace('/login');
     }
-  }, [schoolId, fetchSchoolInfo]);
+  }, [authLoading, authUserId, router]);
+
+  /* ── Fetch admin record ── */
+  useEffect(() => {
+    if (!authLoading && authUserId) {
+      fetchAdminRecord();
+    }
+  }, [authLoading, authUserId, fetchAdminRecord]);
 
   /* ── Fetch billing data ── */
   useEffect(() => {
@@ -229,7 +266,7 @@ export default function SchoolBillingPage() {
   }, [schoolInfo?.school_id]);
 
   /* ── Loading states ── */
-  const isPageLoading = loadingAdmin;
+  const isPageLoading = authLoading || loadingAdmin;
 
   /* ── Full page skeleton ── */
   if (isPageLoading) {
@@ -376,7 +413,7 @@ export default function SchoolBillingPage() {
               {/* Table header */}
               <div
                 className="grid grid-cols-4 gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider"
-                style={{ color: 'var(--text-3)', borderBottom: '1px solid var(--surface-3)' }}
+                style={{ color: 'var(--text-3)', borderBottom: '1px solid var(--border)' }}
               >
                 <span>{t(isHi, 'Date', 'तारीख')}</span>
                 <span className="text-center">{t(isHi, 'Students', 'छात्र')}</span>

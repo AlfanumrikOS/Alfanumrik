@@ -34,15 +34,6 @@ export interface ConsolidatedNavItem {
   label: string;
   labelHi: string;
   icon: string;
-  /**
-   * Task 1.6b: optional one-line bilingual descriptive subtitle rendered under
-   * the label, in the same subdued muted-foreground tone as the section
-   * heading. Used to disambiguate near-identical labels (e.g. the "Academic
-   * Reports" vs "Board Report" entries) without changing the label text
-   * itself. Purely additive — omit for every other item (no layout change).
-   */
-  subtitle?: string;
-  subtitleHi?: string;
   /** When set: hide this item if moduleEnablement[moduleKey] === false. */
   moduleKey?: ModuleKey;
   /**
@@ -165,17 +156,7 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
       { href: '/school-admin/classes', label: 'Classes', labelHi: 'कक्षाएँ', icon: '⊞' },
       { href: '/school-admin/exams', label: 'Exams', labelHi: 'परीक्षा', icon: '⊙', moduleKey: 'testing_engine' },
       { href: '/school-admin/content', label: 'Content', labelHi: 'सामग्री', icon: '⊠', moduleKey: 'lms' },
-      {
-        href: '/school-admin/reports',
-        label: 'Academic Reports',
-        labelHi: 'शैक्षणिक रिपोर्ट',
-        icon: '⊘',
-        moduleKey: 'analytics',
-        // Task 1.6b — disambiguates this interactive, tab-based drill-down
-        // surface from the static "Board Report" export below.
-        subtitle: 'Explore live class & subject data',
-        subtitleHi: 'लाइव कक्षा और विषय डेटा देखें',
-      },
+      { href: '/school-admin/reports', label: 'Academic Reports', labelHi: 'शैक्षणिक रिपोर्ट', icon: '⊘', moduleKey: 'analytics' },
       // Phase 3B Wave D — NEW deep school-wide reporting surface (board/parent-ready
       // mastery + Bloom's + export). reportsDepthOnly: only renders while
       // ff_school_reports_depth is ON; analytics module gating still applies.
@@ -188,10 +169,6 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
         icon: '⊟',
         moduleKey: 'analytics',
         reportsDepthOnly: true,
-        // Task 1.6b — disambiguates this static, exportable summary from the
-        // interactive "Academic Reports" drill-down above.
-        subtitle: 'Printable summary for the board',
-        subtitleHi: 'बोर्ड के लिए प्रिंट योग्य सारांश',
       },
       { href: '/school-admin/announcements', label: 'Announcements', labelHi: 'घोषणाएँ', icon: '⊜', moduleKey: 'communication' },
       // T13 — teacher-> school-admin escalation visibility (RCA follow-up).
@@ -445,7 +422,6 @@ export default function ConsolidatedSchoolNav({
 
             const active = !isLocked && item.href === activeHref;
             const label = isHi ? item.labelHi : item.label;
-            const subtitle = isHi ? item.subtitleHi : item.subtitle;
 
             if (isLocked) {
               return (
@@ -459,12 +435,7 @@ export default function ConsolidatedSchoolNav({
                   style={{ borderLeftColor: 'transparent' }}
                 >
                   <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
-                  <span className="truncate flex-1 flex flex-col">
-                    <span className="truncate">{label}</span>
-                    {subtitle && (
-                      <span className="truncate text-[10px] font-normal text-muted-foreground">{subtitle}</span>
-                    )}
-                  </span>
+                  <span className="truncate flex-1">{label}</span>
                   <span
                     className="ml-auto text-xs opacity-60"
                     aria-label={isHi ? 'मॉड्यूल सक्षम नहीं है' : 'Module not enabled'}
@@ -492,12 +463,7 @@ export default function ConsolidatedSchoolNav({
                 style={activeStyle}
               >
                 <span className="flex-shrink-0 text-[15px] leading-none">{item.icon}</span>
-                <span className="truncate flex-1 flex flex-col">
-                  <span className="truncate">{label}</span>
-                  {subtitle && (
-                    <span className="truncate text-[10px] font-normal text-muted-foreground">{subtitle}</span>
-                  )}
-                </span>
+                <span className="truncate flex-1">{label}</span>
               </Link>
             );
           })}

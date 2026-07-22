@@ -82,12 +82,28 @@ function LegacyTodayPage() {
   // ── Greeting strip — same snapshot source the dashboard hero uses. ──
   const greetingStrip = (
     <header className="mb-5" data-testid="today-greeting">
-      <h1
-        className="text-2xl font-bold"
-        style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
-      >
-        {todayCopy('today.heading', isHi)}
-      </h1>
+      <div className="flex items-start justify-between gap-3">
+        <h1
+          className="text-2xl font-bold"
+          style={{ fontFamily: 'var(--font-display)', color: 'var(--text-1)' }}
+        >
+          {todayCopy('today.heading', isHi)}
+        </h1>
+        <button
+          type="button"
+          onClick={() => router.push('/dashboard')}
+          className="shrink-0 rounded-xl px-3 py-1.5 text-xs font-semibold whitespace-nowrap"
+          style={{
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-2)',
+            minHeight: 44,
+          }}
+          data-testid="today-view-full-dashboard"
+        >
+          {isHi ? 'पूरा डैशबोर्ड देखें' : 'Full dashboard'}
+        </button>
+      </div>
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         <span
           className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm font-bold"

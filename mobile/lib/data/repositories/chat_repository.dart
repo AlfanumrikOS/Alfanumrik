@@ -79,6 +79,26 @@ class ChatRepository {
   ///
   /// Default ('edge') preserves prior behavior. Ops flips the default to
   /// 'api' in a future build after staging validates parity.
+  ///
+  /// [mode] is the Foxy session mode. It was previously hardcoded to `'learn'`
+  /// at both call sites; it is now a parameter DEFAULTING to `'learn'`, so
+  /// every existing caller is byte-identical. The only caller that passes
+  /// anything else today is the Weekly Curiosity Dive, which launches the chat
+  /// in `'explorer'` mode (Phase 6 sub-phase 7 — mobile parity for the web
+  /// dive's `/foxy?mode=explorer&topic=…` hand-off).
+  ///
+  /// Valid values are the route's own `VALID_MODES`
+  /// (`apps/host/src/app/api/foxy/_lib/constants.ts`):
+  /// `learn | explain | practice | revise | doubt | homework | explorer |
+  /// olympiad | lesson`. An unrecognised value is silently coerced to
+  /// `'learn'` SERVER-SIDE (route line ~530), so an unknown mode degrades
+  /// safely rather than erroring — no client-side allowlist is duplicated
+  /// here. NOTE: `packages/lib/src/ai/config.ts` exports a NARROWER
+  /// `VALID_MODES` (no `explorer`); the route imports the wider route-local
+  /// one, which is the contract that actually gates this request.
+  ///
+  /// Nothing else about the send path — safety rails, quota handling, error
+  /// mapping — changes with [mode]; it is threaded through verbatim.
   Future<ApiResult<ChatMessage>> sendMessage({
     required String sessionId,
     required String studentId,
@@ -86,6 +106,7 @@ class ChatRepository {
     String? subject,
     String? topic,
     required String grade,
+    String mode = 'learn',
   }) async {
     try {
       // Save user message
@@ -102,6 +123,7 @@ class ChatRepository {
           subject: subject,
           topic: topic,
           grade: grade,
+          mode: mode,
         );
       }
       return _sendViaEdge(
@@ -111,6 +133,7 @@ class ChatRepository {
         subject: subject,
         topic: topic,
         grade: grade,
+        mode: mode,
       );
     } catch (e) {
       return ApiFailure('Failed to get response: ${e.toString()}');
@@ -136,6 +159,7 @@ class ChatRepository {
     String? subject,
     String? topic,
     required String grade,
+    String mode = 'learn',
   }) async {
     final res = await _client.functions.invoke(
       'foxy-tutor',
@@ -146,7 +170,7 @@ class ChatRepository {
         'subject': subject,
         'topic': topic,
         'grade': grade,
-        'mode': 'learn',
+        'mode': mode,
       },
     );
 
@@ -182,6 +206,7 @@ class ChatRepository {
     String? subject,
     String? topic,
     required String grade,
+    String mode = 'learn',
   }) async {
     try {
       // ApiClient prepends `apiBase` to the path; pass relative path only.
@@ -194,7 +219,7 @@ class ChatRepository {
           'grade': grade,
           if (topic != null) 'chapter': topic,
           'sessionId': sessionId,
-          'mode': 'learn',
+          'mode': mode,
         },
       );
 

@@ -6,6 +6,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/experience_provider.dart';
 import '../../../providers/subscription_provider.dart';
+import '../../widgets/notification_badge.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -141,6 +142,101 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 12),
           ],
 
+          // Practice & Prep — the mobile "More" hub is the app's equivalent of
+          // the web Study Menu / bottom-nav "More" sheet. These practice
+          // surfaces were registered in the router (Phase 6) but had no
+          // user-facing entry point; grouping them here makes them discoverable
+          // in BOTH the legacy 5-tab and the v2 "More" nav (the routes are
+          // registered unconditionally, so both modes can reach them). All are
+          // full-screen routes → context.push, matching Library / Assignments /
+          // STEM Lab above.
+          _SettingsGroup(
+            title: isHi ? 'अभ्यास और तैयारी' : 'Practice & Prep',
+            children: [
+              _SettingsTile(
+                icon: Icons.electric_bolt_outlined,
+                title: isHi ? 'डेली चैलेंज' : 'Daily Challenge',
+                subtitle: isHi
+                    ? 'कॉन्सेप्ट चेन — रोज़ का दिमागी स्ट्रीक'
+                    : 'Concept Chain — your daily brain streak',
+                onTap: () => context.push('/challenge'),
+              ),
+              _SettingsTile(
+                icon: Icons.history_edu_outlined,
+                title: isHi ? 'पिछले वर्ष के प्रश्न' : 'Previous Year Questions',
+                subtitle: isHi
+                    ? 'बोर्ड परीक्षा के असली सवालों से अभ्यास'
+                    : 'Practice real board-exam questions',
+                onTap: () => context.push('/pyq'),
+              ),
+              _SettingsTile(
+                icon: Icons.autorenew_rounded,
+                title: isHi ? 'रिफ्रेश और रिवीज़न' : 'Refresh & Revise',
+                subtitle: isHi
+                    ? 'क्विक रिकॉल और रिटेंशन टेस्ट'
+                    : 'Quick recall & retention tests',
+                onTap: () => context.push('/refresh'),
+              ),
+              _SettingsTile(
+                icon: Icons.timer_outlined,
+                title: isHi ? 'मॉक टेस्ट' : 'Mock Tests',
+                subtitle: isHi
+                    ? 'समयबद्ध पूर्ण-लंबाई परीक्षा अभ्यास'
+                    : 'Timed full-length exam practice',
+                onTap: () => context.push('/exams'),
+              ),
+              _SettingsTile(
+                icon: Icons.document_scanner_outlined,
+                title: isHi ? 'स्कैन और हल करें' : 'Scan & Solve',
+                subtitle: isHi
+                    ? 'सवाल की फोटो लो, हल किया हुआ उत्तर पाओ'
+                    : 'Snap a question, get a worked solution',
+                onTap: () => context.push('/scan'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // Progress & Reports — reflection / report surfaces that logically sit
+          // near Progress. Kept in the "More" hub so they stay reachable in the
+          // legacy nav too (which has no Progress tab); the v2 Today queue also
+          // deep-links Weekly Dive / Monthly Synthesis directly (see
+          // today_deeplink.dart).
+          _SettingsGroup(
+            title: isHi ? 'प्रगति और रिपोर्ट' : 'Progress & Reports',
+            children: [
+              _SettingsTile(
+                icon: Icons.rocket_launch_outlined,
+                title: isHi ? 'साप्ताहिक डाइव' : 'Weekly Dive',
+                subtitle: isHi
+                    ? 'इस हफ़्ते की जिज्ञासा यात्रा'
+                    : "This week's curiosity journey",
+                onTap: () => context.push('/dive'),
+              ),
+              _SettingsTile(
+                icon: Icons.auto_awesome_outlined,
+                title: isHi ? 'मासिक संश्लेषण' : 'Monthly Synthesis',
+                subtitle: isHi
+                    ? 'महीने भर की सीख का सार'
+                    : 'Your month of learning, summarised',
+                onTap: () => context.push('/synthesis'),
+              ),
+              _SettingsTile(
+                icon: Icons.assessment_outlined,
+                title: isHi
+                    ? 'समग्र प्रगति कार्ड'
+                    : 'Holistic Progress Card',
+                subtitle: isHi
+                    ? 'आपका NEP 2020 समग्र रिपोर्ट कार्ड'
+                    : 'Your NEP 2020 holistic report card',
+                onTap: () => context.push('/hpc'),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
           // Plan section
           _SettingsGroup(
             title: 'Subscription',
@@ -182,10 +278,36 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsGroup(
             title: 'App',
             children: [
-              const _SettingsTile(
+              _SettingsTile(
                 icon: Icons.notifications_outlined,
-                title: 'Notifications',
-                subtitle: 'Study reminders are managed by your device',
+                title: isHi ? 'सूचनाएँ' : 'Notifications',
+                subtitle: isHi
+                    ? 'स्ट्रीक, क्विज़ और रिमाइंडर अपडेट'
+                    : 'Streaks, quiz results & reminders',
+                trailing: const NotificationBadge(
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 12,
+                    color: AppColors.textTertiary,
+                  ),
+                ),
+                onTap: () => context.push('/notifications'),
+              ),
+              _SettingsTile(
+                icon: Icons.explore_outlined,
+                title: isHi ? 'लाइब्रेरी' : 'Library',
+                subtitle: isHi
+                    ? 'सभी NCERT अध्याय बिना प्रगति दबाव के देखें'
+                    : 'Browse all NCERT chapters, no progress pressure',
+                onTap: () => context.push('/library'),
+              ),
+              _SettingsTile(
+                icon: Icons.assignment_outlined,
+                title: isHi ? 'मेरे असाइनमेंट' : 'My Assignments',
+                subtitle: isHi
+                    ? 'आपके शिक्षकों द्वारा दिए गए कार्य'
+                    : 'Work assigned by your teachers',
+                onTap: () => context.push('/assignments'),
               ),
               _SettingsTile(
                 icon: Icons.language_outlined,

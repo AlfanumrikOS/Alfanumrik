@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
-import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import {
   Card,
   Button,
@@ -196,7 +196,7 @@ function InviteModal({ open, onClose, schoolId, isHi }: InviteModalProps) {
                 fontFamily: 'var(--font-display)',
                 color: 'var(--orange)',
                 background: 'var(--surface-1)',
-                border: '1px solid var(--surface-3)',
+                border: '1px solid var(--border)',
                 letterSpacing: '0.18em',
               }}
               aria-label={t(isHi, `Invite code: ${code}`, `आमंत्रण कोड: ${code}`)}
@@ -312,7 +312,7 @@ function TeacherCard({ teacher, isHi }: TeacherCardProps) {
       {expanded && (
         <div
           className="mt-4 pt-4 space-y-3 animate-fade-in"
-          style={{ borderTop: '1px solid var(--surface-3)' }}
+          style={{ borderTop: '1px solid var(--border)' }}
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           role="region"
@@ -395,17 +395,42 @@ function TeacherCard({ teacher, isHi }: TeacherCardProps) {
    MAIN PAGE
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminTeachersPage() {
-  const { isHi } = useAuth();
-  const { schoolId, isLoading: loadingAdmin } = useSchoolAdminAuth();
+  const router = useRouter();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── State ── */
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  const [loadingAdmin, setLoadingAdmin] = useState(true);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loadingTeachers, setLoadingTeachers] = useState(false);
   const [rpcError, setRpcError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  /* ── Fetch teachers via RPC ── */
+  /* ── Step 1: Auth guard — fetch school_admins record ── */
+  const fetchAdminRecord = useCallback(async () => {
+    if (!authUserId) return;
+
+    setLoadingAdmin(true);
+
+    const { data, error } = await supabase
+      .from('school_admins')
+      .select('school_id, name')
+      .eq('auth_user_id', authUserId)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error || !data) {
+      // Not an active school admin — redirect to login
+      router.replace('/login');
+      return;
+    }
+
+    setSchoolId(data.school_id as string);
+    setLoadingAdmin(false);
+  }, [authUserId, router]);
+
+  /* ── Step 2: Fetch teachers via RPC ── */
   const fetchTeachers = useCallback(async (sid: string) => {
     setLoadingTeachers(true);
     setRpcError(null);
@@ -422,6 +447,20 @@ export default function SchoolAdminTeachersPage() {
 
     setLoadingTeachers(false);
   }, []);
+
+  /* ── Auth redirect guard ── */
+  useEffect(() => {
+    if (!authLoading && !authUserId) {
+      router.replace('/login');
+    }
+  }, [authLoading, authUserId, router]);
+
+  /* ── Fetch admin record once auth is ready ── */
+  useEffect(() => {
+    if (!authLoading && authUserId) {
+      fetchAdminRecord();
+    }
+  }, [authLoading, authUserId, fetchAdminRecord]);
 
   /* ── Fetch teachers once school_id is known ── */
   useEffect(() => {
@@ -441,7 +480,7 @@ export default function SchoolAdminTeachersPage() {
     : teachers;
 
   /* ── Loading states ── */
-  const isPageLoading = loadingAdmin;
+  const isPageLoading = authLoading || loadingAdmin;
 
   /* ── Full page loading skeleton ── */
   if (isPageLoading) {

@@ -79,8 +79,13 @@ describe.each(['vercel.json', 'apps/host/vercel.json'])(
       for (const [path, schedule] of Object.entries(PRE_EXISTING)) {
         expect(byPath.get(path), path).toBe(schedule);
       }
-      // Exactly 13 pre-existing + the canary — nothing dropped, nothing extra.
-      expect(entries).toHaveLength(14);
+      // At least the 13 pre-existing + the canary — nothing dropped. The list
+      // legitimately grows as new crons land (Phase 8 monitors:
+      // adaptive-loops-monitor, synthesis-delivery-monitor,
+      // synthesis-quality-sample); the per-path pins above are what guarantee
+      // the pre-existing entries are untouched, so this is a floor, not an
+      // exact count (avoids a brittle merge race on the total).
+      expect(entries.length).toBeGreaterThanOrEqual(14);
     });
 
     it('the canary does not collide with another cron at the same minute+hour', () => {

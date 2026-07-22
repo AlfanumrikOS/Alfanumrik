@@ -17,6 +17,13 @@
  * and the ZPD row, mirroring the lane's position in the API contract.
  * Unknown/future kinds are ignored by the filters below (default-safe).
  *
+ * Loop D (blocked-prerequisite, Digital Twin + Knowledge Graph Slice 1):
+ * items[] may additionally carry `kind: 'blocked_prerequisite'` cards,
+ * server-gated by ff_digital_twin_v1 (flag OFF ⇒ the kind never appears —
+ * this component makes no flag check of its own). Rendered directly after
+ * the remediation lane, mirroring its subject/chapter shape. This is
+ * frontend readiness work only; the flag's rollout state is untouched.
+ *
  * Spec: docs/superpowers/specs/2026-05-08-pedagogy-v2-three-speed-rhythm-design.md
  * Spec: docs/superpowers/specs/2026-06-12-phase-a-loop-a-adaptive-remediation-design.md
  */
@@ -26,7 +33,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { trackDashboardCta } from '@alfanumrik/lib/posthog/dashboard-cta';
 
 interface RhythmItem {
-  kind: 'srs_review' | 'zpd_problem' | 'reflection' | 'remediation_review';
+  kind: 'srs_review' | 'zpd_problem' | 'reflection' | 'remediation_review' | 'blocked_prerequisite';
   questionId?: string;
   topicId?: string;
   promptText?: string;
@@ -40,6 +47,11 @@ interface RhythmItem {
   chapterNumber?: number;
   interventionId?: string;
   priority?: number;
+  // Loop D — blocked_prerequisite fields (Digital Twin + Knowledge Graph
+  // Slice 1, ff_digital_twin_v1). `chapterNumber` above carries the DEPENDENT
+  // (advanced) chapter the student is blocked on; this carries the upstream
+  // PREREQUISITE chapter that needs strengthening.
+  prerequisiteChapterNumber?: number;
 }
 
 interface RhythmQueue {
@@ -106,6 +118,17 @@ export default function DailyRhythmQueue() {
       i.subjectCode.length > 0 &&
       typeof i.chapterNumber === 'number',
   );
+  // Loop D — same routing-safety requirement as the remediation lane above: a
+  // malformed card (missing subject/dependent chapter/prerequisite chapter)
+  // can never produce a dead link.
+  const blockedPrerequisite = queue.items.filter(
+    (i) =>
+      i.kind === 'blocked_prerequisite' &&
+      typeof i.subjectCode === 'string' &&
+      i.subjectCode.length > 0 &&
+      typeof i.chapterNumber === 'number' &&
+      typeof i.prerequisiteChapterNumber === 'number',
+  );
 
   const reflectionText = reflection
     ? (isHi ? (reflection.promptTextHi || reflection.promptText) : reflection.promptText)
@@ -117,6 +140,7 @@ export default function DailyRhythmQueue() {
       srs={srs}
       zpd={zpd}
       remediation={remediation}
+      blockedPrerequisite={blockedPrerequisite}
       reflection={reflection}
       reflectionText={reflectionText}
     />
@@ -128,6 +152,7 @@ interface RhythmQueueBodyProps {
   srs: RhythmItem[];
   zpd: RhythmItem | undefined;
   remediation: RhythmItem[];
+  blockedPrerequisite: RhythmItem[];
   reflection: RhythmItem | undefined;
   reflectionText: string | null | undefined;
 }
@@ -142,7 +167,7 @@ interface SynthesisStateLite {
   daysSinceCreated: number;
 }
 
-function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionText }: RhythmQueueBodyProps) {
+function RhythmQueueBody({ isHi, srs, zpd, remediation, blockedPrerequisite, reflection, reflectionText }: RhythmQueueBodyProps) {
   const [diveState, setDiveState] = useState<DiveStateLite | null>(null);
   const [synthesisState, setSynthesisState] = useState<SynthesisStateLite | null>(null);
   const [reflOpen, setReflOpen] = useState(false);
@@ -303,6 +328,63 @@ function RhythmQueueBody({ isHi, srs, zpd, remediation, reflection, reflectionTe
                   <span className="text-sm text-orange-700 underline font-medium">
                     {isHi ? 'मज़बूत करो' : 'Strengthen'}
                   </span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+
+        {/* Loop D — blocked-prerequisite lane (Digital Twin + Knowledge Graph
+            Slice 1, ff_digital_twin_v1). Minimal card, mirroring the
+            remediation lane's warm framing but a distinct "foundation" tone
+            so students can tell the two lanes apart at a glance.
+            Assessment sign-off (2026-07-21): headline rewritten to use the
+            same "Foxy noticed ... let's" collaborative voice as the Loop A
+            remediation card above (was a bare "X needs work before Y
+            clicks" instruction with no Foxy framing — inconsistent tone for
+            an equivalent-severity, routine struggle-signal). Hindi rewritten
+            to open with "Foxy ने देखा कि" to match the remediation line's
+            register, rather than a flat imperative instruction. */}
+        {blockedPrerequisite.map((item, idx) => {
+          const dependentCh = item.chapterNumber as number;
+          const prereqCh = item.prerequisiteChapterNumber as number;
+          const subject = item.subjectCode as string;
+          const headline = isHi
+            ? `Foxy ने देखा कि अध्याय ${prereqCh} पक्का होते ही अध्याय ${dependentCh} आसान हो जाएगा`
+            : `Foxy noticed Chapter ${dependentCh} will click faster once Chapter ${prereqCh} is solid`;
+          const href = `/quiz?subject=${encodeURIComponent(subject)}&chapter=${prereqCh}`;
+          return (
+            <li key={item.interventionId || `blocked-prereq-${subject}-${prereqCh}-${idx}`}>
+              <Link
+                href={href}
+                className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 min-h-[44px] transition-transform active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                data-testid="rhythm-blocked-prerequisite-card"
+                aria-label={
+                  isHi
+                    ? `${headline} — अभ्यास शुरू करो`
+                    : `${headline} — start practice`
+                }
+                onClick={() => {
+                  // interventionId is a uuid (not PII) but is intentionally NOT
+                  // emitted — same posture as the remediation lane above.
+                  trackDashboardCta({
+                    section: 'daily_rhythm_queue',
+                    action: 'blocked_prerequisite',
+                    destination: '/quiz',
+                  });
+                }}
+              >
+                <span className="text-lg leading-none mt-0.5" aria-hidden="true">🔗</span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-medium text-amber-900 leading-snug">
+                    {headline}
+                  </span>
+                  <span className="block text-[11px] text-amber-700 mt-0.5">
+                    {subject} · {isHi ? `अध्याय ${prereqCh}` : `Ch. ${prereqCh}`}
+                  </span>
+                </span>
+                <span className="text-sm text-amber-700 underline font-medium shrink-0">
+                  {isHi ? 'मज़बूत करो' : 'Strengthen'}
                 </span>
               </Link>
             </li>

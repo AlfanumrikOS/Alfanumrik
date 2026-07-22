@@ -17,8 +17,27 @@ import '../../ui/screens/leaderboard/leaderboard_screen.dart';
 import '../../ui/screens/parent/parent_glance_screen.dart';
 import '../../ui/screens/parent/parent_v3_sections.dart';
 import '../../ui/screens/stem/stem_lab_screen.dart';
+import '../../ui/screens/stem/lab_notebook_screen.dart';
 import '../../ui/screens/subscription/plans_screen.dart';
 import '../../ui/screens/settings/settings_screen.dart';
+import '../../ui/screens/notifications/notifications_screen.dart';
+import '../../ui/screens/library/library_screen.dart';
+import '../../ui/screens/challenge/daily_challenge_screen.dart';
+import '../../ui/screens/pyq/pyq_screen.dart';
+import '../../ui/screens/diagnostic/diagnostic_screen.dart';
+import '../../ui/screens/revision/revision_overview_screen.dart';
+import '../../ui/screens/revision/quick_recall_screen.dart';
+import '../../ui/screens/assignments/assignments_list_screen.dart';
+import '../../ui/screens/assignments/assignment_detail_screen.dart';
+import '../../ui/screens/exam/exam_catalog_screen.dart';
+import '../../ui/screens/exam/mock_exam_screen.dart';
+import '../../ui/screens/exam/mock_exam_results_screen.dart';
+import '../../ui/screens/scan_solve/scan_capture_screen.dart';
+import '../../ui/screens/scan_solve/scan_solve_result_screen.dart';
+import '../../ui/screens/dive/dive_screen.dart';
+import '../../ui/screens/dive/dive_history_screen.dart';
+import '../../ui/screens/synthesis/synthesis_screen.dart';
+import '../../ui/screens/progress/hpc_screen.dart';
 import '../../ui/widgets/app_shell.dart';
 import '../../ui/widgets/parent_app_shell.dart';
 import '../../providers/experience_provider.dart';
@@ -195,15 +214,52 @@ final routerProvider = Provider<GoRouter>((ref) {
               ),
             ],
           ),
+          // Phase 6 sub-phase 7 (Weekly Dive): `/chat` now optionally reads
+          // `mode`, `topic` and `subject` query parameters so the Weekly
+          // Curiosity Dive can launch Foxy in `explorer` mode on the dive's
+          // topic — mobile's equivalent of the web dive's
+          // `/foxy?mode=explorer&topic=…` hand-off. A bare `/chat` push (no
+          // query params) behaves EXACTLY as before: `initialMode` is null,
+          // so ChatScreen runs its original "start a session only if none
+          // exists, in the default `learn` mode" branch.
           GoRoute(
             path: '/chat',
-            pageBuilder: (context, state) =>
-                const NoTransitionPage(child: ChatScreen()),
+            pageBuilder: (context, state) {
+              final qp = state.uri.queryParameters;
+              final mode = qp['mode'];
+              return NoTransitionPage(
+                child: ChatScreen(
+                  initialMode: (mode != null && mode.isNotEmpty) ? mode : null,
+                  initialTopic: qp['topic'],
+                  initialSubject: qp['subject'],
+                ),
+              );
+            },
           ),
+          // Phase 6 sub-phase 5 (Assignments): `/quiz` now optionally reads
+          // query parameters (`subject`, `count`, `chapter`, `from`,
+          // `assignmentId`) so a deep link from the Assignments screen can
+          // auto-start the right quiz — mirrors the web's
+          // `/quiz?subject=&count=&chapter=&from=assignment&assignmentId=`.
+          // A bare `/quiz` push (no query params) behaves EXACTLY as before
+          // (manual subject picker).
           GoRoute(
             path: '/quiz',
-            pageBuilder: (context, state) =>
-                const NoTransitionPage(child: QuizScreen()),
+            pageBuilder: (context, state) {
+              final qp = state.uri.queryParameters;
+              final from = qp['from'];
+              final assignmentId = from == 'assignment' ? qp['assignmentId'] : null;
+              return NoTransitionPage(
+                child: QuizScreen(
+                  initialSubject: qp['subject'],
+                  initialChapter: qp['chapter'],
+                  initialCount: int.tryParse(qp['count'] ?? ''),
+                  assignmentId: (assignmentId != null && assignmentId.isNotEmpty)
+                      ? assignmentId
+                      : null,
+                ),
+              );
+            },
           ),
           // /v2 student-parity surfaces (Wave 2.3b). Registered
           // unconditionally so the routes always resolve; flag-OFF builds
@@ -234,6 +290,145 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/stem-lab',
         builder: (context, state) => const StemLabScreen(),
+      ),
+      // Lab Notebook — WebView wrap of /lab-notebook/[studentId]. Full-screen,
+      // same pattern as STEM Lab above.
+      GoRoute(
+        path: '/lab-notebook',
+        builder: (context, state) => const LabNotebookScreen(),
+      ),
+      // Notifications feed — Phase 6 mobile parity for
+      // src/app/notifications/page.tsx. Full-screen (pushed from the bell
+      // overlay in AppShell / the Settings "Notifications" tile).
+      GoRoute(
+        path: '/notifications',
+        builder: (context, state) => const NotificationsScreen(),
+      ),
+      // Library — browse-first content discovery (Tier 3 mobile parity for
+      // src/app/(student)/library/page.tsx). Full-screen; chapter taps push
+      // into the EXISTING /learn/:subjectCode/:topicId route.
+      GoRoute(
+        path: '/library',
+        builder: (context, state) => const LibraryScreen(),
+      ),
+      // Daily Challenge (Concept Chain) — Phase 6 sub-phase 2 mobile parity
+      // for src/app/challenge/page.tsx. Full-screen, own back button (not a
+      // bottom-tab destination on web either).
+      GoRoute(
+        path: '/challenge',
+        builder: (context, state) => const DailyChallengeScreen(),
+      ),
+      // PYQ (Previous Year Questions) — mobile parity for
+      // src/app/(student)/pyq/page.tsx. Shares question_bank directly
+      // (year-tagged, falling back to ungapped bank questions) — confirmed
+      // NOT wired to the exam_papers/mock-test system.
+      GoRoute(
+        path: '/pyq',
+        builder: (context, state) => const PyqScreen(),
+      ),
+      // Diagnostic assessment — mobile parity for src/app/diagnostic/page.tsx.
+      // Deep-linked from the `first_quiz_nudge` notification type (Phase 6
+      // sub-phase 1's notification_type_config.dart already registers that
+      // type's icon/label; this route registration is what resolves its
+      // `/diagnostic` deep link instead of it being a dead link on mobile).
+      GoRoute(
+        path: '/diagnostic',
+        builder: (context, state) => const DiagnosticScreen(),
+      ),
+      // Refresh — Phase 6 sub-phase 4 mobile parity for
+      // src/app/refresh/page.tsx (Quick Recall + Chapter Refresh +
+      // Retention Tests). Full-screen, own back button (matches web, which
+      // also has its own header rather than living inside the bottom nav).
+      GoRoute(
+        path: '/refresh',
+        builder: (context, state) => const RevisionOverviewScreen(),
+      ),
+      GoRoute(
+        path: '/refresh/recall',
+        builder: (context, state) => const QuickRecallScreen(),
+      ),
+      // Assignments (teacher-created) — Phase 6 sub-phase 5 mobile parity
+      // for `apps/host/src/app/(student)/assignments/page.tsx`. Full-screen
+      // (own back button, matches web which also has its own header rather
+      // than living inside the bottom nav).
+      GoRoute(
+        path: '/assignments',
+        builder: (context, state) => const AssignmentsListScreen(),
+      ),
+      GoRoute(
+        path: '/assignments/:id',
+        builder: (context, state) => AssignmentDetailScreen(
+          assignmentId: state.pathParameters['id']!,
+        ),
+      ),
+      // Exams / Mock Tests — Phase 6 sub-phase 6 mobile parity for
+      // `apps/host/src/app/(student)/exams/mock/**`. Full-screen (own back
+      // button, matches web). The runner is the app's ONLY countdown-timer
+      // surface; the clock is seeded from the server's
+      // `exam_papers.duration_minutes` and the score shown on the results
+      // route is the submit API's response verbatim (P1).
+      GoRoute(
+        path: '/exams',
+        builder: (context, state) => const ExamCatalogScreen(),
+      ),
+      GoRoute(
+        path: '/exams/mock/:paperId',
+        builder: (context, state) => MockExamScreen(
+          paperId: state.pathParameters['paperId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/exams/mock/:paperId/results',
+        builder: (context, state) => MockExamResultsScreen(
+          paperId: state.pathParameters['paperId']!,
+        ),
+      ),
+      // Scan & Solve — Phase 6 sub-phase 8 mobile parity for
+      // `apps/host/src/app/scan/page.tsx`, but wired to the REAL pipeline:
+      // `POST /api/scan-solve` (Storage upload → `scan-ocr` Edge Function →
+      // `ncert-solver`) in ONE call. The web page still renders a hardcoded
+      // `simulateOCR()` fixture; mobile does not reproduce that.
+      //
+      // Full-screen (own back button, matches web, which has its own header
+      // rather than a bottom nav). `/scan/result` reads the SAME
+      // `scanSolveProvider` state the capture screen populated — it is a
+      // presentation route, not a re-fetch, so a scan is never billed twice
+      // against the daily cap by navigating.
+      GoRoute(
+        path: '/scan',
+        builder: (context, state) => const ScanCaptureScreen(),
+      ),
+      GoRoute(
+        path: '/scan/result',
+        builder: (context, state) => const ScanSolveResultScreen(),
+      ),
+      // Weekly Curiosity Dive — Phase 6 sub-phase 7 mobile parity for
+      // `apps/host/src/app/dive/page.tsx` (+ `/dive/history`). LIVE at 100%
+      // on web since 2026-06-24, so this closes a real production gap rather
+      // than pre-building a dormant surface. Full-screen (own back button,
+      // matches web, which has its own header rather than a bottom nav).
+      GoRoute(
+        path: '/dive',
+        builder: (context, state) => const DiveScreen(),
+      ),
+      GoRoute(
+        path: '/dive/history',
+        builder: (context, state) => const DiveHistoryScreen(),
+      ),
+      // Monthly Synthesis — mobile parity for
+      // `apps/host/src/app/synthesis/page.tsx`. Registered unconditionally so
+      // the route always resolves; the SERVER gates it
+      // (`ff_pedagogy_v2_monthly_synthesis`, still OFF in production) and the
+      // screen degrades to a soft "not available yet" card on the 404.
+      GoRoute(
+        path: '/synthesis',
+        builder: (context, state) => const SynthesisScreen(),
+      ),
+      // Holistic Progress Card (NEP 2020) — WebView wrap of `/hpc`, same
+      // pattern as STEM Lab / Lab Notebook above.
+      GoRoute(
+        path: '/hpc',
+        builder: (context, state) => const HpcScreen(),
       ),
 
       // Guardian One Experience. ParentAppShell returns the legacy glance

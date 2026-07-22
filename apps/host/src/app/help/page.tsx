@@ -6,6 +6,10 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '@alfanumrik/lib/constants';
 import { Card, Button, LoadingFoxy } from '@alfanumrik/ui/ui';
+import {
+  categoryRequiresReference,
+  referenceEntityTypeForCategory,
+} from '@alfanumrik/lib/support/ticket-categories';
 
 /* ══════════════════════════════════════════════════════════════
    HELP & SUPPORT — Alfanumrik Support Center
@@ -98,11 +102,16 @@ const QUICK_FIXES = [
   { icon: '🐛', label: 'Report a bug', labelHi: 'बग रिपोर्ट करें', action: 'bug' },
 ];
 
+// Category values + reference requirement are the single source of truth in
+// @alfanumrik/lib/support/ticket-categories. Labels are duplicated here (P7)
+// to match the surrounding UI style; keep the value set in sync with that module.
 const TICKET_CATEGORIES = [
   { value: 'account', label: 'Account / Login issue', labelHi: 'खाता / लॉगिन समस्या' },
   { value: 'bug', label: 'App bug or crash', labelHi: 'ऐप में गड़बड़ी / क्रैश' },
   { value: 'content', label: 'Wrong content', labelHi: 'गलत सामग्री' },
   { value: 'billing', label: 'Billing / Payment', labelHi: 'बिलिंग / भुगतान' },
+  { value: 'automated_escalation_dispute', label: 'Dispute an automated flag (at-risk / inactivity)', labelHi: 'स्वचालित चेतावनी पर आपत्ति (जोखिम / निष्क्रियता)' },
+  { value: 'synthesis_content_concern', label: 'Monthly Synthesis content concern', labelHi: 'मासिक सारांश सामग्री पर चिंता' },
   { value: 'other', label: 'Feature request / Other', labelHi: 'फीचर अनुरोध / अन्य' },
 ];
 
@@ -154,6 +163,7 @@ export default function HelpPage() {
 
   // Ticket state
   const [ticketCategory, setTicketCategory] = useState('');
+  const [ticketRefId, setTicketRefId] = useState('');
   const [ticketSubject, setTicketSubject] = useState('');
   const [ticketMessage, setTicketMessage] = useState('');
   const [ticketEmail, setTicketEmail] = useState('');
@@ -201,6 +211,14 @@ export default function HelpPage() {
   // Ticket submit
   const submitTicket = async () => {
     if (!ticketCategory || !ticketMessage.trim()) return;
+    // Escalation / synthesis disputes must reference the exact trigger record.
+    const needsRef = categoryRequiresReference(ticketCategory);
+    if (needsRef && !ticketRefId.trim()) {
+      setTicketError(isHi
+        ? 'इस श्रेणी के लिए संबंधित रिकॉर्ड आईडी आवश्यक है।'
+        : 'A reference ID is required for this category.');
+      return;
+    }
     setTicketSubmitting(true);
     setTicketError('');
     try {
@@ -218,6 +236,8 @@ export default function HelpPage() {
           subject: ticketSubject || ticketCategory,
           description: ticketMessage,
           category: ticketCategory,
+          // ID only — never any PII (P13). Sent only for reference-requiring categories.
+          ...(needsRef && ticketRefId.trim() ? { related_entity_id: ticketRefId.trim() } : {}),
         }),
       });
 
@@ -572,11 +592,27 @@ export default function HelpPage() {
               <div className="space-y-3">
                 <div>
                   <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>{isHi ? 'श्रेणी *' : 'Category *'}</label>
-                  <select value={ticketCategory} onChange={e => setTicketCategory(e.target.value)} className="input-base">
+                  <select value={ticketCategory} onChange={e => { setTicketCategory(e.target.value); setTicketRefId(''); }} className="input-base">
                     <option value="">{isHi ? 'श्रेणी चुनें' : 'Select category'}</option>
                     {TICKET_CATEGORIES.map(cat => <option key={cat.value} value={cat.value}>{isHi ? cat.labelHi : cat.label}</option>)}
                   </select>
                 </div>
+
+                {categoryRequiresReference(ticketCategory) && (
+                  <div>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>
+                      {referenceEntityTypeForCategory(ticketCategory) === 'monthly_synthesis_run'
+                        ? (isHi ? 'मासिक सारांश आईडी *' : 'Monthly Synthesis ID *')
+                        : (isHi ? 'चेतावनी / हस्तक्षेप आईडी *' : 'Flag / intervention ID *')}
+                    </label>
+                    <input type="text" value={ticketRefId} onChange={e => setTicketRefId(e.target.value)} placeholder={isHi ? 'रिकॉर्ड आईडी पेस्ट करें' : 'Paste the record ID'} className="input-base"/>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
+                      {isHi
+                        ? 'यह आईडी हमें विवादित रिकॉर्ड खोजने में मदद करती है।'
+                        : 'This ID helps us locate the exact record you are disputing.'}
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <label className="text-xs font-semibold mb-1 block" style={{ color: 'var(--text-3)' }}>{isHi ? 'विषय' : 'Subject'}</label>
@@ -599,7 +635,7 @@ export default function HelpPage() {
                   </div>
                 )}
 
-                <Button fullWidth onClick={submitTicket} disabled={ticketSubmitting || !ticketCategory || !ticketMessage.trim()}>
+                <Button fullWidth onClick={submitTicket} disabled={ticketSubmitting || !ticketCategory || !ticketMessage.trim() || (categoryRequiresReference(ticketCategory) && !ticketRefId.trim())}>
                   {ticketSubmitting ? (isHi ? 'भेज रहे हैं...' : 'Submitting...') : (isHi ? 'टिकट भेजें →' : 'Submit Ticket →')}
                 </Button>
               </div>

@@ -29,6 +29,18 @@ import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled, PEDAGOGY_V2_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { logger } from '@alfanumrik/lib/logger';
 import { buildInternalCallerHeaders } from '@alfanumrik/lib/security/internal-caller-signing';
+import type { SynthesisBundle } from '@alfanumrik/lib/learn/monthly-synthesis-orchestrator';
+// Item 4.5 (2026-07-21) — pre-send defense-in-depth gate. Re-uses the SAME
+// fabrication checks as item 4.2's oracle (packages/lib/src/ai/validation/
+// synthesis-oracle.ts) as a second, independent pass immediately before the
+// WhatsApp send call. This exists to catch (a) any row persisted BEFORE the
+// 4.2 oracle existed, or (b) a future write path to
+// `monthly_synthesis_runs.summary_text_en/hi` that bypasses
+// `/api/synthesis/state`. Word-cap enforcement is intentionally NOT re-run
+// here — a length overshoot is a formatting nuisance already handled at
+// generation time, not a send-blocking safety concern; this gate only cares
+// about fabrication (P11).
+import { checkNumberFabrication, checkTopicFabrication } from '@alfanumrik/lib/ai/validation/synthesis-oracle';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +84,7 @@ export async function POST(request: Request) {
   // explicit eq(auth_user_id) below.
   const { data: rowData, error: rowErr } = await supabaseAdmin
     .from('monthly_synthesis_runs')
-    .select('id, student_id, synthesis_month, summary_text_en, summary_text_hi, parent_share_status, students!inner(id, name, auth_user_id, grade)')
+    .select('id, student_id, synthesis_month, bundle, summary_text_en, summary_text_hi, parent_share_status, students!inner(id, name, auth_user_id, grade)')
     .eq('id', body.synthesisRunId)
     .maybeSingle();
   if (rowErr) {
@@ -85,6 +97,7 @@ export async function POST(request: Request) {
     id: string;
     student_id: string;
     synthesis_month: string;
+    bundle: SynthesisBundle;
     summary_text_en: string;
     summary_text_hi: string;
     parent_share_status: string;
@@ -126,6 +139,35 @@ export async function POST(request: Request) {
   }
   if (!guardianRow.phone) {
     return NextResponse.json({ error: 'guardian_phone_missing' }, { status: 422 });
+  }
+
+  // 4b. Item 4.5 — pre-send fabrication gate (defense in depth on top of the
+  // item 4.2 oracle). Runs the SAME deterministic checks immediately before
+  // the WhatsApp send call so a row that somehow got persisted before the
+  // 4.2 oracle existed (or via a future bypass path) never reaches a
+  // parent's phone. A flagged row is NEVER silently dropped nor silently
+  // sent — it is written to 'flagged' so a human can review it later (see
+  // migration 20260722098000_monthly_synthesis_flagged_status.sql).
+  // Same grade context threaded through the item-4.2 oracle at generation
+  // time (`/api/synthesis/state`) — without it, this independent re-check
+  // would flag an already-approved summary that legitimately restates
+  // "Grade {grade}" (see synthesis-oracle.ts's AllowedNumberContext).
+  const numberContext = { studentGrade: row.students.grade };
+  const preSendNumEn = checkNumberFabrication(row.summary_text_en, row.bundle, numberContext);
+  const preSendNumHi = checkNumberFabrication(row.summary_text_hi, row.bundle, numberContext);
+  const preSendTopicEn = checkTopicFabrication(row.summary_text_en, row.bundle, row.students.name);
+  if (!preSendNumEn.ok || !preSendNumHi.ok || !preSendTopicEn.ok) {
+    const rejectionCategory = !preSendNumEn.ok || !preSendNumHi.ok ? 'fabricated_number' : 'fabricated_topic';
+    await supabaseAdmin
+      .from('monthly_synthesis_runs')
+      .update({ parent_share_status: 'flagged' })
+      .eq('id', row.id);
+    // P13: category only — never the unbacked numbers/phrases or student name.
+    logger.warn('parent-share: pre-send oracle flagged summary — held for review', {
+      synthesisRunId: row.id,
+      rejectionCategory,
+    });
+    return NextResponse.json({ error: 'flagged_for_review' }, { status: 422 });
   }
 
   // 5. Call whatsapp-notify with the new monthly_synthesis template.

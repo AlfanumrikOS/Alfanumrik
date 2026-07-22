@@ -329,6 +329,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/exams/papers/[id]/start",
+      "file": "apps/host/src/app/api/exams/papers/[id]/start/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/exams/papers/[id]/submit",
       "file": "apps/host/src/app/api/exams/papers/[id]/submit/route.ts",
       "access": "auth",

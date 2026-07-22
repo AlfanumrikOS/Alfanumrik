@@ -27,6 +27,17 @@ class ApiClient {
 
   factory ApiClient() => _instance ??= ApiClient._();
 
+  /// Raw configured [Dio] instance (same one used by [get]/[post] — auth
+  /// header injection + retry interceptor still apply). Exposed for
+  /// repositories that need the FULL response (status code + body) on
+  /// failure to distinguish between multiple non-2xx outcomes that share the
+  /// same HTTP status code (e.g. two different 409 reasons) — [post]'s
+  /// `_mapDioError` collapses those into a single generic [AppException]
+  /// per status code, which is intentional for the common case but too
+  /// lossy for that use case. See `assignments_repository.dart`'s
+  /// `completeAssignment` for the motivating example.
+  Dio get dio => _dio;
+
   Future<Response<T>> get<T>(String path,
       {Map<String, dynamic>? queryParameters}) async {
     try {

@@ -646,6 +646,76 @@ jobs:
           echo "::error::Exact healthy SHA was not observed (current_sha_seen=$CURRENT_SHA_SEEN, last=$LAST_STATUS); rollback suppressed."
           exit 1
 
+      - name: Flag posture canary check (protected-flag drift gate)
+        # Phase 0 flag-governance hardening (master action plan item 0.8).
+        # Architect-owned guardrail: calls the already-deployed
+        # /api/cron/flag-posture-canary route SYNCHRONOUSLY right after the
+        # health check above, so a drifted protected feature flag (the
+        # 2026-07-20 console bulk-enable incident's failure mode) fails THIS
+        # deploy job the same way an unhealthy app does — instead of waiting
+        # for the flag's own nightly Vercel cron slot (03:25 UTC).
+        #
+        # Deliberately does NOT feed rollback_authorized: a flag-posture drift
+        # is a DATA/CONFIG problem (someone/something changed feature_flags),
+        # not a CODE regression from this release, so an automatic Vercel
+        # code-rollback would not fix it and could mask the real issue. Failing
+        # the job still blocks post-deploy-verify/release/CI-Gate from reading
+        # this deploy as healthy and pages the on-call the same way any other
+        # failed health-check step does.
+        #
+        # Uses the CRON_SECRET GH secret (the SAME secret value the Vercel
+        # cron sends as a Bearer token) against the just-verified canonical
+        # production domain.
+        #
+        # Retry note (ops review, 2026-07-22): a single curl attempt could not
+        # distinguish "the route returned a real, non-zero drift count" from
+        # "a one-off network blip / cold start against a domain we JUST proved
+        # healthy in the step above" — both failed this job identically. Only
+        # a NON-200 / unreachable response is now retried (3 attempts, 10s
+        # backoff, mirrors the app-health-check step's resilience posture in
+        # this same job); a 200 response with a non-zero DRIFT_COUNT is a
+        # real signal and fails immediately on the first attempt, no retry.
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET is unavailable; flag-posture canary cannot run."
+            exit 1
+          fi
+          RESPONSE_FILE=$(mktemp)
+          trap 'rm -f "$RESPONSE_FILE"' EXIT
+          STATUS=""
+          BODY=""
+          for attempt in 1 2 3; do
+            set +e
+            STATUS=$(curl -sS --max-time 15 -o "$RESPONSE_FILE" -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              -H "Accept: application/json" \
+              "${PRODUCTION_DOMAIN}/api/cron/flag-posture-canary" 2>/dev/null)
+            CURL_EXIT=$?
+            set -e
+            if [ "$CURL_EXIT" = "0" ] && [ "$STATUS" = "200" ]; then
+              break
+            fi
+            BODY=$(cat "$RESPONSE_FILE" 2>/dev/null || true)
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::flag-posture-canary attempt $attempt/3 did not reach a healthy 200 (curl_exit=$CURL_EXIT status=${STATUS:-none}); retrying in 10s."
+              sleep 10
+            fi
+          done
+          BODY=$(cat "$RESPONSE_FILE" 2>/dev/null || true)
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::flag-posture-canary did not return a healthy 200 after 3 attempts (last status=${STATUS:-none}): $BODY"
+            exit 1
+          fi
+          DRIFT_COUNT=$(node -e "try{const b=JSON.parse(process.argv[1]);process.stdout.write(String(b.count ?? -1))}catch{process.stdout.write('-1')}" "$BODY")
+          if [ "$DRIFT_COUNT" != "0" ]; then
+            echo "::error::Feature-flag posture drift detected ($DRIFT_COUNT flag(s)): $BODY"
+            exit 1
+          fi
+          echo "Flag posture canary: clean (0 drift)."
+
       - name: Auto-rollback on health check failure
         if: failure() && steps.health.outputs.rollback_authorized == 'true'
         env:

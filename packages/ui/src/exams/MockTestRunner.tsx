@@ -161,12 +161,18 @@ function QuestionPalette({
   );
 }
 
-interface Props { paper: MockTestPaper; questions: MockTestQuestion[]; isHi: boolean; }
+interface Props {
+  paper: MockTestPaper;
+  questions: MockTestQuestion[];
+  isHi: boolean;
+  /** cbse_board dynamic-attempt flow only — see useMockTestState. */
+  attemptId?: string;
+}
 
-export default function MockTestRunner({ paper, questions, isHi }: Props) {
+export default function MockTestRunner({ paper, questions, isHi, attemptId }: Props) {
   const router = useRouter();
   const onNavigate = useCallback((path: string) => { router.push(path); }, [router]);
-  const s = useMockTestState(paper, questions, { onNavigate });
+  const s = useMockTestState(paper, questions, { onNavigate, attemptId });
 
   if (s.submitted) return <SubmittedScreen isHi={isHi} />;
 
@@ -216,8 +222,20 @@ export default function MockTestRunner({ paper, questions, isHi }: Props) {
         <div className="rounded-2xl p-5 space-y-4" style={CARD_STYLE}>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 text-xs">
+              {current.section && (
+                <span
+                  className="rounded-full px-2.5 py-0.5 font-bold"
+                  style={{ background: 'var(--purple, #7C3AED)', color: '#fff' }}
+                  data-testid="mock-test-section-badge"
+                >
+                  {isHi ? `खंड ${current.section}` : `Section ${current.section}`}
+                </span>
+              )}
               <span className="rounded-md px-2 py-0.5 font-bold" style={{ background: 'rgba(22,163,74,0.12)', color: '#16A34A' }}>+{current.marks_correct}</span>
-              <span className="rounded-md px-2 py-0.5 font-bold" style={{ background: 'rgba(220,38,38,0.10)', color: '#DC2626' }}>−{Math.abs(current.marks_wrong)}</span>
+              {/* CBSE-board dynamic questions carry no negative marking; hide the −0 chip to avoid confusing students. */}
+              {!(current.section && current.marks_wrong === 0) && (
+                <span className="rounded-md px-2 py-0.5 font-bold" style={{ background: 'rgba(220,38,38,0.10)', color: '#DC2626' }}>−{Math.abs(current.marks_wrong)}</span>
+              )}
               {current.chapter_title && <span className="text-[var(--text-3)] truncate">· {current.chapter_title}</span>}
             </div>
             <button

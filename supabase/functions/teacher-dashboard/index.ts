@@ -2037,7 +2037,7 @@ async function handleGetSubmissionDetail(
   // ownership check.
   const { data: sub, error: subErr } = await supabase
     .from('assignment_submissions')
-    .select('id, assignment_id, student_id, score, questions_total, questions_correct, time_spent_seconds, attempt_number, status, started_at, submitted_at, graded_at, graded_by, responses, teacher_feedback, xp_earned')
+    .select('id, assignment_id, student_id, score, questions_total, questions_correct, time_spent_seconds, attempt_number, status, started_at, submitted_at, graded_at, graded_by, responses, teacher_feedback, teacher_feedback_hi, xp_earned')
     .eq('id', submissionId)
     .maybeSingle()
   if (subErr) {
@@ -2084,6 +2084,7 @@ async function handleGetSubmissionDetail(
       submitted_at: sub.submitted_at,
       graded_at: sub.graded_at,
       teacher_feedback: sub.teacher_feedback,
+      teacher_feedback_hi: sub.teacher_feedback_hi,
       xp_earned: sub.xp_earned,
     },
     answers,
@@ -2105,6 +2106,7 @@ async function handleMarkSubmissionReviewed(
   const teacherId = String(body.teacher_id || '')
   const submissionId = String(body.submission_id || '')
   const feedbackRaw = body.feedback
+  const feedbackHiRaw = body.feedback_hi
   const scoreOverrideRaw = body.score_override
 
   if (!teacherId) return errorResponse('teacher_id required', 400, origin)
@@ -2112,6 +2114,12 @@ async function handleMarkSubmissionReviewed(
 
   const feedback = typeof feedbackRaw === 'string' && feedbackRaw.trim().length > 0
     ? feedbackRaw.trim().slice(0, 2000)
+    : null
+  // P7 bilingual variant — mirrors `feedback` exactly (trim, 2000-char cap,
+  // null when blank). Persisted to the additive teacher_feedback_hi column;
+  // never overwrites the English teacher_feedback column.
+  const feedbackHi = typeof feedbackHiRaw === 'string' && feedbackHiRaw.trim().length > 0
+    ? feedbackHiRaw.trim().slice(0, 2000)
     : null
   const scoreOverride = typeof scoreOverrideRaw === 'number' && Number.isFinite(scoreOverrideRaw)
     ? Math.max(0, Math.min(100, Math.round(scoreOverrideRaw)))
@@ -2214,6 +2222,7 @@ async function handleMarkSubmissionReviewed(
     updated_at: now,
   }
   if (feedback !== null) patch.teacher_feedback = feedback
+  if (feedbackHi !== null) patch.teacher_feedback_hi = feedbackHi
   if (scoreOverride != null) patch.score = scoreOverride
 
   const { error: updateErr } = await supabase

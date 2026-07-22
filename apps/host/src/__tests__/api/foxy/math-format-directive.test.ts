@@ -216,9 +216,11 @@ describe('mode_directive — math-format flag ON injects MATH_FORMAT_DIRECTIVE L
         diagramsFlagOn: false,
         mathFormatFlagOn: true,
       });
-      // Teaching modes have an empty base directive, so the composed result IS
-      // the math-format directive verbatim.
-      expect(d).toBe(MATH_FORMAT_DIRECTIVE);
+      // Most teaching modes have an empty base directive, so the composed
+      // result IS the math-format directive verbatim. 'explorer' is the
+      // exception (item 4.1, 2026-07-21): it now has its OWN non-empty base
+      // MODE_DIRECTIVES entry, so the composed result is base + math-format.
+      expect(d).toBe(composeModeDirective(MODE_DIRECTIVES[mode] ?? '', MATH_FORMAT_DIRECTIVE));
       expect(d).toContain(DIRECTIVE_MARKER);
     },
   );
@@ -234,10 +236,19 @@ describe('mode_directive — math-format flag ON injects MATH_FORMAT_DIRECTIVE L
         diagramsFlagOn: true,
         mathFormatFlagOn: true,
       });
-      // Exact order pin: teach-then-stop → diagram → math-format, each one
-      // blank line down. Math-format is LAST.
+      // Exact order pin: [mode base] → teach-then-stop → diagram →
+      // math-format, each one blank line down. Math-format is LAST.
+      // 'explorer' now has a non-empty base (item 4.1); every other teaching
+      // mode's base is still '' so this reduces to the pre-existing
+      // byte-identical expectation for them.
       expect(d).toBe(
-        `${TEACH_THEN_STOP_DIRECTIVE}\n\n${DIAGRAM_DIRECTIVE}\n\n${MATH_FORMAT_DIRECTIVE}`,
+        composeModeDirective(
+          composeModeDirective(
+            composeModeDirective(MODE_DIRECTIVES[mode] ?? '', TEACH_THEN_STOP_DIRECTIVE),
+            DIAGRAM_DIRECTIVE,
+          ),
+          MATH_FORMAT_DIRECTIVE,
+        ),
       );
       expect(d.endsWith(MATH_FORMAT_DIRECTIVE)).toBe(true);
     },

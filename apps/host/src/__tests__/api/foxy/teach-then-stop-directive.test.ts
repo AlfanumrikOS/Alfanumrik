@@ -114,9 +114,11 @@ describe('mode_directive — flag OFF is byte-identical to today', () => {
 describe('mode_directive — flag ON injects teach-then-stop on prose-teaching turns', () => {
   it.each(PROSE_TEACHING_MODES)('mode %s (flag ON) injects TEACH_THEN_STOP_DIRECTIVE', (mode) => {
     const d = resolveModeDirective({ isQuizMe: false, isRealPractice: false, mode, learningActionsFlagOn: true });
-    // Teaching modes have an empty base directive, so the composed result IS the
-    // teach-then-stop directive verbatim.
-    expect(d).toBe(TEACH_THEN_STOP_DIRECTIVE);
+    // Most teaching modes have an empty base directive, so the composed
+    // result IS the teach-then-stop directive verbatim. 'explorer' is the
+    // exception (item 4.1, 2026-07-21): it now has its OWN non-empty base
+    // MODE_DIRECTIVES entry, so the composed result is base + teach-then-stop.
+    expect(d).toBe(composeModeDirective(MODE_DIRECTIVES[mode] ?? '', TEACH_THEN_STOP_DIRECTIVE));
     expect(d).toContain(DIRECTIVE_MARKER);
   });
 

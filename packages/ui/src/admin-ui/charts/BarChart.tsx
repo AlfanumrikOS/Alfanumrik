@@ -11,7 +11,6 @@
 import {
   BarChart as RechartsBarChart,
   Bar,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -35,16 +34,6 @@ export interface BarChartProps {
   emptyLabel?: string;
   /** Stack bars instead of grouping side-by-side. */
   stacked?: boolean;
-  /**
-   * Optional per-bar fill override — e.g. severity-band colouring (danger/
-   * warning/success) instead of the default one-colour-per-series palette.
-   * Only applied to single-series charts (the common "one bar per category,
-   * coloured by a severity threshold" case). When provided, returns a CSS
-   * color/token string for a given data point; return undefined to fall back
-   * to the series palette color for that bar. Backward compatible: omitting
-   * this prop leaves every existing caller byte-identical.
-   */
-  pointColor?: (point: { x: string | number; y: number }, seriesIndex: number) => string | undefined;
 }
 
 function isEmpty(series: ChartSeries[]): boolean {
@@ -75,7 +64,6 @@ export function BarChart({
   height = 240,
   emptyLabel = 'No data to display',
   stacked = false,
-  pointColor,
 }: BarChartProps) {
   if (isEmpty(series)) {
     return (
@@ -125,15 +113,7 @@ export function BarChart({
             fill={CHART_PALETTE[i % CHART_PALETTE.length]}
             stackId={stackId}
             isAnimationActive={false}
-          >
-            {pointColor &&
-              s.data.map((point) => (
-                <Cell
-                  key={`${s.name}-${point.x}`}
-                  fill={pointColor(point, i) ?? CHART_PALETTE[i % CHART_PALETTE.length]}
-                />
-              ))}
-          </Bar>
+          />
         ))}
       </RechartsBarChart>
     </ResponsiveContainer>

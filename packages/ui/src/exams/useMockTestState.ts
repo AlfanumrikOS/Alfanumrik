@@ -55,6 +55,14 @@ export interface MockTestState {
 export interface MockTestStateOptions {
   /** Injected so the hook stays framework-pure and tests can stub it. */
   onNavigate?: (path: string) => void;
+  /**
+   * Present only for the `cbse_board` dynamic-attempt flow (paper started via
+   * POST /api/exams/papers/[id]/start). When set, it is forwarded on the
+   * submit payload so the backend scores against the stored question
+   * snapshot rather than re-deriving questions from `exam_paper_id`. Static
+   * JEE/NEET/Olympiad papers omit this — submit behaves exactly as before.
+   */
+  attemptId?: string;
 }
 
 export function useMockTestState(
@@ -136,6 +144,10 @@ export function useMockTestState(
 
     // ── Build payload ─────────────────────────────────────────────────────────
     const payload = {
+      // Only present for the cbse_board dynamic-attempt flow — omitted
+      // entirely (not sent as undefined/null) for static papers so the
+      // existing submit contract is untouched.
+      ...(options.attemptId ? { attempt_id: options.attemptId } : {}),
       responses: snapshotResponses.map((r, i) => ({
         question_id: questions[i]?.id ?? '',
         response_index: r.selectedIndex,

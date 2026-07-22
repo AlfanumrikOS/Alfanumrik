@@ -309,7 +309,7 @@ export default function ExamPrepPage() {
 
       <main className="app-container py-5 space-y-4">
         {/* ADR-001 Phase 3b — surfaces the Learner Loop's next-action
-            recommendation on every state of /study-plan (loading,
+            recommendation on every state of /exam-prep (loading,
             no-plan, plan-view). Renders nothing when the flag is off
             or the resolver 404s. */}
         <TodayLoopCard studentId={student.id} isHi={isHi} />

@@ -19,7 +19,15 @@ import { admitAiRoute, finalizeAiRoute, createStaticAiRouteProfile } from '../_s
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type TemplateType = 'daily_reminder' | 'score_notification' | 'streak_warning' | 'weekly_summary' | 'monthly_synthesis'
+type TemplateType =
+  | 'daily_reminder'
+  | 'score_notification'
+  | 'streak_warning'
+  | 'weekly_summary'
+  | 'monthly_synthesis'
+  | 'remediation_escalated'
+  | 'reengagement_escalated'
+  | 'concentration_escalated'
 type Language = 'en' | 'hi'
 
 interface NotifyRequest {
@@ -64,6 +72,35 @@ const TEMPLATES: Record<TemplateType, Record<Language, WhatsAppTemplate>> = {
   monthly_synthesis: {
     en: { id: 'monthly_synthesis_ready', params: ['student_name', 'synthesis_month', 'summary_preview'] },
     hi: { id: 'monthly_synthesis_ready_hi', params: ['student_name', 'synthesis_month', 'summary_preview'] },
+  },
+  // Phase A adaptive-loop parent-facing ESCALATION templates (Master Action
+  // Plan Phase 3, item 3.5) — the 3 highest-stakes guardian touchpoints from
+  // src/lib/notification-triggers.ts: onRemediationEscalated (Loop A),
+  // onInactivityEscalated (Loop B), onConcentrationEscalated /
+  // onConcentrationReescalated (Loop C, both reuse this one template — same
+  // reuse the in-app `notifications.type` column already makes). Deliberately
+  // NO student_name param, matching the existing "your child" (never named)
+  // convention these same in-app guardian rows already use (P13-adjacent —
+  // consistent with the adaptive-loop notification producers, not a new
+  // posture invented here).
+  //
+  // PLACEHOLDER Meta template ids — ops/backend must create + get these
+  // approved in Meta Business Manager before ff_adaptive_remediation_v1 /
+  // ff_adaptive_loops_bc_v1 are ever turned ON in production. Until approved,
+  // the WhatsApp Cloud API call fails (this function returns 400/502) and the
+  // caller's fire-and-forget wrapper (sendWhatsAppEscalation) swallows it —
+  // the in-app notification row is the unaffected, durable record either way.
+  remediation_escalated: {
+    en: { id: 'adaptive_remediation_escalated', params: ['subject_code', 'chapter_number'] },
+    hi: { id: 'adaptive_remediation_escalated_hi', params: ['subject_code', 'chapter_number'] },
+  },
+  reengagement_escalated: {
+    en: { id: 'adaptive_reengagement_escalated', params: [] },
+    hi: { id: 'adaptive_reengagement_escalated_hi', params: [] },
+  },
+  concentration_escalated: {
+    en: { id: 'adaptive_concentration_escalated', params: ['subject_code', 'at_risk_chapter_count'] },
+    hi: { id: 'adaptive_concentration_escalated_hi', params: ['subject_code', 'at_risk_chapter_count'] },
   },
 }
 
@@ -225,11 +262,12 @@ async function logNotification(
   context: EdgeLogContext,
 ): Promise<void> {
   try {
-    // KNOWN GAP (needs migration — architect): the `notification_log` table
-    // does not exist on prod (confirmed against the live DB 2026-06-16). Every
-    // insert here fails and is swallowed, so WhatsApp delivery audit rows are
-    // silently dropped. Delivery itself is unaffected (this is logging only).
-    // Until the table is created, this is a best-effort no-op by design.
+    // RESOLVED 2026-07-22 (Master Action Plan Phase 3, item 3.7): the
+    // `notification_log` table now exists — see migration
+    // 20260722092000_notification_log_audit_table.sql, whose column shape was
+    // derived directly from this insert call (no code change needed here).
+    // The insert stays wrapped in try/catch as best-effort: a logging failure
+    // must never block WhatsApp delivery or the email fallback below.
     await supabase.from('notification_log').insert({
       user_id: userId ?? null,
       channel,

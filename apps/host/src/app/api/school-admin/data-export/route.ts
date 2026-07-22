@@ -1,29 +1,3 @@
-/**
- * POST /api/school-admin/data-export
- *
- * ─── PII posture (P13) — READ BEFORE CHANGING SCOPE ───────────────────────────
- * This endpoint exports PER-STUDENT rows. The `students`, `quiz_results`,
- * `progress`, and `full` export types all include a `student_name` /
- * `name` column (see `exportStudents`/`exportQuizResults`/`exportProgress`
- * below). Email and phone are NEVER included (checked at code review), but
- * names ARE — this is a materially different, HIGHER PII-exposure tier than
- * the sibling `GET /api/school-admin/reports/export` endpoint.
- *
- * ─── Cross-reference: `../reports/export/route.ts` ────────────────────────────
- * `reports/export` is AGGREGATE-ONLY — it returns group-level counts/averages
- * from `export_school_report` with NO student identifiers of any kind, so it
- * is PII-safe by construction. THIS endpoint (`data-export`) is not that — the
- * similar "export" naming should not be read as implying the same PII tier.
- *
- * ─── Open question — NOT decided by this comment ──────────────────────────────
- * Whether per-student `name` export to a school admin is an APPROVED P13
- * access tier has not been explicitly signed off by architect + user as of
- * this writing (RCA finding, 2026-07-21). This comment does not change, widen,
- * or restrict the endpoint's behavior — it documents the current state and
- * flags the open question. Do not treat the current behavior as either
- * approved or rejected until that sign-off happens; see the backend-agent
- * report accompanying this change for the explicit call-out.
- */
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeSchoolAdmin } from '@alfanumrik/lib/school-admin-auth';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';

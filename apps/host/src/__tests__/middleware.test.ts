@@ -160,7 +160,7 @@ describe('Rate limit local logic', () => {
 describe('Protected route patterns', () => {
   const PROTECTED_PREFIXES = [
     '/dashboard', '/quiz', '/profile', '/progress', '/reports',
-    '/study-plan', '/foxy', '/learn', '/review', '/scan',
+    '/foxy', '/learn', '/review', '/scan',
     '/notifications', '/exams', '/leaderboard', '/hpc', '/simulations',
     '/stem-centre', '/research',
     '/parent/children', '/parent/reports', '/parent/profile', '/parent/support',
@@ -496,7 +496,7 @@ describe('Protected route session requirement', () => {
   function requiresSessionCookie(path: string): boolean {
     const PROTECTED_PREFIXES = [
       '/dashboard', '/quiz', '/profile', '/progress', '/reports',
-      '/study-plan', '/foxy', '/learn', '/review', '/scan',
+      '/foxy', '/learn', '/review', '/scan',
       '/notifications', '/exams', '/leaderboard', '/hpc', '/simulations',
       '/stem-centre', '/research',
       '/parent/children', '/parent/reports', '/parent/profile', '/parent/support',

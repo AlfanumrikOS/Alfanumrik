@@ -69,6 +69,11 @@ export async function POST(
       status: result.status,
       submissionId: result.submissionId,
       scorePercent: result.scorePercent,
+      // Additive fields (item 3.8/3.9) — existing consumers destructuring only
+      // the fields above are unaffected.
+      attemptNumber: result.attemptNumber,
+      bestScorePercent: result.bestScorePercent,
+      isLateSubmission: result.isLateSubmission,
     });
   }
 
@@ -85,6 +90,10 @@ export async function POST(
       // Idempotent-friendly: the teacher already reviewed this submission —
       // treat as a soft success rather than an error banner for the student.
       return NextResponse.json({ success: true, status: 'already_graded' });
+    case 'max_attempts_reached':
+      return err('You have used all allowed attempts for this assignment', 409);
+    case 'submission_closed':
+      return err('This assignment no longer accepts submissions (past due)', 409);
     case 'db_error':
       logger.error('student_assignment_complete_failed', {
         error: new Error(result.message),

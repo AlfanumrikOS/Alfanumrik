@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
-import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
@@ -144,7 +143,7 @@ function Step1Profile({ profile, isHi, onSave, saving }: Step1Props) {
               type="color"
               value={primaryColor}
               onChange={(e) => setPrimaryColor(e.target.value)}
-              className="w-10 h-10 rounded-lg border border-surface-3 cursor-pointer"
+              className="w-10 h-10 rounded-lg border border-[var(--border)] cursor-pointer"
               style={{ padding: 2 }}
             />
             <span className="text-xs font-mono text-[var(--text-3)]">{primaryColor}</span>
@@ -159,7 +158,7 @@ function Step1Profile({ profile, isHi, onSave, saving }: Step1Props) {
               type="color"
               value={secondaryColor}
               onChange={(e) => setSecondaryColor(e.target.value)}
-              className="w-10 h-10 rounded-lg border border-surface-3 cursor-pointer"
+              className="w-10 h-10 rounded-lg border border-[var(--border)] cursor-pointer"
               style={{ padding: 2 }}
             />
             <span className="text-xs font-mono text-[var(--text-3)]">{secondaryColor}</span>
@@ -582,7 +581,7 @@ function Step3InviteCodes({
                     className="px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
                     style={{
                       background: isCopied ? 'var(--success)' : 'var(--surface-2)',
-                      border: '1px solid var(--surface-3)',
+                      border: '1px solid var(--border)',
                       color: isCopied ? '#fff' : 'var(--text-2)',
                       minHeight: '40px',
                     }}
@@ -762,8 +761,7 @@ function SetupSkeleton() {
 ───────────────────────────────────────────────────────────── */
 export default function SchoolAdminSetupPage() {
   const router = useRouter();
-  const { isHi } = useAuth();
-  const { schoolId, isLoading: authLoading, error: adminError } = useSchoolAdminAuth();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* ── state ── */
   const [step, setStep] = useState(0);
@@ -776,23 +774,41 @@ export default function SchoolAdminSetupPage() {
   const [createdClasses, setCreatedClasses] = useState<CreatedClass[]>([]);
   const [inviteCodes, setInviteCodes] = useState<InviteCode[]>([]);
 
+  /* ── auth guard ── */
   useEffect(() => {
-    if (adminError) setError(adminError);
-  }, [adminError]);
+    if (!authLoading && !authUserId) {
+      router.replace('/login');
+    }
+  }, [authLoading, authUserId, router]);
 
-  /* ── bootstrap: fetch school profile once the school admin identity resolves ── */
+  /* ── bootstrap: fetch school profile ── */
   const bootstrap = useCallback(async () => {
-    if (!schoolId) return;
+    if (!authUserId) return;
 
     setLoading(true);
     setError(null);
 
     try {
+      // Get admin record to find school_id
+      const { data: adminRecord, error: adminErr } = await supabase
+        .from('school_admins')
+        .select('school_id')
+        .eq('auth_user_id', authUserId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (adminErr) throw new Error(adminErr.message);
+
+      if (!adminRecord) {
+        router.replace('/login');
+        return;
+      }
+
       // Fetch school profile
       const { data: school, error: schoolErr } = await supabase
         .from('schools')
         .select('id, name, slug, tagline, logo_url, primary_color, secondary_color')
-        .eq('id', schoolId)
+        .eq('id', adminRecord.school_id)
         .single();
 
       if (schoolErr) throw new Error(schoolErr.message);
@@ -803,7 +819,7 @@ export default function SchoolAdminSetupPage() {
       const { data: existingClasses } = await supabase
         .from('classes')
         .select('id, name, grade, section')
-        .eq('school_id', schoolId)
+        .eq('school_id', adminRecord.school_id)
         .order('grade', { ascending: true });
 
       if (existingClasses && existingClasses.length > 0) {
@@ -814,13 +830,13 @@ export default function SchoolAdminSetupPage() {
     } finally {
       setLoading(false);
     }
-  }, [schoolId]);
+  }, [authUserId, router]);
 
   useEffect(() => {
-    if (schoolId) {
+    if (!authLoading && authUserId) {
       bootstrap();
     }
-  }, [schoolId, bootstrap]);
+  }, [authLoading, authUserId, bootstrap]);
 
   /* ── Step 1: Save profile ── */
   async function handleSaveProfile(updates: Partial<SchoolProfile>): Promise<boolean> {

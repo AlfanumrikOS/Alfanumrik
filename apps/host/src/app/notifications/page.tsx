@@ -42,6 +42,15 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string; 
   first_quiz_nudge: { icon: '🚀', color: '#E8581C', label: 'Get Started', labelHi: 'शुरू करो' },
   // Loop B engagement — streak about to break (daily-cron early-warning nudge).
   streak_at_risk: { icon: '🔥', color: '#EF4444', label: 'Streak at Risk', labelHi: 'स्ट्रीक खतरे में' },
+  // Loop D — blocked-prerequisite (Digital Twin + Knowledge Graph Slice 1,
+  // ff_digital_twin_v1). Frontend readiness only — the flag is still OFF.
+  // Assessment sign-off (2026-07-21): labels reframed from deficit language
+  // ("Foundation Gap" / "Foundation Fixed") to the same growth-mindset,
+  // action-oriented register as Loop A's remediation labels ("Extra
+  // Practice" / "Extra Help") — this is a routine daily-rhythm card, not an
+  // escalation, so it should not borrow "at risk"/gap severity language.
+  prerequisite_blocked: { icon: '🔗', color: '#F59E0B', label: 'Foundation Boost', labelHi: 'नींव अभ्यास' },
+  prerequisite_resolved: { icon: '✅', color: '#16A34A', label: 'Foundation Ready', labelHi: 'नींव तैयार' },
 };
 
 interface Notification {

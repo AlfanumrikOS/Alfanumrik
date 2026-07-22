@@ -537,17 +537,101 @@ const MODE_DIRECTIVES: Record<string, string> = {
   learn: '',
   explain: '',
   revise: '',
+  // ─── explorer (Pedagogy v2 Wave 2 — Weekly Curiosity Dive) ─────────────────
+  //
+  // BUG FIX (2026-07-21): 'explorer' is a VALID_MODES entry (constants.ts) and
+  // is the LIVE chat surface `/dive` opens via `/foxy?mode=explorer&...` (Dive
+  // is ON at 100% in production). Before this fix, MODE_DIRECTIVES had no
+  // 'explorer' key, so `MODE_DIRECTIVES[mode] ?? ''` silently fell back to ''
+  // — explorer turns got the SAME base persona as learn/explain: the
+  // `cbseGuidelines` "teach deeply... 5-12 blocks" Step-Cards shape (see
+  // buildSystemPrompt below). That directly contradicts the explorer-mode
+  // design (docs/superpowers/specs/2026-05-08-pedagogy-v2-three-speed-rhythm-
+  // design.md §5.2 + docs/superpowers/plans/2026-05-09-pedagogy-v2-wave-2-
+  // weekly-dive.md Task 4): explorer is Socratic-led ("ask before telling"),
+  // only gives direct exposition when the student is GENUINELY stuck (unlike
+  // homework mode, which never gives direct answers), and progressively
+  // builds a structured "artifact draft" (key concepts / worked example / a
+  // "what I figured out" student-voice section) that gets saved to the
+  // student's lab notebook at the end of the dive.
+  //
+  // DECISION (ai-engineer, 2026-07-21 — flagged for assessment sign-off,
+  // see review-trigger note in the route.ts changelog comment near
+  // selectFoxyPromptTemplate): explorer gets its OWN MODE_DIRECTIVES entry
+  // rather than silently reusing learn's (i.e. the empty-string fallback).
+  // Reasoning:
+  //   1. The pedagogy is materially different from learn/explain (Socratic-
+  //      first vs. "teach deeply" exposition-first) — reusing learn's shape
+  //      is not "fine", it is the literal bug this fix closes.
+  //   2. The correct persona text ALREADY EXISTS, author-written by the
+  //      assessment agent, in `MODE_ADJUSTERS.explorer` in
+  //      packages/lib/src/goals/goal-personas.ts (also mirrored in
+  //      apps/host/src/app/api/foxy/_lib/constants.ts's mode-adjuster comment)
+  //      — but it is ONLY injected when `ff_goal_aware_foxy` is ON AND the
+  //      student has set an `academic_goal`. Weekly Dive is live at 100% for
+  //      EVERY student regardless of goal-flag or goal-profile state, so
+  //      relying on that gated path leaves most explorer turns with no
+  //      persona override at all. This directive reuses that SAME
+  //      assessment-authored wording (not new, unreviewed pedagogy) and wires
+  //      it unconditionally for explorer turns, so the fix does not depend on
+  //      an unrelated flag rollout.
+  //   3. Do NOT delete or change MODE_ADJUSTERS.explorer / the expanded-
+  //      persona path — when ff_goal_aware_foxy is ON for a student with a
+  //      goal set, buildAcademicGoalSection's expanded-persona block is
+  //      composed ADDITIONALLY into the system prompt (see buildSystemPrompt),
+  //      so the two layer cleanly: this directive is the always-on floor,
+  //      the expanded persona is a goal-flavoured addition on top.
+  explorer: [
+    '## Mode Directive (EXPLORER — overrides the default teaching-mode shape above,',
+    '## whether that is STEP CARDS or a full teach-deeply exposition)',
+    'The student is on a WEEKLY CURIOSITY DIVE (a self-directed exploration',
+    'session), NOT a standard lesson. Do NOT default to a long, exhaustive',
+    '5-12 block exposition — this is Socratic-led, curiosity-first exploration.',
+    '',
+    '- Ask before telling: open with a question, observation, or small puzzle',
+    '  that invites the student to think, rather than a lecture.',
+    '- Only give direct exposition when the student is GENUINELY stuck after at',
+    '  least one Socratic attempt. (Unlike "homework" mode, which never gives',
+    '  a direct answer, explorer mode MAY explain directly once the student is',
+    '  truly stuck — but Socratic-first is the default posture.)',
+    '- Keep each turn SHORT and conversational: 2-4 blocks per turn, not the',
+    '  5-12 block "teach deeply" shape used in learn/explain mode.',
+    '- Progressively build a structured "artifact draft" as the conversation',
+    '  goes on: track the key concepts discovered so far, one worked example,',
+    '  and a "what I figured out" line phrased in the STUDENT\'s own words (ask',
+    '  them to state it, don\'t write it for them). Reference this draft',
+    '  explicitly turn by turn so the student sees it taking shape — it will',
+    '  be saved as their weekly notebook artifact at the end of the dive.',
+    '- Stay strictly grounded in the retrieved reference material (P12 — never',
+    '  fabricate). If the conversation drifts outside CBSE scope for the',
+    '  student\'s grade, gently steer back rather than following it out.',
+    '- Prefer Indian-context, cross-subject real-world examples where relevant',
+    '  (the Dive is meant to connect ideas across subjects — e.g. monsoons to',
+    '  geography + physics + biology, cricket to mechanics + statistics).',
+    'Write in the student\'s language (English, Hindi, or Hinglish); keep',
+    'technical terms (CBSE, NCERT, Bloom\'s) in English.',
+  ].join('\n'),
 };
 
 // Practice mode emits 5 mcq blocks (stem + 4 options + correct_index + explanation
 // + bloom + difficulty per block). The default 1024 cap truncates after block 1-2,
 // leaving the picker rescue to surface only the intro. 2500 fits 5 mcqs comfortably
 // once the grounded-answer pipeline applies its 1.6x foxy boost (→ ~4000 effective).
+//
+// BUG FIX (2026-07-21, item 4.1): 'explorer' had NO entry here, so the call site
+// (`MODE_MAX_TOKENS[mode] ?? 1024`) silently gave the LIVE `/dive` chat surface a
+// 1024-token budget — well below every sibling teaching mode (3000) despite
+// explorer turns needing room for both a Socratic exchange AND the running
+// artifact-draft summary. Matched to learn/explain/revise's 3000 budget: explorer
+// is pedagogically closer to those (open-ended prose) than to practice's
+// fixed-shape 5-mcq block, and needs at least as much headroom for the
+// artifact-draft bookkeeping this mode's directive asks for every turn.
 const MODE_MAX_TOKENS: Record<string, number> = {
   practice: 2500,
   learn: 3000,
   explain: 3000,
   revise: 3000,
+  explorer: 3000,
 };
 
 // ─── Post-answer re-teach + Quiz-me directives (Phase 1 learning actions) ────

@@ -1183,139 +1183,107 @@ oracle parity, callClaude-only transport with no model override, and the
 
 ---
 
-## Phase 3B reporting-surface regression promotion (RCA Task 3.4) — REG-291, REG-292, REG-293
+## Master Action Plan Phase 3 — student assignment completion hardening (2026-07-22) — REG-299
 
-Source: the "School Dashboard IA/UX Redesign + Statistical Reporting Overhaul"
-RCA (deep audit of `apps/host/src/app/school-admin/**` and its ~37 APIs) found
-that the entire Phase 3B School Admin Command Center + Reports surface
-(`get_classes_at_risk`, `get_teacher_engagement`, `get_school_mastery_rollup`,
-`get_school_bloom_summary`, `export_school_report`, and
-`apps/host/src/app/api/school-admin/data-export/route.ts`) already had real
-unit/contract test coverage (REG-96 School Command Center, REG-99 School
-reporting mastery/Bloom/export) but three specific gaps had never been promoted
-into the catalog or, in one case, never had a test written at all. This section
-closes those three gaps. The plan's Task 3.1 cross-tenant RLS fix (`teachers`/
-`classes` leak) was already promoted separately as REG-290 in
-`.claude/regression/10-rbac-rls.md` in the same session — it is NOT re-added
-here.
+Source: Master Action Plan Phase 3, items 3.8/3.9 (backend). Prior to this
+fix, `completeAssignmentFromSession` (`packages/lib/src/learn/assignment-submission.ts`
+— the write-side counterpart of the teacher grading surface) hardcoded
+`attempt_number: 1` on every call and performed ZERO server-side check of
+`assignments.due_date`, so (a) a second genuine completion silently
+overwrote the first attempt's score/responses instead of recording a new
+attempt, and (b) the "Overdue" badge was purely cosmetic client-side theatre
+— a student could complete an assignment at any time with no record of
+lateness. Both gaps are closed additively (no schema change; `max_attempts`
+and `allow_late_submission` were already-existing columns):
 
-**1. BKT 0.4 at-risk threshold — SQL↔TS literal parity (REG-291).**
-`packages/lib/src/pulse/signals.ts` (`PULSE_THRESHOLDS.at_risk_mastery`) and the
-`AT_RISK_PKNOW_THRESHOLD` cutoff hardcoded into `get_classes_at_risk` (migration
-`20260614000000_phase3b_school_command_center_read_models.sql`) and
-`get_school_mastery_rollup` (migration `20260614000003_phase3b_school_reporting.sql`)
-independently declare the literal `0.4` in TypeScript and PL/pgSQL — same value,
-NOT wired to one shared constant. REG-96/REG-99 already prove the LIVE-DB
-*behavior* at the boundary (a student at exactly 0.40 is not at-risk), but
-nothing before this test mechanically proved the TS and SQL *literals* agree —
-a future edit to `PULSE_THRESHOLDS.at_risk_mastery` alone (or a redefinition of
-either RPC alone) would silently make Student Pulse and the School Command
-Center / Reports "at risk" counts disagree for the same student, with no
-failing test to catch it. This is a static source-level drift canary, modelled
-on the existing REG-48 (`xp-sql-literal-parity.test.ts`) SQL↔TS parity pattern,
-runnable with no live DB.
+- **Multi-attempt (3.8):** the module now reads the student's FULL prior
+  attempt history for the assignment, allocates the NEXT `attempt_number`,
+  and enforces `assignments.max_attempts` (column default 3) with a 409
+  (`max_attempts_reached`) once exceeded. An IDEMPOTENT-REPLAY guard (latest
+  attempt byte-identical on total/correct/score AND submitted within a 15s
+  dedupe window) prevents a network retry from burning a second attempt slot
+  while still allowing a genuinely different second attempt through. An
+  already-graded attempt (`graded_at` set) is never silently clobbered by a
+  replay of that same completion (`already_graded`, soft 200) — but grading
+  one attempt does NOT block a subsequent NEW attempt.
+- **Due-date lockout (3.9):** `now() > due_date` + `allow_late_submission ===
+  false` -> reject with `submission_closed` (409, hard reject, opt-in per
+  assignment). Otherwise (schema default `true`) -> ACCEPT and flag
+  `isLateSubmission: true` in the response (product-policy default:
+  accept-and-flag over hard-reject, since a hard reject-by-default could
+  unfairly lock out a student with a legitimate late excuse).
+- Score/correct/total continue to be read VERBATIM from `quiz_sessions` (no
+  `(correct/total)*100` recomputation — P1 boundary unchanged), and the
+  class-membership + session-ownership boundary checks (student must be an
+  ACTIVE member of the assignment's class; a `quiz_sessions` id cannot be
+  borrowed cross-student) are unchanged by this hardening.
 
-**2. `reports/export` permission-code fix + PII posture cross-reference
-(REG-292).** Task 3.3 found `apps/host/src/app/api/school-admin/reports/export/route.ts`
-gated on `institution.view_analytics` (the read-only analytics permission it
-inherited from the other `resolveCommandCenterContext` callers) instead of the
-export-specific `institution.export_reports` used by its sibling export routes
-— a caller who could only VIEW analytics could also EXPORT them. The fix and a
-new permission-code test landed in this session. The underlying PII-safety
-claim this route makes — `export_school_report` returns AGGREGATES ONLY, no
-student name/id/email anywhere in the payload or the CSV — is NOT re-tested
-here because it is ALREADY covered in full by REG-99 (live-DB jsonb-serialized
-PII-absence check + route-level CSV PII-token-absence check). REG-292 adds only
-the net-new coverage: the corrected permission code is actually enforced.
-`apps/host/src/app/api/school-admin/data-export/route.ts` also received a
-doc-comment cross-reference in the same Task 3.3 pass clarifying it is a
-DIFFERENT, higher PII tier (per-student names) than `reports/export`, and
-flagging that explicit architect+user sign-off on that tier is still an open
-item — not something a test can assert, called out here for visibility.
-
-**3. `data-export` tenant isolation (REG-293).** No test previously exercised
-`data-export/route.ts` end-to-end proving it cannot return another school's
-students — the tenant boundary existed only one level down, in
-`authorizeSchoolAdmin`'s own unit coverage (`school-admin-auth.test.ts` —
-"selects only a requested active membership and rejects a foreign school").
-This was a genuine coverage gap, not just a promotion gap: no test previously
-seeded two schools' students and asserted the route's OWN output was scoped.
-A new test was written and is added here.
-
-| # | Test name | Asserts | Location | Status | Invariants |
-|---|---|---|---|---|---|
-| REG-291 | `bkt_at_risk_threshold_sql_ts_parity` | `PULSE_THRESHOLDS.at_risk_mastery === 0.4` (TS anchor); the `AT_RISK_PKNOW_THRESHOLD` literal grep'd out of `get_classes_at_risk`'s migration and `get_school_mastery_rollup`'s migration both equal that TS constant; a drift sweep across both migrations fails if ANY extracted literal disagrees. Each extractor also asserts it found at least one match, guarding against the regex silently matching nothing and passing vacuously. Static content-pin (source-level grep of both migration files against the live TS import) — does NOT re-run the live-DB boundary probe already owned by REG-96/REG-99. | `apps/host/src/__tests__/school-admin/bkt-at-risk-threshold-sql-ts-parity.test.ts` (7 tests) | U | P8-adjacent (cross-surface consistency of a shared risk threshold), extends REG-48 pattern, REG-96, REG-99 |
-| REG-292 | `reports_export_permission_code_institution_export_reports` | A caller who holds ONLY `institution.view_analytics` (not `institution.export_reports`) gets 403 from `GET /api/school-admin/reports/export`, and the route is proven to have asked `authorizeRequest` for `institution.export_reports` specifically (not the inherited `view_analytics` code) via the mock call-args assertion; a caller who holds `institution.export_reports` gets 200. Exercises the REAL `resolveCommandCenterContext`, mocking only `authorizeRequest` and `@supabase/ssr`. PII-safety of the exported payload itself is NOT re-asserted here — see REG-99 for that coverage (live-DB jsonb PII-absence + route CSV PII-token-absence). | `apps/host/src/__tests__/api/school-admin/reports-export-permission.test.ts` (2 tests) | U | P9 (RBAC — correct permission code, not a laxer inherited one), P13 (cross-referenced, not re-tested — see REG-99) |
-| REG-293 | `data_export_tenant_isolation` | A School-A admin's `POST /api/school-admin/data-export` (`type:'students'`) response contains ONLY School-A student rows and never School-B's, and vice versa for a School-B admin; a client-supplied `school_id`/`schoolId` field in the request body is silently ignored (the export still reflects only the AUTHENTICATED admin's own `authorizeSchoolAdmin`-resolved school, proving there is no body-based tenant-scope injection vector); the same isolation holds for the multi-section `type:'full'` export. Uses a supabase-admin stub whose `.eq()`/`.in()` genuinely filter seeded rows (unlike the no-op passthrough stub used by the row-cap suite), so the assertion exercises the route's real query-scoping code, not just the mock. | `apps/host/src/__tests__/api/school-admin/data-export-tenant-isolation.test.ts` (4 tests) | U | P8 (RLS/tenant boundary), P13 (data privacy — per-student PII scoped to the caller's own school) |
-
-### Pinned tests
-
-- `apps/host/src/__tests__/school-admin/bkt-at-risk-threshold-sql-ts-parity.test.ts::BKT at-risk threshold — cross-surface drift sweep::every SQL at-risk literal across both Phase 3B surfaces equals the TS constant`
-- `apps/host/src/__tests__/school-admin/bkt-at-risk-threshold-sql-ts-parity.test.ts::BKT at-risk threshold — TS anchor (PULSE_THRESHOLDS.at_risk_mastery)::is 0.4 (the platform-wide at-risk p_know cutoff)`
-- `apps/host/src/__tests__/api/school-admin/reports-export-permission.test.ts::GET /api/school-admin/reports/export — permission code (RCA fix)::403s a caller who holds only institution.view_analytics (not institution.export_reports)`
-- `apps/host/src/__tests__/api/school-admin/data-export-tenant-isolation.test.ts::POST /api/school-admin/data-export — tenant isolation (P8/P13)::a School-A admin export includes only School-A students, never School-B rows`
-- `apps/host/src/__tests__/api/school-admin/data-export-tenant-isolation.test.ts::POST /api/school-admin/data-export — tenant isolation (P8/P13)::ignores a client-supplied school_id/schoolId in the body (no tenant-scope injection vector)`
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-299 | `assignment_completion_multi_attempt_and_due_date_hardening` | Helper (13 tests): `assignment_not_found` / `not_enrolled` (cross-class boundary) / `session_not_found` (foreign session id) / `session_incomplete` unchanged; happy path attempt 1 upserts score/correct/total VERBATIM (no recompute) with `bestScorePercent`/`attemptNumber`/`isLateSubmission` in the response; a genuinely DIFFERENT second attempt gets `attempt_number=2` and reports the best score across both; `max_attempts_reached` (409) once the next attempt would exceed `assignments.max_attempts`; due-date lockout both directions (`allow_late_submission=false` -> `submission_closed`/409 with NO upsert; default `true` -> accepts + `isLateSubmission:true`); an idempotent replay (identical scores, within the dedupe window) does NOT burn a second attempt slot (`__upsertSpy` never called); `already_graded` refuses to clobber a replayed teacher-reviewed submission; `db_error` surfaces the underlying message without throwing. Route wiring (14 tests): auth gate (`quiz.attempt` + `requireStudentId`) returns the auth `errorResponse` verbatim when unauthorized and 403 when the caller has no linked student profile; 400 on a non-UUID path id or a missing/non-UUID `session_id`; happy path threads the INTERNAL `studentId` (never `auth.uid()`) through to the helper and returns 200 with `scorePercent`/`attemptNumber`/`bestScorePercent`/`isLateSubmission`; every helper `reason` maps to its documented status code (`not_enrolled`->403, `assignment_not_found`/`session_not_found`->404, `session_incomplete`->400, `already_graded`->200 soft-success, `max_attempts_reached`->409, `submission_closed`->409, `db_error`->500). | `apps/host/src/__tests__/learn/assignment-submission.test.ts` (13), `apps/host/src/__tests__/api/student/assignments/complete.test.ts` (14) | E |
 
 ### Invariants covered by this section
 
-- P8 (RLS/tenant boundary) — REG-293 proves `data-export/route.ts` never
-  crosses schools at the route layer, extending the already-tested
-  `authorizeSchoolAdmin` foreign-school rejection down to an observable
-  end-to-end output. REG-291 is P8-adjacent: the two independently-declared
-  `0.4` at-risk cutoffs (Student Pulse's TS constant, the Command
-  Center/Reports SQL RPCs) are pinned to the same value so a drift cannot make
-  the two surfaces silently disagree about which students are "at risk".
-- P9 (RBAC enforcement) — REG-292 pins the corrected `institution.export_reports`
-  permission code on `reports/export`, closing the RCA-flagged mismatch where it
-  had been checking the laxer `institution.view_analytics` code inherited from
-  its Command Center siblings.
-- P13 (data privacy) — REG-293's tenant scoping is itself a P13 boundary
-  (per-student names/grades/XP/scores never cross schools); REG-292
-  cross-references, rather than duplicates, REG-99's existing PII-absence
-  coverage for `reports/export`'s aggregate-only payload, and notes the open
-  architect/user sign-off item on `data-export`'s higher per-student PII tier
-  (documented in the route's own header comment, not yet a pass/fail test).
-
-### Notes on test strategy
-
-REG-291 mirrors the repo's existing SQL↔TS literal-parity pattern
-(`xp-sql-literal-parity.test.ts`, REG-48/SLC-2): anchor the TS constant, grep
-the authoritative SQL for the same literal, assert equality with a
-vacuous-match guard, and run a drift sweep across every file that declares the
-literal. It is intentionally static (no live Postgres) so it runs in the
-standard unit-test CI job, complementing — not replacing — the live-DB
-behavioral boundary tests already owned by REG-96/REG-99 (which are gated on
-`hasSupabaseIntegrationEnv()` and run only in the separate, currently
-billing-blocked "Integration Tests (live DB)" CI job per those entries' own
-notes).
-
-REG-292 exercises the REAL `resolveCommandCenterContext` (not mocked), stubbing
-only `authorizeRequest` and `@supabase/ssr`, so the permission STRING actually
-threaded through the call is genuinely observed rather than assumed.
-
-REG-293 uses a purpose-built supabase-admin stub with a REAL filtering `.eq()`/
-`.in()` (as opposed to the no-op passthrough stub `reports-row-caps.test.ts`
-uses for a different purpose — proving the row CAP, not tenant scoping) —
-necessary because a no-op filter would make a tenant-isolation assertion pass
-vacuously even if the route forgot to scope its query at all. All three tests
-were run via `npx vitest run` in the authoring session; verbatim output is in
-the accompanying testing-agent report. The honest gap: REG-293 proves isolation
-holds given the `schoolId` `authorizeSchoolAdmin` hands the route — it does not
-re-prove `authorizeSchoolAdmin` itself resolves that id correctly under a live
-Postgres RLS policy (that live-DB proof is out of scope for this route-level
-test and shares the same no-live-DB-in-this-session limitation as REG-96/REG-99's
-integration tier).
+- P1 score accuracy — score/correct/total are read verbatim from
+  `quiz_sessions`; no recomputation happens in the assignment-completion
+  write path, so this hardening cannot introduce a second, drifting score
+  formula.
+- P4-adjacent atomicity — the upsert is keyed on the table's real unique
+  constraint (`assignment_id, student_id, attempt_number`); no attempt's row
+  is ever overwritten by a later attempt (each gets its own row).
+- P8/P9 boundary — class-membership (not just `student_id` RLS ownership) and
+  session-ownership (a session id cannot be borrowed cross-student) remain
+  the actual defense against completing an assignment never issued to the
+  caller's class; unchanged by this hardening and still independently
+  covered by the pre-existing tests in the same file.
 
 ### Catalog total
 
-Pre-Task-3.4: 223 entries (through REG-256, teacher-skills eval harness pins).
-Adds REG-291 (BKT 0.4 at-risk threshold SQL↔TS literal parity drift canary —
-static content-pin, complements REG-96/REG-99's live-DB boundary tests),
-REG-292 (`reports/export` permission-code fix to `institution.export_reports`;
-cross-references rather than duplicates REG-99's existing PII-safety coverage),
-REG-293 (`data-export` tenant isolation — net-new test, no prior route-level
-coverage existed).
-**Total catalog: 226 entries (target: 35 — TARGET EXCEEDED).**
+Pre-REG-299: 298 entries (through REG-298, cron-worker scale hardening).
+Master Action Plan Phase 3 adds REG-299 (assignment completion multi-attempt
++ due-date lockout hardening — 13 helper tests + 14 route-wiring tests, 27
+total).
+**Total catalog: 299 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Hindi teacher-feedback language-aware display (Master Action Plan Phase 3.10)
+
+`assignment_submissions` carries two feedback columns: `teacher_feedback`
+(English, always present when a teacher leaves feedback) and the additive
+optional `teacher_feedback_hi` (Hindi variant). The student assignments page
+(web) and the mobile assignment-detail screen each render a SINGLE feedback
+line, so both must pick which language to show. The teacher-side write path
+(`teacher-dashboard` Edge Function `mark_submission_reviewed` +
+`get_submission_detail`) persists/reads both columns. The pick logic MUST be
+identical across web (`pickTeacherFeedback` in
+`apps/host/src/lib/assignment-feedback.ts`) and mobile
+(`AssignmentSubmission.feedbackFor(isHi)` in
+`mobile/lib/data/models/assignment_models.dart`) — any drift shows a
+Hindi-preferring student a different language on web vs app.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-307 | `teacher_feedback_language_aware_pick_web_mobile_parity` | **(a) Fallback matrix (P7), asserted on BOTH platforms verbatim:** Hindi student + Hindi variant present → Hindi; Hindi student + NO Hindi variant (null / empty / whitespace-only) → English fallback (never a blank box); English student → always English even when a Hindi variant exists; English student + only Hindi present → the Hindi (never hide feedback); no feedback in either language → null so the caller renders nothing. Both implementations `trim()` before testing presence, so a whitespace-only variant is treated as absent identically. **(b) Web/mobile parity:** the ordered branch logic is byte-equivalent — `(isHi && hiTrim) → hi`, else `enTrim → en`, else `hiTrim → hi`, else `null` — mirrored exactly by the Dart `feedbackFor`. **(c) Teacher write/read path:** the `teacher-dashboard` `mark_submission_reviewed` persists `teacher_feedback` + optional `teacher_feedback_hi`, and `get_submission_detail` reads both back, so a teacher-entered Hindi variant actually reaches the student surface. | `apps/host/src/__tests__/app/student-assignments-feedback-i18n.test.ts` (5), `apps/host/src/__tests__/functions/teacher-dashboard-submissions-actions.test.ts` (29), `mobile/test/data/models/assignment_models_test.dart` (feedbackFor cases within the 29-test file) | E |
+
+### Invariants covered by this section
+
+- P7 (bilingual UI) — REG-307 pins that a Hindi-preferring student sees the
+  Hindi teacher feedback when it exists and a graceful English fallback
+  (never a blank box) when it does not, on BOTH web and mobile; technical
+  content is not machine-translated (the teacher authors each variant).
+- Web/mobile contract parity — the pick logic is duplicated in TS and Dart by
+  necessity (no shared runtime); REG-307(b) is the drift guard that keeps the
+  two byte-equivalent so the same submission renders the same language on both
+  surfaces.
+
+### Catalog total
+
+Master Action Plan Phase 3.10 adds REG-307 (Hindi teacher-feedback
+language-aware display — the P7 fallback matrix asserted verbatim on web +
+mobile, web/mobile pick-logic parity, and the teacher-dashboard write/read
+path that carries both language columns).
+**Total catalog: 307 entries (see `00-header.md` for the authoritative running count).**
 
 ---
 

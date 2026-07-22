@@ -15,6 +15,7 @@
 
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { buildInternalCallerHeaders } from '@alfanumrik/lib/security/internal-caller-signing';
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
@@ -23,6 +24,11 @@ interface GuardianRecord {
   auth_user_id: string | null;
   notification_preferences: Record<string, unknown> | null;
   preferred_language: string | null;
+  /** E.164 phone, or null/undefined when unset or not selected by the caller's
+   *  query. Only populated by the 3 Loop A/B/C escalation queries that feed
+   *  the WhatsApp channel (item 3.5) — other callers in this file don't select
+   *  it and it will simply read undefined there. */
+  phone?: string | null;
 }
 
 interface LinkedGuardian {
@@ -605,7 +611,8 @@ export async function onRemediationEscalated(
              id,
              auth_user_id,
              notification_preferences,
-             preferred_language
+             preferred_language,
+             phone
            )`
         )
         .eq('student_id', studentId)
@@ -647,6 +654,13 @@ export async function onRemediationEscalated(
           created_at: now,
           idempotency_key: `remediation_escalated_${interventionId}_${guardian.id}`,
         });
+        // WhatsApp channel (item 3.5) — same preference gate as the in-app row.
+        await sendWhatsAppEscalation(
+          'remediation_escalated',
+          guardian,
+          { subject_code: subjectCode, chapter_number: String(chapterNumber) },
+          { studentId, interventionId },
+        );
       }
     }
 
@@ -711,7 +725,8 @@ async function getLinkedGuardiansDualStatus(studentId: string): Promise<LinkedGu
          id,
          auth_user_id,
          notification_preferences,
-         preferred_language
+         preferred_language,
+         phone
        )`
     )
     .eq('student_id', studentId)
@@ -724,6 +739,90 @@ async function getLinkedGuardiansDualStatus(studentId: string): Promise<LinkedGu
     return [];
   }
   return (data ?? []) as unknown as LinkedGuardian[];
+}
+
+// ─── WhatsApp channel for the 3 highest-stakes parent-facing escalations ─────
+// (item 3.5). Mirrors the EXACT call pattern already used by
+// /api/synthesis/parent-share for the 'monthly_synthesis' template: signed
+// internal-caller headers (buildInternalCallerHeaders) + a service-role Bearer
+// POST straight to the whatsapp-notify Edge Function. Best-effort / fire-and-
+// forget in the sense that a failure here NEVER blocks or throws back to the
+// caller — the in-app `notifications` row (written by the caller, alongside
+// this) is already the durable, authoritative record; WhatsApp is an
+// additional delivery channel, not a replacement.
+//
+// PLACEHOLDER Meta template ids (see whatsapp-notify's TEMPLATES map) — Meta
+// Business Manager template creation/approval is an external dependency this
+// module cannot satisfy. The code path is fully wired and ready to activate
+// once ops/backend substitutes real, Meta-approved template ids AND registers
+// a `security_internal_callers` row for WHATSAPP_INTERNAL_CALLER (a migration
+// — architect-owned; deferred, see this session's report). Until both land,
+// whatsapp-notify will reject/400 the call and this helper logs a warning and
+// returns — the in-app notification is unaffected either way.
+//
+// P13: only subject codes / chapter numbers / counts are sent as template
+// params — NO student name, mirroring the existing "your child" (never named)
+// convention already used by these same in-app guardian rows.
+
+const WHATSAPP_INTERNAL_CALLER = 'adaptive-remediation-whatsapp';
+
+type WhatsAppEscalationTemplate =
+  | 'remediation_escalated'
+  | 'reengagement_escalated'
+  | 'concentration_escalated';
+
+async function sendWhatsAppEscalation(
+  templateType: WhatsAppEscalationTemplate,
+  guardian: GuardianRecord,
+  data: Record<string, string>,
+  logContext: Record<string, unknown>,
+): Promise<void> {
+  try {
+    if (!guardian.phone) return; // no phone on file — the in-app row still covers it
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRoleKey) return; // not configured — best-effort only
+
+    const language: 'en' | 'hi' = guardian.preferred_language === 'hi' ? 'hi' : 'en';
+    const payload = JSON.stringify({
+      type: templateType,
+      recipient_phone: guardian.phone,
+      language,
+      data,
+      user_id: guardian.auth_user_id ?? undefined,
+    });
+    const signHeaders = buildInternalCallerHeaders(
+      'POST',
+      '/functions/v1/whatsapp-notify',
+      payload,
+      WHATSAPP_INTERNAL_CALLER,
+    );
+
+    const res = await fetch(`${supabaseUrl}/functions/v1/whatsapp-notify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serviceRoleKey}`,
+        ...(signHeaders ?? {}),
+      },
+      body: payload,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      logger.warn('notification_triggers: whatsapp escalation send failed', {
+        ...logContext,
+        templateType,
+        status: res.status,
+        body: text.slice(0, 200),
+      });
+    }
+  } catch (err) {
+    logger.warn('notification_triggers: whatsapp escalation send error', {
+      ...logContext,
+      templateType,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**
@@ -919,6 +1018,13 @@ export async function onInactivityEscalated(
           created_at: now,
           idempotency_key: `engagement_escalated_${interventionId}_${guardian.id}`,
         });
+        // WhatsApp channel (item 3.5) — same preference gate as the in-app row.
+        await sendWhatsAppEscalation(
+          'reengagement_escalated',
+          guardian,
+          {},
+          { studentId, interventionId },
+        );
       }
     }
 
@@ -953,7 +1059,7 @@ export async function onConcentrationEscalated(
   ctx: ConcentrationNotificationContext & { escalatedTo: 'teacher' | 'parent' | null },
 ): Promise<void> {
   try {
-    const { subjectCode, interventionId, escalatedTo } = ctx;
+    const { subjectCode, interventionId, escalatedTo, atRiskChapterCount } = ctx;
     const now = new Date().toISOString();
     const rows: RemediationNotificationRow[] = [];
 
@@ -1019,6 +1125,16 @@ export async function onConcentrationEscalated(
           created_at: now,
           idempotency_key: `concentration_escalated_${interventionId}_${guardian.id}`,
         });
+        // WhatsApp channel (item 3.5) — same preference gate as the in-app row.
+        await sendWhatsAppEscalation(
+          'concentration_escalated',
+          guardian,
+          {
+            subject_code: subjectCode,
+            at_risk_chapter_count: String(atRiskChapterCount ?? ''),
+          },
+          { studentId, interventionId },
+        );
       }
     }
 
@@ -1094,7 +1210,7 @@ export async function onConcentrationReescalated(
   ctx: ConcentrationNotificationContext & { escalatedTo: 'teacher' | 'parent' | null },
 ): Promise<void> {
   try {
-    const { subjectCode, interventionId, escalatedTo } = ctx;
+    const { subjectCode, interventionId, escalatedTo, atRiskChapterCount } = ctx;
     const now = new Date().toISOString();
     if (escalatedTo !== 'parent') {
       // B2B re-flag rides the assignment row; no-recipient → ops event only.
@@ -1135,6 +1251,19 @@ export async function onConcentrationReescalated(
         created_at: now,
         idempotency_key: `concentration_reescalated_${interventionId}_${guardian.id}`,
       });
+      // WhatsApp channel (item 3.5) — reuses the SAME 'concentration_escalated'
+      // template as the inject-time alert (mirrors the in-app row's `type`
+      // reuse above); the message content differs at the Meta-template layer,
+      // not here.
+      await sendWhatsAppEscalation(
+        'concentration_escalated',
+        guardian,
+        {
+          subject_code: subjectCode,
+          at_risk_chapter_count: String(atRiskChapterCount ?? ''),
+        },
+        { studentId, interventionId },
+      );
     }
     await upsertRemediationNotifications(rows, 'onConcentrationReescalated', {
       studentId,

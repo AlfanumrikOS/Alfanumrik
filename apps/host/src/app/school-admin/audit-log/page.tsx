@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { supabase } from '@alfanumrik/lib/supabase';
 import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
-import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import SchoolAdminPageHeader from '../_components/SchoolAdminPageHeader';
 import {
   Card,
@@ -223,7 +224,7 @@ function AuditRow({ entry, isHi }: AuditRowProps) {
         <div
           className="mt-3 pt-3"
           style={{
-            borderTop: '1px solid var(--surface-3)',
+            borderTop: '1px solid var(--border)',
           }}
         >
           <p
@@ -243,11 +244,8 @@ function AuditRow({ entry, isHi }: AuditRowProps) {
    MAIN PAGE
 ----------------------------------------------------------------- */
 export default function SchoolAdminAuditLogPage() {
-  const { isHi } = useAuth();
-  const { schoolId, isLoading: authLoading } = useSchoolAdminAuth();
-  /* isSchoolAdmin mirrors the resolved schoolId — kept as its own derived flag
-     (rather than renaming every downstream reference) to minimize the diff. */
-  const isSchoolAdmin = authLoading ? null : Boolean(schoolId);
+  const router = useRouter();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   /* State */
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -261,6 +259,36 @@ export default function SchoolAdminAuditLogPage() {
   const [actionFilter, setActionFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  /* Auth guard */
+  useEffect(() => {
+    if (!authLoading && !authUserId) {
+      router.replace('/login');
+    }
+  }, [authLoading, authUserId, router]);
+
+  /* Verify this user is a school admin */
+  const [isSchoolAdmin, setIsSchoolAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!authUserId) return;
+
+    (async () => {
+      const { data } = await supabase
+        .from('school_admins')
+        .select('school_id')
+        .eq('auth_user_id', authUserId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (!data) {
+        router.replace('/login');
+        return;
+      }
+
+      setIsSchoolAdmin(true);
+    })();
+  }, [authUserId, router]);
 
   /* Fetch audit log */
   const fetchAuditLog = useCallback(
@@ -361,7 +389,7 @@ export default function SchoolAdminAuditLogPage() {
               className="w-full rounded-xl px-3 py-2.5 text-sm"
               style={{
                 background: 'var(--surface-1)',
-                border: '1px solid var(--surface-3)',
+                border: '1px solid var(--border)',
                 color: 'var(--text-1)',
                 minHeight: '44px',
               }}
@@ -392,7 +420,7 @@ export default function SchoolAdminAuditLogPage() {
                 className="w-full rounded-xl px-3 py-2.5 text-sm"
                 style={{
                   background: 'var(--surface-1)',
-                  border: '1px solid var(--surface-3)',
+                  border: '1px solid var(--border)',
                   color: 'var(--text-1)',
                   minHeight: '44px',
                 }}
@@ -414,7 +442,7 @@ export default function SchoolAdminAuditLogPage() {
                 className="w-full rounded-xl px-3 py-2.5 text-sm"
                 style={{
                   background: 'var(--surface-1)',
-                  border: '1px solid var(--surface-3)',
+                  border: '1px solid var(--border)',
                   color: 'var(--text-1)',
                   minHeight: '44px',
                 }}

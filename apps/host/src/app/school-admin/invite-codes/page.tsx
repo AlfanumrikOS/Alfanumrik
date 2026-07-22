@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
-import { useSchoolAdminAuth } from '@alfanumrik/ui/school-admin/use-school-admin-auth';
 import { useSchoolProvisioning } from '@alfanumrik/lib/use-school-provisioning';
 import { InviteCapNotice, SeatCapBlockBanner } from '@alfanumrik/ui/school/SeatPolicyBanners';
 import type { SeatPolicyStatus } from '@alfanumrik/lib/school-admin/seat-enforcement';
@@ -148,7 +148,7 @@ function NewCodeDisplay({ code, isHi }: NewCodeDisplayProps) {
         className="mt-3 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95"
         style={{
           background: copied ? '#16A34A' : 'var(--surface-1)',
-          border: '1px solid var(--surface-3)',
+          border: '1px solid var(--border)',
           color: copied ? '#fff' : 'var(--text-2)',
           minHeight: '40px',
         }}
@@ -275,7 +275,7 @@ function CodeCard({
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
           style={{
             background: isCopied ? '#16A34A' : 'var(--surface-2)',
-            border: '1px solid var(--surface-3)',
+            border: '1px solid var(--border)',
             color: isCopied ? '#fff' : 'var(--text-2)',
             minHeight: '36px',
           }}
@@ -295,7 +295,7 @@ function CodeCard({
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all active:scale-95"
             style={{
               background: 'var(--surface-2)',
-              border: '1px solid var(--surface-3)',
+              border: '1px solid var(--border)',
               color: '#DC2626',
               minHeight: '36px',
               opacity: isDeactivating ? 0.6 : 1,
@@ -475,7 +475,7 @@ function TabSwitcher({ active, onChange, isHi }: TabSwitcherProps) {
       className="flex rounded-xl p-1 mb-4"
       role="tablist"
       aria-label={t(isHi, 'Filter codes', 'कोड फ़िल्टर करें')}
-      style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-3)' }}
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
     >
       {tabs.map((tab) => {
         const isSelected = active === tab.key;
@@ -505,14 +505,15 @@ function TabSwitcher({ active, onChange, isHi }: TabSwitcherProps) {
    MAIN PAGE COMPONENT
 ───────────────────────────────────────────────────────────── */
 export default function InviteCodesPage() {
-  const { isHi } = useAuth();
-  const { schoolId, isLoading: authLoading, error: adminError } = useSchoolAdminAuth();
+  const router = useRouter();
+  const { authUserId, isLoading: authLoading, isHi } = useAuth();
 
   // Seat-enforcement UI gate (Phase 3B Wave B). OFF ⇒ code generation uses the
   // existing direct-insert path and renders no seat surfaces (byte-identical).
   const seatUiEnabled = useSchoolProvisioning();
 
   /* ── state ── */
+  const [schoolId, setSchoolId] = useState<string | null>(null);
   const [codes, setCodes] = useState<InviteCode[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   /** Non-fatal: invite codes still render when the class list fails to load. */
@@ -530,6 +531,13 @@ export default function InviteCodesPage() {
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+
+  /* ── auth guard ── */
+  useEffect(() => {
+    if (!authLoading && !authUserId) {
+      router.replace('/login');
+    }
+  }, [authLoading, authUserId, router]);
 
   /* ── initial data load ── */
   const loadData = useCallback(
@@ -569,31 +577,41 @@ export default function InviteCodesPage() {
     []
   );
 
-  /* ── bootstrap: load codes + classes once the school admin identity resolves ── */
   const bootstrap = useCallback(async () => {
-    if (!schoolId) return;
+    if (!authUserId) return;
 
     setLoadingPage(true);
     setPageError(null);
 
     try {
-      await loadData(schoolId);
+      const { data: adminRecord, error: adminErr } = await supabase
+        .from('school_admins')
+        .select('school_id, name')
+        .eq('auth_user_id', authUserId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (adminErr) throw new Error(adminErr.message);
+
+      if (!adminRecord) {
+        router.replace('/login');
+        return;
+      }
+
+      setSchoolId(adminRecord.school_id);
+      await loadData(adminRecord.school_id);
     } catch (err: unknown) {
       setPageError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoadingPage(false);
     }
-  }, [schoolId, loadData]);
+  }, [authUserId, router, loadData]);
 
   useEffect(() => {
-    if (adminError) setPageError(adminError);
-  }, [adminError]);
-
-  useEffect(() => {
-    if (schoolId) {
+    if (!authLoading && authUserId) {
       bootstrap();
     }
-  }, [schoolId, bootstrap]);
+  }, [authLoading, authUserId, bootstrap]);
 
   /* ── generate code ── */
   async function handleGenerate(values: {

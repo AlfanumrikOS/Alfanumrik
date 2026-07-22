@@ -980,3 +980,107 @@ non-duplicate insert errors and explicit benign handling of 23505).
 
 ---
 
+## REG-301 — Phase 2.2 remediation: CBSE-board dynamic-assembly mock-exam rebuild (structural parity with the legacy tool)
+
+Source: Master Action Plan Phase 2.2 (rebuilding the CBSE board mock-exam
+surface for genuine structural parity with the legacy tool). Three
+independent fixes landed together and are pinned as one entry because they
+share the same student-facing surface (the CBSE-board mock exam) and the
+same root cause class (silent structural drift between what the UI/DB claim
+and what actually gets served/graded):
+
+1. **Section-count bug** in the legacy `/mock-exam` page
+   (`apps/host/src/app/(student)/mock-exam/page.tsx`): `SECTIONS` declared
+   Section B as `count: 5`, yielding 38 questions / 78 marks against the
+   real CBSE 80-mark structure (A 20×1 + B 6×2 + C 7×3 + D 3×5 + E 3×4 = 39
+   questions, 80 marks). Fixed to `count: 6`.
+2. **Idempotency replay-guard bug** in
+   `apps/host/src/app/api/exams/papers/[id]/submit/route.ts`: the
+   double-submit short-circuit queried a column literally named `paper_id`,
+   which does not exist on `mock_test_attempts` (the real FK column is
+   `exam_paper_id` — see `20260520000008_mock_test_attempts.sql`). A
+   PostgREST select against a nonexistent column silently returns no rows,
+   so the replay guard had **never actually short-circuited a double-submit
+   against the real database** — it only appeared to work because the prior
+   unit-test mock's in-memory fixture used the same (wrong) property name,
+   masking the bug. Fixed to query `exam_paper_id`.
+3. **New dynamic cbse_board attempt-assembly flow**: `POST
+   /api/exams/papers/[id]/start` (new route) assembles a per-attempt
+   question snapshot from `question_bank` and persists it via
+   `start_mock_test_attempt` (migration `20260722097000`); submit now scores
+   against that snapshot via `submit_mock_test_attempt` (migration
+   `20260722097100`) when an `attempt_id` is present, instead of the
+   `exam_paper_id` join used by static JEE/NEET/Olympiad papers — with NO
+   negative marking for the cbse_board dynamic path. A pre-existing legacy
+   multi-subject sample paper (`sample_cbse_class12_general_v1`,
+   `subject_scope` length 4) is incompatible with the new RPC's single-
+   subject assumption and was deactivated (`is_active = false`, migration
+   `20260722097200`) rather than special-cased, since 13 single-subject
+   grade-12 template rows already supersede its coverage.
+4. **`source_type` content-scope isolation (assessment REJECTION fix,
+   2026-07-21, folded into the same `20260722097000` migration)**: all
+   three fallback-ladder steps in `start_mock_test_attempt` (exact
+   difficulty → target ±1 → any difficulty, each scoped to
+   subject+grade) additionally restrict `source_type` to the
+   CBSE-board-appropriate allow-list (`ncert_intext`, `ncert_exercise`,
+   `ncert_example`, `cbse_style`, `board_paper`, `practice`). Without
+   this, the general `question_bank` subject+grade pool the RPC
+   deliberately reuses also contains competition-tier rows
+   (`jee_archive`, `neet_archive`, `olympiad`, `pyq` — widened onto
+   `chk_source_type` by `20260520000004`, seeded by `20260520000006` for
+   the SAME physics/chemistry/math grade-12 and math grade-10 subject+
+   grade combinations this RPC serves). Pre-fix, step 3 ("any
+   difficulty") would silently backfill CBSE-board Section E
+   (difficulty target 5) — and, once the small board-tagged pool ran
+   out, Sections A-D too — from JEE/NEET/Olympiad-tagged rows for every
+   grade-12-STEM and grade-10-math attempt, not as an edge case but as
+   the *default* outcome, since genuine board-tagged content for those
+   subject/grade pairs tops out at difficulty 1-4 with only 7-8 rows per
+   subject. Post-fix, those attempts legitimately resolve to
+   `content_insufficient` for the affected sections until real
+   board-tagged difficulty-4/5 rows are authored — this is the CORRECT
+   behavior (per assessment), not a new bug. A literal NULL
+   `source_type` is deliberately NOT treated as board-appropriate even
+   though the column defaults to `'practice'` at the schema level, since
+   an explicit NULL only arises from an anomalous/unverified insert path
+   this RPC should not silently trust.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-301 | `mock_exam_section_b_count_and_dynamic_assembly_parity` | (a) The legacy `/mock-exam` page's rendered "Exam Structure" card shows Section B as `6 × 2 = 12 marks` and a `80 marks` total — never `5 × 2 = 10` / `78 marks`. (b) The submit route's idempotency replay guard queries `exam_paper_id` (not `paper_id`) and correctly short-circuits a double-submit within the 60s window without invoking the RPC. (c) `POST /api/exams/papers/[id]/start` is cbse_board-only (400 `paper_not_cbse_board` for other exam families), 403s without a student profile, and returns `attempt_id` + `questions[]` (including the empty-array `content_insufficient` shape the frontend's `NotReadyCard` depends on). (d) `POST /api/exams/papers/[id]/submit` forwards `attempt_id` as `p_attempt_id` when present (`null` for static papers), and builds the post-submit review from the attempt's own `question_snapshot` (never the `exam_paper_id` join) for dynamic attempts, with marks sourced from the snapshot and no negative marking. (e) The deactivated legacy multi-subject paper (`sample_cbse_class12_general_v1`) no longer appears in `GET /api/exams/papers` and 404s (`paper_not_found`) on `GET /api/exams/papers/[id]` — no dangling reference, since `question_bank`/`mock_test_attempts` FKs to it are untouched (soft `is_active` flip only). (f) `start_mock_test_attempt`'s SQL text has EXACTLY 3 `question_bank` fallback-ladder SELECT steps, and EVERY step's WHERE clause (including step 3, "any difficulty" — the step that previously leaked competition content by design) contains the literal `source_type = ANY (ARRAY['ncert_intext','ncert_exercise','ncert_example','cbse_style','board_paper','practice'])` and none of the 4 competition-tier values (`jee_archive`, `neet_archive`, `olympiad`, `pyq`) appear in any step's WHERE clause or in the allow-list array literal itself — a static-source contract canary against the migration text, since the RPC body cannot be exercised in-process without Postgres. | `apps/host/src/__tests__/app/mock-exam-section-b-count.test.tsx`, `apps/host/src/__tests__/api/exams-submit.test.ts` (idempotency + snapshot-review describes), `apps/host/src/__tests__/api/exams-start.test.ts` (route-level describe, 9 tests: 401 unauthenticated, 400 invalid UUID, 404 unknown paper, 400 non-cbse_board, 403 no student profile, 200 success, 200 content_insufficient, 500 RPC error, 405 non-POST + `source_type` isolation static-contract describe, 4 tests: 3-step-ladder count, per-step allow-list scoping, competition-tier exclusion including step 3, allow-list-literal content check — 13 tests total in this file), `apps/host/src/__tests__/api/exams-papers.test.ts` (deactivation describes) | E |
+
+### Invariants covered by this section
+
+- P1 (score accuracy) / P4 (atomic submission) — the dynamic cbse_board
+  snapshot-scoring path still routes through a single RPC
+  (`submit_mock_test_attempt`) and the review payload's `marks_awarded`
+  matches the snapshot, not a re-derived value.
+- P6-adjacent (question/paper structural correctness AND content-scope
+  correctness) — the legacy page's advertised exam structure (39
+  questions / 80 marks) now matches what is actually assembled and
+  graded (previously false by one question); and every question served
+  into a CBSE-board attempt is now provably drawn only from
+  board-appropriate `source_type` values, closing the vector where the
+  shared subject+grade `question_bank` pool let JEE/NEET/Olympiad rows
+  silently substitute for missing board-tagged content, especially in
+  the "any difficulty" fallback step that has no other filter to catch
+  this.
+- P11-adjacent (no dangling reference on soft-deactivation) — the legacy
+  multi-subject paper's `question_bank`/`mock_test_attempts` FKs remain
+  intact after `is_active = false`; only the two catalog-facing read paths
+  (`.eq('is_active', true)`) stop surfacing it.
+
+### Catalog total
+
+Pre-REG-301: 300 entries (through REG-300, WhatsApp channel for adaptive-loop
+parent escalations). Phase 2.2 remediation adds REG-301 (CBSE-board
+dynamic-assembly mock-exam rebuild — Section B count fix, idempotency
+replay-guard column bug fix, dynamic snapshot-assembly start/submit flow,
+legacy multi-subject paper deactivation, AND the `source_type`
+content-scope isolation fix that excludes competition-tier
+JEE/NEET/Olympiad rows from every fallback-ladder step so CBSE-board
+attempts cannot silently backfill from non-board content).
+**Total catalog: 301 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

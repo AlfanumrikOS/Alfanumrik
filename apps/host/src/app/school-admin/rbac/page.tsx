@@ -544,7 +544,7 @@ export default function SchoolAdminRBACPage() {
                 className="rounded-lg p-3 break-all text-xs font-mono"
                 style={{
                   background: 'var(--surface-2)',
-                  border: '1px solid var(--surface-3)',
+                  border: '1px solid var(--border)',
                   color: 'var(--text-1)',
                 }}
               >
@@ -743,7 +743,7 @@ export default function SchoolAdminRBACPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" role="table">
                   <thead>
-                    <tr className="border-b" style={{ borderColor: 'var(--surface-3)' }}>
+                    <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
                       <th className="text-left py-2 px-2 text-xs font-semibold text-[var(--text-3)]">
                         {t(isHi, 'User', 'उपयोगकर्ता')}
                       </th>
@@ -766,7 +766,7 @@ export default function SchoolAdminRBACPage() {
                       <tr
                         key={elev.id}
                         className="border-b last:border-b-0"
-                        style={{ borderColor: 'var(--surface-3)' }}
+                        style={{ borderColor: 'var(--border)' }}
                       >
                         <td className="py-3 px-2">
                           <div className="text-xs font-mono text-[var(--text-2)]">
@@ -902,7 +902,7 @@ export default function SchoolAdminRBACPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" role="table">
                   <thead>
-                    <tr className="border-b" style={{ borderColor: 'var(--surface-3)' }}>
+                    <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
                       <th className="text-left py-2 px-2 text-xs font-semibold text-[var(--text-3)]">
                         {t(isHi, 'Permissions', 'अनुमतियां')}
                       </th>
@@ -925,7 +925,7 @@ export default function SchoolAdminRBACPage() {
                       <tr
                         key={del.id}
                         className="border-b last:border-b-0"
-                        style={{ borderColor: 'var(--surface-3)' }}
+                        style={{ borderColor: 'var(--border)' }}
                       >
                         <td className="py-3 px-2">
                           <div className="flex flex-wrap gap-1">

@@ -40,7 +40,7 @@
  * Style mirrors notification-triggers-remediation.test.ts exactly (same
  * vi.hoisted supabase-admin mock so the SUT can be imported statically).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -79,6 +79,7 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => mockDb.adminClient,
 }));
 
+import { logger } from '@alfanumrik/lib/logger';
 import {
   onReEngagementNudge,
   onReEngagementReturned,
@@ -87,6 +88,28 @@ import {
   onConcentrationResolved,
   onConcentrationReescalated,
 } from '@alfanumrik/lib/notification-triggers';
+
+/** A single approved guardian WITH a phone on file, for the WhatsApp-channel
+ *  describes below. `guardianLinksResult` uses `.in()` to resolve — matches
+ *  the `twoGuardians()` shape used elsewhere in this file. */
+function guardianWithPhone(prefType: string, overrides: Record<string, unknown> = {}) {
+  return {
+    data: [
+      {
+        guardian_id: 'g-1',
+        guardians: {
+          id: 'g-1',
+          auth_user_id: 'auth-g1',
+          notification_preferences: { [prefType]: true },
+          preferred_language: 'en',
+          phone: '+919876543210',
+          ...overrides,
+        },
+      },
+    ],
+    error: null,
+  };
+}
 
 const IV = '00000000-0000-0000-0000-00000000cc01';
 const HINDI_RE = /[ऀ-ॿ]/; // Devanagari block — P7 pin
@@ -348,5 +371,126 @@ describe('onConcentrationReescalated', () => {
     await expect(
       onConcentrationReescalated('stu-1', { ...CCTX, escalatedTo: 'parent' }),
     ).resolves.toBeUndefined();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// WhatsApp channel (Master Action Plan Phase 3, item 3.5) — Loops B & C.
+// Sibling to the WhatsApp describe block in notification-triggers-remediation
+// .test.ts (Loop A). sendWhatsAppEscalation() is unexported; exercised only
+// through the public trigger functions, exactly as production calls it. Every
+// guardian fixture ABOVE this point omits `phone`, so none of the existing
+// tests in this file ever exercised the fetch call — these are additive.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('onInactivityEscalated — WhatsApp channel (item 3.5)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("parent guardian with a phone: POSTs type 'reengagement_escalated' with an EMPTY data payload (no subject/chapter for this loop)", async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone('reengagement_escalated');
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await onInactivityEscalated('stu-1', { interventionId: IV, escalatedTo: 'parent' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/functions/v1/whatsapp-notify');
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({ type: 'reengagement_escalated', recipient_phone: '+919876543210', data: {} });
+  });
+
+  it('guardian with no phone on file: fetch never called', async () => {
+    mockDb.state.guardianLinksResult = {
+      data: [{ guardian_id: 'g-1', guardians: { id: 'g-1', auth_user_id: 'auth-g1', notification_preferences: null, preferred_language: 'en' } }],
+      error: null,
+    };
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await onInactivityEscalated('stu-1', { interventionId: IV, escalatedTo: 'parent' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('null escalatedTo path: never queries guardians, never calls fetch', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await onInactivityEscalated('stu-1', { interventionId: IV, escalatedTo: null });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a failed whatsapp-notify call is logged as a warning and never thrown', async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone('reengagement_escalated');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('nope', { status: 400 })));
+    await expect(
+      onInactivityEscalated('stu-1', { interventionId: IV, escalatedTo: 'parent' }),
+    ).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'notification_triggers: whatsapp escalation send failed',
+      expect.objectContaining({ templateType: 'reengagement_escalated', status: 400 }),
+    );
+  });
+});
+
+describe('onConcentrationEscalated — WhatsApp channel (item 3.5)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("parent guardian with a phone: POSTs type 'concentration_escalated' with subject_code + at_risk_chapter_count (stringified)", async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone('concentration_escalated');
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await onConcentrationEscalated('stu-1', { ...CCTX, escalatedTo: 'parent' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(body).toMatchObject({
+      type: 'concentration_escalated',
+      recipient_phone: '+919876543210',
+      data: { subject_code: 'math', at_risk_chapter_count: '5' },
+    });
+  });
+
+  it('teacher path: fetch never called (guardians never queried)', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await onConcentrationEscalated('stu-1', { ...CCTX, escalatedTo: 'teacher' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a thrown/rejected fetch is swallowed as a warning, never thrown to the caller', async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone('concentration_escalated');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNRESET')));
+    await expect(
+      onConcentrationEscalated('stu-1', { ...CCTX, escalatedTo: 'parent' }),
+    ).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'notification_triggers: whatsapp escalation send error',
+      expect.objectContaining({ templateType: 'concentration_escalated', error: 'ECONNRESET' }),
+    );
+  });
+});
+
+describe('onConcentrationReescalated — WhatsApp channel (item 3.5)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("parent follow-up guardian with a phone: REUSES the 'concentration_escalated' template (message content differs at the Meta-template layer, not the type)", async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone('concentration_escalated');
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await onConcentrationReescalated('stu-1', { ...CCTX, escalatedTo: 'parent' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(body.type).toBe('concentration_escalated');
+    expect(body.data).toMatchObject({ subject_code: 'math', at_risk_chapter_count: '5' });
+  });
+
+  it('teacher/null paths never call fetch (nothing is sent on those paths at all)', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await onConcentrationReescalated('stu-1', { ...CCTX, escalatedTo: 'teacher' });
+    await onConcentrationReescalated('stu-1', { ...CCTX, escalatedTo: null });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

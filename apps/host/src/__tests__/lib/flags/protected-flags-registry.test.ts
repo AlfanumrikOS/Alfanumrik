@@ -3,13 +3,17 @@
  * bulk-enable incident guardrail).
  *
  * Pins packages/lib/src/flags/protected-flags.ts:
- *   - the registry enumerates exactly 72 flags across exactly 6 tiers;
+ *   - the registry enumerates exactly 74 flags across exactly 6 tiers
+ *     (72 + the 2 Pedagogy v2 constitution-pinned flags added 2026-07-22 —
+ *     ff_productive_failure_v1, ff_pedagogy_v2_monthly_synthesis — Phase 0
+ *     flag-governance hardening, master action plan);
  *   - the P0 quiz-submit pair, the 4 constitution-pinned Group A flags, and
  *     the 5 MoL program flags are protected at their declared tiers;
- *   - EXPECTED_OFF_FLAGS is the 53-name CEO-approved forced-OFF posture
+ *   - EXPECTED_OFF_FLAGS is the 55-name CEO-approved forced-OFF posture
  *     (52 block-(ii) names from migration 20260720110000 +
- *     ff_irt_question_selection) — parsed from the migration SQL itself so
- *     the TS list cannot silently drift from the approved SQL;
+ *     ff_irt_question_selection + the 2 Pedagogy v2 additions above) —
+ *     parsed from the migration SQL itself so the TS list cannot silently
+ *     drift from the approved SQL;
  *   - EXPECTED_OFF_FLAGS is DISJOINT from the 25-flag block-(i) ACTIVATE
  *     list (a flag cannot be simultaneously "must be OFF" and "must be
  *     live"), also parsed from the migration;
@@ -71,8 +75,8 @@ const ALL_TIERS: ProtectedTier[] = [
 // ─── Registry shape ───────────────────────────────────────────────────
 
 describe('PROTECTED_FLAGS registry — shape', () => {
-  it('enumerates exactly 72 protected flags', () => {
-    expect(Object.keys(PROTECTED_FLAGS)).toHaveLength(72);
+  it('enumerates exactly 74 protected flags', () => {
+    expect(Object.keys(PROTECTED_FLAGS)).toHaveLength(74);
   });
 
   it('uses exactly the 6 declared tiers, each at least once', () => {
@@ -108,6 +112,13 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
   });
 
   it.each([
+    'ff_productive_failure_v1',
+    'ff_pedagogy_v2_monthly_synthesis',
+  ])('Pedagogy v2 constitution-pinned flags added 2026-07-22: %s is protected at constitution_pinned', (name) => {
+    expect(getProtection(name)?.tier).toBe('constitution_pinned');
+  });
+
+  it.each([
     'ff_mol_enabled',
     'ff_mol_hybrid_mode_v1',
     'ff_mol_openai_default',
@@ -133,15 +144,22 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
 // ─── EXPECTED_OFF_FLAGS posture list ──────────────────────────────────
 
 describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
-  it('contains exactly 53 unique names (52 block-(ii) + ff_irt_question_selection)', () => {
-    expect(EXPECTED_OFF_FLAGS).toHaveLength(53);
-    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(53);
+  it('contains exactly 55 unique names (52 block-(ii) + ff_irt_question_selection + 2 Pedagogy v2 additions)', () => {
+    expect(EXPECTED_OFF_FLAGS).toHaveLength(55);
+    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(55);
     expect(EXPECTED_OFF_FLAGS).toContain('ff_irt_question_selection');
+    expect(EXPECTED_OFF_FLAGS).toContain('ff_productive_failure_v1');
+    expect(EXPECTED_OFF_FLAGS).toContain('ff_pedagogy_v2_monthly_synthesis');
   });
 
-  it('equals migration 20260720110000 block (ii) ∪ {ff_irt_question_selection} — the TS list cannot drift from the approved SQL', () => {
+  it('equals migration 20260720110000 block (ii) ∪ {ff_irt_question_selection} ∪ {the 2 Pedagogy v2 additions} — the TS list cannot drift from the approved SQL beyond the 2026-07-22 documented additions', () => {
     expect(HONESTY_52).toHaveLength(52);
-    const expected = new Set([...HONESTY_52, 'ff_irt_question_selection']);
+    const expected = new Set([
+      ...HONESTY_52,
+      'ff_irt_question_selection',
+      'ff_productive_failure_v1',
+      'ff_pedagogy_v2_monthly_synthesis',
+    ]);
     expect(new Set(EXPECTED_OFF_FLAGS)).toEqual(expected);
   });
 

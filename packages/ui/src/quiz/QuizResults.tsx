@@ -158,7 +158,10 @@ export default function QuizResults({
   );
   const router = useRouter();
   const { student } = useAuth();
-  // ADR-001 Phase 4 — picks Re-read CTA target (legacy /learn vs /revise).
+  // ADR-001 Phase 4 (retired) — the Re-read CTA no longer branches on
+  // ff_revise_route_v1 (see below); this hook is kept only because the
+  // flashcard "Review" CTA still threads its result into reviewRoute()
+  // as a (now-inert) legacy param.
   const { data: reviseFlags } = useFeatureFlags();
   const [expandedCorrect, setExpandedCorrect] = useState<Set<number>>(new Set());
   const [showCelebration, setShowCelebration] = useState(true);
@@ -947,19 +950,20 @@ export default function QuizResults({
               </div>
             </Card>
 
-            {/* ── Re-read CTA (Phase 3-D deep-link) ─────────────────
-                When a student gets answers wrong, link them straight
-                into Read mode of the chapter the first wrong answer
-                came from. Read mode is gated by ff_learn_read_mode_v1
-                on the destination — flag-off lands them in practice
-                mode, which is harmless. The destination's existing
-                effect emits `learn_read_mode_opened` with
-                trigger: 'deep_link' so quiz-sourced reads are
-                attributable in PostHog.
+            {/* ── Re-read CTA (Phase 3-D deep-link, Phase 5 Study-Menu v2) ──
+                When a student gets answers wrong, link them straight into
+                the chapter the first wrong answer came from. `ff_revise_route_v1`
+                and `ff_study_menu_v2` were both retired (migrations
+                20260603120000 / 20260603120100) once /refresh?tab=chapters
+                became the permanent, unconditional destination — see
+                `reviseRoute()` in `packages/lib/src/routes/study-menu-routes.ts`,
+                which now always returns '/refresh?tab=chapters'. We compose
+                the base from reviseRoute() and preserve the existing
+                subject/chapter/from-quiz query string.
 
-                If the wrong answers span multiple chapters, we deep-
-                link to the first one and let the Read view's "Now
-                practise" CTA bring them back. */}
+                If the wrong answers span multiple chapters, we deep-link
+                to the first one and let the destination's own navigation
+                bring them back for the rest. */}
             {(() => {
               const wrongChapters = Array.from(
                 new Set(
@@ -971,26 +975,12 @@ export default function QuizResults({
               if (wrongChapters.length === 0 || !selectedSubject) return null;
               const firstChapter = wrongChapters[0];
               const moreCount = wrongChapters.length - 1;
-              // ADR-001 Phase 4 — when ff_revise_route_v1 is ON, the CTA
-              // routes to /revise (the new first-class destination); the
-              // /revise page then surfaces "From your quiz" with a
-              // deep-link back into the chapter's Read mode. When OFF,
-              // we keep the legacy direct /learn/[s]/[c]?mode=read
-              // deep-link (Phase 3-D behaviour).
-              //
-              // Phase 5 Study-Menu v2 — when ff_study_menu_v2 is ALSO on,
-              // /revise consolidates into /refresh?tab=chapters. We compose
-              // the base from reviseRoute(flags) and preserve the existing
-              // subject/chapter/from-quiz query string.
-              const reviseOn = reviseFlags?.ff_revise_route_v1 === true;
-              const baseRevise = reviseRoute((reviseFlags ?? {}) as Record<string, boolean>);
-              // baseRevise is either '/refresh?tab=chapters' (v2 on) or
-              // '/revise' (v2 off). Join correctly with & or ? accordingly.
+              const baseRevise = reviseRoute();
+              // baseRevise is always '/refresh?tab=chapters'. Join correctly
+              // with & or ? accordingly (defensive in case the base ever
+              // changes shape again).
               const joiner = baseRevise.includes('?') ? '&' : '?';
-              const reviseHref = `${baseRevise}${joiner}subject=${encodeURIComponent(selectedSubject)}&chapter=${firstChapter}&from=quiz`;
-              const href = reviseOn
-                ? reviseHref
-                : `/learn/${encodeURIComponent(selectedSubject)}/${firstChapter}?mode=read&from=quiz`;
+              const href = `${baseRevise}${joiner}subject=${encodeURIComponent(selectedSubject)}&chapter=${firstChapter}&from=quiz`;
               return (
                 <div className="mt-3">
                   <Button

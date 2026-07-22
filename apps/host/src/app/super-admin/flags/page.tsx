@@ -29,27 +29,56 @@ const TIER_LABELS: Record<FlagProtection['tier'], { en: string; hi: string }> = 
 /** Flags whose DISABLE is also confirm-gated (in addition to tier special_do_not_touch). */
 const CONFIRM_BOTH_DIRECTIONS_FLAGS = ['ff_atomic_subscription_activation'];
 
+/** Structured result of parsing a failed API response body. */
+interface ParsedApiError {
+  message: string;
+  code?: string;
+  /** Only set for FLAG_BULK_CONFIRM_REQUIRED (409) — the exact token the burst guard expects in body.bulk_confirm. */
+  bulkConfirmRequired?: string;
+  /** Only set for FLAG_BULK_CONFIRM_REQUIRED (409) — how many confirmed protected mutations landed in the trailing window. */
+  recentMutationCount?: number;
+}
+
 /**
  * Parse an API error body ({ error } or { code, details }) into a human
- * message. Special-cases ADMIN_INSUFFICIENT_LEVEL so an under-leveled admin
- * learns their writes are being rejected instead of silently swallowed, and
- * FLAG_PROTECTED (409) so a missing/mismatched confirmation surfaces the
- * protection reason instead of a generic failure.
+ * message (+ structured extras for a couple of codes the UI reacts to
+ * beyond just displaying text). Special-cases:
+ * - ADMIN_INSUFFICIENT_LEVEL so an under-leveled admin learns their writes
+ *   are being rejected instead of silently swallowed.
+ * - FLAG_PROTECTED (409) so a missing/mismatched confirmation surfaces the
+ *   protection reason instead of a generic failure.
+ * - FLAG_BULK_CONFIRM_REQUIRED (409) — the Phase 0 velocity/burst guard.
+ *   Surfaces the exact `bulk_confirm` token + recent-mutation count so the
+ *   caller can render the second confirm step (see toggleFlag/saveRollout).
  */
-async function parseApiError(res: Response, isHi: boolean): Promise<string> {
-  let body: { error?: string; code?: string; details?: unknown; reason?: string; reasonHi?: string } | null = null;
+async function parseApiError(res: Response, isHi: boolean): Promise<ParsedApiError> {
+  let body: {
+    error?: string; code?: string; details?: unknown; reason?: string; reasonHi?: string;
+    bulk_confirm_required?: string; recent_mutation_count?: number;
+  } | null = null;
   try { body = await res.json(); } catch { /* non-JSON error body */ }
   if (body?.code === 'ADMIN_INSUFFICIENT_LEVEL') {
-    return isHi
-      ? 'आपका एडमिन स्तर super_admin से नीचे है — बदलाव सहेजे नहीं जा रहे हैं।'
-      : 'Your admin level is below super_admin — changes are not being saved.';
+    return {
+      code: body.code,
+      message: isHi
+        ? 'आपका एडमिन स्तर super_admin से नीचे है — बदलाव सहेजे नहीं जा रहे हैं।'
+        : 'Your admin level is below super_admin — changes are not being saved.',
+    };
   }
   if (body?.code === 'FLAG_PROTECTED') {
     const reason = (isHi ? body.reasonHi : undefined) || body.reason || body.error || '';
     const head = isHi
       ? 'सुरक्षित फ़्लैग — पुष्टि गुम है या मेल नहीं खाती।'
       : 'Protected flag — confirmation missing or mismatched.';
-    return reason ? `${head} ${reason}` : head;
+    return { code: body.code, message: reason ? `${head} ${reason}` : head };
+  }
+  if (body?.code === 'FLAG_BULK_CONFIRM_REQUIRED') {
+    const count = typeof body.recent_mutation_count === 'number' ? body.recent_mutation_count : 0;
+    const required = typeof body.bulk_confirm_required === 'string' ? body.bulk_confirm_required : '';
+    const message = isHi
+      ? `आपने पिछले 10 मिनट में ${count} पुष्टि की गई सुरक्षित-फ़्लैग बदलाव किए हैं। जारी रखने के लिए नीचे पुष्टि टोकन टाइप करें।`
+      : `You've made ${count} confirmed protected-flag change(s) in the last 10 minutes. To proceed, type the confirmation token below.`;
+    return { code: body.code, message, bulkConfirmRequired: required, recentMutationCount: count };
   }
   let detail = typeof body?.error === 'string' ? body.error : '';
   if (Array.isArray(body?.details)) {
@@ -60,7 +89,7 @@ async function parseApiError(res: Response, isHi: boolean): Promise<string> {
     if (issues) detail = detail ? `${detail} — ${issues}` : issues;
   }
   const prefix = isHi ? `सहेजना विफल (HTTP ${res.status})` : `Save failed (HTTP ${res.status})`;
-  return detail ? `${prefix}: ${detail}` : prefix;
+  return { code: body?.code, message: detail ? `${prefix}: ${detail}` : prefix };
 }
 
 /**
@@ -94,6 +123,28 @@ function toggleNeedsConfirm(flag: FeatureFlag, protection: FlagProtection | null
 
 type ConfirmAction = 'enable' | 'disable' | 'rollout';
 
+/** Result of a burst-guard rejection (409 FLAG_BULK_CONFIRM_REQUIRED). */
+interface BurstGuardInfo {
+  /** The exact token the server expects in body.bulk_confirm (e.g. "BULK-4-ff_school_pulse_v1"). */
+  required: string;
+  /** How many confirmed protected-flag mutations this admin made in the trailing 10-minute window. */
+  recentCount: number;
+}
+
+interface ConfirmStateShape {
+  flagId: string;
+  action: ConfirmAction;
+  /** Set once the per-flag confirm has been accepted but the burst guard rejected it — the UI then also asks for bulk_confirm. */
+  burst?: BurstGuardInfo;
+}
+
+/** Outcome of a gated mutation attempt (toggle/rollout), used to drive the confirm-modal state machine. */
+interface MutationOutcome {
+  ok: boolean;
+  /** Present when the burst guard blocked this exact (already flag-confirmed) mutation. */
+  burst?: BurstGuardInfo;
+}
+
 function FlagsContent() {
   const { apiFetch } = useAdmin();
   const { isHi } = useAuth();
@@ -111,8 +162,11 @@ function FlagsContent() {
   const [rolloutEditId, setRolloutEditId] = useState<string | null>(null);
   const [rolloutDraft, setRolloutDraft] = useState('100');
   // Guarded flow for protected flags: which flag/action awaits type-to-confirm.
-  const [confirmState, setConfirmState] = useState<{ flagId: string; action: ConfirmAction } | null>(null);
+  const [confirmState, setConfirmState] = useState<ConfirmStateShape | null>(null);
   const [confirmText, setConfirmText] = useState('');
+  // Phase 0 burst-guard second step: the bulk_confirm token, only shown once
+  // the server has rejected this already-flag-confirmed mutation for velocity.
+  const [bulkConfirmText, setBulkConfirmText] = useState('');
 
   const fetchFlags = useCallback(async () => {
     setLoading(true);
@@ -136,11 +190,16 @@ function FlagsContent() {
 
   const networkErrorMsg = () => (isHi ? 'नेटवर्क त्रुटि — बदलाव सहेजा नहीं गया।' : 'Network error — the change was not saved.');
 
-  const closeConfirm = () => { setConfirmState(null); setConfirmText(''); };
+  const closeConfirm = () => { setConfirmState(null); setConfirmText(''); setBulkConfirmText(''); };
 
-  /** Returns true on success so the confirm UI knows when to close. */
-  const toggleFlag = async (flag: FeatureFlag, confirm?: string): Promise<boolean> => {
-    if (togglingId === flag.id) return false;
+  /**
+   * Returns a MutationOutcome so the confirm UI can tell apart three cases:
+   * plain success, a hard failure (mutationError already set), and the
+   * Phase 0 burst-guard rejection (which is NOT a failure — it means the
+   * per-flag confirm was accepted but a second gate needs bulk_confirm too).
+   */
+  const toggleFlag = async (flag: FeatureFlag, confirm?: string, bulkConfirm?: string): Promise<MutationOutcome> => {
+    if (togglingId === flag.id) return { ok: false };
     setTogglingId(flag.id);
     try {
       const res = await apiFetch('/api/super-admin/feature-flags', {
@@ -149,18 +208,23 @@ function FlagsContent() {
           id: flag.id,
           updates: { enabled: !flag.enabled },
           ...(confirm !== undefined ? { confirm } : {}),
+          ...(bulkConfirm !== undefined ? { bulk_confirm: bulkConfirm } : {}),
         }),
       });
       if (!res.ok) {
-        setMutationError(await parseApiError(res, isHi));
-        return false;
+        const parsed = await parseApiError(res, isHi);
+        if (parsed.code === 'FLAG_BULK_CONFIRM_REQUIRED') {
+          return { ok: false, burst: { required: parsed.bulkConfirmRequired || '', recentCount: parsed.recentMutationCount ?? 0 } };
+        }
+        setMutationError(parsed.message);
+        return { ok: false };
       }
       setMutationError(null);
       await fetchFlags();
-      return true;
+      return { ok: true };
     } catch {
       setMutationError(networkErrorMsg());
-      return false;
+      return { ok: false };
     } finally {
       setTogglingId(null);
     }
@@ -171,6 +235,7 @@ function FlagsContent() {
     if (toggleNeedsConfirm(flag, protection)) {
       setConfirmState({ flagId: flag.id, action: flag.enabled ? 'disable' : 'enable' });
       setConfirmText('');
+      setBulkConfirmText('');
       return;
     }
     toggleFlag(flag);
@@ -183,7 +248,7 @@ function FlagsContent() {
         method: 'POST', body: JSON.stringify({ name: newFlagName.trim(), enabled: false }),
       });
       if (!res.ok) {
-        setMutationError(await parseApiError(res, isHi));
+        setMutationError((await parseApiError(res, isHi)).message);
         return;
       }
       setMutationError(null);
@@ -202,7 +267,7 @@ function FlagsContent() {
         method: 'PATCH', body: JSON.stringify({ id: flagId, updates: { target_roles: roles, target_environments: envs } }),
       });
       if (!res.ok) {
-        setMutationError(await parseApiError(res, isHi));
+        setMutationError((await parseApiError(res, isHi)).message);
         return;
       }
       setMutationError(null);
@@ -220,7 +285,7 @@ function FlagsContent() {
         method: 'DELETE', body: JSON.stringify({ id: flag.id }),
       });
       if (!res.ok) {
-        setMutationError(await parseApiError(res, isHi));
+        setMutationError((await parseApiError(res, isHi)).message);
         return;
       }
       setMutationError(null);
@@ -230,12 +295,12 @@ function FlagsContent() {
     }
   };
 
-  /** Returns true on success so the confirm UI knows when to close. */
-  const saveRollout = async (flagId: string, confirm?: string): Promise<boolean> => {
+  /** Returns a MutationOutcome — see toggleFlag's doc comment for the burst-guard case. */
+  const saveRollout = async (flagId: string, confirm?: string, bulkConfirm?: string): Promise<MutationOutcome> => {
     const parsed = Number(rolloutDraft);
     if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
       setMutationError(isHi ? 'रोलआउट 0 से 100 के बीच की संख्या होनी चाहिए।' : 'Rollout must be a number between 0 and 100.');
-      return false;
+      return { ok: false };
     }
     try {
       const res = await apiFetch('/api/super-admin/feature-flags', {
@@ -244,19 +309,24 @@ function FlagsContent() {
           id: flagId,
           updates: { rollout_percentage: Math.round(parsed) },
           ...(confirm !== undefined ? { confirm } : {}),
+          ...(bulkConfirm !== undefined ? { bulk_confirm: bulkConfirm } : {}),
         }),
       });
       if (!res.ok) {
-        setMutationError(await parseApiError(res, isHi));
-        return false;
+        const parsedErr = await parseApiError(res, isHi);
+        if (parsedErr.code === 'FLAG_BULK_CONFIRM_REQUIRED') {
+          return { ok: false, burst: { required: parsedErr.bulkConfirmRequired || '', recentCount: parsedErr.recentMutationCount ?? 0 } };
+        }
+        setMutationError(parsedErr.message);
+        return { ok: false };
       }
       setMutationError(null);
       setRolloutEditId(null);
       fetchFlags();
-      return true;
+      return { ok: true };
     } catch {
       setMutationError(networkErrorMsg());
-      return false;
+      return { ok: false };
     }
   };
 
@@ -270,17 +340,33 @@ function FlagsContent() {
     if (protection && parsed > 0) {
       setConfirmState({ flagId: flag.id, action: 'rollout' });
       setConfirmText('');
+      setBulkConfirmText('');
       return;
     }
     saveRollout(flag.id);
   };
 
+  /**
+   * Submits the current confirm step. On plain success, closes the modal.
+   * On a burst-guard rejection, keeps the modal open and attaches `burst`
+   * info to confirmState so the second (bulk_confirm) input renders — the
+   * per-flag confirm has ALREADY been accepted by the server at that point,
+   * so the next submit resends both confirm + bulk_confirm together.
+   */
   const submitConfirm = async (flag: FeatureFlag) => {
     if (!confirmState || confirmState.flagId !== flag.id) return;
-    const ok = confirmState.action === 'rollout'
-      ? await saveRollout(flag.id, confirmText)
-      : await toggleFlag(flag, confirmText);
-    if (ok) closeConfirm();
+    const bulkConfirm = confirmState.burst ? bulkConfirmText : undefined;
+    const outcome = confirmState.action === 'rollout'
+      ? await saveRollout(flag.id, confirmText, bulkConfirm)
+      : await toggleFlag(flag, confirmText, bulkConfirm);
+    if (outcome.ok) {
+      closeConfirm();
+      return;
+    }
+    if (outcome.burst) {
+      setConfirmState(prev => (prev && prev.flagId === flag.id ? { ...prev, burst: outcome.burst } : prev));
+      setBulkConfirmText('');
+    }
   };
 
   const recommended = ['foxy_ai_enabled', 'razorpay_payments', 'quiz_module', 'simulations', 'parent_portal', 'teacher_portal', 'leaderboard', 'push_notifications', 'onboarding_flow', 'beta_features'];
@@ -379,7 +465,7 @@ function FlagsContent() {
                 </span>
                 {!confirmOpen && (
                   <button
-                    onClick={() => { setConfirmState({ flagId: flag.id, action: flag.enabled ? 'disable' : 'enable' }); setConfirmText(''); }}
+                    onClick={() => { setConfirmState({ flagId: flag.id, action: flag.enabled ? 'disable' : 'enable' }); setConfirmText(''); setBulkConfirmText(''); }}
                     style={{ fontSize: 11, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
                   >
                     {isHi ? 'ओवरराइड…' : 'override…'}
@@ -451,6 +537,57 @@ function FlagsContent() {
                 {isHi ? 'रद्द' : 'Cancel'}
               </button>
             </div>
+
+            {/*
+             * Phase 0 burst guard (2026-07-22) — second step. Shown only after
+             * the server has already accepted the confirm text above but
+             * rejected the mutation with 409 FLAG_BULK_CONFIRM_REQUIRED
+             * because this admin has made > 3 confirmed protected-flag
+             * mutations in the trailing 10 minutes. Reuses the same
+             * danger-zone visual language as the confirm step above.
+             */}
+            {confirmState.burst && (
+              <div data-testid="burst-guard-step" style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--danger)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', marginBottom: 4 }}>
+                  {isHi
+                    ? '⚠️ हाल ही में कई सुरक्षित-फ़्लैग बदलाव — पुष्टि करें कि आप यह भी करना चाहते हैं'
+                    : "⚠️ You've made several protected-flag changes recently — confirm you intend this one too"}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-2)', marginBottom: 8 }}>
+                  {isHi
+                    ? `आपने पिछले 10 मिनट में ${confirmState.burst.recentCount} पुष्टि की गई सुरक्षित-फ़्लैग बदलाव किए हैं। जारी रखने के लिए नीचे दिया गया टोकन टाइप करें।`
+                    : `You've made ${confirmState.burst.recentCount} confirmed protected-flag change(s) in the last 10 minutes. To proceed with this one, type the token below.`}
+                </div>
+                <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 4, fontWeight: 600 }}>
+                  {isHi ? 'पुष्टि के लिए यह टोकन टाइप करें' : 'Type this token to confirm'}
+                </label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    data-testid="bulk-confirm-input"
+                    value={bulkConfirmText}
+                    onChange={e => setBulkConfirmText(e.target.value)}
+                    placeholder={confirmState.burst.required}
+                    onKeyDown={e => { if (e.key === 'Enter') submitConfirm(flag); if (e.key === 'Escape') closeConfirm(); }}
+                    aria-label={isHi ? 'पुष्टि के लिए टोकन टाइप करें' : 'Type the confirmation token'}
+                    className="w-72 rounded-md border border-surface-3 bg-surface-1 px-3 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <button
+                    onClick={() => submitConfirm(flag)}
+                    disabled={!bulkConfirmText.trim() || togglingId === flag.id}
+                    className="rounded-md px-3 py-1.5 text-[11px] font-semibold text-surface-1 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    style={{ background: 'var(--danger)', border: 'none' }}
+                  >
+                    {isHi ? 'पुष्टि करें' : 'Confirm'}
+                  </button>
+                  <button
+                    onClick={closeConfirm}
+                    className="rounded-md border border-surface-3 bg-transparent px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-2"
+                  >
+                    {isHi ? 'रद्द' : 'Cancel'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

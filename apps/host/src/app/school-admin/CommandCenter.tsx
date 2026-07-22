@@ -44,8 +44,7 @@ import { usePermissions } from '@alfanumrik/lib/usePermissions';
 import { useSchoolPulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { useSchoolPulseFlag } from '@alfanumrik/lib/use-school-pulse-flag';
 import { useSchoolProvisioning } from '@alfanumrik/lib/use-school-provisioning';
-import { NoDataState, StatCard } from '@alfanumrik/ui/admin-ui';
-import { Card } from '@alfanumrik/ui/ui/primitives';
+import { NoDataState } from '@alfanumrik/ui/admin-ui';
 import {
   DEFAULT_PAGE_LIMIT,
   type SchoolOverview,
@@ -64,16 +63,6 @@ const TeacherEngagementTable = dynamic(
   () => import('./command-center/TeacherEngagementTable'),
   { ssr: false, loading: () => <PanelSkeleton /> },
 );
-// Phase 2 Task 2.1 — chart cards, code-split like their sibling panels (P10).
-// Both reuse the SAME classesSWR data as ClassesAtRiskRail (no new fetch).
-const MasteryDistributionCard = dynamic(
-  () => import('./command-center/MasteryDistributionCard'),
-  { ssr: false, loading: () => <PanelSkeleton /> },
-);
-const ClassMasteryBarCard = dynamic(
-  () => import('./command-center/ClassMasteryBarCard'),
-  { ssr: false, loading: () => <PanelSkeleton /> },
-);
 // School Pulse panel is code-split (P10) — only ships when the Command Center
 // renders the principal Pulse section.
 const SchoolPulsePanel = dynamic(
@@ -88,15 +77,12 @@ const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 interface SchoolPickerError extends Error {
   status: number;
   schoolIds?: string[];
-  /** id -> display name (additive; see command-center-context.ts). May be
-   *  partial/absent for older API responses — the picker falls back to the id. */
-  schoolNames?: Record<string, string>;
 }
 
 async function ccFetcher<T>(url: string): Promise<T> {
   const res = await authedFetch(url);
   if (!res.ok) {
-    let body: { error?: string; school_ids?: string[]; school_names?: Record<string, string> } | null = null;
+    let body: { error?: string; school_ids?: string[] } | null = null;
     try {
       body = await res.json();
     } catch {
@@ -106,7 +92,6 @@ async function ccFetcher<T>(url: string): Promise<T> {
     err.status = res.status;
     if (res.status === 400 && Array.isArray(body?.school_ids)) {
       err.schoolIds = body!.school_ids;
-      err.schoolNames = body?.school_names;
     }
     throw err;
   }
@@ -227,9 +212,21 @@ function masteryPct(value: number | null): string {
   return `${Math.round(value * 100)}%`;
 }
 
+// ── KPI tile ─────────────────────────────────────────────────────────────────
+function Kpi({ label, value, color }: { label: string; value: React.ReactNode; color: string }) {
+  return (
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] px-4 py-3.5">
+      <p className="text-[11px] uppercase tracking-wide text-[var(--text-3)]">{label}</p>
+      <p className="text-[26px] font-bold mt-1 tabular-nums" style={{ color }}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function PanelSkeleton() {
   return (
-    <div className="rounded-2xl border border-surface-3 bg-[var(--surface-1)] p-4">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-4">
       <div className="h-4 w-32 rounded bg-[var(--surface-2)] animate-pulse mb-3" aria-hidden="true" />
       <div className="space-y-2" aria-hidden="true">
         {[1, 2, 3, 4].map((i) => (
@@ -267,20 +264,19 @@ function OverviewStrip({
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-      <StatCard label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} accentColor="var(--purple)" />
-      <StatCard label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} accentColor="var(--info)" />
-      <StatCard label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} accentColor="var(--orange)" />
-      <StatCard
+      <Kpi label={tt(isHi, 'Classes', 'कक्षाएँ')} value={overview.class_count} color="var(--purple)" />
+      <Kpi label={tt(isHi, 'Teachers', 'शिक्षक')} value={overview.teacher_count} color="var(--info)" />
+      <Kpi label={tt(isHi, 'Students', 'छात्र')} value={overview.student_count} color="var(--orange)" />
+      <Kpi
         label={tt(isHi, 'Active', 'सक्रिय')}
         value={overview.active_students}
-        accentColor="var(--success)"
+        color="var(--success)"
       />
       {/* Seat utilization. Wave A: display-only. Wave B (flag ON): the same
           gauge augmented with the enforcement band (within plan / grace / over),
           derived from the overview counts — NO new fetch (get_school_overview
-          does not expose grace state). Kept as a bespoke card (not StatCard):
-          it renders a custom gauge body, not a single value. */}
-      <Card variant="elevated" className="px-4 py-3.5">
+          does not expose grace state). */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] px-4 py-3.5">
         <SeatGauge
           pct={overview.seat_utilization_pct}
           isHi={isHi}
@@ -288,11 +284,11 @@ function OverviewStrip({
           seatsPurchased={overview.seats_purchased}
           activeStudents={overview.active_students}
         />
-      </Card>
-      <StatCard
+      </div>
+      <Kpi
         label={tt(isHi, 'Avg mastery', 'औसत महारत')}
         value={masteryPct(overview.avg_mastery)}
-        accentColor="var(--purple)"
+        color="var(--purple)"
       />
     </div>
   );
@@ -337,19 +333,15 @@ function SchoolPulseSection({
 // ── School picker (multi-school 400 case) ────────────────────────────────────
 function SchoolPicker({
   schoolIds,
-  schoolNames,
   onPick,
   isHi,
 }: {
   schoolIds: string[];
-  /** id -> display name (additive API field). Falls back to the raw id only
-   *  when a name is genuinely unavailable, so the picker never blank-renders. */
-  schoolNames?: Record<string, string>;
   onPick: (id: string) => void;
   isHi: boolean;
 }) {
   return (
-    <Card variant="elevated" className="p-6 text-center max-w-md mx-auto">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-6 text-center max-w-md mx-auto">
       <div className="text-3xl mb-3" aria-hidden="true">🏫</div>
       <h2 className="text-base font-bold text-[var(--text-1)] mb-1">
         {tt(isHi, 'Choose a school', 'एक स्कूल चुनें')}
@@ -367,13 +359,13 @@ function SchoolPicker({
             key={id}
             type="button"
             onClick={() => onPick(id)}
-            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-surface-3 hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px] truncate"
+            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px] truncate"
           >
-            {schoolNames?.[id] || id}
+            {id}
           </button>
         ))}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -426,7 +418,7 @@ function SetupChecklist({ isHi }: { isHi: boolean }) {
           <li key={step.href}>
             <a
               href={step.href}
-              className="flex items-center gap-2 rounded-xl border border-surface-3 bg-[var(--surface-1)] px-3 py-3 text-sm font-semibold text-[var(--text-1)] no-underline hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px]"
+              className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-1)] px-3 py-3 text-sm font-semibold text-[var(--text-1)] no-underline hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px]"
             >
               <span
                 aria-hidden="true"
@@ -484,15 +476,6 @@ export default function CommandCenter() {
     return null;
   }, [overviewSWR.error]);
 
-  // Display names for the picker (additive API field). Only present alongside
-  // pickerSchoolIds (same 400 error object) — kept as a separate memo purely
-  // for readability at the call site.
-  const pickerSchoolNames = useMemo(() => {
-    const err = overviewSWR.error;
-    if (err && err.status === 400) return err.schoolNames;
-    return undefined;
-  }, [overviewSWR.error]);
-
   // 2 + 3. The two list panels only fetch once we have a resolvable school
   //    (single-school caller → no picker → fetch immediately; multi-school →
   //    wait for a selection so we don't 400 three times).
@@ -533,7 +516,7 @@ export default function CommandCenter() {
           background: 'color-mix(in srgb, var(--surface-1) 92%, transparent)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
-          borderBottom: '1px solid var(--surface-3)',
+          borderBottom: '1px solid var(--border)',
         }}
       >
         <div>
@@ -550,7 +533,7 @@ export default function CommandCenter() {
             className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
             style={{
               background: 'var(--surface-2)',
-              border: '1px solid var(--surface-3)',
+              border: '1px solid var(--border)',
               color: 'var(--text-2)',
               minHeight: '36px',
             }}
@@ -563,7 +546,7 @@ export default function CommandCenter() {
             className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all active:scale-95"
             style={{
               background: 'var(--surface-2)',
-              border: '1px solid var(--surface-3)',
+              border: '1px solid var(--border)',
               color: 'var(--text-3)',
               minHeight: '36px',
             }}
@@ -577,12 +560,7 @@ export default function CommandCenter() {
       <main className="px-4 pt-4 pb-24 max-w-5xl mx-auto space-y-5">
         {/* Multi-school disambiguation: show the picker instead of the panels */}
         {pickerSchoolIds ? (
-          <SchoolPicker
-            schoolIds={pickerSchoolIds}
-            schoolNames={pickerSchoolNames}
-            onPick={handlePickSchool}
-            isHi={isHi}
-          />
+          <SchoolPicker schoolIds={pickerSchoolIds} onPick={handlePickSchool} isHi={isHi} />
         ) : (
           <>
             {/* First-run setup nudge — ONLY when the overview resolves to the
@@ -600,7 +578,7 @@ export default function CommandCenter() {
                   ))}
                 </div>
               ) : overviewHardError ? (
-                <Card variant="elevated" className="p-6 text-center">
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-6 text-center">
                   <p className="text-sm text-[var(--text-2)] mb-3">
                     {tt(isHi, "Couldn't load the overview.", 'अवलोकन लोड नहीं हो सका।')}
                   </p>
@@ -611,7 +589,7 @@ export default function CommandCenter() {
                   >
                     {tt(isHi, 'Retry', 'दोबारा कोशिश करें')}
                   </button>
-                </Card>
+                </div>
               ) : overview ? (
                 <OverviewStrip overview={overview} isHi={isHi} seatEnforced={seatEnforced} />
               ) : null}
@@ -621,7 +599,7 @@ export default function CommandCenter() {
                 The rail wrapper carries the anchor id the Pulse summary links
                 to (scroll-mt offsets the sticky header). This rail is the ONE
                 authoritative at-risk roster on the page (ops de-dup review). */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 items-start">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               <div id="cc-classes-at-risk" className="scroll-mt-20">
                 <ClassesAtRiskRail
                   rows={classesSWR.data?.data ?? []}
@@ -647,27 +625,6 @@ export default function CommandCenter() {
                 onPrev={() => setTeacherOffset((o) => Math.max(0, o - limit))}
                 onNext={() => setTeacherOffset((o) => o + limit)}
                 onRetry={() => teachersSWR.mutate()}
-              />
-            </div>
-
-            {/* Phase 2 Task 2.1 — mastery distribution + per-class mastery
-                charts. Both reuse the SAME classesSWR page as the rail above
-                (no new fetch); same responsive grid + Card-shell convention
-                as the row above (Task 2.5 layout pass). */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 items-start">
-              <MasteryDistributionCard
-                rows={classesSWR.data?.data ?? []}
-                loading={classesSWR.isLoading && !classesSWR.data}
-                error={Boolean(classesSWR.error)}
-                isHi={isHi}
-                onRetry={() => classesSWR.mutate()}
-              />
-              <ClassMasteryBarCard
-                rows={classesSWR.data?.data ?? []}
-                loading={classesSWR.isLoading && !classesSWR.data}
-                error={Boolean(classesSWR.error)}
-                isHi={isHi}
-                onRetry={() => classesSWR.mutate()}
               />
             </div>
 

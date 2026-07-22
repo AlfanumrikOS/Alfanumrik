@@ -285,34 +285,6 @@ export async function authorizeSchoolAdmin(
     } else if (memberships.length === 1) {
       adminRecord = memberships[0];
     } else {
-      // Task 1.6.1 (school dashboard IA fix): the picker on CommandCenter.tsx
-      // renders school NAMES, not raw ids, so this 400 body carries a
-      // best-effort id->name map alongside school_ids. Fetching names is
-      // read-only and additive - if it fails for any reason we still return
-      // the (already-correct) school_ids-only body rather than failing the
-      // whole request, so the picker falls back to id labels exactly as
-      // before this fix.
-      const schoolIds = memberships.map((membership) => membership.school_id);
-      let schoolNames: Record<string, string> | undefined;
-      try {
-        const { data: schoolRows } = await supabase
-          .from('schools')
-          .select('id, name')
-          .in('id', schoolIds);
-        if (Array.isArray(schoolRows) && schoolRows.length > 0) {
-          schoolNames = Object.fromEntries(
-            schoolRows
-              .filter((row): row is { id: string; name: string } => typeof row?.id === 'string' && typeof row?.name === 'string')
-              .map((row) => [row.id, row.name])
-          );
-        }
-      } catch (nameLookupError) {
-        logger.warn('school_admin_auth_picker_name_lookup_failed', {
-          error: nameLookupError instanceof Error ? nameLookupError : new Error(String(nameLookupError)),
-          route: 'school-admin-auth',
-        });
-      }
-
       return {
         authorized: false,
         userId,
@@ -323,8 +295,7 @@ export async function authorizeSchoolAdmin(
           {
             success: false,
             error: 'Multiple schools — specify schoolId',
-            school_ids: schoolIds,
-            ...(schoolNames ? { school_names: schoolNames } : {}),
+            school_ids: memberships.map((membership) => membership.school_id),
           },
           { status: 400 },
         ),

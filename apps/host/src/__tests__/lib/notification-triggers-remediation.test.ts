@@ -23,7 +23,7 @@
  *
  *   5. FIRE-AND-FORGET: a DB failure never throws to the caller.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@alfanumrik/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -65,6 +65,7 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: () => mockDb.adminClient,
 }));
 
+import { logger } from '@alfanumrik/lib/logger';
 import {
   onRemediationAssigned,
   onRemediationRecovered,
@@ -236,5 +237,148 @@ describe('onRemediationEscalated', () => {
     // Student row still goes out even when the guardian read failed.
     const { rows } = onlyUpsert();
     expect(rows.some((r) => r.recipient_type === 'student')).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// onRemediationEscalated — WhatsApp channel (Master Action Plan Phase 3, item
+// 3.5). sendWhatsAppEscalation() is a private, unexported helper in
+// notification-triggers.ts, so it is exercised here only THROUGH the public
+// onRemediationEscalated() entry point — mirroring how it is actually invoked
+// in production. Prior to this describe block NOTHING asserted the fetch call
+// ever fires: every guardian fixture above omits `phone`, which makes
+// sendWhatsAppEscalation's `if (!guardian.phone) return;` guard short-circuit
+// before any fetch — so the WhatsApp wiring had zero real coverage.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('onRemediationEscalated — WhatsApp channel (item 3.5)', () => {
+  const guardianWithPhone = (overrides: Record<string, unknown> = {}) => ({
+    data: [
+      {
+        guardian_id: 'g-1',
+        guardians: {
+          id: 'g-1',
+          auth_user_id: 'auth-g1',
+          notification_preferences: null,
+          preferred_language: 'hi',
+          phone: '+919876543210',
+          ...overrides,
+        },
+      },
+    ],
+    error: null,
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('parent guardian WITH a phone on file: POSTs to whatsapp-notify with the correct payload + Bearer auth', async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await onRemediationEscalated('stu-1', { ...CTX, escalatedTo: 'parent' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/functions/v1/whatsapp-notify');
+    expect(init.method).toBe('POST');
+    const headers = init.headers as Record<string, string>;
+    expect(headers.Authorization).toMatch(/^Bearer /);
+    expect(headers['Content-Type']).toBe('application/json');
+
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
+      type: 'remediation_escalated',
+      recipient_phone: '+919876543210',
+      language: 'hi', // derived from guardian.preferred_language
+      data: { subject_code: 'math', chapter_number: '4' },
+      user_id: 'auth-g1',
+    });
+    // P13: no name/email/raw-phone-adjacent PII keys beyond the phone itself
+    // required to actually deliver the message.
+    expect(Object.keys(body.data)).toEqual(['subject_code', 'chapter_number']);
+  });
+
+  it('guardian language defaults to "en" when preferred_language is not "hi"', async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone({ preferred_language: 'en' });
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await onRemediationEscalated('stu-1', { ...CTX, escalatedTo: 'parent' });
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+    expect(body.language).toBe('en');
+  });
+
+  it('guardian with NO phone on file: fetch is never called (in-app row still sent)', async () => {
+    mockDb.state.guardianLinksResult = {
+      data: [{
+        guardian_id: 'g-1',
+        guardians: { id: 'g-1', auth_user_id: 'auth-g1', notification_preferences: null, preferred_language: 'en' },
+      }],
+      error: null,
+    };
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await onRemediationEscalated('stu-1', { ...CTX, escalatedTo: 'parent' });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onlyUpsert().rows.some((r) => r.recipient_type === 'guardian')).toBe(true);
+  });
+
+  it('teacher path never invokes the WhatsApp channel (guardians are never queried)', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await onRemediationEscalated('stu-1', { ...CTX, escalatedTo: 'teacher' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a non-2xx whatsapp-notify response is logged as a warning and never throws (in-app row is the durable record)', async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone();
+    const fetchMock = vi.fn().mockResolvedValue(new Response('template not approved', { status: 502 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      onRemediationEscalated('stu-1', { ...CTX, escalatedTo: 'parent' }),
+    ).resolves.toBeUndefined();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'notification_triggers: whatsapp escalation send failed',
+      expect.objectContaining({ templateType: 'remediation_escalated', status: 502 }),
+    );
+    // The in-app notification row still went out despite the WhatsApp failure.
+    expect(onlyUpsert().rows.some((r) => r.recipient_type === 'guardian')).toBe(true);
+  });
+
+  it('a network-level fetch rejection is swallowed (logged as a warning, never thrown)', async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone();
+    const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNRESET'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      onRemediationEscalated('stu-1', { ...CTX, escalatedTo: 'parent' }),
+    ).resolves.toBeUndefined();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'notification_triggers: whatsapp escalation send error',
+      expect.objectContaining({ templateType: 'remediation_escalated', error: 'ECONNRESET' }),
+    );
+  });
+
+  it('missing Supabase env configuration short-circuits before any fetch (best-effort only)', async () => {
+    mockDb.state.guardianLinksResult = guardianWithPhone();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const prevUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    try {
+      await onRemediationEscalated('stu-1', { ...CTX, escalatedTo: 'parent' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      process.env.NEXT_PUBLIC_SUPABASE_URL = prevUrl;
+    }
   });
 });

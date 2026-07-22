@@ -332,6 +332,252 @@ describe('unhandled error → 500 with a GENERIC body (no detail leakage)', () =
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// 1c. Concurrent-run overlap guard — TOCTOU race fix (Master Action Plan 3.4)
+//
+//   Paired fix, both halves exercised here:
+//     (a) migration 20260722095000 — partial unique index on
+//         task_queue(queue_name) WHERE status='processing'
+//     (b) this branch — a 23505 on the run-lock insert is treated as a
+//         DEFINITIVE "already running" signal (acquired: false), never the
+//         generic fail-open path used for other/unexpected insert errors.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('run-lock overlap guard (acquireRunLock)', () => {
+  it('no existing marker + insert succeeds → lock acquired, run proceeds normally', async () => {
+    installHandler({
+      ...injectFixture(),
+      'task_queue.select': { data: [], error: null },
+      'task_queue.insert': { data: { id: 1 }, error: null },
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'inject' }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.data.skipped).toBeUndefined();
+    // The run actually did work (proof the lock was acquired, not denied).
+    expect(body.data.inject).toMatchObject({ injected: 1 });
+    const insertCall = fromCalls.find((c) => classify(c) === 'task_queue.insert');
+    expect(insertCall).toBeDefined();
+  });
+
+  it('an existing non-stale marker (read finds one) → clean "already_running", zero inject/verify DB calls', async () => {
+    installHandler({
+      'task_queue.select': { data: [{ id: 1 }], error: null },
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'all' }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({
+      success: true,
+      data: { skipped: 'already_running', injected: 0, resolved: 0, inject: null, verify: null },
+    });
+    // No lock insert attempted, and no inject/verify work started.
+    expect(fromCalls.some((c) => classify(c) === 'task_queue.insert')).toBe(false);
+    expect(fromCalls.some((c) => classify(c) === 'state_events.recentScan')).toBe(false);
+    expect(fromCalls.some((c) => classify(c) === 'interventions.verifySweep')).toBe(false);
+  });
+
+  it('BEFORE the fix (regression guard): a 23505 on the run-lock insert must NOT fail open — proceeding would double-process the run', async () => {
+    // This is the exact race this migration + branch close: the "any other
+    // marker?" read found nothing (TOCTOU window), but a concurrent
+    // invocation won the insert race, so THIS insert hits the new partial
+    // unique index and returns 23505.
+    installHandler({
+      ...injectFixture(),
+      'task_queue.select': { data: [], error: null },
+      'task_queue.insert': { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "idx_task_queue_run_lock_processing_unique"' } },
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'all' }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    // Clean early-return "already running" shape — NOT the generic fail-open
+    // shape (which would show real inject/verify summaries below).
+    expect(body).toMatchObject({
+      success: true,
+      data: { skipped: 'already_running', injected: 0, resolved: 0, inject: null, verify: null },
+    });
+    // Proof the pipeline never ran: no inject scan, no verify sweep.
+    expect(fromCalls.some((c) => classify(c) === 'state_events.recentScan')).toBe(false);
+    expect(fromCalls.some((c) => classify(c) === 'interventions.verifySweep')).toBe(false);
+  });
+
+  it('a DIFFERENT (non-23505) insert error still fails OPEN — a transient DB hiccup must not freeze the pipeline', async () => {
+    installHandler({
+      ...injectFixture(),
+      'task_queue.select': { data: [], error: null },
+      'task_queue.insert': { data: null, error: { code: '55000', message: 'some transient failure' } },
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'inject' }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.data.skipped).toBeUndefined(); // NOT denied — proceeded despite the lock error
+    expect(body.data.inject).toMatchObject({ injected: 1 }); // the run actually did work
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1d. Fairness ordering on the bounded candidate scan (Master Action Plan 3.1)
+//
+//   Without an ORDER BY, `.slice(0, MAX_INJECT_STUDENTS_PER_RUN)` on an
+//   unordered Postgres result truncates an ARBITRARY subset at fleet scale —
+//   the same cohort could win the 200-student cap every single night. The
+//   fix orders the recent-mastery-changed scan most-recent-trigger-first
+//   before any truncation.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('inject candidate scan — fairness ordering (item 3.1)', () => {
+  it('orders the state_events recent-mastery-changed scan by occurred_at DESCENDING before the 200-student cap truncates it', async () => {
+    installHandler(injectFixture());
+    const { POST } = await loadRoute();
+    await POST(req({ 'x-cron-secret': SECRET }, { phase: 'inject' }));
+
+    const scan = fromCalls.find((c) => classify(c) === 'state_events.recentScan');
+    expect(scan).toBeDefined();
+    // Must sort by occurred_at, descending (most-recent-trigger-first) — NOT an
+    // unordered result that `.slice()` would truncate arbitrarily.
+    expect(hasOp(scan!, 'order', 'occurred_at')).toBe(true);
+    const orderCall = scan!.ops.find((o) => o.op === 'order' && o.args[0] === 'occurred_at');
+    expect(orderCall?.args[1]).toMatchObject({ ascending: false });
+    // The order() call must precede the limit() call — sorting AFTER a
+    // truncating limit would defeat the fairness fix entirely.
+    const orderIdx = scan!.ops.findIndex((o) => o.op === 'order');
+    const limitIdx = scan!.ops.findIndex((o) => o.op === 'limit');
+    expect(orderIdx).toBeGreaterThanOrEqual(0);
+    expect(limitIdx).toBeGreaterThan(orderIdx);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1e. Loop D verify dispatch — route-level wiring for blocked_prerequisite
+// (item 3.2). The pure evaluator (evaluateBlockedPrerequisiteResolution) has
+// its own exhaustive 30-test unit suite in
+// src/__tests__/lib/learn/blocked-prerequisite-verify-evaluation.test.ts —
+// these tests instead pin that the CRON ROUTE actually wires it: fetches
+// subjects/curriculum_topics/concept_mastery, builds the observation, and
+// applies the resulting DB transition + event + audit. Before this fix, EVERY
+// blocked_prerequisite row was routed straight to `summary.pending++` — this
+// closes that "never leaves active" hard blocker at the integration layer,
+// not just the pure-function layer.
+// ════════════════════════════════════════════════════════════════════════════
+
+function blockedPrereqVerifyFixture(overrides: {
+  createdDaysAgo?: number;
+  verifyByDaysFromNow?: number;
+  pKnow?: number | null;
+  daysSinceStudy?: number | null;
+  hasConceptMastery?: boolean;
+} = {}): Fixture {
+  const now = Date.now();
+  const createdAt = new Date(now - (overrides.createdDaysAgo ?? 3) * DAY).toISOString();
+  const verifyBy = new Date(now + (overrides.verifyByDaysFromNow ?? 4) * DAY).toISOString();
+  const lastPracticedAt =
+    overrides.daysSinceStudy != null
+      ? new Date(now - overrides.daysSinceStudy * DAY).toISOString()
+      : null;
+  return {
+    'interventions.verifySweep': {
+      data: [{
+        id: INTERVENTION_ID,
+        student_id: 'stu-1',
+        subject_code: 'math',
+        chapter_number: 7, // dependent chapter
+        trigger_signal: 'blocked_prerequisite',
+        trigger_snapshot: { prereqChapterNumber: 4 },
+        created_at: createdAt,
+        verify_by: verifyBy,
+      }],
+    },
+    students: { data: [{ id: 'stu-1', auth_user_id: AUTH_1, school_id: null, grade: '9' }] },
+    'interventions.update': { data: [{ id: INTERVENTION_ID }], error: null },
+    subjects: { data: [{ id: 'subj-math', code: 'math' }] },
+    curriculum_topics: {
+      data: [{ id: 'topic-prereq-4', subject_id: 'subj-math', grade: '9', chapter_number: 4, display_order: 1 }],
+    },
+    'concept_mastery.select': overrides.hasConceptMastery === false
+      ? { data: [] }
+      : {
+          data: [{
+            student_id: 'stu-1',
+            topic_id: 'topic-prereq-4',
+            p_know: overrides.pKnow ?? 0.7,
+            last_practiced_at: lastPracticedAt,
+            last_attempted_at: lastPracticedAt,
+          }],
+        },
+  };
+}
+
+describe('verify phase — Loop D blocked_prerequisite dispatch (item 3.2)', () => {
+  it("resolved: prereq p_know clears the mastery floor + recently studied → status='recovered' + system.prerequisite_resolved event + audit", async () => {
+    installHandler(blockedPrereqVerifyFixture({ pKnow: 0.8, daysSinceStudy: 0 }));
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'verify' }));
+    const body = await res.json();
+    expect(body.data.verify).toMatchObject({ evaluated: 1, recovered: 1, escalated: 0, pending: 0, errors: 0 });
+
+    const upd = fromCalls.find((c) => classify(c) === 'interventions.update');
+    expect(upd?.payload).toMatchObject({ status: 'recovered' });
+    expect(hasOp(upd!, 'eq', 'status')).toBe(true); // race-guarded on status='active'
+
+    const event = publishEventMock.mock.calls[0][1] as Record<string, unknown>;
+    expect(event.kind).toBe('system.prerequisite_resolved');
+    expect(event.payload).toMatchObject({
+      interventionId: INTERVENTION_ID,
+      subjectCode: 'math',
+      dependentChapterNumber: 7,
+      prerequisiteChapterNumber: 4,
+    });
+    expect(auditLogMock).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'system.prerequisite_resolved',
+      target_id: INTERVENTION_ID,
+    }));
+  });
+
+  it("still_blocked (window open): low prereq p_know → row stays ACTIVE (pending), no update/event/audit", async () => {
+    installHandler(blockedPrereqVerifyFixture({ pKnow: 0.1, daysSinceStudy: 0 }));
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'verify' }));
+    const body = await res.json();
+    expect(body.data.verify).toMatchObject({ evaluated: 1, recovered: 0, escalated: 0, pending: 1, errors: 0 });
+    expect(fromCalls.some((c) => classify(c) === 'interventions.update')).toBe(false);
+    expect(publishEventMock).not.toHaveBeenCalled();
+    expect(auditLogMock).not.toHaveBeenCalled();
+  });
+
+  it("expired: window elapsed with the prerequisite still blocked → status='escalated' + metadata-only audit (Slice 1 has no notification channel for Loop D yet — the transition itself is the fix)", async () => {
+    installHandler(blockedPrereqVerifyFixture({
+      createdDaysAgo: 10, verifyByDaysFromNow: -3, // verify_by 3 days in the PAST
+      pKnow: 0.1, daysSinceStudy: 0,
+    }));
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'verify' }));
+    const body = await res.json();
+    expect(body.data.verify).toMatchObject({ evaluated: 1, recovered: 0, escalated: 1, pending: 0, errors: 0 });
+
+    const upd = fromCalls.find((c) => classify(c) === 'interventions.update');
+    expect(upd?.payload).toMatchObject({ status: 'escalated' });
+    expect(publishEventMock).not.toHaveBeenCalled(); // no event kind registered for the expired path
+    expect(auditLogMock).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'system.blocked_prerequisite_expired',
+      target_id: INTERVENTION_ID,
+      metadata: expect.objectContaining({ subject_code: 'math', dependent_chapter: 7, prereq_chapter: 4 }),
+    }));
+  });
+
+  it('REGRESSION: a fully-unreadable concept_mastery observation must NOT be treated as resolved (no row for the student/topic pair at all)', async () => {
+    installHandler(blockedPrereqVerifyFixture({ hasConceptMastery: false }));
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'verify' }));
+    const body = await res.json();
+    // No observation resolvable -> still_blocked (degrades safely, never a false resolve).
+    expect(body.data.verify).toMatchObject({ recovered: 0, pending: 1, errors: 0 });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // 2. Kill-switch semantics — inject gates on flag; verify gates on active rows
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -585,9 +831,9 @@ describe('verify phase', () => {
 
   it('expired + roster teacher (B2B): creates teacher assignment, links it, escalated_to=teacher', async () => {
     installHandler(verifyFixture({}, {
-      class_students: { data: [{ class_id: 'class-1' }] },
+      class_students: { data: [{ student_id: 'stu-1', class_id: 'class-1' }] },
       classes: { data: [{ id: 'class-1', subject: 'Mathematics', created_at: '2026-01-01T00:00:00Z' }] },
-      class_teachers: { data: [{ teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
+      class_teachers: { data: [{ class_id: 'class-1', teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
       subjects: { data: { id: 'subj-1' } },
       curriculum_topics: { data: { id: 'topic-1' } },
       'assignments.insert': { data: { id: 'tra-1' }, error: null },
@@ -638,7 +884,7 @@ describe('verify phase', () => {
   it('expired + no teacher + linked guardian (B2C): escalated_to=parent, no assignment insert', async () => {
     installHandler(verifyFixture({}, {
       class_students: { data: [] },
-      guardian_links: { data: [{ id: 'link-1' }] },
+      guardian_links: { data: [{ student_id: 'stu-1' }] },
     }));
     const { POST } = await loadRoute();
     const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'verify' }));
@@ -682,9 +928,9 @@ describe('verify phase', () => {
 
   it('B2B assignment insert failure leaves the row ACTIVE (whole escalation retries next run)', async () => {
     installHandler(verifyFixture({}, {
-      class_students: { data: [{ class_id: 'class-1' }] },
+      class_students: { data: [{ student_id: 'stu-1', class_id: 'class-1' }] },
       classes: { data: [{ id: 'class-1', subject: 'Mathematics', created_at: '2026-01-01T00:00:00Z' }] },
-      class_teachers: { data: [{ teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
+      class_teachers: { data: [{ class_id: 'class-1', teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
       subjects: { data: { id: 'subj-1' } },
       curriculum_topics: { data: { id: 'topic-1' } },
       'assignments.insert': { data: null, error: { message: 'insert failed' } },
@@ -736,9 +982,9 @@ describe('verify phase — mixed-case observation matching (assessment cond 3)',
 
 describe('verify phase — B2B assignment 23505 dedupe (architect cond 2, route half)', () => {
   const B2B_FIXTURE: Fixture = {
-    class_students: { data: [{ class_id: 'class-1' }] },
+    class_students: { data: [{ student_id: 'stu-1', class_id: 'class-1' }] },
     classes: { data: [{ id: 'class-1', subject: 'Mathematics', created_at: '2026-01-01T00:00:00Z' }] },
-    class_teachers: { data: [{ teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
+    class_teachers: { data: [{ class_id: 'class-1', teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
     subjects: { data: { id: 'subj-1' } },
     curriculum_topics: { data: { id: 'topic-1' } },
   };
@@ -824,17 +1070,25 @@ describe('verify phase — B2B assignment 23505 dedupe (architect cond 2, route 
 });
 
 describe('verify phase — B2B class selection uses the tiered subject matcher (assessment cond 2)', () => {
-  /** class_teachers responses keyed off the queried class_id. */
+  /**
+   * class_teachers responses keyed off the batched `.in('class_id', [...])`
+   * query (item 3.3 — the escalation cache fetches ALL classes' teachers in
+   * ONE query, not one query per class), returning one row per class id.
+   */
   function installPerClassTeachers(fixture: Fixture): void {
     installHandler(fixture);
     const base = dbHandler;
     dbHandler = (call) => {
       if (call.table === 'class_teachers') {
-        const classId = call.ops.find(
-          (o) => o.op === 'eq' && o.args[0] === 'class_id',
-        )?.args[1];
+        const classIds = (call.ops.find(
+          (o) => o.op === 'in' && o.args[0] === 'class_id',
+        )?.args[1] ?? []) as string[];
         return {
-          data: [{ teacher_id: `teach-${String(classId)}`, joined_at: '2026-01-02T00:00:00Z' }],
+          data: classIds.map((classId) => ({
+            class_id: classId,
+            teacher_id: `teach-${classId}`,
+            joined_at: '2026-01-02T00:00:00Z',
+          })),
           error: null,
         };
       }
@@ -844,7 +1098,7 @@ describe('verify phase — B2B class selection uses the tiered subject matcher (
 
   it("kills the substring false positive: code 'science' picks the Science class over a NEWER 'Social Science' class", async () => {
     installPerClassTeachers(verifyFixture({ subject_code: 'science' }, {
-      class_students: { data: [{ class_id: 'class-soc' }, { class_id: 'class-sci' }] },
+      class_students: { data: [{ student_id: 'stu-1', class_id: 'class-soc' }, { student_id: 'stu-1', class_id: 'class-sci' }] },
       classes: {
         data: [
           // Newer, but tier 0 — must NOT win on the old substring logic.
@@ -871,7 +1125,7 @@ describe('verify phase — B2B class selection uses the tiered subject matcher (
 
   it("fixes the underscore false negative + exact-beats-partial: code 'social_studies' picks the exact 'Social Studies' class over a NEWER partial match", async () => {
     installPerClassTeachers(verifyFixture({ subject_code: 'social_studies' }, {
-      class_students: { data: [{ class_id: 'class-partial' }, { class_id: 'class-exact' }] },
+      class_students: { data: [{ student_id: 'stu-1', class_id: 'class-partial' }, { student_id: 'stu-1', class_id: 'class-exact' }] },
       classes: {
         data: [
           // Newer, tier 1 (leading-token partial match).

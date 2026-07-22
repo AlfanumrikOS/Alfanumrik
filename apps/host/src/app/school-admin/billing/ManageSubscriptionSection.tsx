@@ -13,10 +13,8 @@
  *   - One bilingual component.
  *   - Two inline dialogs (Change plan / Cancel) using <dialog> for
  *     accessibility + focus trapping for free.
- *   - All fetches go through authedFetch() (Task 1.5 — standardized off the
- *     manual `fetch()` + Bearer-header pattern the enclosing page used to use).
- *     The `authToken` prop is still used purely as a gate (skip fetching until
- *     the parent has resolved a session) — authedFetch resolves its own token.
+ *   - All fetches go through fetch() with the same Bearer pattern the
+ *     enclosing page uses.
  *   - On POST success: redirects the browser to Razorpay's hosted page.
  *   - On PATCH success: refreshes parent data via the onChange callback.
  *   - On DELETE success: same.
@@ -24,7 +22,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Card, Button } from '@alfanumrik/ui/ui';
-import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
 import {
   SCHOOL_PER_SEAT_MARKETING_LABEL,
   SCHOOL_PER_SEAT_QUARTERLY_LABEL,
@@ -123,7 +120,9 @@ export default function ManageSubscriptionSection({
     }
     let cancelled = false;
     setLoadingSub(true);
-    authedFetch('/api/school-admin/subscription')
+    fetch('/api/school-admin/subscription', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    })
       .then((r) => (r.ok ? r.json() : Promise.reject(r)))
       .then((j) => {
         if (cancelled) return;
@@ -176,9 +175,12 @@ export default function ManageSubscriptionSection({
       const body = isExistingSub
         ? { plan: formPlan, seats: formSeats }
         : { plan: formPlan, billing_cycle: formCycle, seats: formSeats };
-      const res = await authedFetch('/api/school-admin/subscription', {
+      const res = await fetch('/api/school-admin/subscription', {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(body),
       });
       const json = await res.json().catch(() => ({}));
@@ -236,9 +238,12 @@ export default function ManageSubscriptionSection({
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const res = await authedFetch('/api/school-admin/subscription', {
+      const res = await fetch('/api/school-admin/subscription', {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           cancellation_timing: cancelImmediate ? 'immediate' : 'end_of_cycle',
         }),
@@ -360,7 +365,7 @@ export default function ManageSubscriptionSection({
       <dialog
         ref={changeDialog}
         className="rounded-2xl p-0 backdrop:bg-black/40"
-        style={{ border: '1px solid var(--surface-3)', maxWidth: '420px', width: '92%' }}
+        style={{ border: '1px solid var(--border)', maxWidth: '420px', width: '92%' }}
       >
         <form
           method="dialog"
@@ -382,7 +387,7 @@ export default function ManageSubscriptionSection({
                 value={formPlan}
                 onChange={(e) => setFormPlan(e.target.value)}
                 className="w-full rounded-xl px-3 py-2.5 text-sm"
-                style={{ border: '1px solid var(--surface-3)', background: 'var(--surface-2)' }}
+                style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}
                 data-testid="school-billing-plan-select"
               >
                 {PAID_PLANS.map((p) => (
@@ -427,7 +432,7 @@ export default function ManageSubscriptionSection({
                         onClick={() => setFormCycle(opt.value)}
                         className="text-left rounded-xl px-3 py-2.5 transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange)]"
                         style={{
-                          border: `1.5px solid ${active ? 'var(--purple)' : 'var(--surface-3)'}`,
+                          border: `1.5px solid ${active ? 'var(--purple)' : 'var(--border)'}`,
                           background: active ? 'rgba(124,58,237,0.06)' : 'var(--surface-2)',
                           minHeight: 44,
                         }}
@@ -457,7 +462,7 @@ export default function ManageSubscriptionSection({
                 value={formSeats}
                 onChange={(e) => setFormSeats(Number(e.target.value))}
                 className="w-full rounded-xl px-3 py-2.5 text-sm"
-                style={{ border: '1px solid var(--surface-3)', background: 'var(--surface-2)' }}
+                style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}
                 data-testid="school-billing-seats-input"
               />
               <span className="text-[11px] text-[var(--text-3)] mt-1 inline-block">
@@ -495,7 +500,7 @@ export default function ManageSubscriptionSection({
       <dialog
         ref={cancelDialog}
         className="rounded-2xl p-0 backdrop:bg-black/40"
-        style={{ border: '1px solid var(--surface-3)', maxWidth: '420px', width: '92%' }}
+        style={{ border: '1px solid var(--border)', maxWidth: '420px', width: '92%' }}
       >
         <form
           method="dialog"

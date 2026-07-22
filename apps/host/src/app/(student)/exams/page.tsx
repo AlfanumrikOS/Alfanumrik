@@ -298,6 +298,37 @@ export default function ExamsPage() {
 
       <main className="app-container py-5 space-y-4">
         <SectionErrorBoundary section="Exams">
+        {/* ═══ MOCK TEST CTA ═══ */}
+        {/* Forward link to the full mock-test catalog. Hidden while the add-exam
+            form is open to keep the form focused. Matches the warm-cta PremiumCard
+            + GlowButton style used across this page. */}
+        {!showForm && (
+          <PremiumCard hoverable className="warm-cta">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-2xl flex-shrink-0" aria-hidden="true">🎯</span>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+                    {isHi ? 'मॉक टेस्ट दें' : 'Take a mock test'}
+                  </h2>
+                  <p className="text-xs text-[var(--text-3)] mt-0.5">
+                    {isHi
+                      ? 'पूरे पेपर का अभ्यास करें और अपनी तैयारी जाँचें'
+                      : 'Practise full papers and check your exam readiness'}
+                  </p>
+                </div>
+              </div>
+              <GlowButton
+                size="sm"
+                className="warm-cta flex-shrink-0"
+                onClick={() => router.push('/exams/mock')}
+              >
+                {isHi ? 'शुरू करें' : 'Start'}
+              </GlowButton>
+            </div>
+          </PremiumCard>
+        )}
+
         {/* ═══ ADD EXAM FORM ═══ */}
         {showForm && (
           <PremiumCard gradient className="warm-cta">

@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
-import { authedFetch } from '@alfanumrik/lib/school-admin/authed-fetch';
 import {
   Card,
   Button,
@@ -95,7 +94,7 @@ function ParentRowSkeleton() {
   return (
     <div
       className="flex items-center gap-3 py-3"
-      style={{ borderBottom: '1px solid var(--surface-3)' }}
+      style={{ borderBottom: '1px solid var(--border)' }}
     >
       <div className="flex-1 space-y-2">
         <Skeleton variant="title" height={14} width="45%" />
@@ -110,7 +109,7 @@ function StatCardSkeleton() {
   return (
     <div
       className="rounded-xl p-4 text-center"
-      style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-3)' }}
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
     >
       <Skeleton variant="title" height={28} width="40%" className="mx-auto" />
       <Skeleton variant="text" height={12} width="60%" className="mx-auto mt-2" />
@@ -131,7 +130,7 @@ function StatCard({ value, label, color }: StatCardProps) {
   return (
     <div
       className="rounded-xl p-4 text-center"
-      style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-3)' }}
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
     >
       <p className="text-2xl font-bold" style={{ color }}>{value}</p>
       <p className="text-xs text-[var(--text-3)] mt-1 font-medium">{label}</p>
@@ -232,14 +231,13 @@ export default function SchoolAdminParentsPage() {
   /* ── Success toast ── */
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  /* ── Auth helper: get session token ── */
+  const getToken = useCallback(async (): Promise<string | null> => {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  }, []);
+
   /* ── Step 1: Auth guard — fetch school_admins record ──
-     NOTE (Task 1.5): this page intentionally keeps ITS OWN inline guard rather
-     than the shared useSchoolAdminAuth() hook. Unlike the majority-pattern
-     pages, it distinguishes a real DB-query failure (retryable inline error)
-     from "genuinely not a school admin" (redirect), plus an 8s watchdog so the
-     skeleton never spins forever — folding it into the shared hook would
-     silently drop that UX. The raw-fetch + manual-Bearer calls below ARE
-     migrated onto authedFetch() (no behavior change there).
      SAFE pattern (mirrors setup/page.tsx + ai-config/page.tsx): loadingAdmin is
      cleared on EVERY path via finally — including the redirect-to-/login branch —
      so the full-page skeleton can never spin forever.
@@ -290,11 +288,16 @@ export default function SchoolAdminParentsPage() {
 
   /* ── Fetch parent links via API ── */
   const fetchParentLinks = useCallback(async () => {
+    const token = await getToken();
+    if (!token) return;
+
     setLoadingLinks(true);
     setLinksError(null);
 
     try {
-      const res = await authedFetch('/api/school-admin/parents');
+      const res = await fetch('/api/school-admin/parents', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -316,12 +319,17 @@ export default function SchoolAdminParentsPage() {
     } finally {
       setLoadingLinks(false);
     }
-  }, [isHi]);
+  }, [getToken, isHi]);
 
   /* ── Fetch classes for targeting ── */
   const fetchClasses = useCallback(async () => {
+    const token = await getToken();
+    if (!token) return;
+
     try {
-      const res = await authedFetch('/api/school-admin/classes');
+      const res = await fetch('/api/school-admin/classes', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.ok) {
         const json = await res.json();
         setClasses((json.data ?? []) as SchoolClass[]);
@@ -329,13 +337,16 @@ export default function SchoolAdminParentsPage() {
     } catch {
       // Non-critical
     }
-  }, []);
+  }, [getToken]);
 
   /* ── Send message ──
      Maps the compose form to the /api/school-admin/parents POST contract:
        { message, message_hi, target, target_value, channel }
      and consumes { success, data: { sent_count, failed_count, channel } }. */
   const handleSendMessage = useCallback(async () => {
+    const token = await getToken();
+    if (!token) return;
+
     setSendLoading(true);
     try {
       // Single target_value per the backend contract (one grade or one class).
@@ -346,9 +357,12 @@ export default function SchoolAdminParentsPage() {
             ? selectedClassId
             : undefined;
 
-      const res = await authedFetch('/api/school-admin/parents', {
+      const res = await fetch('/api/school-admin/parents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           message: messageEn.trim(),
           message_hi: messageHi.trim() || undefined,
@@ -401,7 +415,7 @@ export default function SchoolAdminParentsPage() {
     } finally {
       setSendLoading(false);
     }
-  }, [isHi, messageEn, messageHi, targetType, selectedGrade, selectedClassId, channel]);
+  }, [getToken, isHi, messageEn, messageHi, targetType, selectedGrade, selectedClassId, channel]);
 
   /* ── Estimated recipient count ──
      'all'   → all approved links
@@ -497,7 +511,7 @@ export default function SchoolAdminParentsPage() {
   const TabBar = (
     <div
       className="flex gap-1 rounded-xl p-1"
-      style={{ background: 'var(--surface-2)', border: '1px solid var(--surface-3)' }}
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
       role="tablist"
     >
       {(['links', 'message'] as TabFilter[]).map(tab => {
@@ -661,7 +675,7 @@ export default function SchoolAdminParentsPage() {
                     gridTemplateColumns: '2fr 1fr 1fr 1fr',
                     background: 'var(--surface-2)',
                     color: 'var(--text-3)',
-                    borderBottom: '1px solid var(--surface-3)',
+                    borderBottom: '1px solid var(--border)',
                   }}
                 >
                   <span>{t(isHi, 'Parent / Student', 'अभिभावक / छात्र')}</span>
@@ -677,7 +691,7 @@ export default function SchoolAdminParentsPage() {
                     className="grid gap-2 px-4 py-3 items-center"
                     style={{
                       gridTemplateColumns: '2fr 1fr 1fr 1fr',
-                      borderBottom: '1px solid var(--surface-3)',
+                      borderBottom: '1px solid var(--border)',
                     }}
                   >
                     {/* Parent / Student names — P13: don't log phone */}
@@ -724,7 +738,7 @@ export default function SchoolAdminParentsPage() {
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
                       style={{
                         background: 'var(--surface-1)',
-                        border: '1px solid var(--surface-3)',
+                        border: '1px solid var(--border)',
                         color: 'var(--text-2)',
                         minHeight: 32,
                       }}
@@ -740,7 +754,7 @@ export default function SchoolAdminParentsPage() {
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
                       style={{
                         background: 'var(--surface-1)',
-                        border: '1px solid var(--surface-3)',
+                        border: '1px solid var(--border)',
                         color: 'var(--text-2)',
                         minHeight: 32,
                       }}
@@ -811,7 +825,7 @@ export default function SchoolAdminParentsPage() {
                   width: '100%',
                   padding: '10px 12px',
                   borderRadius: 12,
-                  border: '1px solid var(--surface-3)',
+                  border: '1px solid var(--border)',
                   background: 'var(--surface-1)',
                   color: 'var(--text-1)',
                   fontSize: 14,
@@ -838,7 +852,7 @@ export default function SchoolAdminParentsPage() {
                   width: '100%',
                   padding: '10px 12px',
                   borderRadius: 12,
-                  border: '1px solid var(--surface-3)',
+                  border: '1px solid var(--border)',
                   background: 'var(--surface-1)',
                   color: 'var(--text-1)',
                   fontSize: 14,
@@ -909,7 +923,7 @@ export default function SchoolAdminParentsPage() {
                   style={{
                     maxHeight: 150,
                     overflowY: 'auto',
-                    border: '1px solid var(--surface-3)',
+                    border: '1px solid var(--border)',
                     borderRadius: 12,
                     padding: '8px 12px',
                     background: 'var(--surface-1)',

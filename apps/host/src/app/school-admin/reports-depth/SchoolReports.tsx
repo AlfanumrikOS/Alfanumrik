@@ -106,7 +106,7 @@ function GroupByToggle({
     <div
       role="tablist"
       aria-label={tt(isHi, 'Group mastery by', 'महारत समूहित करें')}
-      className="inline-flex rounded-xl border border-surface-3 bg-[var(--surface-2)] p-0.5 no-print"
+      className="inline-flex rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-0.5 no-print"
     >
       {GROUP_BY_OPTIONS.map((opt) => {
         const active = value === opt.key;
@@ -163,7 +163,7 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-surface-3 bg-[var(--surface-1)] p-4 sm:p-5 print-card">
+    <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-4 sm:p-5 print-card">
       <header className="flex items-start justify-between gap-3 mb-4 flex-wrap">
         <div>
           <h2 className="text-sm font-bold text-[var(--text-1)] font-['Sora',system-ui,sans-serif]">{title}</h2>
@@ -215,7 +215,7 @@ function SchoolPicker({
   isHi: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-surface-3 bg-[var(--surface-1)] p-6 text-center max-w-md mx-auto">
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-1)] p-6 text-center max-w-md mx-auto">
       <div className="text-3xl mb-3" aria-hidden="true">🏫</div>
       <h2 className="text-base font-bold text-[var(--text-1)] mb-1">
         {tt(isHi, 'Choose a school', 'एक स्कूल चुनें')}
@@ -233,7 +233,7 @@ function SchoolPicker({
             key={id}
             type="button"
             onClick={() => onPick(id)}
-            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-surface-3 hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px] truncate"
+            className="px-4 py-3 rounded-xl text-sm font-semibold text-left text-[var(--text-1)] bg-[var(--surface-2)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-[0.99] transition-all min-h-[44px] truncate"
           >
             {id}
           </button>
@@ -364,7 +364,7 @@ export default function SchoolReports() {
               type="button"
               onClick={handleDownloadCsv}
               disabled={exporting}
-              className="px-3.5 py-2 rounded-xl text-xs font-semibold text-[var(--text-1)] bg-[var(--surface-1)] border border-surface-3 hover:border-[var(--purple,#7C3AED)] active:scale-95 transition-all min-h-[44px] disabled:opacity-50"
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold text-[var(--text-1)] bg-[var(--surface-1)] border border-[var(--border)] hover:border-[var(--purple,#7C3AED)] active:scale-95 transition-all min-h-[44px] disabled:opacity-50"
             >
               {exporting
                 ? tt(isHi, 'Downloading…', 'डाउनलोड हो रहा…')
@@ -417,7 +417,7 @@ export default function SchoolReports() {
                 )}
               />
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-surface-3">
+              <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="bg-[var(--surface-2)] text-left">
@@ -493,7 +493,7 @@ export default function SchoolReports() {
                 )}
               />
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-surface-3">
+              <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="bg-[var(--surface-2)] text-left">

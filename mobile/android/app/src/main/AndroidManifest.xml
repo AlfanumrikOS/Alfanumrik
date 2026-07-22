@@ -8,6 +8,38 @@
     <!-- Prevent screenshots in payment screens (security) -->
     <!-- <uses-permission android:name="android.permission.PREVENT_SCREENSHOTS" /> -->
 
+    <!--
+      Scan & Solve (Phase 6 sub-phase 8) — camera capture of a homework /
+      textbook question, which is then OCR'd and solved server-side.
+
+      PLAY STORE NOTE: this ADDS a declared permission to the app. The Data
+      Safety form must state that images are collected, are used only to read
+      and solve the photographed question, and are transmitted (they are
+      uploaded to the private `student-scans` Supabase Storage bucket via
+      POST /api/scan-solve). Update the listing before the next release.
+
+      Scope kept deliberately minimal:
+        * CAMERA only. `image_picker` requests it at runtime; a denial is
+          handled gracefully in ScanSolveNotifier (falls back to gallery,
+          never dead-ends).
+        * NO READ_EXTERNAL_STORAGE / READ_MEDIA_IMAGES. Gallery selection goes
+          through the system photo picker / ACTION_GET_CONTENT, which grants
+          per-file access with no permission at all. Declaring a media
+          permission we do not need would be a Data Safety liability.
+        * `required="false"` on the hardware features so the app stays
+          installable on camera-less devices (gallery still works there).
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!-- Android 11+ package visibility for the system camera app. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
+
     <application
         android:label="Alfanumrik"
         android:name="${applicationName}"
