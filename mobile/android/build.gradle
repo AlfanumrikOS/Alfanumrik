@@ -22,7 +22,7 @@ subprojects { proj ->
             compileSdkVersion: 35,
             targetSdkVersion: 35,
             ndkVersion: "26.1.10909125",
-            minSdkVersion: 21,
+            minSdkVersion: 24,
             versionCode: 1,
             versionName: "1.0.0"
         ])
