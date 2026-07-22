@@ -67,7 +67,7 @@ jobs:
       ROLLOUT_PCT: ${{ github.event.inputs.rollout_percentage }}
       IS_ENABLED: ${{ github.event.inputs.is_enabled }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: supabase/setup-cli@v2
         with:
