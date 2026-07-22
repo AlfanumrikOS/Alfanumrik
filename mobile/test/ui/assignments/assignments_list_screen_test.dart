@@ -58,9 +58,9 @@ void main() {
   });
 
   testWidgets('a submitted (not yet graded) assignment shows the Submitted badge and score', (tester) async {
-    final item = AssignmentListItem(
-      assignment: const Assignment(id: 'a-2', title: 'Algebra Basics'),
-      attempts: const [
+    const item = AssignmentListItem(
+      assignment: Assignment(id: 'a-2', title: 'Algebra Basics'),
+      attempts: [
         AssignmentSubmission(
           id: 's-1',
           assignmentId: 'a-2',
@@ -80,9 +80,9 @@ void main() {
   });
 
   testWidgets('a graded assignment shows the Reviewed badge — DISTINCT from Submitted', (tester) async {
-    final item = AssignmentListItem(
-      assignment: const Assignment(id: 'a-3', title: 'Geometry Quiz'),
-      attempts: const [
+    const item = AssignmentListItem(
+      assignment: Assignment(id: 'a-3', title: 'Geometry Quiz'),
+      attempts: [
         AssignmentSubmission(
           id: 's-1',
           assignmentId: 'a-3',

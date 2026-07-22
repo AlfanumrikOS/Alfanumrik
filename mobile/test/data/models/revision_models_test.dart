@@ -28,7 +28,7 @@ void main() {
 
   group('RevisionCard.fromJson', () {
     test('parses a full spaced_repetition_cards-shaped row', () {
-      final card = RevisionCard.fromJson({
+      final card = RevisionCard.fromJson(const {
         'id': 'card-1',
         'subject': 'math',
         'topic': 'math:3:q42',
@@ -71,7 +71,7 @@ void main() {
     });
 
     test('displayLabel prefers chapterTitle, falls back to topic', () {
-      final withChapter = RevisionCard.fromJson({
+      final withChapter = RevisionCard.fromJson(const {
         'id': 'c1',
         'topic': 'math:3:q42',
         'chapter_title': 'Chapter 3',
@@ -79,7 +79,7 @@ void main() {
       });
       expect(withChapter.displayLabel, 'Chapter 3');
 
-      final withoutChapter = RevisionCard.fromJson({
+      final withoutChapter = RevisionCard.fromJson(const {
         'id': 'c2',
         'topic': 'Photosynthesis',
         'chapter_title': '',
@@ -90,7 +90,7 @@ void main() {
 
   group('RevisionGradeResult.fromJson', () {
     test('parses the POST /api/learner/review/grade "card" envelope', () {
-      final result = RevisionGradeResult.fromJson({
+      final result = RevisionGradeResult.fromJson(const {
         'id': 'card-1',
         'ease_factor': 2.7,
         'interval_days': 12,
@@ -113,7 +113,7 @@ void main() {
 
   group('RevisionStackItem.fromJson', () {
     test('parses a revise-stack item', () {
-      final item = RevisionStackItem.fromJson({
+      final item = RevisionStackItem.fromJson(const {
         'subjectCode': 'science',
         'chapterNumber': 7,
         'mastery': 0.42,
@@ -133,7 +133,7 @@ void main() {
 
   group('RevisionRetentionTest.fromJson', () {
     test('parses a retention_tests row', () {
-      final test0 = RevisionRetentionTest.fromJson({
+      final test0 = RevisionRetentionTest.fromJson(const {
         'id': 'rt-1',
         'topic_title': 'Newton\'s Laws',
         'subject': 'physics',

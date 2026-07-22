@@ -115,19 +115,19 @@ class AssignmentCompletionNotifier extends Notifier<AssignmentCompletionState> {
     );
 
     state = switch (outcome) {
-      AssignmentCompletionSuccess s => AssignmentCompletionState(
+      final AssignmentCompletionSuccess s => AssignmentCompletionState(
           status: AssignmentCompletionStatus.success,
           success: s,
         ),
-      AssignmentCompletionMaxAttemptsReached m => AssignmentCompletionState(
+      final AssignmentCompletionMaxAttemptsReached m => AssignmentCompletionState(
           status: AssignmentCompletionStatus.maxAttemptsReached,
           message: m.message,
         ),
-      AssignmentCompletionClosed c => AssignmentCompletionState(
+      final AssignmentCompletionClosed c => AssignmentCompletionState(
           status: AssignmentCompletionStatus.submissionClosed,
           message: c.message,
         ),
-      AssignmentCompletionFailure f => AssignmentCompletionState(
+      final AssignmentCompletionFailure f => AssignmentCompletionState(
           status: AssignmentCompletionStatus.error,
           message: f.message,
         ),

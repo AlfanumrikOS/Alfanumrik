@@ -146,6 +146,14 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   // grandfather entries are pruned. adaptive_interventions_student_select was
   // NOT touched by this migration and remains detected/grandfathered.
   // Ledger: 223 → 221.
+  // Phase 8 item 8.6 (migration 20260722102000_synthesis_quality_scores.sql,
+  // 2026-07-22): the new synthesis_quality_scores_read_admin policy inlines
+  // the IDENTICAL admin_users subquery pattern as the already-grandfathered
+  // foxy_quality_scores_read_admin below (`auth.uid() IN (SELECT auth_user_id
+  // FROM public.admin_users WHERE is_active = true)`), including the same
+  // service_role short-circuit and is_active guard. This is the same
+  // reviewed, accepted pattern — not a new risk class. Ledger: 221 → 222.
+  'synthesis_quality_scores::synthesis_quality_scores_read_admin',
   'adaptive_interventions::adaptive_interventions_student_select',
   'board_score_predictions::board_score_predictions_admin_select',
   'board_score_predictions::board_score_predictions_guardian_select',
@@ -690,10 +698,16 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // teacher_remediation_assignments policies touched by the same migration
     // retain a same-table-ownership ...IN (SELECT ... FROM teachers...)
     // subquery and so are still detected/grandfathered — see the ledger
-    // comment above): 223 → 221. This pins the number so any drift (up = new
+    // comment above): 223 → 221. Phase 8 item 8.6 (migration
+    // 20260722102000_synthesis_quality_scores.sql, 2026-07-22) added ONE new
+    // grandfathered entry: synthesis_quality_scores_read_admin inlines the
+    // identical admin_users subquery pattern as the already-grandfathered
+    // foxy_quality_scores_read_admin (same service_role short-circuit + same
+    // is_active guard) — the same reviewed, accepted pattern, not a new risk
+    // class: 221 → 222. This pins the number so any drift (up = new
     // violation, down = un-pruned ledger) trips a guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(221);
-    expect(detectedRiskKeys().length).toBe(221);
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(222);
+    expect(detectedRiskKeys().length).toBe(222);
   });
 });
 

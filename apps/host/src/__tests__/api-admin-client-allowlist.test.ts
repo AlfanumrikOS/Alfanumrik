@@ -189,7 +189,17 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // mock_test_attempts row on behalf of the student for the cbse_board
 // dynamic-assembly flow. Subject to the same exam.view authorizeRequest()
 // gate as the sibling routes.
-const EXPECTED_COUNT = 256;
+// Phase 8 monitoring routes (2026-07-22): 256 -> 263 for 7 new routes, all
+// service-role-justified as cron (no user session) or super-admin-by-design
+// (cross-student aggregate reads):
+//   src/app/api/cron/adaptive-loops-monitor/route.ts,
+//   src/app/api/cron/synthesis-delivery-monitor/route.ts,
+//   src/app/api/cron/synthesis-quality-sample/route.ts,
+//   src/app/api/super-admin/adaptive-loops/route.ts,
+//   src/app/api/super-admin/ai/irt-readiness/route.ts,
+//   src/app/api/super-admin/synthesis-health/route.ts,
+//   src/app/api/super-admin/synthesis-quality/route.ts.
+const EXPECTED_COUNT = 263;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -264,7 +274,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 255 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 263 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);

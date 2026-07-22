@@ -12,7 +12,7 @@ import 'package:alfanumrik/data/models/notification_item.dart';
 void main() {
   group('NotificationItem.fromJson', () {
     test('parses a complete row', () {
-      final n = NotificationItem.fromJson({
+      final n = NotificationItem.fromJson(const {
         'id': 'n1',
         'type': 'streak_risk',
         'title': 'Your streak is at risk',
@@ -44,7 +44,7 @@ void main() {
     });
 
     test('data that is not a Map degrades to empty map, never throws', () {
-      final n = NotificationItem.fromJson({
+      final n = NotificationItem.fromJson(const {
         'id': 'n2',
         'type': 'quiz_result',
         'title': 't',
@@ -59,7 +59,7 @@ void main() {
 
   group('NotificationItem bilingual display (P7 — data.title_hi/body_hi house convention)', () {
     test('English mode always uses top-level title/body', () {
-      final n = NotificationItem.fromJson({
+      final n = NotificationItem.fromJson(const {
         'id': 'n1',
         'type': 'remediation_assigned',
         'title': 'Extra practice ready',
@@ -73,7 +73,7 @@ void main() {
     });
 
     test('Hindi mode prefers data.title_hi / data.body_hi when present', () {
-      final n = NotificationItem.fromJson({
+      final n = NotificationItem.fromJson(const {
         'id': 'n1',
         'type': 'remediation_assigned',
         'title': 'Extra practice ready',
@@ -87,7 +87,7 @@ void main() {
     });
 
     test('Hindi mode falls back to English when data.*_hi is absent (older rows)', () {
-      final n = NotificationItem.fromJson({
+      final n = NotificationItem.fromJson(const {
         'id': 'n1',
         'type': 'quiz_result',
         'title': 'Quiz complete',
@@ -103,7 +103,7 @@ void main() {
 
   group('NotificationItem.dataIcon / isShareable', () {
     test('dataIcon reads data.icon when a non-empty string', () {
-      final n = NotificationItem.fromJson({
+      final n = NotificationItem.fromJson(const {
         'id': 'n1',
         'type': 'parent_cheer',
         'title': 't',
@@ -116,12 +116,12 @@ void main() {
     });
 
     test('isShareable is true only when data.shareable === true', () {
-      final shareable = NotificationItem.fromJson({
+      final shareable = NotificationItem.fromJson(const {
         'id': 'n1', 'type': 't', 'title': 't', 'body': 'b',
         'data': {'shareable': true}, 'is_read': false,
         'created_at': '2026-07-20T10:00:00.000Z',
       });
-      final notShareable = NotificationItem.fromJson({
+      final notShareable = NotificationItem.fromJson(const {
         'id': 'n2', 'type': 't', 'title': 't', 'body': 'b',
         'data': {'shareable': 'yes'}, 'is_read': false,
         'created_at': '2026-07-20T10:00:00.000Z',
@@ -133,7 +133,7 @@ void main() {
 
   group('NotificationItem.copyWith', () {
     test('flips isRead without mutating other fields', () {
-      final n = NotificationItem.fromJson({
+      final n = NotificationItem.fromJson(const {
         'id': 'n1', 'type': 'quiz_result', 'title': 't', 'body': 'b',
         'data': <String, dynamic>{}, 'is_read': false,
         'created_at': '2026-07-20T10:00:00.000Z',
@@ -148,7 +148,7 @@ void main() {
 
   group('NotificationsFeed.fromJson', () {
     test('parses the full RPC envelope', () {
-      final feed = NotificationsFeed.fromJson({
+      final feed = NotificationsFeed.fromJson(const {
         'unread_count': 2,
         'notifications': [
           {
@@ -171,17 +171,17 @@ void main() {
     test('degrades to empty feed for a non-Map payload (never throws)', () {
       expect(NotificationsFeed.fromJson(null).notifications, isEmpty);
       expect(NotificationsFeed.fromJson('oops').notifications, isEmpty);
-      expect(NotificationsFeed.fromJson([1, 2, 3]).unreadCount, 0);
+      expect(NotificationsFeed.fromJson(const [1, 2, 3]).unreadCount, 0);
     });
 
     test('degrades to empty list when notifications is missing/wrong type', () {
-      final feed = NotificationsFeed.fromJson({'unread_count': 5});
+      final feed = NotificationsFeed.fromJson(const {'unread_count': 5});
       expect(feed.unreadCount, 5);
       expect(feed.notifications, isEmpty);
     });
 
     test('skips malformed entries in the notifications array', () {
-      final feed = NotificationsFeed.fromJson({
+      final feed = NotificationsFeed.fromJson(const {
         'unread_count': 1,
         'notifications': [
           'not-a-map',

@@ -12,7 +12,7 @@ import 'package:alfanumrik/data/models/assignment_models.dart';
 void main() {
   group('Assignment.fromJson', () {
     test('parses a full assignments-row shape with column defaults applied', () {
-      final a = Assignment.fromJson({
+      final a = Assignment.fromJson(const {
         'id': 'a-1',
         'class_id': 'class-1',
         'title': 'Chapter 3 Practice',
@@ -38,7 +38,7 @@ void main() {
     });
 
     test('defaults max_attempts to 3 and allow_late_submission to true when absent', () {
-      final a = Assignment.fromJson({'id': 'a-2', 'title': 'No deadline'});
+      final a = Assignment.fromJson(const {'id': 'a-2', 'title': 'No deadline'});
       expect(a.maxAttempts, 3);
       expect(a.allowLateSubmission, isTrue);
       expect(a.dueDateTime, isNull);
@@ -47,7 +47,7 @@ void main() {
 
   group('AssignmentSubmission.fromJson', () {
     test('parses a full assignment_submissions row', () {
-      final s = AssignmentSubmission.fromJson({
+      final s = AssignmentSubmission.fromJson(const {
         'id': 'sub-1',
         'assignment_id': 'a-1',
         'attempt_number': 2,
@@ -67,12 +67,12 @@ void main() {
     });
 
     test('defaults attempt_number to 1 when absent', () {
-      final s = AssignmentSubmission.fromJson({'id': 's', 'assignment_id': 'a'});
+      final s = AssignmentSubmission.fromJson(const {'id': 's', 'assignment_id': 'a'});
       expect(s.attemptNumber, 1);
     });
 
     test('decodes both teacher_feedback and teacher_feedback_hi', () {
-      final s = AssignmentSubmission.fromJson({
+      final s = AssignmentSubmission.fromJson(const {
         'id': 's',
         'assignment_id': 'a',
         'teacher_feedback': 'Well done',
@@ -140,7 +140,7 @@ void main() {
     });
 
     test('graded_at set -> graded (wins over submitted_at)', () {
-      final sub = AssignmentSubmission(
+      const sub = AssignmentSubmission(
         id: 's',
         assignmentId: 'a',
         submittedAt: '2026-07-01T00:00:00.000Z',
@@ -150,12 +150,12 @@ void main() {
     });
 
     test('status == reviewed -> graded even without graded_at', () {
-      final sub = AssignmentSubmission(id: 's', assignmentId: 'a', status: 'reviewed');
+      const sub = AssignmentSubmission(id: 's', assignmentId: 'a', status: 'reviewed');
       expect(deriveAssignmentViewStatus(sub), AssignmentViewStatus.graded);
     });
 
     test('submitted_at set, not graded -> submitted', () {
-      final sub = AssignmentSubmission(
+      const sub = AssignmentSubmission(
         id: 's',
         assignmentId: 'a',
         submittedAt: '2026-07-01T00:00:00.000Z',
@@ -164,7 +164,7 @@ void main() {
     });
 
     test('neither submitted_at/graded_at nor a matching status -> notStarted', () {
-      final sub = AssignmentSubmission(id: 's', assignmentId: 'a');
+      const sub = AssignmentSubmission(id: 's', assignmentId: 'a');
       expect(deriveAssignmentViewStatus(sub), AssignmentViewStatus.notStarted);
     });
   });
@@ -208,9 +208,9 @@ void main() {
     test('false once attempts.length reaches max_attempts', () {
       final item = AssignmentListItem(
         assignment: baseAssignment(maxAttempts: 2),
-        attempts: [
-          const AssignmentSubmission(id: 's1', assignmentId: 'a-1', attemptNumber: 1),
-          const AssignmentSubmission(id: 's2', assignmentId: 'a-1', attemptNumber: 2),
+        attempts: const [
+          AssignmentSubmission(id: 's1', assignmentId: 'a-1', attemptNumber: 1),
+          AssignmentSubmission(id: 's2', assignmentId: 'a-1', attemptNumber: 2),
         ],
       );
       expect(item.canAttempt(), isFalse);
@@ -256,7 +256,7 @@ void main() {
 
   group('AssignmentCompletionSuccess.fromJson', () {
     test('parses the full Phase 3 multi-attempt + due-date-lockout response shape', () {
-      final s = AssignmentCompletionSuccess.fromJson({
+      final s = AssignmentCompletionSuccess.fromJson(const {
         'success': true,
         'status': 'submitted',
         'submissionId': 'sub-9',
@@ -274,12 +274,12 @@ void main() {
     });
 
     test('isAlreadyGraded is true for the soft already_graded status', () {
-      final s = AssignmentCompletionSuccess.fromJson({'status': 'already_graded'});
+      final s = AssignmentCompletionSuccess.fromJson(const {'status': 'already_graded'});
       expect(s.isAlreadyGraded, isTrue);
     });
 
     test('isLateSubmission defaults to false when absent (older/non-late responses)', () {
-      final s = AssignmentCompletionSuccess.fromJson({'status': 'submitted'});
+      final s = AssignmentCompletionSuccess.fromJson(const {'status': 'submitted'});
       expect(s.isLateSubmission, isFalse);
     });
   });

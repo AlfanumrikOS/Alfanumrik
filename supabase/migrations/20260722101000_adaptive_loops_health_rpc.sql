@@ -13,7 +13,7 @@
 -- alert-firing numbers are derived from a single source of truth.
 --
 -- P13 — AGGREGATE ONLY. This function returns COUNTS and RATIOS only. It never
--- returns a student_id, auth_user_id, subject/chapter target, or any other
+-- returns a student_id, auth_user_id, a subject or chapter target, or any other
 -- row-identifying or PII-shaped value (same posture as
 -- get_recent_signup_verification_status in 20260716093000 and the Pulse
 -- school-lens: the cross-role data boundary lives in SQL so PII never leaves

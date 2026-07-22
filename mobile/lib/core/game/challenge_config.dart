@@ -118,7 +118,7 @@ ChallengeDifficulty getDifficultyForZPD(double zpd) {
 /// Badge milestones awarded at streak thresholds. Coins are read from
 /// [CoinRewards] (see file doc) rather than a second hardcoded literal.
 final List<StreakMilestone> kStreakMilestones = <StreakMilestone>[
-  StreakMilestone(
+  const StreakMilestone(
     days: 7,
     badgeId: 'bronze_7',
     badgeLabel: '7-Day Streak',
@@ -126,7 +126,7 @@ final List<StreakMilestone> kStreakMilestones = <StreakMilestone>[
     badgeIcon: '\u{1F949}',
     coins: CoinRewards.challengeStreak7,
   ),
-  StreakMilestone(
+  const StreakMilestone(
     days: 30,
     badgeId: 'silver_30',
     badgeLabel: '30-Day Streak',
@@ -134,7 +134,7 @@ final List<StreakMilestone> kStreakMilestones = <StreakMilestone>[
     badgeIcon: '\u{1F948}',
     coins: CoinRewards.challengeStreak30,
   ),
-  StreakMilestone(
+  const StreakMilestone(
     days: 100,
     badgeId: 'gold_100',
     badgeLabel: '100-Day Streak',

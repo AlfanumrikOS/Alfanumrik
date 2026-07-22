@@ -46,7 +46,7 @@ class DiagnosticRepository {
     } on AppException catch (e) {
       return ApiFailure(e.message);
     } catch (e) {
-      return ApiFailure('Connection error. Please try again.');
+      return const ApiFailure('Connection error. Please try again.');
     }
   }
 
@@ -74,7 +74,7 @@ class DiagnosticRepository {
     } on AppException catch (e) {
       return ApiFailure(e.message);
     } catch (e) {
-      return ApiFailure('Connection error. Please try again.');
+      return const ApiFailure('Connection error. Please try again.');
     }
   }
 }
