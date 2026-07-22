@@ -37,7 +37,7 @@ if (hasReleaseKeystore) {
 }
 
 android {
-    namespace "com.alfanumrik.app"
+    namespace "com.alfanumrik.student"
     compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
@@ -55,7 +55,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.alfanumrik.app"
+        applicationId "com.alfanumrik.student"
         // Bumped 21 -> 24 (2026-07-22): image_picker_android 0.8.13+19 (pulled in
         // by image_picker ^1.0.7, added this session for Scan & Solve) declares
         // minSdk=24 in its own AAR. AGP's manifest merger hard-fails

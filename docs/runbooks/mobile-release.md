@@ -1,5 +1,9 @@
 # Runbook: Mobile Release (Play Store)
 
+> **Note (2026-07-23):** package renamed from `com.alfanumrik.app` to
+> `com.alfanumrik.student` after the original upload keystore was lost; the old
+> Play Console app entry is abandoned, not deleted.
+
 Operator runbook for the Alfanumrik Android release pipeline. The release
 workflow's guard step points operators here ("see
 `docs/runbooks/mobile-release.md`") when secrets are missing, so this document is
@@ -8,7 +12,7 @@ the single source of truth for cutting an Android release.
 - **Workflow**: `.github/workflows/mobile-release.yml` (`Mobile Release (Play Store)`)
 - **Fastlane**: `mobile/android/fastlane/Fastfile` + `mobile/android/fastlane/Appfile`
 - **Signing config**: `mobile/android/app/build.gradle`, `mobile/android/key.properties.example`
-- **Package name**: `com.alfanumrik.app`
+- **Package name**: `com.alfanumrik.student`
 - **Toolchain (Gradle/AGP/Kotlin/Flutter)**: see the companion runbook
   [`docs/runbooks/mobile-ci-and-android-toolchain.md`](./mobile-ci-and-android-toolchain.md)
 
@@ -101,7 +105,7 @@ The output (a single line, no newlines) is the value of `ANDROID_KEYSTORE_BASE64
 ### 2.3 Google Play Console + service account
 
 1. In the **Play Console**, create the app with package name
-   `com.alfanumrik.app` and accept the developer/distribution agreements.
+   `com.alfanumrik.student` and accept the developer/distribution agreements.
 2. Set up the **internal testing track** (this is the track the `internal` lane
    uploads to).
 3. Create a **Google Cloud service account** with the **Google Play Developer
