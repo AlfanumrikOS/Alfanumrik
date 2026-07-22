@@ -9,11 +9,16 @@
  *     flag-governance hardening, master action plan);
  *   - the P0 quiz-submit pair, the 4 constitution-pinned Group A flags, and
  *     the 5 MoL program flags are protected at their declared tiers;
- *   - EXPECTED_OFF_FLAGS is the 55-name CEO-approved forced-OFF posture
- *     (52 block-(ii) names from migration 20260720110000 +
- *     ff_irt_question_selection + the 2 Pedagogy v2 additions above) —
- *     parsed from the migration SQL itself so the TS list cannot silently
- *     drift from the approved SQL;
+ *   - EXPECTED_OFF_FLAGS is the 54-name CEO-approved forced-OFF posture
+ *     (52 block-(ii) names from migration 20260720110000, MINUS
+ *     ff_adaptive_remediation_v1 (see below), + ff_irt_question_selection +
+ *     the 2 Pedagogy v2 additions above) — parsed from the migration SQL
+ *     itself so the TS list cannot silently drift from the approved SQL;
+ *   - ff_adaptive_remediation_v1 is deliberately EXCLUDED from
+ *     EXPECTED_OFF_FLAGS as of 2026-07-22: CEO-approved production pilot at
+ *     10% rollout (Phase A Loop A). It stays PROTECTED (constitution_pinned)
+ *     for any further increase, but the canary's "must be fully OFF"
+ *     baseline no longer applies to it;
  *   - EXPECTED_OFF_FLAGS is DISJOINT from the 25-flag block-(i) ACTIVATE
  *     list (a flag cannot be simultaneously "must be OFF" and "must be
  *     live"), also parsed from the migration;
@@ -144,15 +149,20 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
 // ─── EXPECTED_OFF_FLAGS posture list ──────────────────────────────────
 
 describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
-  it('contains exactly 55 unique names (52 block-(ii) + ff_irt_question_selection + 2 Pedagogy v2 additions)', () => {
-    expect(EXPECTED_OFF_FLAGS).toHaveLength(55);
-    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(55);
+  it('contains exactly 54 unique names (52 block-(ii) - ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) + ff_irt_question_selection + 2 Pedagogy v2 additions)', () => {
+    expect(EXPECTED_OFF_FLAGS).toHaveLength(54);
+    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(54);
     expect(EXPECTED_OFF_FLAGS).toContain('ff_irt_question_selection');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_productive_failure_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_pedagogy_v2_monthly_synthesis');
   });
 
-  it('equals migration 20260720110000 block (ii) ∪ {ff_irt_question_selection} ∪ {the 2 Pedagogy v2 additions} — the TS list cannot drift from the approved SQL beyond the 2026-07-22 documented additions', () => {
+  it('excludes ff_adaptive_remediation_v1 on purpose: CEO-approved 10% production pilot (2026-07-22), no longer expected fully-OFF, still constitution_pinned for any further increase', () => {
+    expect(EXPECTED_OFF_FLAGS).not.toContain('ff_adaptive_remediation_v1');
+    expect(getProtection('ff_adaptive_remediation_v1')?.tier).toBe('constitution_pinned');
+  });
+
+  it('equals migration 20260720110000 block (ii) ∪ {ff_irt_question_selection} ∪ {the 2 Pedagogy v2 additions}, MINUS ff_adaptive_remediation_v1 (10% pilot exclusion) — the TS list cannot drift from the approved SQL beyond the documented additions/exclusions', () => {
     expect(HONESTY_52).toHaveLength(52);
     const expected = new Set([
       ...HONESTY_52,
@@ -160,6 +170,7 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
       'ff_productive_failure_v1',
       'ff_pedagogy_v2_monthly_synthesis',
     ]);
+    expected.delete('ff_adaptive_remediation_v1');
     expect(new Set(EXPECTED_OFF_FLAGS)).toEqual(expected);
   });
 

@@ -260,10 +260,22 @@ export function getProtection(flagName: string): FlagProtection | null {
  * approved posture is is_enabled=TRUE), ff_board_score_v1,
  * reconcile_stuck_subscriptions_enabled, and all ff_python_* flags
  * (metadata-envelope controlled — their columns are not posture).
+ *
+ * ALSO NOT in this list (on purpose, as of 2026-07-22): ff_adaptive_remediation_v1
+ * (Phase A Loop A adaptive-remediation). CEO-approved in this conversation
+ * (2026-07-22): a deliberate, confirmed production pilot at 10% rollout via
+ * the super-admin console's admin_flip_feature_flag RPC — a genuine change of
+ * approved posture, not drift. is_enabled=true / rollout_percentage=10 is now
+ * this flag's CEO-approved canary baseline, replacing "must be fully OFF."
+ * It remains a `constitution_pinned` entry in PROTECTED_FLAGS above, so the
+ * console guardrail still requires typed confirmation for any FURTHER
+ * increase beyond 10% (e.g. a bump to 50% or 100%). If this pilot is ever
+ * fully rolled back to 0%, re-add 'ff_adaptive_remediation_v1' to this list
+ * (or introduce a dedicated "expected active at rollout X" concept if more
+ * flags reach this state) before the canary can enforce that baseline again.
  */
 export const EXPECTED_OFF_FLAGS: string[] = [
   // Group A — constitution-pinned
-  'ff_adaptive_remediation_v1',
   'ff_adaptive_loops_bc_v1',
   'ff_digital_twin_v1',
   'ff_school_pulse_v1',
