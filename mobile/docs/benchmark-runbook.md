@@ -1,7 +1,7 @@
 # Alfanumrik Mobile — Physical-Device Benchmark Runbook (Option A gate)
 
 **Artifact under test:** the shipping Flutter app in `mobile/`, version **`1.1.0+2`**
-(`pubspec.yaml`), package id **`com.alfanumrik.app`**.
+(`pubspec.yaml`), package id **`com.alfanumrik.student`**.
 
 **Why this exists.** We are deciding between:
 
@@ -136,7 +136,7 @@ bundletool get-size total \
 Record the **arm64-v8a** and **armeabi-v7a** download sizes (the two ABIs Indian
 pilot phones use). `get-size total` prints MIN/MAX bytes per dimension — record
 MAX. **Fail** the ABI if MAX download > 25 MB; **flag** if > 20 MB. Also record
-the installed on-device size (`adb shell pm path com.alfanumrik.app` → `du` the
+the installed on-device size (`adb shell pm path com.alfanumrik.student` → `du` the
 base+split APKs, or Settings → Apps → Alfanumrik → Storage); **fail** if install
 > 60 MB.
 
@@ -149,7 +149,7 @@ the key metric `timeToFirstFrameRasterized` (microseconds).
 ```bash
 cd mobile
 # Kill the app so each run is a true COLD start.
-adb -s "$DEVICE_ID" shell am force-stop com.alfanumrik.app
+adb -s "$DEVICE_ID" shell am force-stop com.alfanumrik.student
 
 flutter run --profile --trace-startup -d "$DEVICE_ID" \
   --dart-define=SUPABASE_URL="$SUPABASE_URL" \
@@ -167,7 +167,7 @@ flutter run --profile --trace-startup -d "$DEVICE_ID" \
   app (Home), then:
   ```bash
   adb -s "$DEVICE_ID" shell am start -W \
-    -n com.alfanumrik.app/com.alfanumrik.app.MainActivity
+    -n com.alfanumrik.student/com.alfanumrik.student.MainActivity
   ```
   Record `WaitTime` (ms). Median of 10; budget ≤ 700 ms.
 
@@ -213,7 +213,7 @@ While the app is in an active learning session (open a subject → chapter list 
 a topic → start a 10-question quiz, i.e. real usage), sample PSS:
 
 ```bash
-adb -s "$DEVICE_ID" shell dumpsys meminfo com.alfanumrik.app | sed -n '1,25p'
+adb -s "$DEVICE_ID" shell dumpsys meminfo com.alfanumrik.student | sed -n '1,25p'
 ```
 
 Record the **TOTAL PSS** line (KB → MB). Sample 3× across the session and record
@@ -228,7 +228,7 @@ of baseline sync cost).
 
 ```bash
 # Resolve the app's UID once.
-adb -s "$DEVICE_ID" shell dumpsys package com.alfanumrik.app | grep userId=
+adb -s "$DEVICE_ID" shell dumpsys package com.alfanumrik.student | grep userId=
 
 # Baseline snapshot, THEN use the app normally for ~30 min (browse chapters,
 # take a couple of quizzes; do NOT open Foxy), THEN snapshot again.
@@ -327,7 +327,7 @@ the deltas:
 
 Clear storage to force a cold cache:
 ```bash
-adb -s "$DEVICE_ID" shell pm clear com.alfanumrik.app   # wipes cache + login
+adb -s "$DEVICE_ID" shell pm clear com.alfanumrik.student   # wipes cache + login
 ```
 (Re-login needed after `pm clear`. For a warm-cache reading, DON'T clear —
 just relaunch.)
