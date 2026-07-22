@@ -132,6 +132,64 @@ describe('GET /api/school-admin/reports — {success,data} envelope on every typ
     expect(typeof json.data.avg_score).toBe('number');
   });
 
+  it('school_overview → NEW score_trend field (Phase 2 Task 2.2), all pre-existing fields byte-identical', async () => {
+    authOk();
+    holders.tables.students = [{ id: STUDENT_ID, grade: '7', is_active: true, last_active: null }];
+    holders.tables.quiz_sessions = [
+      { subject: 'Maths', score_percent: 80, student_id: STUDENT_ID, created_at: '2026-07-01T10:00:00Z' },
+      { subject: 'Science', score_percent: 60, student_id: STUDENT_ID, created_at: '2026-07-01T14:00:00Z' },
+      { subject: 'Maths', score_percent: 100, student_id: STUDENT_ID, created_at: '2026-07-02T09:00:00Z' },
+    ];
+    const { GET } = await import('@/app/api/school-admin/reports/route');
+    const res = await GET(getReq('?type=school_overview'));
+    const json = await res.json();
+    expect(json.success).toBe(true);
+
+    // BEFORE (pre-Task-2.2) keys, verified against the route source prior to
+    // this change: total_quizzes, avg_score, active_students, total_students,
+    // completion_rate, trend_vs_last_week, subject_performance,
+    // grade_performance — 8 keys, no score_trend.
+    const BEFORE_KEYS = [
+      'total_quizzes', 'avg_score', 'active_students', 'total_students',
+      'completion_rate', 'trend_vs_last_week', 'subject_performance', 'grade_performance',
+    ].sort();
+    // AFTER (this change) keys — every BEFORE key still present, plus
+    // score_trend (Phase 2 Task 2.2) and truncated (Phase 3 Task 3.2 — RCA
+    // fix for the unbounded quiz_sessions query; see reports/route.ts's
+    // SCHOOL_WIDE_QUIZ_ROW_CAP comment and reports-row-caps.test.ts).
+    const AFTER_KEYS = [...BEFORE_KEYS, 'score_trend', 'truncated'].sort();
+    expect(Object.keys(json.data).sort()).toEqual(AFTER_KEYS);
+    // Every pre-existing key is present with the same shape as before (not
+    // just "still exists" — the diff above IS the byte-for-byte key set
+    // check; this loop additionally pins each pre-existing value's type).
+    expect(typeof json.data.total_quizzes).toBe('number');
+    expect(typeof json.data.avg_score).toBe('number');
+    expect(typeof json.data.active_students).toBe('number');
+    expect(typeof json.data.total_students).toBe('number');
+    expect(typeof json.data.completion_rate).toBe('number');
+    expect(typeof json.data.trend_vs_last_week).toBe('number');
+    expect(Array.isArray(json.data.subject_performance)).toBe(true);
+    expect(Array.isArray(json.data.grade_performance)).toBe(true);
+
+    // NEW field shape: date-bucketed (YYYY-MM-DD), sorted ascending, avg
+    // rounded per bucket.
+    expect(json.data.score_trend).toEqual([
+      { date: '2026-07-01', avg_score: 70 }, // avg(80,60) = 70
+      { date: '2026-07-02', avg_score: 100 },
+    ]);
+  });
+
+  it('school_overview → score_trend is [] when there is no quiz activity in the window (not fabricated)', async () => {
+    authOk();
+    holders.tables.students = [];
+    holders.tables.quiz_sessions = [];
+    const { GET } = await import('@/app/api/school-admin/reports/route');
+    const res = await GET(getReq('?type=school_overview'));
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.score_trend).toEqual([]);
+  });
+
   it('default (no type) is school_overview and still wraps in the envelope', async () => {
     authOk();
     holders.tables.students = [];

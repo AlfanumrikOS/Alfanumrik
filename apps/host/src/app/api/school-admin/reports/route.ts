@@ -39,6 +39,34 @@ function ok(data: unknown) {
   return NextResponse.json({ success: true, data });
 }
 
+// ── Row caps (Task 3.2, RCA fix — unbounded query risk) ─────────────────────
+// `studentDetail` already capped its 90-day quiz-history read at 200 rows (a
+// single student's own history, so 200 is a generous ceiling). The three
+// school/class-wide handlers below had NO cap at all: `schoolOverview` and
+// `subjectGaps` read every `quiz_sessions` row for the WHOLE SCHOOL in a
+// 7/30-day window, and `classPerformance` reads every row for every student
+// enrolled in one class. A large/active school can produce tens of thousands
+// of rows in those windows, risking slow queries / request timeouts and large
+// response payloads.
+//
+// Caps chosen per handler (documented reasoning):
+//   - SCHOOL_WIDE_QUIZ_ROW_CAP (10,000): schoolOverview/subjectGaps aggregate
+//     across the ENTIRE school over a 7/30-day window. 10K rows is enough for
+//     a large school (thousands of students × several quizzes/week) while
+//     still bounding worst-case payload/query cost; it mirrors the existing
+//     10,000-row cap already used elsewhere in this surface for a
+//     whole-school CSV export (`data-export/route.ts`'s exportQuizResults).
+//   - CLASS_QUIZ_ROW_CAP (2,000): classPerformance aggregates across the
+//     students of ONE class. A single class is small (tens of students), so
+//     2,000 rows (dozens of quizzes/student) comfortably covers legitimate
+//     use while still capping a pathological single-class query.
+// Both are well above realistic legitimate volumes, so truncation should be
+// rare — the `truncated` flag exists precisely so a caller is told, rather
+// than silently served an incomplete aggregate, on the rare occasion the cap
+// is hit.
+const SCHOOL_WIDE_QUIZ_ROW_CAP = 10_000;
+const CLASS_QUIZ_ROW_CAP = 2_000;
+
 // ── School Overview ─────────────────────────────────────────
 async function schoolOverview(schoolId: string) {
   const supabase = getSupabaseAdmin();
@@ -54,9 +82,16 @@ async function schoolOverview(schoolId: string) {
       .eq('is_active', true),
     supabase
       .from('quiz_sessions')
-      .select('subject, score_percent, student_id')
+      // NOTE (Phase 2 Task 2.2): `created_at` is additive to this SELECT to
+      // power the new `score_trend` field below. subject/score_percent/
+      // student_id were already selected and used unchanged.
+      // NOTE (Task 3.2): capped at SCHOOL_WIDE_QUIZ_ROW_CAP+1 (fetch one extra
+      // row so we can detect "more rows exist than the cap" without a
+      // separate count query; the +1th row is trimmed below).
+      .select('subject, score_percent, student_id, created_at')
       .eq('school_id', schoolId)
-      .gte('created_at', weekAgo),
+      .gte('created_at', weekAgo)
+      .limit(SCHOOL_WIDE_QUIZ_ROW_CAP + 1),
     supabase
       .from('quiz_sessions')
       .select('id', { count: 'exact' })
@@ -66,7 +101,13 @@ async function schoolOverview(schoolId: string) {
   ]);
 
   const students = studentsRes.data || [];
-  const quizzes = quizzesRes.data || [];
+  // Task 3.2: the query fetched up to SCHOOL_WIDE_QUIZ_ROW_CAP+1 rows; if we
+  // got the extra row, more rows exist than the cap — trim it and flag
+  // `truncated` so the caller knows the aggregate may be incomplete rather
+  // than silently under-reporting.
+  const fetchedQuizzes = quizzesRes.data || [];
+  const truncated = fetchedQuizzes.length > SCHOOL_WIDE_QUIZ_ROW_CAP;
+  const quizzes = truncated ? fetchedQuizzes.slice(0, SCHOOL_WIDE_QUIZ_ROW_CAP) : fetchedQuizzes;
   const totalStudents = studentsRes.count || 0;
 
   // Active students (last_active within 7 days)
@@ -124,6 +165,27 @@ async function schoolOverview(schoolId: string) {
   const prevWeekCount = prevQuizzesRes.count || 0;
   const trend = quizzes.length - prevWeekCount;
 
+  // ── score_trend (Phase 2 Task 2.2, ADDITIVE ONLY) ──────────────────────────
+  // Date-bucketed (YYYY-MM-DD) avg score_percent series over the same 7-day
+  // window already queried above. New field; every pre-existing key/value in
+  // this response is unchanged (see the contract test for a before/after key
+  // diff). Days with no quiz activity are simply absent from the array — the
+  // LineChart's emptyLabel handles the fully-empty case, and the frontend
+  // renders only the days present rather than fabricating zero-score days.
+  const trendMap = new Map<string, number[]>();
+  for (const q of quizzes) {
+    const day = (q.created_at || '').slice(0, 10); // YYYY-MM-DD
+    if (!day) continue;
+    if (!trendMap.has(day)) trendMap.set(day, []);
+    trendMap.get(day)!.push(q.score_percent || 0);
+  }
+  const score_trend = Array.from(trendMap.entries())
+    .map(([date, scores]) => ({
+      date,
+      avg_score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   return ok({
     total_quizzes: quizzes.length,
     avg_score: avgScore,
@@ -133,6 +195,13 @@ async function schoolOverview(schoolId: string) {
     trend_vs_last_week: trend,
     subject_performance,
     grade_performance,
+    // NEW (additive, optional) — see comment above.
+    score_trend,
+    // NEW (Task 3.2, additive) — true when the underlying quiz_sessions read
+    // hit SCHOOL_WIDE_QUIZ_ROW_CAP and was trimmed; the aggregates above are
+    // then computed over a partial (capped) dataset rather than the full
+    // window.
+    truncated,
   });
 }
 
@@ -171,17 +240,23 @@ async function classPerformance(schoolId: string, params: URLSearchParams) {
       bottom_students: [],
       subject_breakdown: [],
       completion_rate: 0,
+      truncated: false,
     });
   }
 
   // Get quiz data for enrolled students
+  // Task 3.2: capped at CLASS_QUIZ_ROW_CAP+1 (fetch one extra row to detect
+  // truncation without a separate count query; trimmed below).
   const { data: quizzes } = await supabase
     .from('quiz_sessions')
     .select('student_id, subject, score_percent')
     .in('student_id', studentIds)
-    .eq('school_id', schoolId);
+    .eq('school_id', schoolId)
+    .limit(CLASS_QUIZ_ROW_CAP + 1);
 
-  const allQuizzes = quizzes || [];
+  const fetchedQuizzes = quizzes || [];
+  const truncated = fetchedQuizzes.length > CLASS_QUIZ_ROW_CAP;
+  const allQuizzes = truncated ? fetchedQuizzes.slice(0, CLASS_QUIZ_ROW_CAP) : fetchedQuizzes;
 
   // Student averages
   const studentScores = new Map<string, number[]>();
@@ -236,6 +311,8 @@ async function classPerformance(schoolId: string, params: URLSearchParams) {
     top_students: enriched.slice(0, 5),
     bottom_students: enriched.slice(-5).reverse(),
     subject_breakdown,
+    // NEW (Task 3.2, additive) — see CLASS_QUIZ_ROW_CAP comment above.
+    truncated,
   });
 }
 
@@ -360,13 +437,17 @@ async function subjectGaps(schoolId: string, params: URLSearchParams) {
 
     const studentIds = (gradeStudents || []).map(s => s.id);
     if (studentIds.length === 0) {
-      return ok({ grade, gaps: [] });
+      return ok({ grade, gaps: [], truncated: false });
     }
     query = query.in('student_id', studentIds);
   }
 
-  const { data: quizzes } = await query;
-  const allQuizzes = quizzes || [];
+  // Task 3.2: capped at SCHOOL_WIDE_QUIZ_ROW_CAP+1 (fetch one extra row to
+  // detect truncation without a separate count query; trimmed below).
+  const { data: quizzes } = await query.limit(SCHOOL_WIDE_QUIZ_ROW_CAP + 1);
+  const fetchedQuizzes = quizzes || [];
+  const truncated = fetchedQuizzes.length > SCHOOL_WIDE_QUIZ_ROW_CAP;
+  const allQuizzes = truncated ? fetchedQuizzes.slice(0, SCHOOL_WIDE_QUIZ_ROW_CAP) : fetchedQuizzes;
 
   // Group by subject
   const subjectMap = new Map<string, { scores: number[]; students: Set<string> }>();
@@ -393,5 +474,6 @@ async function subjectGaps(schoolId: string, params: URLSearchParams) {
     };
   }).sort((a, b) => a.avg_score - b.avg_score);
 
-  return ok({ grade: grade || 'all', gaps });
+  // NEW (Task 3.2, additive) — see SCHOOL_WIDE_QUIZ_ROW_CAP comment above.
+  return ok({ grade: grade || 'all', gaps, truncated });
 }

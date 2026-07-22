@@ -36,7 +36,12 @@ vi.mock('swr', () => ({
 // next/dynamic returns a no-op component so the code-split panels don't load.
 vi.mock('next/dynamic', () => ({ default: () => () => null }));
 
-vi.mock('@alfanumrik/ui/admin-ui', () => ({ NoDataState: () => null }));
+// StatCard is left as the real component (Task 1.2 — OverviewStrip's KPI
+// tiles now render via the shared admin-ui StatCard); it's plain inert DOM.
+vi.mock('@alfanumrik/ui/admin-ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@alfanumrik/ui/admin-ui')>();
+  return { ...actual, NoDataState: () => null };
+});
 
 import CommandCenter from '@/app/school-admin/CommandCenter';
 

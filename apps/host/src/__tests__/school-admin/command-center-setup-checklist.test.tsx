@@ -45,8 +45,14 @@ vi.mock('@alfanumrik/lib/pulse/use-pulse', () => ({
 vi.mock('next/dynamic', () => ({ default: () => () => null }));
 
 // Keep NoDataState (rendered by OverviewStrip on no_data) inert so we assert
-// purely on the SetupChecklist, not the empty-strip copy.
-vi.mock('@alfanumrik/ui/admin-ui', () => ({ NoDataState: () => null }));
+// purely on the SetupChecklist, not the empty-strip copy. StatCard is the real
+// component (Task 1.2 — OverviewStrip's KPI tiles now render via the shared
+// admin-ui StatCard instead of the removed local Kpi component); it renders
+// plain DOM (label/value), so it's inert enough to leave un-mocked here.
+vi.mock('@alfanumrik/ui/admin-ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@alfanumrik/ui/admin-ui')>();
+  return { ...actual, NoDataState: () => null };
+});
 
 import CommandCenter from '@/app/school-admin/CommandCenter';
 

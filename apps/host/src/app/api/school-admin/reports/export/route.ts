@@ -10,9 +10,10 @@
  *   1. Flag gate (ff_school_reports_depth) FIRST — 404 BEFORE auth when OFF, so
  *      the flag-OFF portal is byte-identical (this endpoint is not present today).
  *   2. Validate ?format (default 'json'; reject unknown with 400 BEFORE the RPC).
- *   3. Resolve caller's school + authorize (institution.view_analytics) and build
- *      the USER-CONTEXT client via resolveCommandCenterContext (so auth.uid()
- *      resolves and the SECURITY DEFINER RPC's internal scope guard passes).
+ *   3. Resolve caller's school + authorize (institution.export_reports) and
+ *      build the USER-CONTEXT client via resolveCommandCenterContext (so
+ *      auth.uid() resolves and the SECURITY DEFINER RPC's internal scope guard
+ *      passes).
  *   4. Call export_school_report:
  *        - format=json → return the jsonb verbatim.
  *        - format=csv  → serialize the aggregate snapshot to CSV server-side in a
@@ -24,10 +25,29 @@
  * ids in the snapshot, so the CSV (which serializes exactly those aggregate
  * fields and nothing else) is PII-safe by construction. No PII is logged.
  *
+ * ─── Cross-reference: PII posture vs. `../../data-export/route.ts` ───────────
+ * THIS endpoint is AGGREGATE-ONLY / PII-SAFE (no student identifiers of any
+ * kind — see above). The sibling `POST /api/school-admin/data-export` endpoint
+ * is a DIFFERENT, HIGHER-PII-EXPOSURE surface: its `students`/`quiz_results`/
+ * `progress`/`full` export types return PER-STUDENT rows including
+ * `student_name` (never email/phone). Despite the similar-sounding "export"
+ * name and CSV output, the two routes have materially different PII tiers.
+ * Do not assume parity between them when reasoning about data exposure — see
+ * the note atop `data-export/route.ts` for the open P13 question on that
+ * endpoint's per-student-name tier.
+ *
  * PDF is NOT generated here — the frontend offers print-to-PDF from a
  * print-friendly view, so no heavy PDF dependency is added (P10).
  *
  * Error mapping: RPC 42501 (scope guard) → 403.
+ *
+ * Permission (RCA fix, 2026-07-21): this is an EXPORT endpoint, so it gates on
+ * `institution.export_reports` — matching its siblings `reports/route.ts` and
+ * `data-export/route.ts` — NOT `institution.view_analytics` (the code it
+ * incorrectly inherited from the other Command Center VIEW routes that share
+ * `resolveCommandCenterContext`). The permission is passed explicitly as the
+ * 3rd arg below; every other `resolveCommandCenterContext` caller is unaffected
+ * (they rely on the function's `institution.view_analytics` default).
  *
  * Contract: src/lib/school-admin/reporting-types.ts (SchoolReportSnapshot).
  * RPC:      export_school_report(p_school_id) in 20260614000003.
@@ -158,8 +178,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 3. Authorize (institution.view_analytics) + resolve school + user-context client.
-    const resolved = await resolveCommandCenterContext(request, ROUTE);
+    // 3. Authorize (institution.export_reports — this is an EXPORT route, see
+    //    the file-header doc comment) + resolve school + user-context client.
+    const resolved = await resolveCommandCenterContext(request, ROUTE, 'institution.export_reports');
     if (!resolved.ok) return resolved.response;
 
     const { supabase, schoolId } = resolved.ctx;
