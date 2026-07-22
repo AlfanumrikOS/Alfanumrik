@@ -443,7 +443,7 @@ jobs:
             echo "| Production migrations | None in this push; skipped db push |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         if: steps.migration-diff.outputs.changed == 'true'
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
@@ -925,7 +925,7 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: supabase/setup-cli@v2
+      - uses: supabase/setup-cli@v3
         if: steps.changed.outputs.functions != ''
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
