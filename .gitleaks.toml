@@ -25,6 +25,27 @@ description = "PII test sentinels — intentional fake values for redactor verif
 # target is the captured SECRET (gitleaks v8.24.3 detect.go).
 regexes = [
     '^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.placeholder$',
+    # 2026-07-22 (PR #1372): supabase/migrations/20260722101000_adaptive_loops_health_rpc.sql,
+    # original commit 267f5ddc. generic-api-key false-positived on the prose
+    # "auth_user_id, subject/chapter target" (a P13 comment enumerating the kinds
+    # of row-identifying values this aggregate-only RPC does NOT return) — the
+    # rule's keyword list matches "auth" in "auth_user_id" preceding a
+    # `/`-containing token close enough to trip on entropy, capturing the bare
+    # word "subject/chapter" as its Secret (verified locally with gitleaks
+    # v8.24.3: Secret = "subject/chapter", entropy 3.51 — no credential shape,
+    # no assignment operator, plain English prose). A later commit on this same
+    # branch reworded the comment to "a subject or chapter target" so the string
+    # no longer appears in HEAD, but gitleaks scans full commit-by-commit history
+    # (`git log -p`), and the original commit's diff still contains the flagged
+    # line — rewording it afterward does not erase it from history. Rewriting
+    # history (rebase/squash) to remove it was out of scope (would require a
+    # force-push), so per this file's own precedent for exactly this failure
+    # class (see the JWT-placeholder entry immediately above), an allowlist
+    # entry is the correct fix. VALUE-scoped (not path-scoped: path-allowlisting
+    # a migrations file could hide a future real leak in the same or another
+    # migration) and anchored ^…$ against the literal captured secret so
+    # nothing broader can hide behind it.
+    '^subject/chapter$',
 ]
 paths = [
     'src/__tests__/ai-prompt-pii\.test\.ts',
