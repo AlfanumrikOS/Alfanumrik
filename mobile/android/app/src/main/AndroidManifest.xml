@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.alfanumrik.app">
+    package="com.alfanumrik.student">
 
     <!-- Network access -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -72,7 +72,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.alfanumrik.app" android:host="callback" />
+                <data android:scheme="com.alfanumrik.student" android:host="callback" />
             </intent-filter>
         </activity>
 

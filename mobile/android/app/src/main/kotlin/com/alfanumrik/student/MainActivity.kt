@@ -1,4 +1,4 @@
-package com.alfanumrik.app
+package com.alfanumrik.student
 
 import io.flutter.embedding.android.FlutterActivity
 

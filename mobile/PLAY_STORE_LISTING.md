@@ -1,3 +1,7 @@
+> **Note (2026-07-23):** package renamed from `com.alfanumrik.app` to
+> `com.alfanumrik.student` after the original upload keystore was lost; the old
+> Play Console app entry is abandoned, not deleted.
+
 # Alfanumrik — Google Play Store Listing
 
 ## App Name
@@ -81,7 +85,7 @@ cbse, learning, study, class 10, class 12, science, maths, ai tutor, foxy, quiz,
 - Privacy Policy URL: (required — see privacy_policy.md)
 
 ## App Details
-- Application ID: com.alfanumrik.app
+- Application ID: com.alfanumrik.student
 - Default language: English (en-IN)
 - Available on: Phone
 - Free with in-app purchases (subscription)
