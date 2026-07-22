@@ -5,6 +5,7 @@ import '../core/network/network_info.dart';
 import '../data/models/offline_quiz_models.dart';
 import '../data/models/quiz_question.dart';
 import '../data/repositories/quiz_repository.dart';
+import 'assignments_provider.dart';
 import 'auth_provider.dart';
 import 'dashboard_provider.dart';
 import 'experience_provider.dart';
@@ -72,6 +73,15 @@ class QuizState {
   /// instead of a score. Only reachable on the `useV2`-ON path.
   final bool savedOffline;
 
+  /// Phase 6 sub-phase 5 (Assignments): non-null ONLY when this quiz was
+  /// launched via the `/quiz?...&from=assignment&assignmentId=<id>` deep
+  /// link from the Assignments screen (mirrors the web's `from=assignment`
+  /// query param handling in `(student)/quiz/page.tsx`). Never affects
+  /// scoring/XP/submission (P1-P4) — it ONLY decides whether
+  /// [QuizNotifier.submitQuiz] fires the post-submit
+  /// `assignmentCompletionProvider` side-effect once a real result exists.
+  final String? assignmentId;
+
   const QuizState({
     this.questions = const [],
     this.currentIndex = 0,
@@ -88,6 +98,7 @@ class QuizState {
     this.idempotencyKey,
     this.sessionExpired = false,
     this.savedOffline = false,
+    this.assignmentId,
   });
 
   QuizState copyWith({
@@ -106,6 +117,7 @@ class QuizState {
     String? idempotencyKey,
     bool? sessionExpired,
     bool? savedOffline,
+    String? assignmentId,
   }) {
     return QuizState(
       questions: questions ?? this.questions,
@@ -124,6 +136,7 @@ class QuizState {
       idempotencyKey: idempotencyKey ?? this.idempotencyKey,
       sessionExpired: sessionExpired ?? this.sessionExpired,
       savedOffline: savedOffline ?? this.savedOffline,
+      assignmentId: assignmentId ?? this.assignmentId,
     );
   }
 
@@ -160,6 +173,11 @@ class QuizNotifier extends Notifier<QuizState> {
     required String subject,
     String? chapterTitle,
     int count = 10,
+    // Phase 6 sub-phase 5 (Assignments): set ONLY when launched from the
+    // Assignments screen's "Start"/"Retry" deep link. Threaded through to
+    // [QuizState.assignmentId] — see that field's doc comment for the exact
+    // (narrow) effect this has on the submit flow.
+    String? assignmentId,
   }) async {
     final student = ref.read(studentProvider).valueOrNull;
     if (student == null) return;
@@ -174,6 +192,7 @@ class QuizNotifier extends Notifier<QuizState> {
       isLoading: true,
       subject: subject,
       idempotencyKey: attemptKey,
+      assignmentId: assignmentId,
     );
 
     final repo = ref.read(quizRepositoryProvider);
@@ -380,6 +399,25 @@ class QuizNotifier extends Notifier<QuizState> {
         if (!quizResult.idempotentReplay) {
           ref.read(dashboardProvider.notifier).refresh();
         }
+
+        // Phase 6 sub-phase 5 (Assignments): fire-and-tracked side-effect
+        // ONLY when this quiz was launched from an assignment deep link AND
+        // the server actually returned a session id (a v1 fallback quiz with
+        // no server session has nothing to record against). This call is
+        // STRICTLY AFTER the normal P1-P4 scoring/XP path has already
+        // completed and does not feed back into it in any way — it only
+        // relays the already-graded session into
+        // `assignment_submissions` and surfaces the outcome via
+        // [assignmentCompletionProvider] for the result screen to render.
+        final assignmentId = state.assignmentId;
+        final sessionId = quizResult.sessionId;
+        if (assignmentId != null && assignmentId.isNotEmpty &&
+            sessionId != null && sessionId.isNotEmpty) {
+          ref.read(assignmentCompletionProvider.notifier).completeFromQuiz(
+                assignmentId: assignmentId,
+                sessionId: sessionId,
+              );
+        }
       },
       failure: (msg) {
         // Phase 1.2: server RAISEs `session_not_started` (P0001) when the
@@ -412,5 +450,9 @@ class QuizNotifier extends Notifier<QuizState> {
   /// Reset quiz state.
   void reset() {
     state = const QuizState();
+    // Clear any stale assignment-completion banner (max-attempts/closed/
+    // success) so the NEXT quiz attempt — which may not be assignment-linked
+    // at all — never inherits a previous attempt's outcome.
+    ref.read(assignmentCompletionProvider.notifier).reset();
   }
 }

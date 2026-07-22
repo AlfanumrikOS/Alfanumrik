@@ -20682,6 +20682,8 @@ export type Database = {
           id: string
           message: string
           priority: string
+          related_entity_id: string | null
+          related_entity_type: string | null
           resolved_at: string | null
           status: string
           student_id: string | null
@@ -20699,6 +20701,8 @@ export type Database = {
           id?: string
           message: string
           priority?: string
+          related_entity_id?: string | null
+          related_entity_type?: string | null
           resolved_at?: string | null
           status?: string
           student_id?: string | null
@@ -20716,6 +20720,8 @@ export type Database = {
           id?: string
           message?: string
           priority?: string
+          related_entity_id?: string | null
+          related_entity_type?: string | null
           resolved_at?: string | null
           status?: string
           student_id?: string | null

@@ -85,6 +85,18 @@
     {
       "path": "/api/cron/flag-posture-canary",
       "schedule": "25 3 * * *"
+    },
+    {
+      "path": "/api/cron/adaptive-loops-monitor",
+      "schedule": "35 4 * * *"
+    },
+    {
+      "path": "/api/cron/synthesis-delivery-monitor",
+      "schedule": "20 4 * * *"
+    },
+    {
+      "path": "/api/cron/synthesis-quality-sample",
+      "schedule": "50 4 * * *"
     }
   ],
   "cleanUrls": true,

@@ -313,6 +313,17 @@ function LegacyProgressPage() {
     if (!isLoading && !isLoggedIn) router.replace('/login');
   }, [isLoading, isLoggedIn, router]);
 
+  // The learner-loop resolver's month-end action emits `?view=synthesis` on
+  // this route (a legacy deep-link shape) to point students at the Monthly
+  // Synthesis ritual. That surface now lives at its own route, so redirect
+  // rather than silently no-op on an unhandled query param.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('view') === 'synthesis') {
+      router.replace('/synthesis');
+    }
+  }, [router]);
+
   useEffect(() => {
     if (!student) return;
     refreshSnapshot();

@@ -11,10 +11,20 @@
  * same threshold (REVISE_MIN_MASTERY, RETENTION_WINDOW_DAYS) so /revise
  * and the resolver never disagree about what counts as decayed.
  *
- * Gating: ff_revise_route_v1. When OFF, returns 404 so callers fall
- * through to legacy behaviour. Independent of ff_learner_loop_v1 (the
- * resolver flag) so /revise can ship as a destination even before the
- * resolver is wired everywhere.
+ * Gating: NONE (unconditional, permanent default — matches the pattern
+ * used for ff_study_menu_v2). This route originally shipped behind
+ * ff_revise_route_v1 (Phase 4 of ADR-001). That flag row was deleted by
+ * migration 20260603120000_remove_ff_revise_route_v1.sql once the
+ * standalone /revise page was folded into /refresh's "Chapter Refresh"
+ * section (Study Menu v2 consolidation, Task 6.4). The migration and its
+ * companion plan correctly removed the OLD /revise page + its nav-visibility
+ * flag check, but this route's OWN internal isFeatureEnabled() gate was
+ * never removed — since isFeatureEnabled() returns false for any
+ * nonexistent flag row, that left this endpoint 404ing UNCONDITIONALLY for
+ * every student after the flag row was dropped. Fixed 2026-07-21 by
+ * deleting the dead gate rather than re-seeding the flag (re-seeding would
+ * just recreate the same "flag lifecycle drifts from code" fragility).
+ * See REG-303.
  *
  * Response (200):
  *   { schemaVersion: 1,
@@ -31,13 +41,12 @@
  *
  * Errors:
  *   401 unauthenticated
- *   404 flag off / no student profile / no decayed topics
+ *   404 no student profile / no decayed topics
  *   500 builder failure
  */
 
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
-import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { createStudentStateBuilder } from '@alfanumrik/lib/state/student-state-builder';
 import { decayedChapters } from '@alfanumrik/lib/state/learner-loop/resolve-next-action';
 import {
@@ -48,8 +57,6 @@ import {
 import { logger } from '@alfanumrik/lib/logger';
 
 export const dynamic = 'force-dynamic';
-
-const FLAG_NAME = 'ff_revise_route_v1';
 
 /** Cap on stack size — past this is too much choice (Hick's law) and
  *  also too much to render on a mobile screen. */
@@ -63,15 +70,6 @@ export async function GET(_request: Request) {
     return NextResponse.json({ error: 'unauthenticated' }, { status: 401 });
   }
   const userId = userResult.user.id;
-
-  // Flag gate.
-  const flagOn = await isFeatureEnabled(FLAG_NAME, {
-    userId, role: 'student',
-    environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
-  });
-  if (!flagOn) {
-    return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  }
 
   // Build StudentState — same canonical builder /api/learner/next uses.
   const builder = createStudentStateBuilder({ sb: supabase });

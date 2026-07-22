@@ -2,8 +2,9 @@
 
 /**
  * StudentOSDashboard — the "Alfa OS" flagship redesign of the student landing
- * (ff_student_os_v1). Renders ONLY when the flag resolves ON; the legacy
- * AtlasDashboard renders otherwise (see page.tsx for the flag dispatch).
+ * (formerly gated by ff_student_os_v1). This is now the ONLY /dashboard
+ * implementation — page.tsx renders it unconditionally (no flag dispatch).
+ * The legacy AtlasDashboard has been deleted.
  *
  * Design philosophy: decision-first, mastery-centric. The page answers "what
  * should I do right now?" before anything else.

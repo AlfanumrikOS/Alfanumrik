@@ -444,9 +444,9 @@ describe('Loop C inject — immediate escalation', () => {
 
   it("'high' band + roster teacher (B2B): teacher assignment + worst-chapter row + escalated_to=teacher + event + audit", async () => {
     installHandler(concentrationFixture({
-      class_students: { data: [{ class_id: 'class-1' }] },
+      class_students: { data: [{ student_id: 'stu-1', class_id: 'class-1' }] },
       classes: { data: [{ id: 'class-1', subject: 'Mathematics', created_at: '2026-01-01T00:00:00Z' }] },
-      class_teachers: { data: [{ teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
+      class_teachers: { data: [{ class_id: 'class-1', teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
       subjects: { data: { id: 'subj-1' } },
       curriculum_topics: { data: { id: 'topic-1' } },
       'assignments.insert': { data: { id: 'tra-1' }, error: null },
@@ -495,7 +495,7 @@ describe('Loop C inject — immediate escalation', () => {
   it("'high' band + no teacher + linked guardian (B2C): escalated_to=parent, no assignment insert", async () => {
     installHandler(concentrationFixture({
       class_students: { data: [] },
-      guardian_links: { data: [{ id: 'link-1' }] },
+      guardian_links: { data: [{ student_id: 'stu-1' }] },
     }));
     const { POST } = await loadRoute();
     const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'inject' }));
@@ -524,9 +524,9 @@ describe('Loop C inject — immediate escalation', () => {
 
   it('B2B assignment insert failure aborts WITHOUT opening the row (retries next run)', async () => {
     installHandler(concentrationFixture({
-      class_students: { data: [{ class_id: 'class-1' }] },
+      class_students: { data: [{ student_id: 'stu-1', class_id: 'class-1' }] },
       classes: { data: [{ id: 'class-1', subject: 'Mathematics', created_at: '2026-01-01T00:00:00Z' }] },
-      class_teachers: { data: [{ teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
+      class_teachers: { data: [{ class_id: 'class-1', teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
       subjects: { data: { id: 'subj-1' } },
       curriculum_topics: { data: { id: 'topic-1' } },
       'assignments.insert': { data: null, error: { message: 'insert failed' } },
@@ -543,9 +543,9 @@ describe('Loop C inject — immediate escalation', () => {
 
   it('B2B assignment 23505 dedupe links the EXISTING row and still opens the intervention', async () => {
     installHandler(concentrationFixture({
-      class_students: { data: [{ class_id: 'class-1' }] },
+      class_students: { data: [{ student_id: 'stu-1', class_id: 'class-1' }] },
       classes: { data: [{ id: 'class-1', subject: 'Mathematics', created_at: '2026-01-01T00:00:00Z' }] },
-      class_teachers: { data: [{ teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
+      class_teachers: { data: [{ class_id: 'class-1', teacher_id: 'teach-1', joined_at: '2026-01-02T00:00:00Z' }] },
       subjects: { data: { id: 'subj-1' } },
       curriculum_topics: { data: { id: 'topic-1' } },
       'assignments.insert': { data: null, error: { code: '23505', message: 'duplicate key value' } },
@@ -557,6 +557,89 @@ describe('Loop C inject — immediate escalation', () => {
     expect(body.data.inject).toMatchObject({ injectedConcentration: 1, errors: 0 });
     const insert = fromCalls.find((c) => classify(c) === 'interventions.insert');
     expect(insert!.payload).toMatchObject({ escalated_to: 'teacher', teacher_assignment_id: 'tra-existing' });
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Loop C inject — escalation-cache N+1 batching fix (Master Action Plan 3.3)
+//
+//   Before the fix, resolveEscalationTarget's class_students/classes/
+//   class_teachers lookups ran ONCE PER Loop-C-winning student inside the
+//   per-student inject loop. buildEscalationCache now prefetches this data
+//   ONCE for the WHOLE run, across every candidate student, before the loop
+//   even starts — so 2 students both winning Loop C must not double the
+//   query count.
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('Loop C inject — escalation-cache batching (item 3.3)', () => {
+  const FIXED_NOW = new Date('2026-01-01T12:00:00Z').getTime();
+  beforeEach(() => { vi.useFakeTimers({ now: FIXED_NOW }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const AUTH_2 = '00000000-0000-0000-0000-0000000000a2';
+
+  it('2 students BOTH winning Loop C (B2B): the class_students/classes/class_teachers batch queries fire exactly ONCE for the whole run, not once per student', async () => {
+    const now = Date.now();
+    const student1 = {
+      id: 'stu-1', auth_user_id: AUTH_1, school_id: 'school-1', grade: '9',
+      last_active: new Date(now - 1 * 3_600_000).toISOString(),
+      created_at: new Date(now - 60 * DAY).toISOString(),
+    };
+    const student2 = {
+      id: 'stu-2', auth_user_id: AUTH_2, school_id: 'school-1', grade: '9',
+      last_active: new Date(now - 1 * 3_600_000).toISOString(),
+      created_at: new Date(now - 60 * DAY).toISOString(),
+    };
+    const masteryFor = (authId: string, subject: string) =>
+      [1, 2, 3, 4, 5].map((ch) => ({
+        auth_user_id: authId, subject_code: subject, chapter_number: ch, mastery: 0.2,
+        last_updated_at: new Date(now - 2 * DAY).toISOString(),
+      }));
+
+    installHandler({
+      'state_events.recentScan': { data: [{ actor_auth_user_id: AUTH_1 }, { actor_auth_user_id: AUTH_2 }] },
+      'students.inactiveScan': { data: [] },
+      students: { data: [student1, student2] },
+      'state_events.byUsers': { data: [] },
+      learner_mastery: { data: [...masteryFor(AUTH_1, 'math'), ...masteryFor(AUTH_2, 'science')] },
+      'interventions.actives': { data: [] },
+      'interventions.terminals': { data: [] },
+      'interventions.insert': { error: null },
+      'interventions.verifySweep': { data: [] },
+      class_students: {
+        data: [
+          { student_id: 'stu-1', class_id: 'class-math' },
+          { student_id: 'stu-2', class_id: 'class-sci' },
+        ],
+      },
+      classes: {
+        data: [
+          { id: 'class-math', subject: 'Mathematics', created_at: '2026-01-01T00:00:00Z' },
+          { id: 'class-sci', subject: 'Science', created_at: '2026-01-01T00:00:00Z' },
+        ],
+      },
+      class_teachers: {
+        data: [
+          { class_id: 'class-math', teacher_id: 'teach-math', joined_at: '2026-01-02T00:00:00Z' },
+          { class_id: 'class-sci', teacher_id: 'teach-sci', joined_at: '2026-01-02T00:00:00Z' },
+        ],
+      },
+      subjects: { data: [{ id: 'subj-math' }, { id: 'subj-sci' }] },
+      curriculum_topics: { data: { id: 'topic-x' } },
+      'assignments.insert': { data: { id: 'tra-x' }, error: null },
+    });
+
+    const { POST } = await loadRoute();
+    const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'inject' }));
+    const body = await res.json();
+    // Both students opened a Loop C row (proof the scenario actually exercised 2 winners).
+    expect(body.data.inject.injectedConcentration).toBe(2);
+
+    // The escalation-cache prefetch queries ran EXACTLY ONCE for the whole run —
+    // not once per Loop-C winner (2 winners here).
+    expect(fromCalls.filter((c) => classify(c) === 'class_students')).toHaveLength(1);
+    expect(fromCalls.filter((c) => classify(c) === 'classes')).toHaveLength(1);
+    expect(fromCalls.filter((c) => classify(c) === 'class_teachers')).toHaveLength(1);
   });
 });
 
@@ -633,7 +716,7 @@ describe('cross-loop arbitration (Decision X3, C-G3)', () => {
       'interventions.insert': { error: null },
       'interventions.verifySweep': { data: [] },
       class_students: { data: [] },
-      guardian_links: { data: [{ id: 'link-1' }] },
+      guardian_links: { data: [{ student_id: 'stu-1' }] },
     });
     const { POST } = await loadRoute();
     const res = await POST(req({ 'x-cron-secret': SECRET }, { phase: 'inject' }));

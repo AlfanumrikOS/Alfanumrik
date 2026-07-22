@@ -9,7 +9,12 @@
  *      precedence is first-PRESENT-wins (Bearer > x-cron-secret > ?token=).
  *
  *   2. DRIFT MATRIX against the CEO-approved posture
- *      (packages/lib/src/flags/protected-flags.ts):
+ *      (packages/lib/src/flags/protected-flags.ts). NOTE (2026-07-22 Phase 0
+ *      flag-governance hardening): EXPECTED_OFF_FLAGS grew 53 → 55 with two
+ *      constitution-pinned Pedagogy v2 flags (ff_productive_failure_v1,
+ *      ff_pedagogy_v2_monthly_synthesis) added to the protected-flags
+ *      registry; the watched set below is derived from EXPECTED_OFF_FLAGS
+ *      directly, so this suite's length pin tracks that growth (54 → 56):
  *        - any EXPECTED_OFF flag with is_enabled=true OR rollout>0 → drift;
  *        - ff_atomic_subscription_activation disabled OR missing → drift
  *          (P11 kill-switch must exist and be enabled);
@@ -213,7 +218,7 @@ describe('flag-posture-canary — auth gate (fail-closed before I/O)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('flag-posture-canary — DB query shape', () => {
-  it('reads feature_flags once, selecting state columns, .in() over the 54-name watched set (53 EXPECTED_OFF + the P11 kill-switch)', async () => {
+  it('reads feature_flags once, selecting state columns, .in() over the 56-name watched set (55 EXPECTED_OFF + the P11 kill-switch)', async () => {
     const { GET } = await loadRoute();
     await GET(req({ 'x-cron-secret': SECRET }));
 
@@ -225,10 +230,11 @@ describe('flag-posture-canary — DB query shape', () => {
     const inOp = fromCalls[0].ops.find((o) => o.op === 'in');
     expect(inOp?.args[0]).toBe('flag_name');
     const watched = inOp?.args[1] as string[];
-    // 53 EXPECTED_OFF + ff_atomic_subscription_activation; the two MoL shadow
-    // flags are already members of EXPECTED_OFF, so the de-duped set is 54.
+    // 55 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions) +
+    // ff_atomic_subscription_activation; the two MoL shadow flags are already
+    // members of EXPECTED_OFF, so the de-duped set is 56.
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(54);
+    expect(watched).toHaveLength(56);
     for (const name of EXPECTED_OFF_FLAGS) expect(watched).toContain(name);
     expect(watched).toContain(ATOMIC);
   });

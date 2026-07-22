@@ -37,7 +37,17 @@ describe('DevOps deployment policy contract', () => {
   });
 
   it('rejects unsafe release rollback/tag and Vercel authority mutations', () => {
-    const workflow = readFileSync(resolve(__dirname, '../../../../.github/workflows/deploy-production.yml'), 'utf8');
+    // Normalize CRLF -> LF before reading. On a Windows checkout with
+    // core.autocrlf=true (documented precedent in .gitattributes, which only
+    // narrowly pins *.sql to eol=lf), this file is materialized on disk with
+    // CRLF line endings while every mutation string below is an LF-only
+    // literal. Without normalizing, `.replace()` silently no-ops (finds no
+    // match), the "mutated" text equals the original, and every
+    // `.pass(mutated)).toBe(false)` assertion below spuriously passes on a
+    // release job whose if-condition was NEVER actually mutated — masking a
+    // real regression instead of catching one. Normalizing makes this
+    // assertion environment-independent without weakening it.
+    const workflow = readFileSync(resolve(__dirname, '../../../../.github/workflows/deploy-production.yml'), 'utf8').replace(/\r\n/g, '\n');
     const checks = buildDevopsPolicyChecks();
     const release = checks.find((check) => check.id === 'production-release-control');
     expect(release?.pass(workflow)).toBe(true);

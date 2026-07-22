@@ -1319,3 +1319,107 @@ coverage existed).
 
 ---
 
+## Master Action Plan Phase 3 — student assignment completion hardening (2026-07-22) — REG-299
+
+Source: Master Action Plan Phase 3, items 3.8/3.9 (backend). Prior to this
+fix, `completeAssignmentFromSession` (`packages/lib/src/learn/assignment-submission.ts`
+— the write-side counterpart of the teacher grading surface) hardcoded
+`attempt_number: 1` on every call and performed ZERO server-side check of
+`assignments.due_date`, so (a) a second genuine completion silently
+overwrote the first attempt's score/responses instead of recording a new
+attempt, and (b) the "Overdue" badge was purely cosmetic client-side theatre
+— a student could complete an assignment at any time with no record of
+lateness. Both gaps are closed additively (no schema change; `max_attempts`
+and `allow_late_submission` were already-existing columns):
+
+- **Multi-attempt (3.8):** the module now reads the student's FULL prior
+  attempt history for the assignment, allocates the NEXT `attempt_number`,
+  and enforces `assignments.max_attempts` (column default 3) with a 409
+  (`max_attempts_reached`) once exceeded. An IDEMPOTENT-REPLAY guard (latest
+  attempt byte-identical on total/correct/score AND submitted within a 15s
+  dedupe window) prevents a network retry from burning a second attempt slot
+  while still allowing a genuinely different second attempt through. An
+  already-graded attempt (`graded_at` set) is never silently clobbered by a
+  replay of that same completion (`already_graded`, soft 200) — but grading
+  one attempt does NOT block a subsequent NEW attempt.
+- **Due-date lockout (3.9):** `now() > due_date` + `allow_late_submission ===
+  false` -> reject with `submission_closed` (409, hard reject, opt-in per
+  assignment). Otherwise (schema default `true`) -> ACCEPT and flag
+  `isLateSubmission: true` in the response (product-policy default:
+  accept-and-flag over hard-reject, since a hard reject-by-default could
+  unfairly lock out a student with a legitimate late excuse).
+- Score/correct/total continue to be read VERBATIM from `quiz_sessions` (no
+  `(correct/total)*100` recomputation — P1 boundary unchanged), and the
+  class-membership + session-ownership boundary checks (student must be an
+  ACTIVE member of the assignment's class; a `quiz_sessions` id cannot be
+  borrowed cross-student) are unchanged by this hardening.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-299 | `assignment_completion_multi_attempt_and_due_date_hardening` | Helper (13 tests): `assignment_not_found` / `not_enrolled` (cross-class boundary) / `session_not_found` (foreign session id) / `session_incomplete` unchanged; happy path attempt 1 upserts score/correct/total VERBATIM (no recompute) with `bestScorePercent`/`attemptNumber`/`isLateSubmission` in the response; a genuinely DIFFERENT second attempt gets `attempt_number=2` and reports the best score across both; `max_attempts_reached` (409) once the next attempt would exceed `assignments.max_attempts`; due-date lockout both directions (`allow_late_submission=false` -> `submission_closed`/409 with NO upsert; default `true` -> accepts + `isLateSubmission:true`); an idempotent replay (identical scores, within the dedupe window) does NOT burn a second attempt slot (`__upsertSpy` never called); `already_graded` refuses to clobber a replayed teacher-reviewed submission; `db_error` surfaces the underlying message without throwing. Route wiring (14 tests): auth gate (`quiz.attempt` + `requireStudentId`) returns the auth `errorResponse` verbatim when unauthorized and 403 when the caller has no linked student profile; 400 on a non-UUID path id or a missing/non-UUID `session_id`; happy path threads the INTERNAL `studentId` (never `auth.uid()`) through to the helper and returns 200 with `scorePercent`/`attemptNumber`/`bestScorePercent`/`isLateSubmission`; every helper `reason` maps to its documented status code (`not_enrolled`->403, `assignment_not_found`/`session_not_found`->404, `session_incomplete`->400, `already_graded`->200 soft-success, `max_attempts_reached`->409, `submission_closed`->409, `db_error`->500). | `apps/host/src/__tests__/learn/assignment-submission.test.ts` (13), `apps/host/src/__tests__/api/student/assignments/complete.test.ts` (14) | E |
+
+### Invariants covered by this section
+
+- P1 score accuracy — score/correct/total are read verbatim from
+  `quiz_sessions`; no recomputation happens in the assignment-completion
+  write path, so this hardening cannot introduce a second, drifting score
+  formula.
+- P4-adjacent atomicity — the upsert is keyed on the table's real unique
+  constraint (`assignment_id, student_id, attempt_number`); no attempt's row
+  is ever overwritten by a later attempt (each gets its own row).
+- P8/P9 boundary — class-membership (not just `student_id` RLS ownership) and
+  session-ownership (a session id cannot be borrowed cross-student) remain
+  the actual defense against completing an assignment never issued to the
+  caller's class; unchanged by this hardening and still independently
+  covered by the pre-existing tests in the same file.
+
+### Catalog total
+
+Pre-REG-299: 298 entries (through REG-298, cron-worker scale hardening).
+Master Action Plan Phase 3 adds REG-299 (assignment completion multi-attempt
++ due-date lockout hardening — 13 helper tests + 14 route-wiring tests, 27
+total).
+**Total catalog: 299 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Hindi teacher-feedback language-aware display (Master Action Plan Phase 3.10)
+
+`assignment_submissions` carries two feedback columns: `teacher_feedback`
+(English, always present when a teacher leaves feedback) and the additive
+optional `teacher_feedback_hi` (Hindi variant). The student assignments page
+(web) and the mobile assignment-detail screen each render a SINGLE feedback
+line, so both must pick which language to show. The teacher-side write path
+(`teacher-dashboard` Edge Function `mark_submission_reviewed` +
+`get_submission_detail`) persists/reads both columns. The pick logic MUST be
+identical across web (`pickTeacherFeedback` in
+`apps/host/src/lib/assignment-feedback.ts`) and mobile
+(`AssignmentSubmission.feedbackFor(isHi)` in
+`mobile/lib/data/models/assignment_models.dart`) — any drift shows a
+Hindi-preferring student a different language on web vs app.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-307 | `teacher_feedback_language_aware_pick_web_mobile_parity` | **(a) Fallback matrix (P7), asserted on BOTH platforms verbatim:** Hindi student + Hindi variant present → Hindi; Hindi student + NO Hindi variant (null / empty / whitespace-only) → English fallback (never a blank box); English student → always English even when a Hindi variant exists; English student + only Hindi present → the Hindi (never hide feedback); no feedback in either language → null so the caller renders nothing. Both implementations `trim()` before testing presence, so a whitespace-only variant is treated as absent identically. **(b) Web/mobile parity:** the ordered branch logic is byte-equivalent — `(isHi && hiTrim) → hi`, else `enTrim → en`, else `hiTrim → hi`, else `null` — mirrored exactly by the Dart `feedbackFor`. **(c) Teacher write/read path:** the `teacher-dashboard` `mark_submission_reviewed` persists `teacher_feedback` + optional `teacher_feedback_hi`, and `get_submission_detail` reads both back, so a teacher-entered Hindi variant actually reaches the student surface. | `apps/host/src/__tests__/app/student-assignments-feedback-i18n.test.ts` (5), `apps/host/src/__tests__/functions/teacher-dashboard-submissions-actions.test.ts` (29), `mobile/test/data/models/assignment_models_test.dart` (feedbackFor cases within the 29-test file) | E |
+
+### Invariants covered by this section
+
+- P7 (bilingual UI) — REG-307 pins that a Hindi-preferring student sees the
+  Hindi teacher feedback when it exists and a graceful English fallback
+  (never a blank box) when it does not, on BOTH web and mobile; technical
+  content is not machine-translated (the teacher authors each variant).
+- Web/mobile contract parity — the pick logic is duplicated in TS and Dart by
+  necessity (no shared runtime); REG-307(b) is the drift guard that keeps the
+  two byte-equivalent so the same submission renders the same language on both
+  surfaces.
+
+### Catalog total
+
+Master Action Plan Phase 3.10 adds REG-307 (Hindi teacher-feedback
+language-aware display — the P7 fallback matrix asserted verbatim on web +
+mobile, web/mobile pick-logic parity, and the teacher-dashboard write/read
+path that carries both language columns).
+**Total catalog: 307 entries (see `00-header.md` for the authoritative running count).**
+
+---
+

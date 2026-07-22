@@ -135,9 +135,26 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   //    class_teachers / teachers / roles / user_roles / admin_users), and none of
   //    those parents inlines these child tables back (verified: reaches-self=false
   //    for all 28). Frozen here as defensive debt, not active cycles. ──
-  'adaptive_interventions::adaptive_interventions_parent_select',
+  // XC-3 backport (migration 20260722091000_adaptive_interventions_rls_xc3_backport.sql,
+  // 2026-07-22): adaptive_interventions_parent_select and
+  // adaptive_interventions_teacher_select were refactored from inlined
+  // guardian_student_links x guardians / class_students x class_teachers x
+  // teachers subqueries to public.is_guardian_of(student_id) /
+  // public.is_teacher_of(student_id) respectively (also closing a P8
+  // missing-is_active over-grant on the teacher policy). Both now contain no
+  // FROM/JOIN of their own, so the detector no longer flags them — their
+  // grandfather entries are pruned. adaptive_interventions_student_select was
+  // NOT touched by this migration and remains detected/grandfathered.
+  // Ledger: 223 → 221.
+  // Phase 8 item 8.6 (migration 20260722102000_synthesis_quality_scores.sql,
+  // 2026-07-22): the new synthesis_quality_scores_read_admin policy inlines
+  // the IDENTICAL admin_users subquery pattern as the already-grandfathered
+  // foxy_quality_scores_read_admin below (`auth.uid() IN (SELECT auth_user_id
+  // FROM public.admin_users WHERE is_active = true)`), including the same
+  // service_role short-circuit and is_active guard. This is the same
+  // reviewed, accepted pattern — not a new risk class. Ledger: 221 → 222.
+  'synthesis_quality_scores::synthesis_quality_scores_read_admin',
   'adaptive_interventions::adaptive_interventions_student_select',
-  'adaptive_interventions::adaptive_interventions_teacher_select',
   'board_score_predictions::board_score_predictions_admin_select',
   'board_score_predictions::board_score_predictions_guardian_select',
   'board_score_predictions::board_score_predictions_student_select',
@@ -165,6 +182,17 @@ const GRANDFATHERED_INLINE_POLICIES: ReadonlySet<string> = new Set([
   'school_churn_signals::school_churn_signals_admin_select',
   'school_health_daily::school_health_daily_admin_select',
   'school_mrr_daily::school_mrr_daily_admin_select',
+  // XC-3 backport (migration 20260722091000, 2026-07-22) touched these three
+  // teacher_remediation_assignments policies too — the roster-membership half
+  // of each was replaced with public.is_teacher_of(student_id) — but all three
+  // (plus the INSERT policy's separate class_id-ownership check) RETAIN a
+  // same-shape inline `teacher_id IN (SELECT t.id FROM public.teachers t
+  // WHERE t.auth_user_id = auth.uid())` ownership subquery that the migration
+  // deliberately left untouched (a different fact than roster membership).
+  // That subquery is itself an inline FROM over `teachers` (RLS-enabled,
+  // ≠ policyTable), so the detector still flags all three — they remain
+  // correctly grandfathered, unlike the two adaptive_interventions entries
+  // above which had NO remaining inline predicate at all.
   'teacher_remediation_assignments::teacher_remediation_assignments_student_select',
   'teacher_remediation_assignments::teacher_remediation_assignments_teacher_insert',
   'teacher_remediation_assignments::teacher_remediation_assignments_teacher_select',
@@ -662,10 +690,24 @@ describe('generalized RLS recursion guard: no NEW inline cross-table policy', ()
     // is_teacher_of() helpers: 240 → 236. Migration 20260702130000 drained the
     // remaining 2 Digital Twin _student_select policies to the EXISTING SECURITY
     // DEFINER helper public.get_my_student_id() (already on the roster — no new
-    // helper minted): 236 → 234. This pins the number so any drift (up = new
+    // helper minted): 236 → 234. The parent-dashboard RCA drain (migration
+    // 20260720170000) removed 11 more: 234 → 223. The XC-3 backport (migration
+    // 20260722091000, 2026-07-22) refactored adaptive_interventions_parent_select
+    // and adaptive_interventions_teacher_select to is_guardian_of()/is_teacher_of()
+    // helpers with NO remaining inline predicate at all (the sibling
+    // teacher_remediation_assignments policies touched by the same migration
+    // retain a same-table-ownership ...IN (SELECT ... FROM teachers...)
+    // subquery and so are still detected/grandfathered — see the ledger
+    // comment above): 223 → 221. Phase 8 item 8.6 (migration
+    // 20260722102000_synthesis_quality_scores.sql, 2026-07-22) added ONE new
+    // grandfathered entry: synthesis_quality_scores_read_admin inlines the
+    // identical admin_users subquery pattern as the already-grandfathered
+    // foxy_quality_scores_read_admin (same service_role short-circuit + same
+    // is_active guard) — the same reviewed, accepted pattern, not a new risk
+    // class: 221 → 222. This pins the number so any drift (up = new
     // violation, down = un-pruned ledger) trips a guard above.
-    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(223);
-    expect(detectedRiskKeys().length).toBe(223);
+    expect(GRANDFATHERED_INLINE_POLICIES.size).toBe(222);
+    expect(detectedRiskKeys().length).toBe(222);
   });
 });
 
@@ -862,11 +904,18 @@ describe('generalized RLS recursion guard: unquoted policy-name coverage (Phase 
     expect(dk).toBe(ck); // mixed-case DROP resolves to the same key → reduction works
   });
 
-  it('the 28 Phase 0a.1 unquoted-name policies are present in the live detected set', () => {
+  it('the remaining Phase 0a.1 unquoted-name policies are present in the live detected set', () => {
     // Anchor proof that the widening is what surfaced them: each is detected now.
+    // NOTE (2026-07-22 XC-3 backport, migration 20260722091000):
+    // adaptive_interventions::adaptive_interventions_teacher_select was
+    // refactored to is_teacher_of(student_id) with no remaining inline
+    // predicate and is no longer detected (see the ledger comment above) — it
+    // was removed from this anchor list; teacher_remediation_assignments_
+    // teacher_select remains detected (retains an inline teacher-ownership
+    // subquery) and still anchors the same migration's grandfathered survivors.
     const detected = new Set(detectedRiskKeys());
     for (const k of [
-      'adaptive_interventions::adaptive_interventions_teacher_select',
+      'adaptive_interventions::adaptive_interventions_student_select',
       'teacher_remediation_assignments::teacher_remediation_assignments_teacher_select',
       'board_score_predictions::board_score_predictions_student_select',
       'parent_cheers::parent_cheers_guardian_select',

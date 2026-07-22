@@ -32,7 +32,8 @@ interface SynthesisRow {
   bundle: SynthesisBundle;
   summaryTextEn: string;
   summaryTextHi: string;
-  parentShareStatus: 'pending' | 'sent' | 'opted_out' | 'failed' | 'suppressed';
+  // 'flagged' added by item 4.5 (2026-07-21) — pre-send fabrication gate.
+  parentShareStatus: 'pending' | 'sent' | 'opted_out' | 'failed' | 'suppressed' | 'flagged';
   parentShareSentAt: string | null;
   createdAt: string;
 }

@@ -299,23 +299,44 @@ class DashboardScreen extends ConsumerWidget {
                     ),
                   ),
 
-                  // STEM Lab tile — Tier 3 R12 Phase 1 mobile parity.
-                  // Routes to a WebView wrap of /stem-centre so the full
-                  // 119-simulation library, lab streak, and coin rewards
-                  // are reachable on mobile. Bilingual via device locale
-                  // (matches the _isHindi() helper used elsewhere).
+                  // STEM Lab + Lab Notebook tiles — Tier 3 R12 Phase 1/6
+                  // mobile parity. STEM Lab routes to a WebView wrap of
+                  // /stem-centre (119 simulations + lab streak + coin
+                  // rewards); Lab Notebook routes to a WebView wrap of
+                  // /lab-notebook/[studentId] (this student's saved lab
+                  // write-ups). Bilingual via device locale (matches the
+                  // _isHindi() helper used elsewhere).
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      child: _ActionCard(
-                        emoji: '🔬',
-                        label: Localizations.localeOf(context)
-                                    .languageCode ==
-                                'hi'
-                            ? 'STEM लैब'
-                            : 'STEM Lab',
-                        color: AppColors.scienceColor,
-                        onTap: () => context.push('/stem-lab'),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _ActionCard(
+                              emoji: '🔬',
+                              label: Localizations.localeOf(context)
+                                          .languageCode ==
+                                      'hi'
+                                  ? 'STEM लैब'
+                                  : 'STEM Lab',
+                              color: AppColors.scienceColor,
+                              onTap: () => context.push('/stem-lab'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _ActionCard(
+                              emoji: '📓',
+                              label: Localizations.localeOf(context)
+                                          .languageCode ==
+                                      'hi'
+                                  ? 'लैब नोटबुक'
+                                  : 'Lab Notebook',
+                              color: AppColors.chemistryColor,
+                              onTap: () => context.push('/lab-notebook'),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

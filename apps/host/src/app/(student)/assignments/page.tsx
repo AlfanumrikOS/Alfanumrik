@@ -31,9 +31,13 @@
  * instead of building a second one.
  *
  * Scope (reported honestly — see the agent's final report for what's
- * deferred): this is a FIRST CUT. Multi-attempt UI, due-date lockout,
- * per-question review of a graded assignment, and Hindi labels for teacher
- * feedback text are not built here.
+ * deferred): this is a FIRST CUT. Multi-attempt UI, due-date lockout, and
+ * per-question review of a graded assignment are not built here.
+ *
+ * P7 teacher feedback (Phase 3 item 3.10, added 2026-07-22): the graded-card
+ * feedback line now picks the Hindi variant (teacher_feedback_hi) when the
+ * student prefers Hindi AND a Hindi variant exists, falling back to the
+ * English teacher_feedback otherwise — see pickTeacherFeedback() below.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -42,6 +46,7 @@ import { useRequireAuth } from '@alfanumrik/lib/useRequireAuth';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { CardListSkeleton, Bone } from '@alfanumrik/ui/Skeleton';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
+import { pickTeacherFeedback } from '@/lib/assignment-feedback';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
@@ -69,6 +74,7 @@ interface SubmissionRow {
   submitted_at: string | null;
   graded_at: string | null;
   teacher_feedback: string | null;
+  teacher_feedback_hi: string | null;
 }
 
 interface TopicRow {
@@ -148,7 +154,7 @@ export default function StudentAssignmentsPage() {
         // caller's own rows only.
         const { data: subs, error: sErr } = await supabase
           .from('assignment_submissions')
-          .select('assignment_id, status, score, submitted_at, graded_at, teacher_feedback')
+          .select('assignment_id, status, score, submitted_at, graded_at, teacher_feedback, teacher_feedback_hi')
           .in('assignment_id', ids);
         if (sErr) throw sErr;
         const map = new Map<string, SubmissionRow>();
@@ -247,6 +253,7 @@ export default function StudentAssignmentsPage() {
               const due = dueBadge(a.due_date, isHi);
               const topic = a.topic_id ? topicsById.get(a.topic_id) : undefined;
               const topicLabel = topic ? (isHi && topic.title_hi ? topic.title_hi : topic.title) : null;
+              const feedbackText = pickTeacherFeedback(isHi, sub?.teacher_feedback, sub?.teacher_feedback_hi);
 
               return (
                 <div key={a.id} style={cardStyle}>
@@ -295,9 +302,9 @@ export default function StudentAssignmentsPage() {
                     </div>
                   )}
 
-                  {viewStatus === 'graded' && sub?.teacher_feedback && (
-                    <p style={{ marginTop: 10, fontSize: 12, color: 'var(--text-3, #7D7264)', fontStyle: 'italic', borderTop: '1px solid var(--surface-2, #EDE6DC)', paddingTop: 8 }}>
-                      &ldquo;{sub.teacher_feedback}&rdquo;
+                  {viewStatus === 'graded' && feedbackText && (
+                    <p lang={isHi && sub?.teacher_feedback_hi && sub.teacher_feedback_hi.trim().length > 0 ? 'hi' : undefined} style={{ marginTop: 10, fontSize: 12, color: 'var(--text-3, #7D7264)', fontStyle: 'italic', borderTop: '1px solid var(--surface-2, #EDE6DC)', paddingTop: 8 }}>
+                      &ldquo;{feedbackText}&rdquo;
                     </p>
                   )}
                 </div>

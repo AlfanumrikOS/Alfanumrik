@@ -374,6 +374,22 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     escalatedTo: 'parent',
     teacherAssignmentId: null,
   },
+  // Loop D (blocked-prerequisite, Digital Twin + Knowledge Graph Slice 1) —
+  // subject + dependent/prerequisite chapter anchored, mirrors Loop A/C shape.
+  'system.prerequisite_blocked': {
+    interventionId: FIXTURE_UUID_C,
+    subjectCode: 'science',
+    dependentChapterNumber: 7,
+    prerequisiteChapterNumber: 4,
+    reason: 'both',
+  },
+  'system.prerequisite_resolved': {
+    interventionId: FIXTURE_UUID_C,
+    subjectCode: 'science',
+    dependentChapterNumber: 7,
+    prerequisiteChapterNumber: 4,
+    daysToResolve: 9,
+  },
   'mesh.cycle_completed': {
     cycleId: FIXTURE_UUID_C,
     decision: 'approve',

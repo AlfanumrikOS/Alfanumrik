@@ -958,3 +958,79 @@ Adds REG-290 (teachers/classes cross-tenant RLS leak fix, 2026-07-21).
 **Total catalog: 257 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## Flag-governance hardening Phase 0 — DB-layer defense-in-depth + TS/DB registry parity + canary watch-list growth (2026-07-22) — REG-296
+
+Source: Master Action Plan Phase 0 (flag-governance hardening program),
+directly following the REG-285/286 app-layer guardrail package. That package
+closed the CONSOLE path but was explicitly documented as doing "nothing to
+stop a mutation issued directly against Postgres (Supabase Studio SQL editor,
+a one-off `psql` session, a CI script with the service-role key, etc.) — the
+likely vector for [the 2026-07-20] incident's underlying action." This entry
+pins the three additions that close that gap and harden the registry itself:
+
+1. **DB-layer defense-in-depth** (migrations `20260722090000`
+   `protected_feature_flags_registry`, `20260722090100`
+   `feature_flags_db_guard_trigger`, `20260722090200`
+   `admin_flip_feature_flag_rpc`): a service-role-only-RLS mirror table, a
+   `BEFORE UPDATE` trigger on `feature_flags` that blocks a direct-Postgres
+   transition making a protected flag MORE enabled (or, for
+   `special_do_not_touch`/`p11_payment` tiers, LESS enabled) unless a
+   transaction-scoped `app.protected_flag_ack` GUC matches the flag name, and
+   the ONE sanctioned RPC that both independently validates
+   `p_confirm = p_flag_name` and arms that GUC atomically with the UPDATE +
+   an `admin_audit_log` row. `authenticated` has column-level `UPDATE` REVOKEd
+   on `feature_flags.is_enabled`/`rollout_percentage` as belt-and-suspenders.
+2. **Velocity/burst guard** (`route.ts`): the 4th+ CONFIRMED protected-flag
+   mutation by the same admin within a trailing 10-minute window requires a
+   SECOND typed token (`bulk_confirm === "BULK-<ordinal>-<flag_name>"`) —
+   this is the specific guard that would have caught the 2026-07-20 incident
+   after its 3rd flip instead of its 49th. Refused bursts are logged under a
+   distinct `feature_flag.bulk_mutation_burst` audit action (not silently
+   dropped).
+3. **Registry parity + canary watch-list growth**: two live, unprotected
+   constitution-pinned flags (`ff_productive_failure_v1`,
+   `ff_pedagogy_v2_monthly_synthesis`) were found during this hardening pass
+   and added to `PROTECTED_FLAGS` + `EXPECTED_OFF_FLAGS` in
+   `packages/lib/src/flags/protected-flags.ts` AND the DB seed migration in
+   the same change. `EXPECTED_OFF_FLAGS` grows from 53 to 55 names; the
+   nightly/deploy-time canary's watched set (`REG-286`) grows from 54 to 56
+   (55 `EXPECTED_OFF_FLAGS` + the P11 kill-switch). A static parity test pins
+   the TS registry and the DB seed together going forward so they cannot
+   silently re-drift.
+
+CI/deploy wiring exists for this same change (`protected-flag-migration-guard`
+job in `.github/workflows/ci.yml`, backed by
+`scripts/check-protected-flag-migrations.mjs`; the synchronous canary step in
+`.github/workflows/deploy-production.yml`'s `health-check` job) but is **not
+yet unit/regression-pinned** — noted here as a follow-up gap, not claimed as
+covered by the tests below.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-296 | `flag_governance_db_defense_in_depth_and_registry_parity` | (a) DB/TS parity: `PROTECTED_FLAGS` enumerates exactly 74 flags across exactly 6 tiers, each carrying a non-empty EN reason + Devanagari `reasonHi`; every `PROTECTED_FLAGS` key is seeded in `protected_feature_flags` with the matching tier, every seeded row exists in `PROTECTED_FLAGS` (no orphan DB rows), the seed row count exactly equals the key count (no duplicates/gaps), `EXPECTED_OFF_FLAGS` is a subset of `PROTECTED_FLAGS` keys, and the two Pedagogy v2 flags added 2026-07-22 (`ff_productive_failure_v1`, `ff_pedagogy_v2_monthly_synthesis`) are present in BOTH the TS registry and the DB seed with tier `constitution_pinned`. (b) `EXPECTED_OFF_FLAGS` contains exactly 55 unique names (52 block-(ii) + `ff_irt_question_selection` + the 2 Pedagogy v2 additions), equals migration `20260720110000` block (ii) ∪ {`ff_irt_question_selection`} ∪ {the 2 additions} (cannot drift from the approved SQL beyond the documented additions), is disjoint from the 25-flag block-(i) ACTIVATE list, and every expected-OFF flag is also console-protected. (c) The nightly/deploy-time canary (`/api/cron/flag-posture-canary`) reads `feature_flags` once, `.in()` over the 56-name watched set (55 `EXPECTED_OFF_FLAGS` — not mocked — + the P11 kill-switch); the same drift matrix from REG-286 (re-armed, half-off, NULL-rollout-clean, missing-row-not-drift, kill-switch-disabled-or-missing, MoL shadow-metadata, compound-drift) is re-verified against the grown set. (d) DB-layer defense-in-depth: PATCH velocity/burst-guard describe block — the 1st-3rd confirmed protected mutation in a trailing 10-minute window needs no `bulk_confirm`; the 4th+ WITHOUT `bulk_confirm` → 409 `FLAG_BULK_CONFIRM_REQUIRED`, zero write, and a distinct `feature_flag.bulk_mutation_burst` audit row (the refusal itself is audited, not silently dropped); the 4th+ WITH the correct `BULK-<ordinal>-<flag_name>` token → write proceeds; WITH a wrong token → 409, no write. Enable/disable/DELETE/POST confirm-gate matrix (typed `confirm === flag_name`, `special_do_not_touch`/`p11_payment` gated on disable too, `ff_python_` prefix rule at the POST boundary, unprotected flags entirely unaffected) is re-verified end to end against the grown 74-flag registry. | `apps/host/src/__tests__/lib/flags/protected-flags-registry.test.ts` (registry shape + `EXPECTED_OFF_FLAGS` composition), `apps/host/src/__tests__/api/super-admin/feature-flags-protected-guardrail.test.ts` (describe blocks `PATCH protected-flag guardrail — velocity/burst guard` and `protected_feature_flags DB/TS registry parity`), `apps/host/src/__tests__/api/cron/flag-posture-canary.test.ts` (56-name watched-set query shape + full drift matrix) | E | P8 (service-role-only RLS on `protected_feature_flags`; `authenticated` UPDATE REVOKEd on the two gated columns), P9-adjacent (the ack GUC + burst token are a second explicit-intent factor layered under the existing super_admin gate), P13 (burst-audit and canary payloads remain metadata/state-only — no operator PII), operational integrity (the 2026-07-20 incident's "click through N flags" shape is now blocked at the 4th flip, not just detected the next morning; a direct-Postgres bypass of the console is now ALSO blocked, not just the console itself) |
+
+### Invariants covered by this section
+
+- Operational integrity — the 2026-07-20 incident class is now blocked at
+  TWO independent layers below the console (DB trigger + burst guard), not
+  just detected by the next nightly canary run; the canary's own watch-list
+  is verified to have grown with the registry, closing the "protect it in TS
+  but forget to add it to the watched set" failure mode.
+- P8 — `protected_feature_flags` carries the same service-role-only RLS
+  posture as the guard trigger and RPC that read it; no student/parent/
+  teacher path touches this table.
+- P9-adjacent — the DB-layer ack GUC and the burst token are both explicit-
+  intent factors that cannot be supplied by an ordinary `authenticated` write
+  (column-level REVOKE + RPC-only ack-arming).
+- P13 — the burst-guard audit row and canary payload both stay on the
+  existing metadata/state-only shape; no new PII surface introduced.
+
+### Catalog total
+
+Flag-governance hardening Phase 0 (DB-layer package) adds REG-296 (DB
+trigger + sanctioned RPC + velocity/burst guard + DB/TS registry parity +
+canary watch-list growth to 56 names). **Total catalog: 296 entries
+(target: 35 — TARGET EXCEEDED).**
+
+---

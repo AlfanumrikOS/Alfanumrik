@@ -14,10 +14,39 @@ export interface MockTestQuestion {
   marks_correct: number;
   marks_wrong: number;
   chapter_title?: string | null;
+  /**
+   * CBSE-board dynamic papers (started via POST /api/exams/papers/[id]/start)
+   * carry a section label (A/B/C/D/E) per question. Static JEE/NEET/Olympiad
+   * papers served via GET /api/exams/papers/[id] do not set this.
+   */
+  section?: string | null;
   /** Admin/teacher-only — students never see this in the API response. */
   correct_answer_index?: number;
   /** Admin/teacher-only — students never see this in the API response. */
   explanation?: string;
+}
+
+/**
+ * CBSE-board dynamic exam family — contract for POST /api/exams/papers/[id]/start.
+ * Unlike static past-year papers, `cbse_board` questions are generated per
+ * attempt (section-weighted pull) and snapshotted server-side into
+ * `mock_test_attempts.question_snapshot` so submit-time scoring is stable
+ * even if the underlying question_bank changes mid-attempt.
+ */
+export interface StartAttemptQuestion {
+  question_id: string;
+  section: string;
+  marks: number;
+  order: number;
+  text: string;
+  /** Not guaranteed by the binding contract — render defensively (P7). */
+  text_hi?: string | null;
+  options: string[];
+}
+
+export interface StartAttemptResponse {
+  attempt_id: string;
+  questions: StartAttemptQuestion[];
 }
 
 export interface MockTestPaper {

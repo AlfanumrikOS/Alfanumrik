@@ -1,18 +1,67 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/subjects_provider.dart';
 import '../../../data/models/quiz_question.dart';
+import '../../../providers/assignments_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/quiz_provider.dart';
 import '../../widgets/loading_widget.dart';
+import '../../widgets/quiz_question_widgets.dart';
 
-class QuizScreen extends ConsumerWidget {
-  const QuizScreen({super.key});
+/// Phase 6 sub-phase 5 (Assignments): the quiz screen's launch/argument
+/// handling is extended MINIMALLY here to support deep-linking from the
+/// Assignments screen (`/quiz?...&from=assignment&assignmentId=<id>` on
+/// web). NONE of the scoring/submission internals below this constructor
+/// are touched — [initialSubject]/[initialChapter]/[initialCount]/
+/// [assignmentId] only decide what auto-starts on entry and are threaded
+/// through to [QuizNotifier.startQuiz] exactly like the existing manual
+/// subject-picker tap already does.
+class QuizScreen extends ConsumerStatefulWidget {
+  final String? initialSubject;
+  final String? initialChapter;
+  final int? initialCount;
+  final String? assignmentId;
+
+  const QuizScreen({
+    super.key,
+    this.initialSubject,
+    this.initialChapter,
+    this.initialCount,
+    this.assignmentId,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<QuizScreen> createState() => _QuizScreenState();
+}
+
+class _QuizScreenState extends ConsumerState<QuizScreen> {
+  bool _autoStartTriggered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final subject = widget.initialSubject;
+    if (subject != null && subject.isNotEmpty) {
+      // Deferred to the post-frame callback: startQuiz() mutates a provider,
+      // which must not happen synchronously during the first build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _autoStartTriggered) return;
+        _autoStartTriggered = true;
+        ref.read(quizProvider.notifier).startQuiz(
+              subject: subject,
+              chapterTitle: widget.initialChapter,
+              count: widget.initialCount ?? 10,
+              assignmentId: widget.assignmentId,
+            );
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final quiz = ref.watch(quizProvider);
     final student = ref.watch(studentProvider).valueOrNull;
 
@@ -190,74 +239,15 @@ class _QuizInProgress extends ConsumerWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // Options
-                  ...List.generate(q.options.length, (i) {
-                    final isSelected = selectedOption == i;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: GestureDetector(
-                        onTap: () =>
-                            ref.read(quizProvider.notifier).selectAnswer(i),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppColors.primary.withValues(alpha: 0.06)
-                                : AppColors.surface,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : AppColors.borderLight,
-                              width: isSelected ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? AppColors.primary
-                                      : AppColors.borderLight,
-                                  shape: BoxShape.circle,
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  String.fromCharCode(65 + i), // A, B, C, D
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: isSelected
-                                        ? Colors.white
-                                        : AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  q.options[i],
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: isSelected
-                                        ? AppColors.primary
-                                        : AppColors.textPrimary,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
+                  // Options — shared with PYQ/Diagnostic via
+                  // QuestionOptionsList (plain selection mode: showResult
+                  // false, no reveal). Same visuals/behaviour as before.
+                  QuestionOptionsList(
+                    options: q.options,
+                    selectedIndex: selectedOption,
+                    onSelect: (i) =>
+                        ref.read(quizProvider.notifier).selectAnswer(i),
+                  ),
                 ],
               ),
             ),
@@ -411,6 +401,12 @@ class _ResultScreen extends ConsumerWidget {
                 // server flagged today's XP as capped).
                 if (result.xpCapped) _DailyCapBanner(result: result, isHi: isHi),
 
+                // Phase 6 sub-phase 5 (Assignments): renders ONLY when this
+                // quiz was launched from an assignment deep link. Never
+                // affects the score/XP shown above — purely informational.
+                if (quiz.assignmentId != null)
+                  _AssignmentCompletionBanner(isHi: isHi),
+
                 // Stats row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -446,8 +442,34 @@ class _ResultScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 32),
 
+                // Assignment-launched quizzes get a dedicated way back to
+                // the Assignments screen (where the just-recorded attempt/
+                // status is now visible) alongside the normal reset CTA —
+                // "Try Another Quiz" alone would strand the student outside
+                // the assignment flow they came from.
+                if (quiz.assignmentId != null) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        ref.read(quizProvider.notifier).reset();
+                        context.go('/assignments');
+                      },
+                      child: Text(isHi ? 'असाइनमेंट पर वापस जाएँ' : 'Back to Assignments'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+
                 ElevatedButton(
                   onPressed: () => ref.read(quizProvider.notifier).reset(),
+                  style: quiz.assignmentId != null
+                      ? ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.surface,
+                          foregroundColor: AppColors.textPrimary,
+                          side: const BorderSide(color: AppColors.border),
+                        )
+                      : null,
                   child: const Text('Try Another Quiz'),
                 ),
               ],
@@ -501,6 +523,106 @@ class _DailyCapBanner extends StatelessWidget {
           height: 1.45,
           fontWeight: FontWeight.w500,
         ),
+      ),
+    );
+  }
+}
+
+/// Phase 6 sub-phase 5 (Assignments): renders the outcome of the
+/// post-submit `POST /api/student/assignments/[id]/complete` call fired by
+/// [QuizNotifier.submitQuiz]. Each [AssignmentCompletionStatus] gets
+/// DISTINCT copy and colour treatment — `maxAttemptsReached` and
+/// `submissionClosed` must never collapse into one generic error banner
+/// (explicit product requirement, not a nice-to-have). Never affects the
+/// score/XP shown elsewhere on this screen — purely informational.
+class _AssignmentCompletionBanner extends ConsumerWidget {
+  final bool isHi;
+  const _AssignmentCompletionBanner({required this.isHi});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(assignmentCompletionProvider);
+
+    String emoji;
+    String message;
+    Color color;
+
+    switch (state.status) {
+      case AssignmentCompletionStatus.idle:
+      case AssignmentCompletionStatus.submitting:
+        emoji = '⏳';
+        color = AppColors.textTertiary;
+        message = isHi
+            ? 'असाइनमेंट में दर्ज हो रहा है…'
+            : 'Recording this against your assignment…';
+        break;
+      case AssignmentCompletionStatus.success:
+        final s = state.success;
+        emoji = '✅';
+        color = AppColors.success;
+        if (s != null && s.isAlreadyGraded) {
+          message = isHi
+              ? 'यह प्रयास पहले ही शिक्षक द्वारा समीक्षित किया जा चुका है।'
+              : 'This attempt has already been reviewed by your teacher.';
+        } else if (s != null && s.attemptNumber != null) {
+          final best = s.bestScorePercent;
+          message = isHi
+              ? 'असाइनमेंट जमा हो गया! प्रयास ${s.attemptNumber}${best != null ? ' · सर्वश्रेष्ठ स्कोर $best%' : ''}'
+              : 'Assignment submitted! Attempt ${s.attemptNumber}${best != null ? ' · best score $best%' : ''}';
+          if (s.isLateSubmission) {
+            message += isHi ? ' (देरी से जमा)' : ' (submitted late)';
+          }
+        } else {
+          message = isHi ? 'असाइनमेंट जमा हो गया!' : 'Assignment submitted!';
+        }
+        break;
+      case AssignmentCompletionStatus.maxAttemptsReached:
+        emoji = '🚫';
+        color = AppColors.error;
+        message = isHi
+            ? 'आपने इस असाइनमेंट के लिए सभी अनुमत प्रयास इस्तेमाल कर लिए हैं।'
+            : "You've used all the attempts allowed for this assignment.";
+        break;
+      case AssignmentCompletionStatus.submissionClosed:
+        emoji = '🔒';
+        color = AppColors.warning;
+        message = isHi
+            ? 'यह असाइनमेंट अब जमा स्वीकार नहीं करता (नियत तिथि निकल चुकी है)।'
+            : 'This assignment no longer accepts submissions (past due).';
+        break;
+      case AssignmentCompletionStatus.error:
+        emoji = '⚠️';
+        color = AppColors.warning;
+        message = isHi
+            ? 'आपका स्कोर सुरक्षित है, लेकिन इसे असाइनमेंट से नहीं जोड़ा जा सका। बाद में फिर कोशिश करें।'
+            : "Your score is saved, but we couldn't link it to the assignment. It'll sync on next refresh.";
+        break;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: 12.5,
+                color: color,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

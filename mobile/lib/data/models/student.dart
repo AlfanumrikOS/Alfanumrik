@@ -14,6 +14,14 @@ class Student extends Equatable {
   final int streakDays;
   final DateTime? lastActiveAt;
 
+  /// Account creation timestamp (`students.created_at`). Nullable for
+  /// backward compatibility with any cached row written before this field
+  /// was added. Used by the Daily Challenge grace-period unlock check
+  /// (mirrors web `apps/host/src/app/challenge/page.tsx`'s
+  /// `daysSinceCreation <= GRACE_PERIOD_DAYS` gate) — not sensitive PII, so
+  /// it is safe to include in the minimal Hive cache projection (P13).
+  final DateTime? createdAt;
+
   const Student({
     required this.id,
     required this.authUserId,
@@ -27,6 +35,7 @@ class Student extends Equatable {
     this.level = 1,
     this.streakDays = 0,
     this.lastActiveAt,
+    this.createdAt,
   });
 
   factory Student.fromJson(Map<String, dynamic> json) {
@@ -45,6 +54,9 @@ class Student extends Equatable {
       lastActiveAt: json['last_active_at'] != null
           ? DateTime.tryParse(json['last_active_at'] as String)
           : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'] as String)
+          : null,
     );
   }
 
@@ -60,6 +72,7 @@ class Student extends Equatable {
         'xp_total': xpTotal,
         'level': level,
         'streak_days': streakDays,
+        'created_at': createdAt?.toIso8601String(),
       };
 
   String get gradeNumber => grade.replaceAll(RegExp(r'[^0-9]'), '');

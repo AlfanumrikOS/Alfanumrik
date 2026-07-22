@@ -104,6 +104,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/cron/adaptive-loops-monitor",
+      "file": "apps/host/src/app/api/cron/adaptive-loops-monitor/route.ts",
+      "access": "cron",
+      "owner": "platform-ops",
+      "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/cron/adaptive-remediation",
       "file": "apps/host/src/app/api/cron/adaptive-remediation/route.ts",
       "access": "cron",
@@ -239,6 +247,22 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/cron/synthesis-delivery-monitor",
+      "file": "apps/host/src/app/api/cron/synthesis-delivery-monitor/route.ts",
+      "access": "cron",
+      "owner": "platform-ops",
+      "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/cron/synthesis-quality-sample",
+      "file": "apps/host/src/app/api/cron/synthesis-quality-sample/route.ts",
+      "access": "cron",
+      "owner": "platform-ops",
+      "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/dashboard/reviews-due",
       "file": "apps/host/src/app/api/dashboard/reviews-due/route.ts",
       "access": "auth",
@@ -323,6 +347,14 @@
     {
       "path": "/api/exams/papers/[id]",
       "file": "apps/host/src/app/api/exams/papers/[id]/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/exams/papers/[id]/start",
+      "file": "apps/host/src/app/api/exams/papers/[id]/start/route.ts",
       "access": "auth",
       "owner": "core-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
@@ -1499,11 +1531,27 @@
       "rationale": "Student-owned endpoint; access must derive from the authenticated student/session context."
     },
     {
+      "path": "/api/super-admin/adaptive-loops",
+      "file": "apps/host/src/app/api/super-admin/adaptive-loops/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/super-admin/ai/[fn]",
       "file": "apps/host/src/app/api/super-admin/ai/[fn]/route.ts",
       "access": "super_admin",
       "owner": "admin-platform",
       "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret."
+    },
+    {
+      "path": "/api/super-admin/ai/irt-readiness",
+      "file": "apps/host/src/app/api/super-admin/ai/irt-readiness/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
       "path": "/api/super-admin/ai/oracle-health",
@@ -2402,6 +2450,22 @@
       "access": "super_admin",
       "owner": "admin-platform",
       "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret."
+    },
+    {
+      "path": "/api/super-admin/synthesis-health",
+      "file": "apps/host/src/app/api/super-admin/synthesis-health/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/super-admin/synthesis-quality",
+      "file": "apps/host/src/app/api/super-admin/synthesis-quality/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
       "path": "/api/super-admin/test-accounts",

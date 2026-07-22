@@ -1859,3 +1859,67 @@ REG-284.
 
 ---
 
+## /api/learner/revise-stack dead-flag-gate — unconditional 404 in production (2026-07-21) — REG-303
+
+Source: live production bug discovered during Master Action Plan Phase 6
+mobile-parity work. `GET /api/learner/revise-stack` (backs the /refresh page's
+"Chapter Refresh" section on web AND the new mobile Refresh screen) gated on
+`isFeatureEnabled('ff_revise_route_v1')`. Migration
+`20260603120000_remove_ff_revise_route_v1.sql` DELETED that flag row as part
+of Study Menu v2 Task 6.4, once the standalone `/revise` page was folded into
+`/refresh`'s Section B ("Backend: Unchanged. The route stays at
+`/api/learner/revise-stack`." — 2026-05-20 consolidation spec). The migration
+and its plan correctly removed the OLD `/revise` page and its nav-visibility
+flag check, but never removed this route's OWN internal
+`isFeatureEnabled()` gate. `isFeatureEnabled()` returns `false` for any
+nonexistent flag row (by design — "Flag doesn't exist → disabled"), so once
+the row was dropped this endpoint 404'd UNCONDITIONALLY for every student.
+Both consumers swallow the 404 into a silent empty state
+(`ChapterRefreshSection.tsx`: `if (res.status === 404) setItems([])`, which
+then renders `null`) — no Sentry error, no visible failure, the section just
+quietly stopped appearing. This is the same failure class as an orphaned
+flag reference, but inverted: instead of a route checking a flag nobody
+seeded, a route kept checking a flag that used to exist and was
+deliberately deleted, with no code-side cleanup pass to match.
+
+Fix: removed the dead `isFeatureEnabled('ff_revise_route_v1')` gate from the
+route entirely — matching the "became a permanent default" pattern already
+used for `ff_study_menu_v2` — rather than re-seeding the deleted flag, which
+would only recreate the identical "flag lifecycle drifts from route code"
+fragility for the next person who deletes it.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-303 | `revise_stack_route_never_gates_on_deleted_flag` | `GET /api/learner/revise-stack` returns real decayed-chapter data (200, `schemaVersion: 1`, populated `items[]`) for an eligible student even when `isFeatureEnabled` is mocked to resolve `false` for every flag name — byte-for-byte the production state after the `ff_revise_route_v1` row was deleted. A dedicated assertion additionally proves `isFeatureEnabled` is never called at all by this route (the fix deletes the dependency, it does not hardcode it to `true`), so a future refactor can't silently reintroduce a flag check without a test failing. Companion assertions pin the surviving 401 (unauthenticated) and 404 `no_decayed_topics` (genuinely nothing to revise) branches so this test can't be satisfied by a route that just always returns 200. | `apps/host/src/__tests__/api/learner/revise-stack/route.test.ts` (4 tests) | E (unit — runs in CI) |
+
+### Invariants covered by this section
+
+- P1-adjacent (Chapter Refresh is part of the spaced-repetition retention
+  system; an unconditional 404 silently removed a whole surface of the
+  product from every student, indistinguishable from "no student ever has
+  decayed chapters")
+- Operational integrity / flag-lifecycle hygiene (same family as REG-125's
+  seed-shape conformance and REG-118's daily-cron static-source contract):
+  when a feature flag is deleted, every code path that reads it must be
+  swept in the SAME change, not left to silently fail closed
+
+### Notes on test strategy
+
+This is a "prove the dependency is gone" test, not just a "prove the
+behavior is correct" test — `isFeatureEnabled` is mocked to always return
+`false` specifically so a regression (someone re-adding a flag check without
+first confirming the flag is seeded) would immediately turn this test red
+via the 200-response assertions, and the `not.toHaveBeenCalled()` assertion
+catches the case where a future change reads a *different* still-existing
+flag on this route without a corresponding rollout plan.
+
+### Catalog total
+
+Pre-REG-303: 251 entries (through REG-284, the 2026-07-20 E2E full-suite
+topology pin). This dead-flag-gate fix adds REG-303 (next free id after
+REG-302, the 2026-07-22 Master Action Plan Phase 4 Foxy explorer + Monthly
+Synthesis entry in `02-foxy-ai.md`).
+**Total catalog: 252 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

@@ -49,6 +49,14 @@ interface SubmitBody {
   responses: SubmitResponseInput[];
   time_taken_seconds: number;
   client_metadata?: Record<string, unknown>;
+  /**
+   * Present only for the cbse_board dynamic-attempt flow (paper started via
+   * POST /api/exams/papers/[id]/start). When set, the RPC scores against
+   * the attempt's own question_snapshot instead of the legacy exam_paper_id
+   * join. Static JEE/NEET/Olympiad papers — and the legacy cbse_board
+   * submit path — omit this entirely; behavior for them is unchanged.
+   */
+  attempt_id?: string;
 }
 
 interface RpcResult {
@@ -136,10 +144,17 @@ function parseBody(raw: unknown): SubmitBody | { error: string } {
     }
   }
 
+  if (o.attempt_id !== undefined) {
+    if (typeof o.attempt_id !== 'string' || !isValidUuid(o.attempt_id)) {
+      return { error: 'invalid_attempt_id' };
+    }
+  }
+
   return {
     responses: o.responses as SubmitResponseInput[],
     time_taken_seconds: o.time_taken_seconds,
     client_metadata: (o.client_metadata as Record<string, unknown> | undefined) ?? undefined,
+    attempt_id: (o.attempt_id as string | undefined) ?? undefined,
   };
 }
 
@@ -219,14 +234,27 @@ export async function POST(
     }
 
     // Idempotency replay guard.
+    //
+    // NOTE (found during Phase 2.2 remediation): this query previously
+    // selected/filtered on a column literally named `paper_id`, which does
+    // not exist on mock_test_attempts (the real FK column is
+    // `exam_paper_id` — see 20260520000008_mock_test_attempts.sql). A
+    // PostgREST select against a nonexistent column returns an error, so
+    // `recent` was always null and this replay guard has never actually
+    // short-circuited a double-submit against the real database — it only
+    // appeared to work because the unit-test mock's in-memory fixtures
+    // used the same (wrong) property name, masking the bug. Fixed here to
+    // query the real column; existing behavior for every exam family is
+    // otherwise unchanged (same window, same ordering, same fallback to a
+    // fresh RPC call on a cache miss).
     const replayCutoff = new Date(Date.now() - IDEMPOTENCY_WINDOW_MS).toISOString();
     const { data: recent } = await supabaseAdmin
       .from('mock_test_attempts')
       .select(
-        'id, paper_id, total_questions, attempted_count, correct_count, wrong_count, skipped_count, raw_score, max_score, score_percent, xp_earned, submitted_at, time_taken_seconds',
+        'id, exam_paper_id, total_questions, attempted_count, correct_count, wrong_count, skipped_count, raw_score, max_score, score_percent, xp_earned, submitted_at, time_taken_seconds',
       )
       .eq('student_id', studentId)
-      .eq('paper_id', paperId)
+      .eq('exam_paper_id', paperId)
       .eq('status', 'submitted')
       .gte('submitted_at', replayCutoff)
       .order('submitted_at', { ascending: false })
@@ -237,7 +265,7 @@ export async function POST(
       const r = recent as Record<string, unknown>;
       const replayResult: RpcResult = {
         attempt_id: r.id as string,
-        paper_id: r.paper_id as string,
+        paper_id: r.exam_paper_id as string,
         total_questions: r.total_questions as number,
         attempted_count: r.attempted_count as number,
         correct_count: r.correct_count as number,
@@ -250,7 +278,11 @@ export async function POST(
         submitted_at: r.submitted_at as string,
         time_taken_seconds: r.time_taken_seconds as number,
       };
-      const review = await buildReview(paperId, body.responses);
+      // For the dynamic cbse_board flow, the review must be built from the
+      // REPLAYED attempt's own snapshot (r.id), not from body.attempt_id —
+      // they are expected to match, but the replayed row is the source of
+      // truth for what was actually scored.
+      const review = await buildReview(paperId, body.responses, r.id as string);
       logger.info('exams_submit_idempotent_replay', {
         route: ROUTE,
         paper_id: paperId,
@@ -269,6 +301,7 @@ export async function POST(
         p_responses: body.responses,
         p_time_taken_seconds: body.time_taken_seconds,
         p_client_metadata: body.client_metadata ?? null,
+        p_attempt_id: body.attempt_id ?? null,
       },
     );
 
@@ -289,7 +322,7 @@ export async function POST(
     }
 
     const result = rpcData as unknown as RpcResult;
-    const review = await buildReview(paperId, body.responses);
+    const review = await buildReview(paperId, body.responses, body.attempt_id);
 
     logger.info('mock_test_submitted', {
       route: ROUTE,
@@ -348,7 +381,114 @@ function buildResponse(result: RpcResult, review: ReviewEntry[]) {
   };
 }
 
+interface SnapshotEntry {
+  question_id: string;
+  section: string;
+  marks: number;
+  order: number;
+}
+
+/**
+ * Builds the post-submit review payload.
+ *
+ * Static JEE/NEET/Olympiad papers (and the legacy cbse_board submit path,
+ * i.e. attemptId undefined): resolves questions via the exam_paper_id join,
+ * exactly as before.
+ *
+ * cbse_board dynamic attempts (attemptId present): the questions are pulled
+ * from the general question_bank pool and are NEVER linked via
+ * exam_paper_id — that join would silently return zero rows. Instead, the
+ * question set + per-question marks come from the attempt's own
+ * `question_snapshot` (marks_correct = snapshot's `marks`, never
+ * question_bank.marks_correct — see submit_mock_test_attempt's snapshot-
+ * scoring branch), and only question_text/options/correct_answer_index/
+ * explanation/chapter_title are freshly resolved from question_bank by id.
+ * No negative marking for this flow (marks_wrong is always 0).
+ */
 async function buildReview(
+  paperId: string,
+  responses: SubmitResponseInput[],
+  attemptId?: string,
+): Promise<ReviewEntry[]> {
+  if (attemptId) {
+    return buildSnapshotReview(responses, attemptId);
+  }
+  return buildStaticReview(paperId, responses);
+}
+
+async function buildSnapshotReview(
+  responses: SubmitResponseInput[],
+  attemptId: string,
+): Promise<ReviewEntry[]> {
+  const { data: attemptRow, error: attemptError } = await supabaseAdmin
+    .from('mock_test_attempts')
+    .select('question_snapshot')
+    .eq('id', attemptId)
+    .maybeSingle();
+
+  if (attemptError || !attemptRow) {
+    logger.error('exams_submit_snapshot_review_lookup_failed', {
+      error: attemptError ? new Error(attemptError.message) : new Error('attempt_not_found'),
+      route: ROUTE,
+      attemptId,
+    });
+    return [];
+  }
+
+  const snapshot = (
+    (attemptRow as Record<string, unknown>).question_snapshot as SnapshotEntry[] | null
+  ) ?? [];
+  const marksBySnapshotId = new Map<string, number>();
+  const snapshotIds: string[] = [];
+  for (const s of snapshot) {
+    marksBySnapshotId.set(s.question_id, s.marks);
+    snapshotIds.push(s.question_id);
+  }
+
+  if (snapshotIds.length === 0) return [];
+
+  const { data: rows, error } = await supabaseAdmin
+    .from('question_bank')
+    .select('id, question_text, options, correct_answer_index, explanation, hint, chapter_title, paper_pattern')
+    .in('id', snapshotIds)
+    .eq('is_active', true);
+
+  if (error) {
+    logger.error('exams_submit_snapshot_review_questions_failed', {
+      error: new Error(error.message),
+      route: ROUTE,
+      attemptId,
+    });
+    return [];
+  }
+
+  const byId = new Map<string, QuestionRow>();
+  for (const r of (rows ?? []) as unknown as QuestionRow[]) byId.set(r.id, r);
+
+  return responses.map((r) => {
+    const q = byId.get(r.question_id);
+    const correctIdx = q?.correct_answer_index ?? null;
+    const isCorrect =
+      r.response_index !== null && correctIdx !== null && r.response_index === correctIdx;
+    const marksCorrect = marksBySnapshotId.get(r.question_id) ?? 0;
+    // No negative marking for cbse_board dynamic attempts — marks_wrong is
+    // always 0 (mirrors submit_mock_test_attempt's snapshot-scoring branch).
+    const marksAwarded = r.response_index === null ? 0 : isCorrect ? marksCorrect : 0;
+    return {
+      question_id: r.question_id,
+      question_text: q?.question_text ?? '',
+      options: Array.isArray(q?.options) ? q!.options! : [],
+      response_index: r.response_index,
+      correct_answer_index: correctIdx,
+      is_correct: isCorrect,
+      marks_awarded: marksAwarded,
+      explanation: q?.explanation ?? null,
+      chapter_title: q?.chapter_title ?? null,
+    };
+  });
+}
+
+async function buildStaticReview(
   paperId: string,
   responses: SubmitResponseInput[],
 ): Promise<ReviewEntry[]> {

@@ -13,11 +13,11 @@ const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 /*
   CBSE 80-mark paper structure:
   Section A: 20 × 1 mark  = 20 MCQ
-  Section B:  5 × 2 marks = short-answer (modelled as MCQ)
+  Section B:  6 × 2 marks = short-answer (modelled as MCQ)
   Section C:  7 × 3 marks = short-answer
   Section D:  3 × 5 marks = long-answer
   Section E:  3 × 4 marks = case-based MCQ (reading comprehension type)
-  Total: 38 questions → 80 marks
+  Total: 39 questions → 80 marks
 */
 
 interface SectionConfig {
@@ -30,13 +30,14 @@ interface SectionConfig {
 
 const SECTIONS: SectionConfig[] = [
   { key: 'A', label: 'Section A', labelHi: 'खंड अ', count: 20, marks: 1 },
-  { key: 'B', label: 'Section B', labelHi: 'खंड ब', count: 5,  marks: 2 },
+  { key: 'B', label: 'Section B', labelHi: 'खंड ब', count: 6,  marks: 2 },
   { key: 'C', label: 'Section C', labelHi: 'खंड स', count: 7,  marks: 3 },
   { key: 'D', label: 'Section D', labelHi: 'खंड द', count: 3,  marks: 5 },
   { key: 'E', label: 'Section E (Case-based)', labelHi: 'खंड ई (केस-आधारित)', count: 3, marks: 4 },
 ];
 
 const TOTAL_MARKS = SECTIONS.reduce((s, sec) => s + sec.count * sec.marks, 0); // 80
+const TOTAL_QUESTIONS = SECTIONS.reduce((s, sec) => s + sec.count, 0); // 39
 const EXAM_DURATION_SEC = 3 * 60 * 60; // 3 hours
 
 interface Question {
@@ -149,7 +150,7 @@ export default function MockExamPage() {
           .from('question_bank')
           .select('id, question_text, question_hi, options, correct_answer_index, explanation, explanation_hi, difficulty, bloom_level')
           .eq('subject', selectedSubject)
-          .limit(38);
+          .limit(TOTAL_QUESTIONS);
         if (fallback) {
           let qi = 0;
           for (const sec of SECTIONS) {

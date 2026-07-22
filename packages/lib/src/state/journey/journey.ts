@@ -355,13 +355,17 @@ function projectOne(e: DomainEvent): JourneyEvent | null {
     case 'system.concentration_escalated':
     case 'system.concentration_resolved':
     case 'system.concentration_reescalated':
-      // Phase A Loops A/B/C — autonomous tiered-authority audit events. These are
+    // Loop D (blocked-prerequisite, Digital Twin + Knowledge Graph Slice 1) —
+    // same actor, same substrate, same rationale as Loops A/B/C above.
+    case 'system.prerequisite_blocked':
+    case 'system.prerequisite_resolved':
+      // Phase A Loops A/B/C/D — autonomous tiered-authority audit events. These are
       // rendered on the Pulse timeline lenses (student/parent/teacher), NOT as
       // journey cards: the journey shows what the LEARNER did; these describe
       // what the PLATFORM did. The student-facing communication for each
       // transition is the bilingual notification (onRemediation* / onReEngagement*
-      // / onConcentration*), and the daily-queue lane itself is the visible
-      // surface while a Loop A intervention is active.
+      // / onConcentration* / prerequisite_blocked / prerequisite_resolved), and the
+      // daily-queue lane itself is the visible surface while an intervention is active.
       return null;
     case 'learner.concept_check_answered':
       // ADR-004 Phase 2 — high-volume signal (one per /api/tutor/answer call).

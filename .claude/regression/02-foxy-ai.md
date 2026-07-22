@@ -1311,3 +1311,118 @@ math-step-density.ts byte-pinned).
 
 ---
 
+## Master Action Plan Phase 4 — Foxy explorer token/persona fix + Monthly Synthesis fabrication oracle + pre-send gate (2026-07-21/22)
+
+Source: Master Action Plan Phase 4 items 4.1 (Foxy explorer mode token-budget
+fix + dedicated persona directive), 4.2 (Monthly Synthesis parent-summary
+fabrication oracle), 4.5 (Synthesis pre-send fabrication gate).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-302 | `foxy_explorer_budget_and_synthesis_fabrication_gate` | **(4.1) Explorer token/persona fix:** `MODE_MAX_TOKENS.explorer === 3000` (matches learn/explain/revise, no longer silently falling back to the 1024 default via `MODE_MAX_TOKENS[mode] ?? 1024`); every mode this fix touches (practice/learn/explain/revise/explorer) has an explicit `MODE_MAX_TOKENS` entry (`doubt`/`homework`/`olympiad`/`lesson` intentionally still rely on the 1024 default — out of scope for this fix); `MODE_DIRECTIVES.explorer` is a distinct, non-empty persona directive (not aliased to `learn`'s `''` fallback) instructing Socratic-first behavior (ask before telling; direct exposition only once genuinely stuck), progressive "artifact draft" building (key concepts / worked example / student-voice line), 2-4 blocks per turn (not the 5-12 block teach-deeply shape), and preserving P12 grounding/scope rails; composes cleanly with the additive diagram/math-format directive channel (verified against `diagram-directive.test.ts` and `math-format-directive.test.ts`, both updated to expect `MODE_DIRECTIVES[mode] ?? ''` as the base instead of assuming every teaching mode's base is `''`). **(4.2) Monthly Synthesis fabrication oracle** (`packages/lib/src/ai/validation/synthesis-oracle.ts`, runs inline in `/api/synthesis/state`'s lazy-fill, before persistence): number-fabrication check cross-references every numeric token in the generated EN+HI text (Devanagari digits normalised) against every number reachable anywhere in the `SynthesisBundle` (including inside string fields, rounded-percent forms, and monthLabel year/month) — an unbacked number rejects the WHOLE bilingual pair; chapter/topic-name fabrication check (EN only — Hindi has no capitalisation signal) flags a "chapter/topic <Name>" or quoted-phrase citation with zero word-level token overlap against `masteryDelta.chaptersTouched` + `chapterMockSummary.chapters` + the student's own name; word-cap enforcement truncates at the last sentence boundary at/before 300 words (360-word hard ceiling) rather than mid-sentence, and is explicitly NOT re-run as a rejection reason (format only, not a safety concern); on ANY rejection (fabrication, Claude error, or circuit-breaker OPEN) the route falls back to a deterministic bundle-only bilingual template (`buildSynthesisFallbackSummary`) so the student/parent is never left with an empty summary; a 5-failure/60s-reset/half-open-single-probe circuit breaker (matching `parent-report-generator`'s existing pattern) short-circuits repeated Claude failures. **(4.5) Pre-send gate** (`/api/synthesis/parent-share`, immediately before the WhatsApp send call): re-runs the SAME number+topic fabrication checks (word-cap deliberately NOT re-run) as an independent defense-in-depth pass covering rows persisted before the 4.2 oracle existed or via a future bypass path; on failure writes `parent_share_status='flagged'` (never `sent`, never silently dropped) and returns 422 `flagged_for_review`; a clean, bundle-backed summary still passes through and sends normally. **Migration** `20260722098000_monthly_synthesis_flagged_status.sql` is additive-only (`DROP CONSTRAINT IF EXISTS` + `ADD CONSTRAINT`, wrapped in `BEGIN`/`COMMIT`, idempotent on re-run) and widens the existing 5-value `parent_share_status` CHECK (`pending, sent, opted_out, failed, suppressed` — confirmed against the original migration `20260511000000_pedagogy_v2_wave_3_monthly_synthesis.sql`) to add exactly one new value, `flagged`; no RLS change (existing table policies already cover the column), no data migration. **(P13)** both routes log ONLY `rejectionCategory` (a `'fabricated_number' \| 'fabricated_topic'` enum) on any rejection path — never `rejectionReason` (human-readable but still a description, not logged either), never the `unbackedNumbers`/`unbackedPhrases` arrays, and never the student's name (verified by reading `apps/host/src/app/api/synthesis/state/route.ts` and `apps/host/src/app/api/synthesis/parent-share/route.ts` directly, not just the test file). | `apps/host/src/__tests__/api/foxy/explorer-mode-token-budget.test.ts` (10 tests), `apps/host/src/__tests__/lib/ai/validation/synthesis-oracle.test.ts` (49 tests, including a dedicated `P13: rejectionReason never contains the student name` case), `apps/host/src/__tests__/api/synthesis/synthesis-routes.test.ts` (extended — item 4.2 lazy-fill/fallback/circuit-breaker + item 4.5 flagged/clean-pass-through describes), `apps/host/src/__tests__/api/foxy/{diagram-directive,math-format-directive,teach-then-stop-directive}.test.ts` (updated to parameterize on `MODE_DIRECTIVES[mode] ?? ''` instead of assuming an empty base for every teaching mode) | E | P11 (no fabrication reaches a parent), P12 (explorer persona stays grounded/in-scope; token fix stops truncated/degraded Dive turns), P13 (category-only logging, no raw fabricated content or student names), P7 (bilingual EN+HI throughout) |
+
+### Invariants covered by this section
+
+- **No silent token-budget fallback** — every live Foxy mode has an explicit
+  `MODE_MAX_TOKENS` entry; a new mode added to `VALID_MODES` without a
+  matching entry is the exact bug class item 4.1 fixed (explorer silently
+  inheriting 1024 instead of the sibling teaching modes' 3000).
+- **Fabrication is checked, not trusted** — the Monthly Synthesis prompt's own
+  "do not fabricate" instruction is defense-in-depth only; the oracle
+  deterministically cross-checks every number and named chapter/topic mention
+  against the bundle BEFORE persistence, and the pre-send gate re-checks
+  AGAIN immediately before a parent's phone sees it.
+- **Reject-to-template, never reject-to-nothing** — every failure mode
+  (fabrication, Claude timeout/error, circuit open) degrades to a
+  deterministic, bundle-only bilingual template; the parent/student is never
+  shown an empty summary and a flagged pre-send row is never silently
+  dropped nor auto-sent.
+- **P13 category-only logging** — rejection logging carries an enum category
+  and counts at most, never the raw unbacked numbers/phrases or the
+  student's name, on both the generation-time oracle and the pre-send gate.
+
+### Catalog total
+
+Pre-REG-302: 301 entries (through REG-301, Phase 2.2 CBSE-board mock-exam
+remediation). Master Action Plan Phase 4 adds REG-302 (Foxy explorer
+token-budget fix + dedicated persona directive [4.1], Monthly Synthesis
+fabrication oracle — number + chapter/topic checks, word-cap enforcement,
+template fallback, circuit breaker [4.2], and the WhatsApp pre-send
+fabrication re-check gate + `flagged` status [4.5]).
+**Total catalog: 302 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Master Action Plan Phase 8 — Monthly-Synthesis delivery + quality monitoring (2026-07-22) — REG-305
+
+Source: Master Action Plan Phase 8, items 8.4 + 8.6 (the rollout-enablement
+prerequisites before the Phase 5 ramp of Monthly Synthesis, still gated OFF by
+`ff_pedagogy_v2_monthly_synthesis`). Monthly Synthesis delivers a ~300-word
+Claude-authored, parent-facing summary over the `whatsapp-notify`
+`monthly_synthesis` template. Two silent-failure modes get monitoring here:
+
+- **8.4 Delivery** — until the Meta template is approved, EVERY WhatsApp send
+  fails and the run's `parent_share_status` becomes `failed`. The nightly
+  monitor (`/api/cron/synthesis-delivery-monitor`, 04:20 UTC) computes
+  `failure_rate_pct = failed/(sent+failed)*100` over a trailing 24h and emits
+  ONE critical `notifications` ops_event when `failure_rate_pct > 20` AND
+  `attempts >= 5` — matched by the seeded `alert_rules` row 'Monthly synthesis
+  delivery failing' (migration `20260722102100`) → CEO email. The dashboard
+  (`/api/super-admin/synthesis-health` → `/super-admin/synthesis-health`)
+  surfaces the 24h window, a 14d per-day trend, and the last-10 failures.
+- **8.6 Quality** — a nightly LLM-as-judge sampler
+  (`/api/cron/synthesis-quality-sample`, 04:50 UTC) scores sampled
+  `monthly_synthesis_runs` on 4 rubric dimensions (grounding 0.35 /
+  no-fabrication 0.35 / tone 0.20 / CBSE-scope 0.10) via a deterministic
+  fabrication oracle (authoritative on no-fabrication — clamps to 0, also caps
+  grounding at 40) + a Sonnet judge gated by the shared synthesis circuit
+  breaker, and INSERTs into `synthesis_quality_scores` (migration
+  `20260722102000`; RLS + service-role-write / super-admin-read mirroring
+  `foxy_quality_scores` exactly). The dashboard
+  (`/api/super-admin/synthesis-quality` → `/super-admin/synthesis-quality`)
+  shows 7d rolling averages, prior-week drift delta, and the lowest-10 for
+  triage.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-305 | `synthesis_delivery_and_quality_monitoring_p13` | Delivery monitor: `computeRollup` counts by `parent_share_status`, `failure_rate_pct` rounds and is `null` on zero attempts, `breached` iff `>20%` AND `attempts>=5` (19%/100-attempts and 100%/4-attempts both DON'T breach; 21%/5-attempts does); fail-closed CRON_SECRET before DB I/O; the breach ops_event carries `window_hours`/`failure_rate_pct`/`attempts`/`sent`/`failed` COUNTS only; heartbeat recorded on both clean and breach paths (breach detection is a successful run). Quality sampler: anti-join skips already-scored `(synthesis_run_id, rubric_version)`; a judge miss (null / breaker-open / throw) counts `failed` and never aborts the loop or crashes (P12); a duplicate-insert `23505` is a silent skip; only missing `ANTHROPIC_API_KEY` → 503. Quality-eval lib: deterministic oracle clamps `no_fabrication` to 0 and caps `grounding` at 40 on any unbacked number/topic; composite uses the documented weights; `parseSynthesisJudgeJson` rejects malformed judge output. Dashboard APIs: both `super_admin.access`-gated. **P13**: the sampler loads student name+grade SERVER-SIDE only and persists NEITHER; `synthesis_quality_scores` stores scores + a judge note (constrained to a one-sentence lowest-dimension reason, or a deterministic counts-only oracle message) + COUNTS-ONLY `oracle_findings` + `raw_judge_response` (the parsed 4-score rubric, NOT the raw summary) — never the summary body, bundle, phone, or name; `synthesis-health` selects `id/student_id/synthesis_month/parent_share_status/created_at` only (no summary text/bundle); both dashboard pages render truncated IDs, month labels, timestamps, scores, counts, and the judge note — no name/email/phone/summary body — and are fully bilingual (P7). | `apps/host/src/__tests__/api/cron/synthesis-delivery-monitor.test.ts` (8), `apps/host/src/__tests__/api/cron/synthesis-quality-sample.test.ts` (8), `apps/host/src/__tests__/api/super-admin/synthesis-health.test.ts` (4), `apps/host/src/__tests__/lib/ai/validation/synthesis-quality-eval.test.ts` (7); migrations `supabase/migrations/20260722102000_synthesis_quality_scores.sql`, `20260722102100_seed_alert_rule_synthesis_delivery_failure.sql` | E |
+
+### Invariants covered by this section
+
+- P13 data privacy — the parent-facing summary body, the bundle, the parent
+  phone, and the student name never reach a persisted column, an ops_events
+  context, a dashboard API payload, or a rendered dashboard cell. Judge notes
+  are constrained to a score-describing sentence; `oracle_findings` and
+  `raw_judge_response` are counts / the parsed rubric only.
+- P8 — `synthesis_quality_scores` ships RLS in the same migration, service-
+  role-write / super-admin-read, byte-for-byte the `foxy_quality_scores`
+  posture it claims to mirror (verified against the source migration).
+- P9 — both dashboard routes are `super_admin.access`-gated; both crons are
+  fail-closed CRON_SECRET before any DB I/O.
+- P11/P12 — a hard fabrication is a hard fail (deterministic clamp to 0,
+  authoritative over the judge); the judge degrades to `null` (counted
+  `failed`) via the shared circuit breaker instead of crashing the sampler.
+- P7 bilingual — both new super-admin dashboards are fully EN/HI via
+  `AuthContext.isHi`.
+
+### Known gap (documented, not silently dropped)
+
+The `created_at`-keyed 24h cohort in `synthesis-delivery-monitor` is a
+documented monitoring PROXY: `monthly_synthesis_runs` has no explicit
+"delivery attempted at" column, so a run created just before the window edge
+whose share is attempted just after could land in an adjacent bucket. This is
+acknowledged inline in the route and is an architect-owned schema change
+(adding a status-change timestamp) deliberately out of Phase 8 scope — not a
+test gap.
+
+### Catalog total
+
+Pre-REG-305: 304 entries (through REG-304, the Phase 8 adaptive-loops
+monitoring gate). Master Action Plan Phase 8 adds REG-305 (Monthly-Synthesis
+delivery-failure monitor [8.4] + LLM-as-judge quality sampler [8.6] + both
+super-admin dashboards + the `synthesis_quality_scores` table and delivery
+alert rule).
+**Total catalog: 305 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

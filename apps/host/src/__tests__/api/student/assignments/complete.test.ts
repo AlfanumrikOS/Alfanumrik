@@ -160,6 +160,35 @@ describe('POST /api/student/assignments/[id]/complete', () => {
     expect(body).toEqual({ success: true, status: 'already_graded' });
   });
 
+  it('max_attempts_reached → 409 (item 3.8)', async () => {
+    holders.mockAuthorize.mockResolvedValue(authOk());
+    holders.mockComplete.mockResolvedValue({ ok: false, reason: 'max_attempts_reached' });
+    const res = await POST(req(), ctx());
+    expect(res.status).toBe(409);
+  });
+
+  it('submission_closed → 409 (item 3.9 — past due, allow_late_submission=false)', async () => {
+    holders.mockAuthorize.mockResolvedValue(authOk());
+    holders.mockComplete.mockResolvedValue({ ok: false, reason: 'submission_closed' });
+    const res = await POST(req(), ctx());
+    expect(res.status).toBe(409);
+  });
+
+  it('happy path threads attemptNumber/bestScorePercent/isLateSubmission through to the response', async () => {
+    holders.mockAuthorize.mockResolvedValue(authOk());
+    holders.mockComplete.mockResolvedValue({
+      ok: true, submissionId: 'sub-1', status: 'submitted', scorePercent: 80,
+      attemptNumber: 2, bestScorePercent: 90, isLateSubmission: true,
+    });
+    const res = await POST(req(), ctx());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({
+      success: true, status: 'submitted', submissionId: 'sub-1', scorePercent: 80,
+      attemptNumber: 2, bestScorePercent: 90, isLateSubmission: true,
+    });
+  });
+
   it('db_error → 500', async () => {
     holders.mockAuthorize.mockResolvedValue(authOk());
     holders.mockComplete.mockResolvedValue({ ok: false, reason: 'db_error', message: 'boom' });

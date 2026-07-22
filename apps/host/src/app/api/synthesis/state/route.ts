@@ -31,6 +31,17 @@ import {
 import type { SynthesisBundle } from '@alfanumrik/lib/learn/monthly-synthesis-orchestrator';
 import { callClaude } from '@alfanumrik/lib/ai/clients/claude';
 import { logger } from '@alfanumrik/lib/logger';
+// Item 4.2 (2026-07-21) — fabrication oracle + word-cap enforcement + template
+// fallback + circuit breaker, ALL of which must run before any Claude-generated
+// text reaches `monthly_synthesis_runs`. See synthesis-oracle.ts header for the
+// full rationale; this route only WIRES the module in — all decision logic
+// (reject-vs-regenerate, truncate-vs-reject, circuit-breaker thresholds) lives
+// there so it stays unit-testable without booting this route.
+import {
+  validateSynthesisSummary,
+  buildSynthesisFallbackSummary,
+  synthesisClaudeCircuitBreaker,
+} from '@alfanumrik/lib/ai/validation/synthesis-oracle';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +51,10 @@ interface SynthesisRow {
   bundle: SynthesisBundle;
   summaryTextEn: string;
   summaryTextHi: string;
-  parentShareStatus: 'pending' | 'sent' | 'opted_out' | 'failed' | 'suppressed';
+  // 'flagged' added by item 4.5 (2026-07-21) — the pre-send fabrication gate
+  // in /api/synthesis/parent-share writes this instead of sending/dropping a
+  // summary that fails a defense-in-depth fabrication re-check.
+  parentShareStatus: 'pending' | 'sent' | 'opted_out' | 'failed' | 'suppressed' | 'flagged';
   parentShareSentAt: string | null;
   createdAt: string;
 }
@@ -107,49 +121,109 @@ export async function GET(_request: Request) {
   let summaryTextHi = row.summary_text_hi;
 
   // Lazy-fill: if the builder Edge Function inserted with empty summaries,
-  // generate them now via Claude + persist via the admin client.
+  // generate them now via Claude, run the item-4.2 oracle (fabrication +
+  // word-cap) BEFORE persistence, and fall back to a deterministic
+  // bundle-only template on ANY failure (circuit open, Claude error, or
+  // oracle rejection) so the student/parent is NEVER left with an empty
+  // summary. `usedFallback` is tracked only for the warn-log below (P13:
+  // counts/categories only, never the generated text or student name).
   if (summaryTextEn.trim().length === 0) {
-    try {
-      const systemPrompt = buildSynthesisSummaryPrompt({
-        studentName: String(studentRow.name ?? 'Student'),
-        studentGrade: String(studentRow.grade ?? ''),
-        bundle: row.bundle,
-        language: 'both',
-      });
-      const claudeResp = await callClaude({
-        systemPrompt,
-        messages: [{ role: 'user', content: 'Generate the bilingual monthly summary as instructed.' }],
-        maxTokens: 800,
-        temperature: 0.4,
-        timeoutMs: 20_000,
-      });
-      const replyText = claudeResp.content ?? '';
-      const parsed = parseSynthesisSummaryReply(replyText);
-      summaryTextEn = parsed.textEn;
-      summaryTextHi = parsed.textHi;
+    const studentNameForPrompt = String(studentRow.name ?? 'Student');
+    let usedFallback = false;
+    let fallbackReason: 'circuit_open' | 'claude_error' | 'oracle_rejected' | null = null;
 
-      // Persist the filled summary via service-role (no UPDATE RLS policy
-      // on monthly_synthesis_runs for end users).
-      const { error: updateErr } = await supabaseAdmin
-        .from('monthly_synthesis_runs')
-        .update({
-          summary_text_en: summaryTextEn,
-          summary_text_hi: summaryTextHi,
-        })
-        .eq('id', row.id);
-      if (updateErr) {
-        logger.warn('synthesis/state: lazy-fill update failed', {
-          userId, rowId: row.id, error: updateErr.message,
+    if (!synthesisClaudeCircuitBreaker.canRequest()) {
+      usedFallback = true;
+      fallbackReason = 'circuit_open';
+    } else {
+      try {
+        const systemPrompt = buildSynthesisSummaryPrompt({
+          studentName: studentNameForPrompt,
+          studentGrade: String(studentRow.grade ?? ''),
+          bundle: row.bundle,
+          language: 'both',
         });
-        // Continue — the user still gets the freshly generated text in this response.
+        const claudeResp = await callClaude({
+          systemPrompt,
+          messages: [{ role: 'user', content: 'Generate the bilingual monthly summary as instructed.' }],
+          maxTokens: 800,
+          temperature: 0.4,
+          timeoutMs: 20_000,
+        });
+        synthesisClaudeCircuitBreaker.recordSuccess();
+        const replyText = claudeResp.content ?? '';
+        const parsed = parseSynthesisSummaryReply(replyText);
+
+        // Item 4.2 oracle — fabrication check (numbers + chapter/topic names
+        // cross-checked against the bundle) THEN word-cap enforcement.
+        // Rejects straight to the template fallback (no in-request retry —
+        // see the DECISION comment on validateSynthesisSummary for why).
+        const verdict = validateSynthesisSummary({
+          textEn: parsed.textEn,
+          textHi: parsed.textHi,
+          bundle: row.bundle,
+          studentName: studentNameForPrompt,
+          studentGrade: String(studentRow.grade ?? ''),
+        });
+
+        if (verdict.ok) {
+          summaryTextEn = verdict.textEn;
+          summaryTextHi = verdict.textHi;
+          if (verdict.wasTruncatedEn || verdict.wasTruncatedHi) {
+            logger.info('synthesis/state: oracle truncated over-length summary', {
+              rowId: row.id,
+              truncatedEn: verdict.wasTruncatedEn,
+              truncatedHi: verdict.wasTruncatedHi,
+            });
+          }
+        } else {
+          usedFallback = true;
+          fallbackReason = 'oracle_rejected';
+          // P13: log ONLY the rejection category — never rejectionReason's
+          // unbacked numbers/phrases and never the generated text/student name.
+          logger.warn('synthesis/state: oracle rejected generated summary', {
+            rowId: row.id,
+            rejectionCategory: verdict.rejectionCategory,
+          });
+        }
+      } catch (e) {
+        synthesisClaudeCircuitBreaker.recordFailure();
+        usedFallback = true;
+        fallbackReason = 'claude_error';
+        logger.warn('synthesis/state: lazy-fill claude call failed', {
+          userId, rowId: row.id, error: e instanceof Error ? e.message : String(e),
+        });
       }
-    } catch (e) {
-      logger.warn('synthesis/state: lazy-fill claude call failed', {
-        userId, rowId: row.id, error: e instanceof Error ? e.message : String(e),
+    }
+
+    if (usedFallback) {
+      const fallback = buildSynthesisFallbackSummary({
+        studentName: studentNameForPrompt,
+        bundle: row.bundle,
       });
-      // Surface a soft fallback so the page still renders the bundle without crashing.
-      summaryTextEn = '';
-      summaryTextHi = '';
+      summaryTextEn = fallback.textEn;
+      summaryTextHi = fallback.textHi;
+      logger.info('synthesis/state: served template fallback summary', {
+        rowId: row.id, reason: fallbackReason,
+      });
+    }
+
+    // Persist the filled summary (Claude+oracle-approved OR template
+    // fallback — either way NEVER empty) via service-role (no UPDATE RLS
+    // policy on monthly_synthesis_runs for end users).
+    const { error: updateErr } = await supabaseAdmin
+      .from('monthly_synthesis_runs')
+      .update({
+        summary_text_en: summaryTextEn,
+        summary_text_hi: summaryTextHi,
+      })
+      .eq('id', row.id);
+    if (updateErr) {
+      logger.warn('synthesis/state: lazy-fill update failed', {
+        userId, rowId: row.id, error: updateErr.message,
+      });
+      // Continue — the user still gets the freshly generated/fallback text
+      // in this response even if the persistence write failed.
     }
   }
 

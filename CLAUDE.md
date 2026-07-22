@@ -85,7 +85,7 @@ supabase migration new <name>                            # Create new migration
 
 **Database migrations**: `supabase/migrations/` ordered by timestamp. Every new table must have RLS enabled and policies in the same migration file.
 
-**Route redirect**: `/quiz` redirects to `/foxy` (configured in `next.config.js`).
+**`/quiz` route**: `/quiz` is a live, heavily-linked page (quiz orchestrator) — it does NOT redirect. `next.config.js`'s `headers()` includes `/quiz` in a shared route group that gets a `Cache-Control: public, max-age=60, stale-while-revalidate=300` header; there is no redirect entry for `/quiz` in `next.config.js`'s `redirects()`.
 
 **Sentry tunnel**: Client errors route through `/monitoring` to bypass ad-blockers (configured in `next.config.js` Sentry options).
 

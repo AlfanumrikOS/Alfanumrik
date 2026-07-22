@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/experience_provider.dart';
+import 'notification_badge.dart';
 
 /// Bottom navigation shell — wraps all main screens.
 /// Uses indexed stack pattern for fast tab switching (no rebuilds).
@@ -115,7 +116,7 @@ class AppShell extends ConsumerWidget {
                         .toList(growable: false),
                   ),
                   const VerticalDivider(width: 1),
-                  Expanded(child: child),
+                  Expanded(child: _withNotificationBell(context, child)),
                 ],
               ),
             ),
@@ -123,7 +124,7 @@ class AppShell extends ConsumerWidget {
         }
 
         return Scaffold(
-          body: child,
+          body: _withNotificationBell(context, child),
           bottomNavigationBar: Container(
             decoration: const BoxDecoration(
               color: AppColors.surface,
@@ -199,4 +200,52 @@ class _Tab {
   final IconData icon;
 
   const _Tab(this.path, this.label, this.activeIcon, this.icon);
+}
+
+/// Overlays a small notification-bell button (with unread badge) on the
+/// top-right of [content], safe-area aware. The empty region of the overlay
+/// SafeArea/Align is transparent to hit-testing, so it never blocks taps on
+/// [content] underneath — only the bell itself is interactive.
+Widget _withNotificationBell(BuildContext context, Widget content) {
+  return Stack(
+    children: [
+      content,
+      SafeArea(
+        child: Align(
+          alignment: Alignment.topRight,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8, right: 12),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () => context.push('/notifications'),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const NotificationBadge(
+                    child: Icon(
+                      Icons.notifications_outlined,
+                      size: 20,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
 }

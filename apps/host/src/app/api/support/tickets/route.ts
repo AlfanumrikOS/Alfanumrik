@@ -41,6 +41,10 @@ import { listChildrenForGuardian } from '@alfanumrik/lib/domains/relationship';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { checkRateLimit, type RateLimitStore } from '@alfanumrik/lib/rate-limiter';
+import {
+  SUPPORT_TICKET_CATEGORIES,
+  validateTicketReference,
+} from '@alfanumrik/lib/support/ticket-categories';
 
 /**
  * Authorize a support-ticket request. Tries 'foxy.chat' (student/teacher),
@@ -83,14 +87,20 @@ const TICKET_RATE_LIMIT = 5;
 const TICKET_RATE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // ── Body schema ───────────────────────────────────────────────────────
-const ALLOWED_CATEGORIES = ['bug', 'billing', 'content', 'account', 'other'] as const;
+// Categories are the single source of truth in
+// @alfanumrik/lib/support/ticket-categories. Two of them
+// (automated_escalation_dispute, synthesis_content_concern) additionally
+// require a structured trigger-record reference — enforced below, after parse.
 const ALLOWED_PRIORITIES = ['low', 'normal', 'high'] as const;
 
 const ticketCreateSchema = z.object({
   subject: z.string().min(1).max(200),
   description: z.string().min(1).max(5000),
-  category: z.enum(ALLOWED_CATEGORIES).optional(),
+  category: z.enum(SUPPORT_TICKET_CATEGORIES).optional(),
   priority: z.enum(ALLOWED_PRIORITIES).optional(),
+  // Optional at the schema layer; REQUIRED for the two escalation/synthesis
+  // dispute categories (see validateTicketReference below). ID only (P13).
+  related_entity_id: z.string().uuid().optional(),
 });
 
 function err(message: string, status: number, code?: string) {
@@ -152,7 +162,17 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  const { subject, description, category, priority } = parsed.data;
+  const { subject, description, category, priority, related_entity_id } = parsed.data;
+  const effectiveCategory = category ?? 'other';
+
+  // 3b. Reference gate — automated_escalation_dispute / synthesis_content_concern
+  //     MUST carry the id of the exact trigger record so support can pull it.
+  //     The entity type is derived server-side from the category (never trusted
+  //     from the client), so type + id can't be mismatched. ID only — no PII (P13).
+  const refCheck = validateTicketReference(effectiveCategory, related_entity_id ?? null);
+  if (!refCheck.ok) {
+    return err(refCheck.error, 400, 'REFERENCE_REQUIRED');
+  }
 
   // 4. Resolve the anchor student_id + role.
   //    - student: auth.studentId (their own record)
@@ -180,12 +200,15 @@ export async function POST(request: NextRequest) {
     student_id: anchorStudentId, // student-self, parent's linked child, or null (teacher)
     email: 'authenticated@redacted', // PII redacted from logs (P13)
     user_role: userRole,
-    category: category ?? 'other',
+    category: effectiveCategory,
     priority: priority ?? 'normal',
     subject: subject.trim().slice(0, 200),
     message: description.trim().slice(0, 5000),
     status: 'open',
     device_info: ua.slice(0, 200),
+    // Structured trigger-record reference (null for ordinary tickets). ID only (P13).
+    related_entity_type: refCheck.relatedEntityType,
+    related_entity_id: refCheck.relatedEntityId,
   };
 
   const { data, error } = await supabaseAdmin
@@ -218,6 +241,9 @@ export async function POST(request: NextRequest) {
       role: insertRow.user_role,
       category: insertRow.category,
       priority: insertRow.priority,
+      // Trigger-record reference for escalation/synthesis disputes (ids only).
+      related_entity_type: refCheck.relatedEntityType,
+      related_entity_id: refCheck.relatedEntityId,
     },
     requestId: request.headers.get('x-request-id') ?? undefined,
   });

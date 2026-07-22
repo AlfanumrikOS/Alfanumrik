@@ -604,6 +604,34 @@ export const SystemConcentrationReescalatedSchema = EventBaseSchema.extend({
   }),
 })
 
+// ── System — Loop D (blocked-prerequisite, Digital Twin + Knowledge Graph
+// Slice 1) ─────────────────────────────────────────────────────────────
+// Same actor + adaptive_interventions substrate as Loops A/B/C. Gated by
+// ff_digital_twin_v1. Payloads are UUIDs + subject codes + chapter numbers +
+// a bounded reason enum only — no PII (P13).
+
+export const SystemPrerequisiteBlockedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.prerequisite_blocked'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    dependentChapterNumber: z.number().int().positive(),
+    prerequisiteChapterNumber: z.number().int().positive(),
+    reason: z.enum(['mastery', 'decay', 'both']),
+  }),
+})
+
+export const SystemPrerequisiteResolvedSchema = EventBaseSchema.extend({
+  kind: z.literal('system.prerequisite_resolved'),
+  payload: z.object({
+    interventionId: uuidLike(),
+    subjectCode: z.string(),
+    dependentChapterNumber: z.number().int().positive(),
+    prerequisiteChapterNumber: z.number().int().positive(),
+    daysToResolve: z.number().int().nonnegative(),
+  }),
+})
+
 // ── Mesh (autonomous improvement) events ─────────────────────────────
 
 export const MeshCycleCompletedSchema = EventBaseSchema.extend({
@@ -669,6 +697,8 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   SystemConcentrationEscalatedSchema,
   SystemConcentrationResolvedSchema,
   SystemConcentrationReescalatedSchema,
+  SystemPrerequisiteBlockedSchema,
+  SystemPrerequisiteResolvedSchema,
   MeshCycleCompletedSchema,
 ])
 
@@ -719,5 +749,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'system.concentration_escalated',
   'system.concentration_resolved',
   'system.concentration_reescalated',
+  'system.prerequisite_blocked',
+  'system.prerequisite_resolved',
   'mesh.cycle_completed',
 ] as const

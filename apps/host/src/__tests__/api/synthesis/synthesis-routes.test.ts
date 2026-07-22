@@ -173,6 +173,12 @@ vi.stubGlobal('fetch', (...args: unknown[]) => holders.mockFetch(...args));
 // ── lazy imports after mocks are in place ────────────────────────────────────
 import { GET } from '@/app/api/synthesis/state/route';
 import { POST } from '@/app/api/synthesis/parent-share/route';
+// Item 4.2/4.5 (2026-07-21): the real (unmocked) oracle module. Its pure
+// fabrication/word-cap/fallback/circuit-breaker logic is exercised for real
+// through these routes — only `synthesisClaudeCircuitBreaker` needs a reset
+// between tests since it is a module-level singleton shared across every
+// `it()` in this file (see beforeEach below).
+import { synthesisClaudeCircuitBreaker } from '@alfanumrik/lib/ai/validation/synthesis-oracle';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 const USER_ID   = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
@@ -256,6 +262,10 @@ describe('GET /api/synthesis/state', () => {
     holders.mockCallClaude.mockResolvedValue({
       content: 'EN: Great month!\nHI: बहुत अच्छा महीना!',
     });
+    // Reset the real (unmocked) circuit-breaker singleton so a failure
+    // recorded by one test can never leak into (and skip the Claude call
+    // for) a later test in this file.
+    synthesisClaudeCircuitBreaker.recordSuccess();
   });
 
   it('returns 401 when not authenticated', async () => {
@@ -403,21 +413,84 @@ describe('GET /api/synthesis/state', () => {
     );
   });
 
-  it('returns empty summary strings and still renders when callClaude fails', async () => {
+  it('item 4.2: falls back to a deterministic template (never empty) when callClaude fails', async () => {
     authedAs(USER_ID);
     flagOn();
     holders.studentRow = { id: STUDENT_ID, name: 'Asha', grade: '9' };
     holders.synthesisRow = SYNTHESIS_ROW_EMPTY_SUMMARY;
     holders.mockCallClaude.mockRejectedValue(new Error('Claude timeout'));
 
+    const mockEq = vi.fn().mockResolvedValue({ error: null });
+    const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq });
+    holders.adminFromMock.mockReturnValue({ update: mockUpdate });
+
     const res = await GET(makeGetRequest());
     // Route falls back gracefully — still 200
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.state).toBe('ready');
-    // Fallback: summaryTextEn and summaryTextHi become '' (soft fallback)
-    expect(body.row.summaryTextEn).toBe('');
-    expect(body.row.summaryTextHi).toBe('');
+    // Item 4.2: the student/parent must NEVER see an empty summary — the
+    // deterministic bundle-only template fills in instead of ''.
+    expect(body.row.summaryTextEn).not.toBe('');
+    expect(body.row.summaryTextHi).not.toBe('');
+    expect(body.row.summaryTextEn).toContain('Asha');
+    // The fallback template is persisted too, not just returned in-response.
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary_text_en: expect.stringContaining('Asha'),
+      }),
+    );
+  });
+
+  it('item 4.2: falls back to the template (never empty) when the oracle rejects a fabricated number', async () => {
+    authedAs(USER_ID);
+    flagOn();
+    holders.studentRow = { id: STUDENT_ID, name: 'Asha', grade: '9' };
+    holders.synthesisRow = SYNTHESIS_ROW_EMPTY_SUMMARY;
+    // A number ("47") with no basis anywhere in the bundle ({ topicsReviewed: 3 }).
+    const { parseSynthesisSummaryReply } = await import('@alfanumrik/lib/ai/workflows/synthesis-summary');
+    (parseSynthesisSummaryReply as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      textEn: 'Asha mastered 47 new topics this month!',
+      textHi: 'आशा ने इस महीने 47 नए विषयों में महारत हासिल की!',
+    });
+
+    const mockEq = vi.fn().mockResolvedValue({ error: null });
+    const mockUpdate = vi.fn().mockReturnValue({ eq: mockEq });
+    holders.adminFromMock.mockReturnValue({ update: mockUpdate });
+
+    const res = await GET(makeGetRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The fabricated "47" must NEVER reach the response.
+    expect(body.row.summaryTextEn).not.toContain('47');
+    expect(body.row.summaryTextEn).not.toBe('');
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary_text_en: expect.not.stringContaining('47'),
+      }),
+    );
+  });
+
+  it('item 4.2: circuit breaker OPEN skips the Claude call entirely and serves the template', async () => {
+    authedAs(USER_ID);
+    flagOn();
+    holders.studentRow = { id: STUDENT_ID, name: 'Asha', grade: '9' };
+    holders.synthesisRow = SYNTHESIS_ROW_EMPTY_SUMMARY;
+    holders.adminFromMock.mockReturnValue({
+      update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+    });
+
+    // Trip the breaker directly (5 failures — SYNTHESIS_CB_FAILURE_THRESHOLD).
+    for (let i = 0; i < 5; i++) synthesisClaudeCircuitBreaker.recordFailure();
+    expect(synthesisClaudeCircuitBreaker.canRequest()).toBe(false);
+
+    const res = await GET(makeGetRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.row.summaryTextEn).not.toBe('');
+    expect(body.row.summaryTextEn).toContain('Asha');
+    // Claude was never called — the breaker short-circuited before the call.
+    expect(holders.mockCallClaude).not.toHaveBeenCalled();
   });
 });
 
@@ -623,6 +696,71 @@ describe('POST /api/synthesis/parent-share', () => {
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error).toBe('no_linked_guardian');
+  });
+
+  // ── Item 4.5 (2026-07-21): pre-send fabrication gate ──────────────────────
+  it('item 4.5: flags (never sends) a summary with a fabricated number, and writes parent_share_status=flagged', async () => {
+    authedAs(USER_ID);
+    flagOn();
+    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    const rowWithFabrication = {
+      ...SYNTHESIS_WITH_STUDENT,
+      bundle: { monthLabel: '2026-06', weeklyArtifactIds: [], masteryDelta: { chaptersTouched: [], topicsMastered: 0, topicsImproved: 0, topicsRegressed: 0 }, chapterMockSummary: null },
+      summary_text_en: 'Asha completed 999 quizzes this month!',
+    };
+    holders.adminFromMock.mockImplementation((table: string) => {
+      if (table === 'monthly_synthesis_runs') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: rowWithFabrication, error: null }) }) }),
+          update: mockUpdate,
+        };
+      }
+      if (table === 'guardian_student_links') {
+        return { select: () => ({ eq: () => ({ in: () => ({ limit: () => Promise.resolve({ data: [{ guardian_id: GUARDIAN_ID }], error: null }) }) }) }) };
+      }
+      if (table === 'guardians') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({
+                data: { id: GUARDIAN_ID, phone: GUARDIAN_PHONE, preferred_language: 'en', monthly_synthesis_optin: true },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return { update: () => ({ eq: () => Promise.resolve({ error: null }) }) };
+    });
+
+    const res = await POST(makePostRequest({ synthesisRunId: ROW_ID }));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error).toBe('flagged_for_review');
+    expect(mockUpdate).toHaveBeenCalledWith({ parent_share_status: 'flagged' });
+    // The WhatsApp send must NEVER have been attempted.
+    expect(holders.mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('item 4.5: a clean, bundle-backed summary passes the pre-send gate and still sends', async () => {
+    authedAs(USER_ID);
+    flagOn();
+    buildAdminFrom({
+      synthesisData: {
+        ...SYNTHESIS_WITH_STUDENT,
+        bundle: { monthLabel: '2026-06', weeklyArtifactIds: [], masteryDelta: { chaptersTouched: ['Motion'], topicsMastered: 2, topicsImproved: 1, topicsRegressed: 0 }, chapterMockSummary: null },
+        summary_text_en: 'Asha mastered 2 topics in Motion this month.',
+      },
+    });
+    holders.mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ whatsapp_id: 'wa-msg-002' }),
+      text: () => Promise.resolve(''),
+    });
+    const res = await POST(makePostRequest({ synthesisRunId: ROW_ID }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
   });
 
   it('returns 403 and updates status to opted_out when guardian has opted out', async () => {

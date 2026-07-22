@@ -15,9 +15,14 @@
  *
  * Query params (all optional):
  *   exam_family  — jee_main | jee_advanced | neet | olympiad_* | cbse_board
- *   subject      — physics | chemistry | math | biology (intersects subject_scope[])
- *   grade        — '11' | '12' (string per P5; passed through for FE context only —
- *                  exam_papers itself has no grade column)
+ *   subject      — one of the 16 CBSE catalog codes (intersects subject_scope[]) —
+ *                  math, science, english, hindi, social_studies, physics,
+ *                  chemistry, biology, economics, accountancy, business_studies,
+ *                  political_science, history_sr, geography, computer_science, coding
+ *   grade        — '6'..'12' (string per P5). Filters exam_papers.grade
+ *                  (added by 20260722096000) — only cbse_board rows have a
+ *                  non-NULL grade, so this naturally scopes results to the
+ *                  CBSE-board template catalog when supplied.
  *   limit        — 1..50, default 20
  *
  * Response shape:
@@ -60,7 +65,35 @@ const VALID_EXAM_FAMILIES = new Set([
   'ntse',
 ]);
 
-const VALID_SUBJECTS = new Set(['physics', 'chemistry', 'math', 'biology']);
+// Phase 2.2 remediation: widened from the original 4-code JEE-only set
+// (physics, chemistry, math, biology) to the 16-code CBSE catalog so the
+// catalog can filter cbse_board papers by subject too (previously only the
+// competitive-exam subjects were queryable). This is the exact union of
+// the two subject lists cross-joined in
+// 20260722096200_cbse_board_exam_papers_grade_subject_matrix_seed.sql
+// (grades 6-10's 5-subject list + grades 11-12's 13-subject list, minus the
+// 2 subjects — math, english — that appear in both). The assessment spec
+// that requested this change said "18-code" in prose but enumerated only
+// these 16 codes; the 16-code list is what the seed migration actually
+// uses, so it — not the "18" in prose — is the source of truth here.
+const VALID_SUBJECTS = new Set([
+  'math',
+  'science',
+  'english',
+  'hindi',
+  'social_studies',
+  'physics',
+  'chemistry',
+  'biology',
+  'economics',
+  'accountancy',
+  'business_studies',
+  'political_science',
+  'history_sr',
+  'geography',
+  'computer_science',
+  'coding',
+]);
 const VALID_GRADES = new Set(['6', '7', '8', '9', '10', '11', '12']);
 
 const FF_COMPETITIVE_EXAMS = 'ff_competitive_exams_v1';
@@ -92,8 +125,10 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
-    // P5: grades are strings. We don't filter on it here (exam_papers has no
-    // grade column) but we still validate so the FE context value is sane.
+    // P5: grades are strings. exam_papers.grade (added by
+    // 20260722096000_exam_papers_add_grade_column.sql) is now a real,
+    // filterable column — see the query build below. Still validated here
+    // regardless (fail fast on a malformed value before hitting the DB).
     if (gradeParam !== null && !VALID_GRADES.has(gradeParam)) {
       return NextResponse.json(
         { success: false, error: 'invalid_grade' },
@@ -129,7 +164,7 @@ export async function GET(request: NextRequest) {
     let query = supabaseAdmin
       .from('exam_papers')
       .select(
-        'id, paper_code, exam_family, exam_session, paper_pattern, exam_year, exam_month, shift, subject_scope, total_questions, total_marks, duration_minutes, marking_scheme, source_url, source_attribution',
+        'id, paper_code, exam_family, exam_session, paper_pattern, exam_year, exam_month, shift, grade, subject_scope, total_questions, total_marks, duration_minutes, marking_scheme, source_url, source_attribution',
       )
       .eq('is_active', true);
 
@@ -141,6 +176,16 @@ export async function GET(request: NextRequest) {
     // the catalog's locked-card UX (frontend never received locked papers to render
     // with the upgrade CTA). The detail route still enforces HTTP 402 row-by-row, so
     // returning all papers in the catalog is safe; the runner is the security boundary.
+
+    // Phase 2.2 remediation: grade is now a real, filterable column
+    // (20260722096000). Only cbse_board template rows populate it — every
+    // other exam_family row keeps grade = NULL, so filtering by grade
+    // naturally excludes all non-cbse_board papers, which is the expected
+    // behavior for a CBSE-grade-scoped query. Callers who want the mixed
+    // catalog (JEE/NEET/Olympiad included) should omit the grade param.
+    if (gradeParam) {
+      query = query.eq('grade', gradeParam);
+    }
 
     if (subjectParam) {
       // subject_scope is a text[] column. Postgrest's `contains` (`cs`)

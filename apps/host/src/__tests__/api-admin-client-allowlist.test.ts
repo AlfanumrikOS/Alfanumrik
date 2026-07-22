@@ -181,7 +181,25 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // (protected-flags.ts) — no user session exists on a scheduled invocation.
 // Fail-closed CRON_SECRET gate (constant-time compare) runs BEFORE any DB
 // I/O; output is counts/flag-names-only (no PII, no operator identity).
-const EXPECTED_COUNT = 255;
+// Phase 2.2 mock-exam remediation (2026-07-21): 255 -> 256 for the new
+// route src/app/api/exams/papers/[id]/start/route.ts. Service-role is
+// justified by the same pattern as its siblings [id]/route.ts,
+// [id]/submit/route.ts, and papers/route.ts: it calls the
+// `start_mock_test_attempt` SECURITY DEFINER RPC and writes a new
+// mock_test_attempts row on behalf of the student for the cbse_board
+// dynamic-assembly flow. Subject to the same exam.view authorizeRequest()
+// gate as the sibling routes.
+// Phase 8 monitoring routes (2026-07-22): 256 -> 263 for 7 new routes, all
+// service-role-justified as cron (no user session) or super-admin-by-design
+// (cross-student aggregate reads):
+//   src/app/api/cron/adaptive-loops-monitor/route.ts,
+//   src/app/api/cron/synthesis-delivery-monitor/route.ts,
+//   src/app/api/cron/synthesis-quality-sample/route.ts,
+//   src/app/api/super-admin/adaptive-loops/route.ts,
+//   src/app/api/super-admin/ai/irt-readiness/route.ts,
+//   src/app/api/super-admin/synthesis-health/route.ts,
+//   src/app/api/super-admin/synthesis-quality/route.ts.
+const EXPECTED_COUNT = 263;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -256,7 +274,7 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 255 (drift in either direction trips a guard above)', () => {
+  it('pins the admin-client route count at exactly 263 (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);

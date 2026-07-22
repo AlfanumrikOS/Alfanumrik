@@ -405,6 +405,133 @@ describe('GET /api/exams/papers', () => {
     // No assertion on count because we only have 2 seeded rows, but the
     // route must not 500/400.
   });
+
+  // ── Phase 2.2 remediation: widened VALID_SUBJECTS + grade filtering ─────
+
+  it('accepts a CBSE-catalog subject that was previously rejected (e.g. social_studies)', async () => {
+    setAuthorized();
+    setFlag(true);
+    seedDefaultPapers();
+    const res = await listGET(makeListRequest('subject=social_studies'));
+    expect(res.status).toBe(200);
+  });
+
+  it('still rejects an unknown subject with 400', async () => {
+    setAuthorized();
+    const res = await listGET(makeListRequest('subject=not_a_real_subject'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_subject');
+  });
+
+  it('filters by grade when the exam_papers rows have a grade column', async () => {
+    setAuthorized();
+    setFlag(true);
+    state.exam_papers = [
+      {
+        id: CBSE_PAPER_ID,
+        paper_code: 'cbse_board_g9_math_v1',
+        exam_family: 'cbse_board',
+        grade: '9',
+        subject_scope: ['math'],
+        is_active: true,
+        total_questions: 39,
+        total_marks: 80,
+        duration_minutes: 180,
+        marking_scheme: { correct: null, wrong: 0, unanswered: 0 },
+      },
+      {
+        id: JEE_PAPER_ID,
+        paper_code: 'cbse_board_g10_math_v1',
+        exam_family: 'cbse_board',
+        grade: '10',
+        subject_scope: ['math'],
+        is_active: true,
+        total_questions: 39,
+        total_marks: 80,
+        duration_minutes: 180,
+        marking_scheme: { correct: null, wrong: 0, unanswered: 0 },
+      },
+    ];
+    const res = await listGET(makeListRequest('grade=9'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.papers).toHaveLength(1);
+    expect(body.papers[0].id).toBe(CBSE_PAPER_ID);
+  });
+
+  it('still rejects an invalid grade with 400', async () => {
+    setAuthorized();
+    const res = await listGET(makeListRequest('grade=13'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_grade');
+  });
+
+  // ── Phase 2.2 follow-up: legacy multi-subject sample paper deactivation ──
+  // (migration 20260722097200_deactivate_legacy_cbse_multisubject_sample_paper.sql
+  // sets is_active=false on paper_code='sample_cbse_class12_general_v1' so it
+  // stops routing through the new dynamic-assembly /start path, which 500s
+  // for any paper whose subject_scope length !== 1.)
+
+  it('excludes a deactivated (is_active=false) paper from the catalog', async () => {
+    setAuthorized();
+    setFlag(true);
+    const LEGACY_ID = '55555555-5555-4555-a555-555555555555';
+    state.exam_papers = [
+      {
+        id: LEGACY_ID,
+        paper_code: 'sample_cbse_class12_general_v1',
+        exam_family: 'cbse_board',
+        grade: null,
+        subject_scope: ['physics', 'chemistry', 'biology', 'math'],
+        is_active: false,
+        total_questions: 30,
+        total_marks: 120,
+        duration_minutes: 180,
+        marking_scheme: { correct: 4, wrong: -1, unanswered: 0 },
+      },
+      {
+        id: CBSE_PAPER_ID,
+        paper_code: 'cbse_board_g12_physics_v1',
+        exam_family: 'cbse_board',
+        grade: '12',
+        subject_scope: ['physics'],
+        is_active: true,
+        total_questions: 39,
+        total_marks: 80,
+        duration_minutes: 180,
+        marking_scheme: { correct: null, wrong: 0, unanswered: 0 },
+      },
+    ];
+    const res = await listGET(makeListRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const codes = body.papers.map((p: { paper_code: string }) => p.paper_code);
+    expect(codes).not.toContain('sample_cbse_class12_general_v1');
+    expect(codes).toContain('cbse_board_g12_physics_v1');
+  });
+
+  it('404s the detail route for a deactivated paper id (no dangling reference)', async () => {
+    setAuthorized();
+    setFlag(true);
+    const LEGACY_ID = '55555555-5555-4555-a555-555555555555';
+    state.exam_papers = [
+      {
+        id: LEGACY_ID,
+        paper_code: 'sample_cbse_class12_general_v1',
+        exam_family: 'cbse_board',
+        grade: null,
+        subject_scope: ['physics', 'chemistry', 'biology', 'math'],
+        is_active: false,
+        total_questions: 30,
+        total_marks: 120,
+        duration_minutes: 180,
+        marking_scheme: { correct: 4, wrong: -1, unanswered: 0 },
+      },
+    ];
+    const res = await detailGET(makeDetailRequest(LEGACY_ID), makeContext(LEGACY_ID));
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe('paper_not_found');
+  });
 });
 
 // ── Tests: detail route ──────────────────────────────────────────────────

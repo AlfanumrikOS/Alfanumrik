@@ -75,12 +75,13 @@ function resetState() {
   state.rpcImpl = null;
 }
 
-interface Filter { kind: 'eq' | 'gte'; col: string; val: unknown }
+interface Filter { kind: 'eq' | 'gte' | 'in'; col: string; val: unknown }
 
 function applyFilters(rows: Array<Record<string, unknown>>, filters: Filter[]) {
   return rows.filter((r) =>
     filters.every((f) => {
       if (f.kind === 'eq') return r[f.col] === f.val;
+      if (f.kind === 'in') return Array.isArray(f.val) && (f.val as unknown[]).includes(r[f.col]);
       const a = r[f.col];
       const b = f.val;
       if (typeof a === 'string' && typeof b === 'string') return a >= b;
@@ -114,6 +115,7 @@ function buildChain(table: keyof MockState | string) {
     select: (cols: string) => typeof chain;
     eq: (col: string, val: unknown) => typeof chain;
     gte: (col: string, val: unknown) => typeof chain;
+    in: (col: string, val: unknown[]) => typeof chain;
     order: (col: string, opts?: { ascending?: boolean }) => typeof chain;
     limit: (n: number) => typeof chain;
     maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
@@ -125,6 +127,7 @@ function buildChain(table: keyof MockState | string) {
     select(_c) { return chain; },
     eq(col, val) { filters.push({ kind: 'eq', col, val }); return chain; },
     gte(col, val) { filters.push({ kind: 'gte', col, val }); return chain; },
+    in(col, val) { filters.push({ kind: 'in', col, val }); return chain; },
     order(col, opts) { orders.push({ col, ascending: opts?.ascending ?? true }); return chain; },
     limit(n) { _limit = n; return chain; },
     maybeSingle() {
@@ -333,7 +336,7 @@ describe('POST /api/exams/papers/[id]/submit', () => {
     seedQuestions(CBSE_PAPER_ID);
     state.mock_test_attempts = [{
       id: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
-      student_id: 'student-uuid-1', paper_id: CBSE_PAPER_ID, status: 'submitted',
+      student_id: 'student-uuid-1', exam_paper_id: CBSE_PAPER_ID, status: 'submitted',
       submitted_at: new Date(Date.now() - 5_000).toISOString(),
       total_questions: 2, attempted_count: 2, correct_count: 2, wrong_count: 0,
       skipped_count: 0, raw_score: 8, max_score: 8, score_percent: 100,
@@ -384,5 +387,112 @@ describe('POST /api/exams/papers/[id]/submit', () => {
     const res = await submitPOST(makeReq(JEE_PAPER_ID, defaultBody()), makeCtx(JEE_PAPER_ID));
     expect(res.status).toBe(200);
     expect((await res.json()).paper_id).toBe(JEE_PAPER_ID);
+  });
+
+  // ── cbse_board dynamic-attempt flow (Phase 2.2) ─────────────────────────
+
+  const ATTEMPT_ID = '55555555-5555-4555-a555-555555555555';
+
+  it('rejects a malformed attempt_id with 400', async () => {
+    setAuthorized();
+    seedPapers();
+    const res = await submitPOST(
+      makeReq(CBSE_PAPER_ID, { ...defaultBody(), attempt_id: 'not-a-uuid' }),
+      makeCtx(CBSE_PAPER_ID),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_attempt_id');
+  });
+
+  it('forwards attempt_id to the RPC as p_attempt_id when present', async () => {
+    setAuthorized({ roles: ['student'] });
+    setFlag(false);
+    seedPapers();
+    let capturedArgs: Record<string, unknown> | null = null;
+    state.rpcImpl = (_name, args) => {
+      capturedArgs = args;
+      return Promise.resolve({
+        data: {
+          attempt_id: ATTEMPT_ID, paper_id: CBSE_PAPER_ID,
+          total_questions: 39, attempted_count: 39, correct_count: 39, wrong_count: 0,
+          skipped_count: 0, raw_score: 80, max_score: 80, score_percent: 100,
+          xp_earned: 100, submitted_at: '2026-07-21T12:00:00.000Z', time_taken_seconds: 3600,
+        },
+        error: null,
+      });
+    };
+    const res = await submitPOST(
+      makeReq(CBSE_PAPER_ID, { ...defaultBody(), attempt_id: ATTEMPT_ID }),
+      makeCtx(CBSE_PAPER_ID),
+    );
+    expect(res.status).toBe(200);
+    expect(capturedArgs?.p_attempt_id).toBe(ATTEMPT_ID);
+  });
+
+  it('omits attempt_id (sends null) for static papers with no attempt_id in the payload', async () => {
+    setAuthorized({ roles: ['student'] });
+    setFlag(false);
+    seedPapers();
+    seedQuestions(CBSE_PAPER_ID);
+    let capturedArgs: Record<string, unknown> | null = null;
+    state.rpcImpl = (_name, args) => {
+      capturedArgs = args;
+      return Promise.resolve({
+        data: {
+          attempt_id: 'aaaaaaaa-0000-4000-a000-000000000000', paper_id: CBSE_PAPER_ID,
+          total_questions: 2, attempted_count: 2, correct_count: 1, wrong_count: 1,
+          skipped_count: 0, raw_score: 3, max_score: 8, score_percent: 37.5,
+          xp_earned: 10, submitted_at: '2026-07-21T12:00:00.000Z', time_taken_seconds: 1234,
+        },
+        error: null,
+      });
+    };
+    const res = await submitPOST(makeReq(CBSE_PAPER_ID, defaultBody()), makeCtx(CBSE_PAPER_ID));
+    expect(res.status).toBe(200);
+    expect(capturedArgs?.p_attempt_id).toBeNull();
+  });
+
+  it('builds review from the attempt question_snapshot (not exam_paper_id) when attempt_id is present', async () => {
+    setAuthorized({ roles: ['student'] });
+    setFlag(false);
+    seedPapers();
+    // Deliberately do NOT link these questions via exam_paper_id — the
+    // dynamic-attempt flow must resolve them purely from the snapshot.
+    state.question_bank = [
+      { id: QA_ID, question_text: 'Dynamic Q1', options: ['a', 'b', 'c', 'd'], correct_answer_index: 1, explanation: 'expl1', hint: null, chapter_title: null, paper_pattern: 'mcq_single', is_active: true },
+      { id: QB_ID, question_text: 'Dynamic Q2', options: ['w', 'x', 'y', 'z'], correct_answer_index: 0, explanation: 'expl2', hint: null, chapter_title: null, paper_pattern: 'mcq_single', is_active: true },
+    ];
+    state.mock_test_attempts = [{
+      id: ATTEMPT_ID,
+      question_snapshot: [
+        { question_id: QA_ID, section: 'A', marks: 1, order: 1 },
+        { question_id: QB_ID, section: 'A', marks: 1, order: 2 },
+      ],
+    }];
+    state.rpcImpl = () => Promise.resolve({
+      data: {
+        attempt_id: ATTEMPT_ID, paper_id: CBSE_PAPER_ID,
+        total_questions: 2, attempted_count: 2, correct_count: 1, wrong_count: 1,
+        skipped_count: 0, raw_score: 1, max_score: 80, score_percent: 1.25,
+        xp_earned: 10, submitted_at: '2026-07-21T12:00:00.000Z', time_taken_seconds: 300,
+      },
+      error: null,
+    });
+    const res = await submitPOST(
+      makeReq(CBSE_PAPER_ID, { ...defaultBody(), attempt_id: ATTEMPT_ID }),
+      makeCtx(CBSE_PAPER_ID),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.review).toHaveLength(2);
+    const ra = body.review.find((r: { question_id: string }) => r.question_id === QA_ID);
+    const rb = body.review.find((r: { question_id: string }) => r.question_id === QB_ID);
+    // QA response_index=1, correct=1 -> correct, marks from snapshot (1).
+    expect(ra.is_correct).toBe(true);
+    expect(ra.marks_awarded).toBe(1);
+    expect(ra.question_text).toBe('Dynamic Q1');
+    // QB response_index=3, correct=0 -> wrong, NO negative marking (0, not -1).
+    expect(rb.is_correct).toBe(false);
+    expect(rb.marks_awarded).toBe(0);
   });
 });

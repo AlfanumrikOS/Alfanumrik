@@ -21,6 +21,20 @@
  *
  * NOTE: this registry protects flags at the CONSOLE boundary. It does not (and
  * cannot) change how any flag evaluates at runtime.
+ *
+ * DB-layer mirror (2026-07-22, Phase 0 flag-governance hardening): this
+ * registry's PROTECTED_FLAGS keys are ALSO mirrored 1:1 into
+ * public.protected_feature_flags (migration
+ * 20260722090000_protected_feature_flags_registry.sql), which a BEFORE
+ * UPDATE trigger on feature_flags (migration
+ * 20260722090100_feature_flags_db_guard_trigger.sql) reads to block a
+ * direct-Postgres/Supabase-Studio mutation from bypassing this CONSOLE-layer
+ * guardrail entirely -- the vector the 2026-07-20 incident's operator action
+ * resembles. A static parity test
+ * (apps/host/src/__tests__/api/super-admin/feature-flags-protected-guardrail.test.ts)
+ * pins the two registries together going forward. If you add/remove a
+ * PROTECTED_FLAGS entry, add a companion migration updating
+ * protected_feature_flags in the SAME change.
  */
 
 export type ProtectedTier =
@@ -117,6 +131,14 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
   ff_adaptive_loops_bc_v1: CONSTITUTION_PINNED,
   ff_digital_twin_v1: CONSTITUTION_PINNED,
   ff_school_pulse_v1: CONSTITUTION_PINNED,
+
+  // constitution_pinned — Pedagogy v2 flags added 2026-07-22 (Phase 0
+  // flag-governance hardening): these were live constitution-pinned
+  // default-OFF flags NOT yet enumerated in this registry. Added here and in
+  // the DB mirror (migration 20260722090000_protected_feature_flags_registry.sql)
+  // in the same change so the two registries land in lockstep.
+  ff_productive_failure_v1: CONSTITUTION_PINNED,
+  ff_pedagogy_v2_monthly_synthesis: CONSTITUTION_PINNED,
 
   // staged_rollout — E4 wave2/wave3 placeholders (migration 20260720110000)
   wave2_group_sessions: STAGED_ROLLOUT,
@@ -245,6 +267,9 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   'ff_adaptive_loops_bc_v1',
   'ff_digital_twin_v1',
   'ff_school_pulse_v1',
+  // Pedagogy v2 constitution-pinned flags added 2026-07-22
+  'ff_productive_failure_v1',
+  'ff_pedagogy_v2_monthly_synthesis',
   // E3 — quiz-submit hardening + payment-coupled
   'ff_server_only_quiz_submit',
   'ff_v1_quiz_rpc_web_blocked',

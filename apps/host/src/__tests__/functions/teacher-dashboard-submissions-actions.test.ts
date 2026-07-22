@@ -293,6 +293,7 @@ function buildReviewedEventPayload(args: {
 
 function buildReviewedCanonicalPatch(args: {
   feedback: string | null;
+  feedbackHi?: string | null;
   scoreOverride: number | null;
   graded_at: string;
   graded_by: string;
@@ -303,6 +304,11 @@ function buildReviewedCanonicalPatch(args: {
     status: 'graded',
   };
   if (args.feedback !== null && args.feedback.length > 0) patch.teacher_feedback = args.feedback;
+  // P7 (Phase 3 item 3.10): the Hindi variant is additive — persisted to the
+  // separate teacher_feedback_hi column, only when provided, and never
+  // overwrites the English teacher_feedback column.
+  const feedbackHi = args.feedbackHi ?? null;
+  if (feedbackHi !== null && feedbackHi.length > 0) patch.teacher_feedback_hi = feedbackHi;
   if (args.scoreOverride != null) patch.score = args.scoreOverride;
   return patch;
 }
@@ -386,6 +392,33 @@ describe('mark_submission_reviewed — canonical patch', () => {
     expect(patch.score).toBe(88);
     expect('teacher_feedback' in patch).toBe(false);
   });
+
+  it('P7: only writes teacher_feedback_hi when a Hindi variant is provided', () => {
+    const patch = buildReviewedCanonicalPatch({
+      feedback: 'Well done', feedbackHi: 'शाबाश', scoreOverride: null,
+      graded_at: '2026-05-16T10:00:00Z', graded_by: 't1',
+    });
+    expect(patch.teacher_feedback).toBe('Well done');
+    expect(patch.teacher_feedback_hi).toBe('शाबाश');
+  });
+
+  it('P7: English-only review leaves teacher_feedback_hi unwritten (additive, never overwrites English)', () => {
+    const patch = buildReviewedCanonicalPatch({
+      feedback: 'Well done', feedbackHi: null, scoreOverride: null,
+      graded_at: '2026-05-16T10:00:00Z', graded_by: 't1',
+    });
+    expect(patch.teacher_feedback).toBe('Well done');
+    expect('teacher_feedback_hi' in patch).toBe(false);
+  });
+
+  it('P7: a Hindi-only review writes the Hindi column and omits the English column', () => {
+    const patch = buildReviewedCanonicalPatch({
+      feedback: null, feedbackHi: 'अच्छा प्रयास', scoreOverride: null,
+      graded_at: '2026-05-16T10:00:00Z', graded_by: 't1',
+    });
+    expect(patch.teacher_feedback_hi).toBe('अच्छा प्रयास');
+    expect('teacher_feedback' in patch).toBe(false);
+  });
 });
 
 // ─── Dispatcher contract — the 3 new actions must be present ─────────
@@ -421,6 +454,23 @@ describe('teacher-dashboard dispatcher — Phase C.1 actions present', () => {
     expect(src).toContain('async function handleGetAssignmentSubmissions(');
     expect(src).toContain('async function handleGetSubmissionDetail(');
     expect(src).toContain('async function handleMarkSubmissionReviewed(');
+  });
+
+  it('P7: mark_submission_reviewed persists teacher_feedback_hi and get_submission_detail returns it', async () => {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const sourcePath = path.resolve(
+      process.cwd(),
+      'supabase/functions/teacher-dashboard/index.ts',
+    );
+    const src = await fs.readFile(sourcePath, 'utf8');
+    // Write path: the Hindi variant is threaded from the request body into the
+    // canonical patch, additively (guarded like teacher_feedback).
+    expect(src).toContain('body.feedback_hi');
+    expect(src).toContain('patch.teacher_feedback_hi = feedbackHi');
+    // Read path: detail select + response envelope surface the Hindi column so
+    // the teacher UI can pre-fill the Hindi textarea when re-editing.
+    expect(src).toContain('teacher_feedback_hi: sub.teacher_feedback_hi');
   });
 
   it('mark_submission_reviewed emits the event BEFORE the canonical write (ADR-005 spine order)', async () => {

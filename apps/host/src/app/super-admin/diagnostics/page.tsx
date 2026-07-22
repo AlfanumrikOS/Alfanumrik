@@ -102,6 +102,25 @@ interface FeatureFlag {
   target_roles: string[]; target_environments: string[];
 }
 
+// Item 4.3 (AI safety/readiness hardening) — IRT question-selection readiness.
+// Diagnostics-only: never reads or flips ff_irt_question_selection itself.
+interface IrtReadinessBreakdownRow {
+  subject: string;
+  grade: string;
+  total_active_served: number;
+  calibrated_n_ge_30: number;
+  readiness_ratio: number;
+}
+
+interface IrtReadinessData {
+  flag_name: string;
+  total_active_served: number;
+  total_calibrated_n_ge_30: number;
+  overall_readiness_ratio: number;
+  breakdown: IrtReadinessBreakdownRow[];
+  generated_at: string;
+}
+
 // Phase F.6 follow-up (2026-05-17): pull catalog counts from /api/super-admin/stats
 // so the Simulation Lab + Content Quality widgets stop showing hardcoded numbers.
 interface StatsResponse {
@@ -129,6 +148,8 @@ function DiagnosticsContent() {
   const [failedJobs, setFailedJobs] = useState<FailedJob[]>([]);
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [irtReadiness, setIrtReadiness] = useState<IrtReadinessData | null>(null);
+  const [irtReadinessError, setIrtReadinessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -136,7 +157,7 @@ function DiagnosticsContent() {
     setLoading(true);
     setError(null);
     try {
-      const [obsRes, deployRes, backupRes, histRes, jobsRes, flagsRes, statsRes] = await Promise.all([
+      const [obsRes, deployRes, backupRes, histRes, jobsRes, flagsRes, statsRes, irtRes] = await Promise.all([
         apiFetch('/api/super-admin/observability'),
         apiFetch('/api/super-admin/deploy'),
         apiFetch('/api/super-admin/platform-ops?action=backups'),
@@ -144,6 +165,7 @@ function DiagnosticsContent() {
         apiFetch('/api/super-admin/support?action=failed_jobs'),
         apiFetch('/api/super-admin/feature-flags'),
         apiFetch('/api/super-admin/stats'),
+        apiFetch('/api/super-admin/ai/irt-readiness'),
       ]);
       if (obsRes.ok) setObsData(await obsRes.json());
       if (deployRes.ok) setDeployInfo(await deployRes.json());
@@ -152,6 +174,16 @@ function DiagnosticsContent() {
       if (jobsRes.ok) { const d = await jobsRes.json(); setFailedJobs(d.data || []); }
       if (flagsRes.ok) { const d = await flagsRes.json(); setFlags(d.data || []); }
       if (statsRes.ok) setStats(await statsRes.json());
+      // IRT readiness is best-effort — a failure here must never block the
+      // rest of the diagnostics page (same partial-failure posture as every
+      // other panel on this page).
+      if (irtRes.ok) {
+        const d = await irtRes.json();
+        if (d.success) { setIrtReadiness(d.data); setIrtReadinessError(null); }
+        else setIrtReadinessError(d.error || 'Failed to load IRT readiness');
+      } else {
+        setIrtReadinessError(`Request failed with status ${irtRes.status}`);
+      }
       // The observability feed is the backbone of this page — if it fails the
       // page would otherwise render a blank header with no diagnostics at all.
       if (!obsRes.ok) {
@@ -298,6 +330,96 @@ function DiagnosticsContent() {
           </div>
         </div>
       )}
+
+      {/* IRT Question-Selection Readiness (Item 4.3) — diagnostics only.
+          ff_irt_question_selection is deliberately OFF; this panel shows
+          what fraction of the actively-served question bank has crossed
+          the n>=30 calibration floor, so an operator can tell whether
+          flipping the flag would change anything meaningful yet. */}
+      <div style={{ marginBottom: 24 }}>
+        <h2 style={S.h2}>IRT Question-Selection Readiness</h2>
+        {irtReadinessError && !irtReadiness && (
+          <div style={{ ...S.card, color: colors.danger, fontSize: 12 }}>
+            {irtReadinessError}
+          </div>
+        )}
+        {irtReadiness && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <div style={S.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>ff_irt_question_selection</div>
+                  <StatusBadge label="OFF (by design)" variant="neutral" />
+                </div>
+                <div style={{ fontSize: 11, color: colors.text3 }}>
+                  Off until calibration accumulates — see Foxy moat plan.
+                </div>
+              </div>
+              <div style={S.card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: colors.text1 }}>Calibration floor crossed</div>
+                  <StatusBadge
+                    label={
+                      irtReadiness.overall_readiness_ratio >= 0.5
+                        ? 'Meaningful'
+                        : irtReadiness.overall_readiness_ratio > 0
+                          ? 'Growing'
+                          : 'Not yet'
+                    }
+                    variant={
+                      irtReadiness.overall_readiness_ratio >= 0.5
+                        ? 'success'
+                        : irtReadiness.overall_readiness_ratio > 0
+                          ? 'info'
+                          : 'warning'
+                    }
+                  />
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: colors.text1, lineHeight: 1.2 }}>
+                  {(irtReadiness.overall_readiness_ratio * 100).toFixed(1)}%
+                </div>
+                <div style={{ fontSize: 11, color: colors.text3, marginTop: 2 }}>
+                  {irtReadiness.total_calibrated_n_ge_30.toLocaleString()} / {irtReadiness.total_active_served.toLocaleString()} actively-served questions with irt_calibration_n {'>='} 30
+                </div>
+              </div>
+            </div>
+
+            {irtReadiness.breakdown.length > 0 ? (
+              <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', overflowX: 'auto' }}>
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Subject</th>
+                      <th style={S.th}>Grade</th>
+                      <th style={S.th}>Actively served</th>
+                      <th style={S.th}>Calibrated (n≥30)</th>
+                      <th style={S.th}>Readiness</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {irtReadiness.breakdown.map((row, i) => (
+                      <tr key={`${row.subject}-${row.grade}-${i}`}>
+                        <td style={S.td}>{row.subject}</td>
+                        <td style={S.td}>{row.grade}</td>
+                        <td style={S.td}>{row.total_active_served.toLocaleString()}</td>
+                        <td style={S.td}>{row.calibrated_n_ge_30.toLocaleString()}</td>
+                        <td style={S.td}>{(row.readiness_ratio * 100).toFixed(1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ ...S.card, color: colors.text3, fontSize: 12 }}>
+                No actively-served questions found (is_active + at least one response recorded).
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: colors.text3, marginTop: 6 }}>
+              Generated: {new Date(irtReadiness.generated_at).toLocaleString()}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Failed Jobs */}
       <div style={{ marginBottom: 24 }}>

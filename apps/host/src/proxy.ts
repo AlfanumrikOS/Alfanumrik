@@ -1086,7 +1086,7 @@ export async function proxy(request: NextRequest) {
   //
   // STUDENT_PROTECTED routes (documented here for reference; enforcement is client-side):
   // '/dashboard', '/quiz', '/foxy', '/progress', '/learn',
-  // '/profile', '/reports', '/study-plan', '/review', '/scan',
+  // '/profile', '/reports', '/exam-prep', '/review', '/scan',
   // '/notifications', '/exams', '/leaderboard', '/hpc', '/simulations',
   // '/stem-centre', '/research', '/billing'
 

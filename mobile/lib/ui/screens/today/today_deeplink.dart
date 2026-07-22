@@ -45,13 +45,18 @@ String resolveMobileRoute(TodayDeepLink deepLink) {
     return '/chat';
   }
 
-  // ── Routes mobile has not yet ported (weekly dive, monthly synthesis, and
-  //    any future web-only destination). Fall back to a sensible existing
-  //    surface so the tap always lands somewhere:
-  //      • dive / synthesis → Learn (closest "explore your learning" home)
-  //      • everything else  → Today home root
-  if (route.startsWith('/dive') || route.startsWith('/synthesis')) {
-    return '/learn';
+  // ── Weekly Curiosity Dive: web `/dive` (+ `/dive/history`) → mobile
+  //    `/dive` (+ `/dive/history`) — identical path shape. These screens are
+  //    now ported (Phase 6 sub-phase 7), so a dive item in the Today queue
+  //    lands on the real Dive surface instead of the old `/learn` fallback.
+  if (route == '/dive' || route.startsWith('/dive/')) {
+    return route;
+  }
+
+  // ── Monthly Synthesis: web `/synthesis` → mobile `/synthesis` (ported;
+  //    server-gated, degrades to a soft "not available yet" card on a 404).
+  if (route == '/synthesis' || route.startsWith('/synthesis')) {
+    return '/synthesis';
   }
 
   // Unknown / web-only route — land on the Today home rather than a 404.

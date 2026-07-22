@@ -109,6 +109,7 @@ interface SubmissionDetail {
     id: string;
     score: number | null;
     teacher_feedback: string | null;
+    teacher_feedback_hi: string | null;
     status: 'pending' | 'submitted' | 'graded';
     submitted_at: string | null;
     graded_at: string | null;
@@ -334,6 +335,7 @@ function SubmissionDetailView({
   onSaved: () => void;
 }) {
   const [feedback, setFeedback] = useState('');
+  const [feedbackHi, setFeedbackHi] = useState('');
   const [scoreOverride, setScoreOverride] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -342,6 +344,7 @@ function SubmissionDetailView({
   useEffect(() => {
     if (detail?.submission) {
       setFeedback(detail.submission.teacher_feedback || '');
+      setFeedbackHi(detail.submission.teacher_feedback_hi || '');
       setScoreOverride(detail.submission.score != null ? String(detail.submission.score) : '');
       setSuccess(false);
       setError('');
@@ -380,6 +383,7 @@ function SubmissionDetailView({
         submission_id: detail.submission.id,
       };
       if (feedback.trim()) params.feedback = feedback.trim();
+      if (feedbackHi.trim()) params.feedback_hi = feedbackHi.trim();
       const overrideNum = scoreOverride.trim() === '' ? null : Number(scoreOverride);
       if (overrideNum != null && Number.isFinite(overrideNum)) {
         params.score_override = overrideNum;
@@ -475,12 +479,41 @@ function SubmissionDetailView({
         <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1A1207', margin: '0 0 12px' }}>
           {tt(isHi, 'Teacher feedback', 'शिक्षक फ़ीडबैक')}
         </h3>
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#7D7264', margin: '0 0 6px' }}>
+          {tt(isHi, 'English feedback', 'अंग्रेज़ी में प्रतिक्रिया')}
+        </label>
         <textarea
           value={feedback}
           onChange={e => setFeedback(e.target.value)}
           rows={4}
           maxLength={2000}
           placeholder={tt(isHi, 'Write feedback for the student (optional)…', 'छात्र के लिए फ़ीडबैक लिखें (वैकल्पिक)…')}
+          style={{
+            width: '100%',
+            padding: '10px 12px',
+            backgroundColor: 'var(--surface-2)',
+            color: '#1A1207',
+            border: '1px solid #EDE6DC',
+            borderRadius: 8,
+            fontSize: 13,
+            fontFamily: 'inherit',
+            resize: 'vertical',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+        {/* P7 — optional Hindi variant. Shown to Hindi-preferring students when
+            present; the English field remains the fallback for everyone. */}
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#7D7264', margin: '14px 0 6px' }}>
+          {tt(isHi, 'Hindi feedback (optional)', 'हिंदी में प्रतिक्रिया (वैकल्पिक)')}
+        </label>
+        <textarea
+          value={feedbackHi}
+          onChange={e => setFeedbackHi(e.target.value)}
+          rows={4}
+          maxLength={2000}
+          lang="hi"
+          placeholder={tt(isHi, 'हिंदी में प्रतिक्रिया लिखें (वैकल्पिक)…', 'हिंदी में प्रतिक्रिया लिखें (वैकल्पिक)…')}
           style={{
             width: '100%',
             padding: '10px 12px',

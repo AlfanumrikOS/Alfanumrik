@@ -37,6 +37,7 @@ const EXAM_FAMILY_OPTIONS = [
   { value: 'cbse_board', label_en: 'CBSE Board', label_hi: 'CBSE बोर्ड' },
 ];
 
+// JEE/NEET/Olympiad subject scope — unchanged.
 const SUBJECT_OPTIONS = [
   { value: '', label_en: 'All Subjects', label_hi: 'सभी विषय' },
   { value: 'physics', label_en: 'Physics', label_hi: 'भौतिकी' },
@@ -44,6 +45,40 @@ const SUBJECT_OPTIONS = [
   { value: 'math', label_en: 'Math', label_hi: 'गणित' },
   { value: 'biology', label_en: 'Biology', label_hi: 'जीव विज्ञान' },
 ];
+
+// cbse_board catalog — full CBSE subject spread, grade-banded per assessment
+// spec (grades 6-10 vs 11-12 stream). NOTE: the backend VALID_SUBJECTS set in
+// GET /api/exams/papers currently only allows physics|chemistry|math|biology
+// (see apps/host/src/app/api/exams/papers/route.ts) — selecting any of the
+// newly-added codes below will 400 until backend widens that validation set
+// and populates exam_papers.subject_scope for cbse_board papers accordingly.
+const CBSE_BOARD_SUBJECTS_JUNIOR = [
+  { value: '', label_en: 'All Subjects', label_hi: 'सभी विषय' },
+  { value: 'math', label_en: 'Math', label_hi: 'गणित' },
+  { value: 'science', label_en: 'Science', label_hi: 'विज्ञान' },
+  { value: 'english', label_en: 'English', label_hi: 'अंग्रेज़ी' },
+  { value: 'hindi', label_en: 'Hindi', label_hi: 'हिंदी' },
+  { value: 'social_studies', label_en: 'Social Studies', label_hi: 'सामाजिक विज्ञान' },
+];
+
+const CBSE_BOARD_SUBJECTS_SENIOR = [
+  { value: '', label_en: 'All Subjects', label_hi: 'सभी विषय' },
+  { value: 'physics', label_en: 'Physics', label_hi: 'भौतिकी' },
+  { value: 'chemistry', label_en: 'Chemistry', label_hi: 'रसायन' },
+  { value: 'biology', label_en: 'Biology', label_hi: 'जीव विज्ञान' },
+  { value: 'math', label_en: 'Math', label_hi: 'गणित' },
+  { value: 'english', label_en: 'English', label_hi: 'अंग्रेज़ी' },
+  { value: 'economics', label_en: 'Economics', label_hi: 'अर्थशास्त्र' },
+  { value: 'accountancy', label_en: 'Accountancy', label_hi: 'लेखाशास्त्र' },
+  { value: 'business_studies', label_en: 'Business Studies', label_hi: 'व्यवसाय अध्ययन' },
+  { value: 'political_science', label_en: 'Political Science', label_hi: 'राजनीति विज्ञान' },
+  { value: 'history_sr', label_en: 'History', label_hi: 'इतिहास' },
+  { value: 'geography', label_en: 'Geography', label_hi: 'भूगोल' },
+  { value: 'computer_science', label_en: 'Computer Science', label_hi: 'कंप्यूटर विज्ञान' },
+  { value: 'coding', label_en: 'Coding', label_hi: 'कोडिंग' },
+];
+
+const CBSE_BOARD_SENIOR_GRADES = new Set(['11', '12']);
 
 async function fetchPapers(url: string): Promise<CatalogResponse> {
   const res = await fetch(url, { credentials: 'same-origin' });
@@ -66,6 +101,21 @@ export default function MockTestCatalog() {
 
   const [examFamily, setExamFamily] = useState<string>('');
   const [subject, setSubject] = useState<string>('');
+
+  const isCbseBoardFamily = examFamily === 'cbse_board';
+  const isSeniorGrade = CBSE_BOARD_SENIOR_GRADES.has(student?.grade ?? '11');
+  const subjectOptions = isCbseBoardFamily
+    ? (isSeniorGrade ? CBSE_BOARD_SUBJECTS_SENIOR : CBSE_BOARD_SUBJECTS_JUNIOR)
+    : SUBJECT_OPTIONS;
+
+  // Selecting cbse_board can change the valid subject vocabulary out from
+  // under the current selection (e.g. 'physics' selected on a junior grade
+  // moving from a non-board family) — reset rather than send a subject the
+  // new list doesn't offer.
+  function handleExamFamilyChange(value: string) {
+    setExamFamily(value);
+    setSubject('');
+  }
 
   // Build query string from filters + student grade (when known).
   const params = new URLSearchParams();
@@ -183,7 +233,7 @@ export default function MockTestCatalog() {
               <select
                 id="exam-family-filter"
                 value={examFamily}
-                onChange={e => setExamFamily(e.target.value)}
+                onChange={e => handleExamFamilyChange(e.target.value)}
                 className="input-base w-full"
               >
                 {EXAM_FAMILY_OPTIONS.map(o => (
@@ -206,7 +256,7 @@ export default function MockTestCatalog() {
                 onChange={e => setSubject(e.target.value)}
                 className="input-base w-full"
               >
-                {SUBJECT_OPTIONS.map(o => (
+                {subjectOptions.map(o => (
                   <option key={o.value || 'all'} value={o.value}>
                     {isHi ? o.label_hi : o.label_en}
                   </option>

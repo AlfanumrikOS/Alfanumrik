@@ -5,6 +5,7 @@ import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { getProtection, type FlagProtection } from '@alfanumrik/lib/flags/protected-flags';
 import { featureFlagSchema, validateBody, zUuid } from '../../../../lib/validation';
 import { z } from 'zod';
+import type { AdminAuth } from '../../../../lib/admin-auth';
 
 /**
  * Feature Flags API — supports global, per-institution, per-role, per-environment scoping.
@@ -23,7 +24,150 @@ import { z } from 'zod';
  * switches must stay fast) EXCEPT the special_do_not_touch / p11_payment
  * tiers (e.g. ff_atomic_subscription_activation is a payment safety device —
  * disabling it also requires confirm).
+ *
+ * Phase 0 flag-governance hardening (2026-07-22, master action plan items
+ * 0.4/0.5/0.10/0.11) — two additive layers on top of the above:
+ *
+ * 1. DB-routed writes for GATED protected mutations. A PATCH that requires
+ *    (and receives) the typed confirmation now writes via the
+ *    `admin_flip_feature_flag` SECURITY DEFINER RPC (migration
+ *    20260722090200) instead of a raw PostgREST PATCH. The RPC re-validates
+ *    the confirm, arms the `app.protected_flag_ack` session GUC for the
+ *    transaction, performs the UPDATE, and writes an admin_audit_log row —
+ *    all atomically. This is what makes the DB-layer BEFORE UPDATE trigger
+ *    (`trg_protect_feature_flags`, migration 20260722090100) actually
+ *    permit the write: a raw PATCH to a gated transition would now be
+ *    REJECTED by that trigger, since only this RPC sets the ack GUC.
+ *    UNGATED protected-flag mutations (description-only edits, or disabling
+ *    a non-payment-safety tier) are UNCHANGED — they keep using the fast
+ *    raw-PATCH path, because the trigger permits those transitions
+ *    unconditionally and routing them through the RPC would needlessly force
+ *    a typed confirmation the existing contract does not require (see
+ *    feature-flags-protected-guardrail.test.ts: "description-only update on
+ *    a PROTECTED flag needs no confirm"). Non-protected flags are entirely
+ *    unaffected in every direction.
+ *
+ * 2. Velocity / burst guard. If the SAME admin has made more than
+ *    `BURST_THRESHOLD` (3) CONFIRMED protected-flag mutations in the
+ *    trailing `BURST_WINDOW_MS` (10 minutes) — counted from admin_audit_log,
+ *    the same durable trail every protected mutation already writes to — the
+ *    4th and later mutation in that window additionally requires the body
+ *    field `bulk_confirm` to equal the exact token `BULK-<ordinal>-<flag_name>`
+ *    (`ordinal` = this mutation's 1-indexed position in the burst, e.g. the
+ *    4th mutation needs `bulk_confirm: "BULK-4-ff_school_pulse_v1"`). Missing
+ *    or wrong token → 409 FLAG_BULK_CONFIRM_REQUIRED, ZERO DB writes, and a
+ *    distinct `feature_flag.bulk_mutation_burst` audit action (so the burst
+ *    ATTEMPT itself is durably logged even when it is refused). This is the
+ *    guardrail the 2026-07-20 incident (49 flags flipped in one bulk action)
+ *    would have tripped after the 3rd flag. Applies uniformly to PATCH,
+ *    DELETE, and POST-under-a-protected-name, since all three are viable
+ *    bulk-flip vectors.
+ *
+ * 3. Every protected-flag audit payload now carries a `tier` field
+ *    (previously only `previous_state`/`updates` were logged) so the audit
+ *    trail is self-describing without a join back to protected-flags.ts.
  */
+
+// ── Phase 0 burst guard (2026-07-22) ─────────────────────────────────────────
+
+const BURST_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const BURST_THRESHOLD = 3; // 1st–3rd confirmed protected mutation in the window: no extra gate
+
+/** Actions counted as a "confirmed protected-flag mutation" for burst purposes. */
+const PROTECTED_MUTATION_ACTIONS = [
+  'feature_flag.created',
+  'feature_flag.updated',
+  'feature_flag.deleted',
+  'feature_flag.protected_flip_rpc',
+] as const;
+
+/**
+ * Count this admin's CONFIRMED protected-flag mutations in the trailing
+ * burst window, read from admin_audit_log (the same durable trail every
+ * protected mutation already writes to — see logAdminAudit). Fail-OPEN on a
+ * read error (returns 0): a transient audit-log read failure must never
+ * block a legitimate single-flag emergency action; the nightly
+ * flag-posture-canary remains the drift backstop either way.
+ */
+async function countRecentProtectedMutations(adminUserId: string): Promise<number> {
+  const since = new Date(Date.now() - BURST_WINDOW_MS).toISOString();
+  try {
+    const actionFilter = `in.(${PROTECTED_MUTATION_ACTIONS.join(',')})`;
+    const res = await fetch(
+      supabaseAdminUrl(
+        'admin_audit_log',
+        `select=id&admin_id=eq.${encodeURIComponent(adminUserId)}` +
+          `&action=${actionFilter}` +
+          `&created_at=gte.${encodeURIComponent(since)}` +
+          `&details->>protected_confirmed=eq.true`,
+      ),
+      { headers: supabaseAdminHeaders('count=exact'), method: 'HEAD' },
+    );
+    if (!res.ok) return 0;
+    const range = res.headers.get('content-range');
+    if (!range) return 0;
+    const total = parseInt(range.split('/')[1] || '0', 10);
+    return Number.isFinite(total) ? total : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function bulkConfirmToken(ordinal: number, flagName: string): string {
+  return `BULK-${ordinal}-${flagName}`;
+}
+
+interface BurstGuardResult {
+  /** Set when the burst guard blocks the request — return this response as-is. */
+  blocked: NextResponse | null;
+  /** This mutation's 1-indexed ordinal within the trailing window (for audit). */
+  ordinal: number;
+}
+
+/**
+ * Enforces the velocity/burst guard for a CONFIRMED protected-flag mutation.
+ * Call this ONLY after the normal typed-confirmation check has already
+ * passed (this guard is a SECOND gate on top of, not instead of, the
+ * per-flag confirm).
+ */
+async function enforceBurstGuard(
+  auth: AdminAuth,
+  flagName: string,
+  bulkConfirm: string | undefined,
+): Promise<BurstGuardResult> {
+  const priorCount = await countRecentProtectedMutations(auth.userId);
+  const ordinal = priorCount + 1;
+  if (ordinal <= BURST_THRESHOLD) return { blocked: null, ordinal };
+
+  const expected = bulkConfirmToken(ordinal, flagName);
+  if (bulkConfirm === expected) return { blocked: null, ordinal };
+
+  // Log the burst ATTEMPT itself — distinct action, so a refused burst is
+  // still durably visible in the audit trail (not just the eventual success).
+  await logAdminAudit(auth, 'feature_flag.bulk_mutation_burst', 'feature_flags', flagName, {
+    flag_name: flagName,
+    attempted_ordinal: ordinal,
+    recent_mutation_count: priorCount,
+    window_minutes: BURST_WINDOW_MS / 60000,
+    bulk_confirm_required: expected,
+  });
+
+  return {
+    ordinal,
+    blocked: NextResponse.json(
+      {
+        error:
+          `You have made ${priorCount} confirmed protected-flag mutation(s) in the last ` +
+          `${BURST_WINDOW_MS / 60000} minutes. To proceed with mutation #${ordinal}, resend the ` +
+          `request with body field "bulk_confirm" set to "${expected}".`,
+        code: 'FLAG_BULK_CONFIRM_REQUIRED',
+        bulk_confirm_required: expected,
+        recent_mutation_count: priorCount,
+      },
+      { status: 409 },
+    ),
+  };
+}
 
 /** 409 body for a protected-flag mutation attempted without typed confirmation. */
 function protectedFlagResponse(flagName: string, protection: FlagProtection): NextResponse {
@@ -37,6 +181,19 @@ function protectedFlagResponse(flagName: string, protection: FlagProtection): Ne
     },
     { status: 409 },
   );
+}
+
+/**
+ * Best-effort mapping of an admin_flip_feature_flag RPC failure to an HTTP
+ * status, without leaking internal error text to the caller. The RPC's own
+ * confirm check is defense-in-depth (the route already validated
+ * confirm === flagName before calling it), so FLAG_CONFIRM_MISMATCH here
+ * would indicate a logic bug rather than a normal caller error.
+ */
+function rpcErrorStatus(errorText: string): number {
+  if (errorText.includes('FLAG_NOT_FOUND')) return 404;
+  if (errorText.includes('FLAG_CONFIRM_MISMATCH')) return 409;
+  return 500;
 }
 
 // GET — list all flags
@@ -112,12 +269,15 @@ export async function POST(request: NextRequest) {
       description: z.string().max(500).nullable().optional(),
       // Protected-flag guardrail: typed confirmation (must equal the flag name).
       confirm: z.string().optional(),
+      // Phase 0 burst guard: only relevant once the per-admin burst threshold
+      // is exceeded (see enforceBurstGuard).
+      bulk_confirm: z.string().optional(),
     }).omit({ flag_name: true, is_enabled: true });
 
     const validation = validateBody(createSchema, body);
     if (!validation.success) return validation.error;
 
-    const { name, enabled, description, rollout_percentage, target_institutions, target_roles, target_environments, confirm } = validation.data;
+    const { name, enabled, description, rollout_percentage, target_institutions, target_roles, target_environments, confirm, bulk_confirm } = validation.data;
 
     // Protected-flag guardrail: creating a flag under a protected NAME requires
     // the typed confirmation (prevents the delete-recreate bypass). Checked
@@ -126,6 +286,17 @@ export async function POST(request: NextRequest) {
     if (createProtection && confirm !== name) {
       return protectedFlagResponse(name, createProtection);
     }
+
+    // Phase 0 burst guard: only reached once the per-flag confirm has already
+    // passed, so this is a SECOND gate on a genuinely confirmed protected
+    // creation.
+    let createBurstOrdinal: number | null = null;
+    if (createProtection) {
+      const burst = await enforceBurstGuard(auth, name, bulk_confirm);
+      if (burst.blocked) return burst.blocked;
+      createBurstOrdinal = burst.ordinal;
+    }
+    void createBurstOrdinal; // recorded via logAdminAudit below, not otherwise used
 
     // Check uniqueness
     const checkRes = await fetch(supabaseAdminUrl('feature_flags', `select=id&flag_name=eq.${encodeURIComponent(name)}&limit=1`), {
@@ -170,7 +341,7 @@ export async function POST(request: NextRequest) {
     await logAdminAudit(auth, 'feature_flag.created', 'feature_flags', flagId || '', {
       name,
       enabled,
-      ...(createProtection ? { protected_confirmed: true } : {}),
+      ...(createProtection ? { protected_confirmed: true, tier: createProtection.tier } : {}),
     });
     invalidateFlagCache();
 
@@ -214,12 +385,15 @@ export async function PATCH(request: NextRequest) {
       }).refine(obj => Object.keys(obj).length > 0, { message: 'At least one field must be provided in updates' }),
       // Protected-flag guardrail: typed confirmation (must equal the flag name).
       confirm: z.string().optional(),
+      // Phase 0 burst guard: only relevant once the per-admin burst threshold
+      // is exceeded (see enforceBurstGuard).
+      bulk_confirm: z.string().optional(),
     });
 
     const validation = validateBody(patchSchema, body);
     if (!validation.success) return validation.error;
 
-    const { id, updates, confirm } = validation.data;
+    const { id, updates, confirm, bulk_confirm } = validation.data;
 
     // Map friendly names to DB columns
     const FIELD_MAP: Record<string, string> = {
@@ -267,10 +441,70 @@ export async function PATCH(request: NextRequest) {
     // unknown and this gate cannot fire — the nightly flag-posture-canary cron
     // is the drift backstop for that path.
     let protectedConfirmed = false;
+    let protectionTier: string | null = null;
     const patchFlagName = typeof previousState?.flag_name === 'string' ? previousState.flag_name : null;
     if (patchFlagName) {
       const protection = getProtection(patchFlagName);
       if (protection) {
+        // Rename-bypass guard (backend review, Phase 0 follow-up 2026-07-22):
+        // renaming a protected flag is a BYPASS vector, not merely a gated
+        // transition. protected_feature_flags and the DB trigger
+        // (trg_protect_feature_flags) both key protection strictly off
+        // flag_name, so a rename to an unregistered name would let a SECOND,
+        // unconfirmed PATCH freely enable the (now-unprotected-by-name) row —
+        // defeating both this app-layer gate and the DB-layer trigger. The
+        // admin_flip_feature_flag RPC (migration 20260722090200) also has no
+        // CASE for flag_name in its UPDATE, so even routing a "confirmed"
+        // rename through the RPC would silently drop the name change while
+        // reporting success. Block outright rather than gate-and-silently-drop.
+        //
+        // FINAL (architect decision, 2026-07-22 — this is not a placeholder;
+        // do not reopen without a new architect review): permanent-block is
+        // the correct, permanent posture. Rename support for a protected flag
+        // was considered and REJECTED, because:
+        //   1. Flag identity is load-bearing in application CODE, not just
+        //      this table — dozens of call sites reference a flag_name as a
+        //      hardcoded string constant (e.g. ADAPTIVE_REMEDIATION_FLAGS.V1,
+        //      ADAPTIVE_LOOPS_BC_FLAGS.V1, DIGITAL_TWIN_FLAGS.V1 in
+        //      packages/lib/src/feature-flags.ts). A runtime admin rename
+        //      cannot atomically update those call sites; every reader still
+        //      using the old string would evaluate against a name that no
+        //      longer exists, and per this app's convention that fails safe
+        //      to "disabled" — an availability regression with no code
+        //      deploy to explain it.
+        //   2. protected_feature_flags.flag_name is deliberately NOT
+        //      FK'd to feature_flags.flag_name (a name can be pre-registered
+        //      before the flag row exists). A rename RPC would therefore need
+        //      to rename BOTH rows in the same transaction and would still
+        //      leave every historical admin_audit_log / audit_logs row that
+        //      recorded the OLD name orphaned for reporting — a forensic-
+        //      trail cost with no offsetting product benefit.
+        //   3. There is no legitimate product need for a protected flag to be
+        //      renamed at runtime. Every protected tier (p0_outage,
+        //      p11_payment, ai_provider, constitution_pinned,
+        //      special_do_not_touch, staged_rollout) exists precisely because
+        //      the flag is high-blast-radius; a genuine rename (e.g.
+        //      correcting a pre-launch typo) should go through the SAME
+        //      review rigor as the original protection — a migration
+        //      updating both tables plus a code PR updating every reference
+        //      — not a self-service console action.
+        // Conclusion: this 409 stays permanent. If a rename is ever genuinely
+        // needed, do it via a hand-authored migration (rename in
+        // feature_flags AND protected_feature_flags in one transaction) paired
+        // with a code PR updating every flag_name reference — never via this
+        // route or the admin_flip_feature_flag RPC.
+        if (typeof updates.name === 'string' && updates.name !== patchFlagName) {
+          return NextResponse.json(
+            {
+              error: `"${patchFlagName}" is a protected flag (${protection.tier}) and cannot be renamed. Renaming would let the row escape protected-flag tracking (protection is keyed by flag_name).`,
+              code: 'FLAG_RENAME_BLOCKED',
+              tier: protection.tier,
+            },
+            { status: 409 },
+          );
+        }
+
+        protectionTier = protection.tier;
         const makingMoreEnabled =
           updates.enabled === true ||
           (typeof updates.rollout_percentage === 'number' && updates.rollout_percentage > 0);
@@ -284,6 +518,16 @@ export async function PATCH(request: NextRequest) {
           protectedConfirmed = true;
         }
       }
+    }
+
+    // Phase 0 burst guard (2026-07-22): a SECOND gate, only reached once the
+    // per-flag confirm above has already passed. Not applied to ungated
+    // protected mutations (description-only edits, safe disables) — those
+    // never set protectedConfirmed and are not the incident's bulk-flip
+    // vector.
+    if (protectedConfirmed && patchFlagName) {
+      const burst = await enforceBurstGuard(auth, patchFlagName, bulk_confirm);
+      if (burst.blocked) return burst.blocked;
     }
 
     // 0-rollout landmine: rollout_percentage has a DB DEFAULT of 0, and the web
@@ -305,26 +549,55 @@ export async function PATCH(request: NextRequest) {
       rolloutPromoted = true;
     }
 
-    const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
-      method: 'PATCH',
-      headers: supabaseAdminHeaders('return=representation'),
-      body: JSON.stringify(safe),
-    });
-
-    if (!res.ok) return NextResponse.json({ error: 'Update failed' }, { status: res.status });
-
-    const updated = await res.json();
-    if (Array.isArray(updated) && updated.length === 0) {
-      return NextResponse.json({ error: 'Flag not found.' }, { status: 404 });
-    }
-
     // C1 (ops review): `updates` is what the caller SENT; `effective_updates`
     // is what was actually WRITTEN (the mapped payload minus the updated_by/
     // updated_at bookkeeping columns) — the two differ when the 0→100 rollout
     // auto-promotion fires. Additive keys only; existing keys unchanged.
+    // Computed BEFORE the write so both the RPC path (which needs it as the
+    // p_updates argument) and the raw-PATCH path (which needs it for the
+    // audit row) share the identical value.
     const effectiveUpdates = Object.fromEntries(
       Object.entries(safe).filter(([k]) => k !== 'updated_by' && k !== 'updated_at'),
     );
+
+    // ── Phase 0 write routing (2026-07-22) ───────────────────────────────────
+    // A GATED-and-CONFIRMED protected mutation writes via the
+    // admin_flip_feature_flag RPC (arms app.protected_flag_ack so
+    // trg_protect_feature_flags permits the write). Everything else
+    // (unprotected flags, or protected-but-ungated updates) keeps the
+    // existing raw-PATCH fast path — see the file-header note for why.
+    let updated: unknown;
+    if (protectedConfirmed && patchFlagName) {
+      const rpcRes = await fetch(supabaseAdminUrl('rpc/admin_flip_feature_flag'), {
+        method: 'POST',
+        headers: supabaseAdminHeaders(),
+        body: JSON.stringify({
+          p_flag_name: patchFlagName,
+          p_updates: effectiveUpdates,
+          p_confirm: confirm,
+          p_actor_id: auth.userId,
+        }),
+      });
+      if (!rpcRes.ok) {
+        const text = await rpcRes.text();
+        return NextResponse.json({ error: 'Update failed' }, { status: rpcErrorStatus(text) });
+      }
+      const rpcRow = await rpcRes.json(); // admin_flip_feature_flag RETURNS jsonb (a single object)
+      updated = [rpcRow]; // normalize to the same array shape the raw-PATCH path returns
+    } else {
+      const res = await fetch(supabaseAdminUrl('feature_flags', `id=eq.${encodeURIComponent(id)}`), {
+        method: 'PATCH',
+        headers: supabaseAdminHeaders('return=representation'),
+        body: JSON.stringify(safe),
+      });
+
+      if (!res.ok) return NextResponse.json({ error: 'Update failed' }, { status: res.status });
+
+      updated = await res.json();
+      if (Array.isArray(updated) && updated.length === 0) {
+        return NextResponse.json({ error: 'Flag not found.' }, { status: 404 });
+      }
+    }
 
     await logAdminAudit(auth, 'feature_flag.updated', 'feature_flags', id, {
       updates,
@@ -333,6 +606,7 @@ export async function PATCH(request: NextRequest) {
       previous_state: previousState,
       flag_name: previousState?.flag_name || null,
       ...(protectedConfirmed ? { protected_confirmed: true } : {}),
+      ...(protectionTier ? { tier: protectionTier } : {}),
     });
     invalidateFlagCache();
 
@@ -369,11 +643,14 @@ export async function DELETE(request: NextRequest) {
       id: zUuid,
       // Protected-flag guardrail: typed confirmation (must equal the flag name).
       confirm: z.string().optional(),
+      // Phase 0 burst guard: only relevant once the per-admin burst threshold
+      // is exceeded (see enforceBurstGuard).
+      bulk_confirm: z.string().optional(),
     });
     const validation = validateBody(deleteSchema, body);
     if (!validation.success) return validation.error;
 
-    const { id, confirm } = validation.data;
+    const { id, confirm, bulk_confirm } = validation.data;
 
     // ── Protected-flag guardrail (2026-07-20 incident) ──────────────────────
     // Deleting a protected flag requires the same typed confirmation as
@@ -381,6 +658,7 @@ export async function DELETE(request: NextRequest) {
     // its absence could change evaluator behavior). Read-only name lookup
     // first; 409 BEFORE the DELETE write or audit row.
     let deleteProtectedConfirmed = false;
+    let deleteTier: string | null = null;
     try {
       const nameRes = await fetch(supabaseAdminUrl('feature_flags', `select=flag_name&id=eq.${encodeURIComponent(id)}&limit=1`), {
         headers: supabaseAdminHeaders(),
@@ -391,10 +669,16 @@ export async function DELETE(request: NextRequest) {
         if (typeof flagName === 'string') {
           const protection = getProtection(flagName);
           if (protection) {
+            deleteTier = protection.tier;
             if (confirm !== flagName) {
               return protectedFlagResponse(flagName, protection);
             }
             deleteProtectedConfirmed = true;
+
+            // Phase 0 burst guard: a SECOND gate, only reached once the
+            // per-flag confirm has already passed.
+            const burst = await enforceBurstGuard(auth, flagName, bulk_confirm);
+            if (burst.blocked) return burst.blocked;
           }
         }
       }
@@ -415,6 +699,7 @@ export async function DELETE(request: NextRequest) {
     await logAdminAudit(auth, 'feature_flag.deleted', 'feature_flags', id, {
       deleted: deleted[0],
       ...(deleteProtectedConfirmed ? { protected_confirmed: true } : {}),
+      ...(deleteTier ? { tier: deleteTier } : {}),
     });
     invalidateFlagCache();
     return NextResponse.json({ success: true });

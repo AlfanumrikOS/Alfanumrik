@@ -22,7 +22,11 @@ export interface ParentShareCardProps {
   synthesisRunId: string;
   summaryTextEn: string;
   summaryTextHi: string;
-  parentShareStatus: 'pending' | 'sent' | 'opted_out' | 'failed' | 'suppressed';
+  // 'flagged' added by item 4.5 (2026-07-21) — the pre-send fabrication gate
+  // in /api/synthesis/parent-share writes this instead of sending/dropping a
+  // summary that fails a defense-in-depth fabrication re-check; a human
+  // reviews it later rather than the parent silently never receiving it.
+  parentShareStatus: 'pending' | 'sent' | 'opted_out' | 'failed' | 'suppressed' | 'flagged';
   parentShareSentAt: string | null;
   /** Wired by Task 6. When undefined, the CTA is shown disabled with a "coming soon" hint. */
   onSend?: () => Promise<void>;
@@ -156,6 +160,12 @@ function StatusChip(props: {
           label: isHi ? 'रोका गया' : 'Suppressed',
           bg: 'rgba(100,100,100,0.1)',
           color: '#525252',
+        };
+      case 'flagged':
+        return {
+          label: isHi ? 'समीक्षा में' : 'Under review',
+          bg: 'rgba(245,166,35,0.15)',
+          color: '#B45309',
         };
       case 'pending':
       default:

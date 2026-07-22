@@ -146,9 +146,11 @@ describe('mode_directive — diagrams flag ON injects DIAGRAM_DIRECTIVE on prose
       learningActionsFlagOn: false,
       diagramsFlagOn: true,
     });
-    // Teaching modes have an empty base directive, so the composed result IS the
-    // diagram directive verbatim.
-    expect(d).toBe(DIAGRAM_DIRECTIVE);
+    // Most teaching modes have an empty base directive, so the composed
+    // result IS the diagram directive verbatim. 'explorer' is the exception
+    // (item 4.1, 2026-07-21): it now has its OWN non-empty base
+    // MODE_DIRECTIVES entry, so the composed result is base + diagram.
+    expect(d).toBe(composeModeDirective(MODE_DIRECTIVES[mode] ?? '', DIAGRAM_DIRECTIVE));
     expect(d).toContain(DIRECTIVE_MARKER);
   });
 
@@ -160,8 +162,16 @@ describe('mode_directive — diagrams flag ON injects DIAGRAM_DIRECTIVE on prose
       learningActionsFlagOn: true,
       diagramsFlagOn: true,
     });
-    // Order: teach-then-stop first, diagram directive appended one blank line down.
-    expect(d).toBe(`${TEACH_THEN_STOP_DIRECTIVE}\n\n${DIAGRAM_DIRECTIVE}`);
+    // Order: [mode base] then teach-then-stop, diagram directive appended one
+    // blank line down. 'explorer' now has a non-empty base (item 4.1); every
+    // other teaching mode's base is still '' so this reduces to the
+    // pre-existing byte-identical expectation for them.
+    expect(d).toBe(
+      composeModeDirective(
+        composeModeDirective(MODE_DIRECTIVES[mode] ?? '', TEACH_THEN_STOP_DIRECTIVE),
+        DIAGRAM_DIRECTIVE,
+      ),
+    );
     expect(d).toContain('TEACH, THEN STOP');
     expect(d).toContain(DIRECTIVE_MARKER);
   });
