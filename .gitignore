@@ -81,3 +81,7 @@ __pycache__/
 # Binary documents (tracked going forward only — no history rewrite)
 Alfanumrik_PreSeed_Investor_Deck.pdf
 Alfanumrik_PreSeed_Investor_Deck.pptx
+
+# Local skill-runner session state (server.pid / server-stopped). Leaked
+# local artifact from a prior commit — never tracked going forward.
+.superpowers/

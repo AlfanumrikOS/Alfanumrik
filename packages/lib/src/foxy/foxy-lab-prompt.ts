@@ -1,10 +1,13 @@
 /**
  * Foxy Lab-Context Prompt Builder — Next.js (server-side) helper
  *
- * Mirror of `supabase/functions/_shared/foxy-lab-prompt.ts` (the Deno helper
- * used by the legacy foxy-tutor Edge Function). Both files MUST keep the
- * "NEVER invent" guardrail wording in sync — that line is the P12 safety
- * contract for this feature and the regression test pins it.
+ * Previously mirrored at `supabase/functions/_shared/foxy-lab-prompt.ts` (a
+ * Deno helper used by the legacy foxy-tutor Edge Function). That mirror was
+ * removed 2026-07-23 after foxy-tutor itself was deleted from the repo
+ * (retired 2026-07-01, replaced by apps/host/src/app/api/foxy/route.ts).
+ * This file is now the sole source. The "NEVER invent" guardrail wording
+ * below is the P12 safety contract for this feature and the regression test
+ * (apps/host/src/__tests__/lib/foxy-lab-context.test.ts) pins it.
  *
  * Renders an array of `LabContextEntry` (from recent-lab-context.ts) into a
  * system-prompt section that Foxy can use to reference the student's recent

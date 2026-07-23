@@ -1,7 +1,0 @@
-# Cycles
-
-One folder per workflow cycle lives here, e.g. `cycle-1/auth-onboarding/` containing
-`01-map.md` … `08-regression.md` and `STATUS.md` (copied from `../templates/`).
-
-This `.gitkeep` keeps the empty directory tracked. The first cycle folder is created
-when the auth-onboarding MAP artifact is written (see `../STATE.md`).

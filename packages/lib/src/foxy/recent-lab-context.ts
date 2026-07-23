@@ -1,11 +1,12 @@
 /**
  * Recent Lab Context — Next.js (server-side) helper
  *
- * Mirror of `supabase/functions/_shared/recent-lab-context.ts` (the Deno
- * helper used by the legacy foxy-tutor Edge Function). Both helpers MUST
- * keep the same output shape and the same trimming/freshness contract so
- * the student gets identical Foxy behavior whichever entry point is hit
- * during the Phase-3/4 migration window.
+ * Previously mirrored at `supabase/functions/_shared/recent-lab-context.ts`
+ * (a Deno helper used by the legacy foxy-tutor Edge Function). That mirror
+ * was removed 2026-07-23 after foxy-tutor itself was deleted from the repo
+ * (retired 2026-07-01, replaced by apps/host/src/app/api/foxy/route.ts).
+ * This file is now the sole source; the "Phase-3/4 migration window" this
+ * comment previously guarded against has closed.
  *
  * Fetches the student's recent STEM lab observations from the
  * `experiment_observations` table (RLS bypassed via the supabase admin

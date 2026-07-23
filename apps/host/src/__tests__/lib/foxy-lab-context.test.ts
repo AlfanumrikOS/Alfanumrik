@@ -5,13 +5,14 @@
  *   src/lib/foxy/recent-lab-context.ts  (DB row → LabContextEntry mapper + fetcher)
  *   src/lib/foxy/foxy-lab-prompt.ts     (LabContextEntry[] → prompt section)
  *
- * The Deno twins live at:
- *   supabase/functions/_shared/recent-lab-context.ts
- *   supabase/functions/_shared/foxy-lab-prompt.ts
- *
- * Both pairs MUST keep the "NEVER invent" guardrail wording in sync — that
- * line is the P12 safety contract for this feature and the regression test
- * pins it.
+ * A Deno mirror of both files previously lived at
+ * supabase/functions/_shared/{recent-lab-context,foxy-lab-prompt}.ts. It was
+ * removed 2026-07-23 (dead-code cleanup) after its only consumer, the
+ * foxy-tutor Edge Function, was deleted from the repo (retired 2026-07-01,
+ * replaced by apps/host/src/app/api/foxy/route.ts). This test only exercises
+ * the Next.js-side output below — it does not read the Deno file from disk —
+ * so removal did not change its behavior. The "NEVER invent" guardrail
+ * remains the P12 safety contract for this feature.
  */
 
 import { describe, it, expect, vi } from 'vitest';
