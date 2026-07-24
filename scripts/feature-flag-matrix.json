@@ -1,7 +1,7 @@
 {
   "source": "packages/lib/src/flags/defaults.ts",
   "registryRoot": "packages/lib/src/flags/registries",
-  "flagCount": 122,
+  "flagCount": 123,
   "flags": [
     {
       "name": "ff_adaptive_live_selection_v1",
@@ -1218,6 +1218,15 @@
       "owner": "consumer-experience",
       "rationale": "Default OFF until an operator or reviewed rollout enables it (seeded OFF by 20260512075619_ff_tutor_v1.sql).",
       "source": "packages/lib/src/flags/registries/consumer.ts"
+    },
+    {
+      "name": "ff_unified_memory_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "ai-learning-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (GenAI Phase 2; OFF = legacy per-reader memory assembly (true no-op). Seed migration owned by architect.).",
+      "source": "packages/lib/src/flags/registries/foxy.ts"
     },
     {
       "name": "ff_unified_quiz_v1",
