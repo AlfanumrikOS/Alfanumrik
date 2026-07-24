@@ -92,6 +92,16 @@
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=0."
     },
     {
+      "name": "ff_content_generation_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 10,
+      "owner": "ai-learning-backend",
+      "rationale": "Student-facing GenAI Content Generation Agent (Mermaid diagrams, GenAI Phase 5c). CEO-authorized staged 10% launch canary (2026-07-24). Verified at the read site: /api/content/diagram re-evaluates the flag with per-user context ({ role, userId }), and isFeatureEnabled applies deterministic per-user rollout via hashForRollout(userId, flagName) < rollout_percentage, so rollout_percentage=10 exposes a deterministic ~10% slice of students (not blanket exposure). Read-only, NCERT-grounded, fail-soft-to-abstain, student-self-only (P13), bilingual (P7). Not protected / not in EXPECTED_OFF_FLAGS; seeded OFF by 20260724180000 and flipped ON at rollout 10 by companion activation migration 20260724210000.",
+      "enablementEvidence": "CEO-authorized staged 10% launch canary 2026-07-24 via the feature-flag governance path (matrix override + regenerate + activation migration 20260724210000_enable_ff_content_generation_v1.sql). Deterministic per-user 10% rollout verified at the read site apps/host/src/app/api/content/diagram/route.ts (isFeatureEnabled with userId context) -> packages/lib/src/feature-flags.ts (hashForRollout(userId, flagName) < rollout_percentage)."
+    },
+    {
       "name": "ff_demo_accounts_v2",
       "defaultEnabled": false,
       "stagingEnabled": false,
@@ -390,6 +400,16 @@
       "owner": "release-ops",
       "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_lesson_generation_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 10,
+      "owner": "ai-learning-backend",
+      "rationale": "Student-facing GenAI Lesson Generation Agent (lesson notes, GenAI Phase 5b). CEO-authorized staged 10% launch canary (2026-07-24). Verified at the read site: /api/lesson re-evaluates the flag with per-user context ({ role, userId }), and isFeatureEnabled applies deterministic per-user rollout via hashForRollout(userId, flagName) < rollout_percentage, so rollout_percentage=10 exposes a deterministic ~10% slice of students (not blanket exposure). Read-only, NCERT-grounded, fail-soft-to-abstain, student-self-only (P13), bilingual (P7). Not protected / not in EXPECTED_OFF_FLAGS; seeded OFF by 20260724170000 and flipped ON at rollout 10 by companion activation migration 20260724200000.",
+      "enablementEvidence": "CEO-authorized staged 10% launch canary 2026-07-24 via the feature-flag governance path (matrix override + regenerate + activation migration 20260724200000_enable_ff_lesson_generation_v1.sql). Deterministic per-user 10% rollout verified at the read site apps/host/src/app/api/lesson/route.ts (isFeatureEnabled with userId context) -> packages/lib/src/feature-flags.ts (hashForRollout(userId, flagName) < rollout_percentage)."
     },
     {
       "name": "ff_level_up_celebration_v1",
@@ -700,6 +720,16 @@
       "owner": "platform-ops",
       "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=100.",
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_response_eval_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "ai-learning-backend",
+      "rationale": "Launch-required runtime observability sensor (GenAI Phase 4). CEO-authorized enablement for launch (2026-07-24): fire-and-forget 9-dimension ResponseEval signal emitted metadata-only into ops_events; never alters student-visible AI output, latency budget, or payload (true no-op to the response path). Enabled at 100% because an observability sensor has no partial-rollout value. Not protected / not in EXPECTED_OFF_FLAGS; staged-rollout flag seeded OFF by 20260724140000 and flipped ON by the companion activation migration 20260724190000.",
+      "enablementEvidence": "CEO-authorized launch enablement 2026-07-24 via the feature-flag governance path (matrix override + regenerate + activation migration 20260724190000_enable_ff_response_eval_v1.sql). Fire-and-forget observability sensor, byte-identical student-facing behavior; sink is the existing append-only public.ops_events log (service-role read, PII-redacted per P13)."
     },
     {
       "name": "ff_rule_engine_v1",
