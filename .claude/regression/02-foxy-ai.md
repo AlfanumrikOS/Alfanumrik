@@ -1760,3 +1760,78 @@ free id after REG-312.
 
 ---
 
+## GenAI Phase 5c — Content Generation Agent (NCERT-grounded Mermaid diagrams) (2026-07-24) — REG-314
+
+The Content Generation Agent is the platform's first GENERATIVE VISUAL artifact:
+on-demand, NCERT-grounded, bilingual Mermaid diagrams (flowchart / mindmap /
+timeline) for one chapter. It is a PURE planner
+(`packages/lib/src/diagram/diagram-plan.ts`, `planDiagram`, assessment-owned) + a
+grounded-generation ORCHESTRATOR (`packages/lib/src/diagram/generate-diagram.ts`,
+`generateDiagram`, ai-engineer-owned) behind a read-only POST route
+(`apps/host/src/app/api/content/diagram/route.ts`, backend-owned), additive and
+flag-gated `ff_content_generation_v1` (default OFF). It decides only HOW to
+VISUALIZE a chapter (diagram TYPE / node budget / complexity) from EXISTING
+unified-memory signals — it re-derives NO mastery, invents NO threshold literal
+(`memory.masteryLevel` is used VERBATIM; node budgets are presentation params),
+and writes NOTHING. Because it is GENERATIVE, student-facing, and emits RENDERABLE
+CODE, the safety spine is a DUAL GATE: grounded path ONLY (one `callGroundedAnswer`,
+single RAG retrieval — REG-50 spirit) with a grounded/confidence-0.75/parse-empty
+abstain ladder, then Gate 1 = `validateMermaidCode` (REUSED verbatim — rejects
+`<script>`/`javascript:`/`click`/`%%{init}` injection + non-allowlisted headers) +
+a v1-kind header constraint (narrower than the Mermaid allow-list), then Gate 2 =
+`screenStudentFacingText` over titleEn/Hi + captionEn/Hi AND the WHOLE mermaidCode
+(node labels are user-facing text). Either gate failing → whole-diagram abstain.
+There is NO raw-SVG fallback — abstain is the only failure mode. It is fail-soft
+(never throws → abstain) and registers as a **LIVE** agent that provably writes NO
+mastery (registry invariant e), taking the live set from 6 → 7 (all agents now
+live). The route is student-self ONLY — it serves the caller's OWN
+`auth.studentId`, has NO `?studentId` cross-student path, NO `canAccessStudent`,
+and NO service-role/admin client. Owner: testing (tests) / assessment (planner) +
+ai-engineer (orchestrator) + backend (route). Maps to P12 (AI safety — grounded-only,
+strict-mode abstain, dual safety gate, no raw code to a student) + P7 (bilingual —
+EN + Hindi title/caption + bilingual abstain copy) + the WHAT/HOW read-only boundary
+(a HOW-only agent that writes nothing) + P5 (grade STRING) + P13 (category/metadata
+logs only). Spec: `docs/superpowers/specs/2026-07-24-content-generation-agent-design.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-314 | `content_generation_diagram_dual_safety_gate_no_raw_svg_v1kind_flagoff_selfscope` | **(a) Planner diagram-type selection (HOW-only):** a valid v1 caller override is HONORED (`caller_override`) even when the title would heuristic elsewhere; an out-of-v1-set override (e.g. `sequenceDiagram`) is IGNORED → content heuristic; the title heuristic picks timeline/flowchart/mindmap from keywords with priority timeline→flowchart→mindmap (a title with both a timeline + a flowchart keyword picks timeline); the subject fallback maps `history_sr`→timeline but NOT `social_studies`; a keyword-free non-chronological title → default mindmap. **(b) Planner node budget (presentation, NOT a mastery gate):** band base 6/9/12 for low/medium/high, +3 for a visual learner (`richLabels:true`), clamped at 15 (high+visual = 12+3 = 15, the cap); a non-visual style earns no bonus; branch depth (1/2/2) + detail level (core/standard/rich) are band-derived. **(c) Planner purity:** identical inputs → deeply-equal, does not mutate inputs, never throws across all bands. **(d) Orchestrator happy path:** a grounded strict-JSON answer parses into a validated `DiagramSpec` with bilingual title/caption (P7) + ≥1 citation + carried-through meta (confidence/model/traceId); a `graph` header maps to the `flowchart` kind; tolerant brace-slice recovery from surrounding prose. **(e) Abstain ladder:** grounded=false → abstain surfacing the service `abstain_reason` + `suggested_alternatives` (screen never runs); `confidence < 0.75` → `low_similarity` (0.75 EXACTLY does NOT abstain); empty answer / `{"error":...}` insufficient-source / zero-citation → `no_supporting_chunks` parse-empty abstain. **(f) SAFETY GATE 1 (structure/injection) — NO raw-SVG:** a malformed mermaid (no allowlisted header) → abstain (`upstream_error`), empty `mermaidCode`, Gate 2 screen never runs; each of 4 injection payloads (`<script>`, `javascript:`, a `click` interaction callback, a `%%{init htmlLabels}` directive) is REJECTED by the REUSED `validateMermaidCode` → abstain, NEVER a raw-SVG/raster fallback, NEVER a throw. **(g) v1-kind enforcement:** a header allowlisted by Mermaid but OUTSIDE the v1 set (`sequenceDiagram`) passes `validateMermaidCode` yet fails the v1-kind check → abstain. **(h) SAFETY GATE 2 (age/toxicity):** an unsafe `titleHi`, an unsafe node label INSIDE the `mermaidCode`, or an unsafe `captionEn` each → whole-diagram abstain (screen runs on all 5 student-facing fields incl. the whole mermaidCode). **(i) Fail-soft / writes-nothing:** a throwing grounded call OR throwing screen OR a malformed grounded envelope → abstain, never throws; only the injected grounded client is touched for I/O. **(j) REG-50 single retrieval:** `callGroundedAnswer` invoked EXACTLY once. **(k) P13:** no `studentId` / PII in any logged value across the grounded-false / low-confidence / gate-1-fail logging paths. **(l) Route flag gate:** flag OFF (default) → 404-style `{success:false}` BEFORE any auth/DB/memory/generation work (`authorizeRequest`/`createSupabaseServerClient`/`getStudentMemory`/`generateDiagram` all uncalled, no diagram shape leaks); role/user-scoped flag OFF (global ON) → 404 after auth, still no generation. **(m) Route student-self scope:** flag ON + self → `generateDiagram` called with the CALLER'S OWN `auth.studentId` + parsed subject/grade STRING/chapter + `artifactType:'diagram'`, `getStudentMemory` for the OWN id, RLS-scoped `createSupabaseServerClient` used; a `diagramType` hint passes through; an abstain envelope is a normal 200 (`abstained:true`); response carries `Cache-Control: private, no-store`; no student profile → 404 `NO_STUDENT_PROFILE`; unresolvable grade → 404 `NO_GRADE`; success audit metadata-only (`subject`/`chapterNumber`/`abstained`). **(n) Route body validation (4xx, never 500):** non-JSON body / JSON array → 400 `INVALID_BODY`; missing subject → 400 `SUBJECT_REQUIRED`; missing chapter object → 400 `CHAPTER_REQUIRED`; missing/non-positive chapterNumber → 400 `CHAPTER_NUMBER_REQUIRED`; missing chapterTitle → 400 `CHAPTER_TITLE_REQUIRED`; invalid diagramType enum → 400 `INVALID_DIAGRAM_TYPE`; invalid language enum → 400 `INVALID_LANGUAGE`. **(o) Read-only source scan:** the route source (comments stripped) contains no `.insert(`/`.update(`/`.upsert(`/`.delete(` and never imports `supabase-admin`/`getSupabaseAdmin`/`canAccessStudent`. **(p) Registry — LIVE + no mastery write:** the agent-registry conformance suite's live-set sanity now includes `content_generation` (**7** live agents — all agents now live), so invariant (d) [entryPoint `apps/host/src/app/api/content/diagram/route.ts` exists on disk] and invariant (e) [`findMasteryWrites` over the entryPoint → empty; the route reads `students.grade` via `.select` — a permitted READ — and writes none of the 9 forbidden mastery tables] PASS; invariant (f) [`ff_content_generation_v1` ∈ `FLAG_DEFAULTS`] holds. **(q) Template parity:** `config-parity.test.ts` confirms `diagram_spec_v1` is registered byte-identically across the Next.js + Deno grounding configs. | `apps/host/src/__tests__/lib/diagram/diagram-plan.test.ts` (17), `apps/host/src/__tests__/lib/diagram/generate-diagram.test.ts` (23), `apps/host/src/__tests__/api/content/diagram/route.test.ts` (16), `apps/host/src/__tests__/agents/agent-registry-conformance.test.ts` (updated live-set → 7, 8), `apps/host/src/__tests__/grounding/config-parity.test.ts` (diagram_spec_v1 parity); source under test `packages/lib/src/diagram/diagram-plan.ts` + `packages/lib/src/diagram/generate-diagram.ts` + `apps/host/src/app/api/content/diagram/route.ts` | E |
+
+### Invariants covered by this section (Content Generation Agent)
+
+- P12 (AI safety) — grounded path ONLY (one `callGroundedAnswer`), `mode:'strict'`
+  with an abstain ladder (grounded=false / `confidence < 0.75` / parse-empty), PLUS
+  a DUAL safety gate: Gate 1 `validateMermaidCode` (injection/grammar) + v1-kind
+  header, Gate 2 `screenStudentFacingText` over every EN + Hindi field AND the whole
+  mermaidCode. Either gate failing → whole-diagram abstain. NO raw-SVG fallback.
+  Fail-soft — a generation failure returns an abstain, never a 500.
+- P7 (bilingual) — every emitted spec carries EN + Hindi title/caption; the abstain
+  copy is bilingual.
+- WHAT/HOW read-only boundary — a HOW-only LIVE agent that writes NOTHING: not
+  mastery/progression (registry invariant e — `findMasteryWrites` empty over the
+  route), not XP. The planner re-derives no mastery and holds no threshold literal.
+- P5 (grade STRING) — grade flows as a STRING "6".."12" end-to-end (request →
+  planner → grounded scope), resolved server-side from the caller's own row.
+- P13 (no PII) — logs are category/metadata only (no studentId); the success audit
+  carries `subject`/`chapterNumber`/`abstained` only.
+- Student-self scope — the route serves only `auth.studentId`; there is NO
+  `?studentId` cross-student path, NO `canAccessStudent`, and NO service-role/admin
+  client (RLS-scoped self reads only).
+- Additive / default-OFF — `ff_content_generation_v1` OFF short-circuits to a
+  404-style no-op before any auth/DB/memory/generation work, so no diagram is ever
+  generated or surfaced until an operator flips the flag.
+
+### Catalog total (Content Generation Agent)
+
+GenAI Phase 5c adds REG-314 (Content Generation Agent — NCERT-grounded Mermaid
+diagram generator: grounded-only single-retrieval generation with a
+grounded/confidence-0.75/parse-empty abstain ladder, a DUAL safety gate
+[validateMermaidCode injection-reject + v1-kind header, then screenStudentFacingText
+over every field incl. the whole mermaidCode] with NO raw-SVG fallback, flag-OFF 404
+no-op, student-self scope, and a LIVE registered agent with zero mastery writes —
+taking the live agent set from 6 → 7). REG-313 was the prior addition (GenAI Phase 5b
+Lesson Generation Agent); REG-314 is the next free id after REG-313.
+**Total catalog: 314 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

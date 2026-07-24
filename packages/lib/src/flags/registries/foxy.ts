@@ -362,3 +362,30 @@ export const LESSON_GENERATION_FLAGS = {
   /** Student-facing Lesson Generation Agent (GenAI Phase 5b). Default off = no generated lesson served. */
   V1: 'ff_lesson_generation_v1',
 } as const;
+
+/**
+ * Content Generation Agent student-facing endpoint flag (2026-07-24, GenAI
+ * architecture Phase 5c).
+ *
+ *  ff_content_generation_v1 — gates the student-facing Content Generation Agent
+ *    endpoint (the on-demand Mermaid diagram generator that composes generated
+ *    content — Mermaid diagrams — from existing signals). When OFF (default), the
+ *    endpoint serves NOTHING — it returns a disabled/404-style response — so OFF
+ *    is a TRUE no-op and no content is ever generated or surfaced. When ON, the
+ *    endpoint serves the generated content behind the same call surface (it never
+ *    mutates student-visible state). Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_lesson_generation_v1 / ff_outcome_prediction_v1 / ff_response_eval_v1 /
+ *    ff_unified_memory_v1 / ff_model_gateway_v1 precedent — lives in FLAG_DEFAULTS
+ *    as false and is intentionally NOT added to EXPECTED_OFF_FLAGS /
+ *    PROTECTED_FLAGS (that list is the CEO-approved forced-OFF posture derived from
+ *    migration 20260720110000; every member must be console-protected). Seed
+ *    migration is owned by architect; the diagram implementation
+ *    (packages/lib/src/diagram/**) is owned by ai-engineer and the API route by
+ *    backend. While absent from feature_flags every read path resolves it to OFF.
+ */
+export const CONTENT_GENERATION_FLAGS = {
+  /** Student-facing Content Generation Agent (Mermaid diagrams, GenAI Phase 5c). Default off = nothing served. */
+  V1: 'ff_content_generation_v1',
+} as const;

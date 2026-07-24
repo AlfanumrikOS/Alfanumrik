@@ -199,15 +199,18 @@ export const AGENT_REGISTRY: Record<AgentId, AgentDescriptor> = {
   content_generation: {
     id: 'content_generation',
     displayName: 'Content Generation',
-    audience: 'admin',
+    audience: 'student',
     decides: 'HOW',
     mayWriteMastery: false,
-    capabilities: ['generate_content', 'generate_questions'],
-    // Intended (planned): consolidates the scattered bulk-gen edge functions.
-    consumes: { modelGateway: true, studentMemory: false },
-    status: 'planned',
-    entryPoint: null,
-    gatingFlag: null,
+    capabilities: ['format_content', 'assemble_prompt', 'select_pedagogy'],
+    // Student-facing NCERT-grounded Mermaid diagram generator (Phase 5c): grounds
+    // one diagram via callGroundedAnswer (strict/abstain), reads Phase-2 student
+    // memory for light presentation adaptation, formats a validated Mermaid spec.
+    // Read-only — writes NO mastery/progression.
+    consumes: { modelGateway: true, studentMemory: true },
+    status: 'live',
+    entryPoint: 'apps/host/src/app/api/content/diagram/route.ts',
+    gatingFlag: 'ff_content_generation_v1',
   },
 } as const;
 

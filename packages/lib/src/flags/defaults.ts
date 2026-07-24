@@ -47,6 +47,7 @@ import {
   RESPONSE_EVAL_FLAGS,
   OUTCOME_PREDICTION_FLAGS,
   LESSON_GENERATION_FLAGS,
+  CONTENT_GENERATION_FLAGS,
 } from './registries/foxy';
 
 /**
@@ -118,6 +119,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [RESPONSE_EVAL_FLAGS.V1]: false, // GenAI Phase 4; OFF = no runtime eval computed/emitted (true no-op, fire-and-forget when ON). Seed migration owned by architect.
   [OUTCOME_PREDICTION_FLAGS.V1]: false, // GenAI Phase 5a; OFF = read-only Outcome Prediction endpoint serves no prediction (disabled/404-style, true no-op). Seed migration owned by architect.
   [LESSON_GENERATION_FLAGS.V1]: false, // GenAI Phase 5b; OFF = student-facing Lesson Generation endpoint serves no generated lesson (disabled/404-style, true no-op). Seed migration owned by architect.
+  [CONTENT_GENERATION_FLAGS.V1]: false, // GenAI Phase 5c; OFF = student-facing Content Generation endpoint (Mermaid diagrams) serves nothing (disabled/404-style, true no-op). Seed migration owned by architect.
   [WHITE_LABEL_FLAGS.TENANT_TYPE_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_MODULE_REGISTRY_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_CONFIG_V2]: false,
