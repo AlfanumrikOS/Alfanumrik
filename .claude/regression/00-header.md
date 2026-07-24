@@ -6,8 +6,14 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 307 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-306..REG-307 (2026-07-22, Master Action Plan Phase 2.3–2.5 + 3.10 —
+**Total catalog: 308 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-308 (2026-07-24, GenAI Phase 1 — provider-agnostic Model Gateway
+backward-compat + provider-routing safety: flag-OFF `ff_model_gateway_v1` forces
+the `default` policy which reproduces the legacy Anthropic-primary chain
+byte-for-byte, the router never selects a dormant `configured:false` provider
+(both Gemini seams), config.ts model-name byte-identity, and Deno↔TS
+`MODEL_FALLBACK_ORDER` parity — P12; see `02-foxy-ai.md`).
+Prior: REG-306..REG-307 (2026-07-22, Master Action Plan Phase 2.3–2.5 + 3.10 —
 REG-306 Alfa OS shell launch [Practice/Revision/Test OS presentation shells:
 default-OFF client-first-paint flag identity + existing-nav non-regression +
 shell render contract + PredictedScoreCard byte-parity + REG-125-conformant

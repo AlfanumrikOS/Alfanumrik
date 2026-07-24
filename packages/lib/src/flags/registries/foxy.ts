@@ -230,3 +230,30 @@ export const FOXY_OLYMPIAD_MODE_FLAGS = {
 export const FOXY_INTERACTIVE_LESSON_FLAGS = {
   V1: 'ff_foxy_interactive_lesson_v1',
 } as const;
+
+/**
+ * Provider-agnostic Model Gateway flag (2026-07-24, GenAI architecture Phase 1).
+ *
+ *  ff_model_gateway_v1 — gates the NON-DEFAULT routing policies of the new
+ *    provider-agnostic Model Gateway (the shared AI-infra layer in front of the
+ *    LLM providers behind Foxy / ncert-solver / quiz-generator / cme-engine /
+ *    grounded-answer). When OFF (default), the gateway reproduces today's
+ *    Anthropic-primary behavior EXACTLY — no alternate provider selection, no
+ *    fallback/shadow/cost-routing policy runs — so OFF is a TRUE no-op and every
+ *    AI path is byte-identical to today. When ON, the gateway's non-default
+ *    routing policies (multi-provider selection, failover, cost/latency routing)
+ *    become active behind the same call surface. Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_foxy_response_cache_l2_v1 / ff_adaptive_live_selection_v1 precedent —
+ *    lives in FLAG_DEFAULTS as false and is intentionally NOT added to
+ *    EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (that list is the CEO-approved
+ *    forced-OFF posture derived from migration 20260720110000; every member must
+ *    be console-protected). Seed migration is owned by architect; the gateway
+ *    implementation (packages/lib/src/ai/gateway/**) is owned by ai-engineer.
+ *    While absent from feature_flags every read path resolves it to OFF.
+ */
+export const MODEL_GATEWAY_FLAGS = {
+  /** Provider-agnostic Model Gateway non-default routing policies. Default off = legacy Anthropic-primary. */
+  V1: 'ff_model_gateway_v1',
+} as const;

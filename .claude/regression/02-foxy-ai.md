@@ -1422,6 +1422,42 @@ monitoring gate). Master Action Plan Phase 8 adds REG-305 (Monthly-Synthesis
 delivery-failure monitor [8.4] + LLM-as-judge quality sampler [8.6] + both
 super-admin dashboards + the `synthesis_quality_scores` table and delivery
 alert rule).
+
+## GenAI Phase 1 — Model Gateway backward-compat + provider-routing safety (2026-07-24) — REG-308
+
+The provider-agnostic Model Gateway (`packages/lib/src/ai/gateway/**`) consolidates
+the four previously-hardcoded model-call sites onto ONE catalog + ONE routing
+decision. It is purely additive and flag-gated behind `ff_model_gateway_v1`
+(default OFF, seeded OFF by architect). The whole point of Phase 1 is that the
+flag-OFF world is a **byte-identical no-op** vs. today's Anthropic-primary
+behavior — so this catalog entry pins the four ways that guarantee could silently
+break: (a) flag-OFF policy parity, (b) a dormant `configured:false` provider
+leaking into a selection, (c) a config model-name drift, (d) Deno↔TS ordering
+drift. Owner: testing (tests) / ai-engineer (gateway source). Maps to P12.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-308 | `model_gateway_backward_compat_and_provider_routing_p12` | **(a) Flag-OFF default-policy parity (the no-op guarantee):** with `ff_model_gateway_v1` OFF, `callModel` forces ANY requested policy (`cost`/`quality`/…) to `default`, and `default` reproduces the legacy Anthropic-primary chain byte-for-byte (`claude-haiku-4-5-20251001` → `claude-sonnet-4-20250514` → `gpt-4o-mini` → `gpt-4o`); the OFF path still consults the flag, an explicit `default` request never touches the flag system, and flag-ON honours the requested policy (`cost` → `gpt-4o-mini` head). **(b) Router never selects a dormant provider:** across EVERY policy × constraint combination the returned chain contains only `configured:true` models — both Gemini seams stay out even when `cost` would rank the cheaper-but-dormant `gemini-1.5-flash` first; constraints FILTER (`minQualityTier`/`maxInputCostPer1M`/`needsVision`) but never REORDER the `default` chain; an impossible constraint yields `[]` (no fallback to dormant). **(c) config.ts model-name byte-identity:** `getAIConfig().primaryModel.name === 'claude-haiku-4-5-20251001'` and `.fallbackModel.name === 'claude-sonnet-4-20250514'` (frozen literals, now sourced from the registry id constants) with request-shaping params unchanged (1024/2048 tok). **(d) Deno↔TS `MODEL_FALLBACK_ORDER` parity:** the edge mirror `supabase/functions/grounded-answer/config.ts` `MODEL_FALLBACK_ORDER` equals the TS registry `LEGACY_FALLBACK_ORDER` for all three keys (`haiku`/`sonnet`/`auto`) — same providers, models, and order — so the Node gateway and the Deno grounded-answer path can never drift. **Gateway behavior (defense-in-depth):** fallback advances on a transient error (incl. a thrown adapter error normalized to a non-fail-fast advance) and crosses the provider boundary; a 401/403 fail-fast aborts the chain WITHOUT trying later models; all-failed returns a structured `{ ok:false, provider:'none' }` and never throws; per-attempt + per-call telemetry emit metadata-only fields (`modelId`/`provider`/`policy`/tokens/cost/latency/`fallbackCount`/`success`) and never the prompt (P13). **Consumer equivalence:** `classifyIntent`'s LLM branch uses legacy `callClaude` when the flag is OFF and `callModel({policy:'default'})` when ON, with an identical return shape and the same throw-on-failure → mode-default fallback on either path. | `apps/host/src/__tests__/lib/ai/gateway/registry.test.ts` (12), `router.test.ts` (13), `gateway.test.ts` (13), `config-model-name-identity.test.ts` (4), `deno-parity.test.ts` (5), `foxy-router-consumer.test.ts` (5); source under test `packages/lib/src/ai/gateway/**`, `packages/lib/src/ai/config.ts`, `packages/lib/src/ai/workflows/foxy-router.ts`, `supabase/functions/grounded-answer/config.ts` | E |
+
+### Invariants covered by this section (Model Gateway)
+
+- P12 AI safety / provider — the router can NEVER surface a `configured:false`
+  (dormant) provider under any policy or constraint; a live-path model/provider
+  change requires an explicit, user-approved catalog edit, and the frozen config
+  model-name literals + the Deno↔TS ordering parity make any such drift fail a
+  test loudly instead of silently repointing a live path.
+- Additive-no-op guarantee — flag-OFF forces `default`, and `default` is the
+  legacy Anthropic-primary chain byte-for-byte, so shipping the gateway changes
+  zero behavior until an operator deliberately flips `ff_model_gateway_v1`.
+- P13 data privacy — gateway telemetry is metadata-only (model id, provider,
+  policy, token counts, cost estimate, latency, fallback count, success); it
+  never carries the system prompt or messages.
+
+### Catalog total (Model Gateway)
+
+GenAI Phase 1 adds REG-308 (Model Gateway backward-compat + provider-routing
+safety). REG-306..REG-307 were the prior additions (Master Action Plan Phase
+2.3–2.5 + 3.10); REG-308 is the next free id after REG-307.
 **Total catalog: 305 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
