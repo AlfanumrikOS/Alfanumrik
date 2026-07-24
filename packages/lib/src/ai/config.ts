@@ -6,18 +6,24 @@
  */
 
 import type { AIConfig, ModelConfig } from './types';
+import { ANTHROPIC_HAIKU_ID, ANTHROPIC_SONNET_ID } from './gateway/registry';
 
 // ─── Model Configurations ───────────────────────────────────────────────────
+//
+// Model NAMES are derived from the gateway registry (the single source of truth
+// for model ids). The request-shaping params (maxTokens/temperature/timeoutMs)
+// stay here — they are per-caller defaults, not model identity. Values below are
+// byte-identical to the pre-registry constants so no caller behavior changes.
 
 const HAIKU: ModelConfig = {
-  name: 'claude-haiku-4-5-20251001',
+  name: ANTHROPIC_HAIKU_ID, // 'claude-haiku-4-5-20251001'
   maxTokens: 1024,
   temperature: 0.3,
   timeoutMs: 30_000,
 };
 
 const SONNET: ModelConfig = {
-  name: 'claude-sonnet-4-20250514',
+  name: ANTHROPIC_SONNET_ID, // 'claude-sonnet-4-20250514'
   maxTokens: 2048,
   temperature: 0.3,
   timeoutMs: 45_000,

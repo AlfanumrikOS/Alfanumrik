@@ -111,6 +111,41 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // quiz verifier — .txt + inline.ts twins; ncert_solver_v1 is raw-markdown and
 // untouched).
 export const PROMPT_REV = 3;
+
+// ── Model fallback ordering (edge mirror of the TS gateway registry) ─────────
+//
+// This constant is the Deno-side mirror of the TS Model Gateway's
+// LEGACY_FALLBACK_ORDER (packages/lib/src/ai/gateway/registry.ts). Deno cannot
+// import from packages/lib directly, so the ordering is duplicated here as the
+// SINGLE source that grounded-answer/claude.ts `resolveModelOrder` reads from.
+//
+// INVARIANT: this MUST equal the TS registry's LEGACY_FALLBACK_ORDER
+// byte-for-byte (same providers, same model ids, same order). A parity test
+// (owned by the testing agent) asserts equality across the Deno/Node boundary
+// so the two can never silently drift.
+//
+// Anthropic runs FIRST for every preference — the Foxy system prompt, JSON
+// output contract, and CBSE pedagogy tree are calibrated for Claude; the OpenAI
+// tiers are availability fallbacks only (RCA-FIX CRITICAL-1, 2026-06-26).
+export const MODEL_FALLBACK_ORDER: Record<
+  'haiku' | 'sonnet' | 'auto',
+  ReadonlyArray<{ provider: 'anthropic' | 'openai'; model: string }>
+> = {
+  haiku: [
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    { provider: 'openai', model: 'gpt-4o-mini' },
+  ],
+  sonnet: [
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    { provider: 'openai', model: 'gpt-4o' },
+  ],
+  auto: [
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    { provider: 'openai', model: 'gpt-4o-mini' },
+    { provider: 'openai', model: 'gpt-4o' },
+  ],
+};
 // MODEL_ROUTE_REV bump rule: bump whenever model routing changes what model
 // (or generation params) a given model_preference resolves to — e.g. a model
 // id upgrade in claude.ts (HAIKU_MODEL / SONNET_MODEL / GPT_* constants), a
