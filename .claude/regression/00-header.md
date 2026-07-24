@@ -6,8 +6,20 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 310 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-310 (2026-07-24, GenAI Phase 3 — Agent Registry + WHAT/HOW boundary:
+**Total catalog: 311 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-311 (2026-07-24, GenAI Phase 4 — runtime `ResponseEval` observability
+sensor: additive, flag-gated `ff_response_eval_v1` (default OFF), OBSERVABILITY-ONLY
+9-dimension response sensor that NEVER blocks/alters a response; pins per-dimension
+normalization for all 9 dims incl. every boundary (mastery 0.4/0.7/0.85, latency
+800/8000ms, cost budget/ceiling, confidence 0.75/0.6 floor/cap, ungrounded cap,
+output-screen 1.0/0.5/0.0), the 6 flag conditions [`toxicity_unsafe`,
+`age_inappropriate`, `curriculum_out_of_scope`, `hallucination_risk_high`,
+`latency_over_ceiling`, `cost_over_ceiling`] firing only under their exact
+condition (difficulty_fit + the 2 deferred dims NEVER flag), PII-clean
+fire-and-forget emission (codes/ids/numbers only, no prose/PII key), never-throw,
+and flag-OFF byte-identity via the re-run 42-test Foxy route suites; P12 AI-safety
+observability + P13 no-PII; see `02-foxy-ai.md`).
+Prior: REG-310 (2026-07-24, GenAI Phase 3 — Agent Registry + WHAT/HOW boundary:
 pure-metadata + inert (no flag/migration/activation) 7-agent registry that is
 HOW-only (`decides:'HOW'`, `mayWriteMastery:false`) with the teeth — a static
 `findMasteryWrites` proof that NO live agent surface (Foxy route + `_lib/`,

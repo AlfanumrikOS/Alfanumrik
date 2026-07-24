@@ -282,3 +282,29 @@ export const UNIFIED_MEMORY_FLAGS = {
   /** Unified Student Memory read-API. Default off = legacy per-reader memory assembly. */
   V1: 'ff_unified_memory_v1',
 } as const;
+
+/**
+ * Runtime ResponseEval observability sensor flag (2026-07-24, GenAI architecture
+ * Phase 4).
+ *
+ *  ff_response_eval_v1 — gates the runtime 9-dimension ResponseEval observability
+ *    sensor (the fire-and-forget quality-scoring layer that grades AI responses
+ *    across 9 dimensions behind Foxy / ncert-solver / quiz-generator / cme-engine /
+ *    grounded-answer). When OFF (default), no runtime eval is computed or emitted —
+ *    so OFF is a TRUE no-op and every AI path is byte-identical to today. When ON,
+ *    the sensor computes and emits the 9-dimension eval fire-and-forget, off the
+ *    response's critical path (it never alters student-visible output). Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_unified_memory_v1 / ff_model_gateway_v1 / ff_foxy_response_cache_l2_v1
+ *    precedent — lives in FLAG_DEFAULTS as false and is intentionally NOT added to
+ *    EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (that list is the CEO-approved forced-OFF
+ *    posture derived from migration 20260720110000; every member must be
+ *    console-protected). Seed migration is owned by architect; the eval
+ *    implementation (packages/lib/src/ai/eval/**) is owned by ai-engineer. While
+ *    absent from feature_flags every read path resolves it to OFF.
+ */
+export const RESPONSE_EVAL_FLAGS = {
+  /** Runtime 9-dimension ResponseEval observability sensor. Default off = no runtime eval (byte-identical, fire-and-forget). */
+  V1: 'ff_response_eval_v1',
+} as const;
