@@ -6,8 +6,22 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 312 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-312 (2026-07-24, GenAI Phase 5a — read-only Outcome Prediction Agent:
+**Total catalog: 313 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-313 (2026-07-24, GenAI Phase 5b — Lesson Generation Agent: the FIRST
+student-facing GENERATIVE artifact — additive, flag-gated `ff_lesson_generation_v1`
+(default OFF), a PURE planner (`planLesson`, maps unified-memory bands → a HOW-only
+`LessonPlan`, no re-derived mastery / no threshold literal / codes-only
+`renderAdaptationCodes`) + a grounded-generation orchestrator (`generateLessonNotes`
+— ONE `callGroundedAnswer` single retrieval [REG-50], a grounded=false /
+`confidence < 0.75` / parse-empty abstain ladder, and a Node-side per-field
+`screenStudentFacingText` backstop on EVERY EN + Hindi field where an unsafe section
+is dropped and all-dropped → whole-lesson abstain, fail-soft never-throw) behind a
+student-self-only read route (own `auth.studentId`, NO cross-student path / no
+`canAccessStudent` / no service-role client, flag-OFF → 404 no-op before any work,
+abstain → 200), registered as a LIVE agent with ZERO mastery writes (agent-registry
+invariants d/e/f over the route); P12 AI-safety + P7 bilingual + WHAT/HOW read-only
++ P5 grade-STRING + P13 no-PII; see `02-foxy-ai.md`).
+Prior: REG-312 (2026-07-24, GenAI Phase 5a — read-only Outcome Prediction Agent:
 additive, flag-gated `ff_outcome_prediction_v1` (default OFF), a PURE composer
 (`composeOutcomePrediction`) behind a read-only GET route that COMPOSES the
 platform's existing predictors into one unified `OutcomePrediction` via a 4-tier

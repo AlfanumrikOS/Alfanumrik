@@ -1,7 +1,7 @@
 {
   "source": "packages/lib/src/flags/defaults.ts",
   "registryRoot": "packages/lib/src/flags/registries",
-  "flagCount": 125,
+  "flagCount": 126,
   "flags": [
     {
       "name": "ff_adaptive_live_selection_v1",
@@ -560,6 +560,15 @@
       "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
       "source": "scripts/feature-flag-matrix.overrides.json",
       "rolloutPercentage": 0
+    },
+    {
+      "name": "ff_lesson_generation_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "ai-learning-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (GenAI Phase 5b; OFF = student-facing Lesson Generation endpoint serves no generated lesson (disabled/404-style, true no-op). Seed migration owned by architect.).",
+      "source": "packages/lib/src/flags/registries/foxy.ts"
     },
     {
       "name": "ff_level_up_celebration_v1",

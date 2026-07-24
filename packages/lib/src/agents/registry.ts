@@ -178,9 +178,9 @@ export const AGENT_REGISTRY: Record<AgentId, AgentDescriptor> = {
     capabilities: ['format_content', 'assemble_prompt', 'select_pedagogy'],
     // Intended (planned): assembles lesson presentation over adaptive WHAT.
     consumes: { modelGateway: true, studentMemory: true },
-    status: 'planned',
-    entryPoint: null,
-    gatingFlag: null,
+    status: 'live',
+    entryPoint: 'apps/host/src/app/api/lesson/route.ts',
+    gatingFlag: 'ff_lesson_generation_v1',
   },
   outcome_prediction: {
     id: 'outcome_prediction',
