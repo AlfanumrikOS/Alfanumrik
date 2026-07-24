@@ -1630,3 +1630,62 @@ REG-310.
 
 ---
 
+## GenAI Phase 5a — read-only Outcome Prediction Agent (2026-07-24) — REG-312
+
+The Outcome Prediction Agent is the platform's first forward-looking learner
+projection: a PURE composer (`packages/lib/src/predict/outcome-prediction.ts`,
+`composeOutcomePrediction`, assessment-owned) behind a read-only GET route
+(`apps/host/src/app/api/predict/outcome/route.ts`, backend-owned), additive and
+flag-gated `ff_outcome_prediction_v1` (default OFF). It COMPOSES the platform's
+EXISTING predictors into one unified, typed `OutcomePrediction` — it invents NO
+new prediction math, NO new confidence formula, and **NO pass-mark constant**:
+"pass" is expressed only via the EXISTING CBSE bands, with the D→C1 boundary
+DERIVED from `calculateBoardExamScore`'s grade oracle (never a hardcoded 50). It
+NEVER recomputes the board score — precomputed `board_score_predictions` /
+`cme_exam_readiness` rows are read verbatim — and it registers as a **LIVE** agent
+that provably writes NO mastery (registry invariant e). The route is the sanctioned
+Pulse-precedent read pattern: RLS-scoped self reads, `canAccessStudent`-gated
+service-role cross-student reads, no payload on any deny. Owner: testing (tests) /
+assessment (composer) + backend (route). Maps to P8 (IDOR — `canAccessStudent` is
+the single cross-student data boundary) + P13 (no PII on deny; metadata-only
+audit), the WHAT/HOW read-only boundary (a HOW-only agent that writes nothing —
+not mastery, not the board rows it reads), and P1/P2-adjacent (prediction
+composed from, but never a back-door into, the deterministic scoring/XP path).
+Spec: `docs/superpowers/specs/2026-07-24-outcome-prediction-agent-design.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-312 | `outcome_prediction_readonly_4tier_compose_and_idor_safe_read` | **(a) 4-tier ladder selection:** tier-1 `board_score_predictions` → `source:'board_score_predictions'`, range low/mid/high + `confidenceBand` read verbatim from the row and `confidence = coverage_pct/100` (NOT a synthesized formula); tier-2 memory-derived `chapters` (no board row) → `source:'pure_predict_exam_score'` with `midMarks`/`confidence` EQUAL to a real `predictExamScore(chapters, totalMarks)` call (delegation, not re-implementation); tier-2′ only `cme_exam_readiness` → `source:'cme_exam_readiness'`, `predicted_marks` read as the mid, `confidence = overall_score/100`; tier-3 nothing usable → `source:'insufficient_data'`, `sufficientData:false`, `boardScoreRange:null`, `confidence.overall:0`, `passLikelihood.band:'unknown'`/`likelihood:null`. Ladder PRECEDENCE board > chapters > cme (all present → board; board removed → chapters); a non-finite `predicted_pct` skips tier-1 and falls through. **(b) No pass-mark constant — derived boundary:** `passLikelihood.basis` reports the SAME D→C1 boundary independently computed from `calculateBoardExamScore` (the smallest whole-% the oracle grades NOT 'D'), and that boundary really is the D-seam (`grade(boundary)!=='D'` AND `grade(boundary-1)==='D'`); likelihood/band move MONOTONICALLY across positions — well above → `likely`/1, straddling → `borderline`/(0,1), entirely below → `at_risk`/0 (band rank + likelihood both non-decreasing). **(c) Deterministic composition (no LLM):** `weakConcepts` includes weak topics STRICTLY below `PULSE_THRESHOLDS.at_risk_mastery` (0.4) and excludes a topic AT exactly 0.4 (reused verbatim, strict `<`), collects knowledge-gaps + cme/board weak chapters, and sorts weakest-first (known masteries ascending, unknown-mastery gaps last); `interventionRecommendations` emits one rec per triggered branch (`remediate_prerequisite`/`review_regression`/`revise_chapter`/`concentrate_subject`/`resume_practice`) with stable ascending ordinal `priority` (root-cause remediate ranks ahead of resume); `rationale` is an array of structured `{code, detail}` string drivers (`source` always present, plus `weak_prerequisites`/`board_coverage`/`learning_velocity` when their inputs exist) — never free-form text; `atRiskSignals.anyAtRisk` mirrors the pulse verdicts (loud→true, quiet→false, absent→false+null); P5 grade STRING + subject + learningVelocity pass through verbatim. **(d) Purity:** identical inputs → deeply-equal output; NEVER throws on minimal/empty/malformed inputs (Infinity/NaN/negative/null); `confidence.overall` and `likelihood` always stay within `[0,1]`. **(e) Route flag gate:** flag OFF (default) → 404-style `{success:false}` BEFORE any auth/DB/memory work (`authorizeRequest`/`canAccessStudent`/`getSupabaseAdmin`/`createSupabaseServerClient`/`getStudentMemory` all uncalled) — a true no-op, no prediction shape leaks. **(f) Self path (P8):** `studentId` omitted OR `=== own` → reads via the RLS-scoped `createSupabaseServerClient` and returns `{success, data:{schemaVersion:1, ...prediction}}`; `canAccessStudent` and the service-role client are NEVER called. **(g) Cross-student IDOR boundary (P8/P13):** `canAccessStudent(callerId, targetId)` is consulted FIRST — false → **403 with NO payload** (no `boardScoreRange`/`passLikelihood` in the body), `getSupabaseAdmin`/`getStudentMemory` never reached, denial audited `status:'denied'`/`reason:'no_relationship'`; true → service-role read via `getSupabaseAdmin` (RLS client NOT used) + a prediction returned. **(h) Subject + fail-soft:** no subject param and none inferable → 400 `SUBJECT_REQUIRED`; every optional sub-read throwing (board/weights/cme/memory/pulse) still yields a 200 `insufficient_data` — the composer degrades, the route never 500s. **(i) Read-only:** the route module source (comments stripped) contains no `.insert(`/`.update(`/`.upsert(`/`.delete(`. **(j) Registry — LIVE + no mastery write:** the agent-registry conformance suite's live-set sanity now includes `outcome_prediction` (5 live agents), so invariant (d) [entryPoint `apps/host/src/app/api/predict/outcome/route.ts` exists on disk] and invariant (e) [`findMasteryWrites` over the entryPoint + co-located `_lib/` → empty] PASS for the new route — the route reads `learner_mastery` via `.select` (a permitted READ) and writes none of the 9 forbidden mastery tables; invariant (f) [`ff_outcome_prediction_v1` ∈ `FLAG_DEFAULTS`] holds. | `apps/host/src/__tests__/lib/predict/outcome-prediction.test.ts` (20), `apps/host/src/__tests__/api/predict/outcome-route.test.ts` (8), `apps/host/src/__tests__/agents/agent-registry-conformance.test.ts` (updated live-set, 8); source under test `packages/lib/src/predict/outcome-prediction.ts` + `apps/host/src/app/api/predict/outcome/route.ts` | E |
+
+### Invariants covered by this section (Outcome Prediction Agent)
+
+- P8 (IDOR / cross-student boundary) — `canAccessStudent` is the SINGLE
+  cross-student data boundary, enforced FIRST on the cross path (false → 403, no
+  payload, no service-role read); the self path relies on RLS and never touches
+  the service role or the boundary check.
+- P13 (no PII) — no student payload on any deny path (403 body carries only the
+  `{success:false, error}` envelope, no prediction shape); the success audit is
+  metadata-only (`subject`/`source`/`self`), never message/name/email/phone.
+- WHAT/HOW read-only boundary — a HOW-only LIVE agent that writes NOTHING: not
+  mastery/progression (registry invariant e — `findMasteryWrites` empty over the
+  route), not XP, and specifically not the `board_score_predictions` /
+  `cme_exam_readiness` rows it reads verbatim (owned by cron/edge).
+- P1/P2 (adjacency) — the prediction is COMPOSED from the deterministic
+  predictors but is never a back-door into the scoring/XP formula; there is NO
+  new pass-mark constant — the D→C1 boundary is derived from
+  `calculateBoardExamScore`, and the board score is never recomputed.
+- Additive / default-OFF — `ff_outcome_prediction_v1` OFF short-circuits to a
+  404-style no-op before any auth/DB/memory work, so the endpoint surfaces no
+  prediction until an operator flips the flag.
+
+### Catalog total (Outcome Prediction Agent)
+
+GenAI Phase 5a adds REG-312 (read-only Outcome Prediction Agent — 4-tier compose
+with no pass-mark constant + no board-score recompute, self-vs-cross-student
+IDOR-safe read pattern, LIVE registered agent with zero mastery writes). REG-311
+was the prior addition (GenAI Phase 4 runtime ResponseEval); REG-312 is the next
+free id after REG-311.
+**Total catalog: 312 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

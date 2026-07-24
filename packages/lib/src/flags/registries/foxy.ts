@@ -308,3 +308,30 @@ export const RESPONSE_EVAL_FLAGS = {
   /** Runtime 9-dimension ResponseEval observability sensor. Default off = no runtime eval (byte-identical, fire-and-forget). */
   V1: 'ff_response_eval_v1',
 } as const;
+
+/**
+ * Outcome Prediction Agent read-only endpoint flag (2026-07-24, GenAI architecture
+ * Phase 5a).
+ *
+ *  ff_outcome_prediction_v1 — gates the read-only Outcome Prediction Agent endpoint
+ *    (the forward-looking predictor that projects a learner's likely outcomes from
+ *    existing signals). When OFF (default), the endpoint serves NO prediction — it
+ *    returns a disabled/404-style response — so OFF is a TRUE no-op and no
+ *    prediction is ever computed or surfaced. When ON, the endpoint serves the
+ *    read-only prediction behind the same call surface (it never mutates
+ *    student-visible state). Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_response_eval_v1 / ff_unified_memory_v1 / ff_model_gateway_v1 precedent —
+ *    lives in FLAG_DEFAULTS as false and is intentionally NOT added to
+ *    EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (that list is the CEO-approved forced-OFF
+ *    posture derived from migration 20260720110000; every member must be
+ *    console-protected). Seed migration is owned by architect; the prediction
+ *    implementation (packages/lib/src/predict/**) is owned by assessment and the
+ *    API route by backend. While absent from feature_flags every read path resolves
+ *    it to OFF.
+ */
+export const OUTCOME_PREDICTION_FLAGS = {
+  /** Read-only Outcome Prediction Agent endpoint (GenAI Phase 5a). Default off. */
+  V1: 'ff_outcome_prediction_v1',
+} as const;

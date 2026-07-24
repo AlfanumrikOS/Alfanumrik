@@ -6,8 +6,21 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 311 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-311 (2026-07-24, GenAI Phase 4 — runtime `ResponseEval` observability
+**Total catalog: 312 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-312 (2026-07-24, GenAI Phase 5a — read-only Outcome Prediction Agent:
+additive, flag-gated `ff_outcome_prediction_v1` (default OFF), a PURE composer
+(`composeOutcomePrediction`) behind a read-only GET route that COMPOSES the
+platform's existing predictors into one unified `OutcomePrediction` via a 4-tier
+data-source ladder (`board_score_predictions` verbatim → memory-derived
+`predictExamScore` → `cme_exam_readiness` verbatim → `insufficient_data`) with NO
+new prediction math, **NO pass-mark constant** (the D→C1 boundary is DERIVED from
+`calculateBoardExamScore`), and NO recompute of the board score; the route is
+self-vs-cross-student IDOR-safe (RLS-scoped self / `canAccessStudent`-gated
+service-role cross, no payload on any deny) and registers as a LIVE agent with
+ZERO mastery writes (agent-registry invariant e over the route + `_lib/`); P8
+IDOR + P13 no-PII + WHAT/HOW read-only boundary + P1/P2-adjacent; see
+`02-foxy-ai.md`).
+Prior: REG-311 (2026-07-24, GenAI Phase 4 — runtime `ResponseEval` observability
 sensor: additive, flag-gated `ff_response_eval_v1` (default OFF), OBSERVABILITY-ONLY
 9-dimension response sensor that NEVER blocks/alters a response; pins per-dimension
 normalization for all 9 dims incl. every boundary (mastery 0.4/0.7/0.85, latency

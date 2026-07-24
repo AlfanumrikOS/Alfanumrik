@@ -192,9 +192,9 @@ export const AGENT_REGISTRY: Record<AgentId, AgentDescriptor> = {
     // Intended (planned): composes existing deterministic predictors + reads
     // learner memory; no LLM by design.
     consumes: { modelGateway: false, studentMemory: true },
-    status: 'planned',
-    entryPoint: null,
-    gatingFlag: null,
+    status: 'live',
+    entryPoint: 'apps/host/src/app/api/predict/outcome/route.ts',
+    gatingFlag: 'ff_outcome_prediction_v1',
   },
   content_generation: {
     id: 'content_generation',
