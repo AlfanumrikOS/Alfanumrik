@@ -6,8 +6,16 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 308 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-308 (2026-07-24, GenAI Phase 1 — provider-agnostic Model Gateway
+**Total catalog: 309 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-309 (2026-07-24, GenAI Phase 2 — Unified Student Memory read-API:
+flag-gated `ff_unified_memory_v1` (default OFF) DPDP erasure suppression
+(pending/purging → fully-empty memory, service-role read, FAIL-CLOSED on any
+error), flag-OFF byte-identity via reference-identical passthrough of the
+existing cognitive/twin/long-memory sub-contexts, fail-soft composition (a
+rejecting sub-read degrades only its slice, never throws), and a PII-clean prompt
+renderer that equals the existing per-slice renderers — P13, WHAT/HOW read-only
+boundary; see `02-foxy-ai.md`).
+Prior: REG-308 (2026-07-24, GenAI Phase 1 — provider-agnostic Model Gateway
 backward-compat + provider-routing safety: flag-OFF `ff_model_gateway_v1` forces
 the `default` policy which reproduces the legacy Anthropic-primary chain
 byte-for-byte, the router never selects a dormant `configured:false` provider

@@ -257,3 +257,28 @@ export const MODEL_GATEWAY_FLAGS = {
   /** Provider-agnostic Model Gateway non-default routing policies. Default off = legacy Anthropic-primary. */
   V1: 'ff_model_gateway_v1',
 } as const;
+
+/**
+ * Unified Student Memory read-API flag (2026-07-24, GenAI architecture Phase 2).
+ *
+ *  ff_unified_memory_v1 — gates the Unified Student Memory read-API (the shared
+ *    memory-assembly layer that consolidates today's per-reader memory behavior
+ *    behind a single read surface). When OFF (default), every reader keeps its
+ *    legacy per-reader memory assembly EXACTLY — no unified read path runs — so
+ *    OFF is a TRUE no-op and memory behavior is byte-identical to today. When ON,
+ *    readers resolve memory through the unified read-API behind the same call
+ *    surface. Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_model_gateway_v1 / ff_foxy_response_cache_l2_v1 precedent — lives in
+ *    FLAG_DEFAULTS as false and is intentionally NOT added to EXPECTED_OFF_FLAGS /
+ *    PROTECTED_FLAGS (that list is the CEO-approved forced-OFF posture derived
+ *    from migration 20260720110000; every member must be console-protected). Seed
+ *    migration is owned by architect; the memory implementation
+ *    (packages/lib/src/memory/**) is owned by ai-engineer. While absent from
+ *    feature_flags every read path resolves it to OFF.
+ */
+export const UNIFIED_MEMORY_FLAGS = {
+  /** Unified Student Memory read-API. Default off = legacy per-reader memory assembly. */
+  V1: 'ff_unified_memory_v1',
+} as const;

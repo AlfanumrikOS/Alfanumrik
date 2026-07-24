@@ -1462,3 +1462,67 @@ safety). REG-306..REG-307 were the prior additions (Master Action Plan Phase
 
 ---
 
+## GenAI Phase 2 — Unified Student Memory read-API + DPDP erasure suppression (2026-07-24) — REG-309
+
+The Unified Student Memory read-API (`getStudentMemory` in
+`apps/host/src/lib/memory/student-memory.ts`, plus the two app-independent leaves
+`packages/lib/src/memory/erasure-guard.ts` + `preferences.ts`) WRAPS the three
+existing Foxy-family learner-state readers (cognitive context, digital twin,
+~30d long-memory) into one typed `StudentMemory` — it invents NO new mastery
+math and NO new thresholds (spec §7). It is purely additive and flag-gated behind
+`ff_unified_memory_v1` (default OFF). The whole point of Phase 2 is that the
+flag-OFF world at `/api/foxy` is **byte-identical** to today (the route aliases
+its existing per-slice sub-contexts when OFF; when ON it injects those SAME
+already-per-user-gated contexts into `getStudentMemory`), so this catalog entry
+pins the four ways that guarantee could silently break, PLUS the one genuinely
+new behavior: a DPDP erasure-pending guard that suppresses a mid-erasure
+student's history from any AI prompt. This is a **WHAT vs HOW read-only
+boundary** — the memory model READS learner state (WHAT is mastered) and advisory
+preferences (HOW to explain); it WRITES nothing (no mastery, XP, gaps, review
+schedules — spec §6). Owner: testing (tests) / ai-engineer + architect (memory
+source). Maps to P13.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-309 | `unified_student_memory_erasure_suppression_and_flag_off_identity_p13` | **(a) DPDP erasure suppression — FAIL-CLOSED (the one new behavior):** `isErasurePending` queries `public.data_erasure_requests` filtered by `student_id` and `status IN ('pending','purging')` on the SERVICE-ROLE admin client (an RLS-scoped read would fail OPEN — the table has no student SELECT policy); a `pending` OR `purging` row trips → `true`; the terminal statuses `cancelled`/`completed`/`failed` never satisfy the filter → zero rows → `false`; and ANY query error, thrown client, or rejected promise ALSO returns `true` (fail-closed — a privacy guard must never fail open). `ERASURE_IN_FLIGHT_STATUSES === ['pending','purging']`. **(b) getStudentMemory short-circuit:** when the erasure guard returns `true` (or the injected check itself throws), the result is fully EMPTY (`isEmpty:true`, `cognitive===EMPTY_COGNITIVE_CONTEXT`, `twin===null`, `longMemory===EMPTY_LONG_MEMORY`, `preferences===EMPTY_PREFERENCES`) AND all four sub-readers are called ZERO times — the learner-state tables are never even queried for a mid-erasure student. When the guard returns `false` the four sub-readers ARE each called once. **(c) Flag-OFF byte-identity basis (passthrough):** for a non-erased student the composed `StudentMemory` embeds the EXACT sub-context objects by REFERENCE (`result.cognitive===fakeCognitive`, `.twin===fakeTwin`, `.longMemory===fakeLong`, `.preferences===fakePrefs`) — no clone, no re-derive — which is the invariant that makes flag-ON == flag-OFF at the route; the cognitive misconception labels are threaded into the long-memory reader in the route's existing order. **(d) Fail-soft composition (never throws):** a rejecting sub-reader degrades ONLY its own slice to the canonical empty value (cognitive→`EMPTY_COGNITIVE_CONTEXT`, twin→`null`, long→`EMPTY_LONG_MEMORY`, prefs→`EMPTY_PREFERENCES`) while every other slice still populates; even all-four-throwing returns empty memory rather than rejecting into the caller. **(e) Renderer parity + PII-clean (P13):** `renderStudentMemoryPromptSection(empty)===''`; for populated memory the output EQUALS the join of the three EXISTING per-slice renderers (`buildCognitivePromptSection` + `renderTwinPromptSection` + `buildLongMemoryPromptSection`) so it is identical to today's per-reader assembly; the rendered block contains no email, no 10-digit phone, no raw UUID, and never the raw `studentId`. **(f) Preferences slice:** `loadStudentPreferences` maps `learning_style`/`preferred_explanation_depth` from `student_learning_profiles`, and any missing row / null data / query error / thrown client → `EMPTY_PREFERENCES` (never invents a value). | `apps/host/src/__tests__/lib/memory/erasure-guard.test.ts` (9), `preferences.test.ts` (6), `student-memory.test.ts` (16); source under test `apps/host/src/lib/memory/student-memory.ts`, `packages/lib/src/memory/erasure-guard.ts`, `packages/lib/src/memory/preferences.ts` | E |
+
+### Invariants covered by this section (Unified Student Memory)
+
+- P13 data privacy — the DPDP erasure guard suppresses a mid-erasure student's
+  learner-state from any AI prompt (rows still physically exist during the
+  two-stage cron cascade), runs on the service-role client so it cannot fail
+  open, and is FAIL-CLOSED on any error. The rendered prompt block is PII-clean
+  by construction (content-only labels + counts; no email/phone/UUID/studentId).
+- WHAT/HOW read-only boundary — the memory model READS learner state (WHAT) and
+  advisory preferences (HOW to explain); it WRITES nothing and derives no new
+  mastery math or thresholds (spec §6/§7).
+- Additive-no-op guarantee — flag-OFF the route aliases its existing sub-contexts
+  (byte-identical); flag-ON injects those SAME reference-identical contexts into
+  `getStudentMemory`, so shipping Phase 2 changes zero prompt bytes for a
+  non-erased student until an operator flips `ff_unified_memory_v1`.
+- Fail-soft composition — a single sub-read failure degrades only its slice; the
+  orchestrator never throws into the Foxy request path.
+
+> **Suppression boundary — known residual gap (2026-07-24).** The DPDP
+> erasure suppression in `getStudentMemory` covers ONLY the three wired slices
+> (cognitive context + digital twin + ~30d long-memory, plus the misconception
+> labels threaded through them) and the advisory preferences slice. It does
+> **not** cover `teachingDirectorSection` (the Foxy teaching-director prompt
+> path), which assembles learner state OUTSIDE `getStudentMemory` and is
+> therefore NOT erasure-suppressed. Consequence: `ff_unified_memory_v1` MUST NOT
+> be enabled in production alongside `ff_foxy_teaching_director_v1` until the
+> teaching-director path is unified behind the same erasure guard — otherwise a
+> mid-erasure student's history could still reach an AI prompt via the
+> unsuppressed teaching-director path. This keeps the catalog honest about the
+> current suppression boundary; closing the gap is a tracked follow-up.
+
+### Catalog total (Unified Student Memory)
+
+GenAI Phase 2 adds REG-309 (Unified Student Memory read-API — DPDP erasure
+suppression + flag-OFF byte-identity + fail-soft composition + PII-clean render).
+REG-308 was the prior addition (GenAI Phase 1 Model Gateway); REG-309 is the next
+free id after REG-308.
+**Total catalog: 309 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
