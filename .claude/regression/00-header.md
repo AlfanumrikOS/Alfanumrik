@@ -6,8 +6,17 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 309 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-309 (2026-07-24, GenAI Phase 2 — Unified Student Memory read-API:
+**Total catalog: 310 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-310 (2026-07-24, GenAI Phase 3 — Agent Registry + WHAT/HOW boundary:
+pure-metadata + inert (no flag/migration/activation) 7-agent registry that is
+HOW-only (`decides:'HOW'`, `mayWriteMastery:false`) with the teeth — a static
+`findMasteryWrites` proof that NO live agent surface (Foxy route + `_lib/`,
+quiz-generator, teacher-dashboard, parent-report-generator) directly writes any of
+the 9 forbidden mastery/progression tables; the adaptive engine alone decides
+WHAT, mastery moves only through the concept-check/BKT projector path —
+adaptive-decides-WHAT learner-state boundary, P1/P2 scoring-adjacent; see
+`02-foxy-ai.md`).
+Prior: REG-309 (2026-07-24, GenAI Phase 2 — Unified Student Memory read-API:
 flag-gated `ff_unified_memory_v1` (default OFF) DPDP erasure suppression
 (pending/purging → fully-empty memory, service-role read, FAIL-CLOSED on any
 error), flag-OFF byte-identity via reference-identical passthrough of the

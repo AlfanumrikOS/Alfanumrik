@@ -1522,7 +1522,58 @@ GenAI Phase 2 adds REG-309 (Unified Student Memory read-API — DPDP erasure
 suppression + flag-OFF byte-identity + fail-soft composition + PII-clean render).
 REG-308 was the prior addition (GenAI Phase 1 Model Gateway); REG-309 is the next
 free id after REG-308.
-**Total catalog: 309 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## GenAI Phase 3 — Agent Registry + WHAT/HOW boundary (2026-07-24) — REG-310
+
+The Agent Registry (`packages/lib/src/agents/registry.ts`, imported via
+`@alfanumrik/lib/agents/registry`) is PURE METADATA + one reusable pure detector.
+It is ADDITIVE and INERT at runtime: NO feature flag, NO migration, NO
+orchestrator activation, and it changes NO agent's behavior (spec §3). It encodes
+the platform's central learner-state invariant per-agent — **the adaptive engine
+alone decides WHAT the student learns; the 7 GenAI agents decide only HOW, and
+MAY NOT write mastery/progression.** The `decides: 'HOW'` and
+`mayWriteMastery: false` fields are LITERAL types, so a WHAT-deciding or
+mastery-writing agent is unrepresentable at compile time; this catalog entry
+re-asserts the contract at runtime (catching any `as`-cast escape) and, most
+importantly, adds **the teeth**: a static proof that NO live agent surface
+directly writes any of the 9 forbidden mastery tables. Mastery moves onto those
+tables ONLY through the concept-check / BKT projector path
+(`learner.concept_check_answered` → `concept-mastery-projector`) + the
+`mastery-state-writer` — no agent is on that allowlist. Owner: testing (tests) /
+ai-engineer + architect (registry source). Maps to the core adaptive-decides-WHAT
+learner-state boundary; P1/P2 scoring-integrity-adjacent (grading stays in the
+deterministic `submitQuizResults()` → `atomic_quiz_profile_update()` path — the
+Assessment agent generates question *content* only, never grades or persists
+mastery).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-310 | `agent_registry_what_how_boundary_no_live_mastery_write` | **(a) 7-agent stable set:** `AGENT_REGISTRY` has EXACTLY 7 agents whose ids equal the immutable set `['tutor','assessment','teacher_copilot','parent_intelligence','lesson','outcome_prediction','content_generation']` (`listAgents()` length 7). **(b) HOW-only + no mastery write:** EVERY agent has `decides === 'HOW'` AND `mayWriteMastery === false` (runtime re-assertion of the literal types). **(c) Identity integrity:** all ids unique AND each descriptor's `id` equals its record key AND `getAgent(id)` round-trips to the same object. **(d) Entry-point reality:** every LIVE agent (`tutor`→`apps/host/src/app/api/foxy/route.ts`, `assessment`→`supabase/functions/quiz-generator/index.ts`, `teacher_copilot`→`supabase/functions/teacher-dashboard/index.ts`, `parent_intelligence`→`supabase/functions/parent-report-generator/index.ts`) has a NON-null `entryPoint` that is a real FILE on disk (resolved with a cwd-resilient repo-root resolver — vitest runs from `apps/host`, but entryPoints reach repo-root `supabase/functions/**` OUTSIDE it); every PLANNED agent (`lesson`/`outcome_prediction`/`content_generation`) has `entryPoint === null`; the live set is exactly those 4. **(e) THE TEETH — no live mastery write:** for every LIVE agent, its `entryPoint` source AND (when present) every file under its co-located `_lib/` dir (Foxy's `apps/host/src/app/api/foxy/_lib/`) is scanned with `findMasteryWrites`, and the result MUST be empty — no live agent surface directly writes any of the 9 forbidden mastery tables (`concept_mastery`, `learner_mastery`, `cme_concept_state`, `student_skill_state`, `knowledge_gaps`, `cme_error_log`, `bloom_progression`, `adaptive_mastery`, `student_learning_profiles`); reads are fine; a regression fails with the offending agent+table+file. **(f) Flag hygiene:** every non-null `gatingFlag` exists in `FLAG_DEFAULTS`, and NO agent gates on `ff_orchestrator_v1` (the orchestrator is not an agent and stays dormant). **Detector unit (`findMasteryWrites`):** positive — flags `.insert`/`.update`/`.upsert`/`.delete` on forbidden tables, whitespace/newline-tolerant, quote-agnostic, dedupes + sorts multiple tables; negative — does NOT flag `.select` reads, non-forbidden-table writes, substring look-alikes (`concept_mastery_audit`), or forbidden names appearing only in comments/string-literals. | `apps/host/src/__tests__/agents/agent-registry-conformance.test.ts` (8), `find-mastery-writes.test.ts` (16); source under test `packages/lib/src/agents/registry.ts` | E |
+
+### Invariants covered by this section (Agent Registry WHAT/HOW boundary)
+
+- Adaptive-decides-WHAT learner-state boundary — the 7-agent registry is HOW-only
+  (`decides: 'HOW'`, `mayWriteMastery: false`) and, provably, NO live agent
+  surface writes any of the 9 mastery/progression tables. The adaptive engine
+  alone decides WHAT; mastery moves only through the concept-check/BKT projector
+  path.
+- P1 Score accuracy / P2 XP economy (adjacency) — grading + XP remain in the
+  deterministic `submitQuizResults()` → `atomic_quiz_profile_update()` path; the
+  Assessment agent produces question *content* only and never grades or persists
+  mastery, so the registry cannot become a back-door to the scoring formula.
+- Additive-inert guarantee — the registry adds no flag, migration, or runtime
+  activation; invariant (f) pins that no descriptor references a phantom flag or
+  the dormant `ff_orchestrator_v1`.
+
+### Catalog total (Agent Registry)
+
+GenAI Phase 3 adds REG-310 (Agent Registry + WHAT/HOW boundary — 7-agent HOW-only
+registry + the static no-live-mastery-write proof). REG-309 was the prior
+addition (GenAI Phase 2 Unified Student Memory); REG-310 is the next free id after
+REG-309.
+**Total catalog: 310 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 
