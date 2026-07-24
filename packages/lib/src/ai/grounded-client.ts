@@ -34,7 +34,10 @@ export type Caller =
   | 'ncert-solver'
   | 'quiz-generator'
   | 'concept-engine'
-  | 'diagnostic';
+  | 'diagnostic'
+  // Lesson Generation Agent (GenAI Phase 5b) — first student-facing generative
+  // caller. Mirrors VALID_CALLERS in grounding-config.ts (config-parity).
+  | 'lesson';
 
 export type Mode = 'strict' | 'soft';
 

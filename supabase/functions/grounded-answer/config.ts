@@ -54,7 +54,7 @@ export const VERIFIER_TIMEOUT_MS = 15_000;
 export const CACHE_TTL_MS = 5 * 60_000;
 
 export const VALID_CALLERS = [
-  'foxy', 'ncert-solver', 'quiz-generator', 'concept-engine', 'diagnostic',
+  'foxy', 'ncert-solver', 'quiz-generator', 'concept-engine', 'diagnostic', 'lesson',
 ] as const;
 
 export const REGISTERED_PROMPT_TEMPLATES = [
@@ -70,6 +70,10 @@ export const REGISTERED_PROMPT_TEMPLATES = [
   'quiz_question_generator_v1',
   'quiz_answer_verifier_v1',
   'ncert_solver_v1',
+  // Lesson Generation Agent (GenAI Phase 5b) — structured, NCERT-grounded,
+  // bilingual multi-section lesson notes. First student-facing generative
+  // artifact; consumed via caller='lesson', cache_scope='none'.
+  'lesson_notes_v1',
 ] as const;
 
 // ── Response-cache v2 generation-context revisions ───────────────────────────
@@ -110,6 +114,12 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // JSON-output templates (foxy_tutor_v1/teach/exam/doubt, quiz generator,
 // quiz verifier — .txt + inline.ts twins; ncert_solver_v1 is raw-markdown and
 // untouched).
+// NOTE (Lesson Agent, GenAI Phase 5b): adding the 'lesson_notes_v1' template id
+// to REGISTERED_PROMPT_TEMPLATES is a PURE ADDITION — it does NOT change any
+// existing template's TEXT and does not alter pipeline prompt assembly for any
+// existing request, and gen_ctx keys on system_prompt_template so it cannot
+// collide with a cached entry. Per the bump rule above, this does NOT bump
+// PROMPT_REV (a bump would needlessly flush every Foxy cache tier).
 export const PROMPT_REV = 3;
 
 // ── Model fallback ordering (edge mirror of the TS gateway registry) ─────────

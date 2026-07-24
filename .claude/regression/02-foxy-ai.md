@@ -1689,3 +1689,74 @@ free id after REG-311.
 
 ---
 
+## GenAI Phase 5b — Lesson Generation Agent (2026-07-24) — REG-313
+
+The Lesson Generation Agent is the platform's FIRST student-facing GENERATIVE
+artifact: on-demand, NCERT-grounded, bilingual multi-section lesson notes for one
+chapter. It is a PURE planner (`packages/lib/src/lesson/lesson-plan.ts`,
+`planLesson`/`renderAdaptationCodes`, assessment-owned) + a grounded-generation
+ORCHESTRATOR (`packages/lib/src/lesson/generate-lesson.ts`, `generateLessonNotes`,
+ai-engineer-owned) behind a read-only GET route
+(`apps/host/src/app/api/lesson/route.ts`, backend-owned), additive and flag-gated
+`ff_lesson_generation_v1` (default OFF). It decides only HOW to present a chapter
+(structure / depth / tone / which misconceptions to call out) from EXISTING
+unified-memory signals — it re-derives NO mastery, invents NO threshold literal
+(`memory.masteryLevel` is used VERBATIM), and writes NOTHING. Because it is
+GENERATIVE and student-facing, the safety spine is doubled: grounded path ONLY
+(one `callGroundedAnswer`, single RAG retrieval — REG-50 spirit), an abstain
+ladder (grounded=false OR `confidence < STRICT_CONFIDENCE_ABSTAIN_THRESHOLD` 0.75
+OR parse-empty), and a Node-side `screenStudentFacingText` backstop on EVERY EN +
+Hindi field (unsafe section dropped, all-dropped → whole-lesson abstain). It is
+fail-soft (never throws → abstain) and registers as a **LIVE** agent that provably
+writes NO mastery (registry invariant e). The route is student-self ONLY — it
+serves the caller's OWN `auth.studentId`, has NO `?studentId` cross-student path,
+NO `canAccessStudent`, and NO service-role/admin client. Owner: testing (tests) /
+assessment (planner) + ai-engineer (orchestrator) + backend (route). Maps to P12
+(AI safety — grounded-only, strict-mode abstain, per-field screen, no unfiltered
+LLM output) + P7 (bilingual — EN + Hindi per section + bilingual abstain copy) +
+the WHAT/HOW read-only boundary (a HOW-only agent that writes nothing) + P5 (grade
+STRING) + P13 (adaptation codes/enums only; category-only logs).
+Spec: `docs/superpowers/specs/2026-07-24-lesson-generation-agent-design.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-313 | `lesson_generation_grounded_only_abstain_ladder_bilingual_screen_flagoff_selfscope` | **(a) Pure planner band anchors:** `masteryLevel` low → `bloomCeiling:'understand'`/`scaffolding:'heavy'`/NO `application` section, medium → `'apply'`/`'moderate'`/application present, high → `'evaluate'`/`'light'`/application present (band VERBATIM, no re-derived mastery, no threshold literal). **(b) Misconception codes + callout gating:** `recentMisconceptions` → `misconceptionCodes` (empty codes filtered) AND `misconception_callouts` section present iff ≥1 real code; no misconceptions (or only-blank codes) → empty codes + no callout section. **(c) emphasisTopics:** weakTopics first then knowledge-gap prerequisites, de-duped (first wins), order-stable, blank/whitespace dropped. **(d) Preferences → depth/persona:** `preferredExplanationDepth` maps case-insensitively (detailed→deep, short→brief, unknown→standard); explicit `request.depth` WINS; `learningStyle` → persona (visual→visual, kinesthetic→concrete, unknown/null→balanced). **(e) targetBloom only LOWERS:** below-ceiling target lowers it, above-ceiling target does NOT raise it (high+create stays evaluate; low+analyze stays understand; low+remember lowers). **(f) Non-decreasing Bloom order** across the returned `sectionKinds` for every band (misconception_callouts ordered AFTER core_concepts by the stable LESSON_STEPS tie-break). **(g) renderAdaptationCodes PII-free (P13):** emits `scaffolding:`/`bloom_ceiling:`/`depth:`/`persona:`/`sections:N`/`emphasis_count:N`/`misconception:<CODE>` and conditional `misconception_callouts:on`/`application:on` codes ONLY — NEVER a topic TITLE or misconception LABEL, every element whitespace-free. **(h) Planner purity:** identical inputs → deeply-equal, does not mutate inputs, never throws. **(i) Orchestrator abstain ladder:** grounded=false → abstain surfacing the service `abstain_reason` + `suggested_alternatives` (screen never runs); `confidence < 0.75` → `low_similarity` abstain (0.75 EXACTLY does NOT abstain); empty / non-JSON / zero-citation answer → `no_supporting_chunks` parse-empty abstain. **(j) Happy path:** multi-section grounded notes parse with EN+Hindi populated per section (P7), ≥1 citation each, de-duped `citationsAll`, meta (confidence/model/traceId) carried through; tolerant brace-slice recovery from surrounding prose; citation fallback to the full retrieved set when `supportingCitationIndexes` absent. **(k) Per-field bilingual screen backstop (P12):** an unsafe EN OR Hindi field drops ONLY that section (rest kept); a section unsafe on its Hindi body is dropped; ALL sections unsafe → whole-lesson `upstream_error` abstain. **(l) Bloom clamp:** each section's `bloomLevel` clamped to `plan.bloomCeiling` (low band: `create`→`understand`; `remember` below ceiling untouched). **(m) REG-50 single retrieval:** `callGroundedAnswer` invoked EXACTLY once. **(n) Fail-soft / writes-nothing:** a throwing grounded call OR throwing screen → abstain, never throws; only the two injected deps are touched (1 call + 4 screen invocations on the surviving section). **(o) Route flag gate:** flag OFF (default) → 404-style `{success:false}` BEFORE any auth/DB/memory/generation work (`authorizeRequest`/`createSupabaseServerClient`/`getStudentMemory`/`generateLessonNotes` all uncalled, no lesson shape leaks); role/user-scoped flag OFF (global ON) → 404 after auth, still no generation. **(p) Route student-self scope:** flag ON + self → `generateLessonNotes` called with the CALLER'S OWN `auth.studentId` + parsed subject/grade STRING/chapter, `getStudentMemory` for the OWN id, RLS-scoped `createSupabaseServerClient` used; a `?studentId=<other>` is IGNORED (generator still gets SELF); an abstain envelope is a normal 200 (`abstained:true`); no student profile → 404 `NO_STUDENT_PROFILE`; unresolvable grade → 404 `NO_GRADE`; success audit is metadata-only (`subject`/`chapterNumber`/`abstained`). **(q) Route WHAT validation:** missing subject → 400 `SUBJECT_REQUIRED`; missing/non-positive chapterNumber → 400 `CHAPTER_NUMBER_REQUIRED`; missing chapterTitle → 400 `CHAPTER_TITLE_REQUIRED`; invalid depth enum → 400 `INVALID_DEPTH`. **(r) Read-only + self-scope source scan:** the route source (block+line comments stripped) contains no `.insert(`/`.update(`/`.upsert(`/`.delete(` and never imports `supabase-admin`/`getSupabaseAdmin`/`canAccessStudent`. **(s) Registry — LIVE + no mastery write:** the agent-registry conformance suite's live-set sanity now includes `lesson` (**6** live agents), so invariant (d) [entryPoint `apps/host/src/app/api/lesson/route.ts` exists on disk] and invariant (e) [`findMasteryWrites` over the entryPoint → empty; the route reads `students.grade` via `.select` — a permitted READ — and writes none of the 9 forbidden mastery tables] PASS; invariant (f) [`ff_lesson_generation_v1` ∈ `FLAG_DEFAULTS`] holds. | `apps/host/src/__tests__/lib/lesson/lesson-plan.test.ts` (25), `apps/host/src/__tests__/lib/lesson/generate-lesson.test.ts` (16), `apps/host/src/__tests__/api/lesson/route.test.ts` (12), `apps/host/src/__tests__/agents/agent-registry-conformance.test.ts` (updated live-set → 6, 8); source under test `packages/lib/src/lesson/lesson-plan.ts` + `packages/lib/src/lesson/generate-lesson.ts` + `apps/host/src/app/api/lesson/route.ts` | E |
+
+### Invariants covered by this section (Lesson Generation Agent)
+
+- P12 (AI safety) — grounded path ONLY (one `callGroundedAnswer`), `mode:'strict'`
+  with an abstain ladder (grounded=false / `confidence < 0.75` / parse-empty) so no
+  ungrounded prose reaches a student, PLUS a Node-side `screenStudentFacingText`
+  backstop on EVERY rendered EN + Hindi field (unsafe section dropped, all-dropped
+  → whole-lesson abstain). Fail-soft — a generation failure returns an abstain,
+  never a 500.
+- P7 (bilingual) — every section carries EN + Hindi (dropped at parse time if any
+  field is missing); the whole-lesson abstain copy is bilingual.
+- WHAT/HOW read-only boundary — a HOW-only LIVE agent that writes NOTHING: not
+  mastery/progression (registry invariant e — `findMasteryWrites` empty over the
+  route), not XP. The planner re-derives no mastery and holds no threshold literal.
+- P5 (grade STRING) — grade flows as a STRING "6".."12" end-to-end (request →
+  planner → grounded scope).
+- P13 (no PII) — `adaptationApplied` is codes/enums only (never a topic title or
+  misconception label); logs are category/metadata only; the success audit carries
+  `subject`/`chapterNumber`/`abstained` only.
+- Student-self scope — the route serves only `auth.studentId`; there is NO
+  `?studentId` cross-student path, NO `canAccessStudent`, and NO service-role/admin
+  client (RLS-scoped self reads only).
+- Additive / default-OFF — `ff_lesson_generation_v1` OFF short-circuits to a
+  404-style no-op before any auth/DB/memory/generation work, so no lesson is ever
+  generated or surfaced until an operator flips the flag.
+
+### Catalog total (Lesson Generation Agent)
+
+GenAI Phase 5b adds REG-313 (Lesson Generation Agent — first student-facing
+GENERATIVE artifact: grounded-only single-retrieval generation with a
+grounded/confidence-0.75/parse-empty abstain ladder, per-field bilingual screen
+backstop [drop → whole-lesson abstain], flag-OFF 404 no-op, student-self scope,
+and a LIVE registered agent with zero mastery writes). REG-312 was the prior
+addition (GenAI Phase 5a read-only Outcome Prediction Agent); REG-313 is the next
+free id after REG-312.
+**Total catalog: 313 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
