@@ -54,7 +54,7 @@ export const VERIFIER_TIMEOUT_MS = 15_000;
 export const CACHE_TTL_MS = 5 * 60_000;
 
 export const VALID_CALLERS = [
-  'foxy', 'ncert-solver', 'quiz-generator', 'concept-engine', 'diagnostic', 'lesson',
+  'foxy', 'ncert-solver', 'quiz-generator', 'concept-engine', 'diagnostic', 'lesson', 'content',
 ] as const;
 
 export const REGISTERED_PROMPT_TEMPLATES = [
@@ -74,6 +74,11 @@ export const REGISTERED_PROMPT_TEMPLATES = [
   // bilingual multi-section lesson notes. First student-facing generative
   // artifact; consumed via caller='lesson', cache_scope='none'.
   'lesson_notes_v1',
+  // Content Generation Agent (GenAI Phase 5c) — single NCERT-grounded Mermaid
+  // diagram spec (flowchart/mindmap/timeline). Student-facing generative
+  // artifact; consumed via caller='content', cache_scope='none'. Pure addition
+  // (no PROMPT_REV bump — gen_ctx keys on system_prompt_template).
+  'diagram_spec_v1',
 ] as const;
 
 // ── Response-cache v2 generation-context revisions ───────────────────────────

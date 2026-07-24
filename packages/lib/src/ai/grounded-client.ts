@@ -37,7 +37,10 @@ export type Caller =
   | 'diagnostic'
   // Lesson Generation Agent (GenAI Phase 5b) — first student-facing generative
   // caller. Mirrors VALID_CALLERS in grounding-config.ts (config-parity).
-  | 'lesson';
+  | 'lesson'
+  // Content Generation Agent (GenAI Phase 5c) — NCERT-grounded Mermaid diagram
+  // generator. Mirrors VALID_CALLERS in grounding-config.ts (config-parity).
+  | 'content';
 
 export type Mode = 'strict' | 'soft';
 
