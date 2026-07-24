@@ -702,6 +702,16 @@
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=100."
     },
     {
+      "name": "ff_response_eval_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "ai-learning-backend",
+      "rationale": "Launch-required runtime observability sensor (GenAI Phase 4). CEO-authorized enablement for launch (2026-07-24): fire-and-forget 9-dimension ResponseEval signal emitted metadata-only into ops_events; never alters student-visible AI output, latency budget, or payload (true no-op to the response path). Enabled at 100% because an observability sensor has no partial-rollout value. Not protected / not in EXPECTED_OFF_FLAGS; staged-rollout flag seeded OFF by 20260724140000 and flipped ON by the companion activation migration 20260724190000.",
+      "enablementEvidence": "CEO-authorized launch enablement 2026-07-24 via the feature-flag governance path (matrix override + regenerate + activation migration 20260724190000_enable_ff_response_eval_v1.sql). Fire-and-forget observability sensor, byte-identical student-facing behavior; sink is the existing append-only public.ops_events log (service-role read, PII-redacted per P13)."
+    },
+    {
       "name": "ff_rule_engine_v1",
       "defaultEnabled": false,
       "stagingEnabled": false,
