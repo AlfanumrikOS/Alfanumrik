@@ -1,7 +1,7 @@
 {
   "source": "packages/lib/src/flags/defaults.ts",
   "registryRoot": "packages/lib/src/flags/registries",
-  "flagCount": 121,
+  "flagCount": 122,
   "flags": [
     {
       "name": "ff_adaptive_live_selection_v1",
@@ -581,6 +581,15 @@
       "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
       "source": "scripts/feature-flag-matrix.overrides.json",
       "rolloutPercentage": 0
+    },
+    {
+      "name": "ff_model_gateway_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "ai-learning-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (GenAI Phase 1; OFF = legacy Anthropic-primary (true no-op). Seed migration owned by architect.).",
+      "source": "packages/lib/src/flags/registries/foxy.ts"
     },
     {
       "name": "ff_mol_admin_functions_v1",

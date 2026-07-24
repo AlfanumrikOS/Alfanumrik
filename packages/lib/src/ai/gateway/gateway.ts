@@ -23,7 +23,8 @@
  * off Claude-primary; user approval required to change a live model/provider.
  */
 
-import { isFeatureEnabled, MODEL_GATEWAY_FLAGS } from '@alfanumrik/lib/feature-flags';
+import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
+import { MODEL_GATEWAY_FLAGS } from '@alfanumrik/lib/flags/registries/foxy';
 import type {
   AdapterMap,
   GatewayAttempt,
