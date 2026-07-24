@@ -1,7 +1,7 @@
 {
   "source": "packages/lib/src/flags/defaults.ts",
   "registryRoot": "packages/lib/src/flags/registries",
-  "flagCount": 123,
+  "flagCount": 124,
   "flags": [
     {
       "name": "ff_adaptive_live_selection_v1",
@@ -939,6 +939,15 @@
       "source": "scripts/feature-flag-matrix.overrides.json",
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=100.",
       "rolloutPercentage": 100
+    },
+    {
+      "name": "ff_response_eval_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "owner": "ai-learning-backend",
+      "rationale": "Default OFF until an operator or reviewed rollout enables it (GenAI Phase 4; OFF = no runtime eval computed/emitted (true no-op, fire-and-forget when ON). Seed migration owned by architect.).",
+      "source": "packages/lib/src/flags/registries/foxy.ts"
     },
     {
       "name": "ff_revision_os_v1",

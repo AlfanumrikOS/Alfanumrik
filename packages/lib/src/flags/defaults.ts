@@ -44,6 +44,7 @@ import {
   FOXY_RESPONSE_CACHE_L2_FLAGS,
   MODEL_GATEWAY_FLAGS,
   UNIFIED_MEMORY_FLAGS,
+  RESPONSE_EVAL_FLAGS,
 } from './registries/foxy';
 
 /**
@@ -112,6 +113,7 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [QUIZ_TELEMETRY_FLAGS.V1]: false, // seeded OFF in a follow-up migration (SPEC-1..5)
   [MODEL_GATEWAY_FLAGS.V1]: false, // GenAI Phase 1; OFF = legacy Anthropic-primary (true no-op). Seed migration owned by architect.
   [UNIFIED_MEMORY_FLAGS.V1]: false, // GenAI Phase 2; OFF = legacy per-reader memory assembly (true no-op). Seed migration owned by architect.
+  [RESPONSE_EVAL_FLAGS.V1]: false, // GenAI Phase 4; OFF = no runtime eval computed/emitted (true no-op, fire-and-forget when ON). Seed migration owned by architect.
   [WHITE_LABEL_FLAGS.TENANT_TYPE_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_MODULE_REGISTRY_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_CONFIG_V2]: false,

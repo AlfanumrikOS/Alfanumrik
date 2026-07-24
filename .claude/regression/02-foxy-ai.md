@@ -1577,3 +1577,56 @@ REG-309.
 
 ---
 
+## GenAI Phase 4 — Runtime `ResponseEval` observability sensor (2026-07-24) — REG-311
+
+The runtime `ResponseEval` sensor (`packages/lib/src/ai/eval/`, imported via
+`@alfanumrik/lib/ai/eval`) scores every Foxy response across 9 dimensions on a
+common `[0,1]` health scale (higher = better) and emits a PII-free record to
+`ops_events`. It is ADDITIVE, flag-gated `ff_response_eval_v1` (default OFF), and
+**OBSERVABILITY-ONLY**: it NEVER blocks, delays, refunds, retries, or alters a
+response — `flagged` is a dashboard signal, not an enforcement action
+(enforcement stays in the pre-existing live `screenStudentFacingText` abstain
+path). `scoreResponse` is a PURE composer (no I/O, no clock, no LLM call, no
+throw on well-formed input) over signals the route already holds at its grounded
+terminal — no new LLM call / retrieval / DB read is introduced. Two dimensions
+that need a judge (`accuracy`, `learning_effectiveness`) are DEFERRED
+(`available:false`, `score:null`, `source:'deferred_llm_judge'`) and populated
+offline by the nightly Sonnet judge. Emission is fire-and-forget via `logOpsEvent`
+(`severity:'info'`) and NEVER throws into the response path. With the flag OFF the
+builder is not invoked at all → the response path is byte-identical. Owner:
+testing (tests) / ai-engineer + ops (sensor source) / assessment (dimension
+semantics, spec §8). Maps to P12 (AI-safety observability — read-only, additive)
+and P13 (no-PII — codes/ids/enums/numbers only). No change to P1–P6/P7–P11/P14–P15.
+Spec: `docs/superpowers/specs/2026-07-24-runtime-response-eval-design.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-311 | `runtime_response_eval_9dim_sensor_observability_only` | **(a) Per-dimension normalization (all 9 dims, incl. boundaries):** `curriculum_alignment` `inScope?1:0` with `code=reason\|'in_scope'` and `raw:null`; `hallucination_risk` `raw=confidence`, health = `confidence` when grounded+citations else capped at `UNGROUNDED_CONFIDENCE_CAP` (0.6), codes `grounded/no_citations/ungrounded`, null confidence → null score; `age_appropriateness` 1.0 clean / 0.5 advisory (`legacy_validator_flag`, grade-range soft-fail) / 0.0 hard-fail (`blocklist`/`screen_error`); `toxicity` binary 0 on `blocklist`/`screen_error` else 1 (ignores the age-only `legacy_validator_flag`); `difficulty_fit` mastery bands with boundaries at EXACTLY 0.4/0.7/0.85 → 1.0 in-ZPD, 0.5 else, `raw=mastery`, null→unavailable; `latency` 1.0 ≤800ms (`LATENCY_HEALTHY_MS`), linear to 0.0 at 8000ms (`LATENCY_DEGRADED_CEILING_MS`), boundary 8000 = 0 health but NO flag; `cost` 1.0 ≤budget (≈$0.0492 derived from registry Haiku pricing), linear to 0.0 at ceiling ($0.25), boundary at ceiling = 0 health but NO flag; `accuracy` + `learning_effectiveness` ALWAYS `available:false`/`score:null`/`raw:null`/`source:'deferred_llm_judge'` regardless of signals. Constants bind to the live pipeline (`HALLUCINATION_CONFIDENCE_FLOOR`=0.75, `UNGROUNDED_CONFIDENCE_CAP`=0.6 from grounding-config; `LATENCY_HEALTHY_MS`=800 from gateway registry). **(b) The 6 flag conditions (observability only):** each of `toxicity_unsafe`/`age_inappropriate`/`curriculum_out_of_scope`/`hallucination_risk_high` (confidence < floor AND `!groundedFromChunks`; boundary EXACTLY at 0.75 and grounded-below-floor do NOT fire)/`latency_over_ceiling` (raw>8000, strict)/`cost_over_ceiling` (raw>0.25, strict) fires ONLY under its exact condition; a clean response → `flagged:false, flagReasons:[]`; `difficulty_fit` at its poorest bands (0.1/0.99) and the 2 deferred dims NEVER contribute a flag; multiple simultaneous flags accumulate sorted + deduped. **(c) PII-clean fire-and-forget emission:** `logResponseEval` calls the injected `logOpsEvent` EXACTLY once with `category:'ai'`/`source:'response-eval'`/`severity:'info'`/`message:'response_eval'`/`subjectType:'foxy_message'`; the emitted `context` carries the 9 dim scores/raws/codes + `flagged`/`flag_reasons` + correlation UUIDs + `grade`/`subject` scope enums ONLY — NO PII-shaped key (`/email\|phone\|name\|token/i`) and NO free-text string leaf (every string leaf whitespace-free ≤64 chars, so no response/message prose can ride along). **(d) Never-throw:** a synchronously-THROWING injected `logOpsEvent` still resolves `logResponseEval`/`evaluateAndEmit` cleanly (no throw into the response path); `scoreResponse` never throws on well-formed OR out-of-range-but-finite input. **(e) Flag-OFF byte-identity:** the route invokes the sensor only behind `isFeatureEnabled('ff_response_eval_v1')` (default OFF); the existing Foxy route characterization + grade-spoof-hard-block suites (42 tests) exercise the flag-OFF response path unchanged and are re-run green alongside these tests. | `apps/host/src/__tests__/lib/ai/eval/response-eval.test.ts` (51), `emit.test.ts` (6); flag-OFF byte-identity via `apps/host/src/__tests__/api/foxy/route-characterization.test.ts` + `grade-spoof-hard-block.test.ts` (42); source under test `packages/lib/src/ai/eval/response-eval.ts` + `emit.ts` | E |
+
+### Invariants covered by this section (runtime ResponseEval sensor)
+
+- P12 (AI-safety observability) — the sensor is a read-only measurement of the
+  9 safety/quality/cost dimensions taken at the grounded terminal; it records
+  what happened (toxicity/age/scope/hallucination flags) but NEVER blocks or
+  alters the response. Enforcement remains the pre-existing live
+  `screenStudentFacingText` abstain path — the sensor only records that it fired.
+- P13 (no-PII) — the emitted `ops_events` context is codes/ids/enums/numbers
+  ONLY (dimension scores/raws/codes + flag reasons + correlation UUIDs + grade/
+  subject scope enums); NO response/prompt text, chunk_text, or PII-shaped key,
+  backstopped by `logOpsEvent`'s `redactContext`.
+- Additive / default-OFF / byte-identity — `ff_response_eval_v1` OFF means the
+  builder is not invoked at all, so the response path is byte-identical (proven
+  by the re-run 42-test flag-OFF route suites). The 2 deferred dims keep the
+  runtime sensor from making any synchronous judge call.
+
+### Catalog total (runtime ResponseEval)
+
+GenAI Phase 4 adds REG-311 (runtime `ResponseEval` observability sensor — 9-dim
+normalization + 6 flag conditions + PII-clean fire-and-forget emission +
+never-throw + flag-OFF byte-identity + 2 deferred dims). REG-310 was the prior
+addition (GenAI Phase 3 Agent Registry); REG-311 is the next free id after
+REG-310.
+**Total catalog: 311 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
