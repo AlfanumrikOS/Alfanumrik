@@ -127,11 +127,13 @@
     {
       "name": "ff_content_generation_v1",
       "defaultEnabled": false,
-      "stagingEnabled": false,
-      "productionEnabled": false,
+      "stagingEnabled": true,
+      "productionEnabled": true,
       "owner": "ai-learning-backend",
-      "rationale": "Default OFF until an operator or reviewed rollout enables it (GenAI Phase 5c; OFF = student-facing Content Generation endpoint (Mermaid diagrams) serves nothing (disabled/404-style, true no-op). Seed migration owned by architect.).",
-      "source": "packages/lib/src/flags/registries/foxy.ts"
+      "rationale": "Student-facing GenAI Content Generation Agent (Mermaid diagrams, GenAI Phase 5c). CEO-authorized staged 10% launch canary (2026-07-24). Verified at the read site: /api/content/diagram re-evaluates the flag with per-user context ({ role, userId }), and isFeatureEnabled applies deterministic per-user rollout via hashForRollout(userId, flagName) < rollout_percentage, so rollout_percentage=10 exposes a deterministic ~10% slice of students (not blanket exposure). Read-only, NCERT-grounded, fail-soft-to-abstain, student-self-only (P13), bilingual (P7). Not protected / not in EXPECTED_OFF_FLAGS; seeded OFF by 20260724180000 and flipped ON at rollout 10 by companion activation migration 20260724210000.",
+      "source": "scripts/feature-flag-matrix.overrides.json",
+      "enablementEvidence": "CEO-authorized staged 10% launch canary 2026-07-24 via the feature-flag governance path (matrix override + regenerate + activation migration 20260724210000_enable_ff_content_generation_v1.sql). Deterministic per-user 10% rollout verified at the read site apps/host/src/app/api/content/diagram/route.ts (isFeatureEnabled with userId context) -> packages/lib/src/feature-flags.ts (hashForRollout(userId, flagName) < rollout_percentage).",
+      "rolloutPercentage": 10
     },
     {
       "name": "ff_cosmic_redesign_v1",
@@ -573,11 +575,13 @@
     {
       "name": "ff_lesson_generation_v1",
       "defaultEnabled": false,
-      "stagingEnabled": false,
-      "productionEnabled": false,
+      "stagingEnabled": true,
+      "productionEnabled": true,
       "owner": "ai-learning-backend",
-      "rationale": "Default OFF until an operator or reviewed rollout enables it (GenAI Phase 5b; OFF = student-facing Lesson Generation endpoint serves no generated lesson (disabled/404-style, true no-op). Seed migration owned by architect.).",
-      "source": "packages/lib/src/flags/registries/foxy.ts"
+      "rationale": "Student-facing GenAI Lesson Generation Agent (lesson notes, GenAI Phase 5b). CEO-authorized staged 10% launch canary (2026-07-24). Verified at the read site: /api/lesson re-evaluates the flag with per-user context ({ role, userId }), and isFeatureEnabled applies deterministic per-user rollout via hashForRollout(userId, flagName) < rollout_percentage, so rollout_percentage=10 exposes a deterministic ~10% slice of students (not blanket exposure). Read-only, NCERT-grounded, fail-soft-to-abstain, student-self-only (P13), bilingual (P7). Not protected / not in EXPECTED_OFF_FLAGS; seeded OFF by 20260724170000 and flipped ON at rollout 10 by companion activation migration 20260724200000.",
+      "source": "scripts/feature-flag-matrix.overrides.json",
+      "enablementEvidence": "CEO-authorized staged 10% launch canary 2026-07-24 via the feature-flag governance path (matrix override + regenerate + activation migration 20260724200000_enable_ff_lesson_generation_v1.sql). Deterministic per-user 10% rollout verified at the read site apps/host/src/app/api/lesson/route.ts (isFeatureEnabled with userId context) -> packages/lib/src/feature-flags.ts (hashForRollout(userId, flagName) < rollout_percentage).",
+      "rolloutPercentage": 10
     },
     {
       "name": "ff_level_up_celebration_v1",
