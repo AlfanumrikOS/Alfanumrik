@@ -107,9 +107,10 @@ describe('GenAI Phase 3 — Agent Registry conformance (spec §3 a–f)', () => 
         expect(agent.entryPoint, `planned agent ${agent.id} must have null entryPoint`).toBeNull();
       }
     }
-    // Sanity: the 4 known live agents are exactly the live set.
+    // Sanity: the 5 known live agents are exactly the live set. `outcome_prediction`
+    // went live 2026-07-24 (GenAI Phase 5a — apps/host/src/app/api/predict/outcome/route.ts).
     expect(liveAgents().map((a) => a.id).sort()).toEqual(
-      ['assessment', 'parent_intelligence', 'teacher_copilot', 'tutor'].sort(),
+      ['assessment', 'outcome_prediction', 'parent_intelligence', 'teacher_copilot', 'tutor'].sort(),
     );
   });
 

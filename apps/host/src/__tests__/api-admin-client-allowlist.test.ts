@@ -199,7 +199,11 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 //   src/app/api/super-admin/ai/irt-readiness/route.ts,
 //   src/app/api/super-admin/synthesis-health/route.ts,
 //   src/app/api/super-admin/synthesis-quality/route.ts.
-const EXPECTED_COUNT = 263;
+// GenAI Phase 5a (2026-07-24): 263 -> 264 for the outcome-prediction
+// cross-student read src/app/api/predict/outcome/route.ts. Service-role is the
+// sanctioned cross-student read path here, taken only AFTER the canAccessStudent
+// gate (architect ruling); registered in scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 264;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

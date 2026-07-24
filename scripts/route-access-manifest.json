@@ -888,6 +888,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/predict/outcome",
+      "file": "apps/host/src/app/api/predict/outcome/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
+      "serviceRoleUse": "Cross-student outcome-prediction read; service-role used only after canAccessStudent boundary, per B1 ruling; RLS on cme_exam_readiness/board_score_predictions has no teacher/guardian policy."
+    },
+    {
       "path": "/api/public/v1/classes",
       "file": "apps/host/src/app/api/public/v1/classes/route.ts",
       "access": "public_api",
