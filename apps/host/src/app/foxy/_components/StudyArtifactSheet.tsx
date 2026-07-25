@@ -383,6 +383,11 @@ export function StudyArtifactSheet(props: StudyArtifactSheetProps) {
             <button
               type="button"
               onClick={onRegenerate}
+              // The text label is `hidden sm:inline`, so on mobile the bare `↻`
+              // glyph would be the entire accessible name. Mirror the Close
+              // button below and name the control explicitly (bilingual via
+              // `chrome`); the visible label stays exactly as-is.
+              aria-label={chrome.regenerate}
               className="shrink-0 h-11 px-3 rounded-xl text-[11px] font-bold transition-all active:scale-95"
               style={{
                 background: 'var(--surface-2)',

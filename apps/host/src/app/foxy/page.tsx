@@ -1303,13 +1303,34 @@ function FoxyExperience() {
   const studyArtifacts = useStudyArtifacts();
   const { open: openStudyArtifact } = studyArtifacts;
 
-  const openArtifact = useCallback((kind: ArtifactKind) => {
-    // Both endpoints require a concrete chapter. Without one we open the
-    // existing chapter picker rather than dead-ending the tap.
+  // The two per-surface chapter affordances, named once so that each
+  // <StudyToolsBar> mount and `openArtifact`'s no-chapter fallback below share a
+  // single definition and can never drift apart.
+  const openLegacyChapterPicker = useCallback(() => {
+    setShowChapterDD(true);
+    setShowSubjectDD(false);
+  }, []);
+  const openFoxyOsChapterPicker = useCallback(() => {
+    setStudySheetOpen(true);
+  }, []);
+
+  // Each surface owns a DIFFERENT chapter affordance: the legacy header renders
+  // the inline chapter dropdown (plus its close-scrim), while the Foxy-OS header
+  // renders neither and routes chapter selection through the study sheet. So the
+  // no-chapter fallback below must NOT hardcode `setShowChapterDD(true)` — on the
+  // Foxy-OS surface that would paint the shared `fixed inset-0 z-40` scrim with
+  // no dropdown behind it, swallowing the student's next tap. The caller passes
+  // the same `onNeedChapter` it already gives its own <StudyToolsBar> mount.
+  const openArtifact = useCallback((kind: ArtifactKind, onNeedChapter: () => void) => {
+    // Both endpoints require a concrete chapter. `hasChapter` on the toolbar is
+    // only `!!activeTopic`, and `chapter_number` is nullable in
+    // `curriculum_topics`, so a topic WITHOUT a usable chapter still reaches
+    // here. Without one we open the surface's own chapter picker rather than
+    // dead-ending the tap.
     const chapterNumber = Number(activeTopic?.chapter_number);
     const chapterTitle = typeof activeTopic?.title === 'string' ? activeTopic.title.trim() : '';
     if (!Number.isInteger(chapterNumber) || chapterNumber <= 0 || !chapterTitle) {
-      setShowChapterDD(true);
+      onNeedChapter();
       return;
     }
     openStudyArtifact(kind, {
@@ -1619,9 +1640,9 @@ function FoxyExperience() {
           showLesson={genAiContentFlags.lesson}
           hasChapter={!!activeTopic}
           accentColor={cfg.color}
-          onDiagram={() => openArtifact('diagram')}
-          onLesson={() => openArtifact('lesson')}
-          onNeedChapter={() => { setShowChapterDD(true); setShowSubjectDD(false); }}
+          onDiagram={() => openArtifact('diagram', openLegacyChapterPicker)}
+          onLesson={() => openArtifact('lesson', openLegacyChapterPicker)}
+          onNeedChapter={openLegacyChapterPicker}
         />
 
         {/* Simplified mode pills — extracted to ./_components/FoxySettings.tsx */}
@@ -1771,9 +1792,9 @@ function FoxyExperience() {
             showLesson={genAiContentFlags.lesson}
             hasChapter={!!activeTopic}
             accentColor={cfg.color}
-            onDiagram={() => openArtifact('diagram')}
-            onLesson={() => openArtifact('lesson')}
-            onNeedChapter={() => setStudySheetOpen(true)}
+            onDiagram={() => openArtifact('diagram', openFoxyOsChapterPicker)}
+            onLesson={() => openArtifact('lesson', openFoxyOsChapterPicker)}
+            onNeedChapter={openFoxyOsChapterPicker}
           />
         </div>
       )}
@@ -2001,7 +2022,7 @@ function FoxyExperience() {
                 {/* Chapter selection nudge when no topic selected */}
                 {!activeTopic && !urlContext && (
                   <button
-                    onClick={() => setShowChapterDD(true)}
+                    onClick={useFoxyOsHeader ? openFoxyOsChapterPicker : openLegacyChapterPicker}
                     className="mb-6 px-5 py-3 rounded-2xl text-sm font-bold transition-all active:scale-[0.97]"
                     style={{
                       background: `color-mix(in srgb, ${cfg.color} 12%, var(--surface-1))`,
@@ -2076,7 +2097,7 @@ function FoxyExperience() {
                 />
 
                 {activeTopic && (
-                  <button onClick={() => setShowChapterDD(true)} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `color-mix(in srgb, ${cfg.color} 10%, var(--surface-1))`, color: cfg.color, border: `1.5px solid color-mix(in srgb, ${cfg.color} 30%, transparent)` }}>
+                  <button onClick={useFoxyOsHeader ? openFoxyOsChapterPicker : openLegacyChapterPicker} className="mt-6 px-5 py-2.5 rounded-xl text-sm font-bold" style={{ background: `color-mix(in srgb, ${cfg.color} 10%, var(--surface-1))`, color: cfg.color, border: `1.5px solid color-mix(in srgb, ${cfg.color} 30%, transparent)` }}>
                     {cfg.icon} {language === 'hi' ? `\u0905\u0928\u094D\u092F ${topics.length} \u0905\u0927\u094D\u092F\u093E\u092F \u0926\u0947\u0916\u094B` : `Browse ${topics.length} Chapters`}
                   </button>
                 )}

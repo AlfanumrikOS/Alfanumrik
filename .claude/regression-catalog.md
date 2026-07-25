@@ -2,7 +2,8 @@
 
 **This file has been split to reduce context cost.**
 
-The full catalog (256 entries) now lives in `.claude/regression/`:
+The full catalog (315 entries — latest REG-315, 2026-07-25) now lives in
+`.claude/regression/`. `00-header.md` carries the authoritative running total:
 
 | File | Feature area |
 |---|---|

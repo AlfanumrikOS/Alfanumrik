@@ -1835,3 +1835,119 @@ Lesson Generation Agent); REG-314 is the next free id after REG-313.
 
 ---
 
+## GenAI Phase 5d — /foxy Study Tools surface (the student-visible mouth of the Lesson + Content agents) (2026-07-25) — REG-315
+
+REG-313 and REG-314 pinned the two GenAI generation AGENTS (planner, orchestrator,
+route). This entry pins the CLIENT SURFACE that finally puts them in front of a
+student: the "Study tools" affordances inside the `/foxy` workspace —
+`StudyToolsBar` (two pills) → `useStudyArtifacts` (open/cache/regenerate state) →
+`study-artifacts.ts` (transport + 4-state normalizer) → `StudyArtifactSheet`
+(render), with `diagram-to-foxy-block.ts` adapting a `DiagramSpec` into the
+EXISTING REG-55 one-block Foxy envelope so the diagram is drawn by the same
+`MermaidBlock` every chat turn already uses. Gated by the same two flags as the
+agents: `ff_content_generation_v1` (Diagram) and `ff_lesson_generation_v1`
+(Lesson notes), read client-side by `useGenAiContentFlags`.
+
+**Why this needs a catalog entry NOW:** migration `20260724220000_set_ff_generation_rollout_100.sql`
+takes BOTH flags to `is_enabled = TRUE` at `rollout_percentage = 100` on merge
+(superseding the two 10% canary migrations), so this surface reaches EVERY student
+immediately — there is no canary window in which a defect stays contained. The
+flag-OFF identity clauses below are therefore not a pre-launch guard but the
+ROLLBACK contract: they are what makes flipping either flag back to 0% a true
+byte-identical no-op on the `/foxy` DOM rather than a partial teardown.
+
+The four load-bearing invariants: (1) flag-OFF DOM identity — asserted as
+`container.innerHTML === ''`, so a stray wrapper or divider FAILS, with each flag
+ramping independently and every degenerate flag-source outcome failing CLOSED;
+(2) the deliberate kind→endpoint ASYMMETRY (diagram = POST + nested `chapter{}`,
+lesson = GET + flat query params), pinned both at the client and by a static
+read-only canary over the two route sources so a future "let's unify these"
+refactor cannot silently cross them; (3) an ABSTAIN (HTTP 200 + `abstained:true`)
+is a NORMAL settled outcome rendered as calm bilingual copy — never the error
+branch, never a retry button — with retry offered ONLY for the `network` reason;
+(4) a CLIENT-side re-run of `validateMermaidCode` as defence-in-depth over
+REG-314's server gate, so an untrusted `mermaidCode` that somehow reaches the
+browser returns `null` and never touches the renderer or the DOM. Owner: testing
+(tests) / frontend (surface). Maps to P12 (AI safety — client injection gate,
+abstain-not-error), P7 (bilingual), P13 (no PII on the wire, in the DOM, or in
+logs), P5 (grade never sent client-side — resolved server-side), and P10-adjacent
+(no speculative network/LLM spend on render).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-315 | `foxy_study_tools_flagoff_dom_identity_kind_endpoint_asymmetry_abstain_not_error_client_mermaid_gate` | **(a) Flag-OFF DOM identity:** both flags OFF → `StudyToolsBar` renders an EMPTY container — asserted as `container.innerHTML === ''` PLUS `firstChild === null` and `childNodes.length === 0`, so a stray wrapper / divider / whitespace text node FAILS — in EN mode, in HI mode, and with a chapter selected; ZERO `fetch` on render at EVERY flag combination incl. BOTH ON (generation is student-initiated only — no speculative LLM spend). **(b) Independent per-flag ramps:** hook — only `ff_content_generation_v1` ON → `{diagram:true,lesson:false}`, only `ff_lesson_generation_v1` ON → `{diagram:false,lesson:true}`; bar — diagram-only renders only the `foxy-tool-diagram` pill, lesson-only only `foxy-tool-lesson`, both → both. **(c) Fail-CLOSED flag resolution:** first paint with no cache resolves BOTH false (under `NODE_ENV=production` and under test); a flag source that THROWS, resolves `undefined`, or returns a map lacking both keys keeps both OFF; an EXPIRED (>5-min TTL), CORRUPT (`{not-json`), or timestamp-less cache is IGNORED → OFF; a fresh cache reads through PER-FLAG; a stale ON cache is CORRECTED back to OFF by the async DB reconcile; the reconciled value is written back to the TTL cache; `getFeatureFlags` is called EXACTLY once (one map read, no per-flag round trip); `clearGenAiContentFlagsCache` removes the key. **(d) Dev override is commit-safe:** `alfanumrik_force_genai_content` is a STRICT no-op under `NODE_ENV==='production'`; outside production `'1'` forces both, `'diagram'`/`'lesson'` force exactly one, an unrecognised value is ignored. **(e) Registry-not-barrel flag import (source canary):** the hook source CONTAINS `@alfanumrik/lib/flags/registries/foxy` and does NOT match `from '@alfanumrik/lib/feature-flags'` (a barrel import would break the existing `vi.mock`'ed Foxy suites); the two flag names are pinned byte-exact to `ff_content_generation_v1` / `ff_lesson_generation_v1` and `GENAI_CONTENT_FLAGS_DEFAULT` equals `{diagram:false,lesson:false}`. **(f) kind→endpoint dispatch ASYMMETRY:** diagram → **POST** `/api/content/diagram` with a JSON string body, `Content-Type: application/json`, `credentials:'include'`, and chapter NESTED as `{chapterNumber, chapterTitle}` with NO flat `chapterNumber`/`chapterTitle` sibling keys; lesson → **GET** `/api/lesson?…` with NO body and FLAT `subject`/`chapterNumber`/`chapterTitle`/`language` query params and NO `chapter` param; one test runs both back-to-back and pins POST+body vs GET+no-body side by side. `diagramType` is included ONLY when the caller supplied a hint; `Authorization: Bearer <tok>` is present when a token exists and the header is ABSENT when it is null. `useStudyArtifacts.open('diagram')` hits `/api/content/diagram` and `open('lesson')` hits `GET /api/lesson?…`. **(g) Static client/route contract canary:** reads BOTH route sources from disk — the diagram route exports `POST` and NOT `GET` and reads `body.chapter` / `chapter.chapterNumber` / `chapter.chapterTitle`; the lesson route exports `GET` and NOT `POST`, reads `searchParams.get('subject')` / `('chapterNumber')` / `('chapterTitle')` / `('language')`, and never calls `request.json()`. This closes the half the client mocks cannot see: a route renaming a param turns THIS red. **(h) ABSTAIN is not an error (P12/UX):** HTTP 200 + `abstained:true` → `status:'abstained'`, never `'error'`, and the state carries NO `reason` field; the server-authored bilingual `messageEn`/`messageHi` + `suggestedAlternatives` pass through verbatim; an abstain envelope with NO `abstain` object, a non-array `suggestedAlternatives`, or non-string messages coerces to empty copy / `[]` without crashing. At the render layer the abstain shows the calm heading + the SERVER message (Hindi under `isHi`), lists the suggested ready chapters, shows NO error copy and NO `Try again`, and STILL offers `Regenerate` (an abstain is a SETTLED result, not a failure). **(i) Error classification + retry ONLY for `network`:** `reasonForStatus` maps 400→`unsupported`, 401/403/404→`unavailable`, 500/502/503 and an unclassified 429→`network`; a thrown fetch, a 200 with a non-JSON body, `success:false`, or `success:true` with no `data` all → `error/network`; end-to-end a 400 → `unsupported` and a thrown fetch → `network` on BOTH transports. At the render layer `unsupported` and `unavailable` (incl. a server-side flag flip surfacing as 404) get their own bilingual copy and NO retry; ONLY `network` renders `Try again` wired to `onRegenerate`; no header `Regenerate` in an error state, and none while loading. **(j) CLIENT-side Mermaid injection gate (P12 defence-in-depth over REG-314's server gate):** `diagramSpecToFoxyResponse` re-runs `validateMermaidCode` in the browser and returns `null` for 9 payload shapes — `<script>` (and uppercase `<SCRIPT>`), a `javascript:` URI, a `click` interaction callback (plain, leading-whitespace, and `click A href`), `%%{init}` overriding `securityLevel` and overriding `htmlLabels`, a non-allowlisted header, and raw HTML `<img onerror>` — and the `null` cannot leak the payload (the serialised result contains no `script` / `javascript:`); it does NOT false-positive on a node LABEL merely containing the word "Click"; empty / whitespace-only / missing `mermaidCode` → `null`; code longer than `FOXY_MAX_MERMAID_CODE_LEN` → `null` while code EXACTLY at the ceiling is ACCEPTED (boundary, not off-by-one). At the sheet, each of 5 unsafe payloads → the structured renderer is NEVER invoked (probe length 0, no `structured-renderer` node), the raw source is NEVER printed (`innerHTML` contains no `alert(1)` / `javascript:`, `querySelector('script')` null), and the calm "Couldn't build this from NCERT yet" fallback renders with NO retry. **(k) REG-55 envelope reuse:** a valid spec becomes EXACTLY ONE `mermaid` block carrying the code VERBATIM (surrounding whitespace trimmed) inside the EXISTING Foxy structured-render envelope, so the diagram is drawn by the same `MermaidBlock` the chat already uses; the title picks EN/HI by `isHi`, falls back to the other language when the primary is empty, then to the caller `fallbackTitle`; the caption maps to the block title per language and the key is OMITTED entirely when there is no caption; an over-long title clamps to 120 with an ellipsis and an over-long caption clamps to 120; `toFoxySubject` maps math / the science family / the social family (→`sst`) / english with `general` as the unknown+empty fallback and threads onto the envelope; all three v1 kinds (flowchart / mindmap / timeline) are accepted. **(l) No duplicate LLM spend:** per `subject+chapterNumber+language` cache — re-opening the SAME context does NOT re-fetch; a change to chapter, language, OR subject re-fetches; three rapid opens of the same still-loading context issue ONE request; an ABSTAIN IS cached (a settled result); an ERROR is NOT cached (re-open re-runs). **(m) Stale-response guard:** a slow first request that resolves AFTER a newer one is DROPPED — a student who switches chapter mid-flight keeps the NEWER chapter's artifact, a stale ERROR cannot overwrite a newer READY, and a stale response cannot overwrite a REGENERATED result; initial state is closed + idle with ZERO fetch; `close()` hides the sheet but KEEPS the settled result; the two artifacts are INDEPENDENT (opening lesson leaves diagram `idle`). **(n) Regenerate:** bypasses the cache with a fresh request for the same context, is the retry path after a failure, regenerates ONLY the OPEN artifact (the closed one stays `idle`), and is a no-op when no sheet is open. **(o) No dead end:** with no chapter selected, clicking EITHER pill routes to `onNeedChapter` and NEVER to `onDiagram`/`onLesson`, and the pill carries a bilingual explanatory title (`Pick a chapter first` / `पहले एक अध्याय चुनो`). **(p) P13 + P5 on the wire:** the diagram request body carries EXACTLY the sorted key set `{chapter, diagramType, language, subject}` and the lesson query string EXACTLY `{chapterNumber, chapterTitle, language, subject}` (sorted set EQUALITY, not a substring check); neither matches `/studentId\|student_id\|userId\|user_id\|email\|phone/i`; NO `grade` is sent on either transport (P5 — grade is resolved SERVER-side from the caller's own enrolled row); the access token is never echoed into the returned state; NOTHING is emitted to `console.log/warn/error/info/debug` on any failure path; neither the rendered `StudyToolsBar` nor the rendered `StudyArtifactSheet` markup matches `/studentId\|student_id\|userId\|@\|\+91/i`. **(q) P7 bilingual parity:** `ARTIFACT_CHROME.en`/`.hi` declare the SAME key set, every value is a non-empty string in BOTH, EN !== HI per key, every HI value contains Devanagari and every EN value contains NONE, and no PII-shaped placeholder appears in either; the technical terms NCERT + Foxy appear VERBATIM in Hindi copy and are never transliterated (`एनसीईआरटी` / `सीबीएसई` / `ब्लूम` / `फॉक्सी` all absent). Bar: `Diagram`/`Lesson notes` in EN, `आरेख`/`पाठ नोट्स` in HI with the English strings GONE, NCERT untranslated in the HI tooltip, and a bilingual `role="group"` aria-label. Sheet: per-kind bilingual "building" copy, bilingual abstain + error copy, bilingual `Close` label, and Bloom's level rendered UNTRANSLATED in HI mode. **(r) a11y + dismissal:** the sheet is `role="dialog"` with `aria-modal="true"` and `aria-labelledby="foxy-artifact-<kind>-title"`, carries the chapter label, and closes on the ✕ and on Escape; the lesson body renders each section heading + body in the active language and falls back to the calm notice for an empty section list; the diagram sheet renders the NCERT citation provenance (`Ch 3 · Atoms and Molecules · p. 42`). | `apps/host/src/__tests__/foxy/genai-content-flags-off-identity.test.ts` (23), `apps/host/src/__tests__/foxy/study-tools-bar.test.tsx` (17), `apps/host/src/__tests__/foxy/study-artifacts-transport.test.ts` (133), `apps/host/src/__tests__/foxy/diagram-to-foxy-block.test.ts` (31), `apps/host/src/__tests__/foxy/use-study-artifacts.test.ts` (20), `apps/host/src/__tests__/foxy/study-artifact-sheet.test.tsx` (38) — **262 tests, all passing**; source under test `apps/host/src/app/foxy/_hooks/useGenAiContentFlags.ts` + `_hooks/useStudyArtifacts.ts` + `_lib/study-artifacts.ts` + `_lib/diagram-to-foxy-block.ts` + `_components/StudyToolsBar.tsx` + `_components/StudyArtifactSheet.tsx` | E |
+
+### Invariants covered by this section (/foxy Study Tools surface)
+
+- P12 (AI safety) — an ABSTAIN is a normal settled 200 rendered as calm bilingual
+  copy, never the error branch and never a retry prompt; and a CLIENT-side re-run
+  of `validateMermaidCode` (defence-in-depth over REG-314's server gate) returns
+  `null` for every injection shape, so an untrusted payload never reaches the
+  renderer nor the DOM. There is no raw-source fallback — the calm notice is the
+  only failure mode.
+- P7 (bilingual) — full EN/HI key-set parity on the shared chrome (both directions:
+  HI has Devanagari, EN has none), bilingual bar labels / tooltips / group
+  aria-label, bilingual loading / abstain / error / close copy, and the technical
+  terms NCERT, CBSE, Bloom's, Foxy left UNTRANSLATED.
+- P13 (no PII) — request body and query string are asserted by sorted key-set
+  EQUALITY (an added key fails), no identifier-shaped key on the wire, no
+  identifier in the rendered markup of either component, the access token never
+  echoed into state, and NOTHING written to `console.*` on any failure path.
+- P5 (grade STRING, server-resolved) — the client sends NO `grade` on either
+  transport; grade is resolved server-side from the caller's own enrolled row
+  (the agent-side half is REG-313/REG-314).
+- Flag-gating / rollback contract — both flags default OFF in the client hook and
+  fail CLOSED on cache miss, cache expiry, cache corruption, a throwing flag
+  source, an `undefined` map, and a map lacking the keys; each ramps
+  INDEPENDENTLY; the OFF path renders literally nothing (`innerHTML === ''`).
+  With migration `20260724220000` taking both flags to 100%, these are the
+  clauses that make a flip back to 0% a clean no-op.
+- P10-adjacent (no speculative spend) — zero network calls on render at any flag
+  combination, a per-`subject+chapter+language` cache so re-opening a sheet does
+  not re-spend an LLM call, single-flight on a still-loading context, and a
+  stale-response guard so a mid-flight chapter switch can never show the previous
+  chapter's artifact.
+
+### Known gap (documented, not silently dropped)
+
+Two properties in the surface's design intent are **structurally true in the
+source but NOT asserted by any test**, and are recorded here rather than claimed
+as coverage:
+
+1. **Page-level mounting.** `apps/host/src/app/foxy/page.tsx` gates the second
+   `StudyToolsBar` mount on `(genAiContentFlags.diagram || genAiContentFlags.lesson)`
+   and mounts `StudyArtifactSheet` only while `studyArtifacts.openKind` is
+   `'diagram'`/`'lesson'`. No test renders `page.tsx` — `foxy-page-snapshot.test.tsx`
+   does not reference either component. The "no sheet is mounted on the OFF path"
+   property is pinned only INDIRECTLY, at the hook layer: `useStudyArtifacts`
+   starts with `openKind === null`, both artifacts `idle`, and zero fetch.
+2. **"No new chunk" on the OFF path.** `StudyArtifactSheet` is a `next/dynamic`
+   import behind a conditional mount, so its chunk (and the lazy mermaid runtime
+   behind it) is fetched on first use only. Nothing asserts this — there is no
+   per-route chunk assertion in the suite; the only enforcement is the global
+   `scripts/check-bundle-size.mjs` CI gate, which is not Study-Tools-specific.
+   Clause (a) asserts no *network call*, which is a different claim.
+
+Neither gap is closed by this entry. Closing (1) would need a `page.tsx` render
+test (the file pulls a large dynamic-import graph); closing (2) would need a
+per-route chunk-manifest assertion. There is also no Playwright/E2E coverage of
+this surface — all 262 tests are unit-level.
+
+### Catalog total (/foxy Study Tools surface)
+
+Pre-REG-315: 314 entries (through REG-314, the GenAI Phase 5c Content Generation
+Agent). GenAI Phase 5d adds REG-315 (the `/foxy` Study Tools client surface — the
+student-visible mouth of the Lesson + Content agents: flag-OFF DOM identity
+asserted as `innerHTML === ''` with independent per-flag ramps and fail-CLOSED
+resolution on every degenerate flag-source outcome, the deliberate
+diagram-POST-nested / lesson-GET-flat endpoint asymmetry pinned at both the client
+and a static route-source canary, abstain-is-not-an-error with retry offered only
+for `network`, and a CLIENT-side `validateMermaidCode` injection gate that returns
+`null` so an unsafe payload never reaches the renderer or the DOM — promoted now
+because migration `20260724220000` takes both gating flags to rollout 100% on
+merge). REG-314 was the prior addition (GenAI Phase 5c Content Generation Agent);
+REG-315 is the next free id after REG-314.
+**Total catalog: 315 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
