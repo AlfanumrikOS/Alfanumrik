@@ -24,7 +24,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Known live columns of public.feature_flags (verified against the prod
@@ -51,7 +52,23 @@ const LIVE_COLUMNS = new Set([
   'metadata',
 ]);
 
-const read = (rel: string) => readFileSync(resolve(process.cwd(), rel), 'utf8');
+// Roots derived from THIS FILE's location, NOT process.cwd(). DO NOT
+// "simplify" back to `resolve(process.cwd(), rel)`: under `npm test` cwd is
+// apps/host, so a repo-root asset like `supabase/functions/identity/index.ts`
+// resolved to the nonexistent `apps/host/supabase/…` and only worked via the
+// fs monkey-patch in src/__tests__/setup.ts. That shim stops remapping the
+// moment the apps/host path exists (a stray `supabase init` under apps/host,
+// a per-app Supabase config), at which point these pins would read a
+// different file — or, with a same-named decoy, pass vacuously. Explicit
+// host-root vs repo-root resolution removes both the cwd and shim dependency.
+// A missing file throws ENOENT here, which is the loud failure we want.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../..');
+const HOST_ROOT = resolve(REPO_ROOT, 'apps/host');
+
+/** Read an app-source file, relative to apps/host. */
+const readHost = (rel: string) => readFileSync(resolve(HOST_ROOT, rel), 'utf8');
+/** Read a repo-root asset (supabase/, scripts/, …), relative to the repo root. */
+const readRepo = (rel: string) => readFileSync(resolve(REPO_ROOT, rel), 'utf8');
 
 // ─── supabase-js chain extraction (internal admin route) ──────────────
 
@@ -118,7 +135,7 @@ const assertAllLive = (cols: string[], context: string) => {
 // ─── Internal admin route ─────────────────────────────────────────────
 
 describe('feature_flags column contract — internal admin route', () => {
-  const src = read('src/app/api/internal/admin/feature-flags/route.ts');
+  const src = readHost('src/app/api/internal/admin/feature-flags/route.ts');
   const usage = extractFeatureFlagChains(src);
 
   it('extraction is non-vacuous (insert + order found)', () => {
@@ -156,7 +173,7 @@ describe('feature_flags column contract — internal admin route', () => {
 // ─── identity Edge Function ───────────────────────────────────────────
 
 describe('feature_flags column contract — identity Edge Function', () => {
-  const src = read('supabase/functions/identity/index.ts');
+  const src = readRepo('supabase/functions/identity/index.ts');
   const usage = extractFeatureFlagChains(src);
 
   it('selects only live columns from feature_flags (non-vacuous)', () => {
@@ -177,7 +194,7 @@ describe('feature_flags column contract — identity Edge Function', () => {
 // ─── Super-admin route (PostgREST URL style) ──────────────────────────
 
 describe('feature_flags column contract — super-admin route (PostgREST URLs)', () => {
-  const src = read('src/app/api/super-admin/feature-flags/route.ts');
+  const src = readHost('src/app/api/super-admin/feature-flags/route.ts');
 
   it('every select= token and the fields list are live columns', () => {
     const cols = extractPostgrestSelects(src);

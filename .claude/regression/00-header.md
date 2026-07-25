@@ -6,8 +6,38 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 313 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-313 (2026-07-24, GenAI Phase 5b — Lesson Generation Agent: the FIRST
+**Total catalog: 315 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-315 (2026-07-25, GenAI Phase 5d — the `/foxy` Study Tools CLIENT
+SURFACE, i.e. the student-visible mouth of the Lesson + Content agents pinned by
+REG-313/REG-314: `StudyToolsBar` → `useStudyArtifacts` → `study-artifacts.ts`
+transport → `StudyArtifactSheet`, plus the `diagram-to-foxy-block` adapter into
+the existing REG-55 one-block envelope. Pins (1) flag-OFF DOM IDENTITY asserted
+as `container.innerHTML === ''` (a stray wrapper/divider FAILS) with the two
+flags ramping INDEPENDENTLY and `useGenAiContentFlags` failing CLOSED on cache
+miss / TTL expiry / corrupt cache / throwing or `undefined` flag source, plus the
+registry-not-barrel import canary; (2) the deliberate kind→endpoint ASYMMETRY —
+diagram = POST `/api/content/diagram` with a NESTED `chapter{}`, lesson = GET
+`/api/lesson` with FLAT query params — pinned at the client AND by a static
+read-only canary over both route sources; (3) ABSTAIN-IS-NOT-AN-ERROR (HTTP 200 +
+`abstained:true` → calm bilingual notice, no retry; retry offered ONLY for the
+`network` reason); (4) a CLIENT-side re-run of `validateMermaidCode` as
+defence-in-depth over REG-314's server gate — 9 injection shapes return `null`,
+never reaching the renderer or the DOM, with no raw-source fallback. Promoted NOW
+because migration `20260724220000_set_ff_generation_rollout_100.sql` takes BOTH
+`ff_content_generation_v1` and `ff_lesson_generation_v1` to rollout 100% on merge,
+so the surface reaches every student with no canary window; the flag-OFF clauses
+are the ROLLBACK contract. P12 + P7 + P13 + P5 + P10-adjacent. Two documented
+gaps: no `page.tsx`-level mount test and no per-route chunk assertion — see the
+"Known gap" block in `02-foxy-ai.md`).
+Prior: REG-314 (2026-07-24, GenAI Phase 5c — Content Generation Agent
+[NCERT-grounded Mermaid diagrams]: grounded-only single-retrieval generation with
+a grounded/confidence-0.75/parse-empty abstain ladder, a DUAL safety gate
+[`validateMermaidCode` injection-reject + a v1-kind header constraint, then
+`screenStudentFacingText` over every EN/HI field AND the whole `mermaidCode`] with
+NO raw-SVG fallback, flag-OFF 404 no-op, student-self scope, and a LIVE registered
+agent with zero mastery writes — taking the live agent set from 6 → 7; see
+`02-foxy-ai.md`).
+Prior: REG-313 (2026-07-24, GenAI Phase 5b — Lesson Generation Agent: the FIRST
 student-facing GENERATIVE artifact — additive, flag-gated `ff_lesson_generation_v1`
 (default OFF), a PURE planner (`planLesson`, maps unified-memory bands → a HOW-only
 `LessonPlan`, no re-derived mastery / no threshold literal / codes-only

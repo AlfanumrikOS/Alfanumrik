@@ -369,6 +369,55 @@ describe('POST /api/content/diagram — body validation', () => {
     expect(holders.mockGenerateDiagram).toHaveBeenCalledTimes(1);
     expect(holders.mockGenerateDiagram.mock.calls[0][0].subject).toBe('physics');
   });
+
+  // ── Assessment ruling 2026-07-25: curriculum-scope correction ──────────────
+  // The guard must be a permissive SUPERSET of what the subject picker
+  // (grade_subject_map ⋈ subjects, via get_available_subjects_v2) can present.
+  // A false 400 lies to an enrolled student; missing CONTENT is the grounded
+  // generator's abstain envelope (200), not this route's 400.
+  it.each([
+    ['11', 'hindi'],
+    ['12', 'hindi'],
+    ['11', 'sanskrit'],
+    ['12', 'psychology'],
+    ['11', 'sociology'],
+    ['12', 'informatics_practices'],
+  ])('grade %s + %s is in scope → guard passes, generator runs', async (grade, subject) => {
+    holders.tables.students = { grade };
+    const POST = await loadPOST();
+    const res = await POST(post({ ...VALID_BODY, subject }));
+    expect(res.status).toBe(200);
+    expect(holders.mockGenerateDiagram).toHaveBeenCalledTimes(1);
+    expect(holders.mockGenerateDiagram.mock.calls[0][0].subject).toBe(subject);
+  });
+
+  it.each([
+    ['9', 'computer_science'],
+    ['7', 'coding'],
+    ['8', 'sanskrit'],
+  ])('grade %s + %s is in scope → guard passes, generator runs', async (grade, subject) => {
+    holders.tables.students = { grade };
+    const POST = await loadPOST();
+    const res = await POST(post({ ...VALID_BODY, subject }));
+    expect(res.status).toBe(200);
+    expect(holders.mockGenerateDiagram).toHaveBeenCalledTimes(1);
+  });
+
+  // Deliberate exclusions — these rejections are CORRECT, not the defect.
+  // CBSE's composite Social Science / Science end at Class X and split into
+  // discipline subjects at XI, so neither code exists for grades 11-12.
+  it.each([
+    ['11', 'social_studies'],
+    ['12', 'social_studies'],
+    ['12', 'science'],
+  ])('grade %s + %s stays out of scope → 400 INVALID_SUBJECT', async (grade, subject) => {
+    holders.tables.students = { grade };
+    const POST = await loadPOST();
+    const res = await POST(post({ ...VALID_BODY, subject }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('INVALID_SUBJECT');
+    expect(holders.mockGenerateDiagram).not.toHaveBeenCalled();
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

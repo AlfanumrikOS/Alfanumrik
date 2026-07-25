@@ -50,10 +50,41 @@
 
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { resolve, join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const MIGRATIONS_ROOT = resolve(process.cwd(), 'supabase/migrations');
+// ---------------------------------------------------------------------------
+// Scan root — deliberately NOT cwd-derived. DO NOT "simplify" this back to
+// `resolve(process.cwd(), 'supabase/migrations')`.
+// ---------------------------------------------------------------------------
+// Under `npm test` the host Vitest process runs with cwd=apps/host, so the
+// cwd form resolved to `apps/host/supabase/migrations` — a path that does not
+// exist on disk. It only ever worked because `src/__tests__/setup.ts`
+// monkey-patches fs.existsSync/readdirSync/readFileSync/statSync to redirect
+// MISSING `apps/host/<repoRootDir>/…` reads up to the repo root. That shim
+// short-circuits the instant the path DOES exist
+// (`if (originalExistsSync(absolute)) return input;`), so a stray
+// `supabase init` inside apps/host — or a future per-app Supabase config —
+// would silently repoint this entire corpus scan at that directory. A
+// partially populated one could still clear the `>= 10` non-vacuity bar below
+// while skipping every real migration, i.e. the pin would stop protecting
+// anything without ever failing.
+//
+// Deriving the root from THIS FILE's location (…/apps/host/src/__tests__/
+// regressions/ → five levels up) makes it independent of both cwd AND the fs
+// shim; the baseline sentinel below makes any future mis-resolution loud.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../..');
+const MIGRATIONS_ROOT = resolve(REPO_ROOT, 'supabase/migrations');
 const REWRITTEN_FILE = '20260606000000_phase5_phase6_python_flags.sql';
+
+/**
+ * pg_dump prod baseline — present at the migrations root in every checkout
+ * (the `_legacy/` archive is skipped by `supabase db push` and by this scan).
+ * Asserting it appears in the ACTUAL scan listing — not merely that some path
+ * resolves — is the durable guarantee: whatever directory this test ends up
+ * reading, it must be the real one.
+ */
+const BASELINE_FILE = '00000000000000_baseline_from_prod.sql';
 
 const PHASE56_FLAGS = [
   'ff_python_ncert_solver_v1',
@@ -291,6 +322,17 @@ describe('REG-125 — feature_flags seed-shape conformance (root migrations)', (
     // though the description string contains a literal `--` (the tokenizer
     // must not treat string contents as a comment and eat the tail).
     expect(ON_CONFLICT_NAME_RE.test(inserts[0].tail)).toBe(true);
+  });
+
+  it('scans the REAL repo-root migrations dir (baseline sentinel — anti-vacuity)', () => {
+    // One line that kills the whole class of silent vacuity: if the scan ever
+    // repoints at a stray/partial `apps/host/supabase/migrations` (see the
+    // MIGRATIONS_ROOT comment), the pg_dump baseline will not be in the
+    // listing and this fails loudly — instead of the corpus pins below
+    // quietly passing over a directory that contains no real migrations.
+    const files = scanned.map((s) => s.file);
+    expect(files, `scan root: ${MIGRATIONS_ROOT}`).toContain(BASELINE_FILE);
+    expect(files).toContain(REWRITTEN_FILE);
   });
 
   it('finds a meaningful population of feature_flags seeds at root (non-vacuous)', () => {
