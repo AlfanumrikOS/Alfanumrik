@@ -69,12 +69,41 @@ const VALID_LANGUAGES: ReadonlySet<DiagramLanguage> = new Set<DiagramLanguage>([
 ]);
 
 /**
- * Valid CBSE subject codes by grade band (source: cbse-learning-rules skill).
- * Grades 6–10 share the junior set; grades 11–12 share the senior set. Used to
- * reject an out-of-scope subject×grade pair with 400 INVALID_SUBJECT BEFORE the
- * grounded generateDiagram call (spec-conformance + cost/latency + clear error).
- * Grade stays a P5 STRING throughout; no map is duplicated from a canonical
- * server-side helper because none is grade-aware for this exact scope set.
+ * Valid CBSE subject codes by grade band. Used to reject an out-of-scope
+ * subject×grade pair with 400 INVALID_SUBJECT BEFORE the grounded
+ * generateDiagram call (spec-conformance + cost/latency + clear error).
+ * Grade stays a P5 STRING throughout.
+ *
+ * ── ASSESSMENT RULING 2026-07-25 (curriculum-scope correction) ───────────────
+ * The original sets were transcribed from the `cbse-learning-rules` skill doc,
+ * whose grade-11/12 table is INCOMPLETE. That produced a real student-facing
+ * defect: a grade 11/12 learner on a legitimately-enrolled Hindi tab got
+ * 400 INVALID_SUBJECT ("not available for this chapter"). The ruling grounds
+ * these sets in what the PLATFORM ACTUALLY OFFERS, not the skill doc:
+ *
+ *   - `grade_subject_map` (⋈ `subjects`) is the canonical catalogue. It is what
+ *     `get_available_subjects_v2()` → `/api/student/subjects` →
+ *     `useAllowedSubjects()` renders in the Foxy subject tab bar. Seeds:
+ *     `_legacy/timestamped/20260415000004_subject_governance_seed.sql` +
+ *     `20260528000010_extend_g11_12_stream_subjects_cbse.sql`.
+ *   - `cbse_syllabus` (`20260624000100_seed_cbse_syllabus_manifest.sql`) is the
+ *     chapter manifest.
+ *
+ * This guard is a SCOPE guard ("is this subject offered at this grade?"), never
+ * a CONTENT-COVERAGE guard. Coverage is the grounded generator's job — it fails
+ * soft to the abstain envelope (200). So the sets are a permissive SUPERSET of
+ * everything the picker can present: a false 400 lies to an enrolled student,
+ * while a false permit costs one abstained generation.
+ *
+ * Deliberate exclusions (these ARE correct rejections):
+ *   - `social_studies` is junior-only. CBSE's composite Social Science ends at
+ *     Class X; at XI/XII it splits into history_sr / geography /
+ *     political_science / economics / sociology / psychology. No
+ *     grade_subject_map or cbse_syllabus row exists for 11–12.
+ *   - `science` is junior-only for the mirror reason (it splits into
+ *     physics / chemistry / biology at XI).
+ *   - `physics` / `chemistry` / `biology` stay out of the junior set (a grade-7
+ *     physics request remains a 400 — the documented intent of this guard).
  */
 const JUNIOR_SUBJECTS: ReadonlySet<string> = new Set<string>([
   'math',
@@ -82,6 +111,12 @@ const JUNIOR_SUBJECTS: ReadonlySet<string> = new Set<string>([
   'english',
   'hindi',
   'social_studies',
+  // Offered 6–10 in grade_subject_map (third language) though not yet in the
+  // chapter manifest — the generator abstains rather than the route 400-ing.
+  'sanskrit',
+  // grade_subject_map + cbse_syllabus: computer_science 9–10, coding 6–8.
+  'computer_science',
+  'coding',
 ]);
 const SENIOR_SUBJECTS: ReadonlySet<string> = new Set<string>([
   'physics',
@@ -89,6 +124,11 @@ const SENIOR_SUBJECTS: ReadonlySet<string> = new Set<string>([
   'biology',
   'math',
   'english',
+  // FIX: Hindi is a standard Class XI/XII CBSE offering (Hindi Core / Hindi
+  // Elective) and is mapped to ALL THREE streams at grades 11 and 12 in
+  // grade_subject_map. Its absence here was the reported defect.
+  'hindi',
+  'sanskrit',
   'economics',
   'accountancy',
   'business_studies',
@@ -96,6 +136,16 @@ const SENIOR_SUBJECTS: ReadonlySet<string> = new Set<string>([
   'history_sr',
   'geography',
   'computer_science',
+  // Senior-secondary electives added to grade_subject_map by
+  // 20260528000010_extend_g11_12_stream_subjects_cbse.sql — all presentable in
+  // the subject picker today, so all must pass this scope guard.
+  'informatics_practices',
+  'psychology',
+  'sociology',
+  'home_science',
+  'fine_arts',
+  'health_fitness',
+  // Platform elective (grade-agnostic), retained from the original set.
   'coding',
 ]);
 
