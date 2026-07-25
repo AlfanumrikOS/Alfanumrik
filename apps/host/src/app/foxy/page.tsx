@@ -105,6 +105,20 @@ import { MessageInput } from './_components/MessageInput';
 import { ReportDialog } from './_components/ReportDialog';
 import { LanguagePicker, ModePicker } from './_components/FoxySettings';
 
+// GenAI student-facing generation agents (Phase 5b lesson + 5c diagram) — the
+// FIRST user-visible surface for the two already-shipped, flag-gated agent
+// endpoints. Both affordances are gated by `useGenAiContentFlags`; when a flag
+// resolves OFF its button renders `null` (StudyToolsBar short-circuits) and the
+// sheet chunk is never fetched, so /foxy is byte-identical to today (P10).
+import { useGenAiContentFlags } from './_hooks/useGenAiContentFlags';
+import { useStudyArtifacts } from './_hooks/useStudyArtifacts';
+import type { ArtifactKind } from './_lib/study-artifacts';
+import { StudyToolsBar } from './_components/StudyToolsBar';
+const StudyArtifactSheet = dynamic(
+  () => import('./_components/StudyArtifactSheet').then((m) => ({ default: m.StudyArtifactSheet })),
+  { ssr: false, loading: () => null },
+);
+
 /* ══════════════════════════════════════════════════════════════
    SUBJECT CONFIGURATION
 
@@ -1277,6 +1291,37 @@ function FoxyExperience() {
     }
   }, [lessonStep, lessonStepsCompleted, activeTopic, language, sendMessage]);
 
+  // ── GenAI study artifacts (Diagram / Lesson notes) ──────────────────────────
+  // Two flag-gated affordances over the already-shipped agent endpoints:
+  //   ff_content_generation_v1 → POST /api/content/diagram → DiagramSpec
+  //   ff_lesson_generation_v1  → GET  /api/lesson          → LessonNotes
+  // Both default OFF and resolve INDEPENDENTLY. This block adds NO new AI call
+  // to the chat path: /api/foxy, scope-lock and the daily-usage limits are
+  // untouched. Placed here (after every state declaration, before the early
+  // auth return) so hook order stays stable across renders.
+  const genAiContentFlags = useGenAiContentFlags();
+  const studyArtifacts = useStudyArtifacts();
+  const { open: openStudyArtifact } = studyArtifacts;
+
+  const openArtifact = useCallback((kind: ArtifactKind) => {
+    // Both endpoints require a concrete chapter. Without one we open the
+    // existing chapter picker rather than dead-ending the tap.
+    const chapterNumber = Number(activeTopic?.chapter_number);
+    const chapterTitle = typeof activeTopic?.title === 'string' ? activeTopic.title.trim() : '';
+    if (!Number.isInteger(chapterNumber) || chapterNumber <= 0 || !chapterTitle) {
+      setShowChapterDD(true);
+      return;
+    }
+    openStudyArtifact(kind, {
+      subject: activeSubject,
+      chapterNumber,
+      chapterTitle,
+      // The routes accept only 'en' | 'hi'; Foxy's third option ('hinglish')
+      // maps to 'en' (both language fields are always populated server-side).
+      language: language === 'hi' ? 'hi' : 'en',
+    });
+  }, [activeTopic, activeSubject, language, openStudyArtifact]);
+
   const cfg = SUBJECTS[activeSubject] || SUBJECTS.science || FALLBACK_SCIENCE;
 
   // Phase 1.2: when entering Foxy from /dashboard with subject+grade pre-filled,
@@ -1565,6 +1610,20 @@ function FoxyExperience() {
           )}
         </div>
 
+        {/* GenAI study tools — "Diagram" / "Lesson notes". Renders `null`
+            (no wrapper, no whitespace) unless a flag resolves ON, so the OFF
+            toolbar is byte-identical to today. */}
+        <StudyToolsBar
+          isHi={isHi}
+          showDiagram={genAiContentFlags.diagram}
+          showLesson={genAiContentFlags.lesson}
+          hasChapter={!!activeTopic}
+          accentColor={cfg.color}
+          onDiagram={() => openArtifact('diagram')}
+          onLesson={() => openArtifact('lesson')}
+          onNeedChapter={() => { setShowChapterDD(true); setShowSubjectDD(false); }}
+        />
+
         {/* Simplified mode pills — extracted to ./_components/FoxySettings.tsx */}
         <ModePicker sessionMode={sessionMode} color={cfg.color} isHi={isHi} onSwitchMode={switchMode} />
       </div>
@@ -1683,18 +1742,42 @@ function FoxyExperience() {
   });
 
   const foxyOsHeaderContent = (
-    <FoxyTopBar
-      isHi={isHi}
-      foxyFace={FOXY_FACES[foxyState]}
-      thinking={foxyState === 'thinking'}
-      subjectName={cfg.name}
-      subjectColor={cfg.color}
-      subjectIcon={cfg.icon}
-      chapterLabel={foxyOsChapterLabel}
-      onBack={() => router.push('/dashboard')}
-      onOpenStudy={() => setStudySheetOpen(true)}
-      onOpenTools={() => setToolsSheetOpen(true)}
-    />
+    <>
+      <FoxyTopBar
+        isHi={isHi}
+        foxyFace={FOXY_FACES[foxyState]}
+        thinking={foxyState === 'thinking'}
+        subjectName={cfg.name}
+        subjectColor={cfg.color}
+        subjectIcon={cfg.icon}
+        chapterLabel={foxyOsChapterLabel}
+        onBack={() => router.push('/dashboard')}
+        onOpenStudy={() => setStudySheetOpen(true)}
+        onOpenTools={() => setToolsSheetOpen(true)}
+      />
+      {/* GenAI study tools on the Foxy-OS mobile header. The compact top bar
+          has no chapter/mode row, so without this the two affordances would be
+          unreachable whenever ff_foxy_os_v1 is ON. Rendered ONLY when at least
+          one content flag is ON — otherwise this whole strip is absent and the
+          rendered DOM is byte-identical to today. */}
+      {(genAiContentFlags.diagram || genAiContentFlags.lesson) && (
+        <div
+          className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
+          style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}
+        >
+          <StudyToolsBar
+            isHi={isHi}
+            showDiagram={genAiContentFlags.diagram}
+            showLesson={genAiContentFlags.lesson}
+            hasChapter={!!activeTopic}
+            accentColor={cfg.color}
+            onDiagram={() => openArtifact('diagram')}
+            onLesson={() => openArtifact('lesson')}
+            onNeedChapter={() => setStudySheetOpen(true)}
+          />
+        </div>
+      )}
+    </>
   );
 
   // ─── Main content — chat + ChatInput + modals ─────────────────────────
@@ -2277,6 +2360,45 @@ function FoxyExperience() {
                 }
               : undefined
           }
+        />
+      )}
+
+      {/* ═══ GenAI STUDY ARTIFACT SHEET (Diagram / Lesson notes) ═══ */}
+      {/* Mounted ONLY while a sheet is open, so the chunk (and the lazy mermaid
+          runtime behind it) is fetched on first use, never on cold paint (P10).
+          Handles all four states internally: loading / ready / abstained /
+          error — an abstain is a normal 200 and is rendered as friendly
+          bilingual copy, never as an error. */}
+      {studyArtifacts.openKind === 'diagram' && (
+        <StudyArtifactSheet
+          kind="diagram"
+          state={studyArtifacts.diagram}
+          isHi={isHi}
+          subjectKey={activeSubject}
+          accentColor={cfg.color}
+          chapterLabel={
+            activeTopic
+              ? `${cfg.name} · ${isHi ? 'अध्याय' : 'Ch'} ${activeTopic.chapter_number}: ${activeTopic.title}`
+              : cfg.name
+          }
+          onClose={studyArtifacts.close}
+          onRegenerate={studyArtifacts.regenerate}
+        />
+      )}
+      {studyArtifacts.openKind === 'lesson' && (
+        <StudyArtifactSheet
+          kind="lesson"
+          state={studyArtifacts.lesson}
+          isHi={isHi}
+          subjectKey={activeSubject}
+          accentColor={cfg.color}
+          chapterLabel={
+            activeTopic
+              ? `${cfg.name} · ${isHi ? 'अध्याय' : 'Ch'} ${activeTopic.chapter_number}: ${activeTopic.title}`
+              : cfg.name
+          }
+          onClose={studyArtifacts.close}
+          onRegenerate={studyArtifacts.regenerate}
         />
       )}
 
