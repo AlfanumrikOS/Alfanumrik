@@ -30,10 +30,20 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { resolve, join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const MIGRATIONS_ROOT = resolve(process.cwd(), 'supabase/migrations');
+// Scan root derived from THIS FILE's location, NOT process.cwd(). DO NOT
+// "simplify" back to `resolve(process.cwd(), 'supabase/migrations')`: under
+// `npm test` cwd is apps/host, so the cwd form resolves to the nonexistent
+// `apps/host/supabase/migrations` and only works via the fs monkey-patch in
+// src/__tests__/setup.ts, which stops remapping the moment that path exists
+// (a stray `supabase init` under apps/host, a per-app Supabase config).
+// Location-resolution is independent of cwd AND of the shim; the baseline
+// sentinel below makes any future mis-resolution loud instead of vacuous.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../..');
+const MIGRATIONS_ROOT = resolve(REPO_ROOT, 'supabase/migrations');
 const MIGRATION_FILE = '20260703000300_chapter_asset_inventory.sql';
 const BASELINE_FILE = '00000000000000_baseline_from_prod.sql';
 
@@ -163,6 +173,16 @@ const EXPECTED_AUDIT_METHODS = [
 // ---------------------------------------------------------------------------
 
 describe(`${MIGRATION_FILE} — chapter_asset_inventory shape`, () => {
+  it('resolves the REAL repo-root migrations dir (baseline sentinel — anti-vacuity)', () => {
+    // The pg_dump prod baseline is present at the migrations root in every
+    // checkout. Reading the DIRECTORY LISTING (rather than probing a single
+    // path, which the setup.ts fs shim can silently redirect) proves the
+    // directory these pins read is the real one.
+    const files = readdirSync(MIGRATIONS_ROOT);
+    expect(files, `scan root: ${MIGRATIONS_ROOT}`).toContain(BASELINE_FILE);
+    expect(files).toContain(MIGRATION_FILE);
+  });
+
   it('exists at migrations root', () => {
     expect(existsSync(join(MIGRATIONS_ROOT, MIGRATION_FILE))).toBe(true);
   });
