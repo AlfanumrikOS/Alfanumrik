@@ -17,10 +17,20 @@
 //
 // ── Two retrieval lanes ──────────────────────────────────────────────────────
 //   LANE A ("live"): drives the REAL retrieve() from
-//     supabase/functions/_shared/rag/retrieve.ts. Exposes cleanly: minSimilarity
-//     (the p_min_quality floor), candidateCount (fetch-N), limit, rerank. RRF-k
-//     and MMR-λ are HARDCODED inside retrieve()/the RPC, so this lane CANNOT vary
-//     them — it varies floor + fetch-N only.
+//     supabase/functions/_shared/rag/retrieve.ts. Exposes cleanly:
+//     minCosineSimilarity (→ the RPC's p_min_similarity ABSOLUTE COSINE floor),
+//     candidateCount (fetch-N), limit, rerank. RRF-k and MMR-λ are HARDCODED
+//     inside retrieve()/the RPC, so this lane CANNOT vary them — it varies the
+//     cosine floor + fetch-N only.
+//
+//     CORRECTION 2026-07-27: this lane previously swept `minSimilarity`, which
+//     PR #1394 turned into a caller-side RRF-scale option that retrieve() reads
+//     NOWHERE (retrieve.ts:627-630 says so explicitly). Every floor sweep run
+//     before this date was therefore A NO-OP: all three configs executed with
+//     the identical default cosine floor, while `buildConfigResult` recorded a
+//     `floor` param that was never applied. Any prior b2 report's floor lane is
+//     INVALID and must not be cited. The sweep now targets `minCosineSimilarity`,
+//     which is the knob that actually reaches `p_min_similarity`.
 //   LANE B ("replica"): reproduces the live pipeline in TS — vec arm + fts arm
 //     candidate fetch (mirrors the RPC's two CTEs) → RRF fusion (parameterized k)
 //     → Voyage rerank-2 (real call) → MMR (parameterized λ via the real
@@ -85,7 +95,22 @@ const VOYAGE_RERANK_MODEL = 'rerank-2';
 const EMBEDDING_DIMENSIONS = 1024;
 
 // ── Live-path defaults (must mirror retrieve.ts) ─────────────────────────────
-const LIVE_DEFAULT_FLOOR = 0.5; // DEFAULT_MIN_SIMILARITY in retrieve.ts
+/**
+ * The ABSOLUTE COSINE floor the live path actually runs at → the RPC's
+ * `p_min_similarity`, supplied by retrieve.ts from NCERT_MIN_COSINE_SIMILARITY
+ * (retrieve.ts:355, measured value 0.22, hard ceiling 0.35).
+ *
+ * CORRECTION 2026-07-27: this constant used to read `0.5` and was labelled
+ * "DEFAULT_MIN_SIMILARITY in retrieve.ts". That was wrong on BOTH counts:
+ *   (a) 0.5 is the RPC's own SQL-level DEFAULT for p_min_similarity — the value
+ *       that applies only when the caller sends nothing. retrieve.ts ALWAYS
+ *       sends a value, so the live path has never run at 0.5. retrieve.ts:179
+ *       states this outright: "The production floor is NCERT_MIN_COSINE_SIMILARITY
+ *       (0.22), NOT the RPC's 0.5 default."
+ *   (b) it was fed to `minSimilarity`, which retrieve() ignores (see the header).
+ * Both defects are fixed here.
+ */
+const LIVE_DEFAULT_COSINE_FLOOR = 0.22;
 const LIVE_DEFAULT_FETCHN = 40; // candidateCount (RERANK_DEFAULT_FETCH)
 const LIVE_DEFAULT_RRF_K = 60; // v_k CONSTANT in the RPC
 const LIVE_DEFAULT_MMR_LAMBDA = 0.7; // applyMMR(chunks, 0.7) in retrieve.ts
@@ -189,7 +214,7 @@ async function fetchRrfPool(realRetrieve: any, sb: any, creds: Creds, item: Gold
   const res = await realRetrieve({
     query: item.query, grade: item.grade, subject: item.subject,
     chapterNumber: item.chapter_number ?? null, limit: fetchN, candidateCount: fetchN,
-    rerank: false, caller: HARNESS_CALLER, minSimilarity: floor, supabase: sb, voyageApiKey: creds.voyageKey,
+    rerank: false, caller: HARNESS_CALLER, minCosineSimilarity: floor, supabase: sb, voyageApiKey: creds.voyageKey,
   });
   const pool = (res.chunks ?? []).map((c: any) => ({ id: String(c.chunk_id), content: String(c.content ?? c.excerpt ?? ''), similarity: typeof c.similarity === 'number' ? c.similarity : 0 }));
   return { pool, error: res.error != null };
@@ -267,7 +292,7 @@ async function runLiveConfig(
       query: item.query, grade: item.grade, subject: item.subject,
       chapterNumber: item.chapter_number ?? null, limit: RETRIEVE_LIMIT,
       candidateCount: fetchN, rerank: true, caller: HARNESS_CALLER,
-      minSimilarity: floor, supabase: sb, voyageApiKey: creds.voyageKey,
+      minCosineSimilarity: floor, supabase: sb, voyageApiKey: creds.voyageKey,
     });
     if (result.error) anyError = true;
     if (result.chunks.length >= RETRIEVE_LIMIT && !result.reranked) rerankedAll = false;
@@ -280,7 +305,7 @@ async function runLiveConfig(
     }
   }
   const groundednessRate = gMeasured === 0 ? null : gPass / gMeasured;
-  return buildConfigResult(config, 'live', { floor, fetchN, rrf_k: LIVE_DEFAULT_RRF_K, mmr_lambda: LIVE_DEFAULT_MMR_LAMBDA }, scored, groundednessRate, !creds.voyageKey || anyError, rerankedAll, baseline);
+  return buildConfigResult(config, 'live', { cosine_floor: floor, fetchN, rrf_k: LIVE_DEFAULT_RRF_K, mmr_lambda: LIVE_DEFAULT_MMR_LAMBDA }, scored, groundednessRate, !creds.voyageKey || anyError, rerankedAll, baseline);
 }
 
 async function runMmrConfig(
@@ -315,7 +340,7 @@ async function runMmrConfig(
     }
   }
   const groundednessRate = gMeasured === 0 ? null : gPass / gMeasured;
-  return buildConfigResult(config, 'replica', { rrf_k: LIVE_DEFAULT_RRF_K, mmr_lambda: mmrLambda, fetchN, floor }, scored, groundednessRate, !creds.voyageKey || anyError, rerankedAll, baseline);
+  return buildConfigResult(config, 'replica', { rrf_k: LIVE_DEFAULT_RRF_K, mmr_lambda: mmrLambda, fetchN, cosine_floor: floor }, scored, groundednessRate, !creds.voyageKey || anyError, rerankedAll, baseline);
 }
 
 // ─── Replica-vs-live validation (Jaccard of top-10 ranked id sets) ───────────
@@ -339,11 +364,11 @@ async function validateReplica(
       query: item.query, grade: item.grade, subject: item.subject,
       chapterNumber: item.chapter_number ?? null, limit: RETRIEVE_LIMIT,
       candidateCount: LIVE_DEFAULT_FETCHN, rerank: true, caller: HARNESS_CALLER,
-      minSimilarity: LIVE_DEFAULT_FLOOR, supabase: sb, voyageApiKey: creds.voyageKey,
+      minCosineSimilarity: LIVE_DEFAULT_COSINE_FLOOR, supabase: sb, voyageApiKey: creds.voyageKey,
     });
     const liveIds = live.chunks.map((c: any) => c.chunk_id);
     // replica @ default λ=0.7 using the FAITHFUL RPC pool
-    const { pool } = await fetchRrfPool(realRetrieve, sb, creds, item as GoldenItem, LIVE_DEFAULT_FETCHN, LIVE_DEFAULT_FLOOR);
+    const { pool } = await fetchRrfPool(realRetrieve, sb, creds, item as GoldenItem, LIVE_DEFAULT_FETCHN, LIVE_DEFAULT_COSINE_FLOOR);
     const rr = await voyageRerank(item.query, pool.map((c) => c.content), RETRIEVE_LIMIT, creds.voyageKey);
     let ranked = rr.reranked ? rr.rankedIndices.map((i) => pool[i]).filter(Boolean) : pool.slice(0, RETRIEVE_LIMIT);
     if (rr.reranked && ranked.length > 1) ranked = applyMMR(ranked, LIVE_DEFAULT_MMR_LAMBDA);
@@ -389,23 +414,32 @@ async function main(): Promise<number> {
   }
 
   if (mode === 'floor' || mode === 'all') {
-    console.log('\n##### FLOOR SWEEP (live lane; expect identical — quality_score is constant 0.7) #####');
-    for (const floor of [0.3, 0.4, 0.5]) {
-      const r = await runLiveConfig(realRetrieve, runGroundingCheck, sb, creds, golden, baseline, `floor=${floor}`, floor, LIVE_DEFAULT_FETCHN);
+    // COSINE floor sweep. Values are ABSOLUTE cosine (→ RPC p_min_similarity),
+    // NOT RRF. The band brackets the live 0.22: one below, live, one above,
+    // staying under the 0.35 hard ceiling documented at retrieve.ts:355.
+    //
+    // Pre-2026-07-27 this lane swept 0.3/0.4/0.5 into `minSimilarity`, which
+    // retrieve() ignores — the three configs were byte-identical runs of the
+    // default floor and the "expect identical" note in the old banner was an
+    // accidental self-fulfilling prophecy, not a finding. Results now differ
+    // because the parameter is finally applied.
+    console.log('\n##### COSINE FLOOR SWEEP (live lane; p_min_similarity = 0.15 / 0.22 / 0.30) #####');
+    for (const floor of [0.15, LIVE_DEFAULT_COSINE_FLOOR, 0.30]) {
+      const r = await runLiveConfig(realRetrieve, runGroundingCheck, sb, creds, golden, baseline, `cosine_floor=${floor}`, floor, LIVE_DEFAULT_FETCHN);
       results.push(r); printConfig(r);
     }
   }
   if (mode === 'fetchn' || mode === 'all') {
     console.log('\n##### FETCH-N SWEEP (live lane; candidateCount = 30 / 40 / 60) #####');
     for (const fetchN of [30, 40, 60]) {
-      const r = await runLiveConfig(realRetrieve, runGroundingCheck, sb, creds, golden, baseline, `fetchN=${fetchN}`, LIVE_DEFAULT_FLOOR, fetchN);
+      const r = await runLiveConfig(realRetrieve, runGroundingCheck, sb, creds, golden, baseline, `fetchN=${fetchN}`, LIVE_DEFAULT_COSINE_FLOOR, fetchN);
       results.push(r); printConfig(r);
     }
   }
   if (mode === 'mmr' || mode === 'all') {
     console.log('\n##### MMR-λ SWEEP (faithful replica lane; λ = 0.5 / 0.7 / 0.85; pool = real RPC RRF k=60) #####');
     for (const lam of [0.5, 0.7, 0.85]) {
-      const r = await runMmrConfig(realRetrieve, applyMMR, runGroundingCheck, sb, creds, golden, baseline, `mmr_lambda=${lam}`, lam, LIVE_DEFAULT_FETCHN, LIVE_DEFAULT_FLOOR);
+      const r = await runMmrConfig(realRetrieve, applyMMR, runGroundingCheck, sb, creds, golden, baseline, `mmr_lambda=${lam}`, lam, LIVE_DEFAULT_FETCHN, LIVE_DEFAULT_COSINE_FLOOR);
       results.push(r); printConfig(r);
     }
   }
