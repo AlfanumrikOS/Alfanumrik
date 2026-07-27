@@ -18,7 +18,19 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-/** Minimal DB type so createClient is fully typed without a generated schema file. */
+/**
+ * Minimal DB type so createClient is fully typed without a generated schema file.
+ *
+ * NOTE: `Relationships` is REQUIRED. supabase-js constrains every table against
+ * its internal `GenericTable` (`{ Row; Insert; Update; Relationships }`). Omit
+ * it and the schema silently fails that constraint — the client does not error,
+ * it degrades every row/insert/update type to `never`, so `d.flag_name`,
+ * `.upsert({ flag_name })` and `.update({ is_enabled })` all become type errors
+ * while still compiling under a program that never type-checks this file. That
+ * is exactly what happened here: the omission went unnoticed because nothing in
+ * CI type-checked `scripts/`. Keep `Relationships: []` even though feature_flags
+ * has no FK traversals in this script.
+ */
 type FlagsDB = {
   public: {
     Tables: {
@@ -26,11 +38,13 @@ type FlagsDB = {
         Row:    { flag_name: string; is_enabled: boolean; target_environments: string[] | null; rollout_percentage: number | null; metadata: unknown };
         Insert: { flag_name: string; is_enabled: boolean; target_environments?: string[] | null; rollout_percentage?: number | null; metadata?: unknown };
         Update: { flag_name?: string; is_enabled?: boolean; target_environments?: string[] | null; rollout_percentage?: number | null; metadata?: unknown };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
     Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 };
 

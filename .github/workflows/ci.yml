@@ -1170,6 +1170,25 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
+      # Type-check gate for repo-root `scripts/**` (52 files).
+      #
+      # Why this is a SEPARATE step from `npm run type-check`: that command is
+      # `--workspaces`, and `scripts/` belongs to no workspace.
+      # `apps/host/tsconfig.json` explicitly EXCLUDES `scripts`, there is no
+      # root tsconfig.json, and `npm run lint` only covers apps/host/src — so
+      # until this step existed, nothing in CI type-checked `scripts/` at all.
+      #
+      # That hole let seven scripts rot: they imported `../src/lib/…`, a
+      # pre-monorepo path deleted in the apps/* + packages/* migration. Every
+      # one of them died at runtime with MODULE_NOT_FOUND and CI stayed green.
+      # One of the seven hid its dead imports inside `await import(...)`, so a
+      # grep for static import lines missed it — only a real compile found it.
+      #
+      # This step is intentionally BLOCKING with no continue-on-error. A green
+      # run means `scripts/` actually compiles.
+      - name: Type check (scripts/)
+        run: npm run type-check:scripts
+
       # R15 fix: Explicit auth/identity test gate.
       # Auth tests MUST pass independently — a failure here blocks the entire CI.
       # This ensures unrelated test changes don't mask auth regressions.

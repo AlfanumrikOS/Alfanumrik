@@ -41,8 +41,8 @@ async function main(): Promise<void> {
   console.log(`\n→ Running chapter-explorer for ${args.subject} grade ${args.grade}: "${args.chapter}"\n`);
 
   // Dynamic imports — see file header for why.
-  const { runChapterExplorer } = await import('../src/lib/ai/agents/agents/chapter-explorer');
-  const { supabaseAdmin } = await import('../src/lib/supabase-admin');
+  const { runChapterExplorer } = await import('../packages/lib/src/ai/agents/agents/chapter-explorer');
+  const { supabaseAdmin } = await import('../packages/lib/src/supabase-admin');
 
   const t0 = Date.now();
   const result = await runChapterExplorer(args);
