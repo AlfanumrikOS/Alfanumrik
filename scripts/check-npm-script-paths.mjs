@@ -37,6 +37,33 @@
  * gate is intentionally conservative: it would rather miss an exotic token than
  * fail CI on a non-path.
  *
+ * KNOWN LIMITATION — EXTENSIONLESS TOKENS ARE NOT CHECKED (deliberate)
+ * -------------------------------------------------------------------
+ * A token with no recognized extension is never resolved. That means a BARE
+ * DIRECTORY argument — `eslint ... src ../../supabase/functions` — is invisible
+ * to this gate. If `../../supabase/functions` were wrong, or were written as a
+ * cwd-relative `supabase/functions`, THIS SCRIPT WOULD NOT CATCH IT. Do not
+ * assume directory arguments are covered; they are not.
+ *
+ * This was measured, not assumed. Two candidate relaxations were prototyped
+ * against the current tree:
+ *   - Resolve ALL extensionless non-flag tokens: 121 false positives. Every
+ *     binary and subcommand name (`npm`, `run`, `build`, `next`, `tsc`,
+ *     `vitest`, `eslint`) is an extensionless token. Non-starter.
+ *   - Resolve only extensionless tokens CONTAINING a slash: 1 hit today, but
+ *     structurally unsafe. Several legitimate non-path token shapes match it:
+ *     vitest filename SUBSTRING filters (`src/__tests__/auth-`, already used
+ *     verbatim in ci.yml's auth gate — deliberately not a real file), scoped
+ *     npm/workspace specifiers (`@alfanumrik/lib`), and URLs. Its one current
+ *     hit is also an unrelated pre-existing issue (`ncert:discover`'s
+ *     `./data/NCERT books` data-dir argument), so adopting it would turn this
+ *     BLOCKING gate red for reasons that have nothing to do with script rot.
+ *
+ * A false positive in a blocking CI gate halts unrelated PRs, which is a worse
+ * failure mode than the miss. Closing this gap properly needs per-CLI argument
+ * grammar (knowing that eslint's trailing positionals are paths but vitest's
+ * are filters), which is out of scope here.
+ *
  * Run via `npm run check:script-paths`. Enforced in CI by the `quality` job in
  * .github/workflows/ci.yml (blocking, no continue-on-error).
  */
@@ -48,8 +75,17 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Extensions that make a token worth resolving against the filesystem. */
-const PATHISH_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.sh'];
+/**
+ * Extensions that make a token worth resolving against the filesystem.
+ *
+ * `.json` is here because config files are passed as path arguments just like
+ * executables are (`eslint --config ../../.eslintrc.ai-boundary.json`), and they
+ * rot in exactly the same way. Omitting it was a real blind spot: the
+ * `lint:ai-boundary` declaration in apps/host/package.json pointed `--config` at
+ * an apps/host-relative `.eslintrc.ai-boundary.json` that does not exist there,
+ * and this canary did not catch it because `.json` was not on this list.
+ */
+const PATHISH_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.sh', '.json'];
 
 /** Shell operators that separate one command from the next. */
 const SEGMENT_SEPARATORS = new Set(['&&', '||', ';', '|', '&']);

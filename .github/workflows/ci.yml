@@ -1252,6 +1252,33 @@ jobs:
       - name: Check npm script paths
         run: npm run check:script-paths
 
+      # P13 (Data Privacy) guard — static scan of every Supabase Edge Function
+      # `index.ts` for PII reaching console.* (email/phone/name/prompt/answer/
+      # OCR text) or for whole request payloads being JSON.stringify'd into logs.
+      # Escape hatch for reviewed lines: the `PII_LOG_ALLOW` marker comment.
+      #
+      # WHY THIS IS ONLY NOW WIRED INTO CI. The script existed but was invoked by
+      # no workflow, so it was manual-invocation-only. It was also unsafe to wire:
+      # its glob resolved against cwd, and `npm run check:edge-logs -w apps/host`
+      # runs with cwd = apps/host, where `supabase/functions/*/index.ts` matches
+      # NOTHING — the guard reported a green "0 files scanned" pass. Wiring a gate
+      # that silently scans nothing is worse than not wiring it: it manufactures
+      # false assurance on a privacy invariant.
+      #
+      # Both halves of that are now fixed. The script anchors its glob to the repo
+      # root via import.meta.url, and — the part that makes wiring SAFE — it has a
+      # fail-loud zero-match floor: matching 0 files exits 1 with a diagnostic,
+      # because a PII guard that inspected nothing has not passed, it has failed to
+      # run. So any future repo-layout change or path refactor that breaks this
+      # gate FAILS CI loudly instead of sailing through green.
+      #
+      # Invoked directly from the repo root (NOT `-w apps/host`) so the cwd is
+      # unambiguous; the script is cwd-independent either way.
+      #
+      # This step is intentionally BLOCKING with no continue-on-error.
+      - name: Edge Function log PII guard (P13)
+        run: node scripts/security/check-edge-logs.mjs
+
   # ── Step 1c: Unit tests (sharded 4×, 2026-07-20 CI speed-up) ──
   # The full-suite `npm test -- --coverage` run (previously a single ~long step
   # inside the quality job) is split across 4 parallel shards. Vitest shards by
