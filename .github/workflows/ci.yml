@@ -1455,34 +1455,103 @@ jobs:
   # Functions. Previously these tests existed on disk but were NEVER invoked by
   # CI — they only ran on-demand locally. This job wires them into every PR.
   #
-  # SCOPE (deliberately narrow — only hermetic, network-free tests):
-  #   - parent-portal/__tests__/      (contract.test.ts: reads index.ts as text,
-  #                                     asserts the auth-before-dispatch contract)
-  #   - teacher-dashboard/__tests__/  (contract.test.ts: same static-source canary)
-  #   - daily-cron/__tests__/         (contract.test.ts: static-source canary —
-  #                                     pins the cron auth gate, critical steps,
-  #                                     Promise.allSettled isolation, flag gating)
+  # SCOPE (deliberately narrow — only hermetic, network-free tests).
+  #
+  # !! The AUTHORITATIVE target list is the `DENO_TEST_TARGETS` env var on the
+  # job below. This block is PROSE *ABOUT* that list, not a second source of
+  # truth. If the two ever disagree, DENO_TEST_TARGETS is right and this comment
+  # is stale — fix the comment; never "fix" the variable to match the comment.
+  # (The 2026-07 HTTP 522 incident documented on that variable was caused by
+  # exactly this failure mode: two lists maintained separately, which drifted.)
+  #
+  #   - parent-portal/__tests__/  — 1 file
+  #       contract.test.ts    static-source canary: reads index.ts as text; 401
+  #                           before dispatch, guardian_id resolved from the JWT
+  #                           (a body-supplied value is overridden), unknown
+  #                           action → 400.
+  #
+  #   - teacher-dashboard/__tests__/  — WHOLE DIRECTORY, 3 files
+  #       contract.test.ts    static-source canary, same shape as parent-portal:
+  #                           401 before dispatch, teacher_id overridden from the
+  #                           JWT, unknown action → 400.
+  #       deploy-intervention-contract.test.ts
+  #                           static-source canary over handleDeployIntervention:
+  #                           it must write the canonical
+  #                           teacher_remediation_assignments table and NEVER
+  #                           assignments / assignment_submissions, and must keep
+  #                           the 23505 dedupe backstop + roster-ownership gate.
+  #       metrics.test.ts     BEHAVIORAL unit tests of the pure metrics.ts
+  #                           helpers: "no signal" vs a real 0, curriculum-scoped
+  #                           mastery averaging, cohort BKT map shaping.
+  #
+  #   - daily-cron/__tests__/  — WHOLE DIRECTORY, 3 files
+  #       contract.test.ts    static-source canary (REG-118): fail-closed cron
+  #                           auth gate before ANY step dispatch, Promise
+  #                           .allSettled per-step isolation → 207 not a hard
+  #                           500, and the flag-gated steps.
+  #       actions.contract.test.ts
+  #                           BEHAVIORAL: createDailyCronActions preserves action
+  #                           names and order, and stamps requiresInternalCronAuth
+  #                           + audit/metric labels on every action.
+  #       verification-delivery.test.ts
+  #                           BEHAVIORAL unit tests of the pure silent-
+  #                           verification-failure decision logic (stuck-signup
+  #                           and streak thresholds, dedup keys), PLUS a static
+  #                           canary over the migration SQL that owns the
+  #                           exclusion rules (they live in SQL for P13).
+  #
+  #   - scan-ocr/__tests__/  — 1 file
+  #       contract.test.ts    static-source canary: SUPABASE_URL and
+  #                           SUPABASE_SERVICE_KEY are DECLARED and env-bound and
+  #                           admitAiRoute() runs — pins the 2026-07-13
+  #                           ReferenceError that 500'd every request before auth.
+  #
   #   - bulk-jee-neet-curated-import/__tests__/validate.test.ts
-  #                                     (pure validation helpers — no I/O)
-  #   - grounded-answer/__tests__/*   (12 unit files of pure helpers)
+  #                           pure P6 question-validation helpers — no I/O.
+  #
+  #   - send-auth-email/__tests__/always-200.test.ts
+  #                           P15 rule 1: every code path returns HTTP 200 so
+  #                           Supabase Auth never blocks signup. Offline — a stub
+  #                           EmailTransport is injected, so no socket is opened.
+  #
   #   - _shared/__tests__/gmail-transport.test.ts
-  #                                     (Gmail API transport — offline, injected
-  #                                     fetcher, in-process WebCrypto test key;
-  #                                     the ONE Deno test in _shared/__tests__)
+  #                           Gmail API transport — offline, injected fetcher,
+  #                           in-process WebCrypto test key. The ONE Deno test in
+  #                           _shared/__tests__ (its 4 siblings are Vitest).
+  #
+  #   - _shared/security/__tests__/internal-cron-auth.test.ts
+  #                           BEHAVIORAL: verifyInternalCronRequest rejects
+  #                           unauthenticated / stale / invalid-signature
+  #                           requests, accepts valid signatures plus the
+  #                           approved CRON_SECRET and the get_cron_secret() DB
+  #                           fallback, and stays FAIL-CLOSED when that fallback
+  #                           errors or mismatches. This is the shared module
+  #                           daily-cron's contract 1a delegates its auth to.
+  #
+  #   - grounded-answer/__tests__/  — 12 files ENUMERATED INDIVIDUALLY in
+  #                           DENO_TEST_TARGETS, NOT the whole directory (23 Deno
+  #                           test files live there). Pure helpers only.
   #
   # EXCLUDED ON PURPOSE:
-  #   - grounded-answer/__tests__/{e2e,pipeline}.test.ts — import index.ts which
-  #     calls Deno.serve() (binds a socket → requires --allow-net + has a server
-  #     side-effect). Flaky/non-deterministic in CI.
+  #   - grounded-answer/__tests__/ — 11 of its 23 Deno test files are absent from
+  #     DENO_TEST_TARGETS. Four of them (e2e, pipeline, cache-durable-l3,
+  #     foxy-answer-continuation) import ../index.ts, which calls Deno.serve()
+  #     (binds a socket → requires --allow-net + has a server side-effect):
+  #     flaky/non-deterministic in CI. The other seven (cache-redis,
+  #     cache-telemetry, foxy-python-generation, gen-ctx, output-screen,
+  #     prompt-segments, rag-content-version-bump) are ordinary offline Deno
+  #     tests with NO recorded exclusion rationale — they appear to have simply
+  #     never been added. Treat those seven as an open TODO, not a decision.
   #   - alfabot-answer, bulk-jee-neet-import/index.test.ts, _shared/__tests__/*
   #     (EXCEPT gmail-transport.test.ts, a Deno test — see SCOPE above),
   #     _shared/mol/__tests__/* — these are VITEST tests (import from 'vitest'),
   #     already covered by the sharded `unit-tests` job's `npm test`, not `deno test`.
   #
-  # Permissions are limited to --allow-read (readTextFileSync of index.ts) and
-  # --allow-env (some helpers read Deno.env). No --allow-net is granted, which
-  # guarantees no test can reach the network. `--no-lock` decouples CI from the
-  # repo's deno.lock (left untouched). Same BLOCKING posture as the unit-test
+  # Permissions are limited to --allow-read (the static-source canaries
+  # readTextFileSync index.ts and, for verification-delivery, a migration .sql)
+  # and --allow-env (some helpers read Deno.env). No --allow-net is granted,
+  # which guarantees no test can reach the network. `--no-lock` decouples CI from
+  # the repo's deno.lock (left untouched). Same BLOCKING posture as the unit-test
   # `quality` job: a failure here fails CI.
   edge-function-tests:
     name: Edge Function Deno Tests
