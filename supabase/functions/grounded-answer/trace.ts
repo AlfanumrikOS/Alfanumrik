@@ -14,6 +14,7 @@
 //     foxy_chat_messages (student-RLS).
 
 import type { Caller, AbstainReason } from './types.ts';
+import type { ConfidenceV2Source } from './confidence-v2.ts';
 
 export interface TraceRow {
   caller: Caller;
@@ -42,7 +43,19 @@ export interface TraceRow {
    */
   grounded_from_chunks: boolean | null;
   abstain_reason: AbstainReason | null;
+  /** LIVE confidence (v1). This is the ONLY value any gate reads. Unchanged. */
   confidence: number | null;
+  /**
+   * SHADOW confidence (v2) — recorded, never compared. See confidence-v2.ts.
+   * null when no chunk carried a relevance signal, or on pre-retrieval
+   * abstains (which is distinguishable from 'none' via confidence_v2_source
+   * being null rather than 'none').
+   */
+  confidence_v2?: number | null;
+  /** Which relevance signal produced confidence_v2. Keeps scales unpoolable. */
+  confidence_v2_source?: ConfidenceV2Source | null;
+  /** Top chunk's ABSOLUTE cosine (migration 20260727130000). Shadow only. */
+  top_cosine_similarity?: number | null;
   answer_length: number | null;
   input_tokens: number | null;
   output_tokens: number | null;
@@ -52,6 +65,30 @@ export interface TraceRow {
 
 // deno-lint-ignore no-explicit-any
 type SupabaseLike = any;
+
+/**
+ * SHADOW-ONLY columns added by migration 20260727130100. They are pure
+ * instrumentation — nothing reads them at runtime.
+ *
+ * If the Edge Function is deployed AHEAD of the migration these columns do not
+ * exist yet and PostgREST rejects the whole insert (PGRST204), which would
+ * silently destroy the trace row and hand callers a placeholder trace_id. That
+ * would be a real behaviour change, so the writer retries ONCE without them.
+ * Net effect: with the migration applied, identical to a plain insert plus the
+ * shadow values; without it, byte-identical to the pre-instrumentation
+ * behaviour.
+ */
+const SHADOW_TRACE_COLUMNS = [
+  'confidence_v2',
+  'confidence_v2_source',
+  'top_cosine_similarity',
+] as const;
+
+function stripShadowColumns(row: TraceRow): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...row };
+  for (const key of SHADOW_TRACE_COLUMNS) delete copy[key];
+  return copy;
+}
 
 /**
  * Insert one grounded_ai_traces row.
@@ -68,6 +105,24 @@ export async function writeTrace(sb: SupabaseLike, row: TraceRow): Promise<strin
       .single();
 
     if (error || !data?.id) {
+      // Shadow-column fallback (see SHADOW_TRACE_COLUMNS). Only attempted when
+      // the row actually carried shadow keys, so the pre-instrumentation
+      // failure path is otherwise untouched.
+      const carriedShadow = SHADOW_TRACE_COLUMNS.some((k) => k in row);
+      if (carriedShadow) {
+        const retry = await sb
+          .from('grounded_ai_traces')
+          .insert(stripShadowColumns(row))
+          .select('id')
+          .single();
+        if (retry && !retry.error && retry.data?.id) {
+          console.warn(
+            'trace: shadow confidence columns rejected — inserted without them ' +
+              '(apply migration 20260727130100)',
+          );
+          return retry.data.id as string;
+        }
+      }
       console.warn(`trace: insert failed — ${error?.message ?? 'no data'}`);
       return placeholderUuid();
     }
