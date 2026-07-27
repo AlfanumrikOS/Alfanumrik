@@ -6,8 +6,36 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 315 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-315 (2026-07-25, GenAI Phase 5d — the `/foxy` Study Tools CLIENT
+**Total catalog: 316 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-316 (2026-07-27, RAG shadow confidence instrumentation — branch
+`claude/rag-confidence-shadow-instrumentation`, commits `6e6f9d96` +
+`9febc5be`, both ZERO behaviour change by design. v1 confidence is
+`0.347606 + 0.2*(chunks/5)` in the vector-only regime — three reachable values,
+912/996 production traces at exactly 0.647606, i.e. a chunk counter. v2
+substitutes a relevance signal (Voyage rerank score, else the absolute cosine
+newly exposed by migration `20260727130000`) into the SAME unmodified
+`computeConfidence` and records it on `grounded_ai_traces`. The value of the
+step is the INTEGRITY OF THE SHADOW DATA, so the pins protect the data:
+(1) `confidence_v2` is never compared to a threshold anywhere — a quote-aware
+scan over ~2400 files, the file-mention allowlist pinned at four modules, the
+strict abstain still reading v1 `confidence`, the SSE metadata frame unchanged,
+plus a meta-pin proving the detector regex actually fires; (2) NULL is never
+coerced to 0 at any hop — `mapNcertRow`, `adaptChunk`, and inside
+`computeConfidenceV2` (signal-less chunks are OMITTED from the top-3 average,
+not zeroed; all-null ⇒ null + `'none'`); (3) `rankedScores` stays positionally
+aligned with `rankedIndices` in BOTH rerank implementations, with every
+fall-through path returning same-length all-null arrays; (4) source precedence
+`rerank > cosine > none` decided by the top chunk and applied uniformly, with
+`top_cosine_similarity` recorded independently of the chosen source;
+(5) a static migration scan pinning the `match_rag_chunks_ncert` overload count
+at 2 — the CI failure PR #1394 did not have; (6) `writeTrace` retries ONCE with
+the shadow keys stripped on a PGRST204-style failure, and only when the row
+carried them. 87 Vitest tests across 4 files. P12. Five documented gaps —
+no live-DB overload assertion, no behavioural `runPipeline`/`runStreamingPipeline`
+test, no Deno tests (Deno unavailable), no `numeric(5,4)` rounding assertion,
+and the pre-existing streaming/non-streaming v1 RRF-normalization asymmetry
+deliberately NOT pinned; see `13-rag-cache.md`).
+Prior: REG-315 (2026-07-25, GenAI Phase 5d — the `/foxy` Study Tools CLIENT
 SURFACE, i.e. the student-visible mouth of the Lesson + Content agents pinned by
 REG-313/REG-314: `StudyToolsBar` → `useStudyArtifacts` → `study-artifacts.ts`
 transport → `StudyArtifactSheet`, plus the `diagram-to-foxy-block` adapter into
