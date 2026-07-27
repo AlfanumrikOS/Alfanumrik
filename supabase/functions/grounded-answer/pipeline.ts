@@ -75,7 +75,11 @@ import { computeConfidence } from './confidence.ts';
 // threshold, never gates abstain or the soft banner. Runs unconditionally
 // (no flag) — the whole point is to accumulate evidence on live traffic.
 // See confidence-v2.ts for why v1's RRF input is a chunk counter.
-import { computeConfidenceV2, type ConfidenceV2Source } from './confidence-v2.ts';
+import {
+  computeConfidenceV2,
+  coverageOrNull,
+  type ConfidenceV2Source,
+} from './confidence-v2.ts';
 import { extractCitations } from './citations.ts';
 import {
   loadTemplate,
@@ -366,6 +370,7 @@ interface PipelineCtx {
   confidenceV2?: number | null;
   confidenceV2Source?: ConfidenceV2Source | null;
   topCosineSimilarity?: number | null;
+  signalCoverage?: number | null;
 }
 
 function baseTraceRowFromCtx(ctx: PipelineCtx): TraceRow {
@@ -397,12 +402,14 @@ function baseTraceRowFromCtx(ctx: PipelineCtx): TraceRow {
     abstain_reason: null,
     confidence: ctx.confidence ?? null,
     // Shadow only — recorded for offline analysis. No branch anywhere reads
-    // these three back. `confidence_v2_source: null` (as opposed to 'none')
+    // these four back. `confidence_v2_source: null` (as opposed to 'none')
     // distinguishes "abstained before retrieval ran" from "retrieval ran but
-    // produced no relevance signal".
+    // produced no relevance signal". `signal_coverage` is what makes
+    // confidence_v2 interpretable (a top-3 average over 1 vs 3 signals).
     confidence_v2: ctx.confidenceV2 ?? null,
     confidence_v2_source: ctx.confidenceV2Source ?? null,
     top_cosine_similarity: ctx.topCosineSimilarity ?? null,
+    signal_coverage: ctx.signalCoverage ?? null,
     answer_length: ctx.answerLength ?? null,
     input_tokens: ctx.inputTokens ?? null,
     output_tokens: ctx.outputTokens ?? null,
@@ -1210,8 +1217,13 @@ export async function runPipeline(
   // confidence_v2 ends up using. Stamped here (rather than next to each v2
   // computation) so post-retrieval abstain rows also carry it. Read by
   // nothing at runtime.
+  // The guard MUST match confidence-v2.ts `asSignal` exactly (typeof number AND
+  // Number.isFinite). Without isFinite a NaN cosine would be stamped raw here
+  // while computeConfidenceV2 nulled it — the same row disagreeing with itself.
   ctx.topCosineSimilarity =
-    chunks.length > 0 && typeof chunks[0].cosine_similarity === 'number'
+    chunks.length > 0 &&
+    typeof chunks[0].cosine_similarity === 'number' &&
+    Number.isFinite(chunks[0].cosine_similarity)
       ? chunks[0].cosine_similarity
       : null;
 
@@ -1260,6 +1272,7 @@ export async function runPipeline(
     });
     ctx.confidenceV2 = shadowV2.confidence_v2;
     ctx.confidenceV2Source = shadowV2.confidence_v2_source;
+    ctx.signalCoverage = coverageOrNull(shadowV2);
     const citations = buildCitationsFromAllChunks(chunks);
     ctx.confidence = confidence;
     ctx.answerLength = 0;
@@ -1732,6 +1745,7 @@ export async function runPipeline(
   });
   ctx.confidenceV2 = shadowV2.confidence_v2;
   ctx.confidenceV2Source = shadowV2.confidence_v2_source;
+  ctx.signalCoverage = coverageOrNull(shadowV2);
 
   if (request.mode === 'strict' && confidence < STRICT_CONFIDENCE_ABSTAIN_THRESHOLD) {
     return finalizeAbstain(sb, ctx, 'low_similarity');

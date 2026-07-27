@@ -265,9 +265,23 @@ describe('REGRESSION — confidence_v2 is shadow-only: never compared to a thres
     expect(frame?.[0]).toMatch(/confidence:\s*plannedConfidence/);
     expect(frame?.[0]).not.toMatch(/confidence_?[vV]2/);
     expect(frame?.[0]).not.toMatch(/top_?[cC]osine/);
+    expect(frame?.[0]).not.toMatch(/signal_?[cC]overage/);
   });
 
-  it('both trace-write sites stamp all three shadow fields', () => {
+  it('no shadow field reaches GroundedResponse (the caller-visible API shape)', () => {
+    // GroundedResponse is a discriminated UNION, so scan the whole contract
+    // module: no shadow identifier may appear anywhere in the caller-visible
+    // type surface. (types.ts is also NOT in SHADOW_TOUCHING_FILES, which the
+    // "only the four known modules" test pins independently.)
+    const code = codeOnly(read('supabase/functions/grounded-answer/types.ts'));
+    expect(code).toMatch(/export type GroundedResponse =/);
+    expect(code.length).toBeGreaterThan(1000);
+    expect(code).not.toMatch(/confidence_?[vV]2/);
+    expect(code).not.toMatch(/top_?[cC]osine/);
+    expect(code).not.toMatch(/signal_?[cC]overage/);
+  });
+
+  it('both trace-write sites stamp all FOUR shadow fields', () => {
     for (const rel of [
       'supabase/functions/grounded-answer/pipeline.ts',
       'supabase/functions/grounded-answer/pipeline-stream.ts',
@@ -276,7 +290,49 @@ describe('REGRESSION — confidence_v2 is shadow-only: never compared to a thres
       expect(code).toMatch(/confidence_v2:\s*ctx\.confidenceV2\s*\?\?\s*null/);
       expect(code).toMatch(/confidence_v2_source:\s*ctx\.confidenceV2Source\s*\?\?\s*null/);
       expect(code).toMatch(/top_cosine_similarity:\s*ctx\.topCosineSimilarity\s*\?\?\s*null/);
+      // signal_coverage is what makes confidence_v2 interpretable: a top-3
+      // average over 1 signal and one over 3 are different statistics. If it
+      // is computed but not persisted, the whole shadow column is unreadable.
+      expect(code).toMatch(/signal_coverage:\s*ctx\.signalCoverage\s*\?\?\s*null/);
+      expect(code).toMatch(/ctx\.signalCoverage\s*=\s*coverageOrNull\(shadowV2\)/);
     }
+  });
+
+  it('writeTrace strips exactly the four shadow columns on the fallback path', () => {
+    const code = codeOnly(read('supabase/functions/grounded-answer/trace.ts'));
+    const set = code.match(/const SHADOW_TRACE_COLUMNS = \[[\s\S]*?\] as const;/);
+    expect(set).not.toBeNull();
+    for (const col of [
+      'confidence_v2',
+      'confidence_v2_source',
+      'top_cosine_similarity',
+      'signal_coverage',
+    ]) {
+      expect(set?.[0]).toContain(`'${col}'`);
+    }
+    // A column added to the trace row but NOT to this set would be re-sent on
+    // the retry and fail the retry too.
+    expect((set?.[0].match(/'/g) ?? []).length / 2).toBe(4);
+  });
+
+  it('the shadow-column retry is gated on a MISSING-COLUMN error, not on any error', () => {
+    const code = codeOnly(read('supabase/functions/grounded-answer/trace.ts'));
+    // An unconditional retry can duplicate a committed row, mask a genuine
+    // constraint failure, and double the round-trip on the streaming path.
+    expect(code).toMatch(/if \(carriedShadow && isMissingShadowColumnError\(error\)\) \{/);
+    expect(code).toMatch(/function isMissingShadowColumnError\(/);
+    expect(code).toMatch(/error\.code === 'PGRST204'/);
+    // A constraint violation NAMES a shadow column too — it must short-circuit
+    // BEFORE any name match, or it gets retried and misattributed.
+    expect(code).toMatch(/if \(CONSTRAINT_PHRASE\.test\(message\)\) return false;/);
+  });
+
+  it('the fallback warn no longer asserts that the migration is missing', () => {
+    const raw = read('supabase/functions/grounded-answer/trace.ts');
+    const call = raw.match(/console\.warn\(\s*\n?\s*'trace: shadow[\s\S]*?\);/);
+    expect(call).not.toBeNull();
+    expect(call?.[0]).not.toMatch(/20260727130100/);
+    expect(call?.[0]).not.toMatch(/apply migration/i);
   });
 
   it('computeConfidenceV2 delegates to the UNMODIFIED v1 computeConfidence', () => {
@@ -330,6 +386,35 @@ describe('REGRESSION — NULL is never coerced to 0 (source hops)', () => {
     }
   });
 
+  it('both topCosineSimilarity stamps use the SAME finite guard as asSignal', () => {
+    // asSignal (confidence-v2.ts) is `typeof v === 'number' && Number.isFinite(v)`.
+    // If a pipeline stamp omits Number.isFinite, a NaN cosine is written raw to
+    // top_cosine_similarity while computeConfidenceV2 nulls it — one row
+    // disagreeing with itself about whether the signal exists.
+    const v2 = codeOnly(read('supabase/functions/grounded-answer/confidence-v2.ts'));
+    expect(v2).toMatch(/typeof v === 'number' && Number\.isFinite\(v\)/);
+    for (const rel of [
+      'supabase/functions/grounded-answer/pipeline.ts',
+      'supabase/functions/grounded-answer/pipeline-stream.ts',
+    ]) {
+      const stamp =
+        codeOnly(read(rel)).match(/ctx\.topCosineSimilarity\s*=[\s\S]*?;/)?.[0] ?? '';
+      expect(stamp).toMatch(/typeof chunks\[0\]\.cosine_similarity === 'number'/);
+      expect(stamp).toMatch(/Number\.isFinite\(chunks\[0\]\.cosine_similarity\)/);
+    }
+  });
+
+  it('coverageOrNull persists NULL (never 0) when there is no v2 score', () => {
+    const code = codeOnly(read('supabase/functions/grounded-answer/confidence-v2.ts'));
+    expect(code).toMatch(
+      /export function coverageOrNull\(result: ConfidenceV2Result\): number \| null \{/,
+    );
+    expect(code).toMatch(/result\.signal_coverage > 0 \? result\.signal_coverage : null/);
+    // A stored 0 would read as "measured, and zero of the top-3 contributed" —
+    // the same false-precision mistake as coercing a missing signal to 0.
+    expect(code).not.toMatch(/signalCoverage\s*=\s*[^\n;]*\?\?\s*0/);
+  });
+
   it('the rerank-score stamp uses ?? null on both pipelines and the unified module', () => {
     for (const rel of [
       'supabase/functions/grounded-answer/pipeline.ts',
@@ -363,6 +448,45 @@ describe('REGRESSION — NULL is never coerced to 0 (source hops)', () => {
     // NULL must remain a legal source stamp ("abstained before retrieval").
     expect(sql).toMatch(/confidence_v2_source IS NULL/);
     expect(sql).toMatch(/confidence_v2_source IN \('rerank', 'cosine', 'none'\)/);
+  });
+
+  it('signal_coverage is an additive, nullable, range-checked column with a COMMENT', () => {
+    const sql = read('supabase/migrations/20260727130100_grounded_traces_shadow_confidence_v2.sql');
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS signal_coverage\s+smallint/);
+    expect(sql).not.toMatch(/signal_coverage[^\n]*NOT NULL/i);
+    expect(sql).not.toMatch(/signal_coverage[^\n]*DEFAULT/i);
+    // NULL stays legal — it is the "no v2 score to interpret" case.
+    expect(sql).toMatch(/signal_coverage IS NULL/);
+    expect(sql).toMatch(/signal_coverage >= 0 AND signal_coverage <= 3/);
+    // Same NOT VALID + to_regclass posture as the other three columns.
+    expect(sql).toMatch(/grounded_ai_traces_signal_coverage_chk[\s\S]*?NOT VALID;/);
+    expect(sql).toMatch(/COMMENT ON COLUMN public\.grounded_ai_traces\.signal_coverage IS/);
+    const comment =
+      sql.match(
+        /COMMENT ON COLUMN public\.grounded_ai_traces\.signal_coverage IS[\s\S]*?'\s*;/,
+      )?.[0] ?? '';
+    expect(comment).toMatch(/CONTRIBUTED a signal/);
+    expect(comment).toMatch(/NULL whenever confidence_v2 is NULL/);
+  });
+
+  it('the migration stays idempotent and to_regclass-guarded for all four columns', () => {
+    const sql = read('supabase/migrations/20260727130100_grounded_traces_shadow_confidence_v2.sql');
+    expect(sql).toMatch(/IF to_regclass\('public\.grounded_ai_traces'\) IS NULL THEN/);
+    // Type-anchored so the prose "ADD COLUMN IF NOT EXISTS is re-runnable" in
+    // the header comment is not counted as a column.
+    const added = [
+      ...sql.matchAll(/ADD COLUMN IF NOT EXISTS\s+(\w+)\s+(?:numeric\(5,4\)|smallint|text)/g),
+    ].map((m) => m[1]);
+    expect(added.sort()).toEqual([
+      'confidence_v2',
+      'confidence_v2_source',
+      'signal_coverage',
+      'top_cosine_similarity',
+    ]);
+    // Both CHECKs are added only when absent, so a replay is a no-op.
+    expect((sql.match(/FROM pg_constraint/g) ?? []).length).toBe(2);
+    expect((sql.match(/NOT VALID;/g) ?? []).length).toBe(2);
+    expect(sql).not.toMatch(/DROP\s+COLUMN/i);
   });
 });
 

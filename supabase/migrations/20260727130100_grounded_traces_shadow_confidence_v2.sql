@@ -8,7 +8,7 @@
 --             added the `cosine_similarity` OUTPUT column to
 --             public.match_rag_chunks_ncert). This migration is ordered after it.
 --
--- ZERO BEHAVIOUR CHANGE. Three ADDITIVE, NULLABLE columns on an existing table.
+-- ZERO BEHAVIOUR CHANGE. Four ADDITIVE, NULLABLE columns on an existing table.
 -- Nothing reads them at runtime:
 --   * the strict-mode abstain gate still reads `confidence` (v1),
 --   * the soft banner still reads `confidence` (v1),
@@ -49,6 +49,13 @@
 -- rows must be EXCLUDED from v2 analysis, never read as 0 — 0 would assert
 -- "maximally irrelevant", a different and false claim.
 --
+-- INTERPRETABILITY: `signal_coverage` is NOT optional metadata. confidence_v2's
+-- top-3 average is taken over ONLY those chunks carrying the SAME signal as the
+-- top chunk, so an average over 1 signal and an average over 3 are different
+-- statistics wearing the same number. Any analysis of confidence_v2 MUST
+-- condition on signal_coverage (alongside confidence_v2_source) or it is
+-- comparing incomparable populations.
+--
 -- NOTE for analysis: an FTS-recovered tier-1 row can legitimately carry a
 -- top_cosine_similarity BELOW the configured floor. `p_min_similarity` gates
 -- only the vector CTE, never the FTS CTE. That is correct, not an anomaly. The
@@ -70,7 +77,8 @@ BEGIN
   ALTER TABLE public.grounded_ai_traces
     ADD COLUMN IF NOT EXISTS confidence_v2          numeric(5,4),
     ADD COLUMN IF NOT EXISTS confidence_v2_source   text,
-    ADD COLUMN IF NOT EXISTS top_cosine_similarity  numeric(5,4);
+    ADD COLUMN IF NOT EXISTS top_cosine_similarity  numeric(5,4),
+    ADD COLUMN IF NOT EXISTS signal_coverage        smallint;
 
   -- Vocabulary guard on the source stamp. NULL is explicitly permitted (it is
   -- the "abstained before retrieval" case). NOT VALID is deliberate: it applies
@@ -87,6 +95,23 @@ BEGIN
       CHECK (
         confidence_v2_source IS NULL
         OR confidence_v2_source IN ('rerank', 'cosine', 'none')
+      ) NOT VALID;
+  END IF;
+
+  -- Range guard on the coverage count. The average is taken over at most the
+  -- top 3 chunks, so 0..3 is the whole domain. NULL stays legal (no v2 score).
+  -- Same NOT VALID rationale as above: every pre-existing row is NULL here.
+  IF NOT EXISTS (
+    SELECT 1
+      FROM pg_constraint
+     WHERE conrelid = 'public.grounded_ai_traces'::regclass
+       AND conname  = 'grounded_ai_traces_signal_coverage_chk'
+  ) THEN
+    ALTER TABLE public.grounded_ai_traces
+      ADD CONSTRAINT grounded_ai_traces_signal_coverage_chk
+      CHECK (
+        signal_coverage IS NULL
+        OR (signal_coverage >= 0 AND signal_coverage <= 3)
       ) NOT VALID;
   END IF;
 END
@@ -119,6 +144,14 @@ BEGIN
     'unembedded chunk, tier 2, tier 3, or no query embedding) — unknown, NOT irrelevant. Values BELOW the '
     '0.22 production floor (NCERT_MIN_COSINE_SIMILARITY) are legitimate: p_min_similarity gates only the '
     'vector CTE, never the FTS CTE.';
+
+  COMMENT ON COLUMN public.grounded_ai_traces.signal_coverage IS
+    'SHADOW ONLY (20260727130100). Count of chunks (0-3) that actually CONTRIBUTED a signal to the top-3 '
+    'average behind confidence_v2 — i.e. those carrying the SAME signal named by confidence_v2_source; '
+    'chunks with no signal are OMITTED from the average, never zeroed. NULL whenever confidence_v2 is NULL '
+    '(no relevance evidence, or abstained before retrieval). REQUIRED FOR INTERPRETATION: a top-3 average '
+    'over 1 signal and one over 3 signals are different statistics — always condition on this column '
+    'together with confidence_v2_source before comparing confidence_v2 values.';
 END
 $comments$;
 

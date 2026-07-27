@@ -3,10 +3,10 @@
  *
  * File under test: supabase/functions/grounded-answer/trace.ts
  *
- * Pin (6): `writeTrace` retries ONCE with the three shadow keys stripped when
- * the first insert fails, and ONLY when the row actually carried them. Rows
- * without shadow keys must take the byte-identical old path (exactly one
- * insert, then the placeholder).
+ * Pin (6): `writeTrace` retries ONCE with the four shadow keys stripped when
+ * the first insert fails, and ONLY when (i) the row actually carried them AND
+ * (ii) the error is a MISSING-COLUMN signal. Every other failure takes the
+ * byte-identical old path (exactly one insert, then the placeholder).
  *
  * WHY THIS MATTERS
  * ----------------
@@ -17,10 +17,16 @@
  * placeholder trace_id — a real behaviour change smuggled in under
  * "instrumentation". The retry is what keeps the change zero-behaviour.
  *
- * The converse is equally load-bearing: an UNCONDITIONAL retry would double
- * every genuine insert failure (RLS denial, dead connection, constraint
- * violation), doubling DB load on exactly the paths that are already
- * degraded. Hence the `'key' in row` guard.
+ * The converse is equally load-bearing. A retry on ANY error would:
+ *   (a) write a DUPLICATE trace row when the first insert actually COMMITTED
+ *       and only the response was lost — a failure mode that did not exist
+ *       before the instrumentation;
+ *   (b) MASK and MISATTRIBUTE a genuine non-column failure (the
+ *       confidence_v2_source CHECK, a numeric overflow, an RLS denial) as a
+ *       missing migration;
+ *   (c) double the round-trip on every failed insert — and on the streaming
+ *       path that write is awaited in front of the metadata frame.
+ * Hence BOTH guards: `'key' in row` and `isMissingShadowColumnError(error)`.
  *
  * P12 (AI safety / grounding observability), P13-adjacent (trace integrity).
  */
@@ -37,7 +43,18 @@ interface InsertCall {
   payload: Record<string, unknown>;
 }
 
-type Outcome = { data: { id: string } | null; error: { message: string } | null };
+type Outcome = {
+  data: { id: string } | null;
+  error: { message: string; code?: string } | null;
+};
+
+/** The shape PostgREST actually returns when a column is not in its cache. */
+function schemaCacheMiss(column = 'confidence_v2'): { message: string; code: string } {
+  return {
+    code: 'PGRST204',
+    message: `Could not find the '${column}' column of 'grounded_ai_traces' in the schema cache`,
+  };
+}
 
 /**
  * Minimal PostgREST-shaped stub: `.from(t).insert(p).select('id').single()`.
@@ -106,10 +123,16 @@ function shadowRow(): Record<string, unknown> {
     confidence_v2: 0.7123,
     confidence_v2_source: 'cosine',
     top_cosine_similarity: 0.4211,
+    signal_coverage: 3,
   };
 }
 
-const SHADOW_KEYS = ['confidence_v2', 'confidence_v2_source', 'top_cosine_similarity'];
+const SHADOW_KEYS = [
+  'confidence_v2',
+  'confidence_v2_source',
+  'top_cosine_similarity',
+  'signal_coverage',
+];
 
 beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -133,12 +156,19 @@ describe('REGRESSION — writeTrace happy path is a single plain insert', () => 
       confidence_v2: 0.7123,
       confidence_v2_source: 'cosine',
       top_cosine_similarity: 0.4211,
+      signal_coverage: 3,
     });
   });
 
   it('null shadow values are still sent (null is a meaningful record)', async () => {
     const { writeTrace } = await loadTrace();
-    const row = { ...baseRow(), confidence_v2: null, confidence_v2_source: null, top_cosine_similarity: null };
+    const row = {
+      ...baseRow(),
+      confidence_v2: null,
+      confidence_v2_source: null,
+      top_cosine_similarity: null,
+      signal_coverage: null,
+    };
     const sb = makeStubClient([{ data: { id: 'trace-2' }, error: null }]);
     await writeTrace(sb, row);
 
@@ -151,13 +181,10 @@ describe('REGRESSION — writeTrace happy path is a single plain insert', () => 
 });
 
 describe('REGRESSION — writeTrace retries ONCE without the shadow columns', () => {
-  it('strips exactly the three shadow keys on a PGRST204-style failure', async () => {
+  it('strips exactly the four shadow keys on a PGRST204-style failure', async () => {
     const { writeTrace } = await loadTrace();
     const sb = makeStubClient([
-      {
-        data: null,
-        error: { message: "Could not find the 'confidence_v2' column of 'grounded_ai_traces' in the schema cache" },
-      },
+      { data: null, error: schemaCacheMiss() },
       { data: { id: 'trace-retry' }, error: null },
     ]);
     const row = shadowRow();
@@ -175,11 +202,26 @@ describe('REGRESSION — writeTrace retries ONCE without the shadow columns', ()
     expect(retryPayload).toEqual(baseRow());
   });
 
+  it('retries on a bare 42703 "does not exist" naming a shadow column (no PGRST204 code)', async () => {
+    const { writeTrace } = await loadTrace();
+    const sb = makeStubClient([
+      {
+        data: null,
+        error: {
+          message: 'column "signal_coverage" of relation "grounded_ai_traces" does not exist',
+        },
+      },
+      { data: { id: 'trace-42703' }, error: null },
+    ]);
+    expect(await writeTrace(sb, shadowRow())).toBe('trace-42703');
+    expect(sb.calls).toHaveLength(2);
+  });
+
   it('retries at most ONCE — a second failure yields the placeholder, not a third insert', async () => {
     const { writeTrace } = await loadTrace();
     const sb = makeStubClient([
-      { data: null, error: { message: 'PGRST204' } },
-      { data: null, error: { message: 'PGRST204 again' } },
+      { data: null, error: schemaCacheMiss() },
+      { data: null, error: schemaCacheMiss('top_cosine_similarity') },
     ]);
     const id = await writeTrace(sb, shadowRow());
 
@@ -187,20 +229,25 @@ describe('REGRESSION — writeTrace retries ONCE without the shadow columns', ()
     expect(id.startsWith(PLACEHOLDER_PREFIX)).toBe(true);
   });
 
-  it('retries when the first insert returns no error but also no id', async () => {
+  it('does NOT retry when the insert returns no error but also no id', async () => {
     const { writeTrace } = await loadTrace();
+    // "No error, no row" is not a missing-column signal. It is precisely the
+    // shape a lost response after a COMMITTED insert takes — retrying would
+    // write a DUPLICATE trace row, a failure mode that did not exist before
+    // the instrumentation.
     const sb = makeStubClient([
       { data: null, error: null },
-      { data: { id: 'trace-retry-2' }, error: null },
+      { data: { id: 'must-not-be-used' }, error: null },
     ]);
-    expect(await writeTrace(sb, shadowRow())).toBe('trace-retry-2');
-    expect(sb.calls).toHaveLength(2);
+    const id = await writeTrace(sb, shadowRow());
+    expect(sb.calls).toHaveLength(1);
+    expect(id.startsWith(PLACEHOLDER_PREFIX)).toBe(true);
   });
 
   it('does not mutate the caller-supplied row while stripping', async () => {
     const { writeTrace } = await loadTrace();
     const sb = makeStubClient([
-      { data: null, error: { message: 'PGRST204' } },
+      { data: null, error: schemaCacheMiss() },
       { data: { id: 'x' }, error: null },
     ]);
     const row = shadowRow();
@@ -249,7 +296,7 @@ describe('REGRESSION — rows WITHOUT shadow keys take the byte-identical old pa
   it('a row carrying even ONE shadow key (explicitly undefined) still qualifies for the retry', async () => {
     const { writeTrace } = await loadTrace();
     const sb = makeStubClient([
-      { data: null, error: { message: 'PGRST204' } },
+      { data: null, error: schemaCacheMiss() },
       { data: { id: 'trace-partial' }, error: null },
     ]);
     // `in` semantics, not truthiness: a present-but-undefined key is still a
@@ -261,14 +308,80 @@ describe('REGRESSION — rows WITHOUT shadow keys take the byte-identical old pa
   });
 });
 
+describe('REGRESSION — a NON-column failure is never retried (no duplicate, no masking)', () => {
+  // Each of these carries a shadow-bearing row, so the `'key' in row` guard
+  // alone would let it through. The error-shape guard is what stops it.
+  const nonColumnErrors: Array<[string, { message: string; code?: string }]> = [
+    [
+      // The CHECK this very migration adds. Its NAME contains a shadow column,
+      // so a naive substring match would retry AND misreport it as a missing
+      // migration while silently dropping the offending value.
+      'the confidence_v2_source vocabulary CHECK',
+      {
+        code: '23514',
+        message:
+          'new row for relation "grounded_ai_traces" violates check constraint ' +
+          '"grounded_ai_traces_confidence_v2_source_chk"',
+      },
+    ],
+    [
+      'the signal_coverage range CHECK',
+      {
+        code: '23514',
+        message:
+          'new row for relation "grounded_ai_traces" violates check constraint ' +
+          '"grounded_ai_traces_signal_coverage_chk"',
+      },
+    ],
+    [
+      'a numeric overflow on confidence_v2',
+      { code: '22003', message: 'numeric field overflow for column confidence_v2' },
+    ],
+    ['an RLS denial', { code: '42501', message: 'new row violates row-level security policy' }],
+    ['a dead connection', { message: 'fetch failed' }],
+    ['a foreign-key violation', { code: '23503', message: 'insert or update violates foreign key constraint' }],
+  ];
+
+  for (const [label, error] of nonColumnErrors) {
+    it(`${label} issues exactly ONE insert`, async () => {
+      const { writeTrace } = await loadTrace();
+      const sb = makeStubClient([
+        { data: null, error },
+        { data: { id: 'must-not-be-used' }, error: null },
+      ]);
+      const id = await writeTrace(sb, shadowRow());
+      expect(sb.calls).toHaveLength(1);
+      expect(id.startsWith(PLACEHOLDER_PREFIX)).toBe(true);
+    });
+  }
+
+  it('the warn text does not assert that migration 20260727130100 is missing', async () => {
+    const { writeTrace } = await loadTrace();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Success-through-retry: the only path that emits the shadow-specific warn.
+    await writeTrace(
+      makeStubClient([
+        { data: null, error: schemaCacheMiss() },
+        { data: { id: 'ok' }, error: null },
+      ]),
+      shadowRow(),
+    );
+    const texts = warn.mock.calls.map((c) => String(c[0]));
+    expect(texts.join('\n')).not.toMatch(/20260727130100/);
+    expect(texts.join('\n')).toMatch(/schema cache/i);
+  });
+});
+
 describe('REGRESSION — writeTrace never propagates a failure to the caller', () => {
   it('always returns a string trace id, on every path', async () => {
     const { writeTrace } = await loadTrace();
     const scenarios: Array<Array<Outcome | 'throw'>> = [
       [{ data: { id: 'ok' }, error: null }],
-      [{ data: null, error: { message: 'PGRST204' } }, { data: { id: 'ok2' }, error: null }],
-      [{ data: null, error: { message: 'PGRST204' } }, { data: null, error: { message: 'x' } }],
-      [{ data: null, error: { message: 'PGRST204' } }, 'throw'],
+      [{ data: null, error: schemaCacheMiss() }, { data: { id: 'ok2' }, error: null }],
+      [{ data: null, error: schemaCacheMiss() }, { data: null, error: { message: 'x' } }],
+      [{ data: null, error: schemaCacheMiss() }, 'throw'],
+      [{ data: null, error: { code: '23514', message: 'violates check constraint' } }],
+      [{ data: null, error: null }],
       ['throw'],
     ];
     for (const outcomes of scenarios) {

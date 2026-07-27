@@ -67,9 +67,25 @@ export interface ConfidenceV2Result {
   confidence_v2: number | null;
   /** Which signal produced confidence_v2. Keeps the two scales unpoolable. */
   confidence_v2_source: ConfidenceV2Source;
-  /** The TOP chunk's absolute cosine, reported independently of the source. */
+  /**
+   * The TOP chunk's absolute cosine, reported independently of the source.
+   *
+   * DELIBERATELY UNREAD by both pipelines: they stamp their own
+   * `ctx.topCosineSimilarity` from `chunks[0]` BEFORE the `scope_mismatch`
+   * branch, so post-retrieval abstain rows (which never reach a v2
+   * computation) still carry the cosine. Do NOT "simplify" the pipelines into
+   * sourcing it from here — that would silently drop the value from every
+   * abstain row, which is a behaviour change. The two must stay guard-identical
+   * (`typeof number && Number.isFinite`); see `asSignal` below.
+   */
   top_cosine_similarity: number | null;
-  /** How many of the top-3 chunks actually carried the chosen signal (0-3). */
+  /**
+   * How many of the top-3 chunks actually carried the chosen signal (0-3).
+   * Persisted to grounded_ai_traces.signal_coverage — without it confidence_v2
+   * is uninterpretable, because a top-3 average over 1 signal and one over 3
+   * signals are different statistics. Callers persist NULL (not 0) whenever
+   * `confidence_v2` is null, so coverage never reads as a measured zero.
+   */
   signal_coverage: number;
 }
 
@@ -142,4 +158,24 @@ export function computeConfidenceV2(args: {
     top_cosine_similarity: topCosine,
     signal_coverage: top3.length,
   };
+}
+
+/**
+ * The value to PERSIST in grounded_ai_traces.signal_coverage: the coverage
+ * count when there is a score to interpret, otherwise NULL.
+ *
+ * A stored 0 would read as "we measured, and zero of the top-3 contributed",
+ * which is the same false-precision mistake as coercing a missing signal to 0.
+ * Coverage is only meaningful alongside a non-null `confidence_v2`.
+ *
+ * Written as `> 0` rather than a null-check on `confidence_v2` on purpose:
+ * `confidence_v2` must never appear next to a comparison operator anywhere in
+ * the tree (that is the shadow-only source pin). The two are exactly
+ * equivalent by construction — every path that returns a non-null
+ * `confidence_v2` has a `source` of 'rerank' or 'cosine', and the top chunk
+ * therefore always contributes, so `signal_coverage >= 1`; every path that
+ * returns null returns `signal_coverage: 0`.
+ */
+export function coverageOrNull(result: ConfidenceV2Result): number | null {
+  return result.signal_coverage > 0 ? result.signal_coverage : null;
 }

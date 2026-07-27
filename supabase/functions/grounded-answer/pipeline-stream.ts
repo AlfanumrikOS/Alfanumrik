@@ -60,7 +60,11 @@ import { computeConfidence } from './confidence.ts';
 // be mirrored here). Never compared to a threshold, never gates anything, and
 // deliberately NOT emitted on the `metadata` frame (the wire shape must not
 // change). See confidence-v2.ts.
-import { computeConfidenceV2, type ConfidenceV2Source } from './confidence-v2.ts';
+import {
+  computeConfidenceV2,
+  coverageOrNull,
+  type ConfidenceV2Source,
+} from './confidence-v2.ts';
 // Digital Twin + Knowledge Graph (Slice 1). Flag-gated cross-subject retrieval
 // widening — mirrors pipeline.ts. Strict no-op when ff_digital_twin_v1 is OFF
 // (default) or no transfer edge exists. See transfer-retrieval.ts.
@@ -284,6 +288,7 @@ interface StreamCtx {
   confidenceV2?: number | null;
   confidenceV2Source?: ConfidenceV2Source | null;
   topCosineSimilarity?: number | null;
+  signalCoverage?: number | null;
 }
 
 function baseTraceRow(ctx: StreamCtx): TraceRow {
@@ -322,6 +327,7 @@ function baseTraceRow(ctx: StreamCtx): TraceRow {
     confidence_v2: ctx.confidenceV2 ?? null,
     confidence_v2_source: ctx.confidenceV2Source ?? null,
     top_cosine_similarity: ctx.topCosineSimilarity ?? null,
+    signal_coverage: ctx.signalCoverage ?? null,
     answer_length: ctx.answerLength ?? null,
     input_tokens: ctx.inputTokens ?? null,
     output_tokens: ctx.outputTokens ?? null,
@@ -524,8 +530,13 @@ export async function* runStreamingPipeline(
   ctx.topSimilarity = chunks.length > 0 ? topSim : null;
   // Shadow: top chunk's ABSOLUTE cosine. Stamped before the scope_mismatch
   // branch so post-retrieval abstain rows carry it too. Read by nothing.
+  // The guard MUST match confidence-v2.ts `asSignal` exactly (typeof number AND
+  // Number.isFinite) so a NaN cosine can't be stamped raw here while
+  // computeConfidenceV2 nulls it.
   ctx.topCosineSimilarity =
-    chunks.length > 0 && typeof chunks[0].cosine_similarity === 'number'
+    chunks.length > 0 &&
+    typeof chunks[0].cosine_similarity === 'number' &&
+    Number.isFinite(chunks[0].cosine_similarity)
       ? chunks[0].cosine_similarity
       : null;
 
@@ -641,6 +652,7 @@ export async function* runStreamingPipeline(
   });
   ctx.confidenceV2 = shadowV2.confidence_v2;
   ctx.confidenceV2Source = shadowV2.confidence_v2_source;
+  ctx.signalCoverage = coverageOrNull(shadowV2);
 
   // Pre-stream citations: indexed from chunk order. The actual extractCitations
   // pass on the final answer below will refine the list to only those
