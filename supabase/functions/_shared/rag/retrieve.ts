@@ -153,7 +153,40 @@ export interface RetrievalChunk {
   chapter_number: number | null;
   chapter_title: string | null;
   page_number: number | null;
+  /**
+   * ORDERING STATISTIC — not a relevance measure. RRF (k=60) in tier 1,
+   * ts_rank in tier 2, the fixed 0.3 sentinel in tier 3. Consumed by
+   * applyMMR, the caller-side RRF floor, and the rerank candidate ordering.
+   * DO NOT reinterpret as relevance; use `cosineSimilarity` / `rerankScore`.
+   */
   similarity: number;
+  /**
+   * ABSOLUTE cosine relevance, `1 - (embedding <=> query_embedding)`, surfaced
+   * by migration 20260727130000. Output only — the RPC filters and orders on
+   * nothing but `similarity`.
+   *
+   * NULL IS MEANINGFUL, NOT MISSING. It means "no relevance evidence for this
+   * row" and occurs for: FTS-recovered rows in tier 1 whose chunk is
+   * unembedded, every row in tier 2 (FTS-only) and tier 3 (LIKE fallback) when
+   * no query embedding was supplied, and any unembedded chunk. NEVER coerce it
+   * to 0 (the `typeof x === 'number' ? x : 0` pattern used for `similarity`) —
+   * that silently scores an unmeasured chunk as maximally IRRELEVANT rather
+   * than unknown.
+   *
+   * An FTS-recovered tier-1 row can legitimately carry a cosine BELOW the
+   * configured floor: `p_min_similarity` gates only the vector CTE, never the
+   * FTS CTE. That is correct behaviour, not an anomaly. The production floor is
+   * NCERT_MIN_COSINE_SIMILARITY (0.22), NOT the RPC's 0.5 default.
+   */
+  cosineSimilarity: number | null;
+  /**
+   * Voyage rerank-2 cross-encoder `relevance_score` for this chunk, when the
+   * rerank stage ran in THIS module. NULL when rerank was skipped, failed, or
+   * was deferred to the caller (grounded-answer passes `rerank: false` and
+   * stamps its own score in pipeline.ts). NULL = no cross-encoder evidence;
+   * never coerce to 0.
+   */
+  rerankScore: number | null;
   /** Truncated content text for prompt injection. */
   excerpt: string;
   /** Full chunk text (alias of excerpt for now — kept distinct in case of future trimming). */
@@ -409,18 +442,34 @@ async function callVoyageEmbedding(
   }
 }
 
+/**
+ * `rankedScores` is POSITIONALLY ALIGNED with `rankedIndices` and carries
+ * Voyage's cross-encoder `relevance_score`. It used to be parsed and thrown
+ * away. NULL entries mean "no cross-encoder evidence" (identity/fall-through
+ * paths, or a Voyage entry without a numeric score) — never 0.
+ */
+function rerankIdentity(
+  documents: string[],
+  topK: number,
+  sliceToTopK: boolean,
+): { rankedIndices: number[]; rankedScores: Array<number | null>; reranked: boolean } {
+  const all = documents.map((_, i) => i);
+  const rankedIndices = sliceToTopK ? all.slice(0, topK) : all;
+  return { rankedIndices, rankedScores: rankedIndices.map(() => null), reranked: false };
+}
+
 async function callVoyageRerank(
   query: string,
   documents: string[],
   topK: number,
   apiKey: string,
   timeoutMs: number,
-): Promise<{ rankedIndices: number[]; reranked: boolean }> {
+): Promise<{ rankedIndices: number[]; rankedScores: Array<number | null>; reranked: boolean }> {
   if (!apiKey || documents.length === 0) {
-    return { rankedIndices: documents.map((_, i) => i).slice(0, topK), reranked: false };
+    return rerankIdentity(documents, topK, true);
   }
   if (documents.length <= topK) {
-    return { rankedIndices: documents.map((_, i) => i), reranked: false };
+    return rerankIdentity(documents, topK, false);
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -441,21 +490,31 @@ async function callVoyageRerank(
     });
     if (!res.ok) {
       await res.text().catch(() => '');
-      return { rankedIndices: documents.map((_, i) => i).slice(0, topK), reranked: false };
+      return rerankIdentity(documents, topK, true);
     }
     const body = await res.json().catch(() => null) as
       | { data?: Array<{ index: number; relevance_score?: number }> }
       | null;
     const ranked = body?.data;
     if (!Array.isArray(ranked) || ranked.length === 0) {
-      return { rankedIndices: documents.map((_, i) => i).slice(0, topK), reranked: false };
+      return rerankIdentity(documents, topK, true);
     }
+    // Filter FIRST, then project index + score from the SAME surviving entries
+    // so the two arrays cannot drift out of alignment. (The pre-existing
+    // `.map(...).filter(Number.isInteger)` ordering is preserved semantically:
+    // same predicate, same surviving indices, same order.)
+    const kept = ranked.slice(0, topK).filter((r) => Number.isInteger(r.index));
     return {
-      rankedIndices: ranked.slice(0, topK).map((r) => r.index).filter((i) => Number.isInteger(i)),
+      rankedIndices: kept.map((r) => r.index),
+      rankedScores: kept.map((r) =>
+        typeof r.relevance_score === 'number' && Number.isFinite(r.relevance_score)
+          ? r.relevance_score
+          : null,
+      ),
       reranked: true,
     };
   } catch {
-    return { rankedIndices: documents.map((_, i) => i).slice(0, topK), reranked: false };
+    return rerankIdentity(documents, topK, true);
   } finally {
     clearTimeout(timer);
   }
@@ -488,6 +547,14 @@ interface NcertRpcRow {
   page_number?: number | null;
   chapter_number?: number | null;
   source?: string | null;
+  /**
+   * Added to the RPC's RETURNS TABLE (appended LAST) by migration
+   * 20260727130000_rag_ncert_expose_cosine_similarity.sql. Absent when running
+   * against a DB that predates that migration; NULL when the row carries no
+   * cosine evidence. Both cases map to `cosineSimilarity: null` — "unknown",
+   * NOT "irrelevant".
+   */
+  cosine_similarity?: number | null;
   // Defense in depth: if a future RPC extension surfaces these, we use them
   // for scope verification. The current RPC does NOT return them; the RPC's
   // own WHERE clause already enforces grade/subject filtering.
@@ -497,6 +564,13 @@ interface NcertRpcRow {
 
 function mapNcertRow(row: NcertRpcRow): RetrievalChunk {
   const sim = typeof row.similarity === 'number' ? row.similarity : 0;
+  // DELIBERATELY NOT the `? x : 0` coalesce used for `similarity` above.
+  // A missing/NULL cosine means "no relevance evidence"; folding it to 0 would
+  // assert "maximally irrelevant", which is a different and false claim.
+  const cos =
+    typeof row.cosine_similarity === 'number' && Number.isFinite(row.cosine_similarity)
+      ? row.cosine_similarity
+      : null;
   const content = row.content ?? '';
   return {
     chunk_id: row.id,
@@ -505,6 +579,10 @@ function mapNcertRow(row: NcertRpcRow): RetrievalChunk {
     chapter_title: row.chapter_title ?? null,
     page_number: row.page_number ?? null,
     similarity: sim,
+    cosineSimilarity: cos,
+    // Populated only if the rerank stage runs below; null = no cross-encoder
+    // evidence.
+    rerankScore: null,
     excerpt: content.length > 600 ? content.slice(0, 600) : content,
     content,
     media_url: row.media_url ?? null,
@@ -680,6 +758,15 @@ export async function retrieve(opts: RetrieveOptions): Promise<RetrievalResult> 
       Math.min(timeoutMs * 0.4, 8_000),
     );
     if (rr.reranked) {
+      // Shadow instrumentation: stamp each surviving chunk with the
+      // cross-encoder score that promoted it, BEFORE the selection below.
+      // Mutation is safe — these objects were freshly built by mapNcertRow in
+      // this call and are not shared. The selection expression itself is
+      // byte-identical to the pre-instrumentation code.
+      rr.rankedIndices.forEach((idx, pos) => {
+        const c = chunks[idx];
+        if (c) c.rerankScore = rr.rankedScores[pos] ?? null;
+      });
       chunks = rr.rankedIndices.map((i) => chunks[i]).filter(Boolean);
       reranked = true;
     } else {
