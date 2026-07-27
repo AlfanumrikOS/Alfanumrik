@@ -1230,6 +1230,28 @@ jobs:
       - name: Type check (scripts/)
         run: npm run type-check:scripts
 
+      # npm-script path canary — the RUNTIME complement to the compile-time gate
+      # immediately above. `type-check:scripts` proves script SOURCES compile;
+      # it says nothing about whether the package.json declarations that invoke
+      # them point at a file that exists.
+      #
+      # npm runs a script with cwd = the directory of the package.json declaring
+      # it, so `node scripts/foo.js` in apps/host/package.json resolves to
+      # apps/host/scripts/foo.js. 22 declarations had rotted this way — each
+      # missing a `../../` prefix, each dying with MODULE_NOT_FOUND the moment
+      # anyone ran it, none visible to any compiler because package.json is
+      # just JSON.
+      #
+      # DELIBERATE ORDERING — this must stay AFTER `Type check (scripts/)`, and
+      # both must stay after the P15-protecting `Auth & Identity test gate`.
+      # Steps are serial and fail-stop; dev-tooling gates run last so a trivial
+      # maintenance-script failure can never abort the job before the onboarding
+      # gate has emitted its signal. See the ordering note above.
+      #
+      # This step is intentionally BLOCKING with no continue-on-error.
+      - name: Check npm script paths
+        run: npm run check:script-paths
+
   # ── Step 1c: Unit tests (sharded 4×, 2026-07-20 CI speed-up) ──
   # The full-suite `npm test -- --coverage` run (previously a single ~long step
   # inside the quality job) is split across 4 parallel shards. Vitest shards by
