@@ -38,8 +38,18 @@
       "@alfanumrik/ui/*": ["packages/ui/src/*"]
     }
   },
-  "include": ["scripts/**/*.ts"],
-  "exclude": ["node_modules", "**/*.test.ts"]
+  // Covers every TypeScript dialect under `scripts/`: `.ts`, `.mts` (ESM —
+  // `scripts/gen-openapi.build.mts` is LIVE: spawned by gen-openapi.mjs, run by
+  // `npm run gen:openapi:check`, and a path trigger in openapi-contract.yml)
+  // and `.cts` (none today, covered pre-emptively so a future one can't slip in
+  // unchecked the way the .mts file did).
+  //
+  // There is deliberately NO `**/*.test.ts` exclude. There are zero test files
+  // under `scripts/` today, so such an exclude would be vacuous — but it would
+  // also silently exempt any future `scripts/foo.test.ts` from this gate. If
+  // script tests are ever added, they get type-checked like everything else.
+  "include": ["scripts/**/*.ts", "scripts/**/*.mts", "scripts/**/*.cts"],
+  "exclude": ["node_modules"]
 
   // On the Deno sources: this program deliberately does NOT enumerate
   // `supabase/functions/**` in `include`. The only Deno files it sees are the
