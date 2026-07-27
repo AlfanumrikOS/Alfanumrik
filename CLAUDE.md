@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev              # Dev server at localhost:3000
 npm run build            # Production build
-npm run type-check       # TypeScript validation (tsc --noEmit)
+npm run type-check       # TypeScript validation across workspaces (npm run type-check --workspaces --if-present) — does NOT cover workspace-less dirs
+npm run type-check:scripts # TypeScript validation for repo-root scripts/ (no workspace; own tsconfig.scripts.json)
 npm run lint             # ESLint on src/ (.ts/.tsx)
 npm test                 # Vitest unit tests
 npm run test:watch       # Vitest in watch mode
