@@ -1487,6 +1487,72 @@ jobs:
   edge-function-tests:
     name: Edge Function Deno Tests
     runs-on: ubuntu-latest
+    env:
+      # ════════════════════════════════════════════════════════════════════════
+      #  SINGLE SOURCE OF TRUTH for the Deno test target set.
+      #  Both the pre-warm ("Cache Deno module dependencies") step and the
+      #  offline ("Run Edge Function Deno tests") step read THIS variable.
+      #  Never inline a target list into either step again.
+      # ────────────────────────────────────────────────────────────────────────
+      #  WHY THIS MUST BE ONE LIST — the 2026-07 HTTP 522 incident:
+      #
+      #  These two lists used to be maintained separately, and they drifted.
+      #  The pre-warm list enumerated INDIVIDUAL FILES (e.g. only
+      #  daily-cron/__tests__/contract.test.ts) while the test step passed
+      #  WHOLE DIRECTORIES (daily-cron/__tests__/) plus at least one path the
+      #  pre-warm list never mentioned at all
+      #  (_shared/security/__tests__/internal-cron-auth.test.ts).
+      #
+      #  Five test files therefore RAN but were never PRE-WARMED:
+      #    daily-cron/__tests__/actions.contract.test.ts
+      #    daily-cron/__tests__/verification-delivery.test.ts
+      #    teacher-dashboard/__tests__/deploy-intervention-contract.test.ts
+      #    teacher-dashboard/__tests__/metrics.test.ts
+      #    _shared/security/__tests__/internal-cron-auth.test.ts
+      #
+      #  The consequence was not merely "a bit less caching". The pre-warmed
+      #  daily-cron/__tests__/contract.test.ts imports ONLY std@0.210.0/assert,
+      #  whereas actions.contract.test.ts imports ../actions.ts, whose first
+      #  line is `import { createClient } from
+      #  'https://esm.sh/@supabase/supabase-js@2'`. That specifier was thus
+      #  absent from the pre-warm module graph entirely — CI run 30310350618
+      #  downloaded std@0.210.0, std@0.224.0, esm.sh/standardwebhooks@1.0.0,
+      #  @stablelib/base64 and fast-sha256 in the cache step, but NEVER
+      #  @supabase/supabase-js.
+      #
+      #  It was fetched for the first time inside the TEST step, which has no
+      #  retry loop and is meant to be fully offline. esm.sh answered HTTP 522
+      #  (Cloudflare origin timeout) after a 39s hang and the job failed. The
+      #  same job passed on the 4 preceding SHAs and on main: this was a latent
+      #  flakiness amplifier that turned any transient esm.sh blip into a red
+      #  build, at a point in the job where nothing can retry it.
+      #
+      #  So: every remote import must be fetched inside the RETRIED pre-warm
+      #  step. Do NOT "optimize" the pre-warm list back down to a subset, and
+      #  do NOT add --allow-net to the test step to paper over a miss. If you
+      #  add a target below, both steps pick it up automatically.
+      # ════════════════════════════════════════════════════════════════════════
+      DENO_TEST_TARGETS: >-
+        supabase/functions/parent-portal/__tests__/
+        supabase/functions/teacher-dashboard/__tests__/
+        supabase/functions/daily-cron/__tests__/
+        supabase/functions/scan-ocr/__tests__/
+        supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts
+        supabase/functions/send-auth-email/__tests__/always-200.test.ts
+        supabase/functions/_shared/__tests__/gmail-transport.test.ts
+        supabase/functions/_shared/security/__tests__/internal-cron-auth.test.ts
+        supabase/functions/grounded-answer/__tests__/cache.test.ts
+        supabase/functions/grounded-answer/__tests__/circuit.test.ts
+        supabase/functions/grounded-answer/__tests__/citations.test.ts
+        supabase/functions/grounded-answer/__tests__/claude.test.ts
+        supabase/functions/grounded-answer/__tests__/confidence.test.ts
+        supabase/functions/grounded-answer/__tests__/coverage.test.ts
+        supabase/functions/grounded-answer/__tests__/embedding.test.ts
+        supabase/functions/grounded-answer/__tests__/grounding-check.test.ts
+        supabase/functions/grounded-answer/__tests__/retrieval.test.ts
+        supabase/functions/grounded-answer/__tests__/trace.test.ts
+        supabase/functions/grounded-answer/__tests__/validation.test.ts
+        supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
     steps:
       - uses: actions/checkout@v6
 
@@ -1497,32 +1563,49 @@ jobs:
 
       - name: Cache Deno module dependencies
         run: |
-          # Pre-warm Deno module cache so the offline test step doesn't need --allow-net.
-          # deno cache resolves and downloads all remote imports (std@0.210.0/assert,
-          # esm.sh/@supabase/supabase-js@2, etc.) and stores them in the Deno cache dir.
-          # The test step then runs with only --allow-read --allow-env (no network).
+          # Pre-warm the Deno module cache so the offline test step doesn't need
+          # --allow-net. `deno cache` resolves and downloads every remote import
+          # reachable from the given entrypoints (std@0.210.0/assert,
+          # esm.sh/@supabase/supabase-js@2, etc.). The test step then runs with
+          # only --allow-read --allow-env (no network).
+          #
+          # Targets come from $DENO_TEST_TARGETS — the SAME variable the test
+          # step uses. See the long incident note on that variable for why these
+          # two sets must never diverge again.
+          #
+          # $DENO_TEST_TARGETS contains directories (which `deno test` expands
+          # itself) as well as files. `deno cache` takes module specifiers, so we
+          # expand directories to individual files HERE, using Deno's documented
+          # test-discovery conventions (*_test.*, *.test.*, test.*). This makes
+          # the pre-warm correct whether or not `deno cache` accepts a directory
+          # argument, so we never depend on that behaviour.
+          targets=""
+          for t in $DENO_TEST_TARGETS; do
+            if [ -d "$t" ]; then
+              found=$(find "$t" -type f \( \
+                -name '*_test.ts'  -o -name '*_test.tsx'  -o -name '*_test.js'  -o -name '*_test.mjs'  -o -name '*_test.jsx' -o \
+                -name '*.test.ts'  -o -name '*.test.tsx'  -o -name '*.test.js'  -o -name '*.test.mjs'  -o -name '*.test.jsx' -o \
+                -name 'test.ts'    -o -name 'test.tsx'    -o -name 'test.js'    -o -name 'test.mjs'    -o -name 'test.jsx' \
+                \) | sort)
+              if [ -z "$found" ]; then
+                echo "::error::No Deno test files found under directory target '$t'. Refusing to pre-warm an empty set."
+                exit 1
+              fi
+              targets="$targets $found"
+            elif [ -f "$t" ]; then
+              targets="$targets $t"
+            else
+              echo "::error::Deno test target '$t' does not exist (renamed or deleted?). Fix DENO_TEST_TARGETS."
+              exit 1
+            fi
+          done
+
+          echo "Pre-warming the Deno module cache for these entrypoints:"
+          printf '  %s\n' $targets
+
           attempt=1
           while true; do
-            if deno cache --no-lock --no-check \
-              supabase/functions/parent-portal/__tests__/contract.test.ts \
-              supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
-              supabase/functions/daily-cron/__tests__/contract.test.ts \
-              supabase/functions/scan-ocr/__tests__/contract.test.ts \
-              supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
-              supabase/functions/send-auth-email/__tests__/always-200.test.ts \
-              supabase/functions/_shared/__tests__/gmail-transport.test.ts \
-              supabase/functions/grounded-answer/__tests__/cache.test.ts \
-              supabase/functions/grounded-answer/__tests__/circuit.test.ts \
-              supabase/functions/grounded-answer/__tests__/citations.test.ts \
-              supabase/functions/grounded-answer/__tests__/claude.test.ts \
-              supabase/functions/grounded-answer/__tests__/confidence.test.ts \
-              supabase/functions/grounded-answer/__tests__/coverage.test.ts \
-              supabase/functions/grounded-answer/__tests__/embedding.test.ts \
-              supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
-              supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
-              supabase/functions/grounded-answer/__tests__/trace.test.ts \
-              supabase/functions/grounded-answer/__tests__/validation.test.ts \
-              supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts; then
+            if deno cache --no-lock --no-check $targets; then
               break
             fi
             if [ "$attempt" -ge 3 ]; then
@@ -1537,27 +1620,13 @@ jobs:
 
       - name: Run Edge Function Deno tests (deterministic, offline)
         run: |
-          deno test --no-lock --no-check --allow-read --allow-env \
-            supabase/functions/parent-portal/__tests__/ \
-            supabase/functions/teacher-dashboard/__tests__/ \
-            supabase/functions/daily-cron/__tests__/ \
-            supabase/functions/scan-ocr/__tests__/ \
-            supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
-            supabase/functions/send-auth-email/__tests__/always-200.test.ts \
-            supabase/functions/_shared/__tests__/gmail-transport.test.ts \
-            supabase/functions/_shared/security/__tests__/internal-cron-auth.test.ts \
-            supabase/functions/grounded-answer/__tests__/cache.test.ts \
-            supabase/functions/grounded-answer/__tests__/circuit.test.ts \
-            supabase/functions/grounded-answer/__tests__/citations.test.ts \
-            supabase/functions/grounded-answer/__tests__/claude.test.ts \
-            supabase/functions/grounded-answer/__tests__/confidence.test.ts \
-            supabase/functions/grounded-answer/__tests__/coverage.test.ts \
-            supabase/functions/grounded-answer/__tests__/embedding.test.ts \
-            supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
-            supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
-            supabase/functions/grounded-answer/__tests__/trace.test.ts \
-            supabase/functions/grounded-answer/__tests__/validation.test.ts \
-            supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
+          # Targets come from $DENO_TEST_TARGETS — the SAME variable the pre-warm
+          # step above uses, so every remote import in this graph was already
+          # downloaded inside that step's retry loop. Deliberately no --allow-net.
+          echo "Running Deno tests over these targets:"
+          printf '  %s\n' $DENO_TEST_TARGETS
+
+          deno test --no-lock --no-check --allow-read --allow-env $DENO_TEST_TARGETS
 
   # ── Step 1b: Integration Tests (live Supabase) ──
   # Runs migration/trigger/view/CHECK-constraint tests that require a real
