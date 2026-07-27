@@ -192,10 +192,17 @@ describe('unified retrieve() — RPC contract', () => {
       p_grade: '10',
       p_chapter_number: 7,
       p_chapter_title: null,
-      p_min_quality: 0.55,
+      // 2026-07-27: `p_min_quality: 0.55` used to be asserted here. That arg
+      // bound PostgREST to the STALE floor-less overload and fed a similarity
+      // threshold into a content-quality gate. See the overload-binding
+      // regression block at the bottom of this file.
+      p_quality_score_gate: 0.4,
+      p_min_similarity: 0.22,
     });
     // chapter_number must be number, never string
     expect(typeof sb.calls[0].args.p_chapter_number).toBe('number');
+    // The caller-side RRF floor must NEVER leak into the RPC args.
+    expect(sb.calls[0].args).not.toHaveProperty('p_min_quality');
   });
 
   it('forwards null chapterNumber as null', async () => {
@@ -357,5 +364,141 @@ describe('unified retrieve() — failure modes (never throws)', () => {
     });
     expect(result.error).toBeNull();
     expect(result.chunks).toHaveLength(1);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// REGRESSION: match_rag_chunks_ncert overload binding (2026-07-27)
+//
+// Production carries TWO overloads of this RPC (`CREATE OR REPLACE` with a
+// changed signature OVERLOADS, it does not replace):
+//   - OLD (baseline, oid 201818): `p_min_quality`. Vector CTE has NO absolute
+//     cosine floor.
+//   - NEW (migration 20260707010000, oid 359405): `p_quality_score_gate` +
+//     `p_min_similarity`. Vector CTE HAS
+//     `AND 1 - (embedding <=> query_embedding) >= p_min_similarity`.
+//
+// PostgREST resolves overloads by argument NAME. Sending `p_min_quality` binds
+// the OLD overload, so the relevance floor becomes dead code AND a similarity
+// threshold is fed into a content `quality_score` gate. Sending NEITHER
+// distinguishing arg matches BOTH overloads and is ambiguous.
+//
+// These tests are the pin: the RPC call MUST carry `p_min_similarity` and
+// `p_quality_score_gate`, and MUST NEVER carry `p_min_quality`.
+// ────────────────────────────────────────────────────────────────────────────
+describe('REGRESSION — match_rag_chunks_ncert overload binding', () => {
+  it('never sends p_min_quality (would bind the stale floor-less overload)', async () => {
+    const { retrieve } = await loadRetrieve();
+    const sb = makeStubClient({ rows: [] });
+    await retrieve({
+      query: 'explain refraction',
+      grade: '10',
+      subject: 'science',
+      // RRF-scale caller floor — the exact value grounded-answer passes in
+      // strict mode. It must NOT reach the RPC on any parameter.
+      minSimilarity: 0.012,
+      rerank: false,
+      caller: 'test',
+      supabase: sb,
+    });
+    const args = sb.calls[0].args;
+    expect(args).not.toHaveProperty('p_min_quality');
+    expect(Object.values(args)).not.toContain(0.012);
+  });
+
+  it('sends BOTH new-overload discriminators so the call is unambiguous', async () => {
+    const { retrieve } = await loadRetrieve();
+    const sb = makeStubClient({ rows: [] });
+    await retrieve({
+      query: 'explain refraction',
+      grade: '10',
+      subject: 'science',
+      rerank: false,
+      caller: 'test',
+      supabase: sb,
+    });
+    const args = sb.calls[0].args;
+    expect(args).toHaveProperty('p_min_similarity');
+    expect(args).toHaveProperty('p_quality_score_gate');
+  });
+
+  it('defaults the cosine floor to the MEASURED 0.22, never the RPC 0.5 default', async () => {
+    const { retrieve, NCERT_MIN_COSINE_SIMILARITY } = await loadRetrieve();
+    // Measured on production: a 0.5 floor drops rank-1 10% of the time and
+    // rank-10 37.5% of the time; within-chapter chunk-pair cosine median is
+    // 0.554. 0.35 is the hard ceiling.
+    expect(NCERT_MIN_COSINE_SIMILARITY).toBe(0.22);
+    expect(NCERT_MIN_COSINE_SIMILARITY).toBeGreaterThan(0.2);
+    expect(NCERT_MIN_COSINE_SIMILARITY).toBeLessThanOrEqual(0.35);
+
+    const sb = makeStubClient({ rows: [] });
+    await retrieve({
+      query: 'x',
+      grade: '10',
+      subject: 'science',
+      rerank: false,
+      caller: 'test',
+      supabase: sb,
+    });
+    expect(sb.calls[0].args.p_min_similarity).toBe(0.22);
+  });
+
+  it('keeps the quality gate DECOUPLED from the similarity floor', async () => {
+    const { retrieve, NCERT_QUALITY_SCORE_GATE } = await loadRetrieve();
+    expect(NCERT_QUALITY_SCORE_GATE).toBe(0.4);
+
+    const sb = makeStubClient({ rows: [] });
+    await retrieve({
+      query: 'x',
+      grade: '10',
+      subject: 'science',
+      // Move ONE knob; the other must not follow.
+      minCosineSimilarity: 0.3,
+      rerank: false,
+      caller: 'test',
+      supabase: sb,
+    });
+    expect(sb.calls[0].args.p_min_similarity).toBe(0.3);
+    expect(sb.calls[0].args.p_quality_score_gate).toBe(0.4);
+
+    const sb2 = makeStubClient({ rows: [] });
+    await retrieve({
+      query: 'x',
+      grade: '10',
+      subject: 'science',
+      qualityScoreGate: 0.6,
+      rerank: false,
+      caller: 'test',
+      supabase: sb2,
+    });
+    expect(sb2.calls[0].args.p_quality_score_gate).toBe(0.6);
+    expect(sb2.calls[0].args.p_min_similarity).toBe(0.22);
+  });
+
+  it('the Next.js cold-path retriever obeys the same contract (static pin)', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    // Walk up from this test file to the monorepo root (the dir holding
+    // `packages/`), so the pin is independent of vitest's cwd.
+    let dir = path.dirname(fileURLToPath(import.meta.url));
+    while (
+      !fs.existsSync(path.join(dir, 'packages', 'lib', 'src')) &&
+      path.dirname(dir) !== dir
+    ) {
+      dir = path.dirname(dir);
+    }
+    const target = path.join(
+      dir,
+      'packages/lib/src/ai/retrieval/ncert-retriever.ts',
+    );
+    expect(fs.existsSync(target)).toBe(true);
+    const src = fs.readFileSync(target, 'utf-8');
+    // Strip comments so the explanatory prose mentioning p_min_quality does
+    // not trip the assertion.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(code).not.toMatch(/p_min_quality\s*:/);
+    expect(code).toMatch(/p_min_similarity\s*:/);
+    expect(code).toMatch(/p_quality_score_gate\s*:/);
   });
 });

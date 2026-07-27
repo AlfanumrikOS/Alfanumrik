@@ -102,10 +102,14 @@ export async function retrieveChunks(
     }
   }
 
-  // TS-side similarity floor — preserved from the legacy implementation
-  // because tests stub the RPC and bypass the DB-side `p_min_quality`
-  // filter. Floor failures are NOT scope drops (they're an expected filter,
-  // per the original retrieval.test.ts contract).
+  // TS-side floor over the RRF fused score the RPC returns (STRICT 0.012 /
+  // SOFT 0.005). This is a DIFFERENT scale from the RPC's absolute cosine
+  // floor (`p_min_similarity`, defaulted in _shared/rag/retrieve.ts to the
+  // measured 0.22) — the unified module deliberately does NOT forward this
+  // value to the RPC, because an RRF-scale number there would mean no floor
+  // at all. Preserved here because tests stub the RPC and bypass DB-side
+  // filtering. Floor failures are NOT scope drops (they're an expected
+  // filter, per the original retrieval.test.ts contract).
   const chunks: RetrievedChunk[] = [];
   for (const c of unified.chunks) {
     if (c.similarity < minSimilarity) continue;
