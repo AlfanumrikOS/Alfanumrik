@@ -28,6 +28,60 @@ import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { applyGoalRerank } from '@alfanumrik/lib/goals/rag-source-weights';
 import { isKnownGoalCode, type GoalCode } from '@alfanumrik/lib/goals/goal-profile';
 
+// ─── RPC relevance/quality parameters — DECOUPLED (2026-07-27) ─────────────
+//
+// `match_rag_chunks_ncert` exists in production as TWO overloads (a
+// `CREATE OR REPLACE` with a changed signature OVERLOADS, it does not replace):
+//   - OLD (baseline, oid 201818): takes `p_min_quality`. Its vector CTE has NO
+//     absolute cosine floor — just `ORDER BY embedding <=> query_embedding`.
+//   - NEW (migration 20260707010000_rca_final_fixes.sql, oid 359405): takes
+//     `p_quality_score_gate` + `p_min_similarity`, and its vector CTE HAS
+//     `AND 1 - (embedding <=> query_embedding) >= p_min_similarity`.
+//
+// This retriever used to send `p_min_quality: minQuality`, which bound
+// PostgREST to the OLD overload (leaving the cosine floor dead code) AND fed a
+// similarity-scale number into a content `quality_score` gate. Both parameters
+// are now sent explicitly and separately. PostgREST resolves overloads by
+// argument NAME, so sending both distinguishing args is also what makes the
+// call unambiguous — a call carrying neither matches BOTH overloads and errors.
+//
+// These MUST stay in sync with the identically-named constants in
+// `supabase/functions/_shared/rag/retrieve.ts` (the primary grounded-answer
+// path); this module is only the `ff_grounded_ai_foxy=false` cold path.
+
+/**
+ * Absolute cosine relevance floor → RPC `p_min_similarity`.
+ *
+ * MEASURED on the production corpus (chunk-embedding proxy: short 36-token
+ * anchors scored against full chunks):
+ *
+ *   floor | rank-1 survives | rank-10 | rank-20
+ *   ------|-----------------|---------|--------
+ *   0.50  |      90.0%      |  62.5%  |  37.5%   ← the RPC's own DEFAULT: unsafe
+ *   0.35  |      97.5%      |  97.5%  |  97.5%   ← hard ceiling, do not exceed
+ *   0.25  |     100.0%      | 100.0%  |  97.5%
+ *
+ * Within-chapter chunk-pair cosine median is 0.554, so a 0.5 floor rejects
+ * ~35% of genuinely same-chapter content. Cross-subject noise band p95 = 0.346.
+ * Real student queries are median 8 words — SHORTER than the 36-token anchors,
+ * so the true recall penalty of a high floor is worse than measured. 0.22 sits
+ * inside the recommended 0.20–0.25 band: above random-pair noise, far below the
+ * 0.554 within-chapter median. DO NOT exceed 0.35; DO NOT fall back to the
+ * RPC's 0.5 default. Any change requires re-running the measurement above.
+ */
+export const NCERT_MIN_COSINE_SIMILARITY = 0.22;
+
+/**
+ * Content-quality gate → RPC `p_quality_score_gate`.
+ *
+ * SQL predicate: `(quality_score IS NULL OR quality_score >= gate)`. Measured
+ * on production: 27,778 chunks, 68% `quality_score IS NULL`, every populated
+ * value exactly 0.7 — so 0.4 is a NO-OP today. It is passed separately and
+ * correctly so it starts working once quality scores are backfilled, and so it
+ * can never again be fed a similarity threshold.
+ */
+export const NCERT_QUALITY_SCORE_GATE = 0.4;
+
 // ─── Embedding Generation ──────────────────────────────────────────────────
 
 /**
@@ -90,7 +144,11 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
 export async function retrieveNcertChunks(query: RetrievalQuery): Promise<RetrievalResult> {
   const config = getAIConfig();
   const matchCount = query.matchCount ?? config.ragMatchCount;
-  const minQuality = query.minQuality ?? config.ragMinQuality;
+  // `query.minQuality` / `config.ragMinQuality` (0.005) are RRF-scale values
+  // and are deliberately NOT sent to the RPC any more: routing them to
+  // `p_min_similarity` would set the ABSOLUTE COSINE floor to ~0.005 (i.e. no
+  // floor), and routing them to `p_quality_score_gate` is the exact
+  // similarity/quality conflation this change removes.
 
   try {
     // Build enriched query for better embedding relevance
@@ -124,7 +182,12 @@ export async function retrieveNcertChunks(query: RetrievalQuery): Promise<Retrie
       match_count:       matchCount,
       p_chapter_number:  chapterNum,
       p_chapter_title:   chapterTitle,
-      p_min_quality:     minQuality,
+      // Both args are unique to the NEW overload — sending them is what binds
+      // PostgREST to the signature that actually applies the cosine floor.
+      // NEVER send `p_min_quality`: it rebinds to the stale floor-less overload
+      // AND conflates similarity with content quality.
+      p_quality_score_gate: NCERT_QUALITY_SCORE_GATE,
+      p_min_similarity:     NCERT_MIN_COSINE_SIMILARITY,
       query_embedding:   embedding,
     });
 

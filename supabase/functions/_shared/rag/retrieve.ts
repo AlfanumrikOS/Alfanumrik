@@ -84,8 +84,30 @@ export interface RetrieveOptions {
   chapterTitle?: string | null;
   /** Top-N to return after rerank. Default 8. */
   limit?: number;
-  /** RPC-side `p_min_quality` floor. Defaults to 0.5 (matches v2 default). */
+  /**
+   * CALLER-SIDE fused-score floor. NOT sent to the RPC.
+   *
+   * grounded-answer passes RRF-scale values here (STRICT 0.012 / SOFT 0.005)
+   * and applies them itself in `grounded-answer/retrieval.ts` against the RRF
+   * `similarity` the RPC returns. It is deliberately NOT routed to
+   * `p_min_similarity`, which is an ABSOLUTE COSINE floor on a completely
+   * different scale — routing an RRF threshold there would set the cosine
+   * floor to ~0.012, i.e. no floor at all. Use `minCosineSimilarity` to move
+   * the RPC-side floor.
+   */
   minSimilarity?: number;
+  /**
+   * RPC-side ABSOLUTE COSINE floor → `p_min_similarity`.
+   * Defaults to NCERT_MIN_COSINE_SIMILARITY (0.22). See that constant for the
+   * production measurement that fixes the value and its 0.35 hard ceiling.
+   */
+  minCosineSimilarity?: number;
+  /**
+   * RPC-side content-quality gate → `p_quality_score_gate`.
+   * Defaults to NCERT_QUALITY_SCORE_GATE (0.4). No-op until quality scores are
+   * backfilled. NEVER pass a similarity threshold here.
+   */
+  qualityScoreGate?: number;
   /** Run Voyage rerank-2 over an over-fetched candidate set. Default true. */
   rerank?: boolean;
   /** When `rerank: true`, fetch this many candidates pre-rerank. Default = max(30, limit). */
@@ -249,7 +271,67 @@ const VOYAGE_RERANK_MODEL = 'rerank-2';
 const EMBEDDING_DIMENSIONS = 1024;
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_LIMIT = 8;
-const DEFAULT_MIN_SIMILARITY = 0.5;
+
+// ────────────────────────────────────────────────────────────────────────────
+// RPC relevance/quality parameters — DECOUPLED (2026-07-27).
+//
+// Background: `match_rag_chunks_ncert` exists in production as TWO overloads.
+// `CREATE OR REPLACE` with a changed signature OVERLOADS, it does not replace:
+//   - OLD (baseline, oid 201818): ..., p_min_quality double precision, ...
+//     Body has NO absolute cosine floor — the vector CTE is just
+//     `ORDER BY c.embedding <=> query_embedding LIMIT v_fetch_count`.
+//   - NEW (migration 20260707010000_rca_final_fixes.sql, oid 359405):
+//     ..., p_quality_score_gate double precision DEFAULT 0.4,
+//     p_min_similarity double precision DEFAULT 0.5, ...
+//     Body HAS `AND 1 - (c.embedding <=> query_embedding) >= p_min_similarity`.
+//
+// This module used to send `p_min_quality: minSimilarity`, which (a) bound
+// PostgREST to the OLD overload — so the absolute cosine floor was DEAD CODE —
+// and (b) fed a *similarity* threshold into a *content quality_score* gate.
+// Both parameters are now sent explicitly and separately, which also
+// disambiguates the overload: `p_quality_score_gate` + `p_min_similarity`
+// appear ONLY in the new signature. (PostgREST resolves overloads by argument
+// NAME; a call carrying no distinguishing arg matches both and is ambiguous —
+// so we always send both.)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Absolute cosine relevance floor → RPC `p_min_similarity`.
+ *
+ * MEASURED on the production corpus (chunk-embedding proxy: short 36-token
+ * anchors scored against full chunks):
+ *
+ *   floor | rank-1 survives | rank-10 | rank-20
+ *   ------|-----------------|---------|--------
+ *   0.50  |      90.0%      |  62.5%  |  37.5%   ← the RPC's own DEFAULT: unsafe
+ *   0.35  |      97.5%      |  97.5%  |  97.5%   ← hard ceiling, do not exceed
+ *   0.25  |     100.0%      | 100.0%  |  97.5%
+ *
+ * Within-chapter chunk-pair cosine median is 0.554, so a 0.5 floor rejects
+ * ~35% of genuinely same-chapter content. Cross-subject noise band p95 = 0.346.
+ * Real student queries are median 8 words — SHORTER than the 36-token anchors
+ * used above, so the true recall penalty of a high floor is worse than measured.
+ *
+ * 0.22 sits inside the recommended 0.20–0.25 band: comfortably above the
+ * cross-subject noise band (p95 0.346 is the *noise* ceiling we must stay under
+ * to keep recall, while 0.22 still clears random-pair territory), and well below
+ * the 0.554 within-chapter median so same-chapter content is never cut.
+ * DO NOT raise above 0.35 (hard ceiling) and DO NOT fall back to the RPC's 0.5
+ * default. Any change requires re-running the measurement above.
+ */
+export const NCERT_MIN_COSINE_SIMILARITY = 0.22;
+
+/**
+ * Content-quality gate → RPC `p_quality_score_gate`.
+ *
+ * The SQL predicate is `(c.quality_score IS NULL OR c.quality_score >= gate)`.
+ * Measured on production: 27,778 chunks, 68% have `quality_score IS NULL` and
+ * EVERY populated value is exactly 0.7. So 0.4 is a NO-OP today (NULLs pass,
+ * 0.7 >= 0.4 passes) — it is passed separately and correctly so it starts
+ * working the moment quality scores are backfilled. It must NEVER again be
+ * fed a similarity threshold.
+ */
+export const NCERT_QUALITY_SCORE_GATE = 0.4;
 // Phase 2.B Win 1: 30 → 40. Empirical: rerank quality plateaus around
 // 35-50 candidates for educational text; 40 is the conservative midpoint.
 // Cost is roughly linear in candidate count (Voyage rerank-2 prices per
@@ -464,7 +546,11 @@ export async function retrieve(opts: RetrieveOptions): Promise<RetrievalResult> 
 
   const startedAt = Date.now();
   const limit = Math.max(1, Math.floor(opts.limit ?? DEFAULT_LIMIT));
-  const minSimilarity = opts.minSimilarity ?? DEFAULT_MIN_SIMILARITY;
+  // NOTE: opts.minSimilarity is intentionally NOT read here — it is an
+  // RRF-scale, caller-side filter (see RetrieveOptions.minSimilarity).
+  const minCosineSimilarity =
+    opts.minCosineSimilarity ?? NCERT_MIN_COSINE_SIMILARITY;
+  const qualityScoreGate = opts.qualityScoreGate ?? NCERT_QUALITY_SCORE_GATE;
   const wantRerank = opts.rerank !== false;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const candidateCount = wantRerank
@@ -520,7 +606,12 @@ export async function retrieve(opts: RetrieveOptions): Promise<RetrievalResult> 
       match_count: candidateCount,
       p_chapter_number: opts.chapterNumber ?? null,
       p_chapter_title: opts.chapterTitle ?? null,
-      p_min_quality: minSimilarity,
+      // Both args are unique to the NEW overload — sending them is what binds
+      // PostgREST to the signature that actually applies the cosine floor.
+      // NEVER send `p_min_quality` here: it silently rebinds to the stale
+      // floor-less overload AND conflates similarity with content quality.
+      p_quality_score_gate: qualityScoreGate,
+      p_min_similarity: minCosineSimilarity,
       query_embedding: embedding,
     });
     if (result?.error) {
