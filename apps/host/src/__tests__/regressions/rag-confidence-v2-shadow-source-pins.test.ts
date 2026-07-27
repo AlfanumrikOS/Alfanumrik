@@ -155,6 +155,68 @@ const SHADOW_TOUCHING_FILES = [
   'supabase/functions/grounded-answer/trace.ts',
 ];
 
+/**
+ * OFFLINE ANALYSIS TOOLING that mentions the shadow identifier.
+ *
+ * Deliberately a SEPARATE list from SHADOW_TOUCHING_FILES so that:
+ *   - the "four production modules" claim above stays literally true, and
+ *   - the STRICT_CONFIDENCE_ABSTAIN_THRESHOLD sweep keeps scanning production
+ *     modules only (a new production consumer cannot dodge that sweep by being
+ *     filed here — see the location + unreachability pins below).
+ *
+ * `scripts/rag/replay-cosine-distribution.ts` — REVIEWED 2026-07-27 against
+ * invariant (1) and found compliant. It is a `npx tsx` replay harness that
+ * RECORDS the shadow value only:
+ *   - `rec.confidence_v2 = v2.confidence_v2` / `rec.confidence_v2_source = …`
+ *     (assignment into a report record — recording is the whole point),
+ *   - `countBy(ok, (r) => r.confidence_v2_source)` (frequency count of the
+ *     SOURCE LABEL, not a magnitude test),
+ *   - `distributionOf(ok.map((r) => r.confidence_v2))` (min/max/mean/percentile
+ *     aggregation; nulls are excluded via a typeof/isFinite guard, never
+ *     coerced to 0 — consistent with invariant (2)),
+ *   - a CSV column name and a console.log of the source-label counts.
+ * There is NO threshold, NO gate, NO filter and NO comparison on the value, and
+ * the harness is not importable from — nor imported by — any production module.
+ */
+const SHADOW_OFFLINE_TOOLING = ['scripts/rag/replay-cosine-distribution.ts'];
+
+// Every file permitted to mention the shadow identifier at all.
+const SHADOW_MENTIONING_FILES = [...SHADOW_TOUCHING_FILES, ...SHADOW_OFFLINE_TOOLING];
+
+// ───────────────────────────────────────────────────────────────────────────
+// The comparison detector. Module-scoped and exported so the table-driven
+// meta-test below can exercise it directly — a detector that silently stops
+// detecting is indistinguishable from a passing pin.
+//
+// Any relational or equality operator adjacent to the shadow identifier.
+// Assignment (`=`) and the object-literal colon are deliberately NOT matched
+// — recording is the whole point.
+//
+// ⚠️ The bare `>` alternative in the operator-first detector carries a
+// `(?<!=)` lookbehind because `>` is also the second character of the ARROW
+// `=>`. Without it, every functional-style read — `ok.map((r) => r.confidence_v2)`
+// — reads as "something is compared to confidence_v2" and the pin fires on
+// legitimate code. `>=` is its own EARLIER alternative and is matched before
+// the bare `>` is ever tried, so `a >= confidence_v2` is unaffected.
+// The identifier-first detector needs no such guard: after the identifier the
+// next character of an arrow is `=`, and no alternative starts with a lone `=`
+// (`===`/`==` both require a second `=`), so `confidenceV2 => x` cannot match.
+// Both facts are pinned by the table below — do not "simplify" either away.
+// ───────────────────────────────────────────────────────────────────────────
+export const CONFIDENCE_V2_COMPARISONS = [
+  // identifier-first:  confidence_v2 <op> …
+  /confidence_?[vV]2(?:_?[sS]ource)?\s*(?:<=|>=|===|!==|==|!=|<|>)/,
+  // operator-first:    … <op> confidence_v2
+  /(?:<=|>=|===|!==|==|!=|<|(?<!=)>)\s*(?:\w+\.)*confidence_?[vV]2\b/,
+  // Ternary/guard shapes that turn the value into a decision.
+  /confidence_?[vV]2\s*\?\?[^\n]*\?/,
+];
+
+/** True when `snippet` contains a comparison/gating use of the shadow value. */
+export function comparesConfidenceV2(snippet: string): boolean {
+  return CONFIDENCE_V2_COMPARISONS.some((re) => re.test(snippet));
+}
+
 describe('REGRESSION — confidence_v2 is shadow-only: never compared to a threshold', () => {
   const ALL_FILES = walkCodeFiles();
 
@@ -169,15 +231,68 @@ describe('REGRESSION — confidence_v2 is shadow-only: never compared to a thres
     }
   });
 
-  // Any relational or equality operator adjacent to the shadow identifier.
-  // Assignment (`=`) and the object-literal colon are deliberately NOT matched
-  // — recording is the whole point.
-  const COMPARISONS = [
-    /confidence_?[vV]2(?:_?[sS]ource)?\s*(?:<=|>=|===|!==|==|!=|<|>)/,
-    /(?:<=|>=|===|!==|==|!=|<|>)\s*(?:\w+\.)*confidence_?[vV]2\b/,
-    // Ternary/guard shapes that turn the value into a decision.
-    /confidence_?[vV]2\s*\?\?[^\n]*\?/,
-  ];
+  const COMPARISONS = CONFIDENCE_V2_COMPARISONS;
+
+  // ── The detector's own truth table ────────────────────────────────────────
+  // This is the pin ON the pin. Every one of the eight JS comparison operators
+  // must be caught in BOTH operand orders, and the arrow token `=>` must not be
+  // mistaken for one. A future "simplification" of the regexes above that drops
+  // an operator, or that removes the `(?<!=)` lookbehind and re-introduces the
+  // arrow-function false positive, fails here loudly instead of silently
+  // gutting (or falsely tripping) the tree-wide scan.
+  const OPERATORS = ['<=', '>=', '===', '!==', '==', '!=', '<', '>'] as const;
+
+  it.each(OPERATORS)(
+    'detects `%s` with confidence_v2 as the RIGHT operand',
+    (op) => {
+      expect(comparesConfidenceV2(`if (threshold ${op} confidence_v2) return abstain();`)).toBe(
+        true,
+      );
+      // …and through a member access, which is how it actually appears.
+      expect(comparesConfidenceV2(`if (0.4 ${op} ctx.confidenceV2) return abstain();`)).toBe(true);
+      // …and with no surrounding whitespace at all.
+      expect(comparesConfidenceV2(`if (t${op}confidence_v2) {}`)).toBe(true);
+    },
+  );
+
+  it.each(OPERATORS)('detects `%s` with confidence_v2 as the LEFT operand', (op) => {
+    expect(comparesConfidenceV2(`if (confidence_v2 ${op} threshold) return abstain();`)).toBe(true);
+    expect(comparesConfidenceV2(`if (ctx.confidenceV2 ${op} 0.4) return abstain();`)).toBe(true);
+    expect(comparesConfidenceV2(`if (confidence_v2${op}t) {}`)).toBe(true);
+    // The SOURCE label is gating too — branching on 'rerank' vs 'cosine' is a
+    // behaviour change just as much as branching on the number.
+    expect(comparesConfidenceV2(`if (confidenceV2Source ${op} 'rerank') {}`)).toBe(true);
+  });
+
+  it('does NOT flag arrow functions or plain record-only reads (false-positive pin)', () => {
+    const benign = [
+      // The exact shapes that made the offline replay harness trip this pin.
+      'confidence_v2: distributionOf(ok.map((r) => r.confidence_v2)),',
+      'confidence_v2_source_counts: countBy(ok, (r) => r.confidence_v2_source),',
+      'rec.confidence_v2 = v2.confidence_v2;',
+      // Arrow variants: paren-less param, destructured param, async, block body.
+      'const f = (r) => r.confidence_v2;',
+      'const f = confidence_v2 => confidence_v2;',
+      'const f = ({ confidence_v2 }) => null;',
+      'const f = async (r) => r.confidence_v2_source;',
+      'items.map((r) => { return r.confidence_v2; });',
+      'int get confidenceV2 => _confidenceV2;',
+      // Recording / typing / declaring — never a decision.
+      'confidence_v2: ctx.confidenceV2 ?? null,',
+      'ctx.confidenceV2 = shadowV2.confidence_v2;',
+      'confidence_v2: computeConfidence({',
+      'confidence_v2?: number | null;',
+      'confidence_v2: number | null;',
+      "'scope_drops', 'reranked', 'confidence_v2', 'confidence_v2_source',",
+      'confidence_v2: null,',
+    ];
+    for (const b of benign) {
+      expect({ snippet: b, flagged: comparesConfidenceV2(b) }).toEqual({
+        snippet: b,
+        flagged: false,
+      });
+    }
+  });
 
   it('the comparison detector actually detects (meta-pin against a dead regex)', () => {
     const violations = [
@@ -216,15 +331,43 @@ describe('REGRESSION — confidence_v2 is shadow-only: never compared to a thres
     expect(offenders).toEqual([]);
   });
 
-  it('only the four known modules reference the shadow identifier at all', () => {
+  it('only the known modules reference the shadow identifier at all', () => {
     const mentioning = ALL_FILES.filter((f) =>
       /confidence_?[vV]2/.test(fs.readFileSync(f, 'utf-8')),
     )
       .map((f) => path.relative(ROOT, f).split(path.sep).join('/'))
       .sort();
-    // A NEW consumer is not automatically wrong — but it must be reviewed
-    // against invariant (1) before this list grows.
-    expect(mentioning).toEqual([...SHADOW_TOUCHING_FILES].sort());
+    // Exact equality, NOT a superset check: growth must be deliberate. A NEW
+    // consumer is not automatically wrong — but it must be reviewed against
+    // invariant (1) before this list grows.
+    expect(mentioning).toEqual([...SHADOW_MENTIONING_FILES].sort());
+  });
+
+  it('the offline-tooling allowlist cannot be used to smuggle in a production module', () => {
+    // Entries here skip the STRICT_CONFIDENCE_ABSTAIN_THRESHOLD sweep, so they
+    // must be structurally incapable of running in a request path: outside every
+    // shipped source root, and reachable only by an explicit `npx tsx` invocation.
+    const SHIPPED_ROOTS = ['supabase/functions/', 'packages/', 'apps/host/src/', 'mobile/lib/'];
+    for (const rel of SHADOW_OFFLINE_TOOLING) {
+      expect({ rel, offline: /^(?:scripts|eval)\//.test(rel) }).toEqual({ rel, offline: true });
+      for (const shipped of SHIPPED_ROOTS) {
+        expect({ rel, under: rel.startsWith(shipped) }).toEqual({ rel, under: false });
+      }
+      expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
+    }
+  });
+
+  it('no shipped module imports the offline tooling (it stays off the request path)', () => {
+    for (const rel of SHADOW_OFFLINE_TOOLING) {
+      const stem = path.basename(rel).replace(/\.[jt]sx?$/, '');
+      const importRe = new RegExp(
+        `(?:from|import|require)\\s*\\(?\\s*['"\`][^'"\`\\n]*${stem}(?:\\.[jt]s)?['"\`]`,
+      );
+      const importers = ALL_FILES.filter((f) => path.relative(ROOT, f) !== path.normalize(rel))
+        .filter((f) => importRe.test(codeOnly(fs.readFileSync(f, 'utf-8'))))
+        .map((f) => path.relative(ROOT, f).split(path.sep).join('/'));
+      expect({ rel, importers }).toEqual({ rel, importers: [] });
+    }
   });
 
   it('the comment stripper preserved the code (guards a vacuous not.toMatch)', () => {
