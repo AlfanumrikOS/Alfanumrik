@@ -1767,6 +1767,226 @@ jobs:
 
           deno test --no-lock --no-check --allow-read --allow-env $DENO_TEST_TARGETS
 
+      # ── ADVISORY MEASUREMENT — NOT A GATE ──────────────────────────────────
+      #  WHY THIS STEP EXISTS
+      #    Both steps above pass --no-check, deliberately, and that stays: the
+      #    test step must be deterministic and offline. The consequence is that
+      #    every local .ts file under supabase/functions/ is EXECUTED in CI with
+      #    TypeScript checking switched off, and nobody knows how many
+      #    diagnostics `deno check` would report against that tree.
+      #
+      #    That single unknown is the only thing blocking a decision on whether
+      #    to wire a real Deno type gate. This step BUYS THAT NUMBER.
+      #
+      #    It must NEVER fail CI. Turning on a blocking gate before knowing the
+      #    size of the debt is exactly the mistake this step exists to prevent,
+      #    so `continue-on-error: true` is load-bearing and the body also ends
+      #    in an explicit `exit 0`. Do not remove either one before reading the
+      #    number this produces. Once the number is known, the decision to gate
+      #    (or not) is a separate, deliberate change.
+      #
+      #  SCOPE — supabase/functions/**/*.ts EXCLUDING supabase/functions/_archive/
+      #    _archive/ holds tombstoned functions (export-report, quiz-generator-v2)
+      #    that are not deployed and are not maintained. Diagnostics there are
+      #    not actionable debt, and any gate we might wire later would exclude
+      #    them too — so the measurement matches what a gate would actually
+      #    cover. The excluded file count is reported alongside the checked
+      #    count, so the delta stays auditable rather than hidden.
+      #    __tests__/ files are deliberately INCLUDED: they are compiled and run
+      #    in this very job, so their type debt is real debt.
+      #
+      #  NETWORK — tolerated, never fatal. The retried pre-warm step above
+      #    cached module SOURCES under --no-check, which does not fetch the
+      #    .d.ts type declarations that type checking needs (esm.sh serves those
+      #    via the X-TypeScript-Types header). `deno check` may therefore
+      #    download. The deno exit status is CAPTURED rather than propagated,
+      #    and a download failure surfaces as "0 diagnostics parsed + non-zero
+      #    exit", which the summary labels INCONCLUSIVE instead of reporting a
+      #    fake zero.
+      #
+      #  This step does NOT read the Deno test-target variable and must never
+      #  start doing so: that variable has exactly two consumers (the pre-warm
+      #  and the test run), an invariant pinned by REG-317.
+      - name: Measure Deno type-check debt (advisory)
+        # LOAD-BEARING. This is a measurement, not a gate. See the note above.
+        continue-on-error: true
+        run: |
+          set +e
+
+          TMP="${RUNNER_TEMP:-/tmp}"
+          RAW="$TMP/deno-check-raw.txt"
+          LIST="$TMP/deno-check-files.txt"
+          CODES="$TMP/deno-check-codes.txt"
+          TALLY="$TMP/deno-check-filetally.txt"
+          STATS="$TMP/deno-check-stats.txt"
+          : > "$RAW"
+
+          # ---- scope: the whole Edge Function tree MINUS _archive/ ----------------
+          find supabase/functions -type f -name '*.ts' \
+            -not -path 'supabase/functions/_archive/*' | sort > "$LIST"
+          mapfile -t FILES < "$LIST"
+          CHECKED_FILES=${#FILES[@]}
+
+          # Guard an empty set. Without this, every command below that expands
+          # "${FILES[@]}" would be invoked with ZERO arguments -- and `cat` with no
+          # arguments reads STDIN, which hangs the job until the runner's timeout
+          # rather than reporting anything. Same reasoning as the pre-warm step's
+          # "Refusing to pre-warm an empty set" check.
+          if [ "$CHECKED_FILES" -eq 0 ]; then
+            echo "::warning::No .ts files found under supabase/functions (tree moved or renamed?). Nothing to measure."
+            echo "## Deno type-check debt (ADVISORY)" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+            echo "No \`.ts\` files found under \`supabase/functions\` — measurement skipped." >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+            exit 0
+          fi
+
+          ARCHIVED=$(find supabase/functions/_archive -type f -name '*.ts' 2>/dev/null | wc -l | tr -d ' ')
+          CHECKED_LINES=$(cat "${FILES[@]}" < /dev/null 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "Scope: $CHECKED_FILES files / $CHECKED_LINES lines under supabase/functions (excluded _archive: $ARCHIVED files)"
+          deno --version
+
+          # ---- parse helper: one pass; reused by the primary run and the fallback -
+          # Deno prints each diagnostic as `TS#### [ERROR]: message` followed by an
+          # `    at file:///abs/path.ts:LINE:COL` frame. A diagnostic can carry extra
+          # related-information frames, so only the FIRST frame after a code line is
+          # attributed. Deliberately no gawk-only constructs (runners default to mawk):
+          # no length(array), no /dev/stderr writes.
+          parse_raw() {
+            : > "$CODES"; : > "$TALLY"; : > "$STATS"
+            awk '
+              match($0, /TS[0-9]+ \[ERROR\]/) {
+                code = substr($0, RSTART, RLENGTH)
+                sub(/ \[ERROR\]/, "", code)
+                total++; codes[code]++; pending = 1; next
+              }
+              pending && /at file:\/\// {
+                f = $0
+                sub(/^.*at file:\/\//, "", f)
+                sub(/:[0-9]+:[0-9]+[^:]*$/, "", f)
+                sub(/^.*\/supabase\/functions\//, "supabase/functions/", f)
+                files[f]++; attributed++; pending = 0
+              }
+              END {
+                print "TOTAL " total + 0 > STATS_OUT
+                print "ATTRIBUTED " attributed + 0 > STATS_OUT
+                for (c in codes) print codes[c] "\t" c > CODES_OUT
+                for (f in files) print files[f] "\t" f > FILES_OUT
+              }
+            ' STATS_OUT="$STATS" CODES_OUT="$CODES" FILES_OUT="$TALLY" "$1"
+
+            TOTAL=$(awk '$1=="TOTAL"{print $2}' "$STATS"); TOTAL=${TOTAL:-0}
+            ATTRIBUTED=$(awk '$1=="ATTRIBUTED"{print $2}' "$STATS"); ATTRIBUTED=${ATTRIBUTED:-0}
+            DISTINCT_FILES=$(wc -l < "$TALLY" | tr -d ' '); DISTINCT_FILES=${DISTINCT_FILES:-0}
+            DISTINCT_CODES=$(wc -l < "$CODES" | tr -d ' '); DISTINCT_CODES=${DISTINCT_CODES:-0}
+          }
+
+          # ---- primary: one invocation over the whole tree ------------------------
+          # NOT --all: plain `deno check` diagnoses LOCAL code only, which is the debt
+          # we own; remote-module diagnostics are not actionable here. --no-lock
+          # matches the two steps above and leaves the repo deno.lock untouched. The
+          # exit status is CAPTURED, never propagated.
+          timeout 900 deno check --no-lock "${FILES[@]}" >> "$RAW" 2>&1
+          STATUS=$?
+          echo "deno check exit status: $STATUS"
+
+          parse_raw "$RAW"
+          MODE="single-invocation"
+
+          # ---- fallback: deno bailed out before emitting any diagnostic -----------
+          # One unresolvable import, or a failure fetching type declarations, can abort
+          # the whole-tree run before anything is type-checked. A per-file sweep still
+          # yields a real number for every file that CAN be checked. Bounded by a 600s
+          # wall-clock budget so a pathological run cannot stall the job.
+          if [ "$TOTAL" -eq 0 ] && [ "$STATUS" -ne 0 ]; then
+            echo "::warning::Whole-tree deno check exited $STATUS with 0 parsed diagnostics; falling back to a per-file sweep."
+            MODE="per-file-fallback"
+            DEADLINE=$(( $(date +%s) + 600 ))
+            SWEPT=0
+            for f in "${FILES[@]}"; do
+              if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+                echo "::warning::Per-file sweep hit its 600s budget after $SWEPT files."
+                break
+              fi
+              timeout 60 deno check --no-lock "$f" >> "$RAW" 2>&1
+              SWEPT=$((SWEPT + 1))
+            done
+            MODE="per-file-fallback ($SWEPT/$CHECKED_FILES files swept)"
+            parse_raw "$RAW"
+          fi
+
+          NON_TS=$(grep -cE '^error: ' "$RAW"); NON_TS=${NON_TS:-0}
+          RAW_BYTES=$(wc -c < "$RAW" | tr -d ' ')
+
+          # ---- report to the job summary -----------------------------------------
+          {
+            echo "## Deno type-check debt (ADVISORY — this step never fails CI)"
+            echo
+            echo "\`deno check --no-lock\` over the Edge Function tree. The cache and test"
+            echo "steps above keep \`--no-check\`; this step measures, it does not gate."
+            echo
+            echo "| Metric | Value |"
+            echo "| --- | --- |"
+            echo "| Files checked | \`$CHECKED_FILES\` |"
+            echo "| Lines checked | \`$CHECKED_LINES\` |"
+            echo "| Files excluded (\`_archive/\`) | \`$ARCHIVED\` |"
+            echo "| **Total TS errors** | **\`$TOTAL\`** |"
+            echo "| **Distinct files with errors** | **\`$DISTINCT_FILES\`** |"
+            echo "| Distinct error codes | \`$DISTINCT_CODES\` |"
+            echo "| Errors attributed to a file | \`$ATTRIBUTED\` |"
+            echo "| Non-TS \`error:\` lines | \`$NON_TS\` |"
+            echo "| deno check exit status | \`$STATUS\` |"
+            echo "| Measurement mode | \`$MODE\` |"
+            echo "| Raw output size | \`$RAW_BYTES\` bytes |"
+            echo
+            if [ "$STATUS" -eq 0 ]; then
+              echo "> **Clean.** Zero diagnostics. A blocking Deno type gate could be wired"
+              echo "> at zero remediation cost."
+            elif [ "$TOTAL" -eq 0 ]; then
+              echo "> **INCONCLUSIVE — do NOT read this as zero debt.** deno exited"
+              echo "> \`$STATUS\` but no \`TS####\` diagnostic was parsed. That normally means a"
+              echo "> module-resolution or network failure: the \`--no-check\` pre-warm above"
+              echo "> caches module SOURCES but not the \`.d.ts\` type declarations that type"
+              echo "> checking needs. See the raw excerpt in the step log."
+            else
+              echo "> **$TOTAL errors across $DISTINCT_FILES of $CHECKED_FILES files.**"
+              echo "> Size remediation from the breakdown below before deciding on a gate."
+            fi
+            echo
+            echo "### Top error codes"
+            echo
+            if [ -s "$CODES" ]; then
+              echo "| Count | Code |"
+              echo "| --- | --- |"
+              sort -rn "$CODES" | head -15 | while IFS="$(printf '\t')" read -r n c; do
+                echo "| \`$n\` | \`$c\` |"
+              done
+            else
+              echo "_none parsed_"
+            fi
+            echo
+            echo "### Top files by error count"
+            echo
+            if [ -s "$TALLY" ]; then
+              echo "| Count | File |"
+              echo "| --- | --- |"
+              sort -rn "$TALLY" | head -10 | while IFS="$(printf '\t')" read -r n f; do
+                echo "| \`$n\` | \`$f\` |"
+              done
+            else
+              echo "_none parsed_"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+
+          # ---- capped raw excerpt so a huge error volume cannot blow up the log ---
+          echo "──────── first 100 lines of raw deno check output ────────"
+          head -100 "$RAW"
+          echo "──────── end excerpt ($RAW_BYTES bytes total) ────────"
+
+          # Advisory by construction. continue-on-error: true is the belt; this is the
+          # braces. Removing either without first reading the number above is the exact
+          # mistake this step exists to prevent.
+          exit 0
+
   # ── Step 1b: Integration Tests (live Supabase) ──
   # Runs migration/trigger/view/CHECK-constraint tests that require a real
   # Postgres backend. Gated on the presence of repository secrets, so PRs from
