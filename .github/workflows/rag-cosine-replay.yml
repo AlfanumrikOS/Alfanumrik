@@ -88,15 +88,16 @@ jobs:
   replay:
     name: Cosine distribution replay (lane=direct, read-only)
     runs-on: ubuntu-latest
-    # SUPABASE_SERVICE_ROLE_KEY is scoped to the `production-ops` environment,
-    # not repo-level. Without this the preflight sees it empty and aborts --
-    # which is exactly what happened on run 30325456772
-    # (COSINE_REPLAY_MISSING_SECRETS=SUPABASE_SERVICE_ROLE_KEY).
-    # Precedent: content-quality-nightly.yml's `content-quality` job declares
-    # the same environment to reach the same secret. Scoping here rather than
-    # promoting the key to repo level keeps an RLS-bypassing credential out of
-    # reach of every other workflow.
-    environment: production-ops
+    # SUPABASE_SERVICE_ROLE_KEY lives in the `supabase` GitHub environment --
+    # confirmed from the environment settings page, NOT inferred. Two earlier
+    # runs (30325456772, 30326862812) aborted at the preflight because the job
+    # first declared no environment, then the wrong one (`production-ops`, an
+    # inference from content-quality-nightly.yml that proved false).
+    # That environment has no wait timer and no deployment-branch restriction,
+    # so declaring it does not introduce an approval pause.
+    # Scoping here rather than promoting the key to repo level keeps an
+    # RLS-bypassing credential out of reach of every other workflow.
+    environment: supabase
     # Hard ceiling so a hung run cannot bill indefinitely. The input validator
     # additionally refuses any (limit x paths x delay) combination whose own
     # wall-clock estimate would exceed this budget.
