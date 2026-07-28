@@ -358,6 +358,27 @@ CREATE POLICY "vernacular_content_authenticated_read" ON "public"."vernacular_co
 -- that exists nowhere in this repo. Permissive policies OR together, so a
 -- true-qual policy here would silently RE-WIDEN production back to
 -- every-authenticated-user. An owner-scoped predicate cannot.
+--
+-- RS-RULE COMPLIANCE (XC-3 / TSB-4 recursion class). Every one of the three
+-- disjuncts below delegates to a SECURITY DEFINER helper. NONE inlines a
+-- FROM/JOIN over another RLS-enabled table. An earlier revision of this file
+-- expressed the student-own disjunct as
+--     student_id IN (SELECT id FROM public.students WHERE auth_user_id = auth.uid())
+-- which is exactly the 2026-07-02 TSB-4 defect: that subquery runs SECURITY
+-- INVOKER, so it re-enters public.students' OWN RLS and can close a
+-- students -> ... -> students cycle ("infinite recursion detected in policy for
+-- relation students"), deadlocking reads on BOTH tables. See
+-- 20260702080000_fix_students_rls_infinite_recursion.sql and
+-- docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md (§5).
+--
+-- HELPER CHOICE: public.get_my_student_ids() (baseline_from_prod.sql:8989) is
+-- SECURITY DEFINER STABLE with SET search_path = public, and its body is
+--     SELECT id FROM students WHERE auth_user_id = auth.uid()
+-- i.e. byte-for-byte the predicate being replaced, so this is a pure
+-- recursion-safety refactor with ZERO semantic change. Deliberately NOT
+-- get_my_student_id() (singular): that helper adds `AND is_active = true`,
+-- which would silently NARROW access for a deactivated student. Both are on
+-- the guard's SECURITY DEFINER helper roster (set H).
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE "public"."leaderboard" ENABLE ROW LEVEL SECURITY;
@@ -365,8 +386,7 @@ DROP POLICY IF EXISTS "leaderboard_public_read" ON "public"."leaderboard";
 DROP POLICY IF EXISTS "leaderboard_owner_read" ON "public"."leaderboard";
 CREATE POLICY "leaderboard_owner_read" ON "public"."leaderboard"
   FOR SELECT TO "authenticated" USING (
-    "student_id" IN (SELECT "id" FROM "public"."students"
-                      WHERE "auth_user_id" = (SELECT "auth"."uid"()))
+    "student_id" IN (SELECT "public"."get_my_student_ids"())
     OR "public"."is_guardian_of"("student_id")
     OR "public"."is_teacher_of"("student_id")
   );

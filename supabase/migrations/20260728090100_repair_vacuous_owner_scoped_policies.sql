@@ -96,14 +96,33 @@ DROP POLICY IF EXISTS "students_read_own_css" ON "public"."chapter_study_session
 DROP POLICY IF EXISTS "chapter_study_sessions_owner_read" ON "public"."chapter_study_sessions";
 
 -- Replace with a real owner-scoped predicate covering the four required
--- patterns: student reads own; parent reads linked child (is_guardian_of
--- resolves guardian_student_links WHERE status = 'approved'); teacher reads
--- assigned student (is_teacher_of resolves class_enrollments -> classes);
--- admin/service_role bypasses RLS entirely.
+-- patterns: student reads own (get_my_student_ids); parent reads linked child
+-- (is_guardian_of resolves guardian_student_links WHERE status = 'approved');
+-- teacher reads assigned student (is_teacher_of resolves class_enrollments ->
+-- classes); admin/service_role bypasses RLS entirely.
+--
+-- RS-RULE COMPLIANCE (XC-3 / TSB-4 recursion class). All three disjuncts
+-- delegate to a SECURITY DEFINER helper; none inlines a FROM/JOIN over another
+-- RLS-enabled table. An earlier revision of this file wrote the student-own
+-- disjunct as
+--     student_id IN (SELECT id FROM public.students WHERE auth_user_id = auth.uid())
+-- which is precisely the 2026-07-02 TSB-4 defect: that subquery is SECURITY
+-- INVOKER, so it re-enters public.students' OWN RLS and can close a
+-- students -> ... -> students cycle ("infinite recursion detected in policy for
+-- relation students"), deadlocking reads on BOTH chapter_study_sessions and
+-- students. See 20260702080000_fix_students_rls_infinite_recursion.sql and
+-- docs/superpowers/plans/2026-07-02-xc3-systemic-rls-defense-in-depth.md (§5).
+--
+-- HELPER CHOICE: public.get_my_student_ids() (baseline_from_prod.sql:8989) is
+-- SECURITY DEFINER STABLE with SET search_path = public and a body of exactly
+--     SELECT id FROM students WHERE auth_user_id = auth.uid()
+-- — the identical predicate, so this is a pure recursion-safety refactor with
+-- ZERO semantic change. Deliberately NOT get_my_student_id() (singular), whose
+-- extra `AND is_active = true` would silently narrow access. No new helper was
+-- minted; both are already on the guard's helper roster (set H).
 CREATE POLICY "chapter_study_sessions_owner_read" ON "public"."chapter_study_sessions"
   FOR SELECT TO "authenticated" USING (
-    "student_id" IN (SELECT "id" FROM "public"."students"
-                      WHERE "auth_user_id" = (SELECT "auth"."uid"()))
+    "student_id" IN (SELECT "public"."get_my_student_ids"())
     OR "public"."is_guardian_of"("student_id")
     OR "public"."is_teacher_of"("student_id")
   );

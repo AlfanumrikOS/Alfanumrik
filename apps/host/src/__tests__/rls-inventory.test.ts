@@ -168,15 +168,52 @@ const AUDIT_DENY_ALL = ['mass_gen_log', 'school_subscriptions'];
 // chapter_asset_inventory: 31-dimension educational-completeness inventory —
 // migration 20260703000300; deny-all reviewed 2026-07-03 (architect+quality,
 // Wave 1); dashboard access via service-role API routes only.
+// 2026-07-28 anon-exposure lockdown (migration
+// 20260728090000_lockdown_anon_readable_public_tables.sql, bucket (d)): the 13
+// tables added below became RLS-on-but-ZERO-policy when their sole permissive
+// PUBLIC/true SELECT policy was dropped and deliberately NOT replaced. Each had
+// exactly ONE policy (the anon-readable read) and no explicit service_role policy,
+// so removing it leaves service_role-only access -- service_role bypasses RLS, so
+// every server-side reader (supabaseAdmin, Edge Functions) is unaffected.
+// Reviewed 2026-07-28 (architect). Per-table justification:
+//   ai_quality_metrics     internal AI telemetry; zero client refs
+//   ai_role_rules          internal AI guardrail config; zero client refs
+//   ai_usage_stats         internal cost telemetry; readers are server-side
+//                          /api/internal/admin/{command-center,ai-monitor}
+//   assessment_questions   answer-bearing content; zero client refs
+//   assessments            answer-bearing content; zero client refs
+//   invite_codes           credential-like; PUBLIC/true let any unauthenticated
+//                          caller ENUMERATE every invite code. /join validates
+//                          server-side via /api/schools/join, so no client reads it
+//   model_pricing          commercially sensitive per-model cost data
+//   mol_routing_weights    internal MoL routing config; zero client refs
+//   pilot_cohorts          internal pilot config; zero client refs
+//   rag_syllabus_map       RAG sibling of the proprietary NCERT corpus
+//   response_cache         cached AI output, may hold OTHER learners content (P13)
+//   textbook_chunks        licensed textbook body text; zero client refs
+//   textbooks              licensed textbook metadata; zero client refs
+// The other 6 bucket-(d) tables are absent here because each retains an explicit
+// _write/_service/service_role policy, so they are not policy-less.
+// Rollback for any single table if an unexpected client reader surfaces:
+//   CREATE POLICY "<t>_authenticated_read" ON public."<t>"
+//     FOR SELECT TO authenticated USING (true);
+// CAVEAT: this bucket rests on service_role carrying BYPASSRLS (Supabase default).
+// The zero-client-ref claims come from static analysis of apps/, packages/ and
+// mobile/ at the time of the migration; they were not independently re-audited.
 const SERVICE_ROLE_ONLY_TABLES = [
   'agent_prompts',
   'agent_runs',
   'agent_steps',
+  'ai_quality_metrics',
+  'ai_role_rules',
+  'ai_usage_stats',
   'alfabot_denylist',
   'alfabot_kb_chunks',
   'alfabot_leads',
   'alfabot_messages',
   'alfabot_sessions',
+  'assessment_questions',
+  'assessments',
   'chapter_asset_inventory',
   'contract_number_sequences',
   'cycle_evaluations',
@@ -185,27 +222,35 @@ const SERVICE_ROLE_ONLY_TABLES = [
   'exam_papers',
   'experiment_observations',
   'foxy_served_items',
+  'invite_codes',
   'invoice_number_sequences',
   'lessons_learned',
   'link_code_otp_challenges',
   'mass_gen_log',
   'mock_test_attempts',
   'mock_test_responses',
+  'model_pricing',
+  'mol_routing_weights',
   'mol_shadow_text_buffer',
   'monthly_synthesis_runs',
   'outcome_metrics',
   'payment_reconciliation_queue',
   'phenomena',
+  'pilot_cohorts',
   'principal_ai_messages',
   'principal_ai_sessions',
   'question_bank_fix_history',
   'rag_content_audit',
   'rag_query_logs',
   'rag_retrieval_logs',
+  'rag_syllabus_map',
+  'response_cache',
   'school_subscriptions',
   'student_lab_badges',
   'student_lab_streaks',
   'tasks',
+  'textbook_chunks',
+  'textbooks',
 ].sort();
 
 // ════════════════════════════════════════════════════════════════════════════
