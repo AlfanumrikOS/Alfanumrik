@@ -463,6 +463,19 @@ async function loadQueries(
   opts: { limit: number | null; minYear: number | null },
 ): Promise<{ queries: SourceQuery[]; skippedNoScope: number; rawRows: number }> {
   const PAGE = 1000;
+  // PostgREST `.in()` is serialised into the GET QUERY STRING, not a body. A
+  // UUID is 36 chars and the separator encodes to `%2C` (3), so N ids cost
+  // ~39N chars. At the previous N=500 that is ~19,500 chars — well past the
+  // ~8 KB request-header ceiling most fronting proxies enforce, so the request
+  // dies at the transport layer BEFORE a response exists. That is why run
+  // 30328123233 failed with a bare `TypeError: fetch failed` at line 490
+  // rather than a structured PostgREST error (a server-side 414 would have
+  // come back as one). N=100 is ~3,900 chars, comfortably under.
+  //
+  // Note the asymmetry that masked this: the `foxy_chat_messages` read above
+  // uses `.range()`, which puts nothing in the URL, so it paged 1000-at-a-time
+  // without trouble. Only the `.in()` lookups were affected.
+  const IN_BATCH = 100;
   const rows: Array<{ content: string; session_id: string; student_id: string; created_at: string }> = [];
   for (let from = 0; ; from += PAGE) {
     let q = sb
@@ -482,11 +495,11 @@ async function loadQueries(
   // Session scope lookup.
   const sessionIds = [...new Set(rows.map((r) => r.session_id).filter(Boolean))];
   const sessions = new Map<string, { grade: string | null; subject: string | null; chapter: string | null }>();
-  for (let i = 0; i < sessionIds.length; i += 500) {
+  for (let i = 0; i < sessionIds.length; i += IN_BATCH) {
     const { data, error } = await sb
       .from('foxy_sessions')
       .select('id, grade, subject, chapter')
-      .in('id', sessionIds.slice(i, i + 500));
+      .in('id', sessionIds.slice(i, i + IN_BATCH));
     if (error) throw new Error(`foxy_sessions read failed: ${error.message ?? String(error)}`);
     for (const s of (data ?? []) as any[]) {
       sessions.set(s.id, { grade: s.grade ?? null, subject: s.subject ?? null, chapter: s.chapter ?? null });
@@ -497,11 +510,11 @@ async function loadQueries(
   // student_id never reaches the artifact).
   const studentIds = [...new Set(rows.map((r) => r.student_id).filter(Boolean))];
   const studentGrade = new Map<string, string | null>();
-  for (let i = 0; i < studentIds.length; i += 500) {
+  for (let i = 0; i < studentIds.length; i += IN_BATCH) {
     const { data, error } = await sb
       .from('students')
       .select('id, grade')
-      .in('id', studentIds.slice(i, i + 500));
+      .in('id', studentIds.slice(i, i + IN_BATCH));
     if (error) throw new Error(`students read failed: ${error.message ?? String(error)}`);
     for (const s of (data ?? []) as any[]) studentGrade.set(s.id, s.grade ?? null);
   }
