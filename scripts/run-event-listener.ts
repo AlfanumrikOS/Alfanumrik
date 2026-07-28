@@ -2,7 +2,14 @@
  * scripts/run-event-listener.ts — standalone event listener runner.
  *
  * Usage:
- *   npx tsx scripts/run-event-listener.ts [--dry-run] [--interval-ms 1000]
+ *   (from the REPO ROOT — the --tsconfig path is relative to cwd)
+ *   npx tsx --tsconfig tsconfig.scripts.json scripts/run-event-listener.ts [--dry-run] [--interval-ms 1000]
+ *
+ * `--tsconfig` is REQUIRED. The event-listener module tree reaches
+ * `@alfanumrik/lib/tutor/bkt` via the path alias, and packages/lib exposes no
+ * `exports` subpath map, so bare tsx resolution fails with
+ * `Cannot find module '@alfanumrik/lib/tutor/bkt'`. The scripts tsconfig
+ * supplies the mappings.
  *
  * Environment:
  *   NEXT_PUBLIC_SUPABASE_URL  — Supabase project URL
@@ -24,7 +31,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { run } from '../src/lib/state/runtime/event-listener';
+import { run } from '../packages/lib/src/state/runtime/event-listener';
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

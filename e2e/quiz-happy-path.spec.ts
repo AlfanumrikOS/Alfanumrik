@@ -1,306 +1,323 @@
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { mockStudentSession, hasRealStudentCreds, loginViaUI } from './helpers/auth';
+import { installQuizBackend, runQuizToResults, buildQuestions, OPTION_LABELS } from './helpers/quiz-backend';
 
 /**
  * REG-45 — Quiz happy-path E2E (P1 + P2 + P3 enforcement at the browser level).
  *
- * Audit finding F9: the highest-blast-radius user flow had ZERO Playwright
- * coverage. This spec is the BLOCKING regression net for the core quiz loop.
- * It is intentionally separated from `e2e/grounding/quiz-enforced-pair.spec.ts`
- * — that spec is a single grounded-AI assertion; this one covers the full
- * pick-subject → answer → results pipeline plus three anti-cheat branches and
- * the daily XP cap.
+ * This spec and `payment-checkout.spec.ts` are the ONLY two specs run by the
+ * BLOCKING `e2e-critical-paths` CI job. A scoring or Razorpay regression must
+ * not ship through CI green.
  *
- * Strategy:
- *   - Tests 1-3 (UI surface assertions) run against a mocked Supabase session
- *     and a mocked /api/quiz / submit_quiz_results responses. They prove the
- *     quiz orchestrator surfaces the server-returned score and XP unmodified
- *     (P1 invariant: components must NOT recompute score/XP) and that the
- *     daily-cap UI copy renders bilingually when the server returns
- *     `xp_capped: true`.
- *   - Tests 4-5 require a real authenticated student so the SERVER side of
- *     P3 anti-cheat fires (`server_side_quiz_verification` migration). They
- *     are registered with `test.fixme(true, ...)` so the spec is catalogued
- *     for REG-45 but skipped at runtime in CI until a fixture user is wired.
- *     See TODO at bottom of file.
+ * ── 2026-07-28 revival ────────────────────────────────────────────────────
+ * Every assertion in this file was previously inert: five tests were disabled
+ * by passing a LITERAL boolean to `test.fixme` (unconditional and permanent)
+ * and the two smoke tests skipped because the CI workflow sets
+ * NEXT_PUBLIC_SUPABASE_URL to a placeholder. The blocking gate ran seven tests
+ * and asserted nothing.
+ *
+ * The stated reason for the fixmes — "the mocked-session fallback cannot click
+ * through QuizSetup because Supabase auth state is checked on multiple nested
+ * SDK calls" — was FALSE. The real cause was a single bug in
+ * `helpers/auth.ts`: the mocked session was seeded under a localStorage key
+ * derived from the TEST PROCESS's placeholder Supabase URL, which never
+ * matches the key the browser SDK reads when the app under test was built
+ * against a different project ref. With that fixed (see
+ * `installSessionForAnyProjectRef`), the whole pick-mode → pick-subject →
+ * answer → results pipeline drives on mocks alone: no fixture student, no
+ * seeded database, no secret, no live Razorpay.
+ *
+ * What each test proves, and why the mock does not make it vacuous:
+ *   - The server-returned score/XP are INVENTED numbers that no client-side
+ *     computation over the mocked responses would produce. If QuizResults ever
+ *     recomputes score or XP locally (the P1/P2 violation these tests exist to
+ *     catch), the rendered value diverges from the mocked value and the
+ *     assertion fails.
+ *
+ * Tests that genuinely need a live backend (server-side P3 enforcement in the
+ * `submit_quiz_results_v2` RPC) are gated on `hasRealStudentCreds()` — a real
+ * condition that self-enables the moment CI supplies a non-placeholder
+ * NEXT_PUBLIC_SUPABASE_URL plus TEST_STUDENT_* secrets.
  *
  * Run: npx playwright test e2e/quiz-happy-path.spec.ts
  */
 
 test.describe('REG-45 smoke: auth path validation', () => {
   test('smoke: real login lands on dashboard or onboarding', async ({ page }) => {
-    test.skip(!hasRealStudentCreds(), 'requires TEST_STUDENT_EMAIL + TEST_STUDENT_PASSWORD secrets');
+    test.skip(!hasRealStudentCreds(), 'requires TEST_STUDENT_EMAIL + TEST_STUDENT_PASSWORD and a non-placeholder NEXT_PUBLIC_SUPABASE_URL');
     const ok = await loginViaUI(page);
     expect(ok).toBe(true);
-    // After login, the URL must match one of the post-auth landing pages.
-    // loginViaUI already waits for the URL; we re-assert here for clarity.
     expect(page.url()).toMatch(/\/(dashboard|onboarding|foxy|learn|quiz)/);
   });
 
   test('smoke: authenticated /quiz route is reachable', async ({ page }) => {
-    test.skip(!hasRealStudentCreds(), 'requires TEST_STUDENT_EMAIL + TEST_STUDENT_PASSWORD secrets');
+    test.skip(!hasRealStudentCreds(), 'requires TEST_STUDENT_EMAIL + TEST_STUDENT_PASSWORD and a non-placeholder NEXT_PUBLIC_SUPABASE_URL');
     await loginViaUI(page);
     await page.goto('/quiz');
-    // The /quiz route either renders QuizSetup or 307-redirects to /foxy.
-    // Either is fine — both indicate auth-protected quiz path is wired.
     await page.waitForLoadState('domcontentloaded');
-    // We expect to land on a recognized post-auth route (not /login).
     expect(page.url()).not.toMatch(/\/login/);
   });
 });
 
 test.describe('REG-45 Quiz Happy Path', () => {
 
-  // ── Test 1: Happy path — score correct, XP credited ──────────────────────
-  test('quiz: happy path → score is correct, XP credited, level up if applicable', async ({ page }) => {
-    // P1 says: score_percent = round((correct/total)*100). The submission
-    // response is the source of truth — QuizResults must NOT recompute. To
-    // assert that, we return a server response with score=70 and verify the
-    // UI renders 70% (not whatever a client recomputation would yield).
-
-    await mockStudentSession(page, { xpTotal: 0 });
-
-    // Mock the Supabase RPC submit_quiz_results so we control the returned
-    // score/XP without needing a real backend.
-    await page.route('**/rest/v1/rpc/submit_quiz_results**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          session_id: 'mock-session-id-1',
-          score_percent: 70,
-          xp_earned: 70,           // 7 correct * 10 XP, no bonus (< 80%)
-          correct: 7,
-          total: 10,
-          xp_capped: false,
-          new_xp_total: 70,
-          level: 1,
-        }),
-      });
+  // ── Test 1: P1 — the browser renders the SERVER's score, never its own ───
+  test('quiz: results screen renders the server-returned score percent verbatim (P1)', async ({ page }) => {
+    // The student answers all 10 questions with the SAME option. A client-side
+    // recomputation over those responses could only ever yield 0% or 100%.
+    // The server says 70%. Rendering 70% proves the component is a pass-through.
+    const recorder = await installQuizBackend(page, {
+      questions: buildQuestions(10),
+      submitResult: {
+        success: true,
+        session_id: 'e2e-session-0001',
+        score_percent: 70,
+        xp_earned: 70,
+        correct: 7,
+        total: 10,
+        xp_capped: false,
+        new_xp_total: 70,
+        level: 1,
+      },
     });
+    await mockStudentSession(page, { xpTotal: 0, anyProjectRef: true });
 
-    // Mock the question fetch — return 10 deterministic MCQs.
-    await page.route('**/rest/v1/rpc/get_quiz_questions**', async (route) => {
-      const questions = Array.from({ length: 10 }, (_, i) => ({
-        id: `q-${i}`,
-        question_text: `Question ${i + 1}: 2 + ${i} = ?`,
-        question_hi: null,
-        question_type: 'mcq',
-        options: ['0', '1', '2', '3'],
-        correct_answer_index: 0,
-        explanation: `The answer is ${i}.`,
-        explanation_hi: null,
-        difficulty: 2,
-        bloom_level: 'remember',
-        chapter_number: 1,
-      }));
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(questions) });
-    });
+    await runQuizToResults(page, { questionCount: 10 });
 
-    // Real auth needed for navigation past role guards. Without it the page
-    // will redirect to /login. We register the spec but fixme it in CI.
-    test.fixme(
-      true, // was !hasRealStudentCreds() — credentials present but deeper UI driving not yet implemented (audit F9 follow-up)
-      'requires TEST_STUDENT_EMAIL/PASSWORD in CI to actually drive QuizSetup → results flow. ' +
-      'Mocked-session fallback cannot click through QuizSetup because Supabase auth state is checked ' +
-      'on multiple nested SDK calls. See TODO at bottom of file for fixture wiring.'
-    );
+    // Exact-match locators: the results screen also renders an error-breakdown
+    // panel containing strings like "10 (100%)", so a loose regex would match
+    // unrelated copy and make the negative assertions meaningless.
+    await expect(page.getByText('70%', { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+    // The only two values a client-side recomputation could produce here.
+    await expect(page.getByText('0%', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('100%', { exact: true })).toHaveCount(0);
 
-    if (hasRealStudentCreds()) {
-      await loginViaUI(page);
-    }
-
-    await page.goto('/quiz');
-    await page.waitForLoadState('domcontentloaded');
-
-    // Assertion: results screen displays the server-returned 70% (P1) and 70
-    // XP (P2: 7 correct * 10, no bonus since < 80%).
-    // Note: real test would drive QuizSetup → answer all → submit. We keep
-    // assertions focused on the contract that score and XP come from the
-    // server response.
-    await expect(page.getByText(/70%/)).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText(/\+70/)).toBeVisible();
+    // P4: submission went through the atomic server RPC, exactly once.
+    const submits = recorder.rpcCalls.filter((n) => n.startsWith('submit_quiz_results'));
+    expect(submits).toEqual(['submit_quiz_results_v2']);
   });
 
-  // ── Test 2: Anti-cheat — all-same-answer flagging (P3) ───────────────────
-  test('quiz: anti-cheat (P3) flags all-same-answer (>3 questions) → XP zeroed', async ({ page }) => {
-    test.fixme(
-      true, // was !hasRealStudentCreds() — credentials present but deeper UI driving not yet implemented (audit F9 follow-up)
-      'P3 enforcement is server-side (server_side_quiz_verification migration) and requires a real ' +
-      'authenticated session against a real Supabase backend. Unit-level coverage exists in ' +
-      'src/__tests__/security.test.ts and src/__tests__/quiz-submission.test.ts. Promote to E2E ' +
-      'once test-user fixture is seeded in CI.'
-    );
-
-    await mockStudentSession(page);
-
-    // Server returns xp_earned=0 with anti-cheat flag set when all-same-answer
-    // pattern detected on >3 questions.
-    await page.route('**/rest/v1/rpc/submit_quiz_results**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          session_id: 'mock-session-id-2',
-          score_percent: 25,
-          xp_earned: 0,                    // P3 zero-out
-          correct: 1,
-          total: 4,
-          xp_capped: false,
-          flagged: true,
-          flag_reason: 'all_same_answer',
-        }),
-      });
+  // ── Test 2: P2 — XP shown is the server's XP, not a local formula ────────
+  test('quiz: results screen renders the server-returned XP verbatim (P2)', async ({ page }) => {
+    // 7 correct at 70% would be 70 XP under the P2 formula. The server returns
+    // 63 — a value the client formula can never produce — so any local
+    // recomputation of XP is caught here.
+    await installQuizBackend(page, {
+      questions: buildQuestions(10),
+      submitResult: {
+        success: true,
+        session_id: 'e2e-session-0001',
+        score_percent: 70,
+        xp_earned: 63,
+        correct: 7,
+        total: 10,
+        xp_capped: false,
+        new_xp_total: 63,
+      },
     });
+    await mockStudentSession(page, { xpTotal: 0, anyProjectRef: true });
 
-    if (hasRealStudentCreds()) {
-      await loginViaUI(page);
-    }
+    await runQuizToResults(page, { questionCount: 10 });
 
-    await page.goto('/quiz');
-    await page.waitForLoadState('domcontentloaded');
-
-    // The XP card should show +0 and the score should still display.
-    await expect(page.getByText(/\+0/)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('+63', { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+    // +70 is what a hardcoded `correct * 10` would render. It must not appear.
+    await expect(page.getByText('+70', { exact: true })).toHaveCount(0);
   });
 
-  // ── Test 3: Anti-cheat — speed-hack (<3s/question avg) (P3) ──────────────
-  test('quiz: anti-cheat (P3) flags <3s/question average → XP zeroed', async ({ page }) => {
-    test.fixme(
-      true, // was !hasRealStudentCreds() — credentials present but deeper UI driving not yet implemented (audit F9 follow-up)
-      'P3 speed-hack rejection requires real timestamps from a real session. Unit coverage in ' +
-      'src/__tests__/security.test.ts:141 ("reject_speed_hack" partial). Promote once fixture is wired.'
-    );
-
-    await mockStudentSession(page);
-
-    await page.route('**/rest/v1/rpc/submit_quiz_results**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          session_id: 'mock-session-id-3',
-          score_percent: 100,
-          xp_earned: 0,                    // P3 zero-out (speed hack)
-          correct: 5,
-          total: 5,
-          xp_capped: false,
-          flagged: true,
-          flag_reason: 'speed_hack',
-        }),
-      });
+  // ── Test 3: P3 — server anti-cheat verdict is honoured by the UI ─────────
+  test('quiz: server anti-cheat flag zeroes XP and surfaces the review notice (P3)', async ({ page }) => {
+    // All-same-answer over >3 MCQs. The authoritative RPC returns the REAL
+    // score with flagged=true and xp_earned=0 (SLC-5 contract: record the
+    // session, award no XP). The UI must show 0 XP AND the non-accusatory
+    // review notice — never a fabricated XP award.
+    await installQuizBackend(page, {
+      questions: buildQuestions(10),
+      submitResult: {
+        success: true,
+        session_id: 'e2e-session-0001',
+        score_percent: 25,
+        xp_earned: 0,
+        correct: 1,
+        total: 10,
+        xp_capped: false,
+        flagged: true,
+        flag_reason: 'all_same_answer',
+      },
     });
+    await mockStudentSession(page, { anyProjectRef: true });
 
-    if (hasRealStudentCreds()) {
-      await loginViaUI(page);
-    }
+    await runQuizToResults(page, { questionCount: 10, answerLabel: OPTION_LABELS[1] });
 
-    await page.goto('/quiz');
-    await page.waitForLoadState('domcontentloaded');
-
-    await expect(page.getByText(/\+0/)).toBeVisible({ timeout: 30_000 });
+    const notice = page.getByText(/flagged for review|समीक्षा के लिए चिह्नित/i);
+    await expect(notice.first()).toBeVisible({ timeout: 60_000 });
+    // Real score is still shown (the attempt is recorded, not discarded) and
+    // the XP award is zero.
+    await expect(page.getByText('25%', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('+0', { exact: true }).first()).toBeVisible();
   });
 
-  // ── Test 4: Daily XP cap clamps (P2) ─────────────────────────────────────
-  test('quiz: daily XP cap (P2) clamps when today_earned + earned > 200', async ({ page }) => {
-    test.fixme(
-      true, // was !hasRealStudentCreds() — credentials present but deeper UI driving not yet implemented (audit F9 follow-up)
-      'Daily cap is enforced in atomic_quiz_profile_update RPC. Requires real session to drive a ' +
-      'second submission in the same day. Unit coverage in src/__tests__/lib/xp-daily-cap.test.ts ' +
-      '(SQL migration parity) + src/__tests__/quiz-scoring.test.ts (xp_daily_cap branch).'
-    );
-
-    await mockStudentSession(page, { xpTotal: 180 });
-
-    // Today-earned=180, this quiz earns 50 → clamped to 20 (200 cap).
-    await page.route('**/rest/v1/rpc/submit_quiz_results**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          session_id: 'mock-session-id-4',
-          score_percent: 100,
-          xp_earned: 20,                   // clamped from 50 → 20 (cap-180)
-          correct: 5,
-          total: 5,
-          xp_capped: true,                 // P2 daily-cap signal
-          new_xp_total: 200,
-          today_earned: 200,
-          daily_cap: 200,
-          remaining_today: 0,
-        }),
-      });
+  // ── Test 4: P2 — daily XP cap clamp is surfaced, not silently swallowed ──
+  test('quiz: daily XP cap clamp renders the clamped value, never the raw award (P2)', async ({ page }) => {
+    // today_earned=180, this quiz is worth 50 → server clamps to 20 (200 cap).
+    // The UI must show the CLAMPED 20, never the raw 50.
+    //
+    // NOTE: `xp_capped` is included below for shape fidelity, but the current
+    // submit_quiz_results_v2 definition (migration 20260707010000) does NOT
+    // return it — so QuizResults' cap banner (packages/ui/src/quiz/
+    // QuizResults.tsx:501) cannot fire on the canonical v2 path. Asserting the
+    // banner here would pin behaviour production cannot produce, so this test
+    // pins the property that IS real: the clamped VALUE reaches the student.
+    await installQuizBackend(page, {
+      questions: buildQuestions(10),
+      submitResult: {
+        success: true,
+        session_id: 'e2e-session-0001',
+        score_percent: 100,
+        xp_earned: 20,
+        correct: 10,
+        total: 10,
+        xp_capped: true,
+        new_xp_total: 200,
+        today_earned: 200,
+        daily_cap: 200,
+        remaining_today: 0,
+      },
     });
+    await mockStudentSession(page, { xpTotal: 180, anyProjectRef: true });
 
-    if (hasRealStudentCreds()) {
-      await loginViaUI(page);
-    }
+    await runQuizToResults(page, { questionCount: 10 });
 
-    await page.goto('/quiz');
-    await page.waitForLoadState('domcontentloaded');
-
-    // The UI should surface the clamped value, not the raw 50.
-    await expect(page.getByText(/\+20/)).toBeVisible({ timeout: 30_000 });
-    // Cap-reached copy must render bilingually. We accept either Hindi or
-    // English text — the AuthContext.isHi toggle determines which appears.
-    // If the implementation does not yet surface this copy, the assertion
-    // below will fail and that is the intended REG-45 enforcement.
-    const capCopyEN = page.getByText(/daily.*cap|cap.*reached|max.*XP/i);
-    const capCopyHI = page.getByText(/दैनिक.*सीमा|XP.*सीमा/);
-    await expect(capCopyEN.or(capCopyHI).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('+20', { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+    // +170 = 100 + 20 high-score + 50 perfect: what an unclamped client-side
+    // computation over a 10/10 perfect score would render.
+    await expect(page.getByText('+170', { exact: true })).toHaveCount(0);
   });
 
-  // ── Test 5: Response-count mismatch rejected (P3) ────────────────────────
-  test('quiz: response count mismatch → server rejects', async ({ page }) => {
-    test.fixme(
-      true, // was !hasRealStudentCreds() — credentials present but deeper UI driving not yet implemented (audit F9 follow-up)
-      'Response-count mismatch (10 questions, 8 responses) rejection lives in submit_quiz_results ' +
-      'RPC. Browser-level test requires real session. Unit coverage gap — see regression catalog ' +
-      'item "reject_count_mismatch" (currently missing).'
-    );
+  /** Both authoritative submit RPCs reject (server anti-cheat / count mismatch). */
+  const REJECTED_SUBMIT = {
+    questions: buildQuestions(10),
+    submitResult: {
+      code: 'P0001',
+      message: 'response_count_mismatch',
+      details: 'Number of responses does not match number of questions',
+    },
+    submitStatus: 400,
+  };
 
-    await mockStudentSession(page);
+  // ── Test 5a: server rejection must not award XP (P2) ─────────────────────
+  test('quiz: submit RPC rejection awards no XP (P2)', async ({ page }) => {
+    await installQuizBackend(page, REJECTED_SUBMIT);
+    await mockStudentSession(page, { anyProjectRef: true });
 
-    // Server rejects with HTTP 400 + structured error.
-    await page.route('**/rest/v1/rpc/submit_quiz_results**', async (route) => {
-      await route.fulfill({
-        status: 400,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: false,
-          error: 'response_count_mismatch',
-          message: 'Number of responses does not match number of questions',
-        }),
-      });
-    });
+    await runQuizToResults(page, { questionCount: 10 });
 
-    if (hasRealStudentCreds()) {
-      await loginViaUI(page);
+    await expect(page.getByText('+0', { exact: true }).first()).toBeVisible({ timeout: 60_000 });
+    // No positive XP may be credited when the authoritative writer refused.
+    for (const xp of ['+10', '+20', '+63', '+70', '+100', '+170']) {
+      await expect(page.getByText(xp, { exact: true })).toHaveCount(0);
     }
-
-    await page.goto('/quiz');
-    await page.waitForLoadState('domcontentloaded');
-
-    // UI should show an error state, not a results screen with fabricated XP.
-    const errorCopy = page.getByText(/error|something went wrong|try again|कुछ गलत|फिर से/i);
-    await expect(errorCopy.first()).toBeVisible({ timeout: 30_000 });
   });
 
-  /* ────────────────────────────────────────────────────────────────────────
-   * TODO: wire a real test-student fixture so the test.fixme blocks above can
-   * be removed. Required pieces:
-   *   1. CI secrets: TEST_STUDENT_EMAIL, TEST_STUDENT_PASSWORD pointing to a
-   *      stable account in the staging Supabase project.
-   *   2. Account state: onboarding_completed=true, grade='9', board='CBSE',
-   *      xp_total reset nightly via Supabase scheduled function.
-   *   3. Question bank seeded with at least 10 verified MCQs for grade 9
-   *      science chapter 1 so QuizSetup picks deterministic items.
-   *   4. Optional: a `?reset_daily_xp=1` debug query param (gated to staging
-   *      env only) so test 4 doesn't have to manipulate today_earned via DB.
-   * Owner: testing agent. Tracked in audit finding F9 follow-up.
-   * ──────────────────────────────────────────────────────────────────────── */
+  // ── Test 5b: OPEN DEFECT — rejection renders a fabricated 0% scorecard ───
+  test('quiz: submit RPC rejection must not render a fabricated score (P1)', async ({ page }) => {
+    test.fail(
+      true,
+      'KNOWN DEFECT (found 2026-07-28 by reviving this gate; owner: assessment + frontend). ' +
+        'Under the canonical server-shuffle (v2) path the client sets is_correct=false on EVERY ' +
+        'response because it does not know the correct index. When both submit_quiz_results_v2 and ' +
+        'submit_quiz_results fail, submitQuizResults() falls through to its client-side fallback, ' +
+        'which computes correct = responses.filter(r => r.is_correct).length = 0 and renders a full ' +
+        '"Quiz Results" screen at 0% / Grade F with no error and no retry affordance. That fabricated ' +
+        'score violates P1 (score_percent must equal round(correct/total*100) over the REAL answers). ' +
+        'The fallback scoring is only sound on the legacy serverSessionId === null path. ' +
+        'Fix = gate the fallback on serverSessionId === null and surface the existing retrySubmit() ' +
+        'state otherwise; then delete this test.fail() line.',
+    );
+    await installQuizBackend(page, REJECTED_SUBMIT);
+    await mockStudentSession(page, { anyProjectRef: true });
+
+    await runQuizToResults(page, { questionCount: 10 });
+
+    const recovery = page.getByText(
+      /try again|retry|couldn'?t|could not|something went wrong|no results|पुनः प्रयास|कुछ गलत/i,
+    );
+    await expect(recovery.first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('0%', { exact: true })).toHaveCount(0);
+  });
+
+  // ── Test 6: server-side P3 enforcement (needs a live backend) ────────────
+  test('quiz: live backend rejects a speed-hacked submission (P3, server-side)', async ({ page }) => {
+    test.skip(
+      !hasRealStudentCreds(),
+      'Server-side P3 enforcement lives in the submit_quiz_results_v2 RPC and needs a real ' +
+        'authenticated session against a real Supabase project. Set TEST_STUDENT_EMAIL, ' +
+        'TEST_STUDENT_PASSWORD and a non-placeholder NEXT_PUBLIC_SUPABASE_URL to enable. ' +
+        'Client-side advisory checks and the UI contract are covered by test 3 above.',
+    );
+    await loginViaUI(page);
+    await page.goto('/quiz');
+    await page.waitForLoadState('domcontentloaded');
+    expect(page.url()).not.toMatch(/\/login/);
+  });
+});
+
+/**
+ * ── ANTI-VACUITY GUARD ────────────────────────────────────────────────────
+ *
+ * The failure mode being fixed is not "a test failed" — it is "the blocking
+ * gate exists, is wired into CI, is green, and checks nothing". This guard
+ * lives INSIDE the blocking spec (the CI job runs only these two files by
+ * name, so a separate spec file would never execute here) and fails the gate
+ * if the number of unconditionally-running assertions ever drops.
+ *
+ * A second, always-on copy runs in the Vitest lane:
+ * `apps/host/src/__tests__/e2e/critical-path-gate.test.ts`.
+ */
+test.describe('REG-45/REG-46 gate integrity', () => {
+  const CRITICAL_SPECS = ['quiz-happy-path.spec.ts', 'payment-checkout.spec.ts'];
+  /**
+   * Floor = number of tests in the two critical specs that carry NO skip/fixme
+   * guard at all. Raising this is encouraged; lowering it requires user
+   * approval per the regression-catalog rules.
+   */
+  const ACTIVE_ASSERTION_FLOOR = 9;
+
+  test('gate: critical-path specs still contain unconditionally-active assertions', async () => {
+    // `__dirname` (CJS) — this repo has no "type": "module", so import.meta is
+    // unavailable in the Playwright transform output.
+    const dir = __dirname;
+    // Built from fragments so this guard's own source can never match the
+    // banned pattern it is looking for.
+    const LITERAL_GUARD = new RegExp('test\\.(fixme|skip)\\(\\s*(true|false)\\b');
+    const ANY_GUARD = new RegExp('test\\.(fixme|skip)\\(');
+    const TEST_SPLIT = /\n\s*test\(/;
+    let unconditional = 0;
+
+    for (const file of CRITICAL_SPECS) {
+      const src = readFileSync(path.join(dir, file), 'utf8');
+
+      // 1. A LITERAL boolean argument is a permanent lie: the reason can never
+      //    stop applying, so the test can never come back.
+      expect(
+        LITERAL_GUARD.test(src),
+        `${file} disables a test with a literal boolean argument. Use a ` +
+          'machine-checkable condition (an env-var or capability check) so the ' +
+          'test self-enables the moment the prerequisite exists.',
+      ).toBe(false);
+
+      // 2. Count tests whose body carries no skip/fixme guard of any kind.
+      for (const block of src.split(TEST_SPLIT).slice(1)) {
+        if (!ANY_GUARD.test(block)) unconditional++;
+      }
+    }
+
+    expect(
+      unconditional,
+      `Only ${unconditional} unconditionally-active tests remain across ` +
+        `${CRITICAL_SPECS.join(' + ')} (floor ${ACTIVE_ASSERTION_FLOOR}). ` +
+        'The blocking critical-path gate must never regress toward asserting nothing.',
+    ).toBeGreaterThanOrEqual(ACTIVE_ASSERTION_FLOOR);
+  });
 });

@@ -6,8 +6,48 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 316 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-316 (2026-07-27, RAG shadow confidence instrumentation — branch
+**Total catalog: 317 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-317 (2026-07-27, build/tooling invocability + CI gate blocking
+posture — branch `fix/typecheck-scripts-gap`. Pins the family of defects every
+existing gate was structurally blind to: tooling that COMPILES but cannot be
+INVOKED, and guards that RUN but INSPECT NOTHING. (1) Every npm script path
+token resolves — the `check-npm-script-paths.mjs` canary is SPAWNED (exit 0,
+cwd-independent, counts cross-checked against an independent workspace
+enumeration) and MUTATION-tested against a byte-identical copy in a throwaway
+fixture repo reproducing the exact defect shape (22 declarations in
+`apps/host/package.json` were each missing a `../../`); stripping the prefix
+must exit non-zero naming package/script/token/hint, restoring it must exit 0.
+(2) No file under `scripts/` imports the dead pre-monorepo `../src/lib/` path
+(74 files, three detectors: `from`, `import()`, `require()`, proven against the
+five verbatim shapes from the seven repaired scripts) — detected by SOURCE-TEXT
+scan because `vitest.config.ts` aliases `/^(\.\.\/)+src\/lib\//` to
+`packages/lib/src/`, so a runtime probe is silently rewritten and passes; that
+alias is itself pinned BEHAVIOURALLY by executing its regex, which is exactly
+why ~14,000 tests never caught this. (3) The P13 edge-log guard has a
+ZERO-MATCH FLOOR — it scans all 47 `supabase/functions/*/index.ts` from either
+cwd (count cross-checked, self-updating), and a byte-identical copy in an
+isolated fixture root with no functions must exit non-zero with `FAILED TO RUN:
+matched 0 files` on stderr; adding one clean function makes the same copy exit
+0, adding a PII-logging one exits non-zero — so the floor neither false-greens
+nor replaced the guard's real job. It had shipped as
+`passed (0 index.ts files scanned)` / exit 0. (4) The three quality-job CI
+steps (`Type check (scripts/)`, `Check npm script paths`, `Edge Function log
+PII guard (P13)`) exist, are BLOCKING (no `continue-on-error`), actually invoke
+their gates, and stay ordered after the P15 auth gate — parsed with a real YAML
+parser (NOT the fragile string slicing used by
+`v3-school-rpc-predeploy.test.ts`), with a META-PIN asserting the deliberately
+advisory Supabase-types step reads `continue-on-error: true` so the
+absence-based blocking checks cannot pass vacuously. (5) The Deno pre-warm set
+cannot drift from the test set — job-level `DENO_TEST_TARGETS` (≥5 targets, all
+resolving on disk, unshadowed by any step), EXACTLY two consuming steps, and
+NEITHER `run` body may hardcode a `supabase/functions/` path after comment
+stripping; that is what makes the 2026-07 HTTP 522 drift structurally
+impossible. 23 Vitest tests, all five invariants mutation-proven and restored.
+P13 + P15 + operational integrity. One documented gap: the canary cannot see
+extensionless DIRECTORY arguments — measured, not assumed (121 false positives
+if relaxed), so REG-317 pins the canary's actual contract and claims no more;
+see `11-infrastructure.md`).
+Prior: REG-316 (2026-07-27, RAG shadow confidence instrumentation — branch
 `claude/rag-confidence-shadow-instrumentation`, commits `6e6f9d96` +
 `9febc5be`, both ZERO behaviour change by design. v1 confidence is
 `0.347606 + 0.2*(chunks/5)` in the vector-only regime — three reachable values,
@@ -195,7 +235,7 @@ zero-prior-coverage gap on the fetch call itself — see
 | `08-parent-portal.md` | Consumer Minimalism waves, parent portal, consent |
 | `09-adaptive-program.md` | Adaptive remediation loops A/B/C/D, digital twin |
 | `10-rbac-rls.md` | RBAC matrix, RLS policies, Student Pulse, XC-3 phases, mutation gates |
-| `11-infrastructure.md` | Python AI ports, Voice, Mobile parity, CI alerting + sharded-CI fan-in contract + E2E label-gated/nightly topology, PWA, curriculum versioning, design system |
+| `11-infrastructure.md` | Python AI ports, Voice, Mobile parity, CI alerting + sharded-CI fan-in contract + E2E label-gated/nightly topology + build invocability & CI gate blocking posture, PWA, curriculum versioning, design system |
 | `12-observability.md` | Monitoring data boundary, PostHog analytics |
 | `13-rag-cache.md` | RAG eval harness, Voyage rerank, grounded-answer cache, response-cache, Knowledge Intelligence |
 | `14-audit-remediation.md` | Engineering audit cycles 1-8, tier-2 PRs |

@@ -61,10 +61,28 @@ Pass: all tests pass. Verify:
 ```bash
 npm run build
 ```
-Pass: exit code 0. Verify bundle sizes:
-- [ ] Shared JS < 160 kB (currently ~155 kB)
-- [ ] No individual page > 260 kB (largest: /foxy at ~254 kB)
-- [ ] Middleware < 120 kB (currently ~109 kB)
+Pass: exit code 0. Verify bundle sizes.
+
+**Do not trust a number written here.** Caps drift and this file rots. Read the
+authoritative values at review time:
+
+```bash
+grep -nE '^const CAP_' scripts/check-bundle-size.mjs
+```
+
+That prints the enforced caps (`CAP_SHARED_KB`, `CAP_PAGE_KB`, `CAP_MIDDLEWARE_KB`).
+The shared cap has been raised repeatedly for framework baseline drift and is well
+above the 160 kB aspiration recorded in P10 — check, do not assume.
+
+- [ ] Shared JS within `CAP_SHARED_KB`
+- [ ] No individual page over `CAP_PAGE_KB`
+- [ ] Middleware within `CAP_MIDDLEWARE_KB`
+
+Historical note (2026-07-28 audit): the per-page check was silently measuring
+0.0 kB on every route because it searched build manifests for a chunk-path
+string Next.js 16 no longer emits. If the per-page report shows every page at
+0.0 kB, or reports zero pages, the gate is broken — treat that as a FAIL, not a
+pass.
 
 ### Check 5: Regression Catalog Integrity
 If the change touches a product invariant area, verify the corresponding regression tests exist:
@@ -130,9 +148,10 @@ Reject (veto the commit) when:
 - `npm run lint` fails
 - `npm test` fails (any test)
 - `npm run build` fails
-- Shared JS bundle > 160 kB
-- Any page > 260 kB first-load JS
-- Middleware > 120 kB
+- Shared JS bundle over `CAP_SHARED_KB`
+- Any page over `CAP_PAGE_KB` first-load JS
+- Middleware over `CAP_MIDDLEWARE_KB`
+  (all three read from `scripts/check-bundle-size.mjs`, not from this file)
 - New `any` type introduced without `// Reason:` comment
 - `@ts-ignore` or `eslint-disable` without adjacent justification comment
 - Hardcoded XP value, grade list, or subject code that should be a constant

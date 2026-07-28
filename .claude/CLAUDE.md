@@ -382,7 +382,8 @@ Commit: [hash] on [branch] | ready to merge: YES/NO
 ```
 npm run dev          # Local dev server
 npm run build        # Production build
-npm run type-check   # TypeScript validation
+npm run type-check   # TypeScript validation across workspaces (--workspaces --if-present); does NOT cover workspace-less dirs
+npm run type-check:scripts  # TypeScript validation for repo-root scripts/ (no workspace; own tsconfig.scripts.json)
 npm test             # Vitest (~14,000+ tests, 869 files)
 npm run test:e2e     # Playwright E2E
 npm run lint         # ESLint

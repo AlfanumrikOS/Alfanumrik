@@ -1,1 +1,8 @@
-{"name": "@alfanumrik/lib", "main": "src/index.ts", "types": "src/index.ts"}
+{
+  "name": "@alfanumrik/lib",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "lint": "node ../../scripts/lint-package.mjs --dir src --min-files 400"
+  }
+}

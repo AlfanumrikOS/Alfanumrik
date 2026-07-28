@@ -983,16 +983,103 @@ jobs:
           fi
           BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
 
+          # ── Post-deploy health probe ────────────────────────────────────────
+          # CI-gate forensic audit, 2026-07-28 — two repairs in this block.
+          #
+          # (1) DIAGNOSTIC WAS DELETED BEFORE IT WAS READ.
+          #     The old code did `rm -f "$HEALTH_BODY"` immediately after
+          #     extracting `healthy` and `git_sha`, and only THEN evaluated the
+          #     failure branch. The /api/v1/health payload carries
+          #     `unhealthy_components: string[]` plus per-check status/latency —
+          #     the only information that says WHICH subsystem is down — and it
+          #     was destroyed before the ::error:: line ran. The operator paged at
+          #     3am got `healthy=false` and nothing else. The body is now parsed
+          #     for component detail and echoed BEFORE any cleanup, and cleanup
+          #     happens once, at the end.
+          #
+          # (2) SINGLE-SHOT PROBE CAUSED A FALSE PAGE.
+          #     This job had no retry. During the audit, two jobs 9 SECONDS APART
+          #     disagreed about production health and this one paged — production
+          #     was fine. The health-check job above already polls for 10 minutes;
+          #     this job re-probes the SAME domain moments later and must be at
+          #     least as resilient. Bounded retry: VERIFY_ATTEMPTS attempts with
+          #     linear backoff, short-circuiting on the first healthy exact-SHA
+          #     response. This does NOT weaken the gate — it still fails if every
+          #     attempt fails; it only refuses to page on a single transient flap.
+          VERIFY_ATTEMPTS=4
+          VERIFY_BACKOFF_SECONDS=10
           HEALTH_BODY=$(mktemp)
-          HEALTH_STATUS=$(curl -sS --max-time 15 -o "$HEALTH_BODY" -w "%{http_code}" \
-            "${BYPASS_HEADER[@]}" "${TARGET_URL}/api/v1/health" 2>/dev/null || true)
-          HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$HEALTH_BODY")
-          DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$HEALTH_BODY")
-          rm -f "$HEALTH_BODY"
+          HEALTH_STATUS=""
+          HEALTHY="false"
+          DEPLOYED_SHA=""
+          UNHEALTHY_COMPONENTS=""
+          COMPONENT_DETAIL=""
+
+          for attempt in $(seq 1 "$VERIFY_ATTEMPTS"); do
+            : > "$HEALTH_BODY"
+            HEALTH_STATUS=$(curl -sS --max-time 15 -o "$HEALTH_BODY" -w "%{http_code}" \
+              "${BYPASS_HEADER[@]}" "${TARGET_URL}/api/v1/health" 2>/dev/null || true)
+            HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$HEALTH_BODY")
+            DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$HEALTH_BODY")
+            # Component detail — extracted BEFORE any cleanup, every attempt, so
+            # the LAST failing attempt still has its diagnostic available below.
+            UNHEALTHY_COMPONENTS=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(Array.isArray(b.unhealthy_components)?b.unhealthy_components.join(','):'')}catch{process.stdout.write('')}" "$HEALTH_BODY")
+            COMPONENT_DETAIL=$(node -e "
+              const fs=require('fs');
+              try{
+                const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));
+                const c=b.checks||b.components||{};
+                const rows=Object.entries(c).map(([k,v])=>
+                  typeof v==='object'&&v?\`\${k}=\${v.status||'?'}\${v.detail?' ('+String(v.detail).slice(0,120)+')':''}\${v.error?' ('+String(v.error).slice(0,120)+')':''}\`:\`\${k}=\${v}\`);
+                process.stdout.write(rows.join(' | '));
+              }catch{process.stdout.write('')}
+            " "$HEALTH_BODY")
+
+            echo "attempt $attempt/$VERIFY_ATTEMPTS: http=$HEALTH_STATUS healthy=$HEALTHY sha=$DEPLOYED_SHA expected=$EXPECTED_SHA"
+            if [ -n "$UNHEALTHY_COMPONENTS" ]; then
+              echo "  unhealthy_components: $UNHEALTHY_COMPONENTS"
+            fi
+
+            if [ "$HEALTH_STATUS" = "200" ] && [ "$HEALTHY" = "true" ] && [ "$DEPLOYED_SHA" = "$EXPECTED_SHA" ]; then
+              break
+            fi
+            if [ "$attempt" -lt "$VERIFY_ATTEMPTS" ]; then
+              SLEEP_FOR=$((VERIFY_BACKOFF_SECONDS * attempt))
+              echo "  transient? retrying in ${SLEEP_FOR}s"
+              sleep "$SLEEP_FOR"
+            fi
+          done
+
           if [ "$HEALTH_STATUS" != "200" ] || [ "$HEALTHY" != "true" ] || [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]; then
-            echo "::error::Post-deploy health did not prove healthy exact SHA (http=$HEALTH_STATUS healthy=$HEALTHY sha=$DEPLOYED_SHA expected=$EXPECTED_SHA)."
+            # Echo the diagnostic BEFORE deleting the body. This is the fix for
+            # the "operator gets no detail" defect.
+            echo "::error::Post-deploy health did not prove healthy exact SHA after $VERIFY_ATTEMPTS attempt(s) (http=$HEALTH_STATUS healthy=$HEALTHY sha=$DEPLOYED_SHA expected=$EXPECTED_SHA)."
+            echo "::error::unhealthy_components: ${UNHEALTHY_COMPONENTS:-<none reported>}"
+            echo "::error::component detail: ${COMPONENT_DETAIL:-<none parsed>}"
+            echo "---- /api/v1/health response body (first 2000 bytes) ----"
+            head -c 2000 "$HEALTH_BODY" || true
+            echo ""
+            echo "---- end body ----"
+            {
+              echo "### Post-deploy health FAILED"
+              echo ""
+              echo "| Field | Value |"
+              echo "|-------|-------|"
+              echo "| http | $HEALTH_STATUS |"
+              echo "| healthy | $HEALTHY |"
+              echo "| deployed sha | ${DEPLOYED_SHA:-<none>} |"
+              echo "| expected sha | $EXPECTED_SHA |"
+              echo "| unhealthy_components | ${UNHEALTHY_COMPONENTS:-<none reported>} |"
+              echo "| component detail | ${COMPONENT_DETAIL:-<none parsed>} |"
+              echo "| attempts | $VERIFY_ATTEMPTS |"
+            } >> $GITHUB_STEP_SUMMARY
+            rm -f "$HEALTH_BODY"
             exit 1
           fi
+          if [ -n "$UNHEALTHY_COMPONENTS" ]; then
+            echo "::warning::Health reported healthy overall but listed components: $UNHEALTHY_COMPONENTS"
+          fi
+          rm -f "$HEALTH_BODY"
 
           # Track application failures separately from checkpoint responses.
           # Every required endpoint must be verified through the bypass; even

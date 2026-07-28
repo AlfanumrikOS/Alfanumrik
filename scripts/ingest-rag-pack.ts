@@ -52,7 +52,7 @@ import {
   applyHeaderDefaults,
   type PackEntry,
   type PackHeader,
-} from '../src/lib/rag/pack-manifest';
+} from '../packages/lib/src/rag/pack-manifest';
 
 interface ScriptArgs {
   packPath: string;

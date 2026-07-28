@@ -25,8 +25,27 @@
  *   (`.select(...)`) are NOT flagged — only writes to canonical state.
  *
  * Allowlist (rule skipped for these files):
- *   - src/lib/state/subscribers/**           — projector subscribers, the
+ *   - packages/lib/src/state/subscribers/**  — projector subscribers, the
  *                                              legitimate canonical writers.
+ *                                              (Pre-monorepo this tree lived
+ *                                              at src/lib/state/subscribers/;
+ *                                              the old suffix no longer
+ *                                              matches anything on disk.)
+ *   - supabase/functions/_shared/state-runtime/concept-mastery-projector.ts
+ *                                            — the Deno-side twin of the
+ *                                              Node projector above. Same
+ *                                              Subscriber<'learner.concept_
+ *                                              check_answered'> contract,
+ *                                              same attemptId idempotency,
+ *                                              same ctx.dryRun honouring; it
+ *                                              is the canonical writer of
+ *                                              public.concept_mastery on the
+ *                                              Edge Function side. Allowlisted
+ *                                              per-file (not the whole
+ *                                              state-runtime/ directory) so a
+ *                                              future canonical write added
+ *                                              elsewhere in that directory
+ *                                              still gets reviewed.
  *   - src/lib/state/services/quiz-completion-service.ts
  *                                              — legacy P4 RPC orchestrator;
  *                                              documented exception (this
@@ -80,14 +99,27 @@ const MUTATING_METHODS = new Set(['insert', 'update', 'upsert', 'delete']);
 // Path-suffix allowlist. We match on the POSIX-normalized full path
 // (forward slashes) rather than a CWD-relative path, because in this
 // repo eslint may run from a worktree directory whose CWD doesn't
-// align with the test runner's CWD. A suffix match on
-// `src/lib/state/subscribers/` is unambiguous in practice (no other
-// directory under the repo carries the same segment).
-const ALLOWLIST_SUFFIXES = ['/src/lib/state/subscribers/'];
+// align with the test runner's CWD. A substring match on
+// `packages/lib/src/state/subscribers/` is unambiguous in practice (no
+// other directory under the repo carries the same segment run).
+//
+// NOTE: this used to read `/src/lib/state/subscribers/`, which was the
+// PRE-MONOREPO location. After the apps/* + packages/* migration the
+// segments read `lib/src/state`, not `src/lib/state`, so the old suffix
+// matched nothing and the rule fired on the very projectors it exists to
+// bless (concept-mastery-projector.ts, scheduled-actions-writer.ts).
+const ALLOWLIST_SUFFIXES = ['/packages/lib/src/state/subscribers/'];
 
-// Path-suffix allowlist for individual files (legacy exceptions).
+// Path-suffix allowlist for individual files.
 const ALLOWLIST_FILE_SUFFIXES = [
+  // Legacy P4 RPC orchestrator — documented exception, see EXCEPTIONS.md.
   '/src/lib/state/services/quiz-completion-service.ts',
+  // Deno-side twin of packages/lib/src/state/subscribers/concept-mastery-projector.ts.
+  // It IS a projector (Subscriber<'learner.concept_check_answered'>, idempotent
+  // on payload.attemptId, honours ctx.dryRun) and is the canonical writer of
+  // public.concept_mastery inside Edge Functions. Allowlisted per-file rather
+  // than by directory so other files under state-runtime/ stay governed.
+  '/supabase/functions/_shared/state-runtime/concept-mastery-projector.ts',
 ];
 
 /**
@@ -173,12 +205,12 @@ const rule = {
     type: 'suggestion',
     docs: {
       description:
-        'Canonical learner-state tables (concept_mastery, adaptive_mastery, daily_schedule, scheduled_actions, entitlements, notification_sends) must only be written from projector subscribers (src/lib/state/subscribers/**) — see ADR-005 §"The enforceable rule" #1.',
+        'Canonical learner-state tables (concept_mastery, adaptive_mastery, daily_schedule, scheduled_actions, entitlements, notification_sends) must only be written from projector subscribers (packages/lib/src/state/subscribers/**, or their Deno twins under supabase/functions/_shared/state-runtime/) — see ADR-005 §"The enforceable rule" #1.',
     },
     schema: [],
     messages: {
       writeOutside:
-        'Canonical state table "{{table}}" must be written only from projector subscribers (src/lib/state/subscribers/**). Detected outside the allowlist. See ADR-005 §"The enforceable rule" and EXCEPTIONS.md.',
+        'Canonical state table "{{table}}" must be written only from projector subscribers (packages/lib/src/state/subscribers/**). Detected outside the allowlist. See ADR-005 §"The enforceable rule" and EXCEPTIONS.md.',
     },
   },
   create(context) {

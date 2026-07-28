@@ -17,10 +17,22 @@
  *     founder reviews the report first; a follow-up phase will land the
  *     update path.)
  *
- * Run:
- *   npm run retroactive-scan -- --limit 50 --budget 100
- *   npm run retroactive-scan -- --subject science --grade 8 --limit 200
- *   npm run retroactive-scan -- --out tmp/scan.md --limit 100
+ * Run (from the REPO ROOT):
+ *   npx tsx --tsconfig tsconfig.scripts.json scripts/retroactive-oracle-scan.ts --limit 50 --budget 100
+ *   npx tsx --tsconfig tsconfig.scripts.json scripts/retroactive-oracle-scan.ts --subject science --grade 8 --limit 200
+ *   npx tsx --tsconfig tsconfig.scripts.json scripts/retroactive-oracle-scan.ts --out tmp/scan.md --limit 100
+ *
+ * Two reasons this is spelled out rather than `npm run retroactive-scan`:
+ *   1. `--tsconfig` is REQUIRED. This script's import tree reaches
+ *      `@alfanumrik/lib/ai/validation/quiz-oracle` through the path alias, and
+ *      packages/lib/package.json declares no `exports` subpath map, so bare
+ *      tsx resolution fails with `Cannot find module`.
+ *   2. The `retroactive-scan` npm script is declared in apps/host/package.json
+ *      as `npx tsx scripts/retroactive-oracle-scan.ts`, but apps/host/ has no
+ *      `scripts/` directory — the declaration and the file location disagree
+ *      (same class of monorepo-migration drift as the `ncert:*` and
+ *      `eval:rag:harness` scripts). Fixing that declaration is left to the
+ *      package.json owner; use the explicit command above meanwhile.
  *
  * Required env vars:
  *   SUPABASE_URL                 (or NEXT_PUBLIC_SUPABASE_URL — fallback)
@@ -52,7 +64,7 @@ import {
   runDeterministicChecks,
   type CandidateQuestion,
   type OracleRejectionCategory,
-} from '../src/lib/oracle/deterministic-checks';
+} from '../packages/lib/src/oracle/deterministic-checks';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
