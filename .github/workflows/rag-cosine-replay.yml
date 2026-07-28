@@ -1,0 +1,490 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# RAG cosine-distribution replay — MANUAL ONLY, SPENDS REAL MONEY.
+#
+# WHY THIS WORKFLOW EXISTS
+#   scripts/rag/replay-cosine-distribution.ts cannot run in the authoring
+#   sandbox: network egress to api.voyageai.com and *.supabase.co is blocked
+#   (verified: both resolve to HTTP 000) and no .env.local exists there. GitHub
+#   Actions runners have egress and this repo holds the required secrets, so the
+#   runner is the only place the replay can actually be measured.
+#
+# SAFETY PROPERTIES (all structural, not conventional)
+#   1. `workflow_dispatch` is the ONLY trigger. There is no `push`, no
+#      `pull_request`, no `schedule`. It is impossible to trigger this by
+#      pushing code, so no commit can silently burn Voyage credits.
+#   2. `--lane direct` is HARD-CODED below. The write-enabled lane is not
+#      exposed as an input and its acknowledgement flag is never passed, so this
+#      workflow is structurally incapable of writing trace rows to production.
+#      lane=direct performs SELECT-only production I/O (see the harness header).
+#   3. `dry_run_only` defaults to TRUE, so the default manual invocation costs
+#      exactly nothing. A real run requires deliberately unchecking it.
+#   4. `limit` is bounded and has no "unlimited" value. Spend is bounded by
+#      query count before a single API call is made.
+#   5. Missing secrets FAIL LOUDLY before Phase 2 spends anything. A replay that
+#      quietly does nothing is the vacuously-green failure mode this guards.
+#   6. Summary statistics are printed to STDOUT (primary channel). $GITHUB_STEP_
+#      SUMMARY is written too, but no GitHub API exposes step summaries — a
+#      lesson that cost two extra CI cycles on the Deno type-debt measurement.
+# ─────────────────────────────────────────────────────────────────────────────
+name: RAG cosine-distribution replay (manual, spends Voyage credits)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run_only:
+        description: 'Plan + cost estimate ONLY. Costs nothing. Uncheck to actually spend.'
+        type: boolean
+        default: true
+      limit:
+        description: 'Max distinct queries to replay (1..2000). Bounds the spend. No unlimited option.'
+        type: string
+        default: '200'
+      path:
+        description: 'Pipeline path. WARNING: stream/both add a Voyage rerank-2 call per query (~400x the embedding cost).'
+        type: choice
+        options:
+          - nonstream
+          - stream
+          - both
+        default: nonstream
+      mode:
+        description: 'Grounded mode. soft = what Foxy chat actually uses.'
+        type: choice
+        options:
+          - soft
+          - strict
+        default: soft
+      match_count:
+        description: 'retrieval.match_count (live Foxy default = 5).'
+        type: string
+        default: '5'
+      delay_ms:
+        description: 'Sleep between queries, ms. Protects the RPC and the Voyage rate limit.'
+        type: string
+        default: '250'
+      min_year:
+        description: 'Optional: only replay messages created on/after Jan 1 of this year (e.g. 2026). Blank = no date filter.'
+        type: string
+        default: ''
+      run_id:
+        description: 'Optional run id (artifact/checkpoint filenames). Blank = derived from the GitHub run id.'
+        type: string
+        default: ''
+      report_floor:
+        description: 'Optional cosine floor for the BELOW_FLOOR statistic. Blank = use the mode floor read from grounded-answer/config.ts.'
+        type: string
+        default: ''
+
+# Read-only. This workflow never writes to the repo.
+permissions:
+  contents: read
+
+# One paid run at a time, repo-wide. Never cancel a run that is already spending.
+concurrency:
+  group: rag-cosine-replay
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    name: Cosine distribution replay (lane=direct, read-only)
+    runs-on: ubuntu-latest
+    # Hard ceiling so a hung run cannot bill indefinitely. The input validator
+    # additionally refuses any (limit x paths x delay) combination whose own
+    # wall-clock estimate would exceed this budget.
+    timeout-minutes: 60
+
+    env:
+      # Every value below is consumed via `env:` and never interpolated into a
+      # `run:` body. That keeps the shell free of `${{ }}` (script-injection safe
+      # and `bash -n`-checkable).
+      DRY_RUN_ONLY: ${{ inputs.dry_run_only }}
+      IN_LIMIT: ${{ inputs.limit }}
+      IN_PATH: ${{ inputs.path }}
+      IN_MODE: ${{ inputs.mode }}
+      IN_MATCH_COUNT: ${{ inputs.match_count }}
+      IN_DELAY_MS: ${{ inputs.delay_ms }}
+      IN_MIN_YEAR: ${{ inputs.min_year }}
+      IN_RUN_ID: ${{ inputs.run_id }}
+      REPORT_FLOOR: ${{ inputs.report_floor }}
+      GH_RUN_ID: ${{ github.run_id }}
+      GH_RUN_ATTEMPT: ${{ github.run_attempt }}
+      OUT_DIR: eval/rag/reports/cosine-replay
+      HARNESS: scripts/rag/replay-cosine-distribution.ts
+      MAX_LIMIT: '2000'
+      WALL_CLOCK_BUDGET_MIN: '50'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # tsx lets Node execute the harness .ts file (and the Deno-targeted
+      # supabase/functions modules it dynamically imports) without a build step.
+      - name: Install tsx (transient)
+        run: npm install --no-save tsx@4.19.0
+
+      - name: Validate inputs (cost + wall-clock bounds)
+        id: validate
+        run: |
+          set -euo pipefail
+          fail=0
+          err() { echo "::error::$1"; fail=1; }
+
+          case "$IN_LIMIT" in
+            ''|*[!0-9]*) err "limit must be a positive integer (got '$IN_LIMIT'). There is deliberately no unlimited option." ;;
+            *) if [ "$IN_LIMIT" -lt 1 ] || [ "$IN_LIMIT" -gt "$MAX_LIMIT" ]; then
+                 err "limit must be between 1 and $MAX_LIMIT (got $IN_LIMIT)."
+               fi ;;
+          esac
+
+          case "$IN_MATCH_COUNT" in
+            ''|*[!0-9]*) err "match_count must be a positive integer (got '$IN_MATCH_COUNT')." ;;
+            *) if [ "$IN_MATCH_COUNT" -lt 1 ] || [ "$IN_MATCH_COUNT" -gt 50 ]; then
+                 err "match_count must be between 1 and 50 (got $IN_MATCH_COUNT)."
+               fi ;;
+          esac
+
+          case "$IN_DELAY_MS" in
+            ''|*[!0-9]*) err "delay_ms must be a non-negative integer (got '$IN_DELAY_MS')." ;;
+          esac
+
+          # The three optional inputs default to '' and are read with ${x:-} so
+          # the step is safe under `set -u` whether the runner exports an empty
+          # env var or omits it entirely.
+          min_year="${IN_MIN_YEAR:-}"
+          if [ -n "$min_year" ]; then
+            case "$min_year" in
+              [0-9][0-9][0-9][0-9]) : ;;
+              *) err "min_year must be a 4-digit year or blank (got '$min_year')." ;;
+            esac
+          fi
+
+          report_floor="${REPORT_FLOOR:-}"
+          if [ -n "$report_floor" ]; then
+            case "$report_floor" in
+              *[!0-9.]*) err "report_floor must be a decimal number or blank (got '$report_floor')." ;;
+            esac
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Input validation failed. Nothing was spent."
+            exit 1
+          fi
+
+          # Paths multiply BOTH the wall clock and (for stream) the rerank spend.
+          if [ "$IN_PATH" = "both" ]; then n_paths=2; else n_paths=1; fi
+
+          # Same shape as the harness's own dry-run estimate:
+          #   limit x paths x (delay_ms + ~900ms of network) / 60000
+          est_min=$(( IN_LIMIT * n_paths * (IN_DELAY_MS + 900) / 60000 ))
+          echo "Estimated wall clock: ~${est_min} min (budget ${WALL_CLOCK_BUDGET_MIN} min, job timeout 60 min)."
+          if [ "$est_min" -gt "$WALL_CLOCK_BUDGET_MIN" ]; then
+            echo "::error::Estimated wall clock ~${est_min} min exceeds the ${WALL_CLOCK_BUDGET_MIN} min budget."
+            echo "::error::Lower 'limit', lower 'delay_ms', or use path=nonstream. Nothing was spent."
+            exit 1
+          fi
+
+          if [ -n "${IN_RUN_ID:-}" ]; then
+            run_id="${IN_RUN_ID}"
+          else
+            run_id="gha-${GH_RUN_ID}-${GH_RUN_ATTEMPT}"
+          fi
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "RUN_ID=${run_id}" >> "$GITHUB_ENV"
+          echo "Resolved run id: ${run_id}"
+
+          # Optional flags are assembled once here so Phase 1 and Phase 2 use a
+          # byte-identical command line apart from --dry-run.
+          extra=""
+          if [ -n "$min_year" ]; then extra="--min-year $min_year"; fi
+          echo "EXTRA_FLAGS=${extra}" >> "$GITHUB_ENV"
+          echo "Optional flags: ${extra:-(none)}"
+
+      # ── PHASE 1 ────────────────────────────────────────────────────────────
+      # Plan + cost estimate. Needs NO secrets, makes NO network calls, writes
+      # NOTHING. Always runs, including when dry_run_only is true.
+      - name: 'Phase 1 — dry run (plan + cost estimate, no credentials, no spend)'
+        run: |
+          set -euo pipefail
+          echo "=== PHASE 1: DRY RUN (no network, no credentials, zero cost) ==="
+          # shellcheck disable=SC2086
+          npx tsx "$HARNESS" \
+            --dry-run \
+            --lane direct \
+            --limit "$IN_LIMIT" \
+            --path "$IN_PATH" \
+            --mode "$IN_MODE" \
+            --match-count "$IN_MATCH_COUNT" \
+            --delay-ms "$IN_DELAY_MS" \
+            --run-id "$RUN_ID" \
+            --out-dir "$OUT_DIR" \
+            --csv \
+            ${EXTRA_FLAGS:-}
+
+      - name: 'Phase 1 — stop here (dry_run_only is true)'
+        if: env.DRY_RUN_ONLY == 'true'
+        run: |
+          set -euo pipefail
+          echo "=== dry_run_only=true — STOPPING BEFORE ANY SPEND ==="
+          echo "COSINE_REPLAY_STATUS=DRY_RUN_ONLY"
+          echo "Nothing was billed. No secrets were read. No production row was written."
+          echo "To perform the real measurement, re-dispatch with dry_run_only unchecked."
+          {
+            echo "### Cosine replay — dry run only"
+            echo ""
+            echo "\`dry_run_only=true\`. Plan and cost estimate printed in the job log; nothing was spent."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── PHASE 2 PREFLIGHT ──────────────────────────────────────────────────
+      # Check credentials BEFORE spending anything, and name exactly which are
+      # absent. Never skip silently: a green run that measured nothing is the
+      # precise failure mode this workflow exists to eliminate.
+      - name: 'Phase 2 preflight — required secrets present'
+        if: env.DRY_RUN_ONLY != 'true'
+        env:
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          echo "=== PHASE 2 PREFLIGHT: credential check (before any spend) ==="
+          missing=""
+
+          if [ -z "${VOYAGE_API_KEY:-}" ]; then
+            missing="${missing} VOYAGE_API_KEY"
+            echo "  [MISSING] VOYAGE_API_KEY"
+          else
+            echo "  [present] VOYAGE_API_KEY"
+          fi
+
+          if [ -z "${SUPABASE_URL:-}" ] && [ -z "${NEXT_PUBLIC_SUPABASE_URL:-}" ]; then
+            missing="${missing} SUPABASE_URL(or NEXT_PUBLIC_SUPABASE_URL)"
+            echo "  [MISSING] SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL (either satisfies the harness)"
+          else
+            echo "  [present] SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL"
+          fi
+
+          if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            missing="${missing} SUPABASE_SERVICE_ROLE_KEY"
+            echo "  [MISSING] SUPABASE_SERVICE_ROLE_KEY"
+          else
+            echo "  [present] SUPABASE_SERVICE_ROLE_KEY"
+          fi
+
+          if [ -n "$missing" ]; then
+            echo "COSINE_REPLAY_STATUS=MISSING_SECRETS"
+            echo "COSINE_REPLAY_MISSING_SECRETS=${missing# }"
+            echo "::error::Cosine replay ABORTED before spending: missing secret(s):${missing}"
+            echo "::error::This is a hard failure on purpose. The harness has no degraded mode --"
+            echo "::error::without VOYAGE_API_KEY the retrieval RPC falls back to its FTS tier where"
+            echo "::error::cosine_similarity is NULL by construction, i.e. a green run measuring nothing."
+            exit 1
+          fi
+          echo "All required credentials are present. Proceeding to the real run."
+
+      # ── PHASE 2 ────────────────────────────────────────────────────────────
+      # The real run. lane=direct is hard-coded: SELECT-only production I/O,
+      # zero rows written to any table.
+      - name: 'Phase 2 — replay (lane=direct, SELECT-only, spends Voyage credits)'
+        id: replay
+        if: env.DRY_RUN_ONLY != 'true'
+        env:
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          echo "=== PHASE 2: REAL RUN (lane=direct — SELECT-only, zero writes) ==="
+          # shellcheck disable=SC2086
+          npx tsx "$HARNESS" \
+            --lane direct \
+            --limit "$IN_LIMIT" \
+            --path "$IN_PATH" \
+            --mode "$IN_MODE" \
+            --match-count "$IN_MATCH_COUNT" \
+            --delay-ms "$IN_DELAY_MS" \
+            --run-id "$RUN_ID" \
+            --out-dir "$OUT_DIR" \
+            --csv \
+            ${EXTRA_FLAGS:-}
+
+      # ── STDOUT IS THE PRIMARY REPORTING CHANNEL ────────────────────────────
+      # Machine-readable KEY=VALUE lines, derived ONLY from what the harness
+      # actually writes (<run-id>.summary.json / <run-id>.records.jsonl). No
+      # statistic is invented; the derivation of every key is printed alongside.
+      - name: 'Emit summary statistics to STDOUT (primary channel)'
+        if: always() && env.DRY_RUN_ONLY != 'true' && steps.replay.conclusion != 'skipped'
+        env:
+          REPLAY_OUTCOME: ${{ steps.replay.outcome }}
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const outDir = process.env.OUT_DIR;
+          const runId = process.env.RUN_ID;
+          const summaryPath = path.join(outDir, runId + '.summary.json');
+          const recordsPath = path.join(outDir, runId + '.records.jsonl');
+          const replayOutcome = process.env.REPLAY_OUTCOME || 'unknown';
+
+          const lines = [];
+          const emit = (k, v) => { const s = k + '=' + v; console.log(s); lines.push(s); };
+          const note = (s) => { console.log(s); lines.push(s); };
+
+          console.log('');
+          console.log('======================================================================');
+          console.log(' COSINE REPLAY — MACHINE-READABLE STATISTICS (stdout is authoritative)');
+          console.log('======================================================================');
+
+          if (!fs.existsSync(summaryPath)) {
+            emit('COSINE_REPLAY_STATUS', 'NO_SUMMARY');
+            emit('COSINE_REPLAY_SUMMARY_PATH', summaryPath);
+            console.log('The harness did not produce a summary artifact at the expected path.');
+            console.log('Replay step outcome: ' + replayOutcome);
+            if (process.env.GITHUB_STEP_SUMMARY) {
+              fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                '### Cosine replay\n\n```\n' + lines.join('\n') + '\n```\n');
+            }
+            // If the replay itself failed, that step already failed the job; do
+            // not double-report. If it "succeeded" with no artifact, that is a
+            // silent-no-op and MUST fail loudly.
+            process.exit(replayOutcome === 'success' ? 1 : 0);
+          }
+
+          const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+          const byPath = summary.by_pipeline_path || {};
+          const paths = Object.keys(byPath).sort();
+
+          // ── Floor for the BELOW_FLOOR statistic ────────────────────────────
+          // The harness does NOT emit a below-floor count, so it is derived here
+          // from records.jsonl. The floor itself is read out of the production
+          // config so it cannot drift from the pipeline; report_floor overrides.
+          let floor = null;
+          let floorSource = 'none';
+          const override = (process.env.REPORT_FLOOR || '').trim();
+          if (override !== '' && Number.isFinite(Number(override))) {
+            floor = Number(override);
+            floorSource = 'report_floor input';
+          } else {
+            const cfgPath = 'supabase/functions/grounded-answer/config.ts';
+            try {
+              const cfg = fs.readFileSync(cfgPath, 'utf8');
+              const key = (summary.config && summary.config.mode) === 'strict'
+                ? 'STRICT_MIN_SIMILARITY' : 'SOFT_MIN_SIMILARITY';
+              const m = cfg.match(new RegExp('export const ' + key + '\\s*=\\s*([0-9.]+)'));
+              if (m) { floor = Number(m[1]); floorSource = cfgPath + ' (' + key + ')'; }
+            } catch (_) { /* fall through to floor=null */ }
+          }
+
+          // ── Per-path below-floor counts, derived from the record stream ────
+          const belowFloor = {};
+          const recordTotals = {};
+          if (fs.existsSync(recordsPath)) {
+            for (const line of fs.readFileSync(recordsPath, 'utf8').split('\n')) {
+              if (!line.trim()) continue;
+              let r; try { r = JSON.parse(line); } catch (_) { continue; }
+              if (r.error !== null && r.error !== undefined) continue;
+              const p = r.pipeline_path;
+              recordTotals[p] = (recordTotals[p] || 0) + 1;
+              if (floor !== null && typeof r.cosine_top1 === 'number' && r.cosine_top1 < floor) {
+                belowFloor[p] = (belowFloor[p] || 0) + 1;
+              }
+            }
+          }
+
+          const f = (v) => (v === null || v === undefined ? 'null' : Number(v).toFixed(6));
+
+          emit('COSINE_REPLAY_STATUS', 'OK');
+          emit('COSINE_REPLAY_RUN_ID', summary.run_id);
+          emit('COSINE_REPLAY_LANE', (summary.config || {}).lane);
+          emit('COSINE_REPLAY_MODE', (summary.config || {}).mode);
+          emit('COSINE_REPLAY_MATCH_COUNT', (summary.config || {}).match_count);
+          emit('COSINE_REPLAY_LIMIT', String((summary.config || {}).limit));
+          emit('COSINE_REPLAY_MIN_YEAR', String((summary.config || {}).min_year));
+          emit('COSINE_REPLAY_PATHS_EXERCISED', paths.join(','));
+          emit('COSINE_REPLAY_CORPUS_RAW_MESSAGES', (summary.corpus || {}).raw_user_messages);
+          emit('COSINE_REPLAY_CORPUS_DISTINCT', (summary.corpus || {}).distinct_replayable);
+          emit('COSINE_REPLAY_CORPUS_SKIPPED_NO_SCOPE', (summary.corpus || {}).skipped_no_resolvable_scope);
+          emit('COSINE_REPLAY_COST_USD_EST', ((summary.cost_estimate || {}).total_usd_est ?? 'null'));
+          emit('COSINE_REPLAY_FLOOR', floor === null ? 'unknown' : String(floor));
+          emit('COSINE_REPLAY_FLOOR_SOURCE', floorSource);
+
+          // Unsuffixed keys refer to PRIMARY_PATH. Suffixed keys exist for every
+          // exercised path. Paths are never pooled (see the harness caveats).
+          const primary = paths[0] || '';
+          emit('COSINE_REPLAY_PRIMARY_PATH', primary);
+
+          for (const p of paths) {
+            const b = byPath[p] || {};
+            const d = b.cosine_top1 || {};
+            const pc = d.percentiles || {};
+            const suffix = '_' + p.toUpperCase();
+            const bf = floor === null ? 'n/a' : String(belowFloor[p] || 0);
+
+            const pairs = [
+              ['COSINE_REPLAY_QUERIES', b.n_queries],
+              ['COSINE_REPLAY_ERRORS', b.n_errors],
+              ['COSINE_REPLAY_ZERO_CHUNK', b.n_zero_chunk],
+              ['COSINE_REPLAY_N', d.n],
+              ['COSINE_REPLAY_NULL_SIGNAL', d.n_null_signal],
+              ['COSINE_REPLAY_MIN', f(d.min)],
+              ['COSINE_REPLAY_MAX', f(d.max)],
+              ['COSINE_REPLAY_MEAN', f(d.mean)],
+              ['COSINE_REPLAY_P5', f(pc.p5)],
+              ['COSINE_REPLAY_P10', f(pc.p10)],
+              ['COSINE_REPLAY_P25', f(pc.p25)],
+              ['COSINE_REPLAY_P50', f(pc.p50)],
+              ['COSINE_REPLAY_P75', f(pc.p75)],
+              ['COSINE_REPLAY_P90', f(pc.p90)],
+              ['COSINE_REPLAY_P95', f(pc.p95)],
+              ['COSINE_REPLAY_BELOW_FLOOR', bf],
+              ['COSINE_REPLAY_RECORDS', recordTotals[p] || 0],
+              ['COSINE_REPLAY_CONF_V2_SOURCES', JSON.stringify(b.confidence_v2_source_counts || {})],
+            ];
+            note('');
+            note('--- pipeline path: ' + p + ' ---');
+            for (const [k, v] of pairs) emit(k + suffix, v);
+            if (p === primary) {
+              note('# unsuffixed aliases below refer to PRIMARY_PATH=' + primary);
+              for (const [k, v] of pairs) emit(k, v);
+            }
+          }
+
+          note('');
+          note('# COSINE_REPLAY_N          = non-null cosine_top1 values (percentile population)');
+          note('# COSINE_REPLAY_NULL_SIGNAL= rows with NO cosine evidence at rank 1 (excluded from percentiles, never coerced to 0)');
+          note('# COSINE_REPLAY_BELOW_FLOOR= non-null cosine_top1 strictly below COSINE_REPLAY_FLOOR (derived from records.jsonl, not emitted by the harness)');
+          note('# Percentiles are nearest-rank, computed by the harness (PERCENTILES = 5,10,25,50,75,90,95).');
+          note('# Paths are reported SEPARATELY and MUST NOT be pooled.');
+          note('# NO THRESHOLD IS DERIVED HERE. Distribution only — assessment + CEO decide.');
+
+          console.log('');
+          console.log('====================== FULL SUMMARY JSON (PII-free) ======================');
+          console.log(JSON.stringify(summary, null, 2));
+          console.log('=========================================================================');
+
+          if (process.env.GITHUB_STEP_SUMMARY) {
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+              '### Cosine distribution replay\n\n' +
+              '(Secondary channel — the job **stdout** above is authoritative.)\n\n' +
+              '```\n' + lines.join('\n') + '\n```\n');
+          }
+          NODE
+
+      - name: Upload replay report directory (secondary artifact)
+        if: always() && env.DRY_RUN_ONLY != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cosine-replay-${{ github.run_id }}-${{ github.run_attempt }}
+          path: eval/rag/reports/cosine-replay/
+          if-no-files-found: warn
+          retention-days: 30
