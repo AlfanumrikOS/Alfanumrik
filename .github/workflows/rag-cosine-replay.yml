@@ -261,15 +261,16 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Alias candidates. Run 30326862812 proved the canonical name resolves
-          # empty at BOTH repo scope and the production-ops environment, so the
-          # credential exists under some other name. Referencing the plausible
-          # variants lets ONE run find it instead of one merge+deploy per guess.
-          ALT_SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          ALT_SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          ALT_SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
-          ALT_SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          # Alias fallback resolved by the ACTIONS EXPRESSION ENGINE, not by shell.
+          # `||` returns the first non-empty value. This is deliberate: an
+          # earlier revision resolved aliases with `export` inside the preflight
+          # step, which does NOT propagate -- each `run:` block is its own shell.
+          # That would have let the preflight report [present] while Phase 2
+          # received an empty key: a vacuously-green run, the exact failure mode
+          # this workflow's fail-loud design exists to prevent.
+          # Every branch here is a `secrets.*` reference, so GitHub's log
+          # masking applies to whichever one wins.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASE_SECRET_KEY || secrets.SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set -euo pipefail
           echo "=== PHASE 2 PREFLIGHT: credential check (before any spend) ==="
@@ -289,19 +290,6 @@ jobs:
             echo "  [present] SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL"
           fi
 
-          # Resolve the service-role key from the canonical name or any alias.
-          for _cand in SUPABASE_SERVICE_ROLE_KEY ALT_SUPABASE_SERVICE_KEY \
-                       ALT_SUPABASE_SECRET_KEY ALT_SERVICE_ROLE_KEY \
-                       ALT_SUPABASE_SERVICE_ROLE; do
-            _val="$(eval "printf '%s' \"\${${_cand}:-}\"")"
-            if [ -n "$_val" ]; then
-              echo "  [present] service-role key resolved from: ${_cand}"
-              echo "COSINE_REPLAY_SERVICE_KEY_SOURCE=${_cand}"
-              export SUPABASE_SERVICE_ROLE_KEY="$_val"
-              break
-            fi
-            echo "  [absent ] ${_cand}"
-          done
           if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
             missing="${missing} SUPABASE_SERVICE_ROLE_KEY"
             echo "  [MISSING] SUPABASE_SERVICE_ROLE_KEY"
@@ -330,15 +318,16 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Alias candidates. Run 30326862812 proved the canonical name resolves
-          # empty at BOTH repo scope and the production-ops environment, so the
-          # credential exists under some other name. Referencing the plausible
-          # variants lets ONE run find it instead of one merge+deploy per guess.
-          ALT_SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          ALT_SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          ALT_SERVICE_ROLE_KEY: ${{ secrets.SERVICE_ROLE_KEY }}
-          ALT_SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          # Alias fallback resolved by the ACTIONS EXPRESSION ENGINE, not by shell.
+          # `||` returns the first non-empty value. This is deliberate: an
+          # earlier revision resolved aliases with `export` inside the preflight
+          # step, which does NOT propagate -- each `run:` block is its own shell.
+          # That would have let the preflight report [present] while Phase 2
+          # received an empty key: a vacuously-green run, the exact failure mode
+          # this workflow's fail-loud design exists to prevent.
+          # Every branch here is a `secrets.*` reference, so GitHub's log
+          # masking applies to whichever one wins.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASE_SECRET_KEY || secrets.SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set -euo pipefail
           echo "=== PHASE 2: REAL RUN (lane=direct — SELECT-only, zero writes) ==="
