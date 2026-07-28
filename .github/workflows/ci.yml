@@ -125,8 +125,13 @@ jobs:
             echo "Review matches above. This check is advisory; a proper tool (gitleaks/trufflehog)"
             echo "should replace this ad-hoc regex scan to reduce false positives."
             echo "| Status | Warnings emitted (non-blocking) |" >> $GITHUB_STEP_SUMMARY
-            # Non-blocking: deploy should not be gated by noisy regex false positives.
-            # A dedicated secret scanner (gitleaks) is a follow-up task.
+            # CATEGORY (i) — DELIBERATE ADVISORY MEASUREMENT. Audited 2026-07-28
+            # and left as-is. This `exit 0` is intentional: the BLOCKING secret
+            # gate is the "Gitleaks scan" step above (flipped advisory→blocking
+            # by audit finding F23). This ad-hoc regex pass is a noisy secondary
+            # signal only; the `|| true` on the greps above are the standard
+            # "grep found nothing" idiom under `set -e`, not swallowed gates.
+            # Do NOT flip this to `exit 1` — do the work in .gitleaks.toml.
             exit 0
           else
             echo "| Status | No secrets detected |" >> $GITHUB_STEP_SUMMARY
@@ -1116,22 +1121,164 @@ jobs:
       - name: AI retry parity gate
         run: node scripts/check-ai-retry-parity.mjs
 
-      # Security audit: critical vulns fail CI, others warn.
-      - name: Security audit
-        run: npm audit --audit-level=critical || echo "::warning::npm audit found vulnerabilities"
+      # ── SECURITY GATE (BLOCKING) ────────────────────────────────────────────
+      # CI-gate forensic audit, 2026-07-28 — category (ii) repair.
+      # WAS: `npm audit --audit-level=critical || echo "::warning::..."`.
+      # The `|| echo` neutralised the ONLY exit code that signals a critical
+      # vulnerability, so the step's own comment ("critical vulns fail CI") was
+      # false: every severity, including critical, degraded to a warning and the
+      # step exited 0. Now the audit JSON is PARSED and the critical/high counts
+      # decide the exit code explicitly.
+      #
+      # ANTI-VACUITY: `npm audit` exits non-zero whenever vulnerabilities exist,
+      # so its exit code cannot be used to detect "the audit did not run". We
+      # therefore assert on the PAYLOAD: both reports must contain a
+      # metadata.vulnerabilities object AND a non-zero dependency total. A
+      # network failure / empty report now fails the step instead of reading as
+      # "no vulnerabilities".
+      #
+      # SCOPE — stated explicitly so this is not a silent narrowing:
+      #   BLOCKING  : critical vulnerabilities in the PRODUCTION tree
+      #               (`npm audit --omit=dev`) — this is what ships to students.
+      #   LOUD WARN : critical vulnerabilities that exist ONLY in the dev tree
+      #               (build tooling). Named in the log and the job summary so
+      #               they cannot rot invisibly.
+      # As measured 2026-07-28: prod-critical = 0, dev-only-critical = 3
+      # (@openapitools/openapi-generator-cli -> concurrently -> shell-quote).
+      # Under the OLD `|| echo` step, neither number could ever fail CI.
+      - name: Security audit (production criticals are blocking)
+        run: |
+          # `set +e`: Actions runs this under `bash -e`, and `npm audit` exits
+          # non-zero simply because vulnerabilities EXIST. We grade the payload,
+          # so every exit path below is explicit.
+          set +e
+          set -u
+          ALL_JSON="$(mktemp)"
+          PROD_JSON="$(mktemp)"
+          # npm audit exits 1 when it FINDS vulnerabilities — that is not an
+          # error here, we grade the payload ourselves. A genuine run failure is
+          # caught by the payload assertions below, not by these exit codes.
+          npm audit --json > "$ALL_JSON" 2>/dev/null
+          npm audit --omit=dev --json > "$PROD_JSON" 2>/dev/null
 
+          grade() {
+            node -e '
+              const fs = require("fs");
+              let r;
+              try { r = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
+              catch { process.stdout.write("PARSE_FAIL"); process.exit(0); }
+              const v = r && r.metadata && r.metadata.vulnerabilities;
+              const d = r && r.metadata && r.metadata.dependencies;
+              if (!v || typeof v !== "object") { process.stdout.write("NO_VULN_BLOCK"); process.exit(0); }
+              const total = d && (typeof d === "number" ? d : d.total);
+              process.stdout.write(["OK", v.critical|0, v.high|0, v.moderate|0, v.low|0, total|0].join(" "));
+            ' "$1"
+          }
+
+          ALL=$(grade "$ALL_JSON")
+          PROD=$(grade "$PROD_JSON")
+
+          echo "## Security Audit" >> $GITHUB_STEP_SUMMARY
+          if [ "${ALL%% *}" != "OK" ] || [ "${PROD%% *}" != "OK" ]; then
+            echo "::error::npm audit produced no usable report (full=$ALL prod=$PROD). The vulnerability gate could not measure anything — failing CLOSED rather than reporting a vacuous pass."
+            echo "| Status | FAILED — audit report unusable |" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          set -- $ALL;  A_CRIT=$2; A_HIGH=$3; A_MOD=$4; A_LOW=$5; A_DEPS=$6
+          set -- $PROD; P_CRIT=$2; P_HIGH=$3; P_MOD=$4; P_LOW=$5; P_DEPS=$6
+
+          echo "| Scope | Deps | Critical | High | Moderate | Low |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|------|----------|------|----------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| production (BLOCKING) | $P_DEPS | $P_CRIT | $P_HIGH | $P_MOD | $P_LOW |" >> $GITHUB_STEP_SUMMARY
+          echo "| full incl. dev (advisory) | $A_DEPS | $A_CRIT | $A_HIGH | $A_MOD | $A_LOW |" >> $GITHUB_STEP_SUMMARY
+          echo "prod : deps=$P_DEPS critical=$P_CRIT high=$P_HIGH moderate=$P_MOD low=$P_LOW"
+          echo "full : deps=$A_DEPS critical=$A_CRIT high=$A_HIGH moderate=$A_MOD low=$A_LOW"
+
+          # Vacuity floor: a real install tree has hundreds of dependencies.
+          if [ "$A_DEPS" -lt 50 ] || [ "$P_DEPS" -lt 50 ]; then
+            echo "::error::npm audit reported only $A_DEPS/$P_DEPS dependencies. The audit did not see the real dependency tree — failing CLOSED."
+            echo "| Status | FAILED — audit saw no dependency tree |" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          if [ "$P_CRIT" -gt 0 ]; then
+            echo "::error::$P_CRIT CRITICAL vulnerability(ies) in the PRODUCTION dependency tree. BLOCKING."
+            node -e '
+              const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              for (const [name, v] of Object.entries(r.vulnerabilities || {})) {
+                if (v.severity === "critical") console.log("  CRITICAL(prod):", name);
+              }
+            ' "$PROD_JSON"
+            echo "| Status | FAILED ($P_CRIT production critical) |" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          DEV_ONLY_CRIT=$((A_CRIT - P_CRIT))
+          if [ "$DEV_ONLY_CRIT" -gt 0 ]; then
+            echo "::warning::$DEV_ONLY_CRIT critical vulnerability(ies) in DEV-ONLY dependencies (build tooling, not shipped). Advisory — see names below."
+            node -e '
+              const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              for (const [name, v] of Object.entries(r.vulnerabilities || {})) {
+                if (v.severity === "critical") console.log("  CRITICAL(dev):", name);
+              }
+            ' "$ALL_JSON"
+            echo "| Dev-only criticals | $DEV_ONLY_CRIT (advisory, named in log) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "$P_HIGH" -gt 0 ]; then
+            echo "::warning::$P_HIGH high-severity vulnerability(ies) in production deps (advisory — only critical blocks today)."
+          fi
+          echo "| Status | PASSED |" >> $GITHUB_STEP_SUMMARY
+
+      # ── LICENSE GATE (BLOCKING) ─────────────────────────────────────────────
+      # CI-gate forensic audit, 2026-07-28 — category (ii) repair.
+      # WAS: `npx license-checker --production --onlyAllow '<allowlist>' 2>/dev/null || {
+      #         echo "license-checker not available, falling back to npm ls"
+      #         ...
+      #         npm ls --all --depth=0 || true    <-- swallows the violation
+      #       }`
+      # THREE independent defects, any one of which made the gate unable to fail:
+      #   1. license-checker exits non-zero for BOTH "could not run" AND "found a
+      #      disallowed license". Both landed in the same fallback, and that
+      #      fallback ended in `|| true` — so the step exited 0 either way.
+      #   2. `2>/dev/null` discarded the message naming the offending package.
+      #   3. `--production` finds ZERO packages from this monorepo's workspace
+      #      root (root package.json is private, `workspaces`-only, no
+      #      `dependencies`). Verified: it prints "Error: No packages found in
+      #      this path." and exits 0. Even without the `|| true` the gate was
+      #      inspecting an empty set.
+      #
+      # Now delegated to scripts/check-licenses.mjs, which enumerates the REAL
+      # production tree via `npm ls --omit=dev --all --json` (workspace-aware:
+      # 477 installed packages vs 0 for the old command), and which carries its
+      # own anti-vacuity floors: a minimum package count, an unreadable-license
+      # ceiling, and a 10-fixture known-bad/known-good self-test of the
+      # allow/deny comparator (AGPL/GPL/LGPL/UNLICENSED must be rejected, MIT and
+      # `(MIT OR CC0-1.0)` must be accepted). Exit 1 = violation, 2 = could not
+      # verify. Both block; "could not verify" is never reported as clean.
       - name: Dependency license check
         run: |
+          set +e
+          set -u
+          LOG="$(mktemp)"
+          node scripts/check-licenses.mjs > "$LOG" 2>&1
+          STATUS=$?
+          cat "$LOG"
           echo "## Dependency License Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          # List all production dependencies and their licenses
-          npx license-checker --production --summary --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;Python-2.0;BlueOak-1.0.0' 2>/dev/null || {
-            echo "license-checker not available, falling back to npm ls"
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            npm ls --all --depth=0 2>&1 | head -60 >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            npm ls --all --depth=0 || true
-          }
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          head -80 "$LOG" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ "$STATUS" -eq 2 ]; then
+            echo "::error::License gate could not verify the dependency tree (see output). Failing CLOSED — previously this path exited 0."
+            echo "| Status | FAILED — could not verify |" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::Disallowed dependency license detected (named in the output above)."
+            echo "| Status | FAILED — disallowed license |" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+          echo "| Status | PASSED |" >> $GITHUB_STEP_SUMMARY
 
       - name: Lint
         run: npm run lint
@@ -2382,18 +2529,41 @@ jobs:
       # sizes ~3x by comparing raw to a gzipped budget.
       # check-bundle-size.mjs measures gzipped, uses HTML-scan to detect what's
       # actually shared first-paint (catches root-layout chunks the manifest
-      # omits), and reports per-page page-only cost separately. Caps are in the
-      # script itself (CAP_SHARED_KB=270 interim, CAP_PAGE_KB=260, CAP_MIDDLEWARE_KB=120).
+      # omits), and gates per-page first-load against the 260 kB P10 cap.
+      # Caps live in the script (CAP_SHARED_KB, CAP_PAGE_KB=260, CAP_MIDDLEWARE_KB=120).
+      #
+      # REPAIRED 2026-07-28 (CI-gate forensic audit). The per-page half of this
+      # gate had been measuring LITERALLY ZERO: it searched the Next.js 16 RSC
+      # manifests for `/_next/static/chunks/`, a string that appears 0 times
+      # across all 204 manifests (Next 16 emits bare `static/chunks/...`). Every
+      # route reported 0.0 kB, "0 over cap", green. It was hiding 101 of 204
+      # routes over the 260 kB budget, worst 307.0 kB. The bash per-page checks
+      # that were deleted on 2026-07-20 "because this step supersedes them" had
+      # therefore left NO per-page enforcement at all.
+      #
+      # The cap was NOT raised. Enforcement is a RATCHET against the committed
+      # scripts/bundle-baseline.json: existing debt is grandfathered and printed
+      # as a loud warning every run, growth beyond baseline fails, and any NEW
+      # route over 260 kB fails. Exit 2 means the measurement itself went vacuous
+      # (zero routes / zero chunk refs / all-zero sizes / missing baseline) — that
+      # also blocks, by design.
       - name: First-load JS budget (authoritative, gzipped per-page)
         run: |
+          set +e
           echo "## First-Load JS Budget (gzipped, per-page)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           npm run check:bundle-size 2>&1 | tee /tmp/bundle-report.txt
           BUNDLE_EXIT=${PIPESTATUS[0]}
-          tail -40 /tmp/bundle-report.txt >> $GITHUB_STEP_SUMMARY
+          tail -80 /tmp/bundle-report.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ "$BUNDLE_EXIT" = "2" ]; then
+            echo "::error::P10 bundle gate produced a VACUOUS measurement (exit 2). It is checking nothing — this is a gate failure, not a pass."
+            echo "BLOCKED: P10 bundle gate is vacuous (measured nothing). See report above." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
           if [ "$BUNDLE_EXIT" != "0" ]; then
+            echo "::error::Per-page first-load JS grew past its ratchet baseline, or a new route exceeds the 260 kB cap."
             echo "BLOCKED: Per-page first-load JS exceeds budget. See report above and P10 in CLAUDE.md." >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
