@@ -2666,14 +2666,34 @@ jobs:
         # suite while the fixture is being wired (audit F9 follow-up). The
         # spec FILES must parse and any non-fixme tests must pass.
         #
-        # BASE_URL points at the deployed production domain so we don't need
-        # to run a dev server in CI. Login goes through real Supabase Auth
-        # (validates the auth flow); RPC calls are intercepted by page.route()
-        # in the spec, so quiz/payment business logic is asserted against
-        # deterministic mocked responses (P1/P2/P3 invariant pinning).
+        # TARGET: an in-job server, NOT the deployed domain.
+        #
+        # Until 2026-07-28 this job set BASE_URL to the production domain
+        # "so we don't need to run a dev server in CI". That made a BLOCKING
+        # PR gate assert against an artifact the PR does not contain:
+        #   - a green run said nothing about the code under review;
+        #   - a red run could not distinguish "this PR broke something" from
+        #     "production is having a moment";
+        #   - and it could never catch a regression BEFORE it shipped, which
+        #     is the entire reason this gate exists.
+        # It failed on its first armed run for exactly that reason: the
+        # mocked session is keyed to the placeholder NEXT_PUBLIC_SUPABASE_URL
+        # above, which cannot match a deployed build compiled against the real
+        # project ref, so all 12 browser tests timed out logged-out.
+        #
+        # With BASE_URL unset, playwright.config.ts starts the app itself
+        # (webServer block) against the same placeholder env the session shim
+        # is keyed to. RPC calls are intercepted by page.route(), so quiz and
+        # payment business logic is asserted against deterministic mocked
+        # responses (P1/P2/P3/P11 invariant pinning) — no live backend needed.
+        #
+        # Deploy-drift detection against the real domain is NOT lost: it lives
+        # in the post-deploy health check on main and the label-gated `e2e`
+        # job. That is where production belongs — after a deploy, not as a
+        # pre-merge blocker.
         run: npx playwright test e2e/quiz-happy-path.spec.ts e2e/payment-checkout.spec.ts
         env:
-          BASE_URL: 'https://alfanumrik.com'
+          # BASE_URL deliberately unset — see the note above.
           # Real-auth path: when these secrets are present, the `test.fixme`
           # guards in the specs flip off and the tests drive a live student
           # session. Until then, the specs run their mocked-only assertions
