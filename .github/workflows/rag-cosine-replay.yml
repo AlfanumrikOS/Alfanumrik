@@ -431,7 +431,32 @@ jobs:
 
           const f = (v) => (v === null || v === undefined ? 'null' : Number(v).toFixed(6));
 
-          emit('COSINE_REPLAY_STATUS', 'OK');
+          // ZERO-SIGNAL GUARD. Run 30328796682 emitted STATUS=OK, ERRORS=0 with
+          // N=0 and NULL_SIGNAL=200 because all 200 Voyage calls returned HTTP
+          // 401 and the harness folds a failed embedding into a NULL signal
+          // rather than an error. That is a green run measuring nothing --
+          // exactly what the preflight's own error text promises cannot happen.
+          // The preflight only checks the key is NON-EMPTY; it cannot know the
+          // key is rejected until a call is made.
+          //
+          // So: if the primary path attempted queries but produced no non-null
+          // cosine value at all, that is a FAILURE, not an OK with nulls.
+          const primaryStats = ((byPath[paths[0] || ''] || {}).cosine_top1) || {};
+          const primaryQueries = (byPath[paths[0] || ''] || {}).n_queries || 0;
+          const zeroSignal = primaryQueries > 0 && (primaryStats.n || 0) === 0;
+          if (zeroSignal) {
+            emit('COSINE_REPLAY_STATUS', 'ZERO_SIGNAL');
+            note('');
+            note('!! ZERO_SIGNAL: ' + primaryQueries + ' queries ran and produced ZERO non-null');
+            note('!! cosine values. This is NOT a distribution of zeros -- it is no measurement.');
+            note('!! Most likely cause: the embedding provider rejected every call (e.g. an');
+            note('!! expired VOYAGE_API_KEY returns HTTP 401, which the harness records as a');
+            note('!! null signal, not an error -- so ERRORS can read 0). Check the replay step');
+            note('!! log for "voyage returned HTTP" lines before trusting any number here.');
+            process.exitCode = 1;
+          } else {
+            emit('COSINE_REPLAY_STATUS', 'OK');
+          }
           emit('COSINE_REPLAY_RUN_ID', summary.run_id);
           emit('COSINE_REPLAY_LANE', (summary.config || {}).lane);
           emit('COSINE_REPLAY_MODE', (summary.config || {}).mode);
