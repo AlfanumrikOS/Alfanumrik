@@ -204,6 +204,24 @@ replay_bash frontend "sed -i s/x/y/ apps/host/src/proxy.ts"         deny  "bash 
 replay_bash frontend "cat README.md"                                allow "benign command not blocked"
 echo
 
+# ── bash-guard positional-matching suite ────────────────
+# The checks above prove patterns can FIRE. This suite proves the
+# bash guard fires on the right thing: that it distinguishes a write
+# TARGET from a path merely mentioned in the command (a commit
+# message, a copy source, an fd-duplication), and that an interpreter
+# heredoc can no longer bypass it entirely.
+echo "=== bash-guard positional matching ==="
+if command -v python3 >/dev/null 2>&1; then
+  if python3 "$(dirname "$0")/verify-bash-guard.py"; then
+    CHECKS=$((CHECKS + 16))
+  else
+    FAILURES=$((FAILURES + 1))
+  fi
+else
+  echo "  SKIP - python3 unavailable"
+fi
+echo
+
 # ── Summary ──────────────────────────────────────────────────
 echo "=== Summary ==="
 if [ "$FAILURES" -eq 0 ]; then
