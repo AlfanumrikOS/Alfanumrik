@@ -1528,20 +1528,80 @@ jobs:
   #                           errors or mismatches. This is the shared module
   #                           daily-cron's contract 1a delegates its auth to.
   #
-  #   - grounded-answer/__tests__/  — 12 files ENUMERATED INDIVIDUALLY in
+  #   - _shared/quiz-oracle.test.ts
+  #                           BEHAVIORAL unit tests of the pure quiz-oracle cache
+  #                           primitives (REG-54 follow-up): candidate cache-key
+  #                           identity includes correct_answer_index, and the LRU
+  #                           cap evicts oldest-first. Imports ONLY ./quiz-oracle
+  #                           .ts — zero remote imports, zero I/O. Note it lives
+  #                           at the _shared ROOT, not in _shared/__tests__/
+  #                           (which is Vitest territory — see EXCLUDED below).
+  #                           Its own header still says "deno test is NOT yet
+  #                           wired into CI"; that TODO is closed by this entry.
+  #
+  #   - bulk-question-gen/__tests__/actions.contract.test.ts
+  #   - quiz-generator/__tests__/actions.contract.test.ts
+  #                           BEHAVIORAL action-registry contract tests. Each
+  #                           imports ONLY its sibling ../actions.ts, which is a
+  #                           dependency-free pure module (literally zero import
+  #                           statements). They do NOT import ../index.ts, so the
+  #                           Deno.serve() in those index.ts files is never
+  #                           reached. No fetch, no Deno.env, no filesystem.
+  #
+  #   - grounded-answer/__tests__/  — 19 files ENUMERATED INDIVIDUALLY in
   #                           DENO_TEST_TARGETS, NOT the whole directory (23 Deno
   #                           test files live there). Pure helpers only.
   #
-  # EXCLUDED ON PURPOSE:
-  #   - grounded-answer/__tests__/ — 11 of its 23 Deno test files are absent from
-  #     DENO_TEST_TARGETS. Four of them (e2e, pipeline, cache-durable-l3,
-  #     foxy-answer-continuation) import ../index.ts, which calls Deno.serve()
-  #     (binds a socket → requires --allow-net + has a server side-effect):
-  #     flaky/non-deterministic in CI. The other seven (cache-redis,
-  #     cache-telemetry, foxy-python-generation, gen-ctx, output-screen,
-  #     prompt-segments, rag-content-version-bump) are ordinary offline Deno
-  #     tests with NO recorded exclusion rationale — they appear to have simply
-  #     never been added. Treat those seven as an open TODO, not a decision.
+  # ── 2026-07-28: the seven-file TODO below was CLOSED BY EXPERIMENT ──────────
+  # The previous version of this comment listed seven grounded-answer tests
+  # (cache-redis, cache-telemetry, foxy-python-generation, gen-ctx, output-screen,
+  # prompt-segments, rag-content-version-bump) as an open TODO — offline tests
+  # with no recorded exclusion rationale that "appear to have simply never been
+  # added". They are now IN the list, together with three further hermetic tests
+  # documented nowhere (_shared/quiz-oracle, bulk-question-gen actions.contract,
+  # quiz-generator actions.contract). 20 targets → 30.
+  #
+  # Be honest about the epistemic status: this was added as a MEASUREMENT, not a
+  # confident fix. Deno could not be run locally when this landed, so CI is the
+  # instrument. What WAS verified statically before adding, per file, over the
+  # full transitive RELATIVE-import closure:
+  #   * no Deno.serve / Deno.listen / Deno.connect / std http/server anywhere in
+  #     the closure — none of the ten reaches an index.ts;
+  #   * no module-level side effects (no top-level await, no module-scope
+  #     Deno.env read, no client constructed at import time);
+  #   * every network-touching code path is exercised either with globalThis
+  #     .fetch stubbed in-process, or with the relevant env pair deliberately
+  #     deleted so the client stays unconfigured and no socket is attempted;
+  #   * the only filesystem read in any closure is prompts/index.ts's .txt
+  #     fallback, which is unreachable in practice (all 9 registered template
+  #     ids have INLINE_PROMPTS entries) and is covered by --allow-read anyway;
+  #   * permissions required stay exactly --allow-read --allow-env. Deno's
+  #     --allow-env covers Deno.env.set/delete, which several of these tests use
+  #     to build their fixtures.
+  # If CI proves any of them wrong, the correct response is to REMOVE that file
+  # from DENO_TEST_TARGETS — never to widen the permission flags on the test step.
+  #
+  # NEW REMOTE IMPORT: cache-redis.test.ts → ../cache-redis.ts pulls
+  # https://esm.sh/@upstash/redis@1, which was not previously in this job's
+  # module graph. It is fetched by the RETRIED pre-warm step because both steps
+  # read the same variable — this is precisely the property the HTTP 522
+  # incident note below demands. Do not "optimize" it back out.
+  #
+  # EXCLUDED ON PURPOSE — the remaining exclusions are now exactly the
+  # Deno.serve set (plus the Vitest files):
+  #   - grounded-answer/__tests__/ — 4 of its 23 Deno test files are absent from
+  #     DENO_TEST_TARGETS: e2e, pipeline, cache-durable-l3 and
+  #     foxy-answer-continuation. All four import ../index.ts, which calls
+  #     Deno.serve() (binds a socket → requires --allow-net + has a server
+  #     side-effect): flaky/non-deterministic in CI. There is no longer any
+  #     "unexplained TODO" residue in this directory.
+  #   - alfabot-answer/__tests__/integration.test.ts (statically imports
+  #     ../index.ts → Deno.serve) and send-welcome-email/__tests__/
+  #     bilingual-welcome.test.ts (DYNAMICALLY imports `../index.ts?cb=…` →
+  #     Deno.serve). Same reason. send-pre-debit-notice/__tests__/
+  #     audit-evidence.test.ts also stays out; it reads ../index.ts as TEXT
+  #     rather than importing it, and its own header documents the esm.sh
+  #     cold-cache concern that kept it out — revisit separately, not here.
   #   - alfabot-answer, bulk-jee-neet-import/index.test.ts, _shared/__tests__/*
   #     (EXCEPT gmail-transport.test.ts, a Deno test — see SCOPE above),
   #     _shared/mol/__tests__/* — these are VITEST tests (import from 'vitest'),
@@ -1610,6 +1670,11 @@ jobs:
         supabase/functions/send-auth-email/__tests__/always-200.test.ts
         supabase/functions/_shared/__tests__/gmail-transport.test.ts
         supabase/functions/_shared/security/__tests__/internal-cron-auth.test.ts
+        supabase/functions/_shared/quiz-oracle.test.ts
+        supabase/functions/bulk-question-gen/__tests__/actions.contract.test.ts
+        supabase/functions/quiz-generator/__tests__/actions.contract.test.ts
+        supabase/functions/grounded-answer/__tests__/cache-redis.test.ts
+        supabase/functions/grounded-answer/__tests__/cache-telemetry.test.ts
         supabase/functions/grounded-answer/__tests__/cache.test.ts
         supabase/functions/grounded-answer/__tests__/circuit.test.ts
         supabase/functions/grounded-answer/__tests__/citations.test.ts
@@ -1617,7 +1682,12 @@ jobs:
         supabase/functions/grounded-answer/__tests__/confidence.test.ts
         supabase/functions/grounded-answer/__tests__/coverage.test.ts
         supabase/functions/grounded-answer/__tests__/embedding.test.ts
+        supabase/functions/grounded-answer/__tests__/foxy-python-generation.test.ts
+        supabase/functions/grounded-answer/__tests__/gen-ctx.test.ts
         supabase/functions/grounded-answer/__tests__/grounding-check.test.ts
+        supabase/functions/grounded-answer/__tests__/output-screen.test.ts
+        supabase/functions/grounded-answer/__tests__/prompt-segments.test.ts
+        supabase/functions/grounded-answer/__tests__/rag-content-version-bump.test.ts
         supabase/functions/grounded-answer/__tests__/retrieval.test.ts
         supabase/functions/grounded-answer/__tests__/trace.test.ts
         supabase/functions/grounded-answer/__tests__/validation.test.ts
