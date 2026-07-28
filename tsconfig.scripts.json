@@ -1,0 +1,60 @@
+{
+  // Type-check gate for repo-root `scripts/**`.
+  //
+  // Why this file exists: `apps/host/tsconfig.json` explicitly EXCLUDES
+  // `scripts` and `supabase`, there is no root `tsconfig.json`, and
+  // `npm run lint` only covers `apps/host/src`. That left 52 script files
+  // with zero type coverage anywhere in CI — which is how six scripts came
+  // to import `../src/lib/…`, a pre-monorepo path that has not existed
+  // since the `apps/*` + `packages/*` migration. They failed at runtime
+  // with MODULE_NOT_FOUND and nothing caught it.
+  //
+  // Run via `npm run type-check:scripts`. Enforced in CI by the
+  // `quality` job in .github/workflows/ci.yml (blocking, no continue-on-error).
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // `scripts/rag/replay-cosine-distribution.ts` dynamically imports the
+    // Deno Edge Function sources with explicit `.ts` specifiers (correct for
+    // Deno, and correct for tsx at runtime). Without this flag every one of
+    // those specifiers is a TS5097 error. Enabling it is safe here because
+    // `noEmit` is on. See the note at the bottom of this file for why this
+    // was chosen over scoping the Deno sources out of the program.
+    "allowImportingTsExtensions": true,
+
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@alfanumrik/lib/*": ["packages/lib/src/*"],
+      "@alfanumrik/ui/*": ["packages/ui/src/*"]
+    }
+  },
+  // Covers every TypeScript dialect under `scripts/`: `.ts`, `.mts` (ESM —
+  // `scripts/gen-openapi.build.mts` is LIVE: spawned by gen-openapi.mjs, run by
+  // `npm run gen:openapi:check`, and a path trigger in openapi-contract.yml)
+  // and `.cts` (none today, covered pre-emptively so a future one can't slip in
+  // unchecked the way the .mts file did).
+  //
+  // There is deliberately NO `**/*.test.ts` exclude. There are zero test files
+  // under `scripts/` today, so such an exclude would be vacuous — but it would
+  // also silently exempt any future `scripts/foo.test.ts` from this gate. If
+  // script tests are ever added, they get type-checked like everything else.
+  "include": ["scripts/**/*.ts", "scripts/**/*.mts", "scripts/**/*.cts"],
+  "exclude": ["node_modules"]
+
+  // On the Deno sources: this program deliberately does NOT enumerate
+  // `supabase/functions/**` in `include`. The only Deno files it sees are the
+  // 14-file transitive closure reachable from the one script that crosses the
+  // Node -> Deno source boundary. Type-checking the full 244-file / 78k-line
+  // Edge Function tree is a separate, unmeasured piece of work that belongs
+  // to `deno check`, not to this gate.
+}

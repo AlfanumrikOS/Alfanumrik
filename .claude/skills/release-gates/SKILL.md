@@ -8,10 +8,12 @@ description: Sequential pre-push gates including type-check, lint, test, build, 
 Sequential gates that must pass before pushing code. Orchestrator enforces the sequence. Quality agent runs Gates 1-4. Domain agents run Gate 5. Orchestrator runs Gate 6.
 
 ## Gate 1: Type Compilation
+Both commands are required. `npm run type-check` fans out to workspaces only; `npm run type-check:scripts` covers repo-root `scripts/` (no workspace, own `tsconfig.scripts.json`).
 ```bash
 npm run type-check
+npm run type-check:scripts
 ```
-- Exit code 0 required
+- Exit code 0 required from both
 - No `any` in new code
 - No `@ts-ignore` without `// Reason:` comment
 
@@ -99,7 +101,8 @@ git diff --cached --name-only | grep -iE '\.env|secret|credential' && echo "BLOC
 ## Gate Summary (copy for PR descriptions)
 ```
 ## Release Gates
-- [ ] Gate 1: type-check — PASS
+- [ ] Gate 1: type-check — PASS (workspaces)
+- [ ] Gate 1: type-check:scripts — PASS (repo-root scripts/)
 - [ ] Gate 2: lint — PASS
 - [ ] Gate 3: tests — PASS ([n]/[n]) | Catalog: [n]/35 exist, gaps: [list areas]
 - [ ] Gate 4: build — PASS (shared: [n] kB)

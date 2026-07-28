@@ -1205,6 +1205,80 @@ jobs:
           fi
           echo "| Status | PASSED |" >> $GITHUB_STEP_SUMMARY
 
+      # Type-check gate for repo-root `scripts/**` (52 files).
+      #
+      # Why this is a SEPARATE step from `npm run type-check`: that command is
+      # `--workspaces`, and `scripts/` belongs to no workspace.
+      # `apps/host/tsconfig.json` explicitly EXCLUDES `scripts`, there is no
+      # root tsconfig.json, and `npm run lint` only covers apps/host/src — so
+      # until this step existed, nothing in CI type-checked `scripts/` at all.
+      #
+      # That hole let seven scripts rot: they imported `../src/lib/…`, a
+      # pre-monorepo path deleted in the apps/* + packages/* migration. Every
+      # one of them died at runtime with MODULE_NOT_FOUND and CI stayed green.
+      # One of the seven hid its dead imports inside `await import(...)`, so a
+      # grep for static import lines missed it — only a real compile found it.
+      #
+      # DELIBERATE ORDERING — DO NOT MOVE THIS BACK NEXT TO `Type check`.
+      # Steps are serial and fail-stop, so placing this dev-tooling gate before
+      # the P15-protecting `Auth & Identity test gate` would let a trivial type
+      # error in a maintenance script abort the job before the auth gate emits
+      # any signal; it runs last so the onboarding gate always reports first.
+      #
+      # This step is intentionally BLOCKING with no continue-on-error. A green
+      # run means `scripts/` actually compiles.
+      - name: Type check (scripts/)
+        run: npm run type-check:scripts
+
+      # npm-script path canary — the RUNTIME complement to the compile-time gate
+      # immediately above. `type-check:scripts` proves script SOURCES compile;
+      # it says nothing about whether the package.json declarations that invoke
+      # them point at a file that exists.
+      #
+      # npm runs a script with cwd = the directory of the package.json declaring
+      # it, so `node scripts/foo.js` in apps/host/package.json resolves to
+      # apps/host/scripts/foo.js. 22 declarations had rotted this way — each
+      # missing a `../../` prefix, each dying with MODULE_NOT_FOUND the moment
+      # anyone ran it, none visible to any compiler because package.json is
+      # just JSON.
+      #
+      # DELIBERATE ORDERING — this must stay AFTER `Type check (scripts/)`, and
+      # both must stay after the P15-protecting `Auth & Identity test gate`.
+      # Steps are serial and fail-stop; dev-tooling gates run last so a trivial
+      # maintenance-script failure can never abort the job before the onboarding
+      # gate has emitted its signal. See the ordering note above.
+      #
+      # This step is intentionally BLOCKING with no continue-on-error.
+      - name: Check npm script paths
+        run: npm run check:script-paths
+
+      # P13 (Data Privacy) guard — static scan of every Supabase Edge Function
+      # `index.ts` for PII reaching console.* (email/phone/name/prompt/answer/
+      # OCR text) or for whole request payloads being JSON.stringify'd into logs.
+      # Escape hatch for reviewed lines: the `PII_LOG_ALLOW` marker comment.
+      #
+      # WHY THIS IS ONLY NOW WIRED INTO CI. The script existed but was invoked by
+      # no workflow, so it was manual-invocation-only. It was also unsafe to wire:
+      # its glob resolved against cwd, and `npm run check:edge-logs -w apps/host`
+      # runs with cwd = apps/host, where `supabase/functions/*/index.ts` matches
+      # NOTHING — the guard reported a green "0 files scanned" pass. Wiring a gate
+      # that silently scans nothing is worse than not wiring it: it manufactures
+      # false assurance on a privacy invariant.
+      #
+      # Both halves of that are now fixed. The script anchors its glob to the repo
+      # root via import.meta.url, and — the part that makes wiring SAFE — it has a
+      # fail-loud zero-match floor: matching 0 files exits 1 with a diagnostic,
+      # because a PII guard that inspected nothing has not passed, it has failed to
+      # run. So any future repo-layout change or path refactor that breaks this
+      # gate FAILS CI loudly instead of sailing through green.
+      #
+      # Invoked directly from the repo root (NOT `-w apps/host`) so the cwd is
+      # unambiguous; the script is cwd-independent either way.
+      #
+      # This step is intentionally BLOCKING with no continue-on-error.
+      - name: Edge Function log PII guard (P13)
+        run: node scripts/security/check-edge-logs.mjs
+
   # ── Step 1c: Unit tests (sharded 4×, 2026-07-20 CI speed-up) ──
   # The full-suite `npm test -- --coverage` run (previously a single ~long step
   # inside the quality job) is split across 4 parallel shards. Vitest shards by
@@ -1381,38 +1455,243 @@ jobs:
   # Functions. Previously these tests existed on disk but were NEVER invoked by
   # CI — they only ran on-demand locally. This job wires them into every PR.
   #
-  # SCOPE (deliberately narrow — only hermetic, network-free tests):
-  #   - parent-portal/__tests__/      (contract.test.ts: reads index.ts as text,
-  #                                     asserts the auth-before-dispatch contract)
-  #   - teacher-dashboard/__tests__/  (contract.test.ts: same static-source canary)
-  #   - daily-cron/__tests__/         (contract.test.ts: static-source canary —
-  #                                     pins the cron auth gate, critical steps,
-  #                                     Promise.allSettled isolation, flag gating)
-  #   - bulk-jee-neet-curated-import/__tests__/validate.test.ts
-  #                                     (pure validation helpers — no I/O)
-  #   - grounded-answer/__tests__/*   (12 unit files of pure helpers)
-  #   - _shared/__tests__/gmail-transport.test.ts
-  #                                     (Gmail API transport — offline, injected
-  #                                     fetcher, in-process WebCrypto test key;
-  #                                     the ONE Deno test in _shared/__tests__)
+  # SCOPE (deliberately narrow — only hermetic, network-free tests).
   #
-  # EXCLUDED ON PURPOSE:
-  #   - grounded-answer/__tests__/{e2e,pipeline}.test.ts — import index.ts which
-  #     calls Deno.serve() (binds a socket → requires --allow-net + has a server
-  #     side-effect). Flaky/non-deterministic in CI.
+  # !! The AUTHORITATIVE target list is the `DENO_TEST_TARGETS` env var on the
+  # job below. This block is PROSE *ABOUT* that list, not a second source of
+  # truth. If the two ever disagree, DENO_TEST_TARGETS is right and this comment
+  # is stale — fix the comment; never "fix" the variable to match the comment.
+  # (The 2026-07 HTTP 522 incident documented on that variable was caused by
+  # exactly this failure mode: two lists maintained separately, which drifted.)
+  #
+  #   - parent-portal/__tests__/  — 1 file
+  #       contract.test.ts    static-source canary: reads index.ts as text; 401
+  #                           before dispatch, guardian_id resolved from the JWT
+  #                           (a body-supplied value is overridden), unknown
+  #                           action → 400.
+  #
+  #   - teacher-dashboard/__tests__/  — WHOLE DIRECTORY, 3 files
+  #       contract.test.ts    static-source canary, same shape as parent-portal:
+  #                           401 before dispatch, teacher_id overridden from the
+  #                           JWT, unknown action → 400.
+  #       deploy-intervention-contract.test.ts
+  #                           static-source canary over handleDeployIntervention:
+  #                           it must write the canonical
+  #                           teacher_remediation_assignments table and NEVER
+  #                           assignments / assignment_submissions, and must keep
+  #                           the 23505 dedupe backstop + roster-ownership gate.
+  #       metrics.test.ts     BEHAVIORAL unit tests of the pure metrics.ts
+  #                           helpers: "no signal" vs a real 0, curriculum-scoped
+  #                           mastery averaging, cohort BKT map shaping.
+  #
+  #   - daily-cron/__tests__/  — WHOLE DIRECTORY, 3 files
+  #       contract.test.ts    static-source canary (REG-118): fail-closed cron
+  #                           auth gate before ANY step dispatch, Promise
+  #                           .allSettled per-step isolation → 207 not a hard
+  #                           500, and the flag-gated steps.
+  #       actions.contract.test.ts
+  #                           BEHAVIORAL: createDailyCronActions preserves action
+  #                           names and order, and stamps requiresInternalCronAuth
+  #                           + audit/metric labels on every action.
+  #       verification-delivery.test.ts
+  #                           BEHAVIORAL unit tests of the pure silent-
+  #                           verification-failure decision logic (stuck-signup
+  #                           and streak thresholds, dedup keys), PLUS a static
+  #                           canary over the migration SQL that owns the
+  #                           exclusion rules (they live in SQL for P13).
+  #
+  #   - scan-ocr/__tests__/  — 1 file
+  #       contract.test.ts    static-source canary: SUPABASE_URL and
+  #                           SUPABASE_SERVICE_KEY are DECLARED and env-bound and
+  #                           admitAiRoute() runs — pins the 2026-07-13
+  #                           ReferenceError that 500'd every request before auth.
+  #
+  #   - bulk-jee-neet-curated-import/__tests__/validate.test.ts
+  #                           pure P6 question-validation helpers — no I/O.
+  #
+  #   - send-auth-email/__tests__/always-200.test.ts
+  #                           P15 rule 1: every code path returns HTTP 200 so
+  #                           Supabase Auth never blocks signup. Offline — a stub
+  #                           EmailTransport is injected, so no socket is opened.
+  #
+  #   - _shared/__tests__/gmail-transport.test.ts
+  #                           Gmail API transport — offline, injected fetcher,
+  #                           in-process WebCrypto test key. The ONE Deno test in
+  #                           _shared/__tests__ (its 4 siblings are Vitest).
+  #
+  #   - _shared/security/__tests__/internal-cron-auth.test.ts
+  #                           BEHAVIORAL: verifyInternalCronRequest rejects
+  #                           unauthenticated / stale / invalid-signature
+  #                           requests, accepts valid signatures plus the
+  #                           approved CRON_SECRET and the get_cron_secret() DB
+  #                           fallback, and stays FAIL-CLOSED when that fallback
+  #                           errors or mismatches. This is the shared module
+  #                           daily-cron's contract 1a delegates its auth to.
+  #
+  #   - _shared/quiz-oracle.test.ts
+  #                           BEHAVIORAL unit tests of the pure quiz-oracle cache
+  #                           primitives (REG-54 follow-up): candidate cache-key
+  #                           identity includes correct_answer_index, and the LRU
+  #                           cap evicts oldest-first. Imports ONLY ./quiz-oracle
+  #                           .ts — zero remote imports, zero I/O. Note it lives
+  #                           at the _shared ROOT, not in _shared/__tests__/
+  #                           (which is Vitest territory — see EXCLUDED below).
+  #                           Its own header still says "deno test is NOT yet
+  #                           wired into CI"; that TODO is closed by this entry.
+  #
+  #   - bulk-question-gen/__tests__/actions.contract.test.ts
+  #   - quiz-generator/__tests__/actions.contract.test.ts
+  #                           BEHAVIORAL action-registry contract tests. Each
+  #                           imports ONLY its sibling ../actions.ts, which is a
+  #                           dependency-free pure module (literally zero import
+  #                           statements). They do NOT import ../index.ts, so the
+  #                           Deno.serve() in those index.ts files is never
+  #                           reached. No fetch, no Deno.env, no filesystem.
+  #
+  #   - grounded-answer/__tests__/  — 19 files ENUMERATED INDIVIDUALLY in
+  #                           DENO_TEST_TARGETS, NOT the whole directory (23 Deno
+  #                           test files live there). Pure helpers only.
+  #
+  # ── 2026-07-28: the seven-file TODO below was CLOSED BY EXPERIMENT ──────────
+  # The previous version of this comment listed seven grounded-answer tests
+  # (cache-redis, cache-telemetry, foxy-python-generation, gen-ctx, output-screen,
+  # prompt-segments, rag-content-version-bump) as an open TODO — offline tests
+  # with no recorded exclusion rationale that "appear to have simply never been
+  # added". They are now IN the list, together with three further hermetic tests
+  # documented nowhere (_shared/quiz-oracle, bulk-question-gen actions.contract,
+  # quiz-generator actions.contract). 20 targets → 30.
+  #
+  # Be honest about the epistemic status: this was added as a MEASUREMENT, not a
+  # confident fix. Deno could not be run locally when this landed, so CI is the
+  # instrument. What WAS verified statically before adding, per file, over the
+  # full transitive RELATIVE-import closure:
+  #   * no Deno.serve / Deno.listen / Deno.connect / std http/server anywhere in
+  #     the closure — none of the ten reaches an index.ts;
+  #   * no module-level side effects (no top-level await, no module-scope
+  #     Deno.env read, no client constructed at import time);
+  #   * every network-touching code path is exercised either with globalThis
+  #     .fetch stubbed in-process, or with the relevant env pair deliberately
+  #     deleted so the client stays unconfigured and no socket is attempted;
+  #   * the only filesystem read in any closure is prompts/index.ts's .txt
+  #     fallback, which is unreachable in practice (all 9 registered template
+  #     ids have INLINE_PROMPTS entries) and is covered by --allow-read anyway;
+  #   * permissions required stay exactly --allow-read --allow-env. Deno's
+  #     --allow-env covers Deno.env.set/delete, which several of these tests use
+  #     to build their fixtures.
+  # If CI proves any of them wrong, the correct response is to REMOVE that file
+  # from DENO_TEST_TARGETS — never to widen the permission flags on the test step.
+  #
+  # NEW REMOTE IMPORT: cache-redis.test.ts → ../cache-redis.ts pulls
+  # https://esm.sh/@upstash/redis@1, which was not previously in this job's
+  # module graph. It is fetched by the RETRIED pre-warm step because both steps
+  # read the same variable — this is precisely the property the HTTP 522
+  # incident note below demands. Do not "optimize" it back out.
+  #
+  # EXCLUDED ON PURPOSE — the remaining exclusions are now exactly the
+  # Deno.serve set (plus the Vitest files):
+  #   - grounded-answer/__tests__/ — 4 of its 23 Deno test files are absent from
+  #     DENO_TEST_TARGETS: e2e, pipeline, cache-durable-l3 and
+  #     foxy-answer-continuation. All four import ../index.ts, which calls
+  #     Deno.serve() (binds a socket → requires --allow-net + has a server
+  #     side-effect): flaky/non-deterministic in CI. There is no longer any
+  #     "unexplained TODO" residue in this directory.
+  #   - alfabot-answer/__tests__/integration.test.ts (statically imports
+  #     ../index.ts → Deno.serve) and send-welcome-email/__tests__/
+  #     bilingual-welcome.test.ts (DYNAMICALLY imports `../index.ts?cb=…` →
+  #     Deno.serve). Same reason. send-pre-debit-notice/__tests__/
+  #     audit-evidence.test.ts also stays out; it reads ../index.ts as TEXT
+  #     rather than importing it, and its own header documents the esm.sh
+  #     cold-cache concern that kept it out — revisit separately, not here.
   #   - alfabot-answer, bulk-jee-neet-import/index.test.ts, _shared/__tests__/*
   #     (EXCEPT gmail-transport.test.ts, a Deno test — see SCOPE above),
   #     _shared/mol/__tests__/* — these are VITEST tests (import from 'vitest'),
   #     already covered by the sharded `unit-tests` job's `npm test`, not `deno test`.
   #
-  # Permissions are limited to --allow-read (readTextFileSync of index.ts) and
-  # --allow-env (some helpers read Deno.env). No --allow-net is granted, which
-  # guarantees no test can reach the network. `--no-lock` decouples CI from the
-  # repo's deno.lock (left untouched). Same BLOCKING posture as the unit-test
+  # Permissions are limited to --allow-read (the static-source canaries
+  # readTextFileSync index.ts and, for verification-delivery, a migration .sql)
+  # and --allow-env (some helpers read Deno.env). No --allow-net is granted,
+  # which guarantees no test can reach the network. `--no-lock` decouples CI from
+  # the repo's deno.lock (left untouched). Same BLOCKING posture as the unit-test
   # `quality` job: a failure here fails CI.
   edge-function-tests:
     name: Edge Function Deno Tests
     runs-on: ubuntu-latest
+    env:
+      # ════════════════════════════════════════════════════════════════════════
+      #  SINGLE SOURCE OF TRUTH for the Deno test target set.
+      #  Both the pre-warm ("Cache Deno module dependencies") step and the
+      #  offline ("Run Edge Function Deno tests") step read THIS variable.
+      #  Never inline a target list into either step again.
+      # ────────────────────────────────────────────────────────────────────────
+      #  WHY THIS MUST BE ONE LIST — the 2026-07 HTTP 522 incident:
+      #
+      #  These two lists used to be maintained separately, and they drifted.
+      #  The pre-warm list enumerated INDIVIDUAL FILES (e.g. only
+      #  daily-cron/__tests__/contract.test.ts) while the test step passed
+      #  WHOLE DIRECTORIES (daily-cron/__tests__/) plus at least one path the
+      #  pre-warm list never mentioned at all
+      #  (_shared/security/__tests__/internal-cron-auth.test.ts).
+      #
+      #  Five test files therefore RAN but were never PRE-WARMED:
+      #    daily-cron/__tests__/actions.contract.test.ts
+      #    daily-cron/__tests__/verification-delivery.test.ts
+      #    teacher-dashboard/__tests__/deploy-intervention-contract.test.ts
+      #    teacher-dashboard/__tests__/metrics.test.ts
+      #    _shared/security/__tests__/internal-cron-auth.test.ts
+      #
+      #  The consequence was not merely "a bit less caching". The pre-warmed
+      #  daily-cron/__tests__/contract.test.ts imports ONLY std@0.210.0/assert,
+      #  whereas actions.contract.test.ts imports ../actions.ts, whose first
+      #  line is `import { createClient } from
+      #  'https://esm.sh/@supabase/supabase-js@2'`. That specifier was thus
+      #  absent from the pre-warm module graph entirely — CI run 30310350618
+      #  downloaded std@0.210.0, std@0.224.0, esm.sh/standardwebhooks@1.0.0,
+      #  @stablelib/base64 and fast-sha256 in the cache step, but NEVER
+      #  @supabase/supabase-js.
+      #
+      #  It was fetched for the first time inside the TEST step, which has no
+      #  retry loop and is meant to be fully offline. esm.sh answered HTTP 522
+      #  (Cloudflare origin timeout) after a 39s hang and the job failed. The
+      #  same job passed on the 4 preceding SHAs and on main: this was a latent
+      #  flakiness amplifier that turned any transient esm.sh blip into a red
+      #  build, at a point in the job where nothing can retry it.
+      #
+      #  So: every remote import must be fetched inside the RETRIED pre-warm
+      #  step. Do NOT "optimize" the pre-warm list back down to a subset, and
+      #  do NOT add --allow-net to the test step to paper over a miss. If you
+      #  add a target below, both steps pick it up automatically.
+      # ════════════════════════════════════════════════════════════════════════
+      DENO_TEST_TARGETS: >-
+        supabase/functions/parent-portal/__tests__/
+        supabase/functions/teacher-dashboard/__tests__/
+        supabase/functions/daily-cron/__tests__/
+        supabase/functions/scan-ocr/__tests__/
+        supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts
+        supabase/functions/send-auth-email/__tests__/always-200.test.ts
+        supabase/functions/_shared/__tests__/gmail-transport.test.ts
+        supabase/functions/_shared/security/__tests__/internal-cron-auth.test.ts
+        supabase/functions/_shared/quiz-oracle.test.ts
+        supabase/functions/bulk-question-gen/__tests__/actions.contract.test.ts
+        supabase/functions/quiz-generator/__tests__/actions.contract.test.ts
+        supabase/functions/grounded-answer/__tests__/cache-redis.test.ts
+        supabase/functions/grounded-answer/__tests__/cache-telemetry.test.ts
+        supabase/functions/grounded-answer/__tests__/cache.test.ts
+        supabase/functions/grounded-answer/__tests__/circuit.test.ts
+        supabase/functions/grounded-answer/__tests__/citations.test.ts
+        supabase/functions/grounded-answer/__tests__/claude.test.ts
+        supabase/functions/grounded-answer/__tests__/confidence.test.ts
+        supabase/functions/grounded-answer/__tests__/coverage.test.ts
+        supabase/functions/grounded-answer/__tests__/embedding.test.ts
+        supabase/functions/grounded-answer/__tests__/foxy-python-generation.test.ts
+        supabase/functions/grounded-answer/__tests__/gen-ctx.test.ts
+        supabase/functions/grounded-answer/__tests__/grounding-check.test.ts
+        supabase/functions/grounded-answer/__tests__/output-screen.test.ts
+        supabase/functions/grounded-answer/__tests__/prompt-segments.test.ts
+        supabase/functions/grounded-answer/__tests__/rag-content-version-bump.test.ts
+        supabase/functions/grounded-answer/__tests__/retrieval.test.ts
+        supabase/functions/grounded-answer/__tests__/trace.test.ts
+        supabase/functions/grounded-answer/__tests__/validation.test.ts
+        supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
     steps:
       - uses: actions/checkout@v6
 
@@ -1423,32 +1702,49 @@ jobs:
 
       - name: Cache Deno module dependencies
         run: |
-          # Pre-warm Deno module cache so the offline test step doesn't need --allow-net.
-          # deno cache resolves and downloads all remote imports (std@0.210.0/assert,
-          # esm.sh/@supabase/supabase-js@2, etc.) and stores them in the Deno cache dir.
-          # The test step then runs with only --allow-read --allow-env (no network).
+          # Pre-warm the Deno module cache so the offline test step doesn't need
+          # --allow-net. `deno cache` resolves and downloads every remote import
+          # reachable from the given entrypoints (std@0.210.0/assert,
+          # esm.sh/@supabase/supabase-js@2, etc.). The test step then runs with
+          # only --allow-read --allow-env (no network).
+          #
+          # Targets come from $DENO_TEST_TARGETS — the SAME variable the test
+          # step uses. See the long incident note on that variable for why these
+          # two sets must never diverge again.
+          #
+          # $DENO_TEST_TARGETS contains directories (which `deno test` expands
+          # itself) as well as files. `deno cache` takes module specifiers, so we
+          # expand directories to individual files HERE, using Deno's documented
+          # test-discovery conventions (*_test.*, *.test.*, test.*). This makes
+          # the pre-warm correct whether or not `deno cache` accepts a directory
+          # argument, so we never depend on that behaviour.
+          targets=""
+          for t in $DENO_TEST_TARGETS; do
+            if [ -d "$t" ]; then
+              found=$(find "$t" -type f \( \
+                -name '*_test.ts'  -o -name '*_test.tsx'  -o -name '*_test.js'  -o -name '*_test.mjs'  -o -name '*_test.jsx' -o \
+                -name '*.test.ts'  -o -name '*.test.tsx'  -o -name '*.test.js'  -o -name '*.test.mjs'  -o -name '*.test.jsx' -o \
+                -name 'test.ts'    -o -name 'test.tsx'    -o -name 'test.js'    -o -name 'test.mjs'    -o -name 'test.jsx' \
+                \) | sort)
+              if [ -z "$found" ]; then
+                echo "::error::No Deno test files found under directory target '$t'. Refusing to pre-warm an empty set."
+                exit 1
+              fi
+              targets="$targets $found"
+            elif [ -f "$t" ]; then
+              targets="$targets $t"
+            else
+              echo "::error::Deno test target '$t' does not exist (renamed or deleted?). Fix DENO_TEST_TARGETS."
+              exit 1
+            fi
+          done
+
+          echo "Pre-warming the Deno module cache for these entrypoints:"
+          printf '  %s\n' $targets
+
           attempt=1
           while true; do
-            if deno cache --no-lock --no-check \
-              supabase/functions/parent-portal/__tests__/contract.test.ts \
-              supabase/functions/teacher-dashboard/__tests__/contract.test.ts \
-              supabase/functions/daily-cron/__tests__/contract.test.ts \
-              supabase/functions/scan-ocr/__tests__/contract.test.ts \
-              supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
-              supabase/functions/send-auth-email/__tests__/always-200.test.ts \
-              supabase/functions/_shared/__tests__/gmail-transport.test.ts \
-              supabase/functions/grounded-answer/__tests__/cache.test.ts \
-              supabase/functions/grounded-answer/__tests__/circuit.test.ts \
-              supabase/functions/grounded-answer/__tests__/citations.test.ts \
-              supabase/functions/grounded-answer/__tests__/claude.test.ts \
-              supabase/functions/grounded-answer/__tests__/confidence.test.ts \
-              supabase/functions/grounded-answer/__tests__/coverage.test.ts \
-              supabase/functions/grounded-answer/__tests__/embedding.test.ts \
-              supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
-              supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
-              supabase/functions/grounded-answer/__tests__/trace.test.ts \
-              supabase/functions/grounded-answer/__tests__/validation.test.ts \
-              supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts; then
+            if deno cache --no-lock --no-check $targets; then
               break
             fi
             if [ "$attempt" -ge 3 ]; then
@@ -1463,27 +1759,375 @@ jobs:
 
       - name: Run Edge Function Deno tests (deterministic, offline)
         run: |
-          deno test --no-lock --no-check --allow-read --allow-env \
-            supabase/functions/parent-portal/__tests__/ \
-            supabase/functions/teacher-dashboard/__tests__/ \
-            supabase/functions/daily-cron/__tests__/ \
-            supabase/functions/scan-ocr/__tests__/ \
-            supabase/functions/bulk-jee-neet-curated-import/__tests__/validate.test.ts \
-            supabase/functions/send-auth-email/__tests__/always-200.test.ts \
-            supabase/functions/_shared/__tests__/gmail-transport.test.ts \
-            supabase/functions/_shared/security/__tests__/internal-cron-auth.test.ts \
-            supabase/functions/grounded-answer/__tests__/cache.test.ts \
-            supabase/functions/grounded-answer/__tests__/circuit.test.ts \
-            supabase/functions/grounded-answer/__tests__/citations.test.ts \
-            supabase/functions/grounded-answer/__tests__/claude.test.ts \
-            supabase/functions/grounded-answer/__tests__/confidence.test.ts \
-            supabase/functions/grounded-answer/__tests__/coverage.test.ts \
-            supabase/functions/grounded-answer/__tests__/embedding.test.ts \
-            supabase/functions/grounded-answer/__tests__/grounding-check.test.ts \
-            supabase/functions/grounded-answer/__tests__/retrieval.test.ts \
-            supabase/functions/grounded-answer/__tests__/trace.test.ts \
-            supabase/functions/grounded-answer/__tests__/validation.test.ts \
-            supabase/functions/grounded-answer/__tests__/wrap-as-paragraph.test.ts
+          # Targets come from $DENO_TEST_TARGETS — the SAME variable the pre-warm
+          # step above uses, so every remote import in this graph was already
+          # downloaded inside that step's retry loop. Deliberately no --allow-net.
+          echo "Running Deno tests over these targets:"
+          printf '  %s\n' $DENO_TEST_TARGETS
+
+          deno test --no-lock --no-check --allow-read --allow-env $DENO_TEST_TARGETS
+
+      # ── ADVISORY MEASUREMENT — NOT A GATE ──────────────────────────────────
+      #  WHY THIS STEP EXISTS
+      #    Both steps above pass --no-check, deliberately, and that stays: the
+      #    test step must be deterministic and offline. The consequence is that
+      #    every local .ts file under supabase/functions/ is EXECUTED in CI with
+      #    TypeScript checking switched off, and nobody knows how many
+      #    diagnostics `deno check` would report against that tree.
+      #
+      #    That single unknown is the only thing blocking a decision on whether
+      #    to wire a real Deno type gate. This step BUYS THAT NUMBER.
+      #
+      #    It must NEVER fail CI. Turning on a blocking gate before knowing the
+      #    size of the debt is exactly the mistake this step exists to prevent,
+      #    so `continue-on-error: true` is load-bearing and the body also ends
+      #    in an explicit `exit 0`. Do not remove either one before reading the
+      #    number this produces. Once the number is known, the decision to gate
+      #    (or not) is a separate, deliberate change.
+      #
+      #  SCOPE — supabase/functions/**/*.ts EXCLUDING supabase/functions/_archive/
+      #    _archive/ holds tombstoned functions (export-report, quiz-generator-v2)
+      #    that are not deployed and are not maintained. Diagnostics there are
+      #    not actionable debt, and any gate we might wire later would exclude
+      #    them too — so the measurement matches what a gate would actually
+      #    cover. The excluded file count is reported alongside the checked
+      #    count, so the delta stays auditable rather than hidden.
+      #    __tests__/ files are deliberately INCLUDED: they are compiled and run
+      #    in this very job, so their type debt is real debt.
+      #
+      #  NETWORK — tolerated, never fatal. The retried pre-warm step above
+      #    cached module SOURCES under --no-check, which does not fetch the
+      #    .d.ts type declarations that type checking needs (esm.sh serves those
+      #    via the X-TypeScript-Types header). `deno check` may therefore
+      #    download. The deno exit status is CAPTURED rather than propagated,
+      #    and a download failure surfaces as "0 diagnostics parsed + non-zero
+      #    exit", which the summary labels INCONCLUSIVE instead of reporting a
+      #    fake zero.
+      #
+      #  This step does NOT read the Deno test-target variable and must never
+      #  start doing so: that variable has exactly two consumers (the pre-warm
+      #  and the test run), an invariant pinned by REG-317.
+      - name: Measure Deno type-check debt (advisory)
+        # LOAD-BEARING. This is a measurement, not a gate. See the note above.
+        continue-on-error: true
+        env:
+          # BLINDNESS FIX #1 of 2 (the other is the sanitise() strip in the body).
+          # Deno colourises its output even when stdout is a pipe, so on runs
+          # 30320408084 and 30321212537 the raw capture was full of CSI escapes:
+          # the job log shows `ESC[32mDownload ESC[0m`, and deno emits a
+          # top-level error as red_bold("error") + a PLAIN ": " -- i.e. the
+          # bytes on the wire are `ESC[1;31merror ESC[0m: message`, NOT
+          # `error: message`. Every ANCHORED reader in the body below
+          # (`grep -cE '^error: '` for NON_TS, the excerpt filter) is then
+          # STRUCTURALLY incapable of matching, and the `at file://` attribution
+          # frame breaks too because deno paints the location cyan, splitting
+          # `at ` from `file://`. That is why both runs reported NON_TS=0 and
+          # FILES=0 against 372,905 bytes of output and a non-zero exit: the
+          # readers were blind, not the tree clean.
+          # NO_COLOR is the documented, deno-honoured kill switch for this.
+          NO_COLOR: '1'
+        run: |
+          set +e
+
+          TMP="${RUNNER_TEMP:-/tmp}"
+          RAW="$TMP/deno-check-raw.txt"
+          # $RAW is the byte-exact capture (it backs RAW_BYTES); $CLEAN is the
+          # ANSI-stripped copy that EVERY reader consumes. Never parse $RAW.
+          CLEAN="$TMP/deno-check-clean.txt"
+          LIST="$TMP/deno-check-files.txt"
+          CODES="$TMP/deno-check-codes.txt"
+          TALLY="$TMP/deno-check-filetally.txt"
+          STATS="$TMP/deno-check-stats.txt"
+          : > "$RAW"
+          : > "$CLEAN"
+
+          # ---- scope: the whole Edge Function tree MINUS _archive/ ----------------
+          find supabase/functions -type f -name '*.ts' \
+            -not -path 'supabase/functions/_archive/*' | sort > "$LIST"
+          mapfile -t FILES < "$LIST"
+          CHECKED_FILES=${#FILES[@]}
+
+          # Guard an empty set. Without this, every command below that expands
+          # "${FILES[@]}" would be invoked with ZERO arguments -- and `cat` with no
+          # arguments reads STDIN, which hangs the job until the runner's timeout
+          # rather than reporting anything. Same reasoning as the pre-warm step's
+          # "Refusing to pre-warm an empty set" check.
+          if [ "$CHECKED_FILES" -eq 0 ]; then
+            echo "::warning::No .ts files found under supabase/functions (tree moved or renamed?). Nothing to measure."
+            echo "## Deno type-check debt (ADVISORY)" >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+            echo "No \`.ts\` files found under \`supabase/functions\` — measurement skipped." >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+            exit 0
+          fi
+
+          ARCHIVED=$(find supabase/functions/_archive -type f -name '*.ts' 2>/dev/null | wc -l | tr -d ' ')
+          CHECKED_LINES=$(cat "${FILES[@]}" < /dev/null 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "Scope: $CHECKED_FILES files / $CHECKED_LINES lines under supabase/functions (excluded _archive: $ARCHIVED files)"
+          deno --version
+
+          # ---- ANSI sanitiser: BLINDNESS FIX #2 of 2 ------------------------------
+          # NO_COLOR is set in this step's env:, which SHOULD make everything below
+          # a no-op. This exists so the measurement does not DEPEND on deno
+          # honouring it -- a regression in deno's colour handling, or a nested
+          # tool that forces colour, must not silently zero the number again.
+          # Strips CSI sequences (ESC [ params final) and folds CR to LF, because
+          # deno's progress bar redraws with `\r` + ESC[K and can otherwise glue a
+          # real diagnostic onto the tail of a progress line where an anchored
+          # pattern cannot see it. $RAW is left byte-exact for RAW_BYTES.
+          ESC=$(printf '\033')
+          sanitise() {
+            tr '\r' '\n' < "$1" | sed "s/${ESC}\[[0-9;?]*[A-Za-z]//g" > "$2"
+          }
+
+          # ---- parse helper: one pass; reused by the primary run and the fallback -
+          # Deno prints each diagnostic as `TS#### [ERROR]: message` followed by an
+          # `    at file:///abs/path.ts:LINE:COL` frame. A diagnostic can carry extra
+          # related-information frames, so only the FIRST frame after a code line is
+          # attributed. Deliberately no gawk-only constructs (runners default to mawk):
+          # no length(array), no /dev/stderr writes.
+          parse_raw() {
+            : > "$CODES"; : > "$TALLY"; : > "$STATS"
+            awk '
+              match($0, /TS[0-9]+ \[ERROR\]/) {
+                code = substr($0, RSTART, RLENGTH)
+                sub(/ \[ERROR\]/, "", code)
+                total++; codes[code]++; pending = 1; next
+              }
+              pending && /at file:\/\// {
+                f = $0
+                sub(/^.*at file:\/\//, "", f)
+                sub(/:[0-9]+:[0-9]+[^:]*$/, "", f)
+                sub(/^.*\/supabase\/functions\//, "supabase/functions/", f)
+                files[f]++; attributed++; pending = 0
+              }
+              END {
+                print "TOTAL " total + 0 > STATS_OUT
+                print "ATTRIBUTED " attributed + 0 > STATS_OUT
+                for (c in codes) print codes[c] "\t" c > CODES_OUT
+                for (f in files) print files[f] "\t" f > FILES_OUT
+              }
+            ' STATS_OUT="$STATS" CODES_OUT="$CODES" FILES_OUT="$TALLY" "$1"
+
+            TOTAL=$(awk '$1=="TOTAL"{print $2}' "$STATS"); TOTAL=${TOTAL:-0}
+            ATTRIBUTED=$(awk '$1=="ATTRIBUTED"{print $2}' "$STATS"); ATTRIBUTED=${ATTRIBUTED:-0}
+            DISTINCT_FILES=$(wc -l < "$TALLY" | tr -d ' '); DISTINCT_FILES=${DISTINCT_FILES:-0}
+            DISTINCT_CODES=$(wc -l < "$CODES" | tr -d ' '); DISTINCT_CODES=${DISTINCT_CODES:-0}
+          }
+
+          # ---- primary: one invocation over the whole tree ------------------------
+          # NOT --all: plain `deno check` diagnoses LOCAL code only, which is the debt
+          # we own; remote-module diagnostics are not actionable here. --no-lock
+          # matches the two steps above and leaves the repo deno.lock untouched. The
+          # exit status is CAPTURED, never propagated.
+          # `>> "$RAW" 2>&1` -- BOTH streams. deno writes type diagnostics and its
+          # top-level `error:` lines to STDERR, so dropping stderr here would be a
+          # far bigger bug than the colour blindness. Verified present on this
+          # invocation and on the per-file fallback below; do not split them.
+          # No --quiet: deno documents that flag as "suppress diagnostic output",
+          # and the `Download` noise it would remove is already excluded by the
+          # filtered excerpt. Silencing 372 KB of noise is not worth any risk of
+          # silencing the one number this step exists to obtain.
+          timeout 900 deno check --no-lock "${FILES[@]}" >> "$RAW" 2>&1
+          STATUS=$?
+          echo "deno check exit status: $STATUS"
+
+          sanitise "$RAW" "$CLEAN"
+          parse_raw "$CLEAN"
+          MODE="single-invocation"
+
+          # ---- fallback: deno bailed out before emitting any diagnostic -----------
+          # One unresolvable import, or a failure fetching type declarations, can abort
+          # the whole-tree run before anything is type-checked. A per-file sweep still
+          # yields a real number for every file that CAN be checked. Bounded by a 600s
+          # wall-clock budget so a pathological run cannot stall the job.
+          if [ "$TOTAL" -eq 0 ] && [ "$STATUS" -ne 0 ]; then
+            echo "::warning::Whole-tree deno check exited $STATUS with 0 parsed diagnostics; falling back to a per-file sweep."
+            MODE="per-file-fallback"
+            DEADLINE=$(( $(date +%s) + 600 ))
+            SWEPT=0
+            for f in "${FILES[@]}"; do
+              if [ "$(date +%s)" -ge "$DEADLINE" ]; then
+                echo "::warning::Per-file sweep hit its 600s budget after $SWEPT files."
+                break
+              fi
+              timeout 60 deno check --no-lock "$f" >> "$RAW" 2>&1
+              SWEPT=$((SWEPT + 1))
+            done
+            MODE="per-file-fallback ($SWEPT/$CHECKED_FILES files swept)"
+            sanitise "$RAW" "$CLEAN"
+            parse_raw "$CLEAN"
+          fi
+
+          # $CLEAN, not $RAW: this anchored pattern is the exact reader that
+          # reported NON_TS=0 twice against a non-zero exit and 372 KB of output.
+          # `-a` on every reader below: deno's output is not guaranteed NUL-free,
+          # and grep silently degrades to "Binary file matches" (count 1, no
+          # lines) the moment it decides a file is binary — another way to get a
+          # confidently wrong number out of this step.
+          NON_TS=$(grep -acE '^error: ' "$CLEAN"); NON_TS=${NON_TS:-0}
+          RAW_BYTES=$(wc -c < "$RAW" | tr -d ' ')
+          # How much colour was actually on the wire. 0 means NO_COLOR was
+          # honoured and the strip was a no-op; >0 means it was load-bearing.
+          # Reported so the next run answers that question without a third
+          # round-trip.
+          ANSI_SEQS=$(grep -aoE "${ESC}\[[0-9;?]*[A-Za-z]" "$RAW" 2>/dev/null | wc -l | tr -d ' ')
+          ANSI_SEQS=${ANSI_SEQS:-0}
+
+          # One word summarising which of the three outcomes we landed on, so the
+          # INCONCLUSIVE case is greppable rather than only readable as prose.
+          if [ "$STATUS" -eq 0 ]; then
+            STATE="CLEAN"
+          elif [ "$TOTAL" -eq 0 ]; then
+            STATE="INCONCLUSIVE"
+          else
+            STATE="MEASURED"
+          fi
+
+          # ---- report to STDOUT *and* the job summary -----------------------------
+          # `tee`, not `>>`. GitHub exposes $GITHUB_STEP_SUMMARY through NO API
+          # surface (not get_job_logs, not check-run output, not any /job-summaries
+          # endpoint) — a summary-only report is readable exclusively by a human
+          # opening the run's Summary tab in a browser, which strands the one number
+          # this step exists to produce. Writing the SAME block to stdout puts it in
+          # the job log, which IS API-readable. The `:-/dev/null` default keeps this
+          # working when the variable is unset (running the body outside Actions).
+          # The KEY=VALUE block below is the machine-readable contract: a future
+          # automated reader greps `^DENO_TYPE_DEBT_TOTAL=` instead of parsing a
+          # markdown table. Fenced so it also renders as a block in the summary.
+          {
+            echo '```'
+            echo "DENO_TYPE_DEBT_STATE=$STATE"
+            echo "DENO_TYPE_DEBT_TOTAL=$TOTAL"
+            echo "DENO_TYPE_DEBT_FILES=$DISTINCT_FILES"
+            echo "DENO_TYPE_DEBT_MODE=$MODE"
+            echo "DENO_TYPE_DEBT_CHECKED_FILES=$CHECKED_FILES"
+            echo "DENO_TYPE_DEBT_EXCLUDED_FILES=$ARCHIVED"
+            echo "DENO_TYPE_DEBT_CHECKED_LINES=$CHECKED_LINES"
+            echo "DENO_TYPE_DEBT_CODES=$DISTINCT_CODES"
+            echo "DENO_TYPE_DEBT_ATTRIBUTED=$ATTRIBUTED"
+            echo "DENO_TYPE_DEBT_NON_TS=$NON_TS"
+            echo "DENO_TYPE_DEBT_EXIT=$STATUS"
+            echo "DENO_TYPE_DEBT_RAW_BYTES=$RAW_BYTES"
+            echo "DENO_TYPE_DEBT_ANSI_SEQS=$ANSI_SEQS"
+            echo '```'
+            echo
+            echo "## Deno type-check debt (ADVISORY — this step never fails CI)"
+            echo
+            echo "\`deno check --no-lock\` over the Edge Function tree. The cache and test"
+            echo "steps above keep \`--no-check\`; this step measures, it does not gate."
+            echo
+            echo "| Metric | Value |"
+            echo "| --- | --- |"
+            echo "| Files checked | \`$CHECKED_FILES\` |"
+            echo "| Lines checked | \`$CHECKED_LINES\` |"
+            echo "| Files excluded (\`_archive/\`) | \`$ARCHIVED\` |"
+            echo "| **Total TS errors** | **\`$TOTAL\`** |"
+            echo "| **Distinct files with errors** | **\`$DISTINCT_FILES\`** |"
+            echo "| Distinct error codes | \`$DISTINCT_CODES\` |"
+            echo "| Errors attributed to a file | \`$ATTRIBUTED\` |"
+            echo "| Non-TS \`error:\` lines | \`$NON_TS\` |"
+            echo "| deno check exit status | \`$STATUS\` |"
+            echo "| Measurement mode | \`$MODE\` |"
+            echo "| Raw output size | \`$RAW_BYTES\` bytes |"
+            echo "| ANSI escapes stripped | \`$ANSI_SEQS\` |"
+            echo
+            if [ "$STATUS" -eq 0 ]; then
+              echo "> **Clean.** Zero diagnostics. A blocking Deno type gate could be wired"
+              echo "> at zero remediation cost."
+            elif [ "$TOTAL" -eq 0 ]; then
+              echo "> **INCONCLUSIVE — do NOT read this as zero debt.** deno exited"
+              echo "> \`$STATUS\` but no \`TS####\` diagnostic was parsed. That normally means a"
+              echo "> module-resolution or network failure: the \`--no-check\` pre-warm above"
+              echo "> caches module SOURCES but not the \`.d.ts\` type declarations that type"
+              echo "> checking needs. Read the **non-TS \`error:\` messages** table below —"
+              echo "> that is the actual cause — then the raw excerpt in the step log."
+            else
+              echo "> **$TOTAL errors across $DISTINCT_FILES of $CHECKED_FILES files.**"
+              echo "> Size remediation from the breakdown below before deciding on a gate."
+            fi
+            echo
+            echo "### Top error codes"
+            echo
+            if [ -s "$CODES" ]; then
+              echo "| Count | Code |"
+              echo "| --- | --- |"
+              sort -rn "$CODES" | head -15 | while IFS="$(printf '\t')" read -r n c; do
+                echo "| \`$n\` | \`$c\` |"
+              done
+            else
+              echo "_none parsed_"
+            fi
+            echo
+            echo "### Top files by error count"
+            echo
+            if [ -s "$TALLY" ]; then
+              echo "| Count | File |"
+              echo "| --- | --- |"
+              sort -rn "$TALLY" | head -10 | while IFS="$(printf '\t')" read -r n f; do
+                echo "| \`$n\` | \`$f\` |"
+              done
+            else
+              echo "_none parsed_"
+            fi
+            echo
+            echo "### Top non-TS \`error:\` messages"
+            echo
+            # THE point of this section: in the INCONCLUSIVE case the TS tables
+            # above are both empty by definition, and the one thing that explains
+            # WHY lives in deno's top-level `error:` lines. Deduped, because a
+            # 244-file sweep repeats the same cause once per file. Absolute paths
+            # are folded to repo-relative so identical errors collapse to one row.
+            if [ "$NON_TS" -gt 0 ]; then
+              echo "| Count | Message |"
+              echo "| --- | --- |"
+              grep -aE '^error: ' "$CLEAN" \
+                | sed -e 's#file:///[^ "]*/supabase/functions/#supabase/functions/#g' \
+                      -e 's/[|`]/ /g' \
+                | cut -c1-200 | sort | uniq -c | sort -rn | head -10 \
+                | while read -r n m; do echo "| \`$n\` | \`$m\` |"; done
+            else
+              echo "_none_"
+            fi
+          } | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+          # ---- capped raw excerpt so a huge error volume cannot blow up the log ---
+          # FILTERED, not a plain head. An aborted whole-tree pass front-loads the
+          # raw file with `Download https://esm.sh/...` lines — on run 30320408084
+          # the first 100 lines of 372,905 raw bytes contained ZERO `TS####` lines,
+          # so the excerpt gave no independent cross-check on the parsed count,
+          # which is the only reason an excerpt exists. Match the same diagnostic
+          # shapes the parser keys on, and fall back when the filter matches
+          # nothing so a FORMAT CHANGE still shows raw evidence instead of an
+          # empty block.
+          #
+          # Reads $CLEAN, not $RAW. The `^error: ` half of this filter is anchored
+          # and could never match deno's coloured `ESC[1;31merror ESC[0m: ...` —
+          # on the two failed runs this filter therefore emptied out and the
+          # fallback dumped 100 lines of `Download` noise, which is why the cause
+          # stayed invisible. Tier 2 now drops that noise before the head so a
+          # format change still surfaces something legible; tier 3 keeps a truly
+          # unfiltered view for the case where the noise IS the whole output.
+          FILTERED="$TMP/deno-check-excerpt.txt"
+          DENOISED="$TMP/deno-check-denoised.txt"
+          grep -aE 'TS[0-9]+ \[ERROR\]|^error: ' "$CLEAN" > "$FILTERED" 2>/dev/null
+          FILTERED_LINES=$(wc -l < "$FILTERED" | tr -d ' '); FILTERED_LINES=${FILTERED_LINES:-0}
+          grep -avE '^(Download |[[:space:]]*$)' "$CLEAN" > "$DENOISED" 2>/dev/null
+          if [ -s "$FILTERED" ]; then
+            echo "──────── deno check output: diagnostic lines (first 100 of $FILTERED_LINES) ────────"
+            head -100 "$FILTERED"
+          elif [ -s "$DENOISED" ]; then
+            echo "──────── no diagnostic-shaped line matched; first 100 non-Download lines ────────"
+            head -100 "$DENOISED"
+          else
+            echo "──────── nothing but download noise; unfiltered first 100 lines ────────"
+            head -100 "$CLEAN"
+          fi
+          echo "──────── end excerpt ($RAW_BYTES bytes raw, $ANSI_SEQS ANSI escapes stripped) ────────"
+
+          # Advisory by construction. continue-on-error: true is the belt; this is the
+          # braces. Removing either without first reading the number above is the exact
+          # mistake this step exists to prevent.
+          exit 0
 
   # ── Step 1b: Integration Tests (live Supabase) ──
   # Runs migration/trigger/view/CHECK-constraint tests that require a real
@@ -1926,7 +2570,37 @@ jobs:
           const failures = required.filter((job) => needs[job]?.result !== 'success');
           failures.push(...forkSkips.filter((job) => needs[job]?.result !== 'skipped'));
           if (failures.length) {
-            console.error('CI Gate failed: ' + failures.map((job) => job + '=' + (needs[job]?.result || 'missing')).join(', '));
+            // DIAGNOSTIC PARTITION ONLY — the gate still exits 1 in every
+            // non-success case. A cancelled upstream is NEVER forgiven: a
+            // genuine cancellation (runner loss, job timeout, manual cancel)
+            // must keep blocking the merge. All that changes below is the
+            // wording, so a human can tell a supersede from a real break
+            // without opening the run.
+            const describe = (job) => job + '=' + (needs[job]?.result || 'missing');
+            const cancelled = failures.filter((job) => needs[job]?.result === 'cancelled');
+            const genuine = failures.filter((job) => needs[job]?.result !== 'cancelled');
+            if (genuine.length === 0) {
+              // Every non-success upstream was cancelled. Overwhelmingly this
+              // is concurrency: cancel-in-progress killing an in-flight job
+              // after a newer push to the same ref. "build" is the usual
+              // victim: its artifact upload runs after ~4.5 min of build work,
+              // so it is nearly always the job still running when a new
+              // commit lands.
+              console.error('CI Gate blocked by CANCELLED upstream(s) only, no genuine failure: ' + cancelled.map(describe).join(', '));
+              console.error('LIKELY SUPERSEDE, not a broken build. Confirm before investigating:');
+              console.error('  1. This run\'s GitHub run-level conclusion reads "cancelled", not "failure".');
+              console.error('  2. A newer CI run exists for this branch (created moments before the cancellation).');
+              console.error('If BOTH hold, this run was superseded by a newer push - read the newer run instead.');
+              console.error('If EITHER does not hold, this was a real cancellation (runner loss, job timeout, manual cancel) and MUST be investigated.');
+              process.exit(1);
+            }
+            // At least one upstream genuinely failed (or was skipped/missing).
+            // Keep the original blunt wording and put the real failures FIRST
+            // so a genuine break is never softened or buried by cancel noise.
+            console.error('CI Gate failed: ' + genuine.concat(cancelled).map(describe).join(', '));
+            if (cancelled.length) {
+              console.error('(' + cancelled.length + ' further upstream(s) were cancelled: ' + cancelled.map(describe).join(', ') + '. Cancellation noise does NOT excuse the genuine failure(s) listed first.)');
+            }
             process.exit(1);
           }
           console.log('CI Gate passed.');
