@@ -28,9 +28,17 @@ npm run lint
 ```bash
 npm test
 ```
-- All tests pass (currently 175 across 7 files)
+- All tests pass. **Do not assert a test count from this file** — it rots. Read
+  vitest's own summary line from the run you just did. (The "175 across 7 files"
+  figure that lived here until 2026-07-28 was understated by roughly two orders
+  of magnitude and would have made this gate unsatisfiable.)
 - No `.skip` without comment and TODO
-- **Regression catalog gap check**: if the change touches a product invariant area, report whether the corresponding regression tests exist. Do NOT claim "regression tests pass" for tests that don't exist. Current catalog status: 4/35 exist (11%). Critical gaps: quiz scoring (0/8), payment (0/4).
+- **Regression catalog gap check**: if the change touches a product invariant area, report whether the corresponding regression tests exist. Do NOT claim "regression tests pass" for tests that don't exist.
+  For the current catalog total, read `.claude/regression/00-header.md` — it is the
+  authoritative source. Note the header's self-declared total and the count of
+  distinct `REG-N` ids in the body do not currently agree; if you need an exact
+  number, derive it and say which definition you used. The "4/35 (11%)" figure
+  recorded here until 2026-07-28 was stale by two orders of magnitude.
 
 ## Gate 4: Build
 ```bash
@@ -38,9 +46,17 @@ npm run build
 ```
 - Exit code 0 required
 - Bundle limits:
-  - Shared JS: < 160 kB (currently ~155 kB)
-  - Individual page: < 260 kB (max: /foxy ~254 kB)
-  - Middleware: < 120 kB (currently ~109 kB)
+  Read the enforced caps from source, never from this file:
+  ```bash
+  grep -nE '^const CAP_' scripts/check-bundle-size.mjs
+  ```
+  - Shared JS: within `CAP_SHARED_KB`
+  - Individual page: within `CAP_PAGE_KB`
+  - Middleware: within `CAP_MIDDLEWARE_KB`
+
+  If the per-page report shows every page at 0.0 kB, or reports zero pages
+  measured, the gate is broken and this is a FAIL — that exact vacuous state
+  shipped undetected until the 2026-07-28 audit.
 
 ## Gate 5: Domain Review
 Conditional. Required when change touches a domain agent's files.

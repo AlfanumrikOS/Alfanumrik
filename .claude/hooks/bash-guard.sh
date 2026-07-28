@@ -37,17 +37,24 @@ CONTEXT=""
 # ── BLOCKING: file modification via Bash on protected paths ──
 
 # Check if command writes to protected files via sed, awk, echo, tee, cat, cp, mv
+#
+# MONOREPO NOTE: these fragments are matched as substrings of the command, not
+# as anchored paths. Before the 2026-07 repair they read `src/lib/(...)`, which
+# matched ONLY the auto-generated re-export stubs at apps/host/src/lib/ and
+# never the CANONICAL implementations at packages/lib/src/ — i.e. the file that
+# actually matters was writable via `sed -i`. Both prefixes are now covered.
+# `middleware` was also dead: the file is apps/host/src/proxy.ts (Next.js 16).
 if echo "$COMMAND" | grep -qE "(sed\s+-i|awk\s+.*>|echo\s+.*>|tee\s|cat\s+.*>|cp\s|mv\s)" ; then
   # Check if it targets protected paths
-  if echo "$COMMAND" | grep -qE "supabase/migrations|src/lib/(rbac|admin-auth|xp-rules|exam-engine|cognitive-engine|feedback-engine|razorpay|middleware)"; then
+  if echo "$COMMAND" | grep -qE "supabase/migrations|(packages/lib/src|apps/host/src/lib)/(rbac|admin-auth|xp-rules|exam-engine|cognitive-engine|feedback-engine|razorpay|supabase-admin|supabase-server)|apps/host/src/proxy\.ts"; then
     DECISION="deny"
     REASON="BLOCKED: $AGENT_TYPE attempted to modify a protected file via Bash. Use Edit/Write tools instead — they are subject to ownership checks."
   fi
-  if echo "$COMMAND" | grep -qE "supabase/functions/(foxy-tutor|ncert-solver|quiz-generator|cme-engine)" && [ "$DECISION" = "allow" ]; then
+  if echo "$COMMAND" | grep -qE "supabase/functions/(ncert-solver|quiz-generator|cme-engine)|apps/host/src/app/api/foxy/" && [ "$DECISION" = "allow" ]; then
     DECISION="deny"
-    REASON="BLOCKED: $AGENT_TYPE attempted to modify a protected AI function via Bash. Use Edit/Write tools instead."
+    REASON="BLOCKED: $AGENT_TYPE attempted to modify a protected AI surface via Bash. Use Edit/Write tools instead."
   fi
-  if echo "$COMMAND" | grep -qE "\.claude/(agents|skills|CLAUDE)" && [ "$DECISION" = "allow" ]; then
+  if echo "$COMMAND" | grep -qE "\.claude/(agents|skills|hooks|CLAUDE)" && [ "$DECISION" = "allow" ]; then
     DECISION="deny"
     REASON="BLOCKED: $AGENT_TYPE attempted to modify agent system files via Bash. Use Edit/Write tools instead."
   fi

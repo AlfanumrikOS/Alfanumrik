@@ -52,7 +52,7 @@ supabase migration new <name>                            # Create new migration
 | Database | Supabase PostgreSQL with RLS, RBAC (6 roles, 71 permissions), pgvector for RAG |
 | Auth | Supabase Auth (email/PKCE), JWT auto-refresh via middleware |
 | Payments | Razorpay (INR subscriptions) |
-| AI | Claude Haiku via Supabase Edge Functions (ncert-solver, quiz-generator, cme-engine + non-AI functions) and the Foxy Next.js route (`apps/host/src/app/api/foxy/route.ts` — `foxy-tutor` Edge Function retired 2026-07-01 for WEB; ⚠️ 2026-07-13: the function is still deployed AND still invoked by the Flutter app (mobile/lib/data/repositories/chat_repository.dart) — repoint mobile before deleting it. CORRECTION 2026-07-20 (verified in-source): the "still invoked by the Flutter app" half of the 2026-07-13 note is SUPERSEDED — `mobile/lib/core/constants/api_constants.dart:99-106` defaults `FOXY_ENDPOINT` to `'api'`, so mobile now POSTs to the Next.js `/api/foxy` route; the `_sendViaEdge` branch in chat_repository.dart (~lines 120-173) is documented dead code kept only so already-installed APKs pointed at 'edge' fail predictably. The deletion caution STANDS: old installed APKs may still call the deployed `foxy-tutor` until forced upgrade — verify invocation metrics (Supabase Edge Function logs / `supabase functions list`) before deleting the deployed function). `quiz-generator/` is the only generator on disk; `quiz-generator-v2/` is archived under `supabase/functions/_archive/`. CORRECTION 2026-07-13: the prior claim that v2 was "never live" was false — it WAS deployed and ACTIVE in production (reached v35) until it was tombstoned with a structured 410 on 2026-07-13 (see docs/runbooks/edge-function-drift-report.md execution log). `enhanced-quiz-generator` (a second live duplicate with no source in git) was tombstoned the same day. |
+| AI | Claude Haiku via Supabase Edge Functions (`ncert-solver`, `quiz-generator`, `cme-engine`) plus the Foxy Next.js route `apps/host/src/app/api/foxy/route.ts`.<br><br>**Foxy:** the `foxy-tutor` Edge Function was retired 2026-07-01. Both web and mobile now POST to `/api/foxy` (`mobile/lib/core/constants/api_constants.dart:99-106` defaults `FOXY_ENDPOINT` to `'api'`; the `_sendViaEdge` branch in `mobile/lib/data/repositories/chat_repository.dart` is documented dead code retained so old APKs pinned to `'edge'` fail predictably).<br>⚠️ **LIVE CAUTION — do not delete the deployed `foxy-tutor` function yet.** Already-installed APKs may still call it until a forced upgrade. Verify invocation metrics (Supabase Edge Function logs / `supabase functions list`) before deletion.<br><br>**Quiz generators:** `quiz-generator/` is the only generator on disk; `quiz-generator-v2/` is archived under `supabase/functions/_archive/`.<br>⚠️ **LIVE LESSON — on-disk ≠ deployed.** `quiz-generator-v2` was once documented as "never live"; it was in fact deployed and ACTIVE in production (reached v35), as was `enhanced-quiz-generator` (a duplicate with no source in git). Both were tombstoned with structured 410s on 2026-07-13 (see `docs/runbooks/edge-function-drift-report.md`). **Always verify deployed state with `supabase functions list` before asserting it.** |
 | Mobile | Flutter 3.16+ / Dart 3.2+, Riverpod, GoRouter — in `/mobile` (shared API contract) |
 | Monitoring | Sentry (client/server/edge), Vercel Analytics |
 | Deployment | Vercel (bom1/Mumbai region), GitHub Actions CI/CD |
@@ -82,7 +82,16 @@ supabase migration new <name>                            # Create new migration
 
 **RBAC**: Server-side enforcement via `authorizeRequest(request, 'permission.code')` in API routes. Client-side `usePermissions()` hook is UI convenience only, not a security boundary.
 
-**Supabase Edge Functions** (`supabase/functions/`): Deno runtime — uses `Deno.serve()`, ES module imports, no `node_modules`. Each function is a directory with `index.ts`. **48 functions on disk** (verified 2026-07-17: 50 dirs = 48 functions + `_shared/` + `_archive/`, each function has an `index.ts`). The count previously read "29" — that was stale, not a deployment claim; see the drift note in `.claude/CLAUDE.md`.
+**Supabase Edge Functions** (`supabase/functions/`): Deno runtime — uses `Deno.serve()`, ES module imports, no `node_modules`. Each function is a directory with `index.ts`.
+
+**Do not quote a function count from memory — measure it:**
+```bash
+find supabase/functions -maxdepth 2 -name index.ts | wc -l   # functions ON DISK
+ls -d supabase/functions/*/ | wc -l                          # dirs (= functions + _shared/ + _archive/)
+```
+As of 2026-07-28 that reads **47 on disk / 49 dirs**. This number has drifted every time it was written down (it has read 29, then 48, then 47), which is why the command is now the source of truth.
+
+⚠️ **"On disk" is NOT "deployed" — these genuinely differ here and the difference has burned us.** `quiz-generator-v2` and `enhanced-quiz-generator` were both live in production with no matching source on disk until they were tombstoned on 2026-07-13. For any claim about what is actually *running*, run `supabase functions list` — never infer deployment state from the filesystem.
 
 **Database migrations**: `supabase/migrations/` ordered by timestamp. Every new table must have RLS enabled and policies in the same migration file.
 
@@ -113,7 +122,11 @@ These are commonly violated and cause bugs:
 
 6. **Bilingual**: All user-facing text must support Hindi/English via `AuthContext.isHi`. Technical terms (CBSE, XP, Bloom's) are not translated.
 
-7. **Bundle budget**: Shared JS < 175 kB (temporary; baseline 160 kB — see P10 in `.claude/CLAUDE.md` for the cap-raise rationale and follow-up tracking), pages < 260 kB, middleware < 120 kB — targets Indian 4G (2-5 Mbps).
+7. **Bundle budget**: targets Indian 4G (2-5 Mbps). **The enforced caps are the constants in `scripts/check-bundle-size.mjs` — read them, do not quote a remembered number:**
+   ```bash
+   grep -nE '^const CAP_' scripts/check-bundle-size.mjs
+   ```
+   As of 2026-07-28: `CAP_SHARED_KB = 289`, `CAP_PAGE_KB = 260`, `CAP_MIDDLEWARE_KB = 120`. `CAP_SHARED_KB` is the authoritative layout-inclusive first-load total and has been ratcheted upward many times for framework/gzip baseline drift (the script header carries the full change log and per-raise rationale). P10's aspirational 160 kB baseline is a *goal*, not the gate — do not reject a change for exceeding 160 kB while `CAP_SHARED_KB` is higher.
 
 8. **Payment integrity**: Razorpay webhook signature must be verified before processing. Subscription status changes written atomically with payment records.
 
@@ -123,14 +136,21 @@ These are commonly violated and cause bugs:
 
 ## Testing
 
-- **Unit tests**: Vitest with JSDOM. Tests in `src/__tests__/`. Setup file: `src/__tests__/setup.ts`.
+- **Unit tests**: Vitest with JSDOM. Tests live under `apps/host/src/__tests__/`, `packages/*/src/__tests__/`, and `supabase/functions/**/__tests__/`. Setup file: `apps/host/src/__tests__/setup.ts`.
+- **Never quote a test count from memory — the pass/fail signal is vitest's own summary line.** To size the suite:
+  ```bash
+  # test FILES on disk
+  find apps packages supabase e2e -type f \( -name '*.test.ts' -o -name '*.test.tsx' \
+    -o -name '*.spec.ts' -o -name '*.spec.tsx' \) | grep -v node_modules | wc -l
+  ```
+  As of 2026-07-28 that reads **1,285 files**. The total *test case* count is only obtainable by running the suite (`npm test`) — `npx vitest list` does not finish collection on `apps/host` within 500s, so treat any written-down case count as unverified.
 - **Coverage thresholds (current → aspirational target, reconciled 2026-04-27):**
   - Global: 35% statements / 30% branches / 35% functions / 35% lines → 60% (TODO(testing): real coverage is ~37%; ratchet upward by adding hook + util + server-helper tests — see `vitest.config.ts` lines 60-68)
   - `src/lib/xp-rules.ts`: 90% statements / 75% branches / 90% functions / 90% lines → 90%/90%/90%/90% (TODO(assessment): branches relaxed; need daily-cap clamp, perfect-score combo, streak-bonus edge cases — see `vitest.config.ts` lines 73-82)
   - `src/lib/cognitive-engine.ts`: 65% all metrics → 80% all metrics (TODO(assessment): need IRT 3PL Newton-Raphson convergence path, SM-2 schedule decay, error-classification branches — file is 1412 LOC, see `vitest.config.ts` lines 83-92)
   - `src/lib/exam-engine.ts`: 80% all metrics → 80% all metrics (at target)
   - Authoritative source: `vitest.config.ts`. If the table above disagrees with the config, the config wins and this doc is stale.
-- **E2E tests**: Playwright, specs in `e2e/`. 30s timeout, 1 retry, trace on first retry.
+- **E2E tests**: Playwright, specs in `e2e/` (`ls e2e/*.spec.ts | wc -l` → **30** as of 2026-07-28). 30s timeout, 1 retry, trace on first retry.
 - **CI pipeline** (`.github/workflows/ci.yml`): parallel jobs at t=0 — secret scan; lint + type-check + auth gate; 4 unit-test shards → coverage-merge fan-in; edge-function Deno tests; integration tests; build + bundle size gates; E2E (PRs) — all fanned into the CI Gate, then post-deploy health check (main).
 
 ## Environment Variables
@@ -155,7 +175,8 @@ Email credentials are set as Supabase Edge Function secrets, not in `.env`.
 See `.claude/CLAUDE.md` for the full product constitution:
 - 14 product invariants (P1-P14) that cannot be violated
 - 10-agent auto-delegation system with domain ownership
-- Enforcement hooks (guard.sh, bash-guard.sh, review-chain.sh, post-edit-check.sh)
+- Enforcement hooks (`guard.sh`, `bash-guard.sh`, `review-chain.sh`, `post-edit-check.sh`) in `.claude/hooks/`
+- **`.claude/hooks/verify-hook-patterns.sh` — run this after ANY hook edit or directory move.** It asserts every hook is executable + LF-terminated and that every ownership/review-chain path pattern matches at least one real tracked file. It exists because the monorepo migration silently killed 17 of 34 patterns (all anchored to a repo-root `src/` that no longer exists) *and* every hook carried CRLF endings that made the shebang resolve to `bash\r` — so enforcement was 0/34 while still looking authoritative. A pattern that matches nothing is indistinguishable from one that has nothing to match yet; this script is what tells them apart.
 - Review chain requirements by change type
 - Approval gates and autonomous operating loop
 
@@ -171,6 +192,8 @@ See `.claude/CLAUDE.md` for the full product constitution:
 > | `src/components/<x>` | shared UI moved to `packages/ui/src/<x>` (the `@alfanumrik/ui` package — canonical implementation); `apps/host/src/components/<x>` is a thin re-export stub. Quiz components (`QuizSetup`, `QuizResults`, `FeedbackOverlay`) live at `packages/ui/src/quiz/`. |
 > | `src/proxy.ts`, `src/types/*` | `apps/host/src/proxy.ts`, `apps/host/src/types/*` |
 > | `supabase/migrations/`, `supabase/functions/` | **UNCHANGED — still at repo ROOT.** They did NOT move under `apps/host/` (`apps/host/supabase/**` does not exist). |
+>
+> **This drift was not only cosmetic.** The enforcement hooks in `.claude/hooks/` were never re-pointed after the migration, so 17 of their 34 ownership / review-chain path patterns were anchored to a repo-root `src/` that no file can match — P14 was structurally unenforced for XP/scoring constants, payment code, RBAC/auth, the RLS-bypassing admin client, and the whole super-admin surface. Repaired 2026-07-28 and pinned by `.claude/hooks/verify-hook-patterns.sh`. **If you move a directory, run that script.** Anywhere you see a `^src/`-anchored path in a doc, spec, or script, treat it as stale and translate it with the table above.
 
 | Area | Location |
 |---|---|
@@ -200,7 +223,7 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Non-AI Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-auth-email/`, `send-welcome-email/`, `session-guard/`, `scan-ocr/`, `export-report/`, `identity/`, `bulk-question-gen/`, `embed-diagrams/`, `embed-ncert-qa/`, `embed-questions/`, `extract-diagrams/`, `extract-ncert-questions/`, `generate-answers/`, `generate-concepts/`, `generate-embeddings/`, `nep-compliance/`, `parent-portal/`, `parent-report-generator/`, `teacher-dashboard/`, `whatsapp-notify/`, `alert-deliverer/` |
 | Feature flags | `packages/lib/src/feature-flags.ts` |
 | Structured logger | `packages/lib/src/logger.ts` |
-| Migrations | `supabase/migrations/` — root holds the `00000000000000_baseline_from_prod.sql` baseline **+ 409 timestamped migrations** (410 `.sql` files total; latest `20260716120000_seed_ff_foxy_math_format_v2.sql`, verified 2026-07-17). The pre-baseline chain is archived under `_legacy/`, which `supabase db push` skips. |
+| Migrations | `supabase/migrations/` — root holds the `00000000000000_baseline_from_prod.sql` baseline plus the timestamped chain. **Count it, don't quote it:** `ls supabase/migrations/*.sql \| wc -l` (total incl. baseline), `ls supabase/migrations/*.sql \| sort \| tail -1` (latest). As of 2026-07-28: **469 `.sql` at root = baseline + 468 timestamped**, latest `20260727130100_grounded_traces_shadow_confidence_v2.sql`. The pre-baseline chain (**359 files**, `find supabase/migrations/_legacy -name '*.sql' \| wc -l`) is archived under `_legacy/`, which `supabase db push` skips because the CLI only applies files at the immediate `supabase/migrations/` root. |
 | NCERT corpus (do not re-ingest before checking) | **~16,006 chunks in `rag_content_chunks`, covering 750 of 761 `cbse_syllabus` rows (~98.6%)** as of the 2026-07 audits. The corpus **exists** — before funding or scoping any re-ingestion, read `/api/super-admin/grounding/coverage` and the `ingestion_gaps` view. `cbse_syllabus.rag_status` is `'ready'` only when `chunk_count >= 50` AND `verified_question_count >= 40`, so a chapter can be fully ingested and still read `'partial'` purely because its questions are unverified — `'partial'` does **not** imply missing content. |
 | CI/CD | `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml` |
 | Operational docs | `docs/` (RBAC matrix, backup/restore, admin ops, architecture docs) |
