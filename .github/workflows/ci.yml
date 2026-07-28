@@ -1917,8 +1917,43 @@ jobs:
           NON_TS=$(grep -cE '^error: ' "$RAW"); NON_TS=${NON_TS:-0}
           RAW_BYTES=$(wc -c < "$RAW" | tr -d ' ')
 
-          # ---- report to the job summary -----------------------------------------
+          # One word summarising which of the three outcomes we landed on, so the
+          # INCONCLUSIVE case is greppable rather than only readable as prose.
+          if [ "$STATUS" -eq 0 ]; then
+            STATE="CLEAN"
+          elif [ "$TOTAL" -eq 0 ]; then
+            STATE="INCONCLUSIVE"
+          else
+            STATE="MEASURED"
+          fi
+
+          # ---- report to STDOUT *and* the job summary -----------------------------
+          # `tee`, not `>>`. GitHub exposes $GITHUB_STEP_SUMMARY through NO API
+          # surface (not get_job_logs, not check-run output, not any /job-summaries
+          # endpoint) — a summary-only report is readable exclusively by a human
+          # opening the run's Summary tab in a browser, which strands the one number
+          # this step exists to produce. Writing the SAME block to stdout puts it in
+          # the job log, which IS API-readable. The `:-/dev/null` default keeps this
+          # working when the variable is unset (running the body outside Actions).
+          # The KEY=VALUE block below is the machine-readable contract: a future
+          # automated reader greps `^DENO_TYPE_DEBT_TOTAL=` instead of parsing a
+          # markdown table. Fenced so it also renders as a block in the summary.
           {
+            echo '```'
+            echo "DENO_TYPE_DEBT_STATE=$STATE"
+            echo "DENO_TYPE_DEBT_TOTAL=$TOTAL"
+            echo "DENO_TYPE_DEBT_FILES=$DISTINCT_FILES"
+            echo "DENO_TYPE_DEBT_MODE=$MODE"
+            echo "DENO_TYPE_DEBT_CHECKED_FILES=$CHECKED_FILES"
+            echo "DENO_TYPE_DEBT_EXCLUDED_FILES=$ARCHIVED"
+            echo "DENO_TYPE_DEBT_CHECKED_LINES=$CHECKED_LINES"
+            echo "DENO_TYPE_DEBT_CODES=$DISTINCT_CODES"
+            echo "DENO_TYPE_DEBT_ATTRIBUTED=$ATTRIBUTED"
+            echo "DENO_TYPE_DEBT_NON_TS=$NON_TS"
+            echo "DENO_TYPE_DEBT_EXIT=$STATUS"
+            echo "DENO_TYPE_DEBT_RAW_BYTES=$RAW_BYTES"
+            echo '```'
+            echo
             echo "## Deno type-check debt (ADVISORY — this step never fails CI)"
             echo
             echo "\`deno check --no-lock\` over the Edge Function tree. The cache and test"
@@ -1975,11 +2010,27 @@ jobs:
             else
               echo "_none parsed_"
             fi
-          } >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+          } | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
           # ---- capped raw excerpt so a huge error volume cannot blow up the log ---
-          echo "──────── first 100 lines of raw deno check output ────────"
-          head -100 "$RAW"
+          # FILTERED, not a plain head. An aborted whole-tree pass front-loads the
+          # raw file with `Download https://esm.sh/...` lines — on run 30320408084
+          # the first 100 lines of 372,905 raw bytes contained ZERO `TS####` lines,
+          # so the excerpt gave no independent cross-check on the parsed count,
+          # which is the only reason an excerpt exists. Match the same diagnostic
+          # shapes the parser keys on, and fall back to the unfiltered head when the
+          # filter matches nothing so a FORMAT CHANGE still shows raw evidence
+          # instead of an empty block.
+          FILTERED="$TMP/deno-check-excerpt.txt"
+          grep -E 'TS[0-9]+ \[ERROR\]|^error: ' "$RAW" > "$FILTERED" 2>/dev/null
+          FILTERED_LINES=$(wc -l < "$FILTERED" | tr -d ' '); FILTERED_LINES=${FILTERED_LINES:-0}
+          if [ -s "$FILTERED" ]; then
+            echo "──────── raw deno check output: diagnostic lines (first 100 of $FILTERED_LINES) ────────"
+            head -100 "$FILTERED"
+          else
+            echo "──────── no diagnostic-shaped line matched; unfiltered first 100 lines ────────"
+            head -100 "$RAW"
+          fi
           echo "──────── end excerpt ($RAW_BYTES bytes total) ────────"
 
           # Advisory by construction. continue-on-error: true is the belt; this is the
