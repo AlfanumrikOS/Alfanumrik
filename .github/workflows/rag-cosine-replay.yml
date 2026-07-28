@@ -88,15 +88,16 @@ jobs:
   replay:
     name: Cosine distribution replay (lane=direct, read-only)
     runs-on: ubuntu-latest
-    # SUPABASE_SERVICE_ROLE_KEY is scoped to the `production-ops` environment,
-    # not repo-level. Without this the preflight sees it empty and aborts --
-    # which is exactly what happened on run 30325456772
-    # (COSINE_REPLAY_MISSING_SECRETS=SUPABASE_SERVICE_ROLE_KEY).
-    # Precedent: content-quality-nightly.yml's `content-quality` job declares
-    # the same environment to reach the same secret. Scoping here rather than
-    # promoting the key to repo level keeps an RLS-bypassing credential out of
-    # reach of every other workflow.
-    environment: production-ops
+    # SUPABASE_SERVICE_ROLE_KEY lives in the `supabase` GitHub environment --
+    # confirmed from the environment settings page, NOT inferred. Two earlier
+    # runs (30325456772, 30326862812) aborted at the preflight because the job
+    # first declared no environment, then the wrong one (`production-ops`, an
+    # inference from content-quality-nightly.yml that proved false).
+    # That environment has no wait timer and no deployment-branch restriction,
+    # so declaring it does not introduce an approval pause.
+    # Scoping here rather than promoting the key to repo level keeps an
+    # RLS-bypassing credential out of reach of every other workflow.
+    environment: supabase
     # Hard ceiling so a hung run cannot bill indefinitely. The input validator
     # additionally refuses any (limit x paths x delay) combination whose own
     # wall-clock estimate would exceed this budget.
@@ -260,7 +261,16 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Alias fallback resolved by the ACTIONS EXPRESSION ENGINE, not by shell.
+          # `||` returns the first non-empty value. This is deliberate: an
+          # earlier revision resolved aliases with `export` inside the preflight
+          # step, which does NOT propagate -- each `run:` block is its own shell.
+          # That would have let the preflight report [present] while Phase 2
+          # received an empty key: a vacuously-green run, the exact failure mode
+          # this workflow's fail-loud design exists to prevent.
+          # Every branch here is a `secrets.*` reference, so GitHub's log
+          # masking applies to whichever one wins.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASE_SECRET_KEY || secrets.SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set -euo pipefail
           echo "=== PHASE 2 PREFLIGHT: credential check (before any spend) ==="
@@ -308,7 +318,16 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Alias fallback resolved by the ACTIONS EXPRESSION ENGINE, not by shell.
+          # `||` returns the first non-empty value. This is deliberate: an
+          # earlier revision resolved aliases with `export` inside the preflight
+          # step, which does NOT propagate -- each `run:` block is its own shell.
+          # That would have let the preflight report [present] while Phase 2
+          # received an empty key: a vacuously-green run, the exact failure mode
+          # this workflow's fail-loud design exists to prevent.
+          # Every branch here is a `secrets.*` reference, so GitHub's log
+          # masking applies to whichever one wins.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_KEY || secrets.SUPABASE_SECRET_KEY || secrets.SERVICE_ROLE_KEY || secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set -euo pipefail
           echo "=== PHASE 2: REAL RUN (lane=direct — SELECT-only, zero writes) ==="
