@@ -7,10 +7,15 @@ import { test, type Page } from '@playwright/test';
  * Supabase token endpoint and `students` REST endpoint such that AuthContext
  * resolves a valid student session without contacting a live backend.
  *
- * Tests that need a *real* logged-in session (e.g. for backend-side P3
- * anti-cheat enforcement) should `test.fixme(true, '<reason>')` until a
- * dedicated test-user fixture is wired in CI. The mocked path here is only
- * useful for asserting client-side flows.
+ * Tests that need a *real* logged-in session (e.g. to exercise the SERVER
+ * side of P3 anti-cheat against a live Supabase) must gate on a MACHINE-
+ * CHECKABLE condition — `test.skip(!hasRealStudentCreds(), '<reason>')` — so
+ * they self-enable the moment the prerequisite exists.
+ *
+ * Passing a LITERAL boolean to `test.fixme` / `test.skip` is BANNED in this
+ * directory: it makes the skip unconditional and permanent, which is how the
+ * blocking critical-path gate ended up green while asserting nothing. The ban
+ * is enforced by `apps/host/src/__tests__/e2e/critical-path-gate.test.ts`.
  *
  * If `TEST_STUDENT_EMAIL` + `TEST_STUDENT_PASSWORD` are present, callers can
  * choose to take the real-login path via `loginViaUI()` instead.
@@ -47,6 +52,36 @@ function supabaseStorageKey(): string {
   }
 }
 
+/**
+ * ── Root cause of the 2026-07 "10 fixme'd critical-path tests" incident ──
+ *
+ * `supabaseStorageKey()` above derives the localStorage key from the
+ * NEXT_PUBLIC_SUPABASE_URL of the PLAYWRIGHT PROCESS. In the blocking
+ * `e2e-critical-paths` CI job that env var is the workflow-level placeholder
+ * (`https://placeholder.supabase.co`) while BASE_URL points at a DEPLOYED
+ * app whose bundle was built against the real project ref. The seeded key
+ * (`sb-placeholder-auth-token`) therefore never matched the key the browser
+ * SDK reads (`sb-<real-ref>-auth-token`), so the mocked session was silently
+ * invisible, every mocked-session flow bounced to /login, and ten assertions
+ * were written off as "needs a real fixture".
+ *
+ * Fix: instead of guessing the project ref, intercept the READ. Any
+ * `sb-<anything>-auth-token` lookup that would otherwise miss resolves to the
+ * mock session. This is target-agnostic (localhost dev, CI-local server, or a
+ * deployed domain) and needs no secret, no seeded DB row, and no env var.
+ */
+async function installSessionForAnyProjectRef(page: Page, session: unknown): Promise<void> {
+  await page.addInitScript((raw: string) => {
+    const AUTH_TOKEN_KEY = /^sb-[^-]+.*-auth-token$/;
+    const origGet = Storage.prototype.getItem;
+    Storage.prototype.getItem = function patchedGetItem(key: string) {
+      const value = origGet.call(this, key);
+      if (value === null && AUTH_TOKEN_KEY.test(key)) return raw;
+      return value;
+    };
+  }, JSON.stringify(session));
+}
+
 export function buildSupabaseSession(role: 'student' | 'teacher' | 'guardian' = 'student') {
   const expiresIn = 3600;
   return {
@@ -74,6 +109,21 @@ export async function mockStudentSession(page: Page, opts?: {
   xpTotal?: number;
   streakDays?: number;
   onboardingCompleted?: boolean;
+  /**
+   * Opt in to the project-ref-agnostic session read shim (see
+   * `installSessionForAnyProjectRef`). Required whenever the app under test
+   * was built against a DIFFERENT Supabase project than the one this process's
+   * NEXT_PUBLIC_SUPABASE_URL names — which is always true for the blocking
+   * `e2e-critical-paths` job (placeholder env, deployed target).
+   *
+   * Default OFF deliberately: turning it on flips several existing specs from
+   * "mocked session silently did not resolve" to "student is authenticated",
+   * and at least `today-home.spec.ts:175` encodes the old behaviour in its
+   * expectations. Enabling it globally is a separate, reviewed change.
+   * TODO(testing): audit the 11 other mockStudentSession callers, then make
+   * this the default and delete the flag.
+   */
+  anyProjectRef?: boolean;
 }): Promise<void> {
   const session = buildSupabaseSession('student');
   const student = {
@@ -97,6 +147,7 @@ export async function mockStudentSession(page: Page, opts?: {
     },
     { keys: storageKeys, value: session },
   );
+  if (opts?.anyProjectRef) await installSessionForAnyProjectRef(page, session);
   await page.route('**/auth/v1/token**', async (route) => {
     await route.fulfill({
       status: 200,
