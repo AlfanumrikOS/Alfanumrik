@@ -1810,16 +1810,36 @@ jobs:
       - name: Measure Deno type-check debt (advisory)
         # LOAD-BEARING. This is a measurement, not a gate. See the note above.
         continue-on-error: true
+        env:
+          # BLINDNESS FIX #1 of 2 (the other is the sanitise() strip in the body).
+          # Deno colourises its output even when stdout is a pipe, so on runs
+          # 30320408084 and 30321212537 the raw capture was full of CSI escapes:
+          # the job log shows `ESC[32mDownload ESC[0m`, and deno emits a
+          # top-level error as red_bold("error") + a PLAIN ": " -- i.e. the
+          # bytes on the wire are `ESC[1;31merror ESC[0m: message`, NOT
+          # `error: message`. Every ANCHORED reader in the body below
+          # (`grep -cE '^error: '` for NON_TS, the excerpt filter) is then
+          # STRUCTURALLY incapable of matching, and the `at file://` attribution
+          # frame breaks too because deno paints the location cyan, splitting
+          # `at ` from `file://`. That is why both runs reported NON_TS=0 and
+          # FILES=0 against 372,905 bytes of output and a non-zero exit: the
+          # readers were blind, not the tree clean.
+          # NO_COLOR is the documented, deno-honoured kill switch for this.
+          NO_COLOR: '1'
         run: |
           set +e
 
           TMP="${RUNNER_TEMP:-/tmp}"
           RAW="$TMP/deno-check-raw.txt"
+          # $RAW is the byte-exact capture (it backs RAW_BYTES); $CLEAN is the
+          # ANSI-stripped copy that EVERY reader consumes. Never parse $RAW.
+          CLEAN="$TMP/deno-check-clean.txt"
           LIST="$TMP/deno-check-files.txt"
           CODES="$TMP/deno-check-codes.txt"
           TALLY="$TMP/deno-check-filetally.txt"
           STATS="$TMP/deno-check-stats.txt"
           : > "$RAW"
+          : > "$CLEAN"
 
           # ---- scope: the whole Edge Function tree MINUS _archive/ ----------------
           find supabase/functions -type f -name '*.ts' \
@@ -1844,6 +1864,20 @@ jobs:
 
           echo "Scope: $CHECKED_FILES files / $CHECKED_LINES lines under supabase/functions (excluded _archive: $ARCHIVED files)"
           deno --version
+
+          # ---- ANSI sanitiser: BLINDNESS FIX #2 of 2 ------------------------------
+          # NO_COLOR is set in this step's env:, which SHOULD make everything below
+          # a no-op. This exists so the measurement does not DEPEND on deno
+          # honouring it -- a regression in deno's colour handling, or a nested
+          # tool that forces colour, must not silently zero the number again.
+          # Strips CSI sequences (ESC [ params final) and folds CR to LF, because
+          # deno's progress bar redraws with `\r` + ESC[K and can otherwise glue a
+          # real diagnostic onto the tail of a progress line where an anchored
+          # pattern cannot see it. $RAW is left byte-exact for RAW_BYTES.
+          ESC=$(printf '\033')
+          sanitise() {
+            tr '\r' '\n' < "$1" | sed "s/${ESC}\[[0-9;?]*[A-Za-z]//g" > "$2"
+          }
 
           # ---- parse helper: one pass; reused by the primary run and the fallback -
           # Deno prints each diagnostic as `TS#### [ERROR]: message` followed by an
@@ -1885,11 +1919,20 @@ jobs:
           # we own; remote-module diagnostics are not actionable here. --no-lock
           # matches the two steps above and leaves the repo deno.lock untouched. The
           # exit status is CAPTURED, never propagated.
+          # `>> "$RAW" 2>&1` -- BOTH streams. deno writes type diagnostics and its
+          # top-level `error:` lines to STDERR, so dropping stderr here would be a
+          # far bigger bug than the colour blindness. Verified present on this
+          # invocation and on the per-file fallback below; do not split them.
+          # No --quiet: deno documents that flag as "suppress diagnostic output",
+          # and the `Download` noise it would remove is already excluded by the
+          # filtered excerpt. Silencing 372 KB of noise is not worth any risk of
+          # silencing the one number this step exists to obtain.
           timeout 900 deno check --no-lock "${FILES[@]}" >> "$RAW" 2>&1
           STATUS=$?
           echo "deno check exit status: $STATUS"
 
-          parse_raw "$RAW"
+          sanitise "$RAW" "$CLEAN"
+          parse_raw "$CLEAN"
           MODE="single-invocation"
 
           # ---- fallback: deno bailed out before emitting any diagnostic -----------
@@ -1911,11 +1954,24 @@ jobs:
               SWEPT=$((SWEPT + 1))
             done
             MODE="per-file-fallback ($SWEPT/$CHECKED_FILES files swept)"
-            parse_raw "$RAW"
+            sanitise "$RAW" "$CLEAN"
+            parse_raw "$CLEAN"
           fi
 
-          NON_TS=$(grep -cE '^error: ' "$RAW"); NON_TS=${NON_TS:-0}
+          # $CLEAN, not $RAW: this anchored pattern is the exact reader that
+          # reported NON_TS=0 twice against a non-zero exit and 372 KB of output.
+          # `-a` on every reader below: deno's output is not guaranteed NUL-free,
+          # and grep silently degrades to "Binary file matches" (count 1, no
+          # lines) the moment it decides a file is binary — another way to get a
+          # confidently wrong number out of this step.
+          NON_TS=$(grep -acE '^error: ' "$CLEAN"); NON_TS=${NON_TS:-0}
           RAW_BYTES=$(wc -c < "$RAW" | tr -d ' ')
+          # How much colour was actually on the wire. 0 means NO_COLOR was
+          # honoured and the strip was a no-op; >0 means it was load-bearing.
+          # Reported so the next run answers that question without a third
+          # round-trip.
+          ANSI_SEQS=$(grep -aoE "${ESC}\[[0-9;?]*[A-Za-z]" "$RAW" 2>/dev/null | wc -l | tr -d ' ')
+          ANSI_SEQS=${ANSI_SEQS:-0}
 
           # One word summarising which of the three outcomes we landed on, so the
           # INCONCLUSIVE case is greppable rather than only readable as prose.
@@ -1952,6 +2008,7 @@ jobs:
             echo "DENO_TYPE_DEBT_NON_TS=$NON_TS"
             echo "DENO_TYPE_DEBT_EXIT=$STATUS"
             echo "DENO_TYPE_DEBT_RAW_BYTES=$RAW_BYTES"
+            echo "DENO_TYPE_DEBT_ANSI_SEQS=$ANSI_SEQS"
             echo '```'
             echo
             echo "## Deno type-check debt (ADVISORY — this step never fails CI)"
@@ -1972,6 +2029,7 @@ jobs:
             echo "| deno check exit status | \`$STATUS\` |"
             echo "| Measurement mode | \`$MODE\` |"
             echo "| Raw output size | \`$RAW_BYTES\` bytes |"
+            echo "| ANSI escapes stripped | \`$ANSI_SEQS\` |"
             echo
             if [ "$STATUS" -eq 0 ]; then
               echo "> **Clean.** Zero diagnostics. A blocking Deno type gate could be wired"
@@ -1981,7 +2039,8 @@ jobs:
               echo "> \`$STATUS\` but no \`TS####\` diagnostic was parsed. That normally means a"
               echo "> module-resolution or network failure: the \`--no-check\` pre-warm above"
               echo "> caches module SOURCES but not the \`.d.ts\` type declarations that type"
-              echo "> checking needs. See the raw excerpt in the step log."
+              echo "> checking needs. Read the **non-TS \`error:\` messages** table below —"
+              echo "> that is the actual cause — then the raw excerpt in the step log."
             else
               echo "> **$TOTAL errors across $DISTINCT_FILES of $CHECKED_FILES files.**"
               echo "> Size remediation from the breakdown below before deciding on a gate."
@@ -2010,6 +2069,25 @@ jobs:
             else
               echo "_none parsed_"
             fi
+            echo
+            echo "### Top non-TS \`error:\` messages"
+            echo
+            # THE point of this section: in the INCONCLUSIVE case the TS tables
+            # above are both empty by definition, and the one thing that explains
+            # WHY lives in deno's top-level `error:` lines. Deduped, because a
+            # 244-file sweep repeats the same cause once per file. Absolute paths
+            # are folded to repo-relative so identical errors collapse to one row.
+            if [ "$NON_TS" -gt 0 ]; then
+              echo "| Count | Message |"
+              echo "| --- | --- |"
+              grep -aE '^error: ' "$CLEAN" \
+                | sed -e 's#file:///[^ "]*/supabase/functions/#supabase/functions/#g' \
+                      -e 's/[|`]/ /g' \
+                | cut -c1-200 | sort | uniq -c | sort -rn | head -10 \
+                | while read -r n m; do echo "| \`$n\` | \`$m\` |"; done
+            else
+              echo "_none_"
+            fi
           } | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
           # ---- capped raw excerpt so a huge error volume cannot blow up the log ---
@@ -2018,20 +2096,33 @@ jobs:
           # the first 100 lines of 372,905 raw bytes contained ZERO `TS####` lines,
           # so the excerpt gave no independent cross-check on the parsed count,
           # which is the only reason an excerpt exists. Match the same diagnostic
-          # shapes the parser keys on, and fall back to the unfiltered head when the
-          # filter matches nothing so a FORMAT CHANGE still shows raw evidence
-          # instead of an empty block.
+          # shapes the parser keys on, and fall back when the filter matches
+          # nothing so a FORMAT CHANGE still shows raw evidence instead of an
+          # empty block.
+          #
+          # Reads $CLEAN, not $RAW. The `^error: ` half of this filter is anchored
+          # and could never match deno's coloured `ESC[1;31merror ESC[0m: ...` —
+          # on the two failed runs this filter therefore emptied out and the
+          # fallback dumped 100 lines of `Download` noise, which is why the cause
+          # stayed invisible. Tier 2 now drops that noise before the head so a
+          # format change still surfaces something legible; tier 3 keeps a truly
+          # unfiltered view for the case where the noise IS the whole output.
           FILTERED="$TMP/deno-check-excerpt.txt"
-          grep -E 'TS[0-9]+ \[ERROR\]|^error: ' "$RAW" > "$FILTERED" 2>/dev/null
+          DENOISED="$TMP/deno-check-denoised.txt"
+          grep -aE 'TS[0-9]+ \[ERROR\]|^error: ' "$CLEAN" > "$FILTERED" 2>/dev/null
           FILTERED_LINES=$(wc -l < "$FILTERED" | tr -d ' '); FILTERED_LINES=${FILTERED_LINES:-0}
+          grep -avE '^(Download |[[:space:]]*$)' "$CLEAN" > "$DENOISED" 2>/dev/null
           if [ -s "$FILTERED" ]; then
-            echo "──────── raw deno check output: diagnostic lines (first 100 of $FILTERED_LINES) ────────"
+            echo "──────── deno check output: diagnostic lines (first 100 of $FILTERED_LINES) ────────"
             head -100 "$FILTERED"
+          elif [ -s "$DENOISED" ]; then
+            echo "──────── no diagnostic-shaped line matched; first 100 non-Download lines ────────"
+            head -100 "$DENOISED"
           else
-            echo "──────── no diagnostic-shaped line matched; unfiltered first 100 lines ────────"
-            head -100 "$RAW"
+            echo "──────── nothing but download noise; unfiltered first 100 lines ────────"
+            head -100 "$CLEAN"
           fi
-          echo "──────── end excerpt ($RAW_BYTES bytes total) ────────"
+          echo "──────── end excerpt ($RAW_BYTES bytes raw, $ANSI_SEQS ANSI escapes stripped) ────────"
 
           # Advisory by construction. continue-on-error: true is the belt; this is the
           # braces. Removing either without first reading the number above is the exact
@@ -2479,7 +2570,37 @@ jobs:
           const failures = required.filter((job) => needs[job]?.result !== 'success');
           failures.push(...forkSkips.filter((job) => needs[job]?.result !== 'skipped'));
           if (failures.length) {
-            console.error('CI Gate failed: ' + failures.map((job) => job + '=' + (needs[job]?.result || 'missing')).join(', '));
+            // DIAGNOSTIC PARTITION ONLY — the gate still exits 1 in every
+            // non-success case. A cancelled upstream is NEVER forgiven: a
+            // genuine cancellation (runner loss, job timeout, manual cancel)
+            // must keep blocking the merge. All that changes below is the
+            // wording, so a human can tell a supersede from a real break
+            // without opening the run.
+            const describe = (job) => job + '=' + (needs[job]?.result || 'missing');
+            const cancelled = failures.filter((job) => needs[job]?.result === 'cancelled');
+            const genuine = failures.filter((job) => needs[job]?.result !== 'cancelled');
+            if (genuine.length === 0) {
+              // Every non-success upstream was cancelled. Overwhelmingly this
+              // is concurrency: cancel-in-progress killing an in-flight job
+              // after a newer push to the same ref. "build" is the usual
+              // victim: its artifact upload runs after ~4.5 min of build work,
+              // so it is nearly always the job still running when a new
+              // commit lands.
+              console.error('CI Gate blocked by CANCELLED upstream(s) only, no genuine failure: ' + cancelled.map(describe).join(', '));
+              console.error('LIKELY SUPERSEDE, not a broken build. Confirm before investigating:');
+              console.error('  1. This run\'s GitHub run-level conclusion reads "cancelled", not "failure".');
+              console.error('  2. A newer CI run exists for this branch (created moments before the cancellation).');
+              console.error('If BOTH hold, this run was superseded by a newer push - read the newer run instead.');
+              console.error('If EITHER does not hold, this was a real cancellation (runner loss, job timeout, manual cancel) and MUST be investigated.');
+              process.exit(1);
+            }
+            // At least one upstream genuinely failed (or was skipped/missing).
+            // Keep the original blunt wording and put the real failures FIRST
+            // so a genuine break is never softened or buried by cancel noise.
+            console.error('CI Gate failed: ' + genuine.concat(cancelled).map(describe).join(', '));
+            if (cancelled.length) {
+              console.error('(' + cancelled.length + ' further upstream(s) were cancelled: ' + cancelled.map(describe).join(', ') + '. Cancellation noise does NOT excuse the genuine failure(s) listed first.)');
+            }
             process.exit(1);
           }
           console.log('CI Gate passed.');
