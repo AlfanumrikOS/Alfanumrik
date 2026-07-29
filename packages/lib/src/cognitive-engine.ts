@@ -408,6 +408,35 @@ function deduplicateAdjacent(arr: string[]): string[] {
 // ─── Cognitive Load Manager ──────────────────────────────────
 
 /**
+ * Fatigue thresholds (0-1 scale). Named constants so `shouldEaseOff`,
+ * `shouldPause`, and any external telemetry mirroring them can never drift
+ * apart via duplicated magic numbers.
+ *
+ * `FATIGUE_PAUSE_THRESHOLD` is the canonical "suggest a pause" trigger for
+ * the LIVE in-quiz interrupting overlay only — kept at its existing
+ * shipped/tested value (0.8) rather than the 0.7 mentioned informally in
+ * agent-boundary docs, since 0.8 is what's actually pinned by existing
+ * tests (adaptive-layer-health.test.ts, cognitive-engine-coverage.test.ts)
+ * and is the least-behavior-change choice.
+ *
+ * `FATIGUE_EASE_OFF_THRESHOLD` is ALSO the intentional threshold for the
+ * `fatigue_detected` telemetry flag persisted via `saveCognitiveMetrics`
+ * (set in quiz/page.tsx), which in turn drives two retrospective/
+ * preparatory student-facing surfaces: the "Low Energy" / "थकान" badge on
+ * `progress/page.tsx` session cards, and the `energyLevel` indicator on
+ * `exam-prep/page.tsx`. This is a deliberate choice, not an oversight: a
+ * retrospective "you seemed tired" signal shown after the fact (or a
+ * preparatory energy read before an exam) is lower-stakes than an
+ * interrupting live pause, so it should fire at the same, lower bar where
+ * the engine already started easing off difficulty (`shouldEaseOff`) —
+ * not wait for the rarer, more severe pause-tier event. Do NOT repoint
+ * `fatigue_detected` at `FATIGUE_PAUSE_THRESHOLD`; that was tried once and
+ * silently suppressed the badge/indicator for the entire 0.6-0.8 band.
+ */
+export const FATIGUE_EASE_OFF_THRESHOLD = 0.6;
+export const FATIGUE_PAUSE_THRESHOLD = 0.8;
+
+/**
  * Update cognitive load state after a response.
  * Detects fatigue, recommends difficulty adjustments.
  */
@@ -440,9 +469,9 @@ export function updateCognitiveLoad(
   ));
 
   // Decision thresholds
-  newState.shouldEaseOff = newState.consecutiveErrors >= 3 || newState.fatigueScore > 0.6;
+  newState.shouldEaseOff = newState.consecutiveErrors >= 3 || newState.fatigueScore > FATIGUE_EASE_OFF_THRESHOLD;
   newState.shouldPushHarder = newState.consecutiveCorrect >= 3 && newState.fatigueScore < 0.3;
-  newState.shouldPause = newState.consecutiveErrors >= 5 || newState.fatigueScore > 0.8;
+  newState.shouldPause = newState.consecutiveErrors >= 5 || newState.fatigueScore > FATIGUE_PAUSE_THRESHOLD;
 
   return newState;
 }
@@ -491,8 +520,12 @@ export function getReflectionPrompt(
   consecutiveCorrect: number,
   bloomLevel: BloomLevel
 ): ReflectionPrompt | null {
-  // After wrong answer: metacognitive reflection
-  if (!isCorrect && consecutiveErrors === 0) {
+  // After wrong answer: metacognitive reflection.
+  // NOTE: the caller passes POST-UPDATE cognitive-load state (updateCognitiveLoad()
+  // runs first and increments consecutiveErrors before this is called), so a wrong
+  // answer always arrives here with consecutiveErrors >= 1. The first error in a new
+  // streak is therefore consecutiveErrors === 1, not 0.
+  if (!isCorrect && consecutiveErrors === 1) {
     return {
       type: 'metacognitive',
       message: 'Think about why you chose that answer. What concept tripped you up?',

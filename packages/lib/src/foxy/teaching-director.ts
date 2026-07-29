@@ -504,7 +504,7 @@ function deriveReflection(
   if (HARD_STRUGGLE_SIGNALS.has(sig)) {
     return getReflectionPrompt(false, 3, 0, targetBloom); // pause
   }
-  return getReflectionPrompt(false, 0, 0, targetBloom); // metacognitive
+  return getReflectionPrompt(false, 1, 0, targetBloom); // metacognitive
 }
 
 function withConceptId(base: RecommendedAction, conceptId: string | null): RecommendedAction {
