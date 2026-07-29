@@ -19,6 +19,9 @@
     "src/app/api/cron/**/*.ts": {
       "maxDuration": 60
     },
+    "src/app/api/whatsapp/webhook/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/**/*.ts": {
       "maxDuration": 30
     },

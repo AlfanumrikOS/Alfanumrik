@@ -374,9 +374,18 @@ export async function POST(request: NextRequest) {
 
     const guardiansWithPhone = guardians.filter((g) => g.phone);
 
+    // HARD-DISABLED 2026-07-29 — WhatsApp bot plan R4 (2026-07-29): this bulk
+    // send posts type:'score_notification' with data:{message}, which fails
+    // whatsapp-notify's template param validation (400) for every recipient.
+    // It fails silently today; it must NOT reanimate when WhatsApp
+    // credentials land. Re-enable only via the new whatsapp-send function.
+    // WhatsApp sends are reported as 0 sent / 0 failed (skipped), not as
+    // failures.
+    const WHATSAPP_SEND_ENABLED = false as boolean;
+
     // Process in parallel with concurrency limit to avoid overwhelming the Edge Function
     const CONCURRENCY = 10;
-    for (let i = 0; i < guardiansWithPhone.length; i += CONCURRENCY) {
+    for (let i = 0; WHATSAPP_SEND_ENABLED && i < guardiansWithPhone.length; i += CONCURRENCY) {
       const batch = guardiansWithPhone.slice(i, i + CONCURRENCY);
       const results = await Promise.allSettled(
         batch.map(async (guardian) => {

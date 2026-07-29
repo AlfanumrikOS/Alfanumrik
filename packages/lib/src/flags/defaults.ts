@@ -49,6 +49,7 @@ import {
   LESSON_GENERATION_FLAGS,
   CONTENT_GENERATION_FLAGS,
 } from './registries/foxy';
+import { WHATSAPP_BOT_FLAGS } from './registries/whatsapp';
 
 /**
  * Default values for known flags. `isFeatureEnabled()` already returns false
@@ -120,6 +121,17 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [OUTCOME_PREDICTION_FLAGS.V1]: false, // GenAI Phase 5a; OFF = read-only Outcome Prediction endpoint serves no prediction (disabled/404-style, true no-op). Seed migration owned by architect.
   [LESSON_GENERATION_FLAGS.V1]: false, // GenAI Phase 5b; OFF = student-facing Lesson Generation endpoint serves no generated lesson (disabled/404-style, true no-op). Seed migration owned by architect.
   [CONTENT_GENERATION_FLAGS.V1]: false, // GenAI Phase 5c; OFF = student-facing Content Generation endpoint (Mermaid diagrams) serves nothing (disabled/404-style, true no-op). Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.V1]: false, // WhatsApp bot MASTER kill switch; OFF = no WhatsApp feature runs (true no-op). Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.INBOUND_WEBHOOK]: false, // WhatsApp inbound webhook processing; OFF = ack-and-discard. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.DAILY6]: false, // WhatsApp Daily-6 practice loop; OFF = no daily questions sent. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.DOUBT]: false, // WhatsApp doubt-solving flow (existing grounded AI path); OFF = no doubt flow. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.DOUBT_CACHE]: false, // WhatsApp doubt-answer cache tier (independent ramp); OFF = every doubt hits the live path. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.OCR]: false, // WhatsApp image-message OCR (scan-ocr); OFF = text-only fallback reply. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.NOTEBOOK]: false, // WhatsApp notebook capture; OFF = nothing saved. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.BOARD_SPRINT]: false, // WhatsApp board-exam sprint program; OFF = no sprint messages. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.PARENT_WEEKLY]: false, // WhatsApp parent weekly summary; OFF = no weekly summary sent. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.ALARM_TEMPLATE]: false, // WhatsApp alarm/reminder template sends (paid templates); OFF = no template sends. Seed migration owned by architect.
+  [WHATSAPP_BOT_FLAGS.COST_GOVERNOR]: false, // WhatsApp cost-governor (budgets + throttling, independent ramp); OFF = governor inactive. Seed migration owned by architect.
   [WHITE_LABEL_FLAGS.TENANT_TYPE_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_MODULE_REGISTRY_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_CONFIG_V2]: false,
