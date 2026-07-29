@@ -27,7 +27,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
-import { hasSupabaseIntegrationEnv } from '../helpers/integration';
+import { hasSupabaseIntegrationEnv, skipIfNoSubstrate } from '../helpers/integration';
 import { ensureSubjects, SAFE_PREFERRED_SUBJECT_CODE } from './_helpers/reference-data';
 
 const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
@@ -81,8 +81,50 @@ async function seedStudent(label: string, schoolId: string | null): Promise<stri
   return data.id;
 }
 
-/** Cache so each distinct plan_code is only looked up once per test run. */
-const planIdCache = new Map<string, string>();
+/**
+ * The `subscription_plans` catalog rows this suite is pinned to.
+ *
+ * IMPORTANT — unlike `subjects` (seeded idempotently by `ensureSubjects()`
+ * below), `subscription_plans` is commercial pricing data with NO seed
+ * migration anywhere in this repo. `grep`-confirmed: there is no
+ * `INSERT INTO subscription_plans` / `COPY subscription_plans` in any file
+ * under `supabase/migrations/` (see the same finding documented in
+ * `supabase/migrations/20260729130500_get_student_usage_single_limit_authority.sql`
+ * lines ~92-95). The `free`/`starter`/`pro`/`unlimited` rows exist in
+ * PRODUCTION only because the pg_dump baseline
+ * (`00000000000000_baseline_from_prod.sql`) captured live prod DATA for this
+ * one table incidentally — it is otherwise schema-only. A migration-only
+ * CI/staging DB built purely from `supabase db push` therefore has NO
+ * guarantee of carrying these rows.
+ *
+ * Rather than hardcode `plan_code` literals and let a missing row surface as
+ * a confusing mid-`beforeAll` throw (which is what broke CI: `resolvePlanId`
+ * failed on 'unlimited' with `error: undefined` because there was truly no
+ * row, not because the query was wrong), this suite resolves ALL the
+ * plan_codes its assertions need in ONE query up front, before seeding
+ * anything, and gates every test behind `skipIfNoSubstrate` — the same
+ * "seed-less CI Supabase DB" idiom already used by
+ * `migrations/atomic-quiz-xp-42p10-e2e.test.ts` and friends (see
+ * `../helpers/integration.ts`). A missing catalog row becomes a loud SKIP,
+ * not a hard FAIL, and never silently weakens an assertion that DOES run.
+ *
+ * 'free' is deliberately NOT in this list: every assertion that touches the
+ * free tier (`FREE_FOXY_FALLBACK`, the `notes`/`ai_total` literals in PIN 1)
+ * pins the SQL function's own hardcoded fallback constants
+ * (`get_plan_limit`'s `IF v_plan IS NULL THEN v_plan := 'free'` branch and
+ * its literal CASE arms), not a `subscription_plans` catalog row — so it
+ * does not depend on this table having a 'free' row at all.
+ */
+const REQUIRED_PLAN_CODES = ['starter', 'pro', 'unlimited'] as const;
+
+interface PlanCatalogRow {
+  id: string;
+  foxy_chats_per_day: number;
+  quizzes_per_day: number;
+}
+
+/** Populated once in `beforeAll` from a single query; never re-queried per-test. */
+const planCatalog = new Map<string, PlanCatalogRow>();
 
 /**
  * `student_subscriptions.plan_id` is `uuid NOT NULL` with a FK to
@@ -91,24 +133,24 @@ const planIdCache = new Map<string, string>();
  * `student_subscriptions_plan_id_fkey` — and the `plan_id: string` (non-optional)
  * Insert type in src/types/database.types.ts). `plan_code` alone is not
  * sufficient to satisfy the insert.
+ *
+ * Reads the `beforeAll`-populated cache only — by the time any caller reaches
+ * this, `REQUIRED_PLAN_CODES` presence has already been gated, so a miss here
+ * would mean the gate itself has a bug, not a legitimately-missing row.
  */
-async function resolvePlanId(planCode: string): Promise<string> {
-  const cached = planIdCache.get(planCode);
-  if (cached) return cached;
-  const { data, error } = await supabaseAdmin
-    .from('subscription_plans')
-    .select('id')
-    .eq('plan_code', planCode)
-    .maybeSingle();
-  if (error || !data) {
-    throw new Error(`no subscription_plans row for plan_code=${planCode}: ${error?.message}`);
+function resolvePlanId(planCode: string): string {
+  const row = planCatalog.get(planCode);
+  if (!row) {
+    throw new Error(
+      `resolvePlanId: no cached subscription_plans row for plan_code=${planCode} — ` +
+        `expected the beforeAll catalog gate to have already caught this as a skip`,
+    );
   }
-  planIdCache.set(planCode, data.id);
-  return data.id;
+  return row.id;
 }
 
 async function giveStudentPlan(studentId: string, planCode: string) {
-  const planId = await resolvePlanId(planCode);
+  const planId = resolvePlanId(planCode);
   const { error } = await supabaseAdmin
     .from('student_subscriptions')
     .insert({ student_id: studentId, plan_id: planId, plan_code: planCode, status: 'active' });
@@ -124,16 +166,20 @@ async function planLimit(studentId: string, feature: string): Promise<number> {
   return data as number;
 }
 
-/** The catalog cap for a consumer plan_code, i.e. the number the school branch must reach. */
-async function catalogCap(planCode: string, column: string): Promise<number> {
-  const { data, error } = await supabaseAdmin
-    .from('subscription_plans')
-    .select(column)
-    .eq('plan_code', planCode)
-    .maybeSingle();
-  if (error) throw new Error(`catalog read failed: ${error.message}`);
-  const raw = (data as Record<string, unknown> | null)?.[column];
-  if (typeof raw !== 'number') throw new Error(`no ${planCode} catalog row`);
+/**
+ * The catalog cap for a consumer plan_code, i.e. the number the school branch
+ * must reach. Reads the `beforeAll`-populated cache — see `planCatalog` above.
+ */
+function catalogCap(planCode: string, column: 'foxy_chats_per_day' | 'quizzes_per_day'): number {
+  const row = planCatalog.get(planCode);
+  if (!row) {
+    throw new Error(
+      `catalogCap: no cached subscription_plans row for plan_code=${planCode} — ` +
+        `expected the beforeAll catalog gate to have already caught this as a skip`,
+    );
+  }
+  const raw = row[column];
+  if (typeof raw !== 'number') throw new Error(`catalogCap: ${planCode}.${column} is not numeric`);
   return raw === -1 ? 999999 : raw;
 }
 
@@ -144,7 +190,46 @@ describeIntegration('get_plan_limit — school coverage (live DB)', () => {
   let basicSchoolUnlimitedStudent = '';
   let inactiveSchoolStudent = '';
 
+  // SEED-DATA gate: false when this staging/CI DB is missing one or more of
+  // REQUIRED_PLAN_CODES' `subscription_plans` rows (see the comment on
+  // `REQUIRED_PLAN_CODES` above for why that can legitimately happen). Every
+  // `it` below skips gracefully via `skipIfNoSubstrate`, surfacing the cause,
+  // rather than the whole suite hard-failing.
+  let available = false;
+  let setupError: string | null = null;
+
   beforeAll(async () => {
+    // 0. Resolve every subscription_plans row this suite's assertions are
+    //    pinned to, in ONE query, BEFORE seeding anything mutable. If any
+    //    required plan_code is absent on this DB, stop here — seeding
+    //    schools/students would just be wasted work ahead of a skip.
+    const { data: catalogRows, error: catalogErr } = await supabaseAdmin
+      .from('subscription_plans')
+      .select('plan_code, id, foxy_chats_per_day, quizzes_per_day')
+      .in('plan_code', [...REQUIRED_PLAN_CODES]);
+    if (catalogErr) {
+      setupError = `subscription_plans catalog read failed: ${catalogErr.message}`;
+      return;
+    }
+    for (const row of (catalogRows ?? []) as Array<
+      { plan_code: string } & PlanCatalogRow
+    >) {
+      planCatalog.set(row.plan_code, {
+        id: row.id,
+        foxy_chats_per_day: row.foxy_chats_per_day,
+        quizzes_per_day: row.quizzes_per_day,
+      });
+    }
+    const missingPlanCodes = REQUIRED_PLAN_CODES.filter((code) => !planCatalog.has(code));
+    if (missingPlanCodes.length > 0) {
+      setupError =
+        `subscription_plans is missing plan_code row(s) on this DB: ` +
+        `${missingPlanCodes.join(', ')}. This catalog table has no seed ` +
+        `migration in this repo (prod-only pg_dump data) — a migration-only ` +
+        `staging/CI DB may legitimately not carry it yet.`;
+      return;
+    }
+
     await ensureSubjects(supabaseAdmin);
 
     const trialSchool = await seedSchool('trial', 'trial', 'trial');
@@ -161,6 +246,7 @@ describeIntegration('get_plan_limit — school coverage (live DB)', () => {
     await giveStudentPlan(basicSchoolUnlimitedStudent, 'unlimited');
 
     inactiveSchoolStudent = await seedStudent('cancelled-school', deadSchool);
+    available = true;
   }, 60_000);
 
   afterAll(async () => {
@@ -176,19 +262,22 @@ describeIntegration('get_plan_limit — school coverage (live DB)', () => {
 
   // ── PIN 1 ──────────────────────────────────────────────────────────────────
 
-  it('PIN 1: a pure-B2C student with no school link is byte-identical to the pre-change value', async () => {
+  it('PIN 1: a pure-B2C student with no school link is byte-identical to the pre-change value', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
     // No subscription row at all → the migration's documented free fallback.
     expect(await planLimit(b2cFree, 'foxy_chat')).toBe(FREE_FOXY_FALLBACK);
     expect(await planLimit(b2cFree, 'notes')).toBe(2);
     expect(await planLimit(b2cFree, 'ai_total')).toBe(15);
   });
 
-  it('PIN 1: a B2C student on a paid personal plan keeps exactly the catalog cap', async () => {
-    const expected = await catalogCap('unlimited', 'foxy_chats_per_day');
+  it('PIN 1: a B2C student on a paid personal plan keeps exactly the catalog cap', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
+    const expected = catalogCap('unlimited', 'foxy_chats_per_day');
     expect(await planLimit(b2cUnlimited, 'foxy_chat')).toBe(expected);
   });
 
-  it('PIN 1: a school link with NO active/trial subscription contributes nothing', async () => {
+  it('PIN 1: a school link with NO active/trial subscription contributes nothing', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
     // The school exists and the student is linked, but its subscription is
     // cancelled — the branch must short-circuit to the personal value.
     expect(await planLimit(inactiveSchoolStudent, 'foxy_chat')).toBe(FREE_FOXY_FALLBACK);
@@ -196,19 +285,22 @@ describeIntegration('get_plan_limit — school coverage (live DB)', () => {
 
   // ── PIN 2 ──────────────────────────────────────────────────────────────────
 
-  it('PIN 2: a student on a `trial` school resolves to the `pro` catalog cap, not free', async () => {
-    const proCap = await catalogCap('pro', 'foxy_chats_per_day');
+  it('PIN 2: a student on a `trial` school resolves to the `pro` catalog cap, not free', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
+    const proCap = catalogCap('pro', 'foxy_chats_per_day');
     const actual = await planLimit(trialSchoolStudent, 'foxy_chat');
     expect(actual).toBe(proCap);
     expect(actual).not.toBe(FREE_FOXY_FALLBACK);
   });
 
-  it('PIN 2: the same student gets the pro quiz cap too (the boost is per-feature, not foxy-only)', async () => {
-    const proQuiz = await catalogCap('pro', 'quizzes_per_day');
+  it('PIN 2: the same student gets the pro quiz cap too (the boost is per-feature, not foxy-only)', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
+    const proQuiz = catalogCap('pro', 'quizzes_per_day');
     expect(await planLimit(trialSchoolStudent, 'quiz')).toBe(proQuiz);
   });
 
-  it('PIN 2: the DISPLAYED number (get_student_usage) equals the ENFORCED number', async () => {
+  it('PIN 2: the DISPLAYED number (get_student_usage) equals the ENFORCED number', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
     const { data, error } = await supabaseAdmin.rpc('get_student_usage', {
       p_student_id: trialSchoolStudent,
     });
@@ -222,13 +314,14 @@ describeIntegration('get_plan_limit — school coverage (live DB)', () => {
 
   // ── PIN 3 ──────────────────────────────────────────────────────────────────
 
-  it('PIN 3: a personally-`unlimited` student under a `basic` school is NOT downgraded', async () => {
-    const personalCap = await catalogCap('unlimited', 'foxy_chats_per_day');
-    const starterCap = await catalogCap('starter', 'quizzes_per_day');
+  it('PIN 3: a personally-`unlimited` student under a `basic` school is NOT downgraded', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
+    const personalCap = catalogCap('unlimited', 'foxy_chats_per_day');
+    const starterCap = catalogCap('starter', 'quizzes_per_day');
 
     // basic school → starter tier, which is STRICTLY lower than unlimited.
     const actual = await planLimit(basicSchoolUnlimitedStudent, 'quiz');
-    const personalQuiz = await catalogCap('unlimited', 'quizzes_per_day');
+    const personalQuiz = catalogCap('unlimited', 'quizzes_per_day');
 
     expect(actual).toBe(personalQuiz);
     expect(actual).toBeGreaterThanOrEqual(starterCap);
@@ -236,7 +329,8 @@ describeIntegration('get_plan_limit — school coverage (live DB)', () => {
     expect(await planLimit(basicSchoolUnlimitedStudent, 'foxy_chat')).toBe(personalCap);
   });
 
-  it('PIN 3: coverage is monotone — no student ever loses capacity across any feature', async () => {
+  it('PIN 3: coverage is monotone — no student ever loses capacity across any feature', async (ctx) => {
+    skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
     for (const feature of ['foxy_chat', 'quiz', 'notes', 'ai_total']) {
       const withSchool = await planLimit(basicSchoolUnlimitedStudent, feature);
       const withoutSchool = await planLimit(b2cUnlimited, feature);
