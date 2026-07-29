@@ -43,12 +43,79 @@ import {
 } from '../_shared/security/ai-admission.ts'
 import { securityCorsHeaders } from '../_shared/security/cors.ts'
 import { getRequestOrigin } from '../_shared/security/attribution.ts'
+// P12 hardening (forensic audit): sanitize RAG chunks before they land in the
+// legacy solver's system prompt (MEDIUM-4), same as grounded-answer/pipeline.ts.
+import { sanitizeChunkForPrompt } from '../_shared/rag/sanitize.ts'
+// P12 hardening (forensic audit): deterministic content backstop before any
+// answer reaches the student (HIGH-2), same screen the Foxy grounded/streaming
+// path applies (grounded-answer/pipeline-stream.ts). Canonical shared copy —
+// see supabase/functions/_shared/rag/output-screen.ts header for provenance.
+import { screenStudentFacingText } from '../_shared/rag/output-screen.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
 const ROUTE_NAME = 'ncert-solver'
+
+// MEDIUM-6 (P12, forensic audit): unbounded `question` length was forwarded
+// straight to retrieval + Claude. Mirrors Foxy's MAX_MESSAGE_LENGTH
+// (apps/host/src/app/api/foxy/route.ts:268, currently 1000).
+const MAX_QUESTION_LENGTH = 1000
+
+// HIGH-1 (P12, forensic audit): mirrors normalizeEnrolledGrade
+// (packages/lib/src/foxy-scope.ts) — students.grade has two production
+// conventions (bare "6" vs "Grade 6"); normalize before comparing against
+// the client-supplied grade so both forms of the true enrolled grade match.
+function normalizeEnrolledGrade(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.replace(/^Grade\s*/i, '').trim()
+  return normalized.length > 0 ? normalized : null
+}
+
+// LOW-1 (P12, forensic audit): mirrors REFUND_ABSTAIN_REASONS
+// (apps/host/src/app/api/foxy/_lib/constants.ts) — reasons for which the
+// student did not actually get served an answer that consumed Claude API
+// tokens on their behalf. Service-side validation abstains (scope_mismatch,
+// low_similarity, no_supporting_chunks, no_chunks_retrieved) are
+// intentionally NOT in this set — the service still ran retrieval (and
+// possibly Claude) for those.
+const REFUND_ABSTAIN_REASONS: ReadonlySet<string> = new Set(['upstream_error', 'circuit_open', 'chapter_not_ready'])
+
+// Best-effort quota refund. Mirrors apps/host/src/app/api/foxy/_lib/quota.ts
+// refundQuota() — decrements today's student_daily_usage row for `feature`
+// by one so a Claude-API/circuit-breaker failure the student didn't cause
+// doesn't consume their daily NCERT-solver allowance. Never throws.
+async function refundQuota(
+  supabase: ReturnType<typeof createClient>,
+  studentId: string,
+  feature: string,
+): Promise<void> {
+  try {
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: row } = await supabase
+      .from('student_daily_usage')
+      .select('usage_count')
+      .eq('student_id', studentId)
+      .eq('feature', feature)
+      .eq('usage_date', today)
+      .single()
+    if (row && typeof row.usage_count === 'number' && row.usage_count > 0) {
+      await supabase
+        .from('student_daily_usage')
+        .update({ usage_count: row.usage_count - 1, updated_at: new Date().toISOString() })
+        .eq('student_id', studentId)
+        .eq('feature', feature)
+        .eq('usage_date', today)
+    }
+  } catch (err) {
+    console.warn(
+      'ncert-solver: quota refund failed:',
+      err instanceof Error ? err.message : String(err),
+      { studentId, feature },
+    )
+  }
+}
 
 const NCERT_SOLVER_PROFILE = createStaticAiRouteProfile({
   route: ROUTE_NAME,
@@ -198,6 +265,18 @@ Deno.serve(async (req) => {
       return resp
     }
 
+    // ── MEDIUM-6 (P12): query-length cap, BEFORE any retrieval/Claude call ──
+    if (question.length > MAX_QUESTION_LENGTH) {
+      statusCode = 400
+      errorCode = 'question_too_long'
+      const resp = jsonResponse(
+        { error: `question must be ${MAX_QUESTION_LENGTH} characters or fewer`, code: 'QUESTION_TOO_LONG' },
+        400, {}, origin ?? '',
+      )
+      await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+      return resp
+    }
+
     // ── Subject governance + daily-quota enforcement (P12) ──
     // Resolve the caller's student row, enforce subject availability via
     // get_available_subjects, then atomically check + increment the
@@ -216,7 +295,7 @@ Deno.serve(async (req) => {
     try {
       const { data: studentRow } = await supabase
         .from('students')
-        .select('id')
+        .select('id, grade, onboarding_completed')
         .eq('auth_user_id', user.id)
         .eq('is_active', true)
         .is('deleted_at', null)
@@ -232,6 +311,60 @@ Deno.serve(async (req) => {
         return resp
       }
       resolvedStudentId = studentRow.id
+
+      // ── HIGH-1 (P12) grade-spoof HARD BLOCK ──
+      // Mirrors apps/host/src/app/api/foxy/route.ts (~line 715-782). The
+      // client-supplied `grade` was previously trusted straight into RAG
+      // scope + prompt assembly with no check against the student's actual
+      // enrolled grade. Runs BEFORE subject validation, RAG retrieval, or
+      // any prompt assembly. The enrolled grade is looked up from
+      // `students.grade` via the authenticated JWT's user id — never from
+      // the request body.
+      const dbGrade = normalizeEnrolledGrade(studentRow.grade as string | null | undefined)
+      const dbOnboardingCompleted = studentRow.onboarding_completed === true
+      const gradeMismatch = dbGrade !== null && dbGrade !== grade
+      // An ONBOARDED student with a null enrolled grade is either profile
+      // corruption or a deliberate client-side patch (onboarding writes via
+      // the anon client, so a student CAN set their own row's grade to
+      // null) — treat as a spoof, same as Foxy. Pre-onboarding users with a
+      // null grade are let through so the P15 signup funnel keeps working.
+      const nullGradeSpoof = dbGrade === null && dbOnboardingCompleted
+      if (gradeMismatch || nullGradeSpoof) {
+        try {
+          await supabase.rpc('log_audit', {
+            p_auth_user_id: user.id,
+            p_action: 'ncert_solver.grade_spoof_attempt',
+            p_resource_type: 'students',
+            p_resource_id: resolvedStudentId,
+            p_details: {
+              claimed_grade: grade,
+              actual_grade: dbGrade,
+              route: 'ncert-solver',
+              ...(nullGradeSpoof ? { reason: 'onboarded_null_grade' } : {}),
+            },
+            p_status: 'denied',
+          })
+        } catch (auditErr) {
+          console.error(
+            'ncert-solver: audit write failed for grade_spoof_attempt:',
+            auditErr instanceof Error ? auditErr.message : String(auditErr),
+          )
+        }
+        statusCode = 403
+        errorCode = 'grade_mismatch'
+        const resp = jsonResponse(
+          {
+            success: false,
+            error: 'Request grade does not match enrollment',
+            error_hi: 'Aapki request ka grade aapke profile se match nahi karta.',
+            code: 'GRADE_MISMATCH',
+          },
+          403, {}, origin ?? '',
+        )
+        await finalizeAiRoute({ sb, admission, statusCode, actualInputTokens, actualOutputTokens, actualCost: null, errorCode })
+        return resp
+      }
+
       const check = await validateSubjectRpc(supabase, studentRow.id, subject)
       if (!check.ok) {
         statusCode = 422
@@ -338,6 +471,12 @@ Deno.serve(async (req) => {
       const grounded = await callGroundedAnswer(groundedRequest, { hopTimeoutMs: 35_000 })
 
       if (!grounded.grounded) {
+        // LOW-1 (P12): refund the quota tick taken above when the abstain
+        // reason means the student didn't actually get an LLM-backed answer
+        // through no fault of their own. Mirrors Foxy's REFUND_ABSTAIN_REASONS.
+        if (REFUND_ABSTAIN_REASONS.has(grounded.abstain_reason) && resolvedStudentId) {
+          await refundQuota(supabase, resolvedStudentId, 'ncert_solver')
+        }
         // Preserve the legacy "solution not available" client contract while
         // enriching it with trace_id + suggested_alternatives from the new
         // service. Existing clients that ignore the extra fields keep working.
@@ -361,6 +500,44 @@ Deno.serve(async (req) => {
           200, {}, origin ?? '',
         )
         await finalizeAiRoute({ sb, admission, statusCode: 200, actualInputTokens, actualOutputTokens, actualCost: null })
+        return resp
+      }
+
+      // ── HIGH-2 (P12) deterministic content screen ──
+      // Screen the grounded answer before it reaches the student. Mirrors
+      // the Foxy streaming path's backstop (grounded-answer/pipeline-stream.ts
+      // screenStudentFacingText call) — this is ncert-solver's own backstop
+      // as a non-streaming caller of the same service, so a regression in the
+      // service's own screening (or a future non-streaming service path)
+      // can't ship unfiltered text here.
+      const groundedOutputScreen = screenStudentFacingText(grounded.answer)
+      if (!groundedOutputScreen.safe) {
+        console.warn(
+          `ncert-solver: output_safety_blocked categories=${groundedOutputScreen.categories.join(',')} trace_id=${grounded.trace_id}`,
+        )
+        const resp = jsonResponse(
+          {
+            answer: '',
+            steps: [],
+            concept: '',
+            explanation: 'NCERT solution not available for this question.',
+            confidence: 0,
+            verified: false,
+            verification_issues: ['output_safety_blocked'],
+            solver_type: 'grounded_service',
+            question_type: 'unknown',
+            marks: marks ?? 0,
+            trace_id: grounded.trace_id,
+            abstain_reason: 'output_safety_blocked',
+            suggested_alternatives: [],
+            flow: 'grounded-answer',
+          },
+          200, {}, origin ?? '',
+        )
+        await finalizeAiRoute({
+          sb, admission, statusCode: 200, actualInputTokens, actualOutputTokens, actualCost: null,
+          errorCode: 'output_safety_blocked',
+        })
         return resp
       }
 
@@ -395,6 +572,11 @@ Deno.serve(async (req) => {
     // ── Circuit breaker check ──
     if (!circuitBreaker.canRequest()) {
       console.warn('ncert-solver: circuit breaker OPEN — returning 503')
+      // LOW-1 (P12): refund — the student's quota tick was consumed above but
+      // no Claude call happened on their behalf.
+      if (resolvedStudentId) {
+        await refundQuota(supabase, resolvedStudentId, 'ncert_solver')
+      }
       statusCode = 503
       errorCode = 'circuit_open'
       const resp = jsonResponse(
@@ -409,7 +591,11 @@ Deno.serve(async (req) => {
     const parsed = parseQuestion(question, subject, grade, options, marks)
 
     // ── Step 2: Retrieve NCERT context ──
-    const ragContext = await fetchRAGContext(supabase, question, subject, grade, chapter)
+    const rawRagContext = await fetchRAGContext(supabase, question, subject, grade, chapter)
+    // MEDIUM-4 (P12): sanitize retrieved chunks before they reach the system
+    // prompt — mirrors grounded-answer/pipeline.ts's per-chunk
+    // sanitizeChunkForPrompt call, which this legacy solver path never had.
+    const ragContext = sanitizeRagContext(rawRagContext)
 
     // ── Step 3: Route to solver ──
     const route = routeToSolver(parsed)
@@ -462,6 +648,46 @@ Deno.serve(async (req) => {
 
     // ── Step 6: Compute final confidence ──
     const confidence = estimateConfidence(route.solver, verification.passed, !!ragContext)
+
+    // ── HIGH-2 (P12) deterministic content screen ──
+    // The legacy solver path returned solution.answer/explanation/etc.
+    // verbatim to the caller with no post-processing at all. Screen every
+    // field that reaches the student — same backstop as the grounded-service
+    // branch above — before returning it; on a hit, abstain instead of
+    // serving unfiltered LLM output. P13: only category tags are logged,
+    // never the answer text.
+    const studentFacingText = [
+      solution.answer,
+      ...(Array.isArray(solution.steps) ? solution.steps : []),
+      solution.explanation,
+      solution.common_mistake,
+      solution.formula_used,
+    ]
+      .filter((v: unknown): v is string => typeof v === 'string')
+      .join('\n')
+    const legacyOutputScreen = screenStudentFacingText(studentFacingText)
+    if (!legacyOutputScreen.safe) {
+      console.warn(`ncert-solver: output_safety_blocked categories=${legacyOutputScreen.categories.join(',')}`)
+      const blockedResp = jsonResponse({
+        answer: '',
+        steps: [],
+        concept: '',
+        explanation: 'NCERT solution not available for this question.',
+        common_mistake: '',
+        formula_used: '',
+        confidence: 0,
+        verified: false,
+        verification_issues: ['output_safety_blocked'],
+        solver_type: route.solver,
+        question_type: parsed.type,
+        marks: parsed.marks,
+      }, 200, {}, origin ?? '')
+      await finalizeAiRoute({
+        sb, admission, statusCode: 200, actualInputTokens, actualOutputTokens, actualCost: null,
+        errorCode: 'output_safety_blocked',
+      })
+      return blockedResp
+    }
 
     // ── Return ──
     const finalResp = jsonResponse({
@@ -593,6 +819,27 @@ function getGradeStyle(grade: string): string {
   if (g <= 7) return 'Use simple language with real-life analogies. Be encouraging.'
   if (g <= 9) return 'Use clear language with proper terms. Give one example.'
   return 'Use precise academic language. Focus on board-exam depth.'
+}
+
+// ─── RAG Context Sanitization (MEDIUM-4, P12) ────────────
+// The legacy solver path (this file) used to interpolate ragContext directly
+// into buildSolverSystemPrompt with no sanitization — unlike the grounded-
+// answer pipeline (supabase/functions/grounded-answer/pipeline.ts,
+// pipeline-stream.ts), which runs every retrieved chunk through
+// sanitizeChunkForPrompt before it reaches the Claude system prompt. Mirror
+// that hardening here. fetchRAGContext (_shared/retrieval.ts formatContextText)
+// joins chunks with the "\n\n---\n\n" separator — split on it, sanitize each
+// chunk (strips leading injection-prefix tokens + caps each chunk at 1500
+// chars — see _shared/rag/sanitize.ts), then rejoin. Chunk count is already
+// bounded upstream (retrieveChunks defaults matchCount to 5), so this also
+// bounds the total prompt contribution to a reasonable size.
+function sanitizeRagContext(ragContext: string | null): string | null {
+  if (!ragContext) return ragContext
+  const sanitizedParts = ragContext
+    .split('\n\n---\n\n')
+    .map((part) => sanitizeChunkForPrompt(part))
+    .filter((part) => part.length > 0)
+  return sanitizedParts.length > 0 ? sanitizedParts.join('\n\n---\n\n') : null
 }
 
 function buildSolverSystemPrompt(parsed: ParsedQuestion, ragContext: string | null): string {

@@ -95,7 +95,24 @@ const MECHANISM_SIGNATURES: ReadonlyArray<readonly [Mechanism, RegExp]> = [
  */
 const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'account-purge': ['jwt-user', 'shared-secret'],
-  'alert-deliverer': ['jwt-user', 'shared-secret'],
+  // H1 fix (2026-07-29, P11-adjacent): removed the client-controlled
+  // `x-cron-source: pg_cron` bare-header bypass and replaced it with
+  // verifyInternalCronRequest() — the same fail-closed internal-cron
+  // contract daily-cron/queue-consumer use. 'internal-cron' is the upgrade
+  // (the real guard now). 'jwt-user' still matches on the literal outbound
+  // `Authorization:` header used for REST calls (not a guard by itself here
+  // — see the LIMITATIONS note above).
+  // CORRECTION (2026-07-29, testing verification): the fix's own PR
+  // description claimed 'shared-secret' would stop matching once the
+  // CRON_SECRET literal moved into the shared helper — verified FALSE by
+  // running this sweep. 'shared-secret' still matches because index.ts's own
+  // header comment (documenting the new auth flow: "CRON_SECRET fast path,
+  // get_cron_secret() DB fallback...") contains the literal substring
+  // "CRON_SECRET", and MECHANISM_SIGNATURES tests raw source text
+  // (comments included, not stripped). This is a detector false-positive on
+  // prose, not a second real guard mechanism — but the ledger must reflect
+  // what the sweep ACTUALLY detects, so 'shared-secret' stays pinned here.
+  'alert-deliverer': ['jwt-user', 'internal-cron', 'shared-secret'],
   'alfabot-answer': ['ai-admission'],
   'alfabot-send-inquiry': ['jwt-user'],
   'board-score': ['jwt-user'],

@@ -431,7 +431,14 @@ describe('adjustDifficulty', () => {
 
 describe('getReflectionPrompt', () => {
   it('returns metacognitive prompt after wrong answer (first error)', () => {
-    const prompt = getReflectionPrompt(false, 0, 0, 'remember');
+    // FIX (2026-07-29, forensic audit): callers pass POST-UPDATE cognitive-load
+    // state — updateCognitiveLoad() increments consecutiveErrors BEFORE
+    // getReflectionPrompt is called (see quiz/page.tsx) — so the first wrong
+    // answer in a new error streak always arrives here with
+    // consecutiveErrors === 1, never 0. This test previously passed
+    // consecutiveErrors: 0, matching the OLD (buggy) `=== 0` condition; the
+    // fixed condition is `=== 1` (see cognitive-engine.ts getReflectionPrompt).
+    const prompt = getReflectionPrompt(false, 1, 0, 'remember');
     expect(prompt).not.toBeNull();
     expect(prompt!.type).toBe('metacognitive');
     expect(prompt!.message).toContain('Think about');
@@ -464,7 +471,8 @@ describe('getReflectionPrompt', () => {
   });
 
   it('includes Hindi translations', () => {
-    const prompt = getReflectionPrompt(false, 0, 0, 'remember');
+    // See the consecutiveErrors=1 note above — this is post-update state too.
+    const prompt = getReflectionPrompt(false, 1, 0, 'remember');
     expect(prompt).not.toBeNull();
     expect(prompt!.messageHi).toBeTruthy();
     expect(prompt!.messageHi.length).toBeGreaterThan(0);

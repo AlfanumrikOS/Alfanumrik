@@ -5,6 +5,8 @@
  * CBSE examiner style: marks, key points hit/missed, model answer, grade label.
  */
 
+import { useAuth } from '@alfanumrik/lib/AuthContext';
+
 interface KeyPoint {
   point: string;
   hit: boolean;
@@ -36,6 +38,7 @@ export default function NCERTEvaluation({
   feedback, keyPoints, modelAnswerSummary, grade,
   onNext, isLast,
 }: Props) {
+  const { isHi } = useAuth();
   const ratio = marksPossible > 0 ? marksAwarded / marksPossible : 0;
   const g = GRADE_CONFIG[grade] ?? GRADE_CONFIG['Needs Improvement'];
   const hitCount = keyPoints.filter(k => k.hit).length;
@@ -81,14 +84,14 @@ export default function NCERTEvaluation({
           </div>
           <div className="text-sm" style={{ color: 'var(--text-2)' }}>
             {marksAwarded === marksPossible
-              ? 'Full marks! Perfect answer.'
+              ? (isHi ? 'पूरे अंक! उत्तम उत्तर।' : 'Full marks! Perfect answer.')
               : marksAwarded === 0
-              ? 'Review the model answer below.'
-              : `${marksAwarded} out of ${marksPossible} marks.`}
+              ? (isHi ? 'नीचे मॉडल उत्तर देखें।' : 'Review the model answer below.')
+              : (isHi ? `${marksPossible} में से ${marksAwarded} अंक।` : `${marksAwarded} out of ${marksPossible} marks.`)}
           </div>
           {keyPoints.length > 0 && (
             <div className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
-              {hitCount}/{keyPoints.length} key points covered
+              {isHi ? `${keyPoints.length} में से ${hitCount} मुख्य बिंदु कवर हुए` : `${hitCount}/${keyPoints.length} key points covered`}
             </div>
           )}
         </div>
@@ -97,14 +100,14 @@ export default function NCERTEvaluation({
       {/* ── Examiner feedback ───────────────────────────── */}
       <div className="mb-4 p-3 rounded-xl text-sm leading-relaxed"
         style={{ background: 'var(--surface-1)', border: '1.5px solid var(--border)', color: 'var(--text-2)' }}>
-        <div className="text-xs font-bold mb-1" style={{ color: 'var(--text-3)' }}>EXAMINER FEEDBACK</div>
+        <div className="text-xs font-bold mb-1" style={{ color: 'var(--text-3)' }}>{isHi ? 'परीक्षक की टिप्पणी' : 'EXAMINER FEEDBACK'}</div>
         {feedback}
       </div>
 
       {/* ── Key points checklist ────────────────────────── */}
       {keyPoints.length > 0 && (
         <div className="mb-4">
-          <div className="text-xs font-bold mb-2" style={{ color: 'var(--text-3)' }}>KEY POINTS</div>
+          <div className="text-xs font-bold mb-2" style={{ color: 'var(--text-3)' }}>{isHi ? 'मुख्य बिंदु' : 'KEY POINTS'}</div>
           {/* WCAG 1.3.1: list semantics for screen readers */}
           <ul role="list" className="space-y-1.5">
             {keyPoints.map((kp, i) => (
@@ -112,7 +115,7 @@ export default function NCERTEvaluation({
                 {/* WCAG 1.1.1: emoji has text alternative */}
                 <span
                   className="mt-0.5 flex-shrink-0 text-base"
-                  aria-label={kp.hit ? 'Covered' : 'Missed'}
+                  aria-label={kp.hit ? (isHi ? 'कवर हुआ' : 'Covered') : (isHi ? 'छूट गया' : 'Missed')}
                   role="img"
                 >
                   {kp.hit ? '✅' : '❌'}
@@ -128,11 +131,11 @@ export default function NCERTEvaluation({
       <details className="mb-4 group">
         <summary className="text-xs font-bold cursor-pointer py-1"
           style={{ color: 'var(--text-3)' }}>
-          YOUR ANSWER ▸
+          {isHi ? 'आपका उत्तर ▸' : 'YOUR ANSWER ▸'}
         </summary>
         <div className="mt-2 p-3 rounded-xl text-sm leading-relaxed whitespace-pre-wrap"
           style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
-          {studentAnswer || <span className="italic">No answer submitted</span>}
+          {studentAnswer || <span className="italic">{isHi ? 'कोई उत्तर सबमिट नहीं किया गया' : 'No answer submitted'}</span>}
         </div>
       </details>
 
@@ -140,7 +143,7 @@ export default function NCERTEvaluation({
       <div className="mb-5 p-3 rounded-xl text-sm leading-relaxed"
         style={{ background: '#16893008', border: '1px solid #16893030' }}>
         <div className="text-xs font-bold mb-1" style={{ color: 'var(--text-green)' }}>
-          <span aria-hidden="true">📖 </span>MODEL ANSWER
+          <span aria-hidden="true">📖 </span>{isHi ? 'मॉडल उत्तर' : 'MODEL ANSWER'}
         </div>
         <p style={{ color: 'var(--text-1)' }}>{modelAnswerSummary}</p>
       </div>
@@ -151,7 +154,7 @@ export default function NCERTEvaluation({
         className="w-full py-4 rounded-2xl font-bold text-white text-base transition-all active:scale-[0.98]"
         style={{ background: 'var(--btn-primary-gradient)' }}
       >
-        {isLast ? 'View Results →' : 'Next Question →'}
+        {isLast ? (isHi ? 'नतीजे देखें →' : 'View Results →') : (isHi ? 'अगला सवाल →' : 'Next Question →')}
       </button>
     </div>
   );

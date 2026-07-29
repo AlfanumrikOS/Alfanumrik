@@ -82,6 +82,24 @@ class QuizState {
   /// `assignmentCompletionProvider` side-effect once a real result exists.
   final String? assignmentId;
 
+  /// M2 forensic-audit fix: a comma-separated list of machine-readable P3
+  /// anti-cheat flag codes (`too_fast`, `pattern`, `count_mismatch`) that
+  /// tripped just before submission, or null if none did. Codes — not
+  /// display text — so the UI can render bilingual copy (P7).
+  ///
+  /// Mirrors the web quiz page's advisory-only checks
+  /// (`apps/host/src/app/(student)/quiz/page.tsx`, the "ANTI-CHEAT:
+  /// Client-side validation before submission (P3)" block): same
+  /// thresholds (avg < 3s/question, >3 MCQ all-same-index), same "warn but
+  /// always still submit" behavior — the server RPC remains the sole
+  /// authority on flagging + zero-XP (P3/P9). Unlike web (which only
+  /// `console.warn`s, invisible to the student), mobile surfaces this as a
+  /// one-shot SnackBar so the student isn't blindsided by a flagged,
+  /// zero-XP result. This is a one-shot transient value — see the
+  /// direct-assign (not `??`) handling in [copyWith], same pattern as
+  /// [error].
+  final String? antiCheatWarning;
+
   const QuizState({
     this.questions = const [],
     this.currentIndex = 0,
@@ -99,6 +117,7 @@ class QuizState {
     this.sessionExpired = false,
     this.savedOffline = false,
     this.assignmentId,
+    this.antiCheatWarning,
   });
 
   QuizState copyWith({
@@ -118,6 +137,7 @@ class QuizState {
     bool? sessionExpired,
     bool? savedOffline,
     String? assignmentId,
+    String? antiCheatWarning,
   }) {
     return QuizState(
       questions: questions ?? this.questions,
@@ -137,6 +157,11 @@ class QuizState {
       sessionExpired: sessionExpired ?? this.sessionExpired,
       savedOffline: savedOffline ?? this.savedOffline,
       assignmentId: assignmentId ?? this.assignmentId,
+      // Direct-assign (like `error` above), not `??`-coalesced: this is a
+      // one-shot advisory banner. Any subsequent copyWith call that doesn't
+      // explicitly re-pass it clears it, so the SnackBar shown by the UI
+      // never reappears on unrelated state transitions.
+      antiCheatWarning: antiCheatWarning,
     );
   }
 
@@ -323,6 +348,21 @@ class QuizNotifier extends Notifier<QuizState> {
       });
     }
 
+    // ── M2: client-side P3 anti-cheat heuristics (advisory-only) ───────────
+    // Mirrors `apps/host/src/app/(student)/quiz/page.tsx`'s pre-submit block
+    // EXACTLY (same thresholds, same "warn, never block" behavior). The
+    // server RPC re-checks all three and remains the sole authority on
+    // flag + zero-XP — this only gives the mobile student a heads-up that
+    // web students effectively don't get either (web only `console.warn`s).
+    final warning = _computeAntiCheatWarning(
+      responses: responses,
+      totalTimeSeconds: timeTaken.inSeconds,
+      questionCount: state.questions.length,
+    );
+    if (warning != null) {
+      state = state.copyWith(antiCheatWarning: warning);
+    }
+
     // ── Wave 2.5.2 OFFLINE branch ─────────────────────────────────────────
     // When the device is OFFLINE at completion AND we're on the useV2 path
     // AND we have a server session id (required for server-authoritative
@@ -445,6 +485,53 @@ class QuizNotifier extends Notifier<QuizState> {
         );
       },
     );
+  }
+
+  /// Computes P3 anti-cheat flag codes, advisory-only. See
+  /// [QuizState.antiCheatWarning] for the exact web parity contract.
+  ///
+  /// Returns a comma-separated code string, or null if nothing tripped.
+  /// Pure/static — no side effects, easy to unit test independently of
+  /// Riverpod state.
+  static String? _computeAntiCheatWarning({
+    required List<Map<String, dynamic>> responses,
+    required int totalTimeSeconds,
+    required int questionCount,
+  }) {
+    final flags = <String>[];
+
+    // 1. Minimum time: 3 seconds avg per question (bots submit instantly).
+    final totalResponses = responses.length;
+    final avgTimePerQ =
+        totalResponses > 0 ? totalTimeSeconds / totalResponses : 0.0;
+    if (totalResponses > 0 && avgTimePerQ < 3) {
+      flags.add('too_fast');
+    }
+
+    // 2. All MCQ answers the same index, with >3 MCQ questions answered.
+    // "MCQ response" = a built response with a real (non -1) selected index.
+    final mcqResponses = responses
+        .where((r) => (r['selected_displayed_index'] as int? ?? -1) >= 0)
+        .toList(growable: false);
+    final optionCounts = [0, 0, 0, 0];
+    for (final r in mcqResponses) {
+      final idx = r['selected_displayed_index'] as int;
+      if (idx >= 0 && idx < 4) optionCounts[idx]++;
+    }
+    final maxSameOption =
+        optionCounts.isEmpty ? 0 : optionCounts.reduce((a, b) => a > b ? a : b);
+    if (mcqResponses.length > 3 && maxSameOption == mcqResponses.length) {
+      flags.add('pattern');
+    }
+
+    // 3. Response count must equal question count. Mobile always builds
+    // exactly one response per question (unanswered → -1), so this should
+    // never trip in practice — kept for exact parity with the web check.
+    if (responses.length != questionCount) {
+      flags.add('count_mismatch');
+    }
+
+    return flags.isEmpty ? null : flags.join(',');
   }
 
   /// Reset quiz state.

@@ -81,6 +81,23 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 }));
 vi.mock('@alfanumrik/lib/ops-events', () => ({ logOpsEvent: vi.fn().mockResolvedValue(undefined) }));
 
+// ── C1 (P11 CRITICAL, 2026-07-29) — verify/route.ts now re-derives the
+// authoritative plan_code/billing_cycle from Razorpay's own order/
+// subscription `notes` instead of trusting the client body. Without this
+// mock, getRazorpayOrder/getRazorpaySubscription hit the real network (or
+// throw), the route can't resolve notesPlanCode/notesBillingCycle, and it
+// fails CLOSED (202 activation_pending) before ever reaching the GST block
+// this file exists to test. notes.student_id must match the mocked
+// students.id ('student-1') so the cross-account binding check passes too.
+vi.mock('@alfanumrik/lib/razorpay', () => ({
+  getRazorpayOrder: vi.fn().mockResolvedValue({
+    notes: { plan_code: 'pro', billing_cycle: 'monthly', student_id: 'student-1' },
+  }),
+  getRazorpaySubscription: vi.fn().mockResolvedValue({
+    notes: { plan_code: 'pro', billing_cycle: 'monthly', student_id: 'student-1' },
+  }),
+}));
+
 // ── supabaseAdmin chain. Records GST update args; lets the test stage the GST
 //    UPDATE outcome (success / error). ──
 const RZP_SECRET = 'fake_ksecret_for_test';

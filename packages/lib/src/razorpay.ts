@@ -196,3 +196,32 @@ export async function createRazorpayOrder(params: {
     }),
   });
 }
+
+// ─── Read-back (P11 C1 fix — authoritative notes lookup) ────
+//
+// `notes` on a Razorpay order/subscription are written ONLY by our server at
+// creation time (createRazorpayOrder / createRazorpaySubscription, both
+// authenticated with our API secret). A client can never mutate them without
+// our credentials. That makes a fresh GET here — reading plan_code /
+// billing_cycle / student_id straight off Razorpay's own record — a source
+// of truth the client-supplied request body can never override. Used by
+// payments/verify to stop trusting client-supplied plan_code/billing_cycle
+// for entitlement decisions.
+
+interface RazorpayOrderWithNotes extends RazorpayOrder {
+  notes?: Record<string, string>;
+}
+
+interface RazorpaySubscriptionWithNotes extends RazorpaySubscription {
+  notes?: Record<string, string>;
+}
+
+/** Fetch a Razorpay Order by id — used to read back its server-set `notes`. */
+export async function getRazorpayOrder(orderId: string): Promise<RazorpayOrderWithNotes> {
+  return rzpFetch<RazorpayOrderWithNotes>(`/orders/${orderId}`, { method: 'GET' });
+}
+
+/** Fetch a Razorpay Subscription by id — used to read back its server-set `notes`. */
+export async function getRazorpaySubscription(subscriptionId: string): Promise<RazorpaySubscriptionWithNotes> {
+  return rzpFetch<RazorpaySubscriptionWithNotes>(`/subscriptions/${subscriptionId}`, { method: 'GET' });
+}

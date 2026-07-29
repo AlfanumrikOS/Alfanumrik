@@ -10,7 +10,7 @@ export default function NotificationsError({ error, reset }: { error: Error & { 
   }, [error]);
 
   const isHi = typeof window !== 'undefined' && (
-    localStorage.getItem('alfanumrik_lang') === 'hi' ||
+    localStorage.getItem('alfanumrik_language') === 'hi' ||
     navigator.language?.startsWith('hi')
   );
 

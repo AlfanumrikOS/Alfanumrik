@@ -1,30 +1,43 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { buildSlackPayload } from './slack.ts';
 import { buildEmailPayload } from './email.ts';
-import { constantTimeEqual } from '../_shared/auth.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+import {
+  auditInternalCronInvocation,
+  internalCronUnauthorizedResponse,
+  verifyInternalCronRequest,
+} from '../_shared/security/internal-cron-auth.ts';
 
 const MAX_BATCH = 50;
 const MAX_RETRIES = 3;
 
 Deno.serve(async (req) => {
-  // Auth: accept service role key, CRON_SECRET, or pg_cron internal header.
-  // pg_cron calls via pg_net from within the same Supabase project pass
-  // x-cron-source: pg_cron since ALTER DATABASE SET is not available on
-  // managed Supabase to configure custom bearer tokens.
-  //
-  // Constant-time compare for both secret paths — naive `===` short-circuits
-  // at the first differing byte and leaks the secret through response timing.
-  const auth = req.headers.get('Authorization')?.replace('Bearer ', '') ?? '';
-  const cronSource = req.headers.get('x-cron-source');
-  const cronSecret = Deno.env.get('CRON_SECRET') ?? '';
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-  const isAuthorized =
-    (serviceKey.length > 0 && constantTimeEqual(auth, serviceKey)) ||
-    (cronSecret.length > 0 && constantTimeEqual(auth, cronSecret)) ||
-    cronSource === 'pg_cron';
-  if (!isAuthorized) {
-    return new Response('unauthorized', { status: 401 });
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
   }
 
+  // H1 fix (P11-adjacent, 2026-07-29): this previously accepted a bare,
+  // client-controlled `x-cron-source: pg_cron` header with NO secret check —
+  // anyone who knew that one header value could invoke this function and
+  // trigger ops-alert delivery. Replaced with the SAME fail-closed,
+  // constant-time internal-cron auth contract daily-cron/queue-consumer use
+  // (CRON_SECRET fast path, get_cron_secret() DB fallback, then signed
+  // internal-caller verification — never a bare header).
+  const requestId = req.headers.get('x-request-id') ?? crypto.randomUUID();
+  const authStarted = performance.now();
+  const sb = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    { auth: { persistSession: false } },
+  );
+  const auth = await verifyInternalCronRequest({ req, route: 'alert-deliverer', sb, requestId, bodyText: '' });
+  if (!auth.ok) {
+    await auditInternalCronInvocation({ sb, route: 'alert-deliverer', requestId, started: authStarted, auth, statusCode: auth.status });
+    return internalCronUnauthorizedResponse(auth, corsHeaders);
+  }
+  await auditInternalCronInvocation({ sb, route: 'alert-deliverer', requestId, started: authStarted, auth, statusCode: 200 });
+
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const siteUrl = Deno.env.get('SITE_URL') ?? supabaseUrl;
   const headers = {
@@ -95,7 +108,27 @@ Deno.serve(async (req) => {
         if (!slackRes.ok) deliveryError = `slack ${slackRes.status}: ${slackRes.statusText}`;
       } else if (channel.type === 'email') {
         const emailPayload = buildEmailPayload({ ...commonParams, to: channel.config?.to ?? '' });
-        // For MVP, attempt via the existing send-auth-email function
+        // For MVP, attempt via the existing send-auth-email function.
+        //
+        // H2 fix (2026-07-29): send-auth-email is a GoTrue-webhook receiver
+        // (P15) that MUST always return HTTP 200 — including when it
+        // rejects an unsigned/malformed payload like this ops-alert POST,
+        // which is not a signed GoTrue webhook. It signals rejection via
+        // `{ success: false }` in the BODY, not the status code. The
+        // previous `deliveryOk = emailRes.ok` was always true (200 is
+        // always .ok) regardless of whether the email was ever sent, so
+        // every email-channel alert was silently marked 'sent' and never
+        // retried. We must NOT change send-auth-email's always-200
+        // contract (P15) — fix belongs here: parse the body and gate on
+        // `success === true`.
+        //
+        // FOLLOW-UP (not fixed here, out of scope): send-auth-email is
+        // purpose-built for GoTrue auth emails specifically and is very
+        // unlikely to ever accept an `ops_alert` type payload as
+        // `success: true` — this channel probably needs a dedicated
+        // transactional/ops-alert email path. Tracked as a follow-up; no
+        // general-purpose SMTP helper was found elsewhere in the codebase
+        // to swap in today.
         const emailRes = await fetch(`${supabaseUrl}/functions/v1/send-auth-email`, {
           method: 'POST',
           headers: { ...headers, 'Content-Type': 'application/json' },
@@ -107,9 +140,22 @@ Deno.serve(async (req) => {
             text: emailPayload.textBody,
           }),
         });
-        deliveryResponse = { status: emailRes.status };
-        deliveryOk = emailRes.ok;
-        if (!emailRes.ok) deliveryError = `email ${emailRes.status}`;
+        let emailBody: unknown = null;
+        try {
+          emailBody = await emailRes.json();
+        } catch {
+          // Non-JSON body — treat as failure below (deliveryOk stays false).
+        }
+        const emailBodySuccess =
+          typeof emailBody === 'object' && emailBody !== null &&
+          (emailBody as Record<string, unknown>).success === true;
+        deliveryResponse = { status: emailRes.status, body: emailBody };
+        deliveryOk = emailRes.ok && emailBodySuccess;
+        if (!deliveryOk) {
+          deliveryError = `email ${emailRes.status}: send-auth-email returned success=${String(
+            typeof emailBody === 'object' && emailBody !== null ? (emailBody as Record<string, unknown>).success : emailBody,
+          )}`;
+        }
       } else {
         deliveryError = `unknown channel type: ${channel.type}`;
       }

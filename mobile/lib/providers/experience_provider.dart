@@ -46,6 +46,14 @@ typedef ExperienceRequest = Future<ExperienceHttpResponse> Function(
 
 final experienceRequestProvider = Provider<ExperienceRequest>((ref) {
   return (queryParameters) async {
+    // TODO(mobile): /api/experience-v3 deleted server-side 2026-07-15, see
+    // forensic audit — decide repoint vs strip. Any USE_V2=true build 404s
+    // on every call here (fails safe to OneExperienceResolution.denied via
+    // the catch below — no correctness break, just a wasted round trip and
+    // permanently unreachable V2/offline-replay features). Not short-
+    // circuited locally: whether to always skip this call is itself the
+    // repoint-vs-strip product decision this TODO defers, not a safe
+    // narrow fix to make unilaterally here.
     final response = await ApiClient().get<Map<String, dynamic>>(
       '/experience-v3',
       queryParameters: queryParameters,

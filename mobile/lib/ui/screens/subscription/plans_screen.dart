@@ -22,6 +22,20 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   String? _error;
   late Razorpay _razorpay;
 
+  /// The plan/billing-cycle currently being purchased. Set in [_checkout]
+  /// right before opening the Razorpay modal, and read back in
+  /// [_onPaymentSuccess] to build the `/payments/verify` request.
+  ///
+  /// C1 forensic-audit fix: `/api/payments/verify` validates `plan_code`
+  /// against a `z.enum(['free','starter','pro','unlimited'])` BEFORE it even
+  /// checks the Razorpay signature — sending `''` (as this screen previously
+  /// did, with a stale "Extracted from order notes" comment that no
+  /// extraction ever happened) means every mobile verify call is rejected
+  /// with 400. The plan/cycle are already known at checkout time; no need to
+  /// parse them back out of Razorpay's response.
+  PlanInfo? _pendingPlan;
+  String? _pendingBillingCycle;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +67,10 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
 
     result.when(
       success: (data) {
+        // Remember what's being purchased so _onPaymentSuccess can send the
+        // real plan_code/billing_cycle to /payments/verify (C1 fix).
+        _pendingPlan = plan;
+        _pendingBillingCycle = billingCycle;
         final options = {
           'key': ApiConstants.razorpayKeyId,
           'order_id': data['order_id'],
@@ -79,6 +97,19 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
   }
 
   void _onPaymentSuccess(PaymentSuccessResponse response) async {
+    final plan = _pendingPlan;
+    if (plan == null) {
+      // Should be unreachable — Razorpay only fires success after a
+      // checkout we initiated with _pendingPlan set — but fail safe rather
+      // than send an empty plan_code that /payments/verify is guaranteed to
+      // reject.
+      setState(() {
+        _isLoading = false;
+        _error = 'Payment verification failed: unknown plan. Please contact support.';
+      });
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     final repo = ref.read(subscriptionRepositoryProvider);
@@ -86,12 +117,14 @@ class _PlansScreenState extends ConsumerState<PlansScreen> {
       orderId: response.orderId ?? '',
       paymentId: response.paymentId ?? '',
       signature: response.signature ?? '',
-      planCode: '', // Extracted from order notes
-      billingCycle: _isYearly ? 'yearly' : 'monthly',
+      planCode: plan.code,
+      billingCycle: _pendingBillingCycle ?? (_isYearly ? 'yearly' : 'monthly'),
     );
 
     result.when(
       success: (_) {
+        _pendingPlan = null;
+        _pendingBillingCycle = null;
         ref.read(subscriptionProvider.notifier).refresh();
         ref.read(studentProvider.notifier).refresh();
         if (mounted) {

@@ -336,6 +336,27 @@ describe('composeTeachingPlan — recommendedNextActions', () => {
     assertBilingual(reflect!.label);
   });
 
+  // Regression: getReflectionPrompt's consecutiveErrors semantics changed from
+  // `=== 0` to `=== 1` (post-update state — a wrong answer always arrives with
+  // consecutiveErrors >= 1). deriveReflection()'s soft-struggle branch
+  // (repeated_hint / long_idle) uses a synthetic sentinel call, not real quiz
+  // state, and must be updated in lockstep or it silently stops returning a
+  // reflection prompt, dropping the 'reflect' action for these two signals.
+  it.each(['repeated_hint', 'long_idle'] as const)(
+    'a soft struggle signal (%s) still appends a metacognitive reflect action',
+    (struggleSignal) => {
+      const plan = composeTeachingPlan(
+        makeInput({
+          cognitiveContext: makeCtx({ masteryLevel: 'medium' }),
+          perception: { struggleSignal, bloomLevel: 'apply' },
+        }),
+      );
+      const reflect = plan.recommendedNextActions.find((a) => a.kind === 'reflect');
+      expect(reflect).toBeDefined();
+      assertBilingual(reflect!.label);
+    },
+  );
+
   it('the Director never emits XP/mastery — only advisory action kinds', () => {
     const plan = composeTeachingPlan(
       makeInput({

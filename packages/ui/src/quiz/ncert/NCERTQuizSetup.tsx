@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { GRADES } from '@alfanumrik/lib/constants';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
 
 export type NCERTQuizConfig = {
   subject: string;
@@ -40,16 +41,17 @@ interface Props {
 }
 
 const QUESTION_TYPES = [
-  { key: 'mixed',         label: 'Mixed CBSE Paper',   icon: '📄', marks: 'All types',  desc: 'Balanced MCQ + SA + MA + LA',  colorVar: 'var(--brand)',        colorHex: '#E8581C' },
-  { key: 'mcq',           label: 'MCQ',                icon: '⭕', marks: '1 mark',     desc: 'Objective single choice',       colorVar: 'var(--text-purple)',  colorHex: '#6C5CE7' },
-  { key: 'short_answer',  label: 'Short Answer (SA)',  icon: '✏️', marks: '1–2 marks',  desc: '2–3 sentences answer',          colorVar: 'var(--text-teal)',    colorHex: '#0880A1' },
-  { key: 'medium_answer', label: 'Medium Answer (MA)', icon: '📝', marks: '3–4 marks',  desc: 'Paragraph with key points',     colorVar: 'var(--text-green)',   colorHex: '#168930' },
-  { key: 'long_answer',   label: 'Long Answer (LA)',   icon: '📃', marks: '5–6 marks',  desc: 'Structured essay response',     colorVar: 'var(--text-red)',     colorHex: '#DC2626' },
+  { key: 'mixed',         label: 'Mixed CBSE Paper',   labelHi: 'मिश्रित CBSE पेपर',      icon: '📄', marks: 'All types',  marksHi: 'सभी प्रकार', desc: 'Balanced MCQ + SA + MA + LA',  descHi: 'संतुलित MCQ + लघु + मध्यम + दीर्घ उत्तर', colorVar: 'var(--brand)',        colorHex: '#E8581C' },
+  { key: 'mcq',           label: 'MCQ',                labelHi: 'MCQ',                    icon: '⭕', marks: '1 mark',     marksHi: '1 अंक',      desc: 'Objective single choice',       descHi: 'एक सही विकल्प चुनो',        colorVar: 'var(--text-purple)',  colorHex: '#6C5CE7' },
+  { key: 'short_answer',  label: 'Short Answer (SA)',  labelHi: 'लघु उत्तर (SA)',         icon: '✏️', marks: '1–2 marks',  marksHi: '1–2 अंक',    desc: '2–3 sentences answer',          descHi: '2–3 वाक्यों में उत्तर',      colorVar: 'var(--text-teal)',    colorHex: '#0880A1' },
+  { key: 'medium_answer', label: 'Medium Answer (MA)', labelHi: 'मध्यम उत्तर (MA)',       icon: '📝', marks: '3–4 marks',  marksHi: '3–4 अंक',    desc: 'Paragraph with key points',     descHi: 'मुख्य बिंदुओं के साथ पैराग्राफ', colorVar: 'var(--text-green)',   colorHex: '#168930' },
+  { key: 'long_answer',   label: 'Long Answer (LA)',   labelHi: 'दीर्घ उत्तर (LA)',       icon: '📃', marks: '5–6 marks',  marksHi: '5–6 अंक',    desc: 'Structured essay response',     descHi: 'संरचित निबंध उत्तर',        colorVar: 'var(--text-red)',     colorHex: '#DC2626' },
 ] as const;
 
 const COUNT_OPTIONS = [5, 10, 15, 20];
 
 export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }: Props) {
+  const { isHi } = useAuth();
   const [step, setStep]             = useState<'subject' | 'grade' | 'chapter' | 'type'>('subject');
   const [subject, setSubject]       = useState(initialSubject ?? '');
   const [grade, setGrade]           = useState(initialGrade ?? '');
@@ -223,7 +225,9 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
             {subjectMeta?.icon} Grade {grade} — pick a chapter
           </h2>
           <p className="text-sm mb-4" style={{ color: 'var(--text-3)' }}>
-            {loadingChapters ? 'Loading chapters…' : `${chapters.length} chapters available`}
+            {loadingChapters
+              ? (isHi ? 'अध्याय लोड हो रहे हैं…' : 'Loading chapters…')
+              : (isHi ? `${chapters.length} अध्याय उपलब्ध` : `${chapters.length} chapters available`)}
           </p>
           {loadingChapters
             ? <div className="text-center py-8" style={{ color: 'var(--text-3)' }}>Loading…</div>
@@ -312,11 +316,11 @@ export default function NCERTQuizSetup({ initialSubject, initialGrade, onStart }
                   </span>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>{qt.label}</span>
+                      <span className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>{isHi ? qt.labelHi : qt.label}</span>
                       <span className="text-xs px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: `${qt.colorHex}18`, color: qt.colorVar }}>{qt.marks}</span>
+                        style={{ background: `${qt.colorHex}18`, color: qt.colorVar }}>{isHi ? qt.marksHi : qt.marks}</span>
                     </div>
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{qt.desc}</div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>{isHi ? qt.descHi : qt.desc}</div>
                   </div>
                   {/* Visual radio indicator */}
                   <div

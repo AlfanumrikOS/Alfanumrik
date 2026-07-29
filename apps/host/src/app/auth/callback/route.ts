@@ -142,14 +142,22 @@ export async function GET(request: NextRequest) {
       const vercelHost = request.headers.get('x-vercel-forwarded-host');
       const isLocalEnv = process.env.NODE_ENV === 'development';
 
-      // Validate vercelHost domain to prevent open redirect vulnerabilities
+      // Validate vercelHost domain to prevent open redirect vulnerabilities.
+      // NOTE: `.vercel.app` is intentionally NOT allowlisted here — it would
+      // admit ANY third party's Vercel deployment as a valid redirect host
+      // (an open host wildcard). The production domain used everywhere else
+      // in the codebase (proxy.ts B2C_HOSTS, CORS ALLOWED_ORIGINS) is
+      // alfanumrik.com; alfanumrik.in is kept as an additional allowed
+      // domain (status as a real owned secondary domain unconfirmed, so it
+      // is not removed) alongside the newly-added alfanumrik.com entries.
       let isAllowedHost = false;
       if (vercelHost) {
         const hostLower = vercelHost.toLowerCase().trim();
         if (
           hostLower === 'alfanumrik.in' ||
           hostLower.endsWith('.alfanumrik.in') ||
-          hostLower.endsWith('.vercel.app') ||
+          hostLower === 'alfanumrik.com' ||
+          hostLower.endsWith('.alfanumrik.com') ||
           hostLower.startsWith('localhost:') ||
           hostLower === 'localhost'
         ) {

@@ -12,7 +12,7 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
 
   // Detect Hindi preference without AuthContext
   const isHi = typeof window !== 'undefined' && (
-    localStorage.getItem('alfanumrik_lang') === 'hi' ||
+    localStorage.getItem('alfanumrik_language') === 'hi' ||
     navigator.language?.startsWith('hi')
   );
 

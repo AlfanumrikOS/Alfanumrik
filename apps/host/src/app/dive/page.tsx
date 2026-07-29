@@ -45,6 +45,7 @@ interface ResolvedDive {
 type Phase =
   | { kind: 'loading' }
   | { kind: 'flag_off' }
+  | { kind: 'error' }
   | { kind: 'completed'; weeklyStreakCount: number; isoWeek: string }
   | { kind: 'picker'; state: DiveStateResponse }
   | { kind: 'dive_active'; resolved: ResolvedDive; state: DiveStateResponse }
@@ -55,6 +56,7 @@ export default function DivePage() {
   const { isHi, isLoggedIn, isLoading } = useAuth();
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' });
   const [pickerError, setPickerError] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     if (isLoading) return;
@@ -63,16 +65,22 @@ export default function DivePage() {
       return;
     }
     let cancelled = false;
+    setPhase({ kind: 'loading' });
     (async () => {
       try {
         const res = await fetch('/api/dive/state', { credentials: 'same-origin' });
         if (cancelled) return;
+        // A 404 with the flag-off shape means the feature is genuinely
+        // disabled for this student — distinct from a real failure below.
         if (res.status === 404) {
           setPhase({ kind: 'flag_off' });
           return;
         }
+        // Any other non-OK status (500, etc.) is a real failure, not a
+        // disabled feature — show a retryable error state instead of the
+        // "not available" copy.
         if (!res.ok) {
-          setPhase({ kind: 'flag_off' });
+          setPhase({ kind: 'error' });
           return;
         }
         const data = (await res.json()) as DiveStateResponse;
@@ -82,11 +90,13 @@ export default function DivePage() {
           setPhase({ kind: 'picker', state: data });
         }
       } catch {
-        if (!cancelled) setPhase({ kind: 'flag_off' });
+        // Network error or JSON parse failure — also a real failure, not a
+        // disabled feature.
+        if (!cancelled) setPhase({ kind: 'error' });
       }
     })();
     return () => { cancelled = true; };
-  }, [isLoading, isLoggedIn, router]);
+  }, [isLoading, isLoggedIn, router, retryTick]);
 
   async function handlePickerCommit(payload:
     | { pickerOption: 'phenomenon'; phenomenonSlug: string }
@@ -132,6 +142,34 @@ export default function DivePage() {
         <p className="text-sm text-[var(--text-2)]">
           {isHi ? 'यह सुविधा अभी आपके लिए उपलब्ध नहीं है।' : 'This feature is not available for you yet.'}
         </p>
+        <Link href="/dashboard" className="mt-4 inline-block text-sm text-purple-700 underline">
+          {isHi ? '← डैशबोर्ड पर वापस जाओ' : '← Back to dashboard'}
+        </Link>
+      </main>
+    );
+  }
+
+  if (phase.kind === 'error') {
+    return (
+      <main className="app-container py-8" data-testid="dive-error">
+        <div
+          className="rounded-2xl p-5 text-center max-w-lg"
+          style={{ background: 'var(--surface-1, #fff)', border: '1px solid var(--border, #e5e7eb)' }}
+          role="alert"
+        >
+          <div className="text-2xl mb-1" aria-hidden="true">⚠️</div>
+          <p className="text-sm text-[var(--text-2)] mb-3">
+            {isHi ? 'कुछ गलत हो गया। कृपया दोबारा कोशिश करें।' : 'Something went wrong. Please try again.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => setRetryTick(t => t + 1)}
+            className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white active:scale-95 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--orange,#E8581C)] focus-visible:ring-offset-2"
+            style={{ background: 'var(--purple, #7C3AED)', minHeight: 44 }}
+          >
+            {isHi ? 'दोबारा कोशिश करें' : 'Retry'}
+          </button>
+        </div>
         <Link href="/dashboard" className="mt-4 inline-block text-sm text-purple-700 underline">
           {isHi ? '← डैशबोर्ड पर वापस जाओ' : '← Back to dashboard'}
         </Link>

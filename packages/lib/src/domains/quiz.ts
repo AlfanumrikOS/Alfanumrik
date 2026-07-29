@@ -28,6 +28,7 @@ import {
   type QuizQuestionSource,
 } from './types';
 import { calculateScorePercent, calculateQuizXP } from '@alfanumrik/lib/scoring';
+import { BLOOM_LEVELS } from '@alfanumrik/lib/cognitive-engine';
 
 // ── Question validation ───────────────────────────────────────────────────────
 // Kept here (not in supabase.ts) so the domain owns its own data quality rules.
@@ -40,7 +41,13 @@ function validateQuestions(questions: unknown[]): QuizQuestion[] {
 
     const opts = Array.isArray(q.options) ? q.options : [];
     if (opts.length !== 4) return false;
-    if (q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
+    // P6: reject null/undefined explicitly before the range check — `null < 0`
+    // and `null > 3` both evaluate to false in JS, so a null correct_answer_index
+    // would otherwise silently pass this gate.
+    if (q.correct_answer_index == null || q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
+
+    // P6: bloom_level must be one of the valid taxonomy levels.
+    if (!q.bloom_level || !BLOOM_LEVELS.includes(q.bloom_level as typeof BLOOM_LEVELS[number])) return false;
 
     if (q.question_text.includes('{{') || q.question_text.includes('[BLANK]')) return false;
 

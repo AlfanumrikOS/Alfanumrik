@@ -50,7 +50,7 @@ export class SectionErrorBoundary extends Component<Props, State> {
         >
           {(() => {
             const isHi = typeof window !== 'undefined' && (
-              localStorage.getItem('alfanumrik_lang') === 'hi' ||
+              localStorage.getItem('alfanumrik_language') === 'hi' ||
               navigator.language?.startsWith('hi')
             );
             return (

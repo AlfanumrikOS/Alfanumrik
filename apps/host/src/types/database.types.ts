@@ -12601,6 +12601,7 @@ export type Database = {
           razorpay_payment_id: string | null
           razorpay_signature: string | null
           receipt: string | null
+          reconciled_at: string | null
           status: string
           student_id: string
           subscription_id: string | null
@@ -12620,6 +12621,7 @@ export type Database = {
           razorpay_payment_id?: string | null
           razorpay_signature?: string | null
           receipt?: string | null
+          reconciled_at?: string | null
           status?: string
           student_id: string
           subscription_id?: string | null
@@ -12639,6 +12641,7 @@ export type Database = {
           razorpay_payment_id?: string | null
           razorpay_signature?: string | null
           receipt?: string | null
+          reconciled_at?: string | null
           status?: string
           student_id?: string
           subscription_id?: string | null

@@ -663,7 +663,6 @@ export async function proxy(request: NextRequest) {
   }
 
   const origin = request.headers.get('origin') || '';
-  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
 
   // ── Layer 0: Subdomain / Custom Domain → School resolution (white-label) ──
   // Extract subdomain or custom domain early (before auth) so school headers
@@ -671,6 +670,7 @@ export async function proxy(request: NextRequest) {
   // B2C domains (alfanumrik.com, www, app, localhost, *.vercel.app) skip this entirely.
   const host = request.headers.get('host') || '';
   const subdomain = extractSubdomain(host);
+  const normalizedHost = host.split(':')[0].toLowerCase();
   let schoolConfig: SchoolConfig | null = null;
   let isExplicitTenantRequest = false; // true when host is a school subdomain or custom domain
 
@@ -685,21 +685,32 @@ export async function proxy(request: NextRequest) {
         isExplicitTenantRequest = true;
       } else {
         // Try custom domain resolution (learn.dps.com)
-        const normalizedHost = host.split(':')[0].toLowerCase();
         schoolConfig = await getSchoolByCustomDomain(normalizedHost, sbUrl, sbKey);
         isExplicitTenantRequest = true;
       }
 
-      // Add school origin to CORS for this request
+      // Add school origin to CORS for this request. IMPORTANT: only ever
+      // push a SERVER-COMPUTED origin here — never the raw, client-supplied
+      // `origin` header. Both branches above only reach this point when
+      // schoolConfig resolved from a DB-verified lookup (active slug, or
+      // domain_verified=true custom domain), so deriving the expected
+      // origin from the resolved host is safe. Trusting the request's
+      // Origin header directly is not: it would let a forged Origin get
+      // reflected back in Access-Control-Allow-Origin for any request that
+      // happens to resolve to a real tenant.
       if (schoolConfig) {
         if (subdomain) {
           ALLOWED_ORIGINS.push(`https://${subdomain}.alfanumrik.com`);
           if (process.env.NODE_ENV !== 'production') {
             ALLOWED_ORIGINS.push(`http://${subdomain}.localhost:3000`);
           }
-        }
-        if (origin && !ALLOWED_ORIGINS.includes(origin)) {
-          ALLOWED_ORIGINS.push(origin);
+        } else {
+          // Custom-domain tenant — normalizedHost was already verified via
+          // domain_verified=eq.true in getSchoolByCustomDomain() above.
+          const verifiedOrigin = `https://${normalizedHost}`;
+          if (!ALLOWED_ORIGINS.includes(verifiedOrigin)) {
+            ALLOWED_ORIGINS.push(verifiedOrigin);
+          }
         }
       }
     }
@@ -712,6 +723,13 @@ export async function proxy(request: NextRequest) {
       );
     }
   }
+
+  // Computed AFTER Layer 0 tenant resolution so legitimate white-label
+  // subdomain / custom-domain origins pushed above are actually reflected
+  // in Access-Control-Allow-Origin. Previously this was frozen before Layer
+  // 0 ran, so resolved tenant origins were silently dropped (functional
+  // bug) even though the ALLOWED_ORIGINS.push() above had no effect.
+  const allowedOrigin = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
 
   // ── Layer 0.5: API Authentication Check ──
   if (pathname.startsWith('/api/v1/')) {
@@ -772,6 +790,23 @@ export async function proxy(request: NextRequest) {
   // though tenant lookup (above) succeeded. This defeats the entire white-label
   // substrate.
   const requestHeaders = new Headers(request.headers);
+
+  // Strip client-supplied trusted headers BEFORE any conditional logic below
+  // re-sets them from server-verified data. Headers.set() above copies ALL
+  // inbound headers verbatim, including these — a request that skips tenant
+  // resolution (e.g. a B2C host, or a request where schoolConfig doesn't
+  // resolve) would otherwise pass through a client-forged x-school-id /
+  // x-auth-degraded straight to downstream API routes and Server Components,
+  // which treat these as server-verified trust signals.
+  requestHeaders.delete('x-school-id');
+  requestHeaders.delete('x-school-name');
+  requestHeaders.delete('x-school-slug');
+  requestHeaders.delete('x-school-logo');
+  requestHeaders.delete('x-school-primary-color');
+  requestHeaders.delete('x-school-secondary-color');
+  requestHeaders.delete('x-school-tagline');
+  requestHeaders.delete('x-auth-degraded');
+
   const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
   requestHeaders.set('x-request-id', requestId);
   if (schoolConfig) {
@@ -1119,6 +1154,26 @@ export async function proxy(request: NextRequest) {
   const ADMIN_SESSION_MAX_AGE = 8 * 60 * 60; // 8 hours
 
   if (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin')) {
+    // Rate limit FIRST — before any secret comparison or the 401 return
+    // below. Every request that reaches this gate (successful or failed)
+    // must consume the same budget, otherwise failed secret guesses never
+    // touch the bucket and the admin secret is brute-forceable at whatever
+    // rate the network allows. 60 requests/minute for admin routes (see
+    // RATE_LIMIT_ADMIN_MAX below).
+    const adminIp = getRateLimitKey(request);
+    const { allowed: adminAllowed } = await checkRateLimit(`admin:${adminIp}`, RATE_LIMIT_ADMIN_MAX, 'admin');
+    if (!adminAllowed) {
+      // Structured log — admin bucket exhaustion is rare and worth observing.
+      console.warn(JSON.stringify({
+        level: 'warn',
+        message: 'rate_limit_exceeded',
+        bucket: 'admin',
+        path,
+        ip: adminIp,
+      }));
+      return rateLimitResponse(request);
+    }
+
     const secretKey = process.env.SUPER_ADMIN_SECRET;
 
     // Header-based auth (API calls + already-authenticated page requests)
@@ -1178,21 +1233,6 @@ export async function proxy(request: NextRequest) {
         path: '/internal/admin',
       });
       return redirectRes;
-    }
-
-    // Rate limit: 10 requests/minute for admin routes
-    const adminIp = getRateLimitKey(request);
-    const { allowed: adminAllowed } = await checkRateLimit(`admin:${adminIp}`, RATE_LIMIT_ADMIN_MAX, 'admin');
-    if (!adminAllowed) {
-      // Structured log — admin bucket exhaustion is rare and worth observing.
-      console.warn(JSON.stringify({
-        level: 'warn',
-        message: 'rate_limit_exceeded',
-        bucket: 'admin',
-        path,
-        ip: adminIp,
-      }));
-      return rateLimitResponse(request);
     }
   }
 

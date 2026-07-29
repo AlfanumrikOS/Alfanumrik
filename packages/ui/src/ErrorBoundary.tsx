@@ -38,7 +38,7 @@ export class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) return this.props.fallback;
 
       const isHi = typeof window !== 'undefined' && (
-        localStorage.getItem('alfanumrik_lang') === 'hi' ||
+        localStorage.getItem('alfanumrik_language') === 'hi' ||
         navigator.language?.startsWith('hi')
       );
 
