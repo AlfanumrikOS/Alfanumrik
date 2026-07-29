@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants/api_constants.dart';
-import '../core/network/api_client.dart';
 import '../core/network/v2_api_client.dart';
 import 'parent_provider.dart';
 import 'role_provider.dart';
@@ -44,23 +43,63 @@ typedef ExperienceRequest = Future<ExperienceHttpResponse> Function(
   Map<String, dynamic> queryParameters,
 );
 
+// RESOLVED 2026-07-29 (mobile forensic follow-up — repoint-vs-strip decision):
+// `/api/experience-v3` was PERMANENTLY deleted server-side on 2026-07-15
+// (PR #1282, "permanently remove Alfanumrik One Experience V3") per explicit
+// CEO directive. The web equivalent of this exact server-driven,
+// sticky-cohort, parallel-flag-gated shell was seeded OFF at 0% rollout for
+// every one of its 5 roles and never turned on in production, so the CEO
+// had it retired outright — "the frontend is evolved on the existing/live
+// design language instead of a parallel flag-gated system" — rather than
+// repointed to a successor. That PR's commit body explicitly lists
+// "mobile Flutter v3" under "Untouched by design": web deliberately left
+// this mobile-side call-site decision to mobile, it was not an oversight.
+//
+// No successor endpoint exists. `apps/host/src/app/api/v2/*` (today,
+// curriculum-version, learn, parent, quiz, student) is a DIFFERENT,
+// still-live "v2" namespace for individual data surfaces — not a
+// capability-resolution/rollout-assignment endpoint. None of those routes
+// serve the {enabled, manifest, capabilities, routeMapped, routeAllowed}
+// shape [resolveOneExperienceResolution] expects.
+//
+// Decision: STRIP the network call (not repoint — there is nothing to
+// repoint to), rather than perform a large removal of the ~24-file
+// oneExperience*/useV2 provider graph in this same change. That plane
+// (quiz/learn/parent/progress/leaderboard V2 surfaces + the offline-quiz-
+// replay Wave 2.5.2 feature) is already unreachable in every production
+// build today — USE_V2 defaults to false in both ApiConstants and
+// build_apk.sh, and no CI workflow sets it true — so this fix only removes
+// a guaranteed-404 network round trip on the rare manual USE_V2=true build;
+// it changes no observable behavior for any shipped APK. The short-circuit
+// lives here, in the production HTTP closure, rather than by hard-coding
+// [oneExperienceProvider]'s result: that provider's resolution pipeline
+// (legacy / enabled / denied branches) is unit-tested in isolation by
+// overriding this exact provider — see
+// `test/providers/experience_provider_test.dart` — so forcing a result at
+// the [oneExperienceProvider] level would have silently broken that
+// coverage. A future genuine capability-resolution endpoint can be wired
+// back in by editing only the request body below.
+//
+// Flagged, not auto-fixed: the offline-quiz-replay feature's own mechanics
+// (Hive queue store, drain service, `submitOfflineReplay` against the still
+// -live `/v2/quiz` route) do not themselves call experience-v3 — they are
+// gated only by [oneExperienceRuntimeEnabledProvider], the SAME server
+// -cohort-assignment switch used by every other V2 surface. Making offline
+// replay reachable without a real successor endpoint would mean bypassing
+// that documented two-layer rollout-safety switch platform-wide (touches
+// quiz/learn/parent/progress/leaderboard/router, not just offline replay) —
+// that is a materially bigger product decision than this endpoint fix and is
+// left for an explicit follow-up call, not made unilaterally here.
 final experienceRequestProvider = Provider<ExperienceRequest>((ref) {
   return (queryParameters) async {
-    // TODO(mobile): /api/experience-v3 deleted server-side 2026-07-15, see
-    // forensic audit — decide repoint vs strip. Any USE_V2=true build 404s
-    // on every call here (fails safe to OneExperienceResolution.denied via
-    // the catch below — no correctness break, just a wasted round trip and
-    // permanently unreachable V2/offline-replay features). Not short-
-    // circuited locally: whether to always skip this call is itself the
-    // repoint-vs-strip product decision this TODO defers, not a safe
-    // narrow fix to make unilaterally here.
-    final response = await ApiClient().get<Map<String, dynamic>>(
-      '/experience-v3',
-      queryParameters: queryParameters,
-    );
-    return ExperienceHttpResponse(
-      statusCode: response.statusCode,
-      data: response.data,
+    // Server-side retirement short-circuit: `/api/experience-v3` was
+    // permanently deleted 2026-07-15 and has no successor (see block
+    // comment above). Every real call here would 404; fail fast locally
+    // instead of paying the round trip. [oneExperienceProvider]'s catch
+    // block turns this into [OneExperienceResolution.denied], identical to
+    // the prior 404 outcome.
+    throw StateError(
+      'experience-v3 retired server-side 2026-07-15 — no successor endpoint',
     );
   };
 });
@@ -91,7 +130,16 @@ final oneExperienceV2ApiClientProvider = Provider<V2ApiClient?>((ref) {
 ///
 /// `USE_V2` remains an emergency build kill switch, but never enables the UI
 /// by itself. Role, tenant and deterministic sticky cohort are resolved by the
-/// same authenticated endpoint as the React application.
+/// same authenticated endpoint the React application used to call. As of
+/// 2026-07-29 that endpoint (`/api/experience-v3`) is permanently retired
+/// server-side with no successor — see the note above
+/// [experienceRequestProvider] — so in a real (non-test-overridden) build
+/// this now fails fast at the request step below and always resolves to
+/// [OneExperienceResolution.denied] once past the compile-time kill switch.
+/// The full try/resolve pipeline is left intact (rather than force-denied
+/// here) because [experienceRequestProvider] is overridden in tests to
+/// exercise the legacy/enabled/denied resolution branches in isolation —
+/// see `test/providers/experience_provider_test.dart`.
 final oneExperienceProvider = FutureProvider<OneExperienceResolution>((
   ref,
 ) async {

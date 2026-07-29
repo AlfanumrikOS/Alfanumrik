@@ -6,8 +6,73 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 317 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-317 (2026-07-27, build/tooling invocability + CI gate blocking
+**Total catalog: 321 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-318..REG-321 (2026-07-29, forensic-audit fix batch, PR #1410 —
+"Forensic audit fix batch: quiz scoring, payments, security, AI safety (6
+critical bugs)"). A deep forensic audit found ~30 confirmed bugs across
+quiz scoring, payments, security/RBAC, AI safety, privacy/logging, and
+mobile-web contract sync; four of the highest-severity findings are
+promoted here as regression-catalog entries (the remainder are covered by
+existing catalog entries or fixed without a new dedicated regression, per
+the PR's own review-chain sign-off — testing agent scoped this promotion to
+the items explicitly assigned, not the full ~30-bug list). REG-318
+(quiz-scoring RPC defect cluster — anti-cheat Check 3 tautology exploit via
+a nonexistent-column join that silently defeated the response-count-mismatch
+rule; daily XP cap computed correctly but not propagated back to the caller;
+`atomic_quiz_profile_update`'s 6-arg overload reading a phantom
+`quiz_sessions.xp_earned` column; its 7-arg overload's streak counter
+comparing "now" against "now" because `last_active` was re-read after being
+overwritten in the same call; and a mixed UTC/IST day-boundary anchor
+producing a 5.5-hour cap/streak off-by-one — all fixed as additive
+`CREATE OR REPLACE`, pinned via migration-source structural tests since no
+live-DB integration harness exists for this RPC graph; see
+`05-xp-scoring.md`). REG-319 (payment verify-route plan-code forgery /
+cross-account binding fix, P11 — `/api/payments/verify` had trusted
+client-supplied `plan_code`/`billing_cycle` after only verifying the HMAC
+signature proved `order_id|payment_id` pairing, not which plan was
+purchased; now derives both fields server-side from the Razorpay order's own
+`notes`, cross-checks caller identity, and fails closed (202) rather than
+trusting the client on any resolution failure; see `04-payments.md`).
+REG-320 (reconcile-payments cron recency-window + terminal-state guard fix,
+P11 — the 30-minute reconciliation cron had no recency bound and no
+terminal-subscription-state awareness, so it could resurrect access for a
+student who had since legitimately cancelled, fighting the cancellation
+cron indefinitely; fixed with a 2-hour recency window, a terminal-state
+guard, and `reconciled_at` stamping; see `04-payments.md`). REG-321
+(ncert-solver AI-safety backport, P12 — the Edge Function, reachable with
+any student JWT, had never received the grade-spoof hard block or
+output-safety screen already shipped on the Foxy Next.js route; the shared
+canonical Deno output-screen module relocation and its TS/Deno pattern-
+parity contract ARE test-pinned, but the grade-spoof `403 GRADE_MISMATCH`
+check, chunk-interpolation sanitization, query-length cap, and
+refund-on-abstain logic are implemented with NO dedicated automated test as
+of this promotion — flagged as an explicit known gap rather than claimed as
+covered; see `02-foxy-ai.md`).
+Reconciliation note (2026-07-29): this catalog's own running total had
+drifted across three inconsistent readings before this pass — the
+`.claude/CLAUDE.md` narrative said 142 (stale since REG-134, 2026-06-13),
+the root `.claude/regression-catalog.md` stub had said 256 at one point,
+and this header plus the per-entry running counters embedded across the 15
+shard files already agreed on 317 as of REG-317. This header's own
+self-declared total and a raw grep-count of `| REG-N |`-shaped table rows
+in the shard bodies do NOT agree (270 exact-format table rows vs the 317
+self-declared here) because a meaningful minority of entries — including
+REG-176, REG-182/183, and others — are written in prose/subsection format
+rather than the `| REG-N | ... |` table-row shape, so a naive single-regex
+count undercounts. The 317 (now 321) figure is the authoritative
+incrementally-maintained running total: each entry's own addition updates
+"Pre-REG-N: X entries ... **Total catalog: X+1 entries**" in the same
+commit, and the highest such self-declaration in the shard set (this file
+and `11-infrastructure.md` at REG-317, now this file at REG-321) is treated
+as ground truth. Known intentional ID gaps below REG-296 (never
+renumbered, do not fill): REG-1..REG-35 (catalog numbering starts at
+REG-36; REG-1..35 were never used — SG-1..SG-6 in `01-subject-governance.md`
+use a separate prefix), REG-80/81/82 (recommended in `03-quiz-integrity.md`/
+`05-xp-scoring.md`, never added), REG-170 (intentionally skipped — see
+`03-quiz-integrity.md`), REG-176 (present, prose format — NOT a gap, a
+counting-format artifact, see above). REG-296 through REG-317 are fully
+contiguous with no gaps; REG-322 is the next free id after this promotion.
+Prior: REG-317 (2026-07-27, build/tooling invocability + CI gate blocking
 posture — branch `fix/typecheck-scripts-gap`. Pins the family of defects every
 existing gate was structurally blind to: tooling that COMPILES but cannot be
 INVOKED, and guards that RUN but INSPECT NOTHING. (1) Every npm script path

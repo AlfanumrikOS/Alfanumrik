@@ -56,7 +56,7 @@ const PLANS: Plan[] = [
     subHi: 'गंभीर होते परिवारों के लिए।',
     price: <>₹<em>{PRICING.starter.monthly}</em><small>/mo</small></>,
     features: [
-      { en: '30 Foxy chats a day', hi: 'प्रतिदिन 30 फ़ॉक्सी चैट' },
+      { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: '20 quizzes a day', hi: 'प्रतिदिन 20 क्विज़' },
       { en: '4 subjects', hi: '4 विषय' },
       { en: 'STEM Lab access', hi: 'STEM लैब पहुँच' },
@@ -76,7 +76,7 @@ const PLANS: Plan[] = [
     subHi: 'गंभीर परिवारों के लिए।',
     price: <>₹<em>{PRICING.pro.monthly}</em><small>/mo</small></>,
     features: [
-      { en: '100 Foxy chats a day', hi: 'प्रतिदिन 100 फ़ॉक्सी चैट' },
+      { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़' },
       { en: 'All subjects, grades 6—12', hi: 'सभी विषय, कक्षा 6—12' },
       { en: 'STEM Lab + parent dashboard', hi: 'STEM लैब + अभिभावक डैशबोर्ड' },

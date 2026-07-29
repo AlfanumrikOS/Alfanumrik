@@ -65,14 +65,14 @@ class Plans {
   static const List<PlanInfo> all = [
     // Benefit strings below are kept byte-identical to the web source of
     // truth (`packages/lib/src/plans.ts` `benefits` arrays) — LOW
-    // forensic-audit fix. NOTE: web's `starter`/`pro` copy still reads "30
-    // Foxy chats/day" / "100 Foxy chats/day" even though enforcement is
-    // unlimited for all paid plans as of migration
-    // `20260714120000_foxy_unlimited_for_paid_plans.sql` (mobile's actual
-    // LIMIT LOGIC already uses the 999999 sentinel and is correct — this is
-    // pure marketing copy). Matching web's current (stale) copy here rather
-    // than diverging further; both platforms need a joint copy fix once
-    // product decides on final "unlimited" wording.
+    // forensic-audit fix. UPDATE 2026-07-29: `starter`/`pro` copy corrected
+    // from "30 Foxy chats/day" / "100 Foxy chats/day" to "Unlimited Foxy
+    // chats" — Foxy chat usage has been unlimited for all paid plans since
+    // migration `20260714120000_foxy_unlimited_for_paid_plans.sql`, and
+    // mobile's own LIMIT LOGIC (dashboard_repository.dart, 999999 sentinel)
+    // already reflects that. This brings paid-plan marketing copy in line
+    // with actual enforcement; free tier keeps its real, still-enforced
+    // 5/day limit (see Plans class docstring / dashboard_repository.dart).
     PlanInfo(
       code: 'starter',
       name: 'Starter',
@@ -80,7 +80,7 @@ class Plans {
       priceMonthly: 299,
       priceYearly: 2399,
       benefits: [
-        '30 Foxy chats/day',
+        'Unlimited Foxy chats',
         '20 quizzes/day',
         '4 subjects',
         'STEM Lab',
@@ -94,7 +94,7 @@ class Plans {
       priceYearly: 5599,
       isPopular: true,
       benefits: [
-        '100 Foxy chats/day',
+        'Unlimited Foxy chats',
         'Unlimited quizzes',
         'All subjects',
         'STEM Lab',

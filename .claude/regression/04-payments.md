@@ -481,3 +481,82 @@ prices-from-SoT on /welcome and /pricing).
 
 ---
 
+## Forensic-audit payment-integrity fix cluster (2026-07-29, PR #1410) — REG-319..REG-320
+
+Source: the 2026-07-29 forensic audit (PR #1410) found two exploitable-today
+P11 holes in `/api/payments/verify` and the `reconcile-payments` cron. Both
+were fixed the same day (`fix(payments): close plan-escalation and
+subscription-resurrection holes (P11)`) and reviewed by architect + ops +
+testing + frontend (P14 payment-flow chain).
+
+**C1 — plan-code forgery / cross-account binding (REG-319).** `verify/route.ts`
+verified only that the Razorpay HMAC signature proved `order_id|payment_id`
+pairing — it did NOT prove which PLAN was purchased, because `plan_code` and
+`billing_cycle` were read from the client-supplied request body. A student
+who genuinely paid for `starter` could re-POST the same valid signature while
+claiming `plan_code: 'unlimited'` in the body and be granted the pricier plan
+for free. Fixed by deriving `plan_code`/`billing_cycle` server-side from the
+Razorpay order/subscription's own `notes` (written only by
+`createRazorpayOrder`/`createRazorpaySubscription` at order-creation time,
+never client-writable), cross-checked against the authenticated caller's
+identity (`notes.student_id`/legacy `notes.user_id`), and failing CLOSED
+(202 `activation_pending`, no RPC call, no `payment_history` insert) rather
+than falling back to the client body when notes can't be resolved.
+
+**C2 — subscription-resurrection cron (REG-320).** `reconcile-payments` (a
+30-minute cron) scanned the last 500 captured payments with no recency bound
+and no terminal-subscription-state check, so any payment whose recorded plan
+didn't match the student's current plan got re-activated with a fresh
+period — including a student who had legitimately CANCELLED since paying,
+fighting the cancellation cron forever. Fixed with a 2-hour recency window,
+a terminal-state guard (skip a payment/student pair whose subscription later
+reached `cancelled`/`expired`/`halted`/`completed` AFTER the payment's
+`created_at`), and `reconciled_at` stamping (additive migration) to prevent
+re-processing.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-319 | `payments_verify_plan_code_forgery_rejection_p11` | (1) **Forgery rejected**: body claims `plan_code: 'unlimited'` while Razorpay's own order `notes` say `starter` — the route activates/records `starter` (RPC `activate_subscription_locked` called with `p_plan_code: 'starter'`, `payment_history.plan_code = 'starter'`), never `unlimited`; response body's `plan` field also reflects the authoritative value. (2) Legacy plan aliases in `notes` (e.g. `'premium'`) are canonicalized the same way as client-facing values (`'premium'` → `'pro'`) even though they come from the authoritative source. (3) **Fail-closed on unresolvable notes**: `notes: undefined` or a rejected/throwing Razorpay order fetch → HTTP 202 `activation_pending`, `success: false`, RPC never called, no `payment_history` insert — never falls back to the client-claimed `plan_code`. (4) **Cross-account binding**: `notes.student_id` belongs to a different student than the authenticated caller → HTTP 403, RPC never called, no insert. (5) Legacy `notes.user_id` binding (pre-`student_id` orders) is accepted when `student_id` is absent and matches the caller. | `apps/host/src/__tests__/api/payments/verify-plan-code-forgery.test.ts` | E |
+| REG-320 | `reconcile_payments_terminal_state_guard_p11` | (1) A captured payment whose subscription later shows `status: 'cancelled'` with `cancelled_at` AFTER the payment's `created_at` is EXCLUDED from reconciliation (`total_stuck: 0`, `atomic_subscription_activation_locked` never called) — closes the resurrection-after-cancellation exploit. (2) A genuinely stuck payment with no terminal subscription state (`status: 'active'`, no `cancelled_at`/`ended_at`) IS reconciled (`total_stuck: 1`, activation RPC called, `payment_history.reconciled_at` stamped on success). (3) A payment whose subscription shows `cancelled_at` BEFORE the payment's `created_at` (a legitimate re-subscribe-after-cancelling flow) IS reconciled — the guard is time-ordered, not merely status-based, so it never blocks a genuine re-subscription. | `apps/host/src/__tests__/api/cron/reconcile-payments-terminal-guard.test.ts` | E |
+
+### Invariants covered by this section
+
+- P11 (payment integrity) — REG-319 closes a plan-escalation exploit where
+  a verified-genuine signature could be replayed with a forged, more
+  expensive `plan_code`; the fix moves plan/cycle determination fully
+  server-side (never trusts the client for entitlement), matching the
+  existing "webhook signature verified before processing" pattern this
+  invariant already requires of the webhook route. REG-320 closes a
+  subscription-resurrection defect where a periodic reconciliation job could
+  re-grant access to a legitimately cancelled subscription indefinitely —
+  "subscription status changes written atomically with the payment record"
+  is preserved (both fixes route through the existing locked RPCs; neither
+  adds a new direct-table-update path).
+- Fail-closed posture (P11-adjacent) — both fixes prefer NO activation over
+  an uncertain one: REG-319 returns 202/pending rather than trusting the
+  client on any notes-resolution failure; REG-320 skips (rather than
+  guesses) when subscription-lifecycle state is ambiguous relative to the
+  payment timestamp.
+
+**Related, not separately catalogued:** the same commit also replaced
+`alert-deliverer`'s client-spoofable `x-cron-source` header auth with the
+shared internal-cron-auth contract, fixed its email channel to check the
+response body's `success` field instead of trusting HTTP status alone
+(previously marked every failed email as "sent"), corrected
+`payment_history.amount` to store rupees consistently across all three
+writers (webhook/verify/subscribe — going-forward only, no historical
+backfill), and stopped silently swallowing webhook insert errors. These are
+defense-in-depth / observability fixes on the payment-adjacent surface
+without their own dedicated regression test in this PR; flagged here for
+visibility rather than promoted to a REG id.
+
+### Catalog total
+
+Pre-REG-319: 318 entries (through REG-318, quiz-scoring RPC defect cluster —
+see `05-xp-scoring.md`). Adds REG-319 (payment verify-route plan-code
+forgery / cross-account binding fix) and REG-320 (reconcile-payments cron
+recency-window + terminal-state guard fix).
+**Total catalog: 320 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

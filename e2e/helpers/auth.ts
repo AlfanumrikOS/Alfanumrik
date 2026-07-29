@@ -232,11 +232,38 @@ export async function loginViaUI(page: Page): Promise<boolean> {
 
   await seedCookieConsent(page);
   await page.goto('/login');
+
+  // ── 2026-07-29 nightly hang triage (run 30405020023, 23/23 auth-dependent
+  // failures) ────────────────────────────────────────────────────────────
+  // Every failure burned the FULL 60s CI test-timeout inside this function
+  // with no thrown error and no #auth-error alert ever appearing — i.e. a
+  // silent hang, not a rejection. Investigation ruled out a stale selector:
+  // `apps/host/src/app/login/page.tsx` deliberately never gates rendering on
+  // auth-loading state ("Always show the login form — never block on
+  // loading state... prevents the infinite spinner when session is
+  // stale/expired"), and AuthScreen's email/password `aria-label`s still
+  // match `/^email/i` / exact 'Password'. A bare `.fill()` timeout is
+  // ambiguous about WHERE the hang is — page never rendering the form vs. a
+  // network call that never resolves — so split the wait into an explicit,
+  // shorter, named step. This changes nothing about what is asserted, only
+  // how fast and clearly a hang is diagnosed next time.
+  const emailInput = page.getByLabel(/^email/i);
+  try {
+    await emailInput.waitFor({ state: 'visible', timeout: 15_000 });
+  } catch {
+    throw new Error(
+      'loginViaUI: the email input never appeared on /login within 15s. ' +
+        'The login form renders unconditionally (independent of auth state — ' +
+        'see apps/host/src/app/login/page.tsx), so this means the TARGET ' +
+        'SERVER itself did not serve a working /login in time, not a Supabase ' +
+        'auth problem. Check BASE_URL / the in-job production server boot log.',
+    );
+  }
   // The login form has 3 elements matching /password/i (the input itself
   // plus "Show password" toggle + "Forgot password?" link). Use exact label
-  // match to disambiguate to the actual input. AuthScreen.tsx:387 sets
+  // match to disambiguate to the actual input. AuthScreen.tsx sets
   // aria-label="Password" on the input.
-  await page.getByLabel(/^email/i).fill(email);
+  await emailInput.fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: /^log in$|^sign in$/i }).click();
 

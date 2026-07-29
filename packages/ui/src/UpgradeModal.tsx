@@ -18,14 +18,14 @@ const PLANS = [
   {
     code: 'starter' as const,
     name: 'Starter',
-    chats: 30,
+    chats: '∞' as const,
     quizzes: 20,
     color: '#E8581C',
   },
   {
     code: 'pro' as const,
     name: 'Pro',
-    chats: 100,
+    chats: '∞' as const,
     quizzes: '∞' as const,
     highlight: true,
     color: '#7C3AED',

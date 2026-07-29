@@ -58,7 +58,7 @@ const TEASER_PLANS: TeaserPlan[] = [
     ctaHi: 'शुरू करें',
     ctaStyle: 'neutral',
     features: [
-      { en: '30 Foxy chats / day', hi: 'प्रतिदिन 30 फ़ॉक्सी चैट' },
+      { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: '20 quizzes / day', hi: 'प्रतिदिन 20 क्विज़' },
       { en: '4 subjects + STEM Lab', hi: '4 विषय + STEM लैब' },
     ],
@@ -73,7 +73,7 @@ const TEASER_PLANS: TeaserPlan[] = [
     ctaHi: 'शुरू करें',
     ctaStyle: 'primary',
     features: [
-      { en: '100 Foxy chats / day', hi: 'प्रतिदिन 100 फ़ॉक्सी चैट' },
+      { en: 'Unlimited Foxy chats', hi: 'असीमित फ़ॉक्सी चैट' },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़' },
       { en: 'All subjects + STEM Lab', hi: 'सभी विषय + STEM लैब' },
     ],

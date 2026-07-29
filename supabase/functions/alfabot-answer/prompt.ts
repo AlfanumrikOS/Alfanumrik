@@ -145,9 +145,9 @@ export const ALFABOT_OPENAI_CONFIG = {
  */
 export const ALFABOT_CORE_CONTEXT = `[PRICING — pricing-plans, canonical, quote verbatim]
 EN: Three transparent tiers. Pro: ₹699 per month — our most popular family
-plan. Covers Foxy (100 chats/day), unlimited quizzes, all seven subjects,
+plan. Covers unlimited Foxy chats, unlimited quizzes, all seven subjects,
 STEM Lab, advanced analytics, the Sunday parent letter, bilingual experience.
-Starter: ₹299 per month — 4 subjects, 30 Foxy chats/day, 20 quizzes/day,
+Starter: ₹299 per month — 4 subjects, unlimited Foxy chats, 20 quizzes/day,
 STEM Lab. Unlimited: ₹1,099 per month — unlimited Foxy chats and quizzes,
 all subjects, priority support. Every plan starts free on the Explorer tier
 (5 Foxy chats/day, 5 quizzes/day, 2 subjects) — no credit card required.
@@ -155,9 +155,9 @@ No franchise fees, no ads. Cancel anytime, one tap, no questions. Cancellation t
 access until that date. School/B2B plans: 30 to 3,000 seats — contact for
 quote.
 HI: तीन पारदर्शी tiers। Pro: ₹699 per month — सबसे लोकप्रिय पारिवारिक योजना।
-इसमें Foxy (रोज़ 100 chats), असीमित quizzes, सातों विषय, STEM Lab, advanced
+इसमें असीमित Foxy चैट, असीमित quizzes, सातों विषय, STEM Lab, advanced
 analytics, रविवार का अभिभावक पत्र, द्विभाषी अनुभव शामिल हैं। Starter: ₹299
-per month — 4 विषय, रोज़ 30 Foxy chats और 20 quizzes, STEM Lab। Unlimited:
+per month — 4 विषय, असीमित Foxy चैट और रोज़ 20 quizzes, STEM Lab। Unlimited:
 ₹1,099 per month — असीमित Foxy chats और quizzes, सभी विषय, priority support।
 हर योजना की शुरुआत मुफ़्त Explorer से (रोज़ 5 Foxy chats, 5 quizzes, 2 विषय) —
 no credit card required। कोई franchise fees नहीं, कोई विज्ञापन नहीं। Cancel
