@@ -152,12 +152,12 @@ class RecentActivity extends Equatable {
 /// mobile has NO reachable server-authoritative limit today. `get_plan_limit()`
 /// and `get_student_usage()` — the single SQL limit authority — both have
 /// EXECUTE REVOKEd from `anon, authenticated` (migrations 20260516040000 /
-/// 20260516050000, re-asserted by 20260729130100 §3), and the one usage RPC
+/// 20260516050000, re-asserted by 20260729130500 §3), and the one usage RPC
 /// mobile CAN call, `get_dashboard_data`, returns no usage/limit key at all.
 ///
 /// The previous code papered over that by defaulting to the FREE cap whenever
 /// it could not resolve one. That is school-blind: since migration
-/// 20260729130000, `get_plan_limit()` returns
+/// 20260729130400, `get_plan_limit()` returns
 /// `GREATEST(personal_limit, school_derived_limit)`, so a student covered by a
 /// paid or trial school subscription is genuinely ALLOWED unlimited Foxy while
 /// a plan-code-only guess still reported "5". Guessing a cap from the plan code

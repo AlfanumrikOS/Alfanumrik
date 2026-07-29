@@ -166,7 +166,7 @@ class DashboardRepository {
       if (cached != null) return ApiSuccess(cached);
 
       // Connectivity/auth probe. NOTE: `plan` is intentionally NOT read for
-      // limits — 20260729130100 documents that key as "the PERSONAL (B2C) plan
+      // limits — 20260729130500 documents that key as "the PERSONAL (B2C) plan
       // code only ... a label, not a limit source", and it cannot express
       // school (B2B) coverage.
       await _v2!.studentApi.getStudentProfile();
@@ -204,7 +204,7 @@ class DashboardRepository {
   /// `check_and_record_usage()` derives the ENFORCED cap from — so what mobile
   /// displays cannot drift from what the server allows. Critically,
   /// `get_plan_limit()` has folded in school (B2B) coverage since migration
-  /// 20260729130000, which is the whole reason a plan-code guess was wrong.
+  /// 20260729130400, which is the whole reason a plan-code guess was wrong.
   ///
   /// Returns the `usage` sub-map keys that could be resolved. Keys are OMITTED
   /// rather than guessed, so anything unresolved parses to
@@ -264,13 +264,13 @@ class DashboardRepository {
   // REMOVED (2026-07-29): `_chatLimit()` / `_quizLimit()` / `_normalizePlan()`.
   //
   // They resolved a student's daily caps from the PLAN CODE ALONE, which is
-  // school-blind. Since migration 20260729130000, `get_plan_limit()` — the
+  // school-blind. Since migration 20260729130400, `get_plan_limit()` — the
   // single SQL limit authority, and the function `check_and_record_usage()`
   // enforces against — returns `GREATEST(personal_limit, school_derived_limit)`,
   // mapping a `trial` or paid SCHOOL subscription onto the `pro` consumer tier.
   // A student covered by a school is therefore genuinely ALLOWED unlimited Foxy
   // while the plan-code guess still reported the FREE cap of 5. Migration
-  // 20260729130100 collapsed the equivalent SQL duplicate for the same reason;
+  // 20260729130500 collapsed the equivalent SQL duplicate for the same reason;
   // this was the same defect's mobile twin, and re-adding a Dart mapping of
   // school plans to consumer tiers would make mobile a FIFTH disagreeing
   // authority. So the guess is deleted rather than corrected.
@@ -282,11 +282,11 @@ class DashboardRepository {
   // Why a direct RPC call is NOT an option (verified, don't retry it):
   //   * `get_plan_limit(uuid,text)` and `get_student_usage(uuid)` both have
   //     EXECUTE REVOKEd from `anon, authenticated` (20260516040000 /
-  //     20260516050000, re-asserted 20260729130100 §3). Mobile authenticates as
+  //     20260516050000, re-asserted 20260729130500 §3). Mobile authenticates as
   //     `authenticated`, so it cannot call either — hence the service-role hop.
   //   * `get_dashboard_data(uuid)` IS granted to `authenticated` (20260623000800)
   //     but its returned object carries no usage/limit/plan key whatsoever.
-  //   * `GET /v2/student/profile` returns `plan` only — and per 20260729130100
+  //   * `GET /v2/student/profile` returns `plan` only — and per 20260729130500
   //     that key is explicitly "the PERSONAL (B2C) plan code only ... a label,
   //     not a limit source".
   //

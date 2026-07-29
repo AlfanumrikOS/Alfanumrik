@@ -21,7 +21,7 @@
  * `checkDailyUsage` PREFERS the server's authoritative number, fetched from
  * `GET /api/usage/daily` — a thin read-through to the very same
  * `get_plan_limit()` RPC that enforcement uses. That RPC has honoured SCHOOL
- * (B2B) coverage since migration 20260729130000, returning
+ * (B2B) coverage since migration 20260729130400, returning
  * GREATEST(personal limit, school-derived limit).
  *
  * The table below CANNOT express that: it is keyed on the
@@ -84,7 +84,7 @@ function getLimitForPlan(plan: string, feature: Feature): number {
  * the `get_plan_limit()` RPC — literally the number `check_and_record_usage()`
  * enforces against, school (B2B) coverage included.
  *
- * The browser cannot call `get_plan_limit` directly: migration 20260729130000 §5
+ * The browser cannot call `get_plan_limit` directly: migration 20260729130400 §5
  * REVOKEs EXECUTE from `anon`/`authenticated`, so the service-role route is the
  * only way for the client to see the authoritative value.
  *

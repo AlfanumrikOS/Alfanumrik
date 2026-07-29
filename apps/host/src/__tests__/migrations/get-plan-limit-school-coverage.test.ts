@@ -2,7 +2,7 @@
  * `get_plan_limit()` school coverage — LIVE-DB integration pins.
  *
  * These are architect's three condition-2 pins for
- * `supabase/migrations/20260729130000_get_plan_limit_school_coverage.sql`:
+ * `supabase/migrations/20260729130400_get_plan_limit_school_coverage.sql`:
  *
  *   PIN 1  a pure-B2C student's limit is byte-identical to the pre-change value
  *   PIN 2  a school-covered student on a `trial` school resolves to the `pro` cap

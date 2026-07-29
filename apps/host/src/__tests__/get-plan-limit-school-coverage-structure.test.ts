@@ -53,10 +53,10 @@ const SCHOOL_PLAN_KEYS = [
 ] as const;
 
 const MIGRATIONS = resolve(__dirname, '../../../../supabase/migrations');
-const COVERAGE_SQL = resolve(MIGRATIONS, '20260729130000_get_plan_limit_school_coverage.sql');
+const COVERAGE_SQL = resolve(MIGRATIONS, '20260729130400_get_plan_limit_school_coverage.sql');
 const AUTHORITY_SQL = resolve(
   MIGRATIONS,
-  '20260729130100_get_student_usage_single_limit_authority.sql'
+  '20260729130500_get_student_usage_single_limit_authority.sql'
 );
 
 function read(path: string): string {
@@ -74,7 +74,7 @@ function executable(sql: string): string {
 
 // ══════════════════════════════════════════════════════════════════════════════
 
-describe('20260729130000 — get_plan_limit school coverage (source contract)', () => {
+describe('20260729130400 — get_plan_limit school coverage (source contract)', () => {
   const sql = read(COVERAGE_SQL);
   const body = executable(sql);
 
@@ -211,7 +211,7 @@ describe('20260729130000 — get_plan_limit school coverage (source contract)', 
 
 // ══════════════════════════════════════════════════════════════════════════════
 
-describe('20260729130100 — get_student_usage single limit authority (source contract)', () => {
+describe('20260729130500 — get_student_usage single limit authority (source contract)', () => {
   const sql = read(AUTHORITY_SQL);
   const body = executable(sql);
 

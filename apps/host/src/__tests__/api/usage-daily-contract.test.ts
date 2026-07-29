@@ -4,7 +4,7 @@
  * This route exists so the client can DISPLAY the number the server ENFORCES.
  * It is a thin read-through to `get_plan_limit()` — the same RPC
  * `check_and_record_usage()` derives its cap from, and which has honoured school
- * (B2B) coverage since migration 20260729130000.
+ * (B2B) coverage since migration 20260729130400.
  *
  * Pinned here:
  *   1. It creates NO limit authority of its own — the response `limit` is

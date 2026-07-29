@@ -8,7 +8,7 @@ import 'package:alfanumrik/data/models/dashboard_data.dart';
 /// `GET /api/usage/daily?feature=…` (a thin read-through to `get_plan_limit()`,
 /// the same RPC `check_and_record_usage()` enforces against) instead of
 /// deriving one from the plan code. The plan-code guess was school-blind: since
-/// migration 20260729130000 `get_plan_limit()` returns
+/// migration 20260729130400 `get_plan_limit()` returns
 /// `GREATEST(personal, school_derived)`, so a school-covered student is allowed
 /// unlimited Foxy while the guess still said 5.
 ///

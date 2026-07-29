@@ -1,4 +1,4 @@
--- Migration: 20260729130000_get_plan_limit_school_coverage.sql
+-- Migration: 20260729130400_get_plan_limit_school_coverage.sql
 --
 -- PURPOSE (P0-1)
 -- ─────────────────────────────────────────────────────────────────────────────

@@ -1,12 +1,12 @@
--- Migration: 20260729130100_get_student_usage_single_limit_authority.sql
+-- Migration: 20260729130500_get_student_usage_single_limit_authority.sql
 --
--- PURPOSE (P0-1, follow-up condition 1 of the 20260729130000 architect review)
+-- PURPOSE (P0-1, follow-up condition 1 of the 20260729130400 architect review)
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Make `get_student_usage()` — the READ-ONLY usage-widget feed — stop computing
 -- its own limits and delegate every limit to `get_plan_limit()`, so there is
 -- exactly ONE limit authority in SQL.
 --
--- THE BUG THIS CLOSES: 20260729130000 taught `get_plan_limit()` about school
+-- THE BUG THIS CLOSES: 20260729130400 taught `get_plan_limit()` about school
 -- (B2B) coverage, and `check_and_record_usage()` derives the ENFORCED cap from
 -- that function — so a school-covered student is now genuinely allowed the
 -- higher cap. But `get_student_usage()` carried a SECOND, independently written
@@ -76,7 +76,7 @@
 --     ever widened both move together instead of one silently lagging.
 --     (Do not confuse this with `school_subscriptions.status`, a DIFFERENT table
 --     whose CHECK DOES allow 'trial' — that is the trial-school path, and it is
---     handled inside `get_plan_limit()` by 20260729130000, not here.)
+--     handled inside `get_plan_limit()` by 20260729130400, not here.)
 --
 -- (3) FREE QUIZ DEFAULT: 3 (this function)  vs  5 (`get_plan_limit()`)
 --     CHOSEN: NEITHER — the hardcoded default is DELETED, not re-picked.
@@ -201,7 +201,7 @@
 -- Restores the exact pre-change body (baseline L5292-5295, reformatted only —
 -- semantics identical). Note this reinstates the duplicated limit logic and with
 -- it the display/enforcement split; it is a display-only rollback and does NOT
--- undo 20260729130000 (that file carries its own separate DOWN).
+-- undo 20260729130400 (that file carries its own separate DOWN).
 --
 --   CREATE OR REPLACE FUNCTION public.get_student_usage(p_student_id uuid)
 --   RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
@@ -350,7 +350,7 @@ BEGIN
   ---------------------------------------------------------------------------
   -- 2c. LIMITS — the single authority. Four calls, zero local policy.
   --     `get_plan_limit()` already accounts for: the personal (B2C) plan, the
-  --     -1 -> 999999 unlimited mapping, and — since 20260729130000 — school
+  --     -1 -> 999999 unlimited mapping, and — since 20260729130400 — school
   --     (B2B) coverage via GREATEST(personal, school-derived). Because the
   --     widget now reads the same function the enforcement path reads, a
   --     school-covered student is DISPLAYED exactly what they are ALLOWED.
@@ -401,7 +401,7 @@ $$;
 
 COMMENT ON FUNCTION public.get_student_usage(uuid) IS
   'Read-only usage-widget feed. Every `limit` is delegated to get_plan_limit() '
-  '— the single limit authority, which since 20260729130000 also honours school '
+  '— the single limit authority, which since 20260729130400 also honours school '
   '(B2B) coverage — and translated back to this function''s -1 unlimited '
   'display sentinel by usage_limit_for_display(). Holds NO limit logic of its '
   'own, so what a student SEES cannot drift from what is ENFORCED. The `plan` '

@@ -10,7 +10,7 @@ import { logger } from '@alfanumrik/lib/logger';
  * WHY THIS ROUTE EXISTS (P0-1, the school-demo defect)
  * ─────────────────────────────────────────────────────────────────────────────
  * Enforcement lives in `check_and_record_usage()`, which derives its cap from
- * `get_plan_limit()`. Since migration 20260729130000 that function returns
+ * `get_plan_limit()`. Since migration 20260729130400 that function returns
  * GREATEST(personal B2C limit, school B2B coverage-derived limit), so a student
  * covered by a paid/trial SCHOOL plan is enforced at the school tier.
  *
@@ -25,7 +25,7 @@ import { logger } from '@alfanumrik/lib/logger';
  * NO NEW AUTHORITY IS CREATED. This is a thin read-through to `get_plan_limit()`
  * plus the usage row. It holds zero limit logic of its own, so what a student
  * SEES cannot drift from what is ENFORCED. `get_plan_limit` has EXECUTE REVOKEd
- * from `anon`/`authenticated` (migration 20260729130000 §5), which is precisely
+ * from `anon`/`authenticated` (migration 20260729130400 §5), which is precisely
  * why the browser cannot call it directly and needs this service-role hop.
  *
  * AUTH (P9): authorizeRequest(request, <feature permission>) — 'foxy.chat' for

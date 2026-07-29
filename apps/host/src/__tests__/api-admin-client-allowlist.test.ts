@@ -205,7 +205,7 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // gate (architect ruling); registered in scripts/admin-client-allowlist.json.
 // P0-1 quota display/enforcement gap (2026-07-29): 264 -> 265 for the new
 // read-only route src/app/api/usage/daily/route.ts. Service-role is REQUIRED,
-// not convenience: migration 20260729130000 §5 REVOKEs EXECUTE ON
+// not convenience: migration 20260729130400 §5 REVOKEs EXECUTE ON
 // public.get_plan_limit(uuid, text) FROM PUBLIC, anon, authenticated, so an
 // RLS-scoped session cannot call the enforcement authority the badge must read.
 // Bounded to one STABLE read-only RPC + one own-row student_daily_usage SELECT,

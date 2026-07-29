@@ -4,7 +4,7 @@
  * THE DEFECT BEING PINNED
  * ─────────────────────────────────────────────────────────────────────────────
  * Enforcement (`check_and_record_usage` → `get_plan_limit`) has honoured SCHOOL
- * (B2B) coverage since migration 20260729130000. DISPLAY, however, was computed
+ * (B2B) coverage since migration 20260729130400. DISPLAY, however, was computed
  * from the TypeScript `PLAN_LIMITS` table keyed on `students.subscription_plan`
  * — a column that is school-blind. A student covered by a paid/trial school
  * therefore saw "5 chats left" and was BLOCKED CLIENT-SIDE at 5 while the server

@@ -6,7 +6,7 @@ import 'package:alfanumrik/data/models/dashboard_data.dart';
 ///
 /// THE BUG: `dashboard_repository.dart` resolved daily caps from the plan code
 /// alone (`_chatLimit()` / `_quizLimit()`), which is school-blind. Since
-/// migration 20260729130000, `get_plan_limit()` — the single SQL limit
+/// migration 20260729130400, `get_plan_limit()` — the single SQL limit
 /// authority that `check_and_record_usage()` enforces against — returns
 /// `GREATEST(personal_limit, school_derived_limit)`, so a student covered by a
 /// paid/trial SCHOOL subscription is genuinely allowed unlimited Foxy while the
