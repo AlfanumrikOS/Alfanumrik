@@ -16,6 +16,25 @@
  * are DISPLAY defaults ONLY and MUST mirror the DB; the paid tiers therefore use
  * the same {@link UNLIMITED_USAGE_SENTINEL} the DB maps -1 to, so the UI never
  * implies a finite paid cap (that stale "30 left" / "100 left" was the bug).
+ *
+ * ─── PLAN_LIMITS IS NOW A FALLBACK ONLY (P0-1 school-coverage fix) ───────────
+ * `checkDailyUsage` PREFERS the server's authoritative number, fetched from
+ * `GET /api/usage/daily` — a thin read-through to the very same
+ * `get_plan_limit()` RPC that enforcement uses. That RPC has honoured SCHOOL
+ * (B2B) coverage since migration 20260729130000, returning
+ * GREATEST(personal limit, school-derived limit).
+ *
+ * The table below CANNOT express that: it is keyed on the
+ * `students.subscription_plan` COLUMN, which is school-blind. A student covered
+ * by a paid/trial school resolves to 'free' here and used to be shown — and
+ * client-side BLOCKED at — 5 chats while the server allowed unlimited. That was
+ * the demo defect.
+ *
+ * So PLAN_LIMITS is retained strictly as the offline/failure fallback. It is
+ * deliberately the CONSERVATIVE direction: for a school-covered student it
+ * under-promises (shows the personal-tier cap) and never over-promises. It is
+ * NOT a second limit authority and must not be consulted when the server
+ * answered. Its "mirror the DB" contract still stands for the B2C tiers.
  */
 
 import { supabase } from './supabase';
@@ -58,6 +77,50 @@ function getLimitForPlan(plan: string, feature: Feature): number {
   return (PLAN_LIMITS[normalizePlanCode(plan)] ?? PLAN_LIMITS.free)[feature];
 }
 
+// ─── Server-authoritative usage (the PREFERRED source) ───────────────────────
+
+/**
+ * Fetch the caller's own daily quota from `GET /api/usage/daily`, which reads
+ * the `get_plan_limit()` RPC — literally the number `check_and_record_usage()`
+ * enforces against, school (B2B) coverage included.
+ *
+ * The browser cannot call `get_plan_limit` directly: migration 20260729130000 §5
+ * REVOKEs EXECUTE from `anon`/`authenticated`, so the service-role route is the
+ * only way for the client to see the authoritative value.
+ *
+ * Returns `null` on ANY failure (no browser, network error, non-2xx, malformed
+ * body) so the caller degrades to the conservative local default rather than to
+ * a fabricated generous one. Never throws.
+ */
+async function fetchServerUsage(
+  feature: Feature,
+): Promise<{ limit: number; count: number } | null> {
+  // Relative URL — browser only. On the server there is no session cookie to
+  // send and no origin to resolve, so we simply don't try.
+  if (typeof window === 'undefined' || typeof fetch !== 'function') return null;
+
+  try {
+    const res = await fetch(`/api/usage/daily?feature=${encodeURIComponent(feature)}`, {
+      credentials: 'same-origin', // session cookie → authorizeRequest
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+
+    const body = await res.json();
+    if (!body?.success) return null;
+
+    const limit = body.data?.limit;
+    const count = body.data?.count;
+    // Only trust a fully-formed numeric answer; anything else is a fallback.
+    if (typeof limit !== 'number' || typeof count !== 'number') return null;
+    if (!Number.isFinite(limit) || !Number.isFinite(count)) return null;
+
+    return { limit, count };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Client-side in-memory cache (avoids spamming DB) ────────
 
 interface CachedUsage {
@@ -95,6 +158,19 @@ export interface UsageResult {
 /**
  * Check whether the student can use the given feature today.
  * Returns current count, limit, and whether the action is allowed.
+ *
+ * SOURCE ORDER (P0-1):
+ *   1. `GET /api/usage/daily` — the server's authoritative `get_plan_limit()`
+ *      number, which honours SCHOOL (B2B) coverage. This is what enforcement
+ *      uses, so the badge and the gate agree.
+ *   2. Local fallback — `PLAN_LIMITS[students.subscription_plan]` + a direct
+ *      read of the usage row. School-blind and therefore CONSERVATIVE (it can
+ *      only under-state a school-covered student's cap, never over-state it).
+ *      This is exactly the pre-fix behavior, so pure-B2C students are unchanged
+ *      whichever branch runs.
+ *
+ * `plan` is now consulted ONLY on the fallback branch. It is kept in the
+ * signature for call-site compatibility.
  */
 export async function checkDailyUsage(
   studentId: string,
@@ -103,7 +179,6 @@ export async function checkDailyUsage(
 ): Promise<UsageResult> {
   const key = cacheKey(studentId, feature);
   const today = todayISO();
-  const limit = getLimitForPlan(plan, feature);
 
   // Return from cache if fresh
   const cached = cache.get(key);
@@ -115,6 +190,27 @@ export async function checkDailyUsage(
       count: cached.count,
     };
   }
+
+  // 1. PREFERRED: the same authority that enforces. Both the limit AND the count
+  //    come from the server so they describe one consistent moment.
+  const server = await fetchServerUsage(feature);
+  if (server) {
+    cache.set(key, {
+      count: server.count,
+      limit: server.limit,
+      date: today,
+      fetchedAt: Date.now(),
+    });
+    return {
+      allowed: server.count < server.limit,
+      remaining: Math.max(0, server.limit - server.count),
+      limit: server.limit,
+      count: server.count,
+    };
+  }
+
+  // 2. FALLBACK: school-blind local default (conservative — never over-promises).
+  const limit = getLimitForPlan(plan, feature);
 
   // Query DB
   const { data } = await supabase

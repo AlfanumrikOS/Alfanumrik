@@ -6,8 +6,42 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 325 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-322..REG-325 (2026-07-29, DSA-audit fix batch, branch
+**Total catalog: 329 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-326..REG-329 (2026-07-29, diagnostic cold-start correctness +
+school-coverage daily-limit P0 batch). REG-326 (diagnostic complete-route
+server-side correctness re-derivation, P1 — **it replaces a test that was
+PINNING the defect**: `diagnostic-complete-contract.test.ts` stubbed an EMPTY
+`question_bank` and then asserted `score_percent === 70` for a body that merely
+*claimed* 7 of 10 correct, an assertion that could only pass if the route
+trusted the client's `is_correct` flag; the whole file is rebuilt on real
+`correct_answer_index` fixtures, with an adversarial pin that an all-`true`
+claim over all-wrong indices scores 0, a 200-case property test, the §7.5a
+50/80 placement boundaries replacing the stale 40/70 cuts, the C2 speed-run
+placement guard, and AC-32 XP neutrality; see `03-quiz-integrity.md`).
+REG-327 (diagnostic 5/6/4 blueprint + V1-V18 Tier-0 verification gate + Rung
+0-4 insufficient-pool ladder + Bloom's spread, pinned against the PURE selector
+— including the **AC-4 information oracle with the pre-fix all-easy 15/0/0 form
+kept as an explicit NEGATIVE fixture** so `ORDER BY difficulty ASC LIMIT 15`
+cannot silently return, a 500-pool never-degraded property test, grades
+`"6".."12"` as STRINGS with integer twins rejected, and the Rung-4 honest stop
+returning HTTP 200 with NO `diagnostic_assessments` insert and a provably
+non-empty `alternatives` array; see `03-quiz-integrity.md`). REG-328
+(daily-limit display == enforcement across the TS client, the new
+`/api/usage/daily` service-role read-through and the Flutter tri-state
+`UsageLimit` parse, plus the "neither unlimited sentinel — `-1` or `999999` —
+ever renders" guarantee; see `15-cross-cutting.md`). REG-329 (the
+`get_plan_limit` school-coverage + `get_student_usage` single-limit-authority
+migrations — **PARTIAL, and honestly so**: the source contract runs on every PR,
+but architect's three semantic pins (B2C byte-identical, `trial` school → `pro`
+cap, personal `unlimited` not downgraded under a `basic` school) execute plpgsql
+and therefore live in the INTEGRATION lane, which does NOT run on a normal PR;
+see `15-cross-cutting.md`). **REG-330 is the next free id.**
+Collision note (2026-07-29): this batch originally claimed REG-322..REG-325 and
+declared REG-326 next-free. The DSA-audit fix batch (PR #1415, immediately
+below) merged to `main` first with the SAME four ids and the SAME next-free
+claim; this batch was renumbered to REG-326..REG-329 during the rebase. No
+entry from either batch was dropped, reworded or renumbered on the #1415 side.
+Also 2026-07-29 (merged first, PR #1415): REG-322..REG-325 (DSA-audit fix batch, branch
 `Alfanumrik/alfanumrik-dsa-review-ba6e30` — a data-structures/algorithms
 review of the quiz-validation, shuffle, XP-ledger, and cron-leaderboard
 surfaces). REG-322 (P6 — single canonical question-quality gate at
@@ -52,7 +86,10 @@ auto-enable gate driven off the RPC integer return, service_role-only
 EXECUTE, counts-only logging, AND the dormant
 `recalculate_performance_scores()` RPC [migration `20260729130200`] pinned
 UNWIRED from both the Vitest and Deno lanes; extends REG-118; see
-`11-infrastructure.md`). REG-326 is the next free id.
+`11-infrastructure.md`). That batch's own header text declared "REG-326 is the
+next free id"; that was true at its merge and is superseded here — REG-326..
+REG-329 were taken by the diagnostic + school-coverage batch above, so **REG-330
+is the next free id.**
 Prior: REG-318..REG-321 (2026-07-29, forensic-audit fix batch, PR #1410 —
 "Forensic audit fix batch: quiz scoring, payments, security, AI safety (6
 critical bugs)"). A deep forensic audit found ~30 confirmed bugs across
@@ -105,12 +142,13 @@ in the shard bodies do NOT agree (270 exact-format table rows vs the 317
 self-declared here) because a meaningful minority of entries — including
 REG-176, REG-182/183, and others — are written in prose/subsection format
 rather than the `| REG-N | ... |` table-row shape, so a naive single-regex
-count undercounts. The 317 (now 325) figure is the authoritative
+count undercounts. The 317 (now 329) figure is the authoritative
 incrementally-maintained running total: each entry's own addition updates
 "Pre-REG-N: X entries ... **Total catalog: X+1 entries**" in the same
 commit, and the highest such self-declaration in the shard set (this file
-and `11-infrastructure.md` at REG-317, then this file at REG-321, now this
-file and `11-infrastructure.md` at REG-325) is treated as ground truth. Known intentional ID gaps below REG-296 (never
+and `11-infrastructure.md` at REG-317, then this file at REG-321, then this
+file and `11-infrastructure.md` at REG-325, now this file and
+`15-cross-cutting.md` at REG-329) is treated as ground truth. Known intentional ID gaps below REG-296 (never
 renumbered, do not fill): REG-1..REG-35 (catalog numbering starts at
 REG-36; REG-1..35 were never used — SG-1..SG-6 in `01-subject-governance.md`
 use a separate prefix), REG-80/81/82 (recommended in `03-quiz-integrity.md`/
@@ -118,7 +156,12 @@ use a separate prefix), REG-80/81/82 (recommended in `03-quiz-integrity.md`/
 `03-quiz-integrity.md`), REG-176 (present, prose format — NOT a gap, a
 counting-format artifact, see above). REG-296 through REG-317 are fully
 contiguous with no gaps; REG-322..REG-325 were consumed by the same-day
-DSA-audit promotion, so REG-326 is the next free id.
+DSA-audit promotion (PR #1415) and REG-326..REG-329 by the same-day
+diagnostic cold-start + school-coverage batch, so **REG-330 is the next free
+id**. Both batches independently claimed REG-322..REG-325 on 2026-07-29; the
+DSA-audit batch merged first and keeps those ids, the diagnostic batch was
+renumbered upward during its rebase. There is no REG-322..REG-325 duplication
+and no gap between REG-321 and REG-329.
 Prior: REG-317 (2026-07-27, build/tooling invocability + CI gate blocking
 posture — branch `fix/typecheck-scripts-gap`. Pins the family of defects every
 existing gate was structurally blind to: tooling that COMPILES but cannot be
