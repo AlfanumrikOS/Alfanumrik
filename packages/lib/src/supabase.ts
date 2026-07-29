@@ -306,7 +306,10 @@ function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
 
     const opts = Array.isArray(q.options) ? q.options : [];
     if (opts.length !== 4) return false;
-    if (q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
+    // FIX (2026-07-29, forensic audit): `null < 0` and `null > 3` are both
+    // `false` in JS, so a null/undefined correct_answer_index used to slip
+    // through this P6 gate and get silently treated as index 0 downstream.
+    if (q.correct_answer_index == null || q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
 
     // Reject template markers (P6: no {{ or [BLANK])
     if (q.question_text.includes('{{') || q.question_text.includes('[BLANK]')) return false;
