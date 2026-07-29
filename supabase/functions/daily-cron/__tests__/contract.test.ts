@@ -349,3 +349,90 @@ Deno.test('daily-cron contract 4b: contract-lifecycle steps are gated behind ff_
     );
   }
 });
+
+// ─── 6. Leaderboard ranking is delegated to the set-based RPC ────────────────
+// DSA audit fix (2026-07-29). `recalculateLeaderboards` used to
+// `.select('id,grade,xp_total')` the whole students table with NO limit, sort it
+// in JS, and assign `rank = i + 1` by array index. PostgREST silently truncates
+// an unfiltered select at its max-rows cap (1000 by default), so past 1000
+// active students the fetch returned an arbitrary partial page: everyone outside
+// it kept a permanently stale rank, and everyone inside it was ranked against a
+// fraction of their own grade cohort — with no error, no 207, and no log.
+//
+// Ranking now lives in public.recalculate_leaderboard_snapshots() (migration
+// 20260729130100). The feature-flag auto-enable deliberately STAYED in
+// TypeScript (flag writes are ops-owned) and is driven off the RPC's integer
+// return, which carries the same meaning the old `entries.length` did.
+//
+// Mirrored in the Vitest lane by
+// apps/host/src/__tests__/regressions/daily-cron-leaderboard-rpc-contract.test.ts,
+// which additionally pins the RPC's own SQL semantics.
+
+Deno.test('daily-cron contract 6: recalculateLeaderboards calls the RPC and no longer ranks in JS', () => {
+  const fnIdx = SRC.indexOf('async function recalculateLeaderboards');
+  assert(fnIdx > 0, 'expected recalculateLeaderboards to remain defined');
+  const body = SRC.slice(fnIdx, SRC.indexOf('\n}', fnIdx) + 2);
+
+  // Ranking is delegated to the set-based RPC.
+  assert(
+    /\.rpc\(\s*['"]recalculate_leaderboard_snapshots['"]\s*\)/.test(body),
+    "expected recalculateLeaderboards to call .rpc('recalculate_leaderboard_snapshots')",
+  );
+
+  // The unbounded fetch + JS ranking must NOT come back. (Note the RPC NAME
+  // contains 'leaderboard_snapshots', so the table assertion matches .from().)
+  assert(!/\.from\(\s*['"]students['"]\s*\)/.test(body), 'no unbounded students .select() may return');
+  assert(!/\.select\(/.test(body), 'no client-side select may return to this step');
+  assert(!/\.sort\(/.test(body), 'ranking must not be done in JS');
+  assert(!/rank\s*:\s*i\s*\+\s*1/.test(body), 'rank must not be assigned by array index');
+  assert(
+    !/\.from\(\s*['"]leaderboard_snapshots['"]\s*\)/.test(body) && !/\.upsert\(/.test(body),
+    'the RPC owns the leaderboard_snapshots write',
+  );
+
+  // Step contract unchanged (contract 3): a failed step THROWS so it lands in
+  // the 207 errors map rather than silently reporting 0.
+  assertStringIncludes(body, 'throw new Error(`recalculateLeaderboards:');
+});
+
+Deno.test('daily-cron contract 6b: the >=2 leaderboard flag gate is driven off the RPC return value', () => {
+  const fnIdx = SRC.indexOf('async function recalculateLeaderboards');
+  const body = SRC.slice(fnIdx, SRC.indexOf('\n}', fnIdx) + 2);
+
+  // The RPC's integer return is the ONLY population measure in this step.
+  assertStringIncludes(body, 'const ranked = Number(data ?? 0)');
+  assert(
+    /!Number\.isFinite\(ranked\)\s*\|\|\s*ranked <= 0/.test(body),
+    'expected a non-finite / non-positive short-circuit on the RPC return',
+  );
+  assertStringIncludes(body, 'if (ranked >= 2)');
+  assertStringIncludes(body, 'return ranked');
+
+  // Flag mutation stayed here (ops-owned), gated on that same value.
+  const gate = body.slice(body.indexOf('if (ranked >= 2)'));
+  assertStringIncludes(gate, "from('feature_flags')");
+  assertStringIncludes(gate, 'leaderboard_global');
+  assertStringIncludes(gate, 'wave1_leaderboard');
+  // A failed flag flip must NOT fail a run whose ranks are already committed.
+  assert(!/throw/.test(gate), 'a failed feature-flag flip must stay non-fatal');
+  assertStringIncludes(gate, 'console.warn');
+});
+
+Deno.test('daily-cron contract 6c: the dormant recalculate_performance_scores RPC stays unwired', () => {
+  // Migration 20260729130200 ships a set-based replacement for
+  // recalculatePerformanceScores, DELIBERATELY not wired up pending assessment
+  // sign-off: wiring it would switch a scoring pipeline ON for the first time
+  // (writing performance_scores + score_history and firing score_milestone
+  // notifications at every student), not perform a like-for-like port. A
+  // drive-by swap is exactly what this pin exists to catch.
+  assert(
+    !/\.rpc\(\s*['"]recalculate_performance_scores['"]/.test(SRC),
+    'recalculate_performance_scores must remain uncalled until assessment signs off',
+  );
+  // The step itself must remain registered and defined (contract 2 covers the
+  // registration; this restates the "left exactly as-is" half).
+  assert(
+    /async function recalculatePerformanceScores/.test(SRC),
+    'expected recalculatePerformanceScores to remain defined and unchanged',
+  );
+});

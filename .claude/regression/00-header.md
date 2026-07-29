@@ -6,8 +6,54 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 321 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-318..REG-321 (2026-07-29, forensic-audit fix batch, PR #1410 —
+**Total catalog: 325 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-322..REG-325 (2026-07-29, DSA-audit fix batch, branch
+`Alfanumrik/alfanumrik-dsa-review-ba6e30` — a data-structures/algorithms
+review of the quiz-validation, shuffle, XP-ledger, and cron-leaderboard
+surfaces). REG-322 (P6 — single canonical question-quality gate at
+`packages/lib/src/quiz/question-validation.ts`: strict-union behaviour
+[null/non-integer `correct_answer_index` rejected, exactly-4-distinct
+options, template markers, explanation char+word floors, `allowNonMcq`
+relaxing MCQ shape only, bloom_level enforcement OPT-IN via
+`enforceBloomLevel` and pinned in BOTH directions — default must not
+silently re-tighten, opt-in must actually enforce and forward through the
+batch wrapper] plus an anti-fork canary [exactly one implementation under
+`packages/lib/src`, the three former fork sites `quiz-assembler.ts`/
+`domains/quiz.ts`/`supabase.ts` delegate, only `quiz-assembler` passes
+`allowNonMcq: true`, the quarantined `quiz-engine.validateQuestionForQuiz`
+has zero production callers]; documented gaps — the quiz page's
+deliberately-thinner `isValidQuestion` last-line filter is outside the
+canary's scan scope, and the Deno-side parity partner
+`supabase/functions/_shared/quiz-oracle.ts` currently lacks the bloom field
+[ai-engineer follow-up]; see `03-quiz-integrity.md`). REG-323 (P6-adjacent
+— canonical non-mutating Fisher-Yates `shuffle()` at
+`packages/lib/src/shuffle.ts` with injectable rng, proven
+permutation-preserving and distribution-correct via exact scripted-rng
+permutations + a uniformity trial, plus a repo-wide static canary banning
+the biased `sort(() => Math.random() - 0.5)` comparator in either ordering
+from `packages/` and `apps/`; see `03-quiz-integrity.md`). REG-324 (P2 —
+the 6-arg `atomic_quiz_profile_update` overload now WRITES the
+`xp_transactions` ledger row it READS for the daily cap, closing the
+cap-read/cap-write mismatch left open after REG-318's F4 read repoint:
+`daily_category='quiz'`, capped `v_effective_xp` with raw only in metadata,
+`v_effective_xp > 0` guard, clamp→ledger→profile/student write ordering in
+one transaction, `v_daily_cap` parity with `XP_RULES.quiz_daily_cap` swept
+across every root migration, and the nine-key JSONB return pinned in order
+[extends REG-48]; recorded HONESTLY as a defensive fix on a
+dormant-but-`authenticated`-EXECUTE-granted overload with NO reachable
+production caller today — the live path is `submit_quiz_results_v2` + the
+7-arg overload; migration `20260729130000_fix_6arg_quiz_xp_ledger_write.sql`;
+see `05-xp-scoring.md`). REG-325 (operational integrity + P13 — daily-cron
+leaderboard ranking delegated to the `recalculate_leaderboard_snapshots()`
+RPC [migration `20260729130100`], killing the silent PostgREST 1000-row
+truncation and JS rank-by-array-index: ROW_NUMBER with `s.id` tie-break,
+unconditional DO UPDATE so ROW_COUNT = students ranked, the `>= 2` flag
+auto-enable gate driven off the RPC integer return, service_role-only
+EXECUTE, counts-only logging, AND the dormant
+`recalculate_performance_scores()` RPC [migration `20260729130200`] pinned
+UNWIRED from both the Vitest and Deno lanes; extends REG-118; see
+`11-infrastructure.md`). REG-326 is the next free id.
+Prior: REG-318..REG-321 (2026-07-29, forensic-audit fix batch, PR #1410 —
 "Forensic audit fix batch: quiz scoring, payments, security, AI safety (6
 critical bugs)"). A deep forensic audit found ~30 confirmed bugs across
 quiz scoring, payments, security/RBAC, AI safety, privacy/logging, and
@@ -59,19 +105,20 @@ in the shard bodies do NOT agree (270 exact-format table rows vs the 317
 self-declared here) because a meaningful minority of entries — including
 REG-176, REG-182/183, and others — are written in prose/subsection format
 rather than the `| REG-N | ... |` table-row shape, so a naive single-regex
-count undercounts. The 317 (now 321) figure is the authoritative
+count undercounts. The 317 (now 325) figure is the authoritative
 incrementally-maintained running total: each entry's own addition updates
 "Pre-REG-N: X entries ... **Total catalog: X+1 entries**" in the same
 commit, and the highest such self-declaration in the shard set (this file
-and `11-infrastructure.md` at REG-317, now this file at REG-321) is treated
-as ground truth. Known intentional ID gaps below REG-296 (never
+and `11-infrastructure.md` at REG-317, then this file at REG-321, now this
+file and `11-infrastructure.md` at REG-325) is treated as ground truth. Known intentional ID gaps below REG-296 (never
 renumbered, do not fill): REG-1..REG-35 (catalog numbering starts at
 REG-36; REG-1..35 were never used — SG-1..SG-6 in `01-subject-governance.md`
 use a separate prefix), REG-80/81/82 (recommended in `03-quiz-integrity.md`/
 `05-xp-scoring.md`, never added), REG-170 (intentionally skipped — see
 `03-quiz-integrity.md`), REG-176 (present, prose format — NOT a gap, a
 counting-format artifact, see above). REG-296 through REG-317 are fully
-contiguous with no gaps; REG-322 is the next free id after this promotion.
+contiguous with no gaps; REG-322..REG-325 were consumed by the same-day
+DSA-audit promotion, so REG-326 is the next free id.
 Prior: REG-317 (2026-07-27, build/tooling invocability + CI gate blocking
 posture — branch `fix/typecheck-scripts-gap`. Pins the family of defects every
 existing gate was structurally blind to: tooling that COMPILES but cannot be

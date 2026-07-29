@@ -15,6 +15,9 @@
  */
 
 import type { ChallengeDifficulty } from './challenge-config';
+// Canonical Fisher-Yates. The byte-identical private copy that used to live in
+// this file has been deleted — see packages/lib/src/shuffle.ts.
+import { shuffle } from './shuffle';
 
 // ---- Types ----
 
@@ -63,20 +66,6 @@ export interface HintResult {
   newOrder: string[];
   /** All card IDs that are now locked (including previously locked). */
   lockedIds: string[];
-}
-
-// ---- Internal Helpers ----
-
-/**
- * Fisher-Yates shuffle (returns a new array).
- */
-function shuffle<T>(arr: T[]): T[] {
-  const result = [...arr];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
 }
 
 // ---- Chain Order Verification ----
