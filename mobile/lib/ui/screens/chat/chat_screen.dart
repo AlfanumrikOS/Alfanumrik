@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/subjects_provider.dart';
 import '../../../providers/chat_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../data/models/chat_message.dart';
@@ -52,25 +53,167 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final notifier = ref.read(chatProvider.notifier);
-      final mode = widget.initialMode;
-      if (mode != null && mode.isNotEmpty) {
-        // Explicit-mode launch: always a fresh session so a leftover `learn`
-        // session can never silently swallow an `explorer` launch.
-        notifier.startSession(
-          subject: widget.initialSubject,
-          topic: widget.initialTopic,
-          mode: mode,
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initSession());
+  }
+
+  /// Starts (or resumes) the Foxy session for this screen.
+  ///
+  /// H2 forensic-audit fix: the Foxy API (`apps/host/src/app/api/foxy/route.ts`)
+  /// 400s on an empty/missing `subject` — there is no server-side "general"
+  /// or default-subject convention to fall back to. Previously the bare
+  /// `/chat` launch (general chat tab, no [initialMode]/[initialSubject])
+  /// called `startSession()` with no subject at all, so every message sent
+  /// from that entry point was guaranteed to fail. We now require a subject
+  /// before opening a general session, via [_promptForSubject].
+  void _initSession() {
+    final notifier = ref.read(chatProvider.notifier);
+    final mode = widget.initialMode;
+    if (mode != null && mode.isNotEmpty) {
+      // Explicit-mode launch: always a fresh session so a leftover `learn`
+      // session can never silently swallow an `explorer` launch.
+      notifier.startSession(
+        subject: widget.initialSubject,
+        topic: widget.initialTopic,
+        mode: mode,
+      );
+      return;
+    }
+    // Legacy path: auto-start a session only if none exists.
+    final chat = ref.read(chatProvider);
+    if (chat.session != null) return;
+
+    if (widget.initialSubject != null && widget.initialSubject!.isNotEmpty) {
+      notifier.startSession(subject: widget.initialSubject);
+      return;
+    }
+
+    // No subject known yet — ask the student to pick one rather than
+    // silently sending `subject: ''` and guaranteeing a 400 on first send.
+    _promptForSubject();
+  }
+
+  /// Blocking subject picker shown before a general (no-subject) chat
+  /// session is allowed to start. Mirrors the subject-selection visuals used
+  /// in [SubjectsScreen] (icon + name chips, `AppColors.subjectColor`).
+  Future<void> _promptForSubject() async {
+    if (!mounted) return;
+    final isHi = Localizations.localeOf(context).languageCode == 'hi';
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isHi ? 'पहले एक विषय चुनें' : 'Pick a subject to start',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isHi
+                      ? 'फॉक्सी को यह जानना ज़रूरी है कि आप किस विषय पर बात करना चाहते हैं।'
+                      : 'Foxy needs to know which subject you want to talk about.',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textTertiary),
+                ),
+                const SizedBox(height: 16),
+                Consumer(
+                  builder: (context, ref, _) {
+                    final subjectsAsync = ref.watch(subjectsProvider);
+                    return subjectsAsync.when(
+                      loading: () => const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                      error: (e, _) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          isHi ? 'विषय लोड नहीं हो सके।' : 'Could not load subjects.',
+                          style: const TextStyle(color: AppColors.error, fontSize: 13),
+                        ),
+                      ),
+                      data: (subjects) {
+                        final available = subjects.where((s) => !s.isLocked).toList();
+                        if (available.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Text(
+                              isHi ? 'कोई विषय उपलब्ध नहीं है।' : 'No subjects available.',
+                              style: const TextStyle(color: AppColors.textTertiary, fontSize: 13),
+                            ),
+                          );
+                        }
+                        return Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: available
+                              .map((s) => GestureDetector(
+                                    onTap: () => Navigator.of(sheetContext).pop(s.code),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.subjectColor(s.code)
+                                            .withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: AppColors.subjectColor(s.code)
+                                              .withValues(alpha: 0.25),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(s.icon, style: const TextStyle(fontSize: 16)),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            isHi ? s.nameHi : s.name,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.subjectColor(s.code),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ))
+                              .toList(growable: false),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
         );
-        return;
-      }
-      // Unchanged legacy path: auto-start a session only if none exists.
-      final chat = ref.read(chatProvider);
-      if (chat.session == null) {
-        notifier.startSession();
-      }
-    });
+      },
+    );
+
+    if (!mounted) return;
+    if (selected == null || selected.isEmpty) {
+      // Dismissed without picking — leave the chat screen rather than let
+      // the student type into an input bar that can never successfully send
+      // (no session ever gets created without a subject).
+      Navigator.of(context).pop();
+      return;
+    }
+    ref.read(chatProvider.notifier).startSession(subject: selected);
   }
 
   @override
@@ -161,7 +304,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     );
                 return;
               }
-              ref.read(chatProvider.notifier).startSession();
+              // General chat: reuse the already-picked subject if we have
+              // one, otherwise re-prompt (H2 fix — Foxy requires a subject).
+              if (chat.subject != null && chat.subject!.isNotEmpty) {
+                ref.read(chatProvider.notifier).startSession(subject: chat.subject);
+              } else {
+                _promptForSubject();
+              }
             },
           ),
         ],

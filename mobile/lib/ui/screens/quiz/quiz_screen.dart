@@ -198,6 +198,27 @@ class _QuizInProgress extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final q = quiz.currentQuestion;
+
+    // M2 forensic-audit fix: surface the advisory-only P3 anti-cheat flags
+    // (see QuizNotifier._computeAntiCheatWarning) as a one-shot SnackBar
+    // right as submission kicks off — non-blocking, submission proceeds
+    // regardless, matching web's "warn but always still submit" contract.
+    ref.listen<QuizState>(quizProvider, (previous, next) {
+      final warning = next.antiCheatWarning;
+      if (warning == null || warning.isEmpty) return;
+      if (previous?.antiCheatWarning == warning) return;
+      final isHi = _isHindi(context);
+      final codes = warning.split(',');
+      final messages = codes.map((c) => _antiCheatMessage(c, isHi)).toList();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(messages.join(' ')),
+          backgroundColor: AppColors.warning,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    });
+
     if (q == null) return const SizedBox.shrink();
 
     final selectedOption = quiz.answers[quiz.currentIndex];
@@ -314,6 +335,31 @@ class _QuizInProgress extends ConsumerWidget {
 /// the data-side `_hi` field convention already used elsewhere in mobile.
 bool _isHindi(BuildContext context) {
   return Localizations.localeOf(context).languageCode == 'hi';
+}
+
+/// Bilingual copy for [QuizState.antiCheatWarning] flag codes (P7). Advisory
+/// tone only — this never blocks submission, it just gives the mobile
+/// student the heads-up web students effectively don't get (web only
+/// `console.warn`s these same checks).
+String _antiCheatMessage(String code, bool isHi) {
+  switch (code) {
+    case 'too_fast':
+      return isHi
+          ? 'आपने यह क्विज़ बहुत तेज़ी से पूरी की।'
+          : "That was fast — make sure you're reading each question.";
+    case 'pattern':
+      return isHi
+          ? 'सभी जवाब एक जैसे लग रहे हैं।'
+          : 'Your answers look like a pattern rather than genuine picks.';
+    case 'count_mismatch':
+      return isHi
+          ? 'कुछ जवाब दर्ज नहीं हुए।'
+          : "Some answers didn't get recorded.";
+    default:
+      return isHi
+          ? 'यह प्रयास समीक्षा के लिए चिह्नित हो सकता है।'
+          : 'This attempt may be flagged for review.';
+  }
 }
 
 class _ResultScreen extends ConsumerWidget {

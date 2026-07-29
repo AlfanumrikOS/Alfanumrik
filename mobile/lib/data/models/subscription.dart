@@ -63,6 +63,16 @@ class Plans {
   Plans._();
 
   static const List<PlanInfo> all = [
+    // Benefit strings below are kept byte-identical to the web source of
+    // truth (`packages/lib/src/plans.ts` `benefits` arrays) — LOW
+    // forensic-audit fix. NOTE: web's `starter`/`pro` copy still reads "30
+    // Foxy chats/day" / "100 Foxy chats/day" even though enforcement is
+    // unlimited for all paid plans as of migration
+    // `20260714120000_foxy_unlimited_for_paid_plans.sql` (mobile's actual
+    // LIMIT LOGIC already uses the 999999 sentinel and is correct — this is
+    // pure marketing copy). Matching web's current (stale) copy here rather
+    // than diverging further; both platforms need a joint copy fix once
+    // product decides on final "unlimited" wording.
     PlanInfo(
       code: 'starter',
       name: 'Starter',
@@ -73,7 +83,7 @@ class Plans {
         '30 Foxy chats/day',
         '20 quizzes/day',
         '4 subjects',
-        'Interactive labs',
+        'STEM Lab',
       ],
     ),
     PlanInfo(
@@ -87,8 +97,8 @@ class Plans {
         '100 Foxy chats/day',
         'Unlimited quizzes',
         'All subjects',
-        'Detailed analytics',
-        'Parent reports',
+        'STEM Lab',
+        'Advanced analytics',
       ],
     ),
     PlanInfo(
@@ -101,9 +111,8 @@ class Plans {
         'Unlimited Foxy chats',
         'Unlimited quizzes',
         'All subjects',
+        'STEM Lab',
         'Priority support',
-        'Full analytics',
-        'Study planner',
       ],
     ),
   ];

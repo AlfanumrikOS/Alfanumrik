@@ -116,25 +116,44 @@ class ChatRepository {
         'content': message,
       });
 
-      if (_foxyEndpoint == 'api') {
-        return _sendViaApi(
-          sessionId: sessionId,
-          message: message,
-          subject: subject,
-          topic: topic,
-          grade: grade,
-          mode: mode,
-        );
+      final result = _foxyEndpoint == 'api'
+          ? await _sendViaApi(
+              sessionId: sessionId,
+              message: message,
+              subject: subject,
+              topic: topic,
+              grade: grade,
+              mode: mode,
+            )
+          : await _sendViaEdge(
+              sessionId: sessionId,
+              studentId: studentId,
+              message: message,
+              subject: subject,
+              topic: topic,
+              grade: grade,
+              mode: mode,
+            );
+
+      // M1 forensic-audit fix: persist the assistant's reply the same way
+      // the user message above was persisted, so reopening a session shows
+      // the full transcript instead of a user-only one. Best-effort — a
+      // local-persistence failure must not turn an otherwise-successful
+      // Foxy reply into an error for the user.
+      if (result is ApiSuccess<ChatMessage>) {
+        try {
+          await _client.from('chat_messages').insert({
+            'session_id': sessionId,
+            'role': 'assistant',
+            'content': result.data.content,
+          });
+        } catch (_) {
+          // Swallow — the reply already rendered in-memory via the returned
+          // ApiSuccess; failing to cache it locally shouldn't fail the send.
+        }
       }
-      return _sendViaEdge(
-        sessionId: sessionId,
-        studentId: studentId,
-        message: message,
-        subject: subject,
-        topic: topic,
-        grade: grade,
-        mode: mode,
-      );
+
+      return result;
     } catch (e) {
       return ApiFailure('Failed to get response: ${e.toString()}');
     }
