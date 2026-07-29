@@ -1951,3 +1951,78 @@ REG-315 is the next free id after REG-314.
 
 ---
 
+## Forensic-audit ncert-solver AI-safety backport (2026-07-29, PR #1410) — REG-321
+
+Source: the 2026-07-29 forensic audit (PR #1410) found `ncert-solver` — a
+Supabase Edge Function reachable with any authenticated student's JWT — had
+never received the P12 safety hardening already shipped on the Foxy Next.js
+route (`fix(ai-safety): back-port Foxy's grade-spoof block and output screen
+to ncert-solver (P12)`, reviewed by ai-engineer + assessment + testing +
+quality):
+
+- **No grade-authority check.** The client-supplied `grade` field drove RAG
+  scope and prompt assembly directly with no comparison against the caller's
+  enrolled grade — a Grade 6 student could request Grade 12 content by
+  editing the request body. Fixed with the same hard `403 GRADE_MISMATCH`
+  block Foxy's route already enforces, run before any retrieval/prompt work.
+- **No deterministic output screen.** Both ncert-solver response paths
+  (grounded RAG + legacy) returned the LLM answer verbatim with no
+  `screenStudentFacingText` pass — the only P12 output backstop
+  (`REG-182`/`REG-183`) covered Foxy and `grounded-answer`, not
+  ncert-solver. Fixed by extracting the canonical screen to a new SHARED Deno
+  module, `supabase/functions/_shared/rag/output-screen.ts` (
+  `grounded-answer/output-screen.ts` is now a thin re-export shim, not a
+  second implementation), and wiring both ncert-solver paths through it
+  before any answer reaches a student.
+- **Unsanitized chunk interpolation.** The legacy RAG path interpolated
+  retrieved chunks directly into the system prompt; now runs through the
+  same sanitizer `grounded-answer`'s hardened path already uses.
+- **No query-length cap.** Added the same 1000-char cap Foxy's BFF enforces
+  (unbounded Claude cost per request, closed).
+- **No refund-on-abstain.** `chapter_not_ready`/`circuit_open` abstains
+  consumed daily quota with no refund; added the same refund-on-abstain
+  logic Foxy already has.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-321 | `ncert_solver_output_screen_shared_module_relocation_p12` | The canonical Deno `screenStudentFacingText` implementation lives at `supabase/functions/_shared/rag/output-screen.ts` (relocated 2026-07-29 so ncert-solver — which had no output screen at all — can share it instead of duplicating or going without); `grounded-answer/output-screen.ts` is verified to genuinely RE-EXPORT the canonical module (`export { screenStudentFacingText, ... } from '../_shared/rag/output-screen.ts'`) and is asserted to NOT declare its own `HARD_BLOCK_PATTERNS` (guards against the canonical/shim relationship silently reversing or re-duplicating). The relocated Deno module's `HARD_BLOCK_PATTERNS` regex literals stay BYTE-IDENTICAL to the TS twin (`src/lib/ai/validation/output-screen.ts`, ≥20 patterns) — a drift here would let a token blocked on one runtime leak on the other, and now on ncert-solver too, since it imports the shared module directly. Representative blocked strings (profanity, slurs, self-harm, Hindi-abuse, chat-injection markup) that the TS twin blocks are proven present verbatim in the Deno twin's pattern set. The Deno twin's fail-safe contract is preserved: a thrown screening error yields `safe:false` with `categories: ["screen_error"]`, and blank text is treated as safe (the abstain path owns the empty case). | `apps/host/src/__tests__/lib/ai/validation/output-screen-deno-parity.test.ts` | E |
+
+### Invariants covered by this section
+
+- P12 (AI safety) — closes the most severe finding in this cluster: an AI
+  Edge Function reachable with a real student JWT that had NEVER been
+  screened for unsafe LLM output. The relocation-and-share architecture
+  (one canonical module, two thin consumers) is what REG-321 actually pins:
+  the TS↔Deno pattern-parity contract that already protected Foxy/
+  grounded-answer now transitively protects ncert-solver as well, since all
+  three consume the same `HARD_BLOCK_PATTERNS` list.
+
+**Known gap — genuinely untested by this promotion, not papered over:** the
+grade-spoof `403 GRADE_MISMATCH` block, the unsanitized-chunk-interpolation
+fix on the legacy RAG path, the 1000-char query-length cap, and the
+refund-on-abstain logic are all implemented in
+`supabase/functions/ncert-solver/index.ts` (251 lines changed in the PR) but
+have **no dedicated automated test** — the PR's diff touched exactly one
+test file (`output-screen-deno-parity.test.ts`, the shared-module-relocation
+parity pins above) and no Deno test suite for `ncert-solver` itself exists
+on disk (confirmed: no `supabase/functions/ncert-solver/**test**` files, and
+neither pre-existing Vitest suite —
+`apps/host/src/__tests__/ncert-solver.test.ts` nor
+`ncert-solver-security.test.ts` — asserts a `GRADE_MISMATCH`/403 authority
+check). REG-321 is therefore scoped narrowly to what IS pinned (the shared
+output-screen module + its cross-runtime parity); the grade-authority,
+sanitization, query-cap, and refund behaviors are a real coverage gap flagged
+to ai-engineer/assessment for a follow-up Deno test suite, not claimed as
+tested here.
+
+### Catalog total
+
+Pre-REG-321: 320 entries (through REG-320, reconcile-payments terminal-state
+guard — see `04-payments.md`). Adds REG-321 (ncert-solver AI-safety
+backport — shared output-screen module relocation + TS/Deno parity; grade-
+spoof/sanitization/quota-refund implemented but NOT yet test-pinned, see
+Known gap above).
+**Total catalog: 321 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

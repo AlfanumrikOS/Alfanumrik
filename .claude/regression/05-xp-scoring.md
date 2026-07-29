@@ -609,3 +609,87 @@ deep links).
 
 ---
 
+## Forensic-audit quiz-scoring RPC defect cluster (2026-07-29, PR #1410) — REG-318
+
+Source: the 2026-07-29 forensic audit (PR #1410) found four defects sitting
+inside the LIVE `submit_quiz_results_v2` / `atomic_quiz_profile_update` RPC
+graph — the exact functions P1/P2/P3/P4 depend on — none of which were
+caught by the existing structural pins because those pins asserted the
+FUNCTIONS EXIST, not that their bodies referenced real columns. Fixed by
+migration `supabase/migrations/20260729120001_fix_quiz_rpc_defects.sql`
+(additive `CREATE OR REPLACE`, no signature/drop changes):
+
+- **F1/F7 — Anti-Cheat Check 3 tautology (P3 exploit).** Check 3 ("response
+  count must equal question count") joined against the nonexistent
+  `quiz_sessions.question_ids` column, which made the check either always
+  pass or throw-and-swallow depending on driver behavior — a student could
+  submit fewer responses than questions served and never get flagged. Fixed
+  to `COUNT(*) FROM quiz_session_shuffles WHERE session_id = p_session_id`,
+  the real per-session served-question ledger.
+- **F5 — daily XP cap silently not propagated (P2).** `submit_quiz_results_v2`
+  computed the capped award correctly in `xp_transactions` but returned the
+  RAW uncapped `v_xp` to the caller, so a capped student saw an uncapped
+  number and `quiz_sessions.score` recorded the wrong value. Fixed to read
+  the effective (capped) amount back from the ledger
+  (`reference_id = 'quiz_' || session_id`) before returning it, and to
+  surface `xp_capped` correctly.
+- **F4/F3 — `atomic_quiz_profile_update` phantom column + streak
+  never-increments (P2).** The 6-arg overload summed a nonexistent
+  `quiz_sessions.xp_earned` column (42703 on every call — silent daily-cap
+  bypass via the exception path); fixed to sum `xp_transactions` filtered by
+  `daily_category = 'quiz'`. The 7-arg overload re-read
+  `students.last_active` for the streak comparison AFTER Step 3 had already
+  overwritten it in the same call, so the comparison was always "now vs now"
+  and streaks could never increment; fixed by capturing
+  `v_prev_last_active` before any write.
+- **F8 — IST day-boundary off-by-one (P2/P3-adjacent).** Daily-cap and
+  streak day-boundary checks mixed a bare `CURRENT_DATE` (evaluated in the
+  session's UTC timezone) with ad-hoc IST conversions elsewhere, producing a
+  5.5-hour window (00:00–05:29 IST) where "today" disagreed between checks.
+  Unified all three day-boundary reads on
+  `(now() AT TIME ZONE 'Asia/Kolkata')::date`.
+- Companion fix (same commit, not RPC-side): `packages/lib/src/supabase.ts`
+  and `domains/quiz.ts` treated a `NULL correct_answer_index` as valid
+  (JS `null === i` comparisons are always false, so P6's option-index check
+  silently passed a malformed question) — now explicitly rejected.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-318 | `quiz_rpc_defect_cluster_fix` | Structural (migration-source) pins, always-on in normal CI (no live DB required): (a) Check 3 selects `COUNT(*) FROM quiz_session_shuffles WHERE session_id = p_session_id` into `v_served_count` and the mismatch/flag condition reads `v_served_count`, not a `quiz_sessions`-self-referential subquery; the old `quiz_sessions.question_ids` reference is verified ABSENT from the executable `submit_quiz_results_v2` function body (comments stripped, scoped to the function body only) — P3 thresholds (avg<3s, >3-question same-answer) asserted UNCHANGED by the fix. (b) `submit_quiz_results_v2` reads `v_xp_effective` back from `xp_transactions` keyed by `'quiz_' \|\| session_id`, computes `v_xp_capped := v_xp_effective < v_xp`, and both `xp_earned`/`xp_capped` are present in the JSONB return; `quiz_sessions.score` is updated to the capped amount. (c) the 6-arg `atomic_quiz_profile_update` overload signature sums `xp_transactions` (`daily_category = 'quiz'`) for `v_today_earned` and is asserted to NEVER reference `SUM(xp_earned) FROM quiz_sessions`; the `200` daily-cap literal mirrors `XP_RULES.quiz_daily_cap`. (d) the 7-arg overload captures `v_prev_last_active` from `students.last_active` and — via a textual-offset assertion on the raw migration source — that capture provably precedes the "Step 3: Write ledger row" comment block; the Step-5 streak `CASE` reads `v_prev_last_active`, not a re-read. (e) no day-boundary check anywhere in the fix matches the old UTC-anchored patterns (`CURRENT_DATE`-only forms); at least 2 distinct `v_ist_today := (now() AT TIME ZONE 'Asia/Kolkata')::date` anchors are present (6-arg + 7-arg overloads). (f) the migration header prose documents P1 score formula / P2 XP formula-and-values / P3 anti-cheat thresholds as explicitly UNCHANGED by this fix (drift canary against scope creep). | `apps/host/src/__tests__/quiz-rpc-defects-fix-20260729-structure.test.ts` | E |
+
+### Invariants covered by this section
+
+- P1 (score accuracy) — unchanged by this fix; pinned as unchanged via the
+  migration-header drift canary (not re-derived by this test — REG-45/51/52
+  own the score-formula assertions themselves).
+- P2 (XP economy) — closes two real defects: the daily cap now actually
+  reaches the client/`quiz_sessions.score` (F5), and the 6-arg profile-update
+  overload no longer 42703s while silently reading zero for "today earned"
+  (F4).
+- P3 (anti-cheat) — closes the Check 3 tautology (F1/F7), the most severe
+  finding in this cluster: a submit-fewer-answers-than-served exploit that
+  had been silently defeating the response-count-mismatch rule in
+  production.
+- P6 (question quality) — companion fix: `correct_answer_index: null` no
+  longer bypasses client-side option-index validation.
+- Streak correctness (P2-adjacent, not separately P-numbered) — F3 closes a
+  defect where the 7-arg overload's streak counter could never increment.
+
+**Known gap:** this entry pins the migration SOURCE (regex/text-offset
+assertions against the SQL body), not live-database behavior — there is no
+`pg`-connected integration test exercising `submit_quiz_results_v2` /
+`atomic_quiz_profile_update` end-to-end against a real Postgres instance in
+CI. This is the same class of gap already documented for REG-232
+(Deno-source-only pins, no live-DB harness). A live-DB integration pass
+remains a tracked follow-up, not a blocker for this promotion.
+
+### Catalog total
+
+Pre-REG-318: 317 entries (through REG-317, build invocability + CI gate
+blocking posture — see `00-header.md`). Adds REG-318 (quiz-scoring RPC
+defect cluster: anti-cheat Check 3 tautology, XP-cap propagation, streak
+ordering, IST day-boundary unification).
+**Total catalog: 318 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

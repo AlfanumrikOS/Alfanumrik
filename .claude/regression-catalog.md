@@ -1,9 +1,17 @@
 # Regression Catalog
 
-**This file has been split to reduce context cost.**
+**This file has been split to reduce context cost. It is a thin pointer,
+not a second source of truth — it intentionally carries no entry count.**
 
-The full catalog (317 entries — latest REG-317, 2026-07-27) now lives in
-`.claude/regression/`. `00-header.md` carries the authoritative running total:
+The full catalog now lives in `.claude/regression/`. `00-header.md` is the
+SOLE authoritative source for the running total and the latest/next-free
+REG-id — read it directly rather than trusting a number copied here, which
+has drifted out of sync with the shard files at least twice before
+(reconciled 2026-07-29: this file previously read "317 entries" while a
+separate stale copy of it had drifted to "256", and `.claude/CLAUDE.md`'s
+narrative text separately drifted to "142" — all three numbers disagreed
+with the shards' own self-maintained total. Do not add a number here again;
+add it only in `00-header.md`, in the same commit that adds the entry.)
 
 | File | Feature area |
 |---|---|
