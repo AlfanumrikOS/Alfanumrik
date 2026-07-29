@@ -1084,3 +1084,95 @@ attempts cannot silently backfill from non-board content).
 
 ---
 
+## DSA-audit fix batch — single canonical P6 question-quality gate + anti-fork canary (2026-07-29, branch `Alfanumrik/alfanumrik-dsa-review-ba6e30`) — REG-322
+
+Source: the 2026-07-29 DSA-audit (data-structures/algorithms review) fix
+batch. The P6 gate had silently FORKED: three hand-rolled validator
+implementations (`quiz-assembler.ts`, `domains/quiz.ts`, `supabase.ts`) plus
+a fourth quarantined copy (`quiz-engine.validateQuestionForQuiz`) each
+enforced a different subset of P6, so "every served question is validated"
+was only true per-path — the paths disagreed on what "valid" meant (the
+`correct_answer_index: null` bypass fixed as REG-318's companion was one
+symptom of exactly this fork). Consolidated into ONE canonical
+implementation at `packages/lib/src/quiz/question-validation.ts`
+(`validateQuestion` + the `validateQuestions` batch wrapper + exported
+thresholds); the three former fork sites now delegate to it.
+
+The canonical gate's behaviour is the STRICT UNION of the forks, with two
+deliberate, documented relaxation knobs: `allowNonMcq` (relaxes MCQ SHAPE
+only, for the assembler's non-MCQ item types) and `enforceBloomLevel`
+(bloom validity is OPT-IN, default OFF for serving, because the live
+question bank contains null/variant bloom rows that must stay servable — a
+silent default-ON flip would mass-invalidate served content).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-322 | `p6_single_canonical_validator_and_anti_fork_canary` | (a) Strict-union behaviour of the canonical gate: `correct_answer_index` must be an INTEGER 0–3 — `null`, non-integers, and out-of-range values rejected (closes the JS `null === i` always-false bypass); options must be exactly 4 distinct non-empty strings; `question_text` non-empty with template markers (`{{`, `[BLANK]`) rejected; `explanation` must clear BOTH the exported char floor and word floor; `allowNonMcq: true` relaxes the MCQ shape checks (options/index) ONLY — text/explanation quality stays enforced. (b) `enforceBloomLevel` pinned in BOTH directions: the default (OFF) must NOT silently re-tighten — rows with null or variant `bloom_level` remain servable — and `{ enforceBloomLevel: true }` must actually enforce the valid bloom set AND forward through the `validateQuestions` batch wrapper. (c) Anti-fork canary over repo source: each per-rejection-reason fingerprint is emitted from exactly ONE file under `packages/lib/src`; no other `packages/lib` file declares a `validateQuestion`/`validateQuestions` body of its own; the three former fork sites (`quiz-assembler.ts`, `domains/quiz.ts`, `supabase.ts`) import and CALL the canonical gate; ONLY `quiz-assembler` passes `allowNonMcq: true`; the quarantined `quiz-engine.validateQuestionForQuiz` has ZERO production callers (it can never serve a student); scan preconditions pinned non-vacuous (non-trivial source set, canonical module exists and exports the gate + thresholds). | `apps/host/src/__tests__/lib/quiz/question-validation.test.ts` (44 tests), `apps/host/src/__tests__/regressions/p6-validator-single-source-canary.test.ts` (8 tests) | E |
+
+### Invariants covered by this section
+
+- P6 (question quality) — one gate, one definition of "valid", enforced on
+  every server-side serving path instead of three drifting copies.
+- P6 fork-resistance (structural) — the canary turns re-forking into a test
+  failure rather than a code-review catch; the same "exactly one
+  implementation" posture REG-50 pins for Foxy retrieval and REG-118 pins
+  for daily-cron steps.
+
+### Known gaps (documented, deliberate)
+
+- `isValidQuestion` in `apps/host/src/app/(student)/quiz/page.tsx` is a
+  deliberately-THINNER last-line client-side filter and sits OUTSIDE the
+  canary's `packages/lib` scan scope. It is defence-in-depth, not a fork of
+  the gate; pinning it to the canonical implementation would drag the full
+  validator into the client bundle.
+- `supabase/functions/_shared/quiz-oracle.ts` is the Deno-side parity
+  partner of this gate; its `CandidateQuestion` type currently carries NO
+  bloom field, so Deno-side bloom parity is NOT claimed by this entry —
+  tracked as an ai-engineer follow-up.
+
+### Catalog total
+
+Pre-REG-322: 321 entries (through REG-321, the ncert-solver AI-safety
+backport — see `00-header.md`). The DSA-audit fix batch adds REG-322
+(single canonical P6 gate + anti-fork canary), the next free id after
+REG-321.
+**Total catalog: 322 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Canonical unbiased shuffle — Fisher-Yates with injectable rng + repo-wide biased-comparator ban (2026-07-29, DSA-audit fix batch) — REG-323
+
+Source: same 2026-07-29 DSA-audit batch. Shuffling used the classic biased
+idiom `arr.sort(() => Math.random() - 0.5)` — NOT a uniform shuffle (the
+result distribution depends on the engine's sort algorithm and is
+position-biased) and it mutates the array in place. Replaced by a single
+canonical `shuffle()` at `packages/lib/src/shuffle.ts`: a non-mutating
+Fisher-Yates over a copy, with an injectable rng (defaulting to
+`Math.random`) that makes the algorithm testable EXACTLY — by asserting the
+specific permutation a scripted rng must produce — not just statistically.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-323 | `canonical_unbiased_shuffle_and_biased_comparator_ban` | (a) NON-MUTATING: the input array is untouched, the return is a NEW instance, mutating the result does not write back into the input, and `readonly` arrays are accepted (compile-time contract exercised at runtime). (b) PERMUTATION: same multiset for a 10-element array, duplicates preserved exactly (multiset, not set), object identity preserved (elements moved, not cloned), empty and single-element arrays handled — the latter without drawing from the rng at all. (c) DISTRIBUTION-CORRECT via the injectable rng: draws exactly n-1 values for an n-element array; produces the EXACT Fisher-Yates permutation for a scripted rng (and a different exact permutation for a different script); an rng pinned at 0 and one pinned just below 1 produce the two deterministic boundary permutations; same seed ⇒ same permutation; a 12,000-trial uniformity check proves every element reaches every position (no input-order bias); with no rng supplied it defaults to `Math.random` (production behaviour unchanged). (d) REPO-WIDE STATIC CANARY: no source file under `packages/` or `apps/` contains the biased sort comparator in EITHER ordering (`Math.random() - 0.5` or `0.5 - Math.random()`), with a non-vacuous scan-size floor, and the canonical module itself is asserted to BE a Fisher-Yates with an injectable rng defaulting to `Math.random`. | `apps/host/src/__tests__/lib/shuffle.test.ts` (20 tests) | E |
+
+### Invariants covered by this section
+
+- P6-adjacent (question selection/ordering) — a biased shuffle
+  systematically over/under-exposes questions by input position and skews
+  where a correct option lands after option shuffling; uniformity is a
+  fairness property of the serving pipeline even though P6 itself speaks to
+  per-question quality. REG-51's server-shuffle AUTHORITY is untouched —
+  this entry pins the shuffle PRIMITIVE, not who is allowed to re-derive
+  from it.
+- Fork-resistance — the static canary makes reintroducing the biased
+  comparator anywhere in `packages/` or `apps/` a test failure.
+
+### Catalog total
+
+Pre-REG-323: 322 entries (through REG-322, the canonical P6 gate, above).
+The DSA-audit fix batch adds REG-323 (canonical unbiased shuffle +
+biased-comparator repo ban).
+**Total catalog: 323 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

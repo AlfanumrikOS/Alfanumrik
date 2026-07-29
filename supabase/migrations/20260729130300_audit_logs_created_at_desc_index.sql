@@ -1,0 +1,169 @@
+-- Migration: 20260729130300_audit_logs_created_at_desc_index.sql
+-- Purpose: DSA audit HIGH — give public.audit_logs a btree index that can
+--          actually satisfy `ORDER BY created_at DESC`. The only existing
+--          created_at index is BRIN, which cannot.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- DEFECT
+-- ═══════════════════════════════════════════════════════════════════════════
+-- audit_logs carries exactly three indexes today (baseline:16622-16628):
+--   idx_audit_logs_auth_user   btree (auth_user_id)
+--   idx_audit_logs_created_at  BRIN  (created_at)     <-- range summary only
+--   idx_audit_logs_resource    btree (resource_type, resource_id)
+--
+-- BRIN stores per-block-range min/max summaries. It can accelerate a
+-- `created_at BETWEEN ...` range filter, but it carries NO ordered structure,
+-- so the planner can never use it to produce sorted output — a BRIN scan is
+-- always followed by a full sort.
+--
+-- The two unfiltered admin log views hit exactly that path:
+--   apps/host/src/app/api/v1/admin/audit-logs/route.ts:39-43
+--   apps/host/src/app/api/internal/admin/logs/route.ts:31-35
+-- Both issue `.select('*', { count: 'exact' }).order('created_at',
+-- {ascending:false}).range(offset, offset+limit-1)` with no date predicate on
+-- the default page. That is:
+--   * a Seq Scan of the whole table,
+--   * plus a full sort of every row,
+--   * plus a SECOND full scan for `count: 'exact'`,
+--   * repeated for every page, since OFFSET discards the rows it walked past.
+-- On an append-only audit table this degrades monotonically forever.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- FIX
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Add a plain btree on (created_at DESC). The planner can then walk it backwards
+-- for the ORDER BY and stop after OFFSET+LIMIT rows, turning the page fetch into
+-- an index scan with no sort node. (The `count: 'exact'` scan is a separate
+-- application-level concern and is NOT addressed here — an index cannot remove
+-- an exact count over an unfiltered table. Flagged to backend.)
+--
+-- The BRIN index is DELIBERATELY LEFT IN PLACE — not dropped, not replaced. It
+-- is ~1000x smaller than a btree and still the cheaper structure for the
+-- date-range-filtered queries the same routes issue when `from`/`to` params are
+-- supplied. The two indexes serve different access paths and coexist.
+--
+-- DESC vs ASC: Postgres can scan a btree in either direction, so an ASC index
+-- would also satisfy this ORDER BY. DESC is specified anyway to match the
+-- dominant query and the convention already used on the sibling audit tables
+-- (idx_audit_log_actor, idx_audit_log_school_time, idx_auth_audit_log_created —
+-- baseline:16616, :16619, :16631 — all btree ... created_at DESC).
+--
+-- ── CONCURRENTLY: deliberately NOT used ───────────────────────────────────
+-- Repo convention, and it is a hard constraint rather than a preference. The
+-- Supabase CLI wraps each migration file in a transaction and CREATE INDEX
+-- CONCURRENTLY cannot run inside one. Established precedent in this repo:
+--   20260515000003_perf_covering_indexes_batch_a.sql:8
+--   20260527000008_perf_index_audit_phase_d6.sql:62-75
+--   20260702160000_p3w3_17_concept_mastery_review_date_index.sql:60-61
+-- all state the same reasoning and use plain CREATE INDEX IF NOT EXISTS. The
+-- lone CONCURRENTLY user (20260702120000_hnsw_index_twin_memory_embedding.sql)
+-- is a pgvector HNSW build, which is orders of magnitude slower and warranted
+-- the special handling.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LOCK RISK: QUEUEING, NOT BUILD DURATION  (ops review, condition C2)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- A plain CREATE INDEX takes an ACCESS EXCLUSIVE lock on audit_logs. The
+-- dominant risk is NOT how long the build takes — it is LOCK QUEUEING. The
+-- statement must WAIT for any open transaction already holding a conflicting
+-- lock on audit_logs, and while it waits it BLOCKS EVERY NEW WRITER BEHIND IT
+-- in the lock queue. One session sitting idle-in-transaction with audit_logs
+-- touched turns a 2-second index build into an unbounded stall of every admin
+-- and system mutation path — including the deploy's own
+-- auditInternalCronInvocation and flag-posture-canary writes. A small table
+-- does NOT protect against this.
+--
+-- Mitigation: `SET LOCAL lock_timeout = '5s'` immediately before the CREATE
+-- INDEX (see below). If the lock cannot be acquired within 5s the migration
+-- aborts cleanly. That fails the `migrations` CI job, which — per
+-- .github/workflows/deploy-production.yml, where `deploy-functions` declares
+-- `needs: [.., migrations]` — SKIPS the function and app deploys. The outcome
+-- is a re-runnable deploy failure instead of a production write outage.
+--
+-- Caveat: `SET LOCAL` outside a transaction degrades to a WARNING and is a
+-- no-op. That is acceptable here because the Supabase CLI wraps each migration
+-- file in a transaction (the same property that forbids CONCURRENTLY above), so
+-- the setting is genuinely in scope and reverts at COMMIT.
+--
+-- ═══════════════════════════════════════════════════════════════════════════
+-- OPERATOR PRE-APPLY PROCEDURE  (ops review, condition C3)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- audit_logs has NO time-based retention — the only deletion path is per-user
+-- GDPR erasure (20260618090000_data_erasure_purger_compliance.sql:131). It
+-- therefore grows monotonically and its current size is genuinely unknown. Do
+-- not guess. Run these three queries against the target database first.
+--
+-- 1. Size / row estimate:
+--      SELECT (SELECT reltuples::bigint FROM pg_class
+--                WHERE oid = 'public.audit_logs'::regclass)     AS est_rows,
+--             pg_size_pretty(pg_table_size('public.audit_logs')) AS heap_size,
+--             pg_size_pretty(pg_total_relation_size('public.audit_logs'))
+--                                                                AS total_size;
+--
+-- 2. Already present? (if so this migration no-ops via IF NOT EXISTS — proceed)
+--      SELECT indexname FROM pg_indexes
+--       WHERE schemaname = 'public' AND tablename = 'audit_logs';
+--
+-- 3. THE ONE THAT MATTERS — open transactions that would queue behind the lock:
+--      SELECT pid, state, now() - xact_start AS xact_age, left(query, 120)
+--        FROM pg_stat_activity
+--       WHERE datname = current_database()
+--         AND state <> 'idle'
+--         AND xact_start < now() - interval '30 seconds'
+--       ORDER BY xact_start;
+--
+-- ABORT CRITERIA — do NOT apply in-band if ANY of the following holds. Instead
+-- build the index OUT-OF-BAND with CONCURRENTLY via psql first (this migration
+-- then no-ops on IF NOT EXISTS):
+--   * est_rows > 5,000,000; OR
+--   * pg_table_size(audit_logs) > 2 GB; OR
+--   * query 3 returns ANY row; OR
+--   * the window overlaps a known bulk import / backfill / mass admin action /
+--     another running migration.
+--
+-- Out-of-band recipe (psql, NOT inside a transaction):
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_logs_created_at_desc
+--     ON public.audit_logs (created_at DESC);
+--
+-- DEPLOYMENT WINDOW: 19:00-23:30 UTC (00:30-05:00 IST).
+-- Derived from vercel.json: the 02:00-05:00 UTC band is dense with cron jobs
+-- (school-operations 02:00, daily-cron 02:30, irt-calibrate 02:50, board-score
+-- 03:00, flag-posture-canary 03:25, foxy-quality-sample 03:40, reverify-domains
+-- 03:45, account-purge 04:00, synthesis-delivery-monitor 04:20,
+-- adaptive-loops-monitor 04:35, synthesis-quality-sample 04:50), and Indian
+-- peak traffic is ~06:30-16:30 UTC. The 19:00-23:30 window sits after
+-- streak-guardian (16:30 UTC) and before the 02:00 cluster — the deepest
+-- traffic trough. Only payments-health (*/10) and reconcile-payments (*/30) run
+-- then, and both are short.
+--
+-- Idempotent: CREATE INDEX IF NOT EXISTS. No table/column created or dropped.
+-- No index dropped. No RLS change (indexes do not affect row-level policies).
+--
+-- ROLLBACK: DROP INDEX IF EXISTS public.idx_audit_logs_created_at_desc;
+--           (safe — no query depends on it for correctness, only for speed;
+--           the BRIN index is untouched.)
+--
+-- REVIEW CHAIN (P14): ops (deployment window / lock note), backend (the
+--                     `count: 'exact'` + OFFSET pagination shape remains a
+--                     separate scaling issue), testing (no behavioural change
+--                     to assert beyond query results being identical).
+
+-- Bound the ACCESS EXCLUSIVE lock WAIT (not the build). If a conflicting lock
+-- is held by an open transaction, abort after 5s rather than blocking every
+-- writer queued behind us. A clean abort fails the `migrations` CI job, which
+-- skips deploy-functions/app (deploy-production.yml: needs: [.., migrations]) —
+-- a re-runnable deploy failure instead of a production write outage.
+-- SET LOCAL is in scope because the Supabase CLI wraps this file in a
+-- transaction; outside one it degrades to a WARNING + no-op, which is safe.
+SET LOCAL lock_timeout = '5s';
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at_desc
+  ON public.audit_logs (created_at DESC);
+
+COMMENT ON INDEX public.idx_audit_logs_created_at_desc IS
+  'Btree supporting ORDER BY created_at DESC on the unfiltered admin log views '
+  '(/api/v1/admin/audit-logs, /api/internal/admin/logs). The pre-existing '
+  'idx_audit_logs_created_at is BRIN, which has no ordered structure and can '
+  'never satisfy a sort — every default-page fetch was a seq scan plus a full '
+  'sort. The BRIN index is intentionally retained for date-range-filtered '
+  'queries. Added 2026-07-29 (DSA audit).';

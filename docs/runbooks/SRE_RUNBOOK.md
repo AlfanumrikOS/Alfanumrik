@@ -1,6 +1,6 @@
 # Alfanumrik SRE Runbook — Wave 1 Production
 
-**Last updated:** 2026-07-17 (§13: V8 heap cap in `vercel-build` corrected 6144 → 4096 for the 8 GB/3-process build container; `USE_CLI_DEPLOY=true` is the active production path)  
+**Last updated:** 2026-07-29 (§9 "Leaderboard Enable" corrected — the flags are auto-enabled nightly by `daily-cron` at `>= 2` ranked students; the previous "≥50, run this UPDATE" instruction described an operator gate that does not exist. Prior update 2026-07-17: §13 V8 heap cap in `vercel-build` corrected 6144 → 4096 for the 8 GB/3-process build container; `USE_CLI_DEPLOY=true` is the active production path)  
 **On-call:** ceo@alfanumrik.com  
 **Stack:** Next.js (Vercel) · Supabase (ap-south-1) · Edge Functions · Razorpay
 
@@ -208,11 +208,75 @@ ORDER BY updated_at DESC LIMIT 20;
 - [ ] Offline sync infrastructure tested (migration `20260321092003`)
 - [ ] Run `UPDATE feature_flags SET is_enabled=true, rollout_percentage=5 WHERE flag_name='wave3_phygital_centers'`
 
-### Leaderboard Enable (trigger at ≥50 students with mastery data)
+### Leaderboard Enable — AUTOMATED, no operator action required
+
+> **Corrected 2026-07-29.** This section previously read "trigger at ≥50 students
+> with mastery data" and told the operator to run a manual `UPDATE`. Both halves
+> were wrong: the system has been doing this itself, nightly, at a threshold 25×
+> lower. Verified against `supabase/functions/daily-cron/index.ts`
+> (`recalculateLeaderboards`).
+
+**There is no manual gate here.** The `leaderboard_entries` step of the nightly
+`daily-cron` Edge Function auto-enables the leaderboard flags without any human
+in the loop:
+
+1. `recalculateLeaderboards()` calls the `public.recalculate_leaderboard_snapshots()`
+   RPC (migration `20260729130100`), which ranks the whole active student
+   population set-based inside Postgres and returns the **integer count of
+   students ranked and written**.
+2. If that returned count is **`>= 2`** (not 50, and not "with mastery data" —
+   the only input is the ranked-row count), the step issues a service_role
+   `UPDATE feature_flags SET is_enabled=true` scoped to
+   `flag_name IN ('leaderboard_global','wave1_leaderboard') AND is_enabled=false`.
+3. The flip is **non-fatal**: if it errors, the step logs a `console.warn` and
+   still returns the rank count. The ranks are already committed by the RPC.
+
+Operational consequences:
+
+- **Expect these two flags to be ON in any environment with ≥2 active students,
+  and to come back ON the next night if you turn them off.** Disabling them by
+  hand is not durable — the cron re-enables at the next tick. To hold them off
+  you must stop the `leaderboard_entries` step or change the threshold in code.
+- The flip is a **service_role mutation that writes no `admin_audit_log` row**.
+  It is a *sanctioned* automated mutator, registered as such in
+  `docs/runbooks/feature-flag-governance.md`. Do not escalate it as unexplained
+  drift; do escalate any *other* unaudited `feature_flags` drift.
+- Threshold rationale (from the source comment): `>= 50` kept the leaderboard
+  permanently invisible at current population; `>= 2` activates it as soon as
+  there is someone to compete against.
+
+#### Manual override (incident use only — NOT the normal path)
+
+The normal path is "do nothing, the cron handles it." Use these only to force a
+posture the cron will not produce, and remember the cron may undo #2 tonight:
+
 ```sql
+-- OVERRIDE 1: force ON early (e.g. demo/staging with <2 ranked students,
+-- or before the next nightly tick has run).
 UPDATE feature_flags SET is_enabled=true, updated_at=now()
 WHERE flag_name IN ('leaderboard_global', 'wave1_leaderboard');
+
+-- OVERRIDE 2: incident kill — disable the leaderboard surface.
+-- ⚠️ NOT DURABLE. daily-cron re-enables both flags on its next run whenever
+-- >= 2 students rank. For a lasting kill you must also disable the
+-- `leaderboard_entries` cron step, or this is a temporary mute at best.
+UPDATE feature_flags SET is_enabled=false, updated_at=now()
+WHERE flag_name IN ('leaderboard_global', 'wave1_leaderboard');
 ```
+
+Neither flag is in the protected-flag registry (`ff_class_leaderboard_v1` is a
+different, unrelated flag), so these bypass no guard — but per
+`docs/runbooks/feature-flag-governance.md` the console remains the preferred
+write path because it leaves an audit row.
+
+> **Open question, do not assume this surface is load-bearing.** The nightly
+> `leaderboard_entries` step writes `leaderboard_snapshots`, but **no application
+> code reads that table** — `/api/v1/leaderboard` computes live via the
+> `get_leaderboard` RPC. Whether to wire the API to the snapshots or retire the
+> step and both flags is an open decision tracked as **F3** in
+> `docs/audits/2026-07-29-dsa-review-followups.md`. Until it is resolved, treat
+> the flags above as governing a surface whose data path is not what the name
+> suggests.
 
 ---
 

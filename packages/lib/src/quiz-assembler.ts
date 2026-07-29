@@ -23,6 +23,7 @@
 
 import { getQuizQuestionsV2 } from '@alfanumrik/lib/supabase';
 import { logger } from '@alfanumrik/lib/logger';
+import { validateQuestion as validateQuestionP6 } from '@alfanumrik/lib/quiz/question-validation';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -52,88 +53,28 @@ export interface AssembleQuizResult {
 }
 
 // ── Question Validation (P6) ───────────────────────────────────
-// Mirrors the validateQuestions() function in supabase.ts, but returns
-// a reason string for observability instead of silently filtering.
+// The local fork that used to live here has been DELETED. It was the weakest
+// of three divergent copies while also being the one on the live quiz path:
+// it had no `== null` guard on correct_answer_index, accepted only 3 distinct
+// options, had no bloom_level check, and had no explanation word-count floor.
+//
+// The single canonical P6 gate now lives in
+// `packages/lib/src/quiz/question-validation.ts` and is the strict union of all
+// three former copies. `allowNonMcq: true` preserves this path's deliberate
+// 2026-05-09 behaviour of letting short/long-answer question types through the
+// MCQ-shape checks (every QUALITY check still applies to them identically).
+//
+// `enforceBloomLevel` is left OFF (its default). This is a SERVING path: a NULL
+// or variant `bloom_level` degrades a mastery heatmap, but rejecting the row
+// removes an answerable question from the student and can empty a chapter.
+// `question_bank.bloom_level` is nullable with no CHECK and no live path has
+// ever filtered on it. See the option's TODO(assessment) for the flip condition.
+//
+// Re-exported so existing importers of `validateQuestion` from this module keep
+// resolving; new code should import from the canonical module directly.
 
 export function validateQuestion(q: any): { valid: boolean; reason?: string } {
-  if (!q) return { valid: false, reason: 'null_question' };
-
-  // Question text checks (apply to ALL types)
-  if (!q.question_text || typeof q.question_text !== 'string')
-    return { valid: false, reason: 'empty_text' };
-  if (q.question_text.length < 15)
-    return { valid: false, reason: 'text_too_short' };
-  if (q.question_text.includes('{{') || q.question_text.includes('[BLANK]'))
-    return { valid: false, reason: 'template_marker' };
-
-  // Template/garbage text patterns
-  const text = q.question_text.toLowerCase();
-  if (text.includes('unrelated topic')) return { valid: false, reason: 'garbage_text' };
-  if (text.startsWith('a student studying') && text.includes('should focus on'))
-    return { valid: false, reason: 'garbage_text' };
-  if (text.startsWith('which of the following best describes the main topic'))
-    return { valid: false, reason: 'garbage_text' };
-  if (text.startsWith('why is') && text.includes('important for grade'))
-    return { valid: false, reason: 'garbage_text' };
-  if (text.startsWith('the chapter') && text.includes('most closely related to which area'))
-    return { valid: false, reason: 'garbage_text' };
-  if (text.startsWith('what is the primary purpose of studying'))
-    return { valid: false, reason: 'garbage_text' };
-
-  // Type-specific shape validation. Short/long-answer questions don't have
-  // four options + correct_answer_index; gating these checks behind
-  // qType==='mcq' lets non-MCQ types flow through once the DB has them.
-  // Reported 2026-05-09: previously this validator rejected every non-MCQ
-  // question because the MCQ-shape checks were unconditional.
-  const qType = (q.question_type_v2 ?? q.question_type ?? 'mcq').toLowerCase();
-  if (qType === 'mcq') {
-    const opts = Array.isArray(q.options) ? q.options : [];
-    if (opts.length !== 4)
-      return { valid: false, reason: `${opts.length}_options` };
-    if (opts.some((o: any) => !o || String(o).trim() === ''))
-      return { valid: false, reason: 'empty_option' };
-    if (q.correct_answer_index < 0 || q.correct_answer_index > 3)
-      return { valid: false, reason: 'bad_answer_index' };
-
-    // Garbage option patterns
-    const optTexts = opts.map((o: string) => (o || '').toLowerCase().trim());
-    if (optTexts.some((o: string) =>
-      o.includes('unrelated topic') || o.includes('physical education') ||
-      o.includes('art and craft') || o.includes('music theory') ||
-      o.includes('it is not important') || o.includes('no board exam')
-    )) return { valid: false, reason: 'garbage_option' };
-
-    // At least 3 distinct options
-    if (new Set(optTexts).size < 3)
-      return { valid: false, reason: 'duplicate_options' };
-  } else {
-    // short_answer / long_answer / ncert — require an expected_answer or
-    // marking guidance that the grader can reference. Fall back to
-    // explanation when expected_answer is not yet populated by the DB.
-    const expected = (q.expected_answer ?? '').toString().trim();
-    const explanation = (q.explanation ?? '').toString().trim();
-    if (expected.length < 5 && explanation.length < 20) {
-      return { valid: false, reason: 'missing_expected_answer' };
-    }
-  }
-
-  // Explanation quality (required for all types)
-  if (!q.explanation || q.explanation.length < 20)
-    return { valid: false, reason: 'weak_explanation' };
-
-  const expl = q.explanation.toLowerCase();
-  if (expl.includes('does not match any option') ||
-      expl.includes('suggesting a possible error') ||
-      expl.includes('assuming a typo') ||
-      expl.includes('not listed') ||
-      expl.includes('however, the correct') ||
-      expl.includes('this is incorrect') ||
-      expl.includes('none of the options') ||
-      expl.includes('there seems to be') ||
-      expl.includes('closest plausible'))
-    return { valid: false, reason: 'unreliable_explanation' };
-
-  return { valid: true };
+  return validateQuestionP6(q, { allowNonMcq: true });
 }
 
 // ── Deduplication ──────────────────────────────────────────────

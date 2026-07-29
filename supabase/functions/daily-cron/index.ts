@@ -135,23 +135,60 @@ async function resetMissedStreaks(supabase: ReturnType<typeof createClient>): Pr
   return new Set((data as { student_id: string }[]).map(p => p.student_id)).size
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Leaderboard nightly rank recalculation.
+//
+// DSA audit fix (2026-07-29): this used to `.select('id,grade,xp_total')` the
+// whole students table with NO limit, group + sort it in JS, and assign
+// `rank = i + 1` by array index. PostgREST silently truncates an unfiltered
+// select at its max-rows cap (1000 by default), so past 1000 active students
+// the fetch returned an arbitrary partial page: everyone outside it kept a
+// permanently stale rank, and everyone inside it was ranked against a
+// fraction of their own grade cohort. Silent in every case.
+//
+// Now a single set-based RPC — public.recalculate_leaderboard_snapshots()
+// (migration 20260729130100) — which ranks the entire population inside the
+// database via
+//   ROW_NUMBER() OVER (PARTITION BY COALESCE(grade,'unknown')
+//                      ORDER BY COALESCE(xp_total,0) DESC, id)
+// i.e. exactly the old `rank = i + 1` semantics (tied students still get
+// DISTINCT consecutive ranks — ROW_NUMBER, not RANK/DENSE_RANK), with
+// student id appended purely as a stable tie-break so ties stop shuffling
+// between nights. Population filter (is_active = true AND deleted_at IS NULL)
+// and the upsert-on-student_id write are unchanged.
+//
+// The RPC returns the number of students ranked and written — the same
+// quantity this function previously returned as `entries.length`, and the
+// same quantity the >= 2 feature-flag gate below is measured against.
+// Feature-flag mutation was DELIBERATELY not ported into the RPC (flag
+// writes are ops-owned and don't belong in a ranking function), so it stays
+// here in TypeScript, now driven off the RPC's integer return value.
+//
+// Step contract unchanged: returns a count on success, throws on failure so
+// Promise.allSettled reports this one step in the 207 `errors` map without
+// aborting the rest of the tick.
+// ──────────────────────────────────────────────────────────────────────────
 async function recalculateLeaderboards(supabase: ReturnType<typeof createClient>): Promise<number> {
-  const { data, error } = await supabase.from('students').select('id,grade,xp_total').eq('is_active',true).is('deleted_at',null)
+  const { data, error } = await supabase.rpc('recalculate_leaderboard_snapshots')
   if (error) throw new Error(`recalculateLeaderboards: ${error.message}`)
-  if (!data?.length) return 0
-  const gm = new Map<string,Array<{id:string;xp_total:number}>>()
-  for (const s of data as {id:string;grade:string;xp_total:number}[]) { const g=s.grade?? 'unknown'; const a=gm.get(g)??[]; a.push({id:s.id,xp_total:s.xp_total??0}); gm.set(g,a) }
-  const now = new Date().toISOString()
-  const entries: {student_id:string;grade:string;total_xp:number;rank:number;updated_at:string}[] = []
-  for (const [grade,list] of gm.entries()) { list.sort((a,b)=>b.xp_total-a.xp_total); list.forEach((s,i)=>entries.push({student_id:s.id,grade,total_xp:s.xp_total,rank:i+1,updated_at:now})) }
-  if (!entries.length) return 0
-  const { error: e } = await supabase.from('leaderboard_snapshots').upsert(entries,{onConflict:'student_id'})
-  if (e) throw new Error(`recalculateLeaderboards upsert: ${e.message}`)
+  const ranked = Number(data ?? 0)
+  if (!Number.isFinite(ranked) || ranked <= 0) return 0
+  // Counts only — no student identifiers (P13).
+  console.log(`daily-cron: leaderboard_entries — ${ranked} students ranked`)
   // Auto-enable leaderboard at >=2 students (was 50 — too high for early-stage, hid the feature from all users).
   // With only 10 students in DB, >=50 means leaderboard is permanently disabled.
   // >=2 ensures the leaderboard activates as soon as there is someone to compete with.
-  if (entries.length >= 2) await supabase.from('feature_flags').update({is_enabled:true,updated_at:now}).in('flag_name',['leaderboard_global','wave1_leaderboard']).eq('is_enabled',false)
-  return entries.length
+  // `ranked` is the RPC's row count, which is what `entries.length` used to be —
+  // the threshold and its semantics are unchanged by the port.
+  if (ranked >= 2) {
+    const now = new Date().toISOString()
+    // Non-fatal, exactly as before: a failed flag flip must not fail the whole
+    // ranking step (the ranks are already committed by the RPC above). Only the
+    // warn log is new — the control flow is byte-for-byte the old behaviour.
+    const { error: flagErr } = await supabase.from('feature_flags').update({is_enabled:true,updated_at:now}).in('flag_name',['leaderboard_global','wave1_leaderboard']).eq('is_enabled',false)
+    if (flagErr) console.warn(`recalculateLeaderboards: leaderboard flag auto-enable failed: ${flagErr.message}`)
+  }
+  return ranked
 }
 
 // Bulk .in() reader used by generateParentDigests, chunked at 200 ids/request
@@ -420,6 +457,25 @@ interface ConceptRow {
   bloom_mastery: Record<string, number> | null
 }
 
+// TODO(assessment): a set-based replacement for this entire function exists on
+// disk — public.recalculate_performance_scores() (migration
+// 20260729130200_recalculate_performance_scores_rpc.sql) — and is INTENTIONALLY
+// NOT WIRED UP here, pending assessment sign-off. Do not swap it in as a
+// drive-by. Reason: the TypeScript below has never actually run to completion in
+// production. It joins `chapter_topics`, a table that does not exist anywhere in
+// the migration chain, and treats that lookup failure as fatal, so this step
+// throws on every nightly tick that has at least one concept_mastery row and
+// writes nothing. Wiring the RPC would therefore not be a like-for-like port —
+// it would switch a scoring pipeline ON for the first time, immediately writing
+// performance_scores + score_history for every student and firing score_milestone
+// notifications at them. The RPC also carries three documented schema
+// substitutions (curriculum_topics for the nonexistent chapter_topics;
+// unnest(daily_activity.subjects_studied) for the nonexistent
+// daily_activity.subject, which moves consistency_score from structurally-zero to
+// real and is worth up to +4.0 overall points; topic_mastery.mastery_percent/100
+// for the TEXT mastery_level that averaged to NaN) plus a verbatim-ported
+// days/hours half-life unit mismatch. All of those are assessment decisions, not
+// backend ones. Leave this function exactly as-is until assessment signs off.
 async function recalculatePerformanceScores(supabase: ReturnType<typeof createClient>): Promise<number> {
   const now = Date.now()
 

@@ -28,61 +28,30 @@ import {
   type QuizQuestionSource,
 } from './types';
 import { calculateScorePercent, calculateQuizXP } from '@alfanumrik/lib/scoring';
-import { BLOOM_LEVELS } from '@alfanumrik/lib/cognitive-engine';
+import { validateQuestions as validateQuestionsP6 } from '@alfanumrik/lib/quiz/question-validation';
+import { shuffle } from '@alfanumrik/lib/shuffle';
 
 // ── Question validation ───────────────────────────────────────────────────────
-// Kept here (not in supabase.ts) so the domain owns its own data quality rules.
+// The domain-local fork that used to live here has been DELETED. P6 is a
+// PRODUCT invariant, not a per-domain data-quality preference — one weaker copy
+// anywhere means a student can be served a broken question from that path.
+//
+// Canonical gate: `packages/lib/src/quiz/question-validation.ts` (strict union
+// of the three former copies — this copy gains the garbage-text patterns, the
+// distinct-4-options rule and the explanation word-count floor it was missing).
+//
+// `allowNonMcq` is left at its default (false), preserving this path's existing
+// posture: MCQ shape is required for every row regardless of question_type.
+//
+// `enforceBloomLevel` is ALSO left at its default (false) — a deliberate
+// LOOSENING of this one copy. It was the only one of the three that checked
+// bloom validity, and it is a SERVING path, so it must not drop an answerable
+// question over a metadata tag: `question_bank.bloom_level` is nullable with no
+// CHECK, and neither `select_quiz_questions_rag` nor `select_quiz_questions_v2`
+// filters on it. See the option's TODO(assessment) for the flip condition.
 
 function validateQuestions(questions: unknown[]): QuizQuestion[] {
-  const seen = new Set<string>();
-  return (questions as QuizQuestion[]).filter(q => {
-    if (!q.question_text || typeof q.question_text !== 'string') return false;
-    if (q.question_text.length < 15) return false;
-
-    const opts = Array.isArray(q.options) ? q.options : [];
-    if (opts.length !== 4) return false;
-    // P6: reject null/undefined explicitly before the range check — `null < 0`
-    // and `null > 3` both evaluate to false in JS, so a null correct_answer_index
-    // would otherwise silently pass this gate.
-    if (q.correct_answer_index == null || q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
-
-    // P6: bloom_level must be one of the valid taxonomy levels.
-    if (!q.bloom_level || !BLOOM_LEVELS.includes(q.bloom_level as typeof BLOOM_LEVELS[number])) return false;
-
-    if (q.question_text.includes('{{') || q.question_text.includes('[BLANK]')) return false;
-
-    const text = q.question_text.toLowerCase();
-    if (text.includes('unrelated topic')) return false;
-    if (text.startsWith('a student studying') && text.includes('should focus on')) return false;
-
-    const optTexts = opts.map((o: string) => (o || '').toLowerCase().trim());
-    if (optTexts.some((o: string) =>
-      o.includes('unrelated topic') || o.includes('physical education') ||
-      o.includes('art and craft') || o.includes('music theory') ||
-      o.includes('it is not important') || o.includes('no board exam')
-    )) return false;
-
-    if (new Set(optTexts).size < 3) return false;
-
-    if (q.explanation) {
-      const expl = q.explanation.toLowerCase();
-      if (
-        expl.includes('does not match any option') ||
-        expl.includes('suggesting a possible error') ||
-        expl.includes('closest plausible') ||
-        expl.includes('none of the options') ||
-        expl.includes('there seems to be')
-      ) return false;
-    }
-
-    if (!q.explanation || q.explanation.length < 20) return false;
-
-    const key = q.question_text.trim().toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-
-    return true;
-  });
+  return validateQuestionsP6(questions as QuizQuestion[]);
 }
 
 // ── Question fetch ────────────────────────────────────────────────────────────
@@ -264,9 +233,13 @@ export async function fetchQuizQuestions(
   const validated = validateQuestions(data ?? []);
   const unseen = validated.filter(q => !seenIds.has(q.id));
   const seen   = validated.filter(q =>  seenIds.has(q.id));
+  // Fisher-Yates via the canonical shuffle. The previous
+  // `.sort(() => Math.random() - 0.5)` was a non-transitive comparator: it
+  // barely permuted the rows, so this `.slice(0, count)` kept handing the
+  // student whichever questions the query happened to return first.
   const pool = [
-    ...unseen.sort(() => Math.random() - 0.5),
-    ...seen.sort(() => Math.random() - 0.5),
+    ...shuffle(unseen),
+    ...shuffle(seen),
   ].slice(0, input.count);
 
   return ok({ source: 'direct_query', questions: pool, count: pool.length });

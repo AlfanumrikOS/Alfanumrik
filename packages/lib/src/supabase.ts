@@ -21,6 +21,8 @@ import {
 } from './adaptive/select-adaptive-questions';
 import { humaneCardLabel } from './srs-card-label';
 import { buildFallbackStudentSnapshot, normalizeStudentSnapshot } from './student-snapshot';
+import { validateQuestions as validateQuestionsP6 } from './quiz/question-validation';
+import { shuffle } from './shuffle';
 
 // Re-export from the canonical client module — new code uses supabase-client.ts
 export { supabase, supabaseUrl, supabaseAnonKey } from './supabase-client';
@@ -276,12 +278,35 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
   const validated = validateQuestions(data ?? []);
   const unseen = validated.filter(q => !seenIds.has(q.id));
   const seen = validated.filter(q => seenIds.has(q.id));
-  // Prioritize unseen, then backfill with seen if pool is too small
-  const pool = [...unseen.sort(() => Math.random() - 0.5), ...seen.sort(() => Math.random() - 0.5)];
+  // Prioritize unseen, then backfill with seen if pool is too small.
+  // Fisher-Yates via the canonical shuffle — the previous
+  // `.sort(() => Math.random() - 0.5)` was a non-transitive comparator that
+  // barely permuted the rows, so the `.slice(0, count)` below kept serving
+  // whichever questions the query returned first.
+  const pool = [...shuffle(unseen), ...shuffle(seen)];
   return pool.slice(0, count);
 }
 
-/** Filter out broken, duplicate, or template questions before they reach students. */
+/**
+ * Filter out broken, duplicate, or template questions before they reach
+ * students.
+ *
+ * The implementation that used to live here has been DELETED and replaced by
+ * the single canonical P6 gate at
+ * `packages/lib/src/quiz/question-validation.ts`, which is the strict union of
+ * the three copies that had drifted apart (this one, `quiz-assembler.ts`, and
+ * `domains/quiz.ts`). This copy contributed the full garbage-text pattern set,
+ * the "exactly 4 DISTINCT options" rule and the explanation word-count floor.
+ *
+ * `allowNonMcq` stays at its default (false), preserving this path's existing
+ * posture: MCQ shape is required for every row regardless of question_type.
+ *
+ * `enforceBloomLevel` stays at its default (false) too, so this path's posture
+ * is likewise unchanged: it never validated `bloom_level` and still does not.
+ * The direct `question_bank` query in `getQuizQuestions()` does not filter the
+ * column either, and the column is nullable with no CHECK — rejecting on it
+ * here would silently shrink live quizzes. See the option's TODO(assessment).
+ */
 interface QuestionRecord {
   id: string;
   question_text: string;
@@ -299,75 +324,7 @@ interface QuestionRecord {
 }
 
 function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
-  const seen = new Set<string>();
-  return questions.filter(q => {
-    if (!q.question_text || typeof q.question_text !== 'string') return false;
-    if (q.question_text.length < 15) return false;
-
-    const opts = Array.isArray(q.options) ? q.options : [];
-    if (opts.length !== 4) return false;
-    // FIX (2026-07-29, forensic audit): `null < 0` and `null > 3` are both
-    // `false` in JS, so a null/undefined correct_answer_index used to slip
-    // through this P6 gate and get silently treated as index 0 downstream.
-    if (q.correct_answer_index == null || q.correct_answer_index < 0 || q.correct_answer_index > 3) return false;
-
-    // Reject template markers (P6: no {{ or [BLANK])
-    if (q.question_text.includes('{{') || q.question_text.includes('[BLANK]')) return false;
-
-    // Reject template/garbage questions
-    const text = q.question_text.toLowerCase();
-    if (text.includes('unrelated topic')) return false;
-    if (text.startsWith('a student studying') && text.includes('should focus on')) return false;
-    if (text.startsWith('which of the following best describes the main topic')) return false;
-    if (text.startsWith('why is') && text.includes('important for grade')) return false;
-    if (text.startsWith('the chapter') && text.includes('most closely related to which area')) return false;
-    if (text.startsWith('what is the primary purpose of studying')) return false;
-
-    // Reject garbage options
-    const optTexts = opts.map((o: string) => (o || '').toLowerCase().trim());
-    if (optTexts.some((o: string) =>
-      o.includes('unrelated topic') || o.includes('physical education') ||
-      o.includes('art and craft') || o.includes('music theory') ||
-      o.includes('it is not important') || o.includes('no board exam')
-    )) return false;
-
-    // Reject if any option is empty (P6: all 4 options must be non-empty)
-    if (opts.some((o: string) => !o || !o.trim())) return false;
-
-    // Reject if fewer than 4 distinct options (P6: all 4 must be distinct)
-    if (new Set(optTexts).size < 4) return false;
-
-    // Reject self-contradicting or unreliable explanations
-    if (q.explanation) {
-      const expl = q.explanation.toLowerCase();
-      if (expl.includes('does not match any option') ||
-          expl.includes('suggesting a possible error') ||
-          expl.includes('assuming a typo') ||
-          expl.includes('not listed') ||
-          expl.includes('however, the correct') ||
-          expl.includes('this is incorrect') ||
-          expl.includes('none of the options') ||
-          expl.includes('there seems to be') ||
-          expl.includes('closest plausible')) return false;
-    }
-
-    // Reject very short or missing explanations
-    if (!q.explanation || q.explanation.length < 20) return false;
-
-    // Reject explanations that are just restating the question
-    if (q.explanation && q.question_text) {
-      const explWords = q.explanation.toLowerCase().split(/\s+/);
-      const qWords = q.question_text.toLowerCase().split(/\s+/);
-      if (explWords.length < 8) return false; // too terse to be educational
-    }
-
-    // Deduplicate
-    const key = q.question_text.trim().toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-
-    return true;
-  });
+  return validateQuestionsP6(questions);
 }
 
 /**
@@ -1304,7 +1261,9 @@ export async function getChapterQuestions(subject: string, grade: string, chapte
   if (difficulty != null) query = query.eq('difficulty', difficulty);
   const { data, error } = await query;
   if (error) console.error('getChapterQuestions:', error.message);
-  return (data ?? []).sort(() => Math.random() - 0.5);
+  // Fisher-Yates via the canonical shuffle (was a biased, non-transitive
+  // `.sort(() => Math.random() - 0.5)` that also mutated `data` in place).
+  return shuffle(data ?? []);
 }
 
 /* ── Distinct chapters for a subject/grade (for quiz chapter selector) ──
