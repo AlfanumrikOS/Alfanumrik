@@ -77,6 +77,30 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+// Exact-key matching (`SENSITIVE_KEYS.has(k.toLowerCase())`) misses
+// compound/camelCase keys — `studentEmail` → `studentemail`, `phoneNumber`
+// → `phonenumber`, `parentEmail`, `emailAddress`, `userPhone`, etc. — none
+// of which equal a literal entry in SENSITIVE_KEYS. Fix: derive a
+// normalized (lowercase, non-alphanumeric stripped) term list from
+// SENSITIVE_KEYS and test containment, so any key whose normalized form
+// CONTAINS a sensitive term is redacted. This mirrors the substring-match
+// posture the client Sentry config already uses via
+// SENSITIVE_CONTEXT_KEY_REGEX (packages/lib/src/sentry-client-redact.ts),
+// and — unlike that regex, which is only ever applied to a shallow
+// extra/contexts pass — is applied here inside `walk()`, so it covers
+// NESTED keys at any depth, not just top-level ones.
+function normalizeKey(k: string): string {
+  return k.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+const SENSITIVE_TERMS: readonly string[] = Array.from(SENSITIVE_KEYS, normalizeKey);
+
+function isSensitiveKey(k: string): boolean {
+  const nk = normalizeKey(k);
+  if (!nk) return false;
+  return SENSITIVE_TERMS.some((term) => term.length > 0 && nk.includes(term));
+}
+
 export function redactPII(value: unknown): unknown {
   const seen = new WeakSet<object>();
 
@@ -90,7 +114,7 @@ export function redactPII(value: unknown): unknown {
     if (isPlainObject(v)) {
       const out: Record<string, unknown> = {};
       for (const [k, val] of Object.entries(v)) {
-        out[k] = SENSITIVE_KEYS.has(k.toLowerCase()) ? REDACTED : walk(val);
+        out[k] = isSensitiveKey(k) ? REDACTED : walk(val);
       }
       return out;
     }

@@ -46,8 +46,20 @@ export interface OpsEventInput {
 const PII_KEYS = new Set([
   'email', 'phone', 'password', 'token', 'authorization', 'cookie',
   'api_key', 'apikey', 'secret', 'access_token', 'refresh_token',
-  'service_role_key',
+  'service_role_key', 'parent_phone', 'full_name', 'school_name',
 ]);
+
+function redactValue(v: unknown): unknown {
+  if (Array.isArray(v)) {
+    // Arrays previously fell through to the raw `out[k] = v` branch below
+    // and were emitted UNWALKED — any PII-keyed object nested inside an
+    // array (e.g. context: { students: [{ email: '...' }] }) shipped raw.
+    return v.map((item) =>
+      item && typeof item === 'object' ? redactContext(item as Record<string, unknown>) : redactValue(item)
+    );
+  }
+  return v;
+}
 
 function redactContext(ctx: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -55,7 +67,9 @@ function redactContext(ctx: Record<string, unknown>): Record<string, unknown> {
     const lower = k.toLowerCase();
     if (PII_KEYS.has(lower) || PII_KEYS.has(lower.replace(/_/g, ''))) {
       out[k] = '[REDACTED]';
-    } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+    } else if (Array.isArray(v)) {
+      out[k] = redactValue(v);
+    } else if (v && typeof v === 'object') {
       out[k] = redactContext(v as Record<string, unknown>);
     } else {
       out[k] = v;

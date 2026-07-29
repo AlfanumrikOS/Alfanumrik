@@ -15,21 +15,46 @@ export interface ApiRateLimitResult {
 }
 
 // ── Distributed limiter (Upstash Redis) ──
-let redisLimiter: Ratelimit | null = null;
+//
+// IMPORTANT: callers pass their own (limit, windowMs) pair per call site
+// (e.g. schools/trial → 5/hour, schools/claim-admin → 10/15min). A single
+// fixed-window Ratelimit instance can't honor per-call limits — Upstash's
+// Ratelimit binds `limit`/`window` at construction time via
+// Ratelimit.slidingWindow(). So instead of one shared instance we lazily
+// build and cache one Ratelimit per distinct (limit, windowMs) pair. These
+// pairs come from a small, fixed set of hardcoded call-site literals (not
+// user input), so the cache has bounded, low cardinality — no eviction
+// needed.
+let redis: Redis | null = null;
 try {
   if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
-    const redis = new Redis({
+    redis = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
     });
-    redisLimiter = new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(100, '1 m'),
-      prefix: 'rl:apikey',
-    });
   }
 } catch {
-  redisLimiter = null;
+  redis = null;
+}
+
+const limiterCache = new Map<string, Ratelimit>();
+
+function getRedisLimiter(limit: number, windowMs: number): Ratelimit | null {
+  if (!redis) return null;
+  const cacheKey = `${limit}:${windowMs}`;
+  let limiter = limiterCache.get(cacheKey);
+  if (!limiter) {
+    limiter = new Ratelimit({
+      redis,
+      // Upstash Duration format: `${number} ms|s|m|h|d`. Using the raw ms
+      // value keeps this exact to the caller's requested window instead of
+      // rounding to a coarser unit.
+      limiter: Ratelimit.slidingWindow(limit, `${windowMs} ms`),
+      prefix: 'rl:apikey',
+    });
+    limiterCache.set(cacheKey, limiter);
+  }
+  return limiter;
 }
 
 // ── In-memory fallback ──
@@ -66,9 +91,10 @@ export async function checkApiRateLimit(
   limit: number = 100,
   windowMs: number = 60_000
 ): Promise<ApiRateLimitResult> {
-  if (redisLimiter) {
+  const limiter = getRedisLimiter(limit, windowMs);
+  if (limiter) {
     try {
-      const result = await redisLimiter.limit(keyId);
+      const result = await limiter.limit(keyId);
       return {
         allowed: result.success,
         remaining: result.remaining,

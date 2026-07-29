@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
+import { redactPIIInText } from '@alfanumrik/lib/ops-events-redactor';
+import { sanitizeUrl } from '@alfanumrik/lib/sentry-client-redact';
 
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 30;
+// NOTE (not fixed here, low priority — flagged by audit, out of scope for
+// this pass): this in-memory `buckets` Map grows unboundedly over the life
+// of the server instance. Stale IP keys are only ever overwritten on their
+// next hit, never evicted, so IPs that hit once and never return leak a
+// small entry forever. Not a correctness or security issue at current
+// traffic, but should get the same MAX_MAP_SIZE-eviction treatment as
+// api-rate-limit.ts / proxy.ts's in-memory limiters if this route ever sees
+// meaningful unique-IP volume.
 const buckets = new Map<string, { count: number; windowStart: number }>();
 
 function rateLimit(ip: string): boolean {
@@ -42,14 +52,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, reason: 'missing_message' }, { status: 400 });
   }
 
+  // P13: message/stack are free-form client-supplied text that can carry
+  // emails/phone numbers/Razorpay IDs pasted or thrown into an error; page_url
+  // can carry auth codes/tokens/emails in query params (e.g. /auth/callback?
+  // code=...&email=...). ops-events.ts's redactContext() only does key-based
+  // redaction on the context object shape — it can't see into these string
+  // VALUES. Apply text-level PII redaction / URL query sanitization before
+  // this ever reaches storage.
   logOpsEvent({
     category: 'client_error',
     source: 'client-error-api',
     severity: 'warning',
-    message: body.message.slice(0, 500),
+    message: redactPIIInText(body.message.slice(0, 500)).text,
     context: {
-      stack: typeof body.stack === 'string' ? body.stack.slice(0, 4000) : undefined,
-      page_url: typeof body.url === 'string' ? body.url : undefined,
+      stack: typeof body.stack === 'string' ? redactPIIInText(body.stack.slice(0, 4000)).text : undefined,
+      page_url: typeof body.url === 'string' ? sanitizeUrl(body.url) : undefined,
       user_agent: typeof body.userAgent === 'string' ? body.userAgent.slice(0, 500) : undefined,
       client_ip: ip,
     },

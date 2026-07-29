@@ -15,12 +15,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logDeprecatedRouteHit, withDeprecationHeaders } from '@alfanumrik/lib/api-route-ownership';
+import { timingSafeEqual } from 'node:crypto';
 
 const CRON_SECRET  = process.env.CRON_SECRET ?? '';
 const SB_URL       = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const SB_SERVICE   = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
 
 export const runtime = 'nodejs'; // daily-cron needs longer timeout than Edge allows
+
+// Constant-time compare — mirrors the pattern used by every other cron route
+// (see api/cron/account-purge/route.ts). Naive `!==` string comparison
+// short-circuits at the first differing byte and leaks the secret through
+// response timing.
+function isAuthorized(request: NextRequest): boolean {
+  if (!CRON_SECRET) return false;
+  const authHeader = request.headers.get('authorization') ?? '';
+  const expected = `Bearer ${CRON_SECRET}`;
+  const a = Buffer.from(authHeader);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export async function GET(request: NextRequest) {
   logDeprecatedRouteHit({
@@ -32,8 +47,7 @@ export async function GET(request: NextRequest) {
   });
 
   // ── Auth: Vercel passes CRON_SECRET as Authorization header ──────────────────
-  const authHeader = request.headers.get('authorization');
-  if (!CRON_SECRET || authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!isAuthorized(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
