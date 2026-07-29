@@ -174,11 +174,11 @@ class DiagnosticRepository {
     final sessionId = payload?['session_id'] as String? ?? '';
     final questions = _parseQuestions(payload?['questions']);
     if (sessionId.isEmpty || questions.isEmpty) {
-      return DiagnosticInsufficientContent(
+      return const DiagnosticInsufficientContent(
         headline: DiagnosticCopy.unknownStopHeadline,
         message: DiagnosticCopy.unknownStopBody,
         reason: 'UNRECOGNISED_EMPTY_FORM',
-        alternatives: const [],
+        alternatives: [],
       );
     }
 

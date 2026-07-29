@@ -31,75 +31,39 @@
  */
 
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { LoadingFoxy, LockedCard, Skeleton } from '@alfanumrik/ui/ui';
-import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import {
   DIAGNOSTIC_COPY as C,
-  ALTERNATIVE_FALLBACK_LABEL,
-  RESULT_THRESHOLDS,
   t,
   type Bilingual,
 } from './copy';
+import type {
+  DiagnosticQuestion,
+  DiagnosticResponse,
+  DiagnosticSummary,
+  DiagnosticAlternative,
+  InsufficientState,
+  DiagnosticScreen,
+} from './types';
 
-// ─── Types ──────────────────────────────────────────────────────
-
-interface DiagnosticQuestion {
-  id: string;
-  question_text: string;
-  question_hi: string | null;
-  question_type: string;
-  options: string | string[];
-  correct_answer_index: number;
-  explanation: string | null;
-  explanation_hi: string | null;
-  difficulty: number;
-  bloom_level: string;
-  chapter_number: number | null;
-  topic_id: string | null;
-}
-
-interface DiagnosticResponse {
-  question_id: string;
-  selected_answer_index: number;
-  // NOTE: the server re-derives correctness from question_bank and ignores this
-  // field (spec §7A C1). It is retained only so an older server build — and the
-  // Flutter client, which posts the same shape — keeps working unchanged.
-  is_correct: boolean;
-  time_taken_seconds: number;
-  topic: string | null;
-  difficulty: number;
-  bloom_level: string;
-}
-
-interface DiagnosticSummary {
-  session_id: string;
-  score_percent: number;
-  correct_answers: number;
-  total_questions: number;
-  weak_topics: string[];
-  strong_topics: string[];
-  recommended_difficulty: 'easy' | 'medium' | 'hard';
-  rpc_failed?: boolean;
-}
-
-/** §5.4 fallback CTA. `kind` is one of other_subject | guided_lesson | foxy. */
-interface DiagnosticAlternative {
-  kind: string;
-  href: string;
-  label: Bilingual | null;
-}
-
-interface InsufficientState {
-  reason: string;
-  message: Bilingual | null;
-  alternatives: DiagnosticAlternative[];
-  subjectCode: string;
-}
-
-type DiagnosticScreen = 'setup' | 'quiz' | 'results' | 'insufficient' | 'stream';
+// ─── Lazy-loaded screens (P10 bundle budget) ─────────────────────
+//
+// Setup is the screen every student sees first, so it stays inline below.
+// Quiz, results, insufficient-content and stream-required are all reached
+// only after an async round trip to /api/diagnostic/start or /complete, so
+// splitting them into their own chunks via next/dynamic keeps their JS out
+// of this route's first-load bundle without changing behaviour — the extra
+// chunk fetch overlaps a network round trip that was already happening.
+// See scripts/check-bundle-size.mjs (P10 ratchet) and
+// scripts/bundle-baseline.json's "/diagnostic" entry.
+const StreamScreen = dynamic(() => import('./StreamScreen'), { loading: () => <LoadingFoxy /> });
+const InsufficientScreen = dynamic(() => import('./InsufficientScreen'), { loading: () => <LoadingFoxy /> });
+const QuizScreen = dynamic(() => import('./QuizScreen'), { loading: () => <LoadingFoxy /> });
+const ResultsScreen = dynamic(() => import('./ResultsScreen'), { loading: () => <LoadingFoxy /> });
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -115,36 +79,11 @@ type DiagnosticGrade = (typeof VALID_DIAGNOSTIC_GRADES)[number];
 /** The full-form length. Anything shorter is a short form (spec §7.1). */
 const DIAGNOSTIC_FULL_FORM = 15;
 
-/**
- * Where "Choose stream" goes.
- *
- * There is no standalone stream-selection ROUTE in this codebase. Stream is
- * captured by (a) the global `StreamGate` modal, mounted in the root layout via
- * LayoutDeferredChrome — it auto-opens for any grade 11/12 student with a NULL
- * stream, on every page including this one — and (b) the dashboard's inline
- * stream chip. We point at the dashboard rather than invent a URL. Raised as a
- * gap per the spec §7.4 note; do not replace this with a guessed route.
- */
-const STREAM_PICKER_ROUTE = '/dashboard';
-
-const DIFFICULTY_LABELS: Record<string, { en: string; hi: string; color: string }> = {
-  easy:   { en: 'Start with Easy questions',   hi: 'आसान प्रश्नों से शुरू करें',    color: '#16A34A' },
-  medium: { en: 'Start with Medium questions',  hi: 'मध्यम प्रश्नों से शुरू करें',   color: '#D97706' },
-  hard:   { en: 'Start with Hard questions',    hi: 'कठिन प्रश्नों से शुरू करें',    color: '#DC2626' },
-};
-
-const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
+// Where "Choose stream" goes (spec §7.4): there is no standalone
+// stream-selection route, so StreamScreen points at the dashboard. See
+// STREAM_PICKER_ROUTE / its doc comment in ./StreamScreen.tsx for why.
 
 // ─── Helpers ────────────────────────────────────────────────────
-
-function parseOptions(opts: string | string[]): string[] {
-  if (Array.isArray(opts)) return opts;
-  try {
-    return JSON.parse(opts);
-  } catch {
-    return [];
-  }
-}
 
 /** P5: normalise a profile grade to a bare string "6".."12", or '' if unusable. */
 function normalizeGrade(raw: string | null | undefined): string {
@@ -239,58 +178,9 @@ function subjectFromHref(href: string): string {
   }
 }
 
-// ─── Circular progress ring (SVG) ───────────────────────────────
-
-function CircleProgress({ percent, size = 120, stroke = 10 }: { percent: number; size?: number; stroke?: number }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const dash = (percent / 100) * circ;
-  // §7.5b: same 80 / 50 boundaries as the message and the recommendation, so
-  // the ring colour can never contradict the copy next to it.
-  const color =
-    percent >= RESULT_THRESHOLDS.strong ? '#16A34A'
-    : percent >= RESULT_THRESHOLDS.mid ? '#D97706'
-    : '#DC2626';
-
-  return (
-    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke="var(--border)"
-        strokeWidth={stroke}
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth={stroke}
-        strokeDasharray={`${dash} ${circ - dash}`}
-        strokeLinecap="round"
-        style={{ transition: 'stroke-dasharray 0.6s ease' }}
-      />
-      {/* percent text — rotated back so it reads correctly */}
-      <text
-        x="50%"
-        y="50%"
-        dominantBaseline="central"
-        textAnchor="middle"
-        fill={color}
-        fontSize={size / 4.5}
-        fontWeight="700"
-        style={{ transform: 'rotate(90deg)', transformOrigin: '50% 50%', fontFamily: 'var(--font-display)' }}
-      >
-        {percent}%
-      </text>
-    </svg>
-  );
-}
-
 // ─── Page Component ─────────────────────────────────────────────
+// (CircleProgress lives in ./ResultsScreen.tsx now — it's only ever needed
+// on the results screen, which is lazy-loaded; see the dynamic() imports above.)
 
 export default function DiagnosticPage() {
   const { student, isLoggedIn, isLoading, isHi, activeRole } = useAuth();
@@ -964,788 +854,70 @@ export default function DiagnosticPage() {
   }
 
   // ─── Render: Stream-required screen (NORMAL state, not an error) ─
+  // Lazy-loaded — see ./StreamScreen.tsx and the dynamic() import above.
 
   if (screen === 'stream') {
     return (
-      <div
-        className="mesh-bg"
-        style={{
-          minHeight: '100dvh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px 16px',
-        }}
-      >
-        <div
-          style={{
-            width: '100%',
-            maxWidth: 420,
-            borderRadius: 16,
-            padding: 24,
-            background: 'var(--surface-1)',
-            border: '1px solid var(--border)',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-            textAlign: 'center',
-            animation: 'slideUp 0.4s ease-out',
-          }}
-        >
-          <div style={{ fontSize: 40, marginBottom: 10 }} aria-hidden="true">🎓</div>
-          <h1
-            style={{
-              fontSize: 19,
-              fontWeight: 700,
-              color: 'var(--text-1)',
-              fontFamily: 'var(--font-display)',
-              margin: '0 0 8px',
-            }}
-          >
-            {t(C.streamHeadline, isHi)}
-          </h1>
-          <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 20px' }}>
-            {streamMessage
-              ? t(streamMessage, isHi, { grade })
-              : t(C.streamBody, isHi, { grade })}
-          </p>
-
-          <button
-            type="button"
-            onClick={() => router.push(STREAM_PICKER_ROUTE)}
-            style={{
-              width: '100%',
-              padding: '14px 0',
-              borderRadius: 12,
-              background: 'linear-gradient(135deg, #E8590C, #F59E0B)',
-              color: '#fff',
-              border: 'none',
-              fontSize: 15,
-              fontWeight: 700,
-              cursor: 'pointer',
-              minHeight: 44,
-            }}
-          >
-            {t(C.streamCta, isHi)}
-          </button>
-
-          <button
-            type="button"
-            onClick={resetToSetup}
-            style={{
-              width: '100%',
-              marginTop: 10,
-              padding: '12px 0',
-              borderRadius: 12,
-              background: 'none',
-              color: 'var(--text-2)',
-              border: '1.5px solid var(--border)',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-              minHeight: 44,
-            }}
-          >
-            {t(C.goBack, isHi)}
-          </button>
-        </div>
-      </div>
+      <StreamScreen
+        isHi={isHi}
+        grade={grade}
+        streamMessage={streamMessage}
+        onGoBack={resetToSetup}
+      />
     );
   }
 
   // ─── Render: Insufficient-content screen (NORMAL state, not an error) ─
+  // Lazy-loaded — see ./InsufficientScreen.tsx and the dynamic() import above.
 
   if (screen === 'insufficient' && insufficient) {
-    const subjectName = subjectLabelFor(insufficient.subjectCode);
-
     return (
-      <div
-        className="mesh-bg"
-        style={{
-          minHeight: '100dvh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px 16px',
-        }}
-      >
-        <div
-          style={{
-            width: '100%',
-            maxWidth: 420,
-            borderRadius: 16,
-            padding: 24,
-            background: 'var(--surface-1)',
-            border: '1px solid var(--border)',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.06)',
-            animation: 'slideUp 0.4s ease-out',
-          }}
-        >
-          <div style={{ textAlign: 'center', marginBottom: 14 }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }} aria-hidden="true">🧰</div>
-            <h1
-              style={{
-                fontSize: 19,
-                fontWeight: 700,
-                color: 'var(--text-1)',
-                fontFamily: 'var(--font-display)',
-                margin: 0,
-              }}
-            >
-              {t(C.insufficientHeadline, isHi)}
-            </h1>
-          </div>
-
-          <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.65, margin: '0 0 18px' }}>
-            {insufficient.message
-              ? t(insufficient.message, isHi, { grade, subject: subjectName })
-              : t(C.insufficientBody, isHi, { grade, subject: subjectName })}
-          </p>
-
-          {/* §5.4 fallback CTAs — always at least one, always tappable */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {insufficient.alternatives.map((alt, i) => {
-              const targetCode = subjectFromHref(alt.href);
-              const label = t(
-                alt.label ?? ALTERNATIVE_FALLBACK_LABEL.get(alt.kind) ?? C.altFoxy,
-                isHi,
-                { subject: targetCode ? subjectLabelFor(targetCode) : subjectName },
-              );
-              const isPrimary = i === 0;
-              return (
-                <button
-                  key={`${alt.kind}-${alt.href}`}
-                  type="button"
-                  onClick={() => handleAlternative(alt)}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px',
-                    borderRadius: 12,
-                    textAlign: 'left',
-                    background: isPrimary
-                      ? 'linear-gradient(135deg, #E8590C, #F59E0B)'
-                      : 'var(--surface-2)',
-                    color: isPrimary ? '#fff' : 'var(--text-1)',
-                    border: isPrimary ? 'none' : '1.5px solid var(--border)',
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    minHeight: 44,
-                  }}
-                >
-                  {label} →
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={resetToSetup}
-            style={{
-              width: '100%',
-              marginTop: 14,
-              padding: '12px 0',
-              borderRadius: 12,
-              background: 'none',
-              color: 'var(--text-2)',
-              border: '1.5px solid var(--border)',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-              minHeight: 44,
-            }}
-          >
-            {t(C.goBack, isHi)}
-          </button>
-        </div>
-      </div>
+      <InsufficientScreen
+        isHi={isHi}
+        grade={grade}
+        insufficient={insufficient}
+        subjectLabelFor={subjectLabelFor}
+        subjectFromHref={subjectFromHref}
+        onAlternative={handleAlternative}
+        onGoBack={resetToSetup}
+      />
     );
   }
 
   // ─── Render: Quiz screen ───────────────────────────────────────
+  // Lazy-loaded — see ./QuizScreen.tsx and the dynamic() import above.
 
   if (screen === 'quiz') {
-    if (!currentQuestion || totalQuestions === 0) {
-      return (
-        <div
-          className="mesh-bg"
-          style={{
-            minHeight: '100dvh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '24px 16px',
-          }}
-        >
-          <div
-            role="alert"
-            style={{
-              textAlign: 'center',
-              padding: 24,
-              borderRadius: 16,
-              background: 'var(--surface-1)',
-              border: '1px solid var(--border)',
-              maxWidth: 360,
-            }}
-          >
-            <p style={{ fontSize: 15, color: 'var(--danger)', marginBottom: 16 }}>
-              {isHi ? 'प्रश्न लोड नहीं हो सके।' : 'Questions could not be loaded.'}
-            </p>
-            <button
-              onClick={resetToSetup}
-              style={{
-                padding: '10px 20px',
-                borderRadius: 10,
-                background: 'var(--accent)',
-                color: '#fff',
-                border: 'none',
-                fontWeight: 600,
-                cursor: 'pointer',
-                minHeight: 44,
-              }}
-            >
-              {t(C.goBack, isHi)}
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    const opts = parseOptions(currentQuestion.options);
-    const questionText =
-      isHi && currentQuestion.question_hi
-        ? currentQuestion.question_hi
-        : currentQuestion.question_text;
-    const progressPct = Math.round(((currentIdx) / totalQuestions) * 100);
-
     return (
-      <div
-        className="mesh-bg"
-        style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: '0' }}
-      >
-        <SectionErrorBoundary section="Diagnostic Quiz">
-          {/* Header */}
-          <header
-            style={{
-              padding: '16px 16px 0',
-              maxWidth: 520,
-              width: '100%',
-              margin: '0 auto',
-            }}
-          >
-            {/* Back + progress label */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 12,
-              }}
-            >
-              <button
-                onClick={resetToSetup}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-3)',
-                  fontSize: 20,
-                  cursor: 'pointer',
-                  padding: '4px 8px',
-                  minHeight: 44,
-                  minWidth: 44,
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-                aria-label={t(C.goBack, isHi)}
-              >
-                &#8592;
-              </button>
-              <span
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: 'var(--text-2)',
-                }}
-              >
-                {isHi
-                  ? `प्रश्न ${currentIdx + 1} / ${totalQuestions}`
-                  : `Question ${currentIdx + 1} of ${totalQuestions}`}
-              </span>
-              <div style={{ width: 44 }} />
-            </div>
-
-            {/* Progress bar */}
-            <div
-              style={{
-                height: 6,
-                borderRadius: 6,
-                background: 'var(--surface-3)',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  height: '100%',
-                  borderRadius: 6,
-                  width: `${progressPct}%`,
-                  background: 'linear-gradient(90deg, #E8590C, #F59E0B)',
-                  transition: 'width 0.3s ease',
-                }}
-              />
-            </div>
-
-            {/* §7.1 short-form banner — the pool could not fill the full form.
-                Tell the student rather than silently shortening the check. */}
-            {isShortForm && (
-              <p
-                style={{
-                  marginTop: 12,
-                  marginBottom: 0,
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  color: '#B45309',
-                  background: 'rgba(217,119,6,0.10)',
-                  border: '1px solid rgba(217,119,6,0.28)',
-                  borderRadius: 10,
-                  padding: '8px 12px',
-                }}
-              >
-                {shortFormMessage
-                  ? t(shortFormMessage, isHi)
-                  : t(C.shortFormBanner, isHi, { count: totalQuestions })}
-              </p>
-            )}
-          </header>
-
-          {/* Main content */}
-          <main
-            style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              padding: '20px 16px 24px',
-              maxWidth: 520,
-              width: '100%',
-              margin: '0 auto',
-            }}
-          >
-            {/* Question card */}
-            <div
-              style={{
-                borderRadius: 16,
-                padding: '20px',
-                background: 'var(--surface-1)',
-                border: '1px solid var(--border)',
-                boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-                marginBottom: 16,
-              }}
-            >
-              <p
-                style={{
-                  fontSize: 16,
-                  fontWeight: 600,
-                  color: 'var(--text-1)',
-                  lineHeight: 1.6,
-                  margin: 0,
-                }}
-              >
-                {questionText}
-              </p>
-            </div>
-
-            {/* Answer options */}
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-                marginBottom: 20,
-              }}
-            >
-              {opts.map((opt, oi) => {
-                const isSelected = selectedOption === oi;
-                return (
-                  <button
-                    key={oi}
-                    type="button"
-                    onClick={() => setSelectedOption(oi)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      padding: '14px 16px',
-                      borderRadius: 12,
-                      border: `2px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
-                      background: isSelected ? 'rgba(232,88,28,0.07)' : 'var(--surface-2)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'border-color 0.15s ease, background 0.15s ease',
-                      minHeight: 44,
-                    }}
-                    aria-pressed={isSelected}
-                  >
-                    <span
-                      style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 8,
-                        background: isSelected ? 'var(--accent)' : 'var(--surface-3)',
-                        color: isSelected ? '#fff' : 'var(--text-2)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        flexShrink: 0,
-                        transition: 'background 0.15s ease',
-                      }}
-                    >
-                      {OPTION_LETTERS[oi]}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 14,
-                        color: isSelected ? 'var(--accent)' : 'var(--text-1)',
-                        fontWeight: isSelected ? 600 : 400,
-                        lineHeight: 1.4,
-                        transition: 'color 0.15s ease',
-                      }}
-                    >
-                      {opt}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Quiz error */}
-            {quizError && (
-              <div
-                role="alert"
-                style={{
-                  fontSize: 13,
-                  color: 'var(--danger)',
-                  padding: '8px 12px',
-                  borderRadius: 10,
-                  background: 'var(--danger-light)',
-                  border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
-                  fontWeight: 600,
-                  marginBottom: 12,
-                }}
-              >
-                {quizError}
-              </div>
-            )}
-
-            {/* Next / Submit button */}
-            <button
-              type="button"
-              disabled={selectedOption === null || submitting}
-              onClick={handleNext}
-              style={{
-                width: '100%',
-                padding: '14px 0',
-                borderRadius: 12,
-                background:
-                  selectedOption !== null
-                    ? 'linear-gradient(135deg, #E8590C, #F59E0B)'
-                    : 'var(--surface-3)',
-                color: selectedOption !== null ? '#fff' : 'var(--text-3)',
-                border: 'none',
-                fontSize: 15,
-                fontWeight: 700,
-                cursor: selectedOption !== null && !submitting ? 'pointer' : 'not-allowed',
-                transition: 'all 0.2s ease',
-                minHeight: 44,
-              }}
-            >
-              {submitting
-                ? (isHi ? 'जमा हो रहा है...' : 'Submitting...')
-                : currentIdx < totalQuestions - 1
-                  ? (isHi ? 'अगला' : 'Next')
-                  : (isHi ? 'परिणाम देखें' : 'See Results')}
-            </button>
-          </main>
-        </SectionErrorBoundary>
-      </div>
+      <QuizScreen
+        isHi={isHi}
+        currentQuestion={currentQuestion}
+        totalQuestions={totalQuestions}
+        currentIdx={currentIdx}
+        selectedOption={selectedOption}
+        onSelectOption={setSelectedOption}
+        onNext={handleNext}
+        submitting={submitting}
+        quizError={quizError}
+        isShortForm={isShortForm}
+        shortFormMessage={shortFormMessage}
+        onGoBack={resetToSetup}
+      />
     );
   }
 
   // ─── Render: Results screen ────────────────────────────────────
+  // Lazy-loaded — see ./ResultsScreen.tsx and the dynamic() import above.
 
   if (screen === 'results' && summary) {
-    const pct = summary.score_percent;
-    // §7.5b: 80 / 50 — the SAME boundaries /api/diagnostic/complete uses for
-    // recommended_difficulty, so the badge, the message and the recommendation
-    // can never disagree. Do not drift these apart from RESULT_THRESHOLDS.
-    const emoji =
-      pct >= RESULT_THRESHOLDS.strong ? '🏆'
-      : pct >= RESULT_THRESHOLDS.mid ? '💪'
-      : '📚';
-    const encouragement =
-      pct >= RESULT_THRESHOLDS.strong ? C.resultStrong
-      : pct >= RESULT_THRESHOLDS.mid ? C.resultMid
-      : C.resultLow;
-    const diffLabel = DIFFICULTY_LABELS[summary.recommended_difficulty] ?? DIFFICULTY_LABELS.medium;
-
     return (
-      <div
-        className="mesh-bg"
-        style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: '0 16px 40px' }}
-      >
-        <SectionErrorBoundary section="Diagnostic Results">
-          <main
-            style={{
-              maxWidth: 480,
-              width: '100%',
-              margin: '0 auto',
-              paddingTop: 24,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 16,
-              animation: 'slideUp 0.5s ease-out',
-            }}
-          >
-            {/* Title */}
-            <h1
-              style={{
-                fontSize: 20,
-                fontWeight: 700,
-                color: 'var(--text-1)',
-                fontFamily: 'var(--font-display)',
-                textAlign: 'center',
-                margin: 0,
-              }}
-            >
-              {isHi ? 'डायग्नोस्टिक परिणाम' : 'Diagnostic Results'}
-            </h1>
-
-            {/* Score card */}
-            <div
-              style={{
-                borderRadius: 16,
-                padding: 24,
-                background: 'var(--surface-1)',
-                border: '1px solid var(--border)',
-                boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: 36, marginBottom: 8 }}>{emoji}</div>
-
-              {/* Circular progress ring */}
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                <CircleProgress percent={pct} size={120} stroke={10} />
-              </div>
-
-              <p
-                style={{
-                  fontSize: 18,
-                  fontWeight: 700,
-                  color: 'var(--text-1)',
-                  margin: '0 0 4px',
-                  fontFamily: 'var(--font-display)',
-                }}
-              >
-                {summary.correct_answers}/{summary.total_questions}{' '}
-                {isHi ? 'सही' : 'correct'}
-              </p>
-              <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
-                {t(encouragement, isHi)}
-              </p>
-            </div>
-
-            {/* Recommended difficulty tag */}
-            <div
-              style={{
-                borderRadius: 12,
-                padding: '14px 16px',
-                background: `${diffLabel.color}12`,
-                border: `1.5px solid ${diffLabel.color}40`,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <span style={{ fontSize: 20 }}>🎯</span>
-              <div>
-                <p
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: 'var(--text-3)',
-                    margin: '0 0 2px',
-                  }}
-                >
-                  {isHi ? 'सुझाव' : 'Recommendation'}
-                </p>
-                <p
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: diffLabel.color,
-                    margin: 0,
-                  }}
-                >
-                  {isHi ? diffLabel.hi : diffLabel.en}
-                </p>
-              </div>
-            </div>
-
-            {/* Weak topics */}
-            {summary.weak_topics && summary.weak_topics.length > 0 && (
-              <div
-                style={{
-                  borderRadius: 14,
-                  padding: 16,
-                  background: 'var(--surface-1)',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: '#DC2626',
-                    marginBottom: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                >
-                  <span>⚠</span>
-                  {isHi ? 'सुधार की जरूरत' : 'Areas to strengthen'}
-                </p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {summary.weak_topics.map((topic) => (
-                    <span
-                      key={topic}
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        padding: '5px 10px',
-                        borderRadius: 20,
-                        background: 'rgba(220,38,38,0.08)',
-                        color: '#DC2626',
-                        border: '1px solid rgba(220,38,38,0.2)',
-                      }}
-                    >
-                      {topic}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Strong topics */}
-            {summary.strong_topics && summary.strong_topics.length > 0 && (
-              <div
-                style={{
-                  borderRadius: 14,
-                  padding: 16,
-                  background: 'var(--surface-1)',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: '#16A34A',
-                    marginBottom: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                >
-                  <span>✓</span>
-                  {isHi ? 'मजबूत क्षेत्र' : 'Strong areas'}
-                </p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {summary.strong_topics.map((topic) => (
-                    <span
-                      key={topic}
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        padding: '5px 10px',
-                        borderRadius: 20,
-                        background: 'rgba(22,163,74,0.08)',
-                        color: '#16A34A',
-                        border: '1px solid rgba(22,163,74,0.2)',
-                      }}
-                    >
-                      {topic}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Empty state for topics when RPC failed or returned nothing */}
-            {(!summary.weak_topics || summary.weak_topics.length === 0) &&
-              (!summary.strong_topics || summary.strong_topics.length === 0) && (
-              <div
-                style={{
-                  borderRadius: 14,
-                  padding: 16,
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--border)',
-                  textAlign: 'center',
-                }}
-              >
-                <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
-                  {isHi
-                    ? 'विस्तृत topic विश्लेषण उपलब्ध नहीं है। कृपया अभ्यास शुरू करें।'
-                    : 'Detailed topic analysis is not available. Please start practising.'}
-                </p>
-              </div>
-            )}
-
-            {/* CTA — go to dashboard when arriving from onboarding, else to quiz */}
-            <button
-              type="button"
-              onClick={() => router.push(isPostOnboarding ? '/dashboard' : '/quiz')}
-              style={{
-                width: '100%',
-                padding: '15px 0',
-                borderRadius: 12,
-                background: 'linear-gradient(135deg, #E8590C, #F59E0B)',
-                color: '#fff',
-                border: 'none',
-                fontSize: 16,
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'opacity 0.2s ease',
-                minHeight: 44,
-              }}
-            >
-              {isPostOnboarding
-                ? (isHi ? 'अपना डैशबोर्ड देखें →' : 'Go to your dashboard →')
-                : (isHi ? 'अभ्यास शुरू करें' : 'Start Practicing')}
-            </button>
-
-            {/* Secondary: re-take */}
-            <button
-              type="button"
-              onClick={resetToSetup}
-              style={{
-                width: '100%',
-                padding: '12px 0',
-                borderRadius: 12,
-                background: 'none',
-                color: 'var(--text-2)',
-                border: '1.5px solid var(--border)',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
-                minHeight: 44,
-              }}
-            >
-              {isHi ? 'दूसरा विषय आज़माएं' : 'Try Another Subject'}
-            </button>
-          </main>
-        </SectionErrorBoundary>
-      </div>
+      <ResultsScreen
+        isHi={isHi}
+        isPostOnboarding={isPostOnboarding}
+        summary={summary}
+        onPrimaryCta={() => router.push(isPostOnboarding ? '/dashboard' : '/quiz')}
+        onRetake={resetToSetup}
+      />
     );
   }
 

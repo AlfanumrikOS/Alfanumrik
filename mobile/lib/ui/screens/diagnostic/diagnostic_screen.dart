@@ -410,7 +410,7 @@ class _InsufficientContentScreen extends ConsumerWidget {
     final alternatives = payload.alternatives.isNotEmpty
         ? payload.alternatives
         : <DiagnosticAlternative>[
-            DiagnosticAlternative(
+            const DiagnosticAlternative(
               kind: 'foxy',
               label: DiagnosticCopy.ctaFoxy,
               href: '/foxy',

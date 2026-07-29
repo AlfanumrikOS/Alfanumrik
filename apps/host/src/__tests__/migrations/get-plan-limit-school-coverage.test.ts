@@ -63,7 +63,11 @@ async function seedStudent(label: string, schoolId: string | null): Promise<stri
   const { data, error } = await supabaseAdmin
     .from('students')
     .insert({
-      full_name: `GPL Test ${label} ${RUN}`,
+      // `students.name` is the real column (verified against
+      // supabase/migrations/00000000000000_baseline_from_prod.sql and
+      // src/types/database.types.ts — there is no `full_name` column;
+      // other live-DB tests, e.g. atomic-quiz-xp-42p10-e2e.test.ts, use `name`).
+      name: `GPL Test ${label} ${RUN}`,
       grade: '9', // P5 — string
       board: 'CBSE',
       school_id: schoolId,
@@ -77,10 +81,37 @@ async function seedStudent(label: string, schoolId: string | null): Promise<stri
   return data.id;
 }
 
+/** Cache so each distinct plan_code is only looked up once per test run. */
+const planIdCache = new Map<string, string>();
+
+/**
+ * `student_subscriptions.plan_id` is `uuid NOT NULL` with a FK to
+ * `subscription_plans.id` and no default (verified against
+ * supabase/migrations/00000000000000_baseline_from_prod.sql — see
+ * `student_subscriptions_plan_id_fkey` — and the `plan_id: string` (non-optional)
+ * Insert type in src/types/database.types.ts). `plan_code` alone is not
+ * sufficient to satisfy the insert.
+ */
+async function resolvePlanId(planCode: string): Promise<string> {
+  const cached = planIdCache.get(planCode);
+  if (cached) return cached;
+  const { data, error } = await supabaseAdmin
+    .from('subscription_plans')
+    .select('id')
+    .eq('plan_code', planCode)
+    .maybeSingle();
+  if (error || !data) {
+    throw new Error(`no subscription_plans row for plan_code=${planCode}: ${error?.message}`);
+  }
+  planIdCache.set(planCode, data.id);
+  return data.id;
+}
+
 async function giveStudentPlan(studentId: string, planCode: string) {
+  const planId = await resolvePlanId(planCode);
   const { error } = await supabaseAdmin
     .from('student_subscriptions')
-    .insert({ student_id: studentId, plan_code: planCode, status: 'active' });
+    .insert({ student_id: studentId, plan_id: planId, plan_code: planCode, status: 'active' });
   if (error) throw new Error(`seed student_subscription failed: ${error.message}`);
 }
 
