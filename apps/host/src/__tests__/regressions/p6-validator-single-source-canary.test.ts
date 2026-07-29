@@ -261,12 +261,16 @@ describe('P6 anti-fork canary: the three former fork sites delegate', () => {
 
       // (a) It imports from the canonical module. Both the alias form
       // (`@alfanumrik/lib/quiz/question-validation`) and a relative form are
-      // accepted — what matters is that it is THAT module.
+      // accepted, and BOTH import mechanics are accepted: a static
+      // `import … from '…'` and a dynamic `await import('…')`. Either is
+      // delegation — the invariant is "no local fork," not "static import".
+      // (supabase.ts went dynamic in PR #1415 to keep the gate out of the
+      // shared first-load bundle after two per-page P10 ratchet breaches.)
       expect(
-        /from\s+['"](?:@alfanumrik\/lib\/|\.{1,2}\/(?:\.\.\/)*)quiz\/question-validation['"]/.test(
+        /(?:from\s+|import\s*\(\s*)['"](?:@alfanumrik\/lib\/|\.{1,2}\/(?:\.\.\/)*)quiz\/question-validation['"]/.test(
           src,
         ),
-        `${rel} must import from packages/lib/src/quiz/question-validation`,
+        `${rel} must import (statically or dynamically) from packages/lib/src/quiz/question-validation`,
       ).toBe(true);
 
       // (b) It actually calls the imported gate.

@@ -21,7 +21,13 @@ import {
 } from './adaptive/select-adaptive-questions';
 import { humaneCardLabel } from './srs-card-label';
 import { buildFallbackStudentSnapshot, normalizeStudentSnapshot } from './student-snapshot';
-import { validateQuestions as validateQuestionsP6 } from './quiz/question-validation';
+// NOTE (P10): the canonical P6 gate `./quiz/question-validation` is imported
+// DYNAMICALLY inside validateQuestions() below, not statically here. This file
+// is in the module graph of nearly every page; a static import puts the full
+// strict-union validator (+ reason-string machinery) into every page's
+// first-load bundle and breached the per-page ratchet on two routes (PR #1415).
+// The delegation target is unchanged — do NOT re-inline a validator here (P6
+// anti-fork canary enforces this).
 import { shuffle } from './shuffle';
 
 // Re-export from the canonical client module — new code uses supabase-client.ts
@@ -275,7 +281,7 @@ export async function getQuizQuestions(subject: string, grade: string, count = 1
   if (error) throw error;
 
   // Validate, deduplicate, prefer unseen questions, shuffle, and trim to count
-  const validated = validateQuestions(data ?? []);
+  const validated = await validateQuestions(data ?? []);
   const unseen = validated.filter(q => !seenIds.has(q.id));
   const seen = validated.filter(q => seenIds.has(q.id));
   // Prioritize unseen, then backfill with seen if pool is too small.
@@ -323,7 +329,11 @@ interface QuestionRecord {
   [key: string]: unknown;
 }
 
-function validateQuestions(questions: QuestionRecord[]): QuestionRecord[] {
+async function validateQuestions(questions: QuestionRecord[]): Promise<QuestionRecord[]> {
+  // Dynamic import (P10): keeps the canonical gate out of the shared first-load
+  // bundle; only the question-fetch path loads it, at call time. Same canonical
+  // module, same defaults (allowNonMcq: false, enforceBloomLevel: false).
+  const { validateQuestions: validateQuestionsP6 } = await import('./quiz/question-validation');
   return validateQuestionsP6(questions);
 }
 
