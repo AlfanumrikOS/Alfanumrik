@@ -571,10 +571,22 @@ jobs:
     outputs:
       exact_sha_verified: ${{ steps.health.outputs.exact_sha_verified }}
       verified_github_sha: ${{ steps.health.outputs.verified_github_sha }}
+      content_verified_noop: ${{ steps.health.outputs.content_verified_noop }}
+      verified_noop_base_sha: ${{ steps.health.outputs.verified_noop_base_sha }}
     steps:
+      # Full history (not the repo default shallow clone) is required so the
+      # no-op-deploy escape hatch below can resolve an arbitrary short SHA
+      # reported by production and walk ancestry/diff it against $GITHUB_SHA.
+      # Scoped to this job only — unrelated jobs keep their shallow/no
+      # checkout and are unaffected.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       - name: Poll canonical production for healthy exact SHA
         id: health
-        # Fail closed unless canonical production reports healthy exact SHA.
+        # Fail closed unless canonical production reports healthy exact SHA
+        # OR a verified content-identical no-op (see verify-noop-deploy.sh).
         # Protection/network/stale-SHA evidence never authorizes rollback.
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
@@ -590,6 +602,8 @@ jobs:
           CURRENT_SHA_UNHEALTHY=0
           echo "exact_sha_verified=false" >> "$GITHUB_OUTPUT"
           echo "verified_github_sha=" >> "$GITHUB_OUTPUT"
+          echo "content_verified_noop=false" >> "$GITHUB_OUTPUT"
+          echo "verified_noop_base_sha=" >> "$GITHUB_OUTPUT"
           echo "rollback_authorized=false" >> "$GITHUB_OUTPUT"
           if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
             echo "::error::Bypass secret is unavailable; release is unverified."
@@ -621,6 +635,31 @@ jobs:
                   echo "exact_sha_verified=true" >> "$GITHUB_OUTPUT"
                   echo "verified_github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
                   exit 0
+                fi
+                # No-op-deploy escape hatch. Production is demonstrably
+                # healthy right now, just reporting a DIFFERENT sha than
+                # ours. If that sha is a real git ancestor of ours with a
+                # byte-identical tree, this is a genuine no-op release
+                # (e.g. a follow-up push re-merging an already-integrated
+                # branch) and there is nothing new for production to ever
+                # converge on — polling for the literal sha would time out
+                # even though production is correct. See
+                # .github/scripts/verify-noop-deploy.sh for the ancestor +
+                # empty-diff guard that keeps this from being a loophole
+                # for a genuinely different/broken deploy.
+                if [ "$HEALTHY" = "true" ] && [ -n "$DEPLOYED_SHA" ] && [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]; then
+                  NOOP_CHECK=$(bash .github/scripts/verify-noop-deploy.sh "$DEPLOYED_SHA" "$GITHUB_SHA" 2>/dev/null || true)
+                  NOOP_OK=$(echo "$NOOP_CHECK" | awk '{print $1}')
+                  if [ "$NOOP_OK" = "true" ]; then
+                    NOOP_BASE_SHA=$(echo "$NOOP_CHECK" | cut -d' ' -f2-)
+                    rm -f "$BODY_FILE"
+                    echo "::notice::No-op deploy detected — $GITHUB_SHA has identical tree to already-healthy $NOOP_BASE_SHA. Skipping literal-SHA wait."
+                    echo "exact_sha_verified=true" >> "$GITHUB_OUTPUT"
+                    echo "verified_github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+                    echo "content_verified_noop=true" >> "$GITHUB_OUTPUT"
+                    echo "verified_noop_base_sha=$NOOP_BASE_SHA" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
                 fi
               fi
             else
@@ -959,7 +998,15 @@ jobs:
     outputs:
       exact_sha_verified: ${{ steps.verify.outputs.exact_sha_verified }}
       verified_github_sha: ${{ steps.verify.outputs.verified_github_sha }}
+      content_verified_noop: ${{ steps.verify.outputs.content_verified_noop }}
+      verified_noop_base_sha: ${{ steps.verify.outputs.verified_noop_base_sha }}
     steps:
+      # Full history required for the no-op-deploy escape hatch in the health
+      # probe below (mirrors health-check job). Scoped to this job only.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       - name: Verify critical endpoints
         id: verify
         env:
@@ -969,6 +1016,8 @@ jobs:
           EXPECTED_SHA="${GITHUB_SHA:0:7}"
           echo "exact_sha_verified=false" >> "$GITHUB_OUTPUT"
           echo "verified_github_sha=" >> "$GITHUB_OUTPUT"
+          echo "content_verified_noop=false" >> "$GITHUB_OUTPUT"
+          echo "verified_noop_base_sha=" >> "$GITHUB_OUTPUT"
           echo "## Post-Deploy Verification" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Probed domain: \`$TARGET_URL\`" >> $GITHUB_STEP_SUMMARY
@@ -1014,6 +1063,8 @@ jobs:
           DEPLOYED_SHA=""
           UNHEALTHY_COMPONENTS=""
           COMPONENT_DETAIL=""
+          NOOP_VERIFIED="false"
+          NOOP_BASE_SHA=""
 
           for attempt in $(seq 1 "$VERIFY_ATTEMPTS"); do
             : > "$HEALTH_BODY"
@@ -1043,6 +1094,24 @@ jobs:
             if [ "$HEALTH_STATUS" = "200" ] && [ "$HEALTHY" = "true" ] && [ "$DEPLOYED_SHA" = "$EXPECTED_SHA" ]; then
               break
             fi
+
+            # No-op-deploy escape hatch (mirrors the health-check job's
+            # identical guard — see .github/scripts/verify-noop-deploy.sh).
+            # Production is healthy right now but reporting a different sha;
+            # only treat this as verified if that sha is a real ancestor of
+            # ours with a byte-identical tree. Never trust an unresolved,
+            # unrelated, or content-different sha.
+            if [ "$HEALTH_STATUS" = "200" ] && [ "$HEALTHY" = "true" ] && [ -n "$DEPLOYED_SHA" ] && [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]; then
+              NOOP_CHECK=$(bash .github/scripts/verify-noop-deploy.sh "$DEPLOYED_SHA" "$GITHUB_SHA" 2>/dev/null || true)
+              NOOP_OK=$(echo "$NOOP_CHECK" | awk '{print $1}')
+              if [ "$NOOP_OK" = "true" ]; then
+                NOOP_VERIFIED="true"
+                NOOP_BASE_SHA=$(echo "$NOOP_CHECK" | cut -d' ' -f2-)
+                echo "::notice::No-op deploy detected — $GITHUB_SHA has identical tree to already-healthy $NOOP_BASE_SHA. Treating post-deploy exact-SHA check as satisfied."
+                break
+              fi
+            fi
+
             if [ "$attempt" -lt "$VERIFY_ATTEMPTS" ]; then
               SLEEP_FOR=$((VERIFY_BACKOFF_SECONDS * attempt))
               echo "  transient? retrying in ${SLEEP_FOR}s"
@@ -1050,7 +1119,7 @@ jobs:
             fi
           done
 
-          if [ "$HEALTH_STATUS" != "200" ] || [ "$HEALTHY" != "true" ] || [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]; then
+          if [ "$HEALTH_STATUS" != "200" ] || [ "$HEALTHY" != "true" ] || { [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ] && [ "$NOOP_VERIFIED" != "true" ]; }; then
             # Echo the diagnostic BEFORE deleting the body. This is the fix for
             # the "operator gets no detail" defect.
             echo "::error::Post-deploy health did not prove healthy exact SHA after $VERIFY_ATTEMPTS attempt(s) (http=$HEALTH_STATUS healthy=$HEALTHY sha=$DEPLOYED_SHA expected=$EXPECTED_SHA)."
@@ -1174,6 +1243,10 @@ jobs:
 
           echo "exact_sha_verified=true" >> "$GITHUB_OUTPUT"
           echo "verified_github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          if [ "$NOOP_VERIFIED" = "true" ]; then
+            echo "content_verified_noop=true" >> "$GITHUB_OUTPUT"
+            echo "verified_noop_base_sha=$NOOP_BASE_SHA" >> "$GITHUB_OUTPUT"
+          fi
           echo "All post-deploy verifications passed."
 
   # ── Step 4: Release Tag & Summary ──
@@ -1321,6 +1394,10 @@ jobs:
           POST_EXACT_SHA_VERIFIED: ${{ needs.post-deploy-verify.outputs.exact_sha_verified }}
           POST_VERIFIED_GITHUB_SHA: ${{ needs.post-deploy-verify.outputs.verified_github_sha }}
           RELEASE_RESULT: ${{ needs.release.result }}
+          HEALTH_CONTENT_VERIFIED_NOOP: ${{ needs.health-check.outputs.content_verified_noop }}
+          HEALTH_VERIFIED_NOOP_BASE_SHA: ${{ needs.health-check.outputs.verified_noop_base_sha }}
+          POST_CONTENT_VERIFIED_NOOP: ${{ needs.post-deploy-verify.outputs.content_verified_noop }}
+          POST_VERIFIED_NOOP_BASE_SHA: ${{ needs.post-deploy-verify.outputs.verified_noop_base_sha }}
         run: |
           FAILED=0
 
@@ -1341,6 +1418,17 @@ jobs:
           require_equal "Post-deploy exact-SHA proof" "$POST_EXACT_SHA_VERIFIED" "true"
           require_equal "Post-deploy verified SHA" "$POST_VERIFIED_GITHUB_SHA" "$EXPECTED_SHA"
           require_equal "Release result" "$RELEASE_RESULT" "success"
+
+          # Audit trail only — informational, never gates this job. The gate
+          # above already requires exact_sha_verified/verified_github_sha to
+          # equal $EXPECTED_SHA regardless of how health-check/post-deploy-verify
+          # arrived at "true" (literal match or verified no-op); this just
+          # records WHICH path was taken so a future incident review doesn't
+          # have to dig through job logs to know whether the no-op escape
+          # hatch fired.
+          if [ "$HEALTH_CONTENT_VERIFIED_NOOP" = "true" ] || [ "$POST_CONTENT_VERIFIED_NOOP" = "true" ]; then
+            echo "::notice::This release was verified via the no-op-deploy escape hatch (health-check base=${HEALTH_VERIFIED_NOOP_BASE_SHA:-<n/a>}, post-deploy-verify base=${POST_VERIFIED_NOOP_BASE_SHA:-<n/a>}), not a literal exact-SHA match on production."
+          fi
 
           if [ "$FAILED" -ne 0 ]; then
             echo "Production release completion evidence is incomplete."
