@@ -26,6 +26,38 @@
   },
   "overrides": [
     {
+      // ── Monorepo allowlist repair for alfanumrik/no-raw-subject-imports ──
+      // The rule (eslint-plugin-alfanumrik/no-raw-subject-imports.js) documents
+      // an allowlist of files where GRADE_SUBJECTS / SUBJECT_META /
+      // getSubjectsForGrade / SUBJECT_BY_GRADE MAY legitimately be declared:
+      // the subjects service itself and the deprecated compat shim. That
+      // allowlist is matched with `file.includes('src/lib/constants.ts')` and
+      // `file.includes('src/lib/subjects.ts')` — PRE-MONOREPO paths. After the
+      // apps/* + packages/* migration the canonical files are
+      // `packages/lib/src/constants.ts` and `packages/lib/src/subjects.ts`,
+      // which do NOT contain the substring `src/lib/…`, so the rule fired on
+      // the very files it is written to exempt.
+      //
+      // This surfaced only on 2026-07-28, when packages/ got a lint script for
+      // the first time (they had never been linted — `--if-present` skipped
+      // them silently). These are the 3 "real errors" from that audit: they are
+      // allowlist path-drift, not a genuine subject-source-of-truth violation.
+      //
+      // Scope is deliberately narrow — exactly the two canonical files the rule
+      // already names. Every other file under packages/ stays fully enforced.
+      // DURABLE FIX (owner: whoever owns eslint-plugin-alfanumrik/): widen the
+      // in-rule `isAllowed` check to match the monorepo paths, then delete this
+      // override.
+      "files": [
+        "packages/lib/src/constants.ts",
+        "packages/lib/src/subjects.ts",
+        "packages/lib/src/subjects.types.ts"
+      ],
+      "rules": {
+        "alfanumrik/no-raw-subject-imports": "off"
+      }
+    },
+    {
       "files": [
         "src/__tests__/**",
         "src/**/*.test.{ts,tsx}",

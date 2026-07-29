@@ -1923,3 +1923,126 @@ Synthesis entry in `02-foxy-ai.md`).
 
 ---
 
+## Build/tooling invocability + CI gate blocking posture (2026-07-27, branch `fix/typecheck-scripts-gap`) — REG-317
+
+Source: the 2026-07-27 `fix/typecheck-scripts-gap` PR (commits `91608206`,
+`3769aaf9`, `34fd721c`, `be165ac2`, `6d2e2e7c`, `72463391`). It closed a family
+of defects that **every existing gate was structurally blind to**: tooling that
+COMPILES but cannot be INVOKED, and guards that RUN but INSPECT NOTHING. Four
+concrete instances, all of which had been green in CI for months:
+
+1. **22 npm script declarations** in `apps/host/package.json` referenced paths
+   that do not resolve from `apps/host` (npm's cwd for that package) — each
+   missing a `../../` prefix, each dying with MODULE_NOT_FOUND the first time a
+   human ran it. `package.json` is just JSON, so no compiler ever reads a script
+   body; `type-check` compiles sources, `lint` covers `apps/host/src`. Nothing
+   in the toolchain looked at declarations at all. The affected set included the
+   flag-governance tooling (`flags:check/sync/reset`), `check:edge-logs`,
+   `forensic:quiz`, `lint:migrations`, `lint:ai-boundary`, the 7 `eval:*`
+   scripts and the 4 `ncert:*` scripts.
+2. **Seven repo-root `scripts/**` files imported `../src/lib/…`**, a path the
+   monorepo migration deleted. `npm run type-check` is `--workspaces` and
+   `scripts/` belongs to no workspace, so `scripts/` was type-checked by nothing.
+   One of the seven hid its dead imports inside `await import(...)`, invisible to
+   a grep for static import lines.
+3. **`scripts/security/check-edge-logs.mjs` — a P13 privacy guard — became a
+   FALSE-GREEN.** Its glob resolved against cwd; from `apps/host` it matched
+   **0 of 47** Edge Function `index.ts` files and printed
+   `Edge log PII guard passed (0 index.ts files scanned)` with exit 0. Before the
+   path repair it crashed loudly; after, it silently succeeded.
+4. **The `edge-function-tests` Deno pre-warm list and test list were two
+   hand-maintained lists, and they drifted.** Five test files RAN without being
+   pre-warmed; `actions.contract.test.ts` transitively imports
+   `esm.sh/@supabase/supabase-js@2`, which was therefore absent from the pre-warm
+   module graph and got fetched for the first time inside the deliberately
+   offline, no-retry test step. esm.sh answered HTTP 522 after a 39s hang and
+   reddened a build that passed on the 4 preceding SHAs.
+
+Fixes shipped: the 22 paths repaired; `scripts/check-npm-script-paths.mjs` added
+(walks every workspace `package.json`, resolves every file-ish token against the
+DECLARING package's directory — it found a 22nd break, `mesh:tick`, that a
+hand-written scan missed); `tsconfig.scripts.json` + a `type-check:scripts` gate;
+the edge-log guard re-anchored to the repo root via `import.meta.url` **and given
+a fail-loud zero-match floor**; and the Deno target set collapsed into a single
+job-level `DENO_TEST_TARGETS` env var read by both steps.
+
+**Why this entry ships WITH a test rather than as prose.** The whole lesson of
+this PR is that a stated rule with no enforcing mechanism is indistinguishable
+from no rule. A prose-only catalog entry would have reproduced the exact failure
+mode it describes.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-317 | `build_invocability_and_ci_gate_blocking_posture` | **(a) Every npm script path token resolves — proven by invoking the canary, not by describing it:** `scripts/check-npm-script-paths.mjs` is SPAWNED and must exit 0 with `check:script-paths OK`; it is spawned a second time from `apps/host` and must return the IDENTICAL script/package counts (the entire bug class is "cwd is not what you think", so a gate that only works from one cwd would reintroduce it); the reported package count is cross-checked against an independently-computed workspace enumeration (root + each `dir/*` glob member + each literal workspace path) and the script count must exceed 30, so a canary that silently walked nothing cannot pass. **(b) MUTATION — the pin is non-vacuous:** a throwaway fixture repo is built in `os.tmpdir()` reproducing the EXACT defect shape (`<tmp>/apps/host/package.json` declaring a script whose target lives at `<tmp>/scripts/`), the REAL canary is copied in **byte-identically** (asserted with `readFileSync(copy) === readFileSync(original)`, so the mutation exercises the real logic and not a re-implementation) and, because the canary derives its repo root from `import.meta.url`, treats `<tmp>` as the root; with `../../scripts/target.mjs` it exits 0, with the `../../` STRIPPED it must exit NON-ZERO naming the package (`apps/host/package.json`), the script (`my:task`), the token, and the `exists at repo root — prefix with ../../` hint; restoring the prefix restores exit 0, proving the failure was the mutation and not fixture drift. **(c) No file under `scripts/` imports the dead pre-monorepo `../src/lib/` path** — a SOURCE-TEXT scan over all 74 `.ts/.mts/.cts/.tsx/.js/.mjs/.cjs` files (with a `> 50` floor so an empty walk cannot vacuously pass) across three detectors: static-import/re-export `from` specifier, dynamic `import()` specifier, and `require()` specifier. The detector is proven non-vacuous against the five VERBATIM shapes taken from the seven repaired scripts (`import … from '../src/lib/supabase-admin'`, a multi-line `} from '../src/lib/rag/pack-manifest'`, `export … from '../../src/lib/logger'`, `await import('../src/lib/state/runtime/event-listener')`, `require('../src/lib/logger')`) and proven false-positive-free against the live monorepo forms (`../../packages/lib/src/…`, `@alfanumrik/lib/…`, `./lib/…`). **(d) The hazard that makes (c) mandatory is itself pinned BEHAVIOURALLY:** the root `vitest.config.ts` is imported and its alias array searched for an entry whose `find` regex, when EXECUTED, matches `'../src/lib/logger'` (and `'../../../src/lib/logger'`), with a `replacement` containing `packages/lib/src` — i.e. under Vitest any import of the dead path is silently rewritten to the live one, which is exactly why ~14,000 existing tests never caught this and why an import-and-see-if-it-throws probe CANNOT work here. If that alias is ever removed, this assertion goes red and tells the next maintainer the runtime approach has become viable. **(e) The edge-log PII guard scans every Edge Function, from any cwd:** the real script is spawned from BOTH the repo root and `apps/host` and must exit 0 reporting a scan count equal to an independently-enumerated count of `supabase/functions/*/index.ts` (currently **47**) — self-updating as functions are added, but hard-failing on any path-resolution break, which is precisely the false-green that shipped. **(f) MUTATION — the zero-match floor:** the real guard is copied byte-identically into an ISOLATED `<tmp>/scripts/security/` (the real script is never modified) whose root has no `supabase/functions/`; matching 0 files must exit NON-ZERO with `FAILED TO RUN: matched 0 files` **on stderr** and must NOT print `guard passed`; adding one clean fixture Edge Function makes the SAME copy exit 0 with `passed (1 index.ts files scanned)` — proving the failure was the floor and not a broken harness; adding a second fixture that logs a bare `email` identifier must exit non-zero with `Unsafe Edge Function logging detected` naming the file — proving the floor did not replace the guard's actual job, i.e. it is not a script that just exits 1 always. **(g) The three quality-job CI steps exist and are BLOCKING** — `.github/workflows/ci.yml` is parsed with a real **YAML parser** (`yaml`, a `vite` dependency and therefore present wherever Vitest runs), NOT by string slicing (`v3-school-rpc-predeploy.test.ts` slices a workflow and that is a known hazard: indentation-sensitive slicing silently reads the wrong job when steps are reordered or a comment block grows). `jobs.quality.steps` must contain `Type check (scripts/)`, `Check npm script paths` and `Edge Function log PII guard (P13)`, each with `continue-on-error` absent or `false`, and each whose `run` body actually invokes its gate (`type-check:scripts`, `check:script-paths`, `scripts/security/check-edge-logs.mjs`) rather than a placeholder; the two npm-script gates are followed through to real declarations in the root `package.json` and to files that exist on disk. **(h) META-PIN making (g) non-vacuous:** every "is blocking" clause in (g) is an ABSENCE check, which passes for free if the parser cannot see the key at all — so the deliberately-advisory `Verify Supabase types are up to date` step is asserted to read `continue-on-error === true`, proving the detector reads the key. Structural anchors (`steps.length >= 10`, the long-standing `Lint` step present) prevent a mis-parse from passing. **(i) Documented step ORDER holds:** `Auth & Identity test gate` (P15) precedes `Type check (scripts/)` precedes `Check npm script paths` precedes `Edge Function log PII guard (P13)` — ci.yml marks this DELIBERATE because steps are serial and fail-stop, so a trivial maintenance-script error must never abort the job before the onboarding gate has emitted a signal. **(j) The Deno pre-warm set cannot drift from the test set:** `jobs['edge-function-tests'].env.DENO_TEST_TARGETS` is defined at JOB level as a non-empty string of ≥ 5 targets, EVERY one of which exists on disk; NO step may shadow it with a step-level `env.DENO_TEST_TARGETS`; EXACTLY two steps consume `$DENO_TEST_TARGETS` and they are `Cache Deno module dependencies` and `Run Edge Function Deno tests (deterministic, offline)` in that order. **(k) THE structural teeth:** after stripping whole-line `#` comments (documenting a path is fine, EXECUTING a hardcoded one is not), NEITHER consumer's `run` body may contain the literal `supabase/functions/` — re-inlining any target is what allowed the two sets to diverge and let a never-pre-warmed remote import be fetched inside the offline step. **(l) The test step stays offline:** its comment-stripped body contains `deno test` and `--allow-read` but never `--allow-net`, so a pre-warm miss fails as a deterministic resolution error rather than as a flaky esm.sh download. | `apps/host/src/__tests__/regressions/reg-317-build-invocability-and-ci-gate-blocking.test.ts` (23 tests) | E (unit — runs in CI) |
+
+### Invariants covered by this section
+
+- **P13 (Data Privacy)** — clauses (e)/(f). The edge-log guard is the only
+  automated check that PII (email / phone / name / prompt / student answer /
+  OCR text) does not reach `console.*` in any of the 47 Supabase Edge
+  Functions. Its zero-match floor is what separates "this guard passed" from
+  "this guard did not run", and it is now the pinned behaviour.
+- **P15 (Onboarding Integrity)** — clause (i). The dev-tooling gates are pinned
+  to run AFTER the auth/identity gate so a maintenance-script failure can never
+  abort the quality job before the onboarding-protecting gate reports.
+- **Operational integrity / build invocability** (same family as REG-118's
+  daily-cron static-source contract, REG-125's seed-shape conformance and
+  REG-303's dead-flag-gate): a declaration that cannot be invoked, a guard that
+  inspects nothing, and two lists that must be one list are all "green CI, dead
+  mechanism" failures. Each is now enforced by an executing test rather than by
+  a comment.
+- **CI blocking posture** — clauses (g)/(h). Three gates that a single
+  `continue-on-error: true` would silently return to the pre-fix state.
+
+### Notes on test strategy
+
+Every clause is BEHAVIOURAL. Nothing here asserts "a string appears in a file"
+as a proxy for a rule:
+
+- The npm-script canary and the edge-log guard are **actually spawned** and
+  their exit codes asserted, from more than one cwd.
+- Both mutation cases run a **byte-identical copy of the real script** against a
+  throwaway fixture root, with the copy's identity asserted — so the mutation
+  cannot pass by testing a re-implementation, and the real scripts under test
+  are never modified.
+- Each mutation has a **positive control** (the same copy exits 0 once the
+  precondition is restored), so a red result proves the mutation caused it.
+- The Vitest alias in clause (d) is proven by **executing its regex**, not by
+  grepping the config text.
+- The workflow is read with a **YAML parser**, and the absence-based
+  "is blocking" assertions carry an explicit **meta-pin** (a known-advisory step
+  must read `true`) so they cannot pass vacuously on a mis-parse.
+
+Verified by mutation on 2026-07-27, all five invariants, each restored after:
+stripping `../../` from a real `apps/host/package.json` declaration reddened
+3 tests; removing the guard's zero-match floor AND re-anchoring its glob to
+`process.cwd()` reproduced the historical
+`Edge log PII guard passed (0 index.ts files scanned)` / exit 0 false-green and
+reddened 2 tests; flipping `Check npm script paths` to `continue-on-error: true`
+and deleting the `Edge Function log PII guard (P13)` step reddened 3 tests;
+adding a `scripts/` file with dead `../src/lib/` imports reddened 1; re-inlining
+a hardcoded `supabase/functions/...` target into the Deno test step reddened 1.
+
+No network, no Supabase, no live DB. Whole file runs in ~2s.
+
+### Known gap (deliberate, not an oversight)
+
+`scripts/check-npm-script-paths.mjs` does not resolve EXTENSIONLESS tokens, so a
+bare DIRECTORY argument (`eslint … ../../supabase/functions`) is invisible to
+it. This is documented at length in the script's own header and was MEASURED,
+not assumed: resolving all extensionless tokens produces 121 false positives
+(every binary and subcommand name), and resolving only slash-containing ones is
+structurally unsafe (vitest filename-substring filters, scoped workspace
+specifiers, URLs). REG-317 pins the canary's ACTUAL contract and deliberately
+does not assert coverage the canary does not have — a test claiming otherwise
+would be the same false assurance this entry exists to prevent.
+
+### Catalog total
+
+Pre-REG-317: 316 entries (through REG-316, the 2026-07-27 RAG shadow confidence
+instrumentation entry in `13-rag-cache.md`). This build-invocability + CI
+blocking-posture pin adds REG-317, the next free id after REG-316.
+**Total catalog: 317 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

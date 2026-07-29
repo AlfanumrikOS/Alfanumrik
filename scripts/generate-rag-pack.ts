@@ -43,8 +43,8 @@ import {
   validatePackHeader,
   type PackEntry,
   type PackHeader,
-} from '../src/lib/rag/pack-manifest';
-import { gradeWithClaude } from '../src/lib/rag/pack-quality-oracle';
+} from '../packages/lib/src/rag/pack-manifest';
+import { gradeWithClaude } from '../packages/lib/src/rag/pack-quality-oracle';
 
 interface OutlineItem {
   subject: string;

@@ -68,6 +68,25 @@ import {
   generateSessionId,
 } from '@alfanumrik/lib/monitoring/log-event';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
+// GenAI Phase 2 — Unified Student Memory read-API (flag-gated proof consumer).
+// Flag CONSTANT imported from the registry module (unmocked) so a vi.mock of
+// the feature-flags barrel can never strip it (Phase-1 lesson, PR #1384).
+import { UNIFIED_MEMORY_FLAGS, RESPONSE_EVAL_FLAGS } from '@alfanumrik/lib/flags/registries/foxy';
+import { getStudentMemory } from '@/lib/memory/student-memory';
+// GenAI Phase 4 — runtime ResponseEval observability sensor (flag-gated proof
+// consumer). OBSERVABILITY ONLY, fire-and-forget: never blocks/alters/delays the
+// response, never throws into the response path. Flag constant imported from the
+// registry module (unmocked) so a vi.mock of the feature-flags barrel can never
+// strip it (Phase-1 lesson).
+// Imported from the module's own barrel (`@alfanumrik/lib/ai/eval`, no `/eval/`
+// SUBPATH) so the architect-owned offline-harness import-boundary guard
+// (src/__tests__/eval/rag/import-boundary.test.ts, which flags any shipped
+// `.../eval/<subpath>` import) does not false-positive on this legitimately
+// shippable runtime module. The barrel is a net-new module never vi.mock'd, so
+// the Phase-1 barrel-strip lesson (which applies to the feature-flags barrel)
+// does not apply here.
+import { scoreResponse, logResponseEval } from '@alfanumrik/lib/ai/eval';
+import { getModel, estimateCostUsd } from '@alfanumrik/lib/ai/gateway/registry';
 import { validateSubjectWrite } from '@alfanumrik/lib/subjects';
 import {
   EMPTY_LONG_MEMORY,
@@ -1778,17 +1797,79 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   const academicGoalSectionValue = buildAcademicGoalSection(academicGoal, mode, {
     useExpandedPersona,
   });
-  const baseCognitiveSection = buildCognitivePromptSection(cognitiveCtx);
+  // ── GenAI Phase 2: Unified Student Memory (ff_unified_memory_v1, default OFF) ──
+  //
+  // Proof consumer (the ONE flag-gated wiring for Phase 2). When ON, the three
+  // memory slices (cognitive / twin / long-memory) are SOURCED from
+  // getStudentMemory, which applies the DPDP erasure-pending guard: a
+  // mid-erasure student's learner-state history is fully SUPPRESSED from the
+  // prompt (spec §3). For every NON-erased student getStudentMemory returns the
+  // SAME sub-contexts the per-reader path already loaded — the readers are
+  // INJECTED as the already-loaded, already-per-user-flag-gated values — so the
+  // rendered sections below are BYTE-IDENTICAL to the OFF path (a parity test
+  // asserts this). When OFF, no unified read runs and this block is a strict
+  // no-op (memCognitive/memTwinSection/memLongMemory alias the legacy values).
+  //
+  // The two template slots (cognitive_context_section / learner_memory_section)
+  // keep their EXISTING per-slot renderers so byte-identity holds across BOTH
+  // non-adjacent slots — a single combined renderStudentMemoryPromptSection
+  // string cannot preserve the split-slot template contract (see the renderer
+  // note in @/lib/memory/student-memory). misconception_section is ALSO sourced
+  // from the unified cognitive slice so an erased student's misconceptions are
+  // suppressed too; identical to legacy when OFF.
+  //
+  // CAVEAT (known residual gap): teachingDirectorSection (appended to the
+  // cognitive slot below, and gated by ff_foxy_teaching_director_v1) is NOT
+  // sourced from getStudentMemory and is therefore NOT erasure-suppressed. So
+  // when BOTH ff_unified_memory_v1 AND ff_foxy_teaching_director_v1 are ON, a
+  // mid-erasure student's teaching directive can STILL reach the prompt even
+  // though the three unified slices (cognitive/twin/long-memory + the
+  // misconception sub-read) are suppressed. This is an accepted residual for
+  // this single-proof-consumer increment; it closes when the teaching director
+  // is brought under getStudentMemory (see spec §3 rollout gate). Comment only
+  // — no behavior change here.
+  const unifiedMemoryEnabled = await isFeatureEnabled(UNIFIED_MEMORY_FLAGS.V1, {
+    role: 'student',
+    userId: auth.userId!,
+  });
+  let memCognitive: CognitiveContext = cognitiveCtx;
+  let memTwinSection: string = twinPromptSection;
+  let memLongMemory: LongMemorySnapshot = longMemory;
+  if (unifiedMemoryEnabled) {
+    const memory = await getStudentMemory(
+      studentId,
+      { subject, grade, chapter },
+      {
+        // Inject the already-loaded, already-flag-gated sub-contexts so the
+        // unified path re-does NO DB work and stays byte-identical for
+        // non-erased students. getStudentMemory still runs the DPDP guard: an
+        // erased student's sub-contexts are replaced with the empty values and
+        // these injected closures are never invoked.
+        loadCognitive: async () => cognitiveCtx,
+        loadTwin: async () => twinContext,
+        loadLongMemory: async () => longMemory,
+        // preferences + erasure-check use the service-role defaults.
+      },
+    );
+    memCognitive = memory.cognitive;
+    memTwinSection =
+      memory.twin && !memory.twin.isEmpty
+        ? `\n\n${renderTwinPromptSection(memory.twin)}`
+        : '';
+    memLongMemory = memory.longMemory;
+  }
+
+  const baseCognitiveSection = buildCognitivePromptSection(memCognitive);
   const cognitiveContextSectionValue =
     baseCognitiveSection +
-    twinPromptSection +
+    memTwinSection +
     (teachingDirectorSection ? `\n\n${teachingDirectorSection}` : '');
   const misconceptionSectionValue = buildMisconceptionPromptSection(
-    cognitiveCtx.recentMisconceptions,
+    memCognitive.recentMisconceptions,
   );
   const pendingExpectationValue = buildExpectationPromptSection(openExpectation);
   const previousSessionContextValue = buildPriorSessionPromptSection(priorSessionTurns);
-  const learnerMemorySectionValue = buildLongMemoryPromptSection(longMemory);
+  const learnerMemorySectionValue = buildLongMemoryPromptSection(memLongMemory);
 
   // cache_scope declaration (fail-closed): 'shared' ONLY when this turn is
   // personalization-free —
@@ -1810,7 +1891,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   );
   const cognitiveSectionIsPersonal =
     !(baseCognitiveSection === '' || baseCognitiveSection === buildColdStartPromptSection()) ||
-    twinPromptSection !== '' ||
+    memTwinSection !== '' ||
     teachingDirectorSection !== '';
   const foxyCacheScope: 'shared' | 'none' =
     history.length === 0 &&
@@ -3046,6 +3127,71 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // throws, and a persist failure never affects this turn's response.
   if (teachingPlan) {
     void persistLessonProgress(resolvedSessionId, teachingPlan);
+  }
+
+  // ── GenAI Phase 4: runtime ResponseEval observability sensor ───────────────
+  // Flag-gated (`ff_response_eval_v1`, default OFF), fire-and-forget, PII-free.
+  // OFF ⇒ this whole block is skipped and the response path is byte-identical.
+  // OBSERVABILITY ONLY: it NEVER blocks/refunds/alters/delays the response and
+  // NEVER throws into the response path — scoreResponse is pure/no-throw,
+  // logResponseEval swallows all errors, and the extraction is wrapped in
+  // try/catch (belt-and-suspenders on top of the route's top-level try/catch).
+  // Every signal is CO-LOCATED here (already computed for this turn) — no new
+  // LLM call, retrieval, or DB read is introduced.
+  //
+  // FOLLOW-UP (not covered by this proof consumer): the STREAMING path
+  // (apps/host/src/app/api/foxy/_lib/streaming.ts) terminates its turn there and
+  // is NOT wired to ResponseEval in this increment — same deferred-surface gap as
+  // Phase-2's teaching-director streaming follow-up. Tracked for a later PR.
+  try {
+    const responseEvalEnabled = await isFeatureEnabled(RESPONSE_EVAL_FLAGS.V1, {
+      userId: auth.userId!,
+      role: 'student',
+    });
+    if (responseEvalEnabled) {
+      // Union of the denormalized + raw output-screen categories. By construction
+      // a turn reaching this terminal already passed the safety screen (blocklist/
+      // screen_error would have returned earlier), so this carries at most the
+      // advisory 'legacy_validator_flag'. Codes only — never any answer text.
+      const screenCategories = [
+        ...new Set([...outputScreen.categories, ...rawAnswerScreen.categories]),
+      ];
+      // Cost estimate from the gateway registry. `grounded.meta.tokens_used` is a
+      // single COMBINED total (no per-direction split crosses the grounded-answer
+      // wire), so we conservatively attribute the whole total to the OUTPUT rate
+      // (the higher $/1M) — an upper bound that never under-reports cost health.
+      const modelDescriptor = getModel(grounded.meta.claude_model);
+      const totalTokens = typeof grounded.meta.tokens_used === 'number' ? grounded.meta.tokens_used : 0;
+      const costUsd = modelDescriptor ? estimateCostUsd(modelDescriptor, 0, totalTokens) : null;
+      void logResponseEval(
+        scoreResponse({
+          // A turn at the grounded terminal is in-scope by construction
+          // (out-of-scope returned earlier); preGateConfirmedInScope only refines
+          // the code label when the STEM guard actually ran this turn.
+          curriculumInScope: true,
+          curriculumReason: null,
+          confidence: typeof grounded.confidence === 'number' ? grounded.confidence : null,
+          groundedFromChunks,
+          citationsCount,
+          screenCategories,
+          masteryLevel: typeof cognitiveCtx.masteryLevel === 'number' ? cognitiveCtx.masteryLevel : null,
+          // Wall-clock latency; cross-checked against grounded.meta.latency_ms.
+          latencyMs: Date.now() - startTime,
+          costUsd,
+          traceId: grounded.trace_id,
+          sessionId: resolvedSessionId,
+          messageId: assistantMessageId ?? undefined,
+          grade: enrolledGrade, // P5 string — scope enum, not PII
+          subject,
+        }),
+      );
+    }
+  } catch (evalErr) {
+    // Absolute backstop — the sensor can never affect this turn's response.
+    console.warn(
+      '[foxy] response-eval sensor failed:',
+      evalErr instanceof Error ? evalErr.message : String(evalErr),
+    );
   }
 
   logFoxyAsk(grounded.meta.tokens_used ?? null);

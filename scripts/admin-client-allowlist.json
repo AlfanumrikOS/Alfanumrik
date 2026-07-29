@@ -1,6 +1,6 @@
 {
-  "_comment": "XC-3 Phase 0b ledger of every src/app/api/**/route.ts that imports the RLS-bypassing service-role client (@/lib/supabase-admin or a relative path to lib/supabase-admin). This list RATCHETS DOWN ONLY: as Phase 2/3 migrate read routes onto the RLS-scoped supabase-server client, their entries are pruned here in the same PR. A NEW admin-importing route that is absent from this ledger FAILS src/__tests__/api-admin-client-allowlist.test.ts (which re-derives the detected set from source with the same import matcher). Pinned by REG-213 (P8/P9).",
-  "count": 263,
+  "_comment": "XC-3 Phase 0b ledger of every src/app/api/**/route.ts that imports the RLS-bypassing service-role client (@/lib/supabase-admin or a relative path to lib/supabase-admin). This list RATCHETS DOWN ONLY: as Phase 2/3 migrate read routes onto the RLS-scoped supabase-server client, their entries are pruned here in the same PR. A NEW admin-importing route that is absent from this ledger FAILS src/__tests__/api-admin-client-allowlist.test.ts (which re-derives the detected set from source with the same import matcher). 263 -> 264: GenAI Phase 5a outcome-prediction cross-student read (service-role after canAccessStudent). Pinned by REG-213 (P8/P9).",
+  "count": 264,
   "routes": [
     "src/app/api/alfabot/inquiry/route.ts",
     "src/app/api/alfabot/lead/route.ts",
@@ -75,6 +75,7 @@
     "src/app/api/payments/verify/route.ts",
     "src/app/api/payments/webhook/route.ts",
     "src/app/api/practice/history/route.ts",
+    "src/app/api/predict/outcome/route.ts",
     "src/app/api/public/v1/classes/route.ts",
     "src/app/api/public/v1/marketplace/listings/route.ts",
     "src/app/api/public/v1/reports/route.ts",

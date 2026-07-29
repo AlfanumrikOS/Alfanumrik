@@ -54,7 +54,7 @@ export const VERIFIER_TIMEOUT_MS = 15_000;
 export const CACHE_TTL_MS = 5 * 60_000;
 
 export const VALID_CALLERS = [
-  'foxy', 'ncert-solver', 'quiz-generator', 'concept-engine', 'diagnostic',
+  'foxy', 'ncert-solver', 'quiz-generator', 'concept-engine', 'diagnostic', 'lesson', 'content',
 ] as const;
 
 export const REGISTERED_PROMPT_TEMPLATES = [
@@ -70,6 +70,15 @@ export const REGISTERED_PROMPT_TEMPLATES = [
   'quiz_question_generator_v1',
   'quiz_answer_verifier_v1',
   'ncert_solver_v1',
+  // Lesson Generation Agent (GenAI Phase 5b) — structured, NCERT-grounded,
+  // bilingual multi-section lesson notes. First student-facing generative
+  // artifact; consumed via caller='lesson', cache_scope='none'.
+  'lesson_notes_v1',
+  // Content Generation Agent (GenAI Phase 5c) — single NCERT-grounded Mermaid
+  // diagram spec (flowchart/mindmap/timeline). Student-facing generative
+  // artifact; consumed via caller='content', cache_scope='none'. Pure addition
+  // (no PROMPT_REV bump — gen_ctx keys on system_prompt_template).
+  'diagram_spec_v1',
 ] as const;
 
 // ── Response-cache v2 generation-context revisions ───────────────────────────
@@ -110,7 +119,48 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // JSON-output templates (foxy_tutor_v1/teach/exam/doubt, quiz generator,
 // quiz verifier — .txt + inline.ts twins; ncert_solver_v1 is raw-markdown and
 // untouched).
+// NOTE (Lesson Agent, GenAI Phase 5b): adding the 'lesson_notes_v1' template id
+// to REGISTERED_PROMPT_TEMPLATES is a PURE ADDITION — it does NOT change any
+// existing template's TEXT and does not alter pipeline prompt assembly for any
+// existing request, and gen_ctx keys on system_prompt_template so it cannot
+// collide with a cached entry. Per the bump rule above, this does NOT bump
+// PROMPT_REV (a bump would needlessly flush every Foxy cache tier).
 export const PROMPT_REV = 3;
+
+// ── Model fallback ordering (edge mirror of the TS gateway registry) ─────────
+//
+// This constant is the Deno-side mirror of the TS Model Gateway's
+// LEGACY_FALLBACK_ORDER (packages/lib/src/ai/gateway/registry.ts). Deno cannot
+// import from packages/lib directly, so the ordering is duplicated here as the
+// SINGLE source that grounded-answer/claude.ts `resolveModelOrder` reads from.
+//
+// INVARIANT: this MUST equal the TS registry's LEGACY_FALLBACK_ORDER
+// byte-for-byte (same providers, same model ids, same order). A parity test
+// (owned by the testing agent) asserts equality across the Deno/Node boundary
+// so the two can never silently drift.
+//
+// Anthropic runs FIRST for every preference — the Foxy system prompt, JSON
+// output contract, and CBSE pedagogy tree are calibrated for Claude; the OpenAI
+// tiers are availability fallbacks only (RCA-FIX CRITICAL-1, 2026-06-26).
+export const MODEL_FALLBACK_ORDER: Record<
+  'haiku' | 'sonnet' | 'auto',
+  ReadonlyArray<{ provider: 'anthropic' | 'openai'; model: string }>
+> = {
+  haiku: [
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    { provider: 'openai', model: 'gpt-4o-mini' },
+  ],
+  sonnet: [
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    { provider: 'openai', model: 'gpt-4o' },
+  ],
+  auto: [
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+    { provider: 'openai', model: 'gpt-4o-mini' },
+    { provider: 'openai', model: 'gpt-4o' },
+  ],
+};
 // MODEL_ROUTE_REV bump rule: bump whenever model routing changes what model
 // (or generation params) a given model_preference resolves to — e.g. a model
 // id upgrade in claude.ts (HAIKU_MODEL / SONNET_MODEL / GPT_* constants), a

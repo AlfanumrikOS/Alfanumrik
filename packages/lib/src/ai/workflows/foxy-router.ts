@@ -12,6 +12,8 @@ import type { FoxyIntent, IntentClassification, ChatMessage, WorkflowResult } fr
 import { getAIConfig } from '../config';
 import { callClaude } from '../clients/claude';
 import { callReasoningModel } from '../clients/reasoning-cascade';
+import { callModel, GATEWAY_FLAG } from '../gateway';
+import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { TraceLogger, logTrace } from '../tracing/trace-logger';
 import { runExplainWorkflow } from './explain';
 import { runDoubtWorkflow } from './doubt-solve';
@@ -159,15 +161,48 @@ Examples:
 
 Current mode: ${mode}`;
 
-  const response = await callClaude({
-    systemPrompt,
-    messages: [{ role: 'user', content: message }],
-    maxTokens: 128,
-    temperature: 0.1,
-  });
+  // Model Gateway proof consumer (Phase 1): this LLM intent classifier is a
+  // non-student-facing, non-grading path.
+  //   - Flag OFF: byte-identical to before — direct callClaude with the legacy
+  //     Haiku→Sonnet fallback only (no OpenAI tier).
+  //   - Flag ON: routes through the gateway `default` policy, which resolves to
+  //     the grounded-answer `auto` chain (Haiku→Sonnet→gpt-4o-mini→gpt-4o). So
+  //     relative to THIS consumer's prior legacy path, the flag-ON path extends
+  //     the fallback tail: on a double-Claude-tier outage the classifier now
+  //     gains an OpenAI fallback (whereas before it would have thrown after
+  //     Sonnet). Anthropic is still primary; ordering within Claude is unchanged.
+  // Either way the throw-on-failure contract is preserved — classifyIntent()
+  // catches and falls back to the mode default. Does NOT touch grounded Foxy
+  // generation, quiz, XP, or P1–P6.
+  const useGateway = await isFeatureEnabled(GATEWAY_FLAG);
+
+  let content: string;
+  if (useGateway) {
+    const result = await callModel(
+      {
+        systemPrompt,
+        messages: [{ role: 'user', content: message }],
+        maxTokens: 128,
+        temperature: 0.1,
+      },
+      { policy: 'default' },
+    );
+    if (!result.ok) {
+      throw new Error(result.error ?? 'Model gateway classification failed');
+    }
+    content = result.content;
+  } else {
+    const response = await callClaude({
+      systemPrompt,
+      messages: [{ role: 'user', content: message }],
+      maxTokens: 128,
+      temperature: 0.1,
+    });
+    content = response.content;
+  }
 
   // Parse response JSON
-  const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error('No JSON object in classification response');
   }

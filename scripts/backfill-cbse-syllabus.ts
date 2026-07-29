@@ -9,14 +9,23 @@
  * recompute fill in chunk_count / verified_question_count / rag_status
  * afterward.
  *
- * Run: npx tsx scripts/backfill-cbse-syllabus.ts [--dry-run]
+ * Run (from the REPO ROOT — the --tsconfig path is relative to cwd):
+ *   npx tsx --tsconfig tsconfig.scripts.json scripts/backfill-cbse-syllabus.ts [--dry-run]
+ *
+ * The `--tsconfig` flag is REQUIRED, not decorative. This script imports
+ * packages/lib/src/supabase-admin.ts, which itself imports
+ * `@alfanumrik/lib/env`. That path alias is declared in tsconfig, but
+ * packages/lib/package.json exposes only `main: "src/index.ts"` with no
+ * `exports` subpath map — so bare Node/tsx resolution cannot follow it and
+ * the run dies with `Cannot find module '@alfanumrik/lib/env'`. Passing the
+ * scripts tsconfig gives tsx the path mappings and the import resolves.
  *
  * Requires: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars
  * Spec: §11.1 Week 1
  */
 
-import { supabaseAdmin } from '../src/lib/supabase-admin';
-import { logger } from '../src/lib/logger';
+import { supabaseAdmin } from '../packages/lib/src/supabase-admin';
+import { logger } from '../packages/lib/src/logger';
 
 interface BackfillResult {
   planned: number;

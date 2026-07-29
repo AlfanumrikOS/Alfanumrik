@@ -14,13 +14,15 @@
 //     on no_supporting_chunks without treating it as an error.
 //   - Token usage is surfaced for cost tracking in trace rows.
 
+import { MODEL_FALLBACK_ORDER } from './config.ts';
+
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
-const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
-const SONNET_MODEL = 'claude-sonnet-4-20250514';
-const GPT_MINI_MODEL = 'gpt-4o-mini';
-const GPT_FULL_MODEL = 'gpt-4o';
+// Model ids are NOT declared here anymore. The fallback ordering (and the ids
+// within it) is the single Deno-side source of truth in ./config.ts
+// (MODEL_FALLBACK_ORDER), which mirrors the TS gateway registry. Keeping a
+// second copy here would be a drift risk — resolveModelOrder reads the constant.
 
 const INSUFFICIENT_CONTEXT_SENTINEL = '{{INSUFFICIENT_CONTEXT}}';
 
@@ -376,24 +378,13 @@ function resolveModelOrder(pref: 'haiku' | 'sonnet' | 'auto'): ModelTarget[] {
   // GPT-4o-mini/GPT-4o are fallbacks only — they receive the same prompt verbatim
   // which causes format/persona deviations. Anthropic models run first; OpenAI
   // only activates if the Claude call fails (timeout / 5xx / auth).
-  if (pref === 'haiku') {
-    return [
-      { provider: 'anthropic', model: HAIKU_MODEL },
-      { provider: 'openai', model: GPT_MINI_MODEL },
-    ];
-  }
-  if (pref === 'sonnet') {
-    return [
-      { provider: 'anthropic', model: SONNET_MODEL },
-      { provider: 'openai', model: GPT_FULL_MODEL },
-    ];
-  }
-  return [
-    { provider: 'anthropic', model: HAIKU_MODEL },
-    { provider: 'anthropic', model: SONNET_MODEL },
-    { provider: 'openai', model: GPT_MINI_MODEL },
-    { provider: 'openai', model: GPT_FULL_MODEL },
-  ];
+  //
+  // Model Gateway parity (2026-07-24): the ORDERING now comes from the shared
+  // MODEL_FALLBACK_ORDER constant in ./config.ts (the Deno mirror of the TS
+  // gateway registry's LEGACY_FALLBACK_ORDER). The mapping below is unchanged —
+  // it just reads the source of truth instead of inlining the targets, so the
+  // Deno path and the Node gateway can never drift. Behavior is byte-identical.
+  return MODEL_FALLBACK_ORDER[pref].map((t) => ({ provider: t.provider, model: t.model }));
 }
 
 type SingleCallResult =

@@ -99,6 +99,29 @@ export const BLOOM_CONFIG: Record<BloomLevel, {
   },
 };
 
+// ─── Mastery band anchors (single source of truth) ───────────
+//
+// These name the mastery-band anchors used throughout this module. Two kinds:
+//   • MASTERY_BUILDING_MAX (0.4) and MASTERY_SECURE_MIN (0.7) name EXECUTED
+//     inline mastery-band literals (BKT pKnow gates, mastery-display badges) that
+//     already run at the call sites noted per-constant below.
+//   • MASTERY_ZPD_CEILING (0.85) names the DOCUMENTED ZPD sweet-spot ceiling — the
+//     upper bound of the 70–85% success-rate target referenced in calculateZPD's
+//     comment. It is not an executed literal there (calculateZPD caps
+//     targetDifficulty at 0.95); this constant makes the documented ceiling
+//     available as a name.
+// They are exported here so downstream consumers — notably the runtime
+// ResponseEval `difficulty_fit` dimension (packages/lib/src/ai/eval/) — can REUSE
+// the exact bands instead of re-hardcoding 0.4 / 0.7 / 0.85.
+//
+// ADDITIVE ONLY: introducing these named constants does not change any behavior
+// in this file (the existing inline literals are left as-is to keep this module
+// byte-identical). Assessment owns these thresholds; a later DRY pass may point
+// the executed inline sites at these names.
+export const MASTERY_BUILDING_MAX = 0.4;   // developing/building boundary — executed inline literal (see getMasteryDisplayBadge; conceptual error-class floor)
+export const MASTERY_SECURE_MIN = 0.7;     // BKT pKnow "secure/mastered" threshold — executed inline literal (getHighestMasteredBloom, BKT updates)
+export const MASTERY_ZPD_CEILING = 0.85;   // Vygotsky ZPD sweet-spot ceiling — documented 70–85% success-band upper bound referenced in calculateZPD's comment (not an executed literal; calculateZPD caps at 0.95)
+
 export type QuizMode = 'cognitive' | 'board' | 'practice';
 
 export interface SM2Card {

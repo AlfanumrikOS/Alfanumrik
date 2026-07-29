@@ -42,6 +42,12 @@ import {
   FOXY_MATH_FORMAT_FLAGS,
   FOXY_CURRICULUM_GUARD_FLAGS,
   FOXY_RESPONSE_CACHE_L2_FLAGS,
+  MODEL_GATEWAY_FLAGS,
+  UNIFIED_MEMORY_FLAGS,
+  RESPONSE_EVAL_FLAGS,
+  OUTCOME_PREDICTION_FLAGS,
+  LESSON_GENERATION_FLAGS,
+  CONTENT_GENERATION_FLAGS,
 } from './registries/foxy';
 
 /**
@@ -108,6 +114,12 @@ export const FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
   [FOXY_RESPONSE_CACHE_L2_FLAGS.V1]: false, // seeded OFF by 20260705000000_seed_ff_foxy_response_cache_l2.sql
   [FOXY_RESPONSE_CACHE_L2_FLAGS.SHADOW_V1]: false, // seeded OFF by 20260705000000_seed_ff_foxy_response_cache_l2.sql
   [QUIZ_TELEMETRY_FLAGS.V1]: false, // seeded OFF in a follow-up migration (SPEC-1..5)
+  [MODEL_GATEWAY_FLAGS.V1]: false, // GenAI Phase 1; OFF = legacy Anthropic-primary (true no-op). Seed migration owned by architect.
+  [UNIFIED_MEMORY_FLAGS.V1]: false, // GenAI Phase 2; OFF = legacy per-reader memory assembly (true no-op). Seed migration owned by architect.
+  [RESPONSE_EVAL_FLAGS.V1]: false, // GenAI Phase 4; OFF = no runtime eval computed/emitted (true no-op, fire-and-forget when ON). Seed migration owned by architect.
+  [OUTCOME_PREDICTION_FLAGS.V1]: false, // GenAI Phase 5a; OFF = read-only Outcome Prediction endpoint serves no prediction (disabled/404-style, true no-op). Seed migration owned by architect.
+  [LESSON_GENERATION_FLAGS.V1]: false, // GenAI Phase 5b; OFF = student-facing Lesson Generation endpoint serves no generated lesson (disabled/404-style, true no-op). Seed migration owned by architect.
+  [CONTENT_GENERATION_FLAGS.V1]: false, // GenAI Phase 5c; OFF = student-facing Content Generation endpoint (Mermaid diagrams) serves nothing (disabled/404-style, true no-op). Seed migration owned by architect.
   [WHITE_LABEL_FLAGS.TENANT_TYPE_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_MODULE_REGISTRY_V1]: false,
   [WHITE_LABEL_FLAGS.TENANT_CONFIG_V2]: false,

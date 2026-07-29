@@ -31,7 +31,25 @@ export interface RetrievedChunk {
   chapter_number: number;
   chapter_title: string;
   page_number: number | null;
+  /**
+   * ORDERING STATISTIC (RRF / ts_rank / 0.3 sentinel), NOT relevance. This is
+   * what the caller-side floor, MMR, citations, and confidence v1 consume.
+   * Unchanged.
+   */
   similarity: number;
+  /**
+   * SHADOW (2026-07-27): absolute cosine from the RPC. Optional because Deno
+   * test fixtures build this shape by hand; `undefined` and `null` mean the
+   * SAME thing — no relevance evidence. Never treat either as 0.
+   */
+  cosine_similarity?: number | null;
+  /**
+   * SHADOW (2026-07-27): Voyage rerank-2 cross-encoder relevance score, stamped
+   * by the pipeline's own rerank stage (grounded-answer defers reranking, so
+   * the unified module never fills it). `undefined`/`null` = not judged by the
+   * cross-encoder. Never treat either as 0.
+   */
+  rerank_score?: number | null;
   media_url: string | null;
   media_description: string | null;
 }
@@ -102,10 +120,14 @@ export async function retrieveChunks(
     }
   }
 
-  // TS-side similarity floor — preserved from the legacy implementation
-  // because tests stub the RPC and bypass the DB-side `p_min_quality`
-  // filter. Floor failures are NOT scope drops (they're an expected filter,
-  // per the original retrieval.test.ts contract).
+  // TS-side floor over the RRF fused score the RPC returns (STRICT 0.012 /
+  // SOFT 0.005). This is a DIFFERENT scale from the RPC's absolute cosine
+  // floor (`p_min_similarity`, defaulted in _shared/rag/retrieve.ts to the
+  // measured 0.22) — the unified module deliberately does NOT forward this
+  // value to the RPC, because an RRF-scale number there would mean no floor
+  // at all. Preserved here because tests stub the RPC and bypass DB-side
+  // filtering. Floor failures are NOT scope drops (they're an expected
+  // filter, per the original retrieval.test.ts contract).
   const chunks: RetrievedChunk[] = [];
   for (const c of unified.chunks) {
     if (c.similarity < minSimilarity) continue;
@@ -123,6 +145,10 @@ function adaptChunk(c: UnifiedChunk): RetrievedChunk {
     chapter_title: c.chapter_title ?? '',
     page_number: c.page_number ?? null,
     similarity: c.similarity,
+    // Pass-through, NOT coalesced to 0. `?? null` only normalizes a possible
+    // `undefined` (older RPC without the column) to the same "unknown" null.
+    cosine_similarity: c.cosineSimilarity ?? null,
+    rerank_score: c.rerankScore ?? null,
     media_url: c.media_url ?? null,
     media_description: c.media_description ?? null,
   };

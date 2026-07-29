@@ -19,6 +19,19 @@
  *   - `supabase/functions/_shared/grounded-client.ts`  (client TO the service — has no AI calls, but lives alongside shared infra that might use embeddings)
  *   - `supabase/functions/_shared/embeddings.ts`  (Voyage client used by grounded-answer)
  *   - `supabase/functions/_shared/reranking.ts`   (reranker may call upstream)
+ *   - `supabase/functions/_shared/rag/retrieve.ts` (the retrieval engine that
+ *      grounded-answer itself delegates to — grounded-answer/retrieval.ts:26
+ *      imports it. It is INSIDE the choke point, not a bypass of it. Its two
+ *      siblings doing the identical job, _shared/embeddings.ts and
+ *      _shared/reranking.ts, were already allowlisted; this one was simply
+ *      never added.)
+ *   - `supabase/functions/_shared/mol/providers/**` (MOL is a second sanctioned
+ *      choke point, with its own router, classifier, telemetry and
+ *      post-processor. grounded-answer/mol-shadow.ts:84 imports
+ *      `../_shared/mol/index.ts`, so grounded-answer DEPENDS on MOL — MOL
+ *      cannot route through grounded-answer without a dependency cycle. Only
+ *      the provider adapters are blessed; the rest of _shared/mol/ (e.g.
+ *      grader.ts) stays governed by this rule.)
  *   - any file with `// eslint-disable-next-line no-direct-ai-calls` or
  *     block-level `/* eslint-disable no-direct-ai-calls *\/` — ESLint
  *     handles these natively when the rule is registered.
@@ -37,6 +50,15 @@ const ALLOWED_PATH_RE = [
   /[\\/]supabase[\\/]functions[\\/]_shared[\\/]grounded-client\.ts$/,
   /[\\/]supabase[\\/]functions[\\/]_shared[\\/]embeddings\.ts$/,
   /[\\/]supabase[\\/]functions[\\/]_shared[\\/]reranking\.ts$/,
+  // The retrieval engine grounded-answer delegates to (grounded-answer/
+  // retrieval.ts imports `retrieve` from here). It is part of the choke point;
+  // telling it to route through grounded-answer would be circular.
+  /[\\/]supabase[\\/]functions[\\/]_shared[\\/]rag[\\/]retrieve\.ts$/,
+  // MOL provider adapters. MOL is a second sanctioned choke point that
+  // grounded-answer itself depends on (mol-shadow.ts imports _shared/mol/
+  // index.ts), so MOL cannot route through grounded-answer without a cycle.
+  // Scoped to providers/ only — grader.ts and the rest of mol/ stay governed.
+  /[\\/]supabase[\\/]functions[\\/]_shared[\\/]mol[\\/]providers[\\/]/,
   /[\\/]eslint-rules[\\/]/, // the rule file itself and its fixtures
 ];
 

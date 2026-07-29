@@ -52,7 +52,7 @@ import {
   validatePackHeader,
   type PackEntry,
   type PackHeader,
-} from '../src/lib/rag/pack-manifest';
+} from '../packages/lib/src/rag/pack-manifest';
 
 interface ScriptArgs {
   csvPath: string;
@@ -98,7 +98,7 @@ function parseArgs(argv: string[]): ScriptArgs {
  * keep PYQ extracts on one line per row (replace embedded newlines with
  * spaces during curation).
  */
-import { parseCsvLine } from '../src/lib/rag/csv';
+import { parseCsvLine } from '../packages/lib/src/rag/csv';
 
 
 const REQUIRED_COLS = ['subject', 'grade', 'chapter_number', 'board_year', 'chunk_text'];

@@ -84,8 +84,30 @@ export interface RetrieveOptions {
   chapterTitle?: string | null;
   /** Top-N to return after rerank. Default 8. */
   limit?: number;
-  /** RPC-side `p_min_quality` floor. Defaults to 0.5 (matches v2 default). */
+  /**
+   * CALLER-SIDE fused-score floor. NOT sent to the RPC.
+   *
+   * grounded-answer passes RRF-scale values here (STRICT 0.012 / SOFT 0.005)
+   * and applies them itself in `grounded-answer/retrieval.ts` against the RRF
+   * `similarity` the RPC returns. It is deliberately NOT routed to
+   * `p_min_similarity`, which is an ABSOLUTE COSINE floor on a completely
+   * different scale — routing an RRF threshold there would set the cosine
+   * floor to ~0.012, i.e. no floor at all. Use `minCosineSimilarity` to move
+   * the RPC-side floor.
+   */
   minSimilarity?: number;
+  /**
+   * RPC-side ABSOLUTE COSINE floor → `p_min_similarity`.
+   * Defaults to NCERT_MIN_COSINE_SIMILARITY (0.22). See that constant for the
+   * production measurement that fixes the value and its 0.35 hard ceiling.
+   */
+  minCosineSimilarity?: number;
+  /**
+   * RPC-side content-quality gate → `p_quality_score_gate`.
+   * Defaults to NCERT_QUALITY_SCORE_GATE (0.4). No-op until quality scores are
+   * backfilled. NEVER pass a similarity threshold here.
+   */
+  qualityScoreGate?: number;
   /** Run Voyage rerank-2 over an over-fetched candidate set. Default true. */
   rerank?: boolean;
   /** When `rerank: true`, fetch this many candidates pre-rerank. Default = max(30, limit). */
@@ -131,7 +153,40 @@ export interface RetrievalChunk {
   chapter_number: number | null;
   chapter_title: string | null;
   page_number: number | null;
+  /**
+   * ORDERING STATISTIC — not a relevance measure. RRF (k=60) in tier 1,
+   * ts_rank in tier 2, the fixed 0.3 sentinel in tier 3. Consumed by
+   * applyMMR, the caller-side RRF floor, and the rerank candidate ordering.
+   * DO NOT reinterpret as relevance; use `cosineSimilarity` / `rerankScore`.
+   */
   similarity: number;
+  /**
+   * ABSOLUTE cosine relevance, `1 - (embedding <=> query_embedding)`, surfaced
+   * by migration 20260727130000. Output only — the RPC filters and orders on
+   * nothing but `similarity`.
+   *
+   * NULL IS MEANINGFUL, NOT MISSING. It means "no relevance evidence for this
+   * row" and occurs for: FTS-recovered rows in tier 1 whose chunk is
+   * unembedded, every row in tier 2 (FTS-only) and tier 3 (LIKE fallback) when
+   * no query embedding was supplied, and any unembedded chunk. NEVER coerce it
+   * to 0 (the `typeof x === 'number' ? x : 0` pattern used for `similarity`) —
+   * that silently scores an unmeasured chunk as maximally IRRELEVANT rather
+   * than unknown.
+   *
+   * An FTS-recovered tier-1 row can legitimately carry a cosine BELOW the
+   * configured floor: `p_min_similarity` gates only the vector CTE, never the
+   * FTS CTE. That is correct behaviour, not an anomaly. The production floor is
+   * NCERT_MIN_COSINE_SIMILARITY (0.22), NOT the RPC's 0.5 default.
+   */
+  cosineSimilarity: number | null;
+  /**
+   * Voyage rerank-2 cross-encoder `relevance_score` for this chunk, when the
+   * rerank stage ran in THIS module. NULL when rerank was skipped, failed, or
+   * was deferred to the caller (grounded-answer passes `rerank: false` and
+   * stamps its own score in pipeline.ts). NULL = no cross-encoder evidence;
+   * never coerce to 0.
+   */
+  rerankScore: number | null;
   /** Truncated content text for prompt injection. */
   excerpt: string;
   /** Full chunk text (alias of excerpt for now — kept distinct in case of future trimming). */
@@ -249,7 +304,67 @@ const VOYAGE_RERANK_MODEL = 'rerank-2';
 const EMBEDDING_DIMENSIONS = 1024;
 const DEFAULT_TIMEOUT_MS = 12_000;
 const DEFAULT_LIMIT = 8;
-const DEFAULT_MIN_SIMILARITY = 0.5;
+
+// ────────────────────────────────────────────────────────────────────────────
+// RPC relevance/quality parameters — DECOUPLED (2026-07-27).
+//
+// Background: `match_rag_chunks_ncert` exists in production as TWO overloads.
+// `CREATE OR REPLACE` with a changed signature OVERLOADS, it does not replace:
+//   - OLD (baseline, oid 201818): ..., p_min_quality double precision, ...
+//     Body has NO absolute cosine floor — the vector CTE is just
+//     `ORDER BY c.embedding <=> query_embedding LIMIT v_fetch_count`.
+//   - NEW (migration 20260707010000_rca_final_fixes.sql, oid 359405):
+//     ..., p_quality_score_gate double precision DEFAULT 0.4,
+//     p_min_similarity double precision DEFAULT 0.5, ...
+//     Body HAS `AND 1 - (c.embedding <=> query_embedding) >= p_min_similarity`.
+//
+// This module used to send `p_min_quality: minSimilarity`, which (a) bound
+// PostgREST to the OLD overload — so the absolute cosine floor was DEAD CODE —
+// and (b) fed a *similarity* threshold into a *content quality_score* gate.
+// Both parameters are now sent explicitly and separately, which also
+// disambiguates the overload: `p_quality_score_gate` + `p_min_similarity`
+// appear ONLY in the new signature. (PostgREST resolves overloads by argument
+// NAME; a call carrying no distinguishing arg matches both and is ambiguous —
+// so we always send both.)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Absolute cosine relevance floor → RPC `p_min_similarity`.
+ *
+ * MEASURED on the production corpus (chunk-embedding proxy: short 36-token
+ * anchors scored against full chunks):
+ *
+ *   floor | rank-1 survives | rank-10 | rank-20
+ *   ------|-----------------|---------|--------
+ *   0.50  |      90.0%      |  62.5%  |  37.5%   ← the RPC's own DEFAULT: unsafe
+ *   0.35  |      97.5%      |  97.5%  |  97.5%   ← hard ceiling, do not exceed
+ *   0.25  |     100.0%      | 100.0%  |  97.5%
+ *
+ * Within-chapter chunk-pair cosine median is 0.554, so a 0.5 floor rejects
+ * ~35% of genuinely same-chapter content. Cross-subject noise band p95 = 0.346.
+ * Real student queries are median 8 words — SHORTER than the 36-token anchors
+ * used above, so the true recall penalty of a high floor is worse than measured.
+ *
+ * 0.22 sits inside the recommended 0.20–0.25 band: comfortably above the
+ * cross-subject noise band (p95 0.346 is the *noise* ceiling we must stay under
+ * to keep recall, while 0.22 still clears random-pair territory), and well below
+ * the 0.554 within-chapter median so same-chapter content is never cut.
+ * DO NOT raise above 0.35 (hard ceiling) and DO NOT fall back to the RPC's 0.5
+ * default. Any change requires re-running the measurement above.
+ */
+export const NCERT_MIN_COSINE_SIMILARITY = 0.22;
+
+/**
+ * Content-quality gate → RPC `p_quality_score_gate`.
+ *
+ * The SQL predicate is `(c.quality_score IS NULL OR c.quality_score >= gate)`.
+ * Measured on production: 27,778 chunks, 68% have `quality_score IS NULL` and
+ * EVERY populated value is exactly 0.7. So 0.4 is a NO-OP today (NULLs pass,
+ * 0.7 >= 0.4 passes) — it is passed separately and correctly so it starts
+ * working the moment quality scores are backfilled. It must NEVER again be
+ * fed a similarity threshold.
+ */
+export const NCERT_QUALITY_SCORE_GATE = 0.4;
 // Phase 2.B Win 1: 30 → 40. Empirical: rerank quality plateaus around
 // 35-50 candidates for educational text; 40 is the conservative midpoint.
 // Cost is roughly linear in candidate count (Voyage rerank-2 prices per
@@ -327,18 +442,34 @@ async function callVoyageEmbedding(
   }
 }
 
+/**
+ * `rankedScores` is POSITIONALLY ALIGNED with `rankedIndices` and carries
+ * Voyage's cross-encoder `relevance_score`. It used to be parsed and thrown
+ * away. NULL entries mean "no cross-encoder evidence" (identity/fall-through
+ * paths, or a Voyage entry without a numeric score) — never 0.
+ */
+function rerankIdentity(
+  documents: string[],
+  topK: number,
+  sliceToTopK: boolean,
+): { rankedIndices: number[]; rankedScores: Array<number | null>; reranked: boolean } {
+  const all = documents.map((_, i) => i);
+  const rankedIndices = sliceToTopK ? all.slice(0, topK) : all;
+  return { rankedIndices, rankedScores: rankedIndices.map(() => null), reranked: false };
+}
+
 async function callVoyageRerank(
   query: string,
   documents: string[],
   topK: number,
   apiKey: string,
   timeoutMs: number,
-): Promise<{ rankedIndices: number[]; reranked: boolean }> {
+): Promise<{ rankedIndices: number[]; rankedScores: Array<number | null>; reranked: boolean }> {
   if (!apiKey || documents.length === 0) {
-    return { rankedIndices: documents.map((_, i) => i).slice(0, topK), reranked: false };
+    return rerankIdentity(documents, topK, true);
   }
   if (documents.length <= topK) {
-    return { rankedIndices: documents.map((_, i) => i), reranked: false };
+    return rerankIdentity(documents, topK, false);
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -359,21 +490,31 @@ async function callVoyageRerank(
     });
     if (!res.ok) {
       await res.text().catch(() => '');
-      return { rankedIndices: documents.map((_, i) => i).slice(0, topK), reranked: false };
+      return rerankIdentity(documents, topK, true);
     }
     const body = await res.json().catch(() => null) as
       | { data?: Array<{ index: number; relevance_score?: number }> }
       | null;
     const ranked = body?.data;
     if (!Array.isArray(ranked) || ranked.length === 0) {
-      return { rankedIndices: documents.map((_, i) => i).slice(0, topK), reranked: false };
+      return rerankIdentity(documents, topK, true);
     }
+    // Filter FIRST, then project index + score from the SAME surviving entries
+    // so the two arrays cannot drift out of alignment. (The pre-existing
+    // `.map(...).filter(Number.isInteger)` ordering is preserved semantically:
+    // same predicate, same surviving indices, same order.)
+    const kept = ranked.slice(0, topK).filter((r) => Number.isInteger(r.index));
     return {
-      rankedIndices: ranked.slice(0, topK).map((r) => r.index).filter((i) => Number.isInteger(i)),
+      rankedIndices: kept.map((r) => r.index),
+      rankedScores: kept.map((r) =>
+        typeof r.relevance_score === 'number' && Number.isFinite(r.relevance_score)
+          ? r.relevance_score
+          : null,
+      ),
       reranked: true,
     };
   } catch {
-    return { rankedIndices: documents.map((_, i) => i).slice(0, topK), reranked: false };
+    return rerankIdentity(documents, topK, true);
   } finally {
     clearTimeout(timer);
   }
@@ -406,6 +547,14 @@ interface NcertRpcRow {
   page_number?: number | null;
   chapter_number?: number | null;
   source?: string | null;
+  /**
+   * Added to the RPC's RETURNS TABLE (appended LAST) by migration
+   * 20260727130000_rag_ncert_expose_cosine_similarity.sql. Absent when running
+   * against a DB that predates that migration; NULL when the row carries no
+   * cosine evidence. Both cases map to `cosineSimilarity: null` — "unknown",
+   * NOT "irrelevant".
+   */
+  cosine_similarity?: number | null;
   // Defense in depth: if a future RPC extension surfaces these, we use them
   // for scope verification. The current RPC does NOT return them; the RPC's
   // own WHERE clause already enforces grade/subject filtering.
@@ -415,6 +564,13 @@ interface NcertRpcRow {
 
 function mapNcertRow(row: NcertRpcRow): RetrievalChunk {
   const sim = typeof row.similarity === 'number' ? row.similarity : 0;
+  // DELIBERATELY NOT the `? x : 0` coalesce used for `similarity` above.
+  // A missing/NULL cosine means "no relevance evidence"; folding it to 0 would
+  // assert "maximally irrelevant", which is a different and false claim.
+  const cos =
+    typeof row.cosine_similarity === 'number' && Number.isFinite(row.cosine_similarity)
+      ? row.cosine_similarity
+      : null;
   const content = row.content ?? '';
   return {
     chunk_id: row.id,
@@ -423,6 +579,10 @@ function mapNcertRow(row: NcertRpcRow): RetrievalChunk {
     chapter_title: row.chapter_title ?? null,
     page_number: row.page_number ?? null,
     similarity: sim,
+    cosineSimilarity: cos,
+    // Populated only if the rerank stage runs below; null = no cross-encoder
+    // evidence.
+    rerankScore: null,
     excerpt: content.length > 600 ? content.slice(0, 600) : content,
     content,
     media_url: row.media_url ?? null,
@@ -464,7 +624,11 @@ export async function retrieve(opts: RetrieveOptions): Promise<RetrievalResult> 
 
   const startedAt = Date.now();
   const limit = Math.max(1, Math.floor(opts.limit ?? DEFAULT_LIMIT));
-  const minSimilarity = opts.minSimilarity ?? DEFAULT_MIN_SIMILARITY;
+  // NOTE: opts.minSimilarity is intentionally NOT read here — it is an
+  // RRF-scale, caller-side filter (see RetrieveOptions.minSimilarity).
+  const minCosineSimilarity =
+    opts.minCosineSimilarity ?? NCERT_MIN_COSINE_SIMILARITY;
+  const qualityScoreGate = opts.qualityScoreGate ?? NCERT_QUALITY_SCORE_GATE;
   const wantRerank = opts.rerank !== false;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const candidateCount = wantRerank
@@ -520,7 +684,12 @@ export async function retrieve(opts: RetrieveOptions): Promise<RetrievalResult> 
       match_count: candidateCount,
       p_chapter_number: opts.chapterNumber ?? null,
       p_chapter_title: opts.chapterTitle ?? null,
-      p_min_quality: minSimilarity,
+      // Both args are unique to the NEW overload — sending them is what binds
+      // PostgREST to the signature that actually applies the cosine floor.
+      // NEVER send `p_min_quality` here: it silently rebinds to the stale
+      // floor-less overload AND conflates similarity with content quality.
+      p_quality_score_gate: qualityScoreGate,
+      p_min_similarity: minCosineSimilarity,
       query_embedding: embedding,
     });
     if (result?.error) {
@@ -589,6 +758,15 @@ export async function retrieve(opts: RetrieveOptions): Promise<RetrievalResult> 
       Math.min(timeoutMs * 0.4, 8_000),
     );
     if (rr.reranked) {
+      // Shadow instrumentation: stamp each surviving chunk with the
+      // cross-encoder score that promoted it, BEFORE the selection below.
+      // Mutation is safe — these objects were freshly built by mapNcertRow in
+      // this call and are not shared. The selection expression itself is
+      // byte-identical to the pre-instrumentation code.
+      rr.rankedIndices.forEach((idx, pos) => {
+        const c = chunks[idx];
+        if (c) c.rerankScore = rr.rankedScores[pos] ?? null;
+      });
       chunks = rr.rankedIndices.map((i) => chunks[i]).filter(Boolean);
       reranked = true;
     } else {
