@@ -9,7 +9,7 @@ export default function QuizError({ error, reset }: { error: Error; reset: () =>
   // Detect Hindi preference without AuthContext (error boundaries run before context).
   // Mirrors the pattern in src/app/dashboard/error.tsx:14-17.
   const isHi = typeof window !== 'undefined' && (
-    localStorage.getItem('alfanumrik_lang') === 'hi' ||
+    localStorage.getItem('alfanumrik_language') === 'hi' ||
     navigator.language?.startsWith('hi')
   );
 

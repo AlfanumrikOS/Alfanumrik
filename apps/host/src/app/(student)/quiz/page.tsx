@@ -38,7 +38,7 @@ import {
   type FeedbackState, type FeedbackResult,
 } from '@alfanumrik/lib/feedback-engine';
 import {
-  BLOOM_CONFIG,
+  BLOOM_CONFIG, FATIGUE_EASE_OFF_THRESHOLD,
   initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt, classifyError,
   type BloomLevel, type CognitiveLoadState, type ReflectionPrompt, type ErrorType,
 } from '@alfanumrik/lib/cognitive-engine';
@@ -1183,11 +1183,24 @@ export default function QuizPage() {
         // P0 fix: if v2 returned per-question review data, sync the
         // authoritative is_correct back into local responses so QuizResults
         // shows the correct/wrong banner derived from server truth.
+        // F6 fix: `allResponses` (built above at the top of this function) is
+        // a SEPARATE array from the `responses` React state, and it still
+        // holds the provisional `is_correct: false` placeholder used in
+        // server-shuffle (v2) mode. It feeds the exam_simulations write,
+        // question_responses write, and cognitive-metrics write BELOW this
+        // block — so it must be mutated in place with the same server-truth
+        // values, not just the `responses` state. (In legacy/non-v2 mode
+        // `res.questions` is absent so this loop is a no-op and allResponses
+        // keeps its already-correct client-computed values.)
         if (res && Array.isArray((res as { questions?: unknown }).questions)) {
           const reviewByQid = new Map(
             ((res as { questions: Array<{ question_id: string; is_correct: boolean }> }).questions)
               .map(rq => [rq.question_id, rq])
           );
+          for (const r of allResponses) {
+            const review = reviewByQid.get(r.question_id);
+            if (review) r.is_correct = review.is_correct;
+          }
           setResponses(prev => prev.map(r => {
             const review = reviewByQid.get(r.question_id);
             return review ? { ...r, is_correct: review.is_correct } : r;
@@ -1240,7 +1253,11 @@ export default function QuizPage() {
             questions_too_easy: tooEasy,
             questions_too_hard: tooHard,
             zpd_accuracy_rate: inZpd > 0 ? allResponses.filter((r, i) => r.is_correct && questions[i]?.difficulty === 2).length / inZpd : undefined,
-            fatigue_detected: cogLoad.fatigueScore > 0.6,
+            // Retrospective/preparatory telemetry consumer (progress page "Low Energy"
+            // badge, exam-prep energy indicator) — intentionally uses the ease-off tier,
+            // not the pause tier. See FATIGUE_EASE_OFF_THRESHOLD doc comment in
+            // cognitive-engine.ts for why these are deliberately different bars.
+            fatigue_detected: cogLoad.fatigueScore > FATIGUE_EASE_OFF_THRESHOLD,
             difficulty_adjustments: cogLoad.shouldEaseOff || cogLoad.shouldPushHarder ? 1 : 0,
             avg_response_time_seconds: allResponses.length > 0
               ? allResponses.reduce((a, r) => a + r.time_spent, 0) / allResponses.length

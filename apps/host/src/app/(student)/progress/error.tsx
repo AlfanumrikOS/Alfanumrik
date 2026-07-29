@@ -9,7 +9,7 @@ export default function ProgressError({ error, reset }: { error: Error & { diges
   }, [error]);
 
   const isHi = typeof window !== 'undefined' && (
-    localStorage.getItem('alfanumrik_lang') === 'hi' || navigator.language?.startsWith('hi')
+    localStorage.getItem('alfanumrik_language') === 'hi' || navigator.language?.startsWith('hi')
   );
 
   return (

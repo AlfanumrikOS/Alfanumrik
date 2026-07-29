@@ -27,7 +27,7 @@ export default function Error({
 
   // Detect Hindi preference — AuthContext may not be available in error state
   const isHi = typeof window !== 'undefined' && (
-    localStorage.getItem('alfanumrik_lang') === 'hi' ||
+    localStorage.getItem('alfanumrik_language') === 'hi' ||
     navigator.language?.startsWith('hi')
   );
 

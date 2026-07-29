@@ -8,7 +8,7 @@ export default function NotFound() {
 
   useEffect(() => {
     try {
-      setIsHi(localStorage.getItem('alfanumrik_lang') === 'hi');
+      setIsHi(localStorage.getItem('alfanumrik_language') === 'hi');
     } catch { /* ignore */ }
   }, []);
 

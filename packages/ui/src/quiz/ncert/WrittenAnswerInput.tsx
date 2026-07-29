@@ -7,6 +7,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
 
 interface Props {
   questionText: string;
@@ -30,6 +31,15 @@ const CBSE_HINTS: Record<string, string[]> = {
   intext:        ['Direct answer from chapter', '1–2 sentences maximum'],
 };
 
+const CBSE_HINTS_HI: Record<string, string[]> = {
+  short_answer:  ['अवधारणा को नाम दो / परिभाषित करो', 'एक स्पष्ट वाक्य', 'उदाहरण की ज़रूरत नहीं'],
+  medium_answer: ['अवधारणा का परिचय दो', '2–3 मुख्य बिंदुओं के साथ समझाओ', 'एक उदाहरण या डायग्राम संकेत दो'],
+  long_answer:   ['परिचय (1–2 वाक्य)', 'मुख्य बिंदु (4–5, क्रमांकित)', 'लागू हो तो डायग्राम/फ़्लोचार्ट', 'निष्कर्ष'],
+  hots:          ['अवधारणा को स्थिति पर लागू करो', 'अपने तर्क को उचित ठहराओ', 'मान्यताएं बताओ'],
+  numerical:     ['पहले सूत्र लिखो', 'इकाइयों के साथ मान रखो', 'हर गणना चरण दिखाओ'],
+  intext:        ['अध्याय से सीधा उत्तर', 'अधिकतम 1–2 वाक्य'],
+};
+
 const TYPE_CONFIG: Record<string, { label: string; color: string; marksLabel: string }> = {
   short_answer:  { label: 'SA',   color: 'var(--text-teal)',   marksLabel: '1–2 Marks' },
   medium_answer: { label: 'MA',   color: 'var(--text-green)',  marksLabel: '3–4 Marks' },
@@ -44,6 +54,7 @@ export default function WrittenAnswerInput({
   timeEstimate, onSubmit, onSkip,
   questionNumber, totalQuestions, isEvaluating,
 }: Props) {
+  const { isHi } = useAuth();
   const [answer, setAnswer]         = useState('');
   const [timeLeft, setTimeLeft]     = useState(timeEstimate);
   const [showHints, setShowHints]   = useState(false);
@@ -56,7 +67,9 @@ export default function WrittenAnswerInput({
   const charCount = answer.length;
   const isOverLimit = wordLimit > 0 && wordCount > wordLimit * 1.2;
   const tConfig = TYPE_CONFIG[questionType] ?? TYPE_CONFIG.short_answer;
-  const hints = CBSE_HINTS[questionType] ?? CBSE_HINTS.short_answer;
+  const hints = isHi
+    ? (CBSE_HINTS_HI[questionType] ?? CBSE_HINTS_HI.short_answer)
+    : (CBSE_HINTS[questionType] ?? CBSE_HINTS.short_answer);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -156,12 +169,12 @@ export default function WrittenAnswerInput({
         className="flex items-center gap-1.5 text-xs mb-3 transition-opacity"
         style={{ color: 'var(--brand)', opacity: showHints ? 1 : 0.7 }}>
         <span>{showHints ? '▾' : '▸'}</span>
-        CBSE Writing Guide for {tConfig.label}
+        {isHi ? `${tConfig.label} के लिए CBSE लेखन गाइड` : `CBSE Writing Guide for ${tConfig.label}`}
       </button>
       {showHints && (
         <div className="mb-3 p-3 rounded-xl text-xs"
           style={{ background: `${tConfig.color}0A`, border: `1px solid ${tConfig.color}30` }}>
-          <div className="font-semibold mb-1" style={{ color: tConfig.color }}>Key points to include:</div>
+          <div className="font-semibold mb-1" style={{ color: tConfig.color }}>{isHi ? 'शामिल करने योग्य मुख्य बिंदु:' : 'Key points to include:'}</div>
           <ol className="list-decimal list-inside space-y-0.5" style={{ color: 'var(--text-2)' }}>
             {hints.map((h, i) => <li key={i}>{h}</li>)}
           </ol>
@@ -213,16 +226,16 @@ export default function WrittenAnswerInput({
           <div className="flex gap-3 mt-4">
             <button onClick={onSkip} className="px-4 py-3 rounded-xl text-sm font-medium transition-all"
               style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1.5px solid var(--border)' }}>
-              Skip
+              {isHi ? 'छोड़ें' : 'Skip'}
             </button>
             <button
               onClick={() => answer.trim().length > 0 ? setReviewing(true) : handleSubmit()}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
               style={{ background: answer.trim() ? 'var(--btn-primary)' : '#767676' }}
               disabled={isEvaluating}
-              aria-label={answer.trim() ? 'Review your answer before submitting' : 'Submit empty answer'}
+              aria-label={answer.trim() ? (isHi ? 'सबमिट करने से पहले अपना उत्तर देखें' : 'Review your answer before submitting') : (isHi ? 'खाली उत्तर सबमिट करें' : 'Submit empty answer')}
             >
-              {answer.trim() ? 'Review Answer →' : 'Submit Empty'}
+              {answer.trim() ? (isHi ? 'उत्तर देखें →' : 'Review Answer →') : (isHi ? 'खाली सबमिट करें' : 'Submit Empty')}
             </button>
           </div>
         </>
@@ -231,17 +244,17 @@ export default function WrittenAnswerInput({
         <div>
           <div className="p-3 mb-4 rounded-xl text-sm"
             style={{ background: 'var(--surface-1)', border: '1.5px solid var(--border)', color: 'var(--text-1)' }}>
-            <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-3)' }}>YOUR ANSWER</div>
+            <div className="text-xs font-semibold mb-2" style={{ color: 'var(--text-3)' }}>{isHi ? 'आपका उत्तर' : 'YOUR ANSWER'}</div>
             <p className="leading-relaxed whitespace-pre-wrap">{answer}</p>
             <div className="text-xs mt-2" style={{ color: 'var(--text-3)' }}>
-              {wordCount} words · {charCount} characters
+              {isHi ? `${wordCount} शब्द · ${charCount} अक्षर` : `${wordCount} words · ${charCount} characters`}
             </div>
           </div>
           <div className="flex gap-3">
             <button onClick={() => setReviewing(false)}
               className="px-4 py-3 rounded-xl text-sm font-medium transition-all"
               style={{ background: 'var(--surface-2)', color: 'var(--text-2)', border: '1.5px solid var(--border)' }}>
-              ← Edit
+              {isHi ? '← संपादित करें' : '← Edit'}
             </button>
             <button onClick={handleSubmit}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
@@ -249,7 +262,7 @@ export default function WrittenAnswerInput({
               disabled={isEvaluating}
               aria-busy={isEvaluating}
             >
-              {isEvaluating ? 'Evaluating…' : 'Submit for Evaluation →'}
+              {isEvaluating ? (isHi ? 'मूल्यांकन हो रहा है…' : 'Evaluating…') : (isHi ? 'मूल्यांकन के लिए सबमिट करें →' : 'Submit for Evaluation →')}
             </button>
           </div>
         </div>

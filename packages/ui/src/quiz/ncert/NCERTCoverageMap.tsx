@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
+import { useAuth } from '@alfanumrik/lib/AuthContext';
 
 interface ChapterProgress {
   chapter_number: number;
@@ -51,6 +52,7 @@ function masterySymbol(pct: number, attempted: number): string {
 }
 
 export default function NCERTCoverageMap({ studentId, subject, grade, onChapterClick }: Props) {
+  const { isHi } = useAuth();
   const [progress, setProgress]   = useState<ChapterProgress[]>([]);
   const [chapters, setChapters]   = useState<ChapterStat[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -79,7 +81,7 @@ export default function NCERTCoverageMap({ studentId, subject, grade, onChapterC
   if (loading) {
     return (
       <div className="text-center py-8 text-sm" style={{ color: 'var(--text-3)' }}>
-        Loading coverage…
+        {isHi ? 'कवरेज लोड हो रहा है…' : 'Loading coverage…'}
       </div>
     );
   }
@@ -101,14 +103,16 @@ export default function NCERTCoverageMap({ studentId, subject, grade, onChapterC
             {subjectMeta?.icon} {subjectMeta?.name} · Grade {grade}
           </span>
           <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
-            {chaptersStarted}/{chapters.length} chapters started · {totalAttempted} questions attempted
+            {isHi
+              ? `${chapters.length} में से ${chaptersStarted} अध्याय शुरू · ${totalAttempted} सवाल हल किए`
+              : `${chaptersStarted}/${chapters.length} chapters started · ${totalAttempted} questions attempted`}
           </div>
         </div>
         <div className="text-right">
           <div className="text-xl font-bold" style={{ color: overallMastery >= 60 ? '#16A34A' : 'var(--text-1)' }}>
             {overallMastery}%
           </div>
-          <div className="text-xs" style={{ color: 'var(--text-3)' }}>overall mastery</div>
+          <div className="text-xs" style={{ color: 'var(--text-3)' }}>{isHi ? 'कुल महारत' : 'overall mastery'}</div>
         </div>
       </div>
 
@@ -121,7 +125,7 @@ export default function NCERTCoverageMap({ studentId, subject, grade, onChapterC
       {/* Legend — WCAG 1.4.1: symbols alongside colour swatches */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs" style={{ color: 'var(--text-3)' }}>
         {[
-          { label: 'Not started', pct: -1, sym: '–' },
+          { label: isHi ? 'शुरू नहीं हुआ' : 'Not started', pct: -1, sym: '–' },
           { label: '1–39%',       pct: 20, sym: '!' },
           { label: '40–59%',      pct: 50, sym: '◔' },
           { label: '60–79%',      pct: 65, sym: '◑' },
@@ -187,7 +191,7 @@ export default function NCERTCoverageMap({ studentId, subject, grade, onChapterC
 
       {chapters.length === 0 && (
         <div className="text-center py-6 text-sm" style={{ color: 'var(--text-3)' }}>
-          No chapter data available yet.
+          {isHi ? 'अभी तक कोई अध्याय डेटा उपलब्ध नहीं है।' : 'No chapter data available yet.'}
         </div>
       )}
     </div>
