@@ -33,12 +33,39 @@ import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
  * batch at 100 stuck payments so a freak large backlog cannot blow past the
  * cron route timeout. If we ever see ≥100 in a single run, ops logs a
  * critical event and the next run picks up the rest.
+ *
+ * C2 fix (P11 — 2026-07-29): this cron previously had no recency bound and no
+ * awareness of a LATER legitimate cancellation/expiry/downgrade, so it could
+ * resurrect access for a student who had since cancelled or been downgraded —
+ * fighting every other lifecycle cron forever, on every run, for the life of
+ * the payment_history row. Two independent guards were added:
+ *   1. Recency bound — only payments captured in the last RECENCY_WINDOW_MS
+ *      are eligible. Reconciliation exists to catch a captured payment that
+ *      failed to activate WITHIN MINUTES of capture, not to re-litigate
+ *      months-old billing history.
+ *   2. Terminal-state guard — if the student's student_subscriptions row
+ *      reached a terminal status (cancelled/expired/halted/completed) AFTER
+ *      the payment's created_at, the mismatch is not a lost activation, it is
+ *      an intentional later lifecycle change; skip it.
+ *   3. `reconciled_at` marker (migration 20260729120000) — once a payment is
+ *      successfully reconciled it is stamped and permanently excluded from
+ *      future scans, so it can never be resurrected again even within the
+ *      recency window.
  */
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const MAX_RECONCILIATIONS_PER_RUN = 100;
+
+// C2 (P11): only consider payments captured within the last 2 hours. This
+// cron runs every 30 minutes specifically to catch a captured payment whose
+// activation write dropped moments earlier — not to re-scan billing history.
+// A 2h window comfortably covers missed runs / a brief outage while staying
+// far short of "resurrect an old, since-cancelled subscription" territory.
+const RECENCY_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+const TERMINAL_SUBSCRIPTION_STATUSES = new Set(['cancelled', 'expired', 'halted', 'completed']);
 
 interface StuckPayment {
   id: string;
@@ -70,10 +97,16 @@ function verifyCronSecret(request: NextRequest): boolean {
 
 async function findStuckPayments(): Promise<StuckPayment[]> {
   const admin = getSupabaseAdmin();
+  const recencyCutoffIso = new Date(Date.now() - RECENCY_WINDOW_MS).toISOString();
+
+  // C2 (P11): recency bound + exclude rows already stamped `reconciled_at`
+  // (migration 20260729120000) so a payment can never be resurrected twice.
   const { data: capturedPayments, error: phError } = await admin
     .from('payment_history')
     .select('id, student_id, plan_code, billing_cycle, razorpay_payment_id, razorpay_order_id, created_at')
     .eq('status', 'captured')
+    .is('reconciled_at', null)
+    .gte('created_at', recencyCutoffIso)
     .order('created_at', { ascending: false })
     .limit(MAX_RECONCILIATIONS_PER_RUN * 5); // pull a little extra so we don't miss tail
 
@@ -85,13 +118,40 @@ async function findStuckPayments(): Promise<StuckPayment[]> {
     .select('id, subscription_plan')
     .in('id', studentIds);
 
+  // C2 (P11): also pull each student's subscription lifecycle so we can skip
+  // payments that were superseded by a LATER legitimate cancellation/expiry/
+  // downgrade — resurrecting those would actively fight the cancellation cron.
+  const { data: subs } = await admin
+    .from('student_subscriptions')
+    .select('student_id, status, cancelled_at, ended_at')
+    .in('student_id', studentIds);
+
   const studentMap = new Map((students || []).map((s) => [s.id, s]));
+  const subMap = new Map((subs || []).map((s) => [s.student_id, s]));
 
   return capturedPayments.filter((p) => {
     const student = studentMap.get(p.student_id);
     if (!student) return true; // student not found → also stuck (rare, but reconcile handles it)
     const currentPlan = student.subscription_plan;
-    return !currentPlan || currentPlan === 'free' || currentPlan !== p.plan_code;
+    const looksStuck = !currentPlan || currentPlan === 'free' || currentPlan !== p.plan_code;
+    if (!looksStuck) return false;
+
+    // Terminal-state guard: if the student's subscription reached a terminal
+    // status AFTER this payment was captured, the mismatch is an intentional
+    // later lifecycle change (cancel/expire/halt/downgrade), not a lost
+    // activation. Do not resurrect it.
+    const sub = subMap.get(p.student_id);
+    if (sub && TERMINAL_SUBSCRIPTION_STATUSES.has(sub.status)) {
+      const terminalAt = sub.ended_at || sub.cancelled_at;
+      if (terminalAt && new Date(terminalAt).getTime() > new Date(p.created_at).getTime()) {
+        return false;
+      }
+      // No terminal timestamp recorded but status is already terminal — be
+      // conservative and skip rather than fight a lifecycle we can't date.
+      if (!terminalAt) return false;
+    }
+
+    return true;
   }) as StuckPayment[];
 }
 
@@ -121,6 +181,20 @@ async function reconcileOne(payment: StuckPayment): Promise<{ studentId: string;
 
   if (rpcErr) {
     return { studentId: payment.student_id, ok: false, error: `atomic_subscription_activation: ${rpcErr.message}` };
+  }
+
+  // C2 (P11): stamp reconciled_at so this exact payment_history row is never
+  // re-scanned/re-processed again (see migration 20260729120000). Best-effort:
+  // activation already succeeded above, so a failure here must not flip the
+  // outcome to failed — just log it for visibility.
+  const { error: markErr } = await admin
+    .from('payment_history')
+    .update({ reconciled_at: new Date().toISOString() })
+    .eq('id', payment.id);
+  if (markErr) {
+    logger.warn('cron/reconcile-payments: failed to stamp reconciled_at (non-blocking)', {
+      error: markErr.message, paymentId: payment.id,
+    });
   }
 
   // Log ops event

@@ -9,6 +9,10 @@
  *        - rejects without CRON_SECRET (401), no DB scan.
  *        - idempotent: a payment whose student is already on the matching plan
  *          is NOT re-reconciled (no double-credit / no students.update).
+ *        - C2 fix (2026-07-29): findStuckPayments() now also queries
+ *          .is('reconciled_at', null) + .gte('created_at', ...) on
+ *          payment_history and .in('student_id', ...) on student_subscriptions
+ *          (terminal-state guard) — the chain mock below models both.
  *   2. /api/cron/expired-subscriptions (POST)
  *        - CRON_SECRET required (401 without).
  *        - delegates to the check_expired_subscriptions RPC whose WHERE filters
@@ -52,6 +56,10 @@ let _studentsByIds: any = { data: [], error: null };
 let _planIdRow: any = { data: { id: 'plan-1' }, error: null };
 let _purgeDueRows: any = { data: [], error: null };
 let _expiredRpc: any = { data: { marked_past_due: 0, halted: 0, checked_at: '2026-06-11T00:00:00Z' }, error: null };
+// C2 fix (2026-07-29): findStuckPayments()'s terminal-state guard reads each
+// stuck student's student_subscriptions row. Empty by default (no row → no
+// terminal status → the guard is a no-op) so existing tests are unaffected.
+let _subsByStudentId: any = { data: [], error: null };
 
 const updateStudentCalls: unknown[] = [];
 const upsertCalls: unknown[] = [];
@@ -63,11 +71,14 @@ function fromMock(table: string) {
   chain.eq = () => chain;
   chain.in = () => {
     if (table === 'students') return Promise.resolve(_studentsByIds);
+    if (table === 'student_subscriptions') return Promise.resolve(_subsByStudentId);
     if (table === 'account_deletion_log') return chain; // followed by .lte().order().limit()
     return chain;
   };
   chain.gt = () => chain;
+  chain.gte = () => chain; // C2 fix: payment_history recency-window filter
   chain.lte = () => chain;
+  chain.is = () => chain; // C2 fix: payment_history .is('reconciled_at', null)
   chain.order = () => chain;
   chain.limit = () => {
     if (table === 'payment_history') return Promise.resolve(_capturedPayments);
@@ -76,7 +87,12 @@ function fromMock(table: string) {
   };
   chain.maybeSingle = () => Promise.resolve(_planIdRow);
   chain.update = (patch: unknown) => {
-    updateStudentCalls.push(patch);
+    // Scoped to 'students' only — the OLD non-atomic reconcile path this
+    // array exists to prove is GONE wrote directly to students.subscription_plan.
+    // C2 fix (2026-07-29) adds a SEPARATE payment_history.update({reconciled_at})
+    // stamp (see reconcile-payments-terminal-guard.test.ts for direct coverage);
+    // it must not be conflated with the students-table assertion here.
+    if (table === 'students') updateStudentCalls.push(patch);
     return { eq: () => Promise.resolve({ data: null, error: null }) };
   };
   chain.upsert = (row: unknown) => {
@@ -116,6 +132,7 @@ beforeEach(() => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'stub-service-key';
   _capturedPayments = { data: [], error: null };
   _studentsByIds = { data: [], error: null };
+  _subsByStudentId = { data: [], error: null };
   _planIdRow = { data: { id: 'plan-1' }, error: null };
   _purgeDueRows = { data: [], error: null };
   _expiredRpc = { data: { marked_past_due: 0, halted: 0, checked_at: '2026-06-11T00:00:00Z' }, error: null };

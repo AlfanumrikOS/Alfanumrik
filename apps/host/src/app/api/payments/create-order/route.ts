@@ -195,6 +195,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Razorpay order
+    //
+    // SECURITY LOAD-BEARING (C1 / P11, 2026-07-29): notes.plan_code,
+    // notes.billing_cycle, and notes.user_id below are re-fetched from
+    // Razorpay by payments/verify as the AUTHORITATIVE record of what was
+    // purchased and for whom — the client-supplied plan_code/billing_cycle in
+    // the verify request body are ignored. This route has no student_id in
+    // notes (mobile checkout resolves the caller by user_id only); verify
+    // falls back to notes.user_id when notes.student_id is absent. Do not
+    // remove or repurpose these note keys without updating verify/route.ts.
     const authString = Buffer.from(`${razorpayKey}:${razorpaySecret}`).toString('base64');
     const orderRes = await fetch('https://api.razorpay.com/v1/orders', {
       method: 'POST',

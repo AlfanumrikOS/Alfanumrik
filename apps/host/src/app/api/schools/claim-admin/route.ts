@@ -37,13 +37,12 @@ export async function POST(request: NextRequest) {
     request.headers.get('x-real-ip') ||
     'unknown';
 
-  // Anti-abuse: limit token-guessing. Documented intent is 10 attempts / 15 min
-  // / IP. NOTE: in production the shared Upstash limiter in api-rate-limit.ts
-  // applies its OWN fixed 100/min sliding window and ignores these passed
-  // limit/window args — so the effective prod cap is 100/min, not 10/15min. The
-  // in-memory fallback (no Upstash) DOES honour the passed args. Tightening the
-  // shared limiter to respect per-call args is out of Track A scope (backend
-  // review) — this comment records the intent-vs-actual gap for maintainers.
+  // Anti-abuse: limit token-guessing to 10 attempts / 15 min / IP. This limit is
+  // actually enforced in production: api-rate-limit.ts lazily builds and caches
+  // one Upstash Ratelimit instance per distinct (limit, windowMs) pair, so this
+  // call gets its own dedicated 10/15min sliding window rather than sharing a
+  // fixed limiter with other call sites. The in-memory fallback (no Upstash)
+  // honours the same args.
   const rateCheck = await checkApiRateLimit(`claim-admin:${ip}`, 10, 15 * 60 * 1000);
   if (!rateCheck.allowed) {
     return NextResponse.json(

@@ -9,6 +9,17 @@ import { paymentVerifySchema, validateBody } from '@alfanumrik/lib/validation';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { computeGst, gstSubscriptionColumns, supplierStateCode } from '@alfanumrik/lib/gst';
 import { isFeatureEnabled, PAYMENT_FLAGS } from '@alfanumrik/lib/feature-flags';
+import { getRazorpayOrder, getRazorpaySubscription } from '@alfanumrik/lib/razorpay';
+
+/** Strip billing-cycle suffix and map legacy aliases to canonical plan code.
+ *  Keep in sync with the same helper in subscribe/route.ts and webhook/route.ts. */
+function canonicalizePlan(raw: string): string {
+  return raw
+    .replace(/_(monthly|yearly)$/, '')
+    .replace(/^ultimate$/, 'unlimited')
+    .replace(/^basic$/, 'starter')
+    .replace(/^premium$/, 'pro');
+}
 
 /**
  * Fail-CLOSED GST gate (Track A.3 launch-safety).
@@ -85,9 +96,23 @@ export async function POST(request: NextRequest) {
     const {
       razorpay_order_id, razorpay_payment_id, razorpay_signature,
       razorpay_subscription_id,
-      plan_code, billing_cycle, type,
+      // C1 (P11 CRITICAL): these are CLIENT-SUPPLIED and are used ONLY for
+      // pre-fetch logging / the kill-switch context below. They MUST NOT be
+      // used to grant entitlement — the HMAC signature only proves
+      // order_id|payment_id (or subscription_id|payment_id) pairing, not
+      // which plan was actually paid for. The authoritative plan_code /
+      // billing_cycle are re-derived below from Razorpay's own server-set
+      // order/subscription `notes` (see clientPlanCode / clientBillingCycle
+      // usage — renamed defensively so no code path below can accidentally
+      // read the client body as the source of truth).
+      plan_code: clientPlanCode, billing_cycle: clientBillingCycle, type,
       place_of_supply,
     } = validation.data;
+    // Reassigned below to the AUTHORITATIVE value read back from Razorpay's
+    // own notes. Declared here (not const) so the rest of this route can
+    // keep using the familiar `plan_code` / `billing_cycle` names.
+    let plan_code: string = clientPlanCode;
+    let billing_cycle: string = clientBillingCycle;
 
     // Verify Razorpay HMAC signature
     const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
@@ -140,12 +165,13 @@ export async function POST(request: NextRequest) {
 
     if (!killSwitchEnabled) {
       logger.warn('verify: razorpay_payments kill-switch active — returning 503');
-      logOpsEvent({
+      // M5: await so the write is not dropped by an early serverless return.
+      await logOpsEvent({
         category: 'payment',
         source: 'verify/route.ts',
         severity: 'critical',
         message: 'razorpay_payments_kill_switch_active',
-        context: { user_id: user.id, plan_code },
+        context: { user_id: user.id, plan_code: clientPlanCode },
       });
       return new NextResponse(
         JSON.stringify({
@@ -157,18 +183,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Duplicate protection — if already processed, return success
-    const { data: existing } = await admin
-      .from('payment_history')
-      .select('id, status')
-      .eq('razorpay_payment_id', razorpay_payment_id)
-      .limit(1);
-
-    if (existing && existing.length > 0 && existing[0].status === 'captured') {
-      return NextResponse.json({ success: true, plan: plan_code, note: 'already_processed' });
-    }
-
-    // Look up student ID — try auth_user_id first, then check if multiple records exist
+    // Look up student ID — try auth_user_id first, then check if multiple records exist.
+    // Resolved BEFORE the duplicate-protection check below so that check can
+    // enforce payment↔account ownership (C1).
     let studentId: string | undefined;
     const { data: studentRow, error: studentErr } = await admin
       .from('students')
@@ -211,6 +228,135 @@ export async function POST(request: NextRequest) {
         payment_id: razorpay_payment_id,
         status: 'activation_pending',
       }, { status: 202 });
+    }
+
+    // Duplicate protection — if already processed, return success ONLY if the
+    // captured payment belongs to THIS student (C1). Without this check, an
+    // authenticated user who learns another user's genuine
+    // order_id|payment_id|signature tuple could replay it against their own
+    // session and receive a misleading `success:true` response.
+    const { data: existing } = await admin
+      .from('payment_history')
+      .select('id, status, student_id, plan_code')
+      .eq('razorpay_payment_id', razorpay_payment_id)
+      .limit(1);
+
+    if (existing && existing.length > 0 && existing[0].status === 'captured') {
+      if (existing[0].student_id !== studentId) {
+        logger.error('verify: captured payment belongs to a different student — rejecting', {
+          paymentId: razorpay_payment_id, requestingStudentId: studentId, ownerStudentId: existing[0].student_id,
+        });
+        await logOpsEvent({
+          category: 'payment',
+          source: 'verify/route.ts',
+          severity: 'critical',
+          message: 'verify_cross_account_payment_reuse_blocked',
+          subjectType: 'student',
+          subjectId: studentId,
+          context: { payment_id: razorpay_payment_id, owner_student_id: existing[0].student_id },
+        });
+        return NextResponse.json({ error: 'This payment is not associated with your account.' }, { status: 403 });
+      }
+      return NextResponse.json({ success: true, plan: existing[0].plan_code, note: 'already_processed' });
+    }
+
+    // ─── C1 (P11 CRITICAL) — authoritative plan_code/billing_cycle/binding ───
+    //
+    // The HMAC signature verified above only proves that order_id|payment_id
+    // (or subscription_id|payment_id) are a genuine Razorpay-issued pair — it
+    // says NOTHING about which plan was purchased. plan_code/billing_cycle in
+    // the request body are client-supplied and MUST NOT be trusted for
+    // entitlement: a client could pay for `starter` and then re-POST the
+    // genuine signature tuple claiming `plan_code: 'unlimited'`.
+    //
+    // Fix: read back the order/subscription's own `notes` from Razorpay —
+    // these were written ONLY by our server (create-order / subscribe routes)
+    // at creation time, authenticated with our API secret. The client cannot
+    // alter them. This also carries `notes.student_id` (or legacy
+    // `notes.user_id`), which we cross-check against the authenticated
+    // caller so payment A can never be attached to account B.
+    let notesPlanCode: string | undefined;
+    let notesBillingCycle: string | undefined;
+    let notesStudentId: string | undefined;
+    let notesUserId: string | undefined;
+    try {
+      if (type === 'subscription' && razorpay_subscription_id) {
+        const sub = await getRazorpaySubscription(razorpay_subscription_id);
+        notesPlanCode = sub.notes?.plan_code;
+        notesBillingCycle = sub.notes?.billing_cycle;
+        notesStudentId = sub.notes?.student_id;
+        notesUserId = sub.notes?.user_id;
+      } else if (razorpay_order_id) {
+        const order = await getRazorpayOrder(razorpay_order_id);
+        notesPlanCode = order.notes?.plan_code;
+        notesBillingCycle = order.notes?.billing_cycle;
+        notesStudentId = order.notes?.student_id;
+        notesUserId = order.notes?.user_id;
+      }
+    } catch (notesFetchErr) {
+      logger.error('verify: Razorpay order/subscription notes fetch failed', {
+        error: notesFetchErr instanceof Error ? notesFetchErr.message : String(notesFetchErr),
+        razorpayOrderId: razorpay_order_id, razorpaySubscriptionId: razorpay_subscription_id,
+      });
+    }
+
+    if (!notesPlanCode || !notesBillingCycle) {
+      // Cannot establish what was actually purchased from an authoritative
+      // source — do NOT fall back to the client-supplied plan_code/billing_cycle
+      // (that is exactly the C1 hole). Fail closed; the webhook (which reads
+      // the SAME Razorpay-set notes independently) will activate shortly.
+      logger.error('verify: could not resolve authoritative plan_code/billing_cycle from Razorpay notes', {
+        razorpayOrderId: razorpay_order_id, razorpaySubscriptionId: razorpay_subscription_id, type,
+      });
+      await logOpsEvent({
+        category: 'payment',
+        source: 'verify/route.ts',
+        severity: 'critical',
+        message: 'verify_authoritative_notes_missing',
+        subjectType: 'student',
+        subjectId: studentId,
+        context: {
+          payment_id: razorpay_payment_id,
+          razorpay_order_id: razorpay_order_id ?? null,
+          razorpay_subscription_id: razorpay_subscription_id ?? null,
+          type: type ?? null,
+        },
+      });
+      return NextResponse.json({
+        success: false,
+        error: 'Payment received but plan details are being confirmed. Your plan will activate within a few minutes.',
+        payment_id: razorpay_payment_id,
+        status: 'activation_pending',
+      }, { status: 202 });
+    }
+
+    plan_code = canonicalizePlan(notesPlanCode);
+    billing_cycle = notesBillingCycle === 'yearly' ? 'yearly' : 'monthly';
+
+    // Cross-account binding check: the order/subscription must have been
+    // created FOR this authenticated caller. notes.student_id is canonical;
+    // notes.user_id (legacy) is the fallback.
+    const notesBoundToCaller =
+      (notesStudentId && notesStudentId === studentId) ||
+      (!notesStudentId && notesUserId && notesUserId === user.id);
+    if (!notesBoundToCaller) {
+      logger.error('verify: order/subscription notes do not belong to the authenticated caller — rejecting', {
+        studentId, authUserId: user.id, notesStudentId, notesUserId,
+      });
+      await logOpsEvent({
+        category: 'payment',
+        source: 'verify/route.ts',
+        severity: 'critical',
+        message: 'verify_cross_account_binding_mismatch',
+        subjectType: 'student',
+        subjectId: studentId,
+        context: {
+          payment_id: razorpay_payment_id,
+          notes_student_id: notesStudentId ?? null,
+          notes_user_id: notesUserId ?? null,
+        },
+      });
+      return NextResponse.json({ error: 'This payment is not associated with your account.' }, { status: 403 });
     }
 
     // Get amount from subscription_plans (source of truth)
@@ -265,7 +411,8 @@ export async function POST(request: NextRequest) {
       // Instead, rely on the webhook for activation and tell the user to wait.
       logger.error('verify: RECONCILIATION REQUIRED', { paymentId: razorpay_payment_id, authUserId: user.id, planCode: plan_code });
 
-      logOpsEvent({
+      // M5: await so the write is not dropped by an early serverless return.
+      await logOpsEvent({
         category: 'payment',
         source: 'verify/route.ts',
         severity: 'warning',

@@ -263,6 +263,14 @@ export async function POST(request: NextRequest) {
       //    student_id was already resolved above (auth_user_id → email fallback)
       //    and the PAY-8 guard guarantees it is present, so notes.student_id is
       //    always a real student id here.
+      //
+      //    SECURITY LOAD-BEARING (C1 / P11, 2026-07-29): notes.plan_code,
+      //    notes.billing_cycle, and notes.student_id are re-fetched from
+      //    Razorpay by payments/verify as the AUTHORITATIVE source of what
+      //    was actually purchased and for whom — the client-supplied
+      //    plan_code/billing_cycle in the verify request body are ignored.
+      //    Do not remove or repurpose these note keys without updating
+      //    verify/route.ts.
       const subscription = await createRazorpaySubscription({
         razorpayPlanId: plan.razorpay_plan_id_monthly,
         totalBillingCycles: 12,
@@ -336,6 +344,11 @@ export async function POST(request: NextRequest) {
     // after Razorpay signature verification succeeds.
     // Charge the TAX-INCLUSIVE total for the yearly one-time order. If the GST
     // RPC was unavailable, fall back to the bare taxable price (sale not blocked).
+    //
+    // SECURITY LOAD-BEARING (C1 / P11, 2026-07-29): see the identical note on
+    // the monthly-subscription notes above — notes.plan_code/billing_cycle/
+    // student_id are re-fetched by payments/verify as the authoritative
+    // record of this order.
     const yearlyChargeInr = gst ? Number(gst.total_payable) : plan.price_yearly;
     const order = await createRazorpayOrder({
       amountInr: yearlyChargeInr,

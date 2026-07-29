@@ -649,18 +649,49 @@ export async function POST(request: NextRequest) {
 
       // Record payment (idempotent via payment_id).
       if (!existing || existing.length === 0) {
-        await admin.from('payment_history').insert({
+        // H3 (P11): payment_history.amount is documented (and written by
+        // verify/route.ts + subscribe/route.ts) as RUPEES. `payment.amount`
+        // here is Razorpay's raw paisa value — divide by 100 so this writer
+        // matches the rest of the payment lifecycle. GOING-FORWARD FIX ONLY:
+        // do NOT backfill historical rows from this change; rows written
+        // before this fix may already be in paisa and need a separate,
+        // explicitly human-approved backfill audit (see payment_history's
+        // own column comment: "Historical records before 2026-03-28 may
+        // contain paisa values.").
+        const { error: phInsertErr } = await admin.from('payment_history').insert({
           student_id: resolved.student_id,
           razorpay_payment_id: paymentId,
           razorpay_order_id: orderId,
           plan_code: planCode,
           billing_cycle: billingCycle,
           currency: payment.currency || 'INR',
-          amount: payment.amount,
+          amount: Math.round(payment.amount / 100),
           status: 'captured',
           payment_method: 'razorpay',
           notes: { source: 'webhook' },
         });
+        // M2: surface insert failures (never silent) — this is NOT the
+        // expected-duplicate case (that's handled by the `existing` check
+        // above), so any error here is a real, visible failure. We
+        // deliberately do NOT throw: subscription activation below must
+        // still proceed per this route's existing atomicity design (the
+        // payment_history row is a ledger entry, not the entitlement gate —
+        // activate_subscription_locked / atomic_subscription_activation_locked
+        // are the gate).
+        if (phInsertErr && !phInsertErr.message.includes('duplicate')) {
+          logger.error('Webhook: payment_history insert failed (payment.captured)', {
+            error: phInsertErr.message, paymentId, studentId: resolved.student_id,
+          });
+          await logOpsEvent({
+            category: 'payment',
+            source: 'webhook/route.ts',
+            severity: 'error',
+            message: 'payment_history_insert_failed',
+            subjectType: 'student',
+            subjectId: resolved.student_id,
+            context: { event_type: eventType, razorpay_payment_id: paymentId, error: phInsertErr.message },
+          });
+        }
       }
 
       // Activate subscription (idempotent — upserts both tables atomically via RPC).
@@ -852,6 +883,8 @@ export async function POST(request: NextRequest) {
       // CHECK constraint on plan_code IN ('free','starter','pro','unlimited').
       // Architect re-review condition (2026-04-15).
       const planCode = rawPlan ? canonicalizePlan(rawPlan) : 'free';
+      // H3 (P11): store rupees, matching the documented convention (see the
+      // payment.captured branch above). Going-forward fix only.
       const { error: failInsertErr } = await admin.from('payment_history').insert({
         student_id: resolved.student_id,
         razorpay_payment_id: payment.id,
@@ -859,7 +892,7 @@ export async function POST(request: NextRequest) {
         plan_code: planCode,
         billing_cycle: notes.billing_cycle || 'monthly',
         currency: payment.currency || 'INR',
-        amount: payment.amount || 0,
+        amount: Math.round((payment.amount || 0) / 100),
         status: 'failed',
         payment_method: 'razorpay',
         notes: { source: 'webhook', error: payment.error_description },
@@ -1044,18 +1077,37 @@ export async function POST(request: NextRequest) {
             .eq('razorpay_payment_id', paymentEntity.id)
             .limit(1);
           if (!existing || existing.length === 0) {
-            await admin.from('payment_history').insert({
+            // H3 (P11): store rupees, matching the documented convention
+            // (see the payment.captured branch above for the full rationale).
+            // Going-forward fix only — no backfill of historical rows here.
+            const { error: phInsertErr } = await admin.from('payment_history').insert({
               student_id: resolved.student_id,
               razorpay_payment_id: paymentEntity.id,
               razorpay_order_id: paymentEntity.order_id,
               plan_code: planCode,
               billing_cycle: 'monthly',
               currency: paymentEntity.currency || 'INR',
-              amount: paymentEntity.amount,
+              amount: Math.round(paymentEntity.amount / 100),
               status: 'captured',
               payment_method: 'razorpay',
               notes: { source: 'webhook', event: eventType, rz_sub_id: rzSubId },
             });
+            // M2: surface insert failures instead of silently swallowing them.
+            // Non-blocking by design — activation below still proceeds.
+            if (phInsertErr && !phInsertErr.message.includes('duplicate')) {
+              logger.error('Webhook: payment_history insert failed (subscription event)', {
+                error: phInsertErr.message, eventType, paymentId: paymentEntity.id, studentId: resolved.student_id,
+              });
+              await logOpsEvent({
+                category: 'payment',
+                source: 'webhook/route.ts',
+                severity: 'error',
+                message: 'payment_history_insert_failed',
+                subjectType: 'student',
+                subjectId: resolved.student_id,
+                context: { event_type: eventType, razorpay_payment_id: paymentEntity.id, error: phInsertErr.message },
+              });
+            }
           }
         }
 
