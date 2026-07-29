@@ -1422,7 +1422,532 @@ monitoring gate). Master Action Plan Phase 8 adds REG-305 (Monthly-Synthesis
 delivery-failure monitor [8.4] + LLM-as-judge quality sampler [8.6] + both
 super-admin dashboards + the `synthesis_quality_scores` table and delivery
 alert rule).
+
+## GenAI Phase 1 — Model Gateway backward-compat + provider-routing safety (2026-07-24) — REG-308
+
+The provider-agnostic Model Gateway (`packages/lib/src/ai/gateway/**`) consolidates
+the four previously-hardcoded model-call sites onto ONE catalog + ONE routing
+decision. It is purely additive and flag-gated behind `ff_model_gateway_v1`
+(default OFF, seeded OFF by architect). The whole point of Phase 1 is that the
+flag-OFF world is a **byte-identical no-op** vs. today's Anthropic-primary
+behavior — so this catalog entry pins the four ways that guarantee could silently
+break: (a) flag-OFF policy parity, (b) a dormant `configured:false` provider
+leaking into a selection, (c) a config model-name drift, (d) Deno↔TS ordering
+drift. Owner: testing (tests) / ai-engineer (gateway source). Maps to P12.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-308 | `model_gateway_backward_compat_and_provider_routing_p12` | **(a) Flag-OFF default-policy parity (the no-op guarantee):** with `ff_model_gateway_v1` OFF, `callModel` forces ANY requested policy (`cost`/`quality`/…) to `default`, and `default` reproduces the legacy Anthropic-primary chain byte-for-byte (`claude-haiku-4-5-20251001` → `claude-sonnet-4-20250514` → `gpt-4o-mini` → `gpt-4o`); the OFF path still consults the flag, an explicit `default` request never touches the flag system, and flag-ON honours the requested policy (`cost` → `gpt-4o-mini` head). **(b) Router never selects a dormant provider:** across EVERY policy × constraint combination the returned chain contains only `configured:true` models — both Gemini seams stay out even when `cost` would rank the cheaper-but-dormant `gemini-1.5-flash` first; constraints FILTER (`minQualityTier`/`maxInputCostPer1M`/`needsVision`) but never REORDER the `default` chain; an impossible constraint yields `[]` (no fallback to dormant). **(c) config.ts model-name byte-identity:** `getAIConfig().primaryModel.name === 'claude-haiku-4-5-20251001'` and `.fallbackModel.name === 'claude-sonnet-4-20250514'` (frozen literals, now sourced from the registry id constants) with request-shaping params unchanged (1024/2048 tok). **(d) Deno↔TS `MODEL_FALLBACK_ORDER` parity:** the edge mirror `supabase/functions/grounded-answer/config.ts` `MODEL_FALLBACK_ORDER` equals the TS registry `LEGACY_FALLBACK_ORDER` for all three keys (`haiku`/`sonnet`/`auto`) — same providers, models, and order — so the Node gateway and the Deno grounded-answer path can never drift. **Gateway behavior (defense-in-depth):** fallback advances on a transient error (incl. a thrown adapter error normalized to a non-fail-fast advance) and crosses the provider boundary; a 401/403 fail-fast aborts the chain WITHOUT trying later models; all-failed returns a structured `{ ok:false, provider:'none' }` and never throws; per-attempt + per-call telemetry emit metadata-only fields (`modelId`/`provider`/`policy`/tokens/cost/latency/`fallbackCount`/`success`) and never the prompt (P13). **Consumer equivalence:** `classifyIntent`'s LLM branch uses legacy `callClaude` when the flag is OFF and `callModel({policy:'default'})` when ON, with an identical return shape and the same throw-on-failure → mode-default fallback on either path. | `apps/host/src/__tests__/lib/ai/gateway/registry.test.ts` (12), `router.test.ts` (13), `gateway.test.ts` (13), `config-model-name-identity.test.ts` (4), `deno-parity.test.ts` (5), `foxy-router-consumer.test.ts` (5); source under test `packages/lib/src/ai/gateway/**`, `packages/lib/src/ai/config.ts`, `packages/lib/src/ai/workflows/foxy-router.ts`, `supabase/functions/grounded-answer/config.ts` | E |
+
+### Invariants covered by this section (Model Gateway)
+
+- P12 AI safety / provider — the router can NEVER surface a `configured:false`
+  (dormant) provider under any policy or constraint; a live-path model/provider
+  change requires an explicit, user-approved catalog edit, and the frozen config
+  model-name literals + the Deno↔TS ordering parity make any such drift fail a
+  test loudly instead of silently repointing a live path.
+- Additive-no-op guarantee — flag-OFF forces `default`, and `default` is the
+  legacy Anthropic-primary chain byte-for-byte, so shipping the gateway changes
+  zero behavior until an operator deliberately flips `ff_model_gateway_v1`.
+- P13 data privacy — gateway telemetry is metadata-only (model id, provider,
+  policy, token counts, cost estimate, latency, fallback count, success); it
+  never carries the system prompt or messages.
+
+### Catalog total (Model Gateway)
+
+GenAI Phase 1 adds REG-308 (Model Gateway backward-compat + provider-routing
+safety). REG-306..REG-307 were the prior additions (Master Action Plan Phase
+2.3–2.5 + 3.10); REG-308 is the next free id after REG-307.
 **Total catalog: 305 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## GenAI Phase 2 — Unified Student Memory read-API + DPDP erasure suppression (2026-07-24) — REG-309
+
+The Unified Student Memory read-API (`getStudentMemory` in
+`apps/host/src/lib/memory/student-memory.ts`, plus the two app-independent leaves
+`packages/lib/src/memory/erasure-guard.ts` + `preferences.ts`) WRAPS the three
+existing Foxy-family learner-state readers (cognitive context, digital twin,
+~30d long-memory) into one typed `StudentMemory` — it invents NO new mastery
+math and NO new thresholds (spec §7). It is purely additive and flag-gated behind
+`ff_unified_memory_v1` (default OFF). The whole point of Phase 2 is that the
+flag-OFF world at `/api/foxy` is **byte-identical** to today (the route aliases
+its existing per-slice sub-contexts when OFF; when ON it injects those SAME
+already-per-user-gated contexts into `getStudentMemory`), so this catalog entry
+pins the four ways that guarantee could silently break, PLUS the one genuinely
+new behavior: a DPDP erasure-pending guard that suppresses a mid-erasure
+student's history from any AI prompt. This is a **WHAT vs HOW read-only
+boundary** — the memory model READS learner state (WHAT is mastered) and advisory
+preferences (HOW to explain); it WRITES nothing (no mastery, XP, gaps, review
+schedules — spec §6). Owner: testing (tests) / ai-engineer + architect (memory
+source). Maps to P13.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-309 | `unified_student_memory_erasure_suppression_and_flag_off_identity_p13` | **(a) DPDP erasure suppression — FAIL-CLOSED (the one new behavior):** `isErasurePending` queries `public.data_erasure_requests` filtered by `student_id` and `status IN ('pending','purging')` on the SERVICE-ROLE admin client (an RLS-scoped read would fail OPEN — the table has no student SELECT policy); a `pending` OR `purging` row trips → `true`; the terminal statuses `cancelled`/`completed`/`failed` never satisfy the filter → zero rows → `false`; and ANY query error, thrown client, or rejected promise ALSO returns `true` (fail-closed — a privacy guard must never fail open). `ERASURE_IN_FLIGHT_STATUSES === ['pending','purging']`. **(b) getStudentMemory short-circuit:** when the erasure guard returns `true` (or the injected check itself throws), the result is fully EMPTY (`isEmpty:true`, `cognitive===EMPTY_COGNITIVE_CONTEXT`, `twin===null`, `longMemory===EMPTY_LONG_MEMORY`, `preferences===EMPTY_PREFERENCES`) AND all four sub-readers are called ZERO times — the learner-state tables are never even queried for a mid-erasure student. When the guard returns `false` the four sub-readers ARE each called once. **(c) Flag-OFF byte-identity basis (passthrough):** for a non-erased student the composed `StudentMemory` embeds the EXACT sub-context objects by REFERENCE (`result.cognitive===fakeCognitive`, `.twin===fakeTwin`, `.longMemory===fakeLong`, `.preferences===fakePrefs`) — no clone, no re-derive — which is the invariant that makes flag-ON == flag-OFF at the route; the cognitive misconception labels are threaded into the long-memory reader in the route's existing order. **(d) Fail-soft composition (never throws):** a rejecting sub-reader degrades ONLY its own slice to the canonical empty value (cognitive→`EMPTY_COGNITIVE_CONTEXT`, twin→`null`, long→`EMPTY_LONG_MEMORY`, prefs→`EMPTY_PREFERENCES`) while every other slice still populates; even all-four-throwing returns empty memory rather than rejecting into the caller. **(e) Renderer parity + PII-clean (P13):** `renderStudentMemoryPromptSection(empty)===''`; for populated memory the output EQUALS the join of the three EXISTING per-slice renderers (`buildCognitivePromptSection` + `renderTwinPromptSection` + `buildLongMemoryPromptSection`) so it is identical to today's per-reader assembly; the rendered block contains no email, no 10-digit phone, no raw UUID, and never the raw `studentId`. **(f) Preferences slice:** `loadStudentPreferences` maps `learning_style`/`preferred_explanation_depth` from `student_learning_profiles`, and any missing row / null data / query error / thrown client → `EMPTY_PREFERENCES` (never invents a value). | `apps/host/src/__tests__/lib/memory/erasure-guard.test.ts` (9), `preferences.test.ts` (6), `student-memory.test.ts` (16); source under test `apps/host/src/lib/memory/student-memory.ts`, `packages/lib/src/memory/erasure-guard.ts`, `packages/lib/src/memory/preferences.ts` | E |
+
+### Invariants covered by this section (Unified Student Memory)
+
+- P13 data privacy — the DPDP erasure guard suppresses a mid-erasure student's
+  learner-state from any AI prompt (rows still physically exist during the
+  two-stage cron cascade), runs on the service-role client so it cannot fail
+  open, and is FAIL-CLOSED on any error. The rendered prompt block is PII-clean
+  by construction (content-only labels + counts; no email/phone/UUID/studentId).
+- WHAT/HOW read-only boundary — the memory model READS learner state (WHAT) and
+  advisory preferences (HOW to explain); it WRITES nothing and derives no new
+  mastery math or thresholds (spec §6/§7).
+- Additive-no-op guarantee — flag-OFF the route aliases its existing sub-contexts
+  (byte-identical); flag-ON injects those SAME reference-identical contexts into
+  `getStudentMemory`, so shipping Phase 2 changes zero prompt bytes for a
+  non-erased student until an operator flips `ff_unified_memory_v1`.
+- Fail-soft composition — a single sub-read failure degrades only its slice; the
+  orchestrator never throws into the Foxy request path.
+
+> **Suppression boundary — known residual gap (2026-07-24).** The DPDP
+> erasure suppression in `getStudentMemory` covers ONLY the three wired slices
+> (cognitive context + digital twin + ~30d long-memory, plus the misconception
+> labels threaded through them) and the advisory preferences slice. It does
+> **not** cover `teachingDirectorSection` (the Foxy teaching-director prompt
+> path), which assembles learner state OUTSIDE `getStudentMemory` and is
+> therefore NOT erasure-suppressed. Consequence: `ff_unified_memory_v1` MUST NOT
+> be enabled in production alongside `ff_foxy_teaching_director_v1` until the
+> teaching-director path is unified behind the same erasure guard — otherwise a
+> mid-erasure student's history could still reach an AI prompt via the
+> unsuppressed teaching-director path. This keeps the catalog honest about the
+> current suppression boundary; closing the gap is a tracked follow-up.
+
+### Catalog total (Unified Student Memory)
+
+GenAI Phase 2 adds REG-309 (Unified Student Memory read-API — DPDP erasure
+suppression + flag-OFF byte-identity + fail-soft composition + PII-clean render).
+REG-308 was the prior addition (GenAI Phase 1 Model Gateway); REG-309 is the next
+free id after REG-308.
+
+---
+
+## GenAI Phase 3 — Agent Registry + WHAT/HOW boundary (2026-07-24) — REG-310
+
+The Agent Registry (`packages/lib/src/agents/registry.ts`, imported via
+`@alfanumrik/lib/agents/registry`) is PURE METADATA + one reusable pure detector.
+It is ADDITIVE and INERT at runtime: NO feature flag, NO migration, NO
+orchestrator activation, and it changes NO agent's behavior (spec §3). It encodes
+the platform's central learner-state invariant per-agent — **the adaptive engine
+alone decides WHAT the student learns; the 7 GenAI agents decide only HOW, and
+MAY NOT write mastery/progression.** The `decides: 'HOW'` and
+`mayWriteMastery: false` fields are LITERAL types, so a WHAT-deciding or
+mastery-writing agent is unrepresentable at compile time; this catalog entry
+re-asserts the contract at runtime (catching any `as`-cast escape) and, most
+importantly, adds **the teeth**: a static proof that NO live agent surface
+directly writes any of the 9 forbidden mastery tables. Mastery moves onto those
+tables ONLY through the concept-check / BKT projector path
+(`learner.concept_check_answered` → `concept-mastery-projector`) + the
+`mastery-state-writer` — no agent is on that allowlist. Owner: testing (tests) /
+ai-engineer + architect (registry source). Maps to the core adaptive-decides-WHAT
+learner-state boundary; P1/P2 scoring-integrity-adjacent (grading stays in the
+deterministic `submitQuizResults()` → `atomic_quiz_profile_update()` path — the
+Assessment agent generates question *content* only, never grades or persists
+mastery).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-310 | `agent_registry_what_how_boundary_no_live_mastery_write` | **(a) 7-agent stable set:** `AGENT_REGISTRY` has EXACTLY 7 agents whose ids equal the immutable set `['tutor','assessment','teacher_copilot','parent_intelligence','lesson','outcome_prediction','content_generation']` (`listAgents()` length 7). **(b) HOW-only + no mastery write:** EVERY agent has `decides === 'HOW'` AND `mayWriteMastery === false` (runtime re-assertion of the literal types). **(c) Identity integrity:** all ids unique AND each descriptor's `id` equals its record key AND `getAgent(id)` round-trips to the same object. **(d) Entry-point reality:** every LIVE agent (`tutor`→`apps/host/src/app/api/foxy/route.ts`, `assessment`→`supabase/functions/quiz-generator/index.ts`, `teacher_copilot`→`supabase/functions/teacher-dashboard/index.ts`, `parent_intelligence`→`supabase/functions/parent-report-generator/index.ts`) has a NON-null `entryPoint` that is a real FILE on disk (resolved with a cwd-resilient repo-root resolver — vitest runs from `apps/host`, but entryPoints reach repo-root `supabase/functions/**` OUTSIDE it); every PLANNED agent (`lesson`/`outcome_prediction`/`content_generation`) has `entryPoint === null`; the live set is exactly those 4. **(e) THE TEETH — no live mastery write:** for every LIVE agent, its `entryPoint` source AND (when present) every file under its co-located `_lib/` dir (Foxy's `apps/host/src/app/api/foxy/_lib/`) is scanned with `findMasteryWrites`, and the result MUST be empty — no live agent surface directly writes any of the 9 forbidden mastery tables (`concept_mastery`, `learner_mastery`, `cme_concept_state`, `student_skill_state`, `knowledge_gaps`, `cme_error_log`, `bloom_progression`, `adaptive_mastery`, `student_learning_profiles`); reads are fine; a regression fails with the offending agent+table+file. **(f) Flag hygiene:** every non-null `gatingFlag` exists in `FLAG_DEFAULTS`, and NO agent gates on `ff_orchestrator_v1` (the orchestrator is not an agent and stays dormant). **Detector unit (`findMasteryWrites`):** positive — flags `.insert`/`.update`/`.upsert`/`.delete` on forbidden tables, whitespace/newline-tolerant, quote-agnostic, dedupes + sorts multiple tables; negative — does NOT flag `.select` reads, non-forbidden-table writes, substring look-alikes (`concept_mastery_audit`), or forbidden names appearing only in comments/string-literals. | `apps/host/src/__tests__/agents/agent-registry-conformance.test.ts` (8), `find-mastery-writes.test.ts` (16); source under test `packages/lib/src/agents/registry.ts` | E |
+
+### Invariants covered by this section (Agent Registry WHAT/HOW boundary)
+
+- Adaptive-decides-WHAT learner-state boundary — the 7-agent registry is HOW-only
+  (`decides: 'HOW'`, `mayWriteMastery: false`) and, provably, NO live agent
+  surface writes any of the 9 mastery/progression tables. The adaptive engine
+  alone decides WHAT; mastery moves only through the concept-check/BKT projector
+  path.
+- P1 Score accuracy / P2 XP economy (adjacency) — grading + XP remain in the
+  deterministic `submitQuizResults()` → `atomic_quiz_profile_update()` path; the
+  Assessment agent produces question *content* only and never grades or persists
+  mastery, so the registry cannot become a back-door to the scoring formula.
+- Additive-inert guarantee — the registry adds no flag, migration, or runtime
+  activation; invariant (f) pins that no descriptor references a phantom flag or
+  the dormant `ff_orchestrator_v1`.
+
+### Catalog total (Agent Registry)
+
+GenAI Phase 3 adds REG-310 (Agent Registry + WHAT/HOW boundary — 7-agent HOW-only
+registry + the static no-live-mastery-write proof). REG-309 was the prior
+addition (GenAI Phase 2 Unified Student Memory); REG-310 is the next free id after
+REG-309.
+**Total catalog: 310 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## GenAI Phase 4 — Runtime `ResponseEval` observability sensor (2026-07-24) — REG-311
+
+The runtime `ResponseEval` sensor (`packages/lib/src/ai/eval/`, imported via
+`@alfanumrik/lib/ai/eval`) scores every Foxy response across 9 dimensions on a
+common `[0,1]` health scale (higher = better) and emits a PII-free record to
+`ops_events`. It is ADDITIVE, flag-gated `ff_response_eval_v1` (default OFF), and
+**OBSERVABILITY-ONLY**: it NEVER blocks, delays, refunds, retries, or alters a
+response — `flagged` is a dashboard signal, not an enforcement action
+(enforcement stays in the pre-existing live `screenStudentFacingText` abstain
+path). `scoreResponse` is a PURE composer (no I/O, no clock, no LLM call, no
+throw on well-formed input) over signals the route already holds at its grounded
+terminal — no new LLM call / retrieval / DB read is introduced. Two dimensions
+that need a judge (`accuracy`, `learning_effectiveness`) are DEFERRED
+(`available:false`, `score:null`, `source:'deferred_llm_judge'`) and populated
+offline by the nightly Sonnet judge. Emission is fire-and-forget via `logOpsEvent`
+(`severity:'info'`) and NEVER throws into the response path. With the flag OFF the
+builder is not invoked at all → the response path is byte-identical. Owner:
+testing (tests) / ai-engineer + ops (sensor source) / assessment (dimension
+semantics, spec §8). Maps to P12 (AI-safety observability — read-only, additive)
+and P13 (no-PII — codes/ids/enums/numbers only). No change to P1–P6/P7–P11/P14–P15.
+Spec: `docs/superpowers/specs/2026-07-24-runtime-response-eval-design.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-311 | `runtime_response_eval_9dim_sensor_observability_only` | **(a) Per-dimension normalization (all 9 dims, incl. boundaries):** `curriculum_alignment` `inScope?1:0` with `code=reason\|'in_scope'` and `raw:null`; `hallucination_risk` `raw=confidence`, health = `confidence` when grounded+citations else capped at `UNGROUNDED_CONFIDENCE_CAP` (0.6), codes `grounded/no_citations/ungrounded`, null confidence → null score; `age_appropriateness` 1.0 clean / 0.5 advisory (`legacy_validator_flag`, grade-range soft-fail) / 0.0 hard-fail (`blocklist`/`screen_error`); `toxicity` binary 0 on `blocklist`/`screen_error` else 1 (ignores the age-only `legacy_validator_flag`); `difficulty_fit` mastery bands with boundaries at EXACTLY 0.4/0.7/0.85 → 1.0 in-ZPD, 0.5 else, `raw=mastery`, null→unavailable; `latency` 1.0 ≤800ms (`LATENCY_HEALTHY_MS`), linear to 0.0 at 8000ms (`LATENCY_DEGRADED_CEILING_MS`), boundary 8000 = 0 health but NO flag; `cost` 1.0 ≤budget (≈$0.0492 derived from registry Haiku pricing), linear to 0.0 at ceiling ($0.25), boundary at ceiling = 0 health but NO flag; `accuracy` + `learning_effectiveness` ALWAYS `available:false`/`score:null`/`raw:null`/`source:'deferred_llm_judge'` regardless of signals. Constants bind to the live pipeline (`HALLUCINATION_CONFIDENCE_FLOOR`=0.75, `UNGROUNDED_CONFIDENCE_CAP`=0.6 from grounding-config; `LATENCY_HEALTHY_MS`=800 from gateway registry). **(b) The 6 flag conditions (observability only):** each of `toxicity_unsafe`/`age_inappropriate`/`curriculum_out_of_scope`/`hallucination_risk_high` (confidence < floor AND `!groundedFromChunks`; boundary EXACTLY at 0.75 and grounded-below-floor do NOT fire)/`latency_over_ceiling` (raw>8000, strict)/`cost_over_ceiling` (raw>0.25, strict) fires ONLY under its exact condition; a clean response → `flagged:false, flagReasons:[]`; `difficulty_fit` at its poorest bands (0.1/0.99) and the 2 deferred dims NEVER contribute a flag; multiple simultaneous flags accumulate sorted + deduped. **(c) PII-clean fire-and-forget emission:** `logResponseEval` calls the injected `logOpsEvent` EXACTLY once with `category:'ai'`/`source:'response-eval'`/`severity:'info'`/`message:'response_eval'`/`subjectType:'foxy_message'`; the emitted `context` carries the 9 dim scores/raws/codes + `flagged`/`flag_reasons` + correlation UUIDs + `grade`/`subject` scope enums ONLY — NO PII-shaped key (`/email\|phone\|name\|token/i`) and NO free-text string leaf (every string leaf whitespace-free ≤64 chars, so no response/message prose can ride along). **(d) Never-throw:** a synchronously-THROWING injected `logOpsEvent` still resolves `logResponseEval`/`evaluateAndEmit` cleanly (no throw into the response path); `scoreResponse` never throws on well-formed OR out-of-range-but-finite input. **(e) Flag-OFF byte-identity:** the route invokes the sensor only behind `isFeatureEnabled('ff_response_eval_v1')` (default OFF); the existing Foxy route characterization + grade-spoof-hard-block suites (42 tests) exercise the flag-OFF response path unchanged and are re-run green alongside these tests. | `apps/host/src/__tests__/lib/ai/eval/response-eval.test.ts` (51), `emit.test.ts` (6); flag-OFF byte-identity via `apps/host/src/__tests__/api/foxy/route-characterization.test.ts` + `grade-spoof-hard-block.test.ts` (42); source under test `packages/lib/src/ai/eval/response-eval.ts` + `emit.ts` | E |
+
+### Invariants covered by this section (runtime ResponseEval sensor)
+
+- P12 (AI-safety observability) — the sensor is a read-only measurement of the
+  9 safety/quality/cost dimensions taken at the grounded terminal; it records
+  what happened (toxicity/age/scope/hallucination flags) but NEVER blocks or
+  alters the response. Enforcement remains the pre-existing live
+  `screenStudentFacingText` abstain path — the sensor only records that it fired.
+- P13 (no-PII) — the emitted `ops_events` context is codes/ids/enums/numbers
+  ONLY (dimension scores/raws/codes + flag reasons + correlation UUIDs + grade/
+  subject scope enums); NO response/prompt text, chunk_text, or PII-shaped key,
+  backstopped by `logOpsEvent`'s `redactContext`.
+- Additive / default-OFF / byte-identity — `ff_response_eval_v1` OFF means the
+  builder is not invoked at all, so the response path is byte-identical (proven
+  by the re-run 42-test flag-OFF route suites). The 2 deferred dims keep the
+  runtime sensor from making any synchronous judge call.
+
+### Catalog total (runtime ResponseEval)
+
+GenAI Phase 4 adds REG-311 (runtime `ResponseEval` observability sensor — 9-dim
+normalization + 6 flag conditions + PII-clean fire-and-forget emission +
+never-throw + flag-OFF byte-identity + 2 deferred dims). REG-310 was the prior
+addition (GenAI Phase 3 Agent Registry); REG-311 is the next free id after
+REG-310.
+**Total catalog: 311 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## GenAI Phase 5a — read-only Outcome Prediction Agent (2026-07-24) — REG-312
+
+The Outcome Prediction Agent is the platform's first forward-looking learner
+projection: a PURE composer (`packages/lib/src/predict/outcome-prediction.ts`,
+`composeOutcomePrediction`, assessment-owned) behind a read-only GET route
+(`apps/host/src/app/api/predict/outcome/route.ts`, backend-owned), additive and
+flag-gated `ff_outcome_prediction_v1` (default OFF). It COMPOSES the platform's
+EXISTING predictors into one unified, typed `OutcomePrediction` — it invents NO
+new prediction math, NO new confidence formula, and **NO pass-mark constant**:
+"pass" is expressed only via the EXISTING CBSE bands, with the D→C1 boundary
+DERIVED from `calculateBoardExamScore`'s grade oracle (never a hardcoded 50). It
+NEVER recomputes the board score — precomputed `board_score_predictions` /
+`cme_exam_readiness` rows are read verbatim — and it registers as a **LIVE** agent
+that provably writes NO mastery (registry invariant e). The route is the sanctioned
+Pulse-precedent read pattern: RLS-scoped self reads, `canAccessStudent`-gated
+service-role cross-student reads, no payload on any deny. Owner: testing (tests) /
+assessment (composer) + backend (route). Maps to P8 (IDOR — `canAccessStudent` is
+the single cross-student data boundary) + P13 (no PII on deny; metadata-only
+audit), the WHAT/HOW read-only boundary (a HOW-only agent that writes nothing —
+not mastery, not the board rows it reads), and P1/P2-adjacent (prediction
+composed from, but never a back-door into, the deterministic scoring/XP path).
+Spec: `docs/superpowers/specs/2026-07-24-outcome-prediction-agent-design.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-312 | `outcome_prediction_readonly_4tier_compose_and_idor_safe_read` | **(a) 4-tier ladder selection:** tier-1 `board_score_predictions` → `source:'board_score_predictions'`, range low/mid/high + `confidenceBand` read verbatim from the row and `confidence = coverage_pct/100` (NOT a synthesized formula); tier-2 memory-derived `chapters` (no board row) → `source:'pure_predict_exam_score'` with `midMarks`/`confidence` EQUAL to a real `predictExamScore(chapters, totalMarks)` call (delegation, not re-implementation); tier-2′ only `cme_exam_readiness` → `source:'cme_exam_readiness'`, `predicted_marks` read as the mid, `confidence = overall_score/100`; tier-3 nothing usable → `source:'insufficient_data'`, `sufficientData:false`, `boardScoreRange:null`, `confidence.overall:0`, `passLikelihood.band:'unknown'`/`likelihood:null`. Ladder PRECEDENCE board > chapters > cme (all present → board; board removed → chapters); a non-finite `predicted_pct` skips tier-1 and falls through. **(b) No pass-mark constant — derived boundary:** `passLikelihood.basis` reports the SAME D→C1 boundary independently computed from `calculateBoardExamScore` (the smallest whole-% the oracle grades NOT 'D'), and that boundary really is the D-seam (`grade(boundary)!=='D'` AND `grade(boundary-1)==='D'`); likelihood/band move MONOTONICALLY across positions — well above → `likely`/1, straddling → `borderline`/(0,1), entirely below → `at_risk`/0 (band rank + likelihood both non-decreasing). **(c) Deterministic composition (no LLM):** `weakConcepts` includes weak topics STRICTLY below `PULSE_THRESHOLDS.at_risk_mastery` (0.4) and excludes a topic AT exactly 0.4 (reused verbatim, strict `<`), collects knowledge-gaps + cme/board weak chapters, and sorts weakest-first (known masteries ascending, unknown-mastery gaps last); `interventionRecommendations` emits one rec per triggered branch (`remediate_prerequisite`/`review_regression`/`revise_chapter`/`concentrate_subject`/`resume_practice`) with stable ascending ordinal `priority` (root-cause remediate ranks ahead of resume); `rationale` is an array of structured `{code, detail}` string drivers (`source` always present, plus `weak_prerequisites`/`board_coverage`/`learning_velocity` when their inputs exist) — never free-form text; `atRiskSignals.anyAtRisk` mirrors the pulse verdicts (loud→true, quiet→false, absent→false+null); P5 grade STRING + subject + learningVelocity pass through verbatim. **(d) Purity:** identical inputs → deeply-equal output; NEVER throws on minimal/empty/malformed inputs (Infinity/NaN/negative/null); `confidence.overall` and `likelihood` always stay within `[0,1]`. **(e) Route flag gate:** flag OFF (default) → 404-style `{success:false}` BEFORE any auth/DB/memory work (`authorizeRequest`/`canAccessStudent`/`getSupabaseAdmin`/`createSupabaseServerClient`/`getStudentMemory` all uncalled) — a true no-op, no prediction shape leaks. **(f) Self path (P8):** `studentId` omitted OR `=== own` → reads via the RLS-scoped `createSupabaseServerClient` and returns `{success, data:{schemaVersion:1, ...prediction}}`; `canAccessStudent` and the service-role client are NEVER called. **(g) Cross-student IDOR boundary (P8/P13):** `canAccessStudent(callerId, targetId)` is consulted FIRST — false → **403 with NO payload** (no `boardScoreRange`/`passLikelihood` in the body), `getSupabaseAdmin`/`getStudentMemory` never reached, denial audited `status:'denied'`/`reason:'no_relationship'`; true → service-role read via `getSupabaseAdmin` (RLS client NOT used) + a prediction returned. **(h) Subject + fail-soft:** no subject param and none inferable → 400 `SUBJECT_REQUIRED`; every optional sub-read throwing (board/weights/cme/memory/pulse) still yields a 200 `insufficient_data` — the composer degrades, the route never 500s. **(i) Read-only:** the route module source (comments stripped) contains no `.insert(`/`.update(`/`.upsert(`/`.delete(`. **(j) Registry — LIVE + no mastery write:** the agent-registry conformance suite's live-set sanity now includes `outcome_prediction` (5 live agents), so invariant (d) [entryPoint `apps/host/src/app/api/predict/outcome/route.ts` exists on disk] and invariant (e) [`findMasteryWrites` over the entryPoint + co-located `_lib/` → empty] PASS for the new route — the route reads `learner_mastery` via `.select` (a permitted READ) and writes none of the 9 forbidden mastery tables; invariant (f) [`ff_outcome_prediction_v1` ∈ `FLAG_DEFAULTS`] holds. | `apps/host/src/__tests__/lib/predict/outcome-prediction.test.ts` (20), `apps/host/src/__tests__/api/predict/outcome-route.test.ts` (8), `apps/host/src/__tests__/agents/agent-registry-conformance.test.ts` (updated live-set, 8); source under test `packages/lib/src/predict/outcome-prediction.ts` + `apps/host/src/app/api/predict/outcome/route.ts` | E |
+
+### Invariants covered by this section (Outcome Prediction Agent)
+
+- P8 (IDOR / cross-student boundary) — `canAccessStudent` is the SINGLE
+  cross-student data boundary, enforced FIRST on the cross path (false → 403, no
+  payload, no service-role read); the self path relies on RLS and never touches
+  the service role or the boundary check.
+- P13 (no PII) — no student payload on any deny path (403 body carries only the
+  `{success:false, error}` envelope, no prediction shape); the success audit is
+  metadata-only (`subject`/`source`/`self`), never message/name/email/phone.
+- WHAT/HOW read-only boundary — a HOW-only LIVE agent that writes NOTHING: not
+  mastery/progression (registry invariant e — `findMasteryWrites` empty over the
+  route), not XP, and specifically not the `board_score_predictions` /
+  `cme_exam_readiness` rows it reads verbatim (owned by cron/edge).
+- P1/P2 (adjacency) — the prediction is COMPOSED from the deterministic
+  predictors but is never a back-door into the scoring/XP formula; there is NO
+  new pass-mark constant — the D→C1 boundary is derived from
+  `calculateBoardExamScore`, and the board score is never recomputed.
+- Additive / default-OFF — `ff_outcome_prediction_v1` OFF short-circuits to a
+  404-style no-op before any auth/DB/memory work, so the endpoint surfaces no
+  prediction until an operator flips the flag.
+
+### Catalog total (Outcome Prediction Agent)
+
+GenAI Phase 5a adds REG-312 (read-only Outcome Prediction Agent — 4-tier compose
+with no pass-mark constant + no board-score recompute, self-vs-cross-student
+IDOR-safe read pattern, LIVE registered agent with zero mastery writes). REG-311
+was the prior addition (GenAI Phase 4 runtime ResponseEval); REG-312 is the next
+free id after REG-311.
+**Total catalog: 312 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## GenAI Phase 5b — Lesson Generation Agent (2026-07-24) — REG-313
+
+The Lesson Generation Agent is the platform's FIRST student-facing GENERATIVE
+artifact: on-demand, NCERT-grounded, bilingual multi-section lesson notes for one
+chapter. It is a PURE planner (`packages/lib/src/lesson/lesson-plan.ts`,
+`planLesson`/`renderAdaptationCodes`, assessment-owned) + a grounded-generation
+ORCHESTRATOR (`packages/lib/src/lesson/generate-lesson.ts`, `generateLessonNotes`,
+ai-engineer-owned) behind a read-only GET route
+(`apps/host/src/app/api/lesson/route.ts`, backend-owned), additive and flag-gated
+`ff_lesson_generation_v1` (default OFF). It decides only HOW to present a chapter
+(structure / depth / tone / which misconceptions to call out) from EXISTING
+unified-memory signals — it re-derives NO mastery, invents NO threshold literal
+(`memory.masteryLevel` is used VERBATIM), and writes NOTHING. Because it is
+GENERATIVE and student-facing, the safety spine is doubled: grounded path ONLY
+(one `callGroundedAnswer`, single RAG retrieval — REG-50 spirit), an abstain
+ladder (grounded=false OR `confidence < STRICT_CONFIDENCE_ABSTAIN_THRESHOLD` 0.75
+OR parse-empty), and a Node-side `screenStudentFacingText` backstop on EVERY EN +
+Hindi field (unsafe section dropped, all-dropped → whole-lesson abstain). It is
+fail-soft (never throws → abstain) and registers as a **LIVE** agent that provably
+writes NO mastery (registry invariant e). The route is student-self ONLY — it
+serves the caller's OWN `auth.studentId`, has NO `?studentId` cross-student path,
+NO `canAccessStudent`, and NO service-role/admin client. Owner: testing (tests) /
+assessment (planner) + ai-engineer (orchestrator) + backend (route). Maps to P12
+(AI safety — grounded-only, strict-mode abstain, per-field screen, no unfiltered
+LLM output) + P7 (bilingual — EN + Hindi per section + bilingual abstain copy) +
+the WHAT/HOW read-only boundary (a HOW-only agent that writes nothing) + P5 (grade
+STRING) + P13 (adaptation codes/enums only; category-only logs).
+Spec: `docs/superpowers/specs/2026-07-24-lesson-generation-agent-design.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-313 | `lesson_generation_grounded_only_abstain_ladder_bilingual_screen_flagoff_selfscope` | **(a) Pure planner band anchors:** `masteryLevel` low → `bloomCeiling:'understand'`/`scaffolding:'heavy'`/NO `application` section, medium → `'apply'`/`'moderate'`/application present, high → `'evaluate'`/`'light'`/application present (band VERBATIM, no re-derived mastery, no threshold literal). **(b) Misconception codes + callout gating:** `recentMisconceptions` → `misconceptionCodes` (empty codes filtered) AND `misconception_callouts` section present iff ≥1 real code; no misconceptions (or only-blank codes) → empty codes + no callout section. **(c) emphasisTopics:** weakTopics first then knowledge-gap prerequisites, de-duped (first wins), order-stable, blank/whitespace dropped. **(d) Preferences → depth/persona:** `preferredExplanationDepth` maps case-insensitively (detailed→deep, short→brief, unknown→standard); explicit `request.depth` WINS; `learningStyle` → persona (visual→visual, kinesthetic→concrete, unknown/null→balanced). **(e) targetBloom only LOWERS:** below-ceiling target lowers it, above-ceiling target does NOT raise it (high+create stays evaluate; low+analyze stays understand; low+remember lowers). **(f) Non-decreasing Bloom order** across the returned `sectionKinds` for every band (misconception_callouts ordered AFTER core_concepts by the stable LESSON_STEPS tie-break). **(g) renderAdaptationCodes PII-free (P13):** emits `scaffolding:`/`bloom_ceiling:`/`depth:`/`persona:`/`sections:N`/`emphasis_count:N`/`misconception:<CODE>` and conditional `misconception_callouts:on`/`application:on` codes ONLY — NEVER a topic TITLE or misconception LABEL, every element whitespace-free. **(h) Planner purity:** identical inputs → deeply-equal, does not mutate inputs, never throws. **(i) Orchestrator abstain ladder:** grounded=false → abstain surfacing the service `abstain_reason` + `suggested_alternatives` (screen never runs); `confidence < 0.75` → `low_similarity` abstain (0.75 EXACTLY does NOT abstain); empty / non-JSON / zero-citation answer → `no_supporting_chunks` parse-empty abstain. **(j) Happy path:** multi-section grounded notes parse with EN+Hindi populated per section (P7), ≥1 citation each, de-duped `citationsAll`, meta (confidence/model/traceId) carried through; tolerant brace-slice recovery from surrounding prose; citation fallback to the full retrieved set when `supportingCitationIndexes` absent. **(k) Per-field bilingual screen backstop (P12):** an unsafe EN OR Hindi field drops ONLY that section (rest kept); a section unsafe on its Hindi body is dropped; ALL sections unsafe → whole-lesson `upstream_error` abstain. **(l) Bloom clamp:** each section's `bloomLevel` clamped to `plan.bloomCeiling` (low band: `create`→`understand`; `remember` below ceiling untouched). **(m) REG-50 single retrieval:** `callGroundedAnswer` invoked EXACTLY once. **(n) Fail-soft / writes-nothing:** a throwing grounded call OR throwing screen → abstain, never throws; only the two injected deps are touched (1 call + 4 screen invocations on the surviving section). **(o) Route flag gate:** flag OFF (default) → 404-style `{success:false}` BEFORE any auth/DB/memory/generation work (`authorizeRequest`/`createSupabaseServerClient`/`getStudentMemory`/`generateLessonNotes` all uncalled, no lesson shape leaks); role/user-scoped flag OFF (global ON) → 404 after auth, still no generation. **(p) Route student-self scope:** flag ON + self → `generateLessonNotes` called with the CALLER'S OWN `auth.studentId` + parsed subject/grade STRING/chapter, `getStudentMemory` for the OWN id, RLS-scoped `createSupabaseServerClient` used; a `?studentId=<other>` is IGNORED (generator still gets SELF); an abstain envelope is a normal 200 (`abstained:true`); no student profile → 404 `NO_STUDENT_PROFILE`; unresolvable grade → 404 `NO_GRADE`; success audit is metadata-only (`subject`/`chapterNumber`/`abstained`). **(q) Route WHAT validation:** missing subject → 400 `SUBJECT_REQUIRED`; missing/non-positive chapterNumber → 400 `CHAPTER_NUMBER_REQUIRED`; missing chapterTitle → 400 `CHAPTER_TITLE_REQUIRED`; invalid depth enum → 400 `INVALID_DEPTH`. **(r) Read-only + self-scope source scan:** the route source (block+line comments stripped) contains no `.insert(`/`.update(`/`.upsert(`/`.delete(` and never imports `supabase-admin`/`getSupabaseAdmin`/`canAccessStudent`. **(s) Registry — LIVE + no mastery write:** the agent-registry conformance suite's live-set sanity now includes `lesson` (**6** live agents), so invariant (d) [entryPoint `apps/host/src/app/api/lesson/route.ts` exists on disk] and invariant (e) [`findMasteryWrites` over the entryPoint → empty; the route reads `students.grade` via `.select` — a permitted READ — and writes none of the 9 forbidden mastery tables] PASS; invariant (f) [`ff_lesson_generation_v1` ∈ `FLAG_DEFAULTS`] holds. | `apps/host/src/__tests__/lib/lesson/lesson-plan.test.ts` (25), `apps/host/src/__tests__/lib/lesson/generate-lesson.test.ts` (16), `apps/host/src/__tests__/api/lesson/route.test.ts` (12), `apps/host/src/__tests__/agents/agent-registry-conformance.test.ts` (updated live-set → 6, 8); source under test `packages/lib/src/lesson/lesson-plan.ts` + `packages/lib/src/lesson/generate-lesson.ts` + `apps/host/src/app/api/lesson/route.ts` | E |
+
+### Invariants covered by this section (Lesson Generation Agent)
+
+- P12 (AI safety) — grounded path ONLY (one `callGroundedAnswer`), `mode:'strict'`
+  with an abstain ladder (grounded=false / `confidence < 0.75` / parse-empty) so no
+  ungrounded prose reaches a student, PLUS a Node-side `screenStudentFacingText`
+  backstop on EVERY rendered EN + Hindi field (unsafe section dropped, all-dropped
+  → whole-lesson abstain). Fail-soft — a generation failure returns an abstain,
+  never a 500.
+- P7 (bilingual) — every section carries EN + Hindi (dropped at parse time if any
+  field is missing); the whole-lesson abstain copy is bilingual.
+- WHAT/HOW read-only boundary — a HOW-only LIVE agent that writes NOTHING: not
+  mastery/progression (registry invariant e — `findMasteryWrites` empty over the
+  route), not XP. The planner re-derives no mastery and holds no threshold literal.
+- P5 (grade STRING) — grade flows as a STRING "6".."12" end-to-end (request →
+  planner → grounded scope).
+- P13 (no PII) — `adaptationApplied` is codes/enums only (never a topic title or
+  misconception label); logs are category/metadata only; the success audit carries
+  `subject`/`chapterNumber`/`abstained` only.
+- Student-self scope — the route serves only `auth.studentId`; there is NO
+  `?studentId` cross-student path, NO `canAccessStudent`, and NO service-role/admin
+  client (RLS-scoped self reads only).
+- Additive / default-OFF — `ff_lesson_generation_v1` OFF short-circuits to a
+  404-style no-op before any auth/DB/memory/generation work, so no lesson is ever
+  generated or surfaced until an operator flips the flag.
+
+### Catalog total (Lesson Generation Agent)
+
+GenAI Phase 5b adds REG-313 (Lesson Generation Agent — first student-facing
+GENERATIVE artifact: grounded-only single-retrieval generation with a
+grounded/confidence-0.75/parse-empty abstain ladder, per-field bilingual screen
+backstop [drop → whole-lesson abstain], flag-OFF 404 no-op, student-self scope,
+and a LIVE registered agent with zero mastery writes). REG-312 was the prior
+addition (GenAI Phase 5a read-only Outcome Prediction Agent); REG-313 is the next
+free id after REG-312.
+**Total catalog: 313 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## GenAI Phase 5c — Content Generation Agent (NCERT-grounded Mermaid diagrams) (2026-07-24) — REG-314
+
+The Content Generation Agent is the platform's first GENERATIVE VISUAL artifact:
+on-demand, NCERT-grounded, bilingual Mermaid diagrams (flowchart / mindmap /
+timeline) for one chapter. It is a PURE planner
+(`packages/lib/src/diagram/diagram-plan.ts`, `planDiagram`, assessment-owned) + a
+grounded-generation ORCHESTRATOR (`packages/lib/src/diagram/generate-diagram.ts`,
+`generateDiagram`, ai-engineer-owned) behind a read-only POST route
+(`apps/host/src/app/api/content/diagram/route.ts`, backend-owned), additive and
+flag-gated `ff_content_generation_v1` (default OFF). It decides only HOW to
+VISUALIZE a chapter (diagram TYPE / node budget / complexity) from EXISTING
+unified-memory signals — it re-derives NO mastery, invents NO threshold literal
+(`memory.masteryLevel` is used VERBATIM; node budgets are presentation params),
+and writes NOTHING. Because it is GENERATIVE, student-facing, and emits RENDERABLE
+CODE, the safety spine is a DUAL GATE: grounded path ONLY (one `callGroundedAnswer`,
+single RAG retrieval — REG-50 spirit) with a grounded/confidence-0.75/parse-empty
+abstain ladder, then Gate 1 = `validateMermaidCode` (REUSED verbatim — rejects
+`<script>`/`javascript:`/`click`/`%%{init}` injection + non-allowlisted headers) +
+a v1-kind header constraint (narrower than the Mermaid allow-list), then Gate 2 =
+`screenStudentFacingText` over titleEn/Hi + captionEn/Hi AND the WHOLE mermaidCode
+(node labels are user-facing text). Either gate failing → whole-diagram abstain.
+There is NO raw-SVG fallback — abstain is the only failure mode. It is fail-soft
+(never throws → abstain) and registers as a **LIVE** agent that provably writes NO
+mastery (registry invariant e), taking the live set from 6 → 7 (all agents now
+live). The route is student-self ONLY — it serves the caller's OWN
+`auth.studentId`, has NO `?studentId` cross-student path, NO `canAccessStudent`,
+and NO service-role/admin client. Owner: testing (tests) / assessment (planner) +
+ai-engineer (orchestrator) + backend (route). Maps to P12 (AI safety — grounded-only,
+strict-mode abstain, dual safety gate, no raw code to a student) + P7 (bilingual —
+EN + Hindi title/caption + bilingual abstain copy) + the WHAT/HOW read-only boundary
+(a HOW-only agent that writes nothing) + P5 (grade STRING) + P13 (category/metadata
+logs only). Spec: `docs/superpowers/specs/2026-07-24-content-generation-agent-design.md`.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-314 | `content_generation_diagram_dual_safety_gate_no_raw_svg_v1kind_flagoff_selfscope` | **(a) Planner diagram-type selection (HOW-only):** a valid v1 caller override is HONORED (`caller_override`) even when the title would heuristic elsewhere; an out-of-v1-set override (e.g. `sequenceDiagram`) is IGNORED → content heuristic; the title heuristic picks timeline/flowchart/mindmap from keywords with priority timeline→flowchart→mindmap (a title with both a timeline + a flowchart keyword picks timeline); the subject fallback maps `history_sr`→timeline but NOT `social_studies`; a keyword-free non-chronological title → default mindmap. **(b) Planner node budget (presentation, NOT a mastery gate):** band base 6/9/12 for low/medium/high, +3 for a visual learner (`richLabels:true`), clamped at 15 (high+visual = 12+3 = 15, the cap); a non-visual style earns no bonus; branch depth (1/2/2) + detail level (core/standard/rich) are band-derived. **(c) Planner purity:** identical inputs → deeply-equal, does not mutate inputs, never throws across all bands. **(d) Orchestrator happy path:** a grounded strict-JSON answer parses into a validated `DiagramSpec` with bilingual title/caption (P7) + ≥1 citation + carried-through meta (confidence/model/traceId); a `graph` header maps to the `flowchart` kind; tolerant brace-slice recovery from surrounding prose. **(e) Abstain ladder:** grounded=false → abstain surfacing the service `abstain_reason` + `suggested_alternatives` (screen never runs); `confidence < 0.75` → `low_similarity` (0.75 EXACTLY does NOT abstain); empty answer / `{"error":...}` insufficient-source / zero-citation → `no_supporting_chunks` parse-empty abstain. **(f) SAFETY GATE 1 (structure/injection) — NO raw-SVG:** a malformed mermaid (no allowlisted header) → abstain (`upstream_error`), empty `mermaidCode`, Gate 2 screen never runs; each of 4 injection payloads (`<script>`, `javascript:`, a `click` interaction callback, a `%%{init htmlLabels}` directive) is REJECTED by the REUSED `validateMermaidCode` → abstain, NEVER a raw-SVG/raster fallback, NEVER a throw. **(g) v1-kind enforcement:** a header allowlisted by Mermaid but OUTSIDE the v1 set (`sequenceDiagram`) passes `validateMermaidCode` yet fails the v1-kind check → abstain. **(h) SAFETY GATE 2 (age/toxicity):** an unsafe `titleHi`, an unsafe node label INSIDE the `mermaidCode`, or an unsafe `captionEn` each → whole-diagram abstain (screen runs on all 5 student-facing fields incl. the whole mermaidCode). **(i) Fail-soft / writes-nothing:** a throwing grounded call OR throwing screen OR a malformed grounded envelope → abstain, never throws; only the injected grounded client is touched for I/O. **(j) REG-50 single retrieval:** `callGroundedAnswer` invoked EXACTLY once. **(k) P13:** no `studentId` / PII in any logged value across the grounded-false / low-confidence / gate-1-fail logging paths. **(l) Route flag gate:** flag OFF (default) → 404-style `{success:false}` BEFORE any auth/DB/memory/generation work (`authorizeRequest`/`createSupabaseServerClient`/`getStudentMemory`/`generateDiagram` all uncalled, no diagram shape leaks); role/user-scoped flag OFF (global ON) → 404 after auth, still no generation. **(m) Route student-self scope:** flag ON + self → `generateDiagram` called with the CALLER'S OWN `auth.studentId` + parsed subject/grade STRING/chapter + `artifactType:'diagram'`, `getStudentMemory` for the OWN id, RLS-scoped `createSupabaseServerClient` used; a `diagramType` hint passes through; an abstain envelope is a normal 200 (`abstained:true`); response carries `Cache-Control: private, no-store`; no student profile → 404 `NO_STUDENT_PROFILE`; unresolvable grade → 404 `NO_GRADE`; success audit metadata-only (`subject`/`chapterNumber`/`abstained`). **(n) Route body validation (4xx, never 500):** non-JSON body / JSON array → 400 `INVALID_BODY`; missing subject → 400 `SUBJECT_REQUIRED`; missing chapter object → 400 `CHAPTER_REQUIRED`; missing/non-positive chapterNumber → 400 `CHAPTER_NUMBER_REQUIRED`; missing chapterTitle → 400 `CHAPTER_TITLE_REQUIRED`; invalid diagramType enum → 400 `INVALID_DIAGRAM_TYPE`; invalid language enum → 400 `INVALID_LANGUAGE`. **(o) Read-only source scan:** the route source (comments stripped) contains no `.insert(`/`.update(`/`.upsert(`/`.delete(` and never imports `supabase-admin`/`getSupabaseAdmin`/`canAccessStudent`. **(p) Registry — LIVE + no mastery write:** the agent-registry conformance suite's live-set sanity now includes `content_generation` (**7** live agents — all agents now live), so invariant (d) [entryPoint `apps/host/src/app/api/content/diagram/route.ts` exists on disk] and invariant (e) [`findMasteryWrites` over the entryPoint → empty; the route reads `students.grade` via `.select` — a permitted READ — and writes none of the 9 forbidden mastery tables] PASS; invariant (f) [`ff_content_generation_v1` ∈ `FLAG_DEFAULTS`] holds. **(q) Template parity:** `config-parity.test.ts` confirms `diagram_spec_v1` is registered byte-identically across the Next.js + Deno grounding configs. | `apps/host/src/__tests__/lib/diagram/diagram-plan.test.ts` (17), `apps/host/src/__tests__/lib/diagram/generate-diagram.test.ts` (23), `apps/host/src/__tests__/api/content/diagram/route.test.ts` (16), `apps/host/src/__tests__/agents/agent-registry-conformance.test.ts` (updated live-set → 7, 8), `apps/host/src/__tests__/grounding/config-parity.test.ts` (diagram_spec_v1 parity); source under test `packages/lib/src/diagram/diagram-plan.ts` + `packages/lib/src/diagram/generate-diagram.ts` + `apps/host/src/app/api/content/diagram/route.ts` | E |
+
+### Invariants covered by this section (Content Generation Agent)
+
+- P12 (AI safety) — grounded path ONLY (one `callGroundedAnswer`), `mode:'strict'`
+  with an abstain ladder (grounded=false / `confidence < 0.75` / parse-empty), PLUS
+  a DUAL safety gate: Gate 1 `validateMermaidCode` (injection/grammar) + v1-kind
+  header, Gate 2 `screenStudentFacingText` over every EN + Hindi field AND the whole
+  mermaidCode. Either gate failing → whole-diagram abstain. NO raw-SVG fallback.
+  Fail-soft — a generation failure returns an abstain, never a 500.
+- P7 (bilingual) — every emitted spec carries EN + Hindi title/caption; the abstain
+  copy is bilingual.
+- WHAT/HOW read-only boundary — a HOW-only LIVE agent that writes NOTHING: not
+  mastery/progression (registry invariant e — `findMasteryWrites` empty over the
+  route), not XP. The planner re-derives no mastery and holds no threshold literal.
+- P5 (grade STRING) — grade flows as a STRING "6".."12" end-to-end (request →
+  planner → grounded scope), resolved server-side from the caller's own row.
+- P13 (no PII) — logs are category/metadata only (no studentId); the success audit
+  carries `subject`/`chapterNumber`/`abstained` only.
+- Student-self scope — the route serves only `auth.studentId`; there is NO
+  `?studentId` cross-student path, NO `canAccessStudent`, and NO service-role/admin
+  client (RLS-scoped self reads only).
+- Additive / default-OFF — `ff_content_generation_v1` OFF short-circuits to a
+  404-style no-op before any auth/DB/memory/generation work, so no diagram is ever
+  generated or surfaced until an operator flips the flag.
+
+### Catalog total (Content Generation Agent)
+
+GenAI Phase 5c adds REG-314 (Content Generation Agent — NCERT-grounded Mermaid
+diagram generator: grounded-only single-retrieval generation with a
+grounded/confidence-0.75/parse-empty abstain ladder, a DUAL safety gate
+[validateMermaidCode injection-reject + v1-kind header, then screenStudentFacingText
+over every field incl. the whole mermaidCode] with NO raw-SVG fallback, flag-OFF 404
+no-op, student-self scope, and a LIVE registered agent with zero mastery writes —
+taking the live agent set from 6 → 7). REG-313 was the prior addition (GenAI Phase 5b
+Lesson Generation Agent); REG-314 is the next free id after REG-313.
+**Total catalog: 314 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## GenAI Phase 5d — /foxy Study Tools surface (the student-visible mouth of the Lesson + Content agents) (2026-07-25) — REG-315
+
+REG-313 and REG-314 pinned the two GenAI generation AGENTS (planner, orchestrator,
+route). This entry pins the CLIENT SURFACE that finally puts them in front of a
+student: the "Study tools" affordances inside the `/foxy` workspace —
+`StudyToolsBar` (two pills) → `useStudyArtifacts` (open/cache/regenerate state) →
+`study-artifacts.ts` (transport + 4-state normalizer) → `StudyArtifactSheet`
+(render), with `diagram-to-foxy-block.ts` adapting a `DiagramSpec` into the
+EXISTING REG-55 one-block Foxy envelope so the diagram is drawn by the same
+`MermaidBlock` every chat turn already uses. Gated by the same two flags as the
+agents: `ff_content_generation_v1` (Diagram) and `ff_lesson_generation_v1`
+(Lesson notes), read client-side by `useGenAiContentFlags`.
+
+**Why this needs a catalog entry NOW:** migration `20260724220000_set_ff_generation_rollout_100.sql`
+takes BOTH flags to `is_enabled = TRUE` at `rollout_percentage = 100` on merge
+(superseding the two 10% canary migrations), so this surface reaches EVERY student
+immediately — there is no canary window in which a defect stays contained. The
+flag-OFF identity clauses below are therefore not a pre-launch guard but the
+ROLLBACK contract: they are what makes flipping either flag back to 0% a true
+byte-identical no-op on the `/foxy` DOM rather than a partial teardown.
+
+The four load-bearing invariants: (1) flag-OFF DOM identity — asserted as
+`container.innerHTML === ''`, so a stray wrapper or divider FAILS, with each flag
+ramping independently and every degenerate flag-source outcome failing CLOSED;
+(2) the deliberate kind→endpoint ASYMMETRY (diagram = POST + nested `chapter{}`,
+lesson = GET + flat query params), pinned both at the client and by a static
+read-only canary over the two route sources so a future "let's unify these"
+refactor cannot silently cross them; (3) an ABSTAIN (HTTP 200 + `abstained:true`)
+is a NORMAL settled outcome rendered as calm bilingual copy — never the error
+branch, never a retry button — with retry offered ONLY for the `network` reason;
+(4) a CLIENT-side re-run of `validateMermaidCode` as defence-in-depth over
+REG-314's server gate, so an untrusted `mermaidCode` that somehow reaches the
+browser returns `null` and never touches the renderer or the DOM. Owner: testing
+(tests) / frontend (surface). Maps to P12 (AI safety — client injection gate,
+abstain-not-error), P7 (bilingual), P13 (no PII on the wire, in the DOM, or in
+logs), P5 (grade never sent client-side — resolved server-side), and P10-adjacent
+(no speculative network/LLM spend on render).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-315 | `foxy_study_tools_flagoff_dom_identity_kind_endpoint_asymmetry_abstain_not_error_client_mermaid_gate` | **(a) Flag-OFF DOM identity:** both flags OFF → `StudyToolsBar` renders an EMPTY container — asserted as `container.innerHTML === ''` PLUS `firstChild === null` and `childNodes.length === 0`, so a stray wrapper / divider / whitespace text node FAILS — in EN mode, in HI mode, and with a chapter selected; ZERO `fetch` on render at EVERY flag combination incl. BOTH ON (generation is student-initiated only — no speculative LLM spend). **(b) Independent per-flag ramps:** hook — only `ff_content_generation_v1` ON → `{diagram:true,lesson:false}`, only `ff_lesson_generation_v1` ON → `{diagram:false,lesson:true}`; bar — diagram-only renders only the `foxy-tool-diagram` pill, lesson-only only `foxy-tool-lesson`, both → both. **(c) Fail-CLOSED flag resolution:** first paint with no cache resolves BOTH false (under `NODE_ENV=production` and under test); a flag source that THROWS, resolves `undefined`, or returns a map lacking both keys keeps both OFF; an EXPIRED (>5-min TTL), CORRUPT (`{not-json`), or timestamp-less cache is IGNORED → OFF; a fresh cache reads through PER-FLAG; a stale ON cache is CORRECTED back to OFF by the async DB reconcile; the reconciled value is written back to the TTL cache; `getFeatureFlags` is called EXACTLY once (one map read, no per-flag round trip); `clearGenAiContentFlagsCache` removes the key. **(d) Dev override is commit-safe:** `alfanumrik_force_genai_content` is a STRICT no-op under `NODE_ENV==='production'`; outside production `'1'` forces both, `'diagram'`/`'lesson'` force exactly one, an unrecognised value is ignored. **(e) Registry-not-barrel flag import (source canary):** the hook source CONTAINS `@alfanumrik/lib/flags/registries/foxy` and does NOT match `from '@alfanumrik/lib/feature-flags'` (a barrel import would break the existing `vi.mock`'ed Foxy suites); the two flag names are pinned byte-exact to `ff_content_generation_v1` / `ff_lesson_generation_v1` and `GENAI_CONTENT_FLAGS_DEFAULT` equals `{diagram:false,lesson:false}`. **(f) kind→endpoint dispatch ASYMMETRY:** diagram → **POST** `/api/content/diagram` with a JSON string body, `Content-Type: application/json`, `credentials:'include'`, and chapter NESTED as `{chapterNumber, chapterTitle}` with NO flat `chapterNumber`/`chapterTitle` sibling keys; lesson → **GET** `/api/lesson?…` with NO body and FLAT `subject`/`chapterNumber`/`chapterTitle`/`language` query params and NO `chapter` param; one test runs both back-to-back and pins POST+body vs GET+no-body side by side. `diagramType` is included ONLY when the caller supplied a hint; `Authorization: Bearer <tok>` is present when a token exists and the header is ABSENT when it is null. `useStudyArtifacts.open('diagram')` hits `/api/content/diagram` and `open('lesson')` hits `GET /api/lesson?…`. **(g) Static client/route contract canary:** reads BOTH route sources from disk — the diagram route exports `POST` and NOT `GET` and reads `body.chapter` / `chapter.chapterNumber` / `chapter.chapterTitle`; the lesson route exports `GET` and NOT `POST`, reads `searchParams.get('subject')` / `('chapterNumber')` / `('chapterTitle')` / `('language')`, and never calls `request.json()`. This closes the half the client mocks cannot see: a route renaming a param turns THIS red. **(h) ABSTAIN is not an error (P12/UX):** HTTP 200 + `abstained:true` → `status:'abstained'`, never `'error'`, and the state carries NO `reason` field; the server-authored bilingual `messageEn`/`messageHi` + `suggestedAlternatives` pass through verbatim; an abstain envelope with NO `abstain` object, a non-array `suggestedAlternatives`, or non-string messages coerces to empty copy / `[]` without crashing. At the render layer the abstain shows the calm heading + the SERVER message (Hindi under `isHi`), lists the suggested ready chapters, shows NO error copy and NO `Try again`, and STILL offers `Regenerate` (an abstain is a SETTLED result, not a failure). **(i) Error classification + retry ONLY for `network`:** `reasonForStatus` maps 400→`unsupported`, 401/403/404→`unavailable`, 500/502/503 and an unclassified 429→`network`; a thrown fetch, a 200 with a non-JSON body, `success:false`, or `success:true` with no `data` all → `error/network`; end-to-end a 400 → `unsupported` and a thrown fetch → `network` on BOTH transports. At the render layer `unsupported` and `unavailable` (incl. a server-side flag flip surfacing as 404) get their own bilingual copy and NO retry; ONLY `network` renders `Try again` wired to `onRegenerate`; no header `Regenerate` in an error state, and none while loading. **(j) CLIENT-side Mermaid injection gate (P12 defence-in-depth over REG-314's server gate):** `diagramSpecToFoxyResponse` re-runs `validateMermaidCode` in the browser and returns `null` for 9 payload shapes — `<script>` (and uppercase `<SCRIPT>`), a `javascript:` URI, a `click` interaction callback (plain, leading-whitespace, and `click A href`), `%%{init}` overriding `securityLevel` and overriding `htmlLabels`, a non-allowlisted header, and raw HTML `<img onerror>` — and the `null` cannot leak the payload (the serialised result contains no `script` / `javascript:`); it does NOT false-positive on a node LABEL merely containing the word "Click"; empty / whitespace-only / missing `mermaidCode` → `null`; code longer than `FOXY_MAX_MERMAID_CODE_LEN` → `null` while code EXACTLY at the ceiling is ACCEPTED (boundary, not off-by-one). At the sheet, each of 5 unsafe payloads → the structured renderer is NEVER invoked (probe length 0, no `structured-renderer` node), the raw source is NEVER printed (`innerHTML` contains no `alert(1)` / `javascript:`, `querySelector('script')` null), and the calm "Couldn't build this from NCERT yet" fallback renders with NO retry. **(k) REG-55 envelope reuse:** a valid spec becomes EXACTLY ONE `mermaid` block carrying the code VERBATIM (surrounding whitespace trimmed) inside the EXISTING Foxy structured-render envelope, so the diagram is drawn by the same `MermaidBlock` the chat already uses; the title picks EN/HI by `isHi`, falls back to the other language when the primary is empty, then to the caller `fallbackTitle`; the caption maps to the block title per language and the key is OMITTED entirely when there is no caption; an over-long title clamps to 120 with an ellipsis and an over-long caption clamps to 120; `toFoxySubject` maps math / the science family / the social family (→`sst`) / english with `general` as the unknown+empty fallback and threads onto the envelope; all three v1 kinds (flowchart / mindmap / timeline) are accepted. **(l) No duplicate LLM spend:** per `subject+chapterNumber+language` cache — re-opening the SAME context does NOT re-fetch; a change to chapter, language, OR subject re-fetches; three rapid opens of the same still-loading context issue ONE request; an ABSTAIN IS cached (a settled result); an ERROR is NOT cached (re-open re-runs). **(m) Stale-response guard:** a slow first request that resolves AFTER a newer one is DROPPED — a student who switches chapter mid-flight keeps the NEWER chapter's artifact, a stale ERROR cannot overwrite a newer READY, and a stale response cannot overwrite a REGENERATED result; initial state is closed + idle with ZERO fetch; `close()` hides the sheet but KEEPS the settled result; the two artifacts are INDEPENDENT (opening lesson leaves diagram `idle`). **(n) Regenerate:** bypasses the cache with a fresh request for the same context, is the retry path after a failure, regenerates ONLY the OPEN artifact (the closed one stays `idle`), and is a no-op when no sheet is open. **(o) No dead end:** with no chapter selected, clicking EITHER pill routes to `onNeedChapter` and NEVER to `onDiagram`/`onLesson`, and the pill carries a bilingual explanatory title (`Pick a chapter first` / `पहले एक अध्याय चुनो`). **(p) P13 + P5 on the wire:** the diagram request body carries EXACTLY the sorted key set `{chapter, diagramType, language, subject}` and the lesson query string EXACTLY `{chapterNumber, chapterTitle, language, subject}` (sorted set EQUALITY, not a substring check); neither matches `/studentId\|student_id\|userId\|user_id\|email\|phone/i`; NO `grade` is sent on either transport (P5 — grade is resolved SERVER-side from the caller's own enrolled row); the access token is never echoed into the returned state; NOTHING is emitted to `console.log/warn/error/info/debug` on any failure path; neither the rendered `StudyToolsBar` nor the rendered `StudyArtifactSheet` markup matches `/studentId\|student_id\|userId\|@\|\+91/i`. **(q) P7 bilingual parity:** `ARTIFACT_CHROME.en`/`.hi` declare the SAME key set, every value is a non-empty string in BOTH, EN !== HI per key, every HI value contains Devanagari and every EN value contains NONE, and no PII-shaped placeholder appears in either; the technical terms NCERT + Foxy appear VERBATIM in Hindi copy and are never transliterated (`एनसीईआरटी` / `सीबीएसई` / `ब्लूम` / `फॉक्सी` all absent). Bar: `Diagram`/`Lesson notes` in EN, `आरेख`/`पाठ नोट्स` in HI with the English strings GONE, NCERT untranslated in the HI tooltip, and a bilingual `role="group"` aria-label. Sheet: per-kind bilingual "building" copy, bilingual abstain + error copy, bilingual `Close` label, and Bloom's level rendered UNTRANSLATED in HI mode. **(r) a11y + dismissal:** the sheet is `role="dialog"` with `aria-modal="true"` and `aria-labelledby="foxy-artifact-<kind>-title"`, carries the chapter label, and closes on the ✕ and on Escape; the lesson body renders each section heading + body in the active language and falls back to the calm notice for an empty section list; the diagram sheet renders the NCERT citation provenance (`Ch 3 · Atoms and Molecules · p. 42`). | `apps/host/src/__tests__/foxy/genai-content-flags-off-identity.test.ts` (23), `apps/host/src/__tests__/foxy/study-tools-bar.test.tsx` (17), `apps/host/src/__tests__/foxy/study-artifacts-transport.test.ts` (133), `apps/host/src/__tests__/foxy/diagram-to-foxy-block.test.ts` (31), `apps/host/src/__tests__/foxy/use-study-artifacts.test.ts` (20), `apps/host/src/__tests__/foxy/study-artifact-sheet.test.tsx` (38) — **262 tests, all passing**; source under test `apps/host/src/app/foxy/_hooks/useGenAiContentFlags.ts` + `_hooks/useStudyArtifacts.ts` + `_lib/study-artifacts.ts` + `_lib/diagram-to-foxy-block.ts` + `_components/StudyToolsBar.tsx` + `_components/StudyArtifactSheet.tsx` | E |
+
+### Invariants covered by this section (/foxy Study Tools surface)
+
+- P12 (AI safety) — an ABSTAIN is a normal settled 200 rendered as calm bilingual
+  copy, never the error branch and never a retry prompt; and a CLIENT-side re-run
+  of `validateMermaidCode` (defence-in-depth over REG-314's server gate) returns
+  `null` for every injection shape, so an untrusted payload never reaches the
+  renderer nor the DOM. There is no raw-source fallback — the calm notice is the
+  only failure mode.
+- P7 (bilingual) — full EN/HI key-set parity on the shared chrome (both directions:
+  HI has Devanagari, EN has none), bilingual bar labels / tooltips / group
+  aria-label, bilingual loading / abstain / error / close copy, and the technical
+  terms NCERT, CBSE, Bloom's, Foxy left UNTRANSLATED.
+- P13 (no PII) — request body and query string are asserted by sorted key-set
+  EQUALITY (an added key fails), no identifier-shaped key on the wire, no
+  identifier in the rendered markup of either component, the access token never
+  echoed into state, and NOTHING written to `console.*` on any failure path.
+- P5 (grade STRING, server-resolved) — the client sends NO `grade` on either
+  transport; grade is resolved server-side from the caller's own enrolled row
+  (the agent-side half is REG-313/REG-314).
+- Flag-gating / rollback contract — both flags default OFF in the client hook and
+  fail CLOSED on cache miss, cache expiry, cache corruption, a throwing flag
+  source, an `undefined` map, and a map lacking the keys; each ramps
+  INDEPENDENTLY; the OFF path renders literally nothing (`innerHTML === ''`).
+  With migration `20260724220000` taking both flags to 100%, these are the
+  clauses that make a flip back to 0% a clean no-op.
+- P10-adjacent (no speculative spend) — zero network calls on render at any flag
+  combination, a per-`subject+chapter+language` cache so re-opening a sheet does
+  not re-spend an LLM call, single-flight on a still-loading context, and a
+  stale-response guard so a mid-flight chapter switch can never show the previous
+  chapter's artifact.
+
+### Known gap (documented, not silently dropped)
+
+Two properties in the surface's design intent are **structurally true in the
+source but NOT asserted by any test**, and are recorded here rather than claimed
+as coverage:
+
+1. **Page-level mounting.** `apps/host/src/app/foxy/page.tsx` gates the second
+   `StudyToolsBar` mount on `(genAiContentFlags.diagram || genAiContentFlags.lesson)`
+   and mounts `StudyArtifactSheet` only while `studyArtifacts.openKind` is
+   `'diagram'`/`'lesson'`. No test renders `page.tsx` — `foxy-page-snapshot.test.tsx`
+   does not reference either component. The "no sheet is mounted on the OFF path"
+   property is pinned only INDIRECTLY, at the hook layer: `useStudyArtifacts`
+   starts with `openKind === null`, both artifacts `idle`, and zero fetch.
+2. **"No new chunk" on the OFF path.** `StudyArtifactSheet` is a `next/dynamic`
+   import behind a conditional mount, so its chunk (and the lazy mermaid runtime
+   behind it) is fetched on first use only. Nothing asserts this — there is no
+   per-route chunk assertion in the suite; the only enforcement is the global
+   `scripts/check-bundle-size.mjs` CI gate, which is not Study-Tools-specific.
+   Clause (a) asserts no *network call*, which is a different claim.
+
+Neither gap is closed by this entry. Closing (1) would need a `page.tsx` render
+test (the file pulls a large dynamic-import graph); closing (2) would need a
+per-route chunk-manifest assertion. There is also no Playwright/E2E coverage of
+this surface — all 262 tests are unit-level.
+
+### Catalog total (/foxy Study Tools surface)
+
+Pre-REG-315: 314 entries (through REG-314, the GenAI Phase 5c Content Generation
+Agent). GenAI Phase 5d adds REG-315 (the `/foxy` Study Tools client surface — the
+student-visible mouth of the Lesson + Content agents: flag-OFF DOM identity
+asserted as `innerHTML === ''` with independent per-flag ramps and fail-CLOSED
+resolution on every degenerate flag-source outcome, the deliberate
+diagram-POST-nested / lesson-GET-flat endpoint asymmetry pinned at both the client
+and a static route-source canary, abstain-is-not-an-error with retry offered only
+for `network`, and a CLIENT-side `validateMermaidCode` injection gate that returns
+`null` so an unsafe payload never reaches the renderer or the DOM — promoted now
+because migration `20260724220000` takes both gating flags to rollout 100% on
+merge). REG-314 was the prior addition (GenAI Phase 5c Content Generation Agent);
+REG-315 is the next free id after REG-314.
+**Total catalog: 315 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 

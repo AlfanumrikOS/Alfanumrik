@@ -25500,6 +25500,14 @@ export type Database = {
           topic: string
         }[]
       }
+      // HAND-CORRECTED 2026-07-27 (no DB access to regenerate; re-run type
+      // generation to confirm). Production carries TWO overloads of this
+      // function; generation had captured only the OLD `p_min_quality` shape.
+      // The declaration below pins the NEW overload (migration
+      // 20260707010000_rca_final_fixes.sql), which is the only one that applies
+      // an absolute cosine floor. `p_min_quality` is intentionally OMITTED so
+      // TypeScript rejects any call that would silently rebind to the stale
+      // floor-less overload.
       match_rag_chunks_ncert: {
         Args: {
           match_count?: number
@@ -25508,7 +25516,8 @@ export type Database = {
           p_concept?: string
           p_content_type?: string
           p_grade: string
-          p_min_quality?: number
+          p_min_similarity?: number
+          p_quality_score_gate?: number
           p_subject_code: string
           query_embedding?: string
           query_text: string

@@ -48,14 +48,24 @@ const PROVIDER_LITERAL = 'anthropic';
  * - 'foxy'           → 'foxy'   (student chat surface)
  * - 'ncert-solver'   → 'solver' (problem-solver surface)
  * - 'quiz-generator' → 'quiz'   (quiz authoring + generation)
+ * - 'lesson'         → 'lesson' (Lesson Generation Agent — student-facing
+ *                                generative lesson notes; GenAI Phase 5b)
  * - 'concept-engine' → null     (internal indexing; no student-facing surface)
  * - 'diagnostic'     → null     (internal health probes; no student surface)
  * - anything else    → null     (defensive — future callers must register here)
  *
  * No 'ocr' mapping in C3 — OCR runs through `scan-ocr`, not grounded-answer.
  * It's kept in the type for forward compatibility.
+ *
+ * The 'lesson' surface has no dedicated slot in mol_request_logs' documented
+ * enum, but the column is free-text (`text`, no CHECK — see migration
+ * 20260518000001 comment "'foxy' | 'quiz' | 'solver' | 'ocr' | other") and
+ * LogPayload.surface is `string | null`, so registering 'lesson' explicitly
+ * (rather than conflating it with 'foxy' chat or the internal-null bucket)
+ * keeps its cost/latency attribution clean. A formal enum/CHECK slot is an
+ * architect follow-up.
  */
-export function mapCallerToSurface(caller: string): 'foxy' | 'quiz' | 'solver' | 'ocr' | null {
+export function mapCallerToSurface(caller: string): 'foxy' | 'quiz' | 'solver' | 'ocr' | 'lesson' | null {
   switch (caller) {
     case 'foxy':
       return 'foxy';
@@ -63,6 +73,8 @@ export function mapCallerToSurface(caller: string): 'foxy' | 'quiz' | 'solver' |
       return 'quiz';
     case 'ncert-solver':
       return 'solver';
+    case 'lesson':
+      return 'lesson';
     case 'concept-engine':
     case 'diagnostic':
       return null;
@@ -82,6 +94,11 @@ export function mapCallerToSurface(caller: string): 'foxy' | 'quiz' | 'solver' |
  * - caller='ncert-solver'  → 'step_by_step'    (the solver emits ordered steps)
  * - caller='quiz-generator'→ 'quiz_generation' (matches MOL plan-table label)
  * - caller='concept-engine'→ 'concept_explanation'
+ * - caller='lesson'        → 'concept_explanation' (structured chapter lesson
+ *                            notes are, task-wise, extended concept teaching;
+ *                            no lesson-specific TaskType literal exists and
+ *                            adding one to _shared/mol/types.ts is an architect
+ *                            follow-up — MOL ignores unknown task_types anyway)
  * - caller='diagnostic'    → 'evaluation'      (initial knowledge assessment)
  * - unknown caller         → 'explanation'     (broad fallback)
  *
@@ -125,6 +142,9 @@ export function mapPipelineToTaskType(args: {
       // See TODO(c5): mapping-refinement above.
       return 'quiz_generation';
     case 'concept-engine':
+      return 'concept_explanation';
+    case 'lesson':
+      // Lesson notes = extended, structured concept teaching for a chapter.
       return 'concept_explanation';
     case 'diagnostic':
       // Diagnostic callers run initial knowledge assessment, which is structurally

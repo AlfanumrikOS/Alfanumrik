@@ -34,6 +34,25 @@ ruleTester.run('no-direct-ai-calls', rule, {
           code: "const url = 'https://api.voyageai.com/v1/embeddings';",
           filename: path.resolve(process.cwd(), 'supabase/functions/_shared/embeddings.ts'),
         },
+        // 2b. Voyage URL allowed inside _shared/rag/retrieve.ts — this IS the
+        //     retrieval engine grounded-answer delegates to (grounded-answer/
+        //     retrieval.ts imports `retrieve` from it), so it sits inside the
+        //     choke point rather than bypassing it.
+        {
+          code: "const url = 'https://api.voyageai.com/v1/embeddings';",
+          filename: path.resolve(process.cwd(), 'supabase/functions/_shared/rag/retrieve.ts'),
+        },
+        // 2c. Anthropic SDK allowed inside the MOL provider adapters. MOL is a
+        //     second sanctioned choke point that grounded-answer itself depends
+        //     on (mol-shadow.ts imports _shared/mol/index.ts), so MOL cannot
+        //     route through grounded-answer without a dependency cycle.
+        {
+          code: "import Anthropic from '@anthropic-ai/sdk';",
+          filename: path.resolve(
+            process.cwd(),
+            'supabase/functions/_shared/mol/providers/anthropic.ts',
+          ),
+        },
         // 3. Unrelated imports are not flagged
         {
           code: "import React from 'react';",
@@ -74,6 +93,15 @@ ruleTester.run('no-direct-ai-calls', rule, {
         {
           code: 'fetch(`https://api.anthropic.com/v1/messages`);',
           filename: path.resolve(process.cwd(), 'src/lib/ai/retriever.ts'),
+          errors: [{ messageId: 'forbiddenUrl' }],
+        },
+        // 6. Scope pin for the MOL allowlist: only providers/ is blessed. The
+        //    rest of _shared/mol/ (notably grader.ts, the LLM-as-judge) stays
+        //    governed — it is a pending inline-disable + docs decision, not a
+        //    rule exemption. Fails loudly if the glob is widened to mol/**.
+        {
+          code: "fetch('https://api.anthropic.com/v1/messages');",
+          filename: path.resolve(process.cwd(), 'supabase/functions/_shared/mol/grader.ts'),
           errors: [{ messageId: 'forbiddenUrl' }],
         },
       ],

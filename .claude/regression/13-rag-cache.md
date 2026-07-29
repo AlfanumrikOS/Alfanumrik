@@ -363,3 +363,88 @@ payload/telemetry).
 
 ---
 
+## REG-316 — RAG shadow confidence instrumentation (absolute cosine + Voyage rerank score → `confidence_v2`), shadow-only by construction (2026-07-27)
+
+Branch `claude/rag-confidence-shadow-instrumentation`, 2 commits: `6e6f9d96`
+(migration `20260727130000` — expose `cosine_similarity` from
+`match_rag_chunks_ncert`) and `9febc5be` (thread cosine + `rerank_score` through
+retrieval, add `confidence-v2.ts`, compute `confidence_v2` in shadow at BOTH
+trace-write sites, migration `20260727130100` adds 3 nullable columns to
+`grounded_ai_traces`). Both are ZERO BEHAVIOUR CHANGE by design.
+
+**Why this needs pinning.** Confidence v1 feeds `computeConfidence` an RRF
+ORDERING statistic. In the vector-only regime RRF is fixed by construction
+(ranks 1,2,3 → 1/61, 1/62, 1/63) and `groundingPassRatio` is pinned at 1, so v1
+collapses to `0.347606 + 0.2 * (chunks / match_count)` — three reachable values,
+with 912 of 996 sampled production traces landing on exactly `0.647606`. It is a
+chunk counter wearing a relevance costume. v2 substitutes a RELEVANCE signal
+(Voyage rerank score, else absolute cosine) into the SAME unmodified
+`computeConfidence`. The entire value of this step is the INTEGRITY OF THE SHADOW
+DATA it collects — so the pins below protect the data, not a user-visible
+behaviour.
+
+Files: `supabase/functions/grounded-answer/{confidence-v2.ts,pipeline.ts,
+pipeline-stream.ts,retrieval.ts,trace.ts}`,
+`supabase/functions/_shared/rag/retrieve.ts`,
+`supabase/functions/_shared/reranking.ts`,
+`supabase/migrations/20260727130000_rag_ncert_expose_cosine_similarity.sql`,
+`supabase/migrations/20260727130100_grounded_traces_shadow_confidence_v2.sql`.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-316 | `shadow_confidence_v2_is_recorded_never_compared` | **(1) Shadow-only, statically enforced.** No production file compares `confidence_v2`/`confidenceV2` to anything — a quote-aware comment-stripping scan over ~2400 files across `supabase/functions`, `packages/lib/src`, `packages/ui/src`, `apps/host/src`, `mobile/lib`, `eval`, `scripts` finds ZERO relational/equality operators adjacent to the shadow identifier, and the set of files that mention it at all is pinned to exactly four (`confidence-v2.ts`, `pipeline.ts`, `pipeline-stream.ts`, `trace.ts`). The strict-mode abstain gate still reads the v1 bare `confidence`, and `STRICT_CONFIDENCE_ABSTAIN_THRESHOLD` is compared against exactly one identifier (`confidence`) in all four files. The SSE `metadata` frame carries `confidence: plannedConfidence` and NO v2/cosine field, so the wire shape is unchanged. `computeConfidenceV2` delegates to the UNMODIFIED v1 `computeConfidence` — no second formula (no `0.4 *`), no private threshold. A meta-pin proves the detector regex actually fires on 6 synthetic violation shapes and stays silent on the 4 legitimate record-only shapes, so the scan cannot rot into a vacuous pass. **(2) NULL is never coerced to 0 at ANY hop.** Behaviourally at three hops: RPC row → chunk (`mapNcertRow` maps absent column / SQL NULL / NaN / Infinity / non-numeric → `null`, keeps a genuine `0`, and leaves `similarity`'s deliberate `? x : 0` untouched — the two adjacent statements must stay different); `adaptChunk` (`cosine_similarity`/`rerank_score` pass through as `null`, never `0`); and inside `computeConfidenceV2` (a signal-less chunk is OMITTED from the top-3 average, NOT zeroed — the omitted mean is asserted to differ from and exceed the zeroed mean; all-null ⇒ `confidence_v2 = null` + source `'none'`; `chunksReturned` still counts signal-less chunks because coverage is a retrieval-VOLUME term). Statically: the `const cos =` statement ends `: null`, both `ctx.topCosineSimilarity` stamps end `: null`, all three `rr.rankedScores[pos] ?? null` sites, the identity-result `map(() => null)` sites, and the DB columns are nullable with no `NOT NULL`/`DEFAULT 0` and NULL still a legal `confidence_v2_source`. **(3) `rankedScores` ↔ `rankedIndices` positional alignment.** For BOTH rerank implementations (`_shared/reranking.ts` and the private `callVoyageRerank` in `_shared/rag/retrieve.ts`): scores pair with the index Voyage returned them for (not with array position, verified through an out-of-order `[4,0,2]` promotion and re-checked end-to-end after MMR reordering by asserting the chunk_id→score PAIRING); a non-numeric/absent `relevance_score` becomes `null` in its slot without shifting neighbours; slicing to `finalCount` slices both arrays together; and EVERY fall-through path — no documents, no API key, `docCount <= topK`, non-2xx, malformed body, empty `data`, network throw — returns `rankedScores` of the SAME LENGTH as `rankedIndices`, filled with `null`. **(4) Precedence + no scale mixing.** The TOP chunk decides the source (`rerank` > `cosine` > `none`) and it is applied UNIFORMLY: a cosine-only neighbour never enters a `'rerank'` row's top-3 average even when its cosine (0.99) dwarfs the rerank scores; rerank wins even when the cosine is far larger (the rerank/RRF inversion this change exists to defeat); a signal-bearing chunk further down does NOT rescue a signal-less top chunk; the top-3 window is exactly 3; `top_cosine_similarity` is recorded INDEPENDENTLY of the chosen source (a `'rerank'` row still reports its own cosine, or `null` when it has none). Output stays inside the `numeric(5,4)` domain `[0,1]` for out-of-range inputs, and the emitted source vocabulary is exactly the DB CHECK vocabulary `('rerank','cosine','none')`. `computeConfidenceV2` is pure (does not mutate the chunk array), total (never throws on `null`/`undefined`/string/number/object `chunks`), deterministic, and divides safely when `matchCountTarget = 0`. **(5) `match_rag_chunks_ncert` overload count stays at 2 (static migration scan).** PostgREST resolves overloads by argument NAME; a third overload re-opens the production defect of PR #1394, where the caller silently bound a stale floor-less overload and the relevance floor became dead code — and NOTHING in CI failed. A parse of every `CREATE [OR REPLACE] FUNCTION … match_rag_chunks_ncert` across the whole migration chain finds exactly TWO distinct argument-name tuples (the 10-arg `p_min_quality` baseline that must survive for fresh-DB REVOKE replay, and the 11-arg live `p_quality_score_gate` + `p_min_similarity` overload); the newest live definition is `20260727130000` and still carries both discriminators and never `p_min_quality`; every `DROP FUNCTION` of that name targets an 11-arg signature (a 10-arg DROP would break the no-`IF EXISTS` REVOKEs in `20260516040000`/`20260516050000`); `cosine_similarity` is APPENDED LAST to the RETURNS TABLE with `similarity` still at index 5, so positional consumers are unaffected; the function body never names the cosine in a `WHERE`/`ORDER BY`/`HAVING` (output-only) while the vector-CTE floor `1 - (c.embedding <=> query_embedding) >= p_min_similarity` is intact; and the migration keeps its own post-flight `v_total > 2` / `v_live <> 1` / `cosine_similarity`-present aborts. **(6) Deploy-ordering fallback.** `writeTrace` retries ONCE with exactly the three shadow keys stripped on a PGRST204-style failure and ONLY when the row actually carried them (`in`-semantics, so a present-but-`undefined` key still qualifies); the retry payload is byte-identical to the pre-instrumentation row; a legacy row without shadow keys that fails issues EXACTLY ONE insert (a genuine RLS/connection failure is never silently doubled); a thrown first insert is not retried; at most one retry ever; the caller-supplied row is not mutated; and every path returns a non-empty string trace id. | `apps/host/src/__tests__/regressions/rag-confidence-v2-shadow.test.ts` (24); `rag-confidence-v2-shadow-source-pins.test.ts` (24); `rag-shadow-signal-plumbing.test.ts` (28); `grounded-trace-shadow-column-fallback.test.ts` (11) — 87 Vitest tests | E | P12 |
+
+### Known gaps (do NOT read this entry as broader than it is)
+
+- **No live-DB assertion of the overload count.** Pin (5) scans MIGRATION
+  SOURCE, not `pg_proc`. A third overload created out-of-band (hand-run SQL,
+  Supabase Studio, a `_legacy/` replay) is invisible to it. The only live check
+  remains the post-flight `DO $post$` block inside `20260727130000`, which fires
+  only when that migration runs. Closing this needs an integration-lane test
+  under `src/__tests__/migrations/**` against a real Postgres.
+- **No behavioural test of `runPipeline` / `runStreamingPipeline`.** Both boot
+  Deno-only dependencies, so the `ctx.confidenceV2` → `TraceRow` wiring, the
+  `topCosineSimilarity` stamp position (before the `scope_mismatch` branch, so
+  post-retrieval abstain rows carry it), and the pre-retrieval-abstain
+  `confidence_v2_source: null` vs `'none'` DISTINCTION are pinned STATICALLY
+  only. `writeTrace` is covered behaviourally; its two callers are not.
+- **No Deno tests were added.** Deno is not installed in the working
+  environment, so anything under `supabase/functions/**/__tests__/` could not
+  have been executed. Nothing was written there rather than shipping unverified
+  tests.
+- **`numeric(5,4)` rounding is not asserted.** A `confidence_v2` of `0.71234567`
+  is stored as `0.7123`. That is intended (shadow precision) but is a DB-level
+  behaviour with no test.
+- **The pre-existing streaming/non-streaming v1 asymmetry is deliberately NOT
+  pinned.** `pipeline-stream.ts` feeds `computeConfidence` the RAW un-normalized
+  RRF while `pipeline.ts` divides by `RRF_THEORETICAL_MAX`. That asymmetry
+  predates this work and was left exactly as is; adding a test would freeze a
+  bug in place. Flagged to assessment.
+
+### Invariants covered by this section
+
+- P12 (AI safety / grounding honesty) — REG-316 keeps `confidence_v2` a purely
+  observational column: it cannot gate an abstain, cannot reach the SSE wire,
+  and cannot be pooled across measurement scales. The shadow sample it collects
+  is protected against the two failure modes that would silently invalidate it —
+  NULL→0 coercion (an unmeasured chunk recorded as maximally irrelevant) and
+  rerank-score/index misalignment (a real score attributed to the wrong chunk).
+- Operational integrity — REG-316(5) is the CI failure that PR #1394 did not
+  have: the `match_rag_chunks_ncert` overload family is now guarded at review
+  time, not at migration-run time.
+- Safe merge / rollback readiness — REG-316(6): the Edge Function may be
+  deployed ahead of migration `20260727130100` without destroying a single trace
+  row, and rows that predate the instrumentation take the byte-identical old
+  write path.
+
+### Catalog total
+
+Pre-REG-316: 315 entries (through REG-315, GenAI Phase 5d Study Tools client
+surface). Adds REG-316 (RAG shadow confidence instrumentation — shadow-only
+enforcement, NULL-never-zero at every hop, rerank score/index alignment,
+source precedence without scale mixing, `match_rag_chunks_ncert` overload-count
+guard, and the trace-writer deploy-ordering fallback).
+**Total catalog: 316 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

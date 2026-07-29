@@ -55,6 +55,16 @@ import {
 import { fireShadowAndForget, recordShadowTextFromStash } from './mol-shadow.ts';
 import { extractCitations } from './citations.ts';
 import { computeConfidence } from './confidence.ts';
+// SHADOW ONLY (2026-07-27) — mirrors pipeline.ts. Recorded on the trace row
+// this file writes (it has its OWN trace write, so the instrumentation has to
+// be mirrored here). Never compared to a threshold, never gates anything, and
+// deliberately NOT emitted on the `metadata` frame (the wire shape must not
+// change). See confidence-v2.ts.
+import {
+  computeConfidenceV2,
+  coverageOrNull,
+  type ConfidenceV2Source,
+} from './confidence-v2.ts';
 // Digital Twin + Knowledge Graph (Slice 1). Flag-gated cross-subject retrieval
 // widening — mirrors pipeline.ts. Strict no-op when ff_digital_twin_v1 is OFF
 // (default) or no transfer edge exists. See transfer-retrieval.ts.
@@ -274,6 +284,11 @@ interface StreamCtx {
   outputTokens?: number;
   answerLength?: number;
   confidence?: number;
+  // ── Shadow instrumentation (never read by any gate) ──
+  confidenceV2?: number | null;
+  confidenceV2Source?: ConfidenceV2Source | null;
+  topCosineSimilarity?: number | null;
+  signalCoverage?: number | null;
 }
 
 function baseTraceRow(ctx: StreamCtx): TraceRow {
@@ -308,6 +323,11 @@ function baseTraceRow(ctx: StreamCtx): TraceRow {
     grounded_from_chunks: null,
     abstain_reason: null,
     confidence: ctx.confidence ?? null,
+    // Shadow only — see pipeline.ts baseTraceRowFromCtx for the contract.
+    confidence_v2: ctx.confidenceV2 ?? null,
+    confidence_v2_source: ctx.confidenceV2Source ?? null,
+    top_cosine_similarity: ctx.topCosineSimilarity ?? null,
+    signal_coverage: ctx.signalCoverage ?? null,
     answer_length: ctx.answerLength ?? null,
     input_tokens: ctx.inputTokens ?? null,
     output_tokens: ctx.outputTokens ?? null,
@@ -469,6 +489,13 @@ export async function* runStreamingPipeline(
       request.retrieval.match_count,
     );
     if (rr.reranked) {
+      // Shadow instrumentation — mirrors pipeline.ts. rankedScores is
+      // positionally aligned with rankedIndices; the selection expression
+      // below is byte-identical to the pre-instrumentation code.
+      rr.rankedIndices.forEach((idx, pos) => {
+        const c = rawChunks[idx];
+        if (c) c.rerank_score = rr.rankedScores[pos] ?? null;
+      });
       chunks = rr.rankedIndices.map((i) => rawChunks[i]).filter(Boolean);
     } else {
       chunks = rawChunks.slice(0, request.retrieval.match_count);
@@ -501,6 +528,17 @@ export async function* runStreamingPipeline(
         Math.min(3, chunks.length)
       : 0;
   ctx.topSimilarity = chunks.length > 0 ? topSim : null;
+  // Shadow: top chunk's ABSOLUTE cosine. Stamped before the scope_mismatch
+  // branch so post-retrieval abstain rows carry it too. Read by nothing.
+  // The guard MUST match confidence-v2.ts `asSignal` exactly (typeof number AND
+  // Number.isFinite) so a NaN cosine can't be stamped raw here while
+  // computeConfidenceV2 nulls it.
+  ctx.topCosineSimilarity =
+    chunks.length > 0 &&
+    typeof chunks[0].cosine_similarity === 'number' &&
+    Number.isFinite(chunks[0].cosine_similarity)
+      ? chunks[0].cosine_similarity
+      : null;
 
   // Step 6b. scope_mismatch.
   if (scopeDrops > 0 && chunks.length === 0) {
@@ -597,6 +635,24 @@ export async function* runStreamingPipeline(
     groundingCheckPassRatio: 1,
   });
   ctx.confidence = plannedConfidence;
+
+  // SHADOW (2026-07-27). Computed from the relevance signal instead of the
+  // ordering statistic, with the SAME groundingCheckPassRatio=1 the streaming
+  // path gives v1. Persisted on the trace row below; deliberately NOT added to
+  // the `metadata` frame — the SSE wire shape is unchanged, so the UI and the
+  // Next.js route see exactly what they saw before.
+  //
+  // NOTE: v1 above feeds computeConfidence the RAW (un-normalized) RRF here,
+  // unlike pipeline.ts which divides by RRF_THEORETICAL_MAX. That pre-existing
+  // asymmetry is LEFT EXACTLY AS IS — fixing it would be a behaviour change.
+  const shadowV2 = computeConfidenceV2({
+    chunks,
+    matchCountTarget: request.retrieval.match_count,
+    groundingCheckPassRatio: 1,
+  });
+  ctx.confidenceV2 = shadowV2.confidence_v2;
+  ctx.confidenceV2Source = shadowV2.confidence_v2_source;
+  ctx.signalCoverage = coverageOrNull(shadowV2);
 
   // Pre-stream citations: indexed from chunk order. The actual extractCitations
   // pass on the final answer below will refine the list to only those

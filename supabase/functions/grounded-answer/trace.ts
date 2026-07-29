@@ -14,6 +14,7 @@
 //     foxy_chat_messages (student-RLS).
 
 import type { Caller, AbstainReason } from './types.ts';
+import type { ConfidenceV2Source } from './confidence-v2.ts';
 
 export interface TraceRow {
   caller: Caller;
@@ -42,7 +43,26 @@ export interface TraceRow {
    */
   grounded_from_chunks: boolean | null;
   abstain_reason: AbstainReason | null;
+  /** LIVE confidence (v1). This is the ONLY value any gate reads. Unchanged. */
   confidence: number | null;
+  /**
+   * SHADOW confidence (v2) — recorded, never compared. See confidence-v2.ts.
+   * null when no chunk carried a relevance signal, or on pre-retrieval
+   * abstains (which is distinguishable from 'none' via confidence_v2_source
+   * being null rather than 'none').
+   */
+  confidence_v2?: number | null;
+  /** Which relevance signal produced confidence_v2. Keeps scales unpoolable. */
+  confidence_v2_source?: ConfidenceV2Source | null;
+  /** Top chunk's ABSOLUTE cosine (migration 20260727130000). Shadow only. */
+  top_cosine_similarity?: number | null;
+  /**
+   * How many of the top-3 chunks contributed a signal to the average behind
+   * confidence_v2 (0-3). WITHOUT this, confidence_v2 is uninterpretable: a
+   * top-3 average over 1 signal and over 3 signals are very different numbers.
+   * Null whenever confidence_v2 is null. Shadow only.
+   */
+  signal_coverage?: number | null;
   answer_length: number | null;
   input_tokens: number | null;
   output_tokens: number | null;
@@ -52,6 +72,69 @@ export interface TraceRow {
 
 // deno-lint-ignore no-explicit-any
 type SupabaseLike = any;
+
+/**
+ * SHADOW-ONLY columns added by migration 20260727130100. They are pure
+ * instrumentation — nothing reads them at runtime.
+ *
+ * If the Edge Function is deployed AHEAD of the migration these columns do not
+ * exist yet and PostgREST rejects the whole insert (PGRST204), which would
+ * silently destroy the trace row and hand callers a placeholder trace_id. That
+ * would be a real behaviour change, so the writer retries ONCE without them —
+ * but ONLY on a missing-column error (see isMissingShadowColumnError). Net
+ * effect: with the migration applied, identical to a plain insert plus the
+ * shadow values; without it, byte-identical to the pre-instrumentation
+ * behaviour; on any OTHER failure, also byte-identical (no extra write).
+ */
+const SHADOW_TRACE_COLUMNS = [
+  'confidence_v2',
+  'confidence_v2_source',
+  'top_cosine_similarity',
+  'signal_coverage',
+] as const;
+
+function stripShadowColumns(row: TraceRow): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...row };
+  for (const key of SHADOW_TRACE_COLUMNS) delete copy[key];
+  return copy;
+}
+
+/** Any shadow column named inside an error message. */
+const SHADOW_COLUMN_NAME_PATTERN = new RegExp(SHADOW_TRACE_COLUMNS.join('|'));
+/** Phrases PostgREST/Postgres use for "that column is not there". */
+const MISSING_COLUMN_PHRASE = /schema cache|does not exist|unknown column|no such column/i;
+/**
+ * A constraint failure NAMES the column too — e.g. the vocabulary CHECK added
+ * by this very migration is called `grounded_ai_traces_confidence_v2_source_chk`.
+ * That is a genuine rejection of the VALUE, not a missing column: retrying
+ * without the shadow keys would write a row that silently lost real data and
+ * would mask a defect we need to see.
+ */
+const CONSTRAINT_PHRASE = /constraint|violates|out of range|overflow|invalid input/i;
+
+/**
+ * True ONLY for "the shadow columns are not in the schema yet".
+ *
+ * Deliberately narrow. An unconditional retry-on-any-error has three costs:
+ *   (a) if the first insert actually COMMITTED and the client merely lost the
+ *       response, the retry writes a DUPLICATE trace row — a failure mode that
+ *       did not exist before the instrumentation;
+ *   (b) a genuine non-column failure (the source CHECK, a numeric overflow, an
+ *       RLS denial) gets masked AND misattributed to a missing migration;
+ *   (c) every failed insert doubles the round-trip, and on the streaming path
+ *       that write is awaited in front of the metadata frame.
+ */
+function isMissingShadowColumnError(
+  error: { code?: unknown; message?: unknown } | null | undefined,
+): boolean {
+  if (!error) return false;
+  const message = typeof error.message === 'string' ? error.message : '';
+  if (CONSTRAINT_PHRASE.test(message)) return false;
+  // PGRST204 is PostgREST's dedicated "column not found in the schema cache"
+  // code. It is raised BEFORE anything is written, so a retry cannot duplicate.
+  if (error.code === 'PGRST204') return true;
+  return SHADOW_COLUMN_NAME_PATTERN.test(message) && MISSING_COLUMN_PHRASE.test(message);
+}
 
 /**
  * Insert one grounded_ai_traces row.
@@ -68,6 +151,26 @@ export async function writeTrace(sb: SupabaseLike, row: TraceRow): Promise<strin
       .single();
 
     if (error || !data?.id) {
+      // Shadow-column fallback (see SHADOW_TRACE_COLUMNS). Attempted ONLY when
+      // (i) the row actually carried shadow keys AND (ii) the error is a
+      // missing-column signal. Every other failure — including "no error but no
+      // id" — takes the byte-identical pre-instrumentation path: one insert,
+      // one warn, a placeholder id. See isMissingShadowColumnError.
+      const carriedShadow = SHADOW_TRACE_COLUMNS.some((k) => k in row);
+      if (carriedShadow && isMissingShadowColumnError(error)) {
+        const retry = await sb
+          .from('grounded_ai_traces')
+          .insert(stripShadowColumns(row))
+          .select('id')
+          .single();
+        if (retry && !retry.error && retry.data?.id) {
+          console.warn(
+            'trace: shadow confidence columns not present in the schema cache — ' +
+              'inserted without them',
+          );
+          return retry.data.id as string;
+        }
+      }
       console.warn(`trace: insert failed — ${error?.message ?? 'no data'}`);
       return placeholderUuid();
     }

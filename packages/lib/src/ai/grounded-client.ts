@@ -34,7 +34,13 @@ export type Caller =
   | 'ncert-solver'
   | 'quiz-generator'
   | 'concept-engine'
-  | 'diagnostic';
+  | 'diagnostic'
+  // Lesson Generation Agent (GenAI Phase 5b) — first student-facing generative
+  // caller. Mirrors VALID_CALLERS in grounding-config.ts (config-parity).
+  | 'lesson'
+  // Content Generation Agent (GenAI Phase 5c) — NCERT-grounded Mermaid diagram
+  // generator. Mirrors VALID_CALLERS in grounding-config.ts (config-parity).
+  | 'content';
 
 export type Mode = 'strict' | 'soft';
 

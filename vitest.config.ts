@@ -61,6 +61,61 @@ const INTEGRATION_TEST_FILE_GLOBS = [
 
 const isIntegrationRun = process.env.RUN_INTEGRATION_TESTS === '1';
 
+/**
+ * ── Orphaned-lane fix (2026-07-28) ────────────────────────────────────────
+ *
+ * Vitest resolves relative `include` globs against `test.root`, which defaults
+ * to the process CWD — NOT to the directory holding this config file. Every
+ * lane that actually runs invokes vitest with CWD = `apps/host`:
+ *
+ *   root `npm test`   → `npm run test --workspaces --if-present` → apps/host
+ *   CI unit shards    → `npm test -w apps/host -- --config ../../vitest.ci-shard.config.mts`
+ *
+ * So `src/**` correctly resolved to `apps/host/src/**`, but every
+ * `supabase/functions/...` entry below silently resolved to the non-existent
+ * `apps/host/supabase/functions/...` and matched ZERO files. Those 24 files
+ * (411 tests, including the P12 AI-admission and P13 PII-redaction suites)
+ * ran in no lane at all: not in the workspace lane (bad prefix) and not from
+ * the repo root (the root `test` script never invokes vitest directly).
+ *
+ * `repoGlob()` anchors those patterns to THIS FILE's directory, so they
+ * resolve identically no matter what CWD vitest is launched from. Verified:
+ * absolute patterns are honoured by vitest 4's collector.
+ *
+ * Guarded by `apps/host/src/__tests__/vitest-lane-coverage.test.ts`, which
+ * fails if any test file on disk is collected by neither lane.
+ */
+const repoGlob = (p: string) => path.resolve(__dirname, p).split(path.sep).join('/');
+
+/**
+ * Edge-Function and shared-package test files that are Vitest-compatible.
+ * These live outside `apps/host/src`, so they need repo-anchored globs.
+ */
+const CROSS_PACKAGE_TEST_GLOBS = [
+  // MOL shared library (Deno-free helpers) — Vitest-compatible.
+  'supabase/functions/_shared/mol/__tests__/**/*.{test,spec}.ts',
+  // Shared Edge-Function helpers. NOTE: gmail-transport.test.ts is a Deno test
+  // and is deliberately NOT listed (it runs in the `deno test` CI job).
+  'supabase/functions/_shared/__tests__/redact-pii.test.ts',
+  'supabase/functions/_shared/__tests__/python-ai-proxy.test.ts',
+  'supabase/functions/_shared/__tests__/ai-admission.test.ts',
+  'supabase/functions/_shared/__tests__/reliability.test.ts',
+  // C3/C4 MOL grounded-answer harnesses. Every OTHER file in that function's
+  // __tests__ dir uses Deno.test(), hence exact paths rather than a directory
+  // glob — vitest must never load the Deno tests.
+  'supabase/functions/grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts',
+  'supabase/functions/grounded-answer/__vitest__/mol-shadow.vitest-harness.ts',
+  'supabase/functions/grounded-answer/__vitest__/mol-shadow.integration.vitest-harness.ts',
+  'supabase/functions/grounded-answer/__vitest__/mol-shadow-governance.vitest-harness.ts',
+  // PR-2 bulk-jee-neet-import static-source contract canary + pure validators.
+  'supabase/functions/bulk-jee-neet-import/__tests__/index.test.ts',
+  // packages/lib tests are normally reached through the auto-generated
+  // re-export stubs under apps/host/src/lib/**. This one has no stub, so it
+  // needs an explicit entry or it runs nowhere. The lane-coverage guard fails
+  // if another un-stubbed packages test appears without being listed here.
+  'packages/lib/src/foxy/foxy-report.test.ts',
+].map(repoGlob);
+
 export default defineConfig({
   plugins: [react()],
   test: {
@@ -73,50 +128,9 @@ export default defineConfig({
         ]
       : [
           'src/**/*.{test,spec}.{ts,tsx}',
-          'supabase/functions/_shared/mol/__tests__/**/*.{test,spec}.ts',
-          // C3 (MOL grounded-answer integration, 2026-05-18). The
-          // mol-telemetry-adapter is the ONLY grounded-answer test that
-          // runs under vitest — every other file in that __tests__ dir
-          // uses Deno.test() and runs via `deno test`. We pick the exact
-          // file path (not a glob over the directory) to avoid vitest
-          // accidentally loading the Deno tests.
-          'supabase/functions/grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts',
-          // C4 foundation (2026-05-19). Shadow-helper unit tests. Same
-          // exact-path convention as the C3 adapter test above — every
-          // other __tests__ file in that dir is Deno-only.
-          'supabase/functions/grounded-answer/__vitest__/mol-shadow.vitest-harness.ts',
-          // C4.2a wire-up (2026-05-19). End-to-end shadow → orchestrator
-          // → single-row-contract integration test. Exercises the real MOL
-          // codepath with fetch-stubbed providers; verifies the prompt-
-          // parity + de-dup fixes work together.
-          'supabase/functions/grounded-answer/__vitest__/mol-shadow.integration.vitest-harness.ts',
-          // FOX-4 / REG-197 (2026-06-29). Thin governance pin that re-asserts
-          // the two MoL-shadow SAFETY invariants — (i) never student-facing /
-          // output discarded, (ii) flag-OFF/kill-switch ⇒ zero side effects —
-          // under a clear FOX-4 header in the DEFAULT (per-PR-gated) lane. Same
-          // exact-path + three-mock-seam convention as the sibling harness
-          // above; no live key/network/DB.
-          'supabase/functions/grounded-answer/__vitest__/mol-shadow-governance.vitest-harness.ts',
-          // C4.2b-ii text capture (2026-05-20). Tests for the text-based
-          // PII redactor used by mol_shadow_text_buffer writes.
-          'supabase/functions/_shared/__tests__/redact-pii.test.ts',
-          // Phase 1 Python AI services cutover (2026-05-24). Tests for
-          // the proxy helper used by bulk-question-gen (and future
-          // Phase 1+ ports) to forward traffic to Cloud Run.
-          'supabase/functions/_shared/__tests__/python-ai-proxy.test.ts',
-          // Platform Security Layer AI admission wrapper regression tests.
-          'supabase/functions/_shared/__tests__/ai-admission.test.ts',
-          'supabase/functions/_shared/__tests__/reliability.test.ts',
-          // C4.2b-ii text capture (2026-05-20). Tests for recordShadowText
-          // + redaction aggregation + DB insert wiring.
-          'supabase/functions/_shared/mol/__tests__/recordShadowText.test.ts',
-          // PR-2 bulk-jee-neet-import (2026-05-19). Static-source contract
-          // canary + pure-function tests for the validation helpers. The
-          // index.ts under test boots `Deno.serve()` and imports from
-          // esm.sh, so it cannot be loaded directly under vitest — the
-          // test file uses readFileSync inspection for the runtime handler
-          // and imports `validation.ts` (Deno-free) for parser coverage.
-          'supabase/functions/bulk-jee-neet-import/__tests__/index.test.ts',
+          // Repo-anchored so they resolve from ANY cwd — see the
+          // "Orphaned-lane fix" note on CROSS_PACKAGE_TEST_GLOBS above.
+          ...CROSS_PACKAGE_TEST_GLOBS,
         ],
     exclude: isIntegrationRun
       ? [

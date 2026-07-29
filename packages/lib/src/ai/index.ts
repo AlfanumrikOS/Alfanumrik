@@ -17,6 +17,18 @@
 // ─── Client ─────────────────────────────────────────────────────────────────
 export { callClaude, isCircuitBreakerOpen, getCircuitBreakerState } from './clients/claude';
 
+// ─── Model Gateway (Phase 1 — provider-agnostic routing, flag-gated) ─────────
+export { callModel, GATEWAY_FLAG } from './gateway';
+export { selectModelChain, getModel, listModels, LEGACY_FALLBACK_ORDER } from './gateway';
+export { ProviderNotConfiguredError } from './gateway';
+export type {
+  RoutingPolicy,
+  RoutingConstraints,
+  ModelDescriptor,
+  GatewayRequest,
+  GatewayResult,
+} from './gateway';
+
 // ─── Config ─────────────────────────────────────────────────────────────────
 export { getAIConfig, normalizePlan } from './config';
 export { VALID_GRADES, VALID_MODES, VALID_LANGUAGES } from './config';

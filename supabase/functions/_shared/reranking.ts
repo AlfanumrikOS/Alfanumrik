@@ -35,6 +35,29 @@ export interface RerankInput {
 
 export interface RerankResult {
   rankedIndices: number[] // original indices, reordered by relevance
+  /**
+   * Voyage's cross-encoder `relevance_score` for each entry of
+   * `rankedIndices`, POSITIONALLY ALIGNED (rankedScores[i] belongs to
+   * rankedIndices[i]).
+   *
+   * SHADOW INSTRUMENTATION (2026-07-27, step 2 of 3). Until now this score was
+   * read off the wire and DISCARDED, which is why downstream confidence had no
+   * choice but to use the pre-rerank RRF ordering statistic. That is an
+   * inversion hazard: when the cross-encoder correctly promotes a chunk from
+   * vector-rank 8 to position 1, `chunks[0].similarity` is that chunk's LOW
+   * pre-rerank RRF, so a BETTER retrieval measures as LOWER confidence.
+   * Carrying the rerank score is what makes the eventual confidence v2 immune
+   * to that inversion.
+   *
+   * `null` is MEANINGFUL, not missing: it means "no cross-encoder evidence for
+   * this document" and occurs on every identity/fall-through path (no API key,
+   * docCount <= finalCount, HTTP failure, malformed body) and for any entry
+   * Voyage returned without a numeric score. NEVER coerce it to 0 — that would
+   * score an unjudged chunk as maximally irrelevant rather than unknown.
+   *
+   * Output only. Nothing in this module filters or orders on it.
+   */
+  rankedScores: Array<number | null>
   reranked: boolean       // false if reranking was skipped/failed
 }
 
@@ -104,7 +127,8 @@ async function fetchWithRetry(
 
 function identityResult(docCount: number, finalCount: number): RerankResult {
   const indices = Array.from({ length: docCount }, (_, i) => i).slice(0, finalCount)
-  return { rankedIndices: indices, reranked: false }
+  // No cross-encoder ran → no relevance evidence. NULL, never 0.
+  return { rankedIndices: indices, rankedScores: indices.map(() => null), reranked: false }
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +153,7 @@ export async function rerankDocuments(
 
   // Guard: no documents to rerank
   if (!documents || documents.length === 0) {
-    return { rankedIndices: [], reranked: false }
+    return { rankedIndices: [], rankedScores: [], reranked: false }
   }
 
   // Guard: no API key configured
@@ -168,11 +192,18 @@ export async function rerankDocuments(
 
     // API returns results sorted by relevance_score descending already
     // Extract original indices in that order
-    const rankedIndices = result.data
-      .slice(0, finalCount)
-      .map((item) => item.index)
+    const kept = result.data.slice(0, finalCount)
+    const rankedIndices = kept.map((item) => item.index)
+    // Shadow instrumentation: carry the cross-encoder score alongside the
+    // index instead of discarding it. Positionally aligned with
+    // rankedIndices. A non-numeric/absent score stays NULL (unknown), never 0.
+    const rankedScores = kept.map((item) =>
+      typeof item.relevance_score === 'number' && Number.isFinite(item.relevance_score)
+        ? item.relevance_score
+        : null,
+    )
 
-    return { rankedIndices, reranked: true }
+    return { rankedIndices, rankedScores, reranked: true }
   } catch (err) {
     // Best-effort: never let reranking failure break retrieval
     console.warn(

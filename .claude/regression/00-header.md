@@ -6,8 +6,168 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 307 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-306..REG-307 (2026-07-22, Master Action Plan Phase 2.3–2.5 + 3.10 —
+**Total catalog: 317 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-317 (2026-07-27, build/tooling invocability + CI gate blocking
+posture — branch `fix/typecheck-scripts-gap`. Pins the family of defects every
+existing gate was structurally blind to: tooling that COMPILES but cannot be
+INVOKED, and guards that RUN but INSPECT NOTHING. (1) Every npm script path
+token resolves — the `check-npm-script-paths.mjs` canary is SPAWNED (exit 0,
+cwd-independent, counts cross-checked against an independent workspace
+enumeration) and MUTATION-tested against a byte-identical copy in a throwaway
+fixture repo reproducing the exact defect shape (22 declarations in
+`apps/host/package.json` were each missing a `../../`); stripping the prefix
+must exit non-zero naming package/script/token/hint, restoring it must exit 0.
+(2) No file under `scripts/` imports the dead pre-monorepo `../src/lib/` path
+(74 files, three detectors: `from`, `import()`, `require()`, proven against the
+five verbatim shapes from the seven repaired scripts) — detected by SOURCE-TEXT
+scan because `vitest.config.ts` aliases `/^(\.\.\/)+src\/lib\//` to
+`packages/lib/src/`, so a runtime probe is silently rewritten and passes; that
+alias is itself pinned BEHAVIOURALLY by executing its regex, which is exactly
+why ~14,000 tests never caught this. (3) The P13 edge-log guard has a
+ZERO-MATCH FLOOR — it scans all 47 `supabase/functions/*/index.ts` from either
+cwd (count cross-checked, self-updating), and a byte-identical copy in an
+isolated fixture root with no functions must exit non-zero with `FAILED TO RUN:
+matched 0 files` on stderr; adding one clean function makes the same copy exit
+0, adding a PII-logging one exits non-zero — so the floor neither false-greens
+nor replaced the guard's real job. It had shipped as
+`passed (0 index.ts files scanned)` / exit 0. (4) The three quality-job CI
+steps (`Type check (scripts/)`, `Check npm script paths`, `Edge Function log
+PII guard (P13)`) exist, are BLOCKING (no `continue-on-error`), actually invoke
+their gates, and stay ordered after the P15 auth gate — parsed with a real YAML
+parser (NOT the fragile string slicing used by
+`v3-school-rpc-predeploy.test.ts`), with a META-PIN asserting the deliberately
+advisory Supabase-types step reads `continue-on-error: true` so the
+absence-based blocking checks cannot pass vacuously. (5) The Deno pre-warm set
+cannot drift from the test set — job-level `DENO_TEST_TARGETS` (≥5 targets, all
+resolving on disk, unshadowed by any step), EXACTLY two consuming steps, and
+NEITHER `run` body may hardcode a `supabase/functions/` path after comment
+stripping; that is what makes the 2026-07 HTTP 522 drift structurally
+impossible. 23 Vitest tests, all five invariants mutation-proven and restored.
+P13 + P15 + operational integrity. One documented gap: the canary cannot see
+extensionless DIRECTORY arguments — measured, not assumed (121 false positives
+if relaxed), so REG-317 pins the canary's actual contract and claims no more;
+see `11-infrastructure.md`).
+Prior: REG-316 (2026-07-27, RAG shadow confidence instrumentation — branch
+`claude/rag-confidence-shadow-instrumentation`, commits `6e6f9d96` +
+`9febc5be`, both ZERO behaviour change by design. v1 confidence is
+`0.347606 + 0.2*(chunks/5)` in the vector-only regime — three reachable values,
+912/996 production traces at exactly 0.647606, i.e. a chunk counter. v2
+substitutes a relevance signal (Voyage rerank score, else the absolute cosine
+newly exposed by migration `20260727130000`) into the SAME unmodified
+`computeConfidence` and records it on `grounded_ai_traces`. The value of the
+step is the INTEGRITY OF THE SHADOW DATA, so the pins protect the data:
+(1) `confidence_v2` is never compared to a threshold anywhere — a quote-aware
+scan over ~2400 files, the file-mention allowlist pinned at four modules, the
+strict abstain still reading v1 `confidence`, the SSE metadata frame unchanged,
+plus a meta-pin proving the detector regex actually fires; (2) NULL is never
+coerced to 0 at any hop — `mapNcertRow`, `adaptChunk`, and inside
+`computeConfidenceV2` (signal-less chunks are OMITTED from the top-3 average,
+not zeroed; all-null ⇒ null + `'none'`); (3) `rankedScores` stays positionally
+aligned with `rankedIndices` in BOTH rerank implementations, with every
+fall-through path returning same-length all-null arrays; (4) source precedence
+`rerank > cosine > none` decided by the top chunk and applied uniformly, with
+`top_cosine_similarity` recorded independently of the chosen source;
+(5) a static migration scan pinning the `match_rag_chunks_ncert` overload count
+at 2 — the CI failure PR #1394 did not have; (6) `writeTrace` retries ONCE with
+the shadow keys stripped on a PGRST204-style failure, and only when the row
+carried them. 87 Vitest tests across 4 files. P12. Five documented gaps —
+no live-DB overload assertion, no behavioural `runPipeline`/`runStreamingPipeline`
+test, no Deno tests (Deno unavailable), no `numeric(5,4)` rounding assertion,
+and the pre-existing streaming/non-streaming v1 RRF-normalization asymmetry
+deliberately NOT pinned; see `13-rag-cache.md`).
+Prior: REG-315 (2026-07-25, GenAI Phase 5d — the `/foxy` Study Tools CLIENT
+SURFACE, i.e. the student-visible mouth of the Lesson + Content agents pinned by
+REG-313/REG-314: `StudyToolsBar` → `useStudyArtifacts` → `study-artifacts.ts`
+transport → `StudyArtifactSheet`, plus the `diagram-to-foxy-block` adapter into
+the existing REG-55 one-block envelope. Pins (1) flag-OFF DOM IDENTITY asserted
+as `container.innerHTML === ''` (a stray wrapper/divider FAILS) with the two
+flags ramping INDEPENDENTLY and `useGenAiContentFlags` failing CLOSED on cache
+miss / TTL expiry / corrupt cache / throwing or `undefined` flag source, plus the
+registry-not-barrel import canary; (2) the deliberate kind→endpoint ASYMMETRY —
+diagram = POST `/api/content/diagram` with a NESTED `chapter{}`, lesson = GET
+`/api/lesson` with FLAT query params — pinned at the client AND by a static
+read-only canary over both route sources; (3) ABSTAIN-IS-NOT-AN-ERROR (HTTP 200 +
+`abstained:true` → calm bilingual notice, no retry; retry offered ONLY for the
+`network` reason); (4) a CLIENT-side re-run of `validateMermaidCode` as
+defence-in-depth over REG-314's server gate — 9 injection shapes return `null`,
+never reaching the renderer or the DOM, with no raw-source fallback. Promoted NOW
+because migration `20260724220000_set_ff_generation_rollout_100.sql` takes BOTH
+`ff_content_generation_v1` and `ff_lesson_generation_v1` to rollout 100% on merge,
+so the surface reaches every student with no canary window; the flag-OFF clauses
+are the ROLLBACK contract. P12 + P7 + P13 + P5 + P10-adjacent. Two documented
+gaps: no `page.tsx`-level mount test and no per-route chunk assertion — see the
+"Known gap" block in `02-foxy-ai.md`).
+Prior: REG-314 (2026-07-24, GenAI Phase 5c — Content Generation Agent
+[NCERT-grounded Mermaid diagrams]: grounded-only single-retrieval generation with
+a grounded/confidence-0.75/parse-empty abstain ladder, a DUAL safety gate
+[`validateMermaidCode` injection-reject + a v1-kind header constraint, then
+`screenStudentFacingText` over every EN/HI field AND the whole `mermaidCode`] with
+NO raw-SVG fallback, flag-OFF 404 no-op, student-self scope, and a LIVE registered
+agent with zero mastery writes — taking the live agent set from 6 → 7; see
+`02-foxy-ai.md`).
+Prior: REG-313 (2026-07-24, GenAI Phase 5b — Lesson Generation Agent: the FIRST
+student-facing GENERATIVE artifact — additive, flag-gated `ff_lesson_generation_v1`
+(default OFF), a PURE planner (`planLesson`, maps unified-memory bands → a HOW-only
+`LessonPlan`, no re-derived mastery / no threshold literal / codes-only
+`renderAdaptationCodes`) + a grounded-generation orchestrator (`generateLessonNotes`
+— ONE `callGroundedAnswer` single retrieval [REG-50], a grounded=false /
+`confidence < 0.75` / parse-empty abstain ladder, and a Node-side per-field
+`screenStudentFacingText` backstop on EVERY EN + Hindi field where an unsafe section
+is dropped and all-dropped → whole-lesson abstain, fail-soft never-throw) behind a
+student-self-only read route (own `auth.studentId`, NO cross-student path / no
+`canAccessStudent` / no service-role client, flag-OFF → 404 no-op before any work,
+abstain → 200), registered as a LIVE agent with ZERO mastery writes (agent-registry
+invariants d/e/f over the route); P12 AI-safety + P7 bilingual + WHAT/HOW read-only
++ P5 grade-STRING + P13 no-PII; see `02-foxy-ai.md`).
+Prior: REG-312 (2026-07-24, GenAI Phase 5a — read-only Outcome Prediction Agent:
+additive, flag-gated `ff_outcome_prediction_v1` (default OFF), a PURE composer
+(`composeOutcomePrediction`) behind a read-only GET route that COMPOSES the
+platform's existing predictors into one unified `OutcomePrediction` via a 4-tier
+data-source ladder (`board_score_predictions` verbatim → memory-derived
+`predictExamScore` → `cme_exam_readiness` verbatim → `insufficient_data`) with NO
+new prediction math, **NO pass-mark constant** (the D→C1 boundary is DERIVED from
+`calculateBoardExamScore`), and NO recompute of the board score; the route is
+self-vs-cross-student IDOR-safe (RLS-scoped self / `canAccessStudent`-gated
+service-role cross, no payload on any deny) and registers as a LIVE agent with
+ZERO mastery writes (agent-registry invariant e over the route + `_lib/`); P8
+IDOR + P13 no-PII + WHAT/HOW read-only boundary + P1/P2-adjacent; see
+`02-foxy-ai.md`).
+Prior: REG-311 (2026-07-24, GenAI Phase 4 — runtime `ResponseEval` observability
+sensor: additive, flag-gated `ff_response_eval_v1` (default OFF), OBSERVABILITY-ONLY
+9-dimension response sensor that NEVER blocks/alters a response; pins per-dimension
+normalization for all 9 dims incl. every boundary (mastery 0.4/0.7/0.85, latency
+800/8000ms, cost budget/ceiling, confidence 0.75/0.6 floor/cap, ungrounded cap,
+output-screen 1.0/0.5/0.0), the 6 flag conditions [`toxicity_unsafe`,
+`age_inappropriate`, `curriculum_out_of_scope`, `hallucination_risk_high`,
+`latency_over_ceiling`, `cost_over_ceiling`] firing only under their exact
+condition (difficulty_fit + the 2 deferred dims NEVER flag), PII-clean
+fire-and-forget emission (codes/ids/numbers only, no prose/PII key), never-throw,
+and flag-OFF byte-identity via the re-run 42-test Foxy route suites; P12 AI-safety
+observability + P13 no-PII; see `02-foxy-ai.md`).
+Prior: REG-310 (2026-07-24, GenAI Phase 3 — Agent Registry + WHAT/HOW boundary:
+pure-metadata + inert (no flag/migration/activation) 7-agent registry that is
+HOW-only (`decides:'HOW'`, `mayWriteMastery:false`) with the teeth — a static
+`findMasteryWrites` proof that NO live agent surface (Foxy route + `_lib/`,
+quiz-generator, teacher-dashboard, parent-report-generator) directly writes any of
+the 9 forbidden mastery/progression tables; the adaptive engine alone decides
+WHAT, mastery moves only through the concept-check/BKT projector path —
+adaptive-decides-WHAT learner-state boundary, P1/P2 scoring-adjacent; see
+`02-foxy-ai.md`).
+Prior: REG-309 (2026-07-24, GenAI Phase 2 — Unified Student Memory read-API:
+flag-gated `ff_unified_memory_v1` (default OFF) DPDP erasure suppression
+(pending/purging → fully-empty memory, service-role read, FAIL-CLOSED on any
+error), flag-OFF byte-identity via reference-identical passthrough of the
+existing cognitive/twin/long-memory sub-contexts, fail-soft composition (a
+rejecting sub-read degrades only its slice, never throws), and a PII-clean prompt
+renderer that equals the existing per-slice renderers — P13, WHAT/HOW read-only
+boundary; see `02-foxy-ai.md`).
+Prior: REG-308 (2026-07-24, GenAI Phase 1 — provider-agnostic Model Gateway
+backward-compat + provider-routing safety: flag-OFF `ff_model_gateway_v1` forces
+the `default` policy which reproduces the legacy Anthropic-primary chain
+byte-for-byte, the router never selects a dormant `configured:false` provider
+(both Gemini seams), config.ts model-name byte-identity, and Deno↔TS
+`MODEL_FALLBACK_ORDER` parity — P12; see `02-foxy-ai.md`).
+Prior: REG-306..REG-307 (2026-07-22, Master Action Plan Phase 2.3–2.5 + 3.10 —
 REG-306 Alfa OS shell launch [Practice/Revision/Test OS presentation shells:
 default-OFF client-first-paint flag identity + existing-nav non-regression +
 shell render contract + PredictedScoreCard byte-parity + REG-125-conformant
@@ -75,7 +235,7 @@ zero-prior-coverage gap on the fetch call itself — see
 | `08-parent-portal.md` | Consumer Minimalism waves, parent portal, consent |
 | `09-adaptive-program.md` | Adaptive remediation loops A/B/C/D, digital twin |
 | `10-rbac-rls.md` | RBAC matrix, RLS policies, Student Pulse, XC-3 phases, mutation gates |
-| `11-infrastructure.md` | Python AI ports, Voice, Mobile parity, CI alerting + sharded-CI fan-in contract + E2E label-gated/nightly topology, PWA, curriculum versioning, design system |
+| `11-infrastructure.md` | Python AI ports, Voice, Mobile parity, CI alerting + sharded-CI fan-in contract + E2E label-gated/nightly topology + build invocability & CI gate blocking posture, PWA, curriculum versioning, design system |
 | `12-observability.md` | Monitoring data boundary, PostHog analytics |
 | `13-rag-cache.md` | RAG eval harness, Voyage rerank, grounded-answer cache, response-cache, Knowledge Intelligence |
 | `14-audit-remediation.md` | Engineering audit cycles 1-8, tier-2 PRs |

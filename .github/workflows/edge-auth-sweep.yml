@@ -31,7 +31,13 @@ jobs:
     name: Unauthenticated probe (production)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Advisory until 5 consecutive clean runs. Then flip to false.
+    # CATEGORY (i) — DELIBERATE ADVISORY. Audited 2026-07-28 and LEFT AS-IS.
+    # This IS a real P9 security gate (it probes deployed Edge Functions for
+    # unauthenticated access) and it currently CANNOT fail the workflow. That is
+    # intentional per the advisory-first rollout in the header: flip to `false`
+    # after 5 consecutive clean nightly runs. Flagged in the CI-gate audit as a
+    # known, time-boxed exception rather than an oversight — if the flip date has
+    # passed without action, that is the thing to fix, not this comment.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6

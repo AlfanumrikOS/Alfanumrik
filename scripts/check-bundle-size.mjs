@@ -31,12 +31,63 @@
  *     that EVERY authed page loads on first paint. The HTML-scan method
  *     reflects what the browser actually downloads on the first request.
  *
- *   - Per-page:   walk page_client-reference-manifest.js files,
- *     extract unique /_next/static/chunks/*.js paths, sum gzipped.
- *     Page cost = (page-specific chunks). We report page-specific
- *     cost (page chunks only, ex-shared) against the 260 kB cap.
+ *   - Per-page:   walk page_client-reference-manifest.js files and sum the
+ *     gzipped size of every unique chunk the route's RSC manifest attributes
+ *     to it. See the PER-PAGE REPAIR note below.
  *
- * Exit code: 0 on pass, 1 on any violation.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * PER-PAGE REPAIR — 2026-07-28 CI-gate forensic audit. READ BEFORE EDITING.
+ *
+ * The per-page gate was measuring LITERALLY ZERO and passing unconditionally.
+ *
+ * Root cause: it searched the RSC manifests for the string
+ * `/_next/static/chunks/`. Next.js 16 does not emit that form in
+ * `page_client-reference-manifest.js`. It emits BARE, un-prefixed paths inside
+ * each client module's `chunks` array:
+ *
+ *     "chunks":["98108","static/chunks/cbab336a-b869ffaf495c6fb9.js", ...]
+ *
+ * The `/_next/` prefix only appears in RENDERED HTML (which is why
+ * measureShared()'s HTML scan kept working). Verified against a real build:
+ * `/_next/static/chunks/` occurs 0 times across all 204 manifests, while
+ * `static/chunks/` occurs 177 times in a single manifest. Result: every page
+ * measured 0.0 kB, `0 over cap`, green forever.
+ *
+ * What it was hiding: 101 of 204 routes exceed the 260 kB P10 per-page budget,
+ * worst /super-admin/entitlements at 307.0 kB gzipped.
+ *
+ * The metric: `firstLoadKb` = gzipped total of the unique `static/chunks/*.js`
+ * files the route's own RSC client-reference manifest lists (its page chunks
+ * PLUS the layout/shared chunks it pulls). This is the route-attributable
+ * first-load client JS and it is what the 260 kB cap in P10 refers to.
+ * `pageOnlyKb` (ex-shared) is still reported, but only as a diagnostic — it is
+ * not the gate, because subtracting shared chunks flatters every page.
+ *
+ * ENFORCEMENT MODEL — RATCHET, not a cap raise.
+ * The cap stays at 260 kB. Raising it to paper over 101 breaches would need CEO
+ * approval (P10 is a product invariant) and would falsely claim compliance. So:
+ *   1. `scripts/bundle-baseline.json` records today's measured size per route.
+ *   2. Any route that grows past its baseline (+ tolerance) FAILS. Bleeding stops
+ *      immediately.
+ *   3. Any route NOT in the baseline (i.e. new) that exceeds 260 kB FAILS. New
+ *      debt is inadmissible.
+ *   4. Every route currently over 260 kB is printed as a loud, labelled WARNING
+ *      block on every CI run, so the debt is permanently visible.
+ *   5. Routes that shrink below baseline print a "ratchet opportunity" hint.
+ * Regenerate the baseline deliberately with `--update-baseline` (never in CI).
+ *
+ * ANTI-VACUITY FLOORS (this file's whole failure mode was a silent zero):
+ *   - zero routes measured                     -> FAIL (distinct message)
+ *   - zero chunk references extracted          -> FAIL
+ *   - every route measures 0 kB                -> FAIL
+ *   - shared measurement is 0 kB / 0 HTML pages-> FAIL
+ *   - middleware measures 0 kB                 -> FAIL
+ *   - baseline file missing/empty in gate mode -> FAIL
+ * A gate that can silently measure nothing is the bug being fixed here. Do not
+ * reintroduce a code path where "found nothing" reads as "passed".
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Exit code: 0 on pass, 1 on any violation, 2 on vacuity/setup failure.
  *
  * TODO (next bundle-reduction targets, 2026-05-05):
  *   1. Lazy-init `@supabase/*` (currently ~55 kB in chunk `0umrmss-c34-s.js`,
@@ -51,9 +102,10 @@
  *   Once both land, drop CAP_SHARED_KB below to the P10 baseline of 160 kB.
  */
 
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
-import { join, relative, sep } from 'node:path';
+import { join, relative, sep, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Caps (P10 in .claude/CLAUDE.md)
 // CAP_SHARED_KB is INTERIM at 280 (2026-06-12). The P10 baseline is 160 kB.
@@ -244,59 +296,187 @@ function measureShared() {
 }
 
 // 3. Per-page client chunks
+//
+// Next.js 16 RSC manifests list chunks WITHOUT the `/_next/` prefix:
+//   "chunks":["98108","static/chunks/cbab336a-b869ffaf495c6fb9.js", ...]
+// Accept both forms so this keeps working if a future Next version reinstates
+// the prefix, and count the extractions so vacuity is detectable.
+const PAGE_CHUNK_RE = /"(?:\/_next\/)?(static\/chunks\/[^"]+?\.js)"/g;
+
 function measurePages(sharedSet) {
   const appDir = join(SERVER_DIR, 'app');
-  if (!existsSync(appDir)) return { pages: [] };
+  if (!existsSync(appDir)) return { pages: [], manifestCount: 0, chunkRefCount: 0 };
   const manifests = walk(appDir, (f) => f.endsWith('page_client-reference-manifest.js'));
 
+  const sizeCache = new Map();
+  const sizeOf = (rel) => {
+    if (sizeCache.has(rel)) return sizeCache.get(rel);
+    const buf = readIfExists(join(NEXT_DIR, rel));
+    const v = buf ? gzKb(buf) : 0;
+    sizeCache.set(rel, v);
+    return v;
+  };
+
   const pages = [];
+  let chunkRefCount = 0;
   for (const mf of manifests) {
     const raw = readIfExists(mf);
     if (!raw) continue;
     const text = raw.toString('utf8');
-    const chunkRe = /\/_next\/static\/chunks\/([^"'\s]+\.js)/g;
     const seen = new Set();
     let m;
-    while ((m = chunkRe.exec(text)) !== null) seen.add(`static/chunks/${m[1]}`);
+    PAGE_CHUNK_RE.lastIndex = 0;
+    while ((m = PAGE_CHUNK_RE.exec(text)) !== null) {
+      chunkRefCount++;
+      seen.add(m[1]);
+    }
 
     const rel = relative(appDir, mf).split(sep);
     rel.pop();
-    const route = '/' + rel.join('/').replace(/\/page$/, '');
+    const route = '/' + rel.join('/');
 
     let pageOnly = 0;
-    let pageTotal = 0;
+    let firstLoad = 0;
     for (const r of seen) {
-      const abs = join(NEXT_DIR, r);
-      const buf = readIfExists(abs);
-      if (!buf) continue;
-      const size = gzKb(buf);
-      pageTotal += size;
+      const size = sizeOf(r);
+      firstLoad += size;
       if (!sharedSet.has(r)) pageOnly += size;
     }
     pages.push({
-      route: route || '/',
+      route: route === '/' ? '/' : route,
+      chunkCount: seen.size,
+      // GATED metric: route-attributable first-load client JS.
+      firstLoadKb: Math.round(firstLoad * 10) / 10,
+      // Diagnostic only (ex-shared). NOT the gate — see the header note.
       pageOnlyKb: Math.round(pageOnly * 10) / 10,
-      pageTotalKb: Math.round(pageTotal * 10) / 10,
     });
   }
-  pages.sort((a, b) => b.pageOnlyKb - a.pageOnlyKb);
-  return { pages };
+  pages.sort((a, b) => b.firstLoadKb - a.firstLoadKb);
+  return { pages, manifestCount: manifests.length, chunkRefCount };
+}
+
+// ── Ratchet baseline ────────────────────────────────────────────────────────
+// Resolved relative to THIS FILE, not to cwd. `check:bundle-size` is declared in
+// BOTH the root package.json (cwd = repo root) and apps/host/package.json
+// (cwd = apps/host); a cwd-relative path made the gate exit 2 from apps/host,
+// which is itself a way for the gate to stop working for the wrong reason.
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const BASELINE_PATH = join(SCRIPT_DIR, 'bundle-baseline.json');
+// Growth allowance per route. CI gzip/OS deltas run ~1% vs local (documented in
+// the CAP_SHARED_KB history above), so a pure-percentage or pure-absolute
+// tolerance alone is either too tight on big pages or too loose on small ones.
+// Calibrated 2026-07-28 against a real local-vs-CI comparison on PR #1407: a
+// baseline generated locally and enforced in CI showed a near-uniform positive
+// offset across 191 of 204 routes with ZERO new routes over cap -- a build
+// environment gzip/OS delta, not a code change. Measured distribution of that
+// offset: p0 +1.16%, p50 +1.49%, p90 +2.03%, p100 +2.27%. The original 1.0% was
+// under-calibrated for it.
+//
+// 1.5% is set at the MEDIAN of that cross-environment offset, deliberately NOT
+// at its p100. That means this tolerance ALONE does not, and is not intended to,
+// absorb a cross-environment baseline mismatch: replaying PR #1407's numbers
+// against 2.5/1.5 still breaches 53 of 191 routes (2.0/1.0 breached 191/191).
+// It is sized for run-to-run variance WITHIN a single environment, which is much
+// smaller than the cross-environment delta. The cross-environment problem has
+// exactly one correct fix: the baseline must be generated by the environment
+// that enforces it. Do not widen these constants to make a provenance mismatch
+// go away -- 4.0/2.5 would have silenced PR #1407 completely, and would equally
+// silence a genuine 2% shared-code regression.
+//
+// This does NOT compound: the ratchet always compares against the fixed
+// baseline, never the previous run, so a route can only ever reach
+// baseline + tolerance no matter how many PRs land.
+const TOL_ABS_KB = 2.5;
+const TOL_PCT = 1.5;
+const allowanceFor = (baselineKb) =>
+  Math.round((baselineKb + Math.max(TOL_ABS_KB, (baselineKb * TOL_PCT) / 100)) * 10) / 10;
+
+// The loader validates ONLY `pages`. Every other key is metadata and is
+// tolerated-but-ignored, so provenance fields (`provenance`,
+// `localDerivedRoutes`, `buildEnvironment`, `localFallbackBuildId`) can be added
+// to the baseline document without touching this function.
+function loadBaseline() {
+  const raw = readIfExists(BASELINE_PATH);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw.toString('utf8'));
+    if (!parsed || typeof parsed.pages !== 'object' || parsed.pages === null) return null;
+    if (Object.keys(parsed.pages).length === 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeBaseline(pages, buildId) {
+  const sorted = {};
+  for (const p of [...pages].sort((a, b) => a.route.localeCompare(b.route))) {
+    sorted[p.route] = p.firstLoadKb;
+  }
+  const doc = {
+    _comment:
+      'P10 per-page ratchet baseline. Metric = gzipped total of the unique ' +
+      'static/chunks/*.js files a route\'s RSC client-reference manifest lists ' +
+      '(route-attributable first-load client JS). The 260 kB cap is UNCHANGED; ' +
+      'this file only stops existing debt from growing. Regenerate deliberately ' +
+      'with `node scripts/check-bundle-size.mjs --update-baseline` after a full ' +
+      '`npm run build`, and explain the delta in the PR. Never regenerate in CI.',
+    metric: 'rsc-manifest-first-load-gzip-kb',
+    capPageKb: CAP_PAGE_KB,
+    toleranceAbsKb: TOL_ABS_KB,
+    tolerancePct: TOL_PCT,
+    // Record WHICH ENVIRONMENT produced these numbers. A baseline generated in
+    // one environment and enforced in another reads as a mass ratchet breach
+    // (PR #1407: 191/204 routes, uniform +1.3%-1.8%). Making provenance explicit
+    // means the next person can tell environment drift from a real regression
+    // by reading the file instead of re-deriving it from the CI log.
+    provenance: process.env.CI
+      ? 'CI-derived: generated by a CI runner (full regeneration, single provenance).'
+      : 'LOCAL-derived: generated on a developer machine (full regeneration, single ' +
+        'provenance). Expect CI to measure ~1-2% HIGHER on every route due to gzip/OS ' +
+        'deltas. If CI then reports a mass ratchet breach, that is this provenance ' +
+        'mismatch, not a regression — re-derive the baseline from CI.',
+    buildEnvironment: process.env.CI ? 'ci' : 'local',
+    generatedAt: new Date().toISOString(),
+    buildId,
+    pageCount: pages.length,
+    pages: sorted,
+  };
+  writeFileSync(BASELINE_PATH, JSON.stringify(doc, null, 2) + '\n');
+  return doc;
+}
+
+// ── Anti-vacuity ────────────────────────────────────────────────────────────
+// Every measurement below must prove it actually measured something. A gate
+// that reports "0 violations" because it found 0 inputs is the exact bug this
+// script was repaired for (see the PER-PAGE REPAIR note at the top).
+const vacuity = [];
+function assertNonVacuous(condition, message) {
+  if (!condition) vacuity.push(message);
 }
 
 // Report + Verdict
 function main() {
+  const updateBaseline = process.argv.includes('--update-baseline');
+
   if (!existsSync(NEXT_DIR)) {
     console.error('ERROR: .next/ not found. Run `npm run build` first.');
     process.exit(2);
   }
 
+  const buildId = (readIfExists(join(NEXT_DIR, 'BUILD_ID')) || Buffer.from('unknown'))
+    .toString('utf8')
+    .trim();
+
   const mw = measureMiddleware();
   const shared = measureShared();
-  const { pages } = measurePages(shared.sharedSet || new Set());
+  const { pages, manifestCount, chunkRefCount } = measurePages(shared.sharedSet || new Set());
 
   const violations = [];
+  const warnings = [];
 
   console.log('=== Bundle Size Report (gzipped) ===');
+  console.log(`build id: ${buildId}`);
   console.log();
   console.log(`Shared JS (chunks loaded by >= ${SHARED_THRESHOLD_PCT}% of ${shared.htmlPagesScanned ?? 0} rendered pages)`);
   for (const r of shared.files) {
@@ -305,41 +485,232 @@ function main() {
   const sharedVerdict = shared.totalKb > CAP_SHARED_KB ? 'OVER' : 'PASS';
   console.log(`  TOTAL: ${kb(shared.totalKb)} / ${CAP_SHARED_KB} kB --- ${sharedVerdict}`);
   if (sharedVerdict === 'OVER') violations.push(`Shared JS ${kb(shared.totalKb)} > ${CAP_SHARED_KB} kB`);
+  assertNonVacuous(shared.files.length > 0, 'shared JS: 0 chunks identified');
+  assertNonVacuous(shared.totalKb > 0, 'shared JS: measured 0.0 kB');
   console.log();
 
-  console.log('Middleware (real chunks referenced by stub)');
+  console.log('Middleware (bundled middleware / chunks referenced by the stub)');
   for (const r of mw.chunks) {
     console.log(`  ${r.missing ? '[MISSING]' : '         '} ${kb(r.kb)}  ${r.file}`);
   }
   const mwVerdict = mw.totalKb > CAP_MIDDLEWARE_KB ? 'OVER' : 'PASS';
   console.log(`  TOTAL: ${kb(mw.totalKb)} / ${CAP_MIDDLEWARE_KB} kB --- ${mwVerdict}`);
   if (mwVerdict === 'OVER') violations.push(`Middleware ${kb(mw.totalKb)} > ${CAP_MIDDLEWARE_KB} kB`);
+  assertNonVacuous(mw.totalKb > 0, 'middleware: measured 0.0 kB');
   console.log();
 
-  console.log(`Per-page bundles (page-specific cost, excluding shared; cap ${CAP_PAGE_KB} kB)`);
-  console.log('  Top 15 heaviest:');
-  for (const p of pages.slice(0, 15)) {
-    const verdict = p.pageOnlyKb > CAP_PAGE_KB ? 'OVER' : 'ok  ';
-    console.log(`  [${verdict}] ${kb(p.pageOnlyKb).padStart(9)}  ${p.route}`);
+  // ── Per-page ──────────────────────────────────────────────────────────────
+  const measuredTotal = pages.reduce((n, p) => n + p.firstLoadKb, 0);
+  const nonZeroPages = pages.filter((p) => p.firstLoadKb > 0).length;
+
+  assertNonVacuous(manifestCount > 0, 'per-page: 0 RSC page manifests found under .next/server/app');
+  assertNonVacuous(
+    chunkRefCount > 0,
+    'per-page: 0 chunk references extracted from the RSC manifests ' +
+      '(the manifest chunk-path format changed again — this is the exact 2026-07-28 bug)',
+  );
+  assertNonVacuous(pages.length > 0, 'per-page: 0 routes measured');
+  assertNonVacuous(nonZeroPages > 0, 'per-page: every route measured 0.0 kB');
+  assertNonVacuous(measuredTotal > 0, 'per-page: total measured first-load JS is 0.0 kB');
+
+  console.log(`Per-page first-load JS (route-attributable, gzipped; cap ${CAP_PAGE_KB} kB)`);
+  console.log(
+    `  measured ${pages.length} routes from ${manifestCount} RSC manifests ` +
+      `(${chunkRefCount} chunk refs, ${nonZeroPages} non-zero)`,
+  );
+  console.log('  Top 10 heaviest:');
+  for (const p of pages.slice(0, 10)) {
+    const verdict = p.firstLoadKb > CAP_PAGE_KB ? 'OVER CAP' : '   ok   ';
+    console.log(
+      `  [${verdict}] ${kb(p.firstLoadKb).padStart(9)}  (ex-shared ${kb(p.pageOnlyKb).padStart(8)})  ${p.route}`,
+    );
   }
-  const overPages = pages.filter((p) => p.pageOnlyKb > CAP_PAGE_KB);
-  if (overPages.length > 0) {
-    for (const p of overPages) {
-      violations.push(`Page ${p.route}: ${kb(p.pageOnlyKb)} > ${CAP_PAGE_KB} kB`);
+  const overCap = pages.filter((p) => p.firstLoadKb > CAP_PAGE_KB);
+  console.log(`  ${overCap.length} of ${pages.length} routes are over the ${CAP_PAGE_KB} kB cap.`);
+  console.log();
+
+  if (updateBaseline) {
+    if (vacuity.length > 0) {
+      console.error('=== REFUSING TO WRITE BASELINE — MEASUREMENT IS VACUOUS ===');
+      for (const v of vacuity) console.error(`  ${v}`);
+      process.exit(2);
+    }
+    const doc = writeBaseline(pages, buildId);
+    console.log(`Wrote ${relative(ROOT, BASELINE_PATH)} — ${doc.pageCount} routes, build ${buildId}.`);
+    console.log('Commit it, and explain any deltas in the PR.');
+    process.exit(0);
+  }
+
+  // ── Ratchet enforcement ───────────────────────────────────────────────────
+  const baseline = loadBaseline();
+  if (!baseline) {
+    console.error('=== P10 RATCHET BASELINE MISSING OR EMPTY ===');
+    console.error(`  Expected: ${relative(ROOT, BASELINE_PATH)}`);
+    console.error('  Without it the per-page gate cannot distinguish "no growth" from');
+    console.error('  "measured nothing". Failing rather than passing vacuously.');
+    console.error('  Regenerate with: npm run build && node scripts/check-bundle-size.mjs --update-baseline');
+    process.exit(2);
+  }
+
+  const baselinePages = baseline.pages;
+  const baselineRoutes = new Set(Object.keys(baselinePages));
+  const grew = [];
+  const newOverCap = [];
+  const shrank = [];
+  let matchedRoutes = 0;
+
+  for (const p of pages) {
+    if (baselineRoutes.has(p.route)) {
+      matchedRoutes++;
+      const base = baselinePages[p.route];
+      const allowed = allowanceFor(base);
+      if (p.firstLoadKb > allowed) {
+        grew.push({ route: p.route, base, now: p.firstLoadKb, allowed });
+      } else if (p.firstLoadKb < base - TOL_ABS_KB) {
+        shrank.push({ route: p.route, base, now: p.firstLoadKb });
+      }
+    } else if (p.firstLoadKb > CAP_PAGE_KB) {
+      newOverCap.push(p);
     }
   }
-  console.log(`  (${pages.length} pages measured, ${overPages.length} over cap)`);
+
+  // A baseline that matches (almost) nothing means route naming drifted and the
+  // ratchet is silently comparing against an empty set. Fail loudly.
+  const matchPct = pages.length > 0 ? (matchedRoutes / pages.length) * 100 : 0;
+  assertNonVacuous(
+    matchedRoutes > 0,
+    'ratchet: 0 measured routes matched the baseline (route-key drift — the ratchet is comparing nothing)',
+  );
+  if (matchedRoutes > 0 && matchPct < 50) {
+    warnings.push(
+      `Only ${matchedRoutes}/${pages.length} (${matchPct.toFixed(0)}%) measured routes exist in the ` +
+        'baseline. Regenerate the baseline if this is an intentional route restructure.',
+    );
+  }
+
+  // ── Systemic-drift diagnostic ─────────────────────────────────────────────
+  // DIAGNOSIS, NOT AMNESTY. This block can only ever ADD a warning; it never
+  // removes, suppresses or downgrades a violation, and the RATCHET BREACH loop
+  // below runs unconditionally. That is deliberate: a root-layout regression
+  // (e.g. a new import in the shared AuthContext) also moves every route by a
+  // small uniform amount, and would trip this exact heuristic. So the shape
+  // "most routes moved, all by a similar small ratio" is AMBIGUOUS between an
+  // environment delta and a genuine shared-code regression — it narrows the
+  // search, it does not exonerate. Never make this auto-pass.
+  //
+  // Why it exists: on PR #1407 the gate emitted 191 near-identical FAIL lines
+  // and nothing in the output said "these are all the same +1.5%". Anyone
+  // reading the log had to re-derive that by hand from 191 rows.
+  if (grew.length > 0 && matchedRoutes > 0) {
+    const grewShare = grew.length / matchedRoutes;
+    const ratios = grew.map((g) => g.now / g.base);
+    const minGrowthPct = (Math.min(...ratios) - 1) * 100;
+    const maxGrowthPct = (Math.max(...ratios) - 1) * 100;
+    if (grewShare >= 0.5 && maxGrowthPct <= 3) {
+      warnings.push(
+        `SYSTEMIC DRIFT SIGNATURE: ${grew.length}/${matchedRoutes} matched routes grew, ` +
+          `all by ${minGrowthPct.toFixed(1)}%-${maxGrowthPct.toFixed(1)}%, with ` +
+          `${newOverCap.length} new route(s) over cap. A uniform proportional shift across ` +
+          'most routes is the signature of a BUILD-ENVIRONMENT delta (gzip/OS/toolchain ' +
+          'version) rather than a code regression — a real regression normally moves a few ' +
+          'routes a lot, not every route a little. Verify before acting: (1) no single route ' +
+          'moved substantially more than the pack, (2) the shared-JS total held steady. If ' +
+          'both hold, regenerate the baseline FROM CI (a baseline must be produced by the ' +
+          'environment that enforces it) — do NOT widen the tolerance. If only a few routes ' +
+          'grew, or shared JS moved too, treat this as a REAL regression and fix the code. ' +
+          'This warning does not and must not make the gate pass.',
+      );
+    }
+  }
+
+  for (const g of grew) {
+    violations.push(
+      `RATCHET BREACH ${g.route}: ${kb(g.now)} > baseline ${kb(g.base)} (+tolerance = ${kb(g.allowed)})`,
+    );
+  }
+  for (const p of newOverCap) {
+    violations.push(
+      `NEW ROUTE OVER CAP ${p.route}: ${kb(p.firstLoadKb)} > ${CAP_PAGE_KB} kB (new routes get no grandfathering)`,
+    );
+  }
+
+  const missingFromBuild = [...baselineRoutes].filter(
+    (r) => !pages.some((p) => p.route === r),
+  );
+
+  console.log('P10 ratchet (cap unchanged at 260 kB; baseline stops existing debt from growing)');
+  console.log(
+    `  baseline: ${Object.keys(baselinePages).length} routes, generated ${baseline.generatedAt || 'unknown'} ` +
+      `(build ${baseline.buildId || 'unknown'})`,
+  );
+  console.log(`  provenance: ${baseline.buildEnvironment || 'unrecorded'}`);
+  if (Array.isArray(baseline.localDerivedRoutes) && baseline.localDerivedRoutes.length > 0) {
+    console.log(
+      `  MIXED PROVENANCE: ${baseline.localDerivedRoutes.length} route(s) still carry ` +
+        'local-derived values (see `localDerivedRoutes` / `provenance` in the baseline).',
+    );
+  }
+  console.log(`  matched ${matchedRoutes}/${pages.length} measured routes`);
+  console.log(`  grew beyond baseline: ${grew.length} | new routes over cap: ${newOverCap.length}`);
+  if (shrank.length > 0) {
+    console.log(`  RATCHET OPPORTUNITY — ${shrank.length} route(s) now smaller than baseline:`);
+    for (const s of shrank.slice(0, 10)) {
+      console.log(`    ${kb(s.now).padStart(9)} (was ${kb(s.base)})  ${s.route}`);
+    }
+    console.log('    Re-run with --update-baseline to lock in the improvement.');
+  }
+  if (missingFromBuild.length > 0) {
+    console.log(`  ${missingFromBuild.length} baseline route(s) no longer in the build (removed/renamed).`);
+  }
   console.log();
+
+  // ── Loud, permanent debt warning ──────────────────────────────────────────
+  if (overCap.length > 0) {
+    console.log('###########################################################################');
+    console.log(`## P10 DEBT: ${overCap.length} of ${pages.length} routes EXCEED the ${CAP_PAGE_KB} kB per-page budget.`);
+    console.log('## These are grandfathered by the ratchet baseline — they are NOT compliant.');
+    console.log('## Target is Indian 4G (2-5 Mbps): every 100 kB is ~0.2-0.4s of extra wait.');
+    console.log('## The cap has NOT been raised. This debt must be paid down, not re-baselined.');
+    console.log('###########################################################################');
+    for (const p of overCap) {
+      const base = baselinePages[p.route];
+      console.log(
+        `  OVER ${kb(p.firstLoadKb).padStart(9)} / ${CAP_PAGE_KB} kB  ${p.route}` +
+          (base !== undefined ? `  (baseline ${kb(base)})` : '  (NOT IN BASELINE)'),
+      );
+    }
+    console.log(`  max: ${kb(overCap[0].firstLoadKb)} at ${overCap[0].route}`);
+    console.log();
+  }
+
+  for (const w of warnings) console.log(`  WARNING: ${w}`);
+  if (warnings.length > 0) console.log();
+
+  // ── Vacuity verdict (checked BEFORE the pass path) ────────────────────────
+  if (vacuity.length > 0) {
+    console.error('=== VACUOUS MEASUREMENT DETECTED (P10 gate is checking nothing) ===');
+    for (const v of vacuity) console.error(`  FAIL: ${v}`);
+    console.error();
+    console.error('This gate previously reported 0.0 kB for all 204 routes and passed');
+    console.error('unconditionally for months. Refusing to repeat that. Fix the measurement');
+    console.error('(see the PER-PAGE REPAIR note in scripts/check-bundle-size.mjs).');
+    process.exit(2);
+  }
 
   if (violations.length > 0) {
     console.log('=== VIOLATIONS (P10) ===');
     for (const v of violations) console.log(`  FAIL: ${v}`);
     console.log();
     console.log('See P10 in .claude/CLAUDE.md. Run `npm run analyze` to investigate.');
+    console.log('Do NOT "fix" this by raising the cap or re-baselining a regression:');
+    console.log('P10 is a product invariant and cap changes require CEO approval.');
     process.exit(1);
   }
 
-  console.log('All bundles within P10 budget.');
+  console.log(
+    `Shared/middleware within budget; no per-page ratchet breach ` +
+      `(${pages.length} routes measured, ${overCap.length} carrying pre-existing P10 debt).`,
+  );
   process.exit(0);
 }
 

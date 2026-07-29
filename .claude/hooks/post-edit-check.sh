@@ -39,8 +39,18 @@ if grep -qE "(SUPABASE_SERVICE_ROLE|sk_live_|rzp_live_|eyJhbGciOi)" "$FILE_PATH"
 fi
 
 # ── Check: NEXT_PUBLIC_ with service role ────────────────────
-if grep -qE "NEXT_PUBLIC_.*SERVICE_ROLE|NEXT_PUBLIC_.*ADMIN_SECRET" "$FILE_PATH" 2>/dev/null; then
-  WARNINGS="${WARNINGS}P8 VIOLATION: $FILE_PATH exposes a server secret via NEXT_PUBLIC_ prefix. This will be visible to browsers. "
+# Scoped to code files. Documentation legitimately lists env var NAMES side by
+# side (e.g. "NEXT_PUBLIC_SUPABASE_URL, ..., SUPABASE_SERVICE_ROLE_KEY" on one
+# line), which the `.*` in this pattern matched across — firing a false P8
+# VIOLATION on every edit to CLAUDE.md. Crying wolf on docs trains agents to
+# ignore the warning, which is worse than not having it. Markdown and .example
+# files are excluded, matching the hardcoded-secret check above.
+if ! echo "$FILE_PATH" | grep -qE "\.(example|md|mdx|txt)$"; then
+  # Require the two halves to be part of the SAME identifier: no whitespace,
+  # comma, or quote between the prefix and the secret token.
+  if grep -qE "NEXT_PUBLIC_[A-Za-z0-9_]*(SERVICE_ROLE|ADMIN_SECRET)" "$FILE_PATH" 2>/dev/null; then
+    WARNINGS="${WARNINGS}P8 VIOLATION: $FILE_PATH exposes a server secret via NEXT_PUBLIC_ prefix. This will be visible to browsers. "
+  fi
 fi
 
 # ── Check: console.log in production code ────────────────────
@@ -55,7 +65,7 @@ if ! echo "$FILE_PATH" | grep -qE "xp-rules\.ts$"; then
   # Look for suspicious XP arithmetic patterns
   if grep -qE "\*\s*10\s*[;+]|quiz_per_correct|===\s*100\s*\?\s*50|>=\s*80\s*\?\s*20" "$FILE_PATH" 2>/dev/null; then
     if echo "$FILE_PATH" | grep -qE "\.(ts|tsx|dart)$"; then
-      WARNINGS="${WARNINGS}P2 WARNING: $FILE_PATH may contain hardcoded XP values. XP constants must come from XP_RULES in src/lib/xp-rules.ts. "
+      WARNINGS="${WARNINGS}P2 WARNING: $FILE_PATH may contain hardcoded XP values. XP constants must come from XP_RULES in packages/lib/src/xp-rules.ts (canonical; apps/host/src/lib/xp-rules.ts is a generated re-export stub). Import via the @alfanumrik/lib/xp-rules alias. "
     fi
   fi
 fi

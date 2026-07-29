@@ -230,3 +230,162 @@ export const FOXY_OLYMPIAD_MODE_FLAGS = {
 export const FOXY_INTERACTIVE_LESSON_FLAGS = {
   V1: 'ff_foxy_interactive_lesson_v1',
 } as const;
+
+/**
+ * Provider-agnostic Model Gateway flag (2026-07-24, GenAI architecture Phase 1).
+ *
+ *  ff_model_gateway_v1 — gates the NON-DEFAULT routing policies of the new
+ *    provider-agnostic Model Gateway (the shared AI-infra layer in front of the
+ *    LLM providers behind Foxy / ncert-solver / quiz-generator / cme-engine /
+ *    grounded-answer). When OFF (default), the gateway reproduces today's
+ *    Anthropic-primary behavior EXACTLY — no alternate provider selection, no
+ *    fallback/shadow/cost-routing policy runs — so OFF is a TRUE no-op and every
+ *    AI path is byte-identical to today. When ON, the gateway's non-default
+ *    routing policies (multi-provider selection, failover, cost/latency routing)
+ *    become active behind the same call surface. Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_foxy_response_cache_l2_v1 / ff_adaptive_live_selection_v1 precedent —
+ *    lives in FLAG_DEFAULTS as false and is intentionally NOT added to
+ *    EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (that list is the CEO-approved
+ *    forced-OFF posture derived from migration 20260720110000; every member must
+ *    be console-protected). Seed migration is owned by architect; the gateway
+ *    implementation (packages/lib/src/ai/gateway/**) is owned by ai-engineer.
+ *    While absent from feature_flags every read path resolves it to OFF.
+ */
+export const MODEL_GATEWAY_FLAGS = {
+  /** Provider-agnostic Model Gateway non-default routing policies. Default off = legacy Anthropic-primary. */
+  V1: 'ff_model_gateway_v1',
+} as const;
+
+/**
+ * Unified Student Memory read-API flag (2026-07-24, GenAI architecture Phase 2).
+ *
+ *  ff_unified_memory_v1 — gates the Unified Student Memory read-API (the shared
+ *    memory-assembly layer that consolidates today's per-reader memory behavior
+ *    behind a single read surface). When OFF (default), every reader keeps its
+ *    legacy per-reader memory assembly EXACTLY — no unified read path runs — so
+ *    OFF is a TRUE no-op and memory behavior is byte-identical to today. When ON,
+ *    readers resolve memory through the unified read-API behind the same call
+ *    surface. Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_model_gateway_v1 / ff_foxy_response_cache_l2_v1 precedent — lives in
+ *    FLAG_DEFAULTS as false and is intentionally NOT added to EXPECTED_OFF_FLAGS /
+ *    PROTECTED_FLAGS (that list is the CEO-approved forced-OFF posture derived
+ *    from migration 20260720110000; every member must be console-protected). Seed
+ *    migration is owned by architect; the memory implementation
+ *    (packages/lib/src/memory/**) is owned by ai-engineer. While absent from
+ *    feature_flags every read path resolves it to OFF.
+ */
+export const UNIFIED_MEMORY_FLAGS = {
+  /** Unified Student Memory read-API. Default off = legacy per-reader memory assembly. */
+  V1: 'ff_unified_memory_v1',
+} as const;
+
+/**
+ * Runtime ResponseEval observability sensor flag (2026-07-24, GenAI architecture
+ * Phase 4).
+ *
+ *  ff_response_eval_v1 — gates the runtime 9-dimension ResponseEval observability
+ *    sensor (the fire-and-forget quality-scoring layer that grades AI responses
+ *    across 9 dimensions behind Foxy / ncert-solver / quiz-generator / cme-engine /
+ *    grounded-answer). When OFF (default), no runtime eval is computed or emitted —
+ *    so OFF is a TRUE no-op and every AI path is byte-identical to today. When ON,
+ *    the sensor computes and emits the 9-dimension eval fire-and-forget, off the
+ *    response's critical path (it never alters student-visible output). Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_unified_memory_v1 / ff_model_gateway_v1 / ff_foxy_response_cache_l2_v1
+ *    precedent — lives in FLAG_DEFAULTS as false and is intentionally NOT added to
+ *    EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (that list is the CEO-approved forced-OFF
+ *    posture derived from migration 20260720110000; every member must be
+ *    console-protected). Seed migration is owned by architect; the eval
+ *    implementation (packages/lib/src/ai/eval/**) is owned by ai-engineer. While
+ *    absent from feature_flags every read path resolves it to OFF.
+ */
+export const RESPONSE_EVAL_FLAGS = {
+  /** Runtime 9-dimension ResponseEval observability sensor. Default off = no runtime eval (byte-identical, fire-and-forget). */
+  V1: 'ff_response_eval_v1',
+} as const;
+
+/**
+ * Outcome Prediction Agent read-only endpoint flag (2026-07-24, GenAI architecture
+ * Phase 5a).
+ *
+ *  ff_outcome_prediction_v1 — gates the read-only Outcome Prediction Agent endpoint
+ *    (the forward-looking predictor that projects a learner's likely outcomes from
+ *    existing signals). When OFF (default), the endpoint serves NO prediction — it
+ *    returns a disabled/404-style response — so OFF is a TRUE no-op and no
+ *    prediction is ever computed or surfaced. When ON, the endpoint serves the
+ *    read-only prediction behind the same call surface (it never mutates
+ *    student-visible state). Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_response_eval_v1 / ff_unified_memory_v1 / ff_model_gateway_v1 precedent —
+ *    lives in FLAG_DEFAULTS as false and is intentionally NOT added to
+ *    EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (that list is the CEO-approved forced-OFF
+ *    posture derived from migration 20260720110000; every member must be
+ *    console-protected). Seed migration is owned by architect; the prediction
+ *    implementation (packages/lib/src/predict/**) is owned by assessment and the
+ *    API route by backend. While absent from feature_flags every read path resolves
+ *    it to OFF.
+ */
+export const OUTCOME_PREDICTION_FLAGS = {
+  /** Read-only Outcome Prediction Agent endpoint (GenAI Phase 5a). Default off. */
+  V1: 'ff_outcome_prediction_v1',
+} as const;
+
+/**
+ * Lesson Generation Agent student-facing endpoint flag (2026-07-24, GenAI
+ * architecture Phase 5b).
+ *
+ *  ff_lesson_generation_v1 — gates the student-facing Lesson Generation Agent
+ *    endpoint (the on-demand lesson builder that composes a generated lesson from
+ *    existing signals). When OFF (default), the endpoint serves NO generated
+ *    lesson — it returns a disabled/404-style response — so OFF is a TRUE no-op
+ *    and no lesson is ever generated or surfaced. When ON, the endpoint serves the
+ *    generated lesson behind the same call surface (it never mutates
+ *    student-visible state). Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_outcome_prediction_v1 / ff_response_eval_v1 / ff_unified_memory_v1 /
+ *    ff_model_gateway_v1 precedent — lives in FLAG_DEFAULTS as false and is
+ *    intentionally NOT added to EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (that list is
+ *    the CEO-approved forced-OFF posture derived from migration 20260720110000;
+ *    every member must be console-protected). Seed migration is owned by architect;
+ *    the lesson implementation (packages/lib/src/lesson/**) is owned by
+ *    ai-engineer and assessment and the API route by backend. While absent from
+ *    feature_flags every read path resolves it to OFF.
+ */
+export const LESSON_GENERATION_FLAGS = {
+  /** Student-facing Lesson Generation Agent (GenAI Phase 5b). Default off = no generated lesson served. */
+  V1: 'ff_lesson_generation_v1',
+} as const;
+
+/**
+ * Content Generation Agent student-facing endpoint flag (2026-07-24, GenAI
+ * architecture Phase 5c).
+ *
+ *  ff_content_generation_v1 — gates the student-facing Content Generation Agent
+ *    endpoint (the on-demand Mermaid diagram generator that composes generated
+ *    content — Mermaid diagrams — from existing signals). When OFF (default), the
+ *    endpoint serves NOTHING — it returns a disabled/404-style response — so OFF
+ *    is a TRUE no-op and no content is ever generated or surfaced. When ON, the
+ *    endpoint serves the generated content behind the same call surface (it never
+ *    mutates student-visible state). Default: false.
+ *
+ *    Normal staged-rollout flag (NOT constitution-pinned): mirrors the
+ *    ff_lesson_generation_v1 / ff_outcome_prediction_v1 / ff_response_eval_v1 /
+ *    ff_unified_memory_v1 / ff_model_gateway_v1 precedent — lives in FLAG_DEFAULTS
+ *    as false and is intentionally NOT added to EXPECTED_OFF_FLAGS /
+ *    PROTECTED_FLAGS (that list is the CEO-approved forced-OFF posture derived from
+ *    migration 20260720110000; every member must be console-protected). Seed
+ *    migration is owned by architect; the diagram implementation
+ *    (packages/lib/src/diagram/**) is owned by ai-engineer and the API route by
+ *    backend. While absent from feature_flags every read path resolves it to OFF.
+ */
+export const CONTENT_GENERATION_FLAGS = {
+  /** Student-facing Content Generation Agent (Mermaid diagrams, GenAI Phase 5c). Default off = nothing served. */
+  V1: 'ff_content_generation_v1',
+} as const;

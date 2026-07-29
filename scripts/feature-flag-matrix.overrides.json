@@ -92,6 +92,16 @@
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=0."
     },
     {
+      "name": "ff_content_generation_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "ai-learning-backend",
+      "rationale": "Student-facing GenAI Content Generation Agent (Mermaid diagrams, GenAI Phase 5c). TURNED OFF by CEO decision 2026-07-27, superseding the 2026-07-24 FULL 100% rollout. Reason: the surface is a DEAD END — it serves a 'not ready' abstain on ~100% of requests, so withdrawing it costs nothing and removes a broken student-facing button. Verified in-source: generate-diagram.ts:298 builds its GroundedRequest with mode:'strict'; strict mode runs the coverage precheck (supabase/functions/grounded-answer/coverage.ts) BEFORE Voyage/Claude, and that precheck hard-gates on cbse_syllabus.rag_status = 'ready', short-circuiting to abstain_reason 'chapter_not_ready' for anything else. Production has ZERO rag_status='ready' rows (CEO-reported 2026-07-27), consistent with recompute_syllabus_status() only promoting a chapter at chunk_count >= 50 AND verified_question_count >= 40 — the ~16,006 ingested NCERT chunks read 'partial' purely because their questions are unverified, so the corpus is present and only the readiness SIGNAL is missing. is_enabled=FALSE is load-bearing and NOT interchangeable with rollout_percentage=0: the client reader getFeatureFlags() (packages/lib/src/supabase.ts:81-109, via apps/host/src/app/foxy/_hooks/useGenAiContentFlags.ts) selects only flag_name/is_enabled/target_roles/target_environments/target_institutions and IGNORES rollout_percentage, so rollout 0 alone would leave the /foxy Study Tools 'Diagram' pill VISIBLE while the server 404s. With is_enabled=FALSE, StudyToolsBar renders null and the surface is a clean no-op. Not protected / not in EXPECTED_OFF_FLAGS; seeded OFF by 20260724180000, ON at 10% by 20260724210000, 100% by 20260724220000, and OFF/0 by the later-timestamped superseding migration 20260727120000_disable_ff_generation_agents.sql (all merged migrations left intact as history; migrations apply in timestamp order so the later one wins). DO NOT re-enable until the coverage/confidence gate fix has landed AND been validated against production data (real ready-chapter counts plus a real /api/content/diagram call returning grounded output rather than an abstain envelope).",
+      "enablementEvidence": "NOT ENABLED. Retained as the disablement record: CEO decision 2026-07-27 to turn this flag OFF (is_enabled=FALSE, rollout 0), superseding the 2026-07-24 100% enablement, recorded through the feature-flag governance path (matrix override + regenerate + forward superseding migration 20260727120000_disable_ff_generation_agents.sql). No merged migration was edited or deleted. Prior enablement evidence (2026-07-24 CEO 100% rollout, migration 20260724220000_set_ff_generation_rollout_100.sql) is superseded and retained only in git history. Re-enablement precondition: rag_status='ready' coverage/confidence fix landed AND validated against production data — this flag must not be flipped back on as a retry."
+    },
+    {
       "name": "ff_demo_accounts_v2",
       "defaultEnabled": false,
       "stagingEnabled": false,
@@ -390,6 +400,16 @@
       "owner": "release-ops",
       "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[], rollout=0.",
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=0."
+    },
+    {
+      "name": "ff_lesson_generation_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": false,
+      "rolloutPercentage": 0,
+      "owner": "ai-learning-backend",
+      "rationale": "Student-facing GenAI Lesson Generation Agent (lesson notes, GenAI Phase 5b). TURNED OFF by CEO decision 2026-07-27, superseding the 2026-07-24 FULL 100% rollout. Reason: the surface is a DEAD END — it serves a 'not ready' abstain on ~100% of requests, so withdrawing it costs nothing and removes a broken student-facing button. Verified in-source: generate-lesson.ts:260 builds its GroundedRequest with mode:'strict'; strict mode runs the coverage precheck (supabase/functions/grounded-answer/coverage.ts) BEFORE Voyage/Claude, and that precheck hard-gates on cbse_syllabus.rag_status = 'ready', short-circuiting to abstain_reason 'chapter_not_ready' for anything else. Production has ZERO rag_status='ready' rows (CEO-reported 2026-07-27), consistent with recompute_syllabus_status() only promoting a chapter at chunk_count >= 50 AND verified_question_count >= 40 — the ~16,006 ingested NCERT chunks read 'partial' purely because their questions are unverified, so the corpus is present and only the readiness SIGNAL is missing. is_enabled=FALSE is load-bearing and NOT interchangeable with rollout_percentage=0: the client reader getFeatureFlags() (packages/lib/src/supabase.ts:81-109, via apps/host/src/app/foxy/_hooks/useGenAiContentFlags.ts) selects only flag_name/is_enabled/target_roles/target_environments/target_institutions and IGNORES rollout_percentage, so rollout 0 alone would leave the /foxy Study Tools 'Lesson notes' pill VISIBLE while the server 404s. With is_enabled=FALSE, StudyToolsBar renders null and the surface is a clean no-op. Not protected / not in EXPECTED_OFF_FLAGS; seeded OFF by 20260724170000, ON at 10% by 20260724200000, 100% by 20260724220000, and OFF/0 by the later-timestamped superseding migration 20260727120000_disable_ff_generation_agents.sql (all merged migrations left intact as history; migrations apply in timestamp order so the later one wins). DO NOT re-enable until the coverage/confidence gate fix has landed AND been validated against production data (real ready-chapter counts plus a real /api/lesson call returning grounded output rather than an abstain envelope).",
+      "enablementEvidence": "NOT ENABLED. Retained as the disablement record: CEO decision 2026-07-27 to turn this flag OFF (is_enabled=FALSE, rollout 0), superseding the 2026-07-24 100% enablement, recorded through the feature-flag governance path (matrix override + regenerate + forward superseding migration 20260727120000_disable_ff_generation_agents.sql). No merged migration was edited or deleted. Prior enablement evidence (2026-07-24 CEO 100% rollout, migration 20260724220000_set_ff_generation_rollout_100.sql) is superseded and retained only in git history. Re-enablement precondition: rag_status='ready' coverage/confidence fix landed AND validated against production data — this flag must not be flipped back on as a retry."
     },
     {
       "name": "ff_level_up_celebration_v1",
@@ -700,6 +720,16 @@
       "owner": "platform-ops",
       "rationale": "Reviewed live feature_flags posture for RCA-24 product readiness; target_environments=[\"production\",\"staging\"], rollout=100.",
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[\"production\",\"staging\"], rollout_percentage=100."
+    },
+    {
+      "name": "ff_response_eval_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": true,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "ai-learning-backend",
+      "rationale": "Launch-required runtime observability sensor (GenAI Phase 4). CEO-authorized enablement for launch (2026-07-24): fire-and-forget 9-dimension ResponseEval signal emitted metadata-only into ops_events; never alters student-visible AI output, latency budget, or payload (true no-op to the response path). Enabled at 100% because an observability sensor has no partial-rollout value. Not protected / not in EXPECTED_OFF_FLAGS; staged-rollout flag seeded OFF by 20260724140000 and flipped ON by the companion activation migration 20260724190000.",
+      "enablementEvidence": "CEO-authorized launch enablement 2026-07-24 via the feature-flag governance path (matrix override + regenerate + activation migration 20260724190000_enable_ff_response_eval_v1.sql). Fire-and-forget observability sensor, byte-identical student-facing behavior; sink is the existing append-only public.ops_events log (service-role read, PII-redacted per P13)."
     },
     {
       "name": "ff_rule_engine_v1",

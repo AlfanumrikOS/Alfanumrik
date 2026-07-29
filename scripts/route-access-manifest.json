@@ -96,6 +96,13 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/content/diagram",
+      "file": "apps/host/src/app/api/content/diagram/route.ts",
+      "access": "auth",
+      "owner": "ai-learning-backend",
+      "rationale": "Authenticated student-self content generation (GenAI Phase 5c); reads only the caller's own grade + learner-memory slice via the RLS-scoped server client and generates on-demand NCERT-grounded Mermaid diagrams for the caller's own studentId. No cross-student path and no service-role/admin client."
+    },
+    {
       "path": "/api/cron/account-purge",
       "file": "apps/host/src/app/api/cron/account-purge/route.ts",
       "access": "cron",
@@ -654,6 +661,13 @@
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
     },
     {
+      "path": "/api/lesson",
+      "file": "apps/host/src/app/api/lesson/route.ts",
+      "access": "auth",
+      "owner": "ai-learning-backend",
+      "rationale": "Authenticated student-self lesson generation (GenAI Phase 5b); reads only the caller's own grade + learner-memory slice via the RLS-scoped server client and generates on-demand NCERT-grounded lesson notes for the caller's own studentId. No cross-student path and no service-role/admin client."
+    },
+    {
       "path": "/api/mol/feedback",
       "file": "apps/host/src/app/api/mol/feedback/route.ts",
       "access": "auth",
@@ -886,6 +900,14 @@
       "owner": "core-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/predict/outcome",
+      "file": "apps/host/src/app/api/predict/outcome/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
+      "serviceRoleUse": "Cross-student outcome-prediction read; service-role used only after canAccessStudent boundary, per B1 ruling; RLS on cme_exam_readiness/board_score_predictions has no teacher/guardian policy."
     },
     {
       "path": "/api/public/v1/classes",

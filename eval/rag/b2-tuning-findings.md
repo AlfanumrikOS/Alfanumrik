@@ -1,5 +1,34 @@
 # RAG Retrieval Tuning — Sub-project B2, Iteration 1 (MEASUREMENT-ONLY)
 
+> ## ⚠️ CORRECTION 2026-07-27 — THE FLOOR LANE IN THIS DOCUMENT IS SUPERSEDED
+>
+> Every "floor" number below (§(a), the `floor=0.3 / 0.4 / 0.5` rows in §(c), and
+> the §(e) recommendation) describes a world that no longer exists, and the
+> harness that produced them had a defect. Do not cite the floor lane.
+>
+> 1. **At the time of measurement (2026-06-14)**, `retrieve()`'s `minSimilarity`
+>    option was forwarded to the RPC's `p_min_quality` — a content-**quality**
+>    gate, not a similarity floor. The "provably inert / byte-identical" finding
+>    was therefore correct, but it was a finding about the *quality gate*.
+> 2. **PR #1394 (2026-07-26)** rebuilt this: the RPC now takes a real
+>    `p_min_similarity` ABSOLUTE COSINE floor plus a separate
+>    `p_quality_score_gate`, and `retrieve()` deliberately reads `opts.minSimilarity`
+>    **nowhere** (retrieve.ts:627-630). The cosine floor is driven only by
+>    `opts.minCosineSimilarity`, defaulting to `NCERT_MIN_COSINE_SIMILARITY = 0.22`.
+> 3. **The harness kept sweeping `minSimilarity`** after that change, so from
+>    #1394 until 2026-07-27 the floor lane was a *pure no-op*: all three configs
+>    ran at the identical default cosine floor while `buildConfigResult` recorded
+>    a `floor` param that was never applied. `LIVE_DEFAULT_FLOOR = 0.5` was stale
+>    on both counts (0.5 is the RPC's SQL-level default, which retrieve() always
+>    overrides; the live path has never run at 0.5).
+>
+> Fixed 2026-07-27 in `eval/rag/harness/b2-sweep.ts`: the lane now sweeps
+> `minCosineSimilarity`, the constant is `LIVE_DEFAULT_COSINE_FLOOR = 0.22`, the
+> recorded param key is `cosine_floor`, and the swept band is 0.15 / 0.22 / 0.30
+> (under the 0.35 hard ceiling at retrieve.ts:355). **The floor lane must be
+> re-run before any floor claim is made.** The fetch-N, MMR-λ and RRF-k lanes in
+> this document are unaffected.
+
 **Date:** 2026-06-14
 **Branch:** `feat/rag-b2-tuning`
 **Scope:** Find retrieval-setting changes that beat the committed B1 baseline, measured rigorously against the 30-item golden set. **No production deploy. No production retrieval settings were edited or committed.**

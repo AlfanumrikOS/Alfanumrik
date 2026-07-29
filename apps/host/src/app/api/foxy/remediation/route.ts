@@ -18,6 +18,20 @@
  *    student who hits the same wrong answer.
  *  - Service-role inserts only; authenticated read (no PII stored).
  *
+ * P12 (AI safety) posture — see generateWithHaiku() for the details:
+ *  - Rule 2 (no unfiltered LLM output): every student-facing string is run
+ *    through `screenStudentFacingText` in BOTH languages. Because the cache
+ *    row is durable and shared, screening happens BEFORE the INSERT, not just
+ *    before the response — a rejected completion leaves no row behind. Cached
+ *    rows are ALSO screened on read, since rows written before this screen
+ *    existed were never checked.
+ *  - Rule 5 (circuit breaker): the Claude call goes through `callClaude`,
+ *    which owns the breaker, retry/backoff, timeout and model fallback. This
+ *    route no longer hand-rolls a fetch to the Anthropic endpoint.
+ *  - Every generation failure mode (no key, upstream error, breaker open,
+ *    empty completion, screening rejection) collapses into one identical 503
+ *    so no new oracle is introduced alongside the P3 uniform 403.
+ *
  * Wire: this endpoint is intentionally NOT yet wired from the quiz UI —
  * the assessment + frontend agents will integrate it after the curated
  * bank lands.
@@ -34,11 +48,18 @@ import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
+import { callClaude } from '@alfanumrik/lib/ai/clients/claude';
+import { screenStudentFacingText } from '@alfanumrik/lib/ai/validation/output-screen';
 
-const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_VERSION = '2023-06-01';
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const REMEDIATION_TIMEOUT_MS = 8_000;
+
+const REMEDIATION_SYSTEM_PROMPT =
+  'You are an Indian CBSE tutor writing a 2-sentence remediation for a student who picked the wrong answer. ' +
+  'Sentence 1: name the misconception in plain English. ' +
+  'Sentence 2: a 1-line correction or example pointing to the right idea. ' +
+  'Then on a new line, write the same remediation in simple Hindi prefixed with "HI: ". ' +
+  'No greetings, no markdown, no citations.';
 
 function errorJson(message: string, status: number, extra?: Record<string, unknown>): NextResponse {
   return NextResponse.json({ success: false, error: message, ...extra }, { status });
@@ -233,6 +254,23 @@ export async function POST(request: NextRequest): Promise<Response> {
   // 1. Cache lookup.
   const cached = await fetchCached(questionId, distractorIndex);
   if (cached) {
+    // P12: screen on READ as well as on write. Rows written BEFORE output
+    // screening existed on this route were never screened, and the cache is
+    // durable — UNIQUE(question_id, distractor_index) means one such row is
+    // replayed to every future student who picks that distractor. Screening
+    // the write path alone would leave that pre-existing population unfiltered.
+    // We refuse to serve a failing row (same 503 as a generation failure) but
+    // deliberately do NOT delete it: deletion here would let a screening
+    // false-positive silently destroy curated content, and the row is already
+    // unreachable to students either way.
+    const safe = remediationTextIsSafe(
+      [cached.remediation_text, cached.remediation_text_hi],
+      { grade: undefined, subject: undefined },
+      { question_id: questionId, distractor_index: distractorIndex, origin: 'cache' },
+    );
+    if (!safe) {
+      return errorJson('Could not generate remediation. Please try again.', 503);
+    }
     return NextResponse.json({
       success: true,
       remediation: cached.remediation_text,
@@ -277,7 +315,15 @@ export async function POST(request: NextRequest): Promise<Response> {
     (question.explanation ? `Reference explanation: ${question.explanation}\n` : '') +
     'Write the 2-sentence remediation now.';
 
-  const generated = await generateWithHaiku(prompt);
+  // P12: generateWithHaiku screens internally and returns null on ANY of
+  // {no API key, upstream failure, circuit breaker open, empty completion,
+  // screening rejection}. All five collapse into this single 503 so the
+  // student-facing surface cannot distinguish them.
+  const generated = await generateWithHaiku(
+    prompt,
+    { grade: question.grade ?? undefined, subject: question.subject ?? undefined },
+    { question_id: questionId, distractor_index: distractorIndex },
+  );
   if (!generated) {
     return errorJson('Could not generate remediation. Please try again.', 503);
   }
@@ -306,62 +352,130 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
 }
 
-async function generateWithHaiku(prompt: string): Promise<{ english: string; hindi: string | null } | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REMEDIATION_TIMEOUT_MS);
-  try {
-    const response = await fetch(ANTHROPIC_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-      },
-      body: JSON.stringify({
-        model: HAIKU_MODEL,
-        max_tokens: 256,
-        temperature: 0.3,
-        system:
-          'You are an Indian CBSE tutor writing a 2-sentence remediation for a student who picked the wrong answer. ' +
-          'Sentence 1: name the misconception in plain English. ' +
-          'Sentence 2: a 1-line correction or example pointing to the right idea. ' +
-          'Then on a new line, write the same remediation in simple Hindi prefixed with "HI: ". ' +
-          'No greetings, no markdown, no citations.',
-        messages: [{ role: 'user', content: prompt }],
-      }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      await response.text().catch(() => '');
-      return null;
-    }
-    const body = await response.json().catch(() => null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const blocks: any[] = Array.isArray(body?.content) ? body.content : [];
-    const text = blocks
-      .filter((b) => b?.type === 'text' && typeof b.text === 'string')
-      .map((b) => b.text as string)
-      .join('')
-      .trim();
-    if (!text) return null;
-
-    // Split English vs Hindi by the "HI:" marker.
-    const hiMarker = text.indexOf('\nHI:');
-    if (hiMarker > 0) {
-      const english = text.slice(0, hiMarker).trim();
-      const hindi = text.slice(hiMarker + 4).trim() || null;
-      return { english, hindi };
-    }
-    return { english: text, hindi: null };
-  } catch (err) {
-    logger.warn('foxy_remediation_llm_failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
+/**
+ * P7 bilingual split — BEHAVIOUR-PRESERVING extraction of the original
+ * inline logic. Do not "simplify" this:
+ *
+ *  - The system prompt asks Haiku for the English remediation, then the SAME
+ *    remediation in simple Hindi on a NEW LINE prefixed with "HI: ". The
+ *    marker we search for is therefore `'\nHI:'` (4 chars), and `hiMarker + 4`
+ *    lands immediately after the colon; the trailing `.trim()` eats the space.
+ *  - The `hiMarker > 0` guard (NOT `>= 0`) is deliberate: a marker at index 0
+ *    means the model emitted Hindi with no English half, which would leave
+ *    `remediation_text` empty. In that case we keep the whole string as the
+ *    English field rather than persisting a blank primary remediation.
+ *  - A missing marker yields `hindi: null`, which is a valid value for the
+ *    nullable `remediation_text_hi` column.
+ */
+function splitBilingual(text: string): { english: string; hindi: string | null } {
+  const hiMarker = text.indexOf('\nHI:');
+  if (hiMarker > 0) {
+    const english = text.slice(0, hiMarker).trim();
+    const hindi = text.slice(hiMarker + 4).trim() || null;
+    return { english, hindi };
   }
+  return { english: text, hindi: null };
+}
+
+/**
+ * P12 rule 2 — "no unfiltered LLM output to students".
+ *
+ * Deterministic, fail-safe screen applied to EVERY student-facing remediation
+ * string, in BOTH languages. Returns true only if every supplied part passes.
+ *
+ * `screenStudentFacingText` is the Next-side twin of the grounded-answer
+ * Deno module of the same name; it fails safe (returns `safe:false`) if the
+ * screen itself throws, and blank strings are treated as safe because the
+ * empty case is owned by the `!text` guard in the caller.
+ *
+ * P13: we log the CATEGORY tags only — never the screened text.
+ */
+function remediationTextIsSafe(
+  parts: Array<string | null>,
+  context: { grade?: string; subject?: string },
+  telemetry: Record<string, unknown>,
+): boolean {
+  for (const part of parts) {
+    if (part == null) continue;
+    const screen = screenStudentFacingText(part, context);
+    if (!screen.safe) {
+      logger.warn('foxy_remediation_output_screen_blocked', {
+        ...telemetry,
+        categories: screen.categories,
+      });
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Generate a remediation via Claude Haiku.
+ *
+ * P12 rule 5 (circuit breaker): this goes through `callClaude`, the single
+ * Next-layer Claude client, which owns the circuit breaker (opens after 5
+ * failures, holds 60s, then allows one half-open probe), bounded retry with
+ * jittered backoff, per-request timeout and Haiku→Sonnet model fallback. We
+ * deliberately do NOT pre-check `isCircuitBreakerOpen()` here: the open →
+ * half-open transition happens inside `callClaude`'s own gate, so short-
+ * circuiting ahead of it would leave a tripped breaker permanently open and
+ * block its own recovery probe. When the breaker is open `callClaude` throws
+ * and we return null, which the caller renders as the SAME 503 fallback used
+ * for any other generation failure — no new response shape, no new oracle.
+ *
+ * P12 rule 2 (screening): the model text is screened INSIDE this function,
+ * before it is returned. There is therefore no code path on which the caller
+ * can persist or serve text that has not been screened. A screening rejection
+ * returns null, so the rejected text is never written to
+ * `wrong_answer_remediations` — which matters more than the response, because
+ * that table is keyed UNIQUE(question_id, distractor_index) and one poisoned
+ * row would be served to every future student who picks that distractor.
+ */
+async function generateWithHaiku(
+  prompt: string,
+  context: { grade?: string; subject?: string },
+  telemetry: Record<string, unknown>,
+): Promise<{ english: string; hindi: string | null } | null> {
+  // Preserved fast-bail from the pre-refactor implementation. Without it a
+  // deploy with no key configured would be treated by callClaude as a 503,
+  // i.e. a TRANSIENT failure, and burn the full retry/backoff ladder on every
+  // request before failing. Nothing is recoverable here — bail immediately.
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+
+  let text: string;
+  try {
+    const response = await callClaude({
+      model: HAIKU_MODEL,
+      systemPrompt: REMEDIATION_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 256,
+      temperature: 0.3,
+      timeoutMs: REMEDIATION_TIMEOUT_MS,
+    });
+    text = (response?.content ?? '').trim();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Distinguish breaker-open from other upstream failures for observability
+    // ONLY. Both produce an identical null → identical 503 to the student.
+    if (message.includes('circuit breaker is open')) {
+      logger.warn('foxy_remediation_circuit_open', telemetry);
+    } else {
+      logger.warn('foxy_remediation_llm_failed', { ...telemetry, error: message });
+    }
+    return null;
+  }
+
+  if (!text) return null;
+
+  const { english, hindi } = splitBilingual(text);
+
+  // Screen the raw completion AND both derived halves. Screening the raw text
+  // alone would be sufficient today (both halves are substrings of it), but
+  // screening the halves explicitly keeps the invariant true if the split ever
+  // changes, and covers the Hindi field independently of the English one.
+  if (!remediationTextIsSafe([text, english, hindi], context, telemetry)) {
+    return null;
+  }
+
+  return { english, hindi };
 }
