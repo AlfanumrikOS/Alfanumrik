@@ -86,7 +86,7 @@ const PLANS: PlanDef[] = [
     ctaHi: 'शुरू करें',
     ctaStyle: 'neutral',
     features: [
-      { en: '30 Foxy chats / day', hi: '30 Foxy चैट / दिन', included: true },
+      { en: 'Unlimited Foxy chats', hi: 'असीमित Foxy चैट', included: true },
       { en: '20 quizzes / day', hi: '20 क्विज़ / दिन', included: true },
       { en: '4 subjects', hi: '4 विषय', included: true },
       { en: 'Progress reports', hi: 'प्रगति रिपोर्ट', included: true },
@@ -105,7 +105,7 @@ const PLANS: PlanDef[] = [
     ctaHi: 'शुरू करें',
     ctaStyle: 'primary',
     features: [
-      { en: '100 Foxy chats / day', hi: '100 Foxy चैट / दिन', included: true },
+      { en: 'Unlimited Foxy chats', hi: 'असीमित Foxy चैट', included: true },
       { en: 'Unlimited quizzes', hi: 'असीमित क्विज़', included: true },
       { en: 'All subjects', hi: 'सभी विषय', included: true },
       { en: 'Progress reports', hi: 'प्रगति रिपोर्ट', included: true },

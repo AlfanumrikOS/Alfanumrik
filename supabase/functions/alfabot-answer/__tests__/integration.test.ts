@@ -142,7 +142,7 @@ Deno.test('happy path: parent asks pricing → response contains ₹699 + cites 
   // framing contradicted the live 3-tier product and was removed from the KB.
   installFetchStub({
     openAiText:
-      'Pro, at ₹699 per month, is our most popular family plan — Foxy with 100 chats a day, unlimited quizzes, all seven subjects, and the Sunday parent letter. Starter is ₹299 per month and Unlimited is ₹1,099 per month (pricing-plans). Want to try Foxy free? Sign up at /.',
+      'Pro, at ₹699 per month, is our most popular family plan — unlimited Foxy chats, unlimited quizzes, all seven subjects, and the Sunday parent letter. Starter is ₹299 per month and Unlimited is ₹1,099 per month (pricing-plans). Want to try Foxy free? Sign up at /.',
   });
   stubSupabase([
     {
