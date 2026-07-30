@@ -14,11 +14,18 @@
 //       FIRST-EVER bind on a phone with no existing live identity cannot
 //       complete from the cron (outcome 'phone_unavailable' → 'failed');
 //       the user resends LINK and the webhook handles it live.
-//     - every other intent has NO Phase-2 processor: rows are bounced back to
+//     - Phase 3: Daily-6 family intents (d6_start / d6_answer / subject_pick /
+//       menu) route through the SAME processor the webhook's after() path uses
+//       (apps/host/src/app/api/whatsapp/_lib/daily6.ts) when
+//       ff_whatsapp_daily6 is ON — sends go via whatsapp-send with the
+//       byte-exact internal caller 'whatsapp-drain-cron' (migration
+//       20260801100600). Flag OFF (or flag read failure) → these rows keep
+//       the no-processor bounce below, exactly as Phase 2.
+//     - every other intent has NO processor yet: rows are bounced back to
 //       'pending' with an incremented attempt count until attempts reach
 //       MAX_ATTEMPTS, then marked 'failed' with last_error =
-//       'no_processor_phase2' (Phase 3 replaces this branch with the real
-//       intent processors).
+//       'no_processor_phase2' (later phases replace this branch with the
+//       doubt/notebook processors).
 //
 // Claiming: RPC whatsapp_claim_inbound(p_id) → boolean (architect-owned;
 // atomically flips pending→processing and increments attempts; false means
@@ -39,8 +46,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'node:crypto';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 import { processLinkBinding } from '../../whatsapp/_lib/link-binding';
+import {
+  DAILY6_PROCESSABLE_INTENTS,
+  processDaily6Event,
+  type Daily6Intent,
+  type Daily6Outcome,
+} from '../../whatsapp/_lib/daily6';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -97,6 +111,31 @@ interface PendingEventRow {
   attempts: number;
   phone_hash: string;
   payload: Record<string, unknown> | null;
+  created_at?: string;
+}
+
+/**
+ * ff_whatsapp_daily6 gate for the drain path. Fail-safe: any flag-read
+ * failure reads as OFF, so d6/menu rows keep the Phase-2 bounce behavior
+ * (pending → failed at MAX_ATTEMPTS) instead of half-processing.
+ */
+async function daily6FlagEnabled(): Promise<boolean> {
+  try {
+    return await isFeatureEnabled('ff_whatsapp_daily6');
+  } catch {
+    return false;
+  }
+}
+
+/** intent_args recorded by the webhook's classification (string map). */
+function extractIntentArgs(payload: Record<string, unknown> | null): Record<string, string> {
+  const args = (payload as { intent_args?: unknown } | null)?.intent_args;
+  if (!args || typeof args !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(args as Record<string, unknown>)) {
+    if (typeof v === 'string') out[k] = v;
+  }
+  return out;
 }
 
 interface DrainCounts {
@@ -135,7 +174,7 @@ async function drain(): Promise<DrainCounts> {
 
   const { data: rows, error: selErr } = await supabaseAdmin
     .from('whatsapp_inbound_events')
-    .select('id, intent, attempts, phone_hash, payload')
+    .select('id, intent, attempts, phone_hash, payload, created_at')
     .eq('status', 'pending')
     .lt('created_at', cutoffIso)
     .lt('attempts', MAX_ATTEMPTS)
@@ -220,7 +259,57 @@ async function drain(): Promise<DrainCounts> {
       continue;
     }
 
-    // No Phase-2 processor for this intent (Phase 3 replaces this branch).
+    // Phase 3: Daily-6 family intents route through the shared processor
+    // (sends carry the byte-exact internal caller 'whatsapp-drain-cron').
+    // Flag OFF / flag-read failure → fall through to the no-processor bounce
+    // below, preserving the Phase-2 posture exactly.
+    if (row.intent && DAILY6_PROCESSABLE_INTENTS.has(row.intent) && (await daily6FlagEnabled())) {
+      let outcome: Daily6Outcome = 'retry';
+      try {
+        const createdAtMs = row.created_at ? Date.parse(row.created_at) : NaN;
+        outcome = await processDaily6Event({
+          id: row.id,
+          intent: row.intent as Daily6Intent,
+          args: extractIntentArgs(row.payload),
+          phoneHash: row.phone_hash,
+          // Best-available arrival time (P3 timing source): the event row's
+          // created_at (webhook receipt), falling back to now.
+          receivedAtMs: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+          source: 'drain',
+        });
+      } catch (err) {
+        // processDaily6Event never throws by contract — belt and braces.
+        logger.error('whatsapp_drain: daily6 processor threw', {
+          eventId: row.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      if (outcome === 'done') {
+        await setEventStatus(row.id, {
+          status: 'done',
+          attempts: attemptsAfterClaim,
+          processed_at: nowIso,
+        });
+        counts.processed += 1;
+      } else if (outcome === 'failed' || attemptsAfterClaim >= MAX_ATTEMPTS) {
+        await setEventStatus(row.id, {
+          status: 'failed',
+          last_error: outcome === 'failed' ? 'daily6_terminal' : 'daily6_processing_error',
+          attempts: attemptsAfterClaim,
+          processed_at: nowIso,
+        });
+        counts.failed += 1;
+      } else {
+        await setEventStatus(row.id, {
+          status: 'pending',
+          attempts: attemptsAfterClaim,
+        });
+      }
+      continue;
+    }
+
+    // No processor for this intent yet (doubt/notebook — later phases).
     if (attemptsAfterClaim >= MAX_ATTEMPTS) {
       await setEventStatus(row.id, {
         status: 'failed',

@@ -8,3 +8,4 @@ export * from './twilio-signature';
 export * from './phone';
 export * from './ist';
 export * from './intent';
+export * from './identity';

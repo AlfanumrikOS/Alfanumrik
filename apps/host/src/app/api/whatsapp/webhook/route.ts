@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
@@ -15,6 +15,11 @@ import {
   processLinkBinding,
   type LinkBindingOutcome,
 } from '../_lib/link-binding';
+import {
+  DAILY6_PROCESSABLE_INTENTS,
+  runDaily6EventFromWebhook,
+  type Daily6Intent,
+} from '../_lib/daily6';
 
 /**
  * Twilio WhatsApp Inbound Webhook — Phase 1 (skeleton).
@@ -59,6 +64,10 @@ import {
  *   ff_whatsapp_bot_v1           Master kill switch. OFF → event is persisted
  *                                as status='ignored', no processing. STOP/
  *                                START/HELP still work (regulatory).
+ *   ff_whatsapp_daily6           Daily-6 loop (Phase 3). OFF → d6/menu events
+ *                                stay status='pending' (no processing); ON →
+ *                                processed via after() with the drain cron as
+ *                                the retry mechanism.
  *
  * P13: NEVER log raw phone numbers (use redactPhone) or message bodies (log
  * length only). MediaUrl0 contents are never stored (bearer-token URLs).
@@ -520,11 +529,55 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // 11. Every OTHER intent stays status='pending' here.
-    // TODO(Phase 3, plan-alfanumrik-whatsapp-bot-mighty-frost.md): intent
-    // processing — UNLINK, Daily 6 loop, doubt ladder — via after() + the
-    // whatsapp-drain cron. Replies go out asynchronously through the
-    // whatsapp-send path, never via TwiML.
+    // 11. Phase 3: Daily-6 family intents (d6_start / d6_answer /
+    //     subject_pick / menu) are processed asynchronously via after() when
+    //     ff_whatsapp_daily6 is ON. The processor settles the event row
+    //     (done/failed); transient failures leave it 'pending' and the
+    //     whatsapp-drain cron is the retry mechanism. Replies go out through
+    //     whatsapp-send (caller literal 'whatsapp-webhook-route'), never via
+    //     TwiML. Flag OFF → the row stays 'pending' exactly as before.
+    if (DAILY6_PROCESSABLE_INTENTS.has(classification.intent) && eventRowId) {
+      let daily6On = false;
+      try {
+        daily6On = await isFeatureEnabled('ff_whatsapp_daily6');
+      } catch (err) {
+        logger.warn('whatsapp webhook: daily6 flag read failed (leaving pending)', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      if (daily6On) {
+        const evt = {
+          id: eventRowId,
+          intent: classification.intent as Daily6Intent,
+          args: classification.args,
+          phoneHash,
+          receivedAtMs: Date.now(),
+          source: 'webhook' as const,
+        };
+        try {
+          after(async () => {
+            await runDaily6EventFromWebhook(evt);
+          });
+        } catch (err) {
+          // after() unavailable (e.g. outside a Next request scope) — the row
+          // stays 'pending'; the drain cron picks it up. Always-200 posture.
+          logger.warn('whatsapp webhook: after() scheduling failed (drain will retry)', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        logger.info('whatsapp webhook: daily6 event scheduled', {
+          intent: classification.intent,
+          phone: redactPhone(msg.phoneE164),
+        });
+        return twimlResponse();
+      }
+    }
+
+    // 12. Every OTHER intent stays status='pending' here.
+    // TODO(later phases, plan-alfanumrik-whatsapp-bot-mighty-frost.md):
+    // UNLINK, doubt ladder, notebook — via after() + the whatsapp-drain cron.
+    // Replies go out asynchronously through the whatsapp-send path, never via
+    // TwiML.
     logger.info('whatsapp webhook: event accepted', {
       intent: classification.intent,
       messageType: deriveMessageType(msg, params),
