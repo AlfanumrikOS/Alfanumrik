@@ -9,7 +9,13 @@ import { NextRequest } from 'next/server';
  *   POST /api/diagnostic/complete — auth, session_id validation, server-side
  *     P1 scoring (full contract pinned in api/diagnostic-complete-contract.test.ts)
  *
- * P5: diagnostic grades are strings "6"-"10" (grade "11" is invalid for diagnostic)
+ * P5: diagnostic grades are STRINGS "6".."12". Grades "11" and "12" became VALID
+ *     on 2026-07-29 (spec `2026-07-29-diagnostic-cold-start-correctness.md` §4 G1:
+ *     `resolve-next-action` routes every zero-mastery student to /diagnostic, so
+ *     the old "6".."10" range made a Class 11 student's very first CTA a 400).
+ *     The two tests that asserted 400 for "11"/"12" were correct for the old
+ *     range and are INVERTED here — the assertion is not weakened, the spec moved.
+ *     Integer grades are still rejected (P5).
  * P9: both routes require authorizeRequest('diagnostic.attempt' / 'diagnostic.complete')
  *
  * Mock strategy (matching api-routes.test.ts standard):
@@ -152,26 +158,38 @@ describe('POST /api/diagnostic/start — authentication (P9)', () => {
 describe('POST /api/diagnostic/start — grade validation (P5)', () => {
   beforeEach(() => { setAuthorized(); });
 
-  it('returns 400 when grade is "11" (diagnostic only covers grades 6-10)', async () => {
+  // ── INVERTED 2026-07-29 (spec §4 G1). These two asserted 400 for "11"/"12",
+  //    which was correct while VALID_DIAGNOSTIC_GRADES was ['6'..'10']. The spec
+  //    widened the range to ['6'..'12'] because resolve-next-action sends every
+  //    zero-mastery student — all grades — to /diagnostic, so a Class 11
+  //    student's first CTA used to be a hard 400. AC-14.
+  it('accepts grade "11" as a STRING (AC-14 — senior grades are in range)', async () => {
+    setFromResult('students', { data: null, error: { message: 'Not found' } });
     const { POST } = await import('@/app/api/diagnostic/start/route');
     const res = await POST(makeStartRequest({ grade: '11', subject: 'math' }));
-    expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.success).toBe(false);
-    expect(body.code).toBe('INVALID_GRADE');
+    expect(body.code).not.toBe('INVALID_GRADE');
   });
 
-  it('returns 400 when grade is "12" (above diagnostic range)', async () => {
+  it('accepts grade "12" as a STRING (AC-14)', async () => {
+    setFromResult('students', { data: null, error: { message: 'Not found' } });
     const { POST } = await import('@/app/api/diagnostic/start/route');
     const res = await POST(makeStartRequest({ grade: '12', subject: 'math' }));
-    expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('INVALID_GRADE');
+    expect(body.code).not.toBe('INVALID_GRADE');
   });
 
   it('returns 400 when grade is "5" (below diagnostic range)', async () => {
     const { POST } = await import('@/app/api/diagnostic/start/route');
     const res = await POST(makeStartRequest({ grade: '5', subject: 'math' }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('INVALID_GRADE');
+  });
+
+  it('returns 400 when grade is "13" (above the widened range — the range moved, it did not vanish)', async () => {
+    const { POST } = await import('@/app/api/diagnostic/start/route');
+    const res = await POST(makeStartRequest({ grade: '13', subject: 'math' }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.code).toBe('INVALID_GRADE');
@@ -183,6 +201,27 @@ describe('POST /api/diagnostic/start — grade validation (P5)', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.code).toBe('INVALID_GRADE');
+  });
+
+  it('returns 400 when grade is integer 11 (P5 / AC-15: the widened range is STRINGS only)', async () => {
+    const { POST } = await import('@/app/api/diagnostic/start/route');
+    const res = await POST(makeStartRequest({ grade: 11, subject: 'math' }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.code).toBe('INVALID_GRADE');
+  });
+
+  it('accepts every string grade "6".."12" and rejects its integer twin (P5, table-driven)', async () => {
+    const { POST } = await import('@/app/api/diagnostic/start/route');
+    for (const g of ['6', '7', '8', '9', '10', '11', '12']) {
+      setFromResult('students', { data: null, error: { message: 'Not found' } });
+      const ok = await POST(makeStartRequest({ grade: g, subject: 'math' }));
+      expect((await ok.json()).code, `string grade "${g}"`).not.toBe('INVALID_GRADE');
+
+      const bad = await POST(makeStartRequest({ grade: Number(g), subject: 'math' }));
+      expect(bad.status, `integer grade ${g}`).toBe(400);
+      expect((await bad.json()).code).toBe('INVALID_GRADE');
+    }
   });
 
   it('returns 400 when grade is missing', async () => {
@@ -276,7 +315,20 @@ describe('POST /api/diagnostic/start — subject validation', () => {
   });
 });
 
-describe('POST /api/diagnostic/start — full success path', () => {
+/**
+ * ── REWRITTEN 2026-07-29 (spec §5.3 F2/F3) ─────────────────────────────────
+ * This block was called "full success path" and asserted a session_id from a
+ * ONE-item, chapter-less, unverified fixture. Under the old
+ * `ORDER BY difficulty ASC LIMIT 15` selector that fixture happened to produce
+ * a session; under the §1 blueprint + §2 Tier-0 gate it cannot satisfy any
+ * rung (no in-scope chapters, no hard band, no HOTS), so the honest outcome is
+ * the Rung-4 stop. The fixture describes an EMPTY pool, so that is what it now
+ * asserts — the assertion is corrected, not weakened.
+ *
+ * A genuinely well-supplied pool (Rung 0, 15 questions, session created) is
+ * covered in src/__tests__/api/diagnostic-start-contract.test.ts.
+ */
+describe('POST /api/diagnostic/start — insufficient pool → Rung 4 honest stop', () => {
   beforeEach(() => {
     setAuthorized();
     setFromResult('students', { data: { id: 'student-1', grade: '9' }, error: null });
@@ -304,15 +356,21 @@ describe('POST /api/diagnostic/start — full success path', () => {
     setFromResult('diagnostic_assessments', { data: { id: 'session-uuid-1' }, error: null });
   });
 
-  it('returns 200 with session_id and questions on valid request', async () => {
+  it('returns HTTP 200 (never a 4xx/5xx dead end) with content_insufficient for an unservable pool', async () => {
     const { POST } = await import('@/app/api/diagnostic/start/route');
     const res = await POST(makeStartRequest({ grade: '9', subject: 'math' }));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.data).toBeDefined();
-    expect(body.data.session_id).toBeDefined();
-    expect(Array.isArray(body.data.questions)).toBe(true);
+    expect(body.ok).toBe(true);
+    expect(body.diagnostic).toBeNull();
+    expect(body.insufficientContent).toBe(true);
+    expect(body.reason).toBe('INSUFFICIENT_POOL');
+    expect(body.data.content_insufficient).toBe(true);
+    // AC-22 — the student is never handed a dead end.
+    expect(Array.isArray(body.alternatives)).toBe(true);
+    expect(body.alternatives.length).toBeGreaterThanOrEqual(1);
+    // No half-started session is offered.
+    expect(body.data.session_id).toBeUndefined();
   });
 });
 
@@ -399,17 +457,32 @@ describe('POST /api/diagnostic/complete — server-side scoring (P1 score accura
   // (delete-then-insert), and computes the summary in-process with the P1
   // formula. Full contract (409, thresholds, ordering) is pinned in
   // src/__tests__/api/diagnostic-complete-contract.test.ts.
+  // C1 (spec §7A, 2026-07-29): correctness is re-derived SERVER-side from
+  // question_bank.correct_answer_index. This block therefore needs a REAL bank
+  // fixture — the previous `question_bank: []` stub could only produce a
+  // non-zero score if the route trusted the client's `is_correct`, so it was
+  // pinning the very defect the route now closes. Full adversarial coverage
+  // lives in src/__tests__/api/diagnostic-complete-contract.test.ts.
+  const BANK = [
+    { id: 'q1', question_text: 'Synthetic algebra item one — pick the correct option.', options: ['a', 'b', 'c', 'd'], correct_answer_index: 0 },
+    { id: 'q2', question_text: 'Synthetic algebra item two — pick the correct option.', options: ['a', 'b', 'c', 'd'], correct_answer_index: 1 },
+    { id: 'q3', question_text: 'Synthetic geometry item one — pick the correct option.', options: ['a', 'b', 'c', 'd'], correct_answer_index: 3 },
+    { id: 'q4', question_text: 'Synthetic geometry item two — pick the correct option.', options: ['a', 'b', 'c', 'd'], correct_answer_index: 2 },
+  ];
+
   beforeEach(() => {
     setAuthorized();
     setFromResult('students', { data: { id: 'student-1' }, error: null });
     setFromResult('diagnostic_assessments', { data: { id: 'session-1', is_completed: false }, error: null });
     setFromResult('diagnostic_responses', { data: null, error: null });
-    setFromResult('question_bank', { data: [], error: null });
+    setFromResult('question_bank', { data: BANK, error: null });
   });
 
   it('computes the summary server-side with the P1 formula (no RPC involved)', async () => {
     const { POST } = await import('@/app/api/diagnostic/complete/route');
 
+    // q1 (picked 0, correct 0) ✓ ; q2 (picked 1, correct 1) ✓ ;
+    // q3 (picked 2, correct 3) ✗ ; q4 (picked 0, correct 2) ✗
     const responses = [
       { question_id: 'q1', selected_answer_index: 0, is_correct: true,  time_taken_seconds: 10, topic: 'algebra',  difficulty: 2, bloom_level: 'understand' },
       { question_id: 'q2', selected_answer_index: 1, is_correct: true,  time_taken_seconds: 8,  topic: 'algebra',  difficulty: 2, bloom_level: 'apply' },
@@ -421,11 +494,25 @@ describe('POST /api/diagnostic/complete — server-side scoring (P1 score accura
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    // 2 correct out of 4 = Math.round((2/4)*100) = 50
+    // 2 server-verified correct out of 4 = Math.round((2/4)*100) = 50
     expect(body.data.score_percent).toBe(50);
     expect(body.data.correct_answers).toBe(2);
     expect(body.data.total_questions).toBe(4);
     // The completion path is direct table writes — no RPC may be invoked
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('ignores the client is_correct flag entirely (C1) — an all-true claim on the same indices still scores 50', async () => {
+    const { POST } = await import('@/app/api/diagnostic/complete/route');
+    const responses = [
+      { question_id: 'q1', selected_answer_index: 0, is_correct: true, time_taken_seconds: 10, topic: 'algebra',  difficulty: 2, bloom_level: 'understand' },
+      { question_id: 'q2', selected_answer_index: 1, is_correct: true, time_taken_seconds: 8,  topic: 'algebra',  difficulty: 2, bloom_level: 'apply' },
+      { question_id: 'q3', selected_answer_index: 2, is_correct: true, time_taken_seconds: 12, topic: 'geometry', difficulty: 3, bloom_level: 'analyze' },
+      { question_id: 'q4', selected_answer_index: 0, is_correct: true, time_taken_seconds: 6,  topic: 'geometry', difficulty: 3, bloom_level: 'remember' },
+    ];
+    const res = await POST(makeCompleteRequest({ session_id: 'session-1', responses }));
+    const body = await res.json();
+    expect(body.data.score_percent).toBe(50);
+    expect(body.data.correct_answers).toBe(2);
   });
 });

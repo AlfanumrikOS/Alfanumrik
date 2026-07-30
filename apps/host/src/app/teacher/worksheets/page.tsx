@@ -7,6 +7,7 @@ import { useTeacherAllowedSubjects } from '@alfanumrik/lib/useTeacherAllowedSubj
 import { supabase } from '@alfanumrik/lib/supabase';
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 import { posthogCapture } from '@alfanumrik/lib/posthog-client';
+import { shuffle } from '@alfanumrik/lib/shuffle';
 
 // ============================================================
 // BILINGUAL HELPERS (P7)
@@ -71,8 +72,14 @@ async function fetchQuestionsFromBank(
     const { data } = await query;
     if (!data || data.length === 0) return null;
 
-    // Shuffle and take requested count
-    const shuffled = data.sort(() => Math.random() - 0.5).slice(0, count);
+    // Shuffle and take requested count.
+    // Fisher-Yates via the canonical `shuffle` helper: the old
+    // `.sort(() => Math.random() - 0.5)` comparator is non-transitive, so it is
+    // not a shuffle at all — it leaves the array heavily biased toward the order
+    // the query returned. Because we immediately `.slice(0, count)`, that bias
+    // decided WHICH questions a teacher's worksheet got. `shuffle` is
+    // non-mutating, so we reassign rather than rely on an in-place side effect.
+    const shuffled = shuffle(data).slice(0, count);
     return shuffled.map(q => {
       const opts = Array.isArray(q.options)
         ? q.options

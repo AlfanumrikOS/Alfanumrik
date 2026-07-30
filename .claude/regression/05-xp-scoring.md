@@ -693,3 +693,56 @@ ordering, IST day-boundary unification).
 
 ---
 
+## 6-arg atomic_quiz_profile_update ledger-write parity — the overload now WRITES the row it READS for the daily cap (2026-07-29, DSA-audit fix batch) — REG-324
+
+Source: the 2026-07-29 DSA-audit fix batch; extends REG-48 (daily-cap clamp
++ SQL/TS literal parity + return-shape pin) and REG-318 (whose F4 fix
+repointed the 6-arg overload's daily-cap READ from the phantom
+`quiz_sessions.xp_earned` column to `xp_transactions` filtered by
+`daily_category = 'quiz'`). The audit found the other half of that contract
+missing: the 6-arg overload READ the ledger to compute "today's earned XP"
+but never WROTE its own award into that ledger — so XP granted through this
+overload was invisible to every subsequent cap computation, including its
+own next invocation (a cap-read/cap-write mismatch: N calls in a day would
+each see an empty ledger and each grant up to the full cap). Fixed by
+migration
+`supabase/migrations/20260729130000_fix_6arg_quiz_xp_ledger_write.sql`
+(additive `CREATE OR REPLACE`, no signature/DDL/RLS change): the overload
+now inserts the `xp_transactions` row it later reads.
+
+REACHABILITY — recorded honestly, per the corrected migration header: this
+overload has NO reachable production caller today. The live submission path
+is `submit_quiz_results_v2` + the 7-arg overload (REG-318). This is a
+DEFENSIVE fix on a dormant surface that nevertheless carries EXECUTE for
+`authenticated` — any signed-in client could invoke it directly via
+PostgREST RPC, and pre-fix each such call would grant cap-bypassing XP the
+ledger never saw. This entry does not claim live-path impact; it claims the
+granted surface is no longer exploitable.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-324 | `xp_6arg_ledger_write_parity` | (a) The 6-arg body INSERTs into `public.xp_transactions` with the column list that both the cap READ and the 7-arg sibling assume; stamps `daily_category = 'quiz'` — the exact value the cap read filters on; writes the CAPPED `v_effective_xp`, never the raw requested `p_xp` (raw amount recorded only in the ledger row's metadata); the INSERT is guarded by `IF v_effective_xp > 0` (0-XP and flagged submissions write nothing); a textual-offset assertion on the migration source proves the INSERT lands AFTER the cap clamp and BEFORE the profile/student writes — one transaction, correct order; and the migration is an additive `CREATE OR REPLACE` with no table/column DDL and no RLS change. (b) `v_daily_cap` literal parity: `XP_RULES.quiz_daily_cap` is pinned at 200 (the P2 anchor — changing it needs user approval), the fix migration's `v_daily_cap` literal equals it, and a drift sweep asserts EVERY `v_daily_cap` literal across ALL root migrations equals it. (c) JSONB return-shape pin (extends REG-48): the fix returns exactly the nine documented keys, in order, byte-for-byte identical to the prior definition of the same overload (no key added or removed); the ledger metadata keys mirror the 7-arg sibling (a separate object from the RETURN); and the cap-status keys are still derived from the clamp variables, not re-hardcoded. | `apps/host/src/__tests__/xp-6arg-ledger-write-parity.test.ts` (17 tests) | E |
+
+### Invariants covered by this section
+
+- P2 (XP economy) — the daily cap is only as strong as the ledger it reads;
+  an overload that reads-but-never-writes is a cap bypass on any surface
+  that can reach it. Closed.
+- P4-adjacent — the ledger write is pinned inside the same transaction,
+  ordered clamp → ledger insert → profile/student writes.
+
+**Known gap:** same class as REG-318 — migration-SOURCE structural pins
+(regex + textual-offset assertions against the SQL body), no live-Postgres
+execution of the RPC in CI. A live-DB integration pass remains the tracked
+follow-up, not a blocker for this promotion.
+
+### Catalog total
+
+Pre-REG-324: 323 entries (through REG-323, the canonical unbiased shuffle —
+see `03-quiz-integrity.md`). The DSA-audit fix batch adds REG-324 (6-arg
+ledger-write parity, closing the cap-read/cap-write mismatch on the
+dormant-but-granted overload).
+**Total catalog: 324 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

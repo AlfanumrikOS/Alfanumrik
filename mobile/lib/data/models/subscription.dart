@@ -68,11 +68,16 @@ class Plans {
     // forensic-audit fix. UPDATE 2026-07-29: `starter`/`pro` copy corrected
     // from "30 Foxy chats/day" / "100 Foxy chats/day" to "Unlimited Foxy
     // chats" — Foxy chat usage has been unlimited for all paid plans since
-    // migration `20260714120000_foxy_unlimited_for_paid_plans.sql`, and
-    // mobile's own LIMIT LOGIC (dashboard_repository.dart, 999999 sentinel)
-    // already reflects that. This brings paid-plan marketing copy in line
-    // with actual enforcement; free tier keeps its real, still-enforced
-    // 5/day limit (see Plans class docstring / dashboard_repository.dart).
+    // migration `20260714120000_foxy_unlimited_for_paid_plans.sql`.
+    // This brings paid-plan marketing copy in line with actual enforcement.
+    //
+    // NOTE (2026-07-29): these are static MARKETING strings mirroring web
+    // `packages/lib/src/plans.ts`. They are NOT a usage-limit authority and
+    // must never be read as one — the resolved cap is server-side
+    // (`get_plan_limit()`), and it can exceed what is printed here when a
+    // student is covered by a school (B2B) subscription. The former
+    // plan-code-derived limit logic in `dashboard_repository.dart` was removed
+    // for exactly that reason; see the note at the bottom of that file.
     PlanInfo(
       code: 'starter',
       name: 'Starter',

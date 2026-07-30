@@ -1084,3 +1084,205 @@ attempts cannot silently backfill from non-board content).
 
 ---
 
+## DSA-audit fix batch — single canonical P6 question-quality gate + anti-fork canary (2026-07-29, branch `Alfanumrik/alfanumrik-dsa-review-ba6e30`) — REG-322
+
+Source: the 2026-07-29 DSA-audit (data-structures/algorithms review) fix
+batch. The P6 gate had silently FORKED: three hand-rolled validator
+implementations (`quiz-assembler.ts`, `domains/quiz.ts`, `supabase.ts`) plus
+a fourth quarantined copy (`quiz-engine.validateQuestionForQuiz`) each
+enforced a different subset of P6, so "every served question is validated"
+was only true per-path — the paths disagreed on what "valid" meant (the
+`correct_answer_index: null` bypass fixed as REG-318's companion was one
+symptom of exactly this fork). Consolidated into ONE canonical
+implementation at `packages/lib/src/quiz/question-validation.ts`
+(`validateQuestion` + the `validateQuestions` batch wrapper + exported
+thresholds); the three former fork sites now delegate to it.
+
+The canonical gate's behaviour is the STRICT UNION of the forks, with two
+deliberate, documented relaxation knobs: `allowNonMcq` (relaxes MCQ SHAPE
+only, for the assembler's non-MCQ item types) and `enforceBloomLevel`
+(bloom validity is OPT-IN, default OFF for serving, because the live
+question bank contains null/variant bloom rows that must stay servable — a
+silent default-ON flip would mass-invalidate served content).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-322 | `p6_single_canonical_validator_and_anti_fork_canary` | (a) Strict-union behaviour of the canonical gate: `correct_answer_index` must be an INTEGER 0–3 — `null`, non-integers, and out-of-range values rejected (closes the JS `null === i` always-false bypass); options must be exactly 4 distinct non-empty strings; `question_text` non-empty with template markers (`{{`, `[BLANK]`) rejected; `explanation` must clear BOTH the exported char floor and word floor; `allowNonMcq: true` relaxes the MCQ shape checks (options/index) ONLY — text/explanation quality stays enforced. (b) `enforceBloomLevel` pinned in BOTH directions: the default (OFF) must NOT silently re-tighten — rows with null or variant `bloom_level` remain servable — and `{ enforceBloomLevel: true }` must actually enforce the valid bloom set AND forward through the `validateQuestions` batch wrapper. (c) Anti-fork canary over repo source: each per-rejection-reason fingerprint is emitted from exactly ONE file under `packages/lib/src`; no other `packages/lib` file declares a `validateQuestion`/`validateQuestions` body of its own; the three former fork sites (`quiz-assembler.ts`, `domains/quiz.ts`, `supabase.ts`) import and CALL the canonical gate; ONLY `quiz-assembler` passes `allowNonMcq: true`; the quarantined `quiz-engine.validateQuestionForQuiz` has ZERO production callers (it can never serve a student); scan preconditions pinned non-vacuous (non-trivial source set, canonical module exists and exports the gate + thresholds). | `apps/host/src/__tests__/lib/quiz/question-validation.test.ts` (44 tests), `apps/host/src/__tests__/regressions/p6-validator-single-source-canary.test.ts` (8 tests) | E |
+
+### Invariants covered by this section
+
+- P6 (question quality) — one gate, one definition of "valid", enforced on
+  every server-side serving path instead of three drifting copies.
+- P6 fork-resistance (structural) — the canary turns re-forking into a test
+  failure rather than a code-review catch; the same "exactly one
+  implementation" posture REG-50 pins for Foxy retrieval and REG-118 pins
+  for daily-cron steps.
+
+### Known gaps (documented, deliberate)
+
+- `isValidQuestion` in `apps/host/src/app/(student)/quiz/page.tsx` is a
+  deliberately-THINNER last-line client-side filter and sits OUTSIDE the
+  canary's `packages/lib` scan scope. It is defence-in-depth, not a fork of
+  the gate; pinning it to the canonical implementation would drag the full
+  validator into the client bundle.
+- `supabase/functions/_shared/quiz-oracle.ts` is the Deno-side parity
+  partner of this gate; its `CandidateQuestion` type currently carries NO
+  bloom field, so Deno-side bloom parity is NOT claimed by this entry —
+  tracked as an ai-engineer follow-up.
+
+### Catalog total
+
+Pre-REG-322: 321 entries (through REG-321, the ncert-solver AI-safety
+backport — see `00-header.md`). The DSA-audit fix batch adds REG-322
+(single canonical P6 gate + anti-fork canary), the next free id after
+REG-321.
+**Total catalog: 322 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Canonical unbiased shuffle — Fisher-Yates with injectable rng + repo-wide biased-comparator ban (2026-07-29, DSA-audit fix batch) — REG-323
+
+Source: same 2026-07-29 DSA-audit batch. Shuffling used the classic biased
+idiom `arr.sort(() => Math.random() - 0.5)` — NOT a uniform shuffle (the
+result distribution depends on the engine's sort algorithm and is
+position-biased) and it mutates the array in place. Replaced by a single
+canonical `shuffle()` at `packages/lib/src/shuffle.ts`: a non-mutating
+Fisher-Yates over a copy, with an injectable rng (defaulting to
+`Math.random`) that makes the algorithm testable EXACTLY — by asserting the
+specific permutation a scripted rng must produce — not just statistically.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-323 | `canonical_unbiased_shuffle_and_biased_comparator_ban` | (a) NON-MUTATING: the input array is untouched, the return is a NEW instance, mutating the result does not write back into the input, and `readonly` arrays are accepted (compile-time contract exercised at runtime). (b) PERMUTATION: same multiset for a 10-element array, duplicates preserved exactly (multiset, not set), object identity preserved (elements moved, not cloned), empty and single-element arrays handled — the latter without drawing from the rng at all. (c) DISTRIBUTION-CORRECT via the injectable rng: draws exactly n-1 values for an n-element array; produces the EXACT Fisher-Yates permutation for a scripted rng (and a different exact permutation for a different script); an rng pinned at 0 and one pinned just below 1 produce the two deterministic boundary permutations; same seed ⇒ same permutation; a 12,000-trial uniformity check proves every element reaches every position (no input-order bias); with no rng supplied it defaults to `Math.random` (production behaviour unchanged). (d) REPO-WIDE STATIC CANARY: no source file under `packages/` or `apps/` contains the biased sort comparator in EITHER ordering (`Math.random() - 0.5` or `0.5 - Math.random()`), with a non-vacuous scan-size floor, and the canonical module itself is asserted to BE a Fisher-Yates with an injectable rng defaulting to `Math.random`. | `apps/host/src/__tests__/lib/shuffle.test.ts` (20 tests) | E |
+
+### Invariants covered by this section
+
+- P6-adjacent (question selection/ordering) — a biased shuffle
+  systematically over/under-exposes questions by input position and skews
+  where a correct option lands after option shuffling; uniformity is a
+  fairness property of the serving pipeline even though P6 itself speaks to
+  per-question quality. REG-51's server-shuffle AUTHORITY is untouched —
+  this entry pins the shuffle PRIMITIVE, not who is allowed to re-derive
+  from it.
+- Fork-resistance — the static canary makes reintroducing the biased
+  comparator anywhere in `packages/` or `apps/` a test failure.
+
+### Catalog total
+
+Pre-REG-323: 322 entries (through REG-322, the canonical P6 gate, above).
+The DSA-audit fix batch adds REG-323 (canonical unbiased shuffle +
+biased-comparator repo ban).
+**Total catalog: 323 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-326..REG-327 — Diagnostic cold-start correctness (2026-07-29): a test was pinning a client-trust scoring defect, and the placement form carried no information
+
+Spec: `docs/superpowers/specs/2026-07-29-diagnostic-cold-start-correctness.md`
+(assessment-owned, 35 acceptance oracles in §8). Implemented by backend
+(`/api/diagnostic/start`, `/api/diagnostic/complete`), frontend (`/diagnostic`)
+and mobile; pinned here by testing.
+
+**REG-326 is the highest-value entry in this batch and it is a self-inflicted
+one.** Before this change, `apps/host/src/__tests__/api/diagnostic-complete-contract.test.ts`
+stubbed `question_bank.select -> { data: [] }` and then asserted
+`score_percent === 70` for a request body that merely *claimed* 7 of 10 correct.
+With an empty question bank the server can derive nothing, so that assertion
+could only ever pass if the route trusted the client-supplied `is_correct`
+flag. The test was not verifying P1 — **it was protecting the vulnerability**,
+and it would have gone red the moment the vulnerability was fixed. Four sibling
+P1 cases, the envelope case and both summary-write cases in the same file shared
+the same empty fixture and the same defect. Every one of them has been rebuilt on
+a real `question_bank` fixture carrying real `correct_answer_index` values, and
+the adversarial direction is now asserted explicitly in both directions.
+
+Two further stale-by-design corrections in the same batch, recorded so they are
+not mistaken for weakened assertions:
+
+  * `diagnostic-api.test.ts` asserted `400 INVALID_GRADE` for grades `"11"` and
+    `"12"`. That was correct while `VALID_DIAGNOSTIC_GRADES` was `['6'..'10']`;
+    spec §4 G1 widened it to `['6'..'12']` because `resolve-next-action` routes
+    every zero-mastery student — all grades — to `/diagnostic`, so a Class 11
+    student's first CTA was a hard 400. The two tests are INVERTED, and the
+    range boundary is re-pinned at `"5"`/`"13"` plus integer rejection (P5).
+  * The placement boundaries moved from 40/70 to **50/80** (§7.5a). Under the
+    old all-easy form an average student scored ~95%, so 40/70 placed nearly
+    everyone at `hard`. The four boundary cases moved from 39/40/69/70 to
+    49/50/79/80 — the cuts MOVED, they were not relaxed.
+
+Also corrected: `diagnostic-api.test.ts`'s "full success path" asserted a
+`session_id` from a ONE-item, chapter-less, unverified fixture. Under the old
+`ORDER BY difficulty ASC LIMIT 15` selector that fixture happened to produce a
+session; under the §1 blueprint + §2 Tier-0 gate it cannot satisfy any rung, so
+the honest outcome is the Rung-4 stop. The fixture describes an EMPTY pool and
+now asserts exactly that.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-326 | `diagnostic_complete_server_rederives_correctness` | **C1 / spec AC-28 — the client's `is_correct` is NEVER read, in either direction.** (a) A 15-item body claiming `is_correct: true` on every answer while submitting indices that all DISAGREE with `question_bank.correct_answer_index` yields `score_percent === 0`, `correct_answers === 0`, and `is_correct: false` on every persisted `diagnostic_responses` row (with `correct_index` sourced from the bank, not the payload). (b) The deflating direction is equally ignored: an all-`false` claim over all-correct indices still scores 100. (c) A partially-forged body (7 genuinely correct of 10, claimed 10) scores 70. (d) A forged `question_id` with no bank row resolves to INCORRECT with `correct_index: null` — never to the claim. (e) An empty bank result AND a bank read ERROR both score 0 (fail-closed), where the pre-fix test asserted 70 off an empty bank. (f) AC-29 property test: across 200 randomized `(total, correct, lie-direction)` triples, `score_percent === Math.round((serverCorrect/total)*100)` and the answer is independent of the claim. (g) **P1 unchanged at every form length** — 7/10 to 70, 1/3 to 33 (integer, never 33.33), 2/3 to 67, 0 to 0, all to 100, and the ladder lengths 15/14/12/10 (AC-20 short form). (h) **AC-31 / §7.5a boundaries** 49 to easy, 50 to medium, 79 to medium, 80 to hard, with `DIAGNOSTIC_PLACEMENT_THRESHOLDS` exported so route and test cannot drift. (i) **AC-30 / C2** avg < 3s per question forces `recommended_difficulty: 'medium'` + `placement_confidence: 'low'` regardless of score (100% and 0% both), exactly 3s is NOT a speed run (strictly-less-than boundary), and the confidence is written into the `next_path` summary. This is a placement-validity rule on an XP-neutral surface — **P3's three checks on the XP-bearing quiz path are neither removed nor weakened**. (j) **AC-32 XP neutrality** — no RPC is called at all (so `atomic_quiz_profile_update` cannot be), no insert/update payload carries an `xp`/`level`/`streak` key, and no XP-bearing table (`quiz_sessions`, `student_learning_profiles`, `students` writes) is touched. (k) Retained: 409 `ALREADY_COMPLETED` idempotency, delete-then-insert ordering + assessment-scoped delete filter, ownership-scoped summary update, and the INSERT_ERROR / SESSION_NOT_FOUND / NO_STUDENT error paths. | `apps/host/src/__tests__/api/diagnostic-complete-contract.test.ts` (37 tests — full rewrite), `apps/host/src/__tests__/diagnostic-api.test.ts` (P1 describe rebuilt on a real 4-row bank fixture + an explicit all-true-claim case) | E |
+| REG-327 | `diagnostic_blueprint_ladder_and_verification_gate` | **§1 blueprint + §2 Tier-0 gate + §5 ladder + §6 Bloom's, asserted against the PURE selector (`packages/lib/src/diagnostic/blueprint.ts`) so no DB is needed.** (a) AC-1 a well-supplied pool yields exactly 15 items at `{easy:5, medium:6, hard:4}`. (b) AC-2 the served band sequence equals the fixed positional template `[1,1,2,2,3,2,1,3,2,2,3,1,2,3,1]` at Rung 0 AND Rung 1. (c) AC-3 two seeds over the same pool give different item sequences while both still satisfy AC-1/AC-2, and the same seed is reproducible. (d) AC-5 positions 1, 2 and 15 are easy and no two adjacent positions are both hard. (e) **AC-4 — the information oracle, and the reason the blueprint exists.** A reference `SE(theta) = 1/sqrt(sum I(theta))` built on the platform's OWN `cognitive-engine.irtProbCorrect` (3PL, D=1.7, a=1.0, c=0.25, b=(d-2)*1.5) asserts `SE(+1.5) < 1.0` for the served form, and `SE(theta) < 1.0` across the whole reported range [-2,+2]. **The pre-fix all-easy 15/0/0 form is included as an explicit NEGATIVE fixture** and must FAIL the same assertion (spec §1.2 puts it at ~2.26) — so reintroducing `ORDER BY difficulty ASC LIMIT 15` cannot silently return. The blueprint is additionally asserted to beat the legacy form by >2x at theta=+1.5. (f) AC-6 table-driven: 21 one-violating-row fixtures covering V1-V17 (inactive, soft-deleted, draft, wrong/integer grade, wrong subject, non-MCQ, 3 options, empty option, duplicate options, index out of 0-3, short text, `{{` template marker, empty explanation, out-of-band difficulty, non-canonical Bloom, all three `failed*` verification states, competition `source_type`, off-syllabus chapter) — each asserted absent from the output at Rung 0, Rung 1 AND a degraded rung. (g) AC-7 a `failed` row is excluded even when it is the ONLY item that could fill the blueprint; degradation, never inclusion. (h) AC-8 an all-`legacy_unverified` pool produces Rung 1 / `standard` / 15 items, not an empty result. (i) AC-9 every returned item passes the REAL `validateQuestion()` from `quiz-assembler`, called directly. (j) AC-10 no duplicate ids even when the pool contains the 3-band-query overlap. (k) AC-11/AC-12 off-syllabus chapters never served, an empty syllabus set yields Rung 4 (`too_few_chapters`), and Rung 0-1 forms span >=5 distinct chapters with <=3 items per chapter. (l) AC-19 per-rung tiers, and Rung 4 for empty / no-hard-band / no-HOTS pools with zero questions and a reason. (m) **AC-24 property test over 500 randomly-shaped pools**: every SERVED form (any rung) has >=1 `difficulty === 3`, >=1 HOTS item, and 0 items violating V1-V18 or `validateQuestion()`; any pool that cannot satisfy that returns Rung 4 with zero questions — and the test asserts BOTH branches were actually exercised. (n) AC-25/26/27 Bloom's windows at Rung 0-1, the relaxed >=3-levels />=1-HOTS / remember<=50% shape at Rung 2-3, and `DIAGNOSTIC_BLOOM_LEVELS` byte-equal (including ORDER) to `cognitive-engine.BLOOM_LEVELS`. (o) **Route-level**: AC-13 a `chapter` param is 400 `CHAPTER_NOT_SUPPORTED` before any DB work; AC-14/AC-15 all seven STRING grades `"6".."12"` return 200 with 15 questions and a `session_id`, `grade` is a string on the request, on the `diagnostic_assessments` insert AND in the response, and integer `11` is rejected before any DB work (P5); **AC-21 Rung 4 returns HTTP 200 and inserts NO `diagnostic_assessments` row** (asserted on the recording client, including the large-pool-but-no-hard-band case); AC-22 `alternatives` is never empty and always ends with the unconditional Foxy CTA — including the pathological "no other unlocked subject AND no syllabus chapters" fixture — and every alternative carries EN + Devanagari copy plus an href (P7); AC-23 the `diagnostic_content_gap` ops event matches no student_id / email / phone / name key and does not contain the student id, while still carrying grade/subject/pool-shape counts (P13); AC-17 a grade-11 student with no stream and no unlocked subject gets the §7.4 stream payload with bilingual copy, not a 400 and not an empty diagnostic; AC-32 the start path calls no `atomic_quiz_profile_update` and touches no XP-bearing table; and the client question payload never carries `verification_state` / `is_verified` / `irt_*` / `source_type` / `content_status`. | `apps/host/src/__tests__/lib/diagnostic/blueprint.test.ts` (57 tests), `apps/host/src/__tests__/api/diagnostic-start-contract.test.ts` (20 tests), `apps/host/src/__tests__/diagnostic-api.test.ts` (grade range + Rung-4 honest-stop describes) | E |
+
+### Known gaps — stated, not papered over
+
+Following the REG-321 precedent, the parts of spec §8 that are NOT covered by
+an automated test in this batch:
+
+- **AC-18** (`resolve-next-action` returns `cold_start_diagnostic` for a
+  zero-mastery grade-12 student AND that URL resolves 200 end-to-end) is NOT
+  pinned. The route half is covered by REG-327(o); the `resolve-next-action`
+  half and the E2E stitch are not.
+- **AC-33/AC-34/AC-35** (the full bilingual sweep over the §7 copy constant, the
+  untranslated-technical-term rule, and "no student-facing string is hardcoded
+  in a component") are only partially covered: REG-327(o) asserts Devanagari
+  presence on the Rung-4 alternatives, the insufficient-content message/headline
+  and the stream message. There is no table-driven sweep over every exported
+  member of `packages/lib/src/diagnostic/copy.ts`, and no static check that
+  components import from it rather than inlining.
+- **AC-16** (grade-11 `commerce` student requesting `physics` gets the existing
+  422 `subject_not_allowed` with `reason: 'grade'`) is covered by the
+  pre-existing `diagnostic-api.test.ts` governance describe against the real
+  `validateSubjectWrite`, but NOT re-asserted for grades 11-12 specifically;
+  `diagnostic-start-contract.test.ts` mocks that boundary deliberately.
+- The **`/diagnostic` page** (`apps/host/src/app/diagnostic/page.tsx`) and its
+  short-form banner / content-insufficient / stream screens have no component
+  test in this batch. The API contracts they consume are pinned; their rendering
+  is not.
+
+### Invariants covered by this section
+
+- P1 (score accuracy) — REG-326(f)(g): `Math.round((correct/total)*100)` over
+  the SERVER-derived correct count, at every ladder form length, verified by a
+  200-case property test rather than a handful of literals.
+- P2 (XP economy) — REG-326(j) + REG-327(o): the diagnostic is XP-neutral on
+  both routes. No RPC, no XP-bearing table, no XP-shaped key in any payload.
+- P3 (anti-cheat) — explicitly UNCHANGED. §7A C2 adds a placement-confidence
+  downgrade on the XP-neutral diagnostic surface; it neither removes nor relaxes
+  any of the three checks on the XP-bearing quiz path.
+- P5 (grade format) — REG-327(o): strings `"6".."12"` on the request, on the
+  `diagnostic_assessments` insert and in the response; integer twins rejected
+  for all seven grades; `"5"`/`"13"` rejected; and V4 rejects a numeric `grade`
+  on a candidate row even when it "equals" the requested grade.
+- P6 (question quality) — REG-327(f)(i): V1-V17 plus the real `validateQuestion()`
+  gate every served item at every rung, asserted per-predicate and again as a
+  500-pool property.
+- P7 (bilingual) — REG-327(o), partially; see the AC-33/34/35 gap above.
+- P13 (data privacy) — REG-327(o): the content-gap telemetry carries grade,
+  subject and counts only, with no student identifier of any kind.
+
+### Catalog total
+
+Pre-REG-326: 325 entries (through REG-325, the daily-cron leaderboard-ranking
+RPC delegation — see `11-infrastructure.md`). Diagnostic cold-start correctness
+adds REG-326 (complete-route server-side correctness re-derivation — the entry
+that replaces a test which was pinning a client-trust scoring defect) and
+REG-327 (blueprint / Tier-0 verification gate / insufficient-pool ladder /
+Bloom's spread, with the pre-fix all-easy form kept as an explicit negative
+fixture on the SE information oracle).
+
+Renumbering note (2026-07-29): this batch originally claimed REG-322..REG-325.
+The same-day DSA-audit batch (PR #1415) landed on `main` first and consumed
+REG-322..REG-325, so this batch was renumbered to REG-326..REG-329 during the
+rebase. No entry from either batch was dropped or reworded.
+**Total catalog: 327 entries (target: 35 — TARGET EXCEEDED).**
+
+---

@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+// Canonical Fisher-Yates shuffle. Replaces four `sort(() => Math.random() - 0.5)`
+// sites in this file: that comparator is non-transitive, so it does not shuffle —
+// it biases heavily toward the array's original order. Every site here is
+// followed by a `.slice(0, n)`, so the bias decided WHICH questions a student was
+// served (the first rows the DB returned won far more often than chance).
+// `shuffle` is non-mutating and returns a NEW array.
+import { shuffle } from '@alfanumrik/lib/shuffle';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -272,9 +279,9 @@ export async function GET(request: NextRequest) {
             bankSeenTexts.add(key);
             (seenQuestionIds.has(String(r.id)) ? bankSeen : bankUnseen).push(r);
           }
-          bankUnseen.sort(() => Math.random() - 0.5);
-          bankSeen.sort(() => Math.random() - 0.5);
-          bankSelected.push(...bankUnseen, ...bankSeen);
+          // `shuffle` does NOT mutate in place (the biased `.sort()` it replaced
+          // did), so the shuffled results must be consumed directly here.
+          bankSelected.push(...shuffle(bankUnseen), ...shuffle(bankSeen));
         }
       } catch (bankErr) {
         // Non-fatal: fall through to rag_content_chunks if question_bank fails.
@@ -424,8 +431,10 @@ export async function GET(request: NextRequest) {
     const previouslySeen = deduped.filter((q: Record<string, unknown>) => seenQuestionIds.has(String(q.id)));
 
     // 5. Shuffle and take only the backfill count — prefer unseen, fall back to seen if pool exhausted
-    const shuffledUnseen = unseenQuestions.sort(() => Math.random() - 0.5);
-    const shuffledSeen = previouslySeen.sort(() => Math.random() - 0.5);
+    // `shuffle` returns a new array; `unseenQuestions` / `previouslySeen` are
+    // left untouched (the `.sort()` this replaced shuffled them in place).
+    const shuffledUnseen = shuffle(unseenQuestions);
+    const shuffledSeen = shuffle(previouslySeen);
     // Prioritize unseen questions, backfill with previously seen if not enough
     const selected = [...shuffledUnseen, ...shuffledSeen].slice(0, remaining);
 
