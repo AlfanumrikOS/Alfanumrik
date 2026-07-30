@@ -165,20 +165,34 @@ describe('classifyControlKeyword — regulatory tier', () => {
 });
 
 describe('classifyIntent — tier 1: ButtonPayload opcodes', () => {
-  it('d6:a:<n> → d6_answer with the answer index arg', () => {
-    expect(classify(msg({ buttonPayload: 'd6:a:2' }))).toEqual({
+  it('d6:a:<qIdx>:<optIdx> → d6_answer with the question-position and answer-index args', () => {
+    expect(classify(msg({ buttonPayload: 'd6:a:0:2' }))).toEqual({
       intent: 'd6_answer',
-      args: { answer: '2' },
+      args: { qIdx: '0', optIdx: '2' },
     });
+  });
+
+  it('d6:a:<qIdx>:<optIdx> — a non-zero question position round-trips correctly', () => {
+    expect(classify(msg({ buttonPayload: 'd6:a:5:0' }))).toEqual({
+      intent: 'd6_answer',
+      args: { qIdx: '5', optIdx: '0' },
+    });
+  });
+
+  it('legacy single-arg d6:a:<n> opcode (pre-dev-5 format) no longer matches — falls through to the keyword tier', () => {
+    // A stale-format opcode from before the dev-5 fix must not be
+    // misinterpreted as a valid answer; classifyButtonPayload returns null
+    // for it and classifyIntent falls through to the (empty) keyword tier.
+    expect(classify(msg({ buttonPayload: 'd6:a:2' })).intent).not.toBe('d6_answer');
   });
 
   it('OPCODE TIER WINS over a STOP body inside classifyIntent (pinned actual)', () => {
     // Resolution order: ButtonPayload first. Note the ROUTE separately runs
     // classifyControlKeyword(body) BEFORE classifyIntent, so at the webhook
     // level a STOP body still wins — this pins the classifier's own order.
-    expect(classify(msg({ buttonPayload: 'd6:a:2', body: 'STOP' }))).toEqual({
+    expect(classify(msg({ buttonPayload: 'd6:a:0:2', body: 'STOP' }))).toEqual({
       intent: 'd6_answer',
-      args: { answer: '2' },
+      args: { qIdx: '0', optIdx: '2' },
     });
   });
 

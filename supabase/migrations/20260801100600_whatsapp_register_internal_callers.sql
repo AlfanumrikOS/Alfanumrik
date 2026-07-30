@@ -179,7 +179,11 @@ END $whatsapp_send_security$;
 -- 3. SELECT name, status, caller_kind FROM security_internal_callers
 --      WHERE name IN ('whatsapp-webhook-route','whatsapp-drain-cron');
 --    -- expect: 2 rows, both active / service_name.
--- 4. grep the caller literals against the source once the routes land:
---      rg "buildInternalCallerHeaders\(.*'whatsapp-(webhook-route|drain-cron)'"
---        apps/host/src/app/api/whatsapp/ apps/host/src/app/api/cron/
---    -- expect: exactly the two names seeded here, byte-identical.
+-- 4. grep the caller literals against the source once the routes land.
+--    The literals are NOT inline at the buildInternalCallerHeaders call —
+--    daily6.ts routes them through callerFor() and a string-union type — so
+--    grep for the literals themselves:
+--      rg -n "'whatsapp-(webhook-route|drain-cron)'" \
+--        apps/host/src/app/api/whatsapp/_lib/daily6.ts
+--    -- expect: the callerFor() return values (daily6.ts, sendWa caller
+--    -- plumbing) carrying exactly the two names seeded here, byte-identical.

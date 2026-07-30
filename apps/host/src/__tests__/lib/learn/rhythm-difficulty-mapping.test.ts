@@ -6,26 +6,25 @@
  *
  * Two layers:
  *
- *  1. MATH SPEC. The route's `mapDifficultyTo01` is INLINE in
- *     src/app/api/rhythm/today/route.ts (not exported), so we cannot import it
- *     for a direct unit test without forcing the whole route module (and its
- *     supabase-server / next dependencies) to load. We therefore pin the math
- *     contract against a local reference twin AND structurally assert that the
- *     route's inline implementation matches that exact contract (the sigmoid
- *     primary, the integer 1/2/3 → 0.25/0.5/0.75 fallback, the 0.5 final
- *     default). The reference twin is identical to the route's body, so any
- *     drift in the route trips the structural pins below.
+ *  1. MATH SPEC. `mapDifficultyTo01` is a private (non-exported) helper of the
+ *     queue builder — since the 2026-07-30 Phase-3-prep move it lives in
+ *     packages/lib/src/learn/build-rhythm-queue.ts (previously inline in
+ *     src/app/api/rhythm/today/route.ts). We pin the math contract against a
+ *     local reference twin AND structurally assert that the module's inline
+ *     implementation matches that exact contract (the sigmoid primary, the
+ *     integer 1/2/3 → 0.25/0.5/0.75 fallback, the 0.5 final default). The
+ *     reference twin is identical to the module's body, so any drift in the
+ *     module trips the structural pins below.
  *
  *     RECOMMENDATION (handed to ai-engineer / backend): export
- *     `mapDifficultyTo01` from a small pure helper (e.g.
- *     src/lib/learn/rhythm-difficulty.ts) so it can be unit-tested DIRECTLY
- *     rather than via a structural mirror. Until then this twin + the source
- *     pins are the guard.
+ *     `mapDifficultyTo01` from build-rhythm-queue.ts (or a small pure helper)
+ *     so it can be unit-tested DIRECTLY rather than via a structural mirror.
+ *     Until then this twin + the source pins are the guard.
  *
  *  2. STRUCTURAL PIN. The Phase-3 change must keep BOTH new signals NON-FATAL:
  *     a missing/failed irt_theta defaults studentAbility to 0 (sigmoid → 0.5),
  *     and a question with no difficulty signal defaults to 0.5. We grep the
- *     route source to confirm it (a) reads irt_theta from
+ *     builder-module source to confirm it (a) reads irt_theta from
  *     student_learning_profiles, (b) batch-fetches question_bank difficulty for
  *     the candidate ids, and (c) wraps both in try/catch with the documented
  *     defaults — so neither fetch can 500 the daily queue.
@@ -121,12 +120,20 @@ describe('mapDifficultyTo01 — both signals missing → 0.5 default (prior beha
   });
 });
 
-// ─── 2. STRUCTURAL PIN — route reads real signals, both non-fatal ────────────
+// ─── 2. STRUCTURAL PIN — builder module reads real signals, both non-fatal ───
 
-const ROUTE = 'src/app/api/rhythm/today/route.ts';
+// The queue builder moved (verbatim) out of the route into packages/lib on
+// 2026-07-30 (Phase 3 prep — WhatsApp bot reuse). The pins now target the
+// canonical module. packages/lib sits at the REPO root, so resolution also
+// tries two levels up from apps/host (the vitest cwd).
+const MODULE = 'packages/lib/src/learn/build-rhythm-queue.ts';
 
 function resolve(rel: string): string | null {
-  for (const c of [path.resolve(process.cwd(), rel), path.resolve(process.cwd(), '..', rel)]) {
+  for (const c of [
+    path.resolve(process.cwd(), rel),
+    path.resolve(process.cwd(), '..', rel),
+    path.resolve(process.cwd(), '..', '..', rel),
+  ]) {
     if (fs.existsSync(c)) return c;
   }
   return null;
@@ -136,26 +143,26 @@ function read(rel: string): string {
   return p ? fs.readFileSync(p, 'utf-8') : '';
 }
 
-describe('rhythm/today route — Phase 3 real-signal wiring (structural pin)', () => {
-  it('the route source exists', () => {
-    expect(resolve(ROUTE)).not.toBeNull();
+describe('build-rhythm-queue module — Phase 3 real-signal wiring (structural pin)', () => {
+  it('the builder module source exists', () => {
+    expect(resolve(MODULE)).not.toBeNull();
   });
 
   it('fetches the student irt_theta from student_learning_profiles', () => {
-    const src = read(ROUTE);
+    const src = read(MODULE);
     expect(src).toMatch(/student_learning_profiles/);
     expect(src).toMatch(/irt_theta/);
   });
 
   it('studentAbility defaults to 0 (sigmoid → 0.5 neutral) when theta missing/non-finite', () => {
-    const src = read(ROUTE);
+    const src = read(MODULE);
     // Default declared as 0, and guarded by Number.isFinite before assignment.
     expect(src).toMatch(/let\s+studentAbility\s*=\s*0/);
     expect(src).toMatch(/Number\.isFinite\(\s*theta\s*\)/);
   });
 
   it('batch-fetches question_bank difficulty for the candidate ids', () => {
-    const src = read(ROUTE);
+    const src = read(MODULE);
     expect(src).toMatch(/from\(['"]question_bank['"]\)/);
     expect(src).toMatch(/select\(['"]id,\s*irt_difficulty,\s*difficulty['"]\)/);
     // Restricted to exactly the candidate ids returned by the adaptive RPC.
@@ -163,7 +170,7 @@ describe('rhythm/today route — Phase 3 real-signal wiring (structural pin)', (
   });
 
   it('inline mapDifficultyTo01 matches the math spec (sigmoid primary, int fallback, 0.5 default)', () => {
-    const src = read(ROUTE);
+    const src = read(MODULE);
     // Sigmoid primary.
     expect(src).toMatch(/1\s*\/\s*\(1\s*\+\s*Math\.exp\(-irtDifficulty\)\)/);
     // Integer band fallback.
@@ -175,7 +182,7 @@ describe('rhythm/today route — Phase 3 real-signal wiring (structural pin)', (
   });
 
   it('BOTH new fetches are NON-FATAL: theta + difficulty wrapped in try/catch, no 500 path', () => {
-    const src = read(ROUTE);
+    const src = read(MODULE);
     // At least the two new fetch blocks (theta, difficulty) plus the lane are
     // try/catch-guarded. Confirm the documented non-fatal defaults are present.
     expect(src).toMatch(/try\s*\{/);
@@ -185,8 +192,16 @@ describe('rhythm/today route — Phase 3 real-signal wiring (structural pin)', (
   });
 
   it('passes the real studentAbility into composeDailyRhythm', () => {
-    const src = read(ROUTE);
+    const src = read(MODULE);
     expect(src).toMatch(/composeDailyRhythm\(\s*\{/);
     expect(src).toMatch(/studentAbility,/);
+  });
+
+  it('the route now delegates to the shared builder (no inline copy left behind)', () => {
+    const routeSrc = read('src/app/api/rhythm/today/route.ts');
+    expect(routeSrc).toMatch(/@alfanumrik\/lib\/learn\/build-rhythm-queue/);
+    // The inline implementation must not silently reappear in the route.
+    expect(routeSrc).not.toMatch(/mapDifficultyTo01/);
+    expect(routeSrc).not.toMatch(/student_learning_profiles/);
   });
 });

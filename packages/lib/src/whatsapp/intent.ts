@@ -7,8 +7,14 @@
  * machine"):
  *
  *   1. Interactive reply id (`ButtonPayload`) — a private opcode space we
- *      author ourselves: `d6:a:<n>`, `d6:q`, `db:next`, `db:stuck`,
- *      `db:got`, `nb:rt:<id>`, `sw:<student_id>`, `menu`.
+ *      author ourselves: `d6:start`, `d6:a:<qIdx>:<optIdx>`, `d6:q`,
+ *      `subj:<code>`, `db:next`, `db:stuck`, `db:got`, `nb:rt:<id>`,
+ *      `sw:<student_id>`, `menu`. `d6:a:<qIdx>:<optIdx>` encodes BOTH the
+ *      0-based served question position (`qIdx`, = the session's d6_index at
+ *      serve time) and the 0-based displayed option index (`optIdx`) — the
+ *      question position lets the server reject a tap on a stale,
+ *      already-superseded question list (WhatsApp never disables previously
+ *      sent interactive lists; see daily6.ts's stale-tap guard).
  *   2. Keyword table with Hindi/Hinglish aliases (STOP/BAND/ROKO/रोको/बंद, ...)
  *      — case-, whitespace-, and Unicode-normalization-insensitive (NFC).
  *      Bare START is OPT-IN, not menu.
@@ -40,9 +46,11 @@ export type WaIntent =
   | 'menu'
   | 'set_language'
   // Daily 6
+  | 'd6_start'
   | 'd6_answer'
   | 'd6_quit'
   | 'd6_nudge'
+  | 'subject_pick'
   // Doubt ladder
   | 'db_next'
   | 'db_stuck'
@@ -171,9 +179,20 @@ function classifyKeyword(body: string): WaClassification | null {
 function classifyButtonPayload(payload: string): WaClassification | null {
   const p = payload.trim();
 
-  const d6Answer = /^d6:a:(\d+)$/.exec(p);
-  if (d6Answer) return { intent: 'd6_answer', args: { answer: d6Answer[1] } };
+  if (p === 'd6:start') return { intent: 'd6_start', args: {} };
+  // dev-5 (Phase-3 conformance): opcode carries BOTH the served question
+  // position and the displayed option index so the server can reject a tap
+  // on a stale, already-superseded question list.
+  const d6Answer = /^d6:a:(\d+):(\d+)$/.exec(p);
+  if (d6Answer) {
+    return { intent: 'd6_answer', args: { qIdx: d6Answer[1], optIdx: d6Answer[2] } };
+  }
   if (p === 'd6:q') return { intent: 'd6_quit', args: {} };
+
+  // Daily-6 subject picker rows (spec Q5). Codes are our own subject codes —
+  // conservative charset so a hostile payload can never smuggle structure.
+  const subjectPick = /^subj:([A-Za-z0-9_-]{1,40})$/.exec(p);
+  if (subjectPick) return { intent: 'subject_pick', args: { subject: subjectPick[1] } };
 
   if (p === 'db:next') return { intent: 'db_next', args: {} };
   if (p === 'db:stuck') return { intent: 'db_stuck', args: {} };
