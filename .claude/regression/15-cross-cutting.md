@@ -214,3 +214,104 @@ and took REG-322..REG-325, so this batch was renumbered to REG-326..REG-329
 during the rebase. Nothing from either batch was dropped or reworded.
 
 ---
+
+## REG-330 — Institution-entitlement override is now a FLOOR on `get_plan_limit` (2026-07-29, super-admin quota-override P0-1)
+
+**The defect this migration closes.** `/super-admin/entitlements` already
+wrote school-scoped daily-limit overrides (`limit.foxy_chat_daily`,
+`limit.quiz_daily`) into `institution_entitlements`, with a full audit trail
+and a "resolved effective value" preview in the panel. But
+`getResolvedEntitlements()`/`isEntitledEnforced()`
+(`packages/lib/src/entitlements/resolver.ts`) — the only TS code that ever
+read that table — has ZERO callers anywhere in the actual Foxy/quiz quota
+path. The REAL enforcement + display authority is 100% SQL: both
+`check_and_record_usage()` and `get_student_usage()` derive their limit
+exclusively from `get_plan_limit()` (REG-329's `20260729130400`/
+`20260729130500`), which never consulted `institution_entitlements` at all.
+An operator could set an override, see it reflected in the panel's own
+preview, and it would do NOTHING at the moment a student actually sent a Foxy
+message or started a quiz. Migration `20260729130600` wires the override in
+as a THIRD candidate value inside `get_plan_limit()` — `effective_limit =
+GREATEST(v_personal, v_school, v_institution_override)` — so both enforcement
+and display inherit the fix automatically with ZERO application/TS code
+changes, mirroring `20260729130400`/`20260729130500`'s zero-TS-change shape.
+The override is a documented FLOOR, not a ceiling: an admin-set value can only
+raise a student's effective cap, never lower it below their personal plan or
+their school's tier-derived coverage. Deliberately NOT gated behind
+`ff_institution_entitlements_v1` — the change is monotonic and a provable
+no-op for every school with no `institution_entitlements` row, so gating it
+would ship the fix "wired but inert", the exact trap this task exists to
+close (see the migration's own "FLAG GATING" header section for the full
+risk-shape argument distinguishing this from `isEntitledEnforced()`'s
+toggle-gate, which manages a different, non-monotonic hazard).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-330 | `get_plan_limit_institution_override_is_a_floor` | **SQL source contract (runs on every PR) + live-DB semantics (does NOT, same shape as REG-329).** Source-contract half, over `20260729130600`: `get_plan_limit`'s signature/volatility/`SECURITY DEFINER`/`search_path` are preserved with no `DROP FUNCTION`, so `check_and_record_usage`/`get_student_usage` keep resolving; the file is `CREATE OR REPLACE`-only and writes no data; the personal (§1) branch and the school (§2) candidate-school query stay byte-identical to `20260729130400`'s baseline, so the "strict no-op for pure B2C" and school-tier no-op proofs both remain valid without re-derivation; the return is `GREATEST(v_personal, v_school, v_institution_override)` — the THIRD term — with no path that returns the override alone or reassigns over `v_personal`; the `p_feature -> entitlement_key` mapping is pinned exact (`foxy_chat -> limit.foxy_chat_daily`, `quiz -> limit.quiz_daily`, every other feature including `notes`/`ai_total` resolves NO key — a hard no-op, confirmed by asserting the ONLY two `'limit.*'` string literals anywhere in the executable SQL are those two); the institution-override lookup fails SOFT (a second, independent `EXCEPTION WHEN OTHERS` block beyond the school branch's own) so a bad optional lookup can never fail a quota check; `coerce_institution_limit_max()`'s five malformed-value branches (non-object/array/null, missing `max` key, `period` outside day/week/month, negative, non-integer) are each pinned to resolve to `NULL` via the SOURCE TEXT of its CASE arms, `{max:null}` is pinned to the shared `999999` unlimited sentinel, and a well-formed non-negative integer passes through verbatim; a malformed row is excluded via `MAX()` aggregation, never a raised error; `effective_from`/`effective_to` window checks against `now()` are pinned present on BOTH institution-override query arms (roster branch and direct-link fallback, 2 occurrences each); `entitlement_key` is matched with `=`, never `LIKE`/`ILIKE`/`~`; the candidate-school CTE is confirmed duplicated verbatim (not shared) exactly twice, matching the migration's own documented rationale; EXECUTE is re-REVOKEd from PUBLIC/anon/authenticated on BOTH `get_plan_limit` and the new `coerce_institution_limit_max`; no RLS policy, table/index DDL, or grade column is touched (P8, P5); a runnable manual DOWN restores `20260729130400`'s post-change `GREATEST(v_personal, v_school)` (i.e. removes only the institution-override term, not the school term); and the file is confirmed to read no feature flag anywhere in its executable body (deliberately ungated, per its own documented rationale). Live-DB half: 7 architect-specified condition-2 pins plus a display==enforcement parity check, added as nested `describe` blocks inside the EXISTING `get-plan-limit-school-coverage.test.ts` (reusing its `beforeAll` catalog-presence gate and seedSchool/seedStudent/giveStudentPlan/planLimit/catalogCap helpers rather than a duplicate rig) — (1) a pure-B2C student is unaffected by the 3rd GREATEST term; (2) a school with NO `institution_entitlements` row resolves exactly as `20260729130400` already proved; (3) an override BELOW the school's tier-derived cap does NOT lower the result (floor, not ceiling); (4) an override ABOVE both personal and tier-derived caps WINS; (5) a malformed override (`{max:-1}`) falls through to NULL with no error and no effect; (6) an override with `effective_to` in the past is ignored; (7) two covering schools (one via the DIRECT `students.school_id` link, one via the ROSTER `class_students` path) each holding a valid override — the HIGHER one wins via the `MAX()` aggregate; plus a `get_student_usage` display-equals-enforcement check under an active override. | `apps/host/src/__tests__/get-plan-limit-institution-override-structure.test.ts` (18 tests, UNIT lane), `apps/host/src/__tests__/migrations/get-plan-limit-school-coverage.test.ts` (8 new tests nested under `institution-override floor (20260729130600)`, 16 total in the file, INTEGRATION lane — see the gap below) | P |
+
+### Known gap — REG-330 is PARTIAL, and this is the honest statement (same shape as REG-329)
+
+All 7 of architect's condition-2 pins plus the display-parity check are
+BEHAVIOURAL and require a live Postgres to execute plpgsql (the function body
+is `LANGUAGE plpgsql`, and `coerce_institution_limit_max` needs a real jsonb
+evaluator). They are written as REAL assertions in the nested
+`describe('institution-override floor (20260729130600)', …)` block added to
+`apps/host/src/__tests__/migrations/get-plan-limit-school-coverage.test.ts`
+(seeds synthetic schools — including a roster-linked second covering school
+via `classes`/`class_students` for the multi-school pin — synthetic students,
+and `institution_entitlements` rows via the live service-role client, calls
+`get_plan_limit`/`get_student_usage`, and relies on `ON DELETE CASCADE` from
+`institution_entitlements.school_id`/`classes.school_id`/
+`class_students.class_id`/`.student_id` for automatic teardown — no separate
+tracking array needed). That file lives in the INTEGRATION lane: it runs only
+under `RUN_INTEGRATION_TESTS=1` with real `STAGING_SUPABASE_*` secrets, and
+was confirmed locally (no live creds available in this environment) to
+collect cleanly and skip all 16 tests in the file (8 pre-existing REG-329
+pins + 8 new REG-330 pins) rather than error — i.e. the suite is verified
+STRUCTURALLY SOUND (collects, no syntax/type errors, correct skip behaviour)
+but its live-DB assertions themselves were NOT executed against a real
+database as part of this work.
+
+**On a normal PR none of REG-330's 8 live-DB pins execute.** What gates every
+PR is the unit-lane source-contract file
+(`get-plan-limit-institution-override-structure.test.ts`, 18 tests, all
+passing locally), which can only detect SOURCE drift — it cannot prove the
+plpgsql actually behaves as GREATEST-floor semantics at runtime. Do not read a
+green PR as "the institution-override floor semantics were verified" — read
+it as "the migration source still has the shape that makes those semantics
+true". Status is therefore `P`, not `E`, and it stays `P` until the
+integration lane runs against a live DB in CI — same caveat, same honesty
+posture as REG-329.
+
+### Invariants covered by this section (REG-330)
+
+- P11 (payment integrity) — entitlement is granted strictly as a function of
+  an already-existing, operator-written `institution_entitlements` row (a
+  commercial-contract fact written via the audited `/super-admin/entitlements`
+  panel). No pricing, no subscription status, and no payment record is
+  written by this migration; a malformed or expired override row contributes
+  nothing (fails closed to the pre-existing `GREATEST(v_personal, v_school)`
+  value).
+- P8 (RLS boundary) — no RLS posture change; the function reads
+  `institution_entitlements` via `SECURITY DEFINER` on behalf of a caller with
+  no direct RLS grant on that table, returns a single integer, and leaks no
+  row/school identifier/commercial-term/PII (P13).
+- P5 (grade format) — no grade column is read or written anywhere in this
+  migration; pinned by a negative source-text assertion.
+- Display/enforcement single-authority (extends REG-329's point) — the
+  override reaches BOTH `check_and_record_usage` (enforcement) and
+  `get_student_usage` (display) through the same `get_plan_limit()` call, so
+  the two cannot drift apart for a school-covered student the way REG-328
+  found them drifting before.
+
+### Catalog total
+
+Pre-REG-330: 329 entries (through REG-329, `get_plan_limit` school-coverage +
+`get_student_usage` single-limit-authority migrations). The institution-
+override floor fix adds REG-330 (`get_plan_limit`'s third `GREATEST` term
+reading `institution_entitlements`, plus the new `coerce_institution_limit_max`
+helper — PARTIAL, same honest shape as REG-329: source-contract in the unit
+lane, semantics in the integration lane only, not yet run against a live DB).
+**Total catalog: 330 entries (target: 35 — TARGET EXCEEDED).**
+
+---

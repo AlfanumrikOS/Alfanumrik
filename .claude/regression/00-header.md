@@ -6,8 +6,20 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 329 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-326..REG-329 (2026-07-29, diagnostic cold-start correctness +
+**Total catalog: 330 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-330 (2026-07-29, institution-entitlement override floor on
+`get_plan_limit()` — the `20260729130600` migration wires the school-scoped
+`institution_entitlements` daily-limit overrides the `/super-admin/entitlements`
+panel already wrote into the SQL enforcement/display authority as a THIRD
+`GREATEST()` term, closing the "operator sets a quota, nothing happens" gap
+left after REG-329's school-tier work. **PARTIAL, and honestly so, same shape
+as REG-329**: the source contract (18 tests) runs on every PR, but the 7
+condition-2 semantic pins plus the display-parity check execute plpgsql and
+therefore live in the INTEGRATION lane, which does NOT run on a normal PR —
+confirmed locally to collect cleanly and skip (no live creds in this
+environment), not executed against a real DB; see `15-cross-cutting.md`).
+**REG-331 is the next free id.**
+Prior: REG-326..REG-329 (2026-07-29, diagnostic cold-start correctness +
 school-coverage daily-limit P0 batch). REG-326 (diagnostic complete-route
 server-side correctness re-derivation, P1 — **it replaces a test that was
 PINNING the defect**: `diagnostic-complete-contract.test.ts` stubbed an EMPTY
@@ -35,7 +47,10 @@ migrations — **PARTIAL, and honestly so**: the source contract runs on every P
 but architect's three semantic pins (B2C byte-identical, `trial` school → `pro`
 cap, personal `unlimited` not downgraded under a `basic` school) execute plpgsql
 and therefore live in the INTEGRATION lane, which does NOT run on a normal PR;
-see `15-cross-cutting.md`). **REG-330 is the next free id.**
+see `15-cross-cutting.md`). This batch's own text declared "REG-330 is the
+next free id"; that was true at its merge and is superseded above — the
+institution-entitlement override floor took REG-330 the same day, so
+**REG-331 is now the next free id.**
 Collision note (2026-07-29): this batch originally claimed REG-322..REG-325 and
 declared REG-326 next-free. The DSA-audit fix batch (PR #1415, immediately
 below) merged to `main` first with the SAME four ids and the SAME next-free
@@ -88,8 +103,9 @@ EXECUTE, counts-only logging, AND the dormant
 UNWIRED from both the Vitest and Deno lanes; extends REG-118; see
 `11-infrastructure.md`). That batch's own header text declared "REG-326 is the
 next free id"; that was true at its merge and is superseded here — REG-326..
-REG-329 were taken by the diagnostic + school-coverage batch above, so **REG-330
-is the next free id.**
+REG-329 were taken by the diagnostic + school-coverage batch above, and REG-330
+was subsequently taken by the same-day institution-entitlement override floor
+(top of this file), so **REG-331 is the next free id.**
 Prior: REG-318..REG-321 (2026-07-29, forensic-audit fix batch, PR #1410 —
 "Forensic audit fix batch: quiz scoring, payments, security, AI safety (6
 critical bugs)"). A deep forensic audit found ~30 confirmed bugs across
@@ -147,8 +163,9 @@ incrementally-maintained running total: each entry's own addition updates
 "Pre-REG-N: X entries ... **Total catalog: X+1 entries**" in the same
 commit, and the highest such self-declaration in the shard set (this file
 and `11-infrastructure.md` at REG-317, then this file at REG-321, then this
-file and `11-infrastructure.md` at REG-325, now this file and
-`15-cross-cutting.md` at REG-329) is treated as ground truth. Known intentional ID gaps below REG-296 (never
+file and `11-infrastructure.md` at REG-325, then this file and
+`15-cross-cutting.md` at REG-329, now this file and `15-cross-cutting.md` at
+REG-330) is treated as ground truth. Known intentional ID gaps below REG-296 (never
 renumbered, do not fill): REG-1..REG-35 (catalog numbering starts at
 REG-36; REG-1..35 were never used — SG-1..SG-6 in `01-subject-governance.md`
 use a separate prefix), REG-80/81/82 (recommended in `03-quiz-integrity.md`/
@@ -156,8 +173,9 @@ use a separate prefix), REG-80/81/82 (recommended in `03-quiz-integrity.md`/
 `03-quiz-integrity.md`), REG-176 (present, prose format — NOT a gap, a
 counting-format artifact, see above). REG-296 through REG-317 are fully
 contiguous with no gaps; REG-322..REG-325 were consumed by the same-day
-DSA-audit promotion (PR #1415) and REG-326..REG-329 by the same-day
-diagnostic cold-start + school-coverage batch, so **REG-330 is the next free
+DSA-audit promotion (PR #1415), REG-326..REG-329 by the same-day
+diagnostic cold-start + school-coverage batch, and REG-330 by the same-day
+institution-entitlement override floor, so **REG-331 is the next free
 id**. Both batches independently claimed REG-322..REG-325 on 2026-07-29; the
 DSA-audit batch merged first and keeps those ids, the diagnostic batch was
 renumbered upward during its rebase. There is no REG-322..REG-325 duplication
