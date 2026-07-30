@@ -315,3 +315,122 @@ lane, semantics in the integration lane only, not yet run against a live DB).
 **Total catalog: 330 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-331 — BoardScore™ subject-scoping fix batch (2026-07-30, CEO-reported "all subjects shown" defect)
+
+Two independent bugs fixed in one wave, per
+`docs/superpowers/specs/2026-07-30-boardscore-subject-scoping.md`:
+
+**Bug 1 (compute always failed).** `computeBoardScore()` in the Deno Edge
+Function `supabase/functions/board-score/index.ts` used a PostgREST nested
+embed (`cme_concept_state.select('... curriculum_topics!inner (... subjects
+!inner (code))')`) requiring an undeclared FK from
+`cme_concept_state.concept_id` to `curriculum_topics.id` — every `compute`
+call 500'd/422'd. Rewritten as three flat fetches (`subjects` id lookup →
+`curriculum_topics` id+chapter_number → `cme_concept_state` by student_id
+only) joined via an in-memory `Map`, mirroring the existing pattern in
+`cme-engine/index.ts`. The scoring formula itself (`computeRetention`,
+`classifyMastery`, the chapter-weighted `effective_mastery × marks_allocated`
+loop, confidence-band widening, recovery-plan ranking, and the
+`board_score_predictions` upsert shape) is confirmed BYTE-FOR-BYTE UNCHANGED —
+verified this session via explicit `git diff` review (not "tests still
+pass," per the spec's own §8 item 8 instruction that a formula claim needs
+diff-level proof, not test-inference).
+
+**Bug 2 (subjects not student-chosen).** The nightly cron computed a
+prediction for EVERY subject with active `cbse_chapter_weights` at a
+student's grade — no reference to what the student actually selected. New
+`getStudentBoardSubjects(studentId, grade)`
+(`apps/host/src/app/api/cron/board-score/_lib/get-student-board-subjects.ts`)
+replaces `getActiveSubjectsForGrade(grade)`: 3-step intersection of (1) the
+student's own `students.selected_subjects`, (2) `subject_kind IN
+('cbse_core','cbse_elective')` — never `platform_elective` — via a real
+`subjects` table join, and (3) subjects with active `cbse_chapter_weights` at
+that grade. Also enforced defense-in-depth at `POST /api/board-score`
+(422 `subject_not_eligible` before any Edge Function call) and in the Edge
+Function's `get` action (`platform_elective` codes excluded from every
+response even for pre-existing stray rows).
+
+Two migrations ship alongside: a one-row data-quality fix
+(`cbse_chapter_weights.subject_code`: `'social_science'` → `'social_studies'`
+for Grade-10 rows — without this, a student who correctly selected
+`social_studies` could never get a Grade-10 SST BoardScore, since the join
+key would never match) and a defensive cleanup DELETE for pre-fix
+over-broad `board_score_predictions` rows (currently a verified NO-OP — the
+table has zero rows in every reachable environment, since Bug 1 meant
+`compute` had never successfully written a row — shipped anyway as a
+standing correctness invariant against a deploy-order race between the
+migration and the application-code fix).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-331 | `boardscore_subject_scoping_and_embed_fix` | **(a) Subject-scoping logic (AC2-AC4, REAL execution via mocked Supabase, not just structural)** — `getStudentBoardSubjects` returns exactly `['math']` for `selected_subjects=['math']` at grade 10, never `science`/`social_studies`/`english` despite those having grade-10 weights (AC2); `[]` for `selected_subjects=[]` OR `NULL`, with the `subjects`/`cbse_chapter_weights` tables never even queried — no fallback to "all subjects" (AC3); `coding` (`platform_elective`) never appears in the result even when present in `selected_subjects`, PROVEN via asserting the exact `.in('subject_kind', ['cbse_core','cbse_elective'])` filter argument the function sent — not by trusting a canned response (AC4); a selected subject with no `cbse_chapter_weights` row at that grade (e.g. `hindi`) is silently excluded, not an error; malformed/null `selected_subjects` and a students-lookup error both resolve to `[]` without throwing; multiple per-chapter weight rows for one subject de-duplicate to one entry. **(b) `POST /api/board-score` eligibility gate (AC5)** — returns `422 { error: 'subject_not_eligible' }` and makes ZERO `fetch` calls to the Edge Function for a subject not in the student's `getStudentBoardSubjects` result, INCLUDING a subject that has `cbse_chapter_weights` at that grade but was never selected (the exact bug-recurrence path if only the cron were fixed); confirms the route calls `getStudentBoardSubjects(studentId, grade)` with the resolved values before deciding; confirms it DOES forward to the Edge Function for an eligible subject; confirms the pre-existing `422 invalid_subject_code` malformed-body path short-circuits before the eligibility check even runs. **(c) Cron per-student scoping (structural)** — `apps/host/src/app/api/cron/board-score/route.ts` imports and calls `getStudentBoardSubjects(studentId, grade)` INSIDE the per-student loop (after the student destructure, not hoisted); the old `getActiveSubjectsForGrade` function and the old per-grade `subjectsByGrade` Map cache are both confirmed ABSENT from the file (a grade-only cache is invalid once subjects are student-scoped — two students in the same grade can now get different subject sets). **(d) Edge Function embed fix + formula-untouched (structural + explicit git-diff review)** — the broken `curriculum_topics!inner(...)`/`subjects!inner(code)` nested-embed pattern is confirmed ABSENT as executable code (the fix's own explanatory comment legitimately NAMES the old pattern in prose, so the assertion strips `//` line-comments and requires the pattern's real multiline field-list shape, not a bare string match); the flat three-query pattern (`subjects` → `curriculum_topics` → `cme_concept_state`, joined via `topicChapterMap: Map`) is confirmed PRESENT; five formula-integrity pins assert `computeRetention`'s exact decay expression, `classifyMastery`'s four exact thresholds (0.75/0.50/0.25), confidence-band widening (`bandHalf = coveragePct < 60 ? 15 : 10`), the chapter-scoring loop's `effective_mastery`/`predicted_marks` expressions, and the upsert's exact `onConflict` natural key — all BYTE-IDENTICAL to pre-fix source, so a FUTURE edit to this file cannot silently drift the formula without a test failing (this session's own `git diff` review, which caught nothing, is not itself a durable guardrail once merged). `getBoardScores`' defensive `platform_elective` exclusion filter also pinned present. **(e) Migration structural pins (source-contract only, no live-DB execution — see gap below)** — `20260801110000` is pinned to the exact `UPDATE public.cbse_chapter_weights SET subject_code = 'social_studies' ... WHERE subject_code = 'social_science' AND grade = '10' AND board = 'CBSE'` predicate (scoped to the EXECUTABLE SQL between `BEGIN;`/`COMMIT;`, so the file's own documented manual-DOWN text — which legitimately runs the update in reverse — cannot false-negative the idempotency check), confirmed idempotent by construction (the WHERE clause only matches the pre-fix value) and DDL/RLS-free; `20260801110100` is pinned to the exact `DELETE FROM public.board_score_predictions bsp WHERE NOT EXISTS (SELECT 1 FROM public.students s WHERE s.id = bsp.student_id AND bsp.subject_code = ANY(COALESCE(s.selected_subjects, '{}')))` predicate, its `RAISE NOTICE`/`GET DIAGNOSTICS` observability, its own in-file honesty about being a current zero-row no-op, and DDL/RLS-free. `deno check` on the Edge Function found 4 pre-existing `SupabaseClient<any,"public",any>` type errors, confirmed via a side-by-side `deno check` on the pre-batch `git show HEAD` copy of the same file to be UNCHANGED by this batch (same 4 errors, same lines, unrelated to the diff) — reported as an honest pre-existing-defect finding, not fixed as part of this pass (out of scope; not testing's file to fix). | `apps/host/src/__tests__/get-student-board-subjects.test.ts` (9), `apps/host/src/__tests__/api/board-score-post-route.test.ts` (5), `apps/host/src/__tests__/board-score-cron-structural.test.ts` (6), `apps/host/src/__tests__/board-score-edge-function-structural.test.ts` (12), `apps/host/src/__tests__/board-score-subject-scoping-migrations-structure.test.ts` (12) — 44 tests | P | P1-adjacent, P5, P6-adjacent |
+
+### Known gap — REG-331 is PARTIAL, and this is the honest statement
+
+The subject-scoping LOGIC (`getStudentBoardSubjects`) and the ROUTE-level
+eligibility gate (`POST /api/board-score`) are executed via mocked Supabase
+responses in the Vitest lane and run on every PR — that part is genuinely
+behaviorally verified, not just structural. What does NOT execute anywhere
+in this pass:
+
+1. **The Edge Function itself.** `supabase/functions/board-score/index.ts`
+   is Deno code. `deno check` (type-check only, no execution) was run and
+   passed with zero NEW errors (4 pre-existing, unrelated errors confirmed
+   present in the pre-batch version too) — but no Deno *test* runner
+   executed `computeBoardScore()` or `getBoardScores()` against a real or
+   mocked Postgres. The flat-fetch-plus-Map-join rewrite (Bug 1) is
+   therefore pinned STRUCTURALLY (source-text pattern absence/presence) and
+   by formula-byte-identity, not by running the function.
+2. **The nightly cron end-to-end.** `apps/host/src/app/api/cron/board-score/route.ts`
+   iterating real students and calling a real (or even mocked) Edge Function
+   fetch is not exercised — only the per-student-loop wiring is pinned via
+   source text (the old cache is gone, the new call site is inside the
+   loop).
+3. **Both migrations' actual SQL execution.** No live-DB integration test
+   runs the `UPDATE`/`DELETE` against a seeded Postgres and asserts a
+   before/after row count, unlike the precedent set by
+   `get-plan-limit-school-coverage.test.ts` for REG-329/330 (which at least
+   HAS an integration-lane companion file, even though it doesn't run on a
+   normal PR either). No integration-lane companion exists yet for these two
+   migrations — this is a bigger gap than REG-329/330's, which have the
+   integration file even if it doesn't execute in this environment.
+
+Do not read a green PR as "BoardScore now computes correctly end-to-end
+against a live database" — read it as "the subject-scoping decision logic is
+behaviorally correct against every mocked scenario tested, the route
+correctly gates on that logic, and the Edge Function's source no longer
+contains the specific broken pattern nor a formula drift." Closing gaps 1-3
+requires either a Deno test harness for this function (none exists in this
+repo for `board-score` specifically) or a live-DB integration suite
+following the REG-329/330 precedent — both out of scope for this pass per
+the task's own Priority 4 framing ("you likely can't execute Deno against a
+live DB").
+
+### Invariants covered by this section (REG-331)
+
+- P1-adjacent (BoardScore's own documented formula, not quiz P1) — the
+  scoring formula, retention decay, confidence-band widening, and upsert
+  shape are pinned byte-identical; explicitly NOT a P1 (quiz
+  `score_percent`) change per spec §6.
+- P5 (grade format) — `grade` flows through `getStudentBoardSubjects` and
+  every Edge Function call as a string throughout; no integer coercion
+  introduced.
+- P6-adjacent (content-scoping correctness) — a student never sees a
+  "predicted board score" for a subject CBSE does not examine
+  (`platform_elective`) or a subject they never elected — the defect this
+  whole batch exists to close was students seeing predictions for
+  subjects they didn't choose.
+
+### Catalog total
+
+Pre-REG-331: 330 entries (through REG-330, institution-entitlement override
+floor). The BoardScore subject-scoping fix batch adds REG-331 (PostgREST
+embed-fix + per-student subject-scoping + the two supporting migrations —
+PARTIAL: the TypeScript-side logic and route gate are behaviorally tested on
+every PR, the Deno Edge Function and both migrations are pinned
+structurally only, with no live execution in this pass — see the gap
+statement above). **Total catalog: 331 entries (target: 35 — TARGET
+EXCEEDED). REG-332 is the next free id.**
+
+---

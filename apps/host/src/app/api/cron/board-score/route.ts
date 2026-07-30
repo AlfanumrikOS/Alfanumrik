@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { getStudentBoardSubjects } from './_lib/get-student-board-subjects';
 
 /**
  * POST /api/cron/board-score
@@ -13,8 +14,12 @@ import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
  * Algorithm:
  *   1. Check feature flag `ff_board_score_v1` — bail immediately if disabled.
  *   2. Fetch all active students (is_active = true, deleted_at IS NULL).
- *   3. For each student, determine their active subjects from
- *      `cbse_chapter_weights` filtered by (board = 'CBSE', grade, is_active).
+ *   3. For each student, determine the subjects BoardScore should compute
+ *      via `getStudentBoardSubjects(studentId, grade)` — the intersection
+ *      of the student's own `selected_subjects`, board-examined subject
+ *      kinds (`cbse_core`/`cbse_elective`, never `platform_elective`), and
+ *      subjects with active `cbse_chapter_weights` at this grade. See
+ *      docs/superpowers/specs/2026-07-30-boardscore-subject-scoping.md §4.
  *   4. Call the `board-score` Edge Function `compute` action for each
  *      (student, subject_code) pair using the SERVICE_ROLE_KEY bearer token.
  *   5. Return a summary: { total_students, total_subjects, success, failed }.
@@ -57,10 +62,6 @@ interface StudentRow {
   grade: string;
 }
 
-interface ChapterWeightRow {
-  subject_code: string;
-}
-
 // ─── Feature Flag ─────────────────────────────────────────────────────────────
 
 async function isBoardScoreEnabled(): Promise<boolean> {
@@ -76,30 +77,6 @@ async function isBoardScoreEnabled(): Promise<boolean> {
     // Fail-closed: if we can't read the flag, don't run.
     return false;
   }
-}
-
-// ─── Subject lookup ───────────────────────────────────────────────────────────
-
-/**
- * Returns the distinct active subject_codes for a given grade from
- * cbse_chapter_weights. These are the subjects the cron will score.
- */
-async function getActiveSubjectsForGrade(grade: string): Promise<string[]> {
-  const { data, error } = await supabaseAdmin
-    .from('cbse_chapter_weights')
-    .select('subject_code')
-    .eq('board', 'CBSE')
-    .eq('grade', grade)
-    .eq('is_active', true);
-
-  if (error || !data) return [];
-
-  // Deduplicate subject_codes (one row per chapter, many chapters per subject).
-  const seen = new Set<string>();
-  for (const row of data as ChapterWeightRow[]) {
-    seen.add(row.subject_code);
-  }
-  return [...seen];
 }
 
 // ─── Edge Function invocation ─────────────────────────────────────────────────
@@ -207,10 +184,6 @@ export async function POST(request: NextRequest) {
   const scoreDate = new Date().toISOString().slice(0, 10);
   const edgeUrl = `${supabaseUrl}/functions/v1/board-score`;
 
-  // Per-grade subject cache so we don't re-query cbse_chapter_weights for
-  // every student in the same grade.
-  const subjectsByGrade = new Map<string, string[]>();
-
   let totalSubjects = 0;
   let successCount = 0;
   let failedCount = 0;
@@ -232,13 +205,10 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // Load subjects for this grade (cached).
-    if (!subjectsByGrade.has(grade)) {
-      const subjects = await getActiveSubjectsForGrade(grade);
-      subjectsByGrade.set(grade, subjects);
-    }
-
-    const subjects = subjectsByGrade.get(grade) ?? [];
+    // Load the subjects BoardScore should compute for THIS student — no
+    // per-grade caching, since different students in the same grade can
+    // have different selected_subjects (spec §4).
+    const subjects = await getStudentBoardSubjects(studentId, grade);
 
     for (const subjectCode of subjects) {
       totalSubjects++;
