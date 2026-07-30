@@ -307,8 +307,17 @@ async function generateParentDigests(supabase: ReturnType<typeof createClient>):
     waTargets.push({guardian_id,phone:guardian.phone,studentName,quizCount,avgScore,xpEarned,streakDays})
   }
 
+  // HARD-DISABLED 2026-07-29 — WhatsApp bot plan R4 (2026-07-29): this send is
+  // double-broken — it POSTs a legacy {phone, template, params} payload shape
+  // that whatsapp-notify no longer accepts, with no internal signing headers,
+  // and it gates on notification_preferences?.whatsapp (a key the column
+  // default never sets). It fails silently today; it must NOT reanimate when
+  // WhatsApp credentials/signing land, or it would hammer the provider with
+  // malformed sends. Re-enable only via the new whatsapp-send function.
+  // The in-app notification upsert below is unaffected.
+  const WHATSAPP_SEND_ENABLED = false as boolean
   const WA_CONCURRENCY = 20
-  for (let i = 0; i < waTargets.length; i += WA_CONCURRENCY) {
+  for (let i = 0; WHATSAPP_SEND_ENABLED && i < waTargets.length; i += WA_CONCURRENCY) {
     const batch = waTargets.slice(i, i + WA_CONCURRENCY)
     await Promise.all(batch.map(async (t) => {
       try {

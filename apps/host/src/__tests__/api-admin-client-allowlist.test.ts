@@ -212,7 +212,19 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // both keyed on the SESSION-derived auth.studentId (never a request-supplied
 // id), behind authorizeRequest() on student-role permissions. Architect-reviewed;
 // full justification + ratchet-down path in scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 265;
+// WhatsApp bot Phase 2 (2026-07-30): 265 -> 268 for the three WhatsApp routes.
+// Service-role is REQUIRED, not convenience: every whatsapp_* table is RLS
+// service-role-only by design (migration 20260801100000 — the tables are keyed
+// by phone-derived identity, not auth.uid(), so no session policy can exist).
+//   src/app/api/whatsapp/webhook/route.ts   — Twilio webhook (no user session);
+//     X-Twilio-Signature HMAC verified fail-closed before any processing.
+//   src/app/api/cron/whatsapp-drain/route.ts — cron worker (no user session);
+//     fail-closed CRON_SECRET gate before any I/O.
+//   src/app/api/whatsapp/link/start/route.ts — cookie-session route; admin
+//     client used only AFTER supabase.auth.getUser() and scoped to that
+//     auth_user_id (whatsapp_link_challenges insert + student-side
+//     parental_consent existence check, which has no student RLS policy).
+const EXPECTED_COUNT = 268;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

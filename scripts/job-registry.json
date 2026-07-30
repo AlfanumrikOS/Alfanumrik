@@ -153,6 +153,15 @@
       "idempotencyKey": "synthesis-quality-sample:synthesis_run_id:rubric_version",
       "lastSuccessMetric": "ops.cron.synthesis_quality_sample.last_success_at",
       "alertThreshold": "no success for 26h"
+    },
+    {
+      "path": "/api/cron/whatsapp-drain",
+      "platform": "vercel",
+      "owner": "backend",
+      "schedule": "* * * * *",
+      "idempotencyKey": "whatsapp-drain:event_id (atomic claim RPC per pending event)",
+      "lastSuccessMetric": "ops.cron.whatsapp_drain.last_success_at",
+      "alertThreshold": "no success for 15m"
     }
   ]
 }
