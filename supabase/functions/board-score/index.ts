@@ -166,25 +166,56 @@ async function computeBoardScore(
   const totalMarks = (weights[0] as ChapterWeight).total_marks
   const totalChapters = weights.length
 
-  // 2. Load CME concept states for this student / subject / grade
-  // We join through curriculum_topics to get chapter_number alignment.
+  // 2. Load CME concept states for this student, and curriculum_topics for
+  // this subject/grade, as two flat fetches — then join in application code.
+  //
+  // NOTE: this deliberately does NOT use a PostgREST nested embed
+  // (`curriculum_topics!inner(...)`) because there is no declared foreign
+  // key from cme_concept_state.concept_id to curriculum_topics.id (only a
+  // PK + UNIQUE(student_id, concept_id) — see baseline migration around
+  // line 15132). A nested embed on an undeclared relationship fails
+  // PostgREST relationship resolution on every call. This mirrors the
+  // flat-fetch + Map-join pattern already used for this exact
+  // concept_id <-> curriculum_topics relationship in
+  // supabase/functions/cme-engine/index.ts (get_next_action,
+  // get_revision_due, get_exam_readiness).
+
+  // 2a. First resolve the subject's internal id from its code.
+  const { data: subjectRowForJoin, error: subjErr } = await supabase
+    .from('subjects')
+    .select('id')
+    .eq('code', subject_code)
+    .maybeSingle()
+
+  if (subjErr || !subjectRowForJoin) {
+    console.error(`[board-score][${correlationId}] subject lookup failed: ${subjErr?.message ?? 'not found'}`)
+    return errorResponse(`Unknown subject_code: ${subject_code}`, 422)
+  }
+
+  const subjectId = (subjectRowForJoin as { id: string }).id
+
+  // 2b. Load curriculum_topics for this subject/grade (id + chapter_number).
+  const { data: topics, error: tErr } = await supabase
+    .from('curriculum_topics')
+    .select('id, chapter_number')
+    .eq('grade', grade)
+    .eq('subject_id', subjectId)
+
+  if (tErr) {
+    console.error(`[board-score][${correlationId}] curriculum_topics load failed: ${tErr.message}`)
+    return errorResponse('Failed to load curriculum topics', 500)
+  }
+
+  const topicChapterMap = new Map<string, number>()
+  for (const t of (topics ?? []) as { id: string; chapter_number: number }[]) {
+    topicChapterMap.set(t.id, t.chapter_number)
+  }
+
+  // 2c. Load CME concept states for this student, flat (no embed).
   const { data: states, error: sErr } = await supabase
     .from('cme_concept_state')
-    .select(`
-      concept_id,
-      mastery_mean,
-      retention_half_life,
-      last_practiced_at,
-      curriculum_topics!inner (
-        chapter_number,
-        grade,
-        subject_id,
-        subjects!inner (code)
-      )
-    `)
+    .select('student_id, concept_id, mastery_mean, retention_half_life, last_practiced_at')
     .eq('student_id', student_id)
-    .eq('curriculum_topics.grade', grade)
-    .eq('curriculum_topics.subjects.code', subject_code)
     .not('mastery_mean', 'is', null)
 
   if (sErr) {
@@ -194,14 +225,17 @@ async function computeBoardScore(
 
   const snapshotAt = new Date().toISOString()
 
-  // Flatten concept states to include chapter_number
-  const flatStates: ConceptState[] = (states ?? []).map((row: any) => ({
-    concept_id: row.concept_id,
-    chapter_number: row.curriculum_topics?.chapter_number ?? null,
-    mastery_mean: row.mastery_mean ?? 0,
-    retention_half_life: row.retention_half_life ?? 48,
-    last_practiced_at: row.last_practiced_at ?? null,
-  }))
+  // 2d. Join in application code: keep only concept states whose concept_id
+  // is a curriculum_topics.id for this grade/subject, attaching chapter_number.
+  const flatStates: ConceptState[] = (states ?? [])
+    .filter((row: any) => topicChapterMap.has(row.concept_id))
+    .map((row: any) => ({
+      concept_id: row.concept_id,
+      chapter_number: topicChapterMap.get(row.concept_id) ?? null,
+      mastery_mean: row.mastery_mean ?? 0,
+      retention_half_life: row.retention_half_life ?? 48,
+      last_practiced_at: row.last_practiced_at ?? null,
+    }))
 
   // Group concept states by chapter_number
   const byChapter = new Map<number, ConceptState[]>()
@@ -362,6 +396,18 @@ async function getBoardScores(
   studentId: string,
   body: GetRequest,
 ): Promise<Response> {
+  // Defensive filter (belt-and-suspenders, per spec §7.2 item 2): BoardScore
+  // must never surface a platform_elective subject (e.g. `coding`) even if a
+  // stray board_score_predictions row exists from before subject-scoping was
+  // enforced upstream (§4/§7.1). We exclude by subject_kind rather than
+  // trusting that no such row will ever be written.
+  const { data: platformElectiveRows } = await supabase
+    .from('subjects')
+    .select('code')
+    .eq('subject_kind', 'platform_elective')
+
+  const platformElectiveCodes = (platformElectiveRows ?? []).map((r: any) => r.code as string)
+
   let query = supabase
     .from('board_score_predictions')
     .select(
@@ -378,6 +424,9 @@ async function getBoardScores(
 
   if (body.subject_code) query = query.eq('subject_code', body.subject_code)
   if (body.grade)        query = query.eq('grade', body.grade)
+  if (platformElectiveCodes.length > 0) {
+    query = query.not('subject_code', 'in', `(${platformElectiveCodes.join(',')})`)
+  }
 
   const { data, error } = await query
   if (error) return errorResponse('Failed to fetch board score predictions', 500)

@@ -3,6 +3,7 @@ import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
+import { getStudentBoardSubjects } from '../cron/board-score/_lib/get-student-board-subjects';
 
 /**
  * GET  /api/board-score  — Fetch latest BoardScore™ predictions for the
@@ -193,6 +194,21 @@ export async function POST(request: NextRequest) {
       { error: 'student_not_found', message: 'Student record not found or inactive.' },
       { status: 404 },
     );
+  }
+
+  // Validate subject eligibility BEFORE forwarding to the Edge Function —
+  // reuses the same rule the nightly cron applies (spec §4/§7.1). A student
+  // (or a client bug, or a stale cached tab) must not be able to trigger a
+  // persisted BoardScore prediction for a subject they never selected.
+  const eligibleSubjects = await getStudentBoardSubjects(studentId, grade);
+  if (!eligibleSubjects.includes(subjectCode)) {
+    logger.info('board-score POST: subject not eligible — rejecting before edge call', {
+      correlation_id: correlationId,
+      student_id: studentId,
+      subject_code: subjectCode,
+      grade,
+    });
+    return NextResponse.json({ error: 'subject_not_eligible' }, { status: 422 });
   }
 
   try {

@@ -6,8 +6,33 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 330 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-330 (2026-07-29, institution-entitlement override floor on
+**Total catalog: 331 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-331 (2026-07-30, BoardScore™ subject-scoping fix batch — CEO-
+reported "all subjects shown" defect. Bug 1: the Deno Edge Function
+`supabase/functions/board-score/index.ts` had used a PostgREST nested embed
+requiring an undeclared FK, making every `compute` call fail; rewritten as a
+flat-fetch + in-memory-Map join mirroring `cme-engine/index.ts`, with the
+scoring formula itself confirmed BYTE-FOR-BYTE UNCHANGED via explicit `git
+diff` review. Bug 2: the nightly cron computed a BoardScore for every subject
+with grade-level `cbse_chapter_weights`, ignoring what the student actually
+selected; new `getStudentBoardSubjects(studentId, grade)` intersects
+`students.selected_subjects` with board-examined `subject_kind`
+(`cbse_core`/`cbse_elective`, never `platform_elective`) and weight-table
+availability, wired into both the cron and a new 422 `subject_not_eligible`
+gate on `POST /api/board-score`. Two supporting migrations: a one-row
+`cbse_chapter_weights` `social_science`→`social_studies` code fix (without
+which Grade-10 Social Studies could never match) and a defensive (currently
+zero-row, verified no-op) cleanup DELETE for pre-fix over-broad
+`board_score_predictions` rows. **PARTIAL**: the subject-scoping decision
+logic and the route-level eligibility gate are REAL behavioral tests (mocked
+Supabase, not just structural) that run on every PR; the Deno Edge Function
+and both migrations are pinned structurally only (source-text pattern
+presence/absence + formula-byte-identity) — no live Deno execution and no
+live-DB migration execution in this pass, a bigger integration-lane gap than
+REG-329/330's since no integration-lane companion file exists yet for these
+two migrations; see `15-cross-cutting.md`).
+**REG-332 is the next free id.**
+Prior: REG-330 (2026-07-29, institution-entitlement override floor on
 `get_plan_limit()` — the `20260729130600` migration wires the school-scoped
 `institution_entitlements` daily-limit overrides the `/super-admin/entitlements`
 panel already wrote into the SQL enforcement/display authority as a THIRD
@@ -18,7 +43,6 @@ condition-2 semantic pins plus the display-parity check execute plpgsql and
 therefore live in the INTEGRATION lane, which does NOT run on a normal PR —
 confirmed locally to collect cleanly and skip (no live creds in this
 environment), not executed against a real DB; see `15-cross-cutting.md`).
-**REG-331 is the next free id.**
 Prior: REG-326..REG-329 (2026-07-29, diagnostic cold-start correctness +
 school-coverage daily-limit P0 batch). REG-326 (diagnostic complete-route
 server-side correctness re-derivation, P1 — **it replaces a test that was
