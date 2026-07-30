@@ -6,8 +6,131 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 321 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-318..REG-321 (2026-07-29, forensic-audit fix batch, PR #1410 —
+**Total catalog: 331 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-331 (2026-07-30, BoardScore™ subject-scoping fix batch — CEO-
+reported "all subjects shown" defect. Bug 1: the Deno Edge Function
+`supabase/functions/board-score/index.ts` had used a PostgREST nested embed
+requiring an undeclared FK, making every `compute` call fail; rewritten as a
+flat-fetch + in-memory-Map join mirroring `cme-engine/index.ts`, with the
+scoring formula itself confirmed BYTE-FOR-BYTE UNCHANGED via explicit `git
+diff` review. Bug 2: the nightly cron computed a BoardScore for every subject
+with grade-level `cbse_chapter_weights`, ignoring what the student actually
+selected; new `getStudentBoardSubjects(studentId, grade)` intersects
+`students.selected_subjects` with board-examined `subject_kind`
+(`cbse_core`/`cbse_elective`, never `platform_elective`) and weight-table
+availability, wired into both the cron and a new 422 `subject_not_eligible`
+gate on `POST /api/board-score`. Two supporting migrations: a one-row
+`cbse_chapter_weights` `social_science`→`social_studies` code fix (without
+which Grade-10 Social Studies could never match) and a defensive (currently
+zero-row, verified no-op) cleanup DELETE for pre-fix over-broad
+`board_score_predictions` rows. **PARTIAL**: the subject-scoping decision
+logic and the route-level eligibility gate are REAL behavioral tests (mocked
+Supabase, not just structural) that run on every PR; the Deno Edge Function
+and both migrations are pinned structurally only (source-text pattern
+presence/absence + formula-byte-identity) — no live Deno execution and no
+live-DB migration execution in this pass, a bigger integration-lane gap than
+REG-329/330's since no integration-lane companion file exists yet for these
+two migrations; see `15-cross-cutting.md`).
+**REG-332 is the next free id.**
+Prior: REG-330 (2026-07-29, institution-entitlement override floor on
+`get_plan_limit()` — the `20260729130600` migration wires the school-scoped
+`institution_entitlements` daily-limit overrides the `/super-admin/entitlements`
+panel already wrote into the SQL enforcement/display authority as a THIRD
+`GREATEST()` term, closing the "operator sets a quota, nothing happens" gap
+left after REG-329's school-tier work. **PARTIAL, and honestly so, same shape
+as REG-329**: the source contract (18 tests) runs on every PR, but the 7
+condition-2 semantic pins plus the display-parity check execute plpgsql and
+therefore live in the INTEGRATION lane, which does NOT run on a normal PR —
+confirmed locally to collect cleanly and skip (no live creds in this
+environment), not executed against a real DB; see `15-cross-cutting.md`).
+Prior: REG-326..REG-329 (2026-07-29, diagnostic cold-start correctness +
+school-coverage daily-limit P0 batch). REG-326 (diagnostic complete-route
+server-side correctness re-derivation, P1 — **it replaces a test that was
+PINNING the defect**: `diagnostic-complete-contract.test.ts` stubbed an EMPTY
+`question_bank` and then asserted `score_percent === 70` for a body that merely
+*claimed* 7 of 10 correct, an assertion that could only pass if the route
+trusted the client's `is_correct` flag; the whole file is rebuilt on real
+`correct_answer_index` fixtures, with an adversarial pin that an all-`true`
+claim over all-wrong indices scores 0, a 200-case property test, the §7.5a
+50/80 placement boundaries replacing the stale 40/70 cuts, the C2 speed-run
+placement guard, and AC-32 XP neutrality; see `03-quiz-integrity.md`).
+REG-327 (diagnostic 5/6/4 blueprint + V1-V18 Tier-0 verification gate + Rung
+0-4 insufficient-pool ladder + Bloom's spread, pinned against the PURE selector
+— including the **AC-4 information oracle with the pre-fix all-easy 15/0/0 form
+kept as an explicit NEGATIVE fixture** so `ORDER BY difficulty ASC LIMIT 15`
+cannot silently return, a 500-pool never-degraded property test, grades
+`"6".."12"` as STRINGS with integer twins rejected, and the Rung-4 honest stop
+returning HTTP 200 with NO `diagnostic_assessments` insert and a provably
+non-empty `alternatives` array; see `03-quiz-integrity.md`). REG-328
+(daily-limit display == enforcement across the TS client, the new
+`/api/usage/daily` service-role read-through and the Flutter tri-state
+`UsageLimit` parse, plus the "neither unlimited sentinel — `-1` or `999999` —
+ever renders" guarantee; see `15-cross-cutting.md`). REG-329 (the
+`get_plan_limit` school-coverage + `get_student_usage` single-limit-authority
+migrations — **PARTIAL, and honestly so**: the source contract runs on every PR,
+but architect's three semantic pins (B2C byte-identical, `trial` school → `pro`
+cap, personal `unlimited` not downgraded under a `basic` school) execute plpgsql
+and therefore live in the INTEGRATION lane, which does NOT run on a normal PR;
+see `15-cross-cutting.md`). This batch's own text declared "REG-330 is the
+next free id"; that was true at its merge and is superseded above — the
+institution-entitlement override floor took REG-330 the same day, so
+**REG-331 is now the next free id.**
+Collision note (2026-07-29): this batch originally claimed REG-322..REG-325 and
+declared REG-326 next-free. The DSA-audit fix batch (PR #1415, immediately
+below) merged to `main` first with the SAME four ids and the SAME next-free
+claim; this batch was renumbered to REG-326..REG-329 during the rebase. No
+entry from either batch was dropped, reworded or renumbered on the #1415 side.
+Also 2026-07-29 (merged first, PR #1415): REG-322..REG-325 (DSA-audit fix batch, branch
+`Alfanumrik/alfanumrik-dsa-review-ba6e30` — a data-structures/algorithms
+review of the quiz-validation, shuffle, XP-ledger, and cron-leaderboard
+surfaces). REG-322 (P6 — single canonical question-quality gate at
+`packages/lib/src/quiz/question-validation.ts`: strict-union behaviour
+[null/non-integer `correct_answer_index` rejected, exactly-4-distinct
+options, template markers, explanation char+word floors, `allowNonMcq`
+relaxing MCQ shape only, bloom_level enforcement OPT-IN via
+`enforceBloomLevel` and pinned in BOTH directions — default must not
+silently re-tighten, opt-in must actually enforce and forward through the
+batch wrapper] plus an anti-fork canary [exactly one implementation under
+`packages/lib/src`, the three former fork sites `quiz-assembler.ts`/
+`domains/quiz.ts`/`supabase.ts` delegate, only `quiz-assembler` passes
+`allowNonMcq: true`, the quarantined `quiz-engine.validateQuestionForQuiz`
+has zero production callers]; documented gaps — the quiz page's
+deliberately-thinner `isValidQuestion` last-line filter is outside the
+canary's scan scope, and the Deno-side parity partner
+`supabase/functions/_shared/quiz-oracle.ts` currently lacks the bloom field
+[ai-engineer follow-up]; see `03-quiz-integrity.md`). REG-323 (P6-adjacent
+— canonical non-mutating Fisher-Yates `shuffle()` at
+`packages/lib/src/shuffle.ts` with injectable rng, proven
+permutation-preserving and distribution-correct via exact scripted-rng
+permutations + a uniformity trial, plus a repo-wide static canary banning
+the biased `sort(() => Math.random() - 0.5)` comparator in either ordering
+from `packages/` and `apps/`; see `03-quiz-integrity.md`). REG-324 (P2 —
+the 6-arg `atomic_quiz_profile_update` overload now WRITES the
+`xp_transactions` ledger row it READS for the daily cap, closing the
+cap-read/cap-write mismatch left open after REG-318's F4 read repoint:
+`daily_category='quiz'`, capped `v_effective_xp` with raw only in metadata,
+`v_effective_xp > 0` guard, clamp→ledger→profile/student write ordering in
+one transaction, `v_daily_cap` parity with `XP_RULES.quiz_daily_cap` swept
+across every root migration, and the nine-key JSONB return pinned in order
+[extends REG-48]; recorded HONESTLY as a defensive fix on a
+dormant-but-`authenticated`-EXECUTE-granted overload with NO reachable
+production caller today — the live path is `submit_quiz_results_v2` + the
+7-arg overload; migration `20260729130000_fix_6arg_quiz_xp_ledger_write.sql`;
+see `05-xp-scoring.md`). REG-325 (operational integrity + P13 — daily-cron
+leaderboard ranking delegated to the `recalculate_leaderboard_snapshots()`
+RPC [migration `20260729130100`], killing the silent PostgREST 1000-row
+truncation and JS rank-by-array-index: ROW_NUMBER with `s.id` tie-break,
+unconditional DO UPDATE so ROW_COUNT = students ranked, the `>= 2` flag
+auto-enable gate driven off the RPC integer return, service_role-only
+EXECUTE, counts-only logging, AND the dormant
+`recalculate_performance_scores()` RPC [migration `20260729130200`] pinned
+UNWIRED from both the Vitest and Deno lanes; extends REG-118; see
+`11-infrastructure.md`). That batch's own header text declared "REG-326 is the
+next free id"; that was true at its merge and is superseded here — REG-326..
+REG-329 were taken by the diagnostic + school-coverage batch above, and REG-330
+was subsequently taken by the same-day institution-entitlement override floor
+(top of this file), so **REG-331 is the next free id.**
+Prior: REG-318..REG-321 (2026-07-29, forensic-audit fix batch, PR #1410 —
 "Forensic audit fix batch: quiz scoring, payments, security, AI safety (6
 critical bugs)"). A deep forensic audit found ~30 confirmed bugs across
 quiz scoring, payments, security/RBAC, AI safety, privacy/logging, and
@@ -59,19 +182,28 @@ in the shard bodies do NOT agree (270 exact-format table rows vs the 317
 self-declared here) because a meaningful minority of entries — including
 REG-176, REG-182/183, and others — are written in prose/subsection format
 rather than the `| REG-N | ... |` table-row shape, so a naive single-regex
-count undercounts. The 317 (now 321) figure is the authoritative
+count undercounts. The 317 (now 329) figure is the authoritative
 incrementally-maintained running total: each entry's own addition updates
 "Pre-REG-N: X entries ... **Total catalog: X+1 entries**" in the same
 commit, and the highest such self-declaration in the shard set (this file
-and `11-infrastructure.md` at REG-317, now this file at REG-321) is treated
-as ground truth. Known intentional ID gaps below REG-296 (never
+and `11-infrastructure.md` at REG-317, then this file at REG-321, then this
+file and `11-infrastructure.md` at REG-325, then this file and
+`15-cross-cutting.md` at REG-329, now this file and `15-cross-cutting.md` at
+REG-330) is treated as ground truth. Known intentional ID gaps below REG-296 (never
 renumbered, do not fill): REG-1..REG-35 (catalog numbering starts at
 REG-36; REG-1..35 were never used — SG-1..SG-6 in `01-subject-governance.md`
 use a separate prefix), REG-80/81/82 (recommended in `03-quiz-integrity.md`/
 `05-xp-scoring.md`, never added), REG-170 (intentionally skipped — see
 `03-quiz-integrity.md`), REG-176 (present, prose format — NOT a gap, a
 counting-format artifact, see above). REG-296 through REG-317 are fully
-contiguous with no gaps; REG-322 is the next free id after this promotion.
+contiguous with no gaps; REG-322..REG-325 were consumed by the same-day
+DSA-audit promotion (PR #1415), REG-326..REG-329 by the same-day
+diagnostic cold-start + school-coverage batch, and REG-330 by the same-day
+institution-entitlement override floor, so **REG-331 is the next free
+id**. Both batches independently claimed REG-322..REG-325 on 2026-07-29; the
+DSA-audit batch merged first and keeps those ids, the diagnostic batch was
+renumbered upward during its rebase. There is no REG-322..REG-325 duplication
+and no gap between REG-321 and REG-329.
 Prior: REG-317 (2026-07-27, build/tooling invocability + CI gate blocking
 posture — branch `fix/typecheck-scripts-gap`. Pins the family of defects every
 existing gate was structurally blind to: tooling that COMPILES but cannot be

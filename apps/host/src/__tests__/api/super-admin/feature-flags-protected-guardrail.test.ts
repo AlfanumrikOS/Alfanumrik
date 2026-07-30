@@ -605,38 +605,56 @@ describe('POST protected-flag guardrail — protected NAME requires confirm befo
 // disagree.
 //
 // If this suite fails after adding/removing a PROTECTED_FLAGS entry: add a
-// companion migration updating protected_feature_flags in the SAME PR, don't
-// weaken this test.
+// companion migration updating protected_feature_flags in the SAME PR (and
+// list it in SEED_MIGRATION_PATHS below), don't weaken this test.
+//
+// 2026-07-30: generalized from a single seed file to a file LIST — the
+// WhatsApp bot seed (20260801100500) added two protected_feature_flags rows
+// in a new migration (the applied 20260722090000 is never edited in place),
+// and this parser must aggregate every seed file or those rows are invisible
+// to the parity assertions.
 describe('protected_feature_flags DB/TS registry parity', () => {
   const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..', '..', '..');
-  const SEED_MIGRATION_PATH = resolve(
-    REPO_ROOT,
-    'supabase',
-    'migrations',
+  // The DB registry is seeded across MULTIPLE migrations: already-applied
+  // migrations are never edited in place, so later PROTECTED_FLAGS additions
+  // ship their protected_feature_flags rows in NEW seed files. Every file
+  // that inserts protected_feature_flags rows must be listed here, or the
+  // parity assertions below go structurally blind to its rows (exactly the
+  // gap the 20260801100500 header documented for the WhatsApp pair until the
+  // 2026-07-30 companion generalized this parser).
+  const SEED_MIGRATION_PATHS = [
     '20260722090000_protected_feature_flags_registry.sql',
-  );
+    '20260801100500_seed_ff_whatsapp_bot.sql', // ff_whatsapp_bot_v1 + ff_whatsapp_alarm_template
+  ].map((name) => resolve(REPO_ROOT, 'supabase', 'migrations', name));
 
   function parseSeededRows(): Map<string, string> {
-    const raw = readFileSync(SEED_MIGRATION_PATH, 'utf8');
-    const startMarker = 'INSERT INTO public.protected_feature_flags (flag_name, tier, reason) VALUES';
-    const startIdx = raw.indexOf(startMarker);
-    expect(startIdx, 'seed INSERT statement not found in migration').toBeGreaterThan(-1);
-    const endIdx = raw.indexOf('ON CONFLICT (flag_name)', startIdx);
-    expect(endIdx, 'ON CONFLICT clause not found after seed INSERT').toBeGreaterThan(startIdx);
-    const block = raw.slice(startIdx, endIdx);
-
-    const rowRe = /\(\s*'([a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*,/g;
     const rows = new Map<string, string>();
-    let m: RegExpExecArray | null;
-    while ((m = rowRe.exec(block))) {
-      rows.set(m[1], m[2]);
+    for (const seedPath of SEED_MIGRATION_PATHS) {
+      const raw = readFileSync(seedPath, 'utf8');
+      const startMarker = 'INSERT INTO public.protected_feature_flags (flag_name, tier, reason) VALUES';
+      const startIdx = raw.indexOf(startMarker);
+      expect(startIdx, `seed INSERT statement not found in ${seedPath}`).toBeGreaterThan(-1);
+      const endIdx = raw.indexOf('ON CONFLICT (flag_name)', startIdx);
+      expect(endIdx, `ON CONFLICT clause not found after seed INSERT in ${seedPath}`).toBeGreaterThan(startIdx);
+      const block = raw.slice(startIdx, endIdx);
+
+      const rowRe = /\(\s*'([a-z0-9_]+)'\s*,\s*'([a-z0-9_]+)'\s*,/g;
+      let m: RegExpExecArray | null;
+      while ((m = rowRe.exec(block))) {
+        expect(rows.has(m[1]), `duplicate protected_feature_flags seed row for ${m[1]} (second occurrence in ${seedPath})`).toBe(false);
+        rows.set(m[1], m[2]);
+      }
     }
     return rows;
   }
 
-  it('the seed migration parses to at least one row (sanity check on the parser itself)', () => {
+  it('every seed migration parses to at least one row (sanity check on the parser itself)', () => {
     const rows = parseSeededRows();
     expect(rows.size).toBeGreaterThan(0);
+    // The WhatsApp seed contributes its two rows (proves the second file is
+    // actually reachable by the parser, not just listed).
+    expect(rows.get('ff_whatsapp_bot_v1')).toBe('staged_rollout');
+    expect(rows.get('ff_whatsapp_alarm_template')).toBe('staged_rollout');
   });
 
   it('every PROTECTED_FLAGS key is seeded in protected_feature_flags with the matching tier', () => {

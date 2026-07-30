@@ -137,6 +137,12 @@ If you see a canary alert (nightly or deploy-time):
    corresponding audit row strongly suggests a direct-Postgres mutation
    bypassed the console entirely — escalate to architect immediately, this
    is exactly the class of incident this hardening exists to catch.
+   **First check the drifted flag against the sanctioned-automated-mutators
+   table below.** There is exactly one known-benign unaudited writer
+   (`daily-cron`, on two named flags). If the drift is that writer on those
+   flags, it is expected and you should NOT escalate. Any other unaudited
+   drift — different flag, different shape, or the same flags moving in a
+   direction the cron cannot produce — still escalates immediately.
 3. **If the drift is a genuine, approved change** that the registries simply
    haven't caught up to yet (e.g. a flag's approved posture changed and
    `EXPECTED_OFF_FLAGS`/`protected_feature_flags` need updating): update
@@ -145,6 +151,56 @@ If you see a canary alert (nightly or deploy-time):
 4. **If the drift is NOT approved**: use the console (with the proper
    confirm/bulk_confirm flow) to restore the flag to its expected posture,
    then investigate how the unapproved change happened.
+
+## Sanctioned automated `feature_flags` mutators
+
+The governance model above assumes every `feature_flags` write is either a
+console/RPC mutation (audited) or an approved migration (marked). There is
+**one** standing exception: a service_role writer inside a scheduled job that
+mutates flags with no audit row. It is recorded here so on-call does not chase
+it as a ghost, and so the set of unexplained mutators stays empty.
+
+| Mutator | Role | Flags it may touch | When it fires | Audited? |
+|---|---|---|---|---|
+| `supabase/functions/daily-cron/index.ts` → `recalculateLeaderboards()` (the `leaderboard_entries` step) | `service_role` | **`leaderboard_global`, `wave1_leaderboard` — these two ONLY** | Nightly, whenever the `recalculate_leaderboard_snapshots()` RPC reports **`>= 2`** students ranked | **No.** Bare `.from('feature_flags').update(...)` — no `admin_audit_log` row, no `audit_logs` row, no RPC |
+
+Shape of the write, so you can recognise it precisely:
+
+```
+UPDATE feature_flags SET is_enabled = true, updated_at = now()
+WHERE flag_name IN ('leaderboard_global','wave1_leaderboard')
+  AND is_enabled = false;
+```
+
+It is **enable-only** and **idempotent** (the `is_enabled = false` predicate
+means a steady state produces no write at all). Read this carefully when
+triaging:
+
+- **Benign, do not escalate:** either of those two flags going `false → true`
+  overnight with no audit row, in an environment with ≥2 active students.
+- **Still escalate:** either of those flags going `true → false` unaudited (the
+  cron cannot do that); a `rollout_percentage` change on them (the cron never
+  writes that column); an unaudited INSERT creating them; or ANY unaudited
+  movement on any other flag. None of those are this mutator.
+
+Two further facts an on-call should have:
+
+- **The nightly canary does not currently alert on this.** Neither
+  `leaderboard_global` nor `wave1_leaderboard` is in `EXPECTED_OFF_FLAGS` or in
+  the protected-flag registry (`ff_class_leaderboard_v1` is a different,
+  unrelated flag). So today this exception is documented pre-emptively rather
+  than in response to a firing alert. **If anyone adds either flag to
+  `EXPECTED_OFF_FLAGS`, the canary will fire every single night** until the cron
+  step is changed — do not do that without also handling the cron.
+- **Turning these flags off by hand is not durable.** The cron re-enables them
+  at the next tick. See the "Leaderboard Enable" section of
+  `docs/runbooks/SRE_RUNBOOK.md` §9 for the incident-override procedure and its
+  caveats.
+
+Tracked follow-up (**F4**, not yet done): route this flip through
+`admin_flip_feature_flag` or have it emit an `audit_logs` row, so the governance
+model has *zero* unaudited mutators instead of one documented one. Recorded in
+`docs/audits/2026-07-29-dsa-review-followups.md`.
 
 ## Where things live (quick reference)
 
@@ -160,8 +216,18 @@ If you see a canary alert (nightly or deploy-time):
 | Deploy-time canary gate | `.github/workflows/deploy-production.yml` (`health-check` job, step "Flag posture canary check") |
 | Nightly canary route | `apps/host/src/app/api/cron/flag-posture-canary/route.ts` |
 | DB/TS parity test | `apps/host/src/__tests__/api/super-admin/feature-flags-protected-guardrail.test.ts` |
+| Sanctioned automated mutator (unaudited, leaderboard flags only) | `supabase/functions/daily-cron/index.ts` (`recalculateLeaderboards`) |
 
 ## Change log
+
+- **2026-07-29** — Recorded `daily-cron`'s `leaderboard_entries` step as the one
+  sanctioned automated `feature_flags` mutator (service_role, unaudited,
+  `leaderboard_global` + `wave1_leaderboard` only, nightly at `>= 2` ranked
+  students), and wired that exception into step 2 of the canary-response
+  procedure so on-call stops short of escalating a known-benign write. Follow-up
+  F4 (make it audited) tracked in
+  `docs/audits/2026-07-29-dsa-review-followups.md`. Docs-only; no behaviour
+  change.
 
 - **2026-07-22** — Phase 0 of the flag-governance hardening program (this
   runbook's initial version). Added the DB-layer trigger, the

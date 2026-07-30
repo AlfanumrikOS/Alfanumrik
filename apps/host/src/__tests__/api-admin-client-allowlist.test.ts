@@ -203,7 +203,28 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // cross-student read src/app/api/predict/outcome/route.ts. Service-role is the
 // sanctioned cross-student read path here, taken only AFTER the canAccessStudent
 // gate (architect ruling); registered in scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 264;
+// P0-1 quota display/enforcement gap (2026-07-29): 264 -> 265 for the new
+// read-only route src/app/api/usage/daily/route.ts. Service-role is REQUIRED,
+// not convenience: migration 20260729130400 §5 REVOKEs EXECUTE ON
+// public.get_plan_limit(uuid, text) FROM PUBLIC, anon, authenticated, so an
+// RLS-scoped session cannot call the enforcement authority the badge must read.
+// Bounded to one STABLE read-only RPC + one own-row student_daily_usage SELECT,
+// both keyed on the SESSION-derived auth.studentId (never a request-supplied
+// id), behind authorizeRequest() on student-role permissions. Architect-reviewed;
+// full justification + ratchet-down path in scripts/admin-client-allowlist.json.
+// WhatsApp bot Phase 2 (2026-07-30): 265 -> 268 for the three WhatsApp routes.
+// Service-role is REQUIRED, not convenience: every whatsapp_* table is RLS
+// service-role-only by design (migration 20260801100000 — the tables are keyed
+// by phone-derived identity, not auth.uid(), so no session policy can exist).
+//   src/app/api/whatsapp/webhook/route.ts   — Twilio webhook (no user session);
+//     X-Twilio-Signature HMAC verified fail-closed before any processing.
+//   src/app/api/cron/whatsapp-drain/route.ts — cron worker (no user session);
+//     fail-closed CRON_SECRET gate before any I/O.
+//   src/app/api/whatsapp/link/start/route.ts — cookie-session route; admin
+//     client used only AFTER supabase.auth.getUser() and scoped to that
+//     auth_user_id (whatsapp_link_challenges insert + student-side
+//     parental_consent existence check, which has no student RLS policy).
+const EXPECTED_COUNT = 268;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -278,7 +299,10 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 263 (drift in either direction trips a guard above)', () => {
+  // Title is deliberately number-free: it previously read "exactly 263" while
+  // EXPECTED_COUNT had already ratcheted to 264, i.e. the title lied about the
+  // pin. EXPECTED_COUNT is the single source of truth.
+  it('pins the admin-client route count at exactly EXPECTED_COUNT (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);

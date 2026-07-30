@@ -47,6 +47,7 @@
     { "name": "teacher-dashboard", "deploy": true, "class": "school-data", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:teacher-dashboard", "owner": "school-operations" },
     { "name": "verify-question-bank", "deploy": true, "class": "ai-data-processing", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:verify-question-bank", "owner": "ai-content" },
     { "name": "webhook-dispatcher", "deploy": true, "class": "ops-job", "requiredSecrets": ["CRON_SECRET", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"], "healthCheck": "invoke:webhook-dispatcher", "owner": "platform-ops" },
-    { "name": "whatsapp-notify", "deploy": true, "class": "api-function", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_TOKEN"], "healthCheck": "invoke:whatsapp-notify", "owner": "platform-ops" }
+    { "name": "whatsapp-notify", "deploy": true, "class": "api-function", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_TOKEN"], "healthCheck": "invoke:whatsapp-notify", "owner": "platform-ops" },
+    { "name": "whatsapp-send", "deploy": true, "class": "api-function", "requiredSecrets": ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_WHATSAPP_FROM", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_STATUS_CALLBACK_URL", "WHATSAPP_TOKEN", "WHATSAPP_TRANSPORT"], "healthCheck": "invoke:whatsapp-send", "owner": "platform-ops" }
   ]
 }

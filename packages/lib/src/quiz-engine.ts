@@ -5,6 +5,7 @@
  */
 
 import type { BloomLevel } from './cognitive-engine';
+import { shuffle } from './shuffle';
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -147,14 +148,15 @@ export const QUESTION_TYPE_LABELS: Record<QuestionTypeV2, { en: string; hi: stri
 
 // ─── Functions ──────────────────────────────────────────────
 
-/** Fisher-Yates shuffle — returns new array */
+/**
+ * Fisher-Yates shuffle — returns new array.
+ *
+ * @deprecated Import `shuffle` from `@alfanumrik/lib/shuffle` instead. This is
+ * now a thin alias kept for existing importers; the duplicated algorithm that
+ * used to live here has been deleted.
+ */
 export function shuffleArray<T>(arr: T[]): T[] {
-  const result = [...arr];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
+  return shuffle(arr);
 }
 
 /** Calculate difficulty assignment for each question slot */

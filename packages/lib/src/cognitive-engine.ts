@@ -25,6 +25,7 @@ import {
 } from '@alfanumrik/lib/goals/mastery-display';
 import type { GoalCode } from '@alfanumrik/lib/goals/goal-profile';
 import { BLOOM_CEILING } from '@alfanumrik/lib/score-config';
+import { shuffle } from '@alfanumrik/lib/shuffle';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -371,7 +372,11 @@ export function interleaveTopics(
   count: number
 ): string[] {
   const weak = topics.filter(t => t.isWeak).sort((a, b) => a.mastery - b.mastery);
-  const strong = topics.filter(t => t.isStrong).sort(() => Math.random() - 0.5);
+  // Fisher-Yates via the canonical shuffle. The previous
+  // `.sort(() => Math.random() - 0.5)` was a non-transitive comparator, so the
+  // retrieval-practice slots below (`strong[i % strong.length]`) kept picking
+  // the same first few strong topics instead of rotating across all of them.
+  const strong = shuffle(topics.filter(t => t.isStrong));
   const medium = topics.filter(t => !t.isWeak && !t.isStrong);
 
   const weakCount = Math.round(count * 0.7);
@@ -393,16 +398,7 @@ export function interleaveTopics(
   }
 
   // Shuffle to prevent back-to-back same topic
-  return deduplicateAdjacent(shuffleArray(selected));
-}
-
-function shuffleArray<T>(arr: T[]): T[] {
-  const result = [...arr];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
+  return deduplicateAdjacent(shuffle(selected));
 }
 
 function deduplicateAdjacent(arr: string[]): string[] {

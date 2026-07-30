@@ -2046,3 +2046,50 @@ blocking-posture pin adds REG-317, the next free id after REG-316.
 
 ---
 
+## daily-cron leaderboard ranking — RPC delegation kills the silent 1000-row truncation (2026-07-29, DSA-audit fix batch) — REG-325
+
+Source: the 2026-07-29 DSA-audit fix batch; extends REG-118 (daily-cron
+static-source contract canary). The daily-cron Edge Function's leaderboard
+step fetched students with an unbounded PostgREST `.select` — which
+silently truncates at the 1000-row default page limit, returning 200 with a
+partial result — and then ranked in JS by array index. Once any leaderboard
+population crossed 1000 rows, ranks were computed over a truncated subset
+with no error, no 207, and no log line: the exact "green pipeline, wrong
+data" family REG-118 exists to police. Fixed by delegating the ENTIRE
+ranking to a new set-based `recalculate_leaderboard_snapshots()` RPC
+(migration
+`supabase/migrations/20260729130100_recalculate_leaderboard_snapshots_rpc.sql`)
+— row limits stop existing because the ranking never leaves Postgres. A
+sibling RPC, `recalculate_performance_scores()` (migration
+`20260729130200_recalculate_performance_scores_rpc.sql`), shipped in the
+same batch as DORMANT infrastructure and is deliberately NOT wired into
+daily-cron; this entry pins its dormancy so it cannot silently start
+running.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-325 | `daily_cron_leaderboard_rpc_delegation_and_dormant_rpc_unwired` | Pinned from BOTH lanes — the Vitest static-contract canary over the Edge Function + migration sources, and the Deno contract tests in the function's own suite: (a) the daily-cron leaderboard step calls the `recalculate_leaderboard_snapshots` RPC and its source contains NO unbounded student `.select` fetch and NO JS rank-by-array-index — the silent-truncation vector is structurally gone, not merely "currently under 1000 rows"; (b) RPC semantics preserved: `ROW_NUMBER()` ranking with the `s.id` tie-break (deterministic total order — equal-XP students cannot swap ranks run-to-run) and an UNCONDITIONAL `DO UPDATE` on conflict so the RPC's `ROW_COUNT` equals students actually ranked (a conditional update would undercount and break (c)); (c) the `>= 2` leaderboard flag auto-enable gate is driven off the RPC's INTEGER RETURN value, not a JS array length; (d) the RPC is `SECURITY DEFINER` with a pinned `search_path` and service_role-only EXECUTE (`REVOKE` from PUBLIC/anon/authenticated + `GRANT` to service_role, all asserted); (e) logging is counts-only — every `console.*` line in the step is asserted free of student identifiers (P13); (f) the dormant `recalculate_performance_scores()` RPC remains UNWIRED — asserted from the Vitest lane AND from Deno contract 6c, so wiring it up requires a deliberate change that reddens two independent test lanes. | `apps/host/src/__tests__/regressions/daily-cron-leaderboard-rpc-contract.test.ts` (24 tests), `supabase/functions/daily-cron/__tests__/contract.test.ts` (contracts 6, 6b, 6c) | E |
+
+### Invariants covered by this section
+
+- Operational integrity (REG-118 family) — a cron step whose correctness
+  silently degrades with scale is a "green CI, wrong data" defect; the
+  ranking is now set-based, where row limits do not exist.
+- P13 (data privacy) — counts-only logging on the cron path; no student
+  identifier reaches cron logs.
+- P8/P9-adjacent — the new RPC is service_role-only EXECUTE; no
+  client-facing surface gained a callable.
+- Leaderboard fairness (P2-adjacent) — deterministic tie-break, and ranks
+  derive from the full population rather than the first 1000 rows PostgREST
+  happened to return.
+
+### Catalog total
+
+Pre-REG-325: 324 entries (through REG-324, the 6-arg ledger-write parity
+pin — see `05-xp-scoring.md`). The DSA-audit fix batch adds REG-325
+(leaderboard RPC delegation + dormant-RPC dormancy pin), the last of the
+four ids REG-322..REG-325 consumed by this batch.
+**Total catalog: 325 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

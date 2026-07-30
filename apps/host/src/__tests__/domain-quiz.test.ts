@@ -71,13 +71,41 @@ vi.mock('@alfanumrik/lib/supabase', () => ({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * A fixture question that PASSES the canonical P6 gate
+ * (`@alfanumrik/lib/quiz/question-validation`).
+ *
+ * The gate is the strict union of the three validators that used to be forked
+ * across quiz-assembler.ts / domains/quiz.ts / supabase.ts, so this fixture has
+ * to satisfy ALL of the following simultaneously — change any one of them and
+ * every source-chain test below silently falls through to `direct_query`
+ * instead of exercising the branch it names:
+ *
+ *   - `question_text` >= MIN_QUESTION_TEXT_LENGTH (15) chars, no `{{`/`[BLANK]`,
+ *     and not matching any garbage-template opener,
+ *   - exactly 4 non-empty DISTINCT options (3 distinct is a rejection),
+ *   - `correct_answer_index` an INTEGER in 0..3 (null/`"1"` are rejections),
+ *   - `bloom_level` is NOT gated by default — it is only validated when a
+ *     caller opts in with `enforceBloomLevel: true`, which serving paths do
+ *     not (the fixture still carries a canonical value for realism),
+ *   - `explanation` >= MIN_EXPLANATION_LENGTH (20) chars AND
+ *     >= MIN_EXPLANATION_WORDS (8) WORDS, with no self-contradicting phrase.
+ *
+ * The word floor is the one that bit us: the previous fixture explanation
+ * ("Mitochondria produce ATP via oxidative phosphorylation.") is 6 words, so
+ * every fixture question was rejected once the canonical validator landed.
+ */
 function makeQuestion(overrides: Record<string, unknown> = {}) {
   return {
     id: overrides.id ?? 'q1',
     question_text: overrides.question_text ?? 'What is the powerhouse of the cell?',
     options: overrides.options ?? ['Nucleus', 'Mitochondria', 'Ribosome', 'Golgi'],
     correct_answer_index: overrides.correct_answer_index ?? 1,
-    explanation: overrides.explanation ?? 'Mitochondria produce ATP via oxidative phosphorylation.',
+    // 14 words / 101 chars — clears both MIN_EXPLANATION_LENGTH and
+    // MIN_EXPLANATION_WORDS with margin.
+    explanation:
+      overrides.explanation ??
+      'Mitochondria are called the powerhouse of the cell because they produce ATP through oxidative phosphorylation.',
     difficulty: overrides.difficulty ?? 2,
     bloom_level: 'remember',
     chapter_number: 1,

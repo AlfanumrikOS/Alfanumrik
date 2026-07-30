@@ -15,9 +15,13 @@
  *
  * Source of truth for the lists: migrations
  *   20260720110000_feature_flags_data_repair_ceo_approved.sql (block ii — the
- *   52-flag forced-OFF list: Group A + E3 + E4 + E5 + E6 + E7) and
+ *   52-flag forced-OFF list: Group A + E3 + E4 + E5 + E6 + E7),
  *   20260720130000_restore_approved_flag_posture.sql (block B —
- *   ff_irt_question_selection; hard-exclusion list — the do-not-touch names).
+ *   ff_irt_question_selection; hard-exclusion list — the do-not-touch names),
+ *   and 20260801100500_seed_ff_whatsapp_bot.sql (the two WhatsApp bot
+ *   protected flags — ff_whatsapp_bot_v1, ff_whatsapp_alarm_template — added
+ *   here 2026-07-30 as that seed's architect-ruled companion, closing its
+ *   documented DB⊃TS drift BEFORE any first flip).
  *
  * NOTE: this registry protects flags at the CONSOLE boundary. It does not (and
  * cannot) change how any flag evaluates at runtime.
@@ -189,6 +193,25 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
   // staged_rollout — dormant until IRT calibration accumulates (restore block B)
   ff_irt_question_selection: IRT_DORMANT,
 
+  // staged_rollout — WhatsApp bot protected pair (DB seed migration
+  // 20260801100500_seed_ff_whatsapp_bot.sql; TS companion landed 2026-07-30
+  // per that seed's OBLIGATION header — the two registries are in lockstep).
+  // Tier and reason mirror the DB protected_feature_flags rows.
+  ff_whatsapp_bot_v1: {
+    tier: 'staged_rollout',
+    reason:
+      'WhatsApp bot MASTER kill switch (default-OFF, CEO-gated staged rollout per the approved 2026-07-29 WhatsApp bot plan). Enabling activates all inbound processing and outbound sends for the channel; flip only via admin_flip_feature_flag, per approved rollout step.',
+    reasonHi:
+      'WhatsApp बॉट का MASTER किल स्विच (डिफ़ॉल्ट-OFF, स्वीकृत 2026-07-29 WhatsApp बॉट योजना के अनुसार CEO-गेटेड चरणबद्ध रोलआउट)। सक्षम करने से चैनल की सभी inbound प्रोसेसिंग और outbound सेंड सक्रिय हो जाती हैं; केवल admin_flip_feature_flag से, स्वीकृत रोलआउट चरण के अनुसार ही फ़्लिप करें।',
+  },
+  ff_whatsapp_alarm_template: {
+    tier: 'staged_rollout',
+    reason:
+      'The only recurring PAID WhatsApp template send (daily alarm — 2026-07-29 WhatsApp bot plan). Premature or bulk enable spends real money per recipient per day AND risks the WhatsApp number quality rating (block-rate driven). Staged 5/25/100 percent with quality monitoring; flip only via admin_flip_feature_flag.',
+    reasonHi:
+      'एकमात्र आवर्ती PAID WhatsApp टेम्पलेट सेंड (डेली अलार्म — 2026-07-29 WhatsApp बॉट योजना)। समय-पूर्व या बल्क सक्षम करने से प्रति प्राप्तकर्ता प्रतिदिन वास्तविक खर्च होता है और WhatsApp नंबर की quality rating को खतरा होता है। quality निगरानी के साथ 5/25/100 प्रतिशत चरणबद्ध; केवल admin_flip_feature_flag से फ़्लिप करें।',
+  },
+
   // special_do_not_touch — controlled outside the console
   ff_atomic_subscription_activation: {
     tier: 'special_do_not_touch',
@@ -253,8 +276,14 @@ export function getProtection(flagName: string): FlagProtection | null {
  * Every flag whose CEO-approved posture is is_enabled=false AND
  * rollout_percentage=0: the 52-flag block-(ii) list from migration
  * 20260720110000 plus ff_irt_question_selection (restore block B in
- * 20260720130000). The flag-posture-canary cron compares live rows against
- * this list nightly.
+ * 20260720130000) plus the two WhatsApp bot protected flags
+ * (ff_whatsapp_bot_v1, ff_whatsapp_alarm_template — seeded fully OFF by
+ * 20260801100500; added here 2026-07-30 as that seed's companion). The
+ * flag-posture-canary cron compares live rows against this list nightly.
+ * When the CEO approves a first WhatsApp flip (e.g. alarm_template to 5%),
+ * remove that flag from this list in the same change — mirroring the
+ * ff_adaptive_remediation_v1 10%-pilot precedent below — or the canary will
+ * report the approved posture as drift.
  *
  * NOT in this list (on purpose): ff_atomic_subscription_activation (its
  * approved posture is is_enabled=TRUE), ff_board_score_v1,
@@ -337,4 +366,8 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   'ff_gst_invoicing_v1',
   // Restore block B — dormant-by-design
   'ff_irt_question_selection',
+  // WhatsApp bot protected pair — seeded fully OFF by 20260801100500
+  // (2026-07-29 plan); companion addition 2026-07-30
+  'ff_whatsapp_bot_v1',
+  'ff_whatsapp_alarm_template',
 ];

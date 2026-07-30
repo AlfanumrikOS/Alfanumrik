@@ -440,6 +440,26 @@ export default function SettingsPage() {
         </SettingsSection>
 
         {/* ════════════════════════════════════════
+            SECTION 3.5 — Connected apps
+            ════════════════════════════════════════ */}
+        <SettingsSection title={isHi ? 'जुड़े हुए ऐप्स' : 'Connected Apps'}>
+          <SettingsRow
+            label={isHi ? 'WhatsApp स्टडी बॉट' : 'WhatsApp Study Bot'}
+            sublabel={
+              isHi
+                ? 'रोज़ के अभ्यास प्रश्न और doubt help WhatsApp पर पाएं'
+                : 'Daily practice and doubt help on WhatsApp'
+            }
+            right={
+              <span className="text-[var(--text-3)] text-sm" aria-hidden="true">
+                →
+              </span>
+            }
+            onClick={() => router.push('/settings/whatsapp')}
+          />
+        </SettingsSection>
+
+        {/* ════════════════════════════════════════
             SECTION 4 — Account
             ════════════════════════════════════════ */}
         <SettingsSection title={isHi ? 'खाता' : 'Account'}>

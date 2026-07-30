@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 366,
+  "routeCount": 389,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -264,6 +264,14 @@
     {
       "path": "/api/cron/synthesis-quality-sample",
       "file": "apps/host/src/app/api/cron/synthesis-quality-sample/route.ts",
+      "access": "cron",
+      "owner": "platform-ops",
+      "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/cron/whatsapp-drain",
+      "file": "apps/host/src/app/api/cron/whatsapp-drain/route.ts",
       "access": "cron",
       "owner": "platform-ops",
       "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
@@ -2718,6 +2726,14 @@
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work."
     },
     {
+      "path": "/api/usage/daily",
+      "file": "apps/host/src/app/api/usage/daily/route.ts",
+      "access": "student",
+      "owner": "student-learning-backend",
+      "rationale": "Student-owned READ of the caller's OWN daily quota (P0-1 display/enforcement gap). Gated by authorizeRequest() with the student-role permission for the requested feature — 'foxy.chat' for foxy_chat, 'quiz.attempt' for quiz (both granted to the student role by migration 20260612123200). The student id is resolved ONLY from the session (auth.studentId, derived from students.auth_user_id = caller); no studentId is accepted from the query string or body, so there is no cross-student read path. EVERY unrecognised ?feature= value — inherited Object.prototype keys included — is rejected 400 before authorizeRequest and before any DB call, with NO exception. Architect-verified against shipped source 2026-07-29: the FEATURE_PERMISSION lookup is a new Map<string, string> (route.ts:82-85) whose get() consults no prototype chain, and the guard is typeof permission !== 'string' (route.ts:95-100), so inherited keys are unreachable by construction and only one of the two allowlisted feature values can ever reach get_plan_limit. HISTORY (CLOSED, kept so the fix is not re-litigated): the pre-ship draft used a plain object literal typed Record<string, string> (which, with noUncheckedIndexedAccess off, typed the index as a non-optional string and gave the compiler no signal), so inherited keys returned truthy and slipped past the !permission guard. The impact was broader than this entry first recorded: a STUDENT caller got an unhandled 500 (rbac.ts:785 calls .split() on the non-string permission in the deny branch, which sits above the try), while a super_admin caller took the isSuperAdmin short-circuit at rbac.ts:779-780 that skips the permission check entirely, so a prototype key DID reach get_plan_limit and land in its generous ai_calls_total ELSE arm. That path also required the caller to own a student row, and get_plan_limit is read-only, so the over-generous number was display-only and never raised the ENFORCED cap in check_and_record_usage. Both paths are closed, pinned by 4 tests covering 8 prototype keys. Response is four integers plus a boolean — no names, emails, phones, school identity, or roster data (P13).",
+      "serviceRoleUse": "Architect-reviewed 2026-07-29. Required, not convenience: migration 20260729130400 §5 (re-asserting 20260516040000/20260516050000) REVOKEs EXECUTE ON public.get_plan_limit(uuid, text) FROM PUBLIC, anon, authenticated, so an RLS-scoped browser session literally cannot call the enforcement authority. Reading the SAME function that check_and_record_usage() enforces from is the whole point of the route — a second, client-side derivation is exactly the drift this closes. Scope is minimal: one STABLE read-only RPC plus one own-row SELECT on student_daily_usage, both keyed on the session-derived studentId. The route never inserts, updates, increments or grants; the hard gate remains checkAndIncrementQuota -> check_and_record_usage in /api/foxy. Input reaching the service-role client is CLOSED, not merely narrow — re-verified against shipped source 2026-07-29 now that the earlier prototype-chain hole is fixed: the only caller-controlled value forwarded to get_plan_limit is p_feature, and it can only be one of the two keys of the FEATURE_PERMISSION Map ('foxy_chat' or 'quiz'), because a Map lookup plus a typeof permission !== 'string' guard returns 400 before the client is touched for every other input, inherited Object.prototype keys included. p_student_id is session-derived and never request-supplied. RATCHET-DOWN PATH (follow-up, not blocking): add an auth.uid()-anchored SECURITY DEFINER wrapper get_my_plan_limit(p_feature text) GRANTed to authenticated, then move this route to the RLS-scoped client and prune this entry. Do NOT simply GRANT EXECUTE on get_plan_limit(uuid, text) to authenticated — it takes p_student_id as an argument and performs no auth.uid() check, so that would let any authenticated user read any student's plan cap."
+    },
+    {
       "path": "/api/v1/account/delete",
       "file": "apps/host/src/app/api/v1/account/delete/route.ts",
       "access": "auth",
@@ -2959,6 +2975,22 @@
       "access": "auth",
       "owner": "core-backend",
       "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/whatsapp/link/start",
+      "file": "apps/host/src/app/api/whatsapp/link/start/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Authenticated user endpoint; route must perform its own session or request authorization before protected work.",
+      "serviceRoleUse": "WhatsApp link-challenge writes require the admin client by design: whatsapp_link_challenges (and the other whatsapp_* tables) are RLS service-role-only per migration 20260801100000, and the student-side parental_consent existence check has no student RLS policy. The route authorizes first via the cookie session (supabase.auth.getUser) and scopes every admin-client read/write to that auth_user_id; the OTP is returned only to the authenticated caller and stored hashed (P13)."
+    },
+    {
+      "path": "/api/whatsapp/webhook",
+      "file": "apps/host/src/app/api/whatsapp/webhook/route.ts",
+      "access": "webhook",
+      "owner": "integrations-backend",
+      "rationale": "Webhook endpoint; access must be protected by provider signature, webhook secret, or equivalent verification.",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     }
   ]
