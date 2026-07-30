@@ -276,24 +276,20 @@ export function getProtection(flagName: string): FlagProtection | null {
  * Every flag whose CEO-approved posture is is_enabled=false AND
  * rollout_percentage=0: the 52-flag block-(ii) list from migration
  * 20260720110000 plus ff_irt_question_selection (restore block B in
- * 20260720130000) plus the two WhatsApp bot protected flags
- * (ff_whatsapp_bot_v1, ff_whatsapp_alarm_template — seeded fully OFF by
- * 20260801100500; added here 2026-07-30 as that seed's companion). The
- * flag-posture-canary cron compares live rows against this list nightly.
- * When the CEO approves a first WhatsApp flip (e.g. alarm_template to 5%),
- * remove that flag from this list in the same change — mirroring the
- * ff_adaptive_remediation_v1 10%-pilot precedent below — or the canary will
- * report the approved posture as drift.
+ * 20260720130000) plus ff_whatsapp_alarm_template (WhatsApp bot
+ * protected flag, seeded fully OFF by 20260801100500; added here
+ * 2026-07-30 as that seed's companion). The flag-posture-canary
+ * cron compares live rows against this list nightly.
  *
  * NOT in this list (on purpose): ff_atomic_subscription_activation (its
  * approved posture is is_enabled=TRUE), ff_board_score_v1,
  * reconcile_stuck_subscriptions_enabled, and all ff_python_* flags
- * (metadata-envelope controlled — their columns are not posture).
+ * (metadata-envelope controlled -- their columns are not posture).
  *
  * ALSO NOT in this list (on purpose, as of 2026-07-22): ff_adaptive_remediation_v1
  * (Phase A Loop A adaptive-remediation). CEO-approved in this conversation
  * (2026-07-22): a deliberate, confirmed production pilot at 10% rollout via
- * the super-admin console's admin_flip_feature_flag RPC — a genuine change of
+ * the super-admin console's admin_flip_feature_flag RPC -- a genuine change of
  * approved posture, not drift. is_enabled=true / rollout_percentage=10 is now
  * this flag's CEO-approved canary baseline, replacing "must be fully OFF."
  * It remains a `constitution_pinned` entry in PROTECTED_FLAGS above, so the
@@ -302,6 +298,16 @@ export function getProtection(flagName: string): FlagProtection | null {
  * fully rolled back to 0%, re-add 'ff_adaptive_remediation_v1' to this list
  * (or introduce a dedicated "expected active at rollout X" concept if more
  * flags reach this state) before the canary can enforce that baseline again.
+ *
+ * ALSO NOT in this list (on purpose, as of 2026-07-30): ff_whatsapp_bot_v1.
+ * CEO-approved deliberate live flip to is_enabled=true,
+ * rollout_percentage=100 (audited via admin_flip_feature_flag) to
+ * exercise the end-to-end WhatsApp bot in production -- an approved
+ * posture change, not drift. Mirrors the ff_adaptive_remediation_v1
+ * precedent immediately above. It remains a `constitution_pinned`
+ * entry in PROTECTED_FLAGS above, so any FURTHER change still requires
+ * typed confirmation. If ever rolled back to 0%, re-add
+ * 'ff_whatsapp_bot_v1' to this list.
  */
 export const EXPECTED_OFF_FLAGS: string[] = [
   // Group A — constitution-pinned
@@ -367,7 +373,14 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   // Restore block B — dormant-by-design
   'ff_irt_question_selection',
   // WhatsApp bot protected pair — seeded fully OFF by 20260801100500
-  // (2026-07-29 plan); companion addition 2026-07-30
-  'ff_whatsapp_bot_v1',
+  // (2026-07-29 plan); companion addition 2026-07-30. ff_whatsapp_bot_v1
+  // REMOVED from this list 2026-07-30: CEO-approved live flip to
+  // is_enabled=true, rollout_percentage=100 (audited via
+  // admin_flip_feature_flag) to exercise the end-to-end WhatsApp bot in
+  // production. Mirrors the ff_adaptive_remediation_v1 10%-pilot
+  // precedent above — an approved posture change is not drift. It
+  // remains a constitution_pinned entry in PROTECTED_FLAGS above, so
+  // any FURTHER change still requires typed confirmation. If ever
+  // rolled back to 0%, re-add 'ff_whatsapp_bot_v1' to this list.
   'ff_whatsapp_alarm_template',
 ];

@@ -61,16 +61,26 @@
  *    ff_model_gateway_v1 precedent — REG-125 canonical seed shape). While
  *    absent from feature_flags every read path resolves each flag to OFF.
  *
- *    Protection posture (updated 2026-07-30 — the protected-flags companion
+ *    Protection posture (updated 2026-07-30 -- the protected-flags companion
  *    LANDED): the two highest-blast-radius flags, ff_whatsapp_bot_v1 and
- *    ff_whatsapp_alarm_template, ARE now in PROTECTED_FLAGS (tier
- *    'staged_rollout') and EXPECTED_OFF_FLAGS in
- *    packages/lib/src/flags/protected-flags.ts, mirroring their
- *    protected_feature_flags DB rows seeded by migration 20260801100500 —
- *    the DB⊃TS drift that seed's header documented is CLOSED, before any
- *    first flip. They are console-protected (typed-confirmation guardrail),
- *    DB-guard-trigger protected, and nightly-canary watched; flips go only
- *    via admin_flip_feature_flag with CEO approval per rollout step.
+ *    ff_whatsapp_alarm_template, ARE both in PROTECTED_FLAGS (tier
+ *    'staged_rollout') in packages/lib/src/flags/protected-flags.ts, mirroring
+ *    their protected_feature_flags DB rows seeded by migration
+ *    20260801100500 -- the DB⊃TS drift that seed's header documented is
+ *    CLOSED, before any first flip. Both are console-protected
+ *    (typed-confirmation guardrail), DB-guard-trigger protected, and
+ *    flips go only via admin_flip_feature_flag with CEO approval per
+ *    rollout step.
+ *
+ *    EXPECTED_OFF_FLAGS divergence (as of 2026-07-30): ff_whatsapp_alarm_template
+ *    remains in EXPECTED_OFF_FLAGS (nightly-canary watched, still expected
+ *    OFF). ff_whatsapp_bot_v1 was REMOVED from EXPECTED_OFF_FLAGS the same
+ *    day -- a CEO-approved deliberate live flip to is_enabled=true,
+ *    rollout_percentage=100 to exercise the end-to-end WhatsApp bot in
+ *    production; an approved posture change, not drift. See that file's
+ *    inline comment (immediately above the EXPECTED_OFF_FLAGS array) for
+ *    the full rationale and the ff_adaptive_remediation_v1 precedent it
+ *    mirrors.
  *
  *    The OTHER NINE remain normal staged-rollout flags (NOT
  *    constitution-pinned): mirrors the ff_model_gateway_v1 /
