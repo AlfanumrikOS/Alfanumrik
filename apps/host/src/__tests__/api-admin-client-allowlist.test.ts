@@ -203,7 +203,16 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // cross-student read src/app/api/predict/outcome/route.ts. Service-role is the
 // sanctioned cross-student read path here, taken only AFTER the canAccessStudent
 // gate (architect ruling); registered in scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 264;
+// P0-1 quota display/enforcement gap (2026-07-29): 264 -> 265 for the new
+// read-only route src/app/api/usage/daily/route.ts. Service-role is REQUIRED,
+// not convenience: migration 20260729130400 §5 REVOKEs EXECUTE ON
+// public.get_plan_limit(uuid, text) FROM PUBLIC, anon, authenticated, so an
+// RLS-scoped session cannot call the enforcement authority the badge must read.
+// Bounded to one STABLE read-only RPC + one own-row student_daily_usage SELECT,
+// both keyed on the SESSION-derived auth.studentId (never a request-supplied
+// id), behind authorizeRequest() on student-role permissions. Architect-reviewed;
+// full justification + ratchet-down path in scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 265;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.
@@ -278,7 +287,10 @@ describe('admin-client allowlist guard: frozen blast radius', () => {
     ).toEqual([]);
   });
 
-  it('pins the admin-client route count at exactly 263 (drift in either direction trips a guard above)', () => {
+  // Title is deliberately number-free: it previously read "exactly 263" while
+  // EXPECTED_COUNT had already ratcheted to 264, i.e. the title lied about the
+  // pin. EXPECTED_COUNT is the single source of truth.
+  it('pins the admin-client route count at exactly EXPECTED_COUNT (drift in either direction trips a guard above)', () => {
     const a = loadAllowlist();
     expect(a.count).toBe(EXPECTED_COUNT);
     expect(a.routes.length).toBe(EXPECTED_COUNT);
