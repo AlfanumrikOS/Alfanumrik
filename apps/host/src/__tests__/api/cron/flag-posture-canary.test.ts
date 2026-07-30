@@ -18,10 +18,14 @@
  *      it is no longer expected fully-OFF (still constitution_pinned for any
  *      further increase). On 2026-07-30 EXPECTED_OFF_FLAGS grew 54 → 56 with
  *      the two WhatsApp bot protected flags (ff_whatsapp_bot_v1,
- *      ff_whatsapp_alarm_template — seed 20260801100500 companion). The
- *      watched set below is derived from EXPECTED_OFF_FLAGS directly, so
+ *      ff_whatsapp_alarm_template — seed 20260801100500 companion), then
+ *      shrank 56 → 55 the same day when the CEO approved a live production
+ *      flip of ff_whatsapp_bot_v1 to is_enabled=true/rollout_percentage=100
+ *      (audited via admin_flip_feature_flag) — it is no longer expected
+ *      fully-OFF (still staged_rollout-protected for any further change).
+ *      The watched set below is derived from EXPECTED_OFF_FLAGS directly, so
  *      this suite's length pin tracks those net changes (watched set
- *      54 → 56 → 55 → 57):
+ *      54 → 56 → 55 → 57 → 56):
  *        - any EXPECTED_OFF flag with is_enabled=true OR rollout>0 → drift;
  *        - ff_atomic_subscription_activation disabled OR missing → drift
  *          (P11 kill-switch must exist and be enabled);
@@ -48,7 +52,7 @@
  *
  * The supabase-admin seam is a recording thenable chain (house pattern from
  * api/cron/adaptive-remediation.test.ts). EXPECTED_OFF_FLAGS is NOT mocked —
- * the route must watch the real, current 56-name list.
+ * the route must watch the real, current 55-name list.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -225,7 +229,7 @@ describe('flag-posture-canary — auth gate (fail-closed before I/O)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('flag-posture-canary — DB query shape', () => {
-  it('reads feature_flags once, selecting state columns, .in() over the 57-name watched set (56 EXPECTED_OFF + the P11 kill-switch)', async () => {
+  it('reads feature_flags once, selecting state columns, .in() over the 56-name watched set (55 EXPECTED_OFF + the P11 kill-switch)', async () => {
     const { GET } = await loadRoute();
     await GET(req({ 'x-cron-secret': SECRET }));
 
@@ -237,14 +241,15 @@ describe('flag-posture-canary — DB query shape', () => {
     const inOp = fromCalls[0].ops.find((o) => o.op === 'in');
     expect(inOp?.args[0]).toBe('flag_name');
     const watched = inOp?.args[1] as string[];
-    // 56 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
-    // ff_adaptive_remediation_v1's 10% pilot exclusion, + the two 2026-07-30
-    // WhatsApp bot protected flags — ff_whatsapp_bot_v1 /
-    // ff_whatsapp_alarm_template, seed 20260801100500 companion) + ATOMIC;
-    // the two MoL shadow flags are already members of EXPECTED_OFF, so the
-    // de-duped set is 57.
+    // 55 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
+    // ff_adaptive_remediation_v1's 10% pilot exclusion, + ff_whatsapp_alarm_template
+    // — the surviving 2026-07-30 WhatsApp bot protected flag, seed
+    // 20260801100500 companion — minus ff_whatsapp_bot_v1, which left
+    // EXPECTED_OFF_FLAGS the same day via its own CEO-approved live flip)
+    // + ATOMIC; the two MoL shadow flags are already members of EXPECTED_OFF,
+    // so the de-duped set is 56.
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(57);
+    expect(watched).toHaveLength(56);
     for (const name of EXPECTED_OFF_FLAGS) expect(watched).toContain(name);
     expect(watched).toContain(ATOMIC);
   });
@@ -358,6 +363,15 @@ describe('flag-posture-canary — drift detection matrix', () => {
   it('ff_adaptive_remediation_v1 bumped PAST the approved 10% pilot (e.g. to 100%) is also NOT caught by this canary — increases beyond 10% are the console guardrail\'s job (PROTECTED_FLAGS constitution_pinned tier), not the posture canary\'s, since the flag is no longer in EXPECTED_OFF_FLAGS at all', async () => {
     const { body } = await run([...CLEAN_ROWS, row('ff_adaptive_remediation_v1', true, 100)]);
     expect(body).toEqual({ drift: [], count: 0 });
+  });
+
+  it('ff_whatsapp_bot_v1 at its CEO-approved live posture (2026-07-30, is_enabled=true/rollout_percentage=100, audited via admin_flip_feature_flag) is NOT drift — it is no longer in EXPECTED_OFF_FLAGS', async () => {
+    const { body } = await run([...CLEAN_ROWS, row('ff_whatsapp_bot_v1', true, 100)]);
+    expect(body).toEqual({ drift: [], count: 0 });
+  });
+
+  it('ff_whatsapp_bot_v1 is correctly no longer in the watched set derived from EXPECTED_OFF_FLAGS', async () => {
+    expect(EXPECTED_OFF_FLAGS).not.toContain('ff_whatsapp_bot_v1');
   });
 });
 
