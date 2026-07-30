@@ -11,6 +11,10 @@ import {
   classifyControlKeyword,
   type NormalizedInbound,
 } from '@alfanumrik/lib/whatsapp/intent';
+import {
+  processLinkBinding,
+  type LinkBindingOutcome,
+} from '../_lib/link-binding';
 
 /**
  * Twilio WhatsApp Inbound Webhook — Phase 1 (skeleton).
@@ -103,6 +107,88 @@ const REPLY_HELP =
   'Alfanumrik Study Bot — commands: MENU (main menu), LINK <code> (connect your account), ' +
   'HINDI / ENGLISH (language), STOP (unsubscribe), START (resume). / ' +
   'कमांड: MENU (मुख्य मेनू), LINK <code> (खाता जोड़ें), HINDI / ENGLISH (भाषा), STOP (बंद करें), START (शुरू करें)।';
+
+// LINK-handler replies (P7 bilingual; P13 — success names NOTHING sensitive:
+// no student name, no OTP echo, no phone).
+const LINK_REPLIES: Record<LinkBindingOutcome, string> = {
+  bound:
+    '✅ Connected! Send MENU to begin. / ✅ जुड़ गया! शुरू करने के लिए MENU भेजें।',
+  invalid:
+    'That code is invalid or has expired. Please open the app and get a fresh code. / ' +
+    'यह कोड गलत है या इसकी अवधि समाप्त हो गई है। कृपया ऐप से नया कोड लें।',
+  ambiguous:
+    'Something went wrong. Please try again from the app with a fresh code. / ' +
+    'कुछ गड़बड़ हुई। कृपया ऐप से नए कोड के साथ दोबारा प्रयास करें।',
+  locked:
+    'Too many attempts. Please wait an hour, then get a fresh code from the app. / ' +
+    'बहुत अधिक प्रयास हुए। कृपया एक घंटे बाद ऐप से नया कोड लें।',
+  limit:
+    'This WhatsApp number is already connected to the maximum number of student accounts. / ' +
+    'यह WhatsApp नंबर पहले से अधिकतम विद्यार्थी खातों से जुड़ा है।',
+  // Cannot occur on the webhook path (the live inbound carries the phone) —
+  // mapped defensively to the generic retry copy.
+  phone_unavailable:
+    'Something went wrong. Please try again from the app with a fresh code. / ' +
+    'कुछ गड़बड़ हुई। कृपया ऐप से नए कोड के साथ दोबारा प्रयास करें।',
+  error:
+    'Something went wrong. Please try again in a few minutes. / ' +
+    'कुछ गड़बड़ हुई। कृपया कुछ मिनट बाद पुनः प्रयास करें।',
+};
+
+/**
+ * Phase 2: inline LINK <otp> processing (deterministic, fast, and the reply is
+ * a free in-window TwiML message). The binding core is shared with the
+ * whatsapp-drain cron (`../_lib/link-binding.ts`).
+ *
+ * The inbound event row is marked 'done' on EVERY outcome — LINK events are
+ * terminally handled inline (retrying an invalid/consumed code from the cron
+ * is wrong, and the cron cannot reply anyway; the OTP stays valid for its TTL,
+ * so on a transient 'error' the user simply resends the same message).
+ * All failures degrade to a TwiML error reply — never a 5xx (always-200
+ * posture).
+ */
+async function handleLinkIntent(
+  msg: NormalizedInbound,
+  phoneHash: string,
+  code: string,
+  eventRowId: string | null,
+): Promise<NextResponse> {
+  let outcome: LinkBindingOutcome = 'error';
+  try {
+    const result = await processLinkBinding({
+      code,
+      phoneHash,
+      phoneE164: msg.phoneE164, // THE one legitimate raw-phone write site (P13)
+      source: 'whatsapp/webhook',
+    });
+    outcome = result.outcome;
+  } catch (err) {
+    // processLinkBinding never throws by contract — belt and braces.
+    logger.error('whatsapp webhook: link binding threw', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  if (eventRowId) {
+    try {
+      await supabaseAdmin
+        .from('whatsapp_inbound_events')
+        .update({ status: 'done', processed_at: new Date().toISOString() })
+        .eq('id', eventRowId);
+    } catch (err) {
+      logger.error('whatsapp webhook: link event done-update failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // P13: outcome + redacted phone only — never the OTP code.
+  logger.info('whatsapp webhook: link intent processed', {
+    outcome,
+    phone: redactPhone(msg.phoneE164),
+  });
+  return twimlMessage(LINK_REPLIES[outcome]);
+}
 
 /** Message type for the events table row. */
 function deriveMessageType(msg: NormalizedInbound, params: Record<string, string>): string {
@@ -422,11 +508,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return twimlResponse();
     }
 
-    // 10. Phase 1 ends here: the row stays status='pending'.
-    // TODO(Phase 2/3, plan-alfanumrik-whatsapp-bot-mighty-frost.md): intent
-    // processing — LINK/UNLINK identity binding, Daily 6 loop, doubt ladder —
-    // via after() + the whatsapp-drain cron. Replies go out asynchronously
-    // through the whatsapp-send path, never via TwiML.
+    // 10. Phase 2: LINK <otp> identity binding is processed INLINE — it is
+    //     deterministic, fast, and its confirmation is a free in-window TwiML
+    //     reply. The event row is marked 'done' by the handler.
+    if (classification.intent === 'link') {
+      return handleLinkIntent(
+        msg,
+        phoneHash,
+        classification.args.otp ?? '',
+        eventRowId,
+      );
+    }
+
+    // 11. Every OTHER intent stays status='pending' here.
+    // TODO(Phase 3, plan-alfanumrik-whatsapp-bot-mighty-frost.md): intent
+    // processing — UNLINK, Daily 6 loop, doubt ladder — via after() + the
+    // whatsapp-drain cron. Replies go out asynchronously through the
+    // whatsapp-send path, never via TwiML.
     logger.info('whatsapp webhook: event accepted', {
       intent: classification.intent,
       messageType: deriveMessageType(msg, params),

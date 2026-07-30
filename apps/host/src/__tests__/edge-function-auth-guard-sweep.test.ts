@@ -166,6 +166,16 @@ const AUTH_GUARD_LEDGER: Record<string, Mechanism[]> = {
   'verify-question-bank': ['internal-cron'],
   'webhook-dispatcher': ['jwt-user', 'shared-secret'],
   'whatsapp-notify': ['ai-admission', 'jwt-user'],
+  // 2026-07-30 (WhatsApp bot Phase 2): outbound send relay. Real guard =
+  // admitAiRoute with a static profile (route 'whatsapp-send', callerTypes
+  // ['internal_service']) — only Next.js callers registered in
+  // security_internal_callers ('whatsapp-webhook-route', 'whatsapp-drain-cron',
+  // migration 20260801100600) may invoke it; fail-closed before any I/O.
+  // Same posture as whatsapp-notify, minus that function's 'jwt-user'
+  // false-positive (no literal "Authorization" appears in this source —
+  // Twilio Basic-auth header construction lives in _shared/whatsapp/
+  // twilio-transport.ts, which the sweep does not scan).
+  'whatsapp-send': ['ai-admission'],
 };
 
 function listFunctionDirs(): string[] {

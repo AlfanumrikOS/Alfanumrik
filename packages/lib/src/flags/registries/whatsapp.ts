@@ -61,13 +61,24 @@
  *    ff_model_gateway_v1 precedent — REG-125 canonical seed shape). While
  *    absent from feature_flags every read path resolves each flag to OFF.
  *
- *    Normal staged-rollout flags (NOT constitution-pinned): mirrors the
- *    ff_model_gateway_v1 / ff_unified_memory_v1 / ff_foxy_response_cache_l2_v1
- *    precedent — they live in FLAG_DEFAULTS as false and are intentionally NOT
- *    added to EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (that list is the
- *    CEO-approved forced-OFF posture derived from migration 20260720110000;
- *    every member must be console-protected and mirrored into
- *    protected_feature_flags in the same change).
+ *    Protection posture (updated 2026-07-30 — the protected-flags companion
+ *    LANDED): the two highest-blast-radius flags, ff_whatsapp_bot_v1 and
+ *    ff_whatsapp_alarm_template, ARE now in PROTECTED_FLAGS (tier
+ *    'staged_rollout') and EXPECTED_OFF_FLAGS in
+ *    packages/lib/src/flags/protected-flags.ts, mirroring their
+ *    protected_feature_flags DB rows seeded by migration 20260801100500 —
+ *    the DB⊃TS drift that seed's header documented is CLOSED, before any
+ *    first flip. They are console-protected (typed-confirmation guardrail),
+ *    DB-guard-trigger protected, and nightly-canary watched; flips go only
+ *    via admin_flip_feature_flag with CEO approval per rollout step.
+ *
+ *    The OTHER NINE remain normal staged-rollout flags (NOT
+ *    constitution-pinned): mirrors the ff_model_gateway_v1 /
+ *    ff_unified_memory_v1 / ff_foxy_response_cache_l2_v1 precedent — they
+ *    live in FLAG_DEFAULTS as false and are intentionally NOT added to
+ *    EXPECTED_OFF_FLAGS / PROTECTED_FLAGS (every member of those lists must
+ *    be console-protected and mirrored into protected_feature_flags in the
+ *    same change).
  */
 export const WHATSAPP_BOT_FLAGS = {
   /** Master kill switch for the entire WhatsApp bot surface. Default off. */

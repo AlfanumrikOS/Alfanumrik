@@ -32,27 +32,39 @@
 -- guarded, tier + reason columns, ON CONFLICT (flag_name) DO UPDATE (that
 -- registry's convention — re-running refreshes tier/reason).
 --
--- ─── DB⊃TS registry drift: DELIBERATE, and invisible to the parity test ──────
--- The TS registry (packages/lib/src/flags/protected-flags.ts) intentionally
--- OMITS these two flags for now, and NO test will flag the drift: the DB<->TS
--- parity suite (apps/host/src/__tests__/api/super-admin/
--- feature-flags-protected-guardrail.test.ts:610-660) parses ONLY migration
--- 20260722090000, so rows seeded HERE are structurally invisible to it; and
--- protected-flags-registry.test.ts count-pins the TS registry at 74 flags /
+-- ─── DB⊃TS registry drift: was DELIBERATE at seed time — CLOSED 2026-07-30 ───
+-- [Historical, as filed] The TS registry (packages/lib/src/flags/
+-- protected-flags.ts) intentionally OMITTED these two flags at seed time, and
+-- NO test flagged the drift: the DB<->TS parity suite
+-- (apps/host/src/__tests__/api/super-admin/
+-- feature-flags-protected-guardrail.test.ts) parsed ONLY migration
+-- 20260722090000, so rows seeded HERE were structurally invisible to it; and
+-- protected-flags-registry.test.ts count-pinned the TS registry at 74 flags /
 -- EXPECTED_OFF_FLAGS at 54, parsed from 20260720110000. The drift direction
--- is SAFE (fail-closed): the DB guard trigger (20260722090100) blocks any
+-- was SAFE (fail-closed): the DB guard trigger (20260722090100) blocks any
 -- enable transition on these flags without the app.protected_flag_ack GUC,
--- and because the TS registry omits them the super-admin console never routes
--- them through admin_flip_feature_flag — so they cannot be enabled from the
--- console at all until the companion PR lands.
+-- and because the TS registry omitted them the super-admin console never
+-- routed them through admin_flip_feature_flag — so they could not be enabled
+-- from the console at all until the companion landed.
 --
--- OBLIGATION (pre-first-flip; architect-reviewed companion PR must do ALL
--- THREE together): (a) add both flags to PROTECTED_FLAGS + EXPECTED_OFF_FLAGS
--- in protected-flags.ts; (b) bump the count pins 74→76 and 54→56; (c) extend
--- the parity test's parser to ALSO aggregate this seed migration — do NOT
--- edit the already-applied 20260722090000 in place. (c) is load-bearing and
--- non-obvious: step (a) without (c) FAILS the "every PROTECTED_FLAGS key is
--- seeded" assertion, because the parser cannot see this file's rows.
+-- OBLIGATION (pre-first-flip; architect-reviewed companion — ALL THREE
+-- together): ✅ FULFILLED 2026-07-30 (ops companion change, BEFORE any first
+-- flip of either flag):
+--   (a) DONE — both flags added to PROTECTED_FLAGS + EXPECTED_OFF_FLAGS in
+--       protected-flags.ts (tier 'staged_rollout', reasons mirroring this
+--       seed's protected_feature_flags rows);
+--   (b) DONE — count pins bumped 74→76 (PROTECTED_FLAGS) and 54→56
+--       (EXPECTED_OFF_FLAGS) in protected-flags-registry.test.ts (that test
+--       now also parses THIS file's protected_feature_flags block); the
+--       flag-posture-canary watched-set pin followed 55→57;
+--   (c) DONE — the parity test's parser was generalized to a seed-file LIST
+--       aggregating protected_feature_flags rows from BOTH 20260722090000
+--       AND this file (neither already-applied migration edited in place).
+--       (c) was load-bearing and non-obvious: step (a) without (c) FAILS the
+--       "every PROTECTED_FLAGS key is seeded" assertion, because the parser
+--       could not see this file's rows.
+-- Both flags are now console-guarded (typed-confirmation, 409 FLAG_PROTECTED),
+-- DB-trigger-guarded, and nightly-posture-canary watched.
 --
 -- Idempotent. Pure data seed — no schema changes, no new tables, so RLS N/A;
 -- feature_flags and protected_feature_flags keep their existing posture.

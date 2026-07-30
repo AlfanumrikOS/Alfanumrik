@@ -1305,6 +1305,33 @@ export async function proxy(request: NextRequest) {
     return addSecurityHeaders(response, request, requestId);
   }
 
+  // Exempt the WhatsApp inbound webhook from the general rate limiter.
+  //
+  // Why: Twilio (and later Meta Cloud API) delivers webhooks from a small
+  // pool of shared egress IPs — many customers' traffic arrives from the
+  // same few addresses, so even modest aggregate volume can exhaust the
+  // 200 req/min general bucket on a single IP. When that happens we return
+  // HTTP 429, which the provider sees as a sustained non-2xx stream — and
+  // sustained non-2xx delivery degrades the WhatsApp number's WABA quality
+  // rating (block-rate driven; a drop to RED cuts the messaging tier and
+  // repeated drops can permanently disable the number). Redelivery is not
+  // our recovery mechanism (the whatsapp_inbound_events table + drain cron
+  // is), so every 429 is pure quality-rating damage with zero upside.
+  //
+  // Security: this does NOT remove auth on the webhook. The route handler
+  // verifies the provider HMAC signature on every request before any DB
+  // write (same rationale as the Razorpay exemption above; see
+  // src/app/api/whatsapp/webhook/route.ts). A flood of bogus requests is
+  // rejected by the signature check; a flood with valid signatures implies
+  // the webhook secret has leaked, which is a much larger incident.
+  //
+  // Scope: only /api/whatsapp/webhook. The whatsapp-drain cron keeps the
+  // limit because it's called by Vercel's cron with CRON_SECRET and never
+  // needs to be open to external IPs.
+  if (pathname === '/api/whatsapp/webhook') {
+    return addSecurityHeaders(response, request, requestId);
+  }
+
   // Synthetic host-monitor probes (Edge Function `synthetic-host-monitor`)
   // GET /api/school-config across every school host in a 5-minute burst from
   // a small set of Supabase egress IPs — which exhausted the general bucket
