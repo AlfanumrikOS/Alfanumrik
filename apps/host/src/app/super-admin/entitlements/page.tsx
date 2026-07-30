@@ -502,17 +502,11 @@ function EntitlementsContent() {
             isHi={isHi}
           />
 
-          {/* enforcement banner */}
-          <div className="mb-5 rounded-lg border border-[color-mix(in_srgb,var(--warning)_40%,transparent)] bg-[color-mix(in_srgb,var(--warning)_5%,transparent)] p-3">
-            <div className="text-xs font-semibold text-warning">
-              {isHi ? 'प्रवर्तन बंद है' : 'Enforcement is OFF'}
-            </div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {isHi
-                ? 'अभी डील कॉन्फ़िगर करें — फ़्लैग सक्षम होने पर ये सक्रिय हो जाएँगी।'
-                : 'Configure deals now; they activate when the flag is enabled.'}
-            </div>
-          </div>
+          {/* enforcement banner — category-aware: limits enforce live today,
+              modules/features are still flag-gated. Do not collapse this back
+              into one blanket "Enforcement is OFF" statement — that was
+              accurate only before limit.* was wired into get_plan_limit(). */}
+          <EnforcementBanner rows={data.rows} isHi={isHi} />
 
           {/* all-inherit empty state */}
           {data.rows.every(r => r.override === null) && dirtyCount === 0 && (
@@ -713,6 +707,61 @@ function Field({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 font-medium text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Enforcement banner — category-aware                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Limits (limit.foxy_chat_daily, limit.quiz_daily) are wired straight into
+ * get_plan_limit(), which both check_and_record_usage() (enforcement) and
+ * get_student_usage() (display) already call — so a limit override set here
+ * takes effect on the student's very next Foxy message or quiz attempt, with
+ * no flag flip required.
+ *
+ * Modules and features (module.*, feature.*) are still resolved only through
+ * isEntitledEnforced(), which stays a no-op until ff_institution_entitlements_v1
+ * is turned on — so those overrides are recorded but not yet enforced.
+ *
+ * This panel always shows both category types (the catalog always includes
+ * at least one row of each), so we always render both halves rather than
+ * branching on row presence.
+ */
+function EnforcementBanner({ rows, isHi }: { rows: PanelRow[]; isHi: boolean }) {
+  const hasLimitRows = rows.some(r => r.category === 'limit');
+  const hasToggleRows = rows.some(r => r.category === 'module' || r.category === 'feature');
+
+  if (!hasLimitRows && !hasToggleRows) return null;
+
+  return (
+    <div className="mb-5 space-y-2">
+      {hasLimitRows && (
+        <div className="rounded-lg border border-[color-mix(in_srgb,var(--success)_40%,transparent)] bg-[color-mix(in_srgb,var(--success)_5%,transparent)] p-3">
+          <div className="text-xs font-semibold text-success">
+            {isHi ? 'सीमाएँ अभी लागू होती हैं' : 'Limits enforce live today'}
+          </div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            {isHi
+              ? 'Foxy चैट और क्विज़ की सीमाएँ बिना किसी फ़्लैग के तुरंत असर करती हैं — छात्र के अगले प्रयास से।'
+              : 'Foxy chat and quiz limit overrides take effect immediately — no flag needed — from the student’s next attempt.'}
+          </div>
+        </div>
+      )}
+      {hasToggleRows && (
+        <div className="rounded-lg border border-[color-mix(in_srgb,var(--warning)_40%,transparent)] bg-[color-mix(in_srgb,var(--warning)_5%,transparent)] p-3">
+          <div className="text-xs font-semibold text-warning">
+            {isHi ? 'मॉड्यूल/फ़ीचर प्रवर्तन अभी बंद है' : 'Module/feature enforcement is OFF'}
+          </div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            {isHi
+              ? 'अभी डील कॉन्फ़िगर करें — ये फ़्लैग (ff_institution_entitlements_v1) सक्षम होने पर सक्रिय हो जाएँगी।'
+              : 'Configure deals now; these activate once the ff_institution_entitlements_v1 flag is enabled.'}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

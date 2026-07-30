@@ -183,6 +183,56 @@ function catalogCap(planCode: string, column: 'foxy_chats_per_day' | 'quizzes_pe
   return raw === -1 ? 999999 : raw;
 }
 
+/**
+ * Insert one `institution_entitlements` row for a school. `value` is the raw
+ * jsonb the resolver must coerce — some callers (PIN 5 below) intentionally
+ * pass a MALFORMED shape to prove `coerce_institution_limit_max` fails soft.
+ * No explicit teardown is needed: `institution_entitlements.school_id` is
+ * `ON DELETE CASCADE` (migration 20260615205752), so a seeded row is removed
+ * automatically when the outer `afterAll` deletes `created.schoolIds`.
+ */
+async function seedInstitutionOverride(
+  schoolId: string,
+  entitlementKey: string,
+  value: Record<string, unknown>,
+  window?: { effectiveFrom?: string; effectiveTo?: string },
+): Promise<void> {
+  const { error } = await supabaseAdmin.from('institution_entitlements').insert({
+    school_id: schoolId,
+    entitlement_key: entitlementKey,
+    value,
+    effective_from: window?.effectiveFrom ?? null,
+    effective_to: window?.effectiveTo ?? null,
+  });
+  if (error) throw new Error(`seed institution_entitlements failed: ${error.message}`);
+}
+
+/**
+ * Cover a student via the ROSTER path (`class_students`), not the direct
+ * `students.school_id` link — the second of the three UNION arms
+ * `get_plan_limit`'s candidate-school CTE reads. `classes.school_id` and
+ * `class_students.class_id`/`.student_id` are all `ON DELETE CASCADE`
+ * (baseline schema), so the created class/class_students rows are cleaned up
+ * automatically when the outer `afterAll` deletes the school or the student —
+ * no separate tracking array is needed.
+ */
+async function linkStudentViaClassRoster(
+  studentId: string,
+  schoolId: string,
+  label: string,
+): Promise<void> {
+  const { data: cls, error: clsErr } = await supabaseAdmin
+    .from('classes')
+    .insert({ school_id: schoolId, name: `GPL-IO ${label} ${RUN}`, grade: '9', is_active: true })
+    .select('id')
+    .single();
+  if (clsErr || !cls) throw new Error(`seed class failed: ${clsErr?.message}`);
+  const { error: linkErr } = await supabaseAdmin
+    .from('class_students')
+    .insert({ class_id: (cls as { id: string }).id, student_id: studentId, is_active: true });
+  if (linkErr) throw new Error(`seed class_students failed: ${linkErr.message}`);
+}
+
 describeIntegration('get_plan_limit — school coverage (live DB)', () => {
   let b2cFree = '';
   let b2cUnlimited = '';
@@ -336,5 +386,175 @@ describeIntegration('get_plan_limit — school coverage (live DB)', () => {
       const withoutSchool = await planLimit(b2cUnlimited, feature);
       expect(withSchool, feature).toBeGreaterThanOrEqual(withoutSchool);
     }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Institution-override floor (20260729130600_get_plan_limit_institution_
+  // override_floor.sql) — REG-330's 7 condition-2 pins.
+  //
+  // Nested inside the SAME describeIntegration block deliberately: it reuses
+  // the outer beforeAll's catalog-presence gate (`available`/`setupError`)
+  // and the module-scope seedSchool/seedStudent/giveStudentPlan/planLimit/
+  // catalogCap helpers instead of duplicating them, per the task instruction
+  // to keep the beforeAll gate reusable rather than re-seed a parallel rig.
+  //
+  // ⚠️ HONEST COVERAGE STATEMENT (REG-330, same shape as REG-329 above): on a
+  // normal PR none of these 8 pins execute. The unit-lane companion
+  // `get-plan-limit-institution-override-structure.test.ts` is what gates
+  // every PR, and it can only detect SOURCE drift. Do not read a green PR as
+  // "the institution-override floor semantics were verified".
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('institution-override floor (20260729130600)', () => {
+    let noOverrideSchoolStudent = '';
+    let floorSchoolStudent = '';
+    let ceilingSchoolStudent = '';
+    let malformedSchoolStudent = '';
+    let expiredSchoolStudent = '';
+    let multiSchoolStudent = '';
+
+    let ioAvailable = false;
+    let ioSetupError: string | null = null;
+
+    beforeAll(async () => {
+      // Reuse the OUTER beforeAll's catalog-presence result — if that gate
+      // failed, none of these fixtures can seed meaningfully either.
+      if (!available) {
+        ioSetupError = setupError ?? 'outer setup did not complete';
+        return;
+      }
+      try {
+        // Case 2: school with NO institution_entitlements row at all — a
+        // fresh 'standard' (-> pro) school, deliberately distinct from
+        // trialSchoolStudent above so this suite reads standalone.
+        const standardSchool = await seedSchool('io-standard', 'standard', 'active');
+        noOverrideSchoolStudent = await seedStudent('io-no-override', standardSchool);
+
+        // Case 3 (floor): a 'standard' (-> pro) school with a LOW override —
+        // must NOT lower the pro tier-derived cap.
+        const floorSchool = await seedSchool('io-floor', 'standard', 'active');
+        floorSchoolStudent = await seedStudent('io-floor', floorSchool);
+        await seedInstitutionOverride(floorSchool, 'limit.foxy_chat_daily', {
+          max: 1,
+          period: 'day',
+        });
+
+        // Case 4 (ceiling raise): a 'basic' (-> starter) school with a HIGH
+        // override — must win over both personal-free and the starter cap.
+        const ceilingSchool = await seedSchool('io-ceiling', 'basic', 'active');
+        ceilingSchoolStudent = await seedStudent('io-ceiling', ceilingSchool);
+        await seedInstitutionOverride(ceilingSchool, 'limit.foxy_chat_daily', {
+          max: 99999,
+          period: 'day',
+        });
+
+        // Case 5 (malformed): a 'basic' school with a malformed override
+        // (negative max) — must fall through to NULL, no error, no effect.
+        const malformedSchool = await seedSchool('io-malformed', 'basic', 'active');
+        malformedSchoolStudent = await seedStudent('io-malformed', malformedSchool);
+        await seedInstitutionOverride(malformedSchool, 'limit.foxy_chat_daily', {
+          max: -1,
+          period: 'day',
+        });
+
+        // Case 6 (expired window): a 'basic' school with a well-formed but
+        // EXPIRED override — must be ignored (effective_to in the past).
+        const expiredSchool = await seedSchool('io-expired', 'basic', 'active');
+        expiredSchoolStudent = await seedStudent('io-expired', expiredSchool);
+        await seedInstitutionOverride(
+          expiredSchool,
+          'limit.foxy_chat_daily',
+          { max: 99999, period: 'day' },
+          { effectiveTo: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
+        );
+
+        // Case 7 (multi-school MAX): ONE student covered by TWO schools — a
+        // DIRECT link (students.school_id) to the LOWER-override school, and
+        // a ROSTER link (class_students) to the HIGHER-override school. The
+        // resolver must return the HIGHER of the two.
+        const multiSchoolLower = await seedSchool('io-multi-lower', 'basic', 'active');
+        const multiSchoolHigher = await seedSchool('io-multi-higher', 'basic', 'active');
+        multiSchoolStudent = await seedStudent('io-multi', multiSchoolLower);
+        await linkStudentViaClassRoster(multiSchoolStudent, multiSchoolHigher, 'io-multi');
+        await seedInstitutionOverride(multiSchoolLower, 'limit.foxy_chat_daily', {
+          max: 500,
+          period: 'day',
+        });
+        await seedInstitutionOverride(multiSchoolHigher, 'limit.foxy_chat_daily', {
+          max: 2000,
+          period: 'day',
+        });
+
+        ioAvailable = true;
+      } catch (e) {
+        ioSetupError = e instanceof Error ? e.message : String(e);
+      }
+    }, 60_000);
+
+    it('1: a pure-B2C student with no school link is unaffected (no regression from adding the 3rd GREATEST term)', async (ctx) => {
+      skipIfNoSubstrate(ctx, available, setupError ?? 'setup did not complete');
+      expect(await planLimit(b2cFree, 'foxy_chat')).toBe(FREE_FOXY_FALLBACK);
+      expect(await planLimit(b2cUnlimited, 'foxy_chat')).toBe(
+        catalogCap('unlimited', 'foxy_chats_per_day'),
+      );
+    });
+
+    it('2: a school with NO institution_entitlements row resolves exactly as 20260729130400 already proved', async (ctx) => {
+      skipIfNoSubstrate(ctx, ioAvailable, ioSetupError ?? 'io setup did not complete');
+      const proCap = catalogCap('pro', 'foxy_chats_per_day');
+      expect(await planLimit(noOverrideSchoolStudent, 'foxy_chat')).toBe(proCap);
+    });
+
+    it('3: an override BELOW the school tier-derived cap does NOT lower the result (floor, not ceiling)', async (ctx) => {
+      skipIfNoSubstrate(ctx, ioAvailable, ioSetupError ?? 'io setup did not complete');
+      const proCap = catalogCap('pro', 'foxy_chats_per_day');
+      const actual = await planLimit(floorSchoolStudent, 'foxy_chat');
+      expect(actual).toBe(proCap);
+      expect(actual).not.toBe(1);
+    });
+
+    it('4: an override ABOVE both personal and tier-derived caps WINS', async (ctx) => {
+      skipIfNoSubstrate(ctx, ioAvailable, ioSetupError ?? 'io setup did not complete');
+      const starterCap = catalogCap('starter', 'foxy_chats_per_day');
+      const actual = await planLimit(ceilingSchoolStudent, 'foxy_chat');
+      expect(actual).toBe(99999);
+      expect(actual).toBeGreaterThan(starterCap);
+      expect(actual).toBeGreaterThan(FREE_FOXY_FALLBACK);
+    });
+
+    it('5: a malformed override value ({max:-1}) falls through to NULL — no error, no effect on the result', async (ctx) => {
+      skipIfNoSubstrate(ctx, ioAvailable, ioSetupError ?? 'io setup did not complete');
+      const starterCap = catalogCap('starter', 'foxy_chats_per_day');
+      const actual = await planLimit(malformedSchoolStudent, 'foxy_chat');
+      expect(actual).toBe(starterCap);
+      expect(actual).not.toBe(-1);
+    });
+
+    it('6: an override with effective_to in the past is ignored (window check)', async (ctx) => {
+      skipIfNoSubstrate(ctx, ioAvailable, ioSetupError ?? 'io setup did not complete');
+      const starterCap = catalogCap('starter', 'foxy_chats_per_day');
+      const actual = await planLimit(expiredSchoolStudent, 'foxy_chat');
+      expect(actual).toBe(starterCap);
+      expect(actual).not.toBe(99999);
+    });
+
+    it('7: two covering schools each with a valid override — the HIGHER one wins (MAX aggregate)', async (ctx) => {
+      skipIfNoSubstrate(ctx, ioAvailable, ioSetupError ?? 'io setup did not complete');
+      const actual = await planLimit(multiSchoolStudent, 'foxy_chat');
+      expect(actual).toBe(2000);
+      expect(actual).not.toBe(500);
+    });
+
+    it('the DISPLAYED number (get_student_usage) equals the ENFORCED number under an active override', async (ctx) => {
+      skipIfNoSubstrate(ctx, ioAvailable, ioSetupError ?? 'io setup did not complete');
+      const { data, error } = await supabaseAdmin.rpc('get_student_usage', {
+        p_student_id: ceilingSchoolStudent,
+      });
+      expect(error).toBeNull();
+      const usage = data as Record<string, { used: number; limit: number }>;
+      const enforced = await planLimit(ceilingSchoolStudent, 'foxy_chat');
+      const displayed = usage.foxy.limit === -1 ? 999999 : usage.foxy.limit;
+      expect(displayed).toBe(enforced);
+      expect(displayed).toBe(99999);
+    });
   });
 });
