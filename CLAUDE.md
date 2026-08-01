@@ -5,39 +5,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Development Commands
 
 ### Web (Next.js)
-```bash
-npm run dev              # Dev server at localhost:3000
-npm run build            # Production build
-npm run type-check       # TypeScript validation across workspaces (npm run type-check --workspaces --if-present) — does NOT cover workspace-less dirs
-npm run type-check:scripts # TypeScript validation for repo-root scripts/ (no workspace; own tsconfig.scripts.json)
-npm run lint             # ESLint on src/ (.ts/.tsx)
-npm test                 # Vitest unit tests
-npm run test:watch       # Vitest in watch mode
-npm run test:coverage    # Vitest with V8 coverage
-npm run test:e2e         # Playwright E2E (auto-starts dev server unless CI)
-npm run test:e2e:ui      # Playwright with interactive UI
-npm run analyze          # Bundle analysis (ANALYZE=true next build)
-```
 
-Run a single test: `npx vitest run src/__tests__/path/to/file.test.ts`
+Standard npm scripts (`npm run dev`/`build`/`lint`/`test`, etc.) — see `package.json` for the full list. Two non-obvious ones:
+- `npm run type-check` runs `--workspaces --if-present`, which does **not** cover workspace-less dirs (e.g. repo-root `scripts/`) — that's what `npm run type-check:scripts` is for separately.
+- Run a single test with `npx vitest run <path-to-file>` (test files live under `apps/host/src/__tests__/`, `packages/*/src/__tests__/`, `supabase/functions/**/__tests__/` — see the Testing section below).
 
 ### Mobile (Flutter)
-```bash
-cd mobile
-flutter pub get          # Install dependencies
-flutter run              # Run on connected device/emulator
-flutter build apk        # Build Android APK
-flutter analyze          # Dart static analysis
-flutter test             # Run Flutter tests
-```
+
+Standard Flutter CLI from `mobile/` (`flutter pub get`, `run`, `build apk`, `analyze`, `test`) — see `mobile/pubspec.yaml`.
 
 ### Supabase Edge Functions (Deno)
-```bash
-supabase functions serve <name> --env-file .env.local   # Local dev
-supabase functions deploy <name>                         # Deploy single function
-supabase db push                                         # Apply pending migrations
-supabase migration new <name>                            # Create new migration
-```
+
+Standard `supabase` CLI (`functions serve`/`deploy`, `db push`, `migration new`) — see `supabase --help`.
 
 ## Architecture Overview
 
@@ -101,10 +80,7 @@ As of 2026-07-28 that reads **47 on disk / 49 dirs**. This number has drifted ev
 
 ### Styling
 
-Tailwind with custom brand tokens in `tailwind.config.js`:
-- Fonts: Plus Jakarta Sans, Sora
-- Brand colors: `orange` (#F97316), `purple` (#7C3AED), `cream`, `warm`
-- Custom animations: `float`, `scale-in`, `slide-up`, `fade-in`, `bounce-in`
+Tailwind with custom brand tokens — see `tailwind.config.js` (fonts, brand colors, custom animations).
 
 ## Critical Development Rules
 
@@ -201,7 +177,7 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Scoring & XP | `packages/lib/src/xp-rules.ts` |
 | Exam engine | `packages/lib/src/exam-engine.ts` |
 | Cognitive engine | `packages/lib/src/cognitive-engine.ts` |
-| NCERT ingestion pipeline | `scripts/ncert-ingestion/` (repo root). PDF → `pdf-parse` → chapter-split → ~400-token chunks → `rag_content_chunks` (`source='ncert_2025'`) → Voyage `voyage-3` embeddings (1024-d, `embed-chunks.ts`). Entry points: `discover.ts`, `ingest-local.ts` (local folder), `storage-ingest.ts` (Supabase Storage bucket `ncert-books`), `validate.ts`, `rollback.ts`. npm scripts are declared in **`apps/host/package.json`**, not the root: `ncert:discover`, `ncert:ingest`, `ncert:embed`, `ncert:validate`, `ncert:pipeline` (= `ncert:ingest && ncert:validate` — note it does **not** run `ncert:embed`). Source PDFs are gitignored; they live in Supabase Storage bucket `ncert-books`. **`ncert:embed` calls the paid Voyage API — never run it casually.** See `scripts/ncert-ingestion/README.md`. ⚠️ **Open question (2026-07-17, do not assert either side):** this pipeline is present and live on disk, but `docs/runbooks/ingest-ncert-french-revolution.md:467` claims the existing 16,006 chunks were produced by "a legacy tool no longer present in the codebase." Both can be true (a retired tool built the corpus; this pipeline is its successor). Provenance of the *existing* chunks is unconfirmed. ⚠️ Also unresolved: the `ncert:*` script bodies reference `scripts/ncert-ingestion/…` and `./data/NCERT books`, which exist only at the **repo root**, while the scripts are declared in `apps/host/package.json` (whose cwd has no `scripts/ncert-ingestion/` or `data/`) — the declarations and the file locations disagree. Verify cwd before running. |
+| NCERT ingestion pipeline | `scripts/ncert-ingestion/` (repo root) — see `scripts/ncert-ingestion/CLAUDE.md` for the full pipeline stages, the npm-script cwd mismatch, and the paid-API warning. |
 | Pedagogy v2 — content-rules resolver (persona × layer × slot) | `packages/lib/src/learn/pedagogy-content-rules.ts` |
 | Pedagogy v2 — daily-rhythm orchestrator (5 SRS + 1 ZPD + reflection) | `packages/lib/src/learn/daily-rhythm-orchestrator.ts` |
 | Pedagogy v2 — weekly-dive orchestrator + streak | `packages/lib/src/learn/weekly-dive-orchestrator.ts`, `packages/lib/src/learn/weekly-streak.ts` |
@@ -223,7 +199,7 @@ See `.claude/CLAUDE.md` for the full product constitution:
 | Non-AI Edge Functions | `supabase/functions/daily-cron/`, `queue-consumer/`, `send-auth-email/`, `send-welcome-email/`, `session-guard/`, `scan-ocr/`, `export-report/`, `identity/`, `bulk-question-gen/`, `embed-diagrams/`, `embed-ncert-qa/`, `embed-questions/`, `extract-diagrams/`, `extract-ncert-questions/`, `generate-answers/`, `generate-concepts/`, `generate-embeddings/`, `nep-compliance/`, `parent-portal/`, `parent-report-generator/`, `teacher-dashboard/`, `whatsapp-notify/`, `alert-deliverer/` |
 | Feature flags | `packages/lib/src/feature-flags.ts` |
 | Structured logger | `packages/lib/src/logger.ts` |
-| Migrations | `supabase/migrations/` — root holds the `00000000000000_baseline_from_prod.sql` baseline plus the timestamped chain. **Count it, don't quote it:** `ls supabase/migrations/*.sql \| wc -l` (total incl. baseline), `ls supabase/migrations/*.sql \| sort \| tail -1` (latest). As of 2026-07-28: **469 `.sql` at root = baseline + 468 timestamped**, latest `20260727130100_grounded_traces_shadow_confidence_v2.sql`. The pre-baseline chain (**359 files**, `find supabase/migrations/_legacy -name '*.sql' \| wc -l`) is archived under `_legacy/`, which `supabase db push` skips because the CLI only applies files at the immediate `supabase/migrations/` root. |
+| Migrations | `supabase/migrations/` — see `supabase/CLAUDE.md` for the exact recount commands (the number drifts constantly) and the schema-reproducibility runbook. |
 | NCERT corpus (do not re-ingest before checking) | **~16,006 chunks in `rag_content_chunks`, covering 750 of 761 `cbse_syllabus` rows (~98.6%)** as of the 2026-07 audits. The corpus **exists** — before funding or scoping any re-ingestion, read `/api/super-admin/grounding/coverage` and the `ingestion_gaps` view. `cbse_syllabus.rag_status` is `'ready'` only when `chunk_count >= 50` AND `verified_question_count >= 40`, so a chapter can be fully ingested and still read `'partial'` purely because its questions are unverified — `'partial'` does **not** imply missing content. |
 | CI/CD | `.github/workflows/ci.yml`, `deploy-production.yml`, `deploy-staging.yml` |
 | Operational docs | `docs/` (RBAC matrix, backup/restore, admin ops, architecture docs) |
