@@ -448,3 +448,158 @@ guard, and the trace-writer deploy-ordering fallback).
 
 ---
 
+## REG-332 — grounded-answer content-readiness precheck: gate on `chunk_count`, not `rag_status` (closes the ncert-solver / GenAI Lesson+Content 100%-abstain deadlock) (2026-08-01)
+
+Source: same-session fix following the 2026-07-27 GenAI incident
+(`docs/incidents/2026-07-27-genai-generation-agents-100pct-abstain/README.md`),
+whose own "Outstanding / NOT resolved" item (a) and acceptance criterion 1
+explicitly named this predicate revision as the deferred remediation path.
+`supabase/functions/grounded-answer/coverage.ts`'s strict-mode content
+precheck — the hard gate every `mode:'strict'` caller runs before any
+Voyage/Claude call — required `cbse_syllabus.rag_status='ready'`, itself an
+aggregate of TWO independent signals (`chunk_count>=50` AND
+`verified_question_count>=40`). Production had zero rows satisfying the
+combined bar (per the incident doc: 889 `partial` / 259 `missing` / 0
+`ready`, reported 2026-07-27), so every strict-mode caller — `ncert-solver`
+(broken silently "for months", per the incident doc, because
+`grounded_ai_traces` only ever recorded `caller='foxy'`, which runs
+soft-mode and skips the gate) and the two newly-shipped GenAI agents (Lesson
+Generation, Content/Diagram Generation, REG-313/314) shipped to 100%
+production rollout — abstained on effectively every real request.
+`verified_question_count` was never relevant to any of the three callers:
+none of them reads `question_bank` (they are pure NCERT-text retrieval /
+generation / structure-verification). Worse, it created a live bootstrapping
+deadlock — `verify-question-bank`, the ONLY process that grows
+`verified_question_count`, itself calls this precheck in `mode:'strict'`
+scoped to the very chapter it is trying to verify a question for, so under
+the old predicate no chapter could ever organically satisfy the gate that
+blocked the one process that grows the count, and each such failure is
+recorded as a PERMANENT `verification_state='failed'` with no retry path
+(never reclaimed by `claim_verification_batch`).
+
+Fix: the 3 predicate-check call sites inside `coverage.ts` — the
+specific-chapter check (`checkCoverage`, chapter_number provided), the
+subject-wide check (`checkCoverage`, chapter_number null), and
+`suggestAlternatives` — now test `chunk_count >= MIN_CHUNKS_FOR_READY`
+(existing constant, `config.ts:4`, value `50`, unchanged) instead of
+`rag_status === 'ready'`. `rag_status`, `verified_question_count`, and
+`recompute_syllabus_status()` are byte-for-byte untouched — confirmed: no
+migration in this change touches `cbse_syllabus`, `recompute_syllabus_status`,
+or `rag_status`, and `config.ts` itself has no diff. Every dashboard/view
+keyed on `rag_status` (`ingestion_gaps`, the super-admin Grounding Coverage
+route) will keep reporting the same "0 ready" picture post-fix — that is now
+a legibility gap, not a functional one; ops should not read an unchanged
+dashboard as "the fix didn't work" (coverage.ts's own OPERATIONAL NOTE).
+
+Files: `supabase/functions/grounded-answer/coverage.ts`,
+`supabase/functions/grounded-answer/__tests__/coverage.test.ts`,
+`supabase/functions/grounded-answer/__tests__/pipeline.test.ts` (test-only
+fixture update to match the new query shape; no `pipeline.ts` production
+code changed — confirmed no diff). `config.ts` (source of
+`MIN_CHUNKS_FOR_READY`) is referenced, not modified.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-332 | `chunk_count_gate_replaces_rag_status_gate` | **(1) A chapter with ample `chunk_count` is servable regardless of `verified_question_count`** — the decisive fixture stubs `syllabus_row: { chunk_count: 200 }` with NO `verified_question_count` field present anywhere in the mock at all, proving `checkCoverage` cannot be reading it, and asserts `ready: true` (`coverage.test.ts`, "2026-08-01 fix: ready:true when chunk_count is ample even though verified_question_count would be zero"). **(2) A chapter below the chunk bar still abstains**, including the exact boundary (`MIN_CHUNKS_FOR_READY - 1` → `ready:false`; `MIN_CHUNKS_FOR_READY` exactly → `ready:true`) and zero/absent-row cases (`coverage.test.ts`, 5 tests). **(3) The subject-wide (no-chapter) and `suggestAlternatives` paths use the same `chunk_count` bar** via `.gte('chunk_count', MIN_CHUNKS_FOR_READY)`, replacing `.eq('rag_status','ready')` (`coverage.test.ts`, 4 tests: 2 subject-wide + 2 `suggestAlternatives`). **(4) The fix holds end-to-end through the real pipeline, not just the isolated unit** — the two tests explicitly named "(regression check)" in `pipeline.test.ts` confirm a `chapter_not_ready` scope still abstains at the coverage stage with `abstain_reason: 'chapter_not_ready'` when run through `runPipeline`, not just `checkCoverage` in isolation. **Real, live Deno counts (verified this session):** `coverage.test.ts` — **10/10 passed, 0 failed** (`deno test --allow-all __tests__/coverage.test.ts`). `pipeline.test.ts` — **21 total: 20 passed, 1 failed**; the 1 failure (`handleRequest: pipeline throws → 500 with structured upstream_error abstain`, asserting HTTP 401 where 500 is expected) was reproduced with an IDENTICAL failure signature (same test, same assertion, same 401-vs-500 diff) against the unmodified pre-fix HEAD version of all three changed files, copied into an isolated scratch directory and run standalone — proving it predates and is unrelated to this change. | `supabase/functions/grounded-answer/__tests__/coverage.test.ts` (10 tests: `returns chapter_not_ready when chunk_count is below the bar`, `returns chapter_not_ready when chunk_count is zero`, `returns chapter_not_ready when syllabus row is absent`, `returns ready:true when chunk_count meets the bar exactly (boundary)`, `returns chapter_not_ready when chunk_count is one below the bar (boundary)`, `2026-08-01 fix: ready:true when chunk_count is ample even though verified_question_count would be zero…`, `subject-wide query: ready:true when subject has at least one chapter meeting the bar`, `subject-wide query: chapter_not_ready when subject has no chapter meeting the bar`, `suggestAlternatives caps at 3`, `suggestAlternatives returns empty array when none exist`); `supabase/functions/grounded-answer/__tests__/pipeline.test.ts` (2 of 21: `strict mode + chapter_not_ready coverage → still abstains at coverage stage (regression check)`, `strict mode + chapter_not_ready coverage → abstain reason is chapter_not_ready (regression check)`) | P | P12 |
+
+### Known gaps (do NOT read this entry as broader than it is)
+
+- **No live-Postgres verification.** Every test above runs against a
+  hand-written Deno stub Supabase client, never a real `cbse_syllabus` row.
+  The incident doc's own acceptance criterion 1 requires the predicate
+  change to be "re-verified against production data" — this entry does NOT
+  satisfy that clause. Closing it needs a live-DB integration-lane check
+  (this repo has no such lane for Deno Edge Functions today).
+- **`pipeline.test.ts` and `e2e.test.ts` do not run in CI's blocking lane.**
+  Per `.github/workflows/ci.yml`'s own comment, 4 of the 23 Deno test files
+  under `grounded-answer/__tests__/` are deliberately absent from
+  `DENO_TEST_TARGETS` — `e2e`, `pipeline`, `cache-durable-l3`, and
+  `foxy-answer-continuation` — because all four import `../index.ts`, which
+  calls `Deno.serve()` (binds a socket, needs `--allow-net`, flaky in CI).
+  Only `coverage.test.ts` is in the CI-blocking `DENO_TEST_TARGETS` list
+  (confirmed by direct read of the workflow file). This session's
+  `pipeline.test.ts` run is real and was executed directly via
+  `deno test --allow-all --no-check`, but it is a local, out-of-CI signal —
+  a future change could silently re-break it without CI ever noticing.
+- **`e2e.test.ts` (untouched by this fix — confirmed zero diff) fails on a
+  completely fresh, unmodified checkout: 8 total, 0 passed, 8 failed**
+  (re-verified this session: `deno test --allow-all --no-check
+  __tests__/e2e.test.ts` from `supabase/functions/grounded-answer/` —
+  corrects the prior wording here, "fails 0/8," which had the count
+  backwards; all 8 fail, none pass). Root cause (verified, not just
+  asserted): every fixture request is built by `mkRequest()` with no
+  `Authorization` header, and `handleRequest` → `admitRequest` →
+  `resolveSecurityPrincipal` (`supabase/functions/_shared/security/auth.ts`)
+  rejects any request missing that header with `{ status: 401,
+  code: 'deny_auth', message: 'missing authorization header' }` before the
+  request ever reaches `runPipeline`/`coverage.ts` — so all 8 failures share
+  this one admission-layer cause (the prior wording, "an `undefined` vs
+  `true` assertion at line 427," described only the last test's symptom of
+  it, not a separate issue, and understated the failure as narrower than it
+  is). `index.ts`, `_shared/security/auth.ts`, and `e2e.test.ts` are all
+  unmodified by this session (confirmed via `git status` / `git diff HEAD`),
+  so this is genuinely pre-existing test/fixture drift against a stale
+  (no-auth-header) request shape — not something this session's
+  `coverage.ts` predicate change introduced or touched; the request never
+  reaches `coverage.ts` at all before being rejected. Reported here only so
+  nobody mistakes it for a regression introduced by this work; not
+  otherwise in scope.
+- **Does not remediate the existing `verification_state='failed'` backlog.**
+  Chapters that already failed verification under the old deadlocked
+  predicate stay `failed` — `verify-question-bank`'s caller does not
+  automatically retry `failed` rows. Whether to reclaim them is a DATA
+  remediation decision (assessment/ops), not addressed by this code change.
+- **SEPARATE, pre-existing, NOT fixed here: `select_quiz_questions_rag` does
+  not filter on `verified_against_ncert` at all.** Independently confirmed
+  by reading the live function body
+  (`supabase/migrations/20260801100700_select_quiz_questions_rag_service_role_skip.sql`,
+  byte-copied from `20260625000200`): its `WHERE` clauses filter only on
+  `subject`/`grade`/`chapter_number`/`is_active`/`question_type_v2` (or
+  `is_ncert`)/`difficulty` — no reference to `verified_against_ncert` or
+  `ff_grounded_ai_enforced_pairs` anywhere in the body, and none of its three
+  live callers (`apps/host/src/app/api/quiz/route.ts`,
+  `.../v2/quiz/questions/route.ts`, `.../whatsapp/_lib/daily6.ts`) add an
+  equivalent filter on top. So quiz-serving today does not gate on
+  verification status at all, regardless of this entry. This is a real,
+  separately-tracked gap — do NOT conflate it with the coverage-precheck fix
+  above; flagging for ai-engineer/assessment follow-up, not claiming it
+  fixed.
+- **Review-chain note.** Per this repo's review-chain matrix, an ai-engineer
+  RAG/retrieval change requires assessment + testing review. The change's
+  own header attributes its review to "ai-engineer review" only (both
+  correction notes in `coverage.ts`); no evidence was found in the diff of a
+  separate assessment sign-off on the predicate change itself. Flagging for
+  the orchestrator to confirm before treating this chain as complete — not
+  something this entry can certify on its own.
+
+### Invariants covered by this section
+
+- P12 (AI safety / grounding availability) — REG-332 closes the specific
+  defect where a content-sufficiency gate was conflated with a quiz-
+  verification-maturity gate, restoring strict-mode groundedness for any
+  chapter with enough ingested NCERT text regardless of an unrelated,
+  structurally-unsatisfiable quiz-verification count. Confidence threshold
+  (`STRICT_CONFIDENCE_ABSTAIN_THRESHOLD = 0.75`, `config.ts:36`), scope
+  verification (`pipeline.ts`'s `scope_mismatch` check, Step 6b), and output
+  screening (`output-screen.ts`) are all confirmed UNCHANGED — none appears
+  in this session's diff — so this fix widens WHICH chapters can be
+  attempted without touching any of the three downstream safety gates that
+  run once a chapter is attempted.
+
+### Catalog total
+
+Pre-REG-332: 331 entries (through REG-331, BoardScore™ subject-scoping fix
+batch — see `15-cross-cutting.md`). Adds REG-332 (grounded-answer
+content-readiness precheck — `chunk_count` gate replaces the
+`rag_status`/`verified_question_count` conflation that deadlocked
+`verify-question-bank` and silently broke `ncert-solver` plus two
+100%-rolled-out GenAI agents; 10/10 `coverage.test.ts` + 20/21
+`pipeline.test.ts` [1 pre-existing unrelated failure] Deno tests verified
+live this session; explicitly PARTIAL — no live-DB verification,
+`pipeline.test.ts`/`e2e.test.ts` outside CI's blocking Deno lane, and a
+separate `select_quiz_questions_rag` verification-filter gap flagged but not
+fixed).
+**Total catalog: 332 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
