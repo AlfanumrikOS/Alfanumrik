@@ -7,7 +7,8 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { track } from '@alfanumrik/lib/analytics';
 import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession } from '@alfanumrik/lib/supabase';
-import { invalidateDashboard } from '@alfanumrik/lib/swr';
+import { invalidateDashboard, useFeatureFlags } from '@alfanumrik/lib/swr';
+import { useNextTask } from '@alfanumrik/lib/quiz/v2/use-next-task';
 import { assembleQuiz } from '@alfanumrik/lib/quiz-assembler';
 import { XP_RULES } from '@alfanumrik/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
@@ -22,6 +23,17 @@ import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 
 // Lazy-load QuizResults — only shown after quiz completion (results screen)
 const QuizResults = dynamic(() => import('@alfanumrik/ui/quiz/QuizResults'), {
+  ssr: false,
+  loading: () => <LoadingFoxy />,
+});
+// Screen 08 "Result" (Wave B, `ff_quiz_result_v2`) — additive presentational
+// alternative to QuizResults. Flag OFF by default (architect seeds the row
+// separately); the legacy QuizResults path below is completely untouched
+// when the flag is off or still resolving. See
+// packages/ui/src/quiz/v2/ResultSummary.tsx for the full design rationale,
+// including the deliberate mastery-band vocabulary choice flagged for
+// assessment's review.
+const ResultSummary = dynamic(() => import('@alfanumrik/ui/quiz/v2/ResultSummary'), {
   ssr: false,
   loading: () => <LoadingFoxy />,
 });
@@ -198,6 +210,16 @@ export default function QuizPage() {
   const { student, isLoggedIn, isLoading, isHi, refreshSnapshot, activeRole } = useAuth();
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
+
+  // Screen 08 "Result" (Wave B, `ff_quiz_result_v2`) — additive flag branch.
+  // OFF by default; when off (or still resolving) the legacy QuizResults
+  // path below is rendered byte-identical to today.
+  const { data: quizV2Flags } = useFeatureFlags();
+  const resultV2On = quizV2Flags?.ff_quiz_result_v2 === true;
+  // "Next task" CTA for the v2 Result screen — reuses the existing
+  // Today-queue mechanism (fails soft to /today). Cheap to resolve
+  // unconditionally; only rendered when resultV2On.
+  const nextTask = useNextTask(student?.id ?? null);
 
   // Setup state
   const [screen, setScreen] = useState<Screen>('select');
@@ -1989,6 +2011,49 @@ export default function QuizPage() {
 
   // ═══ RESULTS SCREEN ═══
   if (screen === 'results' && results) {
+    const networkErrorBanner = networkError && (
+      <div className="fixed bottom-20 left-4 right-4 bg-amber-500 text-white rounded-xl p-4 text-center z-40 shadow-lg animate-slide-up">
+        <p className="text-sm font-medium mb-2">{networkError}</p>
+        <button
+          onClick={retrySubmit}
+          disabled={loading}
+          className="px-4 py-1.5 bg-white text-amber-700 rounded-lg text-sm font-medium disabled:opacity-50"
+        >
+          {loading
+            ? (isHi ? 'भेज रहे हैं...' : 'Submitting...')
+            : (isHi ? 'पुनः प्रयास करें' : 'Retry')}
+        </button>
+      </div>
+    );
+
+    // Screen 08 v2 branch — additive alternative, gated by ff_quiz_result_v2.
+    // Consumes the EXACT same already-computed `results`/`questions`/
+    // `responses` the legacy QuizResults path below receives; no scoring/XP
+    // recomputation (P1/P2 untouched).
+    if (resultV2On) {
+      return (
+        <>
+          <ResultSummary
+            isHi={isHi}
+            results={results}
+            questions={questions}
+            responses={responses}
+            timer={timer}
+            subject={
+              selectedSubject && subMeta
+                ? { code: selectedSubject, name: subMeta.name, icon: subMeta.icon, color: subMeta.color }
+                : null
+            }
+            nextTask={{ href: nextTask.href, labelEn: nextTask.labelEn, labelHi: nextTask.labelHi }}
+            onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
+            onAskFoxy={(href) => router.push(href)}
+            onNextTask={(href) => router.push(href)}
+          />
+          {networkErrorBanner}
+        </>
+      );
+    }
+
     return (
       <>
         <QuizResults
