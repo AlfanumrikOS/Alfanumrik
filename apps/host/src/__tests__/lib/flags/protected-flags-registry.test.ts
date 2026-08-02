@@ -206,9 +206,9 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
 // ─── EXPECTED_OFF_FLAGS posture list ──────────────────────────────────
 
 describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
-  it('contains exactly 60 unique names (52 block-(ii) - ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) + ff_irt_question_selection + 2 Pedagogy v2 additions + 1 WhatsApp bot addition (seed 20260801100500) - ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) + 5 GenAI ecosystem additions (seed 20260801120000))', () => {
-    expect(EXPECTED_OFF_FLAGS).toHaveLength(60);
-    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(60);
+  it('contains exactly 57 unique names (52 block-(ii) - ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) + ff_irt_question_selection + 2 Pedagogy v2 additions + 1 WhatsApp bot addition (seed 20260801100500) - ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) + 5 GenAI ecosystem additions (seed 20260801120000) - 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine))', () => {
+    expect(EXPECTED_OFF_FLAGS).toHaveLength(57);
+    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(57);
     expect(EXPECTED_OFF_FLAGS).toContain('ff_irt_question_selection');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_productive_failure_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_pedagogy_v2_monthly_synthesis');
@@ -255,6 +255,10 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
     ]);
     expected.delete('ff_adaptive_remediation_v1');
     expected.delete('ff_whatsapp_bot_v1');
+    // 2026-08-03: approved intentionally-live, no longer expected fully-OFF.
+    expected.delete('ff_foxy_streaming');
+    expected.delete('ff_goal_aware_rag');
+    expected.delete('ff_grounded_ai_concept_engine');
     expect(new Set(EXPECTED_OFF_FLAGS)).toEqual(expected);
   });
 

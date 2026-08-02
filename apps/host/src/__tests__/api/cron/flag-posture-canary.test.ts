@@ -256,7 +256,7 @@ describe('flag-posture-canary — DB query shape', () => {
     // companion) + ATOMIC; the two MoL shadow flags are already members of
     // EXPECTED_OFF, so the de-duped set is 61.
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(61);
+    expect(watched).toHaveLength(58);
     for (const name of EXPECTED_OFF_FLAGS) expect(watched).toContain(name);
     expect(watched).toContain(ATOMIC);
   });
