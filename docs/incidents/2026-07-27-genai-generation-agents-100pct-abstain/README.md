@@ -95,3 +95,42 @@ None of these are currently true. This incident should not be described as resol
 - [ ] All GenAI-ecosystem flags still relevant at that time are registered in `PROTECTED_FLAGS`/`EXPECTED_OFF_FLAGS`, the companion DB migration is merged to `main` (verify via `git log`, not a working-tree diff), and the full `feature-flags-protected-guardrail.test.ts` + `protected-flags-registry.test.ts` suite is green.
 - [ ] A structural safeguard exists that would block (or at minimum loudly flag) a newly-registered "live" agent reaching 100% rollout with zero verified UI/mobile caller.
 - [ ] Any future re-enable of `ff_lesson_generation_v1` / `ff_content_generation_v1` goes through the protected-flag confirm-gate (once registered) rather than a bare console toggle.
+
+## Addendum 2026-08-02 — flag drift discovered on deploy: caught, remediated, mechanism confirmed; timing/actor still unresolved
+
+**This was caught by, not caused by, this session's flag-governance fix.** Earlier in this session, the five previously-unprotected GenAI flags described as "in-progress, uncommitted" in Outstanding (d) above — `ff_model_gateway_v1`, `ff_unified_memory_v1`, `ff_outcome_prediction_v1`, `ff_lesson_generation_v1`, `ff_content_generation_v1` — were registered into `PROTECTED_FLAGS`/`EXPECTED_OFF_FLAGS` in `packages/lib/src/flags/protected-flags.ts`, with a companion migration (`supabase/migrations/20260801120000_protected_feature_flags_genai_ecosystem_seed.sql`) mirroring them into `public.protected_feature_flags`. This shipped via PR #1432, merged and deployed to production 2026-08-02 ~06:41 UTC — the same file paths and same five flag names Outstanding (d) flagged as unfinished, now committed.
+
+**What the deploy immediately surfaced.** Within minutes, the post-deploy `Post-Deploy Health Check` / flag-posture-canary (`/api/cron/flag-posture-canary`) failed with a real drift report: all five of the newly-registered flags were live in production at `is_enabled=true, rollout_percentage=100` — including `ff_lesson_generation_v1` and `ff_content_generation_v1`, the exact two flags this incident forced OFF on 2026-07-27 for abstaining on ~100% of real requests (see Root cause, Fault B above). The two flags this document is about had silently drifted back to fully-enabled at some point after the 2026-07-27 mitigation, undetected until this session's canary registration gave the posture check something to compare against.
+
+**Confirmed this session's own work did not cause the drift.** Both migrations added this session were grepped directly: `20260801120000_protected_feature_flags_genai_ecosystem_seed.sql` only writes rows into `protected_feature_flags` and never touches `feature_flags.is_enabled`/`rollout_percentage`; the session's other migration does not reference any of these five flag names at all. The drift pre-dated this session's work. It was detected only because this session's fix was the first time any of these five flags were ever added to `EXPECTED_OFF_FLAGS` — nothing was watching them before.
+
+**Remediation — exact SQL run by the CEO immediately, via direct production SQL access:**
+```sql
+UPDATE public.feature_flags
+   SET is_enabled = false, rollout_percentage = 0, updated_at = now()
+ WHERE flag_name IN ('ff_model_gateway_v1','ff_unified_memory_v1','ff_outcome_prediction_v1','ff_lesson_generation_v1','ff_content_generation_v1');
+```
+Verified via a follow-up `SELECT` against `public.feature_flags`: all five rows correctly show `is_enabled=false, rollout_percentage=0` as of `2026-08-02 07:02:03.137428+00`.
+
+**CI closure.** The two failed CI jobs (`Post-Deploy Health Check`, `Production Release Completion Gate`) were re-run after the fix and both now show `success` — verified via `gh run view --json jobs`, not assumed.
+
+**Mechanism, to the extent it's knowable from this app's own tables.** The following forensic query was run against the audit trail to establish how/when the drift happened:
+```sql
+SELECT a.created_at, a.admin_id, a.action, a.details
+  FROM public.admin_audit_log a
+  LEFT JOIN public.feature_flags f ON a.entity_type = 'feature_flags' AND a.entity_id = f.id::text
+ WHERE f.flag_name IN ('ff_model_gateway_v1','ff_unified_memory_v1','ff_outcome_prediction_v1','ff_lesson_generation_v1','ff_content_generation_v1')
+    OR a.details::text ILIKE ANY (ARRAY['%ff_model_gateway_v1%','%ff_unified_memory_v1%','%ff_outcome_prediction_v1%','%ff_lesson_generation_v1%','%ff_content_generation_v1%'])
+ ORDER BY a.created_at DESC LIMIT 50;
+```
+This returned **zero rows**. `admin_audit_log` is written by `logAdminAudit()` (`apps/host/src/app/api/super-admin/feature-flags/route.ts`) on every console-based flag mutation, including the sanctioned `admin_flip_feature_flag` RPC path (`supabase/migrations/20260722090200_admin_flip_feature_flag_rpc.sql`) used for protected flags. Zero rows means this did not go through the super-admin console or any application code path — it was a direct database write (raw SQL, Studio, or some other out-of-band mechanism), bypassing both the audit log and — since these five flags were not yet registered in `protected_feature_flags` at the time — the `trg_protect_feature_flags` BEFORE UPDATE trigger that would otherwise have blocked it. This is the same class of event as the 2026-07-20 incident already referenced in `protected-flags.ts`'s own header comment ("an operator bulk-enable re-armed 49 of the 52 CEO-approved forced-OFF flags at rollout 100") — a direct-DB-write bypass of the console, just this time targeting flags that had not yet been added to the protected list.
+
+**This exact recurrence is now structurally prevented, not just remediated once.** Because these five flags are registered in `protected_feature_flags` as of the `20260801120000` migration (live since today's deploy), any future direct-DB write attempt against them would now hit `trg_protect_feature_flags` and be blocked unless routed through `admin_flip_feature_flag` with the correct typed confirmation.
+
+**Resolved as of 2026-08-02:**
+- [x] All five flags confirmed back at `is_enabled=false, rollout_percentage=0` in production (verified by SELECT, not assumed).
+- [x] `Post-Deploy Health Check` and `Production Release Completion Gate` both re-run and green.
+- [x] All five flags now sit behind `protected_feature_flags` + `trg_protect_feature_flags`, closing the specific gap Outstanding (d) described as unfinished — any future direct-DB write against them is blocked unless routed through `admin_flip_feature_flag`.
+
+**Still open — do not treat this as closed:**
+- [ ] **Exactly when (between 2026-07-27 and 2026-08-02) and by what mechanism the direct write occurred is not established.** That information would only exist in Supabase's raw Postgres query logs — not `admin_audit_log`, and not queryable via any table in this application. Flagged as unresolved; this document should not speculate about it further.
