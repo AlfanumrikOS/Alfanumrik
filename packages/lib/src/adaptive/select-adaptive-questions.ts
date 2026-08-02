@@ -34,10 +34,39 @@
 // module never shrinks a quiz below the requested count and never bypasses
 // the count/P6 guarantees enforced downstream by assembleQuiz.
 //
+// ── Verification-gate Tier-0 mirroring (2026-08-02) ─────────────────────────
+// This module queries question_bank DIRECTLY — it does NOT go through the
+// select_quiz_questions_rag RPC (migration
+// 20260802100000_select_quiz_questions_rag_verification_gate.sql), so it does
+// not automatically inherit that RPC's verification-gate predicates. Before
+// this note, that meant a student who is WEAK on a topic — i.e. exactly the
+// cohort most likely to be served via this weak-topic-targeted path — could
+// be handed a question the automated NCERT verifier had explicitly DISPROVED
+// (verification_state='failed'), a soft-deleted row, or a draft/archived row,
+// none of which validateQuestion() (the downstream P6 gate) checks for.
+//
+// Fix: mirror the RPC's three Tier-0 predicates (spec §2.1) — the ones with
+// NO fallback rung, applied always, regardless of ff_grounded_ai_enforced_pairs
+// enforcement state — in both question_bank queries below:
+//   - deleted_at IS NULL
+//   - content_status = 'published'
+//   - verification_state != 'failed'
+// Deliberately NOT ported: the RPC's Rung E0/E1 enforcement ladder (the
+// strict verified_against_ncert=true AND verification_state='verified'
+// filter applied only when a (grade,subject) pair is enforced AND has a
+// sufficient verified pool for the exact slice). That decision is designed
+// to live in exactly ONE place (spec §2.2's own rationale for why the RPC
+// owns it instead of each of its 3 callers duplicating it) — porting it here
+// would re-create the same duplication risk in a 4th place. If full E0/E1
+// parity for this path is wanted, that is a separate, larger design decision
+// requiring its own spec and review chain, not a silent addition here.
+//
 // Invariants honoured here:
 //   - P5: grade is a string "6".."12" — passed through verbatim, never coerced.
 //   - P6: only active, non-deleted, MCQ-shaped questions are returned as
 //     candidates (the caller's validateQuestion still runs as the final gate).
+//   - Tier-0 verification floor (2026-08-02, see above): never active+deleted,
+//     never non-published, never verifier-disproved.
 //   - No model/provider concerns — this is SELECTION, not generation.
 //
 // Owning agent: ai-engineer. Assessment reviews retrieval/selection correctness.
@@ -95,6 +124,13 @@ export interface AdaptiveQueryBuilder {
   lt: (col: string, val: unknown) => AdaptiveQueryBuilder;
   in: (col: string, vals: unknown[]) => AdaptiveQueryBuilder;
   not: (col: string, op: string, val: unknown) => AdaptiveQueryBuilder;
+  /** IS / IS NOT filter (e.g. `.is('deleted_at', null)`) — real supabase-js's
+   *  PostgrestFilterBuilder already implements this; added to the structural
+   *  type here so the verification-gate Tier-0 mirroring (deleted_at IS NULL)
+   *  can be expressed the same way the rest of this codebase already does
+   *  (packages/lib/src/rbac.ts, domains/tenant.ts, entitlements/effective-plan.ts,
+   *  school-admin/bulk-roster.ts all use this exact idiom). */
+  is: (col: string, val: unknown) => AdaptiveQueryBuilder;
   order: (col: string, opts: { ascending: boolean }) => AdaptiveQueryBuilder;
   limit: (n: number) => Promise<{ data: unknown[] | null; error: { message: string } | null }>;
   maybeSingle: () => Promise<{ data: unknown; error: { message: string } | null }>;
@@ -322,6 +358,12 @@ export async function selectAdaptiveQuestions(
       .eq('subject', subject)
       .eq('grade', grade)
       .eq('is_active', true)
+      // Verification-gate Tier-0 mirroring (2026-08-02, see module header) —
+      // same three predicates select_quiz_questions_rag now applies always,
+      // regardless of enforcement state.
+      .is('deleted_at', null)
+      .eq('content_status', 'published')
+      .not('verification_state', 'eq', 'failed')
       .in('bloom_level', allowedBlooms);
 
     if (chapterNum != null) qb = qb.eq('chapter_number', chapterNum);
@@ -349,6 +391,12 @@ export async function selectAdaptiveQuestions(
           .eq('subject', subject)
           .eq('grade', grade)
           .eq('is_active', true)
+          // Verification-gate Tier-0 mirroring (2026-08-02) — same as the
+          // primary query above; this relaxed (concept_tag-dropped) fallback
+          // must not reintroduce a verifier-disproved/deleted/draft row.
+          .is('deleted_at', null)
+          .eq('content_status', 'published')
+          .not('verification_state', 'eq', 'failed')
           .eq('chapter_number', chapterNum)
           .in('bloom_level', allowedBlooms)
           .limit(Math.max(need * 4, 8));
