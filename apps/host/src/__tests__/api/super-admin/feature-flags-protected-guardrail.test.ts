@@ -613,6 +613,13 @@ describe('POST protected-flag guardrail — protected NAME requires confirm befo
 // in a new migration (the applied 20260722090000 is never edited in place),
 // and this parser must aggregate every seed file or those rows are invisible
 // to the parity assertions.
+//
+// 2026-08-01: added 20260801120000 (5 GenAI ecosystem flags —
+// ff_model_gateway_v1, ff_unified_memory_v1, ff_outcome_prediction_v1,
+// ff_lesson_generation_v1, ff_content_generation_v1 — the flag-governance
+// incident-gap closure). Same reason as the 2026-07-30 generalization: this
+// list is the ONLY thing that makes a new seed file's rows visible to the
+// parity assertions below.
 describe('protected_feature_flags DB/TS registry parity', () => {
   const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..', '..', '..');
   // The DB registry is seeded across MULTIPLE migrations: already-applied
@@ -625,6 +632,7 @@ describe('protected_feature_flags DB/TS registry parity', () => {
   const SEED_MIGRATION_PATHS = [
     '20260722090000_protected_feature_flags_registry.sql',
     '20260801100500_seed_ff_whatsapp_bot.sql', // ff_whatsapp_bot_v1 + ff_whatsapp_alarm_template
+    '20260801120000_protected_feature_flags_genai_ecosystem_seed.sql', // 5 GenAI ecosystem flags
   ].map((name) => resolve(REPO_ROOT, 'supabase', 'migrations', name));
 
   function parseSeededRows(): Map<string, string> {
