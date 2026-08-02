@@ -983,13 +983,24 @@ registry.registerPath({
 });
 
 // ════════════════════════════════════════════════════════════════════════
-// Wave B — student-frontend exam schedule + placement check.
+// Wave B — student-frontend exam schedule.
 //
-// Three thin routes, each independently flag-gated (404 when its own flag is
-// off): ff_exam_schedule_v1 for GET /v2/exam-schedule; ff_placement_v1 for
-// GET /v2/placement and POST /v2/placement/answer. No scoring/XP/mastery math
-// in any of them (P1-P6 owned elsewhere) — the answer route writes exactly
-// ONE append-only learning_events row and touches no mastery table directly.
+// A thin route, flag-gated (404 when ff_exam_schedule_v1 is off). No
+// scoring/XP/mastery math in it (P1-P6 owned elsewhere).
+//
+// The "placement check" sibling that originally shipped alongside this
+// (GET /v2/placement, POST /v2/placement/answer, ff_placement_v1) was
+// removed 2026-08-02: assessment determined it duplicated the already-live,
+// more rigorous diagnostic system (see packages/lib/src/diagnostic/,
+// apps/host/src/app/api/diagnostic/). Its selector/hook/component and this
+// contract's PlacementQuestionOption/PlacementQuestion/PlacementResponse/
+// PlacementAnswerRequest/PlacementAnswerResult schemas were deleted together
+// as one orphaned surface. The underlying learning_events widening +
+// idempotency index (migration 20260802090000) and the ff_placement_v1 flag
+// row (seeded by migration 20260802090200_seed_ff_wave_b_frontend_flags.sql,
+// alongside the still-live ff_exam_schedule_v1) were left in place (inert,
+// no live writer) rather than reverted — a schema/migration decision, not
+// this file's.
 // ════════════════════════════════════════════════════════════════════════
 
 // ── E) EXAM SCHEDULE ─────────────────────────────────────────────────────────
@@ -1046,76 +1057,6 @@ export const ExamScheduleResponse = z
   })
   .openapi('ExamScheduleResponse');
 
-// ── F) PLACEMENT CHECK ───────────────────────────────────────────────────────
-
-/** One MCQ option for a placement probe. */
-export const PlacementQuestionOption = z
-  .object({
-    id: z.string().openapi({ example: '0' }),
-    label: z.string().openapi({ example: '4' }),
-  })
-  .openapi('PlacementQuestionOption');
-
-/**
- * One cold-start placement probe. Mirrors PlacementQuestionRow in
- * packages/lib/src/adaptive/select-placement-questions.ts. Never carries a
- * correct-answer index (P6) — placement probes set a prior, they are not
- * scored client-side.
- */
-export const PlacementQuestion = z
-  .object({
-    id: zUuid,
-    topicId: zUuid.nullable(),
-    chapterNumber: z.number().int().nullable(),
-    stem: z.string().openapi({ example: 'What is 2 + 2?' }),
-    options: z.array(PlacementQuestionOption).length(4),
-  })
-  .openapi('PlacementQuestion');
-
-/** Response for GET /v2/placement. */
-export const PlacementResponse = z
-  .object({
-    schemaVersion: z.literal(1),
-    subject: z.string().openapi({ example: 'math' }),
-    grade: zGrade,
-    questions: z.array(PlacementQuestion),
-  })
-  .openapi('PlacementResponse');
-
-/**
- * Request body for POST /v2/placement/answer. Exactly one of `optionId` /
- * `unseen` is meaningful (a probe either names an option or declares the
- * topic unseen, never both, never neither) — the route enforces this as an
- * explicit runtime guard rather than a Zod `.refine()`, since expressing the
- * `unseen === (optionId !== null)` XOR losslessly through both `null` and
- * `false`/absent would duplicate the same boolean check inside the schema.
- */
-export const PlacementAnswerRequest = z
-  .object({
-    sessionId: zUuid,
-    questionId: zUuid,
-    topicId: zUuid.nullable(),
-    optionId: z.string().max(8).nullable(),
-    unseen: z.boolean(),
-    idempotencyKey: zUuid,
-    occurredAt: z.string().datetime().openapi({ example: '2026-08-02T09:00:00.000Z' }),
-  })
-  .openapi('PlacementAnswerRequest');
-
-/**
- * Response for POST /v2/placement/answer. A duplicate submit (same
- * idempotencyKey, whether caught by the fast-path read or the DB unique
- * index learning_events_placement_probe_idempotency_uniq) returns
- * `duplicate: true` at the SAME 200 status rather than a second row or an
- * error.
- */
-export const PlacementAnswerResult = z
-  .object({
-    accepted: z.literal(true),
-    duplicate: z.boolean(),
-  })
-  .openapi('PlacementAnswerResult');
-
 registry.registerPath({
   method: 'get',
   path: '/v2/exam-schedule',
@@ -1138,48 +1079,6 @@ registry.registerPath({
       description: 'Unexpected server error.',
       content: { 'application/json': { schema: ErrorResponse } },
     },
-  },
-});
-
-registry.registerPath({
-  method: 'get',
-  path: '/v2/placement',
-  operationId: 'getPlacement',
-  summary: 'Six cold-start placement probes for a subject',
-  description:
-    "Returns up to 6 placement probes for the given subject at the student's own grade, via selectPlacementQuestions (the cold-start sibling of the live adaptive selector — same table, same P6 shape guard, no second question source). Read-only; no mastery write happens here. Requires study_plan.view. 404 when ff_placement_v1 is off.",
-  tags: ['placement'],
-  security: SECURITY,
-  request: {
-    query: z.object({
-      subject: z.string().min(1).max(40).openapi({ example: 'math' }),
-      lang: z.enum(['en', 'hi']).optional(),
-    }),
-  },
-  responses: {
-    200: { description: 'Placement probes.', content: { 'application/json': { schema: PlacementResponse } } },
-    400: { description: 'Invalid query params.', content: { 'application/json': { schema: ErrorResponse } } },
-    404: { description: 'Feature flag off, or no student profile for this account.', content: { 'application/json': { schema: ErrorResponse } } },
-    409: { description: 'Student has no grade set.', content: { 'application/json': { schema: ErrorResponse } } },
-    500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
-  },
-});
-
-registry.registerPath({
-  method: 'post',
-  path: '/v2/placement/answer',
-  operationId: 'postPlacementAnswer',
-  summary: 'Record one placement-probe response',
-  description:
-    "Writes a single append-only learning_events row (event_type = placement_probe). Sets a BKT prior via the projector; never recorded as a graded quiz attempt, and an unseen-topic response never counts as a wrong answer. A duplicate idempotencyKey returns 200 with duplicate: true instead of a second row or an error (learning_events_placement_probe_idempotency_uniq). Requires study_plan.create (a write, unlike the sibling GET routes in this family). 404 when ff_placement_v1 is off.",
-  tags: ['placement'],
-  security: SECURITY,
-  request: { body: { content: { 'application/json': { schema: PlacementAnswerRequest } } } },
-  responses: {
-    200: { description: 'Answer recorded (or a benign duplicate).', content: { 'application/json': { schema: PlacementAnswerResult } } },
-    400: { description: 'Invalid body, or optionId/unseen both set or both absent.', content: { 'application/json': { schema: ErrorResponse } } },
-    404: { description: 'Feature flag off.', content: { 'application/json': { schema: ErrorResponse } } },
-    500: { description: 'Unexpected server error.', content: { 'application/json': { schema: ErrorResponse } } },
   },
 });
 
@@ -1212,7 +1111,3 @@ export type TParentGlanceResponse = z.infer<typeof ParentGlanceResponse>;
 export type TExamReadinessBand = z.infer<typeof ExamReadinessBandSchema>;
 export type TExamScheduleEntry = z.infer<typeof ExamScheduleEntry>;
 export type TExamScheduleResponse = z.infer<typeof ExamScheduleResponse>;
-export type TPlacementQuestion = z.infer<typeof PlacementQuestion>;
-export type TPlacementResponse = z.infer<typeof PlacementResponse>;
-export type TPlacementAnswerRequest = z.infer<typeof PlacementAnswerRequest>;
-export type TPlacementAnswerResult = z.infer<typeof PlacementAnswerResult>;

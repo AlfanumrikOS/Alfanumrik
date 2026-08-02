@@ -9,8 +9,11 @@ Today-resolver branch + status-flip helpers + the student-side resolve endpoint
 (`src/lib/state/learner-loop/resolve-next-action.ts`,
 `src/app/api/rhythm/remediation/[id]/resolve/route.ts`); A4 the Command Center
 UI (`src/app/teacher/CommandCenter.tsx`) + the student "from your teacher"
-surfacing (`src/lib/today/*`, `src/components/today/TodayFocusCard.tsx`,
-`TodayQueueItem.tsx`) + the quiz-completion resolve seam (`src/app/quiz/page.tsx`).
+surfacing (`src/lib/today/*`, `packages/ui/src/today/v2/TodayHomeV2.tsx`'s
+FocusHero — the component that superseded the retired `TodayFocusCard.tsx`
+when the Wave B redesign became the sole `/today` loaded-state render on
+2026-08-02 — plus `TodayQueueItem.tsx`) + the quiz-completion resolve seam
+(`src/app/quiz/page.tsx`).
 
 The headline loop — teacher spots an at-risk student → assigns remediation →
 the student sees it at the TOP of Today tagged "from your teacher" → completes

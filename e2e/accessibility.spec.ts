@@ -231,8 +231,9 @@ test.describe('Pricing Page Accessibility', () => {
 /**
  * Wave B accessibility additions (task item 9): today-v2, exam-schedule-card,
  * exam-schedule-list — the 3 new surfaces that are actually REACHABLE via a
- * live route this session (`/today` with ff_today_home_v2 on, `/tests` with
- * ff_exam_schedule_v1 on). `offline-state` and `placement-check` have NO
+ * live route (`/today` with ff_today_home_v1 on — TodayHomeV2 is the sole
+ * /today loaded-state presentation, no separate v2 flag anymore; `/tests`
+ * with ff_exam_schedule_v1 on). `offline-state` and `placement-check` have NO
  * wiring page yet in this pass (usePlacement/PlacementCheck are not mounted
  * anywhere; OfflineState only mounts once OfflineBoundary detects a genuine
  * `offline` browser event, which Playwright's route-mocking does not
@@ -246,7 +247,7 @@ test.describe('Pricing Page Accessibility', () => {
  */
 async function installWaveBFlagMocks(
   page: Page,
-  flags: { todayHomeV1?: boolean; todayHomeV2?: boolean; examScheduleV1?: boolean },
+  flags: { todayHomeV1?: boolean; examScheduleV1?: boolean },
 ): Promise<void> {
   await page.route('**/rest/v1/feature_flags**', async (route) => {
     await route.fulfill({
@@ -255,7 +256,6 @@ async function installWaveBFlagMocks(
       body: JSON.stringify(
         [
           { flag_name: 'ff_today_home_v1', is_enabled: flags.todayHomeV1 ?? false },
-          { flag_name: 'ff_today_home_v2', is_enabled: flags.todayHomeV2 ?? false },
           { flag_name: 'ff_exam_schedule_v1', is_enabled: flags.examScheduleV1 ?? false },
         ].map((f) => ({ ...f, target_roles: null, target_environments: null, target_institutions: null })),
       ),
@@ -271,7 +271,7 @@ async function minHeightPx(page: Page, testId: string): Promise<number> {
   return box?.height ?? 0;
 }
 
-test.describe('Today v2 + exam-schedule-card accessibility (ff_today_home_v2)', () => {
+test.describe('Today v2 + exam-schedule-card accessibility', () => {
   test('today-v2 interactive controls meet the 44px minimum tap target', async ({ page }) => {
     test.fixme(
       !hasRealStudentCreds(),
@@ -300,7 +300,7 @@ test.describe('Today v2 + exam-schedule-card accessibility (ff_today_home_v2)', 
     todayResponse.queue = [todayResponse.primary];
 
     await mockStudentSession(page, { xpTotal: 250, streakDays: 5 });
-    await installWaveBFlagMocks(page, { todayHomeV1: true, todayHomeV2: true, examScheduleV1: true });
+    await installWaveBFlagMocks(page, { todayHomeV1: true, examScheduleV1: true });
     await page.route('**/api/v2/today**', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(todayResponse) });
     });

@@ -1,20 +1,23 @@
 'use client';
 
 /**
- * /today — the adaptive "Today" home (Consumer Minimalism Wave A).
+ * /today — the adaptive "Today" home.
  *
  * Flag-gated by `ff_today_home_v1` (client read via useFeatureFlags). When the
  * flag is OFF we `router.replace('/dashboard')` and render nothing — /today is
  * invisible to current users. When ON we fetch the ordered queue from
- * `GET /api/v2/today` and render:
- *   - a greeting strip with streak + total XP (reuses the SAME AuthContext
- *     snapshot the dashboard hero reads — no new stats endpoint),
- *   - the primary "Today's focus" card,
- *   - the rest of the queue as compact rows.
+ * `GET /api/v2/today` and render `TodayHomeV2` — the sole loaded-state
+ * presentation (greeting, resume/focus hero, exam-schedule card, and the rest
+ * of the queue as compact rows; see packages/ui/src/today/v2/TodayHomeV2.tsx).
+ *
+ * The `ff_today_home_v2` flag that used to gate TodayHomeV2 as an additive
+ * second render path (alongside an older greeting-strip + focus-card render)
+ * has been retired — TodayHomeV2 is unconditional now, gated only by the
+ * pre-existing `ff_today_home_v1` reachability flag above.
  *
  * States: loading (Skeleton), error (retry), empty (today.empty + free-practice
- * CTA → /quiz). The heavy item components are code-split (next/dynamic) to keep
- * the page within the P10 bundle budget. No PII in any client log (P13).
+ * CTA → /quiz). TodayHomeV2 is code-split (next/dynamic) to keep the page
+ * within the P10 bundle budget. No PII in any client log (P13).
  */
 
 import { useEffect } from 'react';
@@ -29,16 +32,9 @@ import { Skeleton, Button, EmptyState } from '@alfanumrik/ui/ui';
 import { calculateLevel } from '@alfanumrik/lib/xp-config';
 import { todayCopy } from '@alfanumrik/lib/today/copy';
 
-// Item cards are split out of first paint — the page chrome (greeting strip +
-// states) is the only thing in the initial bundle.
-const TodayFocusCard = dynamic(() => import('@alfanumrik/ui/today/TodayFocusCard'), {
-  loading: () => <Skeleton height={140} rounded="rounded-2xl" />,
-});
-const TodayQueueItem = dynamic(() => import('@alfanumrik/ui/today/TodayQueueItem'), {
-  loading: () => <Skeleton height={68} rounded="rounded-2xl" />,
-});
-// Wave B home (ff_today_home_v2, default OFF). Split out of first paint so a
-// flag-OFF user — i.e. everyone, until this ramps — never downloads it.
+// The loaded-state presentation is split out of first paint — the page chrome
+// (greeting strip + loading/error/empty states) is the only thing in the
+// initial bundle.
 const TodayHomeV2 = dynamic(() => import('@alfanumrik/ui/today/v2/TodayHomeV2'), {
   loading: () => <Skeleton height={240} rounded="rounded-2xl" />,
 });
@@ -50,11 +46,6 @@ function LegacyTodayPage() {
   const { subjects } = useAllowedSubjects();
 
   const flagOn = flags?.ff_today_home_v1 === true;
-  // Wave B (ff_today_home_v2, default OFF) — an independent flag from
-  // ff_today_home_v1 above. It only swaps the loaded-state presentation; the
-  // auth/flag gate that decides whether /today is reachable at all is
-  // unchanged.
-  const v2On = flags?.ff_today_home_v2 === true;
 
   // Auth + flag gate. While auth/flags resolve we hold (skeleton below).
   useEffect(() => {
@@ -75,14 +66,13 @@ function LegacyTodayPage() {
     flagOn && isLoggedIn ? student?.id : null,
   );
 
-  // Wave B (ff_exam_schedule_v1, default OFF — an independent flag). Only
-  // fetched when the v2 home is on: Wave A's render path has no exam-schedule
-  // card, so firing this request unconditionally would be an observable
-  // behaviour change (a new network call) for the unchanged v2-off path. The
-  // hook itself already resolves a 404 (flag off server-side too) to
-  // `next: null`, so this is harmless either way — the gate below is about
-  // not issuing the request at all while v2 is off.
-  const { next: nextExam } = useExamSchedule(v2On && isLoggedIn ? student?.id : null, isHi);
+  // Wave B (ff_exam_schedule_v1, default OFF — an independent flag). Fetched
+  // under the same gate as the queue itself (flagOn && isLoggedIn) now that
+  // TodayHomeV2 is the unconditional loaded-state render. The hook itself
+  // already resolves a 404 (flag off server-side too) to `next: null`, so this
+  // is harmless when ff_exam_schedule_v1 is off — ExamScheduleCard just
+  // renders nothing.
+  const { next: nextExam } = useExamSchedule(flagOn && isLoggedIn ? student?.id : null, isHi);
 
   // ── Pre-gate render: while resolving auth/flags, or about to redirect. ──
   if (isLoading || flagsLoading || !isLoggedIn || !flagOn) {
@@ -157,13 +147,12 @@ function LegacyTodayPage() {
   );
 
   // ── Loading the queue ──
-  // NOTE (Wave B reconciliation, 2026-08-02): this stays the unconditional
-  // Wave-A `greetingStrip` for v2On too, rather than swapping in a bare
-  // skeleton here. The only visual difference from the v2 header once loaded
-  // is the "Full dashboard" button + Level chip (v2 drops both) — not worth a
-  // new branch for a state that resolves in well under a second, and it keeps
-  // the loading path byte-identical for both flag states, matching "Wave A
-  // unchanged" as literally as possible.
+  // NOTE (Wave B reconciliation, 2026-08-02): the loading/error/empty states
+  // keep this pre-existing `greetingStrip` chrome rather than swapping in
+  // TodayHomeV2's own greeting header. The only visual difference from
+  // TodayHomeV2's header is the "Full dashboard" button + Level chip
+  // (TodayHomeV2 drops both) — not worth a new branch for transient states
+  // that resolve in well under a second.
   if (todayLoading) {
     return (
       <main className="app-container py-6" data-testid="today-loading">
@@ -216,87 +205,17 @@ function LegacyTodayPage() {
     );
   }
 
-  // ── Wave B render path (ff_today_home_v2, default OFF; additive) ──
-  if (v2On) {
-    return (
-      <main className="app-container py-6" data-testid="today-loaded">
-        <TodayHomeV2
-          data={data}
-          subjects={subjects}
-          isHi={isHi}
-          streak={streak}
-          totalXp={totalXp}
-          nextExam={nextExam}
-        />
-      </main>
-    );
-  }
-
-  // ── Loaded — primary focus card + the rest of the queue. ──
-  // Wave A render path — unchanged.
-  const primary = data.primary;
-  const rest = queue.slice(1);
-
+  // ── Loaded — TodayHomeV2 is the sole /today home presentation. ──
   return (
     <main className="app-container py-6" data-testid="today-loaded">
-      {greetingStrip}
-
-      {/* ── Monitoring strip — streak-at-risk banner + queue summary ── */}
-      {data.meta.practicedToday === false && streak > 0 && (
-        <div
-          role="alert"
-          className="flex items-center gap-2.5 rounded-2xl px-4 py-3 text-sm font-semibold mb-3"
-          style={{
-            background: 'rgb(var(--orange-rgb) / 0.08)',
-            border: '1px solid rgb(var(--orange-rgb) / 0.2)',
-            color: 'var(--orange)',
-          }}
-          data-testid="today-streak-risk-banner"
-        >
-          <span aria-hidden="true">🔥</span>
-          <span>
-            {isHi
-              ? 'स्ट्रीक खतरे में — आज कुछ अभ्यास करो!'
-              : 'Streak at risk — practice something today!'}
-          </span>
-        </div>
-      )}
-
-      {queue.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-4" data-testid="today-queue-summary">
-          <span
-            className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
-            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-3)' }}
-          >
-            📋 {queue.length} {isHi ? 'आज की योजना में' : "items in today's plan"}
-          </span>
-          {data.meta.dueReviewCount > 0 && (
-            <span
-              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold"
-              style={{ background: 'rgb(var(--purple-rgb, 124 58 237) / 0.08)', border: '1px solid rgb(var(--purple-rgb, 124 58 237) / 0.2)', color: '#7C3AED' }}
-            >
-              🗂️ {data.meta.dueReviewCount} {isHi ? 'रिव्यू बाकी' : 'reviews due'}
-            </span>
-          )}
-        </div>
-      )}
-
-      <div className="mb-4">
-        <TodayFocusCard item={primary} subjects={subjects} isHi={isHi} />
-      </div>
-
-      {rest.length > 0 && (
-        <section aria-label={todayCopy('today.heading', isHi)} className="flex flex-col gap-2">
-          {rest.map((item) => (
-            <TodayQueueItem
-              key={`${item.rank}-${item.type}`}
-              item={item}
-              subjects={subjects}
-              isHi={isHi}
-            />
-          ))}
-        </section>
-      )}
+      <TodayHomeV2
+        data={data}
+        subjects={subjects}
+        isHi={isHi}
+        streak={streak}
+        totalXp={totalXp}
+        nextExam={nextExam}
+      />
     </main>
   );
 }

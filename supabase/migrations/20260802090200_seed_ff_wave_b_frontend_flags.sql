@@ -1,12 +1,22 @@
 -- Migration: 20260802090200_seed_ff_wave_b_frontend_flags.sql
--- Purpose: Seed the four CEO-approved "Wave B" student-frontend feature
+-- Purpose: Seed the two CEO-approved "Wave B" student-frontend feature
 --          flags so each row EXISTS in public.feature_flags and is
---          auditable + flippable from the super-admin console. All four
+--          auditable + flippable from the super-admin console. Both
 --          default OFF / 0% — this migration is a zero-behavior change.
 --
---   ff_today_home_v2
---     Redesigned student Today/home surface. When OFF, the current home
---     screen renders byte-identically to today.
+--          A fourth flag, ff_placement_v1, was seeded here originally and
+--          is REMOVED as of 2026-08-02, same session, before this file was
+--          ever applied to any database: assessment determined the
+--          Placement Check feature it gated duplicates the already-live,
+--          more rigorous /diagnostic system
+--          (packages/lib/src/diagnostic/blueprint.ts) and deleted its
+--          selector/hook/component/tests; backend is removing the
+--          now-orphaned /api/v2/placement* routes in parallel.
+--          ff_placement_v1 was never flipped ON, so no data or behavior is
+--          affected by its removal. See
+--          20260802090000_widen_learning_events_placement_probe.sql for the
+--          matching learning_events CHECK-constraint reversion.
+--
 --   ff_offline_v2
 --     Offline practice mode: explicit "keep offline" chapter downloads
 --     (cap 5, least-recently-opened eviction) + queued practice-answer
@@ -25,19 +35,9 @@
 --     no parent/teacher visibility by design). Precedence school > teacher
 --     > student is enforced server-side in the read union. When OFF, no
 --     read route composes the union and the new tables are unused.
---   ff_placement_v1
---     Per-subject, six-question placement check on first subject open
---     (re-armed on grade change), written to learning_events as
---     event_type = 'placement_probe' (CHECK widened by migration
---     20260802090000, which also adds the idempotency guard for the answer
---     write path — see learning_events_placement_probe_idempotency_uniq).
---     Sets a BKT prior; never recorded as a graded quiz attempt, and an
---     unseen-topic response never counts as a wrong answer. Questions come
---     from the existing question_bank selector — no second picker. When
---     OFF, no placement probe is served or written.
 --
 -- ─── Default-OFF contract ─────────────────────────────────────────────────────
--- This migration seeds all four rows in the DISABLED state only:
+-- This migration seeds both rows in the DISABLED state only:
 --   is_enabled = FALSE, rollout_percentage = 0.
 -- The read path (isFeatureEnabled in src/lib/feature-flags.ts) returns false
 -- for both `is_enabled = false` AND `rollout_percentage <= 0`, so every
@@ -62,19 +62,15 @@
 -- branches never fail. No schema changes. Pure data seed. No new tables →
 -- RLS N/A; feature_flags keeps its existing baseline RLS posture.
 --
--- No new RBAC permission is registered here: the placement-answer route is
--- repointed to the already-granted study_plan.create permission (backend's
--- change, not a schema change).
---
 -- Owner: architect (this seed + the two schema migrations it follows) +
 --        frontend (surface gate wiring, in parallel, against these exact
---        flag names) + backend (placement-answer route + offline sync
---        route, in parallel, against these exact flag names)
+--        flag names) + backend (offline sync route, in parallel, against
+--        these exact flag names)
 -- Added: 2026-08-02
 --
 -- ─── Reversible (manual DOWN) ─────────────────────────────────────────────────
 --   DELETE FROM feature_flags WHERE flag_name IN (
---     'ff_today_home_v2', 'ff_offline_v2', 'ff_exam_schedule_v1', 'ff_placement_v1'
+--     'ff_offline_v2', 'ff_exam_schedule_v1'
 --   );
 -- The application resolves a missing flag to OFF, so deletion is silent on
 -- the production experience.
@@ -95,13 +91,6 @@ BEGIN
     )
     VALUES
     (
-      'ff_today_home_v2',
-      false,
-      0,
-      'Wave B: redesigned student Today/home surface. Default off; current home screen is byte-identical until flipped.',
-      NULL, NULL, NULL, now(), now()
-    ),
-    (
       'ff_offline_v2',
       false,
       0,
@@ -113,13 +102,6 @@ BEGIN
       false,
       0,
       'Wave B: exam schedule tiers 2-3 (teacher-set dates with chapter scope; student-added dates via student_exam_entries/student_exam_entry_topics, migration 20260802090100, student-private by design). Precedence school > teacher > student enforced server-side in the read union. Default off.',
-      NULL, NULL, NULL, now(), now()
-    ),
-    (
-      'ff_placement_v1',
-      false,
-      0,
-      'Wave B: per-subject 6-question placement check on first subject open, re-armed on grade change, written to learning_events as event_type = ''placement_probe'' (migration 20260802090000, which also adds the idempotency guard learning_events_placement_probe_idempotency_uniq). Sets a BKT prior; never counted as a graded attempt. Default off.',
       NULL, NULL, NULL, now(), now()
     )
     ON CONFLICT (flag_name) DO NOTHING;

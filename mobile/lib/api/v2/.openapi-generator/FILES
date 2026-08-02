@@ -1,4 +1,3 @@
-.gitignore
 README.md
 analysis_options.yaml
 doc/ConceptResponse.md
@@ -25,12 +24,6 @@ doc/ParentGlanceMoments.md
 doc/ParentGlanceResponse.md
 doc/ParentGlanceSnapshot.md
 doc/ParentGlanceWeeklyDay.md
-doc/PlacementAnswerRequest.md
-doc/PlacementAnswerResult.md
-doc/PlacementApi.md
-doc/PlacementQuestion.md
-doc/PlacementQuestionOption.md
-doc/PlacementResponse.md
 doc/ProgressDecayTopic.md
 doc/ProgressKnowledgeGap.md
 doc/ProgressLearningVelocity.md
@@ -61,7 +54,6 @@ lib/src/api.dart
 lib/src/api/exam_schedule_api.dart
 lib/src/api/learn_api.dart
 lib/src/api/parent_api.dart
-lib/src/api/placement_api.dart
 lib/src/api/quiz_api.dart
 lib/src/api/student_api.dart
 lib/src/api/today_api.dart
@@ -94,11 +86,6 @@ lib/src/model/parent_glance_moments.dart
 lib/src/model/parent_glance_response.dart
 lib/src/model/parent_glance_snapshot.dart
 lib/src/model/parent_glance_weekly_day.dart
-lib/src/model/placement_answer_request.dart
-lib/src/model/placement_answer_result.dart
-lib/src/model/placement_question.dart
-lib/src/model/placement_question_option.dart
-lib/src/model/placement_response.dart
 lib/src/model/progress_decay_topic.dart
 lib/src/model/progress_knowledge_gap.dart
 lib/src/model/progress_learning_velocity.dart
@@ -122,14 +109,3 @@ lib/src/model/today_queue_item.dart
 lib/src/model/today_response.dart
 lib/src/model/today_response_meta.dart
 lib/src/serializers.dart
-test/exam_readiness_band_test.dart
-test/exam_schedule_api_test.dart
-test/exam_schedule_entry_test.dart
-test/exam_schedule_entry_topic_test.dart
-test/exam_schedule_response_test.dart
-test/placement_answer_request_test.dart
-test/placement_answer_result_test.dart
-test/placement_api_test.dart
-test/placement_question_option_test.dart
-test/placement_question_test.dart
-test/placement_response_test.dart

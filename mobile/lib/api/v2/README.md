@@ -70,8 +70,6 @@ Class | Method | HTTP request | Description
 [*ParentApi*](doc/ParentApi.md) | [**getParentChildren**](doc/ParentApi.md#getparentchildren) | **GET** /v2/parent/children | List the authenticated guardian&#39;s linked children
 [*ParentApi*](doc/ParentApi.md) | [**getParentGlance**](doc/ParentApi.md#getparentglance) | **GET** /v2/parent/glance | At-a-glance view for one linked child
 [*ParentApi*](doc/ParentApi.md) | [**postParentEncourage**](doc/ParentApi.md#postparentencourage) | **POST** /v2/parent/encourage | Send a preset cheer to a linked child
-[*PlacementApi*](doc/PlacementApi.md) | [**getPlacement**](doc/PlacementApi.md#getplacement) | **GET** /v2/placement | Six cold-start placement probes for a subject
-[*PlacementApi*](doc/PlacementApi.md) | [**postPlacementAnswer**](doc/PlacementApi.md#postplacementanswer) | **POST** /v2/placement/answer | Record one placement-probe response
 [*QuizApi*](doc/QuizApi.md) | [**getQuizQuestions**](doc/QuizApi.md#getquizquestions) | **GET** /v2/quiz/questions | Fetch quiz questions in academic scope
 [*QuizApi*](doc/QuizApi.md) | [**postQuizStart**](doc/QuizApi.md#postquizstart) | **POST** /v2/quiz/start | Start a server-shuffled quiz session
 [*QuizApi*](doc/QuizApi.md) | [**postQuizSubmit**](doc/QuizApi.md#postquizsubmit) | **POST** /v2/quiz/submit | Submit a quiz for server-authoritative grading
@@ -104,11 +102,6 @@ Class | Method | HTTP request | Description
  - [ParentGlanceResponse](doc/ParentGlanceResponse.md)
  - [ParentGlanceSnapshot](doc/ParentGlanceSnapshot.md)
  - [ParentGlanceWeeklyDay](doc/ParentGlanceWeeklyDay.md)
- - [PlacementAnswerRequest](doc/PlacementAnswerRequest.md)
- - [PlacementAnswerResult](doc/PlacementAnswerResult.md)
- - [PlacementQuestion](doc/PlacementQuestion.md)
- - [PlacementQuestionOption](doc/PlacementQuestionOption.md)
- - [PlacementResponse](doc/PlacementResponse.md)
  - [ProgressDecayTopic](doc/ProgressDecayTopic.md)
  - [ProgressKnowledgeGap](doc/ProgressKnowledgeGap.md)
  - [ProgressLearningVelocity](doc/ProgressLearningVelocity.md)

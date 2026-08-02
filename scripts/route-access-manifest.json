@@ -2930,20 +2930,6 @@
       "rationale": "Parent portal endpoint; access must derive from guardian session and child-link authorization."
     },
     {
-      "path": "/api/v2/placement",
-      "file": "apps/host/src/app/api/v2/placement/route.ts",
-      "access": "auth",
-      "owner": "core-backend",
-      "rationale": "First-run placement probe read (cold-start question set from question_bank) for the authenticated student. Student-authenticated via authorizeRequest('study_plan.view'), same boundary as /api/v2/curriculum-version."
-    },
-    {
-      "path": "/api/v2/placement/answer",
-      "file": "apps/host/src/app/api/v2/placement/answer/route.ts",
-      "access": "auth",
-      "owner": "core-backend",
-      "rationale": "Records one placement-probe answer as an append-only learning_events row for the authenticated student. Student-authenticated via authorizeRequest('study_plan.create'), the write-side sibling of GET /api/v2/placement's study_plan.view boundary."
-    },
-    {
       "path": "/api/v2/quiz/questions",
       "file": "apps/host/src/app/api/v2/quiz/questions/route.ts",
       "access": "auth",

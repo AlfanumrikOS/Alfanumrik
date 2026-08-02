@@ -35,11 +35,6 @@ import 'package:alfanumrik_api_v2/src/model/parent_glance_moments.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_glance_response.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_glance_snapshot.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_glance_weekly_day.dart';
-import 'package:alfanumrik_api_v2/src/model/placement_answer_request.dart';
-import 'package:alfanumrik_api_v2/src/model/placement_answer_result.dart';
-import 'package:alfanumrik_api_v2/src/model/placement_question.dart';
-import 'package:alfanumrik_api_v2/src/model/placement_question_option.dart';
-import 'package:alfanumrik_api_v2/src/model/placement_response.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_decay_topic.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_knowledge_gap.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_learning_velocity.dart';
@@ -87,11 +82,6 @@ part 'serializers.g.dart';
   ParentGlanceResponse,
   ParentGlanceSnapshot,
   ParentGlanceWeeklyDay,
-  PlacementAnswerRequest,
-  PlacementAnswerResult,
-  PlacementQuestion,
-  PlacementQuestionOption,
-  PlacementResponse,
   ProgressDecayTopic,
   ProgressKnowledgeGap,
   ProgressLearningVelocity,
