@@ -182,6 +182,23 @@ export const AGENT_REGISTRY: Record<AgentId, AgentDescriptor> = {
     entryPoint: 'apps/host/src/app/api/lesson/route.ts',
     gatingFlag: 'ff_lesson_generation_v1',
   },
+  // DELIBERATE DORMANCY (ai-engineer, 2026-08-02): `status: 'live'` below is
+  // accurate (the entry point is real and returns real data when called), but
+  // this agent has ZERO UI caller anywhere in the app today — confirmed by a
+  // repo-wide grep for `predict/outcome` / `outcome_prediction` outside this
+  // file and the route itself. That is a KNOWN, INTENTIONAL state, not a bug:
+  // shipping a teacher-facing UI for this without product/design scoping
+  // first would repeat the exact rushed-shipping pattern that caused the
+  // 2026-07-27 GenAI generation-agents incident (two sibling agents shipped
+  // to 100% rollout with no UI reachability check). The decision made is to
+  // NOT build a UI right now — do not treat this comment as license to build
+  // one; that still requires an explicit product decision on where/how to
+  // surface it (e.g., teacher portal). Do not change `status`, `entryPoint`,
+  // or `gatingFlag` on this basis alone.
+  // Tracked in docs/incidents/2026-07-27-genai-generation-agents-100pct-abstain/README.md,
+  // Outstanding item (c) and its matching "Outcome Prediction has either a
+  // shipped UI consumer or an explicit... decision to hold it" acceptance
+  // criterion — both intentionally still open pending that product decision.
   outcome_prediction: {
     id: 'outcome_prediction',
     displayName: 'Outcome Prediction',
