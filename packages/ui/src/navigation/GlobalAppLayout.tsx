@@ -77,9 +77,15 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
   // Foxy) is meaningless outside the student surface, and this component
   // wraps every route from the root layout so an unscoped mount would show
   // it there too once the flag ramps. `OfflineBoundary` itself is a static
-  // (non-dynamic) import: it renders `children` untouched whenever the flag
-  // is off or the device is online — see its header comment for why it must
-  // stay SSR-safe rather than being ssr:false like the nav components below.
+  // (non-dynamic) import — it renders `children` untouched whenever the flag
+  // is off (or not yet resolved) or the device is online. Since 2026-08-02
+  // it is a thin shell that does ONLY the flag check itself; the real
+  // useOfflineState()/store.ts logic lives in a next/dynamic({ssr:false})
+  // sibling (OfflineBoundaryActive) that OfflineBoundary constructs only
+  // once the flag resolves true, so that module never enters the always-on
+  // shared bundle this file sits in. See OfflineBoundary's own header
+  // comment for why it must stay SSR-safe rather than being ssr:false like
+  // the nav components below.
   const isOfflineScoped = isLoggedIn && activeRole === 'student';
 
   return (

@@ -1,43 +1,58 @@
 'use client';
 
 /**
- * OfflineBoundary — mounts the offline screen over the student surface when
- * the device drops connection.
+ * OfflineBoundary — thin, ALWAYS-shipped shell over the student surface.
  *
- * MOUNT POINT (fixed 2026-08-02 during review): the original handoff called
- * mounting this in `apps/host/src/app/(student)/layout.tsx` a one-liner, but
- * that layout does not wrap `/today`, `/foxy`, or `/review` — all top-level
- * routes outside the `(student)` route group — so it would never have
- * protected the pages this feature exists for. It is mounted instead in
- * `packages/ui/src/navigation/GlobalAppLayout.tsx`, which already wraps every
- * route from the root layout, scoped there to the logged-in student surface
- * (see the comment at that call site for why it is scoped, and why it is
- * NOT ssr:false there).
+ * P10 FIX (2026-08-02): this file used to contain the full offline-detection
+ * logic (useOfflineState() + the OfflineState swap) directly, as a STATIC
+ * import from `packages/ui/src/navigation/GlobalAppLayout.tsx`. Because
+ * GlobalAppLayout wraps every route from the root layout, that static import
+ * chain — useOfflineState() -> packages/lib/src/offline/store.ts (IndexedDB
+ * open/eviction/write-queue/replay) — shipped in the ALWAYS-loaded shared JS
+ * chunk for every page in the app (marketing, auth, every portal), even
+ * though `ff_offline_v2` is seeded OFF. That regressed the P10 shared-JS
+ * budget (CAP_SHARED_KB in scripts/check-bundle-size.mjs) and, via the
+ * shared-chunk ratchet, every route that inherits the root layout.
  *
- * Flag: ff_offline_v2. When the flag is off, or the device is online, this
- * renders `children` untouched — the route behaves exactly as it does today.
- * `isOffline` (from useOfflineState) can only ever become true inside a
- * client-only `useEffect`, so this component always takes the `children`
- * branch during SSR regardless of flag state — nothing here can change
- * server-rendered output.
+ * Fix: split the flag check from the offline-detection logic.
  *
- * `OfflineState` (the heavy full-screen replacement UI: chapter list, queue
- * banner, saved-explanations, Foxy-disabled card) is dynamically imported
- * with ssr:false. That is safe specifically because the branch that renders
- * it is only reachable once `isOffline` has already flipped true — which, per
- * the paragraph above, never happens during SSR — so it never suppresses
- * real content the way ssr:false on THIS wrapper would. This keeps its markup
- * out of the shared bundle every route (including ones that never go
- * offline) would otherwise pay for.
+ *   - THIS file (OfflineBoundary) does ONLY a cheap useFeatureFlags() read.
+ *     It imports NOTHING from packages/lib/src/offline/ (no useOfflineState,
+ *     no store.ts) and calls no offline-detection hook. When the flag is off
+ *     OR still loading (flags is undefined on first render, both during SSR
+ *     and the first client hydration pass — see below), it renders
+ *     `children` immediately and directly. That is the fast path every page
+ *     takes today, and it is exactly as cheap as rendering `children` with
+ *     no boundary at all: useFeatureFlags() itself is already paid for
+ *     elsewhere in the always-on bundle (AuthContext -> ./swr -> ./supabase
+ *     is already a static chain off GlobalAppLayout's own useAuth() import),
+ *     so adding this check here is ~0 marginal shared-JS cost.
+ *
+ *   - OfflineBoundaryActive.tsx (this directory) holds the real logic —
+ *     useOfflineState(), the router, and the children/OfflineState swap. It
+ *     is loaded via next/dynamic({ ssr: false }) and constructed ONLY once
+ *     `flags.ff_offline_v2 === true`, so its module graph (and store.ts)
+ *     never enters any bundle for the flag-off population, which today is
+ *     everyone. ssr:false is safe specifically THERE (not here) because a
+ *     logged-in student who already has the flag on is client-interactive by
+ *     the time this branch is reached — see that file's header for the full
+ *     argument, including why this never suppresses SSR content: `flags` is
+ *     undefined on the server and on the first client render (SWR has not
+ *     resolved yet), so both server and first client paint always take the
+ *     `children` branch above, before hydration — no markup mismatch, and no
+ *     regression from how this behaved before the split.
+ *
+ * MOUNT POINT: unchanged. Still mounted from
+ * `packages/ui/src/navigation/GlobalAppLayout.tsx`, scoped to the logged-in
+ * student surface — see the comment at that call site.
  */
 
-import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
-import { useOfflineState } from '@alfanumrik/lib/offline/use-offline-state';
-import { touchChapter } from '@alfanumrik/lib/offline/store';
 
-const OfflineState = dynamic(() => import('./OfflineState'), { ssr: false });
+const OfflineBoundaryActive = dynamic(() => import('./OfflineBoundaryActive'), {
+  ssr: false,
+});
 
 export default function OfflineBoundary({
   children,
@@ -46,33 +61,12 @@ export default function OfflineBoundary({
   children: React.ReactNode;
   isHi: boolean;
 }) {
-  const router = useRouter();
   const { data: flags } = useFeatureFlags();
-  const { isOffline, chapters, pending, savedExplanations } = useOfflineState();
 
-  if (flags?.ff_offline_v2 !== true || !isOffline) return <>{children}</>;
+  // Covers BOTH "flag off" and "flags payload hasn't resolved yet" (flags is
+  // undefined while SWR is loading, including during SSR) — both take the
+  // no-op fast path with zero offline-module code involved.
+  if (flags?.ff_offline_v2 !== true) return <>{children}</>;
 
-  const answerCount = pending.filter((p) => p.kind === 'quiz_answer').length;
-  const sessionCount = pending.filter((p) => p.kind === 'quiz_session').length;
-
-  return (
-    <OfflineState
-      isHi={isHi}
-      chapters={chapters.map((c) => ({
-        id: c.id,
-        title: c.title,
-        subjectCode: c.subjectCode,
-        summary: isHi
-          ? 'पूरा अध्याय + ' + c.questionCount + ' प्रश्न'
-          : 'Full chapter + ' + c.questionCount + ' questions',
-      }))}
-      queue={{ answerCount, sessionCount }}
-      savedExplanationCount={savedExplanations.length}
-      onOpenChapter={(c) => {
-        void touchChapter(c.id);
-        router.push('/learn/' + c.subjectCode);
-      }}
-      onOpenSavedExplanations={() => router.push('/foxy?saved=1')}
-    />
-  );
+  return <OfflineBoundaryActive isHi={isHi}>{children}</OfflineBoundaryActive>;
 }

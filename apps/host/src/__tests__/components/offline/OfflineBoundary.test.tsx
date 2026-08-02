@@ -2,10 +2,25 @@
  * OfflineBoundary — mounts the offline screen over the student surface when
  * the device drops connection (packages/ui/src/offline/v2/OfflineBoundary.tsx).
  *
+ * Since 2026-08-02 (P10 shared-JS fix) this is a two-file split:
+ *   - OfflineBoundary.tsx: thin shell, only useFeatureFlags().
+ *   - OfflineBoundaryActive.tsx: the real useOfflineState()/router logic,
+ *     loaded via next/dynamic({ssr:false}) only once the flag is true.
+ * This suite renders the public default export (OfflineBoundary) throughout
+ * — the flag-on assertions now cross one extra async hop (the dynamic import
+ * of OfflineBoundaryActive) before children/OfflineState settle, which is
+ * exactly the behavior the split is meant to produce. `findBy*`/`waitFor`
+ * already tolerate that hop; only the one purely-synchronous assertion below
+ * needed updating.
+ *
  * Pins:
  *   - flag off (ff_offline_v2 !== true) -> renders children untouched,
- *     regardless of isOffline.
- *   - flag on + online (isOffline=false) -> renders children untouched.
+ *     regardless of isOffline, and NEVER calls useOfflineState (the whole
+ *     point of the split: no offline-store code runs on this path).
+ *   - flags payload not yet resolved -> same as flag off: children untouched,
+ *     useOfflineState never called.
+ *   - flag on + online (isOffline=false) -> renders children untouched
+ *     (after OfflineBoundaryActive's chunk resolves).
  *   - flag on + offline=true -> renders the (dynamically-imported) OfflineState
  *     screen instead of children.
  *   - opening a downloaded chapter calls touchChapter(id) AND navigates to
@@ -35,8 +50,9 @@ interface OfflineStateShape {
   savedExplanations: Array<{ id: string }>;
 }
 let offlineState: OfflineStateShape;
+const useOfflineStateMock = vi.fn(() => offlineState);
 vi.mock('@alfanumrik/lib/offline/use-offline-state', () => ({
-  useOfflineState: () => offlineState,
+  useOfflineState: () => useOfflineStateMock(),
 }));
 
 const touchChapterMock = vi.fn();
@@ -51,7 +67,7 @@ beforeEach(() => {
 });
 
 describe('OfflineBoundary — flag/online gating', () => {
-  it('renders children untouched when the flag is off, even while offline', () => {
+  it('renders children untouched when the flag is off, even while offline, and never calls useOfflineState', () => {
     flagsData = { ff_offline_v2: false };
     offlineState = { isOffline: true, chapters: [], pending: [], savedExplanations: [] };
     render(
@@ -61,9 +77,12 @@ describe('OfflineBoundary — flag/online gating', () => {
     );
     expect(screen.getByTestId('child-content')).toBeInTheDocument();
     expect(screen.queryByTestId('offline-state')).not.toBeInTheDocument();
+    // The whole point of the OfflineBoundary/OfflineBoundaryActive split: no
+    // offline-store code (useOfflineState -> store.ts) runs on this path.
+    expect(useOfflineStateMock).not.toHaveBeenCalled();
   });
 
-  it('renders children untouched when the flags payload has not resolved yet', () => {
+  it('renders children untouched when the flags payload has not resolved yet, and never calls useOfflineState', () => {
     flagsData = undefined;
     offlineState = { isOffline: true, chapters: [], pending: [], savedExplanations: [] };
     render(
@@ -72,15 +91,19 @@ describe('OfflineBoundary — flag/online gating', () => {
       </OfflineBoundary>,
     );
     expect(screen.getByTestId('child-content')).toBeInTheDocument();
+    expect(useOfflineStateMock).not.toHaveBeenCalled();
   });
 
-  it('renders children untouched when the flag is on but the device is online', () => {
+  it('renders children untouched when the flag is on but the device is online', async () => {
     offlineState = { isOffline: false, chapters: [], pending: [], savedExplanations: [] };
     render(
       <OfflineBoundary isHi={false}>
         <div data-testid="child-content">Normal page</div>
       </OfflineBoundary>,
     );
+    // flag=true now dynamically imports OfflineBoundaryActive (next/dynamic)
+    // before useOfflineState() ever runs — await that extra hop.
+    await waitFor(() => expect(useOfflineStateMock).toHaveBeenCalled());
     expect(screen.getByTestId('child-content')).toBeInTheDocument();
     expect(screen.queryByTestId('offline-state')).not.toBeInTheDocument();
   });
