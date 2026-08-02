@@ -188,6 +188,31 @@ describe('ProfileScreen — settings list content', () => {
   });
 });
 
+describe('ProfileScreen — Plan row PlanModal trigger (ff_plan_v2, optional)', () => {
+  it('defaults (no planModalEnabled/onOpenPlan passed): still a plain Link to pricingHref, unchanged', () => {
+    render(<ProfileScreen {...baseProps()} />);
+    const row = screen.getByTestId('me-row-plan');
+    expect(row.closest('a')).toHaveAttribute('href', '/pricing');
+    expect(row.closest('button')).toBeNull();
+  });
+
+  it('planModalEnabled=false with onOpenPlan provided: still links to pricingHref, never opens the modal', () => {
+    const onOpenPlan = vi.fn();
+    render(<ProfileScreen {...baseProps({ planModalEnabled: false, onOpenPlan })} />);
+    const row = screen.getByTestId('me-row-plan');
+    expect(row.closest('a')).toHaveAttribute('href', '/pricing');
+  });
+
+  it('planModalEnabled=true + onOpenPlan provided: Plan row becomes a button that calls onOpenPlan, not a Link', () => {
+    const onOpenPlan = vi.fn();
+    render(<ProfileScreen {...baseProps({ planModalEnabled: true, onOpenPlan })} />);
+    const row = screen.getByTestId('me-row-plan');
+    expect(row.closest('a')).toBeNull();
+    fireEvent.click(row.closest('button')!);
+    expect(onOpenPlan).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ProfileScreen — sign out', () => {
   it('wires the sign-out button to onSignOut', () => {
     const onSignOut = vi.fn();
