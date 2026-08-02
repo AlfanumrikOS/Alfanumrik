@@ -75,6 +75,15 @@ export interface ProfileScreenProps {
   editProfileHref: string;
   deleteAccountHref: string;
   pricingHref: string;
+  /**
+   * ff_plan_v2 resolved ON — when true AND `onOpenPlan` is provided, the Plan
+   * row opens the PlanModal (screen 15, `packages/ui/src/billing/v2/PlanModal`)
+   * instead of navigating to `pricingHref`. Optional and defaults to the
+   * existing Link-to-pricing behavior so every caller that doesn't pass it
+   * (and every existing test) is unaffected.
+   */
+  planModalEnabled?: boolean;
+  onOpenPlan?: () => void;
 }
 
 function SettingsRow({
@@ -165,8 +174,11 @@ export default function ProfileScreen({
   editProfileHref,
   deleteAccountHref,
   pricingHref,
+  planModalEnabled,
+  onOpenPlan,
 }: ProfileScreenProps) {
   const [copied, setCopied] = useState(false);
+  const openPlanModal = planModalEnabled && onOpenPlan ? onOpenPlan : undefined;
 
   if (loading) {
     return (
@@ -444,7 +456,8 @@ export default function ProfileScreen({
             icon="💳"
             label={isHi ? 'प्लान' : 'Plan'}
             value={<PlanBadge planCode={student.subscriptionPlan} size="sm" isHi={isHi} />}
-            href={pricingHref}
+            href={openPlanModal ? undefined : pricingHref}
+            onClick={openPlanModal}
             testId="me-row-plan"
           />
         </div>
