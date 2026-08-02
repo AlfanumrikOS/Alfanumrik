@@ -35,3 +35,13 @@
 #   (openapitools.json / a dart-dio template override) and remove this ignore so
 #   dependency bumps in the generated pubspec are no longer frozen.
 pubspec.yaml
+
+# --- Alfanumrik: preserve the *.g.dart gitignore rule in .gitignore ----------
+# Commit f07c3062 (#954) hand-added a `*.g.dart` rule (+ rationale comment) to
+# this package's .gitignore: build_runner's built_value serializers are NOT
+# committed, CI/build_apk.sh regenerates them before the Flutter app compiles.
+# `.gitignore` is a plain supportingFile the generator rewrites from its own
+# template on every run (unlike pubspec.yaml, it carries no per-project hook),
+# so an un-ignored regeneration silently drops the *.g.dart rule every time.
+# Protect it the same way pubspec.yaml is protected above.
+.gitignore

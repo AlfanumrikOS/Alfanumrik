@@ -392,10 +392,12 @@ test.describe('Teacher remediation spine — student-side surfacing (flag ON)', 
     // The teacher-assigned title copy renders (the resolver-tagged primary).
     await expect(page.getByText(/your teacher assigned this/i).first()).toBeVisible();
 
-    // The primary focus card's Continue CTA is present and clickable. It is a
+    // The focus hero's Continue CTA is present and clickable. It is a
     // <button> that router.push()es the resolver deep link (asserted by the
     // navigation test below), not an <a href>, so we only assert visibility here.
-    await expect(page.getByTestId('today-focus-continue')).toBeVisible();
+    // (today-v2-focus-continue — TodayHomeV2 is the sole /today loaded-state
+    // render; the older TodayFocusCard component/testid no longer exists.)
+    await expect(page.getByTestId('today-v2-focus-continue')).toBeVisible();
   });
 
   test('clicking Continue navigates to /quiz with from=teacher + remediationId', async ({
@@ -429,7 +431,7 @@ test.describe('Teacher remediation spine — student-side surfacing (flag ON)', 
     await page.goto('/today');
     await page.waitForLoadState('domcontentloaded');
 
-    const continueCta = page.getByTestId('today-focus-continue');
+    const continueCta = page.getByTestId('today-v2-focus-continue');
     await expect(continueCta).toBeVisible({ timeout: 15_000 });
     await continueCta.click();
 

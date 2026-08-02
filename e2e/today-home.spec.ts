@@ -3,22 +3,27 @@ import { mockStudentSession, hasRealStudentCreds, loginViaUI } from './helpers/a
 import type { TodayResponse } from '../src/lib/today/types';
 
 /**
- * Consumer Minimalism Wave A — the adaptive "Today" home (`/today`).
+ * The adaptive "Today" home (`/today`).
  *
- * Browser-level regression net for the flag-gated Wave A surface. It proves two
- * contracts the unit suite cannot reach:
+ * Browser-level regression net for the flag-gated `/today` surface. It proves
+ * two contracts the unit suite cannot reach:
  *
  *   1. FLAG OFF (default): `/today` is invisible — the page never renders for a
- *      visitor without the flag; it redirects away from itself. For an
- *      authenticated student the destination is `/dashboard`; unauthenticated it
- *      is `/login`. Either way `/today` is not a reachable standalone page, and
- *      the student bottom nav keeps the EXISTING legacy tabs (Home / Practice /
- *      Foxy / Progress) with NO "Today" tab. This is the byte-identical
- *      flag-off parity guarantee.
+ *      visitor without the `ff_today_home_v1` flag; it redirects away from
+ *      itself. For an authenticated student the destination is `/dashboard`;
+ *      unauthenticated it is `/login`. Either way `/today` is not a reachable
+ *      standalone page, and the student bottom nav keeps the EXISTING legacy
+ *      tabs (Home / Practice / Foxy / Progress) with NO "Today" tab. This is
+ *      the byte-identical flag-off parity guarantee.
  *
- *   2. FLAG ON: `/today` renders the greeting strip + the primary "Today's
- *      focus" card with a Continue CTA, and clicking Continue navigates to the
+ *   2. FLAG ON: `/today` renders `TodayHomeV2` — the sole loaded-state
+ *      presentation (see packages/ui/src/today/v2/TodayHomeV2.tsx) — with a
+ *      focus hero and a Continue CTA, and clicking Continue navigates to the
  *      resolver's deep-link target (here `/quiz?subject=science&chapter=3`).
+ *      The `ff_today_home_v2` flag that used to gate this presentation as an
+ *      additive second render path (alongside an older greeting-strip +
+ *      focus-card render) has been retired — TodayHomeV2 is unconditional
+ *      once `ff_today_home_v1` is on.
  *
  * Determinism strategy (mirrors quiz-happy-path.spec.ts + refresh-page.spec.ts):
  *   - Auth: `mockStudentSession` installs the Supabase token/user/students
@@ -42,8 +47,8 @@ import type { TodayResponse } from '../src/lib/today/types';
  *
  * Bilingual: AuthContext bootstraps language from
  * `localStorage['alfanumrik_language']` — the harness DOES support a language
- * toggle, so the bilingual assertion ("आज") runs (gated on the same auth
- * fixture as the other rendered-page tests, not skipped for lack of a toggle).
+ * toggle, so the bilingual assertion runs (gated on the same auth fixture as
+ * the other rendered-page tests, not skipped for lack of a toggle).
  *
  * Run: npx playwright test e2e/today-home.spec.ts
  */
@@ -108,11 +113,18 @@ const TODAY_RESPONSE: TodayResponse = {
  * target_institutions`). Global, unscoped rows so the client coerces them
  * straight to on/off.
  */
-function featureFlagsPayload(todayHomeOn: boolean) {
+function featureFlagsPayload(todayHomeOn: boolean, examScheduleOn = false) {
   return [
     {
       flag_name: 'ff_today_home_v1',
       is_enabled: todayHomeOn,
+      target_roles: null,
+      target_environments: null,
+      target_institutions: null,
+    },
+    {
+      flag_name: 'ff_exam_schedule_v1',
+      is_enabled: examScheduleOn,
       target_roles: null,
       target_environments: null,
       target_institutions: null,
@@ -125,14 +137,22 @@ function featureFlagsPayload(todayHomeOn: boolean) {
  */
 async function installTodayMocks(
   page: Page,
-  opts: { todayHomeOn: boolean; todayResponse?: TodayResponse | null },
+  opts: {
+    todayHomeOn: boolean;
+    todayResponse?: TodayResponse | null;
+    examScheduleOn?: boolean;
+    examScheduleResponse?: { schemaVersion: 1; entries: unknown[] } | null;
+    /** Exposes the exam-schedule route's call count to the caller (proves the
+     *  request is never issued while ff_today_home_v1 is off). */
+    examScheduleCallCounter?: { count: number };
+  },
 ): Promise<void> {
   // Client feature-flag read (getFeatureFlags → supabase.from('feature_flags')).
   await page.route('**/rest/v1/feature_flags**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(featureFlagsPayload(opts.todayHomeOn)),
+      body: JSON.stringify(featureFlagsPayload(opts.todayHomeOn, opts.examScheduleOn)),
     });
   });
 
@@ -163,6 +183,26 @@ async function installTodayMocks(
       body: JSON.stringify(opts.todayResponse ?? TODAY_RESPONSE),
     });
   });
+
+  // GET /api/v2/exam-schedule — fetched by useExamSchedule whenever
+  // ff_today_home_v1 is on && isLoggedIn (see today/page.tsx). Counted so
+  // callers can assert it is NEVER requested while the flag is off.
+  await page.route('**/api/v2/exam-schedule**', async (route) => {
+    if (opts.examScheduleCallCounter) opts.examScheduleCallCounter.count += 1;
+    if (!opts.examScheduleOn || opts.examScheduleResponse === null) {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, error: 'Not found', code: 'NOT_FOUND' }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: opts.examScheduleResponse ?? { schemaVersion: 1, entries: [] } }),
+    });
+  });
 }
 
 // ── 1. Flag OFF — /today never renders as a standalone page ────────────────
@@ -191,6 +231,28 @@ test.describe('Today home — flag OFF (parity)', () => {
     await page.goto('/today');
     await page.waitForURL(/\/(login|dashboard|welcome)/, { timeout: 15_000 });
     expect(page.url()).not.toMatch(/\/today(\?|$)/);
+  });
+
+  // Runs UNCONDITIONALLY: proves the page never issues a stray network call
+  // to the exam-schedule BFF while it is redirecting away (v1 off) — the
+  // exam-schedule fetch is gated by the SAME `flagOn && isLoggedIn` condition
+  // as the queue fetch itself, so it must not fire pre-gate either.
+  test('never requests GET /api/v2/exam-schedule while ff_today_home_v1 is off', async ({ page }) => {
+    const examScheduleCallCounter = { count: 0 };
+    await mockStudentSession(page, { xpTotal: 120, streakDays: 3 });
+    await installTodayMocks(page, {
+      todayHomeOn: false,
+      examScheduleOn: true,
+      examScheduleCallCounter,
+    });
+
+    await page.goto('/today');
+    await page.waitForURL(/\/(login|dashboard|welcome)/, { timeout: 15_000 }).catch(() => {
+      // Some environments bounce fast enough that waitForURL races the
+      // navigation event; the call-count assertion below is the load-bearing
+      // check regardless of which URL we land on.
+    });
+    expect(examScheduleCallCounter.count).toBe(0);
   });
 
   // Requires a RENDERED authenticated dashboard to read the bottom nav, so it
@@ -227,24 +289,25 @@ test.describe('Today home — flag OFF (parity)', () => {
     await expect(nav.getByText('Practice', { exact: true })).toBeVisible();
     await expect(nav.getByText('Progress', { exact: true })).toBeVisible();
 
-    // …and the Wave-A-only tabs must NOT be (flag-off byte-identical parity).
+    // …and the flag-gated tabs must NOT be (flag-off byte-identical parity).
     await expect(nav.getByText('Today', { exact: true })).toHaveCount(0);
     await expect(nav.getByText('Learn', { exact: true })).toHaveCount(0);
     await expect(nav.getByText('Me', { exact: true })).toHaveCount(0);
   });
 });
 
-// ── 2. Flag ON — greeting + focus card + Continue navigation ───────────────
+// ── 2. Flag ON — TodayHomeV2 renders: focus hero + Continue navigation ─────
 
-test.describe('Today home — flag ON', () => {
-  test('renders greeting strip + Today\'s Focus card with a Continue CTA', async ({ page }) => {
+test.describe('Today home — flag ON (TodayHomeV2, the sole loaded-state render)', () => {
+  test('renders the TodayHomeV2 focus hero with a Continue CTA', async ({ page }) => {
     test.fixme(
       !hasRealStudentCreds(),
       'Rendering /today past the auth+flag gate needs an authenticated session. ' +
       'Mocked session resolves only against a real Supabase URL; CI placeholder ' +
       'URL bounces to /login before the gated render. Mocks (flag ON + /api/v2/today ' +
       'envelope) are installed so this passes once a test-student fixture is wired. ' +
-      'The render contract is unit-covered in src/__tests__/lib/today/*.',
+      'The render contract is unit-covered in ' +
+      'src/__tests__/components/today/TodayHomeV2.test.tsx.',
     );
 
     await mockStudentSession(page, { xpTotal: 250, streakDays: 5 });
@@ -257,19 +320,19 @@ test.describe('Today home — flag ON', () => {
     await page.goto('/today');
     await page.waitForLoadState('domcontentloaded');
 
-    // Greeting strip — English heading (default language).
-    const greeting = page.getByTestId('today-greeting');
-    await expect(greeting).toBeVisible({ timeout: 15_000 });
-    await expect(greeting.getByRole('heading', { name: /^Today$/ })).toBeVisible();
+    // The loaded shell renders TodayHomeV2 (root + greeting testids).
+    await expect(page.getByTestId('today-loaded')).toBeVisible({ timeout: 15_000 });
+    const greeting = page.getByTestId('today-v2-greeting');
+    await expect(greeting).toBeVisible();
+    await expect(greeting.getByRole('heading', { name: 'What should I learn now?' })).toBeVisible();
 
-    // The loaded shell + primary focus card render.
-    await expect(page.getByTestId('today-loaded')).toBeVisible();
+    // Primary item (weak_topic_zpd, non-resume) → the focus hero.
+    await expect(page.getByTestId('today-v2-focus-hero')).toBeVisible();
     await expect(page.getByText("Today's focus")).toBeVisible();
-    // Primary item label (weak_topic_zpd → "Today's challenge").
     await expect(page.getByText("Today's challenge")).toBeVisible();
 
     // The Continue CTA exists and is clickable.
-    await expect(page.getByTestId('today-focus-continue')).toBeVisible();
+    await expect(page.getByTestId('today-v2-focus-continue')).toBeVisible();
   });
 
   test('clicking Continue navigates to the resolver deep-link target', async ({ page }) => {
@@ -302,11 +365,11 @@ test.describe('Today home — flag ON', () => {
     await page.goto('/today');
     await page.waitForLoadState('domcontentloaded');
 
-    const continueCta = page.getByTestId('today-focus-continue');
+    const continueCta = page.getByTestId('today-v2-focus-continue');
     await expect(continueCta).toBeVisible({ timeout: 15_000 });
     await continueCta.click();
 
-    // The focus card builds the href from the primary deepLink via
+    // The focus hero builds the href from the primary deepLink via
     // deepLinkToHref → /quiz?subject=science&chapter=3, then router.push()es it.
     await page.waitForURL(/\/quiz\?subject=science&chapter=3/, { timeout: 15_000 });
     expect(page.url()).toContain('/quiz');
@@ -314,15 +377,15 @@ test.describe('Today home — flag ON', () => {
     expect(page.url()).toContain('chapter=3');
   });
 
-  // ── 3. Bilingual — Hindi heading "आज" when isHi is active ────────────────
-  test('renders the Hindi heading "आज" when language is Hindi', async ({ page }) => {
+  // ── 3. Bilingual — Hindi heading when isHi is active ─────────────────────
+  test('renders the Hindi heading when language is Hindi', async ({ page }) => {
     test.fixme(
       !hasRealStudentCreds(),
       'Bilingual assertion needs the gated /today to render. The harness DOES ' +
       'support a language toggle (localStorage["alfanumrik_language"]="hi" → ' +
       'AuthContext.isHi), so this is NOT skipped for lack of a toggle — it is ' +
       'gated on the same auth fixture as the other rendered-page tests. Copy ' +
-      'table ("आज") is unit-covered in src/__tests__/lib/today/copy tests.',
+      'table is unit-covered in src/__tests__/lib/today/copy tests.',
     );
 
     // Seed AuthContext language BEFORE any app script runs. AuthContext reads
@@ -345,18 +408,149 @@ test.describe('Today home — flag ON', () => {
     await page.goto('/today');
     await page.waitForLoadState('domcontentloaded');
 
-    const greeting = page.getByTestId('today-greeting');
+    const greeting = page.getByTestId('today-v2-greeting');
     await expect(greeting).toBeVisible({ timeout: 15_000 });
-    // "आज" is the Hindi copy for `today.heading`.
-    await expect(greeting.getByRole('heading', { name: 'आज' })).toBeVisible();
+    await expect(greeting.getByRole('heading', { name: 'मुझे अभी क्या सीखना चाहिए?' })).toBeVisible();
+  });
+});
+
+// ── 4. TodayHomeV2 — resume vs focus hero selection (rendered /today page) ─
+
+test.describe('TodayHomeV2 rendered on /today — resume vs focus hero', () => {
+  test('renders the v2 testids: root, greeting, and a resume hero for an in-progress session', async ({ page }) => {
+    test.fixme(
+      !hasRealStudentCreds(),
+      'Rendering /today past the auth+flag gate needs an authenticated session — same ' +
+      'fixture dependency as the "flag ON" tests above. Mocks (flag ON, a ' +
+      'resume_in_progress TodayResponse) are installed so this passes the moment a ' +
+      'test-student fixture is wired. Unit-covered in the meantime by ' +
+      'src/__tests__/components/today/TodayHomeV2.test.tsx.',
+    );
+
+    const resumeResponse: TodayResponse = {
+      schemaVersion: 1,
+      resolvedAt: '2026-08-02T09:00:00.000Z',
+      primary: {
+        type: 'resume_in_progress',
+        rank: 1,
+        labelKey: 'today.item.resume_in_progress.label',
+        subtitleKey: 'today.item.resume_in_progress.subtitle',
+        estMinutes: 5,
+        deepLink: { route: '/learn/science/7' },
+        iconHint: 'flame',
+        reason: 'resume',
+        meta: { liveKind: 'in_lesson', subjectCode: 'science', chapterNumber: 7 },
+      },
+      queue: [
+        {
+          type: 'resume_in_progress',
+          rank: 1,
+          labelKey: 'today.item.resume_in_progress.label',
+          subtitleKey: 'today.item.resume_in_progress.subtitle',
+          estMinutes: 5,
+          deepLink: { route: '/learn/science/7' },
+          iconHint: 'flame',
+          reason: 'resume',
+          meta: { liveKind: 'in_lesson', subjectCode: 'science', chapterNumber: 7 },
+        },
+      ],
+      meta: { branch: 'resume', masterySubjectCount: 1, dueReviewCount: 0, practicedToday: true },
+    };
+
+    await mockStudentSession(page, { xpTotal: 250, streakDays: 5 });
+    await installTodayMocks(page, {
+      todayHomeOn: true,
+      todayResponse: resumeResponse,
+    });
+
+    if (hasRealStudentCreds()) {
+      await loginViaUI(page);
+    }
+
+    await page.goto('/today');
+    await page.waitForLoadState('domcontentloaded');
+
+    await expect(page.getByTestId('today-v2')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('today-v2-greeting')).toBeVisible();
+    await expect(page.getByTestId('today-v2-resume-hero')).toBeVisible();
+    await expect(page.getByTestId('today-v2-resume-continue')).toBeVisible();
+    await expect(page.getByTestId('today-v2-resume-later')).toBeVisible();
+    // Focus hero must NOT also render — the two heroes are mutually exclusive.
+    await expect(page.getByTestId('today-v2-focus-hero')).toHaveCount(0);
+  });
+
+  test('clicking today-v2-resume-continue navigates to the resume deep link', async ({ page }) => {
+    test.fixme(
+      !hasRealStudentCreds(),
+      'Same auth-gate dependency as the render test above. Mocks installed; promote with ' +
+      'the test-student fixture.',
+    );
+
+    const resumeResponse: TodayResponse = {
+      schemaVersion: 1,
+      resolvedAt: '2026-08-02T09:00:00.000Z',
+      primary: {
+        type: 'resume_in_progress',
+        rank: 1,
+        labelKey: 'today.item.resume_in_progress.label',
+        subtitleKey: 'today.item.resume_in_progress.subtitle',
+        estMinutes: 5,
+        deepLink: { route: '/learn/science/7' },
+        iconHint: 'flame',
+        reason: 'resume',
+        meta: { liveKind: 'in_lesson', subjectCode: 'science', chapterNumber: 7 },
+      },
+      queue: [],
+      meta: { branch: 'resume', masterySubjectCount: 1, dueReviewCount: 0, practicedToday: true },
+    };
+    // queue[0] must equal primary — mirror that contract in the fixture.
+    resumeResponse.queue = [resumeResponse.primary];
+
+    await mockStudentSession(page, { xpTotal: 250, streakDays: 5 });
+    await installTodayMocks(page, { todayHomeOn: true, todayResponse: resumeResponse });
+
+    if (hasRealStudentCreds()) {
+      await loginViaUI(page);
+    }
+
+    await page.goto('/today');
+    await page.waitForLoadState('domcontentloaded');
+
+    const continueCta = page.getByTestId('today-v2-resume-continue');
+    await expect(continueCta).toBeVisible({ timeout: 15_000 });
+    await continueCta.click();
+    await page.waitForURL(/\/learn\/science\/7/, { timeout: 15_000 });
+    expect(page.url()).toContain('/learn/science/7');
+  });
+
+  test('renders today-v2-focus-hero (not the resume hero) for a non-resume primary item', async ({ page }) => {
+    test.fixme(
+      !hasRealStudentCreds(),
+      'Same auth-gate dependency as the other v2 render tests. Mocks installed; promote ' +
+      'with the test-student fixture.',
+    );
+
+    await mockStudentSession(page, { xpTotal: 250, streakDays: 5 });
+    await installTodayMocks(page, { todayHomeOn: true, todayResponse: TODAY_RESPONSE });
+
+    if (hasRealStudentCreds()) {
+      await loginViaUI(page);
+    }
+
+    await page.goto('/today');
+    await page.waitForLoadState('domcontentloaded');
+
+    await expect(page.getByTestId('today-v2-focus-hero')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('today-v2-focus-continue')).toBeVisible();
+    await expect(page.getByTestId('today-v2-resume-hero')).toHaveCount(0);
   });
 });
 
 /* ──────────────────────────────────────────────────────────────────────────
- * TODO (Consumer Minimalism Wave A follow-up): wire the shared test-student
- * fixture (TEST_STUDENT_EMAIL / TEST_STUDENT_PASSWORD against a staging
- * Supabase project — same fixture tracked by REG-45 / REG-69) so the four
- * `test.fixme(!hasRealStudentCreds(), …)` blocks above run green in CI:
+ * TODO (follow-up): wire the shared test-student fixture (TEST_STUDENT_EMAIL /
+ * TEST_STUDENT_PASSWORD against a staging Supabase project — same fixture
+ * tracked by REG-45 / REG-69) so the `test.fixme(!hasRealStudentCreds(), …)`
+ * blocks above run green in CI:
  *   1. Account state: onboarding_completed=true, grade='9', board='CBSE'.
  *   2. Flip ff_today_home_v1 ON for that user via helpers/feature-flag.ts
  *      instead of the network stub (exercises the real flag read path).

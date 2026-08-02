@@ -46,7 +46,12 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   }),
 }));
 
-import { getActiveTopicsForSubjects, getSubjectIdCodeRows, SYLLABUS_CACHE_TAG } from '@/lib/curriculum/cached-taxonomy';
+import {
+  getActiveTopicsForSubjects,
+  getSubjectIdCodeRows,
+  getTopicTitlesByIds,
+  SYLLABUS_CACHE_TAG,
+} from '@/lib/curriculum/cached-taxonomy';
 
 beforeEach(() => {
   cacheCalls.length = 0;
@@ -93,5 +98,70 @@ describe('cached-taxonomy', () => {
     await expect(getActiveTopicsForSubjects('9', ['a-id'])).rejects.toThrow('curriculum_topics fetch failed');
     // one from() call only — no fallback retry on a real DB error
     expect(fromSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * getTopicTitlesByIds() (added 2026-08-02, Wave B exam-schedule) — id -> title
+ * lookup for an arbitrary, caller-known set of topic ids.
+ *
+ * Pins:
+ *  1. Empty input short-circuits without touching DB or cache (same contract
+ *     as the sibling fetchers above).
+ *  2. Cache key is order-independent over the id set.
+ *  3. Tagged with the shared `syllabus` tag + a TTL, same as the siblings.
+ *  4. Deliberately NOT is_active-filtered (unlike getActiveTopicsForSubjects)
+ *     — the query only selects `id, title`, no `is_active` predicate.
+ *  5. Cache-layer failure degrades to a direct DB read; genuine DB errors
+ *     rethrow without a second query.
+ */
+describe('getTopicTitlesByIds', () => {
+  it('short-circuits on empty input without touching DB or cache', async () => {
+    expect(await getTopicTitlesByIds([])).toEqual([]);
+    expect(fromSpy).not.toHaveBeenCalled();
+    expect(cacheCalls).toHaveLength(0);
+  });
+
+  it('queries curriculum_topics selecting only id and title (is_active-agnostic)', async () => {
+    dbResult = { data: [{ id: 't1', title: 'Number Systems' }], error: null };
+    const rows = await getTopicTitlesByIds(['t1']);
+    expect(rows).toEqual([{ id: 't1', title: 'Number Systems' }]);
+    expect(fromSpy).toHaveBeenCalledWith('curriculum_topics');
+  });
+
+  it('builds an order-independent cache key over the id set', async () => {
+    await getTopicTitlesByIds(['b-id', 'a-id']);
+    await getTopicTitlesByIds(['a-id', 'b-id']);
+    expect(cacheCalls).toHaveLength(2);
+    expect(cacheCalls[0].keyParts).toEqual(cacheCalls[1].keyParts);
+    expect(cacheCalls[0].keyParts[0]).toBe('curriculum-topic-titles-by-id-v1');
+    expect(cacheCalls[0].keyParts.join('|')).toContain('a-id,b-id');
+  });
+
+  it('tags the entry with the shared syllabus tag + a TTL backstop', async () => {
+    await getTopicTitlesByIds(['a-id']);
+    expect(cacheCalls).toHaveLength(1);
+    expect(cacheCalls[0].options.tags).toContain(SYLLABUS_CACHE_TAG);
+    expect(cacheCalls[0].options.revalidate).toBeGreaterThan(0);
+  });
+
+  it('degrades to a direct DB read when the cache layer fails', async () => {
+    cacheThrows = true;
+    dbResult = { data: [{ id: 't1', title: 'Atoms' }], error: null };
+    const rows = await getTopicTitlesByIds(['t1']);
+    expect(rows).toEqual([{ id: 't1', title: 'Atoms' }]);
+    expect(fromSpy).toHaveBeenCalledWith('curriculum_topics');
+  });
+
+  it('rethrows genuine DB errors without a second query', async () => {
+    dbResult = { data: null, error: { message: 'permission denied' } };
+    await expect(getTopicTitlesByIds(['a-id'])).rejects.toThrow('curriculum_topics id lookup failed');
+    expect(fromSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns an empty title array element (not a crash) when a row has a null title', async () => {
+    dbResult = { data: [{ id: 't1', title: null }], error: null };
+    const rows = await getTopicTitlesByIds(['t1']);
+    expect(rows).toEqual([{ id: 't1', title: null }]);
   });
 });

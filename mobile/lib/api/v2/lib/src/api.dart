@@ -9,6 +9,7 @@ import 'package:alfanumrik_api_v2/src/auth/api_key_auth.dart';
 import 'package:alfanumrik_api_v2/src/auth/basic_auth.dart';
 import 'package:alfanumrik_api_v2/src/auth/bearer_auth.dart';
 import 'package:alfanumrik_api_v2/src/auth/oauth.dart';
+import 'package:alfanumrik_api_v2/src/api/exam_schedule_api.dart';
 import 'package:alfanumrik_api_v2/src/api/learn_api.dart';
 import 'package:alfanumrik_api_v2/src/api/parent_api.dart';
 import 'package:alfanumrik_api_v2/src/api/quiz_api.dart';
@@ -67,6 +68,12 @@ class AlfanumrikApiV2 {
     if (this.dio.interceptors.any((i) => i is ApiKeyAuthInterceptor)) {
       (this.dio.interceptors.firstWhere((element) => element is ApiKeyAuthInterceptor) as ApiKeyAuthInterceptor).apiKeys[name] = apiKey;
     }
+  }
+
+  /// Get ExamScheduleApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  ExamScheduleApi getExamScheduleApi() {
+    return ExamScheduleApi(dio, serializers);
   }
 
   /// Get LearnApi instance, base route and serializer can be overridden by a given but be careful,
