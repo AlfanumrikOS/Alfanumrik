@@ -1286,3 +1286,166 @@ rebase. No entry from either batch was dropped or reworded.
 **Total catalog: 327 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-333 — `select_quiz_questions_rag` now filters on NCERT-verification status (wires the existing `ff_grounded_ai_enforced_pairs` control into quiz-serving; closes the specific gap REG-332's own "Known gaps" section flagged and explicitly declined to fix) (2026-08-02)
+
+Source: `docs/superpowers/specs/2026-08-02-quiz-rag-verification-gate-correctness.md`
+(assessment-owned; CEO-authorized fix). `select_quiz_questions_rag` — the RPC
+serving quiz questions to `/api/quiz`, `/api/v2/quiz/questions`, and the
+WhatsApp Daily-6 top-up path — has never, across 7 historical versions since
+2026-04-03, filtered on `question_bank.verification_state` or
+`verified_against_ncert`. This is the SAME gap REG-332's own "Known gaps"
+section (`13-rag-cache.md`) independently found and explicitly declined to fix
+("SEPARATE, pre-existing, NOT fixed here"). A row the automated NCERT verifier
+has explicitly DISPROVED (`verification_state='failed'`) could be served to a
+student with no gate at all; the retroactive verifier
+(`supabase/functions/verify-question-bank/index.ts`) sets
+`verification_state='failed'` on a disproved legacy row WITHOUT touching
+`is_active` (independently re-confirmed by direct read of the UPDATE payload,
+lines 238-248 — no `is_active` key present anywhere in it), so disproved
+legacy rows stay `is_active=true` and fully servable today.
+
+Migration `supabase/migrations/20260802100000_select_quiz_questions_rag_verification_gate.sql`
+adds three Tier-0 predicates, applied identically and unconditionally across
+all four repeated query blocks (pool-count, seen-count, 80%-reset delete,
+`candidate_pool` CTE): `deleted_at IS NULL`, `content_status='published'`,
+`verification_state != 'failed'` (this last one has NO fallback rung at any
+tier — spec §3.4). It then wires the existing, tested, hysteresis-protected
+`ff_grounded_ai_enforced_pairs` control (enable requires server-recomputed
+`verified_ratio >= 0.9`; auto-disable at `<0.85`) into serving for the first
+time since that table was introduced — confirmed by grep that nothing
+previously read `.enabled` anywhere in the three call sites. Because the
+pair-level 90% floor is computed in aggregate across chapters, a
+local-thinness fallback ladder applies the strict filter
+(`verified_against_ncert=true AND verification_state='verified'`) only when
+the enforced pair's verified pool for the EXACT requested chapter/type/
+difficulty slice already meets the requested count (Rung E0); otherwise
+Tier-0-only applies (Rung E1), with an `ops_events` telemetry row (no student
+identifier) firing only for the enforced-but-locally-thin case.
+
+**Testing independently re-ran everything rather than trusting the
+architect's self-report:**
+
+- Function signature re-verified byte-identical (same 8 params, names/types/
+  order/defaults) across all 5 `CREATE OR REPLACE` bodies since 2026-04-03
+  (baseline, `20260509161642`, `20260514000000`, `20260625000200`,
+  `20260801100700`) plus this new migration, by direct read of each file — no
+  accidental overload (the exact bug class that hit a sibling RPC, per
+  `20260702170000_p3w1_5b_revoke_orphan_atomic_quiz_5arg.sql` and
+  `20260729130000_fix_6arg_quiz_xp_ledger_write.sql`, both independently
+  confirmed to exist on disk). The baseline's `pg_dump`-rendered form differs
+  in surface syntax (double-quoted identifiers, single-line,
+  `'{mcq}'::"text"[]`) but is semantically identical in name/type/order/
+  default — not a discrepancy, since Postgres resolves overloads on
+  argument-type signature, not source formatting.
+- RLS claims re-verified against the live baseline SQL, not taken on faith:
+  `ff_pairs_read_all` is `FOR SELECT USING (auth.role()='authenticated')`;
+  `ops_events_no_client_access` is `TO authenticated, anon USING (false) WITH
+  CHECK (false)` — confirms a JWT-authenticated caller genuinely cannot write
+  the telemetry row without `SECURITY DEFINER`.
+- The telemetry `INSERT` is wrapped in a real `BEGIN ... EXCEPTION WHEN
+  OTHERS THEN NULL; END;` block, scoped to ONLY the `ops_events` write — the
+  enforcement-lookup read correctly stays unwrapped, since it feeds the
+  actual rung decision and must fail loudly rather than silently default if
+  it errors.
+- The two source claims underpinning why this fix is scoped correctly were
+  independently re-read, not assumed: `verify-question-bank/index.ts`'s
+  retroactive-verification UPDATE payload (lines 238-248) has no `is_active`
+  key; `bulk-question-gen/index.ts`'s fresh-generation insert (line 954) sets
+  `is_active: verificationState === 'verified'`.
+- All three test-suite layers independently re-executed: (1) structure/
+  contract test, DB-free, every PR — **18/18 pass** (the architect's
+  self-reported "17 assertions" does not match this recount; cosmetic
+  inaccuracy only, not a functional gap). (2) Pure-function ladder-decision
+  mirror — **6/6 pass**. (3) Live-DB AC-1..AC-6, `RUN_INTEGRATION_TESTS=1`-
+  gated — confirmed to import/collect/skip CLEANLY in this environment
+  (**7/7 skipped, 0 executed** — no Supabase creds available here; same
+  honest-coverage-gap shape as REG-329/330/332). (4) All 6 pre-existing test
+  files referencing this RPC by name re-run — **157/157 pass, unbroken**
+  (exact match to the architect's claim, independently reproduced).
+- **New this session (testing agent): closed a real, structural gap.**
+  Neither layer (1) nor (2) above can prove BEHAVIOR — (1) only proves the
+  SQL *text* contains the right tokens; (2) only decides a boolean tier
+  label with no concept of a `failed` row at all. The two properties this
+  review was specifically asked to check — spec §3.4's "no fallback rung"
+  floor for `verification_state='failed'`, and the "legacy backlog stays
+  servable under Tier-0 but must respect the strict rung" interaction — were
+  written as live-DB AC-4/AC-2/AC-3 assertions that never execute in this
+  environment. `select-quiz-questions-rag-tier0-floor.test.ts` (new, 10
+  tests, DB-free, mirrors ONLY the migration's Tier-0 + conditional-strict
+  predicate) closes this: a `failed` row is never servable under either
+  rung, individually or as an all-`failed` pool (enforced or not);
+  `legacy_unverified`/`pending` rows are servable under the relaxed rung and
+  specifically excluded under the strict rung; the `verified_against_ncert`/
+  `verification_state` column-disagreement defense (spec §1.3) is proven to
+  actually exclude under the strict rung, not merely be present as inert
+  text; an end-to-end mixed-pool case resolves to the exact expected subset
+  under each rung. **10/10 pass.**
+- Combined, independently-executed, DB-free total this session: **34/34 new
+  tests pass** (18 contract + 6 ladder + 10 new floor-mirror) plus **157/157
+  pre-existing unbroken** = **191/191**.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-333 | `verification_gate_ladder_and_tier0_floor` | **(1) Structure/signature parity** — the 8-param signature is regex-pinned against source (drift-proof), all four repeated blocks carry the three Tier-0 predicates, the `ff_grounded_ai_enforced_pairs` lookup and the `v_use_strict := v_pair_enforced AND v_verified_pool >= p_count` boundary are pinned verbatim, telemetry is fail-open-wrapped and carries no `p_student_id`, `verified_rank` ordering is added without a new response-payload key, and the migration touches none of its declared non-goals (`select_quiz_questions_v2`, `coverage.ts`, `question-validation.ts`, `chk_source_type`) — **18/18 pass**. **(2) Ladder decision** — pair-not-enforced always relaxed, pair-enforced pool>=count strict (inclusive boundary), pair-enforced pool<count relaxed, and E1≡unenforced-default — **6/6 pass**. **(3) NEW — Tier-0 floor + legacy-backlog behavioral mirror**: a `failed` row is never servable under either rung, an all-`failed` pool yields zero servable rows enforced or not (the actual floor, not just textual presence), `legacy_unverified`/`pending` are servable under relaxed but excluded under strict, the verified_against_ncert/verification_state column-disagreement defense actually excludes under strict, and a 7-row mixed pool resolves to the exact expected subset under each rung — **10/10 pass**. **(4) Live-DB AC-1..AC-6** (pair-enforced-sufficient→100% verified; enforced-thin→relaxed+telemetry; unenforced→genuine mix, no telemetry; failed rows never returned enforced or not; soft-deleted/draft/review/archived never returned) — written, imports/collects/skips cleanly, **0 live executions** (no creds in this environment). **(5)** 157 pre-existing tests across the 6 files that reference this RPC by name, re-run — **unbroken**. | `apps/host/src/__tests__/contract/select-quiz-questions-rag-verification-gate.test.ts` (18 tests); `apps/host/src/__tests__/regressions/select-quiz-questions-rag-verification-tier.test.ts` (6 tests); `apps/host/src/__tests__/regressions/select-quiz-questions-rag-tier0-floor.test.ts` (NEW, 10 tests); `apps/host/src/__tests__/migrations/select-quiz-questions-rag-verification-gate.test.ts` (7 tests, integration-gated, unexecuted); pre-existing: `whatsapp/daily6-compose.test.ts`, `whatsapp/daily6-processor.test.ts`, `regressions/reg-172-pool-reset-tiny-chapter.test.ts`, `lib/adaptive/get-quiz-questions-v2-merge.test.ts`, `api/v2/quiz-questions.test.ts`, `api/quiz-active-student-gate.test.ts` (157 tests) | P | P6, P12 |
+
+### Known gaps (do NOT read this entry as broader than it is)
+
+- **No live-Postgres execution of ANY of this migration's own tests, nor of
+  the migration itself, against a real database** — in this session or, per
+  the architect's own report, any prior one. This is the single largest open
+  item; closing it requires applying this migration to a real (ideally
+  staging) Supabase instance and running `RUN_INTEGRATION_TESTS=1 npm run
+  test:integration` for real.
+- **§7's four pre-rollout census queries** (per-slice verified-pool census,
+  column-agreement check, failed-exclusion impact, existing-enforcement-state
+  check) have not been run by anyone with DB access — flagged to ops per spec
+  §8, not something testing can close. §7.4 matters operationally: if any
+  (grade, subject) pair is ALREADY `enabled=true` today, deploying this
+  migration is the flip moment for that pair, not a separate rollout step,
+  and nobody has confirmed whether that is currently true.
+- **Backend's §3.6 caller-side gap** (no insufficient-count guard on the
+  whole-subject GET path for `/api/quiz`/`/api/v2/quiz/questions`) is
+  explicitly out of scope for this migration, unaddressed, and untested
+  here — flagged to backend per the spec, not claimed as covered.
+- **ai-engineer's review is "confirmation only"** per the spec's own
+  review-chain table. Testing independently re-verified the one specific
+  claim it would need to confirm (`bulk-question-gen`'s insert behavior,
+  line 954), but that is not the same as ai-engineer's own sign-off being on
+  record.
+
+### Invariants covered by this section
+
+- P6 (question quality) — **strengthens**: closes the gap where a
+  verifier-disproved row (`verification_state='failed'`) could serve with no
+  gate; also closes two adjacent Tier-0 gaps (soft-delete via `deleted_at`,
+  draft/review/archived via `content_status`).
+- P12 (AI safety / grounding integrity) — **strengthens**: wires the
+  previously-inert `ff_grounded_ai_enforced_pairs` control into serving for
+  the first time since the table was introduced; directly closes the gap
+  REG-332 flagged and explicitly declined to fix.
+- P1 / P3 / P4 — **confirmed untouched**: this migration operates entirely
+  upstream of scoring (`correct_answer_index` semantics untouched),
+  anti-cheat (timing/pattern/count checks untouched), and atomic submission
+  (`atomic_quiz_profile_update` untouched) — no diff touches any of the
+  three.
+- P13 (data privacy) — the new `ops_events` INSERT carries grade/subject/
+  chapter/difficulty_mode/question_types/counts only, never `p_student_id` —
+  confirmed both by direct SQL read and by the contract test's explicit
+  assertion.
+
+### Catalog total
+
+Pre-REG-333: 332 entries (through REG-332, grounded-answer content-readiness
+precheck — see `13-rag-cache.md`). Adds REG-333 (`select_quiz_questions_rag`
+verification gate — closes the specific gap REG-332's own "Known gaps"
+section flagged and declined to fix; **PARTIAL, explicitly so**: 34 DB-free
+tests independently re-run and passing across 3 layers — structure/contract,
+pure-function ladder, and a new testing-agent-authored Tier-0-floor +
+legacy-backlog behavioral mirror closing a real gap the first two layers
+structurally cannot reach — plus 157 pre-existing tests re-run unbroken, but
+ZERO live-Postgres execution of the migration itself or its own live-DB AC
+suite in this or any prior session).
+**Total catalog: 333 entries (target: 35 — TARGET EXCEEDED).**
+
+---

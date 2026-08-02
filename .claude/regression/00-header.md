@@ -6,8 +6,41 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 332 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-332 (2026-08-01, grounded-answer content-readiness precheck fix —
+**Total catalog: 333 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-333 (2026-08-02, `select_quiz_questions_rag` verification gate —
+the RPC serving quiz questions to `/api/quiz`, `/api/v2/quiz/questions`, and
+the WhatsApp Daily-6 top-up path had never, across 7 historical versions
+since 2026-04-03, filtered on `verification_state`/`verified_against_ncert`,
+closing the exact gap REG-332's own "Known gaps" section flagged and
+explicitly declined to fix. Migration `20260802100000` adds three
+unconditional Tier-0 predicates (`deleted_at IS NULL`,
+`content_status='published'`, `verification_state != 'failed'` — this last
+with no fallback rung at any tier) across all four repeated query blocks,
+and wires the existing, tested, hysteresis-protected
+`ff_grounded_ai_enforced_pairs` control into serving for the first time via a
+local-thinness fallback ladder (strict Rung E0 only when the enforced pair's
+verified pool for the exact requested slice meets the count; Rung
+E1/Tier-0-only otherwise, with `ops_events` telemetry on the thin case only).
+Testing independently re-ran everything rather than trusting the architect's
+self-report: function signature re-verified byte-identical across all 5
+historical `CREATE OR REPLACE` bodies (no accidental overload — the exact bug
+class that hit a sibling RPC before); RLS policies and the telemetry
+fail-open exception wrapper re-verified against live SQL; 18 structure/
+contract tests + 6 pure-function ladder tests + 157 pre-existing
+RPC-referencing tests all independently re-run and passing (191/191,
+DB-free). Testing additionally wrote and ran 10 NEW tests
+(`select-quiz-questions-rag-tier0-floor.test.ts`) closing a real gap: neither
+the structure test nor the ladder-decision mirror could prove BEHAVIOR for
+the one non-negotiable predicate (`verification_state != 'failed'`, no
+fallback rung) or the "legacy backlog stays servable under Tier-0 but not the
+strict rung" interaction — both now have executable, DB-free proof.
+**PARTIAL, explicitly so**: this migration has NEVER executed against a real
+Postgres, in this session or any prior one — the live-DB AC-1..AC-6 suite is
+written and collects/skips cleanly but has zero live executions (no creds in
+this environment); ops has not yet run the §7 pre-rollout census queries; see
+`03-quiz-integrity.md`).
+**REG-334 is the next free id.**
+Prior: REG-332 (2026-08-01, grounded-answer content-readiness precheck fix —
 `supabase/functions/grounded-answer/coverage.ts`'s strict-mode gate required
 `cbse_syllabus.rag_status='ready'` (`chunk_count>=50` AND
 `verified_question_count>=40`); production had zero rows meeting the combined
@@ -39,6 +72,10 @@ SEPARATE, independently-confirmed gap — `select_quiz_questions_rag`'s live
 definition never actually filters on `verified_against_ncert` despite older
 comments/specs claiming it does; see `13-rag-cache.md`).
 **REG-333 is the next free id.**
+This batch's own text declared "REG-333 is the next free id"; that was true
+at its merge and is superseded above — the `select_quiz_questions_rag`
+verification-gate fix took REG-333 on 2026-08-02, so **REG-334 is now the
+next free id.**
 Prior: REG-331 (2026-07-30, BoardScore™ subject-scoping fix batch — CEO-
 reported "all subjects shown" defect. Bug 1: the Deno Edge Function
 `supabase/functions/board-score/index.ts` had used a PostgREST nested embed
