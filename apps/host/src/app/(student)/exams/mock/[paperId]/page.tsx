@@ -42,11 +42,18 @@ import { useParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import Link from 'next/link';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { LoadingFoxy } from '@alfanumrik/ui/ui';
 import MockTestRunner, {
   type MockTestPaper,
   type MockTestQuestion,
 } from '@alfanumrik/ui/exams/MockTestRunner';
+// Screen 11 "Mock exam" (Wave B, `ff_exam_v2`) — additive presentational
+// alternative to MockTestRunner. Flag OFF by default (seeded separately);
+// the legacy MockTestRunner path below is completely untouched when the
+// flag is off or still resolving. See packages/ui/src/exam/v2/ExamRunner.tsx
+// for the full design rationale, including the autosave wiring.
+import ExamRunner from '@alfanumrik/ui/exam/v2/ExamRunner';
 import type { StartAttemptResponse, StartAttemptQuestion } from '@alfanumrik/ui/exams/mock-test-types';
 
 interface PaperResponseSuccess {
@@ -332,6 +339,12 @@ export default function MockTestRunnerPage() {
   const params = useParams<{ paperId: string }>();
   const paperId = params?.paperId;
 
+  // Screen 11 "Mock exam" (Wave B, `ff_exam_v2`) — additive flag branch.
+  // OFF by default; when off (or still resolving) the legacy MockTestRunner
+  // path below renders byte-identical to today.
+  const { data: examV2Flags } = useFeatureFlags();
+  const examV2On = examV2Flags?.ff_exam_v2 === true;
+
   const { data, error, isLoading: paperLoading } = useSWR<FetchResult>(
     isLoggedIn && paperId ? `/api/exams/papers/${paperId}` : null,
     fetchPaper,
@@ -449,7 +462,14 @@ export default function MockTestRunnerPage() {
       );
     }
 
-    return (
+    return examV2On ? (
+      <ExamRunner
+        paper={paper}
+        questions={adaptedQuestions}
+        isHi={isHi}
+        attemptId={startOutcome.data.attempt_id}
+      />
+    ) : (
       <MockTestRunner
         paper={paper}
         questions={adaptedQuestions}
@@ -466,5 +486,9 @@ export default function MockTestRunnerPage() {
     return <NotReadyCard isHi={isHi} />;
   }
 
-  return <MockTestRunner paper={paper} questions={questions} isHi={isHi} />;
+  return examV2On ? (
+    <ExamRunner paper={paper} questions={questions} isHi={isHi} />
+  ) : (
+    <MockTestRunner paper={paper} questions={questions} isHi={isHi} />
+  );
 }

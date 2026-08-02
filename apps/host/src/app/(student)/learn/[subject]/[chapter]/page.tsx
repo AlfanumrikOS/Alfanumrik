@@ -55,6 +55,15 @@ const ChapterReadinessCard = dynamic(
   { ssr: false, loading: () => null },
 );
 
+// Screen 06 "Topic" (Wave B, ff_learn_topic_v2). Additive presentation layer
+// — code-split so its bundle cost is zero for the (today: 100%) flag-off
+// population. See packages/ui/src/learn/v2/TopicPage.tsx for the full
+// citation-integrity contract this component enforces.
+const TopicPageV2 = dynamic(
+  () => import('@alfanumrik/ui/learn/v2/TopicPage'),
+  { loading: () => <LoadingFoxy /> },
+);
+
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
 interface Question {
@@ -163,6 +172,19 @@ function ChapterConceptPageContent() {
   // authority inside load(); the flag effect updates only the ref.
   const chapterReaderV2FlagRef = useRef(false);
   const [v2SourceUsed, setV2SourceUsed] = useState<'curated' | 'rag_fallback' | null>(null);
+  // ── Screen 06 "Topic" (gated by ff_learn_topic_v2) ──
+  // Additive presentation layer over the "explaining" phase only — quiz/
+  // report phases and Read mode are untouched regardless of this flag.
+  const [topicV2FlagOn, setTopicV2FlagOn] = useState(false);
+  // ── Offline "keep chapter" (gated by ff_offline_v2, already shipped) ──
+  // Read here only to decide whether TopicPage's Keep-offline row renders;
+  // the actual IndexedDB write goes through the real keepChapter() from
+  // packages/lib/src/offline/store.ts, dynamically imported on demand so
+  // the store module never enters this page's bundle for the flag-off
+  // population.
+  const [offlineFlagOn, setOfflineFlagOn] = useState(false);
+  const [offlineKept, setOfflineKept] = useState(false);
+  const [offlineBusy, setOfflineBusy] = useState(false);
   // ── Pedagogy v2 / Wave 1: Productive Failure flip ──
   // When ff_productive_failure_v1 is on AND the resolved pedagogy rule says
   // productiveFailure (true for every persona except improve_basics), the
@@ -427,7 +449,8 @@ function ChapterConceptPageContent() {
 
   // Read flag (ff_learn_read_mode_v1) once per session — single round-trip
   // shared with the rest of the dashboard's flag fetch (cached in lib/swr).
-  // Productive-failure flag (ff_productive_failure_v1) piggybacks the same
+  // Productive-failure flag (ff_productive_failure_v1), Topic v2
+  // (ff_learn_topic_v2), and Offline v2 (ff_offline_v2) piggyback the same
   // fetch so we don't double-roundtrip on chapter open.
   useEffect(() => {
     if (!student) return;
@@ -439,6 +462,8 @@ function ChapterConceptPageContent() {
           setReadModeFlagOn(Boolean(flags?.ff_learn_read_mode_v1));
           setProductiveFailureFlagOn(Boolean(flags?.ff_productive_failure_v1));
           chapterReaderV2FlagRef.current = Boolean(flags?.ff_chapter_reader_v2);
+          setTopicV2FlagOn(Boolean(flags?.ff_learn_topic_v2));
+          setOfflineFlagOn(Boolean(flags?.ff_offline_v2));
         }
       } catch {
         // Flags fail closed — practice mode only, tutorial-first preserved.
@@ -446,6 +471,8 @@ function ChapterConceptPageContent() {
           setReadModeFlagOn(false);
           setProductiveFailureFlagOn(false);
           chapterReaderV2FlagRef.current = false;
+          setTopicV2FlagOn(false);
+          setOfflineFlagOn(false);
         }
       }
     })();
@@ -454,6 +481,64 @@ function ChapterConceptPageContent() {
     // would re-fire this flag round-trip on every auth-context reference change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [student?.id]);
+
+  // Whether this chapter is already kept offline — read once the Topic v2 +
+  // Offline v2 flags are both known on. Uses a stable composite key
+  // (`${subject}:${chapterNum}`) as the store row id: OfflineChapterRow.id is
+  // documented as "curriculum_topics.id" but no existing caller keys it that
+  // way yet (grep confirms keepChapter() has zero callers before this), and
+  // nothing downstream (OfflineState's onOpenChapter, the /me downloads
+  // count) reads .id for navigation — only .subjectCode. A chapter-scoped key
+  // is the correct grain for "keep THIS CHAPTER offline" from a topic page.
+  useEffect(() => {
+    if (!topicV2FlagOn || !offlineFlagOn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { listChapters } = await import('@alfanumrik/lib/offline/store');
+        const rows = await listChapters();
+        if (!cancelled) {
+          setOfflineKept(rows.some((r) => r.id === `${subject}:${chapterNum}`));
+        }
+      } catch {
+        // IndexedDB unavailable (private mode/quota) — degrade to "not kept".
+        if (!cancelled) setOfflineKept(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [topicV2FlagOn, offlineFlagOn, subject, chapterNum]);
+
+  // Real "keep offline" write — the actual keepChapter() from the shipped
+  // offline store, not a stub. Dynamically imported so the IndexedDB module
+  // stays out of this page's bundle unless a student with both flags on
+  // actually taps the button.
+  const handleKeepOfflineV2 = useCallback(async () => {
+    if (offlineBusy || offlineKept) return;
+    setOfflineBusy(true);
+    try {
+      const { keepChapter } = await import('@alfanumrik/lib/offline/store');
+      const title = chapterMeta
+        ? (isHi && chapterMeta.title_hi ? chapterMeta.title_hi : chapterMeta.title)
+        : `${subMeta?.name ?? subject} — ${isHi ? 'अध्याय' : 'Chapter'} ${chapterNum}`;
+      await keepChapter({
+        id: `${subject}:${chapterNum}`,
+        subjectCode: subject,
+        title,
+        chapterNumber: chapterNum,
+        questionCount: questions.length,
+      });
+      setOfflineKept(true);
+      // No dedicated PostHogEventName exists for this action yet (adding one
+      // is a shared analytics-registry change out of scope here — see
+      // packages/lib/src/posthog/types.ts). The write itself is the thing
+      // that matters; telemetry can be added by a follow-up if needed.
+    } catch {
+      // Best-effort; IndexedDB unavailable — the button simply stays
+      // actionable and the student can retry.
+    } finally {
+      setOfflineBusy(false);
+    }
+  }, [offlineBusy, offlineKept, chapterMeta, isHi, subMeta, subject, chapterNum, questions.length]);
 
   // Wave 1C: read students.academic_goal once per session so the
   // productive-failure resolver knows the persona. Without this, the
@@ -1155,6 +1240,81 @@ function ChapterConceptPageContent() {
         content={readContent}
         onBack={() => router.push(studentHome)}
         onSwitchToPractice={switchToPracticeMode}
+      />
+    );
+  }
+
+  // ── Screen 06 "Topic" (ff_learn_topic_v2) ───────────────────────────
+  // Additive presentation layer. Only replaces the "explaining" phase's
+  // topic view — quiz/report phases (and Read mode, handled above) fall
+  // straight through to the completely untouched legacy render below.
+  // TopicPage is presentational only (fetches nothing); every value here is
+  // data this component already loaded above, and every citation is sourced
+  // from real fields (topic.ncert_page_range, chapterMeta.title) — never
+  // fabricated when absent (see that component's file header).
+  if (phase === 'explaining' && topicV2FlagOn && topic) {
+    const topicTitleV2 = isHi && topic.title_hi ? topic.title_hi : topic.title;
+    const explanationV2 = isHi && (topic as any).explanation_hi
+      ? (topic as any).explanation_hi
+      : (topic as any).explanation
+        ? (topic as any).explanation
+        : topic.description || '';
+    const chapterTitleV2 = chapterMeta
+      ? (isHi && chapterMeta.title_hi ? chapterMeta.title_hi : chapterMeta.title)
+      : null;
+    const insightsV2 = getTeacherInsights(topic.title, isHi);
+
+    return (
+      <TopicPageV2
+        isHi={isHi}
+        loading={false}
+        error={false}
+        onRetry={load}
+        subjectName={subMeta?.name ?? subject}
+        subjectIcon={subMeta?.icon}
+        subjectColor={subMeta?.color}
+        chapterNumber={chapterNum}
+        topicIndex={currentIdx}
+        topicCount={topics.length}
+        topic={{ id: topic.id, title: topicTitleV2, explanation: explanationV2 || null }}
+        citation={{
+          chapterNumber: chapterNum,
+          chapterTitle: chapterTitleV2,
+          pageRange: topic.ncert_page_range ?? null,
+        }}
+        diagram={
+          diagram
+            ? {
+                imageUrl: diagram.image_url,
+                altText: diagram.alt_text,
+                caption: diagram.caption,
+                captionHi: diagram.caption_hi,
+              }
+            : null
+        }
+        calloutText={insightsV2.examHack || null}
+        onBack={() => router.push(studentHome)}
+        onPrevTopic={currentIdx > 0 ? goPrev : null}
+        onNextTopic={
+          currentIdx < topics.length - 1
+            ? () => {
+                setCurrentIdx(currentIdx + 1);
+                setActiveTab('core');
+              }
+            : null
+        }
+        onAskFoxy={askFoxy}
+        onPractice={() => {
+          // learn_take_quiz_clicked requires score_pct (report-phase "score
+          // that earned the CTA"), which doesn't exist for a first-visit
+          // topic-page tap — no matching event exists for this yet, so we
+          // just navigate rather than force an inaccurate payload.
+          router.push(`/quiz?subject=${subject}&chapter=${chapterNum}`);
+        }}
+        offlineEnabled={offlineFlagOn}
+        isOfflineKept={offlineKept}
+        offlineBusy={offlineBusy}
+        onKeepOffline={handleKeepOfflineV2}
       />
     );
   }

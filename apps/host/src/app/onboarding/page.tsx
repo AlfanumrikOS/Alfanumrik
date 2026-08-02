@@ -15,15 +15,88 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { GRADES, BOARDS } from '@alfanumrik/lib/constants';
-import { LoadingFoxy } from '@alfanumrik/ui/ui';
+import { LoadingFoxy, Skeleton } from '@alfanumrik/ui/ui';
 import { track } from '@alfanumrik/lib/analytics';
+import { useFeatureFlags } from '@alfanumrik/lib/swr';
+import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
+import { useSetup, getMinorSignal, type MinorSignal } from '@alfanumrik/lib/onboarding/use-setup';
+
+// Wave B (ff_onboarding_v2, default OFF — additive flag branch inside this
+// existing route, same pattern as today/page.tsx's now-retired v2 branch).
+// Code-split so the legacy path's bundle is unaffected when the flag is off.
+const SetupFlow = dynamic(() => import('@alfanumrik/ui/onboarding/v2/SetupFlow'), {
+  loading: () => <Skeleton height={360} rounded="rounded-2xl" />,
+});
+
+/**
+ * Wave B v2 branch. Renders when `ff_onboarding_v2` is ON. Reuses every
+ * write mechanism the v1 form below already uses (see use-setup.ts header).
+ * Shares the SAME guard clauses (auth, role redirect, already-onboarded
+ * skip, diagnostic-grade routing) as v1 — only the presentation differs.
+ */
+function OnboardingV2({
+  studentId,
+  studentName,
+  initialGrade,
+  initialBoard,
+  isHi,
+  onDone,
+}: {
+  studentId: string;
+  studentName: string;
+  initialGrade: string;
+  initialBoard: string;
+  isHi: boolean;
+  onDone: (grade: string) => void;
+}) {
+  const { saving, saveGrade, saveSubjects, inviteGuardian, finish } = useSetup(studentId);
+  const { unlocked: subjects, isLoading: subjectsLoading, refresh: refreshSubjects } = useAllowedSubjects();
+  const [minor, setMinor] = useState<MinorSignal>({ isMinor: false, parentConsentEmail: null });
+  const [grade, setGrade] = useState(initialGrade);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMinorSignal().then((signal) => {
+      if (!cancelled) setMinor(signal);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <SetupFlow
+      isHi={isHi}
+      studentName={studentName}
+      initialGrade={initialGrade}
+      initialBoard={initialBoard}
+      subjects={subjects}
+      subjectsLoading={subjectsLoading}
+      isMinor={minor.isMinor}
+      existingParentEmail={minor.parentConsentEmail}
+      saving={saving}
+      onSaveGrade={async (g, b) => {
+        setGrade(g);
+        return saveGrade(g, b);
+      }}
+      onGradeSaved={() => refreshSubjects()}
+      onSaveSubjects={saveSubjects}
+      onInviteGuardian={inviteGuardian}
+      onFinish={finish}
+      onComplete={() => onDone(grade)}
+    />
+  );
+}
 
 export default function OnboardingPage() {
   const { student, isLoggedIn, isLoading, refreshStudent, activeRole, isHi } = useAuth();
   const router = useRouter();
+  const { data: flags, isLoading: flagsLoading } = useFeatureFlags();
+  const onboardingV2On = flags?.ff_onboarding_v2 === true;
 
   const [grade, setGrade] = useState('');
   const [board, setBoard] = useState('CBSE');
@@ -99,6 +172,35 @@ export default function OnboardingPage() {
   if (!student) return <LoadingFoxy />;
   // Guard: already onboarded — redirect handled in useEffect above
   if (student.onboarding_completed) return <LoadingFoxy />;
+
+  // ── Wave B v2 branch — additive, flag-gated. The v1 form below is the
+  // untouched `else` path (same convention as today/page.tsx's retired
+  // v2 branch). While flags are still resolving we hold on the v1 skeleton
+  // rather than flashing one variant then the other. ──
+  if (!flagsLoading && onboardingV2On) {
+    return (
+      <OnboardingV2
+        studentId={student.id}
+        studentName={student.name}
+        initialGrade={grade}
+        initialBoard={board}
+        isHi={isHi}
+        onDone={async (finishedGrade) => {
+          try {
+            track('onboarding_complete', { role: 'student', grade: finishedGrade, board });
+          } catch {
+            /* analytics is non-critical */
+          }
+          await refreshStudent();
+          // Per spec: v2 finish routes to /today (the Alfa OS home), not the
+          // v1 diagnostic-routing heuristic. /today itself bounces to
+          // /dashboard when ff_today_home_v1 is off, so this is safe
+          // regardless of that flag's state.
+          router.replace('/today');
+        }}
+      />
+    );
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

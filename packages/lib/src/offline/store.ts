@@ -42,7 +42,17 @@ export interface OfflineChapterRow {
 export interface PendingWriteRow {
   /** Idempotency key. Also the primary key — a replayed row collides and is a no-op. */
   idempotencyKey: string;
-  kind: 'quiz_answer' | 'quiz_session';
+  /**
+   * `mock_exam_autosave` (screen 11, `ff_exam_v2`) is a periodic (~10s)
+   * safety-net write of the student's in-progress mock-exam responses — NOT
+   * an "offline mock exam" mode. Starting/submitting a mock exam still
+   * always requires a live connection (unchanged, see `ff_offline_v2`'s
+   * scope note in 20260802090200_seed_ff_wave_b_frontend_flags.sql); this
+   * only protects against losing already-typed answers to a transient
+   * signal drop mid-attempt. Never touches scoring or
+   * `submit_mock_test_attempt`.
+   */
+  kind: 'quiz_answer' | 'quiz_session' | 'mock_exam_autosave';
   /** Request path this replays to, e.g. '/api/v2/quiz/submit'. */
   endpoint: string;
   payload: unknown;

@@ -423,6 +423,69 @@ export async function startQuizSession(
 }
 
 /**
+ * Screen "07 Practice" immediate per-question feedback (migration
+ * 20260802130000). Calls check_quiz_answer, which reveals is_correct /
+ * correct_displayed_index / explanation for EXACTLY ONE question from the
+ * server-owned quiz_session_shuffles snapshot — never from live
+ * question_bank, never leaking any other question's answer in the same
+ * response. Matches the direct-RPC calling convention already used by
+ * startQuizSession/submitQuizResults in this file (no API-route wrapper —
+ * the web /quiz page calls Supabase RPCs directly).
+ *
+ * PERSIST-IMMEDIATELY: the RPC also writes the student's selected index +
+ * time spent onto the same quiz_session_shuffles row so progress survives a
+ * crash before final submit. This function does NOT touch XP/profile state
+ * — that remains submitQuizResults()'s job at final submit, unchanged.
+ *
+ * Idempotent/replay-locked server-side: a second call for an
+ * already-answered question replays the FIRST verdict rather than grading a
+ * new guess (defense-in-depth only). The CALLER (the quiz page's state
+ * machine) is still responsible for never allowing a second confirm click
+ * on an already-revealed question — this function does not enforce that,
+ * it only cannot be gamed if the caller's guard is ever bypassed.
+ *
+ * Returns null on any failure (RPC error, malformed response) so the caller
+ * can fall back to the existing "Submitted — check results at end" neutral
+ * state rather than blocking the quiz flow.
+ */
+export interface QuizAnswerCheck {
+  question_id: string;
+  is_correct: boolean;
+  correct_displayed_index: number;
+  explanation: string | null;
+  explanation_hi: string | null;
+  already_answered: boolean;
+}
+export async function checkQuizAnswer(
+  sessionId: string,
+  questionId: string,
+  selectedDisplayedIndex: number,
+  timeSpentSeconds?: number,
+): Promise<QuizAnswerCheck | null> {
+  try {
+    const { data, error } = await supabase.rpc('check_quiz_answer', {
+      p_session_id: sessionId,
+      p_question_id: questionId,
+      p_selected_displayed_index: selectedDisplayedIndex,
+      p_time_spent_seconds: timeSpentSeconds ?? null,
+    });
+    if (error) {
+      console.warn('check_quiz_answer RPC failed:', error.message);
+      return null;
+    }
+    if (!data || typeof data !== 'object') return null;
+    const parsed = (typeof data === 'string' ? JSON.parse(data) : data) as Partial<QuizAnswerCheck>;
+    if (typeof parsed?.is_correct !== 'boolean' || typeof parsed?.correct_displayed_index !== 'number') {
+      return null;
+    }
+    return parsed as QuizAnswerCheck;
+  } catch (e) {
+    console.warn('check_quiz_answer error:', e);
+    return null;
+  }
+}
+
+/**
  * v2 response payload — client sends ONLY the displayed index it clicked.
  * No more is_correct, no more shuffle_map. Server is the single source of truth.
  */

@@ -43,6 +43,20 @@
       "allowedRoles": ["authenticated", "service_role"],
       "ownershipCheck": "not_applicable",
       "grantPosture": "PUBLIC execute revoked after the latest RCA function definition; authenticated and service_role are the only explicit execute roles."
+    },
+    {
+      "id": "RCA-18-004",
+      "functionName": "check_quiz_answer",
+      "definitionMigration": "supabase/migrations/20260802130000_check_quiz_answer_rpc.sql",
+      "grantMigration": "supabase/migrations/20260802130000_check_quiz_answer_rpc.sql",
+      "owner": "architect",
+      "risk": "Screen 07 Practice immediate-feedback RPC is SECURITY DEFINER and reveals a single question's correct-answer index from the server-owned quiz_session_shuffles snapshot; execute privileges must stay owner-scoped and not inherit default PUBLIC execute.",
+      "securityDefiner": true,
+      "searchPathPinned": true,
+      "publicExecute": "revoked",
+      "allowedRoles": ["authenticated", "service_role"],
+      "ownershipCheck": "auth_uid_student_owner",
+      "grantPosture": "PUBLIC execute revoked in the same migration that defines the function; authenticated and service_role are the only explicit execute roles."
     }
   ]
 }
