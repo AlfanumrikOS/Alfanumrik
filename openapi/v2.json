@@ -263,6 +263,108 @@
         ],
         "type": "object"
       },
+      "ExamReadinessBand": {
+        "enum": [
+          "exam_ready",
+          "getting_it",
+          "shaky",
+          "new"
+        ],
+        "type": "string"
+      },
+      "ExamScheduleEntry": {
+        "properties": {
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ExamScheduleEntryTopic"
+            },
+            "type": "array"
+          },
+          "editable": {
+            "type": "boolean"
+          },
+          "endsOn": {
+            "example": "2026-09-10",
+            "type": "string"
+          },
+          "id": {
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "type": "string"
+          },
+          "setBy": {
+            "type": "string"
+          },
+          "setByInitials": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "school",
+              "teacher",
+              "student"
+            ],
+            "type": "string"
+          },
+          "startsOn": {
+            "example": "2026-09-01",
+            "type": "string"
+          },
+          "title": {
+            "example": "Half-Yearly Exam",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "title",
+          "startsOn",
+          "endsOn"
+        ],
+        "type": "object"
+      },
+      "ExamScheduleEntryTopic": {
+        "properties": {
+          "band": {
+            "$ref": "#/components/schemas/ExamReadinessBand"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "label": {
+            "example": "Number Systems",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "band"
+        ],
+        "type": "object"
+      },
+      "ExamScheduleResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ExamScheduleEntry"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "entries"
+        ],
+        "type": "object"
+      },
       "LeaderboardEntry": {
         "properties": {
           "avatar_url": {
@@ -610,6 +712,159 @@
           "label",
           "active",
           "quizzes"
+        ],
+        "type": "object"
+      },
+      "PlacementAnswerRequest": {
+        "properties": {
+          "idempotencyKey": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "occurredAt": {
+            "example": "2026-08-02T09:00:00.000Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "optionId": {
+            "maxLength": 8,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "questionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "topicId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unseen": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sessionId",
+          "questionId",
+          "topicId",
+          "optionId",
+          "unseen",
+          "idempotencyKey",
+          "occurredAt"
+        ],
+        "type": "object"
+      },
+      "PlacementAnswerResult": {
+        "properties": {
+          "accepted": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted",
+          "duplicate"
+        ],
+        "type": "object"
+      },
+      "PlacementQuestion": {
+        "properties": {
+          "chapterNumber": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/PlacementQuestionOption"
+            },
+            "type": "array"
+          },
+          "stem": {
+            "example": "What is 2 + 2?",
+            "type": "string"
+          },
+          "topicId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "chapterNumber",
+          "stem",
+          "options"
+        ],
+        "type": "object"
+      },
+      "PlacementQuestionOption": {
+        "properties": {
+          "id": {
+            "example": "0",
+            "type": "string"
+          },
+          "label": {
+            "example": "4",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "type": "object"
+      },
+      "PlacementResponse": {
+        "properties": {
+          "grade": {
+            "pattern": "^(6|7|8|9|10|11|12)$",
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/PlacementQuestion"
+            },
+            "type": "array"
+          },
+          "schemaVersion": {
+            "enum": [
+              1
+            ],
+            "type": "number"
+          },
+          "subject": {
+            "example": "math",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "subject",
+          "grade",
+          "questions"
         ],
         "type": "object"
       },
@@ -1525,6 +1780,56 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v2/exam-schedule": {
+      "get": {
+        "description": "Returns the school/teacher/student exam-schedule entries in school > teacher > student precedence order. Tier 2 (teacher-set, dated + chapter-scoped) is not bound yet — a fast-follow; only tier 3 (student_exam_entries) is populated today. Chapter mastery bands come from resolveExamReadinessBand(), a relabel of the canonical concept_mastery.mastery_level. Requires study_plan.view. 404 when ff_exam_schedule_v1 is off.",
+        "operationId": "getExamSchedule",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExamScheduleResponse"
+                }
+              }
+            },
+            "description": "The resolved exam schedule (which tiers are present depends on what is bound / populated)."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Feature flag off, or the caller has no student profile."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Three-tier exam schedule for the authenticated student",
+        "tags": [
+          "exam-schedule"
+        ]
+      }
+    },
     "/v2/learn/concept": {
       "get": {
         "description": "Returns the ordered NCERT chapter prose (markdown + source attribution) for a subject + chapter. Reuses fetchChapterContent (rag_content_chunks read used by /learn). Requires study_plan.view.",
@@ -1903,6 +2208,170 @@
         "summary": "At-a-glance view for one linked child",
         "tags": [
           "parent"
+        ]
+      }
+    },
+    "/v2/placement": {
+      "get": {
+        "description": "Returns up to 6 placement probes for the given subject at the student's own grade, via selectPlacementQuestions (the cold-start sibling of the live adaptive selector — same table, same P6 shape guard, no second question source). Read-only; no mastery write happens here. Requires study_plan.view. 404 when ff_placement_v1 is off.",
+        "operationId": "getPlacement",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "subject",
+            "required": true,
+            "schema": {
+              "example": "math",
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "enum": [
+                "en",
+                "hi"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlacementResponse"
+                }
+              }
+            },
+            "description": "Placement probes."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid query params."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Feature flag off, or no student profile for this account."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Student has no grade set."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Six cold-start placement probes for a subject",
+        "tags": [
+          "placement"
+        ]
+      }
+    },
+    "/v2/placement/answer": {
+      "post": {
+        "description": "Writes a single append-only learning_events row (event_type = placement_probe). Sets a BKT prior via the projector; never recorded as a graded quiz attempt, and an unseen-topic response never counts as a wrong answer. A duplicate idempotencyKey returns 200 with duplicate: true instead of a second row or an error (learning_events_placement_probe_idempotency_uniq). Requires study_plan.create (a write, unlike the sibling GET routes in this family). 404 when ff_placement_v1 is off.",
+        "operationId": "postPlacementAnswer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlacementAnswerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlacementAnswerResult"
+                }
+              }
+            },
+            "description": "Answer recorded (or a benign duplicate)."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid body, or optionId/unseen both set or both absent."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Feature flag off."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unexpected server error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "summary": "Record one placement-probe response",
+        "tags": [
+          "placement"
         ]
       }
     },

@@ -22,6 +22,10 @@ import 'package:alfanumrik_api_v2/src/model/curriculum_subject.dart';
 import 'package:alfanumrik_api_v2/src/model/curriculum_topic.dart';
 import 'package:alfanumrik_api_v2/src/model/encourage_request.dart';
 import 'package:alfanumrik_api_v2/src/model/error_response.dart';
+import 'package:alfanumrik_api_v2/src/model/exam_readiness_band.dart';
+import 'package:alfanumrik_api_v2/src/model/exam_schedule_entry.dart';
+import 'package:alfanumrik_api_v2/src/model/exam_schedule_entry_topic.dart';
+import 'package:alfanumrik_api_v2/src/model/exam_schedule_response.dart';
 import 'package:alfanumrik_api_v2/src/model/leaderboard_entry.dart';
 import 'package:alfanumrik_api_v2/src/model/leaderboard_response.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_child.dart';
@@ -31,6 +35,11 @@ import 'package:alfanumrik_api_v2/src/model/parent_glance_moments.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_glance_response.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_glance_snapshot.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_glance_weekly_day.dart';
+import 'package:alfanumrik_api_v2/src/model/placement_answer_request.dart';
+import 'package:alfanumrik_api_v2/src/model/placement_answer_result.dart';
+import 'package:alfanumrik_api_v2/src/model/placement_question.dart';
+import 'package:alfanumrik_api_v2/src/model/placement_question_option.dart';
+import 'package:alfanumrik_api_v2/src/model/placement_response.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_decay_topic.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_knowledge_gap.dart';
 import 'package:alfanumrik_api_v2/src/model/progress_learning_velocity.dart';
@@ -65,6 +74,10 @@ part 'serializers.g.dart';
   CurriculumTopic,
   EncourageRequest,
   ErrorResponse,
+  ExamReadinessBand,
+  ExamScheduleEntry,
+  ExamScheduleEntryTopic,
+  ExamScheduleResponse,
   LeaderboardEntry,
   LeaderboardResponse,
   ParentChild,
@@ -74,6 +87,11 @@ part 'serializers.g.dart';
   ParentGlanceResponse,
   ParentGlanceSnapshot,
   ParentGlanceWeeklyDay,
+  PlacementAnswerRequest,
+  PlacementAnswerResult,
+  PlacementQuestion,
+  PlacementQuestionOption,
+  PlacementResponse,
   ProgressDecayTopic,
   ProgressKnowledgeGap,
   ProgressLearningVelocity,

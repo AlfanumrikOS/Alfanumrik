@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
+import OfflineBoundary from '@alfanumrik/ui/offline/v2/OfflineBoundary';
 
 // Lazy-load the student navigation chrome off the always-on shared layout
 // chunk (P10 shared-JS budget). These two components only render for a
@@ -29,7 +30,7 @@ export function GlobalAppLayout({ children }: { children: React.ReactNode }) {
 
 function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { isLoggedIn, activeRole } = useAuth();
+  const { isLoggedIn, activeRole, isHi } = useAuth();
 
   // Foxy requires edge-to-edge true full screen and has its own back navigation
   const isFocusedFoxy = pathname === '/foxy' || pathname?.startsWith('/foxy');
@@ -66,9 +67,24 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
 
   const showNav = isLoggedIn && activeRole === 'student' && !isFocusedFoxy && !isExcluded;
 
+  // Wave B (ff_offline_v2, default OFF). Deliberately NOT the same condition
+  // as `showNav` above: `showNav` excludes Foxy (`isFocusedFoxy`) and a long
+  // marketing/other-portal exclusion list, but /foxy and /review are exactly
+  // two of the routes the offline boundary review flagged as needing
+  // coverage (see OfflineBoundary's own header comment). Scoped to
+  // "logged-in student" only — not parent/teacher/admin/public — because
+  // OfflineState's copy (downloaded NCERT chapters, queued quiz answers,
+  // Foxy) is meaningless outside the student surface, and this component
+  // wraps every route from the root layout so an unscoped mount would show
+  // it there too once the flag ramps. `OfflineBoundary` itself is a static
+  // (non-dynamic) import: it renders `children` untouched whenever the flag
+  // is off or the device is online — see its header comment for why it must
+  // stay SSR-safe rather than being ssr:false like the nav components below.
+  const isOfflineScoped = isLoggedIn && activeRole === 'student';
+
   return (
     <>
-      {/* 
+      {/*
         Binding Navigation: These components are mounted exactly once at the root layout level.
         They persist through all page navigations, preserving states (like sidebar collapse/expand)
         and ensuring ultra-fast route transitions without UI flashing.
@@ -80,7 +96,9 @@ function GlobalAppLayoutContent({ children }: { children: React.ReactNode }) {
         semantic <main>, but must not race this id while its presence
         registration settles during hydration.
       */}
-      <div id="main-content" tabIndex={-1} data-global-main-content>{children}</div>
+      <div id="main-content" tabIndex={-1} data-global-main-content>
+        {isOfflineScoped ? <OfflineBoundary isHi={isHi}>{children}</OfflineBoundary> : children}
+      </div>
     </>
   );
 }

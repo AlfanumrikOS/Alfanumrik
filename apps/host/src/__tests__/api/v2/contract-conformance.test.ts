@@ -38,6 +38,11 @@ import {
   QuizStartResponse,
   QuizSubmitResult,
   StudentProfileResponse,
+  ExamScheduleResponse,
+  ExamReadinessBandSchema,
+  PlacementResponse,
+  PlacementAnswerRequest,
+  PlacementAnswerResult,
   StudentProgressResponse,
   LeaderboardResponse,
   CurriculumResponse,
@@ -329,6 +334,62 @@ describe('/v2 contract conformance — success envelopes parse against contract 
     };
     expectParses(successEnvelope(ConceptResponse), { success: true, data: payload });
   });
+
+  // ── Wave B: GET /v2/exam-schedule — { success, data: ExamScheduleResponse } ──
+  it('GET /v2/exam-schedule envelope conforms with a student-tier entry + chapter bands', () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      entries: [
+        {
+          id: UUID_A,
+          source: 'student' as const,
+          title: 'Coaching test',
+          startsOn: '2026-09-01',
+          endsOn: '2026-09-01',
+          chapters: [{ id: UUID_Q, label: 'Number Systems', band: 'getting_it' as const }],
+          editable: true,
+        },
+      ],
+    };
+    expectParses(successEnvelope(ExamScheduleResponse), { success: true, data: payload });
+  });
+
+  it('GET /v2/exam-schedule envelope conforms with an empty entries array', () => {
+    expectParses(successEnvelope(ExamScheduleResponse), { success: true, data: { schemaVersion: 1, entries: [] } });
+  });
+
+  // ── Wave B: GET /v2/placement — { success, data: PlacementResponse } ──
+  it('GET /v2/placement envelope conforms, including a question with topicId: null', () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      subject: 'math',
+      grade: '9',
+      questions: [
+        {
+          id: UUID_Q,
+          topicId: null,
+          chapterNumber: null,
+          stem: 'What is 2 + 2?',
+          options: [
+            { id: '0', label: '3' },
+            { id: '1', label: '4' },
+            { id: '2', label: '5' },
+            { id: '3', label: '6' },
+          ],
+        },
+      ],
+    };
+    expectParses(successEnvelope(PlacementResponse), { success: true, data: payload });
+  });
+
+  // ── Wave B: POST /v2/placement/answer — { success, data: PlacementAnswerResult } ──
+  it('POST /v2/placement/answer envelope conforms for a fresh (non-duplicate) answer', () => {
+    expectParses(successEnvelope(PlacementAnswerResult), { success: true, data: { accepted: true, duplicate: false } });
+  });
+
+  it('POST /v2/placement/answer envelope conforms for a duplicate (idempotent-replay) answer', () => {
+    expectParses(successEnvelope(PlacementAnswerResult), { success: true, data: { accepted: true, duplicate: true } });
+  });
 });
 
 describe('/v2 contract conformance — error envelopes parse against ErrorResponse', () => {
@@ -407,5 +468,57 @@ describe('/v2 contract conformance — drift guards (schema rejects malformed ou
       chapter_number: null,
     };
     expect(QuizQuestion.safeParse(threeOptions).success).toBe(false);
+  });
+
+  // ── Wave B drift guards ──
+  it('ExamReadinessBandSchema REJECTS an invented 5th band value', () => {
+    // Only the four bands the exam-schedule route and mastery-band.ts agree
+    // on are valid — a route change that invents a new label must fail here
+    // rather than silently drifting the mobile Dart client.
+    expect(ExamReadinessBandSchema.safeParse('almost_there').success).toBe(false);
+  });
+
+  it('ExamReadinessBandSchema accepts all 4 documented bands', () => {
+    for (const band of ['exam_ready', 'getting_it', 'shaky', 'new']) {
+      expect(ExamReadinessBandSchema.safeParse(band).success).toBe(true);
+    }
+  });
+
+  it('PlacementAnswerRequest requires topicId to be present (null or uuid) — not omittable', () => {
+    const missingTopicId = {
+      sessionId: SESSION,
+      questionId: UUID_Q,
+      optionId: '0',
+      unseen: false,
+      idempotencyKey: UUID_A,
+      occurredAt: '2026-08-02T09:00:00.000Z',
+    };
+    expect(PlacementAnswerRequest.safeParse(missingTopicId).success).toBe(false);
+  });
+
+  it('PlacementAnswerRequest accepts topicId: null (the no-topic-on-record case)', () => {
+    const withNullTopic = {
+      sessionId: SESSION,
+      questionId: UUID_Q,
+      topicId: null,
+      optionId: '0',
+      unseen: false,
+      idempotencyKey: UUID_A,
+      occurredAt: '2026-08-02T09:00:00.000Z',
+    };
+    expect(PlacementAnswerRequest.safeParse(withNullTopic).success).toBe(true);
+  });
+
+  it('PlacementAnswerRequest REJECTS a non-UUID idempotencyKey', () => {
+    const badKey = {
+      sessionId: SESSION,
+      questionId: UUID_Q,
+      topicId: null,
+      optionId: '0',
+      unseen: false,
+      idempotencyKey: 'not-a-uuid',
+      occurredAt: '2026-08-02T09:00:00.000Z',
+    };
+    expect(PlacementAnswerRequest.safeParse(badKey).success).toBe(false);
   });
 });

@@ -66,6 +66,19 @@
   --gold: #F5A623;
   --teal: #0891B2;
   --green: #16A34A;
+  --green-rgb: 22, 163, 74;         /* for rgb(var(--green-rgb) / <alpha>) — added
+                                       Wave B (2026-08-02): OfflineState.tsx and
+                                       ExamSchedule.tsx read this via a hardcoded
+                                       CSS fallback (rgb(var(--green-rgb, 22 163 74) / …)),
+                                       which happened to match this exact value by
+                                       coincidence. Declaring the real token here
+                                       means it now resolves on purpose, and would
+                                       still track a future --green re-theme instead
+                                       of silently reusing a stale fallback forever.
+                                       Scoped to :root only — the cosmic-light surface
+                                       below declares its OWN --green/--green-rgb pair
+                                       (#15803D / 21,128,61) for its own darker green;
+                                       that block is untouched. */
   --purple: #7C3AED;
   --purple-rgb: 124, 58, 237;       /* for rgb(var(--purple-rgb) / <alpha>) */
   --purple-light: #9333EA;

@@ -1,7 +1,22 @@
 {
-  "generated_at": "2026-07-09",
+  "generated_at": "2026-08-02",
   "source": "RCA-25 web-mobile /v2 contract parity inventory",
   "entries": [
+    {
+      "path": "/v2/exam-schedule",
+      "method": "get",
+      "operationId": "getExamSchedule",
+      "hostRoute": "apps/host/src/app/api/v2/exam-schedule/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/exam_schedule_api.dart",
+      "dartMethod": "getExamSchedule",
+      "mobileOwner": "mobile-student",
+      "productSurface": "not yet built in mobile — web-only Wave B feature (Today-home v2 exam schedule); Dart client generated ahead of consumption so the /v2 contract stays honestly in parity with openapi/v2.json",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<ExamScheduleResponse>> getExamSchedule({",
+        "final _path = r'/v2/exam-schedule';"
+      ]
+    },
     {
       "path": "/v2/learn/concept",
       "method": "get",
@@ -75,6 +90,36 @@
       "evidence": [
         "Future<Response<ParentGlanceResponse>> getParentGlance({",
         "final _path = r'/v2/parent/glance';"
+      ]
+    },
+    {
+      "path": "/v2/placement",
+      "method": "get",
+      "operationId": "getPlacement",
+      "hostRoute": "apps/host/src/app/api/v2/placement/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/placement_api.dart",
+      "dartMethod": "getPlacement",
+      "mobileOwner": "mobile-assessment",
+      "productSurface": "not yet built in mobile — web-only Wave B feature (placement check); Dart client generated ahead of consumption so the /v2 contract stays honestly in parity with openapi/v2.json",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<PlacementResponse>> getPlacement({",
+        "final _path = r'/v2/placement';"
+      ]
+    },
+    {
+      "path": "/v2/placement/answer",
+      "method": "post",
+      "operationId": "postPlacementAnswer",
+      "hostRoute": "apps/host/src/app/api/v2/placement/answer/route.ts",
+      "dartApiFile": "mobile/lib/api/v2/lib/src/api/placement_api.dart",
+      "dartMethod": "postPlacementAnswer",
+      "mobileOwner": "mobile-assessment",
+      "productSurface": "not yet built in mobile — web-only Wave B feature (placement check); Dart client generated ahead of consumption so the /v2 contract stays honestly in parity with openapi/v2.json",
+      "status": "generated",
+      "evidence": [
+        "Future<Response<PlacementAnswerResult>> postPlacementAnswer({",
+        "final _path = r'/v2/placement/answer';"
       ]
     },
     {

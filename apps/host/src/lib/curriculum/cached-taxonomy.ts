@@ -135,3 +135,40 @@ export async function getSubjectIdCodeRows(codes: string[]): Promise<SubjectIdCo
   );
   return withCacheFallback(cached, () => fetchSubjectIdCodeRaw(sortedCodes), 'subjects');
 }
+
+export interface TopicTitleRow {
+  id: string;
+  title: string | null;
+}
+
+async function fetchTopicTitlesByIdsRaw(sortedIds: string[]): Promise<TopicTitleRow[]> {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin.from('curriculum_topics').select('id, title').in('id', sortedIds);
+  if (error) {
+    throw new Error(`curriculum_topics id lookup failed: ${error.message}`);
+  }
+  return (data ?? []) as TopicTitleRow[];
+}
+
+/**
+ * Topic id → title for an arbitrary, caller-known set of topic ids.
+ * Deliberately NOT filtered by `is_active` — unlike getActiveTopicsForSubjects(),
+ * a caller here already has specific ids in hand (e.g. topics a student
+ * scoped into an exam-schedule entry) and a topic later deactivated by a
+ * curriculum edit should keep showing its title rather than silently vanish,
+ * which would look like unexplained data loss.
+ *
+ * Distinct from getActiveTopicsForSubjects(), which sweeps ALL active topics
+ * for a (grade, subject) pair: that shape doesn't fit a caller that holds a
+ * small set of arbitrary topic ids with no subject_id in hand to sweep by.
+ */
+export async function getTopicTitlesByIds(ids: string[]): Promise<TopicTitleRow[]> {
+  if (ids.length === 0) return [];
+  const sortedIds = [...ids].sort();
+  const cached = unstable_cache(
+    () => fetchTopicTitlesByIdsRaw(sortedIds),
+    ['curriculum-topic-titles-by-id-v1', sortedIds.join(',')],
+    { revalidate: SYLLABUS_TTL_SECONDS, tags: [SYLLABUS_CACHE_TAG] },
+  );
+  return withCacheFallback(cached, () => fetchTopicTitlesByIdsRaw(sortedIds), 'topic-titles-by-id');
+}

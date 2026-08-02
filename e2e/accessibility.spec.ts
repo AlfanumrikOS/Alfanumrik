@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { mockStudentSession, hasRealStudentCreds, loginViaUI } from './helpers/auth';
 
 /**
  * E2E Accessibility Tests -- Verify basic accessibility requirements.
@@ -224,5 +225,186 @@ test.describe('Pricing Page Accessibility', () => {
     // h2 elements should exist for subsections
     const h2Count = await page.locator('h2').count();
     expect(h2Count).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Wave B accessibility additions (task item 9): today-v2, exam-schedule-card,
+ * exam-schedule-list — the 3 new surfaces that are actually REACHABLE via a
+ * live route this session (`/today` with ff_today_home_v2 on, `/tests` with
+ * ff_exam_schedule_v1 on). `offline-state` and `placement-check` have NO
+ * wiring page yet in this pass (usePlacement/PlacementCheck are not mounted
+ * anywhere; OfflineState only mounts once OfflineBoundary detects a genuine
+ * `offline` browser event, which Playwright's route-mocking does not
+ * simulate) — their 44px tap-target contract is covered at the component
+ * level instead, in src/__tests__/components/offline/OfflineState.test.tsx
+ * and src/__tests__/components/onboarding/PlacementCheck.test.tsx.
+ *
+ * Real rendered dimensions (boundingBox(), not the inline minHeight style
+ * string) are asserted here — the gold-standard check, since actual layout
+ * can only be >= the declared minHeight, never less.
+ */
+async function installWaveBFlagMocks(
+  page: Page,
+  flags: { todayHomeV1?: boolean; todayHomeV2?: boolean; examScheduleV1?: boolean },
+): Promise<void> {
+  await page.route('**/rest/v1/feature_flags**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        [
+          { flag_name: 'ff_today_home_v1', is_enabled: flags.todayHomeV1 ?? false },
+          { flag_name: 'ff_today_home_v2', is_enabled: flags.todayHomeV2 ?? false },
+          { flag_name: 'ff_exam_schedule_v1', is_enabled: flags.examScheduleV1 ?? false },
+        ].map((f) => ({ ...f, target_roles: null, target_environments: null, target_institutions: null })),
+      ),
+    });
+  });
+  await page.route('**/api/student/subjects**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ subjects: [] }) });
+  });
+}
+
+async function minHeightPx(page: Page, testId: string): Promise<number> {
+  const box = await page.getByTestId(testId).boundingBox();
+  return box?.height ?? 0;
+}
+
+test.describe('Today v2 + exam-schedule-card accessibility (ff_today_home_v2)', () => {
+  test('today-v2 interactive controls meet the 44px minimum tap target', async ({ page }) => {
+    test.fixme(
+      !hasRealStudentCreds(),
+      'Rendering /today past the auth+flag gate needs an authenticated session ' +
+      '(same fixture dependency as today-home.spec.ts). Mocks installed; promote with ' +
+      'the test-student fixture.',
+    );
+
+    const todayResponse = {
+      schemaVersion: 1,
+      resolvedAt: '2026-08-02T09:00:00.000Z',
+      primary: {
+        type: 'weak_topic_zpd',
+        rank: 1,
+        labelKey: 'today.item.weak_topic_zpd.label',
+        subtitleKey: 'today.item.weak_topic_zpd.subtitle',
+        estMinutes: 7,
+        deepLink: { route: '/quiz', params: { subject: 'science', chapter: 3 } },
+        iconHint: 'target',
+        reason: 'todays_zpd',
+        meta: { subjectCode: 'science', chapterNumber: 3, zpdBin: 'medium' },
+      },
+      queue: [],
+      meta: { branch: 'start_quiz', masterySubjectCount: 1, dueReviewCount: 0, practicedToday: true },
+    };
+    todayResponse.queue = [todayResponse.primary];
+
+    await mockStudentSession(page, { xpTotal: 250, streakDays: 5 });
+    await installWaveBFlagMocks(page, { todayHomeV1: true, todayHomeV2: true, examScheduleV1: true });
+    await page.route('**/api/v2/today**', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(todayResponse) });
+    });
+    await page.route('**/api/v2/exam-schedule**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            schemaVersion: 1,
+            entries: [
+              {
+                id: 'exam-1',
+                source: 'student',
+                title: 'Coaching test',
+                startsOn: new Date().toISOString().slice(0, 10),
+                endsOn: new Date().toISOString().slice(0, 10),
+                editable: true,
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    if (hasRealStudentCreds()) {
+      await loginViaUI(page);
+    }
+
+    await page.goto('/today');
+    await page.waitForLoadState('domcontentloaded');
+
+    await expect(page.getByTestId('today-v2')).toBeVisible({ timeout: 15_000 });
+
+    // exam-schedule-card
+    await expect(page.getByTestId('exam-schedule-card')).toBeVisible();
+    expect(await minHeightPx(page, 'exam-schedule-revise')).toBeGreaterThanOrEqual(44);
+
+    // today-v2 focus hero CTA (non-resume primary in this fixture)
+    expect(await minHeightPx(page, 'today-v2-focus-continue')).toBeGreaterThanOrEqual(44);
+
+    // Every visible button on the page has an accessible name (generic sweep,
+    // matching the Landing Page Accessibility convention above).
+    const buttons = page.locator('button');
+    const count = await buttons.count();
+    for (let i = 0; i < count; i++) {
+      const button = buttons.nth(i);
+      if (!(await button.isVisible())) continue;
+      const text = (await button.textContent())?.trim();
+      const ariaLabel = await button.getAttribute('aria-label');
+      expect(Boolean(text) || Boolean(ariaLabel), `button ${i} has no accessible name`).toBeTruthy();
+    }
+  });
+});
+
+test.describe('/tests (exam-schedule-list) accessibility (ff_exam_schedule_v1)', () => {
+  test('exam-schedule-list interactive controls meet the 44px minimum tap target', async ({ page }) => {
+    test.fixme(
+      !hasRealStudentCreds(),
+      'Rendering /tests past the auth+flag gate needs an authenticated session — same ' +
+      'fixture dependency as exam-schedule.spec.ts. Mocks installed; promote with the ' +
+      'test-student fixture.',
+    );
+
+    await mockStudentSession(page, { xpTotal: 100, streakDays: 2 });
+    await installWaveBFlagMocks(page, { examScheduleV1: true });
+    await page.route('**/api/v2/exam-schedule**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            schemaVersion: 1,
+            entries: [
+              {
+                id: 'exam-1',
+                source: 'student',
+                title: 'Coaching test',
+                startsOn: new Date().toISOString().slice(0, 10),
+                endsOn: new Date().toISOString().slice(0, 10),
+                editable: true,
+              },
+            ],
+          },
+        }),
+      });
+    });
+
+    if (hasRealStudentCreds()) {
+      await loginViaUI(page);
+    }
+
+    await page.goto('/tests');
+    await page.waitForLoadState('domcontentloaded');
+
+    await expect(page.getByTestId('exam-schedule-list')).toBeVisible({ timeout: 15_000 });
+    expect(await minHeightPx(page, 'exam-schedule-add')).toBeGreaterThanOrEqual(44);
+
+    const editButtons = page.getByText('Edit', { exact: true });
+    if (await editButtons.count() > 0) {
+      const box = await editButtons.first().boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
   });
 });

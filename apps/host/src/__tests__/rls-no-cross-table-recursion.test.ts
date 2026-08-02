@@ -116,6 +116,15 @@ const RLS_HELPERS = [
   'get_my_teacher_id',
   'get_my_teacher_student_ids',
   'get_admin_school_id',
+  // Architect review (migration 20260802090100_create_student_exam_entries.sql,
+  // 2026-08-02): student_exam_entry_topics' ownership-inheritance policy was
+  // authored fresh this session and initially inlined an EXISTS over
+  // student_exam_entries (its parent table). Rather than grandfather it (the
+  // inline form was structurally non-recursive, but still debt), it was
+  // rewritten to delegate to this new helper before ever shipping — same
+  // template as is_school_admin_of_student. Its inner read of
+  // student_exam_entries bypasses RLS.
+  'is_own_exam_entry',
 ] as const;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -616,7 +625,11 @@ describe('generalized RLS recursion guard: parser non-vacuity', () => {
     expect(RLS_HELPERS).toContain('is_school_admin_of');
     // XC-3 Phase 1: the new student-scoped school-admin helper joined the roster.
     expect(RLS_HELPERS).toContain('is_school_admin_of_student');
-    expect(RLS_HELPERS.length).toBe(11);
+    // Architect review 2026-08-02 (migration 20260802090100): new
+    // exam-entry-ownership helper, minted fresh rather than grandfathering
+    // an inline EXISTS on a brand-new policy.
+    expect(RLS_HELPERS).toContain('is_own_exam_entry');
+    expect(RLS_HELPERS.length).toBe(12);
   });
 });
 

@@ -24,6 +24,7 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useFeatureFlags } from '@alfanumrik/lib/swr';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { useTodayQueue } from '@alfanumrik/lib/today/use-today-queue';
+import { useExamSchedule } from '@alfanumrik/lib/exams/use-exam-schedule';
 import { Skeleton, Button, EmptyState } from '@alfanumrik/ui/ui';
 import { calculateLevel } from '@alfanumrik/lib/xp-config';
 import { todayCopy } from '@alfanumrik/lib/today/copy';
@@ -36,6 +37,11 @@ const TodayFocusCard = dynamic(() => import('@alfanumrik/ui/today/TodayFocusCard
 const TodayQueueItem = dynamic(() => import('@alfanumrik/ui/today/TodayQueueItem'), {
   loading: () => <Skeleton height={68} rounded="rounded-2xl" />,
 });
+// Wave B home (ff_today_home_v2, default OFF). Split out of first paint so a
+// flag-OFF user — i.e. everyone, until this ramps — never downloads it.
+const TodayHomeV2 = dynamic(() => import('@alfanumrik/ui/today/v2/TodayHomeV2'), {
+  loading: () => <Skeleton height={240} rounded="rounded-2xl" />,
+});
 
 function LegacyTodayPage() {
   const router = useRouter();
@@ -44,6 +50,11 @@ function LegacyTodayPage() {
   const { subjects } = useAllowedSubjects();
 
   const flagOn = flags?.ff_today_home_v1 === true;
+  // Wave B (ff_today_home_v2, default OFF) — an independent flag from
+  // ff_today_home_v1 above. It only swaps the loaded-state presentation; the
+  // auth/flag gate that decides whether /today is reachable at all is
+  // unchanged.
+  const v2On = flags?.ff_today_home_v2 === true;
 
   // Auth + flag gate. While auth/flags resolve we hold (skeleton below).
   useEffect(() => {
@@ -63,6 +74,15 @@ function LegacyTodayPage() {
   const { data, error, isLoading: todayLoading, mutate } = useTodayQueue(
     flagOn && isLoggedIn ? student?.id : null,
   );
+
+  // Wave B (ff_exam_schedule_v1, default OFF — an independent flag). Only
+  // fetched when the v2 home is on: Wave A's render path has no exam-schedule
+  // card, so firing this request unconditionally would be an observable
+  // behaviour change (a new network call) for the unchanged v2-off path. The
+  // hook itself already resolves a 404 (flag off server-side too) to
+  // `next: null`, so this is harmless either way — the gate below is about
+  // not issuing the request at all while v2 is off.
+  const { next: nextExam } = useExamSchedule(v2On && isLoggedIn ? student?.id : null, isHi);
 
   // ── Pre-gate render: while resolving auth/flags, or about to redirect. ──
   if (isLoading || flagsLoading || !isLoggedIn || !flagOn) {
@@ -137,6 +157,13 @@ function LegacyTodayPage() {
   );
 
   // ── Loading the queue ──
+  // NOTE (Wave B reconciliation, 2026-08-02): this stays the unconditional
+  // Wave-A `greetingStrip` for v2On too, rather than swapping in a bare
+  // skeleton here. The only visual difference from the v2 header once loaded
+  // is the "Full dashboard" button + Level chip (v2 drops both) — not worth a
+  // new branch for a state that resolves in well under a second, and it keeps
+  // the loading path byte-identical for both flag states, matching "Wave A
+  // unchanged" as literally as possible.
   if (todayLoading) {
     return (
       <main className="app-container py-6" data-testid="today-loading">
@@ -189,7 +216,24 @@ function LegacyTodayPage() {
     );
   }
 
+  // ── Wave B render path (ff_today_home_v2, default OFF; additive) ──
+  if (v2On) {
+    return (
+      <main className="app-container py-6" data-testid="today-loaded">
+        <TodayHomeV2
+          data={data}
+          subjects={subjects}
+          isHi={isHi}
+          streak={streak}
+          totalXp={totalXp}
+          nextExam={nextExam}
+        />
+      </main>
+    );
+  }
+
   // ── Loaded — primary focus card + the rest of the queue. ──
+  // Wave A render path — unchanged.
   const primary = data.primary;
   const rest = queue.slice(1);
 
