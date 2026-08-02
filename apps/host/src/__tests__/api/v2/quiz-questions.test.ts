@@ -17,6 +17,11 @@ vi.mock('@alfanumrik/lib/logger', () => ({
 vi.mock('@alfanumrik/lib/subjects', () => ({
   validateSubjectWrite: vi.fn().mockResolvedValue({ ok: true }),
 }));
+// Whole-subject shortfall telemetry (spec §3.6) — asserted on directly below.
+const _logOpsEventImpl = vi.fn().mockResolvedValue(undefined);
+vi.mock('@alfanumrik/lib/ops-events', () => ({
+  logOpsEvent: (...a: unknown[]) => _logOpsEventImpl(...a),
+}));
 
 const STUDENT_A = '11111111-1111-4111-8111-111111111111';
 const QUESTION_ID = '44444444-4444-4444-8444-444444444444';
@@ -145,5 +150,72 @@ describe('GET /api/v2/quiz/questions', () => {
     const res = await GET(url({ subject: 'math', grade: '9', count: '5', chapter: '99' }));
     expect(res.status).toBe(422);
     expect((await res.json()).code).toBe('INVALID_ACADEMIC_SCOPE');
+  });
+
+  // ── Whole-subject shortfall telemetry (spec §3.6) ─────────────────────────
+  // Flagged by migration 20260802100000_select_quiz_questions_rag_verification_gate.sql:
+  // this route serves mobile + web directly (see file header), has no
+  // insufficient-count guard when `chapter` is omitted, and the RPC's own
+  // §3.5 telemetry only covers the enforced-and-locally-thin case. Fix: emit
+  // logOpsEvent (NOT a hard reject) when the whole-subject path returns
+  // fewer rows than requested; response contract is unchanged.
+  describe('whole-subject shortfall telemetry (spec §3.6)', () => {
+    it('emits grounding.quiz_serving telemetry when chapter is omitted and the RPC returns fewer rows than requested', async () => {
+      _rpcResults['select_quiz_questions_rag'] = {
+        data: [ragRow({ id: 'q1' }), ragRow({ id: 'q2' })], // 2 < 5 requested
+        error: null,
+      };
+      const res = await GET(url({ subject: 'math', grade: '9', count: '5' }));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      // Not a hard reject — the short set is still returned as a success.
+      expect(body.success).toBe(true);
+      expect(body.data.questions).toHaveLength(2);
+
+      expect(_logOpsEventImpl).toHaveBeenCalledTimes(1);
+      expect(_logOpsEventImpl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: 'grounding.quiz_serving',
+          severity: 'warning',
+          source: 'api/v2/quiz/questions/route.ts',
+          message: 'quiz_questions_below_requested_count',
+          subjectType: 'quiz_verification_pair',
+          subjectId: '9::math',
+          context: expect.objectContaining({
+            grade: '9',
+            subject: 'math',
+            chapter_number: null,
+            requested_count: 5,
+            returned_count: 2,
+          }),
+        }),
+      );
+    });
+
+    it('does NOT emit telemetry when chapter is omitted and the RPC meets the requested count', async () => {
+      _rpcResults['select_quiz_questions_rag'] = {
+        data: [1, 2, 3, 4, 5].map((i) => ragRow({ id: `q${i}` })),
+        error: null,
+      };
+      const res = await GET(url({ subject: 'math', grade: '9', count: '5' }));
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).success).toBe(true);
+      expect(_logOpsEventImpl).not.toHaveBeenCalled();
+    });
+
+    it('does NOT double-signal on the pre-existing chapter-scoped 422 path', async () => {
+      // Same fixture as the "returns 422 insufficient_questions_in_scope"
+      // case above: chapter specified, too few in-chapter rows. The new
+      // whole-subject telemetry must not also fire here.
+      _rpcResults['validate_academic_scope'] = { data: { ok: true }, error: null };
+      _rpcResults['select_quiz_questions_rag'] = { data: [ragRow({ chapter_number: 3 })], error: null };
+      const res = await GET(url({ subject: 'math', grade: '9', count: '5', chapter: '3' }));
+
+      expect(res.status).toBe(422);
+      expect((await res.json()).code).toBe('INSUFFICIENT_QUESTIONS_IN_SCOPE');
+      expect(_logOpsEventImpl).not.toHaveBeenCalled();
+    });
   });
 });

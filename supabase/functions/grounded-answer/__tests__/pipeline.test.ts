@@ -39,6 +39,7 @@ import { __resetL2CacheFlagCacheForTests } from '../_l2-cache-flags.ts';
 import { buildGenCtx, genCtxKeyFragment, hashGenCtx } from '../gen-ctx.ts';
 import { __resetContentVersionCacheForTests } from '../_content-version.ts';
 import type { GroundedRequest } from '../types.ts';
+import { MIN_CHUNKS_FOR_READY } from '../config.ts';
 
 // Fixture content version used by buildSbStub's rag_content_versions table.
 const STUB_CONTENT_VERSION = 0;
@@ -203,22 +204,43 @@ function buildSbStub(fx: SbFixtures): any {
       if (table === 'cbse_syllabus') {
         return {
           select(cols: string) {
-            if (cols.trim() === 'rag_status') {
+            // 2026-08-01: coverage.ts's specific-chapter query switched from
+            // .select('rag_status') to .select('chunk_count') (see coverage.ts
+            // header + coverage.test.ts, updated same day). This stub must
+            // match the CURRENT query shape or every strict-mode test that
+            // reaches the coverage precheck throws
+            // "TypeError: ...maybeSingle is not a function" (the 'rag_status'
+            // branch never matches, so the call falls into the 4-.eq()
+            // alternatives branch below, which is 3 .eq() short of what
+            // .maybeSingle() needs).
+            if (cols.trim() === 'chunk_count') {
               return chainEq(3, () => ({
                 maybeSingle: () =>
                   Promise.resolve({
-                    data: fx.chapter_ready ? { rag_status: 'ready' } : null,
+                    data: fx.chapter_ready ? { chunk_count: MIN_CHUNKS_FOR_READY + 150 } : null,
                     error: null,
                   }),
               }));
             }
-            // alternatives query: four .eq() then .order().limit()
-            return chainEq(4, () => ({
-              order: () => ({
-                limit: () =>
-                  Promise.resolve({ data: fx.alternatives ?? [], error: null }),
+            // alternatives / subject-wide query: coverage.ts now filters via
+            // .gte('chunk_count', MIN_CHUNKS_FOR_READY) instead of
+            // .eq('rag_status', 'ready') — still 2 .eq() then 1 more .eq(),
+            // just with a .gte() in the third slot: .eq().eq().gte().eq()
+            // .order().limit().
+            return {
+              eq: () => ({
+                eq: () => ({
+                  gte: () => ({
+                    eq: () => ({
+                      order: () => ({
+                        limit: () =>
+                          Promise.resolve({ data: fx.alternatives ?? [], error: null }),
+                      }),
+                    }),
+                  }),
+                }),
               }),
-            }));
+            };
           },
         };
       }

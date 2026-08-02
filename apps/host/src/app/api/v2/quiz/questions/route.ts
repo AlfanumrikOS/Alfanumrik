@@ -25,6 +25,7 @@ import { logger } from '@alfanumrik/lib/logger';
 import { validateSubjectWrite } from '@alfanumrik/lib/subjects';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { QuizQuestion, type TQuizQuestion } from '@alfanumrik/lib/api/v2/contract';
+import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 
 const VALID_COUNTS = [5, 10, 15, 20];
 const VALID_DIFFICULTIES = ['easy', 'medium', 'hard', 'mixed', 'progressive'];
@@ -184,6 +185,33 @@ export async function GET(request: NextRequest) {
           'INSUFFICIENT_QUESTIONS_IN_SCOPE',
         );
       }
+    } else if (rows.length < count) {
+      // Whole-subject mode: NOT a hard reject. Spec docs/superpowers/specs/
+      // 2026-08-02-quiz-rag-verification-gate-correctness.md §3.6: after
+      // migration 20260802100000's Tier-0 predicates on
+      // select_quiz_questions_rag, a whole-subject request can come back
+      // short of `count` for a reason other than pre-existing content
+      // thinness, and the RPC's own §3.5 telemetry only covers the
+      // enforced-and-locally-thin case, not this one (mobile + web both hit
+      // this route directly, per this file's header). Emit ops telemetry
+      // only — this route's response contract is unchanged.
+      void logOpsEvent({
+        category: 'grounding.quiz_serving',
+        severity: 'warning',
+        source: 'api/v2/quiz/questions/route.ts',
+        message: 'quiz_questions_below_requested_count',
+        subjectType: 'quiz_verification_pair',
+        subjectId: `${grade}::${subject}`,
+        context: {
+          grade,
+          subject,
+          chapter_number: null,
+          difficulty_mode: difficulty,
+          question_types: ['mcq'],
+          requested_count: count,
+          returned_count: rows.length,
+        },
+      });
     }
 
     // 7. Project to the contract shape (drops correct_answer_index — P6).
