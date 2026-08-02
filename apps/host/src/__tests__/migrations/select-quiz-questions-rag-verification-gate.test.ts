@@ -23,6 +23,50 @@
  * authoring environment does not have (no DB access — this file is written
  * correctly-gated per the established pattern and has not been executed).
  *
+ * ADDED 2026-08-02 (same-day CI round-trip on this PR): a capability probe
+ * (`verificationGateOwnershipSkipIsLive()` below) now runs BEFORE seeding any
+ * fixture.
+ *
+ * ROOT CAUSE OF THE FIRST CI FAILURE ON THIS SUITE (evidenced, not assumed):
+ * `sync-staging-migrations.yml` -- the ONLY mechanism that pushes merged
+ * `supabase/migrations/**` files to the STAGING project this lane points at
+ * -- has been in GitHub's `disabled_manually` state since 2026-07-11 (its
+ * `updated_at`), and its last run of ANY kind (244 total runs) was
+ * 2026-07-10, confirmed via `gh api repos/.../actions/workflows/270646101`
+ * and `.../runs`. `20260801100700_select_quiz_questions_rag_service_role_skip.sql`
+ * (which added the `auth.uid() IS NOT NULL AND` skip for service-role
+ * callers to this exact function) merged to main 2026-07-30 -- 19 days after
+ * the sync workflow stopped running -- so it, and this migration, have never
+ * reached staging. Staging is therefore still running
+ * `select_quiz_questions_rag` as defined by
+ * `20260625000200_fix_pool_reset_min_pool_guard.sql`, whose ownership guard
+ * is UNCONDITIONAL: `IF NOT EXISTS (SELECT 1 FROM students WHERE id =
+ * p_student_id AND auth_user_id = auth.uid())` with no null-skip at all. That
+ * raises 'Access denied' for EVERY service-role call whose target student's
+ * `auth_user_id` is NULL -- which this suite's `seedStudentOnce()`
+ * deliberately leaves NULL -- independent of what `auth.uid()` itself
+ * resolves to. This is a staging-sync/deployment gap, NOT a defect in this
+ * migration, the RPC, or the "auth.uid() IS NULL for service-role calls"
+ * convention several other RPCs in this codebase already rely on (that
+ * convention is the standard, documented Supabase behavior: a genuine
+ * service_role JWT carries no `sub` claim).
+ *
+ * `verificationGateOwnershipSkipIsLive()` detects this exact condition and
+ * routes it through the SAME `available`/`setupError` -> `skipIfNoSubstrate`
+ * path every `it()` below already uses, instead of hard-failing --
+ * mirroring the established `rpcIsDeployed`/`skipIfRpcNotDeployed` pattern
+ * this repo already uses for the identical "migration merged in this PR, not
+ * yet synced to the target env" deadlock (see
+ * `apps/host/src/__tests__/helpers/integration.ts`, and
+ * `start-quiz-session-shuffle-integrity-e2e.test.ts` for a sibling use). This
+ * suite re-arms itself automatically, with no further code change, once
+ * staging is caught up.
+ *
+ * THIS DOES NOT FIX THE UNDERLYING GAP -- that fix is operational, not code:
+ * ops/architect need to determine why `sync-staging-migrations.yml` was
+ * disabled and, if appropriate, re-enable it and run a catch-up sync. That is
+ * intentionally NOT done as a silent side effect of this PR.
+ *
  * P13: every fixture is synthetic (grade/subject/student rows created and
  * torn down by this suite); no real student data touched.
  *
@@ -38,7 +82,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
-import { hasSupabaseIntegrationEnv, skipIfNoSubstrate } from '../helpers/integration';
+import { hasSupabaseIntegrationEnv, skipIfNoSubstrate, isMissingRpcError } from '../helpers/integration';
 import { SAFE_PREFERRED_SUBJECT_CODE } from './_helpers/reference-data';
 
 const describeIntegration = hasSupabaseIntegrationEnv() ? describe : describe.skip;
@@ -180,12 +224,69 @@ async function verificationStatesFor(ids: string[]): Promise<Map<string, { verif
   return map;
 }
 
+/**
+ * Capability probe -- see the file header ("ADDED 2026-08-02") for the full
+ * root-cause writeup. Resolves `{ live: true }` when the deployed
+ * select_quiz_questions_rag skips its ownership guard for service-role
+ * callers (auth.uid() IS NULL), which every test below depends on. Resolves
+ * `{ live: false, reason }` when it detects either (a) the RPC is not
+ * deployed at all, or (b) the pre-2026-08-01 unconditional-guard version is
+ * still what's live on this database (a staging-sync gap, not a bug in this
+ * PR). Re-throws any other error -- this probe must never swallow a
+ * genuine, unrelated defect.
+ *
+ * Probe args are deliberately benign/read-only (P13-safe: a fixed nil UUID
+ * that cannot match any real student, and a nonsense subject code that
+ * cannot match any real question_bank row), so it is safe to call before any
+ * fixture exists -- same contract as `rpcIsDeployed()` in
+ * `../helpers/integration`.
+ */
+async function verificationGateOwnershipSkipIsLive(): Promise<{ live: boolean; reason: string }> {
+  const { error } = await supabaseAdmin.rpc('select_quiz_questions_rag', {
+    p_student_id: '00000000-0000-0000-0000-000000000000',
+    p_subject: '__zzq_capability_probe_unused__',
+    p_grade: TEST_GRADE,
+    p_chapter_number: null,
+    p_count: 1,
+    p_difficulty_mode: 'mixed',
+    p_question_types: ['mcq'],
+    p_query_embedding: null,
+  });
+  if (!error) return { live: true, reason: '' };
+  if (isMissingRpcError(error, 'select_quiz_questions_rag')) {
+    return {
+      live: false,
+      reason: '[integration] select_quiz_questions_rag() is NOT deployed to this database yet.',
+    };
+  }
+  if (/access denied/i.test(error.message ?? '')) {
+    return {
+      live: false,
+      reason: [
+        '[integration] select_quiz_questions_rag() rejected a service-role probe call with',
+        '"Access denied". The deployed function predates',
+        '20260801100700_select_quiz_questions_rag_service_role_skip.sql (no auth.uid() IS NOT NULL',
+        'skip for service-role callers) -- this is the sync-staging-migrations.yml gap documented',
+        'in the file header, not a defect in this migration or the RPC.',
+      ].join(' '),
+    };
+  }
+  throw new Error(
+    `verificationGateOwnershipSkipIsLive probe: unexpected error from select_quiz_questions_rag: ${error.message}`,
+  );
+}
+
 describeIntegration('select_quiz_questions_rag — verification gate (live DB)', () => {
   let available = false;
   let setupError: string | null = null;
 
   beforeAll(async () => {
     try {
+      const probe = await verificationGateOwnershipSkipIsLive();
+      if (!probe.live) {
+        setupError = probe.reason;
+        return;
+      }
       await seedSubjectOnce();
       await seedStudentOnce();
       available = true;
