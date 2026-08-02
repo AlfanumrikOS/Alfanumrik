@@ -85,6 +85,7 @@ Fix (ddc41f8):
 - Migration `20260418130000` widens the v2 RPC filter from `rag_status='ready'` to `rag_status IN ('partial', 'ready')`.
 - Both routes get a bounded fallback: if v2 returns empty AND student has a grade, fall back to `GRADE_SUBJECTS` / `chapters` catalog and log `ops_events` (category=`grounding.study_path`).
 - Architecture self-gates at lower layers: grounded-answer coverage precheck and quiz `verified_against_ncert` filter both still enforce strictness. No end-user safety regression.
+  > **CORRECTION (2026-08-02, architect, per assessment's spec `docs/superpowers/specs/2026-08-02-quiz-rag-verification-gate-correctness.md`):** the "quiz `verified_against_ncert` filter" half of this claim was FALSE as written and remained false from 2026-04-18 until 2026-08-02. `select_quiz_questions_rag` — the RPC actually serving quiz questions — had no `verified_against_ncert` or `verification_state` predicate at all across all of its historical versions in that window; a verifier-disproved (`verification_state='failed'`) row could be served with no gate. Only the grounded-answer coverage precheck (a different mechanism, for Foxy/NCERT-solver, not question-bank serving) was real at the time. This was not a cosmetic error: it was load-bearing justification for the hotfix decision described above, though that hotfix's own mechanism (widening `rag_status IN ('partial','ready')` for subject/chapter visibility) is separate from question serving and is not itself invalidated by this correction. The gate now genuinely exists as of migration `20260802100000_select_quiz_questions_rag_verification_gate.sql` — see the addendum at the end of this document.
 
 ### 7. Finishing betterment
 - Mobile-web sync check: mobile does not shuffle options and does not send `is_correct`, so it is forward-compatible with the new RPC shape without changes.
@@ -101,7 +102,7 @@ Fix (ddc41f8):
 | P3 (anti-cheat) | Preserved | Server remains authoritative for answer correctness (Path B chosen over Path A). |
 | P4 (atomic submission) | Preserved | Single RPC signature unchanged. |
 | P5 (grade format) | **Strengthened** | CHECK constraint on `cbse_syllabus.grade`. |
-| P6 (question quality) | **Strengthened** | `verified_against_ncert` gate prevents unverified rows reaching students. |
+| P6 (question quality) | **Strengthened** [CORRECTED 2026-08-02 — see addendum] | `verified_against_ncert` gate prevents unverified rows reaching students. **This was FALSE as of 2026-04-18: no such gate existed in `select_quiz_questions_rag` until migration `20260802100000_select_quiz_questions_rag_verification_gate.sql`.** Same root cause as the line-87 correction above. |
 | P7 (bilingual UI) | Preserved | All new strings EN+HI. |
 | P8 (RLS) | Preserved | 9 new tables/views all with RLS policies in the same migration. |
 | P9 (RBAC) | Preserved | `super_admin.access` seeded + enforced on 5 new API routes. |
@@ -233,3 +234,63 @@ After the main deploy, two visible regressions surfaced in the quiz picker:
 ### Remaining deferred work
 
 - **`grounded-answer` Edge Function** — 18-file bundle; all `ff_grounded_ai_*` flags are OFF so no user-facing path is blocked. Required before: (a) re-scheduling `grounded-verify-question-bank`, (b) Phase 4 Grade 10 Science pilot flip. Follow `docs/runbooks/grounding/rollout-sequence.md` and the pre-rollout checklist (`scripts/pre-rollout-checklist.ts`) before the flip.
+
+---
+
+## Addendum 2026-08-02 — correcting two false verification-gate claims
+
+This report originally claimed (§6 "Post-deploy hotfix", and the P6 row of the
+"Product-invariant compliance" table above) that a `verified_against_ncert`
+filter existed in the quiz-serving path as of 2026-04-18. **Both claims were
+false.** They are corrected in place above (inline `CORRECTION` notes) rather
+than silently rewritten, per this repo's convention for historical
+completion reports. This addendum is the full explanation.
+
+**What was actually true on 2026-04-18, confirmed by direct re-read of the
+live function body (assessment's independent audit,
+`docs/superpowers/specs/2026-08-02-quiz-rag-verification-gate-correctness.md`
+§1.1):** `select_quiz_questions_rag` — the RPC that serves quiz questions to
+`/api/quiz`, `/api/v2/quiz/questions`, and (from 2026-08-01) the WhatsApp
+Daily-6 top-up path — has never, across 7 historical versions since
+2026-04-03, filtered on `question_bank.verified_against_ncert` or
+`verification_state`. A row the automated NCERT verifier explicitly
+DISPROVED (`verification_state = 'failed'`) could be served to a student
+with no gate at all, for the entire period between this report's original
+publication and the fix below. The retroactive verifier
+(`supabase/functions/verify-question-bank/index.ts`) sets
+`verification_state='failed'` on an existing legacy row WITHOUT touching
+`is_active`, so a disproved legacy row stayed `is_active=true` and fully
+servable — this was the population most exposed by the false claim.
+
+**Why the false claim happened:** the 2026-04-17 design spec's own §5.3 and
+§4 ("Four unbreakable invariants") specified this gate as part of the
+original approved architecture — gate by `ff_grounded_ai_enforced_pairs`,
+primary predicate `verified_against_ncert = true` when enforced, `legacy_
+unverified` + `verified` (never `failed`) otherwise. The design was sound and
+approved; it was simply never implemented in `select_quiz_questions_rag`
+itself, and this completion report was written as though the design and the
+implementation were the same thing. `ff_grounded_ai_enforced_pairs` itself
+was real, tested, and hysteresis-protected (enable requires a server-
+recomputed `verified_ratio >= 0.9`; auto-disable at `< 0.85`) — but nothing
+in the serving path ever read its `enabled` column. It was a pure no-op with
+respect to serving from the day it was created until the fix below.
+
+**The fix (CEO-authorized, 2026-08-02):** migration
+`supabase/migrations/20260802100000_select_quiz_questions_rag_verification_gate.sql`
+wires `ff_grounded_ai_enforced_pairs` into `select_quiz_questions_rag` for
+real, adds three Tier-0 predicate closures (`deleted_at IS NULL`,
+`content_status = 'published'`, `verification_state != 'failed'` — the last
+with no fallback rung, ever), and adds a local-thinness fallback ladder so a
+pair that clears 90% verified in aggregate but has a locally-thin chapter/
+difficulty slice still degrades gracefully instead of starving. Full design:
+`docs/superpowers/specs/2026-08-02-quiz-rag-verification-gate-correctness.md`.
+Review chain: assessment (spec) → architect (this migration) → ai-engineer
+(confirmation) → testing → backend (caller-side gap, §3.6) → ops (§7 census
+before enabling any new pair) → quality.
+
+**Lesson, stated plainly for the next person auditing a completion report:**
+a design spec being approved, and a control-plane table being built and
+tested, are not evidence that the serving path actually reads either of
+them. Verify claims like "X gate prevents Y" against the actual function
+body that runs in the hot path, not against the spec that proposed it or the
+admin tooling that manages it.

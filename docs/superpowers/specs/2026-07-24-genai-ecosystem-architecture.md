@@ -223,10 +223,10 @@ Two tiers, one offline (exists) and one runtime (planned).
 - **Per-surface oracles:** AI quiz-generator validation oracle (REG-54, deterministic + LLM-grader gate before `question_bank` insert); Foxy scope-lock and structured-output oracles.
 
 ### 8.2 Runtime eval gate (planned, L1)
-A pre-delivery gate scoring every student-facing GenAI response on **9 dimensions**:
+A sensor scoring every student-facing GenAI response on **9 dimensions**:
 1. Accuracy 2. Curriculum alignment 3. Hallucination 4. Age-appropriateness 5. Difficulty 6. Learning-effectiveness 7. Toxicity 8. Latency 9. Cost.
 
-Fails-closed on the safety dimensions (hallucination/toxicity/age): a failing response is suppressed/regenerated, not delivered. Flag-gated, default-OFF, with a regression entry before any traffic (Section 12).
+**CORRECTION (2026-08-01, verified in-source):** this paragraph previously read "Fails-closed on the safety dimensions (hallucination/toxicity/age): a failing response is suppressed/regenerated, not delivered." That was wrong. Both the governing design spec (`docs/superpowers/specs/2026-07-24-runtime-response-eval-design.md`) and the shipped implementation (`packages/lib/src/ai/eval/response-eval.ts`'s `scoreResponse`, `packages/lib/src/ai/eval/emit.ts`'s `logResponseEval`) agree this gate is **observability-only and fire-and-forget**: it never blocks, delays, refunds, retries, or alters a response. At the sole production call site (`apps/host/src/app/api/foxy/route.ts`), the eval is invoked as `void logResponseEval(scoreResponse(...))` — not awaited, unable to affect the response already being returned. A `flagged` record is a dashboard signal, not an enforcement action. Real enforcement of the safety dimensions (toxicity / age-appropriateness / curriculum scope) is the separate, pre-existing `screenStudentFacingText` path, which already runs before delivery — not this gate. Flag-gated (`ff_response_eval_v1`), default-OFF, with a regression entry before any traffic (Section 12).
 
 ---
 
@@ -275,9 +275,11 @@ Every phase ships behind a **default-OFF feature flag** with a **regression-cata
 | **1 (now)** | **Model Gateway (L2)** | `ff_model_gateway_v1` | This deliverable. OFF = Anthropic-primary byte-identical. Migration `20260724120000`. |
 | 2 | Unified Student Memory read-API (L3) | new staged flag | Read-only agent memory + DPDP erasure. |
 | 3 | Orchestration activation (L4) | `ff_orchestrator_v1` (existing, dormant) | Turn on event-bus routing for the canonical workflow. |
-| 4 | Runtime Eval Gate (L1, 9-dim) | new staged flag | Fail-closed on safety dims. |
+| 4 | Runtime Eval Gate (L1, 9-dim) | new staged flag | Observability-only, fire-and-forget: scores every Foxy response, never blocks/alters/delays it. |
 | 5 | Net-new agents: OutcomePrediction, Lesson, ContentGeneration surfaces | per-agent flags | Compose existing primitives; read-only concept boundary. |
 | 6 | Voice-native + provider expansion (e.g. Gemini) | per-capability flags | Provider add is a CEO gate (Section 13). |
+
+> **CORRECTION (2026-08-01, verified in-source):** the Phase 4 row above previously read "Fail-closed on safety dims." That was wrong — it contradicted both this program's own governing design spec and its shipped implementation. The Runtime Eval Gate (`packages/lib/src/ai/eval/response-eval.ts`'s `scoreResponse`, wired fire-and-forget via `void logResponseEval(...)` at the sole production call site `apps/host/src/app/api/foxy/route.ts`) is **observability-only**: it never blocks, delays, refunds, retries, or alters a response — a `flagged` record is a dashboard signal, not an enforcement action (`docs/superpowers/specs/2026-07-24-runtime-response-eval-design.md` §1, §4). Real enforcement of the safety dimensions (toxicity / age-appropriateness / curriculum scope) remains the separate, pre-existing `screenStudentFacingText` path, not this gate. See §8.2's matching correction.
 
 Phases are independent flags; they ramp separately (the adaptive Loop-A/Loops-B&C precedent: separate flags, independent ramps).
 

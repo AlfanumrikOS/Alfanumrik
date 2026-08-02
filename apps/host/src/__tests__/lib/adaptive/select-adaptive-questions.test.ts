@@ -126,6 +126,10 @@ function makeFakeClient(cfg: FakeConfig): { client: AdaptiveClient; log: QueryLo
           entry.filters[`${col}__not_${op}`] = val;
           return builder;
         },
+        is(col: string, val: unknown) {
+          entry.filters[`${col}__is`] = val;
+          return builder;
+        },
         order() {
           return builder;
         },
@@ -741,5 +745,104 @@ describe('selectAdaptiveQuestions — assertion 7 (P6/P5/subject integrity)', ()
     expect(res.questions.length).toBeLessThanOrEqual(5);
     const ids = res.questions.map((q: any) => q.id);
     expect(new Set(ids).size).toBe(ids.length); // no dup IDs within result
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Verification-gate Tier-0 mirroring (2026-08-02)
+//
+// select_quiz_questions_rag (migration
+// 20260802100000_select_quiz_questions_rag_verification_gate.sql) now excludes
+// soft-deleted, non-published, and verifier-disproved rows. This module
+// queries question_bank directly and does NOT go through that RPC, so it does
+// not automatically inherit those predicates — closed by mirroring the three
+// Tier-0 predicates (the ones with no fallback rung, applied regardless of
+// ff_grounded_ai_enforced_pairs enforcement state) in both question_bank
+// queries. Deliberately NOT covered here: the RPC's Rung E0/E1 enforcement
+// ladder (strict verified_against_ncert filter under an enforced pair) — that
+// stays a single-owner decision inside the RPC (spec §2.2's own rationale),
+// not duplicated into this module.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('selectAdaptiveQuestions — verification-gate Tier-0 mirroring (2026-08-02)', () => {
+  it('the primary (concept_tag-scoped) question_bank query carries all three Tier-0 predicates', async () => {
+    const { client, log } = makeFakeClient({
+      subject: { data: { id: 'subj-uuid-1' }, error: null },
+      mastery: { data: [masteryRow(0.6)], error: null },
+      questionBank: (filters) => {
+        const allowed = new Set((filters.in?.vals as string[]) ?? BLOOM_ORDER);
+        return { data: [makeQuestion({ bloom_level: [...allowed][0] ?? 'remember' })], error: null };
+      },
+    });
+    await selectAdaptiveQuestions(client, BASE_PARAMS);
+    const qbCalls = log.filter((l) => l.table === 'question_bank');
+    expect(qbCalls.length).toBeGreaterThan(0);
+    for (const call of qbCalls) {
+      expect(call.filters['deleted_at__is']).toBeNull();
+      expect(call.filters['content_status']).toBe('published');
+      expect(call.filters['verification_state__not_eq']).toBe('failed');
+    }
+  });
+
+  it('the relaxed (concept_tag-dropped) fallback query ALSO carries all three Tier-0 predicates', async () => {
+    let callCount = 0;
+    const { client, log } = makeFakeClient({
+      subject: { data: { id: 'subj-uuid-1' }, error: null },
+      mastery: { data: [masteryRow(0.6, { chapter: 5, conceptTag: 'fractions' })], error: null },
+      questionBank: () => {
+        callCount += 1;
+        // First call (primary, concept_tag-scoped) returns too few rows,
+        // forcing the relaxed (chapter-only) fallback query to fire.
+        if (callCount === 1) return { data: [], error: null };
+        return { data: [makeQuestion({ bloom_level: 'remember' })], error: null };
+      },
+    });
+    await selectAdaptiveQuestions(client, { ...BASE_PARAMS, count: 5 });
+    const qbCalls = log.filter((l) => l.table === 'question_bank');
+    expect(qbCalls.length).toBe(2); // primary + relaxed fallback both fired
+    for (const call of qbCalls) {
+      expect(call.filters['deleted_at__is']).toBeNull();
+      expect(call.filters['content_status']).toBe('published');
+      expect(call.filters['verification_state__not_eq']).toBe('failed');
+    }
+  });
+
+  it('BEHAVIORAL: a soft-deleted / draft / verifier-failed row is never served, even when it is the only way to fill the count', async () => {
+    // This resolver simulates what a REAL Postgres backend does given the
+    // recorded filter calls — the selector performs NO client-side filtering
+    // on these three columns (unlike the P6 shape checks in isUsableCandidate),
+    // so this is the only thing standing between "the filter call was made"
+    // and "the filter call actually excluded the bad rows". If a future edit
+    // drops one of the three .is()/.eq()/.not() calls in the source, the
+    // corresponding `filters[...]` check below goes false/undefined and the
+    // bad row survives into `data` — failing this test.
+    const { client } = makeFakeClient({
+      subject: { data: { id: 'subj-uuid-1' }, error: null },
+      mastery: { data: [masteryRow(0.6)], error: null },
+      questionBank: (filters) => {
+        const fixtureRows = [
+          { id: 'good', deleted_at: null as string | null, content_status: 'published', verification_state: 'verified' },
+          { id: 'soft-deleted', deleted_at: '2026-01-01T00:00:00Z', content_status: 'published', verification_state: 'verified' },
+          { id: 'draft', deleted_at: null as string | null, content_status: 'draft', verification_state: 'verified' },
+          { id: 'failed-verifier', deleted_at: null as string | null, content_status: 'published', verification_state: 'failed' },
+        ];
+        const survivors = fixtureRows.filter((r) => {
+          if (filters['deleted_at__is'] === null && r.deleted_at !== null) return false;
+          if (filters['content_status'] === 'published' && r.content_status !== 'published') return false;
+          if (filters['verification_state__not_eq'] === 'failed' && r.verification_state === 'failed') return false;
+          return true;
+        });
+        return {
+          data: survivors.map((r) => makeQuestion({ id: r.id, bloom_level: 'remember' })),
+          error: null,
+        };
+      },
+    });
+    const res = await selectAdaptiveQuestions(client, { ...BASE_PARAMS, count: 10 });
+    const ids = res.questions.map((q: any) => q.id);
+    expect(ids).toContain('good');
+    expect(ids).not.toContain('soft-deleted');
+    expect(ids).not.toContain('draft');
+    expect(ids).not.toContain('failed-verifier');
   });
 });

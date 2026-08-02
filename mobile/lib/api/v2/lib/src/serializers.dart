@@ -22,6 +22,10 @@ import 'package:alfanumrik_api_v2/src/model/curriculum_subject.dart';
 import 'package:alfanumrik_api_v2/src/model/curriculum_topic.dart';
 import 'package:alfanumrik_api_v2/src/model/encourage_request.dart';
 import 'package:alfanumrik_api_v2/src/model/error_response.dart';
+import 'package:alfanumrik_api_v2/src/model/exam_readiness_band.dart';
+import 'package:alfanumrik_api_v2/src/model/exam_schedule_entry.dart';
+import 'package:alfanumrik_api_v2/src/model/exam_schedule_entry_topic.dart';
+import 'package:alfanumrik_api_v2/src/model/exam_schedule_response.dart';
 import 'package:alfanumrik_api_v2/src/model/leaderboard_entry.dart';
 import 'package:alfanumrik_api_v2/src/model/leaderboard_response.dart';
 import 'package:alfanumrik_api_v2/src/model/parent_child.dart';
@@ -65,6 +69,10 @@ part 'serializers.g.dart';
   CurriculumTopic,
   EncourageRequest,
   ErrorResponse,
+  ExamReadinessBand,
+  ExamScheduleEntry,
+  ExamScheduleEntryTopic,
+  ExamScheduleResponse,
   LeaderboardEntry,
   LeaderboardResponse,
   ParentChild,

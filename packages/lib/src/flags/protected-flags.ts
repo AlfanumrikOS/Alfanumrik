@@ -18,10 +18,26 @@
  *   52-flag forced-OFF list: Group A + E3 + E4 + E5 + E6 + E7),
  *   20260720130000_restore_approved_flag_posture.sql (block B —
  *   ff_irt_question_selection; hard-exclusion list — the do-not-touch names),
- *   and 20260801100500_seed_ff_whatsapp_bot.sql (the two WhatsApp bot
+ *   20260801100500_seed_ff_whatsapp_bot.sql (the two WhatsApp bot
  *   protected flags — ff_whatsapp_bot_v1, ff_whatsapp_alarm_template — added
  *   here 2026-07-30 as that seed's architect-ruled companion, closing its
- *   documented DB⊃TS drift BEFORE any first flip).
+ *   documented DB⊃TS drift BEFORE any first flip), and
+ *   20260801120000_protected_feature_flags_genai_ecosystem_seed.sql (5 GenAI
+ *   ecosystem flags — ff_model_gateway_v1, ff_unified_memory_v1,
+ *   ff_outcome_prediction_v1, ff_lesson_generation_v1,
+ *   ff_content_generation_v1 — added here 2026-08-01). These 5 were seeded
+ *   OFF between 2026-07-24 and 2026-07-27 but never opted into this registry,
+ *   which is why two of their siblings (ff_lesson_generation_v1,
+ *   ff_content_generation_v1) could go from seeded-OFF to 100%-production-
+ *   rollout in a single day (20260724220000_set_ff_generation_rollout_100.sql)
+ *   with zero CI check, console confirmation, or canary alert firing — the
+ *   Phase 0 safety net below is opt-in PER FLAG, and nobody had opted these
+ *   in. ff_response_eval_v1, the 6th flag seeded in that same window, is
+ *   deliberately EXCLUDED here: it was a knowing, CEO-authorized 100%-rollout
+ *   of a fire-and-forget, metadata-only observability sensor
+ *   (20260724190000_enable_ff_response_eval_v1.sql), never disabled, and not
+ *   implicated in the incident — EXPECTED_OFF_FLAGS is for flags whose
+ *   approved posture is OFF, which is not this one's.
  *
  * NOTE: this registry protects flags at the CONSOLE boundary. It does not (and
  * cannot) change how any flag evaluates at runtime.
@@ -130,6 +146,18 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
   ff_grounded_answer_mol_shadow_v1: AI_PROVIDER,
   ff_mol_shadow_text_capture_v1: AI_PROVIDER,
 
+  // ai_provider — GenAI ecosystem Phase 1 Model Gateway (separate program from
+  // MoL above; registered 2026-08-01, closing the 2026-07-24..27 GenAI
+  // generation-agent incident gap — see migration
+  // 20260801120000_protected_feature_flags_genai_ecosystem_seed.sql).
+  ff_model_gateway_v1: {
+    tier: 'ai_provider',
+    reason:
+      "AI provider-routing change (GenAI Model Gateway L2; seeded OFF by migration 20260724120000, never enabled). When ON, the gateway's default policy adds an OpenAI fallback tier (gpt-4o-mini/gpt-4o) behind Anthropic for Foxy's intent classifier (packages/lib/src/ai/workflows/foxy-router.ts) — a real cross-provider routing change requiring explicit CEO provider approval that has not been given.",
+    reasonHi:
+      'AI प्रदाता-रूटिंग परिवर्तन (GenAI मॉडल गेटवे L2; माइग्रेशन 20260724120000 द्वारा सीड किया गया OFF, कभी सक्षम नहीं हुआ)। ON होने पर, गेटवे की default नीति Foxy के इंटेंट क्लासिफायर के लिए Anthropic के पीछे एक OpenAI फ़ॉलबैक टियर (gpt-4o-mini/gpt-4o) जोड़ती है (packages/lib/src/ai/workflows/foxy-router.ts) — यह एक वास्तविक क्रॉस-प्रदाता रूटिंग परिवर्तन है जिसके लिए स्पष्ट CEO प्रदाता स्वीकृति आवश्यक है, जो अभी तक नहीं दी गई है।',
+  },
+
   // constitution_pinned — Group A (REG-124/126/131/175)
   ff_adaptive_remediation_v1: CONSTITUTION_PINNED,
   ff_adaptive_loops_bc_v1: CONSTITUTION_PINNED,
@@ -212,6 +240,40 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
       'एकमात्र आवर्ती PAID WhatsApp टेम्पलेट सेंड (डेली अलार्म — 2026-07-29 WhatsApp बॉट योजना)। समय-पूर्व या बल्क सक्षम करने से प्रति प्राप्तकर्ता प्रतिदिन वास्तविक खर्च होता है और WhatsApp नंबर की quality rating को खतरा होता है। quality निगरानी के साथ 5/25/100 प्रतिशत चरणबद्ध; केवल admin_flip_feature_flag से फ़्लिप करें।',
   },
 
+  // staged_rollout — GenAI ecosystem flags registered 2026-08-01 (incident
+  // gap closure; see migration
+  // 20260801120000_protected_feature_flags_genai_ecosystem_seed.sql and the
+  // header note above). ff_model_gateway_v1 (ai_provider tier) is declared
+  // earlier, next to the MoL group.
+  ff_unified_memory_v1: {
+    tier: 'staged_rollout',
+    reason:
+      "Blocked on an unresolved DPDP erasure-pending interlock (seeded OFF by migration 20260724130000, never enabled; design spec docs/superpowers/specs/2026-07-24-unified-student-memory-design.md Sec 2.3/3). Enabling before Foxy's teachingDirectorSection is brought under the erasure-pending guard would let a mid-erasure student's teaching directive leak into a prompt. That interlock is still open — no getStudentMemory composer exists yet (only the erasure-guard and preferences sub-reads, under packages/lib/src/memory/).",
+    reasonHi:
+      'एक अनसुलझे DPDP erasure-pending इंटरलॉक पर अवरुद्ध (माइग्रेशन 20260724130000 द्वारा सीड किया गया OFF, कभी सक्षम नहीं हुआ; डिज़ाइन स्पेक docs/superpowers/specs/2026-07-24-unified-student-memory-design.md खंड 2.3/3)। Foxy के teachingDirectorSection को erasure-pending गार्ड के दायरे में लाए बिना सक्षम करने से मिड-इरेज़र छात्र का टीचिंग डायरेक्टिव प्रॉम्प्ट में लीक हो सकता है। यह इंटरलॉक अभी भी खुला है — कोई getStudentMemory कंपोज़र अभी मौजूद नहीं है (केवल erasure-guard और preferences सब-रीड, packages/lib/src/memory/ के अंतर्गत)।',
+  },
+  ff_outcome_prediction_v1: {
+    tier: 'staged_rollout',
+    reason:
+      'Read-only Outcome Prediction Agent endpoint (GenAI Phase 5a; seeded OFF by migration 20260724150000, never enabled). Backend route and tests are complete, but zero UI surface reaches it — verified no reference to predict/outcome or outcome_prediction anywhere under apps/host/src/app outside the route itself. Enabling today would activate a route nobody can navigate to; hold OFF until a UI consumer ships.',
+    reasonHi:
+      'रीड-ओनली Outcome Prediction Agent एंडपॉइंट (GenAI Phase 5a; माइग्रेशन 20260724150000 द्वारा सीड किया गया OFF, कभी सक्षम नहीं हुआ)। बैकएंड रूट और टेस्ट पूर्ण हैं, लेकिन इस तक पहुँचने के लिए कोई UI सतह मौजूद नहीं है — सत्यापित: apps/host/src/app में रूट के अलावा कहीं भी predict/outcome या outcome_prediction का कोई संदर्भ नहीं है। आज सक्षम करने से एक ऐसा रूट सक्रिय हो जाएगा जिस तक कोई नहीं पहुँच सकता; UI उपभोक्ता के लॉन्च होने तक OFF रखें।',
+  },
+  ff_lesson_generation_v1: {
+    tier: 'staged_rollout',
+    reason:
+      "Student-facing Lesson Generation Agent (GenAI Phase 5b): escalated to 100% same-day (migration 20260724220000) then FORCE-DISABLED 3 days later (20260727120000) because it abstained on ~100% of requests — production has zero cbse_syllabus rows at rag_status='ready' under the strict-mode coverage precheck, a dead end, not a degradation. Do NOT re-enable until (a) the coverage/confidence gate fix has landed (chapters legitimately reaching rag_status='ready', or a deliberately revised readiness predicate) AND (b) that fix is validated against production data with a real grounded, non-abstain response.",
+    reasonHi:
+      "छात्र-मुखी Lesson Generation Agent (GenAI Phase 5b): उसी दिन 100% तक बढ़ाया गया (माइग्रेशन 20260724220000) फिर 3 दिन बाद बलपूर्वक अक्षम किया गया (20260727120000) क्योंकि यह लगभग 100% अनुरोधों पर abstain करता था — प्रोडक्शन में strict-mode coverage precheck के तहत rag_status='ready' वाली कोई cbse_syllabus पंक्ति नहीं है, यह एक डेड एंड है, गुणवत्ता में कमी नहीं। तब तक पुनः सक्षम न करें जब तक (a) coverage/confidence गेट फिक्स न आ जाए (चैप्टर वास्तव में rag_status='ready' तक पहुँचें, या readiness predicate जानबूझकर संशोधित हो) और (b) वह फिक्स प्रोडक्शन डेटा के विरुद्ध वास्तविक ग्राउंडेड, non-abstain प्रतिक्रिया से सत्यापित हो।",
+  },
+  ff_content_generation_v1: {
+    tier: 'staged_rollout',
+    reason:
+      "Student-facing Content Generation Agent, Mermaid diagrams (GenAI Phase 5c): escalated to 100% same-day (migration 20260724220000) then FORCE-DISABLED 3 days later (20260727120000) because it abstained on ~100% of requests — production has zero cbse_syllabus rows at rag_status='ready' under the strict-mode coverage precheck, a dead end, not a degradation. Do NOT re-enable until (a) the coverage/confidence gate fix has landed (chapters legitimately reaching rag_status='ready', or a deliberately revised readiness predicate) AND (b) that fix is validated against production data with a real grounded, non-abstain response.",
+    reasonHi:
+      "छात्र-मुखी Content Generation Agent, Mermaid डायग्राम (GenAI Phase 5c): उसी दिन 100% तक बढ़ाया गया (माइग्रेशन 20260724220000) फिर 3 दिन बाद बलपूर्वक अक्षम किया गया (20260727120000) क्योंकि यह लगभग 100% अनुरोधों पर abstain करता था — प्रोडक्शन में strict-mode coverage precheck के तहत rag_status='ready' वाली कोई cbse_syllabus पंक्ति नहीं है, यह एक डेड एंड है, गुणवत्ता में कमी नहीं। तब तक पुनः सक्षम न करें जब तक (a) coverage/confidence गेट फिक्स न आ जाए (चैप्टर वास्तव में rag_status='ready' तक पहुँचें, या readiness predicate जानबूझकर संशोधित हो) और (b) वह फिक्स प्रोडक्शन डेटा के विरुद्ध वास्तविक ग्राउंडेड, non-abstain प्रतिक्रिया से सत्यापित हो।",
+  },
+
   // special_do_not_touch — controlled outside the console
   ff_atomic_subscription_activation: {
     tier: 'special_do_not_touch',
@@ -278,8 +340,13 @@ export function getProtection(flagName: string): FlagProtection | null {
  * 20260720110000 plus ff_irt_question_selection (restore block B in
  * 20260720130000) plus ff_whatsapp_alarm_template (WhatsApp bot
  * protected flag, seeded fully OFF by 20260801100500; added here
- * 2026-07-30 as that seed's companion). The flag-posture-canary
- * cron compares live rows against this list nightly.
+ * 2026-07-30 as that seed's companion) plus the 5 GenAI ecosystem flags
+ * added 2026-08-01 — ff_model_gateway_v1, ff_unified_memory_v1,
+ * ff_outcome_prediction_v1, ff_lesson_generation_v1,
+ * ff_content_generation_v1 — all still seeded OFF/0% today (see migration
+ * 20260801120000_protected_feature_flags_genai_ecosystem_seed.sql and the
+ * per-flag reasons above for why each is not yet ready to enable). The
+ * flag-posture-canary cron compares live rows against this list nightly.
  *
  * NOT in this list (on purpose): ff_atomic_subscription_activation (its
  * approved posture is is_enabled=TRUE), ff_board_score_v1,
@@ -383,4 +450,15 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   // any FURTHER change still requires typed confirmation. If ever
   // rolled back to 0%, re-add 'ff_whatsapp_bot_v1' to this list.
   'ff_whatsapp_alarm_template',
+  // GenAI ecosystem flags — registered 2026-08-01, closing the
+  // 2026-07-24..27 GenAI generation-agent incident gap (see the header note
+  // above and migration 20260801120000_protected_feature_flags_genai_
+  // ecosystem_seed.sql). All 5 are still seeded OFF/0% as of this addition.
+  // ff_response_eval_v1 is deliberately NOT included — its approved posture
+  // is is_enabled=TRUE (see header note).
+  'ff_model_gateway_v1',
+  'ff_unified_memory_v1',
+  'ff_outcome_prediction_v1',
+  'ff_lesson_generation_v1',
+  'ff_content_generation_v1',
 ];

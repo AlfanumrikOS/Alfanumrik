@@ -11,17 +11,16 @@ part 'parent_glance_snapshot.g.dart';
 /// ParentGlanceSnapshot
 ///
 /// Properties:
-/// * [accuracy]
-/// * [avgScore]
-/// * [sessionsThisWeek]
-/// * [streakDays]
-/// * [timeMinutes]
-/// * [totalChats]
-/// * [totalQuizzes]
-/// * [xp]
+/// * [accuracy] 
+/// * [avgScore] 
+/// * [sessionsThisWeek] 
+/// * [streakDays] 
+/// * [timeMinutes] 
+/// * [totalChats] 
+/// * [totalQuizzes] 
+/// * [xp] 
 @BuiltValue()
-abstract class ParentGlanceSnapshot
-    implements Built<ParentGlanceSnapshot, ParentGlanceSnapshotBuilder> {
+abstract class ParentGlanceSnapshot implements Built<ParentGlanceSnapshot, ParentGlanceSnapshotBuilder> {
   @BuiltValueField(wireName: r'accuracy')
   num? get accuracy;
 
@@ -48,24 +47,18 @@ abstract class ParentGlanceSnapshot
 
   ParentGlanceSnapshot._();
 
-  factory ParentGlanceSnapshot([void updates(ParentGlanceSnapshotBuilder b)]) =
-      _$ParentGlanceSnapshot;
+  factory ParentGlanceSnapshot([void updates(ParentGlanceSnapshotBuilder b)]) = _$ParentGlanceSnapshot;
 
   @BuiltValueHook(initializeBuilder: true)
   static void _defaults(ParentGlanceSnapshotBuilder b) => b;
 
   @BuiltValueSerializer(custom: true)
-  static Serializer<ParentGlanceSnapshot> get serializer =>
-      _$ParentGlanceSnapshotSerializer();
+  static Serializer<ParentGlanceSnapshot> get serializer => _$ParentGlanceSnapshotSerializer();
 }
 
-class _$ParentGlanceSnapshotSerializer
-    implements PrimitiveSerializer<ParentGlanceSnapshot> {
+class _$ParentGlanceSnapshotSerializer implements PrimitiveSerializer<ParentGlanceSnapshot> {
   @override
-  final Iterable<Type> types = const [
-    ParentGlanceSnapshot,
-    _$ParentGlanceSnapshot
-  ];
+  final Iterable<Type> types = const [ParentGlanceSnapshot, _$ParentGlanceSnapshot];
 
   @override
   final String wireName = r'ParentGlanceSnapshot';
@@ -90,19 +83,15 @@ class _$ParentGlanceSnapshotSerializer
       );
     }
     yield r'sessions_this_week';
-    yield object.sessionsThisWeek == null
-        ? null
-        : serializers.serialize(
-            object.sessionsThisWeek,
-            specifiedType: const FullType.nullable(int),
-          );
+    yield object.sessionsThisWeek == null ? null : serializers.serialize(
+      object.sessionsThisWeek,
+      specifiedType: const FullType.nullable(int),
+    );
     yield r'streak_days';
-    yield object.streakDays == null
-        ? null
-        : serializers.serialize(
-            object.streakDays,
-            specifiedType: const FullType.nullable(int),
-          );
+    yield object.streakDays == null ? null : serializers.serialize(
+      object.streakDays,
+      specifiedType: const FullType.nullable(int),
+    );
     if (object.timeMinutes != null) {
       yield r'time_minutes';
       yield serializers.serialize(
@@ -139,9 +128,7 @@ class _$ParentGlanceSnapshotSerializer
     ParentGlanceSnapshot object, {
     FullType specifiedType = FullType.unspecified,
   }) {
-    return _serializeProperties(serializers, object,
-            specifiedType: specifiedType)
-        .toList();
+    return _serializeProperties(serializers, object, specifiedType: specifiedType).toList();
   }
 
   void _deserializeProperties(
@@ -248,3 +235,4 @@ class _$ParentGlanceSnapshotSerializer
     return result.build();
   }
 }
+

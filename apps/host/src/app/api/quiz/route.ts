@@ -3,6 +3,7 @@ import { authorizeRequest, logAudit } from '@alfanumrik/lib/rbac';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { validateSubjectWrite } from '@alfanumrik/lib/subjects';
+import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 
 function subjectNotAllowedResponse(error: {
   code: string;
@@ -550,6 +551,35 @@ async function handleGetQuestions(
       },
       { status: 422 },
     );
+  }
+
+  // Whole-subject mode (no chapter specified): unlike the chapter-scoped path
+  // above, this is NOT a hard reject. Spec docs/superpowers/specs/2026-08-02-
+  // quiz-rag-verification-gate-correctness.md §3.6: after migration
+  // 20260802100000's Tier-0 predicates (deleted_at/content_status/
+  // verification_state on select_quiz_questions_rag), a whole-subject request
+  // can come back short of `count` for a reason other than pre-existing
+  // content thinness — and the RPC's own telemetry (spec §3.5) only fires for
+  // the enforced-and-locally-thin case, not this one. Emit ops telemetry so
+  // the gap is visible without ever blocking or degrading the student's quiz.
+  if (chapter == null && questions.length < count) {
+    void logOpsEvent({
+      category: 'grounding.quiz_serving',
+      severity: 'warning',
+      source: 'api/quiz/route.ts',
+      message: 'quiz_questions_below_requested_count',
+      subjectType: 'quiz_verification_pair',
+      subjectId: `${grade}::${subject}`,
+      context: {
+        grade,
+        subject,
+        chapter_number: null,
+        difficulty_mode: difficulty,
+        question_types: types,
+        requested_count: count,
+        returned_count: questions.length,
+      },
+    });
   }
 
   return NextResponse.json({ success: true, questions });

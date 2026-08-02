@@ -22,10 +22,16 @@
  *      shrank 56 → 55 the same day when the CEO approved a live production
  *      flip of ff_whatsapp_bot_v1 to is_enabled=true/rollout_percentage=100
  *      (audited via admin_flip_feature_flag) — it is no longer expected
- *      fully-OFF (still staged_rollout-protected for any further change).
+ *      fully-OFF (still staged_rollout-protected for any further change). On
+ *      2026-08-01 EXPECTED_OFF_FLAGS grew 55 → 60 with the 5 GenAI ecosystem
+ *      flags (ff_model_gateway_v1, ff_unified_memory_v1,
+ *      ff_outcome_prediction_v1, ff_lesson_generation_v1,
+ *      ff_content_generation_v1 — seed 20260801120000 companion), closing the
+ *      2026-07-24..27 GenAI generation-agent incident gap — all 5 stay
+ *      seeded OFF/0%, no same-day shrink this time.
  *      The watched set below is derived from EXPECTED_OFF_FLAGS directly, so
  *      this suite's length pin tracks those net changes (watched set
- *      54 → 56 → 55 → 57 → 56):
+ *      54 → 56 → 55 → 57 → 56 → 61):
  *        - any EXPECTED_OFF flag with is_enabled=true OR rollout>0 → drift;
  *        - ff_atomic_subscription_activation disabled OR missing → drift
  *          (P11 kill-switch must exist and be enabled);
@@ -52,7 +58,7 @@
  *
  * The supabase-admin seam is a recording thenable chain (house pattern from
  * api/cron/adaptive-remediation.test.ts). EXPECTED_OFF_FLAGS is NOT mocked —
- * the route must watch the real, current 55-name list.
+ * the route must watch the real, current 60-name list.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -229,7 +235,7 @@ describe('flag-posture-canary — auth gate (fail-closed before I/O)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('flag-posture-canary — DB query shape', () => {
-  it('reads feature_flags once, selecting state columns, .in() over the 56-name watched set (55 EXPECTED_OFF + the P11 kill-switch)', async () => {
+  it('reads feature_flags once, selecting state columns, .in() over the 61-name watched set (60 EXPECTED_OFF + the P11 kill-switch)', async () => {
     const { GET } = await loadRoute();
     await GET(req({ 'x-cron-secret': SECRET }));
 
@@ -241,15 +247,16 @@ describe('flag-posture-canary — DB query shape', () => {
     const inOp = fromCalls[0].ops.find((o) => o.op === 'in');
     expect(inOp?.args[0]).toBe('flag_name');
     const watched = inOp?.args[1] as string[];
-    // 55 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
+    // 60 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
     // ff_adaptive_remediation_v1's 10% pilot exclusion, + ff_whatsapp_alarm_template
     // — the surviving 2026-07-30 WhatsApp bot protected flag, seed
     // 20260801100500 companion — minus ff_whatsapp_bot_v1, which left
-    // EXPECTED_OFF_FLAGS the same day via its own CEO-approved live flip)
-    // + ATOMIC; the two MoL shadow flags are already members of EXPECTED_OFF,
-    // so the de-duped set is 56.
+    // EXPECTED_OFF_FLAGS the same day via its own CEO-approved live flip —
+    // + the 5 GenAI ecosystem flags added 2026-08-01, seed 20260801120000
+    // companion) + ATOMIC; the two MoL shadow flags are already members of
+    // EXPECTED_OFF, so the de-duped set is 61.
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(56);
+    expect(watched).toHaveLength(61);
     for (const name of EXPECTED_OFF_FLAGS) expect(watched).toContain(name);
     expect(watched).toContain(ATOMIC);
   });

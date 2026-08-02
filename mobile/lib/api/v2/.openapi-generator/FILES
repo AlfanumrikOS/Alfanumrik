@@ -1,4 +1,3 @@
-.gitignore
 README.md
 analysis_options.yaml
 doc/ConceptResponse.md
@@ -9,6 +8,11 @@ doc/CurriculumSubject.md
 doc/CurriculumTopic.md
 doc/EncourageRequest.md
 doc/ErrorResponse.md
+doc/ExamReadinessBand.md
+doc/ExamScheduleApi.md
+doc/ExamScheduleEntry.md
+doc/ExamScheduleEntryTopic.md
+doc/ExamScheduleResponse.md
 doc/LeaderboardEntry.md
 doc/LeaderboardResponse.md
 doc/LearnApi.md
@@ -47,6 +51,7 @@ doc/TodayResponse.md
 doc/TodayResponseMeta.md
 lib/alfanumrik_api_v2.dart
 lib/src/api.dart
+lib/src/api/exam_schedule_api.dart
 lib/src/api/learn_api.dart
 lib/src/api/parent_api.dart
 lib/src/api/quiz_api.dart
@@ -68,6 +73,10 @@ lib/src/model/curriculum_topic.dart
 lib/src/model/date.dart
 lib/src/model/encourage_request.dart
 lib/src/model/error_response.dart
+lib/src/model/exam_readiness_band.dart
+lib/src/model/exam_schedule_entry.dart
+lib/src/model/exam_schedule_entry_topic.dart
+lib/src/model/exam_schedule_response.dart
 lib/src/model/leaderboard_entry.dart
 lib/src/model/leaderboard_response.dart
 lib/src/model/parent_child.dart
@@ -100,10 +109,3 @@ lib/src/model/today_queue_item.dart
 lib/src/model/today_response.dart
 lib/src/model/today_response_meta.dart
 lib/src/serializers.dart
-test/parent_child_test.dart
-test/parent_children_response_test.dart
-test/parent_glance_child_test.dart
-test/parent_glance_moments_test.dart
-test/parent_glance_response_test.dart
-test/parent_glance_snapshot_test.dart
-test/parent_glance_weekly_day_test.dart
