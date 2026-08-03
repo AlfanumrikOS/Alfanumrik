@@ -13,7 +13,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { adminHeaders } from '@alfanumrik/lib/admin-session';
 import { useAdminFetch } from '../_hooks/useAdminFetch';
 import type { SupportTicket } from '../_lib/internal-admin-types';
 
@@ -45,12 +44,11 @@ const S: Record<string, any> = {
 };
 
 export interface SupportTabProps {
-  secret: string;
   onToast?: (msg: string) => void;
 }
 
-export default function SupportTab({ secret, onToast }: SupportTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function SupportTab({ onToast }: SupportTabProps) {
+  const apiFetch = useAdminFetch();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [ticketStatus, setTicketStatus] = useState('open');
   const [ticketPage, setTicketPage] = useState(1);
@@ -76,7 +74,8 @@ export default function SupportTab({ secret, onToast }: SupportTabProps) {
   const resolveTicket = async (id: string) => {
     await fetch('/api/internal/admin/support', {
       method: 'PATCH',
-      headers: adminHeaders(secret),
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, status: 'resolved' }),
     });
     onToast?.('Ticket resolved');

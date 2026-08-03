@@ -46,12 +46,11 @@ const S: Record<string, any> = {
 };
 
 export interface CommandTabProps {
-  secret: string;
   onNavigate?: (tab: Tab) => void;
 }
 
-export default function CommandTab({ secret, onNavigate }: CommandTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function CommandTab({ onNavigate }: CommandTabProps) {
+  const apiFetch = useAdminFetch();
   const [command, setCommand] = useState<CommandData | null>(null);
   const [loading, setLoading] = useState(false);
 

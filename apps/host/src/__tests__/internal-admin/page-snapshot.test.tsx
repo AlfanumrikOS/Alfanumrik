@@ -1,16 +1,20 @@
 /**
  * Regression-net snapshot test for /internal/admin/page.tsx
  *
- * Locks down current behaviour BEFORE the Plan 5 decomposition begins:
- *   - Login screen renders when no admin secret is in sessionStorage
- *   - Main shell + tab navigation render once the secret is present
+ * Locks down the SESSION-ONLY console shell (P2-1 PR-4):
+ *   - Login screen renders when not yet authenticated (email + password, NO
+ *     admin-secret field)
+ *   - Main shell + tab navigation render once a session login succeeds
  *   - Tab switching works (clicking Users brings up the User Management heading)
  *
- * Catches "the page crashes" or "tabs disappear" during the refactor.
+ * Catches "the page crashes" or "tabs disappear" during future refactors.
  *
  * Notes (verified against current page.tsx):
- *   - sessionStorage key is `alfa_admin_secret` (see src/lib/admin-session.ts)
- *   - Admin secret header is `x-admin-secret`
+ *   - Auth is a boolean gate flipped by <LoginScreen> onLogin() after
+ *     POST /api/super-admin/login succeeds — there is no shared secret and
+ *     nothing is read from sessionStorage.
+ *   - Internal-admin requests carry the session cookie (credentials:'same-origin'),
+ *     not an x-admin-secret header.
  *   - Tab labels: Command Center, Users, Content CMS, Schools, Revenue,
  *     AI Monitor, Feature Flags, Support, Audit Logs, Reports
  *   - Users tab heading: "User Management"
@@ -28,7 +32,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 // Default fetch payload — shaped to keep every tab from crashing on first render.
-// The Command tab dereferences command.totals.{students,...}, command.activity.{dau,...},
+// POST /api/super-admin/login resolves ok (so the LoginScreen advances). The
+// Command tab dereferences command.totals.{students,...}, command.activity.{dau,...},
 // command.ai.{calls_last_1h,...}, command.revenue.{today_inr,...}, command.support.open_tickets,
 // and command.sparkline (an array). All other tabs use { data: [], total: 0 }.
 function makeFetchMock() {
@@ -57,6 +62,8 @@ function makeFetchMock() {
         support: { open_tickets: 0 },
         sparkline: [],
       };
+    } else if (typeof url === 'string' && url.includes('/api/super-admin/login')) {
+      payload = { success: true };
     } else {
       payload = { data: [], total: 0 };
     }
@@ -65,6 +72,19 @@ function makeFetchMock() {
       json: async () => payload,
       blob: async () => new Blob([''], { type: 'application/json' }),
     } as unknown as Response);
+  });
+}
+
+/** Drive the LoginScreen through a successful session login. */
+async function logInPastLoginScreen() {
+  fireEvent.change(screen.getByPlaceholderText(/administrator email/i), {
+    target: { value: 'admin@alfa.com' },
+  });
+  fireEvent.change(screen.getByPlaceholderText(/administrator password/i), {
+    target: { value: 'pw' },
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /access console/i }));
   });
 }
 
@@ -81,28 +101,24 @@ afterEach(() => {
 });
 
 describe('Internal admin page regression net', () => {
-  it('shows the login screen when no admin secret is stored', async () => {
-    // No sessionStorage key — login screen should appear
+  it('shows the login screen when not authenticated', async () => {
     const { default: Page } = await import('@/app/internal/admin/page');
     render(<Page />);
 
-    // The login form has an input with placeholder "Admin secret key"
-    expect(screen.getByPlaceholderText(/admin secret/i)).toBeInTheDocument();
-    // Submit button reads "Access Console" while idle
+    // Session-only login: email + password + "Access Console", NO secret field.
+    expect(screen.getByPlaceholderText(/administrator email/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/administrator password/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /access console/i })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/admin secret/i)).not.toBeInTheDocument();
   });
 
-  it('renders the main shell with all tabs after secret is set', async () => {
-    // Pre-set the secret BEFORE importing the page so its post-mount useEffect
-    // picks it up via getAdminSecretFromSession() and bypasses the login screen.
-    sessionStorage.setItem('alfa_admin_secret', 'test-secret');
-
+  it('renders the main shell with all tabs after a successful login', async () => {
     const { default: Page } = await import('@/app/internal/admin/page');
     render(<Page />);
 
-    // The page reads the secret in a useEffect (post-mount), so the LoginScreen
-    // appears for one render before being replaced. Wait for the Sign Out button
-    // to confirm the main shell has rendered.
+    await logInPastLoginScreen();
+
+    // Wait for the Sign Out button to confirm the main shell has rendered.
     await waitFor(
       () => {
         expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
@@ -124,10 +140,10 @@ describe('Internal admin page regression net', () => {
   });
 
   it('switches tabs when a sidebar tab is clicked', async () => {
-    sessionStorage.setItem('alfa_admin_secret', 'test-secret');
-
     const { default: Page } = await import('@/app/internal/admin/page');
     render(<Page />);
+
+    await logInPastLoginScreen();
 
     // Wait until past LoginScreen (Sign Out button visible)
     await waitFor(

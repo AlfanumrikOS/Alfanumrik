@@ -27,7 +27,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { adminHeaders } from '@alfanumrik/lib/admin-session';
 import { useAdminFetch } from '../_hooks/useAdminFetch';
 import type { Student } from '../_lib/internal-admin-types';
 
@@ -65,15 +64,14 @@ const S: Record<string, any> = {
 };
 
 export interface UsersTabProps {
-  secret: string;
   onSelectUser: (student: Student) => void;
   onToast?: (msg: string) => void;
   /** Bumped by parent after UserDrawer completes an action — triggers re-fetch. */
   refreshKey?: number;
 }
 
-export default function UsersTab({ secret, onSelectUser, onToast, refreshKey = 0 }: UsersTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function UsersTab({ onSelectUser, onToast, refreshKey = 0 }: UsersTabProps) {
+  const apiFetch = useAdminFetch();
   const [users, setUsers] = useState<Student[]>([]);
   const [userTotal, setUserTotal] = useState(0);
   const [userPage, setUserPage] = useState(1);
@@ -104,7 +102,8 @@ export default function UsersTab({ secret, onSelectUser, onToast, refreshKey = 0
     if (ids.length === 0) { onToast?.('No users selected'); return; }
     const res = await fetch('/api/internal/admin/bulk-action', {
       method: 'POST',
-      headers: adminHeaders(secret),
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, ids, ...extras }),
     });
     const d = await res.json();

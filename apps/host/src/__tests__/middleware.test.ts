@@ -1080,111 +1080,101 @@ describe('F4: role-based redirect decision', () => {
   });
 });
 
-// ─── A2 PR-2: /internal/admin gate — session OR secret (additive) ─────────
+// ─── A2 PR-4: /internal/admin gate — SESSION-ONLY (secret path removed) ─────
 //
 // Layer 2.1 of src/proxy.ts protects /internal/admin* and /api/internal/admin*.
-// PR-2 of the admin-auth (A2) migration makes it accept a valid super_admin
-// Supabase session as EQUIVALENT to the legacy SUPER_ADMIN_SECRET, WITHOUT
-// changing the secret path (the 13 handlers still call requireAdminSecret this
-// PR). This block replicates the exact gate decision and pins the truth table:
-//   - the legacy secret path is UNCHANGED (still allows),
-//   - a definitive 'super_admin' session now ALSO allows,
+// PR-4 of the admin-auth (A2) migration REMOVED the legacy SUPER_ADMIN_SECRET
+// path entirely. PR-3 had already repointed all 13 /api/internal/admin handlers
+// off requireAdminSecret() onto authorizeRequest('super_admin'), so the shared
+// secret no longer authorizes any /internal/admin surface. This block replicates
+// the post-PR-4 gate decision and pins the truth table:
+//   - the ONLY way to allow is a DEFINITIVE 'super_admin' session resolved on a
+//     live, non-degraded auth path,
+//   - there is NO secret input anymore (a secret can no longer allow anything),
 //   - every non-super_admin / degraded / unknown / null / no-session case
-//     STAYS fail-closed (deny unless the secret is also present).
+//     is fail-closed (deny).
 
-describe('A2 PR-2: internal-admin gate accepts session OR secret (additive, fail-closed)', () => {
+describe('A2 PR-4: internal-admin gate is session-only (secret removed, fail-closed)', () => {
   type ResolvedRole =
     | 'student' | 'teacher' | 'guardian' | 'institution_admin'
     | 'admin' | 'super_admin' | 'none' | 'unknown';
 
-  // Faithful replica of the Layer 2.1 decision after the PR-2 edit:
-  //   const secretAuthenticated = headerValid || cookieValid || queryValid;
+  // Faithful replica of the Layer 2.1 decision after the PR-4 edit:
   //   let sessionAuthenticated = false;
-  //   if (!secretAuthenticated && authUserId && !authDegraded) {
+  //   if (authUserId && !authDegraded) {
   //     sessionAuthenticated = (await getUserRoleFromCache(authUserId)) === 'super_admin';
   //   }
-  //   const isAuthenticated = secretAuthenticated || sessionAuthenticated;
+  //   const isAuthenticated = sessionAuthenticated;
   //   if (!isAuthenticated) { /* 401 / Access Denied */ }
+  // No secret term exists — the gate is the session alone.
   function gateAllows(opts: {
-    secretAuthenticated: boolean;
     authUserId: string | null;
     authDegraded: boolean;
     sessionRole: ResolvedRole | null; // what getUserRoleFromCache would return
   }): boolean {
-    const { secretAuthenticated, authUserId, authDegraded, sessionRole } = opts;
+    const { authUserId, authDegraded, sessionRole } = opts;
     let sessionAuthenticated = false;
-    if (!secretAuthenticated && authUserId && !authDegraded) {
+    if (authUserId && !authDegraded) {
       sessionAuthenticated = sessionRole === 'super_admin';
     }
-    return secretAuthenticated || sessionAuthenticated;
+    return sessionAuthenticated;
   }
 
-  it('UNCHANGED: a valid secret still allows (no session needed)', () => {
-    expect(gateAllows({ secretAuthenticated: true, authUserId: null, authDegraded: false, sessionRole: null })).toBe(true);
+  it('a definitive super_admin session allows (the ONLY allow path)', () => {
+    expect(gateAllows({ authUserId: 'u-1', authDegraded: false, sessionRole: 'super_admin' })).toBe(true);
   });
 
-  it('NEW: a definitive super_admin session allows without any secret', () => {
-    expect(gateAllows({ secretAuthenticated: false, authUserId: 'u-1', authDegraded: false, sessionRole: 'super_admin' })).toBe(true);
+  it('fail-closed: no session → deny (there is no secret fallback anymore)', () => {
+    expect(gateAllows({ authUserId: null, authDegraded: false, sessionRole: null })).toBe(false);
   });
 
-  it('UNCHANGED fail-closed: no secret AND no session → deny', () => {
-    expect(gateAllows({ secretAuthenticated: false, authUserId: null, authDegraded: false, sessionRole: null })).toBe(false);
-  });
-
-  it('fail-closed: an "admin" (non-super_admin) session is NOT equivalent to the secret → deny', () => {
-    expect(gateAllows({ secretAuthenticated: false, authUserId: 'u-1', authDegraded: false, sessionRole: 'admin' })).toBe(false);
+  it('fail-closed: an "admin" (non-super_admin) session is NOT sufficient → deny', () => {
+    expect(gateAllows({ authUserId: 'u-1', authDegraded: false, sessionRole: 'admin' })).toBe(false);
   });
 
   it('fail-closed: institution_admin / teacher / student / none sessions → deny', () => {
     for (const role of ['institution_admin', 'teacher', 'student', 'none'] as ResolvedRole[]) {
-      expect(gateAllows({ secretAuthenticated: false, authUserId: 'u-1', authDegraded: false, sessionRole: role })).toBe(false);
+      expect(gateAllows({ authUserId: 'u-1', authDegraded: false, sessionRole: role })).toBe(false);
     }
   });
 
   it('fail-closed: ROLE_UNKNOWN (transient probe failure) → deny (never allow on inconclusive)', () => {
-    expect(gateAllows({ secretAuthenticated: false, authUserId: 'u-1', authDegraded: false, sessionRole: 'unknown' })).toBe(false);
+    expect(gateAllows({ authUserId: 'u-1', authDegraded: false, sessionRole: 'unknown' })).toBe(false);
   });
 
   it('fail-closed: null role (env misconfig) → deny', () => {
-    expect(gateAllows({ secretAuthenticated: false, authUserId: 'u-1', authDegraded: false, sessionRole: null })).toBe(false);
+    expect(gateAllows({ authUserId: 'u-1', authDegraded: false, sessionRole: null })).toBe(false);
   });
 
   it('fail-closed: a super_admin session is NOT trusted when auth is degraded → deny', () => {
-    expect(gateAllows({ secretAuthenticated: false, authUserId: 'u-1', authDegraded: true, sessionRole: 'super_admin' })).toBe(false);
-  });
-
-  it('secret + super_admin session both present → allow (secret short-circuits, session redundant)', () => {
-    expect(gateAllows({ secretAuthenticated: true, authUserId: 'u-1', authDegraded: false, sessionRole: 'super_admin' })).toBe(true);
-  });
-
-  it('the role lookup is SKIPPED when the secret already authenticated (hot-path: zero extra latency)', () => {
-    // When secretAuthenticated is true, sessionRole must be irrelevant to the
-    // outcome — proving the `!secretAuthenticated` guard short-circuits the
-    // (async) getUserRoleFromCache call on every x-admin-secret API request.
-    const withSuper = gateAllows({ secretAuthenticated: true, authUserId: 'u-1', authDegraded: false, sessionRole: 'super_admin' });
-    const withNull = gateAllows({ secretAuthenticated: true, authUserId: 'u-1', authDegraded: false, sessionRole: null });
-    expect(withSuper).toBe(withNull);
-    expect(withSuper).toBe(true);
+    expect(gateAllows({ authUserId: 'u-1', authDegraded: true, sessionRole: 'super_admin' })).toBe(false);
   });
 });
 
-// ─── A2 PR-2: proxy.ts source-level structural pins ──────────────────────────
+// ─── A2 PR-4: proxy.ts source-level structural pins ──────────────────────────
 //
 // Guards the real Layer 2.1 edit against regression: the gate MUST reuse the
 // shared getUserRoleFromCache resolver, accept only a definitive 'super_admin',
-// KEEP the constant-time secret comparisons, and KEEP the fail-closed deny.
-describe('A2 PR-2: proxy.ts internal-admin gate source structure', () => {
+// be SESSION-ONLY (the shared-secret path was removed in PR-4 — assert it stays
+// removed so it can never silently return), and KEEP the fail-closed deny.
+describe('A2 PR-4: proxy.ts internal-admin gate source structure', () => {
   async function readProxy(): Promise<string> {
     const fs = await import('fs');
     const path = await import('path');
     return fs.readFileSync(path.resolve(process.cwd(), 'src/proxy.ts'), 'utf-8');
   }
 
-  it('splits secret auth from session auth (additive, not a cutover)', async () => {
+  it('is a SESSION-ONLY gate (isAuthenticated derives from the session alone, no additive secret branch)', async () => {
     const file = await readProxy();
-    expect(file).toContain('const secretAuthenticated =');
+    // The gate resolves directly to the session result — no `secretAuthenticated ||` term.
+    expect(file).toMatch(/const\s+isAuthenticated\s*=\s*sessionAuthenticated\s*;/);
     expect(file).toMatch(/let\s+sessionAuthenticated\s*=\s*false/);
-    expect(file).toMatch(/const\s+isAuthenticated\s*=\s*secretAuthenticated\s*\|\|\s*sessionAuthenticated/);
+    // The additive secret branch that PR-2 introduced is gone entirely.
+    expect(file).not.toContain('const secretAuthenticated =');
+    expect(file).not.toMatch(/secretAuthenticated\s*\|\|\s*sessionAuthenticated/);
+    // The session-lookup guard is no longer prefixed by `!secretAuthenticated &&`.
+    expect(file).toMatch(/if\s*\(\s*authUserId\s*&&\s*!authDegraded\s*\)/);
+    expect(file).not.toMatch(/if\s*\(\s*!secretAuthenticated\s*&&/);
   });
 
   it('resolves the session role via the shared getUserRoleFromCache helper (no hand-rolled JWT parsing)', async () => {
@@ -1198,15 +1188,31 @@ describe('A2 PR-2: proxy.ts internal-admin gate source structure', () => {
   it("accepts ONLY a definitive 'super_admin' session, gated on a live non-degraded session", async () => {
     const file = await readProxy();
     expect(file).toMatch(/sessionAuthenticated\s*=\s*adminSessionRole\s*===\s*'super_admin'/);
-    expect(file).toMatch(/if\s*\(\s*!secretAuthenticated\s*&&\s*authUserId\s*&&\s*!authDegraded\s*\)/);
+    expect(file).toMatch(/if\s*\(\s*authUserId\s*&&\s*!authDegraded\s*\)/);
   });
 
-  it('KEEPS the constant-time shared-secret comparisons (secret path unchanged)', async () => {
+  it('DROPS the shared-secret path entirely (regression guard: the secret path must never silently return)', async () => {
     const file = await readProxy();
-    expect(file).toContain("request.headers.get('x-admin-secret')");
-    expect(file).toMatch(/secureEqual\(headerSecret,\s*secretKey\)/);
-    expect(file).toMatch(/secureEqual\(querySecret,\s*secretKey\)/);
-    expect(file).toMatch(/secureEqual\(sessionCookie,\s*expectedCookieToken\)/);
+    // NOTE: these assert on the CODE forms, not bare tokens — the removal
+    // comment in proxy.ts still names `x-admin-secret`, `?secret=`, and the
+    // `alfanumrik_admin_sess` cookie in prose. A bare `not.toContain('x-admin-secret')`
+    // would false-fail on that comment, so we pin the handling constructs.
+    //
+    // The x-admin-secret header read is gone (the quoted literal only ever
+    // existed in code; the comment uses the unquoted token).
+    expect(file).not.toContain("headers.get('x-admin-secret')");
+    expect(file).not.toContain("'x-admin-secret'");
+    // The constant-time secret comparisons are gone — secureEqual is no longer
+    // imported or called anywhere in the middleware.
+    expect(file).not.toContain('secureEqual');
+    // The ?secret= query-param read is gone.
+    expect(file).not.toContain("searchParams.get('secret')");
+    // The alfanumrik_admin_sess cookie constant + its read are gone (quoted
+    // literal and the ADMIN_SESSION_COOKIE constant only ever existed in code).
+    expect(file).not.toContain("'alfanumrik_admin_sess'");
+    expect(file).not.toContain('ADMIN_SESSION_COOKIE');
+    // And the split-variable that OR'd secret with session is gone.
+    expect(file).not.toContain('secretAuthenticated');
   });
 
   it('KEEPS the fail-closed deny (401 JSON for API, Access Denied HTML for pages)', async () => {
@@ -1214,42 +1220,5 @@ describe('A2 PR-2: proxy.ts internal-admin gate source structure', () => {
     expect(file).toMatch(/if\s*\(\s*!isAuthenticated\s*\)/);
     expect(file).toContain("error: 'Unauthorized'");
     expect(file).toContain('Access Denied');
-  });
-});
-
-describe('Timing-safe string comparison', () => {
-  // Re-implement the timingSafeEqual from middleware for testing.
-  // Note: when lengths differ, set mismatch=1 BEFORE comparing bytes
-  // to ensure different-length strings always return false.
-  function timingSafeEqual(a: string, b: string): boolean {
-    let mismatch = a.length !== b.length ? 1 : 0;
-    // Compare against the shorter string to avoid out-of-bounds,
-    // but mismatch is already set if lengths differ.
-    const len = Math.min(a.length, b.length);
-    for (let i = 0; i < len; i++) {
-      mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-    }
-    return mismatch === 0;
-  }
-
-  it('returns true for matching strings', () => {
-    expect(timingSafeEqual('secret123', 'secret123')).toBe(true);
-  });
-
-  it('returns false for different strings of same length', () => {
-    expect(timingSafeEqual('secret123', 'secret456')).toBe(false);
-  });
-
-  it('returns false for different length strings', () => {
-    expect(timingSafeEqual('short', 'longerstring')).toBe(false);
-  });
-
-  it('returns true for empty strings', () => {
-    expect(timingSafeEqual('', '')).toBe(true);
-  });
-
-  it('handles special characters', () => {
-    expect(timingSafeEqual('p@$$w0rd!', 'p@$$w0rd!')).toBe(true);
-    expect(timingSafeEqual('p@$$w0rd!', 'p@$$w0rd?')).toBe(false);
   });
 });

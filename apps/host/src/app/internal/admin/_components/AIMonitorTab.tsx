@@ -36,12 +36,8 @@ const S: Record<string, any> = {
   gridAuto: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 },
 };
 
-export interface AIMonitorTabProps {
-  secret: string;
-}
-
-export default function AIMonitorTab({ secret }: AIMonitorTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function AIMonitorTab() {
+  const apiFetch = useAdminFetch();
   const [aiData, setAiData] = useState<Record<string, unknown> | null>(null);
 
   const fetchAI = useCallback(async () => {

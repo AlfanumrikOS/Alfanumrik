@@ -12,7 +12,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { adminHeaders } from '@alfanumrik/lib/admin-session';
 import { useAdminFetch } from '../_hooks/useAdminFetch';
 import type { FeatureFlag } from '../_lib/internal-admin-types';
 
@@ -44,12 +43,11 @@ const S: Record<string, any> = {
 };
 
 export interface FlagsTabProps {
-  secret: string;
   onToast?: (msg: string) => void;
 }
 
-export default function FlagsTab({ secret, onToast }: FlagsTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function FlagsTab({ onToast }: FlagsTabProps) {
+  const apiFetch = useAdminFetch();
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -69,7 +67,8 @@ export default function FlagsTab({ secret, onToast }: FlagsTabProps) {
   const toggleFlag = async (flag: FeatureFlag) => {
     await fetch('/api/internal/admin/feature-flags', {
       method: 'PATCH',
-      headers: adminHeaders(secret),
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: flag.id, is_enabled: !flag.is_enabled }),
     });
     onToast?.(`Flag "${flag.name}" ${!flag.is_enabled ? 'enabled' : 'disabled'}`);

@@ -28,7 +28,6 @@ import {
   ANON_ID_MAX_AGE_SECONDS,
   generateAnonId,
 } from '@alfanumrik/lib/anon-id';
-import { secureEqual } from '@alfanumrik/lib/secure-compare';
 /* ═══════════════════════════════════════════════════════════════
  * PROXY — Security Hardening + Auth Session Refresh
  * Next.js 16 proxy — export only the canonical proxy function.
@@ -1250,19 +1249,14 @@ export async function proxy(request: NextRequest) {
   }
 
   // ── Layer 2.1: Protect ALL /internal/admin routes (page + API) ──
-  // Server-side auth: secret must match BEFORE page or API renders.
-  //
-  // Auth flow (two accepted mechanisms):
-  //   1. x-admin-secret header      — used by all API calls (adminHeaders() in admin-session.ts)
-  //   2. ?secret= query param       — ONLY for first page load; immediately stripped from URL
-  //                                   and stored as a short-lived httpOnly session cookie so
-  //                                   the secret never persists in browser history or server logs.
-  //   3. alfanumrik_admin_sess cookie — set by mechanism 2; used for subsequent page loads.
-  //
-  // Security property: after the first redirect, the secret no longer appears in any URL.
-  const ADMIN_SESSION_COOKIE = 'alfanumrik_admin_sess';
-  const ADMIN_SESSION_MAX_AGE = 8 * 60 * 60; // 8 hours
-
+  // Server-side auth: a live, non-degraded super_admin Supabase session must be
+  // present BEFORE the page or API renders. The legacy SUPER_ADMIN_SECRET
+  // shared-secret path (x-admin-secret header / ?secret= query param /
+  // alfanumrik_admin_sess cookie) was removed in the A2 migration PR-4 — PR-3
+  // had already swapped all 13 /api/internal/admin handlers off
+  // requireAdminSecret() onto authorizeRequest('super_admin'), so the shared
+  // secret no longer authorizes any /internal/admin surface. This gate is now
+  // session-only and fail-closed.
   if (path.startsWith('/internal/admin') || path.startsWith('/api/internal/admin')) {
     // Rate limit FIRST — before any secret comparison or the 401 return
     // below. Every request that reaches this gate (successful or failed)
@@ -1284,72 +1278,36 @@ export async function proxy(request: NextRequest) {
       return rateLimitResponse(request);
     }
 
-    const secretKey = process.env.SUPER_ADMIN_SECRET;
-
-    // Header-based auth (API calls + already-authenticated page requests)
-    const headerSecret = request.headers.get('x-admin-secret');
-
-    // Query-param auth (first-time page navigation only — strip immediately after validation)
-    const querySecret = request.nextUrl.searchParams.get('secret');
-
-    // Cookie-based auth (subsequent page loads after first redirect)
-    const sessionCookie = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
-    // Cookie stores sha256(secretKey + "|admin_session") — validates without putting the raw
-    // secret in the cookie value. Uses Web Crypto (globalThis.crypto.subtle) for Edge compat.
-    let expectedCookieToken: string | null = null;
-    if (secretKey) {
-      const enc = new TextEncoder();
-      const hashBuf = await crypto.subtle.digest('SHA-256', enc.encode(`${secretKey}|admin_session`));
-      expectedCookieToken = Array.from(new Uint8Array(hashBuf))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
-        .slice(0, 32);
-    }
-    // Constant-time compares for shared-secret checks — naive `===` short-
-    // circuits at the first differing byte and leaks the secret through
-    // response timing. The session cookie token is also a derived secret
-    // (sha256 prefix) so it gets the same treatment.
-    const cookieValid = !!(sessionCookie && expectedCookieToken && secureEqual(sessionCookie, expectedCookieToken));
-
-    const headerValid = !!(headerSecret && secretKey && secureEqual(headerSecret, secretKey));
-    const queryValid  = !!(querySecret  && secretKey && secureEqual(querySecret,  secretKey));
-
-    // Legacy shared-secret authentication (UNCHANGED — header / cookie / query).
-    const secretAuthenticated = headerValid || cookieValid || queryValid;
-
-    // ── A2 migration PR-2: accept a super_admin Supabase session as EQUIVALENT
-    //    to SUPER_ADMIN_SECRET (session-OR-secret, ADDITIVE). ──
+    // ── A2 migration PR-4: SESSION-ONLY super_admin gate. ──
     //
-    // This is the ENABLING step so PR-3 can swap the 13 /api/internal/admin
-    // handlers from requireAdminSecret() to authorizeRequest('super_admin').
-    // In THIS PR the handlers STILL require x-admin-secret, so the secret path
-    // above is left 100% intact and every existing caller keeps working; the
-    // session is only a SECOND accepted credential at this gate. PR-4 removes
-    // the secret path entirely.
+    // The legacy SUPER_ADMIN_SECRET path (x-admin-secret header / ?secret=
+    // query param / alfanumrik_admin_sess cookie) was removed here in PR-4.
+    // PR-3 had already repointed all 13 /api/internal/admin handlers off
+    // requireAdminSecret() onto authorizeRequest('super_admin'), so the shared
+    // secret no longer authorizes any /internal/admin surface and this gate is
+    // now the sole session boundary in front of them.
     //
     // Resolution reuses the SAME Edge-safe helper Layer 0.65 uses for
     // /super-admin — getUserRoleFromCache(): get_admin_level RPC over the
     // admin_users roster (what authorizeAdmin / /api/super-admin/login key off)
     // UNION the user_roles RBAC probe (what authorizeRequest → get_user_permissions
     // keys off). We accept ONLY a DEFINITIVE 'super_admin': this console is the
-    // highest-privilege surface, so an 'admin'/'institution_admin'/'none' session
-    // is NOT equivalent to the secret.
+    // highest-privilege surface, so an 'admin'/'institution_admin'/'none'
+    // session is NOT sufficient.
     //
-    // FAIL-CLOSED on the session path (this gate is a security boundary, unlike
-    // Layer 0.65 which fails open as a UX redirect): the lookup runs only when
-    // the secret path already failed AND a live, non-degraded session exists;
-    // ROLE_UNKNOWN (transient probe failure), null (env misconfig), any non-
-    // super_admin role, auth degraded, or no session all leave this false, so
-    // the request must still present a valid secret or be denied exactly as
-    // today. Skipped entirely when the secret already authenticated, so the
-    // dominant x-admin-secret API path takes on ZERO extra latency.
+    // FAIL-CLOSED (this gate is a security boundary, unlike Layer 0.65 which
+    // fails open as a UX redirect): the lookup runs only when a live, non-
+    // degraded session exists; ROLE_UNKNOWN (transient probe failure), null
+    // (env misconfig), any non-super_admin role, auth degraded, or no session
+    // all leave this false, so the request is denied exactly as an
+    // unauthenticated one.
     let sessionAuthenticated = false;
-    if (!secretAuthenticated && authUserId && !authDegraded) {
+    if (authUserId && !authDegraded) {
       const adminSessionRole = await getUserRoleFromCache(authUserId);
       sessionAuthenticated = adminSessionRole === 'super_admin';
     }
 
-    const isAuthenticated = secretAuthenticated || sessionAuthenticated;
+    const isAuthenticated = sessionAuthenticated;
 
     if (!isAuthenticated) {
       if (path.startsWith('/api/')) {
@@ -1359,25 +1317,9 @@ export async function proxy(request: NextRequest) {
         );
       }
       return new NextResponse(
-        '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🔐</div><h1 style="font-size:18px;margin-bottom:8px">Access Denied</h1><p style="color:#888;font-size:13px">Invalid or missing admin secret.</p></div></body></html>',
+        '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🔐</div><h1 style="font-size:18px;margin-bottom:8px">Access Denied</h1><p style="color:#888;font-size:13px">Super admin session required.</p></div></body></html>',
         { status: 401, headers: { 'Content-Type': 'text/html' } }
       );
-    }
-
-    // If authenticated via query param on a page route: redirect to clean URL + set session cookie.
-    // This strips the secret from the URL so it never sits in browser history or CDN logs.
-    if (queryValid && !path.startsWith('/api/')) {
-      const cleanUrl = new URL(request.url);
-      cleanUrl.searchParams.delete('secret');
-      const redirectRes = NextResponse.redirect(cleanUrl, { status: 302 });
-      redirectRes.cookies.set(ADMIN_SESSION_COOKIE, expectedCookieToken!, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: ADMIN_SESSION_MAX_AGE,
-        path: '/internal/admin',
-      });
-      return redirectRes;
     }
   }
 

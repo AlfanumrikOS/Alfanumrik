@@ -36,12 +36,8 @@ const S: Record<string, any> = {
   gridAuto: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 },
 };
 
-export interface RevenueTabProps {
-  secret: string;
-}
-
-export default function RevenueTab({ secret }: RevenueTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function RevenueTab() {
+  const apiFetch = useAdminFetch();
   const [revenue, setRevenue] = useState<Record<string, unknown> | null>(null);
   const [revPeriod, setRevPeriod] = useState('30d');
 

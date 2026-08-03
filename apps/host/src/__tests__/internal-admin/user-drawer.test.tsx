@@ -6,7 +6,8 @@
  *
  *  - Renders nothing when `student === null`
  *  - Renders the student name as the DetailDrawer title and shows email
- *  - Hits GET /api/internal/admin/users/:id on mount with x-admin-secret header
+ *  - Hits GET /api/internal/admin/users/:id on mount with the session cookie
+ *    (credentials:'same-origin', no x-admin-secret — P2-1 session-only)
  *  - Shows action buttons for an active student (Suspend, Reset Streak, Reset XP)
  *  - Shows the Restore button instead of Suspend for an inactive student
  *  - Renders the Entitlement Inspector with plan override controls
@@ -57,7 +58,7 @@ afterEach(() => {
 describe('UserDrawer', () => {
   it('returns null when student is null', () => {
     const { container } = render(
-      <UserDrawer student={null} secret="s" onClose={() => {}} onRefresh={() => {}} />,
+      <UserDrawer student={null} onClose={() => {}} onRefresh={() => {}} />,
     );
     expect(container.firstChild).toBeNull();
   });
@@ -66,7 +67,6 @@ describe('UserDrawer', () => {
     render(
       <UserDrawer
         student={fakeStudent}
-        secret="s"
         onClose={() => {}}
         onRefresh={() => {}}
       />,
@@ -79,11 +79,10 @@ describe('UserDrawer', () => {
     expect(screen.getByText('test@example.com')).toBeInTheDocument();
   });
 
-  it('hits the user detail endpoint on mount with the admin secret header', async () => {
+  it('hits the user detail endpoint on mount with the session cookie and no admin secret', async () => {
     render(
       <UserDrawer
         student={fakeStudent}
-        secret="abc-secret"
         onClose={() => {}}
         onRefresh={() => {}}
       />,
@@ -91,18 +90,22 @@ describe('UserDrawer', () => {
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
         '/api/internal/admin/users/s-1',
-        expect.objectContaining({
-          headers: expect.objectContaining({ 'x-admin-secret': 'abc-secret' }),
-        }),
+        expect.objectContaining({ credentials: 'same-origin' }),
       );
     });
+    // The session cookie (same-origin) is the sole credential — no secret header.
+    const detailCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[0] === '/api/internal/admin/users/s-1',
+    );
+    const headers = (detailCall?.[1]?.headers ?? {}) as Record<string, string>;
+    expect(headers['x-admin-secret']).toBeUndefined();
+    expect(headers['Content-Type']).toBe('application/json');
   });
 
   it('shows Suspend / Reset Streak / Reset XP buttons for an active student', () => {
     render(
       <UserDrawer
         student={fakeStudent}
-        secret="s"
         onClose={() => {}}
         onRefresh={() => {}}
       />,
@@ -118,7 +121,6 @@ describe('UserDrawer', () => {
     render(
       <UserDrawer
         student={inactiveStudent}
-        secret="s"
         onClose={() => {}}
         onRefresh={() => {}}
       />,
@@ -131,7 +133,6 @@ describe('UserDrawer', () => {
     render(
       <UserDrawer
         student={fakeStudent}
-        secret="s"
         onClose={() => {}}
         onRefresh={() => {}}
       />,

@@ -32,12 +32,8 @@ const S: Record<string, any> = {
   }),
 };
 
-export interface SchoolsTabProps {
-  secret: string;
-}
-
-export default function SchoolsTab({ secret }: SchoolsTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function SchoolsTab() {
+  const apiFetch = useAdminFetch();
   const [schools, setSchools] = useState<Record<string, unknown>[]>([]);
   const [schoolTotal, setSchoolTotal] = useState(0);
   const [loading, setLoading] = useState(false);

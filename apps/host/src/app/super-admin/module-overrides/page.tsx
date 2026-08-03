@@ -9,7 +9,8 @@
  *   - Module's downstream service (e.g. Live Classes provider) is down
  *   - Compliance: a module should never run for any tenant of a region
  *
- * Backed by GET / PUT /api/super-admin/module-overrides (auth: admin secret).
+ * Backed by GET / PUT /api/super-admin/module-overrides (auth: super_admin
+ * session cookie via authorizeAdmin — sent automatically on same-origin fetch).
  *
  * UX:
  *   - Each module row shows: name, description, current force-disabled
@@ -21,7 +22,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import AdminShell, { readAdminJson } from '../_components/AdminShell';
-import { adminHeaders, getAdminSecretFromSession } from '@alfanumrik/lib/admin-session';
 
 const colors = {
   bg: '#FFFFFF',
@@ -74,7 +74,8 @@ export default function ModuleOverridesPage() {
     setError(null);
     try {
       const res = await fetch('/api/super-admin/module-overrides', {
-        headers: adminHeaders(getAdminSecretFromSession()),
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
       });
       const body = await readAdminJson(res);
       if (!res.ok || !body.success) {
@@ -115,7 +116,8 @@ export default function ModuleOverridesPage() {
     try {
       const res = await fetch('/api/super-admin/module-overrides', {
         method: 'PUT',
-        headers: adminHeaders(getAdminSecretFromSession()),
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           moduleKey: m.key,
           isForceDisabled: nextState,

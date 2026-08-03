@@ -1,24 +1,23 @@
 /**
- * Unit tests for the extracted LoginScreen component.
+ * Unit tests for the internal-admin LoginScreen component.
  *
- * P2-1 PR-2 changed the login contract: the console now requires TWO
- * credentials before onLogin() fires —
- *   1. a super_admin SESSION (email + password → POST /api/super-admin/login,
- *      credentials:'same-origin'; the 200 sets an httpOnly cookie, no tokens
- *      in the body), and
- *   2. the shared admin SECRET (validated, unchanged, via GET
- *      /api/internal/admin/stats with the x-admin-secret header).
+ * P2-1 PR-4 made the console SESSION-ONLY: the sole credential is the
+ * super_admin SESSION — email + password POSTed to /api/super-admin/login with
+ * credentials:'same-origin'. On 200 the server sets an httpOnly sb-* cookie
+ * (no tokens in the body) and onLogin() fires. The former shared admin secret
+ * (its input, its GET /api/internal/admin/stats validation, and its
+ * sessionStorage persistence) was removed end-to-end.
  *
  * These tests assert:
- *  - The secret input + "Access Console" button still render (pinned strings).
- *  - onLogin(secret) fires only after BOTH steps succeed, and the secret is
- *    persisted to sessionStorage under the canonical key.
- *  - A rejected secret shows the "denied" error and does NOT call onLogin.
- *  - A failed session login surfaces the server error and never reaches the
- *    secret step.
+ *  - Email + password inputs + the "Access Console" button render.
+ *  - There is NO admin-secret input any more.
+ *  - onLogin() fires (with no argument) after the session login succeeds, and
+ *    the request is POST /api/super-admin/login with credentials:'same-origin'
+ *    and an {email, password} body — no secret validation call, no
+ *    x-admin-secret header, nothing written to sessionStorage.
+ *  - A failed session login surfaces the server error and never calls onLogin.
  *  - A network error is surfaced and does not call onLogin.
- *  - The submit button stays disabled until all three fields are provided
- *    (both-required gating).
+ *  - The submit button stays disabled until BOTH email and password are given.
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -27,16 +26,13 @@ import LoginScreen from '@/app/internal/admin/_components/LoginScreen';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
-/** Fill all three credential fields with the given values. */
-function fillCredentials(email: string, password: string, secret: string) {
+/** Fill the two credential fields with the given values. */
+function fillCredentials(email: string, password: string) {
   fireEvent.change(screen.getByPlaceholderText(/administrator email/i), {
     target: { value: email },
   });
   fireEvent.change(screen.getByPlaceholderText(/administrator password/i), {
     target: { value: password },
-  });
-  fireEvent.change(screen.getByPlaceholderText(/admin secret/i), {
-    target: { value: secret },
   });
 }
 
@@ -56,33 +52,36 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-describe('LoginScreen', () => {
-  it('renders an admin secret input + submit button', () => {
+describe('LoginScreen (session-only)', () => {
+  it('renders email + password inputs and the submit button, with NO secret field', () => {
     render(<LoginScreen onLogin={() => {}} />);
-    expect(screen.getByPlaceholderText(/admin secret/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/administrator email/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/administrator password/i)).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: /access console|login|sign in/i }),
     ).toBeInTheDocument();
+    // The shared-secret input is gone.
+    expect(screen.queryByPlaceholderText(/admin secret/i)).not.toBeInTheDocument();
   });
 
-  it('calls onLogin with secret after BOTH session login and secret validation succeed', async () => {
-    (global.fetch as FetchMock).mockImplementation((url: string) => {
-      if (url === '/api/super-admin/login') {
-        return Promise.resolve({ ok: true, json: async () => ({ success: true }) });
-      }
-      // /api/internal/admin/stats
-      return Promise.resolve({ ok: true, json: async () => ({}) });
+  it('calls onLogin after the session login succeeds (session-only, no secret step)', async () => {
+    (global.fetch as FetchMock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
     });
     const onLogin = vi.fn();
     render(<LoginScreen onLogin={onLogin} />);
 
-    fillCredentials('admin@alfa.com', 'pw', 's3cret');
+    fillCredentials('admin@alfa.com', 'pw');
     clickAccessConsole();
 
-    await waitFor(() => expect(onLogin).toHaveBeenCalledWith('s3cret'));
+    await waitFor(() => expect(onLogin).toHaveBeenCalledTimes(1));
+    // onLogin now takes no argument (there is no secret to hand back).
+    expect(onLogin).toHaveBeenCalledWith();
 
-    // Session step: POST /api/super-admin/login with email/password body and
-    // credentials:'same-origin' (so the server can set the sb-* cookie).
+    // The ONLY request is POST /api/super-admin/login with the credential body
+    // and credentials:'same-origin' so the server can set the sb-* cookie.
+    expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/super-admin/login',
       expect.objectContaining({
@@ -91,65 +90,31 @@ describe('LoginScreen', () => {
         body: JSON.stringify({ email: 'admin@alfa.com', password: 'pw' }),
       }),
     );
-    // Secret step: GET /api/internal/admin/stats with the lowercase
-    // x-admin-secret header (unchanged from the pre-PR-2 flow).
-    expect(global.fetch).toHaveBeenCalledWith(
+    // The legacy secret-validation endpoint must NOT be called any more.
+    expect(global.fetch).not.toHaveBeenCalledWith(
       '/api/internal/admin/stats',
-      expect.objectContaining({
-        headers: expect.objectContaining({ 'x-admin-secret': 's3cret' }),
-      }),
+      expect.anything(),
     );
-    // Persists secret to sessionStorage under the canonical key.
-    expect(sessionStorage.getItem('alfa_admin_secret')).toBe('s3cret');
-  });
-
-  it('shows an error and does not call onLogin when the secret is rejected', async () => {
-    (global.fetch as FetchMock).mockImplementation((url: string) => {
-      if (url === '/api/super-admin/login') {
-        return Promise.resolve({ ok: true, json: async () => ({ success: true }) });
-      }
-      // Secret validation fails.
-      return Promise.resolve({ ok: false, status: 401, text: async () => 'invalid' });
-    });
-    const onLogin = vi.fn();
-    render(<LoginScreen onLogin={onLogin} />);
-
-    fillCredentials('admin@alfa.com', 'pw', 'wrong');
-    clickAccessConsole();
-
-    await waitFor(() => {
-      expect(screen.getByText(/invalid|wrong|denied/i)).toBeInTheDocument();
-    });
-    expect(onLogin).not.toHaveBeenCalled();
+    // Nothing is persisted client-side (the session lives in an httpOnly cookie).
     expect(sessionStorage.getItem('alfa_admin_secret')).toBeNull();
   });
 
-  it('surfaces the server error and never validates the secret when session login fails', async () => {
-    (global.fetch as FetchMock).mockImplementation((url: string) => {
-      if (url === '/api/super-admin/login') {
-        return Promise.resolve({
-          ok: false,
-          status: 401,
-          json: async () => ({ error: 'Invalid email or password.', code: 'INVALID_CREDENTIALS' }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
+  it('surfaces the server error and does not call onLogin when session login fails', async () => {
+    (global.fetch as FetchMock).mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'Invalid email or password.', code: 'INVALID_CREDENTIALS' }),
     });
     const onLogin = vi.fn();
     render(<LoginScreen onLogin={onLogin} />);
 
-    fillCredentials('admin@alfa.com', 'badpw', 's3cret');
+    fillCredentials('admin@alfa.com', 'badpw');
     clickAccessConsole();
 
     await waitFor(() => {
       expect(screen.getByText(/invalid email or password/i)).toBeInTheDocument();
     });
     expect(onLogin).not.toHaveBeenCalled();
-    // The secret endpoint must NOT be reached if the session login fails.
-    expect(global.fetch).not.toHaveBeenCalledWith(
-      '/api/internal/admin/stats',
-      expect.anything(),
-    );
     expect(sessionStorage.getItem('alfa_admin_secret')).toBeNull();
   });
 
@@ -158,7 +123,7 @@ describe('LoginScreen', () => {
     const onLogin = vi.fn();
     render(<LoginScreen onLogin={onLogin} />);
 
-    fillCredentials('admin@alfa.com', 'pw', 'x');
+    fillCredentials('admin@alfa.com', 'pw');
     clickAccessConsole();
 
     await waitFor(() => {
@@ -167,20 +132,17 @@ describe('LoginScreen', () => {
     expect(onLogin).not.toHaveBeenCalled();
   });
 
-  it('keeps the submit button disabled until all three credentials are provided', () => {
+  it('keeps the submit button disabled until both email and password are provided', () => {
     render(<LoginScreen onLogin={() => {}} />);
     const button = screen.getByRole('button', { name: /access console/i });
     expect(button).toBeDisabled();
 
-    // Secret alone is not enough — the session credentials are also required.
-    fireEvent.change(screen.getByPlaceholderText(/admin secret/i), {
-      target: { value: 's3cret' },
-    });
-    expect(button).toBeDisabled();
-
+    // Email alone is not enough.
     fireEvent.change(screen.getByPlaceholderText(/administrator email/i), {
       target: { value: 'admin@alfa.com' },
     });
+    expect(button).toBeDisabled();
+
     fireEvent.change(screen.getByPlaceholderText(/administrator password/i), {
       target: { value: 'pw' },
     });
