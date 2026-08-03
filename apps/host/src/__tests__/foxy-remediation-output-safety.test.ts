@@ -102,7 +102,18 @@ function buildQueryChain(table: string) {
 }
 
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
-  supabaseAdmin: { from: (table: string) => buildQueryChain(table) },
+  supabaseAdmin: {
+    from: (table: string) => buildQueryChain(table),
+    // P1 batch 2026-08-03: the route now debits the daily foxy_chat bucket via
+    // the check_and_record_usage RPC (the same DB authority /api/foxy uses).
+    // Default: allowed. get_plan_limit (and any other RPC) resolves to
+    // { data: null } → quota.ts's fail-soft unlimited branch, keeping this
+    // suite focused on P12 output safety rather than quota mechanics.
+    rpc: async (name: string) =>
+      name === 'check_and_record_usage'
+        ? { data: [{ allowed: true, used_count: 1 }], error: null }
+        : { data: null, error: null },
+  },
 }));
 
 // ── Claude transport spy ─────────────────────────────────────────────────────

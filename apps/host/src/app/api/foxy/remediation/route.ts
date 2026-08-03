@@ -50,6 +50,14 @@ import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { callClaude } from '@alfanumrik/lib/ai/clients/claude';
 import { screenStudentFacingText } from '@alfanumrik/lib/ai/validation/output-screen';
+// Daily-quota gate (P12 rule 4) — the SAME helper + RPC pair (/api/foxy →
+// check_and_record_usage → get_plan_limit) that meters Foxy chat. Remediation
+// is Claude inference inside the Foxy tutoring flow, so it debits the same
+// daily `foxy_chat` bucket (DB-authoritative per-plan cap; unlimited for the
+// paid plans). The bilingual errorJson is imported ALIASED because this route
+// has its own single-language errorJson used by the P3 uniform-403 machinery.
+import { checkAndIncrementQuota, refundQuota } from '../_lib/quota';
+import { errorJson as bilingualErrorJson } from '../_lib/constants';
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const REMEDIATION_TIMEOUT_MS = 8_000;
@@ -302,6 +310,27 @@ export async function POST(request: NextRequest): Promise<Response> {
     return remediationUnavailable();
   }
 
+  // Daily-quota gate (P12 rule 4). Guard order: auth → ai_usage_global kill
+  // switch (top of POST) → … → quota → paid inference. Placed AFTER the cache
+  // lookup and all validation, immediately BEFORE the paid Claude call, so:
+  //   (a) serving a cached snippet stays free — no inference happens there,
+  //       and the cache is the designed common path for this endpoint;
+  //   (b) 400/403/404/422 misfires never consume a unit (no refunds needed
+  //       on those paths);
+  //   (c) only attestation-passed students can reach the 429, so the P3
+  //       uniform-403 oracle closure above is untouched (cache existence is
+  //       already public via `cached: true` on the success shape).
+  // 429 envelope is byte-identical to /api/foxy's quota-exhaustion response.
+  const quota = await checkAndIncrementQuota(studentId);
+  if (!quota.allowed) {
+    return bilingualErrorJson(
+      'Daily Foxy chat limit reached. Upgrade your plan or try again tomorrow.',
+      'Aaj ke Foxy chats khatam ho gaye. Kal dobara try karein ya plan upgrade karein.',
+      429,
+      { quotaRemaining: 0 },
+    );
+  }
+
   const prompt =
     (curated
       ? `Editor-curated misconception for this distractor: ${curated.label}
@@ -325,6 +354,11 @@ export async function POST(request: NextRequest): Promise<Response> {
     { question_id: questionId, distractor_index: distractorIndex },
   );
   if (!generated) {
+    // Refund the quota unit — the student did not receive a usable answer.
+    // Same refund-on-upstream-failure semantics as /api/foxy (best-effort;
+    // refundQuota never throws). Keeps a breaker-open / screening-rejection
+    // window from silently eating a free student's daily foxy_chat cap.
+    await refundQuota(studentId, 'foxy_chat');
     return errorJson('Could not generate remediation. Please try again.', 503);
   }
 

@@ -9,6 +9,14 @@
  * zero behavior change. Quota constants live in `./constants` (Step 1); this
  * module imports them rather than redefining. Pinned by the 25 route-
  * characterization tests from Step 0.
+ *
+ * VOICE WIRING PRECONDITION (assessment review 2026-08-03 C1): voice playback
+ * must NOT be wired to clients under chat-unit-per-play accounting (charging a
+ * foxy_chat unit per audio play would multi-bill a single answered turn).
+ * Expected behavior before any client wiring: option (c) — messageId-bound
+ * synthesis + cached audio + free replays, so a turn is charged once and
+ * replaying its audio is free. No behavior change here; this is a precondition
+ * on future callers of checkAndIncrementQuota/refundQuota.
  */
 
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
@@ -100,25 +108,64 @@ async function resolveDailyLimit(studentId: string): Promise<number> {
  * chapter not yet ingested) so the student doesn't "lose" a message to an
  * error they didn't cause. Best-effort — a DB failure here is logged but
  * doesn't propagate.
+ *
+ * CONCURRENCY (assessment review 2026-08-03 C2): supabase-js cannot express
+ * `usage_count = usage_count - 1` (no SQL-expression updates), and the old
+ * read-then-absolute-write could clobber a concurrent charge (refund reads N,
+ * chat increments to N+1, refund writes N-1 → student nets a free unit). This
+ * now uses optimistic concurrency (compare-and-set): read the current count N,
+ * then UPDATE guarded by `.eq('usage_count', N)`. If a concurrent writer moved
+ * the counter between read and write, the CAS matches zero rows; we re-read
+ * and retry ONCE, then give up. Every path fails toward the house: never write
+ * below 0, never blind-overwrite a concurrent increment, skip the refund when
+ * still contended. Follow-up (tracked per C2): replace with a proper atomic
+ * decrement RPC (SQL `GREATEST(usage_count - 1, 0)`) so no CAS loop is needed.
+ *
+ * DAY BOUNDARY (per assessment C2, accepted): `today` is computed at refund
+ * time — the charge-time date is not available here. A refund straddling UTC
+ * midnight therefore targets the NEW day's row (usually absent → no-op) while
+ * the charge hit the previous day's row. Negligible edge; accepted.
  */
 export async function refundQuota(studentId: string, feature: string): Promise<void> {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const { data: row } = await supabaseAdmin
-      .from('student_daily_usage')
-      .select('usage_count')
-      .eq('student_id', studentId)
-      .eq('feature', feature)
-      .eq('usage_date', today)
-      .single();
-    if (row && typeof row.usage_count === 'number' && row.usage_count > 0) {
-      await supabaseAdmin
+    // CAS with one retry: 2 attempts total, each re-reading the current count.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { data: row } = await supabaseAdmin
         .from('student_daily_usage')
-        .update({ usage_count: row.usage_count - 1, updated_at: new Date().toISOString() })
+        .select('usage_count')
         .eq('student_id', studentId)
         .eq('feature', feature)
-        .eq('usage_date', today);
+        .eq('usage_date', today)
+        .maybeSingle();
+      const current = row?.usage_count;
+      // No row or already 0 → nothing to refund. Never decrement below 0.
+      if (typeof current !== 'number' || current <= 0) return;
+
+      const { error, count } = await supabaseAdmin
+        .from('student_daily_usage')
+        .update(
+          { usage_count: current - 1, updated_at: new Date().toISOString() },
+          { count: 'exact' },
+        )
+        .eq('student_id', studentId)
+        .eq('feature', feature)
+        .eq('usage_date', today)
+        .eq('usage_count', current); // CAS guard: only apply if unchanged since our read
+
+      if (error) {
+        // Best-effort contract: hard DB error → log and stop (no retry storm).
+        logger.warn('foxy_quota_refund_failed', { error: error.message, studentId, feature });
+        return;
+      }
+      // count === 0 → CAS missed (concurrent write) → loop re-reads and retries
+      // once. Any other value — >= 1 (applied), or null/undefined in
+      // environments that don't surface an affected-row count — is treated as
+      // applied, matching the pre-CAS single-write behavior.
+      if (count !== 0) return;
     }
+    // Both attempts contended → skip the refund (fail toward the house).
+    logger.warn('foxy_quota_refund_contended_skipped', { studentId, feature });
   } catch (err) {
     logger.warn('foxy_quota_refund_failed', {
       error: err instanceof Error ? err.message : String(err),
