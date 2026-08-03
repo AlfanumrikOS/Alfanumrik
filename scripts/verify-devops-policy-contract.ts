@@ -187,22 +187,18 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
     },
     {
       id: 'manual-only-containment',
-      label: 'broken schedules and AWS auto deploy stay suspended',
+      label: 'broken schedules stay suspended',
       file: '.github/workflows/mesh-cron.yml',
       pass: (text) => {
         const content = readFileSync(repoPath('.github/workflows/content-quality-nightly.yml'), 'utf8');
-        const aws = readFileSync(repoPath('.github/workflows/deploy-aws.yml'), 'utf8');
         return workflowDispatchOnly(text)
           && workflowDispatchOnly(content)
-          && workflowDispatchOnly(aws)
           && includesAll('Agent mesh execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: agent-mesh-break-glass')(text)
           && !text.includes('eval npm')
           && !text.includes('inputs.goal_override')
-          && includesAll('Credentialed content-quality execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: production-ops')(content)
-          && includesAll('AWS production delivery is suspended in Phase 0', 'enabled=false', 'DEPLOY_AWS_PRODUCTION', 'refs/heads/main', 'environment: production-break-glass')(aws)
-          && !aws.includes('enabled=true');
+          && includesAll('Credentialed content-quality execution is suspended in Phase 0', 'enabled=false', "if: needs.gate.outputs.enabled == 'true'", 'environment: production-ops')(content);
       },
-      failure: 'Mesh, credentialed content scans, and AWS delivery must remain hard-suspended in Phase 0.',
+      failure: 'Mesh and credentialed content scans must remain hard-suspended in Phase 0.',
     },
     {
       id: 'production-cron-break-glass',
@@ -218,7 +214,16 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
           && JSON.stringify(expected) === JSON.stringify(choices)
           && !choices.includes('all')
           && includesAll('ENABLE_PRODUCTION_CRON_BREAK_GLASS', 'RUN_ONE_PRODUCTION_CRON', 'refs/heads/main')(gate)
-          && includesAll('needs: gate', 'environment: production-break-glass', 'id-token: write')(run)
+          && includesAll('needs: gate', 'environment: production-break-glass')(run)
+          // Least-privilege after the 2026-08-03 AWS decommission (P2-6): AWS OIDC
+          // (configure-aws-credentials) was the ONLY consumer of id-token: write,
+          // so the run job must NOT grant it. Assert the absence of the yaml-key
+          // form — NOT the substring, which the removal-rationale comment still
+          // contains, so a naive `!run.includes('id-token: write')` would
+          // false-fail on the clean tree. This also replaces the old positive
+          // `includesAll('id-token: write')` assertion that only passed because
+          // that comment carried the substring (a false-green).
+          && !/^[ \t]*id-token:[ \t]*write/m.test(run)
           && text.includes("TARGET_URL: 'https://alfanumrik.com'")
           && !text.includes('PRODUCTION_CRON_TARGET_URL');
       },

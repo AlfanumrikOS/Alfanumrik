@@ -6,20 +6,27 @@ not others, silently killing pg_cron-driven functions for 17 days
 choreography that prevents a repeat. Incident detail: drift-report execution
 log + `_shared/security/internal-cron-auth.ts` header.
 
-## Where CRON_SECRET lives (verified 2026-07-13 — FIVE stores)
+## Where CRON_SECRET lives (verified 2026-07-13 — FIVE stores; AWS SM decommissioned as break-glass source 2026-08-03)
 
 | # | Store | Consumer | How to update |
 |---|-------|----------|---------------|
-| 1 | AWS Secrets Manager `alfa-prod/app` (key `CRON_SECRET`) | `production-cron-runner.yml` break-glass workflow — **treat as the source of truth** | AWS console / CLI |
+| 1 | ~~AWS Secrets Manager `alfa-prod/app` (key `CRON_SECRET`)~~ **DECOMMISSIONED as break-glass source 2026-08-03** | ~~`production-cron-runner.yml` break-glass workflow~~ — re-homed to the GitHub Actions secret store (see row 5) | n/a — no longer read by any consumer; delete the `alfa-prod/app` `CRON_SECRET` key during AWS Secrets Manager teardown |
 | 2 | Vercel env `CRON_SECRET` | Vercel cron → `/api/cron/*` routes (the canonical daily scheduler) | Vercel dashboard → Settings → Env Vars → redeploy |
 | 3 | Supabase Edge Function secrets `CRON_SECRET` | `verifyInternalCronRequest` env path in every cron-authed Edge Function | Dashboard → Edge Functions → Secrets (values are WRITE-ONLY — never readable after save) |
 | 4 | DB: `public.get_cron_secret()` + vault secret `cron_secret` | pg_cron jobs (send the vault value; functions accept it via the DB-RPC fallback) | One SQL block — see below |
-| 5 | GitHub Actions secret (if any workflow still holds a copy) | legacy workflows | repo Settings → Secrets → Actions |
+| 5 | GitHub Actions secret `CRON_SECRET` (repo- or `Production`/`production-break-glass`-environment-scoped) | `production-cron-runner.yml` break-glass workflow — **treat as the source of truth**; must equal the Vercel production `CRON_SECRET` (row 2) | repo Settings → Secrets → Actions (or the scoped environment's secrets) |
+
+> **2026-08-03 — AWS SM decommissioned as break-glass source.** AWS Secrets
+> Manager `alfa-prod/app` is no longer the `CRON_SECRET` source of truth. Per the
+> P2-6 AWS host decommission, `production-cron-runner.yml` now reads `CRON_SECRET`
+> directly from the GitHub Actions secret store (row 5), which must equal the
+> Vercel production `CRON_SECRET`. The `alfa-prod/app` `CRON_SECRET` key is retired
+> and should be removed during the AWS Secrets Manager teardown.
 
 ## Rotation procedure (do ALL steps in one sitting)
 
 1. Generate the new value locally: `openssl rand -hex 32`.
-2. AWS SM `alfa-prod/app` → update key `CRON_SECRET`.
+2. GitHub Actions secret `CRON_SECRET` (repo- or `Production`/`production-break-glass`-environment-scoped) → update its value; keep it equal to the Vercel production `CRON_SECRET` (step 3). (Was AWS SM `alfa-prod/app`, decommissioned as the break-glass source 2026-08-03.)
 3. Vercel env → replace `CRON_SECRET` → trigger a redeploy (env changes don't
    hot-reload).
 4. Supabase Edge Function secrets → replace `CRON_SECRET`.
