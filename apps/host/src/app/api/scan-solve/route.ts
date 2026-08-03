@@ -30,7 +30,28 @@ const SCAN_LIMITS: Record<string, number> = {
 
 const DEFAULT_SCAN_LIMIT = 10;
 
+// ─── Upstream call budgets ─────────────────────────────────────
+// Two CHAINED edge-function calls (scan-ocr → ncert-solver) must fit inside
+// the 30s Vercel function budget: 12s OCR + 15s solve leaves ~3s headroom
+// for storage upload + DB writes.
+const OCR_TIMEOUT_MS = 12_000;
+const SOLVER_TIMEOUT_MS = 15_000;
+
 // ─── Helpers ───────────────────────────────────────────────────
+
+// Timeout-bounded fetch. Mirrors the module-private helper at
+// packages/lib/src/supabase.ts:40 (`fetchWithTimeout`) — that copy is not
+// exported from @alfanumrik/lib, so the canonical semantics are replicated
+// here until packages/lib exposes a shared export (P1-4a follow-up).
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
+}
 
 function bilingualError(en: string, hi: string, isHi: boolean) {
   return isHi ? hi : en;
@@ -274,19 +295,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const ocrResponse = await fetch(`${supabaseUrl}/functions/v1/scan-ocr`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${serviceKey}`,
-      },
-      body: JSON.stringify({
-        action: 'upload_and_process',
-        file_name: fileName,
-        file_type: fileType,
-        storage_path: storagePath,
-      }),
-    });
+    let ocrResponse: Response;
+    try {
+      ocrResponse = await fetchWithTimeout(`${supabaseUrl}/functions/v1/scan-ocr`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          action: 'upload_and_process',
+          file_name: fileName,
+          file_type: fileType,
+          storage_path: storagePath,
+        }),
+      }, OCR_TIMEOUT_MS);
+    } catch (err) {
+      // Non-timeout network errors keep the pre-existing outer-catch 500 path.
+      if (!isAbortError(err)) throw err;
+
+      logger.warn('scan-solve: scan-ocr timed out', { studentId, scanId: scanRecord.id, timeoutMs: OCR_TIMEOUT_MS });
+      await supabaseAdmin.from('student_scans').update({
+        status: 'ocr_failed',
+        error_message: `OCR timed out after ${OCR_TIMEOUT_MS / 1000}s`,
+        updated_at: new Date().toISOString(),
+      }).eq('id', scanRecord.id);
+
+      // Same body shape as the ocr_failed response; distinguishable via
+      // status='ocr_timeout' + HTTP 504.
+      return NextResponse.json({
+        scan_id: scanRecord.id,
+        status: 'ocr_timeout',
+        extracted_text: null,
+        solution: null,
+        error: bilingualError(
+          'Reading the image took too long. Please try again with a clearer photo.',
+          'Image padhne mein zyada samay lag gaya. Saaf photo ke saath dobara try karein.',
+          isHi,
+        ),
+      }, { status: 504 });
+    }
 
     const ocrResult = await ocrResponse.json();
 
@@ -318,7 +366,7 @@ export async function POST(request: NextRequest) {
     let solveError = null;
 
     try {
-      const solverResponse = await fetch(`${supabaseUrl}/functions/v1/ncert-solver`, {
+      const solverResponse = await fetchWithTimeout(`${supabaseUrl}/functions/v1/ncert-solver`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -329,7 +377,7 @@ export async function POST(request: NextRequest) {
           subject: subject || 'general',
           grade: grade,
         }),
-      });
+      }, SOLVER_TIMEOUT_MS);
 
       if (solverResponse.ok) {
         solution = await solverResponse.json();
@@ -339,7 +387,11 @@ export async function POST(request: NextRequest) {
         logger.warn('scan-solve: ncert-solver failed', { studentId, status: solverResponse.status, error: solveError });
       }
     } catch (err) {
-      solveError = err instanceof Error ? err.message : 'Solver network error';
+      // Solver timeout degrades gracefully to the existing 'ocr_only' response
+      // (extracted text is still returned; solve_error carries bilingual copy).
+      solveError = isAbortError(err)
+        ? `Solver timed out after ${SOLVER_TIMEOUT_MS / 1000}s`
+        : err instanceof Error ? err.message : 'Solver network error';
       logger.error('scan-solve: ncert-solver exception', { studentId, error: solveError });
     }
 

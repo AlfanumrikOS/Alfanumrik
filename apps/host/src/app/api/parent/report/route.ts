@@ -17,6 +17,25 @@ import { cookies } from 'next/headers';
  * Returns cached report if <24h old, otherwise calls the Edge Function.
  */
 
+// Bound the parent-report-generator hop (AI generation can hang upstream).
+// 25s interim per architect review 2026-08-03: a 15s abort discarded
+// completed-but-unpersisted AI generations (route upserts the report cache
+// only AFTER the response), causing parent retry loops that restarted full
+// generation. Single hop within the 30s maxDuration budget allows 25s.
+// Durable fix = move persistence into parent-report-generator so aborted
+// responses still populate the cache.
+const REPORT_TIMEOUT_MS = 25_000;
+
+// Timeout-bounded fetch. Mirrors the module-private helper at
+// packages/lib/src/supabase.ts:40 (`fetchWithTimeout`) — that copy is not
+// exported from @alfanumrik/lib, so the canonical semantics are replicated
+// here until packages/lib exposes a shared export (P1-4a follow-up).
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
 async function createRlsScopedClient(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -128,18 +147,33 @@ export async function POST(request: Request) {
 
     const edgeFunctionUrl = `${supabaseUrl}/functions/v1/parent-report-generator`;
 
-    const efResponse = await fetch(edgeFunctionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-      },
-      body: JSON.stringify({
-        student_id,
-        parent_id: guardian.id,
-        language: safeLanguage,
-      }),
-    });
+    let efResponse: Response;
+    try {
+      efResponse = await fetchWithTimeout(edgeFunctionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          student_id,
+          parent_id: guardian.id,
+          language: safeLanguage,
+        }),
+      }, REPORT_TIMEOUT_MS);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        logger.warn('parent_report_edge_function_timeout', {
+          route: '/api/parent/report',
+          timeoutMs: REPORT_TIMEOUT_MS,
+        });
+        return NextResponse.json(
+          { success: false, error: 'Report generation timed out. Please try again later.' },
+          { status: 504 }
+        );
+      }
+      throw err; // non-timeout network errors keep the pre-existing outer-catch 500 path
+    }
 
     if (!efResponse.ok) {
       const errorData = await efResponse.json().catch(() => ({}));

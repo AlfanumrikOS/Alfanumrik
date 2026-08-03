@@ -29,6 +29,21 @@ const ALLOWED_FUNCTIONS = new Set([
   'bulk-question-gen',
 ]);
 
+// Bound the edge-function hop so a hung upstream can't pin this route to the
+// full Vercel function budget. Bulk/embed functions self-report progress via
+// GET status polls, so 20s is generous for a single hop.
+const EDGE_PROXY_TIMEOUT_MS = 20_000;
+
+// Timeout-bounded fetch. Mirrors the module-private helper at
+// packages/lib/src/supabase.ts:40 (`fetchWithTimeout`) — that copy is not
+// exported from @alfanumrik/lib, so the canonical semantics are replicated
+// here until packages/lib exposes a shared export (P1-4a follow-up).
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
 async function proxyToEdgeFunction(
   request: NextRequest,
   fn: string,
@@ -50,15 +65,26 @@ async function proxyToEdgeFunction(
 
   const signingHeaders = buildInternalCallerHeaders(method, edgePath, bodyText, `${fn}-proxy`);
 
-  const res = await fetch(targetUrl.toString(), {
-    method,
-    headers: {
-      'Authorization': `Bearer ${serviceKey}`,
-      'Content-Type': 'application/json',
-      ...(signingHeaders ?? {}),
-    },
-    ...(method === 'POST' ? { body: bodyText } : {}),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(targetUrl.toString(), {
+      method,
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+        ...(signingHeaders ?? {}),
+      },
+      ...(method === 'POST' ? { body: bodyText } : {}),
+    }, EDGE_PROXY_TIMEOUT_MS);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return NextResponse.json(
+        { error: `Edge function "${fn}" timed out after ${EDGE_PROXY_TIMEOUT_MS / 1000}s` },
+        { status: 504 },
+      );
+    }
+    throw err; // non-timeout network errors keep the pre-existing unhandled-500 path
+  }
 
   const responseBody = await res.text();
   return new NextResponse(responseBody, {

@@ -116,12 +116,29 @@ function errorResponse(message: string, status: number) {
 
 // ─── Voyage Embedding ────────────────────────────────────────
 
+// Embedding is awaited BEFORE the Promise.all of RPCs in handleChapter — an
+// un-timed Voyage hang would stall the whole request. 8s bound; on timeout
+// generateQueryEmbedding returns null and both callers already degrade
+// gracefully (handleChapter skips semantic search, handleSearchLegacy
+// proceeds with text-only matching, has_embedding=false).
+const EMBEDDING_TIMEOUT_MS = 8_000;
+
+// Timeout-bounded fetch. Mirrors the module-private helper at
+// packages/lib/src/supabase.ts:40 (`fetchWithTimeout`) — that copy is not
+// exported from @alfanumrik/lib, so the canonical semantics are replicated
+// here until packages/lib exposes a shared export (P1-4a follow-up).
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
 async function generateQueryEmbedding(text: string): Promise<number[] | null> {
   const voyageKey = process.env.VOYAGE_API_KEY;
   if (!voyageKey) return null;
   try {
     // eslint-disable-next-line alfanumrik/no-direct-ai-calls -- TODO(phase-4-cleanup): route concept-engine embeddings through grounded-answer service once ff_foxy_grounded_only is removed.
-    const res = await fetch('https://api.voyageai.com/v1/embeddings', {
+    const res = await fetchWithTimeout('https://api.voyageai.com/v1/embeddings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -132,7 +149,7 @@ async function generateQueryEmbedding(text: string): Promise<number[] | null> {
         input: [text],
         output_dimension: 1024,
       }),
-    });
+    }, EMBEDDING_TIMEOUT_MS);
     if (!res.ok) return null;
     const data = await res.json();
     return data.data?.[0]?.embedding ?? null;
