@@ -78,6 +78,9 @@ const SUPABASE_ANON_KEY    = Deno.env.get('SUPABASE_ANON_KEY')        || ''
 const MAX_COUNT = 20
 const DEFAULT_SA_COUNT = 5
 const DEFAULT_LA_COUNT = 3
+// P5: grades are strings "6".."12". Keep in sync with the canonical set in
+// packages/lib/src/identity/constants.ts — Deno edge functions cannot import
+// across the supabase/ ↔ packages/ boundary (provenance-tracked copy).
 const VALID_GRADES = ['6','7','8','9','10','11','12']
 const VALID_QUESTION_TYPES = ['short_answer','long_answer'] as const
 type QuestionType = typeof VALID_QUESTION_TYPES[number]

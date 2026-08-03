@@ -36,7 +36,12 @@ export const VALID_PAPER_PATTERNS = [
 ] as const;
 export type PaperPattern = (typeof VALID_PAPER_PATTERNS)[number];
 
-/** P5 grade format: strings "6" through "12". */
+/**
+ * P5 grade format: strings "6" through "12".
+ * Keep in sync with the canonical set in packages/lib/src/identity/constants.ts
+ * — Deno edge functions cannot import across the supabase/ ↔ packages/ boundary,
+ * so this literal is a deliberate provenance-tracked copy.
+ */
 export const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'] as const;
 export type Grade = (typeof VALID_GRADES)[number];
 

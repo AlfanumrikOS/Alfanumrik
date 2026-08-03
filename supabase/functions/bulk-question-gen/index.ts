@@ -92,6 +92,9 @@ const DEFAULT_COUNT      = 10
 const DEFAULT_DIFFICULTY = 3
 const DEFAULT_BLOOM      = 'remember'
 
+// P5: grades are strings "6".."12". Keep in sync with the canonical set in
+// packages/lib/src/identity/constants.ts — Deno edge functions cannot import
+// across the supabase/ ↔ packages/ boundary (provenance-tracked copy).
 const VALID_GRADES      = ['6','7','8','9','10','11','12']
 const VALID_BLOOM_LEVELS = ['remember','understand','apply','analyze','evaluate','create']
 

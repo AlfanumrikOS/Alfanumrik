@@ -239,6 +239,10 @@ export class RetrievalError extends Error {
 // Validation (P5 grade format + scope sanity)
 // ────────────────────────────────────────────────────────────────────────────
 
+// P5: grades are strings "6".."12". Keep in sync with the canonical set in
+// packages/lib/src/identity/constants.ts — Deno edge functions cannot import
+// across the supabase/ ↔ packages/ boundary, so this literal is a deliberate
+// provenance-tracked copy (same pattern as the XP literals).
 const VALID_GRADES = new Set<string>(['6', '7', '8', '9', '10', '11', '12']);
 
 function validateOptions(opts: RetrieveOptions): void {

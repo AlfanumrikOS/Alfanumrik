@@ -60,7 +60,21 @@ export function isValidLinkCode(code: string): boolean {
   return LINK_CODE_RE.test(code);
 }
 
-/** Validate grade format (e.g., "6", "7", "8", "9", "10", "11", "12") */
+/**
+ * Loose numeric grade-range check (1..12), accepts numbers OR strings.
+ *
+ * ⚠️ INTENTIONALLY DIVERGENT from the canonical grade-set membership guard
+ * `isValidGrade` in `identity/constants.ts` — DO NOT unify them. This one is
+ * a general input-sanitization range check that:
+ *   - accepts integers as well as strings (parseInt), and
+ *   - admits grades 1..5 (range 1-12), not just the CBSE product set 6-12.
+ * Its numbers-1..12 semantics are load-bearing: pinned by
+ * `apps/host/src/__tests__/lib/sanitize.test.ts` (asserts isValidGrade(1..12)
+ * === true, isValidGrade(0/13) === false). No production code imports this
+ * symbol from `sanitize` (verified 2026-08-03) — it is defense-in-depth only.
+ * For P5 grade-set membership ("6".."12" strings only), import `isValidGrade`
+ * from `@alfanumrik/lib/identity/constants` instead.
+ */
 export function isValidGrade(grade: string | number): boolean {
   const g = typeof grade === 'string' ? parseInt(grade, 10) : grade;
   return Number.isInteger(g) && g >= 1 && g <= 12;
