@@ -229,8 +229,41 @@ function buildGenerateBody(args: FoxyPythonGenerationArgs) {
     },
     rag_context: args.ragContext || null,
     config: {
-      // Foxy's persona / JSON contract / pedagogy tree are Claude-calibrated
-      // (see claude.ts resolveModelOrder RCA note) → prefer Anthropic.
+      // preferred_provider stays 'anthropic' — a DELIBERATE, TRACKED
+      // EXCEPTION to the platform-wide OpenAI-primary swap (CEO-approved,
+      // 2026-08-02 cost change; see config.ts's MODEL_FALLBACK_ORDER,
+      // claude.ts's resolveModelOrder, and
+      // packages/lib/src/ai/gateway/registry.ts's LEGACY_FALLBACK_ORDER —
+      // all now OpenAI-first for this SAME Foxy generation step when it
+      // runs the direct TS path instead of this Python bridge). Two
+      // concrete, current reasons — not the old "Foxy is Claude-calibrated"
+      // rationale alone, which is real history (see claude.ts's RCA note)
+      // but is no longer, by itself, the deciding factor anywhere else in
+      // the codebase:
+      //   1. Dark by default: ff_python_foxy_tutor_v1 is seeded OFF with
+      //      rollout_pct=0, and PYTHON_AI_BASE_URL is empty until architect
+      //      wires it (see this file's header — three independent kill
+      //      layers). This seam carries ZERO production traffic today, so
+      //      the cost pressure behind the platform swap does not apply here
+      //      yet.
+      //   2. Unvalidated bridge: eval/openai-migration/harness/cli.ts — the
+      //      harness built to gate the platform swap — calls
+      //      packages/lib/src/ai/clients/openai.ts's callOpenAI DIRECTLY.
+      //      It validates the TS-direct OpenAI path the swap actually
+      //      changed, NOT this Python/Cloud-Run MOL bridge's own OpenAI
+      //      call, so there is no equivalent output-quality signal yet for
+      //      GPT-4o-mini served through this seam.
+      // This is an ACTIVE re-pin, not a stale leftover default: Python's own
+      // router (router.py's select_provider_chain, the "A2 live path")
+      // already makes OpenAI the deterministic primary for
+      // task_type='explanation' — omitting preferred_provider here would
+      // already resolve to OpenAI. Setting 'anthropic' deliberately
+      // overrides that default for Foxy specifically while this bridge is
+      // unramped and unvalidated.
+      // Follow-up (tracked, not urgent at rollout_pct=0): before promoting
+      // ff_python_foxy_tutor_v1 off 0%, extend eval/openai-migration (or an
+      // equivalent pass) to cover this bridge's own OpenAI call, then
+      // revisit this value the same way the direct TS path was gated.
       // NOTE: haiku↔sonnet granularity is not expressible via preferred_provider
       // (the Python router owns model choice per task_type); tracked follow-up.
       preferred_provider: 'anthropic' as const,
@@ -243,9 +276,10 @@ function buildGenerateBody(args: FoxyPythonGenerationArgs) {
     },
     // NB: modelPreference (haiku|sonnet|auto) is intentionally NOT sent — the
     // Python GenerateRequest/GenerateConfig use extra="forbid", and the Python
-    // router owns model selection per task_type. We express the Foxy/Claude
-    // calibration via preferred_provider='anthropic' above. Finer haiku↔sonnet
-    // mapping is a tracked follow-up (would need a Python config field).
+    // router owns model selection per task_type. See the preferred_provider
+    // comment above for why this seam pins 'anthropic' as a tracked exception
+    // to the platform's OpenAI-primary default. Finer haiku↔sonnet mapping is
+    // a separate tracked follow-up (would need a Python config field).
   };
 }
 

@@ -8,6 +8,16 @@
 //   - Haiku 401 → auth_error, doesn't try Sonnet
 //   - content '{{INSUFFICIENT_CONTEXT}}' → insufficientContext:true
 //   - both models timeout → ok:false, reason:timeout
+//
+// NOTE (2026-08-02, OpenAI-primary cost swap): resolveModelOrder() now reads
+// MODEL_FALLBACK_ORDER (./config.ts), which puts OpenAI first for every
+// preference. Most tests below omit `openaiApiKey`, so callClaude()'s
+// `if (target.provider === 'openai' && !req.openaiApiKey) continue;` guard
+// skips the OpenAI legs entirely and these tests exercise the Anthropic-only
+// fallback path (still valid coverage, but no longer "the primary/default
+// path" some test names/comments describe). Only the
+// "OpenAI finish_reason=length" test below supplies openaiApiKey and
+// exercises the real OpenAI-primary order end-to-end.
 
 import { assertEquals } from 'https://deno.land/std@0.210.0/assert/mod.ts';
 import { callClaude } from '../claude.ts';
@@ -482,9 +492,11 @@ Deno.test('Anthropic stop_reason absent → stopReason:other (never spuriously m
 });
 
 Deno.test('OpenAI finish_reason=length → stopReason:max_tokens (normalized)', async () => {
-  // Only OpenAI is stubbed, and Haiku 529 forces the fallback to gpt-4o-mini.
+  // gpt-4o-mini is primary for modelPreference='haiku' post the 2026-08-02
+  // OpenAI-primary swap (MODEL_FALLBACK_ORDER.haiku = [openai mini, anthropic
+  // haiku]), so it answers on the FIRST attempt — no forced Anthropic 529
+  // detour is needed to reach it anymore.
   installFetchStub([
-    () => Promise.resolve(new Response('overloaded', { status: 529 })),
     () => Promise.resolve(mockOpenAIOkResponse('partial from gpt', 'length')),
   ]);
   try {

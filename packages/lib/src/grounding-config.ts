@@ -94,4 +94,8 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // collide with a cached entry. Per the bump rule, this does NOT bump PROMPT_REV
 // (a bump would needlessly flush every Foxy cache tier).
 export const PROMPT_REV = 3;
-export const MODEL_ROUTE_REV = 1;
+// MODEL_ROUTE_REV=2 (2026-08-02): OpenAI-primary provider swap — kept in sync
+// with the authoritative bump in supabase/functions/grounded-answer/config.ts
+// (see that file for the full cost-driven rationale and RCA-FIX CRITICAL-1
+// calibration history).
+export const MODEL_ROUTE_REV = 2;

@@ -3,7 +3,8 @@
  *
  * Provider-agnostic model routing for the Next.js / shared TS layer. Phase 1 is
  * PURELY ADDITIVE and flag-gated (ff_model_gateway_v1, default OFF): `default`
- * policy reproduces the legacy Anthropic-primary chain byte-for-byte, and
+ * policy reproduces the legacy fallback chain byte-for-byte (OpenAI-primary,
+ * Claude fallback as of the 2026-08-02 cost-driven provider swap), and
  * non-default policies degrade to `default` when the flag is off.
  *
  * Usage:

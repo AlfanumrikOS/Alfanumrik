@@ -12,7 +12,12 @@ logger = structlog.get_logger(__name__)
 
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-GRADER_MODEL = "claude-sonnet-4-6-20251022"
+# Aligned to the id already pinned by config-model-name-identity.test.ts,
+# packages/lib/src/ai/gateway/registry.ts (ANTHROPIC_SONNET_ID), and
+# packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL) — this environment has
+# no ANTHROPIC_API_KEY, so this was NOT confirmed against a live Anthropic
+# model-catalog check; get a final live confirmation at the next review.
+GRADER_MODEL = "claude-sonnet-4-20250514"
 GRADER_TIMEOUT_MS = 30000
 GRADER_MAX_TOKENS = 1024
 

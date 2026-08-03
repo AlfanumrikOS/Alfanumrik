@@ -139,26 +139,34 @@ export const PROMPT_REV = 3;
 // (owned by the testing agent) asserts equality across the Deno/Node boundary
 // so the two can never silently drift.
 //
-// Anthropic runs FIRST for every preference — the Foxy system prompt, JSON
-// output contract, and CBSE pedagogy tree are calibrated for Claude; the OpenAI
-// tiers are availability fallbacks only (RCA-FIX CRITICAL-1, 2026-06-26).
+// OpenAI runs FIRST for every preference (CEO-approved cost-driven provider
+// swap, 2026-08-02): Anthropic's per-token cost does not scale with
+// per-student revenue at current volume. Claude is RETAINED as the fallback
+// tier, not deleted — specifically because the Foxy system prompt, JSON
+// output contract, and CBSE pedagogy tree were originally calibrated against
+// Claude's behavior (RCA-FIX CRITICAL-1, 2026-06-26). That calibration
+// history is exactly why an output-quality validation pass (the
+// eval/openai-migration harness) gates how far the canary ramps before
+// GPT-4o/GPT-4o-mini output reaches students at volume — this reorder makes
+// OpenAI primary for cost, it does not certify OpenAI output quality by
+// itself.
 export const MODEL_FALLBACK_ORDER: Record<
   'haiku' | 'sonnet' | 'auto',
   ReadonlyArray<{ provider: 'anthropic' | 'openai'; model: string }>
 > = {
   haiku: [
-    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
     { provider: 'openai', model: 'gpt-4o-mini' },
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
   ],
   sonnet: [
-    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     { provider: 'openai', model: 'gpt-4o' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
   ],
   auto: [
-    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
-    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
     { provider: 'openai', model: 'gpt-4o-mini' },
     { provider: 'openai', model: 'gpt-4o' },
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
   ],
 };
 // MODEL_ROUTE_REV bump rule: bump whenever model routing changes what model
@@ -166,4 +174,9 @@ export const MODEL_FALLBACK_ORDER: Record<
 // id upgrade in claude.ts (HAIKU_MODEL / SONNET_MODEL / GPT_* constants), a
 // change to resolveModelOrder(), or a change to the effective-temperature /
 // effective-max_tokens derivation in the pipeline.
-export const MODEL_ROUTE_REV = 1;
+// MODEL_ROUTE_REV=2 (2026-08-02): OpenAI-primary provider swap — every
+// model_preference now resolves to a GPT model first (Claude second), per the
+// rationale above. Cache entries written under rev 1 reflected a
+// Claude-primary resolution and must not be served for a request made under
+// this new ordering.
+export const MODEL_ROUTE_REV = 2;

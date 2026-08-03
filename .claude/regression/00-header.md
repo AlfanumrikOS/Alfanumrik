@@ -6,8 +6,42 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 331 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-331 (2026-07-30, BoardScore™ subject-scoping fix batch — CEO-
+**Total catalog: 332 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-332 (2026-08-02, Model Gateway OpenAI-primary provider swap — a
+CEO-directed cost swap flipped `MODEL_FALLBACK_ORDER`
+[`supabase/functions/grounded-answer/config.ts`] and `LEGACY_FALLBACK_ORDER`
+[`packages/lib/src/ai/gateway/registry.ts`] from Anthropic-primary to
+OpenAI-primary for every preference key (gpt-4o-mini/gpt-4o now run FIRST,
+Claude Haiku/Sonnet retained as the reliability fallback tier, not deleted),
+gated behind a fast Claude-graded output-quality validation pass
+[`eval/openai-migration/` harness] before canary ramp, per RCA-FIX
+CRITICAL-1's Claude-calibration concern. Shared infrastructure — the same
+config also re-orders ncert-solver's grounded path and the
+quiz-generation/verification prompt templates. A NEW explicit regression pin
+(`router.test.ts`: "default chain is OpenAI-primary post 2026-08 cost
+directive, Claude retained as fallback") asserts the new order on both model
+ids and providers so a future accidental revert is caught immediately, the
+same way the pre-swap order used to be pinned; the Deno↔TS parity test
+[REG-308] now anchors the new order on both sides; every gateway/router test
+whose mock adapter map implicitly relied on the pre-swap order (only an
+`anthropic` entry present, silently never reaching the real unmocked
+`openaiAdapter`) was restructured to mock both providers explicitly, closing
+the test-hermeticity gap the reorder exposed — including the Deno-side
+`grounded-answer/__tests__/claude.test.ts`. A companion Sonnet model-ID drift
+fix (`claude-sonnet-4-6-20251022`→`claude-sonnet-4-20250514`) shipped in the
+same change; a same-session ai-engineer follow-up closed the gap this entry
+originally flagged as open, and an independent direct-read reconciliation
+(2026-08-02) confirms the corrected id is now applied with no residual gap
+across all 11 live source files that referenced it (`registry.ts`,
+`grounded-answer/config.ts`, MoL's TS `router.ts`/`telemetry.ts`/`grader.ts`/
+`grader-cron.ts`, `_shared/security/quota.ts`, and Python
+`mol/cost.py`/`router.py`/`grader.py`/`grader_cron.py` — the last of these,
+`grader.py`, was found during this reconciliation and had never been named
+in either the original "verified applied" or "Known gap" lists), with every
+corresponding test (incl. `grader-cron.test.ts`'s mock fixture) updated to
+match. See `02-foxy-ai.md` for the full file-by-file accounting and REG-308's
+correction note. **REG-333 is the next free id.**)
+Prior: REG-331 (2026-07-30, BoardScore™ subject-scoping fix batch — CEO-
 reported "all subjects shown" defect. Bug 1: the Deno Edge Function
 `supabase/functions/board-score/index.ts` had used a PostgREST nested embed
 requiring an undeclared FK, making every `compute` call fail; rewritten as a
@@ -31,7 +65,10 @@ presence/absence + formula-byte-identity) — no live Deno execution and no
 live-DB migration execution in this pass, a bigger integration-lane gap than
 REG-329/330's since no integration-lane companion file exists yet for these
 two migrations; see `15-cross-cutting.md`).
-**REG-332 is the next free id.**
+This paragraph's own text declared "REG-332 is the next free id"; that was
+true at its merge and is fulfilled (not contradicted) above — the Model
+Gateway OpenAI-primary provider swap took REG-332 on 2026-08-02 exactly as
+predicted, so **REG-333 is now the next free id.**
 Prior: REG-330 (2026-07-29, institution-entitlement override floor on
 `get_plan_limit()` — the `20260729130600` migration wires the school-scoped
 `institution_entitlements` daily-limit overrides the `/super-admin/entitlements`

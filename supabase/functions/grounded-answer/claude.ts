@@ -374,10 +374,17 @@ function claudeFailureLabel(kind: 'timeout' | 'server_error' | 'unknown'): strin
 
 function resolveModelOrder(pref: 'haiku' | 'sonnet' | 'auto'): ModelTarget[] {
   // RCA-FIX CRITICAL-1 (2026-06-26): Foxy system prompt, JSON output contract,
-  // and CBSE pedagogy decision tree are calibrated for Claude behavior.
-  // GPT-4o-mini/GPT-4o are fallbacks only — they receive the same prompt verbatim
-  // which causes format/persona deviations. Anthropic models run first; OpenAI
-  // only activates if the Claude call fails (timeout / 5xx / auth).
+  // and CBSE pedagogy decision tree were originally calibrated for Claude
+  // behavior — GPT-4o-mini/GPT-4o receive the same prompt verbatim, which can
+  // cause format/persona deviations relative to Claude.
+  //
+  // OpenAI-primary provider swap (CEO-approved, 2026-08-02): Anthropic's
+  // per-token cost does not scale with per-student revenue at current volume,
+  // so OpenAI models now run FIRST for every preference. Claude is RETAINED as
+  // the fallback tier (activates on OpenAI timeout / 5xx / auth failure), not
+  // deleted — precisely because of the calibration history above, which is why
+  // an output-quality validation pass (eval/openai-migration harness) gates
+  // how far the canary ramps before OpenAI output reaches students at volume.
   //
   // Model Gateway parity (2026-07-24): the ORDERING now comes from the shared
   // MODEL_FALLBACK_ORDER constant in ./config.ts (the Deno mirror of the TS

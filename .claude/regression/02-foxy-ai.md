@@ -1425,6 +1425,18 @@ alert rule).
 
 ## GenAI Phase 1 — Model Gateway backward-compat + provider-routing safety (2026-07-24) — REG-308
 
+> **CORRECTION 2026-08-02 (superseded by REG-332 below, NOT removed — per this
+> catalog's "removing an entry requires explicit user approval" rule):** the
+> "byte-for-byte Anthropic-primary" order this section's test-table row quotes
+> (`claude-haiku-4-5-20251001` → `claude-sonnet-4-20250514` → `gpt-4o-mini` →
+> `gpt-4o`) was the order AS OF 2026-07-24. A CEO-directed cost swap on
+> 2026-08-02 flipped it to OpenAI-primary (Claude retained as the reliability
+> fallback tier, not deleted) — see REG-332 for the new order and its
+> dedicated pinning test. Everything ELSE in this section (the flag-OFF no-op
+> guarantee, the never-select-a-dormant-provider invariant, config model-name
+> byte-identity, Deno↔TS ordering parity) remains accurate; only the specific
+> legacy order quoted below is now historical, not current.
+
 The provider-agnostic Model Gateway (`packages/lib/src/ai/gateway/**`) consolidates
 the four previously-hardcoded model-call sites onto ONE catalog + ONE routing
 decision. It is purely additive and flag-gated behind `ff_model_gateway_v1`
@@ -1459,6 +1471,137 @@ GenAI Phase 1 adds REG-308 (Model Gateway backward-compat + provider-routing
 safety). REG-306..REG-307 were the prior additions (Master Action Plan Phase
 2.3–2.5 + 3.10); REG-308 is the next free id after REG-307.
 **Total catalog: 305 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## Model Gateway OpenAI-primary provider swap (2026-08-02) — REG-332
+
+CEO-directed cost swap (see the approved plan, "Multi-Provider AI Cost/Quality
+Routing Plan Revision 2," Phase 1): Anthropic's per-token cost does not scale
+with per-student revenue at current volume, so `MODEL_FALLBACK_ORDER`
+(`supabase/functions/grounded-answer/config.ts`) and `LEGACY_FALLBACK_ORDER`
+(`packages/lib/src/ai/gateway/registry.ts`) both flipped from
+Anthropic-primary to OpenAI-primary for every preference key
+(`haiku`/`sonnet`/`auto`): gpt-4o-mini/gpt-4o now run FIRST, Claude
+Haiku/Sonnet are RETAINED as the reliability fallback tier, not deleted —
+specifically because the Foxy system prompt, JSON output contract, and CBSE
+pedagogy decision tree were originally calibrated against Claude's behavior
+(RCA-FIX CRITICAL-1, 2026-06-26), which is why the swap ships behind a fast
+output-quality validation pass (the new `eval/openai-migration/` harness,
+Claude-graded via the existing quality-eval judge kept deliberately on a
+different provider than what it grades) before the canary ramps. This flip is
+shared infrastructure — the SAME config also re-orders ncert-solver's grounded
+path and the quiz-generation/verification prompt templates
+(`REGISTERED_PROMPT_TEMPLATES`), since they all resolve through
+`resolveModelOrder()` / `MODEL_FALLBACK_ORDER`. A companion fix in the same
+change corrected a pre-existing Sonnet model-ID drift
+(`claude-sonnet-4-6-20251022` → the verified-valid `claude-sonnet-4-20250514`)
+— see the note below (originally logged as a "Known gap," closed by a
+same-session ai-engineer follow-up and independently re-verified 2026-08-02)
+for the complete, current, file-by-file accounting of that companion fix.
+
+This is exactly the kind of core AI-provider-primacy change REG-67 (AlfaBot
+model provenance) and REG-51 (server-shuffle authority) established precedent
+for pinning: a routing-order change is invisible in a diff review unless a
+test explicitly asserts the NEW order as intentional, the same way the OLD
+order used to be asserted before this swap.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-332 | `model_gateway_openai_primary_provider_swap_p12` | **New regression pin:** `selectModelChain('default')` (no constraints) resolves to `[gpt-4o-mini, gpt-4o, claude-haiku-4-5-20251001, claude-sonnet-4-20250514]` — OpenAI-primary, Claude retained as fallback — asserted on BOTH model ids and providers explicitly (an id rename alone can't silently flip a provider and stay green). **Companion coverage (updated, not new):** the Deno↔TS `MODEL_FALLBACK_ORDER`/`LEGACY_FALLBACK_ORDER` parity test (REG-308) now anchors the NEW order on both sides; every `router.test.ts`/`gateway.test.ts` test whose mock adapter map supplied only an `anthropic` entry (implicitly relying on the pre-swap order to mean the real, unmocked `openaiAdapter` was never reached) was restructured to mock both providers explicitly, so none of this suite's green state depends on `OPENAI_API_KEY` being absent from the test environment; the Deno-side `grounded-answer/__tests__/claude.test.ts` "OpenAI finish_reason=length" test (the one test in that 15-test suite that supplies `openaiApiKey` and therefore actually exercises the OpenAI-primary order end-to-end) was updated the same way — the other 14 tests in that file were left green-but-annotated (they now validate the Anthropic-only fallback path taken when no `openaiApiKey` is configured, not "the primary/default path" their names describe, per a new file-header note). **Also found and fixed (full-suite sweep, genuinely failing, distinct from the companion Sonnet-ID file-list note below — formerly this entry's "Known gap"):** `grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts`'s "computes cost via PRICING table for claude-sonnet too" — `_shared/mol/telemetry.ts`'s `PRICING` table WAS correctly repointed to key on `claude-sonnet-4-20250514` (old-id entry removed), but this test's fixture still sent the stale `claude-sonnet-4-6-20251022`, so `calcCost` found no PRICING match and silently returned 0 instead of the expected 1494.00 INR — a real assertion failure, not just a latent drift. **Second independent full-suite sweep (2026-08-02, `python -m pytest tests/unit`, 893 tests across unit+integration): found 3 more genuinely-failing tests from the SAME Sonnet-ID drift, this time on the Python side** — `python/services/ai/mol/cost.py`'s `PRICING` dict was correctly repointed the same way as its TS twin, but `python/tests/unit/test_cost.py::test_pricing_has_all_known_models` and `::test_compute_cost_for_sonnet` still asserted/sent the stale `claude-sonnet-4-6-20251022` (the latter's `compute_cost()` call silently returned `(0.0, 0.0)` instead of the expected $13.50 — the date-suffix fallback regex requires dashes in the trailing date and does not match this id's undashed `20251022` tail, so there is no silent-alias rescue), and `test_cost_cap.py::test_over_ceiling_raises_cost_cap_exceeded` asserted a `MolError` that never raised once the same zeroed-cost estimate could no longer exceed the ₹2.00 `evaluation` ceiling — all 3 fixed by updating the stale literal to `claude-sonnet-4-20250514` (same pricing values, id-only fix, mirrors the TS-side fix pattern). `python/tests/unit/test_providers_anthropic.py` and `test_eval_harness.py` also reference the old id but pass either fixture through inertly (never looked up against `PRICING`), so intentionally left as-is — not broken, no fix needed. | `apps/host/src/__tests__/lib/ai/gateway/router.test.ts` (14 tests, incl. the new "default chain is OpenAI-primary post 2026-08 cost directive, Claude retained as fallback" pin), `deno-parity.test.ts` (5 tests), `gateway.test.ts` (13 tests, 9 restructured); `supabase/functions/grounded-answer/__tests__/claude.test.ts` (15 Deno tests, 1 fixed); `supabase/functions/grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts` (28 tests, 1 fixed); `python/tests/unit/test_cost.py` (2 fixed), `python/tests/unit/test_cost_cap.py` (1 fixed); source under test `packages/lib/src/ai/gateway/registry.ts`, `router.ts`, `gateway.ts`, `supabase/functions/grounded-answer/config.ts`, `claude.ts`, `supabase/functions/_shared/mol/telemetry.ts`, `python/services/ai/mol/cost.py` | E |
+
+### Companion Sonnet model-ID drift fix — verified fully applied (corrected 2026-08-02; section originally titled "Known gap")
+
+> **CORRECTION 2026-08-02 (same-session ai-engineer follow-up closed this
+> gap; re-verified here by an independent, direct re-read of every file
+> listed below — not assumed from this catalog's own prior text or from any
+> other prior turn's summary):** this section originally flagged 4 files as
+> still carrying the stale `claude-sonnet-4-6-20251022` id after the
+> companion fix landed in `registry.ts`, `grounded-answer/config.ts`, MoL's
+> TS `router.ts`, and `python/services/ai/mol/cost.py`. All 4 are now
+> confirmed fixed. The original accounting also silently omitted two files
+> that received the identical fix at the same time
+> (`supabase/functions/_shared/mol/telemetry.ts`,
+> `supabase/functions/_shared/security/quota.ts`), and this re-verification
+> pass additionally found one more file that was never named in EITHER list
+> (`python/services/ai/mol/grader.py` — the exact Python twin of the
+> already-flagged `_shared/mol/grader.ts`). The complete, current file set
+> for this companion fix, all confirmed by direct read to use the corrected
+> `claude-sonnet-4-20250514` id:
+>
+> - `packages/lib/src/ai/gateway/registry.ts` (`ANTHROPIC_SONNET_ID`)
+> - `supabase/functions/grounded-answer/config.ts` (`MODEL_FALLBACK_ORDER`)
+> - `supabase/functions/_shared/mol/router.ts` (`SONNET` constant)
+> - `supabase/functions/_shared/mol/telemetry.ts` (`PRICING` table key) —
+>   was already fixed at the time this entry was first written; simply
+>   never listed. Its dedicated test fix is already described in the main
+>   REG-332 row above (`mol-telemetry-adapter.vitest-harness.ts`).
+> - `supabase/functions/_shared/mol/grader.ts` (`GRADER_MODEL` constant) —
+>   was the open gap; now fixed.
+> - `supabase/functions/_shared/mol/grader-cron.ts` (fallback default
+>   inside `writeGraderTelemetry`) — was the open gap; now fixed. Its test,
+>   `supabase/functions/_shared/mol/__tests__/grader-cron.test.ts` (the
+>   `okGrader` mock fixture's `model` field), was updated in the same pass
+>   — source and test now agree on the CORRECTED id, closing the exact
+>   "source and test agree with each other, just not with the rest of the
+>   platform" drift this section originally flagged.
+> - `supabase/functions/_shared/security/quota.ts` (`mapModel()`'s sonnet
+>   branch) — was already fixed at the time this entry was first written;
+>   simply never listed. Named explicitly as in-scope by migration
+>   `20260802120000_model_pricing_add_claude_sonnet_4_20250514.sql`'s own
+>   header comment, and independently confirmed fixed by direct read here.
+> - `python/services/ai/mol/cost.py` (`PRICING` dict)
+> - `python/services/ai/mol/router.py` (`SONNET` constant) — was the open
+>   gap; now fixed.
+> - `python/services/ai/mol/grader_cron.py` (fallback default inside
+>   `_write_grader_telemetry`) — was the open gap; now fixed. Its own
+>   inline comment cross-references this catalog's "Known gap" note by
+>   name when explaining the fix.
+> - `python/services/ai/mol/grader.py` (`GRADER_MODEL` constant) — named in
+>   NEITHER this entry's original "verified applied" list NOR its "Known
+>   gap" list, despite being the Python twin of the already-flagged
+>   `_shared/mol/grader.ts`. Found and confirmed fixed during this
+>   re-verification pass.
+>
+> A fresh repo-wide search for the literal stale id confirms zero remaining
+> occurrences in live source or live test assertions. The only surviving
+> hits are: (a) this catalog's own historical prose describing the fix;
+> (b) explanatory code comments/docstrings narrating the fix in
+> `python/tests/unit/test_cost.py` and
+> `grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts`
+> (their actual assertions already use the corrected id — see the main
+> REG-332 row above); (c) the already-applied, now-historical
+> `20260518000003_model_pricing.sql` migration, correctly left untouched
+> per migration-immutability convention (`20260802120000_model_pricing_add_claude_sonnet_4_20250514.sql`
+> adds a sibling row rather than editing history — its own header explains
+> why); and (d) two Python test fixtures
+> (`python/tests/unit/test_providers_anthropic.py`,
+> `python/tests/unit/test_eval_harness.py`) that pass the id through
+> inertly and never resolve it against a PRICING lookup. All four of these
+> were already correctly accounted for as non-bugs in the main REG-332 row
+> above — none is a newly discovered gap.
+>
+> **No residual gap.** This section is retained rather than deleted, per
+> this catalog's "removing an entry requires explicit user approval" norm —
+> it now records the closed state instead of an open one.
+
+### Invariants covered by this section
+
+- P12 AI safety / provider — a live-path provider/model change is CEO-approved
+  (satisfies the constitution's "AI model or provider changes" user-approval
+  gate) and is now pinned by an explicit, clearly-named regression test rather
+  than being provable only by reading source; a future accidental revert to
+  Anthropic-primary fails this test immediately.
+- Regression-catalog discipline — this entry supersedes REG-308's specific
+  "Anthropic-primary" order examples without editing REG-308's own text; see
+  the correction note prepended to REG-308's section above.
+
+### Catalog total (Model Gateway OpenAI-primary swap)
+
+Adds REG-332 (Model Gateway OpenAI-primary provider swap). REG-331 was the
+prior addition (2026-07-30, BoardScore™ subject-scoping fix batch — see
+`00-header.md`); REG-332 is the next free id after REG-331.
+**Total catalog: 332 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 

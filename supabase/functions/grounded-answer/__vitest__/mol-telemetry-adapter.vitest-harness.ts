@@ -400,7 +400,12 @@ describe('shadowLogClaudeCall — LogPayload contract', () => {
   });
 
   it('computes cost via PRICING table for claude-sonnet too', async () => {
-    // claude-sonnet-4-6-20251022 pricing: input 3.00/1M, output 15.00/1M.
+    // claude-sonnet-4-20250514 pricing: input 3.00/1M, output 15.00/1M.
+    // (2026-08-02 Sonnet model-ID drift fix: PRICING's key is
+    // 'anthropic/claude-sonnet-4-20250514' — the stale
+    // 'claude-sonnet-4-6-20251022' id this fixture used to send has no
+    // PRICING row and no base-alias match, so calcCost silently fell back to
+    // 0 instead of exercising this test's whole point.)
     // tokens: 1_000_000 prompt + 1_000_000 completion
     //   = 1.00 * 3.00 + 1.00 * 15.00 = 18.00 USD
     // INR @ default rate 83 = 1494.00
@@ -412,7 +417,7 @@ describe('shadowLogClaudeCall — LogPayload contract', () => {
       isGroundingCheck: false,
       latencyMs: 1234,
       claudeResponse: okClaude({
-        model: 'claude-sonnet-4-6-20251022',
+        model: 'claude-sonnet-4-20250514',
         inputTokens: 1_000_000,
         outputTokens: 1_000_000,
       }),

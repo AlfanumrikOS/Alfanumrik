@@ -11,9 +11,11 @@
  *
  * FLAG GATE (ff_model_gateway_v1, default OFF): the NON-default policies are
  * gated. When the flag is OFF, ANY requested policy is forced to `default`, so
- * callModel behaves identically to the legacy Anthropic-primary chain
- * regardless of what the caller asked for. `default` is always available (it IS
- * the legacy path) and never touches the flag system.
+ * callModel behaves identically to the legacy fallback chain (OpenAI-primary,
+ * Claude fallback as of the 2026-08-02 cost-driven provider swap — see
+ * registry.ts's LEGACY_FALLBACK_ORDER header) regardless of what the caller
+ * asked for. `default` is always available (it IS the legacy path) and never
+ * touches the flag system.
  *
  * Zero behavior change by default: with policy `default` and no constraints the
  * chain is byte-for-byte the legacy grounded-answer `auto` order, invoked
@@ -78,7 +80,8 @@ export async function callModel(
   const requested: RoutingPolicy = opts.policy ?? 'default';
 
   // Flag gate: non-default policies require ff_model_gateway_v1. OFF → force
-  // `default` so behavior is identical to the legacy Anthropic-primary chain.
+  // `default` so behavior is identical to the legacy fallback chain (OpenAI-
+  // primary, Claude fallback — see registry.ts's LEGACY_FALLBACK_ORDER header).
   let effectivePolicy: RoutingPolicy = requested;
   if (requested !== 'default') {
     const enabled = await isFeatureEnabled(GATEWAY_FLAG, opts.flagContext ?? {});

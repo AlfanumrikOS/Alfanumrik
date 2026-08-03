@@ -1,7 +1,8 @@
 /**
  * Model Gateway — Deno ↔ TS MODEL_FALLBACK_ORDER parity (Phase 1).
  *
- * The legacy Anthropic-primary fallback ordering exists TWICE:
+ * The legacy fallback ordering (OpenAI-primary, Claude retained as fallback
+ * per the 2026-08-02 CEO-directed cost swap) exists TWICE:
  *   - TS (Node graph):  packages/lib/src/ai/gateway/registry.ts
  *                       → `LEGACY_FALLBACK_ORDER`
  *   - Deno (Edge graph): supabase/functions/grounded-answer/config.ts
@@ -81,14 +82,18 @@ describe('MODEL_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
     expect(Object.keys(LEGACY_FALLBACK_ORDER).sort()).toEqual(['auto', 'haiku', 'sonnet']);
   });
 
-  it('auto chain is Anthropic-primary on both sides (Haiku → Sonnet → mini → full)', () => {
-    // Anchor the specific legacy order so a reordering on EITHER side fails here,
-    // not just a drift between the two.
+  it('auto chain is OpenAI-primary on both sides (mini → full → Haiku → Sonnet), Claude retained as fallback', () => {
+    // Anchor the specific current order so a reordering on EITHER side fails
+    // here, not just a drift between the two. Updated 2026-08-02: the
+    // CEO-directed cost swap flipped this from Anthropic-primary to
+    // OpenAI-primary — see registry.ts's LEGACY_FALLBACK_ORDER header and
+    // router.test.ts's dedicated "OpenAI-primary post 2026-08 cost directive"
+    // regression pin (REG-332) for the companion assertion on the TS side.
     expect(deno.auto.map((t) => `${t.provider}:${t.model}`)).toEqual([
-      'anthropic:claude-haiku-4-5-20251001',
-      'anthropic:claude-sonnet-4-20250514',
       'openai:gpt-4o-mini',
       'openai:gpt-4o',
+      'anthropic:claude-haiku-4-5-20251001',
+      'anthropic:claude-sonnet-4-20250514',
     ]);
     expect(tsAsPlain(LEGACY_FALLBACK_ORDER.auto).map((t) => `${t.provider}:${t.model}`)).toEqual(
       deno.auto.map((t) => `${t.provider}:${t.model}`),

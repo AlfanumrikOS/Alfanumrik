@@ -50,7 +50,12 @@
 
 const ANTHROPIC_VERSION = '2023-06-01';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const GRADER_MODEL = 'claude-sonnet-4-6-20251022';
+// Aligned to the id already pinned by config-model-name-identity.test.ts,
+// packages/lib/src/ai/gateway/registry.ts (ANTHROPIC_SONNET_ID), and
+// packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL) — this environment has
+// no ANTHROPIC_API_KEY, so this was NOT confirmed against a live Anthropic
+// model-catalog check; get a final live confirmation at the next review.
+const GRADER_MODEL = 'claude-sonnet-4-20250514';
 const GRADER_TIMEOUT_MS = 30_000;
 const GRADER_MAX_TOKENS = 1024;
 

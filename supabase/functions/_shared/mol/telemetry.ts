@@ -12,7 +12,11 @@ const PRICING: Record<string, { input: number; output: number }> = {
   'openai/o3-mini':     { input: 1.10, output: 4.40 },
   'openai/o1':          { input: 15.00, output: 60.00 },
   'anthropic/claude-haiku-4-5-20251001':  { input: 1.00, output: 5.00 },
-  'anthropic/claude-sonnet-4-6-20251022': { input: 3.00, output: 15.00 },
+  // Key aligned to the id pinned by config-model-name-identity.test.ts /
+  // registry.ts (ANTHROPIC_SONNET_ID) / quality-eval.ts (JUDGE_MODEL); not
+  // confirmed live (no ANTHROPIC_API_KEY in this environment) — reconfirm at
+  // the next Anthropic model-catalog review. Values unchanged.
+  'anthropic/claude-sonnet-4-20250514':   { input: 3.00, output: 15.00 },
   'anthropic/claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
   'anthropic/claude-3-opus-20240229':    { input: 15.00, output: 75.00 },
 }

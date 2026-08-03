@@ -8,12 +8,20 @@ from services.ai.mol.cost import PRICING, compute_cost, to_inr
 
 
 def test_pricing_has_all_known_models():
-    """PRICING must cover the 4 models referenced in router constants."""
+    """PRICING must cover the 4 models referenced in router constants.
+
+    Sonnet id updated 2026-08-02 (Sonnet model-ID drift companion fix to the
+    OpenAI-primary provider swap, REG-332): the stale
+    'claude-sonnet-4-6-20251022' id was never a real Anthropic model; PRICING's
+    key is now 'claude-sonnet-4-20250514', matching registry.ts
+    (ANTHROPIC_SONNET_ID), config-model-name-identity.test.ts, and
+    quality-eval.ts (JUDGE_MODEL).
+    """
     expected_keys = {
         "openai/gpt-4o-mini",
         "openai/gpt-4o",
         "anthropic/claude-haiku-4-5-20251001",
-        "anthropic/claude-sonnet-4-6-20251022",
+        "anthropic/claude-sonnet-4-20250514",
     }
     assert expected_keys.issubset(PRICING.keys())
 
@@ -67,7 +75,12 @@ def test_to_inr_zero():
 
 
 def test_compute_cost_for_sonnet():
-    """Sonnet pricing: $3 input / $15 output per 1M."""
-    usd, _ = compute_cost("anthropic", "claude-sonnet-4-6-20251022", 2_000_000, 500_000)
+    """Sonnet pricing: $3 input / $15 output per 1M.
+
+    Model id updated 2026-08-02 (see test_pricing_has_all_known_models for the
+    Sonnet-ID drift rationale) — using the stale id here would silently miss
+    PRICING and return $0.00 instead of exercising this test's whole point.
+    """
+    usd, _ = compute_cost("anthropic", "claude-sonnet-4-20250514", 2_000_000, 500_000)
     # 2M * 3 + 0.5M * 15 = 6 + 7.5 = $13.50
     assert usd == pytest.approx(13.50, rel=1e-9)

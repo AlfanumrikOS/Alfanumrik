@@ -104,6 +104,11 @@ const GPT_4O: ModelDescriptor = {
 // Gemini entries are DORMANT in Phase 1: configured=false so the router can
 // never select them. They exist only to prove the seam (a third provider drops
 // in by flipping `configured` once GEMINI_API_KEY + adapter wiring land).
+// Note (2026-08-02, OpenAI-primary provider swap review): the pricing/latency
+// figures below have not been re-checked against Gemini's live pricing page
+// since these entries were added and are likely-stale placeholder estimates —
+// harmless today since configured:false keeps them unselectable, but re-verify
+// before ever flipping `configured` to true.
 const GEMINI_FLASH: ModelDescriptor = {
   id: GEMINI_FLASH_ID,
   provider: 'gemini',
@@ -166,9 +171,15 @@ export function listModels(opts: { configuredOnly?: boolean } = {}): ModelDescri
 // ─── Legacy fallback ordering (the ONE canonical chain) ─────────────────────
 //
 // Reproduces supabase/functions/grounded-answer/claude.ts `resolveModelOrder`
-// EXACTLY. Anthropic runs FIRST for every preference — the Foxy system prompt,
-// JSON output contract, and CBSE pedagogy tree are calibrated for Claude; the
-// OpenAI tiers are availability fallbacks only (RCA-FIX CRITICAL-1, 2026-06-26).
+// EXACTLY. OpenAI runs FIRST for every preference (CEO-approved cost-driven
+// provider swap, 2026-08-02): Anthropic's per-token cost does not scale with
+// per-student revenue at current volume. Claude is RETAINED as the fallback
+// tier, not deleted — specifically because the Foxy system prompt, JSON
+// output contract, and CBSE pedagogy tree were originally calibrated against
+// Claude's behavior (RCA-FIX CRITICAL-1, 2026-06-26). That calibration
+// history is exactly why an output-quality validation pass (the
+// eval/openai-migration harness) gates how far the canary ramps before
+// GPT-4o/GPT-4o-mini output reaches students at volume.
 //
 // The `default` routing policy resolves to LEGACY_FALLBACK_ORDER.auto. The edge
 // mirror lives in supabase/functions/grounded-answer/config.ts
@@ -181,18 +192,18 @@ export interface FallbackTarget {
 
 export const LEGACY_FALLBACK_ORDER: Readonly<Record<'haiku' | 'sonnet' | 'auto', readonly FallbackTarget[]>> = {
   haiku: [
-    { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
     { provider: 'openai', model: OPENAI_MINI_ID },
+    { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
   ],
   sonnet: [
-    { provider: 'anthropic', model: ANTHROPIC_SONNET_ID },
     { provider: 'openai', model: OPENAI_FULL_ID },
+    { provider: 'anthropic', model: ANTHROPIC_SONNET_ID },
   ],
   auto: [
-    { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
-    { provider: 'anthropic', model: ANTHROPIC_SONNET_ID },
     { provider: 'openai', model: OPENAI_MINI_ID },
     { provider: 'openai', model: OPENAI_FULL_ID },
+    { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
+    { provider: 'anthropic', model: ANTHROPIC_SONNET_ID },
   ],
 } as const;
 

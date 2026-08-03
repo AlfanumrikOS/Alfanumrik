@@ -9,7 +9,8 @@
  * Contracts pinned here:
  *   - FLAG GATE: with ff_model_gateway_v1 OFF, ANY requested policy is forced to
  *     `default` — the flag-OFF world is byte-identical to today's legacy
- *     Anthropic-primary chain (this is the additive-no-op guarantee).
+ *     OpenAI-primary chain (Claude retained as fallback; this is the
+ *     additive-no-op guarantee).
  *   - FALLBACK: a transient (non-fail-fast) failure advances to the next model.
  *   - FAIL-FAST: a 401/403 auth failure aborts the chain immediately — the
  *     remaining models are NOT tried (a different model, same key, won't help).
@@ -86,23 +87,31 @@ beforeEach(() => {
 describe('callModel — flag gate (OFF forces default policy)', () => {
   it('forces default even when the caller requests `cost`, and consults the flag', async () => {
     mockIsFeatureEnabled.mockResolvedValue(false);
-    // anthropic succeeds first — proving the DEFAULT chain (Haiku first) ran,
-    // not `cost` (which would put gpt-4o-mini first).
+    // `default` and `cost` now BOTH start at gpt-4o-mini (OpenAI-primary
+    // swap), so a same-head success can't distinguish which chain ran. Make
+    // mini fail and look at what answers SECOND instead: default's next hop
+    // is gpt-4o (openai), cost's next hop is Haiku (anthropic) — divergent
+    // enough to prove which chain actually executed.
     const adapters: AdapterMap = {
+      openai: fakeAdapter('openai', async (d) => {
+        if (d.id === OPENAI_MINI_ID) {
+          return { kind: 'error', failFast: false, error: 'openai:5xx', latencyMs: 1 };
+        }
+        return okOutcome(d.id);
+      }),
       anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)),
-      openai: fakeAdapter('openai', async (d) => okOutcome(d.id)),
     };
     const res = await callModel(REQ, { policy: 'cost', adapters });
 
     expect(res.ok).toBe(true);
     expect(res.policy).toBe('default');
-    expect(res.modelId).toBe(ANTHROPIC_HAIKU_ID); // default chain head, not cost head
-    expect(res.provider).toBe('anthropic');
-    expect(res.fallbackCount).toBe(0);
+    expect(res.modelId).toBe(OPENAI_FULL_ID); // default's 2nd hop, not cost's 2nd hop (Haiku)
+    expect(res.provider).toBe('openai');
+    expect(res.fallbackCount).toBe(1);
     // The gate must have evaluated the gateway flag.
     expect(mockIsFeatureEnabled).toHaveBeenCalledWith(GATEWAY_FLAG, expect.anything());
-    // openai adapter must NOT have been tried (Haiku answered first).
-    expect((adapters.openai!.invoke as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    // anthropic adapter must NOT have been tried (gpt-4o answered second).
+    expect((adapters.anthropic!.invoke as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 
   it('forces default even when the caller requests `quality`', async () => {
@@ -113,14 +122,23 @@ describe('callModel — flag gate (OFF forces default policy)', () => {
     };
     const res = await callModel(REQ, { policy: 'quality', adapters });
     expect(res.policy).toBe('default');
-    // quality head would be Sonnet; default head is Haiku.
-    expect(res.modelId).toBe(ANTHROPIC_HAIKU_ID);
+    // quality head would be Sonnet; default head is gpt-4o-mini (OpenAI-primary).
+    expect(res.modelId).toBe(OPENAI_MINI_ID);
   });
 
   it('does NOT consult the flag for an explicit `default` request (default is always available)', async () => {
-    const adapters: AdapterMap = { anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)) };
+    // Both providers mocked explicitly (hermetic). An anthropic-only map
+    // would, post-reorder, fall through to the REAL DEFAULT_ADAPTERS.openai
+    // (callModel merges caller overrides with the real adapters per-provider)
+    // — it happens to fail safely today only because OPENAI_API_KEY is unset
+    // in this environment, which is an environment accident, not a guarantee.
+    const adapters: AdapterMap = {
+      openai: fakeAdapter('openai', async (d) => okOutcome(d.id)),
+      anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)),
+    };
     const res = await callModel(REQ, { policy: 'default', adapters });
     expect(res.policy).toBe('default');
+    expect(res.modelId).toBe(OPENAI_MINI_ID);
     expect(mockIsFeatureEnabled).not.toHaveBeenCalled();
   });
 
@@ -139,66 +157,79 @@ describe('callModel — flag gate (OFF forces default policy)', () => {
 });
 
 describe('callModel — fallback advances on transient failure', () => {
-  it('skips a failed Haiku and succeeds on Sonnet, recording the failed attempt', async () => {
-    // default policy (flag not needed since request is default)
-    const anthropic = fakeAdapter('anthropic', async (d) => {
-      if (d.id === ANTHROPIC_HAIKU_ID) {
-        return { kind: 'error', failFast: false, error: 'anthropic:5xx', latencyMs: 7 };
+  it('skips a failed mini and succeeds on gpt-4o, recording the failed attempt', async () => {
+    // default policy (flag not needed since request is default). anthropic is
+    // mocked explicitly too, even though it should never be invoked — mini's
+    // provider-internal fallback to gpt-4o resolves the request first, and an
+    // anthropic-only map would silently exercise the REAL openai adapter for
+    // the first (failing) attempt instead of this fake.
+    const openai = fakeAdapter('openai', async (d) => {
+      if (d.id === OPENAI_MINI_ID) {
+        return { kind: 'error', failFast: false, error: 'openai:5xx', latencyMs: 7 };
       }
       return okOutcome(d.id);
     });
-    const res = await callModel(REQ, { policy: 'default', adapters: { anthropic } });
+    const anthropic = fakeAdapter('anthropic', async (d) => okOutcome(d.id));
+    const res = await callModel(REQ, { policy: 'default', adapters: { openai, anthropic } });
 
     expect(res.ok).toBe(true);
-    expect(res.modelId).toBe(ANTHROPIC_SONNET_ID);
+    expect(res.modelId).toBe(OPENAI_FULL_ID);
     expect(res.fallbackCount).toBe(1);
     expect(res.attempts).toHaveLength(2);
-    expect(res.attempts[0]).toMatchObject({ modelId: ANTHROPIC_HAIKU_ID, success: false, error: 'anthropic:5xx' });
-    expect(res.attempts[1]).toMatchObject({ modelId: ANTHROPIC_SONNET_ID, success: true });
+    expect(res.attempts[0]).toMatchObject({ modelId: OPENAI_MINI_ID, success: false, error: 'openai:5xx' });
+    expect(res.attempts[1]).toMatchObject({ modelId: OPENAI_FULL_ID, success: true });
+    expect((anthropic.invoke as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 
-  it('crosses the provider boundary (anthropic all-fail → openai succeeds)', async () => {
-    const anthropic = fakeAdapter('anthropic', async () => ({
-      kind: 'error' as const, failFast: false, error: 'anthropic:timeout', latencyMs: 5,
+  it('crosses the provider boundary (openai all-fail → anthropic succeeds)', async () => {
+    // Post OpenAI-primary swap, OpenAI is the primary tier and Claude is the
+    // reliability fallback — this test now exercises that exact fallback path
+    // (mirrors the pre-swap test, providers swapped).
+    const openai = fakeAdapter('openai', async () => ({
+      kind: 'error' as const, failFast: false, error: 'openai:timeout', latencyMs: 5,
     }));
-    const openai = fakeAdapter('openai', async (d) => okOutcome(d.id));
+    const anthropic = fakeAdapter('anthropic', async (d) => okOutcome(d.id));
     const res = await callModel(REQ, { policy: 'default', adapters: { anthropic, openai } });
 
     expect(res.ok).toBe(true);
-    expect(res.provider).toBe('openai');
-    expect(res.modelId).toBe(OPENAI_MINI_ID); // first openai model in the default chain
-    expect(res.fallbackCount).toBe(2); // Haiku + Sonnet failed first
+    expect(res.provider).toBe('anthropic');
+    expect(res.modelId).toBe(ANTHROPIC_HAIKU_ID); // first anthropic model in the default chain
+    expect(res.fallbackCount).toBe(2); // mini + gpt-4o failed first
   });
 
   it('normalizes a thrown adapter error into a non-fail-fast advance', async () => {
-    const anthropic = fakeAdapter('anthropic', async (d) => {
-      if (d.id === ANTHROPIC_HAIKU_ID) throw new Error('boom-network');
+    // Both providers mocked explicitly (see the "does NOT consult the flag"
+    // test above for why an anthropic-only map is unsafe post-reorder).
+    const openai = fakeAdapter('openai', async (d) => {
+      if (d.id === OPENAI_MINI_ID) throw new Error('boom-network');
       return okOutcome(d.id);
     });
-    const res = await callModel(REQ, { policy: 'default', adapters: { anthropic } });
+    const anthropic = fakeAdapter('anthropic', async (d) => okOutcome(d.id));
+    const res = await callModel(REQ, { policy: 'default', adapters: { openai, anthropic } });
     expect(res.ok).toBe(true);
-    expect(res.modelId).toBe(ANTHROPIC_SONNET_ID);
+    expect(res.modelId).toBe(OPENAI_FULL_ID);
     expect(res.attempts[0].error).toContain('boom-network');
+    expect((anthropic.invoke as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 });
 
 describe('callModel — fail-fast on auth (401/403)', () => {
   it('aborts the whole chain on a fail-fast auth error and does not try later models', async () => {
-    const anthropic = fakeAdapter('anthropic', async (d) => {
-      if (d.id === ANTHROPIC_HAIKU_ID) {
-        return { kind: 'error', failFast: true, error: 'anthropic 401 unauthorized', latencyMs: 3 };
+    const openai = fakeAdapter('openai', async (d) => {
+      if (d.id === OPENAI_MINI_ID) {
+        return { kind: 'error', failFast: true, error: 'openai 401 unauthorized', latencyMs: 3 };
       }
       return okOutcome(d.id);
     });
-    const openai = fakeAdapter('openai', async (d) => okOutcome(d.id));
+    const anthropic = fakeAdapter('anthropic', async (d) => okOutcome(d.id));
     const res = await callModel(REQ, { policy: 'default', adapters: { anthropic, openai } });
 
     expect(res.ok).toBe(false);
     expect(res.attempts).toHaveLength(1); // stopped after the auth failure
     expect(res.error).toContain('401');
-    // Sonnet + both openai models must never be invoked.
-    expect((anthropic.invoke as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
-    expect((openai.invoke as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    // gpt-4o + both anthropic models must never be invoked.
+    expect((openai.invoke as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+    expect((anthropic.invoke as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 });
 
@@ -217,20 +248,27 @@ describe('callModel — all candidates fail', () => {
     expect(res.modelId).toBe('');
     expect(res.content).toBe('');
     expect(res.attempts).toHaveLength(4); // all four default-chain models tried
-    expect(res.error).toBe('openai:5xx'); // last failure surfaced
+    // anthropic is now the fallback tier (tried last in the OpenAI-primary
+    // chain), so its error is the last one surfaced.
+    expect(res.error).toBe('anthropic:timeout'); // last failure surfaced
   });
 });
 
 describe('callModel — telemetry emission (metadata only, P13)', () => {
   it('emits a per-attempt record with the documented fields on success', async () => {
-    const adapters: AdapterMap = { anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)) };
+    // Both providers mocked explicitly (an anthropic-only map would silently
+    // fall through to the REAL openai adapter now that OpenAI is primary).
+    const adapters: AdapterMap = {
+      openai: fakeAdapter('openai', async (d) => okOutcome(d.id)),
+      anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)),
+    };
     await callModel(REQ, { policy: 'default', adapters });
 
     expect(emitAttempt).toHaveBeenCalled();
     const arg = emitAttempt.mock.calls[0][0];
     expect(arg).toMatchObject({
-      modelId: ANTHROPIC_HAIKU_ID,
-      provider: 'anthropic',
+      modelId: OPENAI_MINI_ID,
+      provider: 'openai',
       policy: 'default',
       success: true,
       fallbackCount: 0,
@@ -243,10 +281,18 @@ describe('callModel — telemetry emission (metadata only, P13)', () => {
   });
 
   it('emits a success summary naming the answering model', async () => {
-    const adapters: AdapterMap = { anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)) };
+    // Both providers mocked explicitly (same rationale as above — this test
+    // previously mocked anthropic only and passed "by accident" because the
+    // assertion doesn't care about fallbackCount/attempt shape, only the
+    // FINAL model; it would have silently exercised the real openai adapter
+    // first under the new order).
+    const adapters: AdapterMap = {
+      openai: fakeAdapter('openai', async (d) => okOutcome(d.id)),
+      anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)),
+    };
     await callModel(REQ, { policy: 'default', adapters });
     expect(emitSummary).toHaveBeenCalledWith(
-      expect.objectContaining({ success: true, modelId: ANTHROPIC_HAIKU_ID, provider: 'anthropic', policy: 'default' }),
+      expect.objectContaining({ success: true, modelId: OPENAI_MINI_ID, provider: 'openai', policy: 'default' }),
     );
   });
 
@@ -264,17 +310,18 @@ describe('callModel — telemetry emission (metadata only, P13)', () => {
   });
 });
 
-// Reference the full-model id so an unused-import lint never masks a future
-// assertion that needs it; also documents the default chain's tail.
-it('default chain tail is gpt-4o (documented order sanity)', async () => {
-  const anthropic = fakeAdapter('anthropic', async () => ({
+// Documents the default chain's new tail position (Claude Sonnet, retained as
+// the reliability fallback after the 2026-08-02 OpenAI-primary swap).
+it('default chain tail is Claude Sonnet (documented order sanity, post OpenAI-primary swap)', async () => {
+  const openai = fakeAdapter('openai', async () => ({
     kind: 'error' as const, failFast: false, error: 'a', latencyMs: 1,
   }));
-  const openai = fakeAdapter('openai', async (d) => {
-    if (d.id === OPENAI_FULL_ID) return okOutcome(d.id);
+  const anthropic = fakeAdapter('anthropic', async (d) => {
+    if (d.id === ANTHROPIC_SONNET_ID) return okOutcome(d.id);
     return { kind: 'error', failFast: false, error: 'b', latencyMs: 1 };
   });
   const res = await callModel(REQ, { policy: 'default', adapters: { anthropic, openai } });
   expect(res.ok).toBe(true);
-  expect(res.modelId).toBe(OPENAI_FULL_ID);
+  expect(res.modelId).toBe(ANTHROPIC_SONNET_ID);
+  expect(res.attempts).toHaveLength(4); // mini, gpt-4o, Haiku all failed before Sonnet
 });
