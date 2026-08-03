@@ -56,7 +56,16 @@ const selectedSchoolIntegrationJob = textBetween(
   '  selected-school-rpc-integration:',
   '\n  quality:',
 );
-const ciGateJob = textBetween(ciWorkflow, '  ci-gate:', '\n  health-check:');
+// ci-gate is the TERMINAL job in ci.yml (P0-4, 2026-08-03: the post-deploy
+// health-check job was deleted as a duplicate of deploy-production.yml's, so
+// the old '\n  health-check:' end marker no longer exists). Slice from the
+// job header to EOF rather than to a following-job marker. Keep textBetween
+// strict for its other callers; assert the start marker is present here.
+const ciGateStart = ciWorkflow.indexOf('  ci-gate:');
+if (ciGateStart < 0) {
+  throw new Error('Missing source marker: ci-gate:');
+}
+const ciGateJob = ciWorkflow.slice(ciGateStart);
 
 describe('One Experience V3 selected-school RPC predeploy migration', () => {
   it('applies the additive function DDL and grants in one transaction', () => {
