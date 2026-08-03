@@ -9,6 +9,14 @@
 //     practice mode_directive), max_tokens, temperature, model_preference,
 //     conversation_turns, or content_version MUST hash differently.
 //   - genCtxKeyFragment: 12-char prefix of the full hash.
+//
+// Percentage-rollout cache-order fix (2026-08-03, assessment finding,
+// REG-335 follow-up — renumbered from REG-333 during the origin/main merge;
+// see .claude/regression/00-header.md's collision note): buildGenCtx's
+// model_order fold-in + the
+// cachedResponseMatchesModelOrder defense-in-depth read-time check. See
+// gen-ctx.ts's ModelOrder / GenCtx / cachedResponseMatchesModelOrder docs
+// for the full design.
 
 import { assert, assertEquals } from 'https://deno.land/std@0.210.0/assert/mod.ts';
 import {
@@ -16,10 +24,11 @@ import {
   canonicalJson,
   genCtxKeyFragment,
   hashGenCtx,
+  cachedResponseMatchesModelOrder,
   GEN_CTX_KEY_FRAGMENT_LENGTH,
 } from '../gen-ctx.ts';
 import { PROMPT_REV, MODEL_ROUTE_REV } from '../config.ts';
-import type { GroundedRequest } from '../types.ts';
+import type { GroundedRequest, GroundedResponse } from '../types.ts';
 
 function makeRequest(overrides: {
   template_variables?: Record<string, string>;
@@ -122,4 +131,110 @@ Deno.test('every gen_ctx component changes the hash (max_tokens, temperature, mo
     assert(v !== base, 'each gen_ctx component must contribute to the hash');
   }
   assertEquals(new Set([base, ...variants]).size, variants.length + 1);
+});
+
+// ─── Percentage-rollout cache-order fix (2026-08-03, REG-335 follow-up) ─────
+
+Deno.test('buildGenCtx: defaults model_order to openai_primary, and folds an explicit order in verbatim', () => {
+  const defaulted = buildGenCtx(makeRequest(), 0);
+  assertEquals(defaulted.model_order, 'openai_primary');
+
+  const explicitOpenai = buildGenCtx(makeRequest(), 0, 'openai_primary');
+  assertEquals(explicitOpenai.model_order, 'openai_primary');
+
+  const explicitClaude = buildGenCtx(makeRequest(), 0, 'claude_primary');
+  assertEquals(explicitClaude.model_order, 'claude_primary');
+});
+
+Deno.test('cache-order-blindness fix: an otherwise-IDENTICAL request hashes DIFFERENTLY under openai_primary vs claude_primary', async () => {
+  // This is the core property the fix depends on: a caller's rollout-bucket
+  // flip must rotate the gen_ctx hash — which is embedded in every cache
+  // tier's key/tuple — so a stale cross-order response can never be served
+  // from a hash-matched key.
+  const req = makeRequest();
+  const openaiHash = await hashGenCtx(buildGenCtx(req, 0, 'openai_primary'));
+  const claudeHash = await hashGenCtx(buildGenCtx(req, 0, 'claude_primary'));
+  assert(
+    openaiHash !== claudeHash,
+    'identical request must hash differently across openai_primary vs claude_primary',
+  );
+  // Sanity: the SAME order is still deterministic (no accidental extra entropy).
+  const openaiHashAgain = await hashGenCtx(buildGenCtx(req, 0, 'openai_primary'));
+  assertEquals(openaiHash, openaiHashAgain);
+});
+
+// ─── cachedResponseMatchesModelOrder: exact-match defense-in-depth ──────────
+
+function groundedResponseWithOrder(modelOrder?: 'openai_primary' | 'claude_primary'): GroundedResponse {
+  return {
+    grounded: true,
+    answer: 'An answer.',
+    citations: [],
+    confidence: 0.9,
+    groundedFromChunks: true,
+    trace_id: 'trace-x',
+    meta: {
+      claude_model: 'claude-haiku-4-5-20251001',
+      tokens_used: 100,
+      latency_ms: 500,
+      ...(modelOrder ? { model_order: modelOrder } : {}),
+    },
+  };
+}
+
+Deno.test('cachedResponseMatchesModelOrder: same recorded order as expected → true (serve)', () => {
+  assert(cachedResponseMatchesModelOrder(groundedResponseWithOrder('openai_primary'), 'openai_primary'));
+  assert(cachedResponseMatchesModelOrder(groundedResponseWithOrder('claude_primary'), 'claude_primary'));
+});
+
+Deno.test('cachedResponseMatchesModelOrder: DIFFERENT recorded order than expected → false (miss) — the actual bug scenario', () => {
+  // The exact production bug assessment traced: a response generated under
+  // one order must never be served to a caller currently expecting the
+  // other order.
+  assertEquals(
+    cachedResponseMatchesModelOrder(groundedResponseWithOrder('claude_primary'), 'openai_primary'),
+    false,
+  );
+  assertEquals(
+    cachedResponseMatchesModelOrder(groundedResponseWithOrder('openai_primary'), 'claude_primary'),
+    false,
+  );
+});
+
+Deno.test('cachedResponseMatchesModelOrder: no false positive on ordinary same-order provider fallback', () => {
+  // claude.ts's per-call fallback can legitimately answer via Claude even
+  // while resolved under 'openai_primary' (e.g. an OpenAI outage). The
+  // check compares the TAGGED order (routing decision), never the recorded
+  // claude_model/provider, so this must still pass.
+  const fellBackToClaudeUnderOpenaiPrimaryOrder: GroundedResponse = {
+    grounded: true,
+    answer: 'An answer.',
+    citations: [],
+    confidence: 0.9,
+    groundedFromChunks: true,
+    trace_id: 'trace-fallback',
+    meta: {
+      claude_model: 'claude-haiku-4-5-20251001', // Anthropic model actually answered...
+      tokens_used: 100,
+      latency_ms: 500,
+      model_order: 'openai_primary', // ...but the ROUTING decision was openai_primary.
+    },
+  };
+  assert(cachedResponseMatchesModelOrder(fellBackToClaudeUnderOpenaiPrimaryOrder, 'openai_primary'));
+});
+
+Deno.test('cachedResponseMatchesModelOrder: permissive (true) when model_order is absent — pre-fix/legacy entries never crash a read', () => {
+  assert(cachedResponseMatchesModelOrder(groundedResponseWithOrder(undefined), 'openai_primary'));
+  assert(cachedResponseMatchesModelOrder(groundedResponseWithOrder(undefined), 'claude_primary'));
+});
+
+Deno.test('cachedResponseMatchesModelOrder: permissive (true) for a non-grounded response', () => {
+  const abstain: GroundedResponse = {
+    grounded: false,
+    abstain_reason: 'upstream_error',
+    suggested_alternatives: [],
+    trace_id: 'trace-abstain',
+    meta: { latency_ms: 200 },
+  };
+  assert(cachedResponseMatchesModelOrder(abstain, 'openai_primary'));
 });

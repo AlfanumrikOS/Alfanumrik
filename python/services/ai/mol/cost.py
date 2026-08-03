@@ -25,7 +25,11 @@ PRICING: dict[str, dict[str, float]] = {
     "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "openai/gpt-4o": {"input": 2.50, "output": 10.00},
     "anthropic/claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
-    "anthropic/claude-sonnet-4-6-20251022": {"input": 3.00, "output": 15.00},
+    # Key aligned to the id pinned by config-model-name-identity.test.ts /
+    # registry.ts (ANTHROPIC_SONNET_ID) / quality-eval.ts (JUDGE_MODEL); not
+    # confirmed live (no ANTHROPIC_API_KEY in this environment) — reconfirm at
+    # the next Anthropic model-catalog review. Values unchanged.
+    "anthropic/claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
 }
 
 # Matches a trailing -YYYY-MM-DD on dated model strings (gpt-4o-2024-08-06,

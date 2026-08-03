@@ -92,7 +92,7 @@ describe('P2 XP literal parity — parent-facing Deno Edge Functions', () => {
 
 /**
  * PROPOSED REGRESSION CATALOG ROW (orchestrator assigns the REG id):
- *   REG-xxx: xp_edge_function_literal_parity
+ *   REG-337: xp_edge_function_literal_parity
  *     asserts  | parent-report-generator + parent-portal Deno sources carry the
  *              | canonical P2 literals (correct*10, +20 @ >=80, +50 @ ===100),
  *              | no non-canonical xp increments, no regressed +25 / ?30:0 shapes.

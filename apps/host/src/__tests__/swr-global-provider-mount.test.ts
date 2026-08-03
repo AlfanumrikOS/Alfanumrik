@@ -66,7 +66,7 @@ describe('global SWR provider mount (P0-2)', () => {
 
 /**
  * PROPOSED REGRESSION CATALOG ROW (orchestrator assigns the REG id):
- *   REG-xxx: swr_global_provider_mount
+ *   REG-340: swr_global_provider_mount
  *     asserts  | app/layout.tsx mounts <SWRProvider> as the outermost client
  *              | provider and SWRProvider wires DEFAULT_CONFIG into <SWRConfig>,
  *              | so no useSWR call site regresses to SWR library defaults.

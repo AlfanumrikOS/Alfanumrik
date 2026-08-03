@@ -1,0 +1,92 @@
+-- 20260802180000_model_pricing_add_claude_sonnet_4_20250514.sql
+--
+-- Renumbered 2026-08-03 (was 20260802120000). The original timestamp collided
+-- with 20260802120000_seed_ff_wave_b_gap_screens.sql, which arrived from
+-- origin/main via PR #1438 and was APPLIED TO PRODUCTION at 2026-08-02T18:14:30Z
+-- ("Applying migration 20260802120000_seed_ff_wave_b_gap_screens.sql..." in the
+-- deploy-production run's `supabase db push --linked --include-all` log; that
+-- run's later Post-Deploy Health Check failure did not roll the push back).
+--
+-- Why this was NOT benign: supabase_migrations.schema_migrations keys on the
+-- 14-digit VERSION prefix, not the filename, and that column is its PRIMARY
+-- KEY. Two files sharing version 20260802120000 are therefore not merely an
+-- ordering ambiguity — the alphabetical tiebreak never gets a chance to
+-- matter. This repo has already taken the outage: per the incident recorded
+-- in scripts/lint-migrations.js's duplicate-version guard, PRs #1363 and
+-- #1364 both shipped a migration timestamped 20260720170000, and when the
+-- second merged, `supabase db push` failed IN THE PRODUCTION DEPLOY JOB with
+-- a duplicate-key error on schema_migrations_pkey, blocking every migration
+-- in that push until a hotfix renamed the colliding files. Renaming main's
+-- copy instead was never an option: its version is already recorded in
+-- production's ledger, and three sibling main migrations (20260802140000,
+-- 20260802150000, 20260802170000) cross-reference it by filename.
+--
+-- 20260802180000 is the first free slot strictly AFTER main's last applied
+-- migration (20260802170000_ramp_wave_b_gap_screens.sql), so this appends to the
+-- remote ledger rather than inserting behind it, and strictly BEFORE this
+-- session's 20260803120000 / 20260803120001 pair, preserving their ordering.
+-- Verified free across all 506 root migrations + the 349 archived under
+-- _legacy/timestamped/; `npm run lint:migrations` passes (0 failures).
+--
+-- Purpose: seed public.model_pricing with the CORRECT Claude Sonnet model id
+-- ('claude-sonnet-4-20250514'), which the current seed row (from
+-- 20260518000003_model_pricing.sql) does not have — it instead used the
+-- drifted/incorrect 'claude-sonnet-4-6-20251022'.
+--
+-- Context: as part of the OpenAI-primary / Claude-fallback cost-routing
+-- change, a parallel fix is aligning supabase/functions/_shared/mol/router.ts,
+-- supabase/functions/_shared/mol/telemetry.ts,
+-- supabase/functions/_shared/security/quota.ts, and
+-- python/services/ai/mol/cost.py to all use 'claude-sonnet-4-20250514' — the
+-- id already established elsewhere in this schema as the canonical current
+-- Sonnet id (see the baseline's public.ai_interaction_logs.model DEFAULT and
+-- write_foxy_cache()'s p_model DEFAULT, both 'claude-sonnet-4-20250514'; two
+-- regression tests also treat it as frozen by contract).
+--
+-- Functional risk this closes: quota.ts's computeEstimatedCost() calls the
+-- RPC public.security_compute_ai_cost(provider, model, ...) (added in
+-- 20260618000001_platform_security_layer.sql), which SELECTs from
+-- model_pricing WHERE provider = p_provider AND model = p_model with no
+-- fallback row — a miss returns SQL NULL, which computeEstimatedCost()
+-- floors to 0. Once quota.ts's mapModel() starts returning
+-- 'claude-sonnet-4-20250514' with no matching (provider, model) row, cost-
+-- based quota estimation silently zeroes out for Sonnet-preference calls.
+-- (Request-count-based quota is a separate mechanism and is unaffected.)
+--
+-- UPDATE vs INSERT: this migration INSERTs a new row rather than updating the
+-- existing 'claude-sonnet-4-6-20251022' row's model id in place.
+--   1. docs/MOL_OPERATIONS.md's "Updating prices" section already documents
+--      the convention for this exact table: "Update model_pricing rows via
+--      migration (do not UPDATE in-place — migration trail is the audit)."
+--   2. model_pricing.model is joined by plain string equality against
+--      provider/model pairs recorded elsewhere with no FK — e.g.
+--      mol_request_logs.model (text not null, no FK to model_pricing) and
+--      security_compute_ai_cost's own p_model argument. The precedent
+--      migration 20260520000020_mol_pricing_date_aliases.sql added sibling
+--      rows (rather than renaming existing ones) for exactly this reason:
+--      "the SQL-side cost backfill via JOIN to model_pricing finds NULL"
+--      otherwise. Renaming the existing row's model id in place would orphan
+--      that join for any historical row still keyed on
+--      'claude-sonnet-4-6-20251022'. Nothing in this schema assumes exactly
+--      one row per provider, so leaving the old row untouched and adding the
+--      corrected id as a new row carries no downside.
+--
+-- Pricing: same input/output USD-per-1M-token rate as the existing
+-- 'claude-sonnet-4-6-20251022' row — this migration corrects a model id, not
+-- a price; there is no rate-card basis to diverge from the existing Sonnet
+-- tier pricing.
+--
+-- RLS: public.model_pricing already has RLS enabled with zero SELECT
+-- policies as of 20260728090000_lockdown_anon_readable_public_tables.sql
+-- ("commercially sensitive cost data; zero client refs" — service-role-only
+-- reads). This migration is seed data only; it intentionally does not touch
+-- RLS or policies, and must not reintroduce the permissive
+-- model_pricing_read_all policy that migration deliberately dropped.
+--
+-- Idempotent: ON CONFLICT (provider, model) DO NOTHING on the (provider,
+-- model) primary key — safe to re-run.
+
+insert into public.model_pricing (provider, model, input_usd_per_1m, output_usd_per_1m)
+values
+  ('anthropic', 'claude-sonnet-4-20250514', 3.00, 15.00)
+on conflict (provider, model) do nothing;

@@ -364,7 +364,21 @@ async def _write_grader_telemetry(
                     "task_type": "shadow_grader",
                     "surface": "cron",
                     "provider": "anthropic",
-                    "model": result.model if result else "claude-sonnet-4-6-20251022",
+                    # Aligned to the id already pinned by
+                    # config-model-name-identity.test.ts,
+                    # packages/lib/src/ai/gateway/registry.ts
+                    # (ANTHROPIC_SONNET_ID), and
+                    # packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL) —
+                    # this environment has no ANTHROPIC_API_KEY, so this was
+                    # NOT confirmed against a live Anthropic model-catalog
+                    # check; get a final live confirmation at the next
+                    # review. Also closes the SAME drift bug flagged for
+                    # this file in .claude/regression/02-foxy-ai.md's
+                    # REG-334 "Known gap" note (this file was not one of the
+                    # 4 files the ai-engineer follow-up task named, but the
+                    # regression catalog independently corroborated it as a
+                    # 5th still-stale instance of the same bug).
+                    "model": result.model if result else "claude-sonnet-4-20250514",
                     "passes": 1,
                     "fallback_count": 0,
                     "failure_chain": "grader:no_result" if failed else None,

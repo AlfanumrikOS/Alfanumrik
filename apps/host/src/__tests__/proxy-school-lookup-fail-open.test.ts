@@ -170,7 +170,7 @@ describe('school-lookup failure semantics (proxy.ts source pins)', () => {
 
 /**
  * PROPOSED REGRESSION CATALOG ROW (orchestrator assigns the REG id):
- *   REG-xxx: proxy_school_lookup_fail_open
+ *   REG-341: proxy_school_lookup_fail_open
  *     asserts  | transient tenant-lookup failures (non-2xx / thrown / 3s timeout)
  *              | never write the 60s negative cache and never hard-404 a tenant —
  *              | last-known-good is re-served or the request fails open (5s error

@@ -7,7 +7,12 @@ type SupabaseClientLike = {
 
 function mapModel(preference: 'haiku' | 'sonnet' | 'auto'): { provider: string; model: string } {
   if (preference === 'haiku') return { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' };
-  return { provider: 'anthropic', model: 'claude-sonnet-4-6-20251022' };
+  // Aligned to the id already pinned by config-model-name-identity.test.ts,
+  // packages/lib/src/ai/gateway/registry.ts (ANTHROPIC_SONNET_ID), and
+  // packages/lib/src/foxy/quality-eval.ts (JUDGE_MODEL) — this environment has
+  // no ANTHROPIC_API_KEY, so this was NOT confirmed against a live Anthropic
+  // model-catalog check; get a final live confirmation at the next review.
+  return { provider: 'anthropic', model: 'claude-sonnet-4-20250514' };
 }
 
 function estimateTokens(text: string): number {

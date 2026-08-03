@@ -3,7 +3,7 @@
  * bulk-enable incident guardrail).
  *
  * Pins packages/lib/src/flags/protected-flags.ts:
- *   - the registry enumerates exactly 81 flags across exactly 6 tiers
+ *   - the registry enumerates exactly 82 flags across exactly 6 tiers
  *     (72 + the 2 Pedagogy v2 constitution-pinned flags added 2026-07-22 —
  *     ff_productive_failure_v1, ff_pedagogy_v2_monthly_synthesis — Phase 0
  *     flag-governance hardening, master action plan; + the 2 WhatsApp bot
@@ -14,20 +14,35 @@
  *     ff_unified_memory_v1, ff_outcome_prediction_v1,
  *     ff_lesson_generation_v1, ff_content_generation_v1 — closing the
  *     2026-07-24..27 GenAI generation-agent incident gap, seed migration
- *     20260801120000);
- *   - the P0 quiz-submit pair, the 4 constitution-pinned Group A flags, and
- *     the 5 MoL program flags are protected at their declared tiers;
- *   - EXPECTED_OFF_FLAGS is the 60-name CEO-approved forced-OFF posture
+ *     20260801120000; + ff_foxy_openai_primary_rollout_v1 added 2026-08-03 —
+ *     the Foxy OpenAI-primary provider-swap rollback lever, REG-334/REG-335,
+ *     architect-ruled companion to migration
+ *     20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql; it is
+ *     protected at ai_provider but is NOT part of the MoL-program group
+ *     below — it has its own FlagProtection literal with flag-specific
+ *     reason text, per that migration's own governance ruling);
+ *   - the P0 quiz-submit pair, the 4 constitution-pinned Group A flags, the 5
+ *     MoL program flags, and the standalone ff_foxy_openai_primary_rollout_v1
+ *     lever are protected at their declared tiers;
+ *   - EXPECTED_OFF_FLAGS is the 58-name CEO-approved forced-OFF posture
  *     (52 block-(ii) names from migration 20260720110000, MINUS
- *     ff_adaptive_remediation_v1 (see below), + ff_irt_question_selection +
- *     the 2 Pedagogy v2 additions above + ff_whatsapp_alarm_template (the
- *     surviving WhatsApp addition, parsed from seed 20260801100500's
- *     protected_feature_flags block), MINUS ff_whatsapp_bot_v1 (see below),
- *     + the 5 GenAI ecosystem flags added 2026-08-01 above)
- *     — parsed from the migration SQL itself so the TS list cannot silently
- *     drift from the approved SQL beyond the documented additions/exclusions
- *     (the 5 GenAI ecosystem names are hardcoded literals in the parity test
- *     below, the same way the 2 Pedagogy v2 additions already are);
+ *     ff_adaptive_remediation_v1 (see below), MINUS ff_whatsapp_bot_v1 (see
+ *     below), MINUS ff_foxy_streaming / ff_goal_aware_rag /
+ *     ff_grounded_ai_concept_engine (3 flags approved intentionally-live
+ *     2026-08-03 — still PROTECTED_FLAGS entries, just no longer expected
+ *     fully-OFF), + ff_irt_question_selection + the 2 Pedagogy v2 additions
+ *     above + ff_whatsapp_alarm_template (the surviving WhatsApp addition,
+ *     parsed from seed 20260801100500's protected_feature_flags block) +
+ *     the 5 GenAI ecosystem flags added 2026-08-01 above +
+ *     ff_foxy_openai_primary_rollout_v1 (seeded is_enabled=false/
+ *     rollout_percentage=0 by migration 20260803120000 — its current
+ *     CEO-approved posture)) — the block-(ii) and WhatsApp portions are
+ *     parsed from the migration SQL itself; ff_irt_question_selection, the 2
+ *     Pedagogy v2 flags, the 5 GenAI ecosystem flags, and
+ *     ff_foxy_openai_primary_rollout_v1 are explicit documented literals
+ *     (same pattern as each other) rather than parsed from a migration this
+ *     file reads — so the TS list cannot silently drift from the approved
+ *     SQL beyond the documented additions/exclusions;
  *   - ff_adaptive_remediation_v1 is deliberately EXCLUDED from
  *     EXPECTED_OFF_FLAGS as of 2026-07-22: CEO-approved production pilot at
  *     10% rollout (Phase A Loop A). It stays PROTECTED (constitution_pinned)
@@ -117,8 +132,8 @@ const ALL_TIERS: ProtectedTier[] = [
 // ─── Registry shape ───────────────────────────────────────────────────
 
 describe('PROTECTED_FLAGS registry — shape', () => {
-  it('enumerates exactly 81 protected flags (76 + the 5 GenAI ecosystem flags added 2026-08-01 per seed 20260801120000)', () => {
-    expect(Object.keys(PROTECTED_FLAGS)).toHaveLength(81);
+  it('enumerates exactly 82 protected flags (74 + the 2 WhatsApp bot flags added 2026-07-30 per seed 20260801100500 + the 5 GenAI ecosystem flags added 2026-08-01 per seed 20260801120000 + the 1 ff_foxy_openai_primary_rollout_v1 addition, 2026-08-03, per migration 20260803120001)', () => {
+    expect(Object.keys(PROTECTED_FLAGS)).toHaveLength(82);
   });
 
   it('uses exactly the 6 declared tiers, each at least once', () => {
@@ -170,6 +185,10 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
     expect(getProtection(name)?.tier).toBe('ai_provider');
   });
 
+  it('ff_foxy_openai_primary_rollout_v1 is protected at ai_provider — NOT part of the MoL program group above (REG-334/REG-335, migration 20260803120001)', () => {
+    expect(getProtection('ff_foxy_openai_primary_rollout_v1')?.tier).toBe('ai_provider');
+  });
+
   it('ff_competitive_exams_v1 is the p11_payment tier (₹999 SKU coupling)', () => {
     expect(getProtection('ff_competitive_exams_v1')?.tier).toBe('p11_payment');
   });
@@ -206,9 +225,9 @@ describe('PROTECTED_FLAGS registry — tier membership', () => {
 // ─── EXPECTED_OFF_FLAGS posture list ──────────────────────────────────
 
 describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
-  it('contains exactly 57 unique names (52 block-(ii) - ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) + ff_irt_question_selection + 2 Pedagogy v2 additions + 1 WhatsApp bot addition (seed 20260801100500) - ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) + 5 GenAI ecosystem additions (seed 20260801120000) - 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine))', () => {
-    expect(EXPECTED_OFF_FLAGS).toHaveLength(57);
-    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(57);
+  it('contains exactly 58 unique names (52 block-(ii) - ff_adaptive_remediation_v1 (10% pilot, 2026-07-22) + ff_irt_question_selection + 2 Pedagogy v2 additions + 1 WhatsApp bot addition (seed 20260801100500) - ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) + 5 GenAI ecosystem additions (seed 20260801120000) - 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine) + 1 ff_foxy_openai_primary_rollout_v1 addition (seed 20260803120000, 2026-08-03))', () => {
+    expect(EXPECTED_OFF_FLAGS).toHaveLength(58);
+    expect(new Set(EXPECTED_OFF_FLAGS).size).toBe(58);
     expect(EXPECTED_OFF_FLAGS).toContain('ff_irt_question_selection');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_productive_failure_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_pedagogy_v2_monthly_synthesis');
@@ -218,6 +237,7 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
     expect(EXPECTED_OFF_FLAGS).toContain('ff_outcome_prediction_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_lesson_generation_v1');
     expect(EXPECTED_OFF_FLAGS).toContain('ff_content_generation_v1');
+    expect(EXPECTED_OFF_FLAGS).toContain('ff_foxy_openai_primary_rollout_v1');
   });
 
   it('excludes ff_adaptive_remediation_v1 on purpose: CEO-approved 10% production pilot (2026-07-22), no longer expected fully-OFF, still constitution_pinned for any further increase', () => {
@@ -230,18 +250,28 @@ describe('EXPECTED_OFF_FLAGS — the CEO-approved forced-OFF posture', () => {
     expect(getProtection('ff_whatsapp_bot_v1')?.tier).toBe('staged_rollout');
   });
 
-  it('equals migration 20260720110000 block (ii) ∪ {ff_irt_question_selection} ∪ {the 2 Pedagogy v2 additions} ∪ {the 2 WhatsApp protected flags parsed from seed 20260801100500} ∪ {the 5 GenAI ecosystem flags added 2026-08-01}, MINUS ff_adaptive_remediation_v1 (10% pilot exclusion) MINUS ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) — the TS list cannot drift from the approved SQL beyond the documented additions/exclusions', () => {
+  it('equals migration 20260720110000 block (ii) ∪ {ff_irt_question_selection} ∪ {the 2 Pedagogy v2 additions} ∪ {the 2 WhatsApp protected flags parsed from seed 20260801100500} ∪ {the 5 GenAI ecosystem flags added 2026-08-01} ∪ {ff_foxy_openai_primary_rollout_v1}, MINUS ff_adaptive_remediation_v1 (10% pilot exclusion) MINUS ff_whatsapp_bot_v1 (CEO-approved live flip, 2026-07-30) MINUS the 3 flags approved intentionally-live 2026-08-03 (ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine) — the TS list cannot drift from the approved SQL beyond the documented additions/exclusions', () => {
     expect(HONESTY_52).toHaveLength(52);
     // Sanity on the second parser: exactly the WhatsApp protected pair.
     expect([...WHATSAPP_PROTECTED].sort()).toEqual([
       'ff_whatsapp_alarm_template',
       'ff_whatsapp_bot_v1',
     ]);
+    // ff_foxy_openai_primary_rollout_v1 (2026-08-03) is a documented literal
+    // addition, same as ff_irt_question_selection / the 2 Pedagogy v2 flags
+    // above — it is NOT parsed from a migration this file reads. It lives in
+    // its OWN migration (20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql),
+    // not in the two files MIGRATION/WHATSAPP_SEED already parse, so neither
+    // HONESTY_52 nor WHATSAPP_PROTECTED can pick it up automatically; this
+    // was confirmed by actually running this suite before adding the literal
+    // below (it failed with the derived `expected` set missing exactly this
+    // one name) rather than assumed.
     const expected = new Set([
       ...HONESTY_52,
       'ff_irt_question_selection',
       'ff_productive_failure_v1',
       'ff_pedagogy_v2_monthly_synthesis',
+      'ff_foxy_openai_primary_rollout_v1',
       ...WHATSAPP_PROTECTED,
       // GenAI ecosystem flags added 2026-08-01 (seed 20260801120000). Not
       // parsed from a migration the way HONESTY_52/WHATSAPP_PROTECTED are —

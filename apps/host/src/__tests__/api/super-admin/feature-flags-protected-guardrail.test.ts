@@ -633,6 +633,7 @@ describe('protected_feature_flags DB/TS registry parity', () => {
     '20260722090000_protected_feature_flags_registry.sql',
     '20260801100500_seed_ff_whatsapp_bot.sql', // ff_whatsapp_bot_v1 + ff_whatsapp_alarm_template
     '20260801120000_protected_feature_flags_genai_ecosystem_seed.sql', // 5 GenAI ecosystem flags
+    '20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql', // ff_foxy_openai_primary_rollout_v1
   ].map((name) => resolve(REPO_ROOT, 'supabase', 'migrations', name));
 
   function parseSeededRows(): Map<string, string> {
@@ -663,6 +664,10 @@ describe('protected_feature_flags DB/TS registry parity', () => {
     // actually reachable by the parser, not just listed).
     expect(rows.get('ff_whatsapp_bot_v1')).toBe('staged_rollout');
     expect(rows.get('ff_whatsapp_alarm_template')).toBe('staged_rollout');
+    // The Foxy OpenAI-primary rollout-lever seed (added 2026-08-03) contributes
+    // its one row (proves the third file is actually reachable by the parser,
+    // not just listed in SEED_MIGRATION_PATHS).
+    expect(rows.get('ff_foxy_openai_primary_rollout_v1')).toBe('ai_provider');
   });
 
   it('every PROTECTED_FLAGS key is seeded in protected_feature_flags with the matching tier', () => {
@@ -709,5 +714,13 @@ describe('protected_feature_flags DB/TS registry parity', () => {
       expect(rows.get(flagName), `${flagName} missing/wrong tier in DB seed`).toBe('constitution_pinned');
       expect(EXPECTED_OFF_FLAGS.includes(flagName), `${flagName} missing from EXPECTED_OFF_FLAGS`).toBe(true);
     }
+  });
+
+  it('ff_foxy_openai_primary_rollout_v1 (added 2026-08-03, REG-334/REG-335, migration 20260803120001) is present in both the TS registry and the DB seed with tier ai_provider, and is in EXPECTED_OFF_FLAGS', () => {
+    const rows = parseSeededRows();
+    const flagName = 'ff_foxy_openai_primary_rollout_v1';
+    expect(PROTECTED_FLAGS[flagName]?.tier, `${flagName} missing/wrong tier in PROTECTED_FLAGS`).toBe('ai_provider');
+    expect(rows.get(flagName), `${flagName} missing/wrong tier in DB seed`).toBe('ai_provider');
+    expect(EXPECTED_OFF_FLAGS.includes(flagName), `${flagName} missing from EXPECTED_OFF_FLAGS`).toBe(true);
   });
 });

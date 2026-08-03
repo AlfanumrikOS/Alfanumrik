@@ -104,6 +104,11 @@ const GPT_4O: ModelDescriptor = {
 // Gemini entries are DORMANT in Phase 1: configured=false so the router can
 // never select them. They exist only to prove the seam (a third provider drops
 // in by flipping `configured` once GEMINI_API_KEY + adapter wiring land).
+// Note (2026-08-02, OpenAI-primary provider swap review): the pricing/latency
+// figures below have not been re-checked against Gemini's live pricing page
+// since these entries were added and are likely-stale placeholder estimates —
+// harmless today since configured:false keeps them unselectable, but re-verify
+// before ever flipping `configured` to true.
 const GEMINI_FLASH: ModelDescriptor = {
   id: GEMINI_FLASH_ID,
   provider: 'gemini',
@@ -166,9 +171,15 @@ export function listModels(opts: { configuredOnly?: boolean } = {}): ModelDescri
 // ─── Legacy fallback ordering (the ONE canonical chain) ─────────────────────
 //
 // Reproduces supabase/functions/grounded-answer/claude.ts `resolveModelOrder`
-// EXACTLY. Anthropic runs FIRST for every preference — the Foxy system prompt,
-// JSON output contract, and CBSE pedagogy tree are calibrated for Claude; the
-// OpenAI tiers are availability fallbacks only (RCA-FIX CRITICAL-1, 2026-06-26).
+// EXACTLY. OpenAI runs FIRST for every preference (CEO-approved cost-driven
+// provider swap, 2026-08-02): Anthropic's per-token cost does not scale with
+// per-student revenue at current volume. Claude is RETAINED as the fallback
+// tier, not deleted — specifically because the Foxy system prompt, JSON
+// output contract, and CBSE pedagogy tree were originally calibrated against
+// Claude's behavior (RCA-FIX CRITICAL-1, 2026-06-26). That calibration
+// history is exactly why an output-quality validation pass (the
+// eval/openai-migration harness) gates how far the canary ramps before
+// GPT-4o/GPT-4o-mini output reaches students at volume.
 //
 // The `default` routing policy resolves to LEGACY_FALLBACK_ORDER.auto. The edge
 // mirror lives in supabase/functions/grounded-answer/config.ts
@@ -180,6 +191,38 @@ export interface FallbackTarget {
 }
 
 export const LEGACY_FALLBACK_ORDER: Readonly<Record<'haiku' | 'sonnet' | 'auto', readonly FallbackTarget[]>> = {
+  haiku: [
+    { provider: 'openai', model: OPENAI_MINI_ID },
+    { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
+  ],
+  sonnet: [
+    { provider: 'openai', model: OPENAI_FULL_ID },
+    { provider: 'anthropic', model: ANTHROPIC_SONNET_ID },
+  ],
+  auto: [
+    { provider: 'openai', model: OPENAI_MINI_ID },
+    { provider: 'openai', model: OPENAI_FULL_ID },
+    { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
+    { provider: 'anthropic', model: ANTHROPIC_SONNET_ID },
+  ],
+} as const;
+
+// ─── Claude-primary rollback ordering (percentage-rollout mechanism, 2026-08-03) ─
+//
+// Reconstructed BYTE-FOR-BYTE from the pre-2026-08-02 order (verified via
+// `git show 5e6ffa9f -- packages/lib/src/ai/gateway/registry.ts` — the swap
+// commit simply reversed each two-element array and moved the two anthropic
+// entries ahead of the two openai entries in `auto`; nothing else changed).
+// This is the ROLLBACK target for the new ff_foxy_openai_primary_rollout_v1
+// percentage rollout (packages/lib/src/ai/gateway/rollout.ts): a caller whose
+// deterministic bucket falls inside `rollout_percentage` resolves here
+// instead of LEGACY_FALLBACK_ORDER. LEGACY_FALLBACK_ORDER above is UNCHANGED
+// and stays the fail-safe / seed-state default — see rollout.ts's header for
+// the full precedence. Deno mirror: supabase/functions/grounded-answer/
+// config.ts's CLAUDE_PRIMARY_FALLBACK_ORDER; a parity test (owned by testing)
+// asserts equality across the Deno/Node boundary, mirroring the existing
+// MODEL_FALLBACK_ORDER/LEGACY_FALLBACK_ORDER parity test.
+export const CLAUDE_PRIMARY_FALLBACK_ORDER: Readonly<Record<'haiku' | 'sonnet' | 'auto', readonly FallbackTarget[]>> = {
   haiku: [
     { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
     { provider: 'openai', model: OPENAI_MINI_ID },
@@ -196,14 +239,24 @@ export const LEGACY_FALLBACK_ORDER: Readonly<Record<'haiku' | 'sonnet' | 'auto',
   ],
 } as const;
 
-/** Resolve a legacy preference key into ordered descriptors (configured only). */
-export function legacyChain(pref: 'haiku' | 'sonnet' | 'auto'): ModelDescriptor[] {
+/** Shared mapping: an ordered FallbackTarget[] → configured-only ModelDescriptor[]. */
+function chainFromOrder(order: readonly FallbackTarget[]): ModelDescriptor[] {
   const out: ModelDescriptor[] = [];
-  for (const target of LEGACY_FALLBACK_ORDER[pref]) {
+  for (const target of order) {
     const m = BY_ID.get(target.model);
     if (m && m.configured) out.push(m);
   }
   return out;
+}
+
+/** Resolve a legacy preference key into ordered descriptors (configured only). */
+export function legacyChain(pref: 'haiku' | 'sonnet' | 'auto'): ModelDescriptor[] {
+  return chainFromOrder(LEGACY_FALLBACK_ORDER[pref]);
+}
+
+/** Resolve a preference key against the Claude-primary rollback order (configured only). */
+export function claudePrimaryChain(pref: 'haiku' | 'sonnet' | 'auto'): ModelDescriptor[] {
+  return chainFromOrder(CLAUDE_PRIMARY_FALLBACK_ORDER[pref]);
 }
 
 // ─── Cost model ─────────────────────────────────────────────────────────────

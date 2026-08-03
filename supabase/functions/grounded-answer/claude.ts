@@ -14,7 +14,8 @@
 //     on no_supporting_chunks without treating it as an error.
 //   - Token usage is surfaced for cost tracking in trace rows.
 
-import { MODEL_FALLBACK_ORDER } from './config.ts';
+import { MODEL_FALLBACK_ORDER, CLAUDE_PRIMARY_FALLBACK_ORDER } from './config.ts';
+import { shouldUseClaudePrimary } from './_model-rollout-flag.ts';
 
 const ANTHROPIC_ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -113,6 +114,18 @@ export interface ClaudeRequest {
   apiKey: string;
   openaiApiKey?: string;
   modelPreference: 'haiku' | 'sonnet' | 'auto';
+  /**
+   * Percentage-rollout mechanism (2026-08-03, on top of the 2026-08-02
+   * OpenAI-primary swap): opaque per-caller bucketing key for
+   * ff_foxy_openai_primary_rollout_v1, forwarded to resolveModelOrder(). In
+   * practice this is GroundedRequest.student_id, passed through unchanged by
+   * pipeline.ts/pipeline-stream.ts — claude.ts treats it as an opaque string,
+   * never inspects or logs it beyond hashing. Absent/null → the rollout
+   * mechanism cannot bucket this call and resolves to MODEL_FALLBACK_ORDER
+   * (OpenAI-primary), the documented fail-safe direction. See
+   * ./_model-rollout-flag.ts for the full precedence.
+   */
+  callerId?: string | null;
   /**
    * Phase 2 of Foxy continuity fix: prior conversation turns in native shape.
    * When provided and non-empty, the call body becomes
@@ -285,7 +298,7 @@ export async function callClaude(req: ClaudeRequest): Promise<ClaudeResponse> {
   if (!req.apiKey && !req.openaiApiKey) {
     return { ok: false, reason: 'auth_error' };
   }
-  const modelOrder = resolveModelOrder(req.modelPreference);
+  const modelOrder = await resolveModelOrder(req.modelPreference, req.callerId);
   const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
 
   let lastReason: 'timeout' | 'server_error' | 'unknown' = 'unknown';
@@ -372,19 +385,38 @@ function claudeFailureLabel(kind: 'timeout' | 'server_error' | 'unknown'): strin
   return failureLabel('anthropic', kind);
 }
 
-function resolveModelOrder(pref: 'haiku' | 'sonnet' | 'auto'): ModelTarget[] {
+async function resolveModelOrder(
+  pref: 'haiku' | 'sonnet' | 'auto',
+  callerId?: string | null,
+): Promise<ModelTarget[]> {
   // RCA-FIX CRITICAL-1 (2026-06-26): Foxy system prompt, JSON output contract,
-  // and CBSE pedagogy decision tree are calibrated for Claude behavior.
-  // GPT-4o-mini/GPT-4o are fallbacks only — they receive the same prompt verbatim
-  // which causes format/persona deviations. Anthropic models run first; OpenAI
-  // only activates if the Claude call fails (timeout / 5xx / auth).
+  // and CBSE pedagogy decision tree were originally calibrated for Claude
+  // behavior — GPT-4o-mini/GPT-4o receive the same prompt verbatim, which can
+  // cause format/persona deviations relative to Claude.
+  //
+  // OpenAI-primary provider swap (CEO-approved, 2026-08-02): Anthropic's
+  // per-token cost does not scale with per-student revenue at current volume,
+  // so OpenAI models now run FIRST for every preference. Claude is RETAINED as
+  // the fallback tier (activates on OpenAI timeout / 5xx / auth failure), not
+  // deleted — precisely because of the calibration history above, which is why
+  // an output-quality validation pass (eval/openai-migration harness) gates
+  // how far the canary ramps before OpenAI output reaches students at volume.
   //
   // Model Gateway parity (2026-07-24): the ORDERING now comes from the shared
   // MODEL_FALLBACK_ORDER constant in ./config.ts (the Deno mirror of the TS
   // gateway registry's LEGACY_FALLBACK_ORDER). The mapping below is unchanged —
   // it just reads the source of truth instead of inlining the targets, so the
   // Deno path and the Node gateway can never drift. Behavior is byte-identical.
-  return MODEL_FALLBACK_ORDER[pref].map((t) => ({ provider: t.provider, model: t.model }));
+  //
+  // Percentage-rollout mechanism (2026-08-03): ff_foxy_openai_primary_rollout_v1
+  // (see ./_model-rollout-flag.ts) can bucket `callerId` onto the reconstructed
+  // CLAUDE_PRIMARY_FALLBACK_ORDER rollback table instead. Seeded disabled
+  // (rollout_percentage=0), so shouldUseClaudePrimary resolves false for every
+  // caller until an operator deliberately ramps it — this call is then a
+  // guaranteed-false no-op read, keeping today's OpenAI-primary resolution
+  // byte-identical.
+  const table = (await shouldUseClaudePrimary(callerId)) ? CLAUDE_PRIMARY_FALLBACK_ORDER : MODEL_FALLBACK_ORDER;
+  return table[pref].map((t) => ({ provider: t.provider, model: t.model }));
 }
 
 type SingleCallResult =
@@ -523,7 +555,7 @@ export async function* callClaudeStream(
     yield { type: 'final', ok: false, reason: 'auth_error', partialText: '', model: null };
     return;
   }
-  const modelOrder = resolveModelOrder(req.modelPreference);
+  const modelOrder = await resolveModelOrder(req.modelPreference, req.callerId);
   const perCallTimeout = Math.min(req.timeoutMs * PER_CALL_TIMEOUT_FRAC, PER_CALL_TIMEOUT_CAP_MS);
 
   let lastReason: 'timeout' | 'server_error' | 'unknown' = 'unknown';

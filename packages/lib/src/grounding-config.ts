@@ -94,4 +94,14 @@ export const REGISTERED_PROMPT_TEMPLATES = [
 // collide with a cached entry. Per the bump rule, this does NOT bump PROMPT_REV
 // (a bump would needlessly flush every Foxy cache tier).
 export const PROMPT_REV = 3;
-export const MODEL_ROUTE_REV = 1;
+// MODEL_ROUTE_REV=2 (2026-08-02): OpenAI-primary provider swap — kept in sync
+// with the authoritative bump in supabase/functions/grounded-answer/config.ts
+// (see that file for the full cost-driven rationale and RCA-FIX CRITICAL-1
+// calibration history).
+// MODEL_ROUTE_REV=3 (2026-08-03): percentage-rollout mechanism on top of the
+// OpenAI-primary swap (ff_foxy_openai_primary_rollout_v1) — kept in sync with
+// the authoritative bump in supabase/functions/grounded-answer/config.ts (see
+// that file for the full rationale, including the documented KNOWN LIMITATION
+// re: gen_ctx not yet recording which order a cached response was generated
+// under).
+export const MODEL_ROUTE_REV = 3;

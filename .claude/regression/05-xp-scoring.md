@@ -746,7 +746,7 @@ dormant-but-granted overload).
 
 ---
 
-## P2 XP literal parity in parent-facing Deno Edge Functions (2026-08-03, P0+P1 batch) — REG-335
+## P2 XP literal parity in parent-facing Deno Edge Functions (2026-08-03, P0+P1 batch) — REG-337
 
 Source: the 2026-08-03 P0+P1 launch-hardening batch (item P0-3, commit
 `bac67843`). Extends the REG-48 / REG-181 (`xp-sql-literal-parity.test.ts`,
@@ -764,7 +764,7 @@ makes any future Deno-land drift a CI failure.
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-335 | `xp_edge_function_literal_parity` | (a) **Canonical anchor:** `XP_RULES.quiz_per_correct` / `quiz_high_score_bonus` / `quiz_perfect_bonus` pinned at 10 / 20 / 50 (changing them is a P2 invariant change requiring user approval AND must be mirrored into both Deno files — the per-file asserts enforce the mirroring). (b) **Per Deno file** (both files, code-shaped regex extractors tied to executable expressions so the provenance comments can never satisfy a match, each with a ≥1-match vacuous-pass guard): every `correct * N` multiplier === `quiz_per_correct`; every `>= 80) xp += N` === `quiz_high_score_bonus`; every `=== 100) xp += N` === `quiz_perfect_bonus`; and a **drift sweep** that EVERY `xp +=` literal in the file is a canonical bonus (20 or 50) — a novel increment fails even if the three anchored shapes stay intact. (c) **The pre-fix drifted shapes are pinned ABSENT:** no `+= 25` / `+ 25` and no flat `? 30 : 0` estimate can reappear in either source. | `apps/host/src/__tests__/xp-edge-function-literal-parity.test.ts` (11 tests: 1 anchor + 5 per Deno file) | E |
+| REG-337 | `xp_edge_function_literal_parity` | (a) **Canonical anchor:** `XP_RULES.quiz_per_correct` / `quiz_high_score_bonus` / `quiz_perfect_bonus` pinned at 10 / 20 / 50 (changing them is a P2 invariant change requiring user approval AND must be mirrored into both Deno files — the per-file asserts enforce the mirroring). (b) **Per Deno file** (both files, code-shaped regex extractors tied to executable expressions so the provenance comments can never satisfy a match, each with a ≥1-match vacuous-pass guard): every `correct * N` multiplier === `quiz_per_correct`; every `>= 80) xp += N` === `quiz_high_score_bonus`; every `=== 100) xp += N` === `quiz_perfect_bonus`; and a **drift sweep** that EVERY `xp +=` literal in the file is a canonical bonus (20 or 50) — a novel increment fails even if the three anchored shapes stay intact. (c) **The pre-fix drifted shapes are pinned ABSENT:** no `+= 25` / `+ 25` and no flat `? 30 : 0` estimate can reappear in either source. | `apps/host/src/__tests__/xp-edge-function-literal-parity.test.ts` (11 tests: 1 anchor + 5 per Deno file) | E |
 
 ### Invariants covered by this section
 
@@ -777,10 +777,10 @@ makes any future Deno-land drift a CI failure.
 
 ### Catalog total
 
-Pre-REG-335: 334 entries (through REG-334, the setup-plans caller-contract
-migration — see `04-payments.md`). The 2026-08-03 P0+P1 batch adds REG-335
+Pre-REG-337: 336 entries (through REG-336, the setup-plans caller-contract
+migration — see `04-payments.md`). The 2026-08-03 P0+P1 batch adds REG-337
 (P2 XP literal parity in the two parent-facing Deno Edge Functions).
-**Total catalog: 335 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 337 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 

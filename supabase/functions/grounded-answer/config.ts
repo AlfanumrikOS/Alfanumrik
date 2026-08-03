@@ -139,10 +139,51 @@ export const PROMPT_REV = 3;
 // (owned by the testing agent) asserts equality across the Deno/Node boundary
 // so the two can never silently drift.
 //
-// Anthropic runs FIRST for every preference — the Foxy system prompt, JSON
-// output contract, and CBSE pedagogy tree are calibrated for Claude; the OpenAI
-// tiers are availability fallbacks only (RCA-FIX CRITICAL-1, 2026-06-26).
+// OpenAI runs FIRST for every preference (CEO-approved cost-driven provider
+// swap, 2026-08-02): Anthropic's per-token cost does not scale with
+// per-student revenue at current volume. Claude is RETAINED as the fallback
+// tier, not deleted — specifically because the Foxy system prompt, JSON
+// output contract, and CBSE pedagogy tree were originally calibrated against
+// Claude's behavior (RCA-FIX CRITICAL-1, 2026-06-26). That calibration
+// history is exactly why an output-quality validation pass (the
+// eval/openai-migration harness) gates how far the canary ramps before
+// GPT-4o/GPT-4o-mini output reaches students at volume — this reorder makes
+// OpenAI primary for cost, it does not certify OpenAI output quality by
+// itself.
 export const MODEL_FALLBACK_ORDER: Record<
+  'haiku' | 'sonnet' | 'auto',
+  ReadonlyArray<{ provider: 'anthropic' | 'openai'; model: string }>
+> = {
+  haiku: [
+    { provider: 'openai', model: 'gpt-4o-mini' },
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+  ],
+  sonnet: [
+    { provider: 'openai', model: 'gpt-4o' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+  ],
+  auto: [
+    { provider: 'openai', model: 'gpt-4o-mini' },
+    { provider: 'openai', model: 'gpt-4o' },
+    { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+    { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+  ],
+};
+
+// ── Claude-primary rollback order (percentage-rollout mechanism, 2026-08-03) ─
+//
+// Reconstructed BYTE-FOR-BYTE from the pre-2026-08-02 order (verified via
+// `git show 5e6ffa9f -- supabase/functions/grounded-answer/config.ts` — the
+// swap commit simply reversed each two-element array and moved the two
+// anthropic entries ahead of the two openai entries in `auto`; nothing else
+// changed). This is the ROLLBACK target for `_model-rollout-flag.ts`'s
+// percentage-based rollout: `ff_foxy_openai_primary_rollout_v1` buckets a
+// caller into this order instead of MODEL_FALLBACK_ORDER when the flag is
+// enabled and the caller's hash falls inside `rollout_percentage`.
+//
+// MODEL_FALLBACK_ORDER above is UNCHANGED and stays the fail-safe / seed-state
+// default — see _model-rollout-flag.ts's header for the full precedence.
+export const CLAUDE_PRIMARY_FALLBACK_ORDER: Record<
   'haiku' | 'sonnet' | 'auto',
   ReadonlyArray<{ provider: 'anthropic' | 'openai'; model: string }>
 > = {
@@ -161,9 +202,30 @@ export const MODEL_FALLBACK_ORDER: Record<
     { provider: 'openai', model: 'gpt-4o' },
   ],
 };
+
 // MODEL_ROUTE_REV bump rule: bump whenever model routing changes what model
 // (or generation params) a given model_preference resolves to — e.g. a model
 // id upgrade in claude.ts (HAIKU_MODEL / SONNET_MODEL / GPT_* constants), a
 // change to resolveModelOrder(), or a change to the effective-temperature /
 // effective-max_tokens derivation in the pipeline.
-export const MODEL_ROUTE_REV = 1;
+// MODEL_ROUTE_REV=2 (2026-08-02): OpenAI-primary provider swap — every
+// model_preference now resolves to a GPT model first (Claude second), per the
+// rationale above. Cache entries written under rev 1 reflected a
+// Claude-primary resolution and must not be served for a request made under
+// this new ordering.
+// MODEL_ROUTE_REV=3 (2026-08-03): resolveModelOrder() is now rollout-flag-aware
+// (see _model-rollout-flag.ts) — it can resolve a preference to
+// CLAUDE_PRIMARY_FALLBACK_ORDER instead of MODEL_FALLBACK_ORDER once
+// ff_foxy_openai_primary_rollout_v1 is enabled with rollout_percentage>0. The
+// flag SEEDS disabled (rollout_percentage=0), so this bump is precautionary —
+// today's resolution is byte-identical to rev 2 for every caller. Bumping
+// still invalidates rev-2 cache entries per the rule above (defensive, cheap,
+// self-healing). KNOWN LIMITATION, not solved by this bump: gen_ctx does not
+// currently record WHICH order a given cached response was generated under,
+// so once rollout_percentage>0 a response cached from a claude-primary-bucketed
+// student could theoretically be served (via L1/L2/L3 hit) to a student
+// bucketed to openai-primary, or vice versa. This is a content-mixing
+// concern, not a P12 safety violation (both orders produce grounded,
+// safety-railed, curriculum-scoped answers) — flagged here for
+// testing/architect to assess before any ramp beyond the safe 0% seed.
+export const MODEL_ROUTE_REV = 3;

@@ -1,7 +1,8 @@
 /**
  * Model Gateway — Deno ↔ TS MODEL_FALLBACK_ORDER parity (Phase 1).
  *
- * The legacy Anthropic-primary fallback ordering exists TWICE:
+ * The legacy fallback ordering (OpenAI-primary, Claude retained as fallback
+ * per the 2026-08-02 CEO-directed cost swap) exists TWICE:
  *   - TS (Node graph):  packages/lib/src/ai/gateway/registry.ts
  *                       → `LEGACY_FALLBACK_ORDER`
  *   - Deno (Edge graph): supabase/functions/grounded-answer/config.ts
@@ -22,7 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { LEGACY_FALLBACK_ORDER } from '@alfanumrik/lib/ai/gateway';
+import { LEGACY_FALLBACK_ORDER, CLAUDE_PRIMARY_FALLBACK_ORDER } from '@alfanumrik/lib/ai/gateway';
 
 // cwd-resilient repo-root resolution (tests run from apps/host; supabase/ lives
 // at the repo root). Mirrors edge-function-manifest.test.ts's repoPath helper.
@@ -36,15 +37,20 @@ function repoRead(rel: string): string {
 type Target = { provider: string; model: string };
 
 /**
- * Parse the Deno `MODEL_FALLBACK_ORDER` object literal into
- * { haiku|sonnet|auto: Target[] }. We scope to the object's text (between its
- * `export const` and the following `export const MODEL_ROUTE_REV`) then, for
- * each key, extract the ordered `{ provider: 'x', model: 'y' }` tuples.
+ * Parse a Deno order-table object literal (e.g. `MODEL_FALLBACK_ORDER` or
+ * `CLAUDE_PRIMARY_FALLBACK_ORDER`) into { haiku|sonnet|auto: Target[] }. We
+ * scope to the object's text (between its `export const <constName>` and the
+ * following `export const <endMarker>`) then, for each key, extract the
+ * ordered `{ provider: 'x', model: 'y' }` tuples.
  */
-function parseDenoOrder(src: string): Record<'haiku' | 'sonnet' | 'auto', Target[]> {
-  const start = src.indexOf('export const MODEL_FALLBACK_ORDER');
-  expect(start, 'MODEL_FALLBACK_ORDER not found in Deno config').toBeGreaterThanOrEqual(0);
-  const end = src.indexOf('export const MODEL_ROUTE_REV', start);
+function parseDenoOrder(
+  src: string,
+  constName: string,
+  endMarker: string,
+): Record<'haiku' | 'sonnet' | 'auto', Target[]> {
+  const start = src.indexOf(`export const ${constName}`);
+  expect(start, `${constName} not found in Deno config`).toBeGreaterThanOrEqual(0);
+  const end = src.indexOf(`export const ${endMarker}`, start);
   const block = end > start ? src.slice(start, end) : src.slice(start);
 
   const out = {} as Record<'haiku' | 'sonnet' | 'auto', Target[]>;
@@ -68,7 +74,7 @@ const tsAsPlain = (targets: readonly { provider: string; model: string }[]): Tar
 
 describe('MODEL_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
   const denoSrc = repoRead('supabase/functions/grounded-answer/config.ts');
-  const deno = parseDenoOrder(denoSrc);
+  const deno = parseDenoOrder(denoSrc, 'MODEL_FALLBACK_ORDER', 'CLAUDE_PRIMARY_FALLBACK_ORDER');
 
   for (const key of ['haiku', 'sonnet', 'auto'] as const) {
     it(`${key} ordering matches byte-for-byte (same providers, models, order)`, () => {
@@ -81,17 +87,65 @@ describe('MODEL_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
     expect(Object.keys(LEGACY_FALLBACK_ORDER).sort()).toEqual(['auto', 'haiku', 'sonnet']);
   });
 
-  it('auto chain is Anthropic-primary on both sides (Haiku → Sonnet → mini → full)', () => {
-    // Anchor the specific legacy order so a reordering on EITHER side fails here,
-    // not just a drift between the two.
+  it('auto chain is OpenAI-primary on both sides (mini → full → Haiku → Sonnet), Claude retained as fallback', () => {
+    // Anchor the specific current order so a reordering on EITHER side fails
+    // here, not just a drift between the two. Updated 2026-08-02: the
+    // CEO-directed cost swap flipped this from Anthropic-primary to
+    // OpenAI-primary — see registry.ts's LEGACY_FALLBACK_ORDER header and
+    // router.test.ts's dedicated "OpenAI-primary post 2026-08 cost directive"
+    // regression pin (REG-334, renumbered 2026-08-03 from REG-332 — see
+    // .claude/regression/00-header.md's collision note) for the companion
+    // assertion on the TS side.
+    expect(deno.auto.map((t) => `${t.provider}:${t.model}`)).toEqual([
+      'openai:gpt-4o-mini',
+      'openai:gpt-4o',
+      'anthropic:claude-haiku-4-5-20251001',
+      'anthropic:claude-sonnet-4-20250514',
+    ]);
+    expect(tsAsPlain(LEGACY_FALLBACK_ORDER.auto).map((t) => `${t.provider}:${t.model}`)).toEqual(
+      deno.auto.map((t) => `${t.provider}:${t.model}`),
+    );
+  });
+});
+
+// ─── CLAUDE_PRIMARY_FALLBACK_ORDER parity (percentage-rollout mechanism, 2026-08-03) ─
+//
+// The reconstructed pre-2026-08-02 order (the rollback target for
+// ff_foxy_openai_primary_rollout_v1) ALSO exists twice — same drift risk as
+// MODEL_FALLBACK_ORDER/LEGACY_FALLBACK_ORDER above, same technique here.
+describe('CLAUDE_PRIMARY_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
+  const denoSrc = repoRead('supabase/functions/grounded-answer/config.ts');
+  const deno = parseDenoOrder(denoSrc, 'CLAUDE_PRIMARY_FALLBACK_ORDER', 'MODEL_ROUTE_REV');
+
+  for (const key of ['haiku', 'sonnet', 'auto'] as const) {
+    it(`${key} ordering matches byte-for-byte (same providers, models, order)`, () => {
+      expect(deno[key]).toEqual(tsAsPlain(CLAUDE_PRIMARY_FALLBACK_ORDER[key]));
+    });
+  }
+
+  it('both sides expose exactly the haiku / sonnet / auto keys', () => {
+    expect(Object.keys(deno).sort()).toEqual(['auto', 'haiku', 'sonnet']);
+    expect(Object.keys(CLAUDE_PRIMARY_FALLBACK_ORDER).sort()).toEqual(['auto', 'haiku', 'sonnet']);
+  });
+
+  it('auto chain is Claude-primary on both sides (Haiku → Sonnet → mini → full) — the exact pre-2026-08-02 order', () => {
+    // Anchor the reconstructed order explicitly, verified via
+    // `git show 5e6ffa9f -- supabase/functions/grounded-answer/config.ts`
+    // (the swap commit's diff shows this is precisely what was reversed).
     expect(deno.auto.map((t) => `${t.provider}:${t.model}`)).toEqual([
       'anthropic:claude-haiku-4-5-20251001',
       'anthropic:claude-sonnet-4-20250514',
       'openai:gpt-4o-mini',
       'openai:gpt-4o',
     ]);
-    expect(tsAsPlain(LEGACY_FALLBACK_ORDER.auto).map((t) => `${t.provider}:${t.model}`)).toEqual(
+    expect(tsAsPlain(CLAUDE_PRIMARY_FALLBACK_ORDER.auto).map((t) => `${t.provider}:${t.model}`)).toEqual(
       deno.auto.map((t) => `${t.provider}:${t.model}`),
     );
+  });
+
+  it('is NOT the same order as MODEL_FALLBACK_ORDER/LEGACY_FALLBACK_ORDER (sanity — these must diverge)', () => {
+    const legacyDeno = parseDenoOrder(denoSrc, 'MODEL_FALLBACK_ORDER', 'CLAUDE_PRIMARY_FALLBACK_ORDER');
+    expect(deno.auto).not.toEqual(legacyDeno.auto);
+    expect(CLAUDE_PRIMARY_FALLBACK_ORDER.auto).not.toEqual(LEGACY_FALLBACK_ORDER.auto);
   });
 });

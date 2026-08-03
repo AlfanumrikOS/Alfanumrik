@@ -258,7 +258,12 @@ const okGrader = async (_args: {
   winner: 'baseline',
   notes: 'NCERT alignment edge.',
   rubric_version: 'mol-grader-v2',
-  model: 'claude-sonnet-4-6-20251022',
+  // Aligned to the id already pinned by config-model-name-identity.test.ts,
+  // registry.ts (ANTHROPIC_SONNET_ID), and quality-eval.ts (JUDGE_MODEL).
+  // This is a mock GraderResult (no assertion in this file depends on the
+  // literal value), updated only for hygiene alongside the grader.ts/
+  // grader-cron.ts source fix in the same PR.
+  model: 'claude-sonnet-4-20250514',
   prompt_tokens: 320,
   completion_tokens: 280,
 });

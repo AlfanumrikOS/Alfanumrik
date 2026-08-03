@@ -1426,7 +1426,7 @@ path that carries both language columns).
 
 ---
 
-## usePortalFetch timeout envelope + bilingual copy + request headers (2026-08-03, P0+P1 batch) — REG-336
+## usePortalFetch timeout envelope + bilingual copy + request headers (2026-08-03, P0+P1 batch) — REG-338
 
 Source: the 2026-08-03 P0+P1 launch-hardening batch.
 `packages/lib/src/usePortalFetch.ts` (`usePortalFetch` / `usePortalAction`)
@@ -1441,7 +1441,7 @@ error box, and so the request envelope every portal call rides on (anon
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-336 | `use_portal_fetch_timeout_envelope_bilingual_headers` | (a) **Timeout path** (browser-faithful harness: a hanging fetch that rejects with a REAL `AbortError` when the hook's own AbortController fires): `usePortalFetch` rejects with the friendly `PORTAL_TIMEOUT_MESSAGE_EN` — never the raw AbortError; a caller-supplied `timeoutMessage` wins over the default; a NON-abort failure is rethrown AS-IS (the friendly copy is timeout-only — genuine errors are not masked). (b) **P7 bilingual, chosen at CALL time:** `usePortalAction(endpoint, isHi)` rejects with `PORTAL_TIMEOUT_MESSAGE_HI` when `isHi=true` and the EN copy when false; a language toggle keeps the SAME function reference (referential stability pinned — safe in `useEffect`/`useCallback` dep arrays) while the copy still follows the CURRENT language at call time (no stale-closure English for a Hindi user). (c) **Request envelope:** every request carries the anon `apikey` header; the current session's `Authorization: Bearer <token>` is attached when a session exists; `usePortalAction` POSTs `{ action, ...params }` to the given `/functions/v1/*` endpoint; and a FAILED session read fails SOFT — the request still goes out with `apikey` and WITHOUT a Bearer header (the Edge Function's own auth decides; the portal never dies client-side on a session-read blip). | `apps/host/src/__tests__/lib/use-portal-fetch.test.ts` (8 tests) | E |
+| REG-338 | `use_portal_fetch_timeout_envelope_bilingual_headers` | (a) **Timeout path** (browser-faithful harness: a hanging fetch that rejects with a REAL `AbortError` when the hook's own AbortController fires): `usePortalFetch` rejects with the friendly `PORTAL_TIMEOUT_MESSAGE_EN` — never the raw AbortError; a caller-supplied `timeoutMessage` wins over the default; a NON-abort failure is rethrown AS-IS (the friendly copy is timeout-only — genuine errors are not masked). (b) **P7 bilingual, chosen at CALL time:** `usePortalAction(endpoint, isHi)` rejects with `PORTAL_TIMEOUT_MESSAGE_HI` when `isHi=true` and the EN copy when false; a language toggle keeps the SAME function reference (referential stability pinned — safe in `useEffect`/`useCallback` dep arrays) while the copy still follows the CURRENT language at call time (no stale-closure English for a Hindi user). (c) **Request envelope:** every request carries the anon `apikey` header; the current session's `Authorization: Bearer <token>` is attached when a session exists; `usePortalAction` POSTs `{ action, ...params }` to the given `/functions/v1/*` endpoint; and a FAILED session read fails SOFT — the request still goes out with `apikey` and WITHOUT a Bearer header (the Edge Function's own auth decides; the portal never dies client-side on a session-read blip). | `apps/host/src/__tests__/lib/use-portal-fetch.test.ts` (8 tests) | E |
 
 ### Invariants covered by this section
 
@@ -1455,10 +1455,10 @@ error box, and so the request envelope every portal call rides on (anon
 
 ### Catalog total
 
-Pre-REG-336: 335 entries (through REG-335, the parent-facing Deno XP literal
-parity pin — see `05-xp-scoring.md`). The 2026-08-03 P0+P1 batch adds REG-336
+Pre-REG-338: 337 entries (through REG-337, the parent-facing Deno XP literal
+parity pin — see `05-xp-scoring.md`). The 2026-08-03 P0+P1 batch adds REG-338
 (usePortalFetch timeout envelope + bilingual copy + request headers).
-**Total catalog: 336 entries (target: 35 — TARGET EXCEEDED).**
+**Total catalog: 338 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 
