@@ -32,8 +32,11 @@ import {
   getMasteryOverview,
 } from './supabase';
 
-// Default SWR config optimized for Indian mobile networks
-const DEFAULT_CONFIG: SWRConfiguration = {
+// Default SWR config optimized for Indian mobile networks.
+// Exported so SWRProvider.tsx can mount it as the global <SWRConfig> — every
+// useSWR call site that passes no config inherits these defaults instead of
+// SWR library defaults (unbounded retries, revalidateOnFocus: true, 2s dedupe).
+export const DEFAULT_CONFIG: SWRConfiguration = {
   revalidateOnFocus: false,         // Disabled by default; enabled per-hook where needed
   revalidateOnReconnect: true,      // Refresh when phone gets signal back
   dedupingInterval: 10000,          // 10s dedup to prevent request storms at scale
