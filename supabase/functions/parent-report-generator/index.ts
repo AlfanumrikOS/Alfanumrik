@@ -196,10 +196,12 @@ async function fetchWeeklyStats(
       .gte('completed_at', weekAgoISO)
       .order('completed_at', { ascending: false }),
 
-    // Last week's quiz sessions (for trend comparison)
+    // Last week's quiz sessions (for trend comparison).
+    // correct_answers + total_questions included so prior-week XP is derived
+    // with the same canonical P2 formula as the current week.
     supabase
       .from('quiz_sessions')
-      .select('id, score_percent, time_taken_seconds')
+      .select('id, score_percent, time_taken_seconds, correct_answers, total_questions')
       .eq('student_id', studentId)
       .gte('completed_at', twoWeeksAgoISO)
       .lt('completed_at', weekAgoISO),
@@ -240,20 +242,33 @@ async function fetchWeeklyStats(
   const subjectSet = new Set<string>()
   quizzes.forEach(q => { if (q.subject) subjectSet.add(q.subject) })
 
-  // XP earned this week (approximate from quiz scores)
-  // We use a rough estimate since exact XP tracking per-week requires xp_history table
-  const xpEarned = quizzes.reduce((sum, q) => {
-    let xp = (q.correct_answers || 0) * 10
-    if ((q.score_percent || 0) >= 80) xp += 25
-    if ((q.score_percent || 0) === 100) xp += 50
-    return sum + xp
-  }, 0)
+  // XP earned per quiz, re-derived with the canonical P2 formula (approximate:
+  // quiz_sessions stores no xp_earned column and the 200 XP/day cap is not
+  // re-applied here, so this can slightly over-estimate on heavy-use days).
+  const quizXp = (q: {
+    correct_answers?: number | null
+    total_questions?: number | null
+    score_percent?: number | null
+  }): number => {
+    const correct = q.correct_answers || 0
+    const total = q.total_questions || 0
+    // P1: score_percent = Math.round((correct / total) * 100); fall back to the
+    // stored score_percent only when totals are unavailable.
+    const scorePercent = total > 0
+      ? Math.round((correct / total) * 100)
+      : Math.round(q.score_percent || 0)
+    let xp = correct * 10 // P2: XP_RULES.quiz_per_correct=10 (packages/lib/src/xp-config.ts — Deno cannot import it; keep in sync)
+    if (scorePercent >= 80) xp += 20 // P2: XP_RULES.quiz_high_score_bonus=20 (packages/lib/src/xp-config.ts — Deno cannot import it; keep in sync)
+    if (scorePercent === 100) xp += 50 // P2: XP_RULES.quiz_perfect_bonus=50 (packages/lib/src/xp-config.ts — Deno cannot import it; keep in sync)
+    return xp
+  }
 
-  // XP from last week
-  const xpLastWeek = prevQuizzes.reduce((sum, q) => {
-    // Rough estimate since we don't have correct_answers for prev week
-    return sum + ((q.score_percent || 0) > 0 ? 30 : 0)
-  }, 0)
+  const xpEarned = quizzes.reduce((sum, q) => sum + quizXp(q), 0)
+
+  // XP from last week — derived with the same canonical formula as the current
+  // week (the prev-week query now selects correct_answers + total_questions).
+  // The previous flat +30 per quiz had no backing in XP_RULES and violated P2.
+  const xpLastWeek = prevQuizzes.reduce((sum, q) => sum + quizXp(q), 0)
 
   // Mastery changes
   const masteryData = masteryChanges.data || []
