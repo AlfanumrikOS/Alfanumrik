@@ -323,10 +323,12 @@
       "name": "ff_foxy_openai_primary_rollout_v1",
       "defaultEnabled": false,
       "stagingEnabled": false,
-      "productionEnabled": false,
+      "productionEnabled": true,
       "owner": "ai-learning-backend",
-      "rationale": "Default OFF until an operator or reviewed rollout enables it (OpenAI-primary rollback lever (2026-08-03); OFF/rollout_percentage=0 = 100% OpenAI-primary, byte-identical to the already-shipped default (true no-op). Seed migration owned by architect.).",
-      "source": "packages/lib/src/flags/registries/foxy.ts"
+      "rationale": "CEO-approved (Pradeep Sharma) INTENTIONALLY-LIVE 2026-08-03 at 100%: the Foxy OpenAI-primary provider-swap rollback lever (REG-334/REG-335, shipped by #1443). Production posture is is_enabled=true, rollout_percentage=100 — the OpenAI-primary rollback lever deliberately pulled to 100%. Removed from EXPECTED_OFF_FLAGS the same day so the flag-posture canary treats enabled=true/100 as the approved state, not drift. Still an ai_provider-tier PROTECTED_FLAGS entry (console typed-confirmation required for any further change). defaultEnabled stays false: the code/FLAG_DEFAULTS default remains OFF (byte-identical OpenAI-primary no-op); only the live production DB posture is ON via the pulled lever.",
+      "source": "scripts/feature-flag-matrix.overrides.json",
+      "enablementEvidence": "CEO-approved intentionally-live 2026-08-03 (Pradeep Sharma): production feature_flags row is_enabled=true, rollout_percentage=100. The live 100% posture is the CEO-confirmed OpenAI-primary rollback lever, confirmed intentional after #1443; the post-deploy flag-posture canary now sees enabled=true/100 as expected.",
+      "rolloutPercentage": 100
     },
     {
       "name": "ff_foxy_os_v1",

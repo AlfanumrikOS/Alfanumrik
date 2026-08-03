@@ -50,8 +50,15 @@
  *   from both the E6 MoL program group and the GenAI ecosystem group above,
  *   since it governs a different concern: what percentage of live student
  *   Foxy/ncert-solver/quiz-gen traffic is routed to Claude-primary instead of
- *   the shipped OpenAI-primary default. Its CEO-approved posture is OFF, so
- *   it is also listed in EXPECTED_OFF_FLAGS below.
+ *   the shipped OpenAI-primary default. CEO-APPROVED INTENTIONALLY-LIVE
+ *   2026-08-03 (Pradeep Sharma): its production posture is now
+ *   is_enabled=true / rollout_percentage=100 (the OpenAI-primary rollback
+ *   lever, deliberately pulled), so it is DELIBERATELY EXCLUDED from
+ *   EXPECTED_OFF_FLAGS below — mirroring the ff_adaptive_remediation_v1 /
+ *   ff_whatsapp_bot_v1 precedents. It REMAINS an ai_provider-tier
+ *   PROTECTED_FLAGS entry, so the console guardrail still requires typed
+ *   confirmation for any further change (and, if ever rolled back to 0%, it
+ *   should be re-added to EXPECTED_OFF_FLAGS).
  *
  * NOTE: this registry protects flags at the CONSOLE boundary. It does not (and
  * cannot) change how any flag evaluates at runtime.
@@ -379,12 +386,8 @@ export function getProtection(flagName: string): FlagProtection | null {
  * ff_outcome_prediction_v1, ff_lesson_generation_v1,
  * ff_content_generation_v1 — all still seeded OFF/0% today (see migration
  * 20260801120000_protected_feature_flags_genai_ecosystem_seed.sql and the
- * per-flag reasons above for why each is not yet ready to enable) plus
- * ff_foxy_openai_primary_rollout_v1 (Foxy OpenAI-primary provider-swap
- * rollback lever, seeded is_enabled=false / rollout_percentage=0 by
- * migration 20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql;
- * added here 2026-08-03). The flag-posture-canary cron compares live rows
- * against this list nightly.
+ * per-flag reasons above for why each is not yet ready to enable). The
+ * flag-posture-canary cron compares live rows against this list nightly.
  *
  * NOT in this list (on purpose): ff_atomic_subscription_activation (its
  * approved posture is is_enabled=TRUE), ff_board_score_v1,
@@ -413,6 +416,19 @@ export function getProtection(flagName: string): FlagProtection | null {
  * entry in PROTECTED_FLAGS above, so any FURTHER change still requires
  * typed confirmation. If ever rolled back to 0%, re-add
  * 'ff_whatsapp_bot_v1' to this list.
+ *
+ * ALSO NOT in this list (on purpose, as of 2026-08-03):
+ * ff_foxy_openai_primary_rollout_v1. CEO-approved (Pradeep Sharma)
+ * INTENTIONALLY-LIVE at is_enabled=true / rollout_percentage=100 -- the
+ * OpenAI-primary rollback lever, deliberately pulled to 100%. It was seeded
+ * is_enabled=false / rollout_percentage=0 by migration 20260803120000 and
+ * briefly listed here; #1443 shipped the flag and the live 100% posture is
+ * now the CEO-confirmed approved state (the OpenAI-primary rollback lever is
+ * allowed to be live), not drift. It remains an `ai_provider` entry in
+ * PROTECTED_FLAGS above, so any FURTHER change still requires typed
+ * confirmation. If ever rolled back to 0%, re-add
+ * 'ff_foxy_openai_primary_rollout_v1' to this list -- mirrors the
+ * ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 precedents immediately above.
  */
 export const EXPECTED_OFF_FLAGS: string[] = [
   // Group A — constitution-pinned
@@ -497,15 +513,15 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   'ff_outcome_prediction_v1',
   'ff_lesson_generation_v1',
   'ff_content_generation_v1',
-  // Foxy OpenAI-primary provider-swap rollback lever — seeded
-  // is_enabled=false / rollout_percentage=0 by migration
-  // 20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql (2026-08-03).
-  // Same footprint every other ai_provider-tier flag has today (all five
-  // MoL flags above are also in this list). Its CEO-approved posture stays
-  // OFF until ops/CEO decide a ramp schedule. It remains an ai_provider-tier
-  // entry in PROTECTED_FLAGS above regardless, so any change still requires
-  // typed confirmation — if later deliberately ramped, remove it from this
-  // list at that time (mirrors the ff_adaptive_remediation_v1 /
-  // ff_whatsapp_bot_v1 precedent immediately above).
-  'ff_foxy_openai_primary_rollout_v1',
+  // ff_foxy_openai_primary_rollout_v1 REMOVED from this list 2026-08-03:
+  // CEO-approved (Pradeep Sharma) intentionally-live at is_enabled=true /
+  // rollout_percentage=100 — the OpenAI-primary rollback lever, deliberately
+  // pulled to 100%. Seeded OFF by 20260803120000 and briefly listed here;
+  // #1443 shipped the flag and the live 100% posture is now the CEO-confirmed
+  // approved state (the rollback lever is allowed to be live), not drift, so
+  // the canary no longer expects it fully-OFF. It remains an ai_provider-tier
+  // PROTECTED_FLAGS entry above, so any further change still requires typed
+  // confirmation. If ever rolled back to 0%, re-add
+  // 'ff_foxy_openai_primary_rollout_v1' here. Mirrors the
+  // ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 precedents.
 ];

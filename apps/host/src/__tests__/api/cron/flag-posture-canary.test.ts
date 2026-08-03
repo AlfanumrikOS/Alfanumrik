@@ -40,11 +40,15 @@
  *      day with ff_foxy_openai_primary_rollout_v1 (the Foxy OpenAI-primary
  *      provider-swap rollback lever, REG-334/REG-335 — seeded
  *      is_enabled=false/rollout_percentage=0 by migration 20260803120000 and
- *      protected by 20260803120001; its CEO-approved posture stays OFF until
- *      ops/CEO decide a ramp schedule).
+ *      protected by 20260803120001), then shrank 58 → 57 the same day when
+ *      the CEO (Pradeep Sharma) confirmed that lever's live 100% posture is
+ *      INTENTIONAL (is_enabled=true/rollout_percentage=100 — the shipped
+ *      OpenAI-primary rollback lever, #1443), so it is no longer expected
+ *      fully-OFF (still ai_provider-protected for any further change) —
+ *      mirrors the ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1 precedents.
  *      The watched set below is derived from EXPECTED_OFF_FLAGS directly, so
  *      this suite's length pin tracks those net changes (watched set
- *      54 → 56 → 55 → 57 → 56 → 61 → 58 → 59):
+ *      54 → 56 → 55 → 57 → 56 → 61 → 58 → 59 → 58):
  *        - any EXPECTED_OFF flag with is_enabled=true OR rollout>0 → drift;
  *        - ff_atomic_subscription_activation disabled OR missing → drift
  *          (P11 kill-switch must exist and be enabled);
@@ -85,7 +89,7 @@
  *
  * The supabase-admin seam is a recording thenable chain (house pattern from
  * api/cron/adaptive-remediation.test.ts). EXPECTED_OFF_FLAGS is NOT mocked —
- * the route must watch the real, current 58-name list.
+ * the route must watch the real, current 57-name list.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -264,7 +268,7 @@ describe('flag-posture-canary — auth gate (fail-closed before I/O)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('flag-posture-canary — DB query shape', () => {
-  it('reads feature_flags once, selecting state columns, .in() over the 59-name watched set (58 EXPECTED_OFF + the P11 kill-switch)', async () => {
+  it('reads feature_flags once, selecting state columns, .in() over the 58-name watched set (57 EXPECTED_OFF + the P11 kill-switch)', async () => {
     const { GET } = await loadRoute();
     await GET(req({ 'x-cron-secret': SECRET }));
 
@@ -276,7 +280,7 @@ describe('flag-posture-canary — DB query shape', () => {
     const inOp = fromCalls[0].ops.find((o) => o.op === 'in');
     expect(inOp?.args[0]).toBe('flag_name');
     const watched = inOp?.args[1] as string[];
-    // 58 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
+    // 57 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
     // ff_adaptive_remediation_v1's 10% pilot exclusion, + ff_whatsapp_alarm_template
     // — the surviving 2026-07-30 WhatsApp bot protected flag, seed
     // 20260801100500 companion — minus ff_whatsapp_bot_v1, which left
@@ -284,11 +288,13 @@ describe('flag-posture-canary — DB query shape', () => {
     // + the 5 GenAI ecosystem flags added 2026-08-01, seed 20260801120000
     // companion, minus the 3 flags approved intentionally-live on 2026-08-03
     // — ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine —
-    // + ff_foxy_openai_primary_rollout_v1, seed 20260803120000 companion)
+    // minus ff_foxy_openai_primary_rollout_v1, which was added same-day by
+    // seed 20260803120000 then CEO-approved intentionally-live at
+    // enabled=true/100 the same day, so it never nets into this list)
     // + ATOMIC; the two MoL shadow flags are already members of EXPECTED_OFF,
-    // so the de-duped set is 59.
+    // so the de-duped set is 58.
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(59);
+    expect(watched).toHaveLength(58);
     // Belt-and-braces against the silent-merge failure mode described in the
     // file header: pin the RELATION as well as the literal, so a future
     // EXPECTED_OFF_FLAGS edit that forgets this file fails with a message that
@@ -419,6 +425,15 @@ describe('flag-posture-canary — drift detection matrix', () => {
 
   it('ff_whatsapp_bot_v1 is correctly no longer in the watched set derived from EXPECTED_OFF_FLAGS', async () => {
     expect(EXPECTED_OFF_FLAGS).not.toContain('ff_whatsapp_bot_v1');
+  });
+
+  it('ff_foxy_openai_primary_rollout_v1 at its CEO-approved intentionally-live posture (2026-08-03, is_enabled=true/rollout_percentage=100 — the OpenAI-primary rollback lever, #1443) is NOT drift — it is no longer in EXPECTED_OFF_FLAGS, so the post-deploy flag-posture canary sees prod enabled=true/100 as expected', async () => {
+    const { body } = await run([...CLEAN_ROWS, row('ff_foxy_openai_primary_rollout_v1', true, 100)]);
+    expect(body).toEqual({ drift: [], count: 0 });
+  });
+
+  it('ff_foxy_openai_primary_rollout_v1 is correctly no longer in the watched set derived from EXPECTED_OFF_FLAGS', async () => {
+    expect(EXPECTED_OFF_FLAGS).not.toContain('ff_foxy_openai_primary_rollout_v1');
   });
 });
 
