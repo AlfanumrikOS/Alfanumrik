@@ -1,4 +1,6 @@
--- 20260803120000_redeclare_orphan_pg_cron_jobs.sql
+-- 20260803120002_redeclare_orphan_pg_cron_jobs.sql
+-- (renamed from 20260803120000 to resolve a timestamp collision after #1443
+--  landed 20260803120000/120001 on main; sorts after both, independent of them.)
 -- CI/CD system-design review, 2026-08-03.
 --
 -- Purpose: re-declare three pg_cron jobs that run in PRODUCTION but exist in
