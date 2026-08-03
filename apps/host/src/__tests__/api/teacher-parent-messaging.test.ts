@@ -14,10 +14,22 @@
  *   - Auth-gate denial returns 403.
  *   - Cross-tenant GET on a wrong-owner thread id returns 403.
  *
- * The Supabase chain is mocked at `supabaseAdmin.from(table)` granularity
- * with a tiny in-memory store that mirrors the columns we actually
- * touch. The state-events bus is intercepted by mocking publishEvent —
- * we only assert the route called it with the right kind/payload.
+ * Both the teacher and parent routes now delegate to auth.uid()-anchored
+ * SECURITY DEFINER RPCs via `createSupabaseServerClient().rpc(name, args)`
+ * (teacher set: migration 20260803130000; parent set: 20260710190000). The
+ * mock re-implements each RPC's real contract against a tiny in-memory store:
+ * params, the jsonb return shape, the error_code → deny mapping, and — the
+ * security boundary — the auth.uid()→teachers.id / auth.uid()→guardians.id
+ * resolution plus the thread-ownership, guardian-link, and active
+ * class_teachers ⋈ class_enrollments roster gates. Request-supplied ids are
+ * only routing hints, never the boundary.
+ *
+ * The RPCs (not the routes) now own the state-event and notification writes,
+ * so those are modeled INSIDE the rpc handler: the spine event is routed
+ * through the publishEvent spy so its emission stays under assertion, and the
+ * counterparty notification row is inserted exactly as the SQL does. A
+ * legacy `supabaseAdmin.from(table)` builder mock is retained for any residual
+ * table access but the RPC path is the live boundary for these six routes.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -56,6 +68,17 @@ const STUDENT_ID_X    = '55555555-cccc-cccc-cccc-555555555555';
 const STUDENT_ID_Y    = '55555555-dddd-dddd-dddd-555555555555';
 
 const SCHOOL_ID       = '66666666-6666-6666-6666-666666666666';
+
+// An auth.uid() that belongs to neither a teacher nor a guardian — used to
+// exercise the RPCs' `not_teacher` fail-closed branch.
+const NON_MEMBER_AUTH = '77777777-7777-7777-7777-777777777777';
+
+// Roster fixtures: teacher A's active class enrolls Child X (and only X).
+// The teacher_send_parent_message RPC's NEW-thread branch requires the active
+// class_teachers ⋈ class_enrollments join, so this pins BOTH sides of the gate:
+//   - A → Child X  : enrolled → new-thread create is authorized (happy path)
+//   - A → Child Y  : NOT enrolled → new-thread create is 403 not_authorized
+const CLASS_ID_A      = '88888888-aaaa-aaaa-aaaa-888888888888';
 
 // ── In-memory store ───────────────────────────────────────────────────
 interface ThreadRow {
@@ -98,7 +121,10 @@ let notifications: NotificationRow[];
 let teachers: Array<{ id: string; auth_user_id: string; school_id: string | null; name: string }>;
 let guardians: Array<{ id: string; auth_user_id: string; name: string }>;
 let students:  Array<{ id: string; name: string; school_id: string | null }>;
-let links:     Array<{ guardian_id: string; student_id: string; status: string }>;
+let links:     Array<{ guardian_id: string; student_id: string; status: string; created_at: string }>;
+// Roster substrate for the NEW-thread class_teachers ⋈ class_enrollments gate.
+let classTeachers:    Array<{ teacher_id: string; class_id: string; is_active: boolean }>;
+let classEnrollments: Array<{ class_id: string; student_id: string; is_active: boolean }>;
 
 let idCounter = 0;
 const newId = () => `99999999-0000-0000-0000-${String(++idCounter).padStart(12, '0')}`;
@@ -118,8 +144,17 @@ function resetStore() {
     { id: STUDENT_ID_Y, name: 'Child Y', school_id: SCHOOL_ID },
   ];
   links = [
-    { guardian_id: GUARDIAN_ID_X, student_id: STUDENT_ID_X, status: 'approved' },
-    { guardian_id: GUARDIAN_ID_Y, student_id: STUDENT_ID_Y, status: 'approved' },
+    { guardian_id: GUARDIAN_ID_X, student_id: STUDENT_ID_X, status: 'approved', created_at: '2026-01-01T00:00:00.000Z' },
+    { guardian_id: GUARDIAN_ID_Y, student_id: STUDENT_ID_Y, status: 'approved', created_at: '2026-01-01T00:00:00.000Z' },
+  ];
+  // Teacher A actively teaches a class that enrolls Child X only. Child Y is
+  // deliberately un-enrolled so the not_authorized_for_student gate has a
+  // failing case; Teacher B teaches no one.
+  classTeachers = [
+    { teacher_id: TEACHER_ID_A, class_id: CLASS_ID_A, is_active: true },
+  ];
+  classEnrollments = [
+    { class_id: CLASS_ID_A, student_id: STUDENT_ID_X, is_active: true },
   ];
   threads = [];
   messages = [];
@@ -353,6 +388,231 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
 vi.mock('@alfanumrik/lib/supabase-server', () => ({
   createSupabaseServerClient: async () => ({
     rpc: async (name: string, args?: Record<string, unknown>) => {
+      // ── Teacher-side RPCs ──────────────────────────────────────────────
+      // Symmetric twins of the parent set (migration 20260803130000). The ONLY
+      // auth boundary is teachers.auth_user_id = auth.uid(); teacher_id /
+      // student_id / guardian_id in the request are routing hints, never the
+      // boundary. Fail-closed to not_teacher when the session is not a teacher.
+      if (
+        name === 'teacher_send_parent_message' ||
+        name === 'teacher_list_message_threads' ||
+        name === 'teacher_list_thread_messages'
+      ) {
+        const teacher = teachers.find((t) => t.auth_user_id === authState.userId);
+        if (!teacher) {
+          return { data: { success: false, error_code: 'not_teacher', error: 'Teacher account not found' }, error: null };
+        }
+
+        if (name === 'teacher_send_parent_message') {
+          const body = String(args?.p_body ?? '').trim();
+          if (!body || body.length > 4000) {
+            return { data: { success: false, error_code: 'invalid_input', error: 'Invalid message body' }, error: null };
+          }
+          let threadId = (args?.p_thread_id as string | null) ?? null;
+          let guardianId = (args?.p_guardian_id as string | null) ?? null;
+          let studentId = (args?.p_student_id as string | null) ?? null;
+          let schoolId: string | null = null;
+          let isNewThread = false;
+
+          if (threadId) {
+            // Append path: the thread must exist AND be owned by the resolved
+            // teacher (teacher_id = session teacher). No roster re-check — a
+            // reply into an owned thread is always legitimate.
+            const thread = threads.find((t) => t.id === threadId);
+            if (!thread) {
+              return { data: { success: false, error_code: 'thread_not_found', error: 'Thread not found' }, error: null };
+            }
+            if (thread.teacher_id !== teacher.id) {
+              return { data: { success: false, error_code: 'thread_not_owned', error: 'Thread not owned by caller' }, error: null };
+            }
+            guardianId = thread.guardian_id;
+            studentId = thread.student_id;
+            schoolId = thread.school_id;
+          } else {
+            // Create path.
+            if (!studentId) {
+              return { data: { success: false, error_code: 'invalid_input', error: 'student_id is required' }, error: null };
+            }
+            // Resolve/validate the recipient guardian via an approved/active
+            // guardian_student_links row.
+            if (guardianId) {
+              const linked = links.some((l) =>
+                l.guardian_id === guardianId &&
+                l.student_id === studentId &&
+                ['approved', 'active'].includes(l.status),
+              );
+              if (!linked) {
+                return { data: { success: false, error_code: 'not_linked', error: 'No approved guardian/student link' }, error: null };
+              }
+            } else {
+              const primary = links
+                .filter((l) => l.student_id === studentId && ['approved', 'active'].includes(l.status))
+                .sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
+              if (!primary) {
+                return { data: { success: false, error_code: 'not_linked', error: 'No approved guardian linked to this student' }, error: null };
+              }
+              guardianId = primary.guardian_id;
+            }
+            schoolId = teacher.school_id;
+
+            // Reuse an existing (teacher, guardian, student) thread — repeat
+            // conversation, counts as an owned reply, so no roster re-check.
+            const existing = threads.find((t) =>
+              t.teacher_id === teacher.id &&
+              t.guardian_id === guardianId &&
+              t.student_id === studentId,
+            );
+            if (existing) {
+              threadId = existing.id;
+            } else {
+              // INITIATING a brand-new thread is the one action gated by the
+              // active class_teachers ⋈ class_enrollments roster join (same as
+              // canAccessStudent's teacher branch). Fail-closed.
+              const teaches = classTeachers.some((ct) =>
+                ct.teacher_id === teacher.id &&
+                ct.is_active === true &&
+                classEnrollments.some((ce) =>
+                  ce.class_id === ct.class_id &&
+                  ce.student_id === studentId &&
+                  ce.is_active === true,
+                ),
+              );
+              if (!teaches) {
+                return { data: { success: false, error_code: 'not_authorized_for_student', error: 'You do not teach this student' }, error: null };
+              }
+              const nowIso = new Date().toISOString();
+              threadId = newId();
+              threads.push({
+                id: threadId,
+                teacher_id: teacher.id,
+                guardian_id: guardianId!,
+                student_id: studentId!,
+                school_id: schoolId,
+                subject: (args?.p_subject as string | null) ?? null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                last_message_at: nowIso,
+              });
+              isNewThread = true;
+            }
+          }
+
+          const now = new Date(Date.now() + idCounter).toISOString();
+          const messageId = newId();
+          messages.push({
+            id: messageId,
+            thread_id: threadId!,
+            sender_role: 'teacher',
+            sender_auth_user_id: authState.userId!,
+            body,
+            created_at: now,
+            read_at: null,
+          });
+          const thread = threads.find((t) => t.id === threadId);
+          if (thread) {
+            thread.last_message_at = now;
+            thread.updated_at = now;
+          }
+
+          // The RPC (not the route) now owns the state-event + guardian
+          // notification writes. Model the spine event through the publishEvent
+          // spy so the RPC-path emission stays under assertion, then insert the
+          // guardian notification row exactly as the SQL does.
+          await mockPublishEvent(null, {
+            kind: 'teacher.parent_message_sent',
+            payload: { threadId, messageId, teacherId: teacher.id, guardianId, studentId, bodyLength: body.length, isNewThread },
+          });
+
+          const notifBody = body.length > 200 ? `${body.slice(0, 200)}...` : body;
+          notifications.push({
+            id: newId(),
+            recipient_id: guardianId!,
+            recipient_type: 'guardian',
+            type: 'teacher_message',
+            title: 'New message from teacher',
+            message: notifBody,
+            body: notifBody,
+            data: { thread_id: threadId, message_id: messageId, student_id: studentId },
+            is_read: false,
+            created_at: new Date().toISOString(),
+          });
+
+          return { data: { success: true, thread_id: threadId, message_id: messageId, is_new_thread: isNewThread }, error: null };
+        }
+
+        if (name === 'teacher_list_message_threads') {
+          const limit = Math.min(Math.max(Number(args?.p_limit ?? 50), 1), 50);
+          const rows = threads
+            .filter((t) => t.teacher_id === teacher.id)
+            .sort((a, b) => b.last_message_at.localeCompare(a.last_message_at))
+            .slice(0, limit)
+            .map((thread) => {
+              const latest = [...messages]
+                .filter((m) => m.thread_id === thread.id)
+                .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+              // Teacher-perspective unread = guardian-sent messages not yet read.
+              const unread_count = messages.filter((m) =>
+                m.thread_id === thread.id &&
+                m.sender_role === 'guardian' &&
+                m.read_at === null,
+              ).length;
+              return {
+                id: thread.id,
+                teacher_id: thread.teacher_id,
+                guardian_id: thread.guardian_id,
+                student_id: thread.student_id,
+                school_id: thread.school_id,
+                subject: thread.subject,
+                created_at: thread.created_at,
+                updated_at: thread.updated_at,
+                last_message_at: thread.last_message_at,
+                guardian_name: guardians.find((g) => g.id === thread.guardian_id)?.name ?? null,
+                student_name: students.find((s) => s.id === thread.student_id)?.name ?? null,
+                last_message_preview: latest ? (latest.body.length > 120 ? `${latest.body.slice(0, 120)}...` : latest.body) : null,
+                last_message_sender_role: latest?.sender_role ?? null,
+                unread_count,
+              };
+            });
+          return {
+            data: { success: true, threads: rows, unreadTotal: rows.reduce((sum, row) => sum + row.unread_count, 0) },
+            error: null,
+          };
+        }
+
+        // name === 'teacher_list_thread_messages'
+        const threadId = args?.p_thread_id as string;
+        const thread = threads.find((t) => t.id === threadId);
+        if (!thread) {
+          return { data: { success: false, error_code: 'thread_not_found', error: 'Thread not found' }, error: null };
+        }
+        if (thread.teacher_id !== teacher.id) {
+          return { data: { success: false, error_code: 'thread_not_owned', error: 'Thread not owned by caller' }, error: null };
+        }
+        const cursor = args?.p_cursor ? String(args.p_cursor) : null;
+        const limit = Math.min(Math.max(Number(args?.p_limit ?? 100), 1), 100);
+        const all = messages
+          .filter((m) => m.thread_id === threadId && (!cursor || m.created_at > cursor))
+          .sort((a, b) => a.created_at.localeCompare(b.created_at));
+        const page = all.slice(0, limit);
+        const hasMore = all.length > limit;
+        const readAt = new Date().toISOString();
+        // Missing read_at UPDATE path: mark guardian-sent unread rows read for
+        // the viewing teacher, reflected in the returned page.
+        for (const m of page) {
+          if (m.sender_role === 'guardian' && m.read_at === null) m.read_at = readAt;
+        }
+        return {
+          data: {
+            success: true,
+            messages: page,
+            nextCursor: hasMore ? page[page.length - 1]?.created_at ?? null : null,
+            hasMore,
+          },
+          error: null,
+        };
+      }
+
+      // ── Guardian-side RPCs ─────────────────────────────────────────────
       const guardian = guardians.find((g) => g.auth_user_id === authState.userId);
       if (!guardian) {
         return { data: { success: false, error_code: 'no_guardian', error: 'Guardian account not found' }, error: null };
@@ -569,6 +829,10 @@ beforeEach(() => {
 describe('POST /api/teacher/messages', () => {
   it('creates a thread and first message when no thread_id supplied', async () => {
     authedAs(TEACHER_AUTH_A, ['class.manage']);
+    // Happy path for the NEW-thread roster gate: Teacher A actively teaches
+    // Child X (class_teachers ⋈ class_enrollments fixture in resetStore), so
+    // the RPC is authorized to initiate the thread. The un-taught counterpart
+    // is covered by the not_authorized_for_student test below.
     const res = await TEACHER_POST(
       postRequest('/api/teacher/messages', {
         guardian_id: GUARDIAN_ID_X,
@@ -583,10 +847,18 @@ describe('POST /api/teacher/messages', () => {
     expect(threads).toHaveLength(1);
     expect(messages).toHaveLength(1);
     expect(messages[0].sender_role).toBe('teacher');
-    // Spine event was emitted.
+    // The RPC — not the route — now owns the spine event; assert it emitted
+    // teacher.parent_message_sent with the resolved (never request-supplied)
+    // teacher id and the new-thread flag.
     expect(mockPublishEvent).toHaveBeenCalledTimes(1);
     expect(mockPublishEvent.mock.calls[0][1].kind).toBe('teacher.parent_message_sent');
-    // Notification row for the guardian was created.
+    expect(mockPublishEvent.mock.calls[0][1].payload).toMatchObject({
+      teacherId: TEACHER_ID_A,
+      guardianId: GUARDIAN_ID_X,
+      studentId: STUDENT_ID_X,
+      isNewThread: true,
+    });
+    // The RPC inserted the guardian notification row.
     expect(notifications.filter((n) => n.recipient_id === GUARDIAN_ID_X && n.recipient_type === 'guardian')).toHaveLength(1);
   });
 
@@ -670,6 +942,46 @@ describe('POST /api/teacher/messages', () => {
     expect(json.is_new_thread).toBe(true);
     expect(threads).toHaveLength(1);
     expect(threads[0].guardian_id).toBe(GUARDIAN_ID_X);
+  });
+
+  it('returns 403 (not_authorized_for_student) when initiating a thread about a student the teacher does not teach', async () => {
+    authedAs(TEACHER_AUTH_A, ['class.manage']);
+    // Guardian Y IS approved-linked to Child Y (so the link check passes), but
+    // Teacher A does not teach Child Y (no class_enrollments row) — the
+    // NEW-thread roster gate must fail-closed with a clean 403, and nothing
+    // may be written.
+    const res = await TEACHER_POST(
+      postRequest('/api/teacher/messages', {
+        guardian_id: GUARDIAN_ID_Y,
+        student_id:  STUDENT_ID_Y,
+        body:        'should be blocked by the roster gate',
+      }) as never,
+    );
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.success).toBe(false);
+    expect(threads).toHaveLength(0);
+    expect(messages).toHaveLength(0);
+    expect(notifications).toHaveLength(0);
+    expect(mockPublishEvent).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 (not_teacher) when the session does not resolve to a teacher', async () => {
+    // Auth gate passes (class.manage granted) but the auth.uid() belongs to no
+    // teachers row — the RPC resolves teachers.id from auth.uid() and
+    // fail-closes.
+    authedAs(NON_MEMBER_AUTH, ['class.manage']);
+    const res = await TEACHER_POST(
+      postRequest('/api/teacher/messages', {
+        guardian_id: GUARDIAN_ID_X,
+        student_id:  STUDENT_ID_X,
+        body:        'not a teacher',
+      }) as never,
+    );
+    expect(res.status).toBe(403);
+    expect(threads).toHaveLength(0);
+    expect(messages).toHaveLength(0);
+    expect(mockPublishEvent).not.toHaveBeenCalled();
   });
 
   it('rejects 400 on empty body', async () => {
@@ -915,6 +1227,33 @@ describe('GET threads/[id]/messages — read marking', () => {
       { params: Promise.resolve({ id: j.thread_id }) },
     );
     expect(res2.status).toBe(403);
+  });
+});
+
+// ── teacher identity boundary (not_teacher mapping) ──────────────────
+describe('teacher not_teacher mapping', () => {
+  it('threads list returns 404 when the caller does not resolve to a teacher', async () => {
+    // Per the threads route, not_teacher maps to 404 (teacher-row-missing),
+    // distinct from the send/messages routes which map it to 403.
+    authedAs(NON_MEMBER_AUTH, ['class.manage']);
+    const res = await TEACHER_THREADS(getRequest('/api/teacher/messages/threads') as never);
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.success).toBe(false);
+  });
+
+  it('messages list returns 403 when the caller does not resolve to a teacher', async () => {
+    authedAs(NON_MEMBER_AUTH, ['class.manage']);
+    // A well-formed (but irrelevant) thread id passes the route UUID guard; the
+    // RPC fail-closes on teacher resolution before any thread lookup.
+    const threadId = 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa';
+    const res = await TEACHER_MESSAGES(
+      getRequest(`/api/teacher/messages/threads/${threadId}/messages`) as never,
+      { params: Promise.resolve({ id: threadId }) },
+    );
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.success).toBe(false);
   });
 });
 
