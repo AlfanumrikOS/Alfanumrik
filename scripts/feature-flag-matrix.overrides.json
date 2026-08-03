@@ -222,6 +222,16 @@
       "enablementEvidence": "Live Supabase feature_flags evidence captured 2026-07-10: is_enabled=true, target_environments=[], rollout_percentage=100."
     },
     {
+      "name": "ff_foxy_openai_primary_rollout_v1",
+      "defaultEnabled": false,
+      "stagingEnabled": false,
+      "productionEnabled": true,
+      "rolloutPercentage": 100,
+      "owner": "ai-learning-backend",
+      "rationale": "CEO-approved (Pradeep Sharma) INTENTIONALLY-LIVE 2026-08-03 at 100%: the Foxy OpenAI-primary provider-swap rollback lever (REG-334/REG-335, shipped by #1443). Production posture is is_enabled=true, rollout_percentage=100 — the OpenAI-primary rollback lever deliberately pulled to 100%. Removed from EXPECTED_OFF_FLAGS the same day so the flag-posture canary treats enabled=true/100 as the approved state, not drift. Still an ai_provider-tier PROTECTED_FLAGS entry (console typed-confirmation required for any further change). defaultEnabled stays false: the code/FLAG_DEFAULTS default remains OFF (byte-identical OpenAI-primary no-op); only the live production DB posture is ON via the pulled lever.",
+      "enablementEvidence": "CEO-approved intentionally-live 2026-08-03 (Pradeep Sharma): production feature_flags row is_enabled=true, rollout_percentage=100. The live 100% posture is the CEO-confirmed OpenAI-primary rollback lever, confirmed intentional after #1443; the post-deploy flag-posture canary now sees enabled=true/100 as expected."
+    },
+    {
       "name": "ff_foxy_session_reactivate_v1",
       "defaultEnabled": true,
       "stagingEnabled": true,

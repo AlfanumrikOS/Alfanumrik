@@ -716,11 +716,17 @@ describe('protected_feature_flags DB/TS registry parity', () => {
     }
   });
 
-  it('ff_foxy_openai_primary_rollout_v1 (added 2026-08-03, REG-334/REG-335, migration 20260803120001) is present in both the TS registry and the DB seed with tier ai_provider, and is in EXPECTED_OFF_FLAGS', () => {
+  it('ff_foxy_openai_primary_rollout_v1 (added 2026-08-03, REG-334/REG-335, migration 20260803120001) is present in both the TS registry and the DB seed with tier ai_provider, and is NOT in EXPECTED_OFF_FLAGS (CEO-approved intentionally-live 2026-08-03)', () => {
     const rows = parseSeededRows();
     const flagName = 'ff_foxy_openai_primary_rollout_v1';
+    // Stays CONSOLE-protected at ai_provider (typed confirmation for any
+    // further change) in both TS and the DB mirror — that did not change.
     expect(PROTECTED_FLAGS[flagName]?.tier, `${flagName} missing/wrong tier in PROTECTED_FLAGS`).toBe('ai_provider');
     expect(rows.get(flagName), `${flagName} missing/wrong tier in DB seed`).toBe('ai_provider');
-    expect(EXPECTED_OFF_FLAGS.includes(flagName), `${flagName} missing from EXPECTED_OFF_FLAGS`).toBe(true);
+    // But it is DELIBERATELY not canary-watched: CEO-approved intentionally-live
+    // at is_enabled=true/rollout_percentage=100 (the OpenAI-primary rollback
+    // lever, #1443), so the flag-posture canary must NOT treat enabled=true/100
+    // as drift. Mirrors ff_adaptive_remediation_v1 / ff_whatsapp_bot_v1.
+    expect(EXPECTED_OFF_FLAGS.includes(flagName), `${flagName} should be excluded from EXPECTED_OFF_FLAGS (intentionally-live)`).toBe(false);
   });
 });
