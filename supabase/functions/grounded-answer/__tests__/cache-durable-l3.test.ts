@@ -675,6 +675,93 @@ Deno.test('getDurableSolution rejects a stored tuple mismatch — treated as a m
   assertEquals(result, null, 'a mismatched stored tuple must never be served from L3');
 });
 
+// ── Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up) ──────
+// getDurableSolution's THIRD, independent defense-in-depth check — mirrors
+// cache-redis.ts's getFromRedisL2. See gen-ctx.ts's
+// cachedResponseMatchesModelOrder doc.
+
+Deno.test('getDurableSolution rejects a model_order mismatch even when the tuple/key both match — defense-in-depth backstop', async () => {
+  const req = makeSolverRequest();
+  const stored = await deriveIdentities(req, 0);
+  const storedResponse: GroundedResponse = {
+    grounded: true,
+    answer: 'claude-primary-shaped solution',
+    citations: [],
+    confidence: 0.9,
+    groundedFromChunks: true,
+    trace_id: 'trace-claude-primary-l3',
+    meta: {
+      claude_model: 'claude-haiku-4-5-20251001',
+      tokens_used: 42,
+      latency_ms: 10,
+      model_order: 'claude_primary',
+    },
+  };
+  const payload = { tuple: stored.tuple, response: storedResponse };
+  // deno-lint-ignore no-explicit-any
+  const sb: any = {
+    from: () => ({
+      select: () => {
+        // deno-lint-ignore no-explicit-any
+        const chain: any = {
+          eq: () => chain,
+          maybeSingle: () => Promise.resolve({ data: { response: payload }, error: null }),
+        };
+        return chain;
+      },
+    }),
+  };
+  const key = {
+    grade: '10',
+    subject_code: 'science',
+    question_hash: stored.questionHash,
+    gen_ctx_hash: stored.genCtxHash,
+  };
+
+  // Same tuple, same key — but the READER now expects openai_primary (a
+  // caller whose bucket flipped, or a fresh caller under the shipped
+  // default). Must reject even though tuplesMatch would pass.
+  const mismatched = await getDurableSolution(sb, key, stored.tuple, 'openai_primary');
+  assertEquals(mismatched, null, 'a model_order mismatch must be a miss, never served from L3');
+
+  // Sanity: the SAME expected order still serves normally.
+  const matched = await getDurableSolution(sb, key, stored.tuple, 'claude_primary');
+  assert(matched !== null, 'a matching model_order must still serve from L3');
+});
+
+Deno.test('getDurableSolution defaults expectedModelOrder to openai_primary when the caller omits it (pre-existing call sites keep working)', async () => {
+  const req = makeSolverRequest();
+  const stored = await deriveIdentities(req, 0);
+  // No model_order recorded at all (mirrors every pre-existing fixture in
+  // this file) — permissive, so the 3-arg call site keeps working exactly
+  // as before this fix.
+  const payload = { tuple: stored.tuple, response: groundedResponse('answer', 't-default-order') };
+  // deno-lint-ignore no-explicit-any
+  const sb: any = {
+    from: () => ({
+      select: () => {
+        // deno-lint-ignore no-explicit-any
+        const chain: any = {
+          eq: () => chain,
+          maybeSingle: () => Promise.resolve({ data: { response: payload }, error: null }),
+        };
+        return chain;
+      },
+    }),
+  };
+  const result = await getDurableSolution(
+    sb,
+    {
+      grade: '10',
+      subject_code: 'science',
+      question_hash: stored.questionHash,
+      gen_ctx_hash: stored.genCtxHash,
+    },
+    stored.tuple,
+  );
+  assert(result !== null, 'an entry with no recorded model_order must still serve on the 3-arg (defaulted) call');
+});
+
 Deno.test('putDurableSolution never stores an abstain (grounded:false) response', async () => {
   let upsertCalls = 0;
   // deno-lint-ignore no-explicit-any

@@ -130,6 +130,25 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
   ff_grounded_answer_mol_shadow_v1: AI_PROVIDER,
   ff_mol_shadow_text_capture_v1: AI_PROVIDER,
 
+  // ai_provider — Foxy OpenAI-primary provider-swap rollback lever
+  // (REG-332/REG-333, 2026-08-03). NOT part of the MoL program group above —
+  // architect ruling (migration 20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql,
+  // Task 2): protect at tier 'ai_provider' (this flag decides which AI
+  // provider serves real student traffic — precisely the class of risk the
+  // tier exists to gate) but do NOT reuse the shared AI_PROVIDER constant
+  // above — its reason text is scoped to "(MoL program)" and would mislead
+  // an operator reading the console's 409 response for this flag. Reason
+  // text below is copied verbatim from that migration's `reason` column, per
+  // its own OBLIGATION note. DB-layer mirror: that same migration inserts
+  // the matching public.protected_feature_flags row (tier 'ai_provider').
+  ff_foxy_openai_primary_rollout_v1: {
+    tier: 'ai_provider',
+    reason:
+      'Foxy OpenAI-primary provider-swap rollback lever (REG-332, commit 5e6ffa9f, 2026-08-02): governs the percentage of live student Foxy/ncert-solver/quiz-gen traffic routed to Claude-primary instead of the shipped OpenAI-primary default. AI provider change affecting real student traffic — requires explicit CEO approval before any enable.',
+    reasonHi:
+      'Foxy OpenAI-प्राइमरी प्रदाता-स्वैप के लिए प्रतिशत-आधारित रोलबैक लीवर (REG-332, कमिट 5e6ffa9f, 2026-08-02): यह तय करता है कि लाइव छात्र Foxy/ncert-solver/quiz-gen ट्रैफ़िक का कितना प्रतिशत, पहले से लागू OpenAI-primary डिफ़ॉल्ट के बजाय, Claude-primary की ओर भेजा जाता है। वास्तविक छात्र ट्रैफ़िक को प्रभावित करने वाला AI प्रदाता परिवर्तन — किसी भी सक्षमीकरण से पहले CEO की स्पष्ट स्वीकृति आवश्यक है।',
+  },
+
   // constitution_pinned — Group A (REG-124/126/131/175)
   ff_adaptive_remediation_v1: CONSTITUTION_PINNED,
   ff_adaptive_loops_bc_v1: CONSTITUTION_PINNED,
@@ -383,4 +402,15 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   // any FURTHER change still requires typed confirmation. If ever
   // rolled back to 0%, re-add 'ff_whatsapp_bot_v1' to this list.
   'ff_whatsapp_alarm_template',
+  // Foxy OpenAI-primary provider-swap rollback lever — seeded
+  // is_enabled=false / rollout_percentage=0 by migration
+  // 20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql (2026-08-03).
+  // Same footprint every other ai_provider-tier flag has today (all five
+  // MoL flags above are also in this list). Its CEO-approved posture stays
+  // OFF until ops/CEO decide a ramp schedule. It remains an ai_provider-tier
+  // entry in PROTECTED_FLAGS above regardless, so any change still requires
+  // typed confirmation — if later deliberately ramped, remove it from this
+  // list at that time (mirrors the ff_adaptive_remediation_v1 /
+  // ff_whatsapp_bot_v1 precedent immediately above).
+  'ff_foxy_openai_primary_rollout_v1',
 ];

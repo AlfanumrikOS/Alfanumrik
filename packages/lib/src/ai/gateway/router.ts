@@ -29,7 +29,10 @@ import { listModels, legacyChain, blendedCostPer1M } from './registry';
 
 // ─── Constraint filter ──────────────────────────────────────────────────────
 
-function passesConstraints(m: ModelDescriptor, c: RoutingConstraints): boolean {
+// Exported (additive) so rollout.ts's flag-aware default-chain resolution can
+// apply the exact same constraint filter as selectModelChain's `default`
+// branch without duplicating the predicate. Pure — no behavior change.
+export function passesConstraints(m: ModelDescriptor, c: RoutingConstraints): boolean {
   if (c.needsJson && !m.capabilities.json) return false;
   if (c.needsVision && !m.capabilities.vision) return false;
   if (typeof c.minQualityTier === 'number' && m.qualityTier < c.minQualityTier) return false;

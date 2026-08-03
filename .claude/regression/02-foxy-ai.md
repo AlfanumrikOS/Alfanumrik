@@ -1605,6 +1605,122 @@ prior addition (2026-07-30, BoardScore™ subject-scoping fix batch — see
 
 ---
 
+## OpenAI-primary percentage-rollout mechanism (2026-08-03) — REG-333
+
+> **CLOSURE NOTE 2026-08-03 (same-day testing follow-up; independently
+> re-verified, not taken on any other agent's report alone):** both Known
+> gaps below are now closed. This entry is upgraded from **PARTIAL (P)** to
+> **E**.
+>
+> - **Known gap #1 (CI-wiring) — closed by architect.** `model-rollout-flag.test.ts`
+>   is now enumerated in `DENO_TEST_TARGETS` in `.github/workflows/ci.yml`
+>   (confirmed by direct read of the workflow file). Re-run fresh:
+>   `deno test --no-lock --no-check --allow-read --allow-env` over all 20
+>   CI-scope `grounded-answer/__tests__/` files (verified exactly 20 "running
+>   N tests from" lines, not assumed) = **237/237 passed**, including the
+>   15-test `model-rollout-flag.test.ts` suite confirmed present in the run
+>   output. The prior "228/228 (19 CI-scope files + 1 new file)" framing no
+>   longer applies now that the file is wired IN, not run alongside — it's
+>   one 20-file CI-scope set. 237 vs the old 228 is not a discrepancy: the
+>   other 19 files also grew tests from this session's cache-order-blindness
+>   fix (`cache-redis.test.ts`, `gen-ctx.test.ts`, `claude.test.ts`, etc. are
+>   all modified in the same working tree).
+> - **Known gap #2 (protected-flags console-guardrail blind spot) — closed by
+>   ai-engineer (TS companion) + testing (the two stale follow-up test files
+>   this gap itself named).** `packages/lib/src/flags/protected-flags.ts` now
+>   carries `ff_foxy_openai_primary_rollout_v1` in both `PROTECTED_FLAGS`
+>   (tier `ai_provider`) and `EXPECTED_OFF_FLAGS` (confirmed by direct read).
+>   `protected-flags-registry.test.ts` and `feature-flags-protected-guardrail.test.ts`
+>   were verified failing in exactly the 5 predicted ways BEFORE any fix (3 +
+>   2 failures, 62/67 passing, no other unexpected failures), then fixed
+>   (PROTECTED_FLAGS 76→77, EXPECTED_OFF_FLAGS 55→56, `SEED_MIGRATION_PATHS`
+>   +1 entry, plus 2 new dedicated tier/DB-parity pins for the new flag) and
+>   re-verified fully green: **69/69 passing.** The exact-set-equality
+>   migration-parsing derivation does NOT auto-pick-up a brand-new migration
+>   file — confirmed empirically (red before the fix, green after), not
+>   assumed — so the fix is a documented literal addition to the derived
+>   set, the same established pattern already used for
+>   `ff_irt_question_selection` and the 2 Pedagogy v2 flags.
+>
+> Also re-run fresh as part of this closure: `vitest run src/__tests__/lib/ai/`
+> (486/486, 30 files, unchanged/still green) and the two cache-order-blindness
+> fix files most directly under test, `model-order-cache-fix.test.ts` (2/2)
+> and `cache-durable-l3.test.ts` (9/9), both run standalone. **Separately
+> found, NOT part of this mechanism and NOT blocking this closure:**
+> `pipeline.test.ts`'s "handleRequest: pipeline throws → 500 with structured
+> upstream_error abstain" test fails (gets 401, not 500) — but this was
+> confirmed, via a clean `git worktree` checkout of committed HEAD
+> (`5e6ffa9f`), to already fail identically BEFORE any of this session's
+> changes. Pre-existing, not a regression from this work, and the file is
+> deliberately excluded from `DENO_TEST_TARGETS` (imports `../index.ts` →
+> `Deno.serve()`, same as `pipeline.ts`'s CI-exclusion rationale elsewhere in
+> `ci.yml`), so it is not currently CI-blocking either. Flagged for separate
+> triage (ai-engineer/backend, `admitRequest`/`handleRequest` in
+> `grounded-answer/index.ts`) — out of scope for this catalog entry, whose
+> mechanism-specific coverage is unaffected by it.
+>
+> The Known-gap paragraphs below are left as-is (historical record of what
+> was true at authoring time), per this catalog's "removing/rewriting an
+> entry" discipline — this note documents what changed since.
+
+Built ON TOP OF the already-committed, flat REG-332 swap (commit `5e6ffa9f`),
+still uncommitted at review time: `ff_foxy_openai_primary_rollout_v1` (plain
+`is_enabled`/`rollout_percentage` columns, seeded OFF/0% by a parallel
+architect migration, `20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql`)
+adds a deterministic, per-caller rollback lever so ops can dial a controlled
+percentage of traffic BACK to the reconstructed Claude-primary order
+(`CLAUDE_PRIMARY_FALLBACK_ORDER` in both `packages/lib/src/ai/gateway/registry.ts`
+and the Deno mirror `supabase/functions/grounded-answer/config.ts`) instead of
+REG-332's unconditional 100%-OpenAI-primary default, without a second flat
+code deploy. Bucketing reuses the pre-existing, already-parity-tested
+`hashForRollout` family (`packages/lib/src/feature-flags.ts` /
+`supabase/functions/identity/index.ts`) — salted `hash(id + ':' + flagName) %
+100` — deliberately NOT the three OTHER, unsalted/differently-salted
+hash-bucketing implementations already in this codebase (`inRolloutBucket` in
+`_shared/mol/feature-flag.ts` and `hashBucket` in `_shared/python-ai-proxy.ts`,
+both salted by the caller id alone with no flag name in the hash; `shadowBucket`
+in `grounded-answer/mol-shadow.ts`, salted by `task_type` not `flagName`) —
+this review confirmed the distinction by direct side-by-side reading of all
+four implementations' source (seed/accumulator/modulo expressions), not by
+trusting the parity test's green result alone. Fail-safe direction is always
+toward OpenAI-primary: no caller id, flag OFF, `rollout_percentage<=0`, or ANY
+flag-read error all resolve to the shipped REG-332 default, and the no-caller-id
+check runs BEFORE the flag/network read so an anonymous call never touches the
+flag system at all (proved in Deno via a `stubFetchThrows` that would fail the
+test if a network call were attempted). `resolveDefaultChain`
+(`packages/lib/src/ai/gateway/rollout.ts`) is the sole new code path inside
+`callModel`'s `default` policy; this review confirmed via direct `git diff
+5e6ffa9f` that `LEGACY_FALLBACK_ORDER`, `legacyChain()`'s behavior, and
+`router.ts`'s `selectModelChain` are byte-for-byte unchanged (`router.ts`'s only
+change is an additive `export` on `passesConstraints`), and that `gateway.ts`'s
+only behavioral change is a single ternary that takes the new path exclusively
+when `effectivePolicy === 'default'` — so REG-332's own pin (`router.test.ts`:
+"default chain is OpenAI-primary post 2026-08 cost directive, Claude retained
+as fallback") never traverses the new code at all and remains a valid,
+structurally-unmodified regression guard, re-run and reconfirmed green by this
+review.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-333 | `model_gateway_openai_primary_rollout_percentage_lever_p12` | **New regression pin:** (1) no-caller-id / caller-id-with-flag-OFF / flag-absent-or-erroring all resolve to the unchanged OpenAI-primary chain, with the no-id case proven to never call `isFeatureEnabled` at all; (2) caller-id-with-flag-ON (in-bucket) resolves to the reconstructed `CLAUDE_PRIMARY_FALLBACK_ORDER`/`claudePrimaryChain`, asserted on both model ids AND providers, end-to-end through `callModel` with fake adapters (not just the pure resolver in isolation) including a fallback-within-the-Claude-primary-chain case; (3) TS↔Deno hash-bucketing PARITY (`hashForRollout`/`_model-rollout-flag.ts`) via a 6-uuid matrix plus a source-text pin on the three load-bearing expressions; (4) TS↔Deno FALLBACK-TABLE parity for `CLAUDE_PRIMARY_FALLBACK_ORDER` itself (extends the existing `deno-parity.test.ts`, same technique as the pre-existing `MODEL_FALLBACK_ORDER` pin, plus an explicit "diverges from the OpenAI-primary table" sanity check) — found by this review in the diff, not named in the original change-set summary handed to testing; (5) Deno-only: determinism, integer range [0,99], a 2000-sample decile-uniformity sanity check (generous ±50%-of-expected tolerance band, ~7 standard deviations wide at N=2000 — explicitly documented in its own source comment as a badly-broken-hash sanity check, not a rigorous statistical test, which this review judges to be an honest and sound framing), and exact `rollout_percentage=0`/`=100` boundary behavior over 25 callers each plus a mid-ramp (30%) check against 200 callers verifying BOTH sides of the bucket boundary are populated; (6) `rollout_percentage` clamped to [0,100] and cached 5 minutes (one fetch observed across 3 calls); (7) `callerId` (`request.student_id`) threaded identically through every `callClaude` call site in both `pipeline.ts` and `pipeline-stream.ts` — initial call, retry, and bounded-continuation — so a single answer's provider order cannot flip mid-flow (confirmed by direct diff, not exercised by a dedicated pipeline-level test). **Independently reproduced by testing, not taken on ai-engineer's report alone:** fresh `deno test --no-lock --no-check --allow-read --allow-env` over the 19 CI-scope `grounded-answer/__tests__/` files + the new file = 228/228 (213 + 15, both sub-counts independently re-verified in isolation); fresh `npx vitest run src/__tests__/lib/ai/` = 486/486 (30 files); fresh `tsc --noEmit` (`npm run type-check`) = exit 0. A claimed "599/599 consolidated flag-registry-sensitive run" could NOT be exactly reproduced — three good-faith reconstructions of a plausible file set (import-based: 525/525; filename-based: 505/505; directory+file-list based: 620/620) all passed 100% but none matched 599 exactly; flagged as imprecisely specified rather than as a failure, since no reconstruction attempt found any failing test. **Known gap #1 (CI-enforcement, found by this review):** `supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts` (the 15-test Deno suite covering items 3, 5, and 6 above) is NOT YET added to `DENO_TEST_TARGETS` in `.github/workflows/ci.yml` — it passes locally but does not currently run in CI, so a future regression in the Deno-side hash/bucketing/fail-safe logic would not be caught automatically until this is wired in (the same failure class REG-317 pinned elsewhere in this codebase — a Deno test that exists but was never wired into the CI-run set). **Known gap #2 (adjacent to this mechanism's own correctness; found by this review):** a parallel architect migration (`20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql`) registers this flag in `protected_feature_flags` at tier `ai_provider`, but its self-documented TS companion (`packages/lib/src/flags/protected-flags.ts` PROTECTED_FLAGS/EXPECTED_OFF_FLAGS entries) is not yet applied, and neither is testing's own follow-up (the `protected-flags-registry.test.ts` 76→77/55→56 count-pin bump and the `feature-flags-protected-guardrail.test.ts` `SEED_MIGRATION_PATHS` addition). This review confirmed BOTH existing DB/TS parity tests currently pass GREEN specifically because their parser is still blind to the new migration file — i.e. the console typed-confirmation guardrail does not yet cover this flag. Low practical risk today only because the flag is seeded OFF/0% (a live no-op); should close before any ramp. | `packages/lib/src/ai/gateway/rollout.ts` (10 new tests, `apps/host/src/__tests__/lib/ai/gateway/rollout.test.ts`), `apps/host/src/__tests__/lib/ai/gateway/model-rollout-hash-parity.test.ts` (5 new tests), `apps/host/src/__tests__/lib/ai/gateway/deno-parity.test.ts` (+6 new tests, 5→11 total, `CLAUDE_PRIMARY_FALLBACK_ORDER` parity block), `apps/host/src/__tests__/lib/ai/gateway/gateway.test.ts` (+4 new tests in a dedicated "percentage-rollout mechanism" block, 13→17 total); `supabase/functions/grounded-answer/_model-rollout-flag.ts` (`supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts`, 15 new Deno tests — NOT in `DENO_TEST_TARGETS`, see Known gap #1); source under test `packages/lib/src/ai/gateway/{rollout,gateway,router,registry,index}.ts`, `supabase/functions/grounded-answer/{claude,config,pipeline,pipeline-stream}.ts`, `packages/lib/src/flags/registries/foxy.ts` (`MODEL_ROLLOUT_FLAGS`), `packages/lib/src/grounding-config.ts` + `supabase/functions/grounded-answer/config.ts` (`MODEL_ROUTE_REV` 2→3, kept in parity); migrations `20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql` + `20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql` (structural only, no live-DB execution in this pass) | E |
+
+### Catalog total (OpenAI-primary percentage-rollout mechanism)
+
+Adds REG-333 (percentage-rollout lever on top of REG-332). REG-332 was the
+prior addition (2026-08-02, Model Gateway OpenAI-primary provider swap — see
+above); REG-333 is the next free id after REG-332, per `00-header.md`.
+**Total catalog: 333 entries (target: 35 — TARGET EXCEEDED).** Originally
+marked **PARTIAL (P)**, not E, for Known gap #1 above (the new Deno suite's
+CI-wiring) plus Known gap #2 (the protected-flags console-guardrail blind
+spot) — the mechanism's own correctness coverage (TS + Deno, both runtimes,
+hash parity, fallback-table parity, boundary, determinism, uniformity,
+end-to-end `callModel` integration) was always real, independently re-run by
+testing, and passing in full. **UPGRADED to E 2026-08-03** (same-day testing
+follow-up) — see the closure note directly under this section's heading
+above for the fresh evidence on both gaps.
+
+---
+
 ## GenAI Phase 2 — Unified Student Memory read-API + DPDP erasure suppression (2026-07-24) — REG-309
 
 The Unified Student Memory read-API (`getStudentMemory` in

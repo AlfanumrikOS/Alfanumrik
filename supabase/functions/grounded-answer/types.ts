@@ -12,6 +12,27 @@ export type { FoxyResponse } from './structured-schema.ts';
 export type Caller = typeof VALID_CALLERS[number];
 export type Mode = 'strict' | 'soft';
 
+/**
+ * Percentage-rollout mechanism (2026-08-03, cache-order-blindness fix —
+ * assessment finding, REG-333 follow-up). Which model fallback table a
+ * request/response was resolved under:
+ *   - 'openai_primary' — MODEL_FALLBACK_ORDER, today's shipped, 100%-live
+ *     default (ff_foxy_openai_primary_rollout_v1 disabled, at 0%, or the
+ *     caller has no bucketable id — see grounded-answer/_model-rollout-flag.ts).
+ *   - 'claude_primary' — CLAUDE_PRIMARY_FALLBACK_ORDER: the caller was
+ *     bucketed into the rollout flag's rollback order.
+ *
+ * Deliberately independent of which PROVIDER actually answered a given
+ * call: claude.ts's per-call fallback can still reach either provider
+ * under EITHER order (e.g. an OpenAI outage falls back to Claude even while
+ * resolved under 'openai_primary'). This field tags the ROUTING decision
+ * itself, not the outcome — that is what makes it safe to use as an
+ * exact-match cache defense-in-depth signal (see gen-ctx.ts's
+ * cachedResponseMatchesModelOrder) without false-positiving on ordinary
+ * same-order provider fallback.
+ */
+export type ModelOrder = 'openai_primary' | 'claude_primary';
+
 export type AbstainReason =
   | 'chapter_not_ready'
   | 'no_chunks_retrieved'
@@ -138,7 +159,24 @@ export type GroundedResponse =
        */
       structured?: FoxyResponse;
       trace_id: string;
-      meta: { claude_model: string; tokens_used: number; latency_ms: number };
+      meta: {
+        claude_model: string;
+        tokens_used: number;
+        latency_ms: number;
+        /**
+         * Percentage-rollout cache-order fix (2026-08-03, assessment
+         * finding, REG-333 follow-up): the ModelOrder this response was
+         * resolved+generated under, stamped ONLY for cache-eligible
+         * requests (pipeline.ts's finalizeGrounded — see gen-ctx.ts's
+         * ModelOrder doc). Used exclusively as an independent, exact-match
+         * defense-in-depth check on cache read
+         * (cachedResponseMatchesModelOrder); not read by any student-facing
+         * consumer. Absent/undefined for non-cache-eligible responses
+         * (never cached, so never re-validated) and for any response
+         * generated before this fix shipped.
+         */
+        model_order?: ModelOrder;
+      };
     }
   | {
       grounded: false;

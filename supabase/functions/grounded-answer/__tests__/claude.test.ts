@@ -21,6 +21,7 @@
 
 import { assertEquals } from 'https://deno.land/std@0.210.0/assert/mod.ts';
 import { callClaude } from '../claude.ts';
+import { __resetModelRolloutCacheForTests } from '../_model-rollout-flag.ts';
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 const SONNET_MODEL = 'claude-sonnet-4-20250514';
@@ -517,5 +518,96 @@ Deno.test('OpenAI finish_reason=length → stopReason:max_tokens (normalized)', 
     }
   } finally {
     restoreFetch();
+  }
+});
+
+// ─── Percentage-rollout mechanism (2026-08-03) — end-to-end wiring ──────────
+// Dedicated bucketing-logic unit tests live in
+// __tests__/model-rollout-flag.test.ts. These two tests only prove the
+// INTEGRATION: resolveModelOrder really does consult shouldUseClaudePrimary
+// and really does switch the resolved order.
+
+function mockFlagRowResponse(row: { is_enabled: boolean; rollout_percentage: number | null } | null): Response {
+  return new Response(JSON.stringify(row === null ? [] : [row]), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+Deno.test('rollout: callerId + rollout_percentage=100 → resolves CLAUDE_PRIMARY_FALLBACK_ORDER (Haiku first, not gpt-4o-mini)', async () => {
+  __resetModelRolloutCacheForTests();
+  Deno.env.set('SUPABASE_URL', 'https://test.supabase.co');
+  Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role-key');
+  const calls: FetchCall[] = [];
+  installFetchStub(
+    [
+      () => Promise.resolve(mockFlagRowResponse({ is_enabled: true, rollout_percentage: 100 })),
+      () => Promise.resolve(mockAnthropicOkResponse('answer from claude-primary bucket')),
+    ],
+    (c) => calls.push(c),
+  );
+  try {
+    const result = await callClaude({
+      systemPrompt: 'You are Foxy.',
+      userMessage: 'test',
+      maxTokens: 1024,
+      temperature: 0.3,
+      timeoutMs: 30_000,
+      apiKey: 'sk-test',
+      openaiApiKey: 'sk-openai',
+      modelPreference: 'haiku',
+      callerId: 'student-in-rollback-bucket',
+    });
+    assertEquals(result.ok, true);
+    if (result.ok) {
+      assertEquals(result.provider, 'anthropic');
+      assertEquals(result.model, HAIKU_MODEL);
+    }
+    // calls[0] is the flag-row fetch (no `model` field); calls[1] is the ONE
+    // model call — Haiku answered first try, no fallback to gpt-4o-mini needed.
+    assertEquals(calls.length, 2);
+    assertEquals(calls[1].model, HAIKU_MODEL);
+  } finally {
+    restoreFetch();
+    Deno.env.delete('SUPABASE_URL');
+    Deno.env.delete('SUPABASE_SERVICE_ROLE_KEY');
+    __resetModelRolloutCacheForTests();
+  }
+});
+
+Deno.test('rollout: callerId present but flag disabled → still resolves MODEL_FALLBACK_ORDER (OpenAI-primary, unchanged)', async () => {
+  __resetModelRolloutCacheForTests();
+  Deno.env.set('SUPABASE_URL', 'https://test.supabase.co');
+  Deno.env.set('SUPABASE_SERVICE_ROLE_KEY', 'test-service-role-key');
+  const calls: FetchCall[] = [];
+  installFetchStub(
+    [
+      () => Promise.resolve(mockFlagRowResponse({ is_enabled: false, rollout_percentage: 100 })),
+      () => Promise.resolve(mockOpenAIOkResponse('answer from openai-primary', 'stop')),
+    ],
+    (c) => calls.push(c),
+  );
+  try {
+    const result = await callClaude({
+      systemPrompt: 'You are Foxy.',
+      userMessage: 'test',
+      maxTokens: 1024,
+      temperature: 0.3,
+      timeoutMs: 30_000,
+      apiKey: 'sk-test',
+      openaiApiKey: 'sk-openai',
+      modelPreference: 'haiku',
+      callerId: 'any-student',
+    });
+    assertEquals(result.ok, true);
+    if (result.ok) {
+      assertEquals(result.provider, 'openai');
+      assertEquals(result.model, 'gpt-4o-mini');
+    }
+  } finally {
+    restoreFetch();
+    Deno.env.delete('SUPABASE_URL');
+    Deno.env.delete('SUPABASE_SERVICE_ROLE_KEY');
+    __resetModelRolloutCacheForTests();
   }
 });

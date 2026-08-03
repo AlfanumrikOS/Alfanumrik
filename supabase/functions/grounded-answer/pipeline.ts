@@ -134,8 +134,21 @@ import {
 // Response-cache v2: gen_ctx tuple (prompt/model revisions + generation
 // params + template variables + content_version) hashed into every cache
 // key + stored tuple. Fixes the v1 mode-collision bug — see gen-ctx.ts.
-import { buildGenCtx, genCtxKeyFragment, hashGenCtx } from './gen-ctx.ts';
+// Percentage-rollout cache-order fix (2026-08-03, assessment finding,
+// REG-333 follow-up): cachedResponseMatchesModelOrder + ModelOrder — see
+// gen-ctx.ts's doc comments for the full design.
+import {
+  buildGenCtx,
+  genCtxKeyFragment,
+  hashGenCtx,
+  cachedResponseMatchesModelOrder,
+  type ModelOrder,
+} from './gen-ctx.ts';
 import { getRagContentVersion } from './_content-version.ts';
+// Percentage-rollout mechanism (2026-08-03): resolved BEFORE the Step-2
+// cache lookup below (not only inside claude.ts's resolveModelOrder at the
+// Claude-call step) — see the cacheEligible block for the full rationale.
+import { shouldUseClaudePrimary } from './_model-rollout-flag.ts';
 // Durable L3 solution store (ncert-solver only, ff_ncert_solver_solution_store_v1).
 import { getDurableSolution, putDurableSolution } from './cache-durable.ts';
 import { logCacheMetric } from './cache-telemetry.ts';
@@ -521,6 +534,11 @@ async function finalizeGrounded(
   claudeModelLabel: string,
   tokensUsed: number,
   structured?: FoxyResponse,
+  // Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up): the
+  // SAME modelOrder resolved for the cache key/tuple in Step 2 (null for
+  // non-cache-eligible requests, which are never cached and so never need
+  // this stamp — see gen-ctx.ts's cachedResponseMatchesModelOrder doc).
+  modelOrder?: ModelOrder | null,
 ): Promise<GroundedResponse> {
   // Compute groundedFromChunks FIRST so we can persist it on the trace row.
   // Audit 2026-05-10: pre-fix this was computed only for the wire response
@@ -549,6 +567,7 @@ async function finalizeGrounded(
       claude_model: claudeModelLabel,
       tokens_used: tokensUsed,
       latency_ms: Date.now() - ctx.startedAt,
+      ...(modelOrder ? { model_order: modelOrder } : {}),
     },
   };
   if (structured) {
@@ -776,6 +795,7 @@ async function continueFoxyStructured(args: {
   anthropicKey: string;
   openaiApiKey: string;
   modelPreference: 'haiku' | 'sonnet' | 'auto';
+  callerId?: string | null;
 }): Promise<{ ok: boolean; content: string; inputTokens: number; outputTokens: number }> {
   const priorTurns = args.priorTurns ?? [];
   const result = await callClaude({
@@ -789,6 +809,9 @@ async function continueFoxyStructured(args: {
     apiKey: args.anthropicKey,
     openaiApiKey: args.openaiApiKey,
     modelPreference: args.modelPreference,
+    // Percentage-rollout mechanism (2026-08-03): same caller as the primary
+    // call — a continuation must resolve the SAME provider order.
+    callerId: args.callerId,
     // Reconstruct the turn the model was mid-way through: prior history, the
     // student's question, then the model's own partial answer as an assistant
     // turn. The continuation instruction (the user turn callClaude appends)
@@ -894,6 +917,14 @@ export async function runPipeline(
   let cacheTuple: CacheTuple | null = null;
   let genCtxHash: string | null = null;
   let contentVersion = 0;
+  // Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up):
+  // resolved inside the `cacheEligible` block below, reused verbatim for
+  // the gen_ctx hash, every cache-tier defense-in-depth check, AND the
+  // eventual finalizeGrounded() meta.model_order stamp — so the read
+  // identity, the write identity, and the stamped response can never drift
+  // from each other. Stays null for non-cache-eligible requests (never
+  // cached, so never needed).
+  let modelOrder: ModelOrder | null = null;
 
   if (cacheEligible) {
     // Content-version read. A MISSING row is version 0; a read ERROR returns
@@ -930,7 +961,28 @@ export async function runPipeline(
     // fragment) and the stored tuple (full hash, re-validated on read).
     // This fixes the v1 mode-collision bug (Foxy learn/practice/quiz_me
     // identical-text collisions).
-    genCtxHash = await hashGenCtx(buildGenCtx(request, contentVersion));
+    //
+    // Percentage-rollout cache-order fix (2026-08-03, assessment finding,
+    // REG-333 follow-up): resolve THIS caller's rollout bucket BEFORE any
+    // cache lookup below (L1/L2/L3), not only inside claude.ts's
+    // resolveModelOrder at the Claude-call step. Folding the resolved order
+    // into gen_ctx means a bucket flip is a guaranteed cache miss — see
+    // gen-ctx.ts's ModelOrder/GenCtx docs.
+    //
+    // Adds no new I/O on the common (flag-off) path: shouldUseClaudePrimary
+    // short-circuits to zero I/O when student_id is absent (unchanged from
+    // today), and otherwise reads the SAME 5-minute in-process-cached flag
+    // row that claude.ts's independent call (at the Claude-call step, on a
+    // cache miss) already reads. Moving the FIRST touch earlier cannot add
+    // a NEW network fetch — it can only change WHICH request pays for the
+    // (at-most-once-per-5-minutes) refresh; the total fetch volume over any
+    // sustained window is unchanged. Both resolutions are the identical
+    // deterministic function against the identical cached row within one
+    // request's sub-second lifetime, so they can never disagree.
+    modelOrder = (await shouldUseClaudePrimary(request.student_id))
+      ? 'claude_primary'
+      : 'openai_primary';
+    genCtxHash = await hashGenCtx(buildGenCtx(request, contentVersion, modelOrder));
     cacheKey = await buildCacheKey(
       request.query,
       request.scope,
@@ -940,12 +992,22 @@ export async function runPipeline(
     );
     const hit = getFromCache(cacheKey);
     if (hit && hit.grounded) {
-      console.warn('cache_hit', {
+      if (cachedResponseMatchesModelOrder(hit, modelOrder)) {
+        console.warn('cache_hit', {
+          caller: request.caller,
+          grade: request.scope.grade,
+          subject: request.scope.subject_code,
+        });
+        return hit;
+      }
+      // REG-333 follow-up: redundant backstop (the gen_ctx hash above
+      // already structurally prevents this) — see gen-ctx.ts's
+      // cachedResponseMatchesModelOrder doc. Fall through to L2/L3/pipeline.
+      console.warn('cache_l1_model_order_mismatch', {
         caller: request.caller,
         grade: request.scope.grade,
         subject: request.scope.subject_code,
       });
-      return hit;
     }
 
     // Step 2b. L2 (Upstash Redis) cache tier. Extends the L1 miss-fallthrough
@@ -981,7 +1043,7 @@ export async function runPipeline(
     });
     const servingEnabled = await isL2CacheServingEnabledForCaller(sb, request.caller);
     if (servingEnabled) {
-      const l2Hit = await getFromRedisL2(redisKey, cacheTuple);
+      const l2Hit = await getFromRedisL2(redisKey, cacheTuple, modelOrder);
       if (l2Hit && l2Hit.grounded) {
         logCacheMetric('cache_l2_hit', {
           caller: request.caller,
@@ -998,7 +1060,7 @@ export async function runPipeline(
         subject: request.scope.subject_code,
       });
     } else if (await isL2CacheShadowEnabled(sb)) {
-      const shadowHit = await getFromRedisL2(redisKey, cacheTuple);
+      const shadowHit = await getFromRedisL2(redisKey, cacheTuple, modelOrder);
       if (shadowHit && shadowHit.grounded) {
         logCacheMetric('cache_l2_shadow_hit', {
           caller: request.caller,
@@ -1042,6 +1104,7 @@ export async function runPipeline(
           gen_ctx_hash: genCtxHash,
         },
         cacheTuple,
+        modelOrder,
       );
       if (l3Hit && l3Hit.grounded) {
         logCacheMetric('cache_l3_hit', {
@@ -1276,7 +1339,10 @@ export async function runPipeline(
     const citations = buildCitationsFromAllChunks(chunks);
     ctx.confidence = confidence;
     ctx.answerLength = 0;
-    return finalizeGrounded(sb, ctx, '', citations, confidence, '', 0);
+    // retrieve_only is never cache-eligible (see cacheEligible's definition
+    // above) — modelOrder is always null here; finalizeGrounded omits
+    // meta.model_order accordingly.
+    return finalizeGrounded(sb, ctx, '', citations, confidence, '', 0, undefined, modelOrder);
   }
 
   // Step 8. Strict mode requires at least 3 chunks — fewer means we can't
@@ -1441,6 +1507,9 @@ export async function runPipeline(
       apiKey: anthropicKey,
       openaiApiKey,
       modelPreference: request.generation.model_preference,
+      // Percentage-rollout mechanism (2026-08-03): opaque bucketing key for
+      // ff_foxy_openai_primary_rollout_v1 — see claude.ts's ClaudeRequest.callerId.
+      callerId: request.student_id,
       // Phase 2 of Foxy continuity fix (2026-05-18): prefer native
       // conversation turns when supplied. Absent → byte-identical legacy
       // single-user-message body to Claude.
@@ -1699,6 +1768,10 @@ export async function runPipeline(
       apiKey: anthropicKey,
       openaiApiKey,
       modelPreference: request.generation.model_preference,
+      // Percentage-rollout mechanism (2026-08-03): same caller as the primary
+      // call above — a retry must resolve the SAME provider order, not a
+      // freshly-bucketed one.
+      callerId: request.student_id,
       // Omit conversation_turns: the re-ground nudge must see a clean slate
       // so the model focuses on the reference material, not conversation history.
     });
@@ -1787,6 +1860,7 @@ export async function runPipeline(
         partialAnswer: primaryAnswer,
         userQuery: request.query,
         priorTurns: request.generation.conversation_turns,
+        callerId: request.student_id,
         // Bound the continuation budget so a pathological tail cannot run away.
         maxTokens: Math.min(effectiveMaxTokens, FOXY_CONTINUATION_TOKEN_CAP),
         timeoutMs: request.timeout_ms,
@@ -1844,6 +1918,12 @@ export async function runPipeline(
     claude.model,
     totalTokensUsed,
     structuredForResponse,
+    // Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up):
+    // stamps meta.model_order so a later cache READ of this exact response
+    // can independently re-validate it against the reader's then-current
+    // expected order — see gen-ctx.ts's cachedResponseMatchesModelOrder.
+    // null when this request was never cache-eligible (Step 2 never ran).
+    modelOrder,
   );
 
   // Cache the grounded response. retrieve_only responses skip the cache

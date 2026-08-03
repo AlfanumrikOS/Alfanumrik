@@ -17,6 +17,12 @@
 //     INCLUDING the full gen_ctx_hash (the v1 mode-collision fix) — against
 //     the current request's tuple. Any mismatch is a miss, never served.
 //   - Per-caller TTLs: foxy 20 min, ncert-solver 24 h.
+//   - Percentage-rollout cache-order fix (2026-08-03, assessment finding,
+//     REG-333 follow-up): getFromRedisL2's THIRD, independent defense-in-depth
+//     check — a stored response whose recorded meta.model_order disagrees
+//     with the caller's currently-expected order is a miss, never served,
+//     even when the tuple/key both matched. See gen-ctx.ts's
+//     cachedResponseMatchesModelOrder doc.
 
 import { assert, assertEquals, assertStringIncludes } from 'https://deno.land/std@0.210.0/assert/mod.ts';
 import {
@@ -343,6 +349,84 @@ Deno.test('getFromRedisL2 rejects a gen_ctx_hash mismatch — the v1 mode-collis
     const currentTuple = buildCacheTuple({ ...base, gen_ctx_hash: GEN_CTX_HASH_B });
     const result = await getFromRedisL2(key, currentTuple);
     assertEquals(result, null, 'a gen_ctx_hash mismatch must be a miss — never serve across generation contexts');
+  } finally {
+    restore();
+    clearUpstashEnv();
+  }
+});
+
+// ─── Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up) ────
+
+Deno.test('getFromRedisL2 rejects a model_order mismatch even when the tuple/key both match — defense-in-depth backstop', async () => {
+  const fakeHost = 'http://fake-upstash-model-order-mismatch-test.example';
+  setCacheEnv(fakeHost);
+  const store = new Map<string, string>();
+  const restore = installFetchStubForUpstash(store, fakeHost);
+  try {
+    const key = `rag:cache:v2:10:science:soft:foxy:some-hash:${FRAG_A}`;
+    const tuple = buildCacheTuple({
+      caller: 'foxy',
+      mode: 'soft',
+      grade: '10',
+      subject_code: 'science',
+      chapter_number: 1,
+      query: 'Explain photosynthesis',
+      gen_ctx_hash: GEN_CTX_HASH_A,
+    });
+    const storedResponse: GroundedResponse = {
+      grounded: true,
+      answer: 'claude-primary-shaped answer',
+      citations: [],
+      confidence: 0.9,
+      groundedFromChunks: true,
+      trace_id: 'trace-claude-primary',
+      meta: {
+        claude_model: 'claude-haiku-4-5-20251001',
+        tokens_used: 100,
+        latency_ms: 500,
+        model_order: 'claude_primary',
+      },
+    };
+    await putInRedisL2(key, storedResponse, tuple);
+
+    // Same tuple, same key — but the READER now expects openai_primary (a
+    // caller whose bucket flipped, or a fresh caller under the shipped
+    // default). Must reject even though tuplesMatch would pass.
+    const mismatched = await getFromRedisL2(key, tuple, 'openai_primary');
+    assertEquals(mismatched, null, 'a model_order mismatch must be a miss, never served');
+
+    // Sanity: the SAME expected order still serves normally.
+    const matched = await getFromRedisL2(key, tuple, 'claude_primary');
+    assert(matched !== null, 'a matching model_order must still serve');
+    assertEquals(matched?.grounded, true);
+  } finally {
+    restore();
+    clearUpstashEnv();
+  }
+});
+
+Deno.test('getFromRedisL2 defaults expectedModelOrder to openai_primary when the caller omits it (pre-existing call sites keep working)', async () => {
+  const fakeHost = 'http://fake-upstash-model-order-default-test.example';
+  setCacheEnv(fakeHost);
+  const store = new Map<string, string>();
+  const restore = installFetchStubForUpstash(store, fakeHost);
+  try {
+    const key = `rag:cache:v2:10:science:soft:foxy:default-order-hash:${FRAG_A}`;
+    const tuple = buildCacheTuple({
+      caller: 'foxy',
+      mode: 'soft',
+      grade: '10',
+      subject_code: 'science',
+      chapter_number: 1,
+      query: 'q',
+      gen_ctx_hash: GEN_CTX_HASH_A,
+    });
+    // No model_order recorded at all (mirrors every pre-existing fixture in
+    // this file) — permissive, so the 2-arg call site keeps working exactly
+    // as before this fix.
+    await putInRedisL2(key, groundedResponse('answer'), tuple);
+    const result = await getFromRedisL2(key, tuple);
+    assert(result !== null, 'an entry with no recorded model_order must still serve on the 2-arg (defaulted) call');
   } finally {
     restore();
     clearUpstashEnv();

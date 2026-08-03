@@ -259,6 +259,52 @@ export const MODEL_GATEWAY_FLAGS = {
 } as const;
 
 /**
+ * OpenAI-primary rollout flag (2026-08-03) — percentage-based rollback lever
+ * added ON TOP OF the already-shipped, unconditional 2026-08-02 OpenAI-primary
+ * provider swap (MODEL_FALLBACK_ORDER / LEGACY_FALLBACK_ORDER, CEO-approved,
+ * REG-332). That swap flipped 100% of traffic to OpenAI-primary at deploy
+ * time with no ramp; this flag lets ops dial a CONTROLLED, deterministic
+ * percentage of traffic back to the reconstructed Claude-primary order
+ * (CLAUDE_PRIMARY_FALLBACK_ORDER / packages/lib/src/ai/gateway/rollout.ts)
+ * instead of a second flat switch.
+ *
+ *  ff_foxy_openai_primary_rollout_v1 — plain is_enabled + rollout_percentage
+ *    columns (NOT the ff_python_* metadata/kill_switch envelope — see
+ *    rollout.ts's header for why). Bucketing is per-caller deterministic
+ *    (hashForRollout(callerId, flagName) < rollout_percentage), matching the
+ *    prior-art precedent this codebase already uses for sticky, multi-turn-
+ *    stable rollout decisions (REG-135: MoL's original Math.random() weighted
+ *    routing was a documented bug precisely because per-REQUEST randomness
+ *    breaks continuity — deterministic per-caller hashing is required here for
+ *    the same reason, doubly so for a multi-turn tutoring conversation).
+ *
+ *    Mapping (inverted from "rollout_pct% get the new thing" — read the
+ *    rollout.ts header before touching this flag):
+ *      - is_enabled=false, OR rollout_percentage<=0, OR no caller id
+ *        available, OR the flag read fails → OPENAI-PRIMARY (today's shipped,
+ *        100%-live default — this is what keeps a fresh deploy of this
+ *        mechanism, and its seed state, a pure no-op).
+ *      - is_enabled=true AND rollout_percentage=P AND a caller id is present
+ *        → bucket<P rolls that caller BACK to Claude-primary; bucket>=P stays
+ *        on OpenAI-primary. So rollout_percentage names how much traffic is
+ *        peeled OFF OpenAI (not how much newly gets it — it already has 100%).
+ *
+ *    Default: false / rollout_percentage=0 (pure no-op seed; CEO/orchestrator
+ *    decides the actual ramp schedule separately, after this ships). Seed
+ *    migration is owned by architect; the rollout implementation
+ *    (packages/lib/src/ai/gateway/rollout.ts, Deno mirror
+ *    supabase/functions/grounded-answer/_model-rollout-flag.ts) is owned by
+ *    ai-engineer. Not added to PROTECTED_FLAGS/EXPECTED_OFF_FLAGS by this
+ *    change — flagged as a recommendation for architect/ops given this flag's
+ *    AI-provider-routing blast radius (see the `ai_provider` tier precedent
+ *    for ff_mol_enabled / ff_grounded_answer_mol_shadow_v1 in protected-flags.ts).
+ */
+export const MODEL_ROLLOUT_FLAGS = {
+  /** Percentage-based rollback lever for the OpenAI-primary swap. Default off = 100% OpenAI-primary, unchanged. */
+  V1: 'ff_foxy_openai_primary_rollout_v1',
+} as const;
+
+/**
  * Unified Student Memory read-API flag (2026-07-24, GenAI architecture Phase 2).
  *
  *  ff_unified_memory_v1 — gates the Unified Student Memory read-API (the shared

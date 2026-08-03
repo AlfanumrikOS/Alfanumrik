@@ -62,6 +62,10 @@
 import { Redis } from 'https://esm.sh/@upstash/redis@1';
 import type { Caller, GroundedResponse } from './types.ts';
 import { normalizeQuery } from './cache.ts';
+// Percentage-rollout cache-order fix (2026-08-03, assessment finding,
+// REG-333 follow-up) — see gen-ctx.ts's ModelOrder /
+// cachedResponseMatchesModelOrder docs.
+import { cachedResponseMatchesModelOrder, type ModelOrder } from './gen-ctx.ts';
 
 /** Redis key namespace. See file header for collision-avoidance rationale. */
 export const REDIS_CACHE_NAMESPACE = 'rag:cache:v2';
@@ -204,13 +208,20 @@ export function tuplesMatch(a: CacheTuple, b: CacheTuple): boolean {
 
 /**
  * Look up a key in the L2 cache. Returns null on: missing Upstash secrets,
- * any Redis error, no entry, a defense-in-depth tuple mismatch, or a
- * non-grounded stored payload. NEVER throws — callers can await this
- * unconditionally and fall through to the normal pipeline on null.
+ * any Redis error, no entry, a defense-in-depth tuple mismatch, a
+ * defense-in-depth model_order mismatch, or a non-grounded stored payload.
+ * NEVER throws — callers can await this unconditionally and fall through to
+ * the normal pipeline on null.
+ *
+ * `expectedModelOrder` defaults to 'openai_primary' (see gen-ctx.ts's
+ * buildGenCtx doc for the same fallback rationale — keeps pre-existing/
+ * unrelated call sites compiling without churn). Real pipeline.ts call
+ * sites always pass the caller's actually-resolved order explicitly.
  */
 export async function getFromRedisL2(
   key: string,
   expectedTuple: CacheTuple,
+  expectedModelOrder: ModelOrder = 'openai_primary',
 ): Promise<GroundedResponse | null> {
   const client = getRedisClient();
   if (!client) return null;
@@ -229,6 +240,18 @@ export async function getFromRedisL2(
       return null;
     }
     if (raw.response.grounded !== true) return null;
+    if (!cachedResponseMatchesModelOrder(raw.response, expectedModelOrder)) {
+      // REG-333 follow-up: redundant backstop — the gen_ctx hash (folded
+      // into `key` and `expectedTuple.gen_ctx_hash` above) already
+      // structurally prevents this. See gen-ctx.ts's
+      // cachedResponseMatchesModelOrder doc.
+      console.warn('cache_l2_model_order_mismatch', {
+        caller: expectedTuple.caller,
+        grade: expectedTuple.grade,
+        subject: expectedTuple.subject_code,
+      });
+      return null;
+    }
     return raw.response;
   } catch (err) {
     console.warn(`cache_l2 read failed — ${String(err)}`);

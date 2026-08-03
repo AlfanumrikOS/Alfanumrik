@@ -325,3 +325,77 @@ it('default chain tail is Claude Sonnet (documented order sanity, post OpenAI-pr
   expect(res.modelId).toBe(ANTHROPIC_SONNET_ID);
   expect(res.attempts).toHaveLength(4); // mini, gpt-4o, Haiku all failed before Sonnet
 });
+
+// ─── Percentage-rollout mechanism (2026-08-03) — end-to-end via callModel ───
+// Dedicated resolveDefaultChain unit tests live in rollout.test.ts. These
+// prove the FULL callModel integration: a caller id in opts.flagContext
+// really does move the `default` policy's resolved chain between
+// OpenAI-primary and the reconstructed Claude-primary order.
+describe('callModel — percentage-rollout mechanism (ff_foxy_openai_primary_rollout_v1)', () => {
+  it('explicit default policy + no flagContext.userId → never consults ANY flag (today\'s callers, unaffected)', async () => {
+    // Mirrors "does NOT consult the flag for an explicit `default` request"
+    // above: this is the overwhelming majority call shape today (e.g. the
+    // intent classifier in ai/workflows/foxy-router.ts passes no
+    // flagContext at all).
+    const adapters: AdapterMap = {
+      openai: fakeAdapter('openai', async (d) => okOutcome(d.id)),
+      anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)),
+    };
+    const res = await callModel(REQ, { policy: 'default', adapters });
+    expect(res.modelId).toBe(OPENAI_MINI_ID);
+    expect(mockIsFeatureEnabled).not.toHaveBeenCalled();
+  });
+
+  it('explicit default policy + flagContext.userId, rollout flag OFF → resolves OpenAI-primary (unchanged)', async () => {
+    mockIsFeatureEnabled.mockResolvedValue(false);
+    const adapters: AdapterMap = {
+      openai: fakeAdapter('openai', async (d) => okOutcome(d.id)),
+      anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)),
+    };
+    const res = await callModel(REQ, {
+      policy: 'default',
+      adapters,
+      flagContext: { userId: 'student-out-of-bucket' },
+    });
+    expect(res.modelId).toBe(OPENAI_MINI_ID);
+    expect(res.provider).toBe('openai');
+  });
+
+  it('explicit default policy + flagContext.userId, rollout flag ON (in-bucket) → resolves Claude-primary', async () => {
+    mockIsFeatureEnabled.mockResolvedValue(true);
+    const adapters: AdapterMap = {
+      openai: fakeAdapter('openai', async (d) => okOutcome(d.id)),
+      anthropic: fakeAdapter('anthropic', async (d) => okOutcome(d.id)),
+    };
+    const res = await callModel(REQ, {
+      policy: 'default',
+      adapters,
+      flagContext: { userId: 'student-in-rollback-bucket' },
+    });
+    // Claude-primary auto order is [Haiku, Sonnet, mini, full] — Haiku answers first.
+    expect(res.modelId).toBe(ANTHROPIC_HAIKU_ID);
+    expect(res.provider).toBe('anthropic');
+    // OpenAI must never have been tried.
+    expect((adapters.openai!.invoke as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it('rollout flag ON but that specific model fails → falls through the Claude-primary chain, not the OpenAI-primary one', async () => {
+    mockIsFeatureEnabled.mockResolvedValue(true);
+    const anthropic = fakeAdapter('anthropic', async (d) => {
+      if (d.id === ANTHROPIC_HAIKU_ID) {
+        return { kind: 'error', failFast: false, error: 'anthropic:5xx', latencyMs: 1 };
+      }
+      return okOutcome(d.id); // Sonnet (2nd in Claude-primary order) answers
+    });
+    const openai = fakeAdapter('openai', async (d) => okOutcome(d.id));
+    const res = await callModel(REQ, {
+      policy: 'default',
+      adapters: { anthropic, openai },
+      flagContext: { userId: 'student-in-rollback-bucket' },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.modelId).toBe(ANTHROPIC_SONNET_ID); // 2nd hop in Claude-primary, not gpt-4o
+    expect(res.fallbackCount).toBe(1);
+    expect((openai.invoke as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+});

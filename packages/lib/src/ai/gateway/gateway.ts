@@ -37,6 +37,7 @@ import type {
   RoutingPolicy,
 } from './types';
 import { selectModelChain } from './router';
+import { resolveDefaultChain } from './rollout';
 import { estimateCostUsd, getModel } from './registry';
 import { anthropicAdapter } from './adapters/anthropic';
 import { openaiAdapter } from './adapters/openai';
@@ -88,7 +89,16 @@ export async function callModel(
     if (!enabled) effectivePolicy = 'default';
   }
 
-  const chain = selectModelChain(effectivePolicy, opts.constraints ?? {});
+  // Percentage-rollout mechanism (2026-08-03): the `default` policy's chain
+  // is resolved through resolveDefaultChain, which is rollout-flag-aware
+  // (ff_foxy_openai_primary_rollout_v1) — see rollout.ts's header. When
+  // opts.flagContext carries no userId (most callers today), this is
+  // byte-identical to `selectModelChain('default', constraints)`, i.e.
+  // unchanged behavior. Non-default policies are untouched — still resolved
+  // by the pure, no-I/O selectModelChain exactly as before.
+  const chain = effectivePolicy === 'default'
+    ? await resolveDefaultChain(opts.flagContext, opts.constraints ?? {})
+    : selectModelChain(effectivePolicy, opts.constraints ?? {});
   const adapters = opts.adapters ?? {};
 
   const attempts: GatewayAttempt[] = [];

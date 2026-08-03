@@ -207,14 +207,56 @@ export const LEGACY_FALLBACK_ORDER: Readonly<Record<'haiku' | 'sonnet' | 'auto',
   ],
 } as const;
 
-/** Resolve a legacy preference key into ordered descriptors (configured only). */
-export function legacyChain(pref: 'haiku' | 'sonnet' | 'auto'): ModelDescriptor[] {
+// ─── Claude-primary rollback ordering (percentage-rollout mechanism, 2026-08-03) ─
+//
+// Reconstructed BYTE-FOR-BYTE from the pre-2026-08-02 order (verified via
+// `git show 5e6ffa9f -- packages/lib/src/ai/gateway/registry.ts` — the swap
+// commit simply reversed each two-element array and moved the two anthropic
+// entries ahead of the two openai entries in `auto`; nothing else changed).
+// This is the ROLLBACK target for the new ff_foxy_openai_primary_rollout_v1
+// percentage rollout (packages/lib/src/ai/gateway/rollout.ts): a caller whose
+// deterministic bucket falls inside `rollout_percentage` resolves here
+// instead of LEGACY_FALLBACK_ORDER. LEGACY_FALLBACK_ORDER above is UNCHANGED
+// and stays the fail-safe / seed-state default — see rollout.ts's header for
+// the full precedence. Deno mirror: supabase/functions/grounded-answer/
+// config.ts's CLAUDE_PRIMARY_FALLBACK_ORDER; a parity test (owned by testing)
+// asserts equality across the Deno/Node boundary, mirroring the existing
+// MODEL_FALLBACK_ORDER/LEGACY_FALLBACK_ORDER parity test.
+export const CLAUDE_PRIMARY_FALLBACK_ORDER: Readonly<Record<'haiku' | 'sonnet' | 'auto', readonly FallbackTarget[]>> = {
+  haiku: [
+    { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
+    { provider: 'openai', model: OPENAI_MINI_ID },
+  ],
+  sonnet: [
+    { provider: 'anthropic', model: ANTHROPIC_SONNET_ID },
+    { provider: 'openai', model: OPENAI_FULL_ID },
+  ],
+  auto: [
+    { provider: 'anthropic', model: ANTHROPIC_HAIKU_ID },
+    { provider: 'anthropic', model: ANTHROPIC_SONNET_ID },
+    { provider: 'openai', model: OPENAI_MINI_ID },
+    { provider: 'openai', model: OPENAI_FULL_ID },
+  ],
+} as const;
+
+/** Shared mapping: an ordered FallbackTarget[] → configured-only ModelDescriptor[]. */
+function chainFromOrder(order: readonly FallbackTarget[]): ModelDescriptor[] {
   const out: ModelDescriptor[] = [];
-  for (const target of LEGACY_FALLBACK_ORDER[pref]) {
+  for (const target of order) {
     const m = BY_ID.get(target.model);
     if (m && m.configured) out.push(m);
   }
   return out;
+}
+
+/** Resolve a legacy preference key into ordered descriptors (configured only). */
+export function legacyChain(pref: 'haiku' | 'sonnet' | 'auto'): ModelDescriptor[] {
+  return chainFromOrder(LEGACY_FALLBACK_ORDER[pref]);
+}
+
+/** Resolve a preference key against the Claude-primary rollback order (configured only). */
+export function claudePrimaryChain(pref: 'haiku' | 'sonnet' | 'auto'): ModelDescriptor[] {
+  return chainFromOrder(CLAUDE_PRIMARY_FALLBACK_ORDER[pref]);
 }
 
 // ─── Cost model ─────────────────────────────────────────────────────────────

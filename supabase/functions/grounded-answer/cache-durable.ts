@@ -39,6 +39,10 @@
 
 import type { GroundedResponse } from './types.ts';
 import { tuplesMatch, type CacheTuple } from './cache-redis.ts';
+// Percentage-rollout cache-order fix (2026-08-03, assessment finding,
+// REG-333 follow-up) — see gen-ctx.ts's ModelOrder /
+// cachedResponseMatchesModelOrder docs.
+import { cachedResponseMatchesModelOrder, type ModelOrder } from './gen-ctx.ts';
 
 const TABLE = 'ncert_solver_solutions';
 
@@ -58,14 +62,20 @@ interface DurablePayload {
 
 /**
  * Look up a durable solution. Returns null on: no row, any DB error, a
- * malformed payload, a defense-in-depth tuple mismatch, or a non-grounded
- * stored response. NEVER throws.
+ * malformed payload, a defense-in-depth tuple mismatch, a defense-in-depth
+ * model_order mismatch, or a non-grounded stored response. NEVER throws.
+ *
+ * `expectedModelOrder` defaults to 'openai_primary' (see gen-ctx.ts's
+ * buildGenCtx doc for the same fallback rationale — keeps pre-existing/
+ * unrelated call sites compiling without churn). Real pipeline.ts call
+ * sites always pass the caller's actually-resolved order explicitly.
  */
 export async function getDurableSolution(
   // deno-lint-ignore no-explicit-any
   sb: any,
   key: DurableSolutionKey,
   expectedTuple: CacheTuple,
+  expectedModelOrder: ModelOrder = 'openai_primary',
 ): Promise<GroundedResponse | null> {
   try {
     const { data, error } = await sb
@@ -88,6 +98,17 @@ export async function getDurableSolution(
       return null;
     }
     if (payload.response.grounded !== true) return null;
+    if (!cachedResponseMatchesModelOrder(payload.response, expectedModelOrder)) {
+      // REG-333 follow-up: redundant backstop — see cache-redis.ts's
+      // getFromRedisL2 for the identical pattern + gen-ctx.ts's
+      // cachedResponseMatchesModelOrder doc.
+      console.warn('cache_l3_model_order_mismatch', {
+        caller: expectedTuple.caller,
+        grade: expectedTuple.grade,
+        subject: expectedTuple.subject_code,
+      });
+      return null;
+    }
     return payload.response;
   } catch (err) {
     console.warn(`cache_l3 read failed — ${String(err)}`);
