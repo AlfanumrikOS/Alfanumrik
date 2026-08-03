@@ -167,7 +167,7 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    const res = await fetch(supabaseAdminUrl(table, `id=eq.${user_id}`), {
+    const res = await fetch(supabaseAdminUrl(table, `id=eq.${encodeURIComponent(user_id)}`), {
       method: 'PATCH', headers: supabaseAdminHeaders('return=minimal'), body: JSON.stringify(safe),
     });
 
@@ -177,7 +177,7 @@ export async function PATCH(request: NextRequest) {
     if (table === 'students' && typeof safe.subscription_plan === 'string') {
       const rawPlan = safe.subscription_plan as string;
       const canonicalPlan = rawPlan.replace(/_(monthly|yearly)$/, '').replace(/^ultimate$/, 'unlimited').replace(/^basic$/, 'starter').replace(/^premium$/, 'pro');
-      await fetch(supabaseAdminUrl('student_subscriptions', `student_id=eq.${user_id}`), {
+      await fetch(supabaseAdminUrl('student_subscriptions', `student_id=eq.${encodeURIComponent(user_id)}`), {
         method: 'PATCH', headers: supabaseAdminHeaders('return=minimal'),
         body: JSON.stringify({ plan_code: canonicalPlan }),
       });

@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     if (commitSha !== 'unknown') {
       try {
         const checkRes = await fetch(
-          supabaseAdminUrl('deployment_history', `select=id&commit_sha=eq.${commitSha}&limit=1`),
+          supabaseAdminUrl('deployment_history', `select=id&commit_sha=eq.${encodeURIComponent(commitSha)}&limit=1`),
           { headers: supabaseAdminHeaders() }
         );
         const existing = checkRes.ok ? await checkRes.json() : [];

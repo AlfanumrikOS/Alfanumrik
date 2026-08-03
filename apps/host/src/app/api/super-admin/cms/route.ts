@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
 
       const fields = 'id,title,title_hi,parent_topic_id,chapter_number,display_order,topic_type,content_status,is_active,difficulty_level,bloom_focus,tags,created_at,updated_at';
       const r = await supabaseGet('curriculum_topics',
-        `select=${fields}&subject_id=eq.${subjectId}&grade=eq.${encodeURIComponent(grade)}&deleted_at=is.null&order=chapter_number.asc.nullslast,display_order.asc`
+        `select=${fields}&subject_id=eq.${encodeURIComponent(subjectId)}&grade=eq.${encodeURIComponent(grade)}&deleted_at=is.null&order=chapter_number.asc.nullslast,display_order.asc`
       );
       return NextResponse.json({ data: r.data, total: r.total });
     }
@@ -108,8 +108,8 @@ export async function GET(request: NextRequest) {
       const fields = 'id,title,title_hi,grade,subject_id,parent_topic_id,chapter_number,display_order,topic_type,content_status,is_active,difficulty_level,bloom_focus,tags,description,created_at,updated_at,created_by,updated_by,reviewed_by,published_by,published_at';
       const filters = ['deleted_at=is.null'];
       if (grade) filters.push(`grade=eq.${encodeURIComponent(grade)}`);
-      if (subjectId) filters.push(`subject_id=eq.${subjectId}`);
-      if (status) filters.push(`content_status=eq.${status}`);
+      if (subjectId) filters.push(`subject_id=eq.${encodeURIComponent(subjectId)}`);
+      if (status) filters.push(`content_status=eq.${encodeURIComponent(status)}`);
       if (search) filters.push(`search_vector=fts.${encodeURIComponent(search)}`);
 
       const r = await supabaseGet('curriculum_topics',
@@ -134,8 +134,8 @@ export async function GET(request: NextRequest) {
       const filters = ['deleted_at=is.null'];
       if (grade) filters.push(`grade=eq.${encodeURIComponent(grade)}`);
       if (subject) filters.push(`subject=eq.${encodeURIComponent(subject)}`);
-      if (status) filters.push(`content_status=eq.${status}`);
-      if (difficulty) filters.push(`difficulty=eq.${difficulty}`);
+      if (status) filters.push(`content_status=eq.${encodeURIComponent(status)}`);
+      if (difficulty) filters.push(`difficulty=eq.${encodeURIComponent(difficulty)}`);
       if (questionType) filters.push(`question_type=eq.${encodeURIComponent(questionType)}`);
       if (search) filters.push(`search_vector=fts.${encodeURIComponent(search)}`);
 
@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
       if (!isValidUUID(entityId)) return NextResponse.json({ error: 'entity_id must be a valid UUID' }, { status: 400 });
 
       const r = await supabaseGet('cms_item_versions',
-        `select=id,version_number,status,change_summary,created_by,reviewed_by,published_by,created_at,reviewed_at,published_at&entity_type=eq.${entityType}&entity_id=eq.${entityId}&order=version_number.desc`
+        `select=id,version_number,status,change_summary,created_by,reviewed_by,published_by,created_at,reviewed_at,published_at&entity_type=eq.${encodeURIComponent(entityType)}&entity_id=eq.${encodeURIComponent(entityId)}&order=version_number.desc`
       );
       return NextResponse.json({ data: r.data, total: r.total });
     }
@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
       if (!isValidUUID(versionId)) return NextResponse.json({ error: 'version_id must be a valid UUID' }, { status: 400 });
 
       const r = await supabaseGet('cms_item_versions',
-        `select=*&id=eq.${versionId}&limit=1`
+        `select=*&id=eq.${encodeURIComponent(versionId)}&limit=1`
       );
       return NextResponse.json({ data: Array.isArray(r.data) ? r.data[0] : null });
     }
@@ -341,7 +341,7 @@ export async function POST(request: NextRequest) {
       const table = entity_type === 'topic' ? 'curriculum_topics' : entity_type === 'question' ? 'question_bank' : null;
       if (!table) return NextResponse.json({ error: 'Invalid entity_type' }, { status: 400 });
 
-      const current = await supabaseGet(table, `select=*&id=eq.${entity_id}&limit=1`);
+      const current = await supabaseGet(table, `select=*&id=eq.${encodeURIComponent(entity_id)}&limit=1`);
       if (!Array.isArray(current.data) || current.data.length === 0) {
         return NextResponse.json({ error: 'Entity not found' }, { status: 404 });
       }
@@ -357,7 +357,7 @@ export async function POST(request: NextRequest) {
       if (!version_id || !isValidUUID(version_id)) return NextResponse.json({ error: 'Valid version_id (UUID) required' }, { status: 400 });
 
       // Get the version snapshot
-      const vr = await supabaseGet('cms_item_versions', `select=*&id=eq.${version_id}&limit=1`);
+      const vr = await supabaseGet('cms_item_versions', `select=*&id=eq.${encodeURIComponent(version_id)}&limit=1`);
       if (!Array.isArray(vr.data) || vr.data.length === 0) {
         return NextResponse.json({ error: 'Version not found' }, { status: 404 });
       }
@@ -367,7 +367,7 @@ export async function POST(request: NextRequest) {
       if (!table) return NextResponse.json({ error: 'Invalid entity_type in version' }, { status: 400 });
 
       // Snapshot current state before rollback
-      const currentData = await supabaseGet(table, `select=*&id=eq.${version.entity_id}&limit=1`);
+      const currentData = await supabaseGet(table, `select=*&id=eq.${encodeURIComponent(version.entity_id)}&limit=1`);
       if (Array.isArray(currentData.data) && currentData.data.length > 0) {
         await createVersionSnapshot(auth, version.entity_type, version.entity_id, currentData.data[0], `Pre-rollback snapshot (rolling back to v${version.version_number})`);
       }
@@ -384,7 +384,7 @@ export async function POST(request: NextRequest) {
         if (!EXCLUDE.includes(k)) restore[k] = v;
       }
 
-      const result = await supabasePatch(table, `id=eq.${version.entity_id}`, restore);
+      const result = await supabasePatch(table, `id=eq.${encodeURIComponent(version.entity_id)}`, restore);
       if (!result.ok) return NextResponse.json({ error: 'Rollback failed' }, { status: 500 });
 
       await logAdminAudit(auth, 'cms.rollback', table, version.entity_id, {
@@ -473,7 +473,7 @@ export async function PATCH(request: NextRequest) {
       const { id, updates } = updateValidation.data;
 
       // Snapshot before update
-      const before = await supabaseGet('curriculum_topics', `select=*&id=eq.${id}&limit=1`);
+      const before = await supabaseGet('curriculum_topics', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`);
       if (Array.isArray(before.data) && before.data.length > 0) {
         await createVersionSnapshot(auth, 'topic', id, before.data[0], 'Auto-snapshot before edit');
       }
@@ -484,7 +484,7 @@ export async function PATCH(request: NextRequest) {
         if (ALLOWED.includes(k)) safe[k] = v;
       }
 
-      const r = await supabasePatch('curriculum_topics', `id=eq.${id}`, safe);
+      const r = await supabasePatch('curriculum_topics', `id=eq.${encodeURIComponent(id)}`, safe);
       if (!r.ok) return NextResponse.json({ error: 'Update failed' }, { status: 500 });
 
       await logAdminAudit(auth, 'cms.topic.updated', 'curriculum_topics', id, { fields_changed: Object.keys(safe) });
@@ -524,7 +524,7 @@ export async function PATCH(request: NextRequest) {
       const { id, updates } = updateQValidation.data;
 
       // Snapshot before update
-      const before = await supabaseGet('question_bank', `select=*&id=eq.${id}&limit=1`);
+      const before = await supabaseGet('question_bank', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`);
       if (Array.isArray(before.data) && before.data.length > 0) {
         await createVersionSnapshot(auth, 'question', id, before.data[0], 'Auto-snapshot before edit');
       }
@@ -535,7 +535,7 @@ export async function PATCH(request: NextRequest) {
         if (ALLOWED.includes(k)) safe[k] = v;
       }
 
-      const r = await supabasePatch('question_bank', `id=eq.${id}`, safe);
+      const r = await supabasePatch('question_bank', `id=eq.${encodeURIComponent(id)}`, safe);
       if (!r.ok) return NextResponse.json({ error: 'Update failed' }, { status: 500 });
 
       await logAdminAudit(auth, 'cms.question.updated', 'question_bank', id, { fields_changed: Object.keys(safe) });

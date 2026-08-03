@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
   // /api/super-admin/* gate will also enforce this on every subsequent call,
   // but failing here avoids issuing a session cookie to a non-admin).
   const adminRes = await fetch(
-    `${url}/rest/v1/admin_users?select=id,admin_level&auth_user_id=eq.${userId}&is_active=eq.true&limit=1`,
+    `${url}/rest/v1/admin_users?select=id,admin_level&auth_user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&limit=1`,
     {
       headers: {
         apikey: process.env.SUPABASE_SERVICE_ROLE_KEY || anonKey,
@@ -247,7 +247,7 @@ export async function POST(request: NextRequest) {
       for (const lookup of lookupTables) {
         try {
           const res = await fetch(
-            `${url}/rest/v1/${lookup.table}?select=id&auth_user_id=eq.${userId}&limit=1`,
+            `${url}/rest/v1/${lookup.table}?select=id&auth_user_id=eq.${encodeURIComponent(userId)}&limit=1`,
             {
               headers: {
                 apikey: serviceKey,

@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     if (action === 'role_permissions') {
       const roleId = params.get('role_id');
       if (!roleId) return NextResponse.json({ error: 'role_id required' }, { status: 400 });
-      return NextResponse.json({ data: await query('role_permissions', `select=permission_id,permissions(code,resource,action)&role_id=eq.${roleId}`) });
+      return NextResponse.json({ data: await query('role_permissions', `select=permission_id,permissions(code,resource,action)&role_id=eq.${encodeURIComponent(roleId)}`) });
     }
 
     if (action === 'user_roles') {
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       const offset = (page - 1) * 25;
       const search = params.get('search');
       let q = `select=id,auth_user_id,role_id,is_active,created_at,roles(name,display_name)&order=created_at.desc&offset=${offset}&limit=25`;
-      if (search) q += `&auth_user_id=eq.${search}`;
+      if (search) q += `&auth_user_id=eq.${encodeURIComponent(search)}`;
 
       const res = await fetch(supabaseAdminUrl('user_roles', q), { headers: supabaseAdminHeaders('count=exact') });
       const data = await res.json();

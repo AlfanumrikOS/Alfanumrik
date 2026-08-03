@@ -47,7 +47,7 @@ export async function POST(
 
     // Look up the demo account
     const accountRes = await fetch(
-      supabaseAdminUrl('demo_accounts', `select=id,auth_user_id,role,email&id=eq.${id}&limit=1`),
+      supabaseAdminUrl('demo_accounts', `select=id,auth_user_id,role,email&id=eq.${encodeURIComponent(id)}&limit=1`),
       { method: 'GET', headers: supabaseAdminHeaders() },
     );
     if (!accountRes.ok) {

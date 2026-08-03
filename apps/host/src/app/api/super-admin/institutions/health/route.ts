@@ -94,22 +94,22 @@ export async function GET(request: NextRequest) {
     const [studentsRes, activeStudentsRes, quizActivityRes, subscriptionsRes] = await Promise.all([
       // Total students per school
       fetch(
-        supabaseAdminUrl('students', `select=id,school_id,last_active&school_id=in.(${schoolIds.join(',')})&is_active=eq.true`),
+        supabaseAdminUrl('students', `select=id,school_id,last_active&school_id=in.(${schoolIds.map(encodeURIComponent).join(',')})&is_active=eq.true`),
         { method: 'GET', headers: supabaseAdminHeaders('return=representation') },
       ),
       // Students active in last 7 days
       fetch(
-        supabaseAdminUrl('students', `select=id,school_id&school_id=in.(${schoolIds.join(',')})&is_active=eq.true&last_active=gte.${sevenDaysAgo}`),
+        supabaseAdminUrl('students', `select=id,school_id&school_id=in.(${schoolIds.map(encodeURIComponent).join(',')})&is_active=eq.true&last_active=gte.${sevenDaysAgo}`),
         { method: 'GET', headers: supabaseAdminHeaders('return=representation') },
       ),
       // Quiz sessions in last 7 days per school
       fetch(
-        supabaseAdminUrl('quiz_sessions', `select=id,school_id,created_at&school_id=in.(${schoolIds.join(',')})&created_at=gte.${sevenDaysAgo}`),
+        supabaseAdminUrl('quiz_sessions', `select=id,school_id,created_at&school_id=in.(${schoolIds.map(encodeURIComponent).join(',')})&created_at=gte.${sevenDaysAgo}`),
         { method: 'GET', headers: supabaseAdminHeaders('return=representation') },
       ),
       // School subscriptions
       fetch(
-        supabaseAdminUrl('school_subscriptions', `select=school_id,plan,seats_purchased,status&school_id=in.(${schoolIds.join(',')})`),
+        supabaseAdminUrl('school_subscriptions', `select=school_id,plan,seats_purchased,status&school_id=in.(${schoolIds.map(encodeURIComponent).join(',')})`),
         { method: 'GET', headers: supabaseAdminHeaders('return=representation') },
       ),
     ]);
