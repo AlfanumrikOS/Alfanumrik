@@ -13,6 +13,14 @@ import {
  * `x-admin-secret` header (and `Content-Type: application/json`) used by
  * every `/api/internal/admin/*` endpoint.
  *
+ * During P2-1 PR-2 the panel sends BOTH credentials on every request:
+ *  - the `x-admin-secret` header (handlers still require it), and
+ *  - the httpOnly sb-* session cookie, carried automatically by same-origin
+ *    fetch. We set `credentials: 'same-origin'` explicitly (the default for
+ *    same-origin requests) so the middleware session-or-secret bridge always
+ *    sees the cookie. NO `Authorization: Bearer` header — the client never
+ *    holds the token (it lives only in the httpOnly cookie).
+ *
  * Throws `Error('Admin API <status>: <body>')` on non-2xx responses.
  *
  * Wraps `adminHeaders()` from `@alfanumrik/lib/admin-session` — do NOT reimplement
@@ -23,6 +31,7 @@ export function useAdminFetch(secret: string | null) {
     async <T = unknown>(path: string, init?: RequestInit): Promise<T> => {
       const res = await fetch(path, {
         ...init,
+        credentials: init?.credentials ?? 'same-origin',
         headers: {
           ...adminHeaders(secret ?? ''),
           ...(init?.headers || {}),
