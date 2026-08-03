@@ -6,8 +6,92 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 333 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-333 (2026-08-02, `select_quiz_questions_rag` verification gate —
+**Total catalog: 335 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
+built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
+still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`
+[seeded OFF/0% by a parallel architect migration] adds a deterministic
+per-caller lever, via the pre-existing salted `hashForRollout` family [NOT the
+three other, differently-salted hash-bucketing implementations already in this
+codebase — confirmed by direct side-by-side source reading, not just a passing
+parity test], to dial a controlled percentage of traffic back to the
+reconstructed Claude-primary order instead of REG-334's unconditional 100%
+default. Fail-safe always toward OpenAI-primary; the no-caller-id case never
+even reads the flag. Independently re-run by testing, not taken on the
+building agent's report alone: Deno 228/228 (19 CI-scope `grounded-answer`
+files + 1 new file, both sub-counts re-verified separately), vitest 486/486 in
+`src/__tests__/lib/ai/`, `tsc --noEmit` clean. `git diff` against `5e6ffa9f`
+confirmed `LEGACY_FALLBACK_ORDER`/`legacyChain()`/`selectModelChain` are
+byte-for-byte unchanged, so REG-334's own pin never traverses the new code
+path and remains valid. **UPGRADED to E (2026-08-03, same-day testing
+follow-up):** was marked PARTIAL for two gaps — (1) the new 15-test Deno
+suite (`model-rollout-flag.test.ts`) not yet in `DENO_TEST_TARGETS`
+[the same failure class REG-317 pinned elsewhere], now wired in by
+architect and confirmed by a fresh CI-scope run (20 files, 237/237 passing,
+up from 19 files/228 — the other 19 files also grew tests from the same
+session's cache-order-blindness fix, not a discrepancy); (2) a related
+architect migration's open TS-companion + test-count-pin obligation on the
+`protected_feature_flags` DB/TS parity guard [low practical risk while the
+flag stayed seeded OFF/0%], now closed — ai-engineer applied the TS
+companion, testing fixed its own two stale test files (verified failing in
+exactly the predicted 5 ways first, 62/67, then fixed and re-verified
+69/69 green). See `02-foxy-ai.md` for the full accounting, the closure note,
+and the honest "599/599" reproduction shortfall [three good-faith
+reconstructions all passed 100% but none matched 599 exactly].
+**REG-336 is the next free id.**)
+Prior: REG-334 (2026-08-02, Model Gateway OpenAI-primary provider swap — a
+CEO-directed cost swap flipped `MODEL_FALLBACK_ORDER`
+[`supabase/functions/grounded-answer/config.ts`] and `LEGACY_FALLBACK_ORDER`
+[`packages/lib/src/ai/gateway/registry.ts`] from Anthropic-primary to
+OpenAI-primary for every preference key (gpt-4o-mini/gpt-4o now run FIRST,
+Claude Haiku/Sonnet retained as the reliability fallback tier, not deleted),
+gated behind a fast Claude-graded output-quality validation pass
+[`eval/openai-migration/` harness] before canary ramp, per RCA-FIX
+CRITICAL-1's Claude-calibration concern. Shared infrastructure — the same
+config also re-orders ncert-solver's grounded path and the
+quiz-generation/verification prompt templates. A NEW explicit regression pin
+(`router.test.ts`: "default chain is OpenAI-primary post 2026-08 cost
+directive, Claude retained as fallback") asserts the new order on both model
+ids and providers so a future accidental revert is caught immediately, the
+same way the pre-swap order used to be pinned; the Deno↔TS parity test
+[REG-308] now anchors the new order on both sides; every gateway/router test
+whose mock adapter map implicitly relied on the pre-swap order (only an
+`anthropic` entry present, silently never reaching the real unmocked
+`openaiAdapter`) was restructured to mock both providers explicitly, closing
+the test-hermeticity gap the reorder exposed — including the Deno-side
+`grounded-answer/__tests__/claude.test.ts`. A companion Sonnet model-ID drift
+fix (`claude-sonnet-4-6-20251022`→`claude-sonnet-4-20250514`) shipped in the
+same change; a same-session ai-engineer follow-up closed the gap this entry
+originally flagged as open, and an independent direct-read reconciliation
+(2026-08-02) confirms the corrected id is now applied with no residual gap
+across all 11 live source files that referenced it (`registry.ts`,
+`grounded-answer/config.ts`, MoL's TS `router.ts`/`telemetry.ts`/`grader.ts`/
+`grader-cron.ts`, `_shared/security/quota.ts`, and Python
+`mol/cost.py`/`router.py`/`grader.py`/`grader_cron.py` — the last of these,
+`grader.py`, was found during this reconciliation and had never been named
+in either the original "verified applied" or "Known gap" lists), with every
+corresponding test (incl. `grader-cron.test.ts`'s mock fixture) updated to
+match. See `02-foxy-ai.md` for the full file-by-file accounting and REG-308's
+correction note.)
+Collision note (2026-08-03): the pair immediately above was authored on this
+branch as REG-332 (Model Gateway OpenAI-primary provider swap) and REG-333
+(OpenAI-primary percentage-rollout mechanism). Independently, `origin/main`
+had ALSO taken REG-332 and REG-333 — for two unrelated fixes, both directly
+below (grounded-answer content-readiness precheck, 2026-08-01;
+`select_quiz_questions_rag` verification gate, 2026-08-02) — and merged to
+main first. Per this catalog's established numbering convention (the side
+that reached `main` first keeps its ids; the not-yet-merged side is
+renumbered up — the same resolution already used for the 2026-07-29
+REG-322..325 collision further below), this branch's pair was renumbered
+REG-332→REG-334 and REG-333→REG-335 during this merge's conflict resolution:
+heading, table-row id, and every internal self-reference updated in both
+`00-header.md` and `02-foxy-ai.md`, plus the corresponding `REG-332`/`REG-333`
+comment references in `router.test.ts`, `deno-parity.test.ts`, and the
+`grounded-answer` cache-order-fix Deno test files. No entry from either side
+was dropped or reworded — only this branch's two ID numerals moved, and the
+catalog total grew by 2 (both of main's entries plus both of this branch's
+renumbered entries), not by 1. **REG-336 is the next free id.**
+Prior: REG-333 (2026-08-02, `select_quiz_questions_rag` verification gate —
 the RPC serving quiz questions to `/api/quiz`, `/api/v2/quiz/questions`, and
 the WhatsApp Daily-6 top-up path had never, across 7 historical versions
 since 2026-04-03, filtered on `verification_state`/`verified_against_ncert`,

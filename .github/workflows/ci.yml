@@ -1695,8 +1695,8 @@ jobs:
   #                           Deno.serve() in those index.ts files is never
   #                           reached. No fetch, no Deno.env, no filesystem.
   #
-  #   - grounded-answer/__tests__/  — 19 files ENUMERATED INDIVIDUALLY in
-  #                           DENO_TEST_TARGETS, NOT the whole directory (23 Deno
+  #   - grounded-answer/__tests__/  — 20 files ENUMERATED INDIVIDUALLY in
+  #                           DENO_TEST_TARGETS, NOT the whole directory (25 Deno
   #                           test files live there). Pure helpers only.
   #
   # ── 2026-07-28: the seven-file TODO below was CLOSED BY EXPERIMENT ──────────
@@ -1736,12 +1736,12 @@ jobs:
   #
   # EXCLUDED ON PURPOSE — the remaining exclusions are now exactly the
   # Deno.serve set (plus the Vitest files):
-  #   - grounded-answer/__tests__/ — 4 of its 23 Deno test files are absent from
-  #     DENO_TEST_TARGETS: e2e, pipeline, cache-durable-l3 and
-  #     foxy-answer-continuation. All four import ../index.ts, which calls
-  #     Deno.serve() (binds a socket → requires --allow-net + has a server
-  #     side-effect): flaky/non-deterministic in CI. There is no longer any
-  #     "unexplained TODO" residue in this directory.
+  #   - grounded-answer/__tests__/ — 5 of its 25 Deno test files are absent from
+  #     DENO_TEST_TARGETS: e2e, pipeline, cache-durable-l3,
+  #     foxy-answer-continuation and model-order-cache-fix. All five import
+  #     ../index.ts, which calls Deno.serve() (binds a socket → requires
+  #     --allow-net + has a server side-effect): flaky/non-deterministic in CI.
+  #     There is no longer any "unexplained TODO" residue in this directory.
   #   - alfabot-answer/__tests__/integration.test.ts (statically imports
   #     ../index.ts → Deno.serve) and send-welcome-email/__tests__/
   #     bilingual-welcome.test.ts (DYNAMICALLY imports `../index.ts?cb=…` →
@@ -1833,6 +1833,7 @@ jobs:
         supabase/functions/grounded-answer/__tests__/foxy-python-generation.test.ts
         supabase/functions/grounded-answer/__tests__/gen-ctx.test.ts
         supabase/functions/grounded-answer/__tests__/grounding-check.test.ts
+        supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts
         supabase/functions/grounded-answer/__tests__/output-screen.test.ts
         supabase/functions/grounded-answer/__tests__/prompt-segments.test.ts
         supabase/functions/grounded-answer/__tests__/rag-content-version-bump.test.ts

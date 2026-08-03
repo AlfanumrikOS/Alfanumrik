@@ -781,6 +781,9 @@ export async function* runStreamingPipeline(
     apiKey: anthropicKey,
     openaiApiKey,
     modelPreference: request.generation.model_preference,
+    // Percentage-rollout mechanism (2026-08-03): opaque bucketing key for
+    // ff_foxy_openai_primary_rollout_v1 — see claude.ts's ClaudeRequest.callerId.
+    callerId: request.student_id,
     // Phase 2 of Foxy continuity fix (2026-05-18): prefer native conversation
     // turns when supplied. Absent → byte-identical legacy single-user body.
     conversationTurns: request.generation.conversation_turns,
@@ -894,6 +897,9 @@ export async function* runStreamingPipeline(
       apiKey: anthropicKey,
       openaiApiKey,
       modelPreference: request.generation.model_preference,
+      // Percentage-rollout mechanism (2026-08-03): same caller as the primary
+      // stream above — a retry must resolve the SAME provider order.
+      callerId: request.student_id,
       // Omit conversation_turns: re-ground nudge needs a clean slate so the
       // model focuses on the reference material, not conversation history.
     });

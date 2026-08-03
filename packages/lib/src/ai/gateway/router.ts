@@ -9,8 +9,9 @@
  * only decides ordering.
  *
  * Policy semantics (see docs/superpowers/specs/2026-07-24-model-gateway-design.md):
- *   default  → the legacy Anthropic-primary chain, byte-for-byte (Haiku → Sonnet
- *              → gpt-4o-mini → gpt-4o). Constraints FILTER but never REORDER, so
+ *   default  → the legacy fallback chain, byte-for-byte (OpenAI-primary as of
+ *              the 2026-08-02 cost-driven provider swap: gpt-4o-mini → gpt-4o
+ *              → Haiku → Sonnet). Constraints FILTER but never REORDER, so
  *              with no constraints the order is identical to the legacy path.
  *   cost     → ascending blended cost (inputCostPer1M + outputCostPer1M).
  *   latency  → ascending p50LatencyMs.
@@ -28,7 +29,10 @@ import { listModels, legacyChain, blendedCostPer1M } from './registry';
 
 // ─── Constraint filter ──────────────────────────────────────────────────────
 
-function passesConstraints(m: ModelDescriptor, c: RoutingConstraints): boolean {
+// Exported (additive) so rollout.ts's flag-aware default-chain resolution can
+// apply the exact same constraint filter as selectModelChain's `default`
+// branch without duplicating the predicate. Pure — no behavior change.
+export function passesConstraints(m: ModelDescriptor, c: RoutingConstraints): boolean {
   if (c.needsJson && !m.capabilities.json) return false;
   if (c.needsVision && !m.capabilities.vision) return false;
   if (typeof c.minQualityTier === 'number' && m.qualityTier < c.minQualityTier) return false;
@@ -90,7 +94,7 @@ export function selectModelChain(
   constraints: RoutingConstraints = {},
 ): ModelDescriptor[] {
   if (policy === 'default') {
-    // Legacy Anthropic-primary 'auto' chain, filtered (never reordered).
+    // Legacy 'auto' chain (OpenAI-primary, Claude fallback), filtered (never reordered).
     return legacyChain('auto').filter((m) => passesConstraints(m, constraints));
   }
 

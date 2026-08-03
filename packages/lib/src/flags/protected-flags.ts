@@ -39,6 +39,20 @@
  *   implicated in the incident — EXPECTED_OFF_FLAGS is for flags whose
  *   approved posture is OFF, which is not this one's.
  *
+ *   ff_foxy_openai_primary_rollout_v1 — the Foxy OpenAI-primary provider-swap
+ *   rollback lever (REG-334/REG-335 — renumbered 2026-08-03 from
+ *   REG-332/REG-333 during the origin/main merge; see 00-header.md's
+ *   collision note) — was added here 2026-08-03 by migration
+ *   20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql, itself
+ *   seeded is_enabled=false / rollout_percentage=0 the same day by
+ *   20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql. It is
+ *   registered as its own `ai_provider`-tier PROTECTED_FLAGS entry — separate
+ *   from both the E6 MoL program group and the GenAI ecosystem group above,
+ *   since it governs a different concern: what percentage of live student
+ *   Foxy/ncert-solver/quiz-gen traffic is routed to Claude-primary instead of
+ *   the shipped OpenAI-primary default. Its CEO-approved posture is OFF, so
+ *   it is also listed in EXPECTED_OFF_FLAGS below.
+ *
  * NOTE: this registry protects flags at the CONSOLE boundary. It does not (and
  * cannot) change how any flag evaluates at runtime.
  *
@@ -156,6 +170,26 @@ export const PROTECTED_FLAGS: Record<string, FlagProtection> = {
       "AI provider-routing change (GenAI Model Gateway L2; seeded OFF by migration 20260724120000, never enabled). When ON, the gateway's default policy adds an OpenAI fallback tier (gpt-4o-mini/gpt-4o) behind Anthropic for Foxy's intent classifier (packages/lib/src/ai/workflows/foxy-router.ts) — a real cross-provider routing change requiring explicit CEO provider approval that has not been given.",
     reasonHi:
       'AI प्रदाता-रूटिंग परिवर्तन (GenAI मॉडल गेटवे L2; माइग्रेशन 20260724120000 द्वारा सीड किया गया OFF, कभी सक्षम नहीं हुआ)। ON होने पर, गेटवे की default नीति Foxy के इंटेंट क्लासिफायर के लिए Anthropic के पीछे एक OpenAI फ़ॉलबैक टियर (gpt-4o-mini/gpt-4o) जोड़ती है (packages/lib/src/ai/workflows/foxy-router.ts) — यह एक वास्तविक क्रॉस-प्रदाता रूटिंग परिवर्तन है जिसके लिए स्पष्ट CEO प्रदाता स्वीकृति आवश्यक है, जो अभी तक नहीं दी गई है।',
+  },
+
+  // ai_provider — Foxy OpenAI-primary provider-swap rollback lever
+  // (REG-334/REG-335, 2026-08-03 — renumbered same-day from REG-332/REG-333
+  // during the origin/main merge). NOT part of the MoL program group above —
+  // architect ruling (migration 20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql,
+  // Task 2): protect at tier 'ai_provider' (this flag decides which AI
+  // provider serves real student traffic — precisely the class of risk the
+  // tier exists to gate) but do NOT reuse the shared AI_PROVIDER constant
+  // above — its reason text is scoped to "(MoL program)" and would mislead
+  // an operator reading the console's 409 response for this flag. Reason
+  // text below is copied verbatim from that migration's `reason` column, per
+  // its own OBLIGATION note. DB-layer mirror: that same migration inserts
+  // the matching public.protected_feature_flags row (tier 'ai_provider').
+  ff_foxy_openai_primary_rollout_v1: {
+    tier: 'ai_provider',
+    reason:
+      'Foxy OpenAI-primary provider-swap rollback lever (REG-334, commit 5e6ffa9f, 2026-08-02): governs the percentage of live student Foxy/ncert-solver/quiz-gen traffic routed to Claude-primary instead of the shipped OpenAI-primary default. AI provider change affecting real student traffic — requires explicit CEO approval before any enable.',
+    reasonHi:
+      'Foxy OpenAI-प्राइमरी प्रदाता-स्वैप के लिए प्रतिशत-आधारित रोलबैक लीवर (REG-334, कमिट 5e6ffa9f, 2026-08-02): यह तय करता है कि लाइव छात्र Foxy/ncert-solver/quiz-gen ट्रैफ़िक का कितना प्रतिशत, पहले से लागू OpenAI-primary डिफ़ॉल्ट के बजाय, Claude-primary की ओर भेजा जाता है। वास्तविक छात्र ट्रैफ़िक को प्रभावित करने वाला AI प्रदाता परिवर्तन — किसी भी सक्षमीकरण से पहले CEO की स्पष्ट स्वीकृति आवश्यक है।',
   },
 
   // constitution_pinned — Group A (REG-124/126/131/175)
@@ -345,8 +379,12 @@ export function getProtection(flagName: string): FlagProtection | null {
  * ff_outcome_prediction_v1, ff_lesson_generation_v1,
  * ff_content_generation_v1 — all still seeded OFF/0% today (see migration
  * 20260801120000_protected_feature_flags_genai_ecosystem_seed.sql and the
- * per-flag reasons above for why each is not yet ready to enable). The
- * flag-posture-canary cron compares live rows against this list nightly.
+ * per-flag reasons above for why each is not yet ready to enable) plus
+ * ff_foxy_openai_primary_rollout_v1 (Foxy OpenAI-primary provider-swap
+ * rollback lever, seeded is_enabled=false / rollout_percentage=0 by
+ * migration 20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql;
+ * added here 2026-08-03). The flag-posture-canary cron compares live rows
+ * against this list nightly.
  *
  * NOT in this list (on purpose): ff_atomic_subscription_activation (its
  * approved posture is is_enabled=TRUE), ff_board_score_v1,
@@ -459,4 +497,15 @@ export const EXPECTED_OFF_FLAGS: string[] = [
   'ff_outcome_prediction_v1',
   'ff_lesson_generation_v1',
   'ff_content_generation_v1',
+  // Foxy OpenAI-primary provider-swap rollback lever — seeded
+  // is_enabled=false / rollout_percentage=0 by migration
+  // 20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql (2026-08-03).
+  // Same footprint every other ai_provider-tier flag has today (all five
+  // MoL flags above are also in this list). Its CEO-approved posture stays
+  // OFF until ops/CEO decide a ramp schedule. It remains an ai_provider-tier
+  // entry in PROTECTED_FLAGS above regardless, so any change still requires
+  // typed confirmation — if later deliberately ramped, remove it from this
+  // list at that time (mirrors the ff_adaptive_remediation_v1 /
+  // ff_whatsapp_bot_v1 precedent immediately above).
+  'ff_foxy_openai_primary_rollout_v1',
 ];

@@ -39,6 +39,10 @@ eval/rag/reports/
 # eval/teacher-skills/harness/report.ts. Do not track in git.
 eval/teacher-skills/reports/
 
+# OpenAI-migration validation harness run artefacts — per-run JSON reports
+# written by eval/openai-migration/harness/cli.ts. Do not track in git.
+eval/openai-migration/reports/
+
 # stray build logs
 build-out.txt
 build-tmp.txt

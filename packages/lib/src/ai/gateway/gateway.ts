@@ -11,9 +11,11 @@
  *
  * FLAG GATE (ff_model_gateway_v1, default OFF): the NON-default policies are
  * gated. When the flag is OFF, ANY requested policy is forced to `default`, so
- * callModel behaves identically to the legacy Anthropic-primary chain
- * regardless of what the caller asked for. `default` is always available (it IS
- * the legacy path) and never touches the flag system.
+ * callModel behaves identically to the legacy fallback chain (OpenAI-primary,
+ * Claude fallback as of the 2026-08-02 cost-driven provider swap — see
+ * registry.ts's LEGACY_FALLBACK_ORDER header) regardless of what the caller
+ * asked for. `default` is always available (it IS the legacy path) and never
+ * touches the flag system.
  *
  * Zero behavior change by default: with policy `default` and no constraints the
  * chain is byte-for-byte the legacy grounded-answer `auto` order, invoked
@@ -35,6 +37,7 @@ import type {
   RoutingPolicy,
 } from './types';
 import { selectModelChain } from './router';
+import { resolveDefaultChain } from './rollout';
 import { estimateCostUsd, getModel } from './registry';
 import { anthropicAdapter } from './adapters/anthropic';
 import { openaiAdapter } from './adapters/openai';
@@ -78,14 +81,24 @@ export async function callModel(
   const requested: RoutingPolicy = opts.policy ?? 'default';
 
   // Flag gate: non-default policies require ff_model_gateway_v1. OFF → force
-  // `default` so behavior is identical to the legacy Anthropic-primary chain.
+  // `default` so behavior is identical to the legacy fallback chain (OpenAI-
+  // primary, Claude fallback — see registry.ts's LEGACY_FALLBACK_ORDER header).
   let effectivePolicy: RoutingPolicy = requested;
   if (requested !== 'default') {
     const enabled = await isFeatureEnabled(GATEWAY_FLAG, opts.flagContext ?? {});
     if (!enabled) effectivePolicy = 'default';
   }
 
-  const chain = selectModelChain(effectivePolicy, opts.constraints ?? {});
+  // Percentage-rollout mechanism (2026-08-03): the `default` policy's chain
+  // is resolved through resolveDefaultChain, which is rollout-flag-aware
+  // (ff_foxy_openai_primary_rollout_v1) — see rollout.ts's header. When
+  // opts.flagContext carries no userId (most callers today), this is
+  // byte-identical to `selectModelChain('default', constraints)`, i.e.
+  // unchanged behavior. Non-default policies are untouched — still resolved
+  // by the pure, no-I/O selectModelChain exactly as before.
+  const chain = effectivePolicy === 'default'
+    ? await resolveDefaultChain(opts.flagContext, opts.constraints ?? {})
+    : selectModelChain(effectivePolicy, opts.constraints ?? {});
   const adapters = opts.adapters ?? {};
 
   const attempts: GatewayAttempt[] = [];
