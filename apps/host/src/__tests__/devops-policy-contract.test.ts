@@ -36,6 +36,20 @@ describe('DevOps deployment policy contract', () => {
     expect(result.checked).toBeGreaterThanOrEqual(18);
   });
 
+  it('rejects a reintroduced ci.yml health-check duplicate (P0-4: poll lives only in deploy-production.yml)', () => {
+    // P0-4 (2026-08-03): ci.yml's post-deploy health-check job was deleted as a
+    // duplicate of deploy-production.yml's. The contract now asserts the
+    // bounded exact-SHA poll in deploy-production.yml (which the check reads
+    // itself) and that ci.yml carries NO health-check job at all.
+    const ci = readFileSync(resolve(__dirname, '../../../../.github/workflows/ci.yml'), 'utf8').replace(/\r\n/g, '\n');
+    const checks = buildDevopsPolicyChecks();
+    const ciGate = checks.find((check) => check.id === 'ci-gate-and-exact-sha-poll');
+    expect(ciGate?.pass(ci)).toBe(true);
+
+    const reintroduced = `${ci}\n  health-check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo duplicate poll\n`;
+    expect(ciGate?.pass(reintroduced)).toBe(false);
+  });
+
   it('rejects unsafe release rollback/tag and Vercel authority mutations', () => {
     // Normalize CRLF -> LF before reading. On a Windows checkout with
     // core.autocrlf=true (documented precedent in .gitattributes, which only
@@ -71,7 +85,9 @@ describe('DevOps deployment policy contract', () => {
     expect(release?.pass(workflow.replace('require_equal "Release result" "$RELEASE_RESULT" "success"', 'echo "$RELEASE_RESULT"'))).toBe(false);
     expect(release?.pass(workflow.replace('echo "Production release completion evidence is incomplete."\n            exit 1', 'echo "Production release completion evidence is incomplete."\n            exit 0'))).toBe(false);
 
-    const vercel = readFileSync(resolve(__dirname, '../../../../vercel.json'), 'utf8');
+    // apps/host/vercel.json is the authoritative deploy config — the repo-root
+    // copy was deleted 2026-08-03 (ci.yml quality job guards its reappearance).
+    const vercel = readFileSync(resolve(__dirname, '../../../../apps/host/vercel.json'), 'utf8');
     const unsafe = JSON.stringify({ ...JSON.parse(vercel), git: { deploymentEnabled: { main: false } } });
     expect(productionDeploymentAuthorityIsSafe(vercel, workflow)).toBe(true);
     expect(productionDeploymentAuthorityIsSafe(unsafe, workflow)).toBe(false);

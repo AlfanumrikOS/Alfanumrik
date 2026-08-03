@@ -41,8 +41,13 @@ on:
       - 'supabase/migrations/**'
   workflow_dispatch:
 
+# Shared group with deploy-staging.yml's `migrations` job: both run
+# `supabase db push` against the SAME staging database, and the two workflows
+# previously used unrelated groups, so a main-push sync and a develop/staging
+# deploy could push migrations concurrently (racing schema_migrations
+# bookkeeping and DDL). One serial lane for all staging DB pushes fixes that.
 concurrency:
-  group: sync-staging-migrations
+  group: staging-db-push
   cancel-in-progress: false   # never cancel a migration push mid-flight
 
 jobs:
