@@ -178,7 +178,7 @@
 | E2E tests (PRs) | ACTIVE | `.github/workflows/ci.yml` e2e job |
 | Bundle size limits | ACTIVE | `.github/workflows/ci.yml` bundle check |
 | Build verification | ACTIVE | `.github/workflows/ci.yml` build step |
-| Health check (post-deploy) | ACTIVE | `.github/workflows/ci.yml` health-check job |
+| Health check (post-deploy) | ACTIVE | `.github/workflows/deploy-production.yml` health-check job (~line 559) |
 | Dependency license check | ACTIVE | `.github/workflows/ci.yml` license step |
 
 ## Test Coverage Summary
