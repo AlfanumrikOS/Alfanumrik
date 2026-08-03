@@ -25,6 +25,7 @@
     "lint:ai-boundary": "bash ../../scripts/check-config-parity.sh && eslint --config ../../.eslintrc.ai-boundary.json --ext .ts,.tsx src ../../packages/lib/src ../../packages/ui/src ../../supabase/functions",
     "test:coverage": "vitest run --coverage",
     "type-check": "tsc --noEmit",
+    "type-check:tests": "tsc --noEmit -p tsconfig.tests.json",
     "supabase:gen-types": "node scripts/gen-supabase-types.mjs",
     "supabase:check-types": "node scripts/gen-supabase-types.mjs --check",
     "gen:openapi": "node ../../scripts/gen-openapi.mjs",

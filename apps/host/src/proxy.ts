@@ -333,6 +333,10 @@ async function validateSessionCached(sessionId: string): Promise<boolean | null>
           'apikey': serviceKey,
           'Authorization': `Bearer ${serviceKey}`,
         },
+        // Bound this lookup — a hung PostgREST must not stall the hot path.
+        // On timeout the fetch rejects → the catch below → null → allow through
+        // (same fail-open path as any other network error).
+        signal: AbortSignal.timeout(3000),
       }
     );
 
@@ -632,10 +636,32 @@ function rpcFromPath(pathname: string): string | null {
   return pathname.slice(prefix.length).split('/')[0] || null;
 }
 
+/**
+ * Deterministic 1-in-10 sampler for API request telemetry, keyed on the
+ * request id (FNV-1a 32-bit hash). Deterministic so a given request id
+ * always makes the same keep/drop decision (stable across retries and
+ * easy to reason about when correlating logs).
+ */
+function shouldSampleRequestLog(requestId: string): boolean {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < requestId.length; i++) {
+    h ^= requestId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) % 10 === 0;
+}
+
 async function recordApiRequestLog(request: NextRequest, requestId: string): Promise<void> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) return;
+
+  // SAMPLING (~10%): best-effort telemetry only — one PostgREST insert per
+  // request was pure hot-path overhead. Deterministic on the requestId hash.
+  // NOTE: the fire site runs BEFORE the downstream route handler executes,
+  // so the response status is not available there — an always-log-on->=400
+  // carve-out is not possible at this layer; plain 1:10 sampling applies.
+  if (!shouldSampleRequestLog(requestId)) return;
 
   try {
     const pathname = request.nextUrl.pathname;
@@ -648,6 +674,9 @@ async function recordApiRequestLog(request: NextRequest, requestId: string): Pro
         'Content-Type': 'application/json',
         Prefer: 'return=minimal',
       },
+      // Bound the telemetry insert — on timeout the fetch rejects → the
+      // catch below swallows it (existing best-effort path, log dropped).
+      signal: AbortSignal.timeout(2000),
       body: JSON.stringify({
         path: pathname,
         rpc: rpcFromPath(pathname),
@@ -918,6 +947,15 @@ export async function proxy(request: NextRequest) {
   if (supabaseUrl && supabaseKey && hasSupabaseAuthCookie) {
     const { createServerClient } = await import('@supabase/ssr');
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      global: {
+        // Bound every Supabase auth fetch (getUser / token refresh) to 5s so a
+        // hung Supabase cannot stall the middleware hot path. On timeout the
+        // fetch rejects (TimeoutError) → getUser() surfaces it as a non-session
+        // error or throw → the EXISTING authDegraded fail-open handling below
+        // (x-auth-degraded) applies, exactly as for any other Supabase outage.
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(5000) }),
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();

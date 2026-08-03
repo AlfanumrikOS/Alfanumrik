@@ -176,14 +176,49 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
-      // Restrict to TypeScript source only. A bare `src/lib/**` glob made the
-      // v8 provider's getCoverageMapForUncoveredFiles() feed non-source files
-      // (e.g. src/lib/state/README.md) into rolldown's parseAstAsync(), which
-      // throws `RolldownError: Parse failed: Invalid Character` on markdown and
-      // crashed the entire `vitest run --coverage` job in CI. Markdown has no
-      // coverable code, so scoping the include to *.{ts,tsx} cannot change the
-      // coverage numbers — it only stops the parser from choking on docs.
-      include: ['src/lib/**/*.{ts,tsx}'],
+      // ── Honest-include repair (2026-08-03, P1-7 quality-gate audit) ──
+      // The previous include was `src/lib/**/*.{ts,tsx}`, which — with vitest
+      // resolving globs against test.root = process CWD = apps/host in every
+      // lane that runs — matched the ~402 two-line auto-generated re-export
+      // stubs under apps/host/src/lib/ plus 5 real files, and NONE of the
+      // canonical implementations in packages/lib/src + packages/ui/src.
+      // Global floors and every per-file threshold were measuring shims.
+      //
+      // Glob mechanics, verified empirically against vitest 4.1.8 (picomatch
+      // + tinyglobby + pathe) on 2026-08-03:
+      // - COVERED files are kept via pm.isMatch(absPath, include,
+      //   { contains: true }) → `../../packages/...` patterns NEVER match (an
+      //   absolute path contains no literal `../..`); bare `packages/...`
+      //   patterns DO match (unanchored contains-match against the absolute
+      //   path).
+      // - UNCOVERED files are enumerated by tinyglobby with cwd = test.root →
+      //   bare `packages/...` deliberately finds nothing from apps/host. This
+      //   is intentional: vitest's createUncoveredFileTransformer() refuses
+      //   any file outside project.config.root (= apps/host), falls back to
+      //   raw file content, and rolldown's parseAstAsync() then fails on raw
+      //   TypeScript — every uncovered packages file would emit a logged
+      //   RolldownError and be dropped anyway (verified 2026-08-03 with
+      //   absolute include patterns, which DO enumerate). So for packages/**
+      //   this include measures files LOADED during the test run only;
+      //   packages files with zero importing tests do not appear as 0% rows.
+      //   KNOWN LIMITATION — the packages side of the global number is
+      //   therefore still slightly flattering. Fixing it requires moving
+      //   test.root to the repo root, which relocates blob/coverage output
+      //   paths that .github/workflows/ci.yml hardcodes (apps/host/coverage,
+      //   apps/host/.vitest-reports) — tracked as a follow-up, do not flip it
+      //   casually.
+      // - Files outside test.root are silently dropped from the report unless
+      //   `allowExternal: true` is set.
+      allowExternal: true,
+      include: [
+        'src/**/*.{ts,tsx}',
+        'packages/lib/src/**/*.{ts,tsx}',
+        'packages/ui/src/**/*.{ts,tsx}',
+      ],
+      // Keep every entry *.{ts,tsx}-scoped: a bare `src/lib/**` glob once made
+      // getCoverageMapForUncoveredFiles() feed src/lib/state/README.md into
+      // rolldown's parseAstAsync(), which throws on markdown and crashed the
+      // whole `vitest run --coverage` job in CI.
       exclude: [
         'src/__tests__/**',
         'node_modules/**',
@@ -193,6 +228,16 @@ export default defineConfig({
         // regardless of where it lives under an `include` glob.
         '**/*.md',
         '**/*.json',
+        // Test files OUTSIDE src/__tests__: packages/lib keeps many *.test.ts
+        // files NEXT TO their source (e.g. admin-audit-throttle.test.ts), the
+        // grounded-answer harnesses live in __vitest__/, and __tests__ dirs
+        // exist under packages too. Exclude semantics run through picomatch
+        // with contains:true, so these match at any path depth.
+        '**/*.{test,spec}.{ts,tsx}',
+        '**/__tests__/**',
+        '**/__vitest__/**',
+        '**/__mocks__/**',
+        '**/*.stories.{ts,tsx}',
         // Server / integration territory: tests live in src/__tests__/migrations
         // and src/__tests__/scripts (the integration-only suite gated on real
         // STAGING_SUPABASE_* secrets in CI). They are NOT exercised by the unit
@@ -203,17 +248,47 @@ export default defineConfig({
         'src/lib/domains/**',
         'src/lib/identity/**',
         'src/lib/middleware/**',
+        // ...and the canonical packages/lib twins of the same territory (the
+        // src/lib entries above keep matching the re-export stub layer; these
+        // match the real code):
+        'packages/lib/src/ai/**',
+        'packages/lib/src/domains/**',
+        'packages/lib/src/identity/**',
+        'packages/lib/src/middleware/**',
         // Generated / wrapper files with nothing meaningful to test.
         'src/lib/types.ts',
         'src/lib/constants.ts',
+        'packages/lib/src/types.ts',
+        'packages/lib/src/constants.ts',
       ],
       thresholds: {
-        // Global threshold for the unit-tested core of `src/lib/**` (minus the
-        // exclusions above). Was previously labelled "aspirational" with a 60%
+        // Global threshold — NOTE the measured surface changed on 2026-08-03
+        // (P1-7): include went from the stub-only `src/lib/**` to all of
+        // apps/host `src/**` + the canonical packages/lib + packages/ui code,
+        // so the historical floor rationale below (Installments 1-3) describes
+        // a DIFFERENT, much smaller denominator. Full-suite measurement on
+        // the new surface (2026-08-03, local Windows run, 1209 files /
+        // 18,973 passing tests, 1,447 files in the coverage map):
+        //   statements 60.37 | branches 51.69 | functions 58.25 | lines 62.23
+        // Floors kept at min(previous, measured-2) per metric:
+        //   statements 54 (measured 60.37 — headroom, ratchet candidate)
+        //   branches   49 (measured 51.69)
+        //   functions  56 (measured 58.25; LOWERED from 58 because the margin
+        //                  was 0.25pt — inside normal local↔CI environment
+        //                  delta — on a floor calibrated against the old
+        //                  stub surface. Set to measured-2 per the P1-7
+        //                  repair protocol; before=58, after=56.)
+        //   lines      55 (measured 62.23 — headroom, ratchet candidate)
+        // TODO(testing): once the CI merge job confirms the merged-shard
+        // numbers on the new surface, ratchet statements/lines/functions up
+        // to (CI-measured − 2). Aspirational target remains 60%+ across the
+        // board via the testing chain.
+        //
+        // ── Historical floor rationale (pre-2026-08-03, stub-era surface) ──
+        // Was previously labelled "aspirational" with a 60%
         // target, but `continue-on-error: true` masked that reality never
         // exceeded ~37%. Now that CI is a hard gate (P0-D launch fix), the
-        // floor must reflect actual present coverage. Aspirational target
-        // remains 60% — ratchet upward via the testing chain (see TODOs).
+        // floor must reflect actual present coverage.
         //
         // Installment 1 (2026-04-28, PR test/global-coverage-installment-1):
         // raised floors after adding 8 pure-utility test files covering
@@ -245,33 +320,30 @@ export default defineConfig({
         // installment 4 the 60% milestone should clear.
         statements: 54,
         branches: 49,
-        functions: 58,
+        functions: 56,
         lines: 55,
-        // Per-file thresholds for critical business logic.
-        // P14 review chains (assessment + testing) own restoring xp-rules
-        // branches → 90% and cognitive-engine all-metrics → 80%; thresholds
-        // here reflect current reality as a hard floor that prevents further
-        // drift while the gap is closed.
-        // TODO(assessment): restore xp-rules.ts branches threshold to 90 by
-        // adding tests for the daily-cap clamp, perfect-score combo, and
-        // streak-bonus edge cases.
+        // ── Per-file thresholds for critical business logic ──
         //
-        // D2-B (2026-05-05): xp-rules.ts is now a thin re-export shim
-        // (`export * from './xp-config'`). The XP economy live source moved
-        // to xp-config.ts. Both files share the same 90/90/90/90 floor:
-        // - xp-rules.ts: trivial — single re-export line, V8 reports 100% on
-        //   any test that touches a re-exported symbol.
-        // - xp-config.ts: the real surface area; all 234 P2 tests now import
-        //   from this file (8 test files repointed).
-        // Keeping both in the threshold map prevents regressions if a future
-        // change either reintroduces logic into the shim or detaches xp-config.
-        'src/lib/xp-rules.ts': {
-          statements: 90,
-          branches: 90,
-          functions: 90,
-          lines: 90,
-        },
-        'src/lib/xp-config.ts': {
+        // Key format (repaired 2026-08-03, P1-7): vitest matches threshold
+        // keys with an ANCHORED picomatch against
+        // pathe.relative(config.root, coveredFile), and config.root = process
+        // CWD = apps/host in every lane that runs. So the ONLY key form that
+        // reaches the canonical implementations under packages/ is
+        // '../../packages/...' (bare 'packages/...', '**/packages/...' and
+        // absolute keys all match nothing — verified empirically against
+        // vitest 4.1.8). The previous keys ('src/lib/xp-rules.ts' etc.)
+        // pointed at the 2-line apps/host re-export stubs: V8 reports ~100%
+        // on a stub the moment any test imports it, so those 90% floors were
+        // tautologies. If a lane ever invokes vitest from the repo root
+        // instead of apps/host, these keys go silently vacuous — keep lane
+        // CWD = apps/host (the CI merge job already does).
+        //
+        // P14 review chains (assessment + testing) own these floors.
+        //
+        // D2-B (2026-05-05): packages/lib/src/xp-rules.ts is a thin re-export
+        // shim (`export * from './xp-config'`). The XP economy live source is
+        // xp-config.ts — the 90/90/90/90 floor sits on the real surface.
+        '../../packages/lib/src/xp-config.ts': {
           statements: 90,
           branches: 90,
           functions: 90,
@@ -285,15 +357,15 @@ export default defineConfig({
         // Params switch cases, calculateChapterPriority urgency tiers,
         // generateExamStudyPlan (last-day / last-week / normal), predict-
         // ExamScore confidence, classifyImageText heuristics, and compute-
-        // MonthlyReportMetrics. Actual coverage: 100/98.8/100/100. Floor
-        // pinned at 80 to leave 1-2 branches of headroom for refactors.
-        'src/lib/cognitive-engine.ts': {
+        // MonthlyReportMetrics. Floor pinned at 80 to leave headroom for
+        // refactors.
+        '../../packages/lib/src/cognitive-engine.ts': {
           statements: 80,
           branches: 80,
           functions: 80,
           lines: 80,
         },
-        'src/lib/exam-engine.ts': {
+        '../../packages/lib/src/exam-engine.ts': {
           statements: 80,
           branches: 80,
           functions: 80,
@@ -310,7 +382,7 @@ export default defineConfig({
         // four-way env fallback final clause) — not worth chasing.
         // feature-flags.ts is the single gate every projector, BFF
         // route, and Edge Function reads, so the floor is high.
-        'src/lib/feature-flags.ts': {
+        '../../packages/lib/src/feature-flags.ts': {
           statements: 95,
           branches: 85,
           functions: 95,
@@ -331,7 +403,7 @@ export default defineConfig({
         // convention above. oauth-manager.ts is the gate for the entire
         // B2B developer platform (app registration, token validation,
         // scope intersection) so the floor is high.
-        'src/lib/oauth-manager.ts': {
+        '../../packages/lib/src/oauth-manager.ts': {
           statements: 95,
           branches: 92,
           functions: 95,

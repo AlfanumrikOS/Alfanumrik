@@ -1,0 +1,46 @@
+{
+  // ── Test-file type-checking lane (2026-08-03, P1-7 quality-gate audit) ──
+  //
+  // The main tsconfig.json excludes `**/*.test.ts(x)` and `src/__tests__` from
+  // `npm run type-check`, so the ~1,225 test files under apps/host/src were
+  // never type-checked by any gate. This config is the SAME program as the app
+  // tsconfig (extends it) with those exclusions removed, so the error delta it
+  // reports is attributable to test files (and the packages code they pull in
+  // transitively).
+  //
+  // Run via `npm run type-check:tests` (apps/host) — kept as a SEPARATE lane
+  // rather than folded into the main type-check because the measured error
+  // count on 2026-08-03 exceeded the fold-in threshold; see the P1-7 audit
+  // report for the count and top error categories. TODO(testing): burn the
+  // error count down, then delete the test exclusions from tsconfig.json and
+  // retire this file.
+  //
+  // NOTE: ~31 of the 1,225 test files use vitest's `globals: true` names
+  // (describe/it/expect) without importing them; they error here with
+  // TS2582/TS2304 until they import from 'vitest' explicitly. No
+  // `compilerOptions.types` override is set — doing so would disable the
+  // automatic @types/* inclusion the app program relies on and contaminate
+  // the measurement with non-test errors.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Keep this lane's incremental state out of the app lane's .tsbuildinfo.
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "../../.next/types/**/*.ts",
+    "../../.next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "supabase",
+    "scripts",
+    "Alfanumrik",
+    "FoxyTutorAgent"
+  ]
+}
