@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdminSecret } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'analytics.global');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
 

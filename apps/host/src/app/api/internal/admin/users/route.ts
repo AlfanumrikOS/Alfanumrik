@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { validateBody, zPlanCode } from '@alfanumrik/lib/validation';
 
@@ -34,8 +35,8 @@ const PatchBodySchema = z.discriminatedUnion('table', [
 ]);
 
 export async function GET(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'user.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const sp = new URL(request.url).searchParams;
@@ -80,8 +81,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'user.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';

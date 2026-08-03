@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdminSecret } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
 export const runtime = 'nodejs';
@@ -7,8 +7,8 @@ export const runtime = 'nodejs';
 // GET /api/internal/admin/ai-monitor
 // Returns hourly AI usage for last 24h + error rate + top subjects
 export async function GET(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'analytics.global');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

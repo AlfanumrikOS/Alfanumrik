@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { invalidateFlagCache } from '@alfanumrik/lib/feature-flags';
 import { getProtection } from '@alfanumrik/lib/flags/protected-flags';
@@ -28,8 +29,8 @@ export const runtime = 'nodejs';
 
 // GET /api/internal/admin/feature-flags — list all flags
 export async function GET(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'system.config');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   // NB: the column is flag_name — ordering by the nonexistent `name` column
@@ -45,8 +46,8 @@ export async function GET(request: NextRequest) {
 
 // POST /api/internal/admin/feature-flags — create flag
 export async function POST(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'system.config');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';
@@ -97,8 +98,8 @@ export async function POST(request: NextRequest) {
 
 // PATCH /api/internal/admin/feature-flags — update flag
 export async function PATCH(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'system.config');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';

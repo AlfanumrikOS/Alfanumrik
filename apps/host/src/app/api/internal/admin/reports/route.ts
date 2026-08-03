@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 
 export const runtime = 'nodejs';
 
@@ -29,8 +30,8 @@ function toCsv(data: Record<string, unknown>[]): string {
 }
 
 export async function GET(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'analytics.global');
+  if (!auth.authorized) return auth.errorResponse!;
   const ip = request.headers.get('x-forwarded-for') || '';
 
   try {

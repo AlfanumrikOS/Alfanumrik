@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
 export const runtime = 'nodejs';
 
 // GET /api/internal/admin/support?status=open|pending|resolved|all&page=&limit=
 export async function GET(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'support.view_tickets');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const sp = new URL(request.url).searchParams;
@@ -31,8 +32,8 @@ export async function GET(request: NextRequest) {
 
 // PATCH /api/internal/admin/support — update ticket status / add note
 export async function PATCH(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'support.manage_tickets');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';

@@ -1,49 +1,59 @@
 /**
- * /api/internal/admin/feature-flags — protected-flag guardrail PARITY fix
- * (backend review, Phase 0 follow-up 2026-07-22).
+ * /api/internal/admin/feature-flags — protected-flag guardrail coverage.
  *
- * This route mutates `feature_flags` directly via the WEAKER `x-admin-secret`
- * shared-secret gate (`requireAdminSecret`), distinct from the super_admin
- * session check on `/api/super-admin/feature-flags`. Before this fix it had
- * ZERO protected-flags-registry awareness:
+ * AUTH-MODEL UPDATE (P2-1 PR-3, 2026-08-03)
+ *   This route previously mutated `feature_flags` behind the WEAKER
+ *   `x-admin-secret` shared-secret gate (`requireAdminSecret`). It was swapped
+ *   to the session/RBAC gate `authorizeRequest(request, 'system.config')`. The
+ *   guardrail this file exists to verify is UNCHANGED — the route still REFUSES
+ *   to create/enable a protected flag from this path — so the auth PRECONDITION
+ *   is the only thing rewritten here: we authenticate as an authorized
+ *   super_admin (mocked `authorizeRequest`) so every test reaches the guardrail
+ *   logic, then assert the guardrail behavior exactly as before.
  *
- *   - POST (INSERT) is not covered by the DB-layer `trg_protect_feature_flags`
+ * WHY THE GUARDRAIL EXISTS (unchanged)
+ *   - POST (INSERT) is NOT covered by the DB-layer `trg_protect_feature_flags`
  *     trigger (BEFORE UPDATE only), so it could create a brand-new row under a
  *     protected/reserved name pre-enabled — the "delete-recreate"-class bypass
  *     the super-admin console POST handler already defends against.
- *   - PATCH on an EXISTING protected row making it MORE enabled would still be
- *     blocked by the DB trigger, but this route had no typed-confirmation /
- *     burst-guard parity and would surface a raw, unhandled Postgres trigger
- *     error instead of a clean 403.
+ *   - PATCH on an EXISTING protected row making it MORE enabled would be blocked
+ *     by the DB trigger, but this route had no typed-confirmation / burst-guard
+ *     parity and would surface a raw Postgres trigger error instead of a clean
+ *     403.
+ *   The route now REFUSES to touch a protected flag from this path at all — POST
+ *   refuses creation under a protected/reserved name (403 FLAG_PROTECTED) and
+ *   PATCH refuses is_enabled / rollout_percentage changes on an existing
+ *   protected flag (403 FLAG_PROTECTED). Everything else (unprotected flags, or
+ *   protected-flag description/target_* edits) is unaffected.
  *
- * Rather than duplicating the confirm/burst-guard machinery from the console
- * route, this route now simply REFUSES to touch a protected flag from this
- * weaker-authed path at all — POST refuses creation under a protected/
- * reserved name (403 FLAG_PROTECTED) and PATCH refuses is_enabled /
- * rollout_percentage changes on an existing protected flag (403
- * FLAG_PROTECTED). Everything else (unprotected flags, or protected-flag
- * description/target_* edits) is unaffected.
- *
- * SEAM CHOICE (mirrors internal-admin-secret-gate.test.ts): `requireAdminSecret`
- * is a pure header/env check — NOT mocked, driven for real via the
- * `x-admin-secret` header + `SUPER_ADMIN_SECRET` env var. `getProtection` (the
- * protected-flags registry) is also NOT mocked — real registry data is used so
- * this suite breaks if the registry silently drops a flag. Only the
- * service-role DB seam (`getSupabaseAdmin`) and `logAdminAction` are mocked.
+ * SEAM CHOICE
+ *   - `authorizeRequest` (`@alfanumrik/lib/rbac`) is MOCKED — `permit()` (the
+ *     beforeEach default) resolves an authorized super_admin so tests reach the
+ *     guardrail; `deny()` resolves the 401 the route propagates before any DB
+ *     work (see the auth-precedence block).
+ *   - `getProtection` (the protected-flags registry) is NOT mocked — real
+ *     registry data is used so this suite breaks if the registry silently drops
+ *     a flag.
+ *   - Only the service-role DB seam (`getSupabaseAdmin`), `logAdminAction`, and
+ *     `invalidateFlagCache` are mocked.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-// ── logAdminAction is fire-and-forget; stub it and keep requireAdminSecret real. ──
+// ── RBAC gate. Mocked so tests can authenticate as an authorized super_admin
+//    (permit — the default) or an unauthenticated caller (deny). ──
+const _authorizeImpl = vi.fn();
+vi.mock('@alfanumrik/lib/rbac', () => ({
+  authorizeRequest: (...args: unknown[]) => _authorizeImpl(...args),
+}));
+
+// ── logAdminAction is fire-and-forget; stub it. It is the only symbol this
+//    route imports from admin-auth. ──
 const logAdminAction = vi.fn().mockResolvedValue(undefined);
-vi.mock('@alfanumrik/lib/admin-auth', async () => {
-  const actual = await vi.importActual<typeof import('@alfanumrik/lib/admin-auth')>('@alfanumrik/lib/admin-auth');
-  return {
-    ...actual,
-    logAdminAction: (...args: unknown[]) => logAdminAction(...args),
-  };
-});
+vi.mock('@alfanumrik/lib/admin-auth', () => ({
+  logAdminAction: (...args: unknown[]) => logAdminAction(...args),
+}));
 
 const invalidateFlagCache = vi.fn();
 vi.mock('@alfanumrik/lib/feature-flags', () => ({
@@ -99,27 +109,50 @@ vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   getSupabaseAdmin: (...args: unknown[]) => getSupabaseAdminMock(...args),
 }));
 
-const SECRET = 'test-super-admin-secret';
 const FLAG_ID = '11111111-1111-4111-8111-111111111111';
 
 function req(body: unknown, opts: { method?: string; headers?: Record<string, string> } = {}): NextRequest {
   const { method = 'POST', headers = {} } = opts;
   return new NextRequest('http://localhost/api/internal/admin/feature-flags', {
     method,
-    headers: { 'content-type': 'application/json', 'x-admin-secret': SECRET, ...headers },
+    // Bearer header for realism only — authorizeRequest is mocked, so allow/deny
+    // is driven by permit()/deny(), not by real token verification.
+    headers: { 'content-type': 'application/json', Authorization: 'Bearer t', ...headers },
     body: JSON.stringify(body),
   });
 }
 
-const ORIGINAL_ENV = { ...process.env };
+/** Authorized super_admin (holds system.config) → reaches the guardrail. */
+function permit() {
+  _authorizeImpl.mockResolvedValue({
+    authorized: true,
+    userId: 'admin-1',
+    studentId: null,
+    roles: ['super_admin'],
+    permissions: [],
+    errorResponse: null,
+  });
+}
+
+/** No valid session → authorizeRequest returns its 401 before any handler work. */
+function deny() {
+  const errorResponse = new Response(
+    JSON.stringify({ error: 'Unauthorized', code: 'AUTH_REQUIRED' }),
+    { status: 401, headers: { 'Content-Type': 'application/json' } },
+  );
+  _authorizeImpl.mockResolvedValue({
+    authorized: false,
+    userId: null,
+    studentId: null,
+    roles: [],
+    permissions: [],
+    errorResponse,
+  });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env = { ...ORIGINAL_ENV, SUPER_ADMIN_SECRET: SECRET };
-});
-
-afterEach(() => {
-  process.env = ORIGINAL_ENV;
+  permit(); // default: authenticated authorized super_admin, so tests reach the guardrail
 });
 
 // Representative protected names, one per relevant tier (same as the
@@ -127,6 +160,34 @@ afterEach(() => {
 const CONSTITUTION_FLAG = 'ff_school_pulse_v1'; // constitution_pinned
 const SPECIAL_FLAG = 'ff_atomic_subscription_activation'; // special_do_not_touch
 const UNPROTECTED_FLAG = 'ff_demo_v1';
+
+// ─── Auth precondition — the RBAC gate runs BEFORE the guardrail ──────────
+// Proves the auth swap didn't just move the guardrail behind a no-op gate: an
+// unauthenticated caller is rejected before getSupabaseAdmin() is ever obtained,
+// so the guardrail (and every DB touch) is unreachable without a session.
+
+describe('/api/internal/admin/feature-flags — authorization gate precedes the guardrail', () => {
+  it('POST without a valid session → 401, service-role client never obtained', async () => {
+    deny();
+    const { POST } = await import('@/app/api/internal/admin/feature-flags/route');
+    const res = await POST(req({ name: CONSTITUTION_FLAG, is_enabled: true }) as never) as Response;
+
+    expect(res.status).toBe(401);
+    expect(getSupabaseAdminMock).not.toHaveBeenCalled();
+    expect(logAdminAction).not.toHaveBeenCalled();
+    expect(invalidateFlagCache).not.toHaveBeenCalled();
+  });
+
+  it('PATCH without a valid session → 401, service-role client never obtained', async () => {
+    deny();
+    const { PATCH } = await import('@/app/api/internal/admin/feature-flags/route');
+    const res = await PATCH(req({ id: FLAG_ID, is_enabled: true }, { method: 'PATCH' }) as never) as Response;
+
+    expect(res.status).toBe(401);
+    expect(getSupabaseAdminMock).not.toHaveBeenCalled();
+    expect(logAdminAction).not.toHaveBeenCalled();
+  });
+});
 
 // ─── POST — creating under a protected/reserved name ──────────────────────
 

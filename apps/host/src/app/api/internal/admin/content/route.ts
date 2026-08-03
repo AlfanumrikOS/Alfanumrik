@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { SYLLABUS_CACHE_TAG } from '@/lib/curriculum/cached-taxonomy';
 
@@ -9,8 +10,8 @@ export const runtime = 'nodejs';
 // GET /api/internal/admin/content
 // ?resource=topics|questions|subjects&subject_code=&grade=&chapter=&page=&limit=&search=
 export async function GET(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'content.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const sp = new URL(request.url).searchParams;
@@ -85,8 +86,8 @@ export async function GET(request: NextRequest) {
 
 // POST /api/internal/admin/content — create question (topics require subject_id lookup)
 export async function POST(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'content.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';
@@ -143,8 +144,8 @@ export async function POST(request: NextRequest) {
 
 // PATCH /api/internal/admin/content — update topic or question
 export async function PATCH(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'content.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';
@@ -179,8 +180,8 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE /api/internal/admin/content?resource=topic|question&id=
 export async function DELETE(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'content.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';
