@@ -2627,24 +2627,21 @@
       "file": "apps/host/src/app/api/teacher/messages/route.ts",
       "access": "teacher",
       "owner": "teacher-backend",
-      "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks.",
-      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+      "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks. P2-7b (2026-08-03): migrated off the service-role client onto the RLS-scoped createSupabaseServerClient invoking auth.uid()-anchored SECURITY DEFINER RPCs (migration 20260803130000)."
     },
     {
       "path": "/api/teacher/messages/threads",
       "file": "apps/host/src/app/api/teacher/messages/threads/route.ts",
       "access": "teacher",
       "owner": "teacher-backend",
-      "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks.",
-      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+      "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks. P2-7b (2026-08-03): migrated off the service-role client onto the RLS-scoped createSupabaseServerClient invoking auth.uid()-anchored SECURITY DEFINER RPCs (migration 20260803130000)."
     },
     {
       "path": "/api/teacher/messages/threads/[id]/messages",
       "file": "apps/host/src/app/api/teacher/messages/threads/[id]/messages/route.ts",
       "access": "teacher",
       "owner": "teacher-backend",
-      "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks.",
-      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+      "rationale": "Teacher endpoint; access must derive from teacher session and class/student boundary checks. P2-7b (2026-08-03): migrated off the service-role client onto the RLS-scoped createSupabaseServerClient invoking auth.uid()-anchored SECURITY DEFINER RPCs (migration 20260803130000)."
     },
     {
       "path": "/api/teacher/modules",

@@ -241,7 +241,15 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // src/app/api/cron/daily/route.ts was DELETED — a deprecated alias for
 // /api/cron/daily-cron, scheduled by nothing, carrying only deprecation
 // telemetry. Its ledger entry is pruned in the same change (ratchet DOWN).
-const EXPECTED_COUNT = 268;
+// P2-7b teacher-messaging RLS migration (2026-08-03, architect-approved): 268 -> 265.
+// The three teacher-messaging routes — src/app/api/teacher/messages/route.ts,
+// src/app/api/teacher/messages/threads/route.ts, and
+// src/app/api/teacher/messages/threads/[id]/messages/route.ts — moved OFF the
+// service-role client onto auth.uid()-anchored SECURITY DEFINER RPCs invoked
+// through the RLS-scoped createSupabaseServerClient (teacher RPC set: migration
+// 20260803130000, symmetric with the parent set). Their ledger entries are
+// pruned in the SAME change so the guard ratchets DOWN, not drifts.
+const EXPECTED_COUNT = 265;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

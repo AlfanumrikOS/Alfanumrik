@@ -18,8 +18,11 @@
  *   - GET /api/parent/notifications
  *   - GET /api/teacher/messages/threads/[id]/messages
  *
- * Shared Supabase-admin mock fixture: 150 rows in each table so we can
- * verify the 100-cap.
+ * Both routes now read through SECURITY DEFINER RPCs on the RLS-scoped server
+ * client (parent_list_notifications; teacher_list_thread_messages after the
+ * 2026-08-03 P2-7b teacher-messaging RLS migration). The RPCs are mocked via
+ * handleNotificationsRpc / handleTeacherThreadMessagesRpc against 150-row
+ * in-memory fixtures so we can verify the 100-cap and cursor monotonicity.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -349,6 +352,34 @@ function handleNotificationsRpc(name: string, args?: Record<string, unknown>) {
   };
 }
 
+// P2-7b (2026-08-03): the teacher thread-messages route migrated OFF the
+// service-role client onto createSupabaseServerClient().rpc(
+// 'teacher_list_thread_messages', { p_thread_id, p_cursor, p_limit }) — a
+// SECURITY DEFINER RPC (migration 20260803130000). This handler mirrors that
+// RPC's real pagination contract (identical to the one modeled in
+// api/teacher-parent-messaging.test.ts): oldest-first, `created_at > p_cursor`,
+// p_limit re-clamped 1..100, hasMore ⇔ there is a row beyond the page.
+function handleTeacherThreadMessagesRpc(args?: Record<string, unknown>) {
+  const threadId = typeof args?.p_thread_id === 'string' ? args.p_thread_id : null;
+  const rawLimit = Number(args?.p_limit ?? 100);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 100) : 100;
+  const cursor = typeof args?.p_cursor === 'string' ? args.p_cursor : null;
+
+  const all = messages
+    .filter((row) => row.thread_id === threadId && (!cursor || row.created_at > cursor))
+    .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  const page = all.slice(0, limit);
+  const hasMore = all.length > limit;
+
+  return {
+    success: true,
+    messages: page,
+    nextCursor: hasMore ? page.at(-1)?.created_at ?? null : null,
+    hasMore,
+  };
+}
+
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   supabaseAdmin: {
     from(table: string) {
@@ -404,10 +435,16 @@ beforeEach(() => {
   // 150 rows so we can exercise the 100-cap.
   notifications = makeNotificationFixture(150);
   messages = makeMessagesFixture(150);
-  mockRpc.mockImplementation(async (name: string, args?: Record<string, unknown>) => ({
-    data: handleNotificationsRpc(name, args),
-    error: null,
-  }));
+  mockRpc.mockImplementation(async (name: string, args?: Record<string, unknown>) => {
+    // Both routes under test now speak SECURITY DEFINER RPCs through the
+    // RLS-scoped server client; dispatch by RPC name. The teacher RPC returns
+    // its payload flat ({ success, messages, nextCursor, hasMore }); the
+    // notifications RPC nests under `data` ({ success, data: { items, ... } }).
+    if (name === 'teacher_list_thread_messages') {
+      return { data: handleTeacherThreadMessagesRpc(args), error: null };
+    }
+    return { data: handleNotificationsRpc(name, args), error: null };
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
