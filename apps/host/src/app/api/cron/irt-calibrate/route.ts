@@ -17,33 +17,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
-import { timingSafeEqual } from 'node:crypto';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-
-  // Vercel Cron sends the secret either as `Authorization: Bearer <secret>`
-  // (preferred) or via the `?token=` query param. Match either, with a
-  // constant-time compare to keep timing-attack surface minimal.
-  const auth  = req.headers.get('authorization') ?? '';
-  const token = req.nextUrl.searchParams.get('token') ?? '';
-  const provided = auth.startsWith('Bearer ')
-    ? auth.slice('Bearer '.length)
-    : token;
-
-  if (!provided) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
+// Auth: shared @alfanumrik/lib/cron-auth gate. Vercel Cron sends
+// `Authorization: Bearer <CRON_SECRET>` automatically; `x-cron-secret` is
+// accepted for ops invocations. The legacy `?token=` query carrier was
+// REMOVED 2026-08-03 (secrets in query strings land in access logs).
 
 export async function GET(req: NextRequest): Promise<Response> {
-  if (!isAuthorized(req)) {
+  if (!verifyCronAuth(req).ok) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 

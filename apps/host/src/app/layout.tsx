@@ -8,6 +8,7 @@ import { CosmicThemeProvider } from '@alfanumrik/lib/cosmic-theme';
 import { cosmicFontVars } from '@alfanumrik/lib/cosmic-fonts';
 import { momentumFontClass, momentumFontVars } from '@alfanumrik/lib/momentum-fonts';
 import { SchoolProvider } from '@alfanumrik/lib/SchoolContext';
+import { SWRProvider } from '@alfanumrik/lib/SWRProvider';
 import { TenantConfigProvider } from '@alfanumrik/lib/tenant-domain/client';
 import { ErrorBoundary } from '@alfanumrik/ui/ErrorBoundary';
 import ServiceWorkerCleanup from '@alfanumrik/lib/RegisterSW';
@@ -181,34 +182,43 @@ export default function RootLayout({
           legacy --school-{primary,secondary} vars from SchoolProvider use
           a different namespace, so there's no collision.
         */}
-        <TenantConfigProvider>
-          <SchoolProvider>
-            <AuthProvider>
-              {/* CosmicThemeProvider — Phase 0 of the cosmic redesign. Reads
-                  ff_cosmic_redesign_v1 client-side and, only when ON, writes
-                  data-design="cosmic" + data-theme + data-role to <html> to
-                  activate the cosmic token scope. When OFF it removes those
-                  attributes, so the legacy light theme renders unchanged.
-                  Mounted inside AuthProvider so it can read activeRole for the
-                  role-scoped palettes. Renders no markup itself. */}
-              <CosmicThemeProvider>
-                <ErrorBoundary>
-                  <div className="app-shell">
-                    <GlobalAppLayout>{children}</GlobalAppLayout>
-                  </div>
-                </ErrorBoundary>
-                <ServiceWorkerCleanup />
-                {/* In-app toast mount (Phase A.4). Replaces native alert() for
-                    error UI so cheap school tablets don't see blocking dialogs. */}
-                <Toaster />
-                {/* Non-critical client-only chrome (consent banner, maintenance
-                    banner, offline indicator, PostHog SDK init). Lazy-loaded
-                    to keep shared JS under the P10 budget. */}
-                <LayoutDeferredChrome />
-              </CosmicThemeProvider>
-            </AuthProvider>
-          </SchoolProvider>
-        </TenantConfigProvider>
+        {/* SWRProvider — global <SWRConfig> mounting DEFAULT_CONFIG from
+            packages/lib/src/swr.tsx (bounded retries, 10s dedupe, no focus
+            revalidation). Without it, useSWR call sites that pass no config
+            inherit SWR library defaults (unbounded error retries, focus
+            revalidation on). Outermost among client providers — it has no
+            dependencies, so every portal inherits it. Hooks that pass their
+            own config object still override per option. Renders no markup. */}
+        <SWRProvider>
+          <TenantConfigProvider>
+            <SchoolProvider>
+              <AuthProvider>
+                {/* CosmicThemeProvider — Phase 0 of the cosmic redesign. Reads
+                    ff_cosmic_redesign_v1 client-side and, only when ON, writes
+                    data-design="cosmic" + data-theme + data-role to <html> to
+                    activate the cosmic token scope. When OFF it removes those
+                    attributes, so the legacy light theme renders unchanged.
+                    Mounted inside AuthProvider so it can read activeRole for the
+                    role-scoped palettes. Renders no markup itself. */}
+                <CosmicThemeProvider>
+                  <ErrorBoundary>
+                    <div className="app-shell">
+                      <GlobalAppLayout>{children}</GlobalAppLayout>
+                    </div>
+                  </ErrorBoundary>
+                  <ServiceWorkerCleanup />
+                  {/* In-app toast mount (Phase A.4). Replaces native alert() for
+                      error UI so cheap school tablets don't see blocking dialogs. */}
+                  <Toaster />
+                  {/* Non-critical client-only chrome (consent banner, maintenance
+                      banner, offline indicator, PostHog SDK init). Lazy-loaded
+                      to keep shared JS under the P10 budget. */}
+                  <LayoutDeferredChrome />
+                </CosmicThemeProvider>
+              </AuthProvider>
+            </SchoolProvider>
+          </TenantConfigProvider>
+        </SWRProvider>
       </body>
     </html>
   );

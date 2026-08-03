@@ -6,7 +6,9 @@
  *
  *   1. FAIL-CLOSED CRON_SECRET auth gate (REG-118/REG-127 posture): missing
  *      secret, wrong secret, or unset env → 401 with ZERO DB I/O. Carrier
- *      precedence is first-PRESENT-wins (Bearer > x-cron-secret > ?token=).
+ *      precedence is first-PRESENT-wins (Bearer > x-cron-secret). The ?token=
+ *      query carrier was REMOVED 2026-08-03 (P1 verifyCronAuth batch) and now
+ *      401s even with a correct value.
  *
  *   2. DRIFT MATRIX against the CEO-approved posture
  *      (packages/lib/src/flags/protected-flags.ts). NOTE (2026-07-22 Phase 0
@@ -223,12 +225,14 @@ describe('flag-posture-canary — auth gate (fail-closed before I/O)', () => {
     expect(res.status).toBe(200);
   });
 
-  it('accepts x-cron-secret and ?token= carriers', async () => {
+  it('accepts x-cron-secret; REJECTS ?token= (query carrier removed 2026-08-03)', async () => {
     const { GET } = await loadRoute();
     expect((await GET(req({ 'x-cron-secret': SECRET }))).status).toBe(200);
+    // P1 batch (verifyCronAuth consolidation): secrets in query strings leak
+    // into access/CDN logs, so the ?token= carrier now 401s.
     expect(
       (await GET(req({}, `http://localhost/api/cron/flag-posture-canary?token=${SECRET}`))).status,
-    ).toBe(200);
+    ).toBe(401);
   });
 
   it('carrier precedence is first-PRESENT-wins: a wrong Bearer is NOT rescued by a correct x-cron-secret', async () => {

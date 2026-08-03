@@ -1,7 +1,8 @@
 name: OpenAPI Contract Drift Check
 
 # Wave 2.1 (Phase 2 foundation): the /v2 contract is generated from a single Zod
-# source (src/lib/api/v2/contract.ts). The committed artifact openapi/v2.json
+# source (packages/lib/src/api/v2/contract.ts — canonical; apps/host/src/lib/api/v2/contract.ts
+# is a thin re-export stub of it). The committed artifact openapi/v2.json
 # MUST stay in lockstep with that source. This workflow regenerates the spec and
 # fails if the committed file is stale, so the contract can't silently drift
 # (which would desync the mobile Dart client).
@@ -15,7 +16,11 @@ on:
   push:
     branches: [main, master, develop]
     paths:
-      - 'src/lib/api/v2/contract.ts'
+      # Monorepo paths (2026-07-17 migration): canonical Zod source + its
+      # apps/host re-export stub. The old pre-monorepo 'src/lib/api/v2/contract.ts'
+      # matched nothing, so this gate never fired on contract changes.
+      - 'packages/lib/src/api/v2/contract.ts'
+      - 'apps/host/src/lib/api/v2/contract.ts'
       - 'scripts/gen-openapi.mjs'
       - 'scripts/gen-openapi.build.mts'
       - 'openapi/v2.json'
@@ -26,7 +31,9 @@ on:
   pull_request:
     branches: [main, master]
     paths:
-      - 'src/lib/api/v2/contract.ts'
+      # Keep in lockstep with the push paths above (canonical + stub).
+      - 'packages/lib/src/api/v2/contract.ts'
+      - 'apps/host/src/lib/api/v2/contract.ts'
       - 'scripts/gen-openapi.mjs'
       - 'scripts/gen-openapi.build.mts'
       - 'openapi/v2.json'

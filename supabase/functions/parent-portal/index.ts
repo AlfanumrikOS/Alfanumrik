@@ -630,10 +630,22 @@ async function getChildDashboardData(
       return istDateString(qDate) === dateStr
     })
     const quizCount = dayQuizzes.length
-    const dayXp = dayQuizzes.reduce(
-      (sum: number, q: Record<string, unknown>) => sum + (Number(q.correct_answers) || 0) * 10,
-      0
-    )
+    // XP re-derived per quiz with the canonical P2 formula (approximate:
+    // quiz_sessions stores no xp_earned column and the 200 XP/day cap is not
+    // re-applied here). Previously this dropped both bonuses (base-only *10).
+    const dayXp = dayQuizzes.reduce((sum: number, q: Record<string, unknown>) => {
+      const correct = Number(q.correct_answers) || 0
+      const total = Number(q.total_questions) || 0
+      // P1: score_percent = Math.round((correct / total) * 100); fall back to
+      // the stored score_percent only when totals are unavailable.
+      const scorePercent = total > 0
+        ? Math.round((correct / total) * 100)
+        : Math.round(Number(q.score_percent) || 0)
+      let xp = correct * 10 // P2: XP_RULES.quiz_per_correct=10 (packages/lib/src/xp-config.ts — Deno cannot import it; keep in sync)
+      if (scorePercent >= 80) xp += 20 // P2: XP_RULES.quiz_high_score_bonus=20 (packages/lib/src/xp-config.ts — Deno cannot import it; keep in sync)
+      if (scorePercent === 100) xp += 50 // P2: XP_RULES.quiz_perfect_bonus=50 (packages/lib/src/xp-config.ts — Deno cannot import it; keep in sync)
+      return sum + xp
+    }, 0)
     dailyActivity.push({
       label: istDayOfWeekLabel(d),
       day: dateStr,

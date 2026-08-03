@@ -28,7 +28,9 @@ The companion SLO doc is `docs/architecture/SLO.md` §"Alerting wire-up" — tha
 | PagerDuty service for SEV-1 critical paging | Sentry → Settings → Integrations → PagerDuty; service key must be configured before any rule routes to it |
 | PostHog → Sentry webhook (for projector lag) | PostHog → Project Settings → Webhooks; receiver endpoint configured in Sentry → Integrations → Webhooks |
 
-**Hands off `tracesSampleRate`.** All three configs (`sentry.server.config.ts:12`, `sentry.client.config.ts:9`, `sentry.edge.config.ts:12`) pin `tracesSampleRate = 0.1` in production with an explicit comment warning against bumping it. Bumping to `1.0` multiplies Sentry transaction spend by 10× and exhausts free-tier quota — see [`RISK_REGISTER.md`](../architecture/RISK_REGISTER.md) §R16. Performance Alerts work fine at 0.1 sampling; what changes is the noise floor on tail-percentile alerts, not the alert correctness. **Do not adjust sample rate as a tuning lever** — adjust thresholds instead (see §10 "Tuning guidance").
+**Hands off `tracesSampleRate`.** All three runtimes pin `tracesSampleRate = 0.1` in production with an explicit comment warning against bumping it. The configs live under `apps/host/` (the old repo-root `sentry.client.config.ts` / `sentry.server.config.ts` / `sentry.edge.config.ts` paths are gone): client = `apps/host/instrumentation-client.ts` (thin loader) + `apps/host/sentry-client-init.ts:28` (init options), server = `apps/host/sentry.server.config.ts:12`, edge = `apps/host/sentry.edge.config.ts:12`, registered via `apps/host/instrumentation.ts`. Bumping to `1.0` multiplies Sentry transaction spend by 10× and exhausts free-tier quota — see [`RISK_REGISTER.md`](../architecture/RISK_REGISTER.md) §R16. Performance Alerts work fine at 0.1 sampling; what changes is the noise floor on tail-percentile alerts, not the alert correctness. **Do not adjust sample rate as a tuning lever** — adjust thresholds instead (see §10 "Tuning guidance").
+
+> **Client-event baseline note (2026-08-03).** Client-side Sentry events only began flowing on 2026-08-03 — the client SDK was never bundled before this date (the configs sat at the repo root, outside the Next.js project root), so any prior "zero client errors" reading is an artifact of the missing SDK, not evidence of health. Treat 2026-08-03 as day zero for client alert-rule tuning baselines. Also note client init is DEFERRED (window load/idle) with a bounded pre-init error buffer: errors in the first ~2–6 s are buffered and flushed at init, and sessions that bounce before init lose their events entirely — expect a systematic undercount of very-short sessions when tuning browser-side thresholds.
 
 **Project ID placeholders used below.** Replace at paste time:
 
@@ -85,7 +87,7 @@ Correctness SLIs in [`SLO.md`](../architecture/SLO.md#correctness) are not laten
 
 | # | SLO row ([`SLO.md`](../architecture/SLO.md#availability)) | Sentry alert type | Trigger condition | Threshold | Severity | Runbook on fire |
 |---|---|---|---|---|---|---|
-| A1 | `/api/v1/health` (99.9 % monthly) | Cron Monitor | HTTP probe to `https://alfanumrik.vercel.app/api/v1/health` every 60 s; expect 200 | 2 consecutive failures (~2 min) | critical (page on-call) | [`database-outage-response.md`](./database-outage-response.md) — health endpoint composes DB + auth + Edge Function probes |
+| A1 | `/api/v1/health` (99.9 % monthly) | Cron Monitor | HTTP probe to `https://alfanumrik.com/api/v1/health` every 60 s; expect 200 | 2 consecutive failures (~2 min) | critical (page on-call) | [`database-outage-response.md`](./database-outage-response.md) — health endpoint composes DB + auth + Edge Function probes |
 | A2 | Marketing pages (ISR) (99.95 %) | Metric Alert | `event.type:error AND tag.http.status_code:5xx AND tag.route:/(?!api)` count over 5 min | ≥ 5 consecutive 5xx | warn | Vercel deployment logs (operator console) |
 | A3 | Student dashboard `/dashboard` (99.9 %) | Metric Alert | `event.type:error AND tag.http.status_code:5xx AND transaction:/dashboard` count over 5 min | ≥ 5 consecutive 5xx | critical | `docs/runbooks/ssr-latency-degraded.md` (Iter. 2) — same root causes (DB pool, cold start, RSC failure) |
 | A4 | Razorpay webhook `/api/webhooks/razorpay` (99.95 %) | Issue Alert | `event.type:error AND transaction:/api/webhooks/razorpay AND tag.http.status_code:5xx` count over 5 min | 1 failure on POST | critical (P0 — Razorpay retry budget burns fast) | [`payment-webhook-recovery.md`](./payment-webhook-recovery.md) §"Severity tiers" P0 row |
@@ -221,7 +223,7 @@ Use this for the synthetic `/api/v1/health` ping.
 
 1. Sentry → Crons → **Create Monitor**
 2. **Schedule** type: HTTP probe
-3. **URL**: `https://alfanumrik.vercel.app/api/v1/health`
+3. **URL**: `https://alfanumrik.com/api/v1/health`
 4. **Interval**: every 60 s
 5. **Expected status**: 200
 6. **Grace period**: 30 s (allow one slow response without flagging)

@@ -185,6 +185,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: quality
     environment: staging
+    # Job-level concurrency: serializes every `supabase db push` against the
+    # staging DB into ONE lane shared with sync-staging-migrations.yml (same
+    # group name there, workflow-level). Without this, a main-push migration
+    # sync and this deploy's push could run DDL concurrently on the same
+    # database. Scoped to this JOB (not the workflow) so only the DB-push
+    # portion queues — build/deploy stay parallel under the workflow group
+    # above. Never cancel a migration push mid-flight.
+    concurrency:
+      group: staging-db-push
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
 

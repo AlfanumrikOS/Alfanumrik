@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
-import { captureException } from '@sentry/nextjs';
+// Lazy drop-in (same name/signature): keeps @sentry/core out of the
+// first-paint shared bundle (P10) — see packages/lib/src/sentry-lazy-capture.ts.
+import { captureException } from '@alfanumrik/lib/sentry-lazy-capture';
 
 /**
  * Root route error boundary — catches errors in any page (not root layout).

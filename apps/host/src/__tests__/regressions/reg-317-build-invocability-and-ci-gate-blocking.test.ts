@@ -77,6 +77,19 @@ function runNode(scriptPath: string, cwd: string) {
   };
 }
 
+/**
+ * Normalize Windows `\` separators to POSIX `/` for path-CONTENT assertions.
+ * The scripts under test emit paths with the host-OS separator — path.relative
+ * (check-npm-script-paths.mjs), path.resolve (the vitest.config alias) and
+ * fs.globSync (check-edge-logs.mjs) all print `\` on Windows and `/` on the
+ * Linux CI runner. That is correct behaviour on each OS; the bug was only that
+ * a few assertions checked for a literal `a/b/c` substring, so they passed on
+ * CI but spuriously failed on a Windows dev machine. Normalizing the RECEIVED
+ * text keeps each assertion's path content fully intact (nothing weakened) and
+ * makes the pin OS-independent, exactly as it is already cwd-independent.
+ */
+const posix = (s: string) => s.replace(/\\/g, '/');
+
 /** Create a throwaway directory tree and always clean it up. */
 function withTempDir<T>(prefix: string, fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -182,10 +195,10 @@ describe('REG-317 (1) npm script declarations are invocable', () => {
       const broken = runNode(copiedCanary, root);
       expect(broken.status).not.toBe(0);
       expect(broken.combined).toMatch(/check:script-paths FAILED/);
-      expect(broken.combined).toContain('apps/host/package.json');
+      expect(posix(broken.combined)).toContain('apps/host/package.json');
       expect(broken.combined).toContain('my:task');
       expect(broken.combined).toContain('scripts/target.mjs');
-      expect(broken.combined).toMatch(/exists at repo root — prefix with \.\.\/\.\.\//);
+      expect(posix(broken.combined)).toMatch(/exists at repo root — prefix with \.\.\/\.\.\//);
 
       // Restoring the prefix restores green — the failure was the mutation,
       // not fixture drift.
@@ -302,7 +315,7 @@ describe('REG-317 (2) scripts/ never imports the deleted pre-monorepo src/lib pa
       (a) => a?.find instanceof RegExp && a.find.test('../src/lib/logger')
     );
     expect(rewriter, 'vitest.config.ts no longer rewrites ../src/lib/* ').toBeTruthy();
-    expect(String(rewriter.replacement)).toContain('packages/lib/src');
+    expect(posix(String(rewriter.replacement))).toContain('packages/lib/src');
     // It rewrites every depth of `../`, which is why no script could ever
     // fail a runtime probe regardless of how deeply nested it is.
     expect(rewriter.find.test('../../../src/lib/logger')).toBe(true);
@@ -371,7 +384,7 @@ describe('REG-317 (3) edge-log PII guard fails loudly when it scans nothing', ()
       const dirty = runNode(copied, root);
       expect(dirty.status).not.toBe(0);
       expect(dirty.combined).toMatch(/Unsafe Edge Function logging detected/);
-      expect(dirty.combined).toContain('supabase/functions/beta/index.ts');
+      expect(posix(dirty.combined)).toContain('supabase/functions/beta/index.ts');
       expect(dirty.combined).not.toMatch(/FAILED TO RUN/);
     });
   });

@@ -4,9 +4,10 @@
  * Pins (plan "Ack-fast / async split" + REG-118/REG-119 cron posture):
  *   1. FAIL-CLOSED CRON_SECRET gate BEFORE any DB I/O — missing env, missing
  *      credential, or wrong secret → 401 with ZERO from()/rpc() calls.
- *      Carrier precedence is FIRST-PRESENT-WINS (Bearer > x-cron-secret >
- *      ?token=): a wrong higher-precedence carrier is NOT rescued by a
- *      correct lower one.
+ *      Carrier precedence is FIRST-PRESENT-WINS (Bearer > x-cron-secret): a
+ *      wrong higher-precedence carrier is NOT rescued by a correct lower one.
+ *      The ?token= query carrier was REMOVED 2026-08-03 (P1 verifyCronAuth
+ *      batch) and now 401s even with a correct value.
  *   2. Claims via RPC whatsapp_claim_inbound(p_id); rows where the claim
  *      returns false (or errors) are SKIPPED — no status write, not counted.
  *   3. Non-link intents have no Phase-2 processor: attemptsAfterClaim < 3 →
@@ -211,10 +212,19 @@ describe('fail-closed CRON_SECRET gate (REG-118 posture)', () => {
   it.each([
     ['Bearer', { bearer: CRON_SECRET }],
     ['x-cron-secret', { headerSecret: CRON_SECRET }],
-    ['?token=', { token: CRON_SECRET }],
   ] as const)('correct secret via %s → 200', async (_label, opts) => {
     const res = await GET(makeRequest(opts));
     expect(res.status).toBe(200);
+  });
+
+  // P1 batch 2026-08-03 (verifyCronAuth consolidation): the ?token= query
+  // carrier was REMOVED — query strings land in access/CDN logs, so a secret
+  // there is a secret leaked. Even a CORRECT token must now 401.
+  it('correct secret via ?token= → 401 with zero DB I/O (query carrier removed)', async () => {
+    const res = await GET(makeRequest({ token: CRON_SECRET }));
+    expect(res.status).toBe(401);
+    expect(st.fromCalls).toEqual([]);
+    expect(st.rpcCalls).toEqual([]);
   });
 
   it('FIRST-PRESENT-WINS: wrong Bearer is NOT rescued by a correct x-cron-secret', async () => {

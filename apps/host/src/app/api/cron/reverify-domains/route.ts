@@ -5,6 +5,7 @@ import { logAdminAction } from '@alfanumrik/lib/admin-auth';
 import { getDomainState, getVercelEnv } from '@alfanumrik/lib/vercel/domains';
 import { logger } from '@alfanumrik/lib/logger';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
 
 /**
  * POST /api/cron/reverify-domains
@@ -81,20 +82,8 @@ interface CronSummary {
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
-
-function verifyCronSecret(request: NextRequest): boolean {
-  const cronSecret =
-    request.headers.get('x-cron-secret') ||
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !cronSecret) return false;
-  if (cronSecret.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < cronSecret.length; i++) {
-    mismatch |= cronSecret.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
+// Shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret, constant-time,
+// fail-closed).
 
 // ─── DNS check ───────────────────────────────────────────────────────────────
 
@@ -142,11 +131,8 @@ async function checkVercelState(customDomain: string): Promise<{ ok: boolean; di
 // ─── Main Handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  if (!verifyCronSecret(request)) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 },
-    );
+  if (!verifyCronAuth(request).ok) {
+    return unauthorizedResponse();
   }
 
   const startTime = Date.now();

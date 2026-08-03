@@ -25,19 +25,20 @@
 // loop is enabled.
 //
 // Security: fail-closed CRON_SECRET gate with a constant-time compare BEFORE
-// any DB I/O (house pattern — copied from flag-posture-canary /
-// adaptive-remediation). Accepts Bearer, x-cron-secret, or ?token=.
+// any DB I/O (shared @alfanumrik/lib/cron-auth gate). Accepts Bearer or
+// x-cron-secret; the legacy ?token= query carrier was removed 2026-08-03
+// (secrets in query strings land in access logs).
 //
 // P13: the response body and every ops_events row carry aggregate counts /
 // ratios / timestamps only — never a student id, subject/chapter target, or
 // PII-shaped value.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'node:crypto';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 import {
   evaluateAdaptiveLoopsAlerts,
   type AdaptiveLoopsHealth,
@@ -58,31 +59,10 @@ const STORM_DAYS = 30;
 // (house pattern: api/cron/adaptive-remediation, api/cron/flag-posture-canary)
 // ════════════════════════════════════════════════════════════════════════════
 
-function constantTimeMatch(provided: string, secret: string): boolean {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-/**
- * Carrier precedence is FIRST-PRESENT-WINS: exactly ONE candidate is selected
- * (Bearer, else x-cron-secret, else ?token=) and compared once. A WRONG value
- * in a higher-precedence carrier is NOT rescued by a correct lower one.
- */
-function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false; // fail closed on missing configuration
-
-  const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
-  const headerSecret = req.headers.get('x-cron-secret') ?? '';
-  const token = req.nextUrl.searchParams.get('token') ?? '';
-
-  const provided = bearer || headerSecret || token;
-  if (!provided) return false;
-  return constantTimeMatch(provided, secret);
-}
+// Shared @alfanumrik/lib/cron-auth gate. Carrier precedence is
+// FIRST-PRESENT-WINS (Bearer, else x-cron-secret); exactly ONE candidate is
+// compared once — a WRONG value in a higher-precedence carrier is NOT rescued
+// by a correct lower one.
 
 // ════════════════════════════════════════════════════════════════════════════
 // MONITOR
@@ -156,7 +136,7 @@ async function runMonitor(startedAt: number): Promise<NextResponse> {
 async function handle(request: NextRequest): Promise<NextResponse> {
   const startedAt = Date.now();
   // Fail-closed auth BEFORE any DB I/O.
-  if (!isAuthorized(request)) {
+  if (!verifyCronAuth(request).ok) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   try {

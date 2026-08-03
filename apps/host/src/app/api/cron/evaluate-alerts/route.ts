@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
+import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
 
 /**
  * POST /api/cron/evaluate-alerts
@@ -20,15 +21,6 @@ const COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const DAY_MS = COOLDOWN_MS;
 const HOUR_MS = 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
-
-function verifyCronSecret(req: NextRequest): boolean {
-  const secret = req.headers.get('x-cron-secret') || req.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !secret || secret.length !== expected.length) return false;
-  let m = 0;
-  for (let i = 0; i < secret.length; i++) m |= secret.charCodeAt(i) ^ expected.charCodeAt(i);
-  return m === 0;
-}
 
 // ── Evaluators (one per rule_type) ──────────────────────────────────────────
 
@@ -112,8 +104,8 @@ const EVALUATORS: Record<RuleType, (r: AlertRule) => Promise<EvalResult>> = {
 // ── Handler ─────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  if (!verifyCronSecret(request)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!verifyCronAuth(request).ok) {
+    return unauthorizedResponse();
   }
 
   const t0 = Date.now();

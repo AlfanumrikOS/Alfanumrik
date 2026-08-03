@@ -198,7 +198,7 @@ get a regression pin.
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-160 | `school_admin_quarterly_billing_p11_no_split_brain` | **THE QUARTERLY BILLING P11 GUARD (no split-brain, no pre-payment access, no orphan).** **(1) Plan-id by cycle:** a quarterly POST creates the Razorpay sub with `razorpayPlanId='rzp_quarterly_plan'` and `totalBillingCycles=4`, and NEVER with the monthly plan id (a quarterly request charged on the monthly plan = split-brain). **(2) Pre-payment trial (P11):** the DB stamp sets `billing_cycle='quarterly'` + `razorpay_subscription_id` but sets NO `status` (row keeps pre-payment `'trial'`); no field smuggles `'active'` — only the signature-verified webhook activates. **(3) notes carry school_id** so the webhook can match + activate. **(4) Null-guard (P11, no orphan):** quarterly plan id NULL → 400 code `plan_not_provisioned`, `createRazorpaySubscription` NEVER called, and NO fallback to the (present) monthly id. **(5) Real-path guard intact:** a non-demo school with an unprovisioned quarterly plan still 400s `plan_not_provisioned` (no comp). **(6) Webhook invoice fallback ×3:** with no payment entity the school invoice amount = seats × price_per_seat_monthly × 3 × 100 paisa for quarterly (monthly ×1, yearly ×12) — captured off the `publishEvent` payload; a mutation to ×1 fails the test. **(7) createRazorpayPlan back-compat:** the 2-arg call posts `period='monthly'`, `interval=1`; `{interval:3}` posts `interval=3` (rupees→paisa ×100 at the boundary). **(8) Setup-plans provisions both cadences:** a fully-provisioned (monthly+quarterly) plan reports `monthly:already_exists; quarterly:already_exists` (no recreation); a bare plan creates both. | `src/__tests__/api/school-admin-subscription-quarterly-comp.test.ts` (quarterly happy-path + null-guard + real-path guard), `src/__tests__/payments/webhook-school-quarterly-invoice.test.ts` (3), `src/__tests__/lib/razorpay-create-plan.test.ts` (3), `src/__tests__/api/payments/status-and-setup-plans.test.ts` (repaired: both-cadence idempotency), `src/__tests__/pricing-drift-guard.test.ts` (quarterly derived-figure block) | U (unit; real POST/webhook handlers with school-admin-auth + table-aware in-memory admin mocks; fetch-stubbed createRazorpayPlan; publishEvent mock captures the computed invoice amount) |
+| REG-160 | `school_admin_quarterly_billing_p11_no_split_brain` | **THE QUARTERLY BILLING P11 GUARD (no split-brain, no pre-payment access, no orphan).** **(1) Plan-id by cycle:** a quarterly POST creates the Razorpay sub with `razorpayPlanId='rzp_quarterly_plan'` and `totalBillingCycles=4`, and NEVER with the monthly plan id (a quarterly request charged on the monthly plan = split-brain). **(2) Pre-payment trial (P11):** the DB stamp sets `billing_cycle='quarterly'` + `razorpay_subscription_id` but sets NO `status` (row keeps pre-payment `'trial'`); no field smuggles `'active'` — only the signature-verified webhook activates. **(3) notes carry school_id** so the webhook can match + activate. **(4) Null-guard (P11, no orphan):** quarterly plan id NULL → 400 code `plan_not_provisioned`, `createRazorpaySubscription` NEVER called, and NO fallback to the (present) monthly id. **(5) Real-path guard intact:** a non-demo school with an unprovisioned quarterly plan still 400s `plan_not_provisioned` (no comp). **(6) Webhook invoice fallback ×3:** with no payment entity the school invoice amount = seats × price_per_seat_monthly × 3 × 100 paisa for quarterly (monthly ×1, yearly ×12) — captured off the `publishEvent` payload; a mutation to ×1 fails the test. **(7) createRazorpayPlan back-compat:** the 2-arg call posts `period='monthly'`, `interval=1`; `{interval:3}` posts `interval=3` (rupees→paisa ×100 at the boundary). **(8) Setup-plans provisions both cadences:** a fully-provisioned (monthly+quarterly) plan reports `monthly:already_exists; quarterly:already_exists` (no recreation); a bare plan creates both. *Caller contract updated 2026-08-03 (P1-4b, architect-required rewrite):* the setup-plans route now sits behind the session-based `authorizeAdmin(request, 'super_admin')` floor — the former x-admin-secret/service-role-key header gate is REMOVED (the formerly-correct header alone now 401s with zero Razorpay calls) and every accepted invocation writes a metadata-only `razorpay_plans_provisioned` admin audit; the idempotency behaviour pinned here is unchanged and re-runs behind that session gate — see REG-336. | `src/__tests__/api/school-admin-subscription-quarterly-comp.test.ts` (quarterly happy-path + null-guard + real-path guard), `src/__tests__/payments/webhook-school-quarterly-invoice.test.ts` (3), `src/__tests__/lib/razorpay-create-plan.test.ts` (3), `src/__tests__/api/payments/status-and-setup-plans.test.ts` (repaired: both-cadence idempotency; auth re-pinned 2026-08-03 to the `authorizeAdmin(super_admin)` session gate — see REG-336), `src/__tests__/pricing-drift-guard.test.ts` (quarterly derived-figure block) | U (unit; real POST/webhook handlers with school-admin-auth + table-aware in-memory admin mocks; fetch-stubbed createRazorpayPlan; publishEvent mock captures the computed invoice amount) |
 | REG-161 | `school_admin_demo_comp_server_gated_boundary` | **THE DEMO-COMP SERVER-GATED BOUNDARY (the P11 sanctioned exception — a real school can NEVER comp).** **(1) Comp grant shape:** a demo school's POST → response `{success:true, comp:true}` with `status:'active'`, `is_demo:true`, `razorpay_subscription_id:null`; the DB row stamps the same; ZERO Razorpay calls. **(2) Period by cycle:** comp `current_period_end` is ~+3 months for quarterly, ~+1 month for monthly. **(3) Metadata-only audit (P13):** exactly one `subscription.comp_granted` audit with `metadata:{is_demo:true, billing_cycle, razorpay_subscription_id:null,…}` and NO PII (no email/phone/name keys anywhere in the audit blob). **(4) Reorder pin:** a demo school with an UNPROVISIONED quarterly plan STILL comps (the comp branch runs above the null-guard) — response is NOT `plan_not_provisioned`. **(5) THE CRITICAL BOUNDARY — non-demo can NEVER comp:** `isDemoSchool=false` → real Razorpay path (a real sub id is returned), response carries NO `comp`, the row stays pre-payment trial, and NO `subscription.comp_granted` audit fires. **(6) Fail-closed:** `isDemoSchool` is proven (directly) to return false — never throw — on is_demo=false / null / missing row / query error / thrown client / rejected maybeSingle / empty school id (no DB touch for empty id); the route therefore defaults to the payment-gated path on any predicate failure. **(7) Predicate input:** `isDemoSchool` resolves is_demo via `eq('id', schoolId)` from the server-resolved id only. | `src/__tests__/api/school-admin-subscription-quarterly-comp.test.ts` (demo comp quarterly/monthly + reorder pin + non-demo-never-comp + fail-closed), `src/__tests__/lib/is-demo-school.test.ts` (10) | U (unit; real POST handler with isDemoSchool + logSchoolAudit mocked at the boundary; direct is-demo-school predicate test with a table-aware admin mock) |
 
 ### Invariants covered by this section
@@ -557,6 +557,51 @@ see `05-xp-scoring.md`). Adds REG-319 (payment verify-route plan-code
 forgery / cross-account binding fix) and REG-320 (reconcile-payments cron
 recency-window + terminal-state guard fix).
 **Total catalog: 320 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## setup-plans caller-contract migration — x-admin-secret header gate REMOVED, authorizeAdmin(super_admin) session floor (2026-08-03, P0+P1 batch) — REG-336
+
+Source: the 2026-08-03 P0+P1 launch-hardening batch (item P1-4b,
+architect-reviewed). `POST /api/payments/setup-plans` provisions LIVE Razorpay
+Plan objects and mutates `subscription_plans`, yet its gate was
+`x-admin-secret == SUPABASE_SERVICE_ROLE_KEY` — the DB service-role key
+doubling as an HTTP bearer secret (anyone who ever handled the key in any
+context could mint live billing plans, and rotating one meant rotating the
+other). Replaced with the house super-admin convention: session-based
+`authorizeAdmin(request, 'super_admin')` — the TOP tier, deliberately above
+`finance`/`admin`, because `admin-auth.ts` reserves provisioning /
+sensitive-state mutation for `super_admin` and this is a rare setup operation,
+not routine finance work. Every accepted invocation now writes a metadata-only
+`logAdminAudit('razorpay_plans_provisioned', 'subscription_plans', …)` row
+(plan codes, statuses, Razorpay plan ids — no PII). CALLER CONTRACT CHANGE:
+any legacy script sending the formerly-correct `x-admin-secret` header now
+receives 401 (ADMIN_NO_TOKEN) and must switch to an authenticated super-admin
+session (Bearer token or sb-* cookie).
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-336 | `setup_plans_super_admin_session_gate_caller_contract` | (a) No session at all → 401 and `createRazorpayPlan` is NEVER called. (b) A WRONG `x-admin-secret` → 401, zero Razorpay calls. (c) **The caller-contract pin:** the formerly-CORRECT `x-admin-secret` (byte-equal to the in-fixture `SUPABASE_SERVICE_ROLE_KEY`) alone now ALSO yields 401 with zero Razorpay calls — proving the header is no longer consulted at all. All three deny paths exercise the REAL `authorizeAdmin` (the module mock delegates to the genuine gate; these requests carry no Bearer/cookie session candidate, so the real gate 401s before any network I/O). (d) The authorized path pins the FLOOR: `authorizeAdmin` is called with `'super_admin'` — not a lower tier — and exactly ONE `logAdminAudit` write fires on success (the audited-provisioning posture; audit-write internals deliberately not under test here). (e) The REG-160(8) both-cadence idempotency behaviour re-runs unchanged behind a mocked super_admin grant using the real `AdminAuth` shape (userId/adminId/email/name/adminLevel): a fully-provisioned plan reports `monthly:already_exists; quarterly:already_exists` with zero Razorpay calls; a bare plan creates both cadences. | `apps/host/src/__tests__/api/payments/status-and-setup-plans.test.ts` (setup-plans describe block, extended 2026-08-03) | E |
+
+### Invariants covered by this section
+
+- P11 (payment integrity, provisioning surface) — the route that mints live
+  Razorpay Plan objects is no longer reachable with a leaked/shared DB key;
+  every deny path is proven to perform zero Razorpay SDK calls.
+- P9 (RBAC enforcement) — the gate is the ranked `authorizeAdmin` session
+  convention at the `super_admin` floor, pinned so a refactor cannot silently
+  lower the tier; the deny paths run the genuine gate, not a stub.
+- P13-adjacent — the new provisioning audit row carries metadata only (plan
+  codes / statuses / Razorpay plan ids; no email/phone/name), consistent with
+  the house admin-audit posture.
+
+### Catalog total
+
+Pre-REG-336: 335 entries (through REG-335, the OpenAI-primary
+percentage-rollout mechanism — see `00-header.md` / `02-foxy-ai.md`). The
+2026-08-03 P0+P1 batch adds REG-336 (setup-plans caller-contract migration),
+the first of the eight ids REG-336..REG-343 consumed by this batch.
+**Total catalog: 336 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 

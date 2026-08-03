@@ -2093,3 +2093,108 @@ four ids REG-322..REG-325 consumed by this batch.
 
 ---
 
+## 2026-08-03 P0+P1 launch-hardening batch — global SWR provider, tenant-lookup fail-open, health-poll de-duplication, coverage-gate honesty — REG-340..REG-343
+
+Source: the 2026-08-03 P0+P1 batch (P0-2 commit `41438447`, P0-5 commit
+`69463b6b`, P0-4 commit `41723e86`, and the P1-7 quality-gate audit). Four
+infrastructure pins; the sibling entries from the same batch are REG-336
+(`04-payments.md`), REG-337 (`05-xp-scoring.md`), REG-338
+(`07-teacher-school.md`) and REG-339 (`10-rbac-rls.md`).
+
+**REG-340 (P0-2).** `DEFAULT_CONFIG` in `packages/lib/src/swr.tsx` (bounded
+error retries, 10s dedupe, `revalidateOnFocus` off — tuned for Indian mobile
+networks) was only applied by the hooks defined in that file; every other
+`useSWR` call site silently inherited SWR library defaults (UNBOUNDED error
+retries, `revalidateOnFocus: true`, 2s dedupe). Fix:
+`packages/lib/src/SWRProvider.tsx` mounts `<SWRConfig value={DEFAULT_CONFIG}>`
+as the outermost client provider in the root layout, so every hook inherits
+the tuned config. Static-source pins (house pattern per REG-259 — importing
+`layout.tsx` into a unit test would drag globals.css + the full provider tree
+with it).
+
+**REG-341 (P0-5).** `getSchoolBySlug` / `getSchoolByCustomDomain` in
+`apps/host/src/proxy.ts` treated a PostgREST non-2xx (or thrown fetch) as
+"school absent": they wrote the 60s NEGATIVE cache and returned null, so a
+single transient 5xx blacked out an entire white-label tenant behind a hard
+404 for a full minute. Fix: lookups return `{ ok, data }`; transient failures
+(non-2xx / thrown / 3s `AbortSignal` timeout) NEVER write the 60s negative
+cache — they re-serve last-known-good config (5s re-cache) or fail open to
+the generic experience (5s error cache) — and the tenant 404 branch fires
+ONLY on a definitive empty-200 (`ok: true, data: null`). Every failure also
+emits a structured `school_lookup_fail_open` `console.warn` breadcrumb
+(JSON: cache key slug/host + upstream cause + chosen fallback — no PII, same
+house pattern as `middleware_auth_degraded`, emission bounded by the 5s
+re-cache); the warn lives inside the pinned `schoolLookupFailure` source but
+its emission is not separately asserted — documented, not claimed. The lookup
+helpers are module-private and `proxy()` needs the full Next.js runtime, so
+the pin is (a) a byte-mirrored behavioral reproduction of the cache-decision
+logic plus (b) static source-structure asserts on `src/proxy.ts` (the
+existing middleware-harness conventions).
+
+**REG-342 (P0-4).** `ci.yml`'s post-deploy health-check job DUPLICATED
+`deploy-production.yml`'s bounded exact-SHA poll — two independent pollers
+against the same deployment can disagree, and only one of them gates the
+release. The ci.yml duplicate was deleted; the devops policy contract's
+`ci-gate-and-exact-sha-poll` check now asserts BOTH halves — the poll lives
+ONLY in `deploy-production.yml`, and reintroducing a ci.yml health-check job
+is a CONTRACT FAILURE, mutation-proven.
+
+**REG-343 (P1-7).** The coverage gate was measuring the WRONG surface — and
+could therefore never fail on the code that matters. `coverage.include` was
+`src/lib/**/*.{ts,tsx}`, which (globs resolving against `test.root` = process
+CWD = `apps/host`) matched the ~402 two-line auto-generated re-export stubs
+under `apps/host/src/lib/` plus 5 real files and NONE of the canonical
+implementations in `packages/lib/src` + `packages/ui/src`. V8 reports ~100%
+on a stub the moment any test imports it, so the global floors AND every
+per-file threshold (including the 90% xp-rules floors) were tautologies — a
+vacuous gate. Repaired with the glob mechanics verified EMPIRICALLY against
+vitest 4.1.8 and written into the config as rationale.
+
+| # | Test name | Asserts | Location | Status |
+|---|---|---|---|---|
+| REG-340 | `swr_global_provider_mount` | (a) The root layout imports `SWRProvider` from `@alfanumrik/lib/SWRProvider` and mounts `<SWRProvider>` (open + close) in the JSX tree. (b) OUTERMOST pin: `<SWRProvider>` opens BEFORE `<TenantConfigProvider>` and closes AFTER it — the provider cannot be silently demoted below another provider (where subtrees would escape it). (c) `SWRProvider.tsx` is `'use client'`, imports `SWRConfig` from `swr` and `DEFAULT_CONFIG` from `./swr`, and renders `<SWRConfig value={DEFAULT_CONFIG}>`. (d) `DEFAULT_CONFIG` stays exported from `packages/lib/src/swr.tsx` (typed `SWRConfiguration`) — so no `useSWR` call site can regress to unbounded library-default retries. | `apps/host/src/__tests__/swr-global-provider-mount.test.ts` (5 tests) | E |
+| REG-341 | `proxy_school_lookup_fail_open` | **Behavioral mirror** (byte-mirrored `schoolLookupFailure` / cache-read / 404-gate logic, 6 tests): transient failure with NO last-known-good → 5s error-cache entry (TTL asserted ≤ 5s, never the 60s negative cache); transient failure WITH a stale positive entry → serves the stale config (`{ ok: false, data }`, re-cached 5s WITHOUT the error flag); a prior error entry is never promoted to last-known-good on repeat failure; a cached error entry reads back `ok: false`, so the 404 branch cannot fire from cache; `shouldHard404` is FALSE for every `ok: false` shape (fail open, with or without stale data) and TRUE only for a definitive `{ ok: true, data: null }` on an explicit tenant request (the B2C host is untouched either way). **Source pins on `src/proxy.ts`** (6 tests): ≥2 `AbortSignal.timeout(3000)` fetch bounds (both lookups); ≥4 `return schoolLookupFailure(` call sites (non-2xx AND thrown/timeout branches, both lookups); the `!res.ok` branches contain NO `60_000` cache write; `schoolLookupFailure`'s body writes exactly two `5_000`-TTL arms and no `60_000`; the tenant 404 gate is textually `isExplicitTenantRequest && !schoolConfig && !schoolLookupFailed`; cache reads surface `{ ok: !cached.error, data: cached.data }` in both lookups. | `apps/host/src/__tests__/proxy-school-lookup-fail-open.test.ts` (12 tests) | E |
+| REG-342 | `ci_deploy_health_poll_single_home` | (a) The `ci-gate-and-exact-sha-poll` policy check passes against the REAL current `ci.yml` + `deploy-production.yml`: `deploy-production.yml` carries the bounded exact-SHA poll (`POLL_WINDOW_SECONDS=600` deadline loop, `EXPECTED_SHA` compare, `b.ok===true&&b.status==='healthy'`, `b.version?.git_sha||''`, no `sleep 60`, no soft-pass) and `ci.yml` carries NO `health-check` job at all (`mappingEntryBlock(ci, 'health-check') === ''`). (b) **Mutation pin:** appending a minimal `health-check:` job back into the ci.yml text makes the same check FAIL — reintroducing the duplicate poller is a contract failure, not a style nit. (c) Same suite, same change: the production-deployment-authority check now reads `apps/host/vercel.json` as the authoritative deploy config (the repo-root `vercel.json` was deleted 2026-08-03; a ci.yml quality-job guard watches for its reappearance). | `apps/host/src/__tests__/devops-policy-contract.test.ts` (reintroduction mutation test + re-armed contract) + `scripts/verify-devops-policy-contract.ts` (`ci-gate-and-exact-sha-poll`) | E |
+| REG-343 | `coverage_gate_integrity_honest_include_and_threshold_keys` | The repaired `vitest.config.ts` coverage block, with each mechanic empirically verified against vitest 4.1.8 (picomatch + tinyglobby + pathe) and recorded in-config: (a) `allowExternal: true` — without it, files outside `test.root` are SILENTLY dropped from the report; (b) `include` carries the apps/host `src/**` glob PLUS the BARE `packages/lib/src/**` + `packages/ui/src/**` globs — the bare form is the one that contains-matches covered absolute paths (`../../`-relative include patterns can NEVER match an absolute path); (c) per-file threshold KEYS use the `'../../packages/lib/src/<x>'` form — the ONLY form that reaches the canonical implementations, because vitest matches threshold keys with an ANCHORED picomatch against `path.relative(config.root, coveredFile)` with `config.root` = `apps/host` (bare `packages/...`, `**/packages/...` and absolute key forms all match NOTHING — silently vacuous). Keys repointed: `xp-config.ts` 90/90/90/90 (the real XP surface — the old `'src/lib/xp-rules.ts'`/`'src/lib/xp-config.ts'` STUB keys deleted), `cognitive-engine.ts` 80×4, `exam-engine.ts` 80×4, `feature-flags.ts` 95/85/95/95, `oauth-manager.ts`; (d) test/harness files are excluded from the coverage denominator at ANY depth (`**/*.{test,spec}.{ts,tsx}`, `**/__tests__/**`, `**/__vitest__/**`, `**/__mocks__/**`, stories) plus the packages/ twins of the already-excluded integration territory; (e) global floors recalibrated against the HONEST surface (statements 54 / branches 49 / functions 56 / lines 55 vs measured 60.37 / 51.69 / 58.25 / 62.23 on 1,447 covered files — functions LOWERED 58→56 per the measured−2 repair protocol with before/after recorded in-config); (f) the orphan threshold-free `vitest.mesh.config.ts` escape-hatch lane is DELETED (its agents/eval/state targets already run in the main gated lane). | `vitest.config.ts` coverage block (config-level pin + embedded empirically-verified rationale) | P (config repair; see known-gaps below) |
+
+### Known gaps (REG-343 — recorded honestly, not claimed as covered)
+
+- Packages files with ZERO importing tests do not appear as 0% rows:
+  vitest's uncovered-file enumerator refuses files outside the project root
+  (= `apps/host`), so the packages side of the global number is still
+  slightly flattering. The fix (move `test.root` to the repo root) relocates
+  blob/coverage output paths that `.github/workflows/ci.yml` hardcodes —
+  tracked as a follow-up, do not flip casually.
+- The `'../../packages/...'` threshold keys go silently vacuous if a lane
+  ever invokes vitest from any CWD other than `apps/host` (every current
+  lane, including the CI merge job, runs from `apps/host`).
+- NO dedicated meta-test pins the config shape itself (a test asserting
+  `allowExternal`, the include globs and the key form) — the pin today is
+  the repaired config plus its embedded rationale, which is why REG-343 is
+  recorded as P, not E. Writing that meta-test is the ratchet path to E.
+
+### Invariants covered by this section
+
+- P10-adjacent (REG-340) — retry behaviour on Indian 4G is bounded globally,
+  not only in the hooks that happened to live in `swr.tsx`.
+- White-label tenant availability / operational integrity (REG-341) — a
+  transient PostgREST blip can no longer 404 an entire school tenant for
+  60s; only a definitive "school does not exist" answer may 404.
+- Deployment integrity (REG-342) — exactly one health authority polls the
+  exact deployed SHA; the duplicate-poller failure mode is mutation-pinned.
+- Gate honesty (REG-343, REG-317 family) — a coverage gate that measures
+  re-export stubs is indistinguishable from a passing gate; the measured
+  surface is now the canonical code, and every known remaining blind spot
+  is written down rather than silently green.
+
+### Catalog total
+
+Pre-REG-340: 339 entries (through REG-339, the verifyCronAuth consolidation
+— see `10-rbac-rls.md`). The 2026-08-03 P0+P1 batch adds REG-340 (global SWR
+provider mount), REG-341 (proxy school-lookup fail-open), REG-342 (CI/deploy
+health-poll single home) and REG-343 (coverage-gate integrity) — the last
+four of the eight ids REG-336..REG-343 consumed by this batch.
+**Total catalog: 343 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

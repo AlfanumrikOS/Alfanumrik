@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
-import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { loadParentSession } from '../_components/parent-session';
 
 // ============================================================
@@ -41,9 +41,6 @@ interface ChildOption {
 // ============================================================
 // CONSTANTS
 // ============================================================
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
 const STATUS_COLORS: Record<string, string> = {
   present: 'bg-green-100 text-green-800 border-green-200',
   absent: 'bg-red-100 text-red-800 border-red-200',
@@ -76,29 +73,10 @@ function STATUS_LABEL(status: string, isHi: boolean): string {
 }
 
 // ============================================================
-// API HELPER (matches children/page.tsx pattern — raw fetch with JWT)
+// API — shared usePortalAction helper (matches children/page.tsx pattern).
+// 10s AbortController timeout so a hung backend can't spin forever; bilingual
+// abort copy (P7). Headers match the legacy api(): apikey + Bearer JWT (P13).
 // ============================================================
-async function api(action: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SB_KEY,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — request will be rejected by Edge Function */ }
-
-  const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json() as Promise<Record<string, unknown>>;
-}
 
 // ============================================================
 // SKELETON
@@ -306,6 +284,7 @@ export default function ParentAttendancePage() {
   const auth = useAuth();
   const router = useRouter();
   const isHi = auth.isHi ?? false;
+  const api = usePortalAction('/functions/v1/parent-portal', isHi);
 
   // Auth state
   const [guardianId, setGuardianId] = useState<string | null>(null);
@@ -373,7 +352,7 @@ export default function ParentAttendancePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [authChecked, guardianId]);
+  }, [api, authChecked, guardianId]);
 
   // ── Fetch attendance for selected child + month ──────────────────────────
   const fetchAttendance = useCallback(async () => {
@@ -429,7 +408,7 @@ export default function ParentAttendancePage() {
     } finally {
       setLoading(false);
     }
-  }, [authChecked, guardianId, children, selectedChildIdx, year, month, isHi]);
+  }, [api, authChecked, guardianId, children, selectedChildIdx, year, month, isHi]);
 
   useEffect(() => {
     fetchAttendance();

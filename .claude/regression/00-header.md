@@ -6,8 +6,56 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 335 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
+**Total catalog: 343 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-336..REG-343 (2026-08-03, P0+P1 launch-hardening batch — eight
+pins across five shards, catalogued in one pass. REG-336 setup-plans
+caller-contract migration: the x-admin-secret/service-role-key header gate
+is REMOVED in favour of a session-based `authorizeAdmin(request,
+'super_admin')` floor — the formerly-CORRECT header alone now 401s with zero
+Razorpay calls, and accepted invocations write a metadata-only provisioning
+audit (P11/P9; `04-payments.md` — the stale REG-160 setup-plans prose was
+rewritten to the new contract in the same pass, per the 2026-08-03 architect
+review). REG-337 P2 XP literal parity in the two parent-facing Deno Edge
+Functions (parent-report-generator + parent-portal): the canonical
+`correct*10` / `+20 @ >=80` / `+50 @ ===100` shapes pinned against XP_RULES
+by code-shaped regexes with a drift sweep over EVERY `xp +=` literal, and
+the regressed `+25` / `?30:0` shapes pinned ABSENT (`05-xp-scoring.md`).
+REG-338 usePortalFetch timeout envelope: friendly bilingual timeout copy
+chosen from `isHi` AT CALL TIME (P7), non-abort errors rethrown as-is, and
+the anon-apikey + session-Bearer + `{action,...params}` envelope pinned for
+every teacher/parent portal Edge-Function call (`07-teacher-school.md`).
+REG-339 verifyCronAuth consolidation: all 23 `/api/cron/*` +
+`/api/internal/cron/*` routes authenticate through ONE fail-closed helper
+(`packages/lib/src/cron-auth.ts`) — Bearer/x-cron-secret carriers only, the
+leaked-into-access-logs `?token=` query carrier REMOVED (never consulted at
+all), first-present-wins, constant-time compare — pinned at the helper level
+(13 tests) AND across 4 re-pinned route carrier matrices, with
+`/api/cron/daily` pinned DELETED and the admin-client allowlist (269→268) +
+route-access manifest (390 entries === 390 route files on disk) ratcheted in
+lock-step (`10-rbac-rls.md`). REG-340 global SWR provider: `<SWRProvider>`
+mounted OUTERMOST in the root layout wiring DEFAULT_CONFIG into
+`<SWRConfig>`, so no `useSWR` call site regresses to unbounded library-
+default retries (`11-infrastructure.md`). REG-341 proxy school-lookup
+fail-open: transient tenant-lookup failures (non-2xx / thrown / 3s timeout)
+NEVER write the 60s negative cache and NEVER hard-404 a white-label tenant —
+last-known-good is re-served or the request fails open on a 5s error cache;
+only a definitive empty-200 may 404 (`11-infrastructure.md`). REG-342 the
+exact-SHA production health poll lives ONLY in `deploy-production.yml` —
+reintroducing a ci.yml health-check job is a mutation-proven contract
+failure (`11-infrastructure.md`). REG-343 coverage-gate integrity, recorded
+honestly as PARTIAL: `vitest.config.ts`'s coverage include had measured ~402
+apps/host re-export stubs and NONE of the canonical packages/lib+ui code, so
+the global floors and every per-file threshold (incl. the 90% XP floors)
+were tautologies; repaired with `allowExternal: true`, bare
+`packages/{lib,ui}/src/**` include globs, per-file threshold keys in the
+ONLY form vitest's anchored relative-path match can reach
+(`'../../packages/...'`), and floors recalibrated on the honest surface —
+each mechanic empirically verified against vitest 4.1.8, but NO enforcing
+meta-test on the config shape yet, an explicit known gap
+(`11-infrastructure.md`). Sanity for the whole batch: the 14 pin/companion
+test files were re-run green in ONE vitest pass from apps/host — 191/191.)
+**REG-344 is the next free id.**
+Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`
 [seeded OFF/0% by a parallel architect migration] adds a deterministic
@@ -90,7 +138,10 @@ comment references in `router.test.ts`, `deno-parity.test.ts`, and the
 `grounded-answer` cache-order-fix Deno test files. No entry from either side
 was dropped or reworded — only this branch's two ID numerals moved, and the
 catalog total grew by 2 (both of main's entries plus both of this branch's
-renumbered entries), not by 1. **REG-336 is the next free id.**
+renumbered entries), not by 1. **REG-336 is the next free id.** That was true
+at this merge's start and is superseded above — the same-day P0+P1
+launch-hardening batch then consumed REG-336..REG-343, so **REG-344 is now the
+next free id.**
 Prior: REG-333 (2026-08-02, `select_quiz_questions_rag` verification gate —
 the RPC serving quiz questions to `/api/quiz`, `/api/v2/quiz/questions`, and
 the WhatsApp Daily-6 top-up path had never, across 7 historical versions
@@ -123,7 +174,11 @@ Postgres, in this session or any prior one — the live-DB AC-1..AC-6 suite is
 written and collects/skips cleanly but has zero live executions (no creds in
 this environment); ops has not yet run the §7 pre-rollout census queries; see
 `03-quiz-integrity.md`).
-**REG-334 is the next free id.**
+**REG-334 is the next free id.** That was true at its writing and is
+superseded above — REG-334/REG-335 went to the Model Gateway OpenAI-primary
+swap + its percentage-rollout mechanism, and the 2026-08-03 P0+P1
+launch-hardening batch then consumed REG-336..REG-343, so **REG-344 is now the
+next free id.**
 Prior: REG-332 (2026-08-01, grounded-answer content-readiness precheck fix —
 `supabase/functions/grounded-answer/coverage.ts`'s strict-mode gate required
 `cbse_syllabus.rag_status='ready'` (`chunk_count>=50` AND

@@ -13,44 +13,22 @@
  *
  * P13: teacher-dashboard binds the caller to its JWT-derived teacher_id.
  * P7:  every user-facing string has both English and Hindi variants.
- * P8:  only the client-side Supabase instance is used (via auth.getSession()).
+ * P8:  only the client-side Supabase session is used (via the shared helper).
  * P10: no new icon libraries — plain Tailwind + inline styles only.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRequireAuth } from '@alfanumrik/lib/useRequireAuth';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 
 // ── Bilingual helper (P7) ──────────────────────────────────────
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
-// ── Edge Function helpers ──────────────────────────────────────
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-async function api(action: string, params: Record<string, unknown> = {}) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SUPABASE_ANON,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — Edge Function will reject */ }
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${text}`);
-  }
-  return res.json();
-}
+// Edge-function calls go through the shared usePortalAction helper (10s
+// AbortController timeout so a hung backend can't spin forever; bilingual
+// abort copy — P7). Headers match the legacy api(): apikey + Bearer JWT (P13).
 
 // ── Types ─────────────────────────────────────────────────────
 type AttendanceStatus = 'present' | 'absent' | 'late' | 'excused';
@@ -283,6 +261,7 @@ export default function TeacherAttendancePage() {
   const { isHi, isLoading, teacher } = useRequireAuth('teacher');
   const isReady = !isLoading && !!teacher;
   const router = useRouter();
+  const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
 
   const today = todayISO();
 
@@ -317,7 +296,7 @@ export default function TeacherAttendancePage() {
     } finally {
       setClassesLoading(false);
     }
-  }, [teacherId]);
+  }, [api, teacherId]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
 
@@ -362,7 +341,7 @@ export default function TeacherAttendancePage() {
     } finally {
       setRosterLoading(false);
     }
-  }, [teacherId, selectedClassId, selectedDate, isHi]);
+  }, [api, teacherId, selectedClassId, selectedDate, isHi]);
 
   useEffect(() => {
     if (selectedClassId) loadAttendance();

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { createRazorpayPlan } from '@alfanumrik/lib/razorpay';
 import { logger } from '@alfanumrik/lib/logger';
-import { secureEqual } from '@alfanumrik/lib/secure-compare';
+import { authorizeAdmin, logAdminAudit } from '@alfanumrik/lib/admin-auth';
 
 /**
  * Setup Razorpay Plans — Admin only
@@ -11,21 +11,28 @@ import { secureEqual } from '@alfanumrik/lib/secure-compare';
  * and stores the IDs in subscription_plans.razorpay_plan_id_monthly.
  *
  * Safe to call multiple times — skips plans that already have IDs.
+ *
+ * Auth (P1-4b, 2026-08-03): session-based `authorizeAdmin(request,
+ * 'super_admin')` — the house super-admin convention. Replaces the former
+ * `x-admin-secret == SUPABASE_SERVICE_ROLE_KEY` header gate: the DB
+ * service-role key must never double as an HTTP bearer secret. Level
+ * rationale: this route provisions LIVE Razorpay Plan objects and mutates
+ * `subscription_plans` — admin-auth.ts explicitly lists provisioning /
+ * sensitive-state mutations as 'super_admin' territory, and this is a rare
+ * setup operation, not a routine finance task ('finance'/'admin' admins
+ * should not be able to mint new live billing plans).
+ *
+ * CALLER CONTRACT CHANGE: any script invoking this route with the
+ * `x-admin-secret` header now receives 401 (ADMIN_NO_TOKEN) and must switch
+ * to an authenticated super-admin session (Bearer token or sb-* cookie).
  */
 export async function POST(request: NextRequest) {
   try {
+    const auth = await authorizeAdmin(request, 'super_admin');
+    if (!auth.authorized) return auth.response;
+
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const adminSecret = request.headers.get('x-admin-secret');
-
-    // Simple admin auth — only callable with the service role key as header.
-    // Constant-time compare — naive `!==` short-circuits at the first
-    // differing byte and leaks the service role key through response timing
-    // (same fix as PR #610 admin-secret + cron-secret gates).
-    if (!adminSecret || !serviceKey || !secureEqual(adminSecret, serviceKey)) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     if (!supabaseUrl || !serviceKey) {
       return NextResponse.json({ error: 'Not configured' }, { status: 503 });
     }
@@ -103,6 +110,17 @@ export async function POST(request: NextRequest) {
         ...(quarterlyId ? { razorpay_plan_id_quarterly: quarterlyId } : {}),
       });
     }
+
+    // Audit trail (house rule: security-relevant admin mutations are logged).
+    // Metadata only — plan codes, statuses, Razorpay plan ids; no PII.
+    await logAdminAudit(
+      auth,
+      'razorpay_plans_provisioned',
+      'subscription_plans',
+      'setup-plans',
+      { results },
+      request.headers.get('x-forwarded-for') ?? undefined,
+    );
 
     return NextResponse.json({ results });
   } catch (err) {

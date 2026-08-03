@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { track } from '@alfanumrik/lib/analytics';
 import ChildDataErasureSection from '@alfanumrik/ui/parent/ChildDataErasureSection';
 import ParentChildChat from '@alfanumrik/ui/parent/ParentChildChat';
@@ -12,33 +13,12 @@ import { usePulse } from '@alfanumrik/lib/pulse/use-pulse';
 import { StudentPulse } from '@alfanumrik/ui/pulse';
 import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-async function api(action: string, params: Record<string, unknown> = {}) {
-  // P13: parent-portal binds caller to JWT — Authorization header is now
-  // required for every action except parent_login. Body.guardian_id is
-  // overridden server-side from the JWT-resolved guardian.
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SB_KEY,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — request will be rejected by Edge Function */ }
-
-  const res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json();
-}
+// P13: parent-portal binds caller to JWT — Authorization header is required
+// for every action except parent_login; body.guardian_id is overridden
+// server-side from the JWT-resolved guardian. The fetch goes through the
+// shared usePortalAction helper (10s AbortController timeout so a hung backend
+// can't spin forever; bilingual abort copy — P7), which sends the same headers
+// as the legacy helper: apikey + Bearer session token.
 
 // ============================================================
 // TYPES
@@ -1030,11 +1010,13 @@ const t = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
 
 export default function ParentChildrenPage() {
   const { guardian, isLoading: authLoading, isLoggedIn, isHi } = useAuth();
+  const api = usePortalAction('/functions/v1/parent-portal', isHi);
   const { can } = usePermissions();
   const router = useRouter();
 
   const [children, setChildren] = useState<ChildData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [expandedChild, setExpandedChild] = useState<string | null>(null);
   const [unlinkTarget, setUnlinkTarget] = useState<ChildData | null>(null);
   const [unlinkLoading, setUnlinkLoading] = useState(false);
@@ -1043,6 +1025,7 @@ export default function ParentChildrenPage() {
   const fetchChildren = useCallback(async () => {
     if (!guardian) return;
     setLoading(true);
+    setLoadError('');
     try {
       const res = await api('get_child_dashboard', { guardian_id: guardian.id });
 
@@ -1062,10 +1045,13 @@ export default function ParentChildrenPage() {
       setChildren(childrenList);
     } catch (err) {
       console.error('Failed to fetch children:', err);
+      // A failed/timed-out fetch is NOT "no children linked" — surface a real
+      // error state instead of the empty state (which invites re-linking).
       setChildren([]);
+      setLoadError(err instanceof Error && err.message ? err.message : 'error');
     }
     setLoading(false);
-  }, [guardian]);
+  }, [api, guardian]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -1181,8 +1167,44 @@ export default function ParentChildrenPage() {
         </p>
       </div>
 
-      {/* Children list or empty state */}
-      {children.length === 0 ? (
+      {/* Children list, error, or empty state */}
+      {loadError ? (
+        <div
+          role="alert"
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            border: '1px solid #EF4444',
+            padding: '28px 22px',
+            marginBottom: 14,
+            textAlign: 'center',
+          }}
+        >
+          <div style={{ fontSize: 36, marginBottom: 10 }}>&#x26A0;&#xFE0F;</div>
+          <p style={{ fontSize: 15, fontWeight: 700, color: '#EF4444', margin: '0 0 6px' }}>
+            {t(isHi, 'Could not load your children', 'आपके बच्चों की जानकारी लोड नहीं हो सकी')}
+          </p>
+          <p style={{ fontSize: 12, color: '#94A3B8', margin: '0 0 16px', lineHeight: 1.5 }}>
+            {loadError}
+          </p>
+          <button
+            onClick={fetchChildren}
+            style={{
+              padding: '11px 24px',
+              minHeight: 44,
+              backgroundColor: '#16A34A',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 10,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {t(isHi, 'Try Again', 'पुनः प्रयास करें')}
+          </button>
+        </div>
+      ) : children.length === 0 ? (
         <NoChildrenState guardianId={guardian.id} onLinked={fetchChildren} isHi={isHi} />
       ) : (
         <>

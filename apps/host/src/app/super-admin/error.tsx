@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { captureException } from '@sentry/nextjs';
+import { captureException } from '@alfanumrik/lib/sentry-lazy-capture';
 
 /**
  * /super-admin error boundary — English-only per ops decision.

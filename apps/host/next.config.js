@@ -266,15 +266,35 @@ const nextConfig = {
 // Also wraps in AWS ECS (DEPLOY_TARGET=production set by task definition)
 if (process.env.VERCEL || process.env.CI || process.env.DEPLOY_TARGET === 'production') {
   const { withSentryConfig } = require('@sentry/nextjs');
+  // @sentry/nextjs v10 signature is withSentryConfig(nextConfig, sentryBuildOptions)
+  // — TWO arguments (verified against the installed 10.53.1:
+  // build/cjs/config/withSentryConfig/index.js). This call previously used the
+  // legacy v7 THREE-argument shape, so the third object (widenClientFileUpload,
+  // hideSourceMaps, disableLogger, tunnelRoute) was silently ignored. Options
+  // are now merged into the single v10 options object. `hideSourceMaps` no
+  // longer exists in v10 — its intent is covered by the v10 default
+  // `sourcemaps.deleteSourcemapsAfterUpload: true` (maps are removed from the
+  // build output after upload).
   module.exports = withSentryConfig(withBundleAnalyzer(nextConfig), {
     silent: true,
     org: process.env.SENTRY_ORG,
     project: process.env.SENTRY_PROJECT,
-  }, {
     widenClientFileUpload: true,
-    hideSourceMaps: true,
     disableLogger: true,
     tunnelRoute: '/monitoring',
+    // P10: strip SDK code we never use from the client bundle. The client init
+    // (apps/host/sentry-client-init.ts) sets replay sample rates but never
+    // registers replayIntegration, so Replay never activates — excluding the
+    // replay iframe/Shadow-DOM recorders is safe. excludeTracing is
+    // deliberately NOT set (tracesSampleRate is in use). Supported flags
+    // verified against 10.53.1 build/types/config/types.d.ts
+    // (bundleSizeOptimizations — no feedback exclusion exists in this
+    // version; excludeReplayWorker is only for manually-hosted workers).
+    bundleSizeOptimizations: {
+      excludeDebugStatements: true,
+      excludeReplayShadowDom: true,
+      excludeReplayIframe: true,
+    },
   });
 } else {
   module.exports = withBundleAnalyzer(nextConfig);

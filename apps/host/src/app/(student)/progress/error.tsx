@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { captureException } from '@sentry/nextjs';
+import { captureException } from '@alfanumrik/lib/sentry-lazy-capture';
 
 export default function ProgressError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {

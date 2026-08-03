@@ -14,8 +14,45 @@
  *   logger.error('AI response failed', { error, studentId });
  */
 
-import { captureException, captureMessage } from '@sentry/nextjs';
 import { redactPII } from '@alfanumrik/lib/ops-events-redactor';
+
+declare global {
+  interface Window {
+    /** Installed by apps/host/instrumentation-client.ts: force-loads and
+     * initializes the deferred browser Sentry SDK (memoized). */
+    __alfSentryReady?: () => Promise<void>;
+  }
+}
+
+/**
+ * Lazy Sentry transport (P10, 2026-08-03). The logger sits in the first-paint
+ * client graph (root layout → AuthContext → analytics → logger), so a STATIC
+ * `import { captureException } from '@sentry/nextjs'` kept ~10 kB gzipped of
+ * @sentry/core in the shared first-load bundle and breached CAP_SHARED_KB
+ * (scripts/check-bundle-size.mjs). The dynamic import moves it to an async
+ * chunk while preserving behavior:
+ *  - SERVER/EDGE: '@sentry/nextjs' is already module-cached at boot
+ *    (instrumentation.ts imports it statically), so `import()` resolves
+ *    immediately and capture happens one microtask later — Sentry's transport
+ *    was always async anyway.
+ *  - CLIENT: awaits the deferred-init bridge (instrumentation-client.ts)
+ *    first, so an error logged before the idle-time init still initializes
+ *    the SDK and is delivered through the P13 beforeSend redaction chain.
+ *  - Fail-open, exactly like the try/catch it replaces: a Sentry failure
+ *    never breaks the logger.
+ */
+function withSentry(capture: (sentry: typeof import('@sentry/nextjs')) => void): void {
+  const ready =
+    typeof window !== 'undefined' && window.__alfSentryReady
+      ? window.__alfSentryReady()
+      : Promise.resolve();
+  ready
+    .then(() => import('@sentry/nextjs'))
+    .then(capture)
+    .catch(() => {
+      // Sentry failed — don't break the logger
+    });
+}
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -112,22 +149,27 @@ export const logger = {
   error(message: string, meta?: Record<string, unknown>): void {
     if (!shouldLog('error')) return;
 
-    // Capture to Sentry for centralized error aggregation.
-    // Wrapped in try-catch so a Sentry failure never breaks the logger itself.
-    try {
+    // Capture to Sentry for centralized error aggregation. Lazy transport
+    // (see withSentry above) — payloads are byte-identical to the previous
+    // static captureException/captureMessage calls, and failures still never
+    // break the logger.
+    {
       const originalError = meta?.error instanceof Error ? meta.error : undefined;
+      const metaSnapshot = meta ? { ...meta } : undefined;
       if (originalError) {
-        captureException(originalError, {
-          extra: { ...meta, logMessage: message },
+        withSentry((sentry) => {
+          sentry.captureException(originalError, {
+            extra: { ...metaSnapshot, logMessage: message },
+          });
         });
       } else {
-        captureMessage(message, {
-          level: 'error',
-          extra: meta,
+        withSentry((sentry) => {
+          sentry.captureMessage(message, {
+            level: 'error',
+            extra: metaSnapshot,
+          });
         });
       }
-    } catch {
-      // Sentry failed — don't break the logger
     }
 
     // Extract error details if an Error object is passed

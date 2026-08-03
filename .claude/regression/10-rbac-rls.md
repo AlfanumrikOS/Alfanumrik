@@ -1034,3 +1034,49 @@ canary watch-list growth to 56 names). **Total catalog: 296 entries
 (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## verifyCronAuth consolidation — one fail-closed cron gate, ?token= carrier REMOVED, /api/cron/daily deleted (2026-08-03, P0+P1 batch) — REG-339
+
+Source: the 2026-08-03 P0+P1 launch-hardening batch (architect-approved).
+Every `/api/cron/*` and `/api/internal/cron/*` route — 23 route files (21 +
+2) — now authenticates through ONE shared helper,
+`packages/lib/src/cron-auth.ts` (`verifyCronAuth` + `unauthorizedResponse`),
+replacing ~14 hand-copied per-route implementations that had drifted: several
+accepted a `?token=` QUERY carrier, and a secret in a query string is a
+secret leaked (query strings land in access/CDN logs). The behavior contract,
+pinned at BOTH the helper level and the route level: (1) FAIL CLOSED —
+`CRON_SECRET` unset rejects even a correct header; (2) carriers are
+`Authorization: Bearer` (the Vercel Cron carrier) and `x-cron-secret` (the
+daily-cron fan-out carrier) ONLY; (3) the `?token=` carrier is REMOVED — the
+query string is never even consulted as a credential; (4) FIRST-PRESENT-WINS
+— exactly one compare per request, a wrong higher-precedence carrier is not
+rescued by a correct lower one; (5) constant-time compare
+(`node:crypto` `timingSafeEqual` with an explicit length guard). The
+deprecated `/api/cron/daily` alias (a duplicate of `/api/cron/daily-cron`,
+scheduled by nothing, carrying only deprecation telemetry) was DELETED in the
+same change, with the surrounding governance ledgers ratcheted in lock-step.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-339 | `verify_cron_auth_consolidation_fail_closed_no_query_carrier` | **Helper level** (13 tests): `CRON_SECRET` unset → rejected even with a CORRECT header (`missing_secret`, proven for both carriers); no carrier → `missing_credentials`; wrong Bearer / wrong `x-cron-secret` → `invalid_credentials`; a length-mismatched secret is an ordinary reject, never a `timingSafeEqual` throw (explicit length guard); correct Bearer → ok; correct `x-cron-secret` → ok; FIRST-PRESENT-WINS (a wrong Bearer is NOT rescued by a correct `x-cron-secret`); a CORRECT `?token=` with NO headers → `missing_credentials` — not `invalid_credentials` — proving the query string is never consulted at all; a CORRECT `?token=` does not rescue a wrong header → `invalid_credentials`; source pins — the compare is `node:crypto` `timingSafeEqual(a, b)` (no `===` on the secret) and the helper source contains NO `searchParams`/`nextUrl`/`new URL(`/`get('token')`, so the query carrier cannot silently return; `unauthorizedResponse()` is the house 401 `{ success: false, error: 'Unauthorized' }`. **Route level** (4 re-pinned carrier-matrix suites): adaptive-remediation, adaptive-loops-monitor, flag-posture-canary and whatsapp-drain each accept Bearer/`x-cron-secret` only and 401 a CORRECT `?token=` with ZERO DB I/O — including flipping the old irt-calibrate-precedent `?token=` ACCEPT pin into an explicit REJECT pin. **Deletion + ledger lock-step:** `apps/host/src/app/api/cron/daily/route.ts` is pinned DELETED via `fs.existsSync === false` (replacing the old deprecation-header pin, so the dead alias cannot be silently reintroduced); the admin-client allowlist ratchets 269 → 268 with the route's ledger entry pruned in the SAME change (`EXPECTED_COUNT` + json `count` + route list; `detected === allowlist` both directions); and `scripts/route-access-manifest.json` is regenerated to EXACT parity — 390 route files on disk === 390 manifest entries, `/api/cron/daily` pruned. | `apps/host/src/__tests__/lib/cron-auth.test.ts` (13), `apps/host/src/__tests__/api/cron/adaptive-remediation.test.ts`, `apps/host/src/__tests__/api/cron/adaptive-loops-monitor.test.ts`, `apps/host/src/__tests__/api/cron/flag-posture-canary.test.ts`, `apps/host/src/__tests__/whatsapp/whatsapp-drain-route.test.ts` (re-pinned carrier matrices), `apps/host/src/__tests__/api/api-ownership-routing.test.ts` (deletion pin + manifest parity), `apps/host/src/__tests__/api-admin-client-allowlist.test.ts` + `scripts/admin-client-allowlist.json` (269→268 ratchet) | E | P9 (fail-closed cron auth before any I/O — extends REG-127 from one worker to the whole cron surface), P13-adjacent (the cron secret can no longer ride query strings into access/CDN logs), operational integrity (one audited gate instead of 14 drifting copies; every governance ledger moved in the same change, so none drifts) |
+
+### Invariants covered by this section
+
+- P9 (RBAC/auth enforcement) — the entire cron surface fails closed through
+  one helper whose contract is pinned at two levels; a new cron route that
+  hand-rolls its own gate no longer has a house pattern to drift from.
+- P13-adjacent — removing the query carrier removes the one credential path
+  that was structurally logged by CDNs/access logs.
+- Operational integrity — the dead `/api/cron/daily` alias is pinned deleted,
+  and the allowlist (269→268) + route-access manifest (390 === disk) ratchets
+  prove the deletion propagated to every governance ledger in the same PR.
+
+### Catalog total
+
+Pre-REG-339: 338 entries (through REG-338, the usePortalFetch timeout
+envelope — see `07-teacher-school.md`). The 2026-08-03 P0+P1 batch adds
+REG-339 (verifyCronAuth consolidation + query-carrier removal + dead-alias
+deletion with lock-step ledger ratchets).
+**Total catalog: 339 entries (target: 35 — TARGET EXCEEDED).**
+
+---

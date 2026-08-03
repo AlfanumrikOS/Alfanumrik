@@ -1,15 +1,31 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 
 /**
  * REG-227 — Sentry `environment:` tag resolution (Environment Readiness
  * remediation wave, 2026-07-02).
  *
+ * FILE LOCATIONS (updated 2026-08-03, P0-1 Sentry-initialization fix;
+ * re-updated same day for the P10 deferred-load repair)
+ * =====================================================================
+ * The three Sentry init files historically sat at the REPO root
+ * (`sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`)
+ * — outside the Next.js project root — and were therefore never loaded. They
+ * now live in `apps/host/` under the @sentry/nextjs v10 convention: the client
+ * config content moved first to `apps/host/instrumentation-client.ts` (P0-1),
+ * then to `apps/host/sentry-client-init.ts` (P10 repair, 2026-08-03:
+ * `instrumentation-client.ts` became a ~1 kB deferred loader that `import()`s
+ * the init module after window load, keeping the browser SDK out of the
+ * first-paint shared bundle — CAP_SHARED_KB). Server/edge configs kept their
+ * names in `apps/host/` and are imported from `apps/host/instrumentation.ts`
+ * by NEXT_RUNTIME. The `environment:` tag expressions this test pins are
+ * UNCHANGED — only the file paths moved.
+ *
  * THE BUG THIS PINS
  * ==================
- * All three Sentry init files (`sentry.client.config.ts`, `sentry.server.config.ts`,
- * `sentry.edge.config.ts`) used to key the `environment` tag off `process.env.NODE_ENV`
+ * All three Sentry init files used to key the `environment` tag off `process.env.NODE_ENV`
  * ONLY. Next.js's `next build` always sets `NODE_ENV=production` for a production-mode
  * build regardless of which Vercel environment (Production vs Preview) the build is
  * destined for — `VERCEL_ENV` (`production`/`preview`/`development`) is the only value
@@ -27,7 +43,7 @@ import * as path from 'path';
  *
  * THE FIX (already applied, ops pass, this test only pins it)
  * =============================================================
- *   sentry.client.config.ts: process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV || 'development'
+ *   sentry-client-init.ts:   process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV || 'development'
  *   sentry.server.config.ts: process.env.VERCEL_ENV || process.env.NODE_ENV || 'development'
  *   sentry.edge.config.ts:   process.env.VERCEL_ENV || process.env.NODE_ENV || 'development'
  *
@@ -37,10 +53,10 @@ import * as path from 'path';
  *
  * WHY THIS TEST DOES NOT IMPORT THE CONFIG FILES DIRECTLY
  * ==========================================================
- * `sentry.*.config.ts` call `Sentry.init(...)` as a top-level side effect at module
+ * The Sentry init files call `Sentry.init(...)` as a top-level side effect at module
  * import time. Importing them under Vitest would trigger the real Sentry SDK. The
  * existing convention for this exact problem
- * (`src/lib/sentry-client-redact.ts` extracted from `sentry.client.config.ts`,
+ * (`src/lib/sentry-client-redact.ts` extracted from the client Sentry config,
  * tested via `src/__tests__/sentry/client-redact.test.ts`) is to pull testable logic
  * out into a plain module — but the `environment:` line is a single inline expression
  * with no natural extraction point, and these three files are outside the testing
@@ -60,8 +76,18 @@ import * as path from 'path';
  * REGRESSION CATALOG: REG-227.
  */
 
+// apps/host/ — the Next.js project root, where the Sentry init files live as
+// of the 2026-08-03 P0-1 fix. Anchored to this test file's own location
+// (apps/host/src/__tests__/sentry/ → three levels up) so resolution works
+// regardless of the vitest cwd; cwd-based candidates kept as fallback.
+const HOST_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
 function resolve(rel: string): string | null {
-  for (const c of [path.resolve(process.cwd(), rel), path.resolve(process.cwd(), '..', rel)]) {
+  for (const c of [
+    path.resolve(HOST_ROOT, rel),
+    path.resolve(process.cwd(), rel),
+    path.resolve(process.cwd(), 'apps', 'host', rel),
+  ]) {
     if (fs.existsSync(c)) return c;
   }
   return null;
@@ -69,11 +95,11 @@ function resolve(rel: string): string | null {
 
 function read(rel: string): string {
   const p = resolve(rel);
-  if (!p) throw new Error(`Fixture file not found: ${rel} (checked cwd and parent)`);
+  if (!p) throw new Error(`Fixture file not found: ${rel} (checked apps/host root and cwd)`);
   return fs.readFileSync(p, 'utf8');
 }
 
-const CLIENT_CONFIG = 'sentry.client.config.ts';
+const CLIENT_CONFIG = 'sentry-client-init.ts';
 const SERVER_CONFIG = 'sentry.server.config.ts';
 const EDGE_CONFIG = 'sentry.edge.config.ts';
 
@@ -87,7 +113,7 @@ const SERVER_EDGE_EXPR = "environment: process.env.VERCEL_ENV || process.env.NOD
 const REGRESSED_LINE_RE = /environment:\s*process\.env\.NODE_ENV\s*\|\|\s*'development',/;
 
 describe('REG-227 — Sentry environment-tag resolution (static source pin)', () => {
-  it('sentry.client.config.ts prioritizes NEXT_PUBLIC_VERCEL_ENV over NODE_ENV', () => {
+  it('sentry-client-init.ts (deferred client init) prioritizes NEXT_PUBLIC_VERCEL_ENV over NODE_ENV', () => {
     const src = read(CLIENT_CONFIG);
     expect(src).toContain(CLIENT_EXPR);
   });

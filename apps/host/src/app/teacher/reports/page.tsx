@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
 import { Bone, CardListSkeleton, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 import { StatCard, BarChart, LineChart, DataTable } from '@alfanumrik/ui/admin-ui';
@@ -14,33 +14,9 @@ import type { Column } from '@alfanumrik/ui/admin-ui';
 // ============================================================
 const tt = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-async function api(action: string, params: Record<string, unknown> = {}) {
-  // Build headers — always include apikey; add Bearer token when a session
-  // exists so teacher-dashboard can authenticate the caller via JWT (P13).
-  // Pattern mirrors src/app/teacher/page.tsx api() helper.
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SUPABASE_ANON,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — request will be rejected by Edge Function */ }
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json();
-}
+// Edge-function calls go through the shared usePortalAction helper (10s
+// AbortController timeout so a hung backend can't spin forever; bilingual
+// abort copy — P7). Headers match the legacy api(): apikey + Bearer JWT (P13).
 
 /* ─── Styles (Atlas warm theme) ─── */
 const pageStyle: React.CSSProperties = {
@@ -263,6 +239,7 @@ function ClassOverviewTab({ data, isHi }: { data: OverviewData | null; isHi: boo
 
 /* ─── Tab 2: Student Analysis ─── */
 function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentListEntry[]; teacherId: string; isHi: boolean }) {
+  const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
   const [selectedId, setSelectedId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [profile, setProfile] = useState<StudentProfile | null>(null);
@@ -286,7 +263,7 @@ function StudentAnalysisTab({ students, teacherId, isHi }: { students: StudentLi
     } finally {
       setLoading(false);
     }
-  }, [teacherId]);
+  }, [api, teacherId]);
 
   useEffect(() => {
     if (selectedId) loadProfile(selectedId);
@@ -579,6 +556,7 @@ function TrendsTab({ data, isHi }: { data: TrendsData | null; isHi: boolean }) {
 /* ─── Main Page ─── */
 export default function TeacherReportsPage() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
+  const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
   const router = useRouter();
 
   const [tab, setTab] = useState<'overview' | 'student' | 'trends'>('overview');
@@ -616,7 +594,7 @@ export default function TeacherReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [teacherId]);
+  }, [api, teacherId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

@@ -36,6 +36,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -54,16 +55,8 @@ interface DueSubscription {
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
-function verifyCronSecret(req: NextRequest): boolean {
-  const secret =
-    req.headers.get('x-cron-secret') ||
-    req.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !secret || secret.length !== expected.length) return false;
-  let m = 0;
-  for (let i = 0; i < secret.length; i++) m |= secret.charCodeAt(i) ^ expected.charCodeAt(i);
-  return m === 0;
-}
+// Shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret, constant-time,
+// fail-closed).
 
 // ─── Edge Function call (HTTP, not RPC — Edge runs separately) ───────────────
 async function invokeSendPreDebitNotice(
@@ -93,7 +86,7 @@ async function invokeSendPreDebitNotice(
 export async function POST(request: NextRequest) {
   const startedMs = Date.now();
 
-  if (!verifyCronSecret(request)) {
+  if (!verifyCronAuth(request).ok) {
     return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 });
   }
 

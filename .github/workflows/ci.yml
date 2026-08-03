@@ -29,7 +29,12 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel in-flight CI on main: deploy-production.yml (its own group,
+  # cancel-in-progress: false) fail-closed polls the "CI Gate" job for the
+  # EXACT pushed SHA. Two quick pushes to main used to cancel run 1's CI Gate
+  # while run 1's deploy kept waiting on that SHA — a stranded deploy needing
+  # a manual rerun. PR/develop refs keep the cancel-and-supersede behavior.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   NODE_VERSION: '22'
@@ -1099,6 +1104,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      # apps/host/vercel.json is the single deploy config (Vercel project root dir = apps/host); a root copy is dead config that silently drifts.
+      - name: Root vercel.json drift guard
+        run: |
+          if [ -f vercel.json ]; then echo "::error::root vercel.json must not exist (apps/host/vercel.json is authoritative)"; exit 1; fi
 
       - uses: actions/setup-node@v6
         with:
@@ -2711,7 +2721,7 @@ jobs:
             playwright-report/
           retention-days: 14
 
-  # ── Step 3: Post-deploy health check (main branch only) ──
+  # ── Step 3: CI Gate ──
   # 2026-07-20 CI speed-up: the advisory `e2e` job was removed from this gate.
   # Its TEST verdict was ALREADY ignored (the job's test STEP runs with
   # continue-on-error: true, so a test failure never fails the job). Infra
@@ -2797,134 +2807,3 @@ jobs:
           }
           console.log('CI Gate passed.');
           NODE
-
-  health-check:
-    name: Post-Deploy Health Check
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    needs: [build]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    outputs:
-      exact_sha_verified: ${{ steps.health.outputs.exact_sha_verified }}
-      verified_github_sha: ${{ steps.health.outputs.verified_github_sha }}
-      content_verified_noop: ${{ steps.health.outputs.content_verified_noop }}
-      verified_noop_base_sha: ${{ steps.health.outputs.verified_noop_base_sha }}
-    steps:
-      # Full history (not the repo default shallow clone) is required so the
-      # no-op-deploy escape hatch below can resolve an arbitrary short SHA
-      # reported by production and walk ancestry/diff it against $GITHUB_SHA.
-      # Same script as deploy-production.yml's health-check/post-deploy-verify
-      # jobs (PR #1414) — .github/scripts/verify-noop-deploy.sh is reused
-      # here, not duplicated. No job currently reads this job's outputs; they
-      # are exposed for parity with the deploy-production.yml convention and
-      # for any future consumer.
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Poll canonical production for healthy exact SHA
-        id: health
-        # Production is served from the canonical alfanumrik.com domain.
-        # The .vercel.app subdomain is not aliased to this project and 404s —
-        # was a past source of false health-check failures in CI.
-        #
-        # Fail closed unless canonical production reports healthy exact SHA
-        # OR a verified content-identical no-op (see verify-noop-deploy.sh).
-        # This job has no rollback authority — it only reports pass/fail, so
-        # the escape hatch only ever affects whether THIS job's verdict is
-        # true/false, never any production mutation.
-        env:
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-        run: |
-          TARGET_URL="https://alfanumrik.com/api/v1/health"
-          EXPECTED_SHA="${GITHUB_SHA:0:7}"
-          POLL_WINDOW_SECONDS=600
-          DEADLINE=$((SECONDS + POLL_WINDOW_SECONDS))
-          ATTEMPT=0
-          LAST_STATUS=""
-          echo "exact_sha_verified=false" >> "$GITHUB_OUTPUT"
-          echo "verified_github_sha=" >> "$GITHUB_OUTPUT"
-          echo "content_verified_noop=false" >> "$GITHUB_OUTPUT"
-          echo "verified_noop_base_sha=" >> "$GITHUB_OUTPUT"
-          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
-            echo "::error::Bypass secret is required for CI production verification."
-            exit 1
-          fi
-          BYPASS_HEADER=(-H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET")
-          set +e
-          while [ "$SECONDS" -lt "$DEADLINE" ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            # Capture body and status WITHOUT piping into head/tail. Writing into
-            # a `head` that exits early closes the pipe and produces the
-            # "echo: write error: Broken pipe" seen in the old loop. Use a
-            # plain temp file + curl's own %{http_code} instead.
-            HEADERS_FILE=$(mktemp)
-            BODY_FILE=$(mktemp)
-            BODY=$(curl -sS -m 10 -D "$HEADERS_FILE" -o "$BODY_FILE" -w "%{http_code}" \
-              -A "Alfanumrik-CI-HealthCheck/1.0 (+https://alfanumrik.com; vercel-monitoring)" \
-              -H "Accept: application/json" \
-              -H "x-health-probe: github-actions" \
-              "${BYPASS_HEADER[@]}" \
-              "$TARGET_URL" 2>/dev/null)
-            CURL_EXIT=$?
-            STATUS="$BODY"
-            LAST_STATUS="$STATUS"
-
-            if [ "$CURL_EXIT" != "0" ]; then
-              echo "Attempt $ATTEMPT: curl failed (exit $CURL_EXIT)"
-              LAST_STATUS="curl-exit-$CURL_EXIT"
-              rm -f "$HEADERS_FILE" "$BODY_FILE"
-              REMAINING=$((DEADLINE - SECONDS))
-              if [ "$REMAINING" -le 0 ]; then break; fi
-              SLEEP_SECONDS=20
-              if [ "$REMAINING" -lt "$SLEEP_SECONDS" ]; then SLEEP_SECONDS="$REMAINING"; fi
-              sleep "$SLEEP_SECONDS"
-              continue
-            fi
-
-            if [ "$STATUS" = "200" ]; then
-              HEALTHY=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.ok===true&&b.status==='healthy'))}catch{process.stdout.write('false')}" "$BODY_FILE")
-              DEPLOYED_SHA=$(node -e "const fs=require('fs');try{const b=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(b.version?.git_sha||''))}catch{process.stdout.write('')}" "$BODY_FILE")
-              if [ "$HEALTHY" = "true" ] && [ "$DEPLOYED_SHA" = "$EXPECTED_SHA" ]; then
-                rm -f "$HEADERS_FILE" "$BODY_FILE"
-                echo "exact_sha_verified=true" >> "$GITHUB_OUTPUT"
-                echo "verified_github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              # No-op-deploy escape hatch. Production is demonstrably healthy
-              # right now, just reporting a DIFFERENT sha than ours. If that
-              # sha is a real git ancestor of ours with a byte-identical tree,
-              # this is a genuine no-op release (e.g. a follow-up push
-              # re-merging an already-integrated branch) and there is nothing
-              # new for production to ever converge on — polling for the
-              # literal sha would time out even though production is correct.
-              # See .github/scripts/verify-noop-deploy.sh for the ancestor +
-              # empty-diff guard that keeps this from being a loophole for a
-              # genuinely different/broken deploy.
-              if [ "$HEALTHY" = "true" ] && [ -n "$DEPLOYED_SHA" ] && [ "$DEPLOYED_SHA" != "$EXPECTED_SHA" ]; then
-                NOOP_CHECK=$(bash .github/scripts/verify-noop-deploy.sh "$DEPLOYED_SHA" "$GITHUB_SHA" 2>/dev/null || true)
-                NOOP_OK=$(echo "$NOOP_CHECK" | awk '{print $1}')
-                if [ "$NOOP_OK" = "true" ]; then
-                  NOOP_BASE_SHA=$(echo "$NOOP_CHECK" | cut -d' ' -f2-)
-                  rm -f "$HEADERS_FILE" "$BODY_FILE"
-                  echo "::notice::No-op deploy detected — $GITHUB_SHA has identical tree to already-healthy $NOOP_BASE_SHA. Skipping literal-SHA wait."
-                  echo "exact_sha_verified=true" >> "$GITHUB_OUTPUT"
-                  echo "verified_github_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-                  echo "content_verified_noop=true" >> "$GITHUB_OUTPUT"
-                  echo "verified_noop_base_sha=$NOOP_BASE_SHA" >> "$GITHUB_OUTPUT"
-                  exit 0
-                fi
-              fi
-            fi
-
-            echo "Attempt $ATTEMPT did not prove healthy exact SHA (http=$STATUS)."
-            rm -f "$HEADERS_FILE" "$BODY_FILE"
-            REMAINING=$((DEADLINE - SECONDS))
-            if [ "$REMAINING" -le 0 ]; then break; fi
-            SLEEP_SECONDS=20
-            if [ "$REMAINING" -lt "$SLEEP_SECONDS" ]; then SLEEP_SECONDS="$REMAINING"; fi
-            sleep "$SLEEP_SECONDS"
-          done
-
-          echo "::error::Healthy exact SHA $EXPECTED_SHA was not observed within the bounded polling window (last=$LAST_STATUS)."
-          exit 1

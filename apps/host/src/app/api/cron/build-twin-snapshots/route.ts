@@ -23,9 +23,10 @@
 // { skipped: 'flag_off' } — byte-identical to not existing.
 //
 // Security (P9, REG-118/REG-119 posture): fail-closed CRON_SECRET gate with a
-// constant-time compare BEFORE any DB I/O. Accepts `x-cron-secret`,
-// `Authorization: Bearer`, or `?token=` (first-present-wins, irt-calibrate
-// precedent).
+// constant-time compare BEFORE any DB I/O (shared @alfanumrik/lib/cron-auth).
+// Accepts `Authorization: Bearer` or `x-cron-secret` (first-present-wins,
+// irt-calibrate precedent); the legacy `?token=` query carrier was removed
+// 2026-08-03 (secrets in query strings land in access logs).
 //
 // P13: no PII anywhere — rows, the response, and logs carry student UUIDs,
 // topic UUIDs, numbers, and enum-like error tags ONLY. Free-text columns on
@@ -33,12 +34,12 @@
 // NEVER selected. Generic 500 body; counts-only logging + response.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled, DIGITAL_TWIN_FLAGS } from '@alfanumrik/lib/feature-flags';
 import { predictRetention } from '@alfanumrik/lib/cognitive-engine';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,34 +59,10 @@ const DEFAULT_STRENGTH = 1.0;
 
 // ════════════════════════════════════════════════════════════════════════════
 // AUTH — fail-closed, constant-time, BEFORE any DB I/O
+// (shared @alfanumrik/lib/cron-auth gate: first-present-wins Bearer, else
+//  x-cron-secret; exactly ONE candidate compared; fail-closed on a missing
+//  CRON_SECRET)
 // ════════════════════════════════════════════════════════════════════════════
-
-function constantTimeMatch(provided: string, secret: string): boolean {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-/**
- * First-present-wins carrier precedence (Bearer, else x-cron-secret, else
- * ?token=): exactly ONE candidate is compared. A wrong value in a higher-
- * precedence carrier is NOT rescued by a correct lower one. Fail-closed on a
- * missing CRON_SECRET.
- */
-function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false; // fail closed on missing configuration
-
-  const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
-  const headerSecret = req.headers.get('x-cron-secret') ?? '';
-  const token = req.nextUrl.searchParams.get('token') ?? '';
-
-  const provided = bearer || headerSecret || token;
-  if (!provided) return false;
-  return constantTimeMatch(provided, secret);
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // ROW SHAPES
@@ -368,7 +345,7 @@ async function runBuild(admin: SupabaseClient, nowMs: number): Promise<BuildSumm
 
 export async function POST(req: NextRequest): Promise<Response> {
   // Fail-closed auth gate — BEFORE any DB I/O (REG-118/REG-119 posture).
-  if (!isAuthorized(req)) {
+  if (!verifyCronAuth(req).ok) {
     return NextResponse.json({ success: false, error: 'unauthorized' }, { status: 401 });
   }
 

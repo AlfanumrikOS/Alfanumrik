@@ -3,23 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useRouter } from 'next/navigation';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 
-// Rule 9: NEVER hardcode API keys — use environment variables
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-async function nepApi(action: string, params: Record<string, unknown> = {}) {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/nep-compliance`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON },
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json();
-}
+// nep-compliance calls go through the shared usePortalAction helper (10s
+// AbortController timeout so a hung backend can't spin forever; bilingual
+// abort copy — P7). The helper also attaches the signed-in student's Bearer
+// token alongside the apikey header the legacy nepApi() sent.
 
 const BLOOM_COLORS: Record<string, string> = { remember: '#3B82F6', understand: '#6366F1', apply: '#8B5CF6', analyze: '#D97706', evaluate: '#EA580C', create: '#DC2626' };
 function BloomBar({ dist }: { dist: Record<string, number> | null | undefined }) {
@@ -50,6 +39,7 @@ function BehaviorRating({ value, label }: { value: number|null; label: string })
 
 export default function HPCPage() {
   const { student, isLoading: authLoading, isLoggedIn, isHi } = useAuth();
+  const nepApi = usePortalAction('/functions/v1/nep-compliance', isHi);
   const router = useRouter();
   const [hpc, setHpc] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,12 +61,21 @@ export default function HPCPage() {
     if (!studentId) return;
     (async () => {
       setLoading(true);
-      await nepApi('generate_hpc', { student_id: studentId });
-      const data = await nepApi('get_hpc', { student_id: studentId });
-      setHpc(data);
-      setLoading(false);
+      try {
+        await nepApi('generate_hpc', { student_id: studentId });
+        const data = await nepApi('get_hpc', { student_id: studentId });
+        setHpc(data);
+      } catch (e) {
+        // Previously an unhandled rejection left the spinner running forever.
+        // Route failures (incl. the 10s timeout) into the existing bilingual
+        // error branch below instead.
+        const msg = e instanceof Error ? e.message : '';
+        setHpc(msg ? { error: msg } : null);
+      } finally {
+        setLoading(false);
+      }
     })();
-  }, [studentId]);
+  }, [nepApi, studentId]);
 
   // Pedagogy v2 Wave 3 chip: surface the latest monthly synthesis when
   // it exists. Renders nothing on 404 (flag off) or no_synthesis_yet.

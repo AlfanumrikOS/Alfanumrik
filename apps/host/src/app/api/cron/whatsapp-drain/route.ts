@@ -43,11 +43,11 @@
 // payloads, no message bodies. Logs carry row UUIDs and outcome labels only.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'node:crypto';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 import { processLinkBinding } from '../../whatsapp/_lib/link-binding';
 import {
   DAILY6_PROCESSABLE_INTENTS,
@@ -71,35 +71,11 @@ const GENERIC_500_BODY = 'internal_error';
 
 // ════════════════════════════════════════════════════════════════════════════
 // AUTH — fail-closed, constant-time, BEFORE any DB I/O
-// (copied exactly from api/cron/adaptive-remediation/route.ts)
+// (shared @alfanumrik/lib/cron-auth gate: FIRST-PRESENT-WINS Bearer, else
+//  x-cron-secret — a WRONG value in a higher-precedence carrier is NOT rescued
+//  by a correct lower one. The legacy ?token= query carrier was removed
+//  2026-08-03: secrets in query strings land in access logs.)
 // ════════════════════════════════════════════════════════════════════════════
-
-function constantTimeMatch(provided: string, secret: string): boolean {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-/**
- * Carrier precedence is FIRST-PRESENT-WINS, not first-match-wins (pinned by
- * tests — irt-calibrate precedent): exactly ONE candidate is selected (Bearer,
- * else x-cron-secret, else ?token=) and compared once. A WRONG value in a
- * higher-precedence carrier is NOT rescued by a correct lower one.
- */
-function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false; // fail closed on missing configuration
-
-  const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
-  const headerSecret = req.headers.get('x-cron-secret') ?? '';
-  const token = req.nextUrl.searchParams.get('token') ?? '';
-
-  const provided = bearer || headerSecret || token;
-  if (!provided) return false;
-  return constantTimeMatch(provided, secret);
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // DRAIN
@@ -335,7 +311,7 @@ async function drain(): Promise<DrainCounts> {
 
 async function handle(req: NextRequest): Promise<NextResponse> {
   // Fail-closed auth gate — BEFORE any DB I/O (REG-118/REG-119 posture).
-  if (!isAuthorized(req)) {
+  if (!verifyCronAuth(req).ok) {
     return NextResponse.json(
       { success: false, error: 'unauthorized' },
       { status: 401 },

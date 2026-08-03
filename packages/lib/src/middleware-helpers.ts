@@ -194,6 +194,9 @@ async function fetchGetUserRolePrimary(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ p_auth_user_id: userId }),
+      // Bound this probe — on timeout the fetch rejects → catch → ok:false →
+      // ROLE_UNKNOWN → caller fails open (existing transient-failure path).
+      signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return { ok: false };
 
@@ -233,6 +236,9 @@ async function fetchAdminLevel(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ p_user_id: userId }),
+      // Bound this probe — on timeout the fetch rejects → catch → ok:false →
+      // ROLE_UNKNOWN → caller fails open (existing transient-failure path).
+      signal: AbortSignal.timeout(3000),
     });
     if (res.status === 404) return { ok: true, value: null }; // RPC not deployed yet — legacy fallback.
     if (!res.ok) return { ok: false };
@@ -271,6 +277,9 @@ async function fetchElevatedRole(
         'apikey': serviceKey,
         'Authorization': `Bearer ${serviceKey}`,
       },
+      // Bound this probe — on timeout the fetch rejects → catch → ok:false →
+      // ROLE_UNKNOWN → caller fails open (existing transient-failure path).
+      signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return { ok: false };
     const rows = (await res.json()) as Array<{ role?: { name?: string } | null }>;
@@ -317,7 +326,15 @@ export async function getUserRoleFromCache(userId: string): Promise<ResolvedMidd
   const redis = await getRedis();
   if (redis) {
     try {
-      const cached = await redis.get<MiddlewareRole>(ROLE_CACHE_KEY(userId));
+      // Bound the Redis read to 3s — a hung Upstash must not stall the
+      // middleware hot path. On timeout we resolve null and fall through to
+      // the PostgREST source of truth, the SAME destination as the existing
+      // catch path (a rejected get is swallowed to avoid an unhandled
+      // rejection after the race resolves).
+      const cached = await Promise.race([
+        redis.get<MiddlewareRole>(ROLE_CACHE_KEY(userId)).catch(() => null),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 3000)),
+      ]);
       if (cached) {
         writeLocalRoleCache(userId, cached);
         return cached;

@@ -333,6 +333,10 @@ async function validateSessionCached(sessionId: string): Promise<boolean | null>
           'apikey': serviceKey,
           'Authorization': `Bearer ${serviceKey}`,
         },
+        // Bound this lookup — a hung PostgREST must not stall the hot path.
+        // On timeout the fetch rejects → the catch below → null → allow through
+        // (same fail-open path as any other network error).
+        signal: AbortSignal.timeout(3000),
       }
     );
 
@@ -374,7 +378,9 @@ async function validateSessionCached(sessionId: string): Promise<boolean | null>
 // ── Subdomain → School resolution (white-label) ──────────────────────
 // Schools access Alfanumrik via <slug>.alfanumrik.com. This cache avoids
 // a DB query on every request (5-minute TTL, 1-minute negative cache).
-const schoolCache = new Map<string, { data: SchoolConfig | null; expires: number }>();
+// `error: true` marks a ≤5s transient-failure entry (PostgREST non-2xx /
+// network error / timeout) — NOT a definitive "school absent" negative entry.
+const schoolCache = new Map<string, { data: SchoolConfig | null; expires: number; error?: boolean }>();
 
 interface SchoolConfig {
   id: string;
@@ -385,6 +391,57 @@ interface SchoolConfig {
   secondary_color: string;
   tagline: string | null;
   settings: Record<string, unknown>;
+}
+
+/**
+ * Outcome of a tenant lookup.
+ *  - `ok: true`  → the lookup was DEFINITIVE: `data` is the school, or null
+ *                  when PostgREST answered 200 with an empty result (school
+ *                  genuinely absent/inactive → the 404 branch may fire).
+ *  - `ok: false` → the lookup FAILED (non-2xx, network error, or 3s timeout).
+ *                  `data` carries last-known-good config when we have one;
+ *                  callers must NOT hard-404 the tenant on this outcome.
+ */
+interface SchoolLookupResult {
+  ok: boolean;
+  data: SchoolConfig | null;
+}
+
+/**
+ * Record a FAILED tenant lookup (non-2xx / network error / timeout) — as
+ * opposed to a definitive 200-with-empty-result. Never writes the 60s
+ * negative cache: a single transient PostgREST 5xx used to black out an
+ * entire white-label tenant behind a hard 404 for a full minute. Instead:
+ *  - if we hold last-known-good config for this key, re-serve it (re-cached
+ *    for 5s so an outage doesn't hammer PostgREST on every request);
+ *  - otherwise cache the error state for 5s and fail open to the generic
+ *    (no-school) experience.
+ */
+function schoolLookupFailure(
+  cacheKey: string,
+  stale: { data: SchoolConfig | null; expires: number; error?: boolean } | undefined,
+  cause: string
+): SchoolLookupResult {
+  const staleGood = stale && stale.data && !stale.error ? stale.data : null;
+  // Structured breadcrumb — same console.warn(JSON.stringify) house pattern as
+  // middleware_auth_degraded (the shared logger is too heavy for the middleware
+  // bundle). Emission is bounded by the 5s re-cache below (~0.2 lines/s per
+  // tenant per isolate worst case), so no sampling needed. cacheKey is a tenant
+  // slug or "domain:"-prefixed host — no PII. `cause` is the upstream HTTP
+  // status (e.g. "http_503") or the thrown error class (e.g. "TimeoutError").
+  console.warn(JSON.stringify({
+    level: 'warn',
+    message: 'school_lookup_fail_open',
+    cacheKey,
+    cause,
+    fallback: staleGood ? 'last_known_good' : 'generic',
+  }));
+  if (staleGood) {
+    schoolCache.set(cacheKey, { data: staleGood, expires: Date.now() + 5_000 });
+  } else {
+    schoolCache.set(cacheKey, { data: null, expires: Date.now() + 5_000, error: true });
+  }
+  return { ok: false, data: staleGood };
 }
 
 function extractSubdomain(host: string): string | null {
@@ -409,9 +466,9 @@ async function getSchoolBySlug(
   slug: string,
   sbUrl: string,
   sbKey: string
-): Promise<SchoolConfig | null> {
+): Promise<SchoolLookupResult> {
   const cached = schoolCache.get(slug);
-  if (cached && cached.expires > Date.now()) return cached.data;
+  if (cached && cached.expires > Date.now()) return { ok: !cached.error, data: cached.data };
 
   try {
     // Direct PostgREST query with anon key — lightweight for edge middleware.
@@ -424,11 +481,14 @@ async function getSchoolBySlug(
         'apikey': sbKey,
         'Authorization': `Bearer ${sbKey}`,
       },
+      // Bound THIS lookup only — a hung PostgREST must not stall every tenant
+      // request behind it. On timeout the fetch rejects → catch → fail open.
+      signal: AbortSignal.timeout(3000),
     });
 
     if (!res.ok) {
-      schoolCache.set(slug, { data: null, expires: Date.now() + 60_000 });
-      return null;
+      // Transient upstream failure (5xx/503/429/…), NOT "school absent".
+      return schoolLookupFailure(slug, cached, `http_${res.status}`);
     }
 
     const rows = await res.json();
@@ -438,9 +498,10 @@ async function getSchoolBySlug(
     schoolCache.set(slug, { data, expires: Date.now() + ttl });
 
     evictStaleSchoolCache();
-    return data;
-  } catch {
-    return null;
+    return { ok: true, data };
+  } catch (err) {
+    // Network error or 3s timeout — same fail-open path as non-2xx.
+    return schoolLookupFailure(slug, cached, (err as { name?: string } | null)?.name || 'unknown_error');
   }
 }
 
@@ -452,10 +513,10 @@ async function getSchoolByCustomDomain(
   domain: string,
   sbUrl: string,
   sbKey: string
-): Promise<SchoolConfig | null> {
+): Promise<SchoolLookupResult> {
   const cacheKey = `domain:${domain}`;
   const cached = schoolCache.get(cacheKey);
-  if (cached && cached.expires > Date.now()) return cached.data;
+  if (cached && cached.expires > Date.now()) return { ok: !cached.error, data: cached.data };
 
   try {
     const url = `${sbUrl}/rest/v1/schools?custom_domain=eq.${encodeURIComponent(domain)}&is_active=eq.true&domain_verified=eq.true&select=id,name,slug,logo_url,primary_color,secondary_color,tagline,settings&limit=1`;
@@ -464,11 +525,13 @@ async function getSchoolByCustomDomain(
         'apikey': sbKey,
         'Authorization': `Bearer ${sbKey}`,
       },
+      // Bound THIS lookup only (see getSchoolBySlug) — timeout → catch → fail open.
+      signal: AbortSignal.timeout(3000),
     });
 
     if (!res.ok) {
-      schoolCache.set(cacheKey, { data: null, expires: Date.now() + 60_000 });
-      return null;
+      // Transient upstream failure (5xx/503/429/…), NOT "school absent".
+      return schoolLookupFailure(cacheKey, cached, `http_${res.status}`);
     }
 
     const rows = await res.json();
@@ -478,9 +541,10 @@ async function getSchoolByCustomDomain(
     schoolCache.set(cacheKey, { data, expires: Date.now() + ttl });
 
     evictStaleSchoolCache();
-    return data;
-  } catch {
-    return null;
+    return { ok: true, data };
+  } catch (err) {
+    // Network error or 3s timeout — same fail-open path as non-2xx.
+    return schoolLookupFailure(cacheKey, cached, (err as { name?: string } | null)?.name || 'unknown_error');
   }
 }
 
@@ -572,10 +636,32 @@ function rpcFromPath(pathname: string): string | null {
   return pathname.slice(prefix.length).split('/')[0] || null;
 }
 
+/**
+ * Deterministic 1-in-10 sampler for API request telemetry, keyed on the
+ * request id (FNV-1a 32-bit hash). Deterministic so a given request id
+ * always makes the same keep/drop decision (stable across retries and
+ * easy to reason about when correlating logs).
+ */
+function shouldSampleRequestLog(requestId: string): boolean {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < requestId.length; i++) {
+    h ^= requestId.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0) % 10 === 0;
+}
+
 async function recordApiRequestLog(request: NextRequest, requestId: string): Promise<void> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) return;
+
+  // SAMPLING (~10%): best-effort telemetry only — one PostgREST insert per
+  // request was pure hot-path overhead. Deterministic on the requestId hash.
+  // NOTE: the fire site runs BEFORE the downstream route handler executes,
+  // so the response status is not available there — an always-log-on->=400
+  // carve-out is not possible at this layer; plain 1:10 sampling applies.
+  if (!shouldSampleRequestLog(requestId)) return;
 
   try {
     const pathname = request.nextUrl.pathname;
@@ -588,6 +674,9 @@ async function recordApiRequestLog(request: NextRequest, requestId: string): Pro
         'Content-Type': 'application/json',
         Prefer: 'return=minimal',
       },
+      // Bound the telemetry insert — on timeout the fetch rejects → the
+      // catch below swallows it (existing best-effort path, log dropped).
+      signal: AbortSignal.timeout(2000),
       body: JSON.stringify({
         path: pathname,
         rpc: rpcFromPath(pathname),
@@ -673,6 +762,7 @@ export async function proxy(request: NextRequest) {
   const normalizedHost = host.split(':')[0].toLowerCase();
   let schoolConfig: SchoolConfig | null = null;
   let isExplicitTenantRequest = false; // true when host is a school subdomain or custom domain
+  let schoolLookupFailed = false; // true when the lookup itself failed (never hard-404 on this)
 
   if (!isB2CHost(host)) {
     const sbUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -681,11 +771,15 @@ export async function proxy(request: NextRequest) {
     if (sbUrl && sbKey) {
       if (subdomain) {
         // Try slug-based resolution (*.alfanumrik.com)
-        schoolConfig = await getSchoolBySlug(subdomain, sbUrl, sbKey);
+        const lookup = await getSchoolBySlug(subdomain, sbUrl, sbKey);
+        schoolConfig = lookup.data;
+        schoolLookupFailed = !lookup.ok;
         isExplicitTenantRequest = true;
       } else {
         // Try custom domain resolution (learn.dps.com)
-        schoolConfig = await getSchoolByCustomDomain(normalizedHost, sbUrl, sbKey);
+        const lookup = await getSchoolByCustomDomain(normalizedHost, sbUrl, sbKey);
+        schoolConfig = lookup.data;
+        schoolLookupFailed = !lookup.ok;
         isExplicitTenantRequest = true;
       }
 
@@ -715,8 +809,15 @@ export async function proxy(request: NextRequest) {
       }
     }
 
-    // If this is an explicit tenant request but no school found → 404
-    if (isExplicitTenantRequest && !schoolConfig) {
+    // If this is an explicit tenant request but no school found → 404.
+    // ONLY when the lookup was DEFINITIVE (200 with empty result, or a cached
+    // negative). When the lookup itself FAILED (PostgREST 5xx/network error/
+    // timeout) we fail open to the generic no-school experience instead:
+    // schoolConfig drives branding/config headers (x-school-*), never an auth
+    // boundary — auth is enforced by Layers 0.5/0.6/0.65 plus per-route
+    // authorizeRequest() and RLS. A transient blip must not hard-404 an
+    // entire white-label tenant (previously it did, for 60s per blip).
+    if (isExplicitTenantRequest && !schoolConfig && !schoolLookupFailed) {
       return new NextResponse(
         '<html><body style="background:#0f0f0f;color:#e0e0e0;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><div style="font-size:48px;margin-bottom:16px">🏫</div><h1 style="font-size:20px;margin-bottom:8px">School Not Found</h1><p style="color:#888;font-size:14px">This school is not registered on Alfanumrik.</p><a href="https://alfanumrik.com" style="color:#7C3AED;margin-top:16px;display:inline-block">Go to Alfanumrik →</a></div></body></html>',
         { status: 404, headers: { 'Content-Type': 'text/html' } }
@@ -846,6 +947,15 @@ export async function proxy(request: NextRequest) {
   if (supabaseUrl && supabaseKey && hasSupabaseAuthCookie) {
     const { createServerClient } = await import('@supabase/ssr');
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      global: {
+        // Bound every Supabase auth fetch (getUser / token refresh) to 5s so a
+        // hung Supabase cannot stall the middleware hot path. On timeout the
+        // fetch rejects (TimeoutError) → getUser() surfaces it as a non-session
+        // error or throw → the EXISTING authDegraded fail-open handling below
+        // (x-auth-degraded) applies, exactly as for any other Supabase outage.
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(5000) }),
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();

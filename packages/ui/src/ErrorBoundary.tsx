@@ -1,7 +1,9 @@
 'use client';
 
 import { Component, type ReactNode } from 'react';
-import { captureException } from '@sentry/nextjs';
+// Lazy drop-in (same name/signature): keeps @sentry/core out of the
+// first-paint shared bundle (P10) — see packages/lib/src/sentry-lazy-capture.ts.
+import { captureException } from '@alfanumrik/lib/sentry-lazy-capture';
 
 interface Props {
   children: ReactNode;

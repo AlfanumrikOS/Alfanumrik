@@ -330,24 +330,33 @@ export function buildDevopsPolicyChecks(): DevopsPolicyCheck[] {
     },
     {
       id: 'ci-gate-and-exact-sha-poll',
-      label: 'CI exposes aggregate gate and bounded exact-SHA production poll',
+      label: 'CI exposes aggregate gate; bounded exact-SHA production poll lives only in deploy-production',
       file: '.github/workflows/ci.yml',
       pass: (text) => {
         const gate = mappingEntryBlock(text, 'ci-gate', 2);
-        const health = mappingEntryBlock(text, 'health-check', 2);
+        // P0-4 (2026-08-03): ci.yml's post-deploy health-check job was DELETED
+        // as a duplicate of deploy-production.yml's. The bounded exact-SHA
+        // production poll now lives ONLY in deploy-production.yml — this check
+        // asserts it there AND asserts the duplicate never reappears in ci.yml.
+        const deployText = readFileSync(repoPath('.github/workflows/deploy-production.yml'), 'utf8');
+        const deployHealth = mappingEntryBlock(deployText, 'health-check', 2);
         return /permissions:\r?\n  contents: read/.test(text)
           && includesAll('name: CI Gate', 'if: always()', 'SAME_REPOSITORY_PR', "forkSkips.push('integration-tests', 'e2e-critical-paths')", 'process.exit(1)')(gate)
           && includesAll('Trusted integration job requires', 'exit 1')(mappingEntryBlock(text, 'integration-tests', 2))
-          && includesAll('POLL_WINDOW_SECONDS=600', 'while [ "$SECONDS" -lt "$DEADLINE" ]; do', 'EXPECTED_SHA=', "b.ok===true&&b.status==='healthy'", "b.version?.git_sha||''")(health)
-          && !health.includes('sleep 60')
-          && !/soft[- ]pass|soft-success/i.test(health);
+          && mappingEntryBlock(text, 'health-check', 2) === ''
+          && includesAll('POLL_WINDOW_SECONDS=600', 'while [ "$SECONDS" -lt "$DEADLINE" ]; do', 'EXPECTED_SHA=', "b.ok===true&&b.status==='healthy'", "b.version?.git_sha||''")(deployHealth)
+          && !deployHealth.includes('sleep 60')
+          && !/soft[- ]pass|soft-success/i.test(deployHealth);
       },
-      failure: 'CI must aggregate required jobs and poll healthy exact SHA for about ten minutes without soft-pass.',
+      failure: 'CI must aggregate required jobs and must NOT duplicate the production health poll; deploy-production.yml must poll healthy exact SHA for about ten minutes without soft-pass.',
     },
     {
       id: 'vercel-authority-cutover-safe',
       label: 'Vercel Git main cannot be disabled before CLI is authoritative',
-      file: 'vercel.json',
+      // apps/host/vercel.json is the authoritative deploy config (Vercel
+      // project root dir = apps/host). The root copy was deleted 2026-08-03;
+      // ci.yml's quality job guards against it reappearing.
+      file: 'apps/host/vercel.json',
       pass: productionDeploymentAuthorityIsSafe,
       failure: 'Do not disable Vercel Git main until CLI deploy is mandatory and directly verified.',
     },

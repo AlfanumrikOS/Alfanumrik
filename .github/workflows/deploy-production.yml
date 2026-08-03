@@ -241,12 +241,15 @@ jobs:
   #     concurrency cancels the in-progress CI run per ref, the cancelled
   #     gate is treated as failure, and only the newest SHA (with its own
   #     green CI Gate) deploys.
-  #   - Keys on the "CI Gate" JOB rather than the whole-run conclusion
-  #     because ci.yml's own push-to-main health-check job waits on the
-  #     production deploy itself — gating on run conclusion would deadlock
-  #     the optional CLI-deploy path (vars.USE_CLI_DEPLOY) and couple the
-  #     quality verdict to the deploy plane. "CI Gate" aggregates every
-  #     pre-merge quality job and nothing deploy-coupled.
+  #   - Keys on the "CI Gate" JOB rather than the whole-run conclusion so
+  #     the quality verdict stays decoupled from the deploy plane: "CI Gate"
+  #     aggregates every pre-merge quality job and nothing deploy-coupled,
+  #     and job-level keying keeps that property even if ci.yml later grows
+  #     advisory or deploy-coupled jobs. (Historically this also avoided a
+  #     deadlock with ci.yml's push-to-main health-check job, which waited
+  #     on the production deploy itself; that job is deleted — the
+  #     post-deploy health check now lives in THIS workflow's health-check
+  #     job below.)
   #
   # Build note: nothing downstream consumes a build artifact from this job.
   # The web deploy builds for itself (Vercel GitHub App remote build in

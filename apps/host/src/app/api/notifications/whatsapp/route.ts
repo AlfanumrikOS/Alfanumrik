@@ -27,6 +27,19 @@ const VALID_TYPES: WhatsAppTemplateType[] = [
   'weekly_summary',
 ];
 
+// Bound the whatsapp-notify edge-function hop (WhatsApp providers can hang).
+const WHATSAPP_TIMEOUT_MS = 10_000;
+
+// Timeout-bounded fetch. Mirrors the module-private helper at
+// packages/lib/src/supabase.ts:40 (`fetchWithTimeout`) — that copy is not
+// exported from @alfanumrik/lib, so the canonical semantics are replicated
+// here until packages/lib exposes a shared export (P1-4a follow-up).
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id));
+}
+
 export async function POST(request: NextRequest) {
   // Auth: admin or system only
   const auth = await authorizeAdmin(request, 'support');
@@ -108,15 +121,26 @@ export async function POST(request: NextRequest) {
     const bodyPayload = JSON.stringify({ type, recipient_phone, language, data, user_id });
     const signingHeaders = buildInternalCallerHeaders('POST', '/functions/v1/whatsapp-notify', bodyPayload, 'notifications-whatsapp-route');
 
-    const response = await fetch(edgeFunctionUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${serviceRoleKey}`,
-        'Content-Type': 'application/json',
-        ...(signingHeaders ?? {}),
-      },
-      body: bodyPayload,
-    });
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(edgeFunctionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'Content-Type': 'application/json',
+          ...(signingHeaders ?? {}),
+        },
+        body: bodyPayload,
+      }, WHATSAPP_TIMEOUT_MS);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return NextResponse.json(
+          { success: false, error: `WhatsApp delivery timed out after ${WHATSAPP_TIMEOUT_MS / 1000}s. Please try again.` },
+          { status: 504 },
+        );
+      }
+      throw err; // non-timeout network errors keep the pre-existing outer-catch 500 path
+    }
 
     const result = await response.json();
 

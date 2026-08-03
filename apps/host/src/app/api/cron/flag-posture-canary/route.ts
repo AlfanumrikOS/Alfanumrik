@@ -35,12 +35,12 @@
 // daily slot).
 
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'node:crypto';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { auditLog } from '@alfanumrik/lib/audit';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 import { EXPECTED_OFF_FLAGS } from '@alfanumrik/lib/flags/protected-flags';
 
 export const runtime = 'nodejs';
@@ -60,34 +60,10 @@ const MOL_METADATA_PAUSED_FLAGS = [
 
 // ════════════════════════════════════════════════════════════════════════════
 // AUTH — fail-closed, constant-time, BEFORE any DB I/O
-// (house pattern: api/cron/adaptive-remediation/route.ts)
+// (shared @alfanumrik/lib/cron-auth gate: first-present-wins Bearer, else
+//  x-cron-secret; exactly ONE candidate compared; a WRONG value in a higher-
+//  precedence carrier is NOT rescued by a correct lower one)
 // ════════════════════════════════════════════════════════════════════════════
-
-function constantTimeMatch(provided: string, secret: string): boolean {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-/**
- * Carrier precedence is FIRST-PRESENT-WINS: exactly ONE candidate is selected
- * (Bearer, else x-cron-secret, else ?token=) and compared once. A WRONG value
- * in a higher-precedence carrier is NOT rescued by a correct lower one.
- */
-function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false; // fail closed on missing configuration
-
-  const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
-  const headerSecret = req.headers.get('x-cron-secret') ?? '';
-  const token = req.nextUrl.searchParams.get('token') ?? '';
-
-  const provided = bearer || headerSecret || token;
-  if (!provided) return false;
-  return constantTimeMatch(provided, secret);
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // CANARY
@@ -213,7 +189,7 @@ async function runCanary(startedAt: number): Promise<NextResponse> {
 async function handle(request: NextRequest): Promise<NextResponse> {
   const startedAt = Date.now();
   // Fail-closed auth BEFORE any DB I/O.
-  if (!isAuthorized(request)) {
+  if (!verifyCronAuth(request).ok) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   try {

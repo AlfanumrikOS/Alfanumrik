@@ -42,11 +42,11 @@ describe('API ownership routing guardrails', () => {
     expect(component).not.toContain('/functions/v1/parent-portal');
   });
 
-  it('marks the deprecated daily cron route with telemetry and deprecation headers', () => {
-    const route = source('src/app/api/cron/daily/route.ts');
-
-    expect(route).toContain('logDeprecatedRouteHit');
-    expect(route).toContain('withDeprecationHeaders');
-    expect(route).toContain("canonicalRoute: '/api/cron/daily-cron'");
+  it('the deprecated /api/cron/daily alias stays deleted (P1 batch 2026-08-03, architect-approved)', () => {
+    // The alias was scheduled by nothing and carried only deprecation telemetry;
+    // it was removed alongside the verifyCronAuth consolidation. This pin
+    // prevents the dead alias from being silently reintroduced.
+    const deleted = path.resolve(process.cwd(), 'src/app/api/cron/daily/route.ts');
+    expect(fs.existsSync(deleted)).toBe(false);
   });
 });

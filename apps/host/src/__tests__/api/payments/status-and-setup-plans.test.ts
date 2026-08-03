@@ -11,9 +11,13 @@
  *      and that the response reflects the authed user's own row.
  *
  * setup-plans (POST): src/app/api/payments/setup-plans/route.ts
- *   3. NOT open — it requires the x-admin-secret header to equal the service
- *      role key (constant-time compare). Missing/wrong secret → 401, and NO
- *      Razorpay plan creation happens.
+ *   3. NOT open — P1-4b (2026-08-03): the route now requires a session-based
+ *      authorizeAdmin(request, 'super_admin'). The former
+ *      `x-admin-secret == SUPABASE_SERVICE_ROLE_KEY` header gate was REMOVED
+ *      (the DB service-role key must never double as an HTTP bearer secret).
+ *      No session → 401 (ADMIN_NO_TOKEN), and a request carrying ONLY the
+ *      formerly-correct x-admin-secret header also 401s — with NO Razorpay
+ *      plan creation on any deny path.
  *   4. Idempotent — a plan that already has BOTH razorpay_plan_id_monthly AND
  *      razorpay_plan_id_quarterly is reported fully 'already_exists' for both
  *      cadences and is NOT re-created at Razorpay. (Quarterly provisioning was
@@ -43,6 +47,28 @@ const bearerGetUser = vi.fn();
 vi.mock('@alfanumrik/lib/supabase-client', () => ({
   supabase: { auth: { getUser: (...a: unknown[]) => bearerGetUser(...a) } },
 }));
+
+// ── Admin auth (setup-plans; P1-4b 2026-08-03) ──────────────────────────────
+// The route moved from the x-admin-secret header gate to session-based
+// authorizeAdmin(request, 'super_admin'). The DEFAULT implementation (set in
+// beforeEach) delegates to the REAL authorizeAdmin so the deny-path tests keep
+// exercising the genuine gate (these requests carry no Bearer/cookie session
+// candidate, so the real gate 401s BEFORE any network I/O). The idempotency
+// test overrides with an authorized result matching AdminAuth's real shape
+// (admin-auth.ts: userId/adminId/email/name/adminLevel). logAdminAudit is a
+// noop — audit-write internals are not under test here.
+const mockAuthorizeAdmin = vi.fn();
+const mockLogAdminAudit = vi.fn().mockResolvedValue(undefined);
+let realAuthorizeAdmin: (typeof import('@alfanumrik/lib/admin-auth'))['authorizeAdmin'];
+vi.mock('@alfanumrik/lib/admin-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@alfanumrik/lib/admin-auth')>();
+  realAuthorizeAdmin = actual.authorizeAdmin;
+  return {
+    ...actual,
+    authorizeAdmin: (...a: unknown[]) => mockAuthorizeAdmin(...a),
+    logAdminAudit: (...a: unknown[]) => mockLogAdminAudit(...a),
+  };
+});
 
 // ── Razorpay (setup-plans) ──────────────────────────────────────────────────
 const createRazorpayPlan = vi.fn();
@@ -97,6 +123,9 @@ function fromMock(table: string) {
 
 vi.mock('@alfanumrik/lib/supabase-admin', () => ({
   supabaseAdmin: { from: (t: string) => fromMock(t) },
+  // The real admin-auth module (loaded via importOriginal above) imports this
+  // named export; the factory must define it or Vitest rejects the import.
+  getSupabaseAdmin: () => ({ from: (t: string) => fromMock(t) }),
 }));
 
 function makeGet(): any {
@@ -117,6 +146,11 @@ beforeEach(() => {
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'stub-service-key';
   ssrGetUser.mockResolvedValue({ data: { user: { id: 'auth-self', email: 'self@x.com' } } });
   bearerGetUser.mockResolvedValue({ data: { user: null } });
+  // Default: delegate to the REAL authorizeAdmin (deny paths exercise the
+  // genuine session gate; per-test overrides grant super_admin).
+  mockAuthorizeAdmin.mockImplementation((...a: unknown[]) =>
+    (realAuthorizeAdmin as (...args: unknown[]) => unknown)(...a),
+  );
   // Default: authorizeRequest succeeds as the student.
   mockAuthorizeRequest.mockResolvedValue({
     authorized: true,
@@ -181,17 +215,27 @@ describe('GET /api/payments/status — auth + own-record-only', () => {
   });
 });
 
-describe('POST /api/payments/setup-plans — admin-secret gate (NOT open)', () => {
-  it('returns 401 when the x-admin-secret header is missing — no Razorpay plan created', async () => {
+describe('POST /api/payments/setup-plans — authorizeAdmin(super_admin) session gate (NOT open; P1-4b)', () => {
+  it('returns 401 when the request carries no session at all — no Razorpay plan created', async () => {
     const { POST } = await import('@/app/api/payments/setup-plans/route');
     const res = await POST(makePost(null));
     expect(res.status).toBe(401);
     expect(createRazorpayPlan).not.toHaveBeenCalled();
   });
 
-  it('returns 401 when the x-admin-secret header is wrong — no Razorpay plan created', async () => {
+  it('returns 401 when only a (wrong) x-admin-secret header is presented — no Razorpay plan created', async () => {
     const { POST } = await import('@/app/api/payments/setup-plans/route');
     const res = await POST(makePost('not-the-service-key'));
+    expect(res.status).toBe(401);
+    expect(createRazorpayPlan).not.toHaveBeenCalled();
+  });
+
+  it('CALLER CONTRACT CHANGE: the formerly-CORRECT x-admin-secret (== service role key) alone now yields 401', async () => {
+    // P1-4b removed the x-admin-secret == SUPABASE_SERVICE_ROLE_KEY gate.
+    // Legacy scripts sending the exact right secret with no session must be
+    // rejected — the header is no longer consulted at all.
+    const { POST } = await import('@/app/api/payments/setup-plans/route');
+    const res = await POST(makePost('stub-service-key'));
     expect(res.status).toBe(401);
     expect(createRazorpayPlan).not.toHaveBeenCalled();
   });
@@ -216,10 +260,23 @@ describe('POST /api/payments/setup-plans — admin-secret gate (NOT open)', () =
     };
     createRazorpayPlan.mockResolvedValue({ id: 'rzp_plan_new' });
 
+    // Authenticate as a super_admin session (AdminAuth shape from admin-auth.ts).
+    mockAuthorizeAdmin.mockResolvedValueOnce({
+      authorized: true,
+      userId: 'auth-admin-user',
+      adminId: 'admin-row-1',
+      email: 'ops@alfanumrik.com',
+      name: 'Ops Admin',
+      adminLevel: 'super_admin',
+    });
+
     const { POST } = await import('@/app/api/payments/setup-plans/route');
-    // Correct secret == the service role key (secureEqual stub is ===).
-    const res = await POST(makePost('stub-service-key'));
+    const res = await POST(makePost(null));
     expect(res.status).toBe(200);
+    // The route must demand the super_admin floor, not a lower tier.
+    expect(mockAuthorizeAdmin).toHaveBeenCalledWith(expect.anything(), 'super_admin');
+    // Provisioning is audited (metadata-only) via logAdminAudit.
+    expect(mockLogAdminAudit).toHaveBeenCalledTimes(1);
     const body = await res.json();
 
     const proResult = body.results.find((r: any) => r.plan_code === 'pro');
