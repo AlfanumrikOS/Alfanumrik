@@ -1314,9 +1314,44 @@ export async function proxy(request: NextRequest) {
     const headerValid = !!(headerSecret && secretKey && secureEqual(headerSecret, secretKey));
     const queryValid  = !!(querySecret  && secretKey && secureEqual(querySecret,  secretKey));
 
-    const isAuthenticated = headerValid || cookieValid || queryValid;
+    // Legacy shared-secret authentication (UNCHANGED — header / cookie / query).
+    const secretAuthenticated = headerValid || cookieValid || queryValid;
 
-    if (!secretKey || !isAuthenticated) {
+    // ── A2 migration PR-2: accept a super_admin Supabase session as EQUIVALENT
+    //    to SUPER_ADMIN_SECRET (session-OR-secret, ADDITIVE). ──
+    //
+    // This is the ENABLING step so PR-3 can swap the 13 /api/internal/admin
+    // handlers from requireAdminSecret() to authorizeRequest('super_admin').
+    // In THIS PR the handlers STILL require x-admin-secret, so the secret path
+    // above is left 100% intact and every existing caller keeps working; the
+    // session is only a SECOND accepted credential at this gate. PR-4 removes
+    // the secret path entirely.
+    //
+    // Resolution reuses the SAME Edge-safe helper Layer 0.65 uses for
+    // /super-admin — getUserRoleFromCache(): get_admin_level RPC over the
+    // admin_users roster (what authorizeAdmin / /api/super-admin/login key off)
+    // UNION the user_roles RBAC probe (what authorizeRequest → get_user_permissions
+    // keys off). We accept ONLY a DEFINITIVE 'super_admin': this console is the
+    // highest-privilege surface, so an 'admin'/'institution_admin'/'none' session
+    // is NOT equivalent to the secret.
+    //
+    // FAIL-CLOSED on the session path (this gate is a security boundary, unlike
+    // Layer 0.65 which fails open as a UX redirect): the lookup runs only when
+    // the secret path already failed AND a live, non-degraded session exists;
+    // ROLE_UNKNOWN (transient probe failure), null (env misconfig), any non-
+    // super_admin role, auth degraded, or no session all leave this false, so
+    // the request must still present a valid secret or be denied exactly as
+    // today. Skipped entirely when the secret already authenticated, so the
+    // dominant x-admin-secret API path takes on ZERO extra latency.
+    let sessionAuthenticated = false;
+    if (!secretAuthenticated && authUserId && !authDegraded) {
+      const adminSessionRole = await getUserRoleFromCache(authUserId);
+      sessionAuthenticated = adminSessionRole === 'super_admin';
+    }
+
+    const isAuthenticated = secretAuthenticated || sessionAuthenticated;
+
+    if (!isAuthenticated) {
       if (path.startsWith('/api/')) {
         return new NextResponse(
           JSON.stringify({ error: 'Unauthorized' }),
