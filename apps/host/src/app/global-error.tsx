@@ -1,5 +1,10 @@
 'use client';
 
+// Lazy drop-in (same name/signature): keeps @sentry/core out of the
+// first-paint shared bundle (P10) — see packages/lib/src/sentry-lazy-capture.ts.
+import { captureException } from '@alfanumrik/lib/sentry-lazy-capture';
+import { useEffect } from 'react';
+
 export default function GlobalError({
   error,
   reset,
@@ -7,6 +12,15 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    // Report root-level React render errors to Sentry (standard App Router
+    // global-error pattern). No-ops when NEXT_PUBLIC_SENTRY_DSN is absent —
+    // the client is initialized with `enabled: false` in
+    // sentry-client-init.ts (deferred-loaded by instrumentation-client.ts).
+    // PII redaction applies via beforeSend (P13).
+    captureException(error);
+  }, [error]);
+
   return (
     <html lang="en">
       <body data-digest={error.digest} style={{ margin: 0, background: '#FBF8F4' }}>

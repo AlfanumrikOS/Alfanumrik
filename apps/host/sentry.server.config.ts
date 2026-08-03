@@ -47,7 +47,8 @@ Sentry.init({
         delete h.cookie;
         delete h.Cookie;
         // Set-Cookie can leak the session cookie back through Sentry. Parity
-        // with sentry.client.config.ts. Added 2026-05-05 (D7 follow-up #4).
+        // with the client config (instrumentation-client.ts). Added 2026-05-05
+        // (D7 follow-up #4).
         delete h['set-cookie'];
         delete h['Set-Cookie'];
         delete h['x-api-key'];
@@ -58,7 +59,7 @@ Sentry.init({
       }
       // request.url often carries auth tokens / verification codes / email
       // params (e.g. /auth/callback?code=…&email=…). Strip those before the
-      // event leaves the server. Parity with sentry.client.config.ts.
+      // event leaves the server. Parity with the client config.
       // Added 2026-05-05 (D7 follow-up #4 — Section 11 + Section 7.1 claim).
       if (typeof event.request.url === 'string') {
         event.request.url = sanitizeUrl(event.request.url);

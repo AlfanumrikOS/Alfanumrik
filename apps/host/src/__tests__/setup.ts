@@ -79,10 +79,12 @@ import path from 'node:path';
     'scripts',
     'supabase',
   ]);
+  // NOTE (2026-08-03, P0-1): the three `sentry.*.config.ts` entries were
+  // removed from this set — the Sentry init files now live at the apps/host
+  // project root (instrumentation.ts / instrumentation-client.ts /
+  // sentry.server.config.ts / sentry.edge.config.ts), so host-relative reads
+  // resolve directly and the repo-root copies no longer exist.
   const repoRootFiles = new Set([
-    'sentry.client.config.ts',
-    'sentry.edge.config.ts',
-    'sentry.server.config.ts',
     'vercel.json',
   ]);
 

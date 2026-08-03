@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { captureException } from '@sentry/nextjs';
+import { captureException } from '@alfanumrik/lib/sentry-lazy-capture';
 
 // P15 (Onboarding Integrity): the signup → verification → profile → dashboard
 // funnel is the #1 acquisition path. A blank crash here loses a new user
