@@ -50,6 +50,34 @@ describe('DevOps deployment policy contract', () => {
     expect(ciGate?.pass(reintroduced)).toBe(false);
   });
 
+  it('rejects a reintroduced id-token: write grant on the break-glass run job (P2-6: least privilege after AWS decommission)', () => {
+    // P2-6 (2026-08-03): AWS OIDC (configure-aws-credentials) was the only
+    // consumer of id-token: write; the grant was removed with the AWS
+    // decommission. The contract enforces the grant stays gone via the yaml-key
+    // form, NOT the substring — the removal-rationale comment in the workflow
+    // still contains the literal text "id-token: write", so a substring guard
+    // would false-fail on the clean tree. Normalize CRLF -> LF first so the
+    // LF-only injection literal below is not a silent no-op on a Windows checkout.
+    const workflow = readFileSync(
+      resolve(__dirname, '../../../../.github/workflows/production-cron-runner.yml'),
+      'utf8',
+    ).replace(/\r\n/g, '\n');
+    const checks = buildDevopsPolicyChecks();
+    const breakGlass = checks.find((check) => check.id === 'production-cron-break-glass');
+
+    // Clean tree: removal-rationale comment carries the substring but no grant.
+    expect(breakGlass?.pass(workflow)).toBe(true);
+
+    // Reintroducing a real yaml-key grant under the run job's permissions block
+    // must trip the check.
+    const regranted = workflow.replace(
+      '      # Removed with the 2026-08-03 AWS decommission; least privilege restored.\n      contents: read',
+      '      # Removed with the 2026-08-03 AWS decommission; least privilege restored.\n      contents: read\n      id-token: write',
+    );
+    expect(regranted).not.toBe(workflow); // guard against a silent no-op replace
+    expect(breakGlass?.pass(regranted)).toBe(false);
+  });
+
   it('rejects unsafe release rollback/tag and Vercel authority mutations', () => {
     // Normalize CRLF -> LF before reading. On a Windows checkout with
     // core.autocrlf=true (documented precedent in .gitattributes, which only

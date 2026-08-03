@@ -8,11 +8,10 @@ function repoPath(rel: string): string {
   return resolve(process.cwd(), rel);
 }
 
-describe('AWS Docker standalone runtime layout', () => {
+describe('Docker standalone runtime layout', () => {
   it('starts the Next standalone server from the copied root layout', () => {
     const dockerfile = readFileSync(repoPath('Dockerfile'), 'utf8');
     const nextConfig = readFileSync(repoPath('apps/host/next.config.js'), 'utf8');
-    const deployAwsWorkflow = readFileSync(repoPath('.github/workflows/deploy-aws.yml'), 'utf8');
     const healthRoute = readFileSync(repoPath('apps/host/src/app/api/v1/health/route.ts'), 'utf8');
 
     expect(dockerfile).toContain('COPY --from=builder /app/apps/host/public ./apps/host/public');
@@ -27,8 +26,5 @@ describe('AWS Docker standalone runtime layout', () => {
     expect(nextConfig).toContain('outputFileTracingRoot: repoRoot');
     expect(nextConfig).toContain('root: repoRoot');
     expect(healthRoute).toContain('process.env.DEPLOY_GIT_SHA');
-    expect(deployAwsWorkflow).toContain('--build-arg DEPLOY_GIT_SHA="${GITHUB_SHA}"');
-    expect(deployAwsWorkflow).toContain('BODY_OK=$(echo "$BODY" | jq -r');
-    expect(deployAwsWorkflow).toContain('if [ "$BODY_OK" = "true" ] && [ "$BODY_STATUS" = "healthy" ]; then');
   });
 });

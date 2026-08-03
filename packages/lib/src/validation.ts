@@ -12,7 +12,7 @@
 
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
-import { GRADES } from './constants';
+import { isValidGrade } from './identity/constants';
 
 // ── UUID Validation ──────────────────────────────────────
 
@@ -26,17 +26,17 @@ export function isValidUUID(id: unknown): id is string {
 
 // ── Grade Validation (P5) ────────────────────────────────
 
-/** Valid CBSE grades: string "6" through "12" */
-const VALID_GRADES = new Set<string>(GRADES);
-
 /**
- * Type guard: returns true if `grade` is a string and one of "6"-"12".
- * Rejects integers (P5: grades are always strings).
- * Rejects prefixed forms like "Grade 9".
+ * Grade-set membership guard. Single-sourced from the canonical
+ * identity constants (`packages/lib/src/identity/constants.ts`) and
+ * re-exported here so existing importers of `@alfanumrik/lib/validation`
+ * keep working without a second, drift-prone definition.
+ *
+ * Semantics (unchanged): returns true iff `grade` is a string and one of
+ * "6"-"12". Rejects integers (P5: grades are always strings) and rejects
+ * prefixed forms like "Grade 9".
  */
-export function isValidGrade(grade: unknown): grade is string {
-  return typeof grade === 'string' && VALID_GRADES.has(grade);
-}
+export { isValidGrade };
 
 // ── Plan Code Validation ─────────────────────────────────
 

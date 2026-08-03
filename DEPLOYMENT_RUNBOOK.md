@@ -372,15 +372,14 @@ If a migration caused a production incident:
 
 Use `scripts/deploy/rollback.sh` only when the migration was designed with explicit rollback support and the risk has been reviewed.
 
-### AWS ECS Rollback
+### AWS ECS Rollback (decommissioned 2026-08-03)
 
-The AWS ECS workflow is gated by `vars.ENABLE_AWS_DEPLOY`. Use it only during AWS cutover or controlled ECS rollout.
-
-If ECS smoke fails, the workflow attempts rollback to the previous task definition. Manual fallback:
-
-```bash
-aws ecs update-service --cluster <cluster> --service <service> --task-definition <previous-task-definition> --force-new-deployment
-```
+The AWS ECS Fargate parallel host was decommissioned on 2026-08-03 (CEO decision
+2026-07-13). Vercel (bom1) is the sole compute host. There is no AWS ECS deploy
+or rollback path to invoke. The CRON_SECRET break-glass runner
+(`.github/workflows/production-cron-runner.yml`) no longer depends on AWS — it
+reads `secrets.CRON_SECRET` from the GitHub Actions secret store directly. See
+`docs/runbooks/aws-host-decommission.md` for the decommission record.
 
 ---
 

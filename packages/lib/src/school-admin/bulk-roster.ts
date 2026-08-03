@@ -34,6 +34,11 @@
  */
 
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
+// P5 grade-set: single-sourced from the canonical identity constants.
+// (Was a local literal + a local isValidGrade with identical semantics;
+// consolidated 2026-08-03 to remove the duplicate definitions. Both names
+// are re-exported below so this module's public API is unchanged.)
+import { VALID_GRADES, isValidGrade } from '../identity/constants';
 
 // ─── Shared constants ────────────────────────────────────────────────────────
 
@@ -43,8 +48,11 @@ export const MAX_BULK_ROWS = 500;
 /** Hard cap on classes per bulk-create request. */
 export const MAX_BULK_CLASSES = 200;
 
-/** Canonical CBSE grade strings (P5 — strings, never integers). */
-export const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'] as const;
+/**
+ * Canonical CBSE grade strings (P5 — strings, never integers).
+ * Re-exported from `../identity/constants` (the single source of truth).
+ */
+export { VALID_GRADES, isValidGrade };
 
 /** Sections used by the template preset (grades × sections). */
 export const TEMPLATE_SECTIONS = ['A', 'B', 'C', 'D'] as const;
@@ -216,10 +224,7 @@ export async function atomicRegisterTeacher(
 }
 
 // ─── Validation (pure — no I/O, no logging) ──────────────────────────────────
-
-export function isValidGrade(grade: unknown): grade is (typeof VALID_GRADES)[number] {
-  return typeof grade === 'string' && (VALID_GRADES as readonly string[]).includes(grade);
-}
+// isValidGrade is imported from ../identity/constants and re-exported above.
 
 export function isValidEmail(email: unknown): boolean {
   return typeof email === 'string' && EMAIL_REGEX.test(email.trim());

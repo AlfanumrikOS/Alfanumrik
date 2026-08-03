@@ -70,15 +70,15 @@ export async function GET(
     fetchSchoolMeta([id]),
     safeSelect<HealthRow>(
       'school_health_daily',
-      `select=score_date,composite_score,tier,adoption_score,engagement_score,outcomes_score,retention_score,usage_score&school_id=eq.${id}&score_date=gte.${since30}&order=score_date.asc&limit=400`,
+      `select=score_date,composite_score,tier,adoption_score,engagement_score,outcomes_score,retention_score,usage_score&school_id=eq.${encodeURIComponent(id)}&score_date=gte.${since30}&order=score_date.asc&limit=400`,
     ),
     safeSelect<ChurnRow>(
       'school_churn_signals',
-      `select=score_date,risk_score,risk_band,reasons&school_id=eq.${id}&score_date=gte.${since30}&order=score_date.asc&limit=400`,
+      `select=score_date,risk_score,risk_band,reasons&school_id=eq.${encodeURIComponent(id)}&score_date=gte.${since30}&order=score_date.asc&limit=400`,
     ),
     safeSelect<MrrRow>(
       'school_mrr_daily',
-      `select=snapshot_date,mrr,arr,seats_purchased&school_id=eq.${id}&snapshot_date=gte.${since30}&order=snapshot_date.asc&limit=400`,
+      `select=snapshot_date,mrr,arr,seats_purchased&school_id=eq.${encodeURIComponent(id)}&snapshot_date=gte.${since30}&order=snapshot_date.asc&limit=400`,
     ),
   ]);
 

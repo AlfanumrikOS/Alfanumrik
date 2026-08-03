@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
   // Find the latest snapshot_date for this level.
   const latest = await safeSelect<{ snapshot_date: string }>(
     'geographic_metrics',
-    `select=snapshot_date&geo_level=eq.${level}&order=snapshot_date.desc&limit=1`,
+    `select=snapshot_date&geo_level=eq.${encodeURIComponent(level)}&order=snapshot_date.desc&limit=1`,
   );
   if (latest.length === 0) {
     return NextResponse.json({ level, rows: [] }, { headers: INTELLIGENCE_CACHE_HEADERS });
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
   // All rows for that level on the latest snapshot date.
   const geoRows = await safeSelect<GeoRow>(
     'geographic_metrics',
-    `select=snapshot_date,geo_level,geo_key,school_count,student_count,active_students,avg_health_score,total_mrr,churn_rate&geo_level=eq.${level}&snapshot_date=eq.${snapshotDate}&order=student_count.desc&limit=10000`,
+    `select=snapshot_date,geo_level,geo_key,school_count,student_count,active_students,avg_health_score,total_mrr,churn_rate&geo_level=eq.${encodeURIComponent(level)}&snapshot_date=eq.${encodeURIComponent(snapshotDate)}&order=student_count.desc&limit=10000`,
   );
   const rows = geoRows.map((r) => ({
     geo_key: r.geo_key,

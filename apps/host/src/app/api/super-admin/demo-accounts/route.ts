@@ -843,7 +843,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const accountRes = await fetch(
-      supabaseAdminUrl('demo_accounts', `select=*&id=eq.${id}&limit=1`),
+      supabaseAdminUrl('demo_accounts', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`),
       { method: 'GET', headers: supabaseAdminHeaders() },
     );
     if (!accountRes.ok) {
@@ -868,7 +868,7 @@ export async function PUT(request: NextRequest) {
     if (resolvedAction === 'activate' || resolvedAction === 'deactivate') {
       const newStatus = resolvedAction === 'activate';
       const patchRes = await fetch(
-        supabaseAdminUrl('demo_accounts', `id=eq.${id}`),
+        supabaseAdminUrl('demo_accounts', `id=eq.${encodeURIComponent(id)}`),
         {
           method: 'PATCH',
           headers: supabaseAdminHeaders('return=minimal'),
@@ -901,7 +901,7 @@ export async function PUT(request: NextRequest) {
       const rpcResult = await rpcRes.json();
 
       await fetch(
-        supabaseAdminUrl('demo_seed_data', `demo_account_id=eq.${id}`),
+        supabaseAdminUrl('demo_seed_data', `demo_account_id=eq.${encodeURIComponent(id)}`),
         { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
       );
 
@@ -914,7 +914,7 @@ export async function PUT(request: NextRequest) {
           const idx = Math.abs(id.charCodeAt(0) + id.charCodeAt(id.length - 1)) % personas.length;
           seedPersona = personas[idx];
           await fetch(
-            supabaseAdminUrl('demo_accounts', `id=eq.${id}`),
+            supabaseAdminUrl('demo_accounts', `id=eq.${encodeURIComponent(id)}`),
             {
               method: 'PATCH',
               headers: supabaseAdminHeaders('return=minimal'),
@@ -978,7 +978,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const accountRes = await fetch(
-      supabaseAdminUrl('demo_accounts', `select=*&id=eq.${id}&limit=1`),
+      supabaseAdminUrl('demo_accounts', `select=*&id=eq.${encodeURIComponent(id)}&limit=1`),
       { method: 'GET', headers: supabaseAdminHeaders() },
     );
     if (!accountRes.ok) {
@@ -1031,7 +1031,7 @@ export async function DELETE(request: NextRequest) {
       if (demoStudentIds.length > 0) {
         const csv = demoStudentIds.join(',');
         await fetch(
-          supabaseAdminUrl('student_subscriptions', `student_id=in.(${csv})&is_demo=eq.true`),
+          supabaseAdminUrl('student_subscriptions', `student_id=in.(${csv})&is_demo=eq.true`), // csv = DB-derived student UUIDs (see .filter(string) above)
           { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
         ).catch(() => {});
       }
@@ -1071,7 +1071,7 @@ export async function DELETE(request: NextRequest) {
       if (studentIds.length > 0) {
         const csv = studentIds.join(',');
         await fetch(
-          supabaseAdminUrl('student_subscriptions', `student_id=in.(${csv})&is_demo=eq.true`),
+          supabaseAdminUrl('student_subscriptions', `student_id=in.(${csv})&is_demo=eq.true`), // csv = DB-derived student UUIDs (see .filter(string) above)
           { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
         ).catch(() => {});
       }
@@ -1087,12 +1087,12 @@ export async function DELETE(request: NextRequest) {
     );
 
     await fetch(
-      supabaseAdminUrl('demo_seed_data', `demo_account_id=eq.${id}`),
+      supabaseAdminUrl('demo_seed_data', `demo_account_id=eq.${encodeURIComponent(id)}`),
       { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
     );
 
     await fetch(
-      supabaseAdminUrl('demo_accounts', `id=eq.${id}`),
+      supabaseAdminUrl('demo_accounts', `id=eq.${encodeURIComponent(id)}`),
       { method: 'DELETE', headers: supabaseAdminHeaders('return=minimal') },
     );
 

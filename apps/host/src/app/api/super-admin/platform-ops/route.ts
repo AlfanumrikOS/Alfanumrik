@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
       const filters = ['is_active=eq.true'];
       if (entityType) filters.push(`entity_type=eq.${encodeURIComponent(entityType)}`);
-      if (entityId) filters.push(`entity_id=eq.${entityId}`);
+      if (entityId) filters.push(`entity_id=eq.${encodeURIComponent(entityId)}`);
 
       const r = await supabaseGet('cms_assets',
         `select=id,entity_type,entity_id,file_name,file_type,file_size,storage_path,alt_text,caption,uploaded_by,created_at&${filters.join('&')}&order=created_at.desc&offset=${offset}&limit=${limit}`
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
         safe.verified_at = safe.verified_at || new Date().toISOString();
       }
 
-      const res = await fetch(supabaseAdminUrl('backup_status', `id=eq.${id}`), {
+      const res = await fetch(supabaseAdminUrl('backup_status', `id=eq.${encodeURIComponent(id)}`), {
         method: 'PATCH',
         headers: supabaseAdminHeaders('return=representation'),
         body: JSON.stringify(safe),
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
       const { id } = body;
       if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-      const res = await fetch(supabaseAdminUrl('cms_assets', `id=eq.${id}`), {
+      const res = await fetch(supabaseAdminUrl('cms_assets', `id=eq.${encodeURIComponent(id)}`), {
         method: 'PATCH',
         headers: supabaseAdminHeaders('return=representation'),
         body: JSON.stringify({ is_active: false }),

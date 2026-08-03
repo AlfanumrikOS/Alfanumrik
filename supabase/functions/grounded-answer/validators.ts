@@ -6,6 +6,9 @@
 import { VALID_CALLERS, REGISTERED_PROMPT_TEMPLATES } from './config.ts';
 import type { GroundedRequest } from './types.ts';
 
+// P5: grades are strings "6".."12". Keep in sync with the canonical set in
+// packages/lib/src/identity/constants.ts — Deno edge functions cannot import
+// across the supabase/ ↔ packages/ boundary (provenance-tracked copy).
 const VALID_GRADES = ['6', '7', '8', '9', '10', '11', '12'];
 const VALID_MODES = ['strict', 'soft'];
 const VALID_MODEL_PREFERENCES = ['haiku', 'sonnet', 'auto'];

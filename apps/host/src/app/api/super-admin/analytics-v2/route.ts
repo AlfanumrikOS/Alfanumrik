@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
     }[] = [];
 
     if (ids.length > 0) {
-      const idList = ids.join(',');
+      const idList = ids.map(encodeURIComponent).join(',');
       const [qCountRes, fCountRes] = await Promise.all([
         supabaseRest('quiz_sessions', `select=student_id&student_id=in.(${idList})&limit=5000`),
         supabaseRest('foxy_sessions', `select=student_id&student_id=in.(${idList})&limit=5000`),
@@ -179,7 +179,7 @@ export async function GET(request: NextRequest) {
     if (topIds.length > 0) {
       const studRes = await supabaseRest(
         'students',
-        `select=id,name,grade&id=in.(${topIds.join(',')})&is_demo=eq.false&limit=10`
+        `select=id,name,grade&id=in.(${topIds.map(encodeURIComponent).join(',')})&is_demo=eq.false&limit=10`
       );
       const studRows = await safeJson<{ id: string; name: string; grade: string }>(studRes);
       top_active = topIds.map(id => {

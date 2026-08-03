@@ -143,7 +143,7 @@ async function fetchLatestSyntheticBySchool(
     // memory at ~50 schools × 4 checks.
     const params = [
       'select=school_id,status,run_at',
-      `school_id=in.(${schoolIds.join(',')})`,
+      `school_id=in.(${schoolIds.map(encodeURIComponent).join(',')})`,
       'order=run_at.desc',
       'limit=200',
     ].join('&');
@@ -259,7 +259,7 @@ export async function GET(request: NextRequest) {
             'students',
             [
               'select=id,school_id,last_active',
-              `school_id=in.(${schoolIds.join(',')})`,
+              `school_id=in.(${schoolIds.map(encodeURIComponent).join(',')})`,
               'is_active=eq.true',
               `last_active=gte.${sevenDaysAgo}`,
               'limit=20000',

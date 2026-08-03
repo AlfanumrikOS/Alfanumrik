@@ -37,12 +37,12 @@ export async function GET(request: NextRequest) {
     ];
 
     if (ruleType && isValidRuleType(ruleType)) {
-      queryParts.push(`rule_type=eq.${ruleType}`);
+      queryParts.push(`rule_type=eq.${encodeURIComponent(ruleType)}`);
     }
     if (schoolId === 'global') {
       queryParts.push('school_id=is.null');
     } else if (schoolId && isValidUUID(schoolId)) {
-      queryParts.push(`school_id=eq.${schoolId}`);
+      queryParts.push(`school_id=eq.${encodeURIComponent(schoolId)}`);
     }
 
     const res = await fetch(supabaseAdminUrl('school_alert_rules', queryParts.join('&')), {
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
     let schoolNames: Record<string, string> = {};
     if (schoolIds.length > 0) {
       const schoolRes = await fetch(
-        supabaseAdminUrl('schools', `select=id,name&id=in.(${schoolIds.join(',')})&limit=100`),
+        supabaseAdminUrl('schools', `select=id,name&id=in.(${schoolIds.map(encodeURIComponent).join(',')})&limit=100`),
         { headers: supabaseAdminHeaders() },
       );
       if (schoolRes.ok) {

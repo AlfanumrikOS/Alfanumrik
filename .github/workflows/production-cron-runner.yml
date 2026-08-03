@@ -46,10 +46,12 @@ permissions:
 
 env:
   NODE_VERSION: '22'
-  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-  # Security boundary: never send CRON_SECRET to a mutable repository variable.
+  # Security boundary: CRON_SECRET is sourced from the CRON_SECRET GitHub Actions
+  # secret (repo- or Production-environment-scoped), never a mutable repository
+  # variable. AWS Secrets Manager (alfa-prod/app) was retired as the source on
+  # 2026-08-03 when the AWS Fargate host was decommissioned — see
+  # docs/runbooks/aws-host-decommission.md.
   TARGET_URL: 'https://alfanumrik.com'
-  CRON_SECRET_AWS_SECRET_ID: ${{ vars.CRON_SECRET_AWS_SECRET_ID || 'alfa-prod/app' }}
 
 jobs:
   gate:
@@ -92,8 +94,9 @@ jobs:
     environment: production-break-glass
     timeout-minutes: 90
     permissions:
+      # id-token: write was only required for AWS OIDC (configure-aws-credentials).
+      # Removed with the 2026-08-03 AWS decommission; least privilege restored.
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v6
 
@@ -101,56 +104,17 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: alfa-github-cron-${{ github.run_id }}
-
-      - name: Load CRON_SECRET from AWS Secrets Manager
-        shell: bash
-        run: |
-          set -euo pipefail
-          SECRET_ID="${CRON_SECRET_AWS_SECRET_ID:-alfa-prod/app}"
-          SECRET_JSON="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --query SecretString --output text)"
-          CRON_SECRET="$(SECRET_JSON="$SECRET_JSON" node - <<'NODE'
-          const raw = process.env.SECRET_JSON || '';
-          let parsed = raw;
-          try {
-            parsed = JSON.parse(raw);
-          } catch {
-            parsed = raw;
-          }
-
-          let value = '';
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            value = parsed.CRON_SECRET || parsed.cron_secret || '';
-          } else if (typeof parsed === 'string') {
-            value = parsed;
-          }
-
-          process.stdout.write(String(value || '').trim());
-          NODE
-          )"
-
-          if [ -z "$CRON_SECRET" ]; then
-            echo "::error::CRON_SECRET was not found in AWS Secrets Manager secret $SECRET_ID"
-            exit 1
-          fi
-
-          echo "::add-mask::$CRON_SECRET"
-          {
-            echo 'CRON_SECRET<<__CRON_SECRET__'
-            printf '%s\n' "$CRON_SECRET"
-            echo '__CRON_SECRET__'
-          } >> "$GITHUB_ENV"
-          echo "Loaded CRON_SECRET from AWS Secrets Manager secret: $SECRET_ID"
-
       - name: Run selected production crons
         env:
           JOB_PATH: ${{ inputs.job_path }}
           BREAK_GLASS_REASON: ${{ inputs.reason }}
+          # CRON_SECRET now comes directly from the GitHub Actions secret store
+          # (was AWS Secrets Manager alfa-prod/app until the 2026-08-03 AWS
+          # decommission). GitHub auto-masks secret values in logs. The runner
+          # script (scripts/run-production-crons.mjs) fails closed when
+          # CRON_SECRET is empty, so a missing/unprovisioned secret aborts the
+          # break-glass run rather than hitting production unauthenticated.
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: node scripts/run-production-crons.mjs
 
