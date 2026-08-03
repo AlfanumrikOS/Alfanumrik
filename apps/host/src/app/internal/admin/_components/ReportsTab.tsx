@@ -18,7 +18,6 @@
  */
 
 import { useState } from 'react';
-import { adminHeaders } from '@alfanumrik/lib/admin-session';
 
 const C = {
   bg3: '#161b22',
@@ -40,18 +39,15 @@ const S: Record<string, any> = {
   }),
 };
 
-export interface ReportsTabProps {
-  secret: string;
-}
-
-export default function ReportsTab({ secret }: ReportsTabProps) {
+export default function ReportsTab() {
   const [reportStatus, setReportStatus] = useState('');
 
   const downloadReport = async (type: string, format: string) => {
     setReportStatus(`Generating ${type} report...`);
     try {
       const res = await fetch(`/api/internal/admin/reports?type=${type}&format=${format}`, {
-        headers: adminHeaders(secret),
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
       });
       if (!res.ok) { setReportStatus('Failed'); return; }
       const blob = await res.blob();

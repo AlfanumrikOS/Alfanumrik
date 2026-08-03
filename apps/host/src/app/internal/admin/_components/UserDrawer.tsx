@@ -6,8 +6,8 @@
  * Extracted from src/app/internal/admin/page.tsx as part of the Plan 5
  * decomposition (Task 5). Behaviour preserved verbatim:
  *
- *   - Fetches `/api/internal/admin/users/:id` on mount and whenever
- *     student.id or secret changes (recent_quizzes + top_mastery panels).
+ *   - Fetches `/api/internal/admin/users/:id` on mount and whenever the
+ *     selected student.id changes (recent_quizzes + top_mastery panels).
  *   - Action handlers (all PATCH `/api/internal/admin/users/:id`):
  *       • suspend         — when student.is_active === true
  *       • restore         — when student.is_active === false
@@ -18,22 +18,21 @@
  *
  *   - Visual styling rewritten in Tailwind tokens; the outer chrome now uses
  *     the shared <DetailDrawer> primitive (Plan 0 admin-ui kit), and plan
- *     chips use <StatusBadge>. `useAdminFetch(secret)` is wired in for
- *     consistency with the rest of the refactor — the action handlers
- *     intentionally use raw `fetch()` so they can read the JSON body on
- *     non-2xx responses (the hook throws and discards the body).
+ *     chips use <StatusBadge>. `useAdminFetch()` is wired in for consistency
+ *     with the rest of the refactor — the action handlers intentionally use
+ *     raw `fetch()` (with credentials:'same-origin' so the session cookie is
+ *     sent) so they can read the JSON body on non-2xx responses (the hook
+ *     throws and discards the body).
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import DetailDrawer from '@alfanumrik/ui/admin-ui/DetailDrawer';
 import { StatusBadge, type StatusBadgeVariant } from '@alfanumrik/ui/admin-ui';
-import { adminHeaders } from '@alfanumrik/lib/admin-session';
 import { useAdminFetch } from '../_hooks/useAdminFetch';
 import type { Student } from '../_lib/internal-admin-types';
 
 export interface UserDrawerProps {
   student: Student | null;
-  secret: string;
   onClose: () => void;
   onRefresh: () => void;
 }
@@ -46,11 +45,10 @@ const planVariant = (plan: string): StatusBadgeVariant => {
 
 export default function UserDrawer({
   student,
-  secret,
   onClose,
   onRefresh,
 }: UserDrawerProps) {
-  const apiFetch = useAdminFetch(secret);
+  const apiFetch = useAdminFetch();
 
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,8 +74,8 @@ export default function UserDrawer({
   useEffect(() => {
     if (!studentId) return;
     fetchDetail();
-    // re-fetch when student.id or secret changes (matches inline behaviour)
-  }, [studentId, secret, fetchDetail]);
+    // re-fetch when the selected student changes
+  }, [studentId, fetchDetail]);
 
   // Generic action (suspend/restore/reset_streak/reset_xp) — closes drawer, refreshes list
   const doAction = async (action: string, extras?: Record<string, unknown>) => {
@@ -87,7 +85,8 @@ export default function UserDrawer({
     try {
       const res = await fetch(`/api/internal/admin/users/${studentId}`, {
         method: 'PATCH',
-        headers: adminHeaders(secret),
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, ...extras }),
       });
       const json = await res.json();
@@ -111,7 +110,8 @@ export default function UserDrawer({
     try {
       const res = await fetch(`/api/internal/admin/users/${studentId}`, {
         method: 'PATCH',
-        headers: adminHeaders(secret),
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'upgrade_plan', plan: selectedPlan }),
       });
       const json = await res.json();

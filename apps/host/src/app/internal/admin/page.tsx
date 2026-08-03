@@ -3,9 +3,11 @@
 /**
  * ALFANUMRIK SUPER ADMIN — thin tab dispatcher.
  *
- * Auth via sessionStorage (`alfa_admin_secret`). On first visit shows
- * <LoginScreen>. Renders the chrome (toast / header / sidebar nav) and
- * dispatches to one of 10 per-tab components in ./_components/<TabName>Tab.tsx.
+ * SESSION-ONLY auth (P2-1): the console is gated on the super_admin session
+ * cookie established by <LoginScreen>. There is no shared secret and nothing
+ * to persist client-side — a boolean `authed` flag flips once login succeeds.
+ * Renders the chrome (toast / header / sidebar nav) and dispatches to one of
+ * 10 per-tab components in ./_components/<TabName>Tab.tsx.
  *
  * Cross-cutting state owned here so it survives tab switches:
  *   - selectedUser → <UserDrawer> mounts at top level
@@ -13,11 +15,7 @@
  *   - showToast → bottom-right toast, callable by Users / Flags / Support tabs
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  getAdminSecretFromSession,
-  clearAdminSession,
-} from '@alfanumrik/lib/admin-session';
+import { useState, useCallback, useRef } from 'react';
 import LoginScreen from './_components/LoginScreen';
 import UserDrawer from './_components/UserDrawer';
 import LogsTab from './_components/LogsTab';
@@ -73,7 +71,7 @@ const S: Record<string, any> = {
 };
 
 function LegacyInternalAdminPage() {
-  const [secret, setSecret] = useState('');
+  const [authed, setAuthed] = useState(false);
   const [tab, setTab] = useState<Tab>('command');
   const [toast, setToast] = useState('');
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -85,19 +83,24 @@ function LegacyInternalAdminPage() {
   /** Bumped after UserDrawer completes an action — UsersTab refetches. */
   const [usersRefreshKey, setUsersRefreshKey] = useState(0);
 
-  // ── Auth ──
-  useEffect(() => {
-    const saved = getAdminSecretFromSession();
-    if (saved) setSecret(saved);
-  }, []);
-
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 3000);
   }, []);
 
-  if (!secret) return <LoginScreen onLogin={setSecret} />;
+  // ── Sign out ── revoke the server session (expires the sb-* cookie), then
+  // return to the login screen. The session is httpOnly, so teardown is
+  // server-side only; there is no client-side secret/state to clear.
+  const handleSignOut = useCallback(() => {
+    void fetch('/api/super-admin/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+    }).catch(() => undefined);
+    setAuthed(false);
+  }, []);
+
+  if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
 
   const TABS: { key: Tab; icon: string; label: string }[] = [
     { key: 'command', icon: '⚡', label: 'Command Center' },
@@ -132,7 +135,7 @@ function LegacyInternalAdminPage() {
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <span style={{ fontSize: 10, color: C.text3 }}>{new Date().toLocaleString()}</span>
-          <button onClick={() => { clearAdminSession(); setSecret(''); }} style={S.signOutBtn}>Sign Out</button>
+          <button onClick={handleSignOut} style={S.signOutBtn}>Sign Out</button>
         </div>
       </header>
 
@@ -149,18 +152,18 @@ function LegacyInternalAdminPage() {
         {/* Main content */}
         <main style={S.content}>
 
-          {tab === 'command' && <CommandTab secret={secret} onNavigate={setTab} />}
+          {tab === 'command' && <CommandTab onNavigate={setTab} />}
           {tab === 'users' && (
-            <UsersTab secret={secret} onSelectUser={setSelectedUser} onToast={showToast} refreshKey={usersRefreshKey} />
+            <UsersTab onSelectUser={setSelectedUser} onToast={showToast} refreshKey={usersRefreshKey} />
           )}
-          {tab === 'content' && <ContentTab secret={secret} />}
-          {tab === 'schools' && <SchoolsTab secret={secret} />}
-          {tab === 'revenue' && <RevenueTab secret={secret} />}
-          {tab === 'ai' && <AIMonitorTab secret={secret} />}
-          {tab === 'flags' && <FlagsTab secret={secret} onToast={showToast} />}
-          {tab === 'support' && <SupportTab secret={secret} onToast={showToast} />}
-          {tab === 'logs' && <LogsTab secret={secret} />}
-          {tab === 'reports' && <ReportsTab secret={secret} />}
+          {tab === 'content' && <ContentTab />}
+          {tab === 'schools' && <SchoolsTab />}
+          {tab === 'revenue' && <RevenueTab />}
+          {tab === 'ai' && <AIMonitorTab />}
+          {tab === 'flags' && <FlagsTab onToast={showToast} />}
+          {tab === 'support' && <SupportTab onToast={showToast} />}
+          {tab === 'logs' && <LogsTab />}
+          {tab === 'reports' && <ReportsTab />}
         </main>
       </div>
 
@@ -168,7 +171,6 @@ function LegacyInternalAdminPage() {
       {selectedUser && (
         <UserDrawer
           student={selectedUser}
-          secret={secret}
           onClose={() => setSelectedUser(null)}
           onRefresh={() => setUsersRefreshKey(k => k + 1)}
         />

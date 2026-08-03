@@ -51,12 +51,8 @@ const S: Record<string, any> = {
   td: { padding: '9px 12px', borderBottom: `1px solid ${C.bg2}`, color: C.text2, verticalAlign: 'middle' as const },
 };
 
-export interface ContentTabProps {
-  secret: string;
-}
-
-export default function ContentTab({ secret }: ContentTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function ContentTab() {
+  const apiFetch = useAdminFetch();
   const [topics, setTopics] = useState<Topic[]>([]);
   const [topicTotal, setTopicTotal] = useState(0);
   const [questions, setQuestions] = useState<Question[]>([]);

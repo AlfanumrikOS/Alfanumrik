@@ -16,7 +16,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { adminHeaders } from '@alfanumrik/lib/admin-session';
 import { useAdminFetch } from '../_hooks/useAdminFetch';
 import type { LogEntry } from '../_lib/internal-admin-types';
 
@@ -48,12 +47,8 @@ const S: Record<string, any> = {
   td: { padding: '9px 12px', borderBottom: `1px solid ${C.bg2}`, color: C.text2, verticalAlign: 'middle' as const },
 };
 
-export interface LogsTabProps {
-  secret: string;
-}
-
-export default function LogsTab({ secret }: LogsTabProps) {
-  const apiFetch = useAdminFetch(secret);
+export default function LogsTab() {
+  const apiFetch = useAdminFetch();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logTotal, setLogTotal] = useState(0);
   const [logPage, setLogPage] = useState(1);
@@ -78,7 +73,8 @@ export default function LogsTab({ secret }: LogsTabProps) {
   const exportCsv = async () => {
     try {
       const res = await fetch('/api/internal/admin/reports?type=audit&format=csv', {
-        headers: adminHeaders(secret),
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
       });
       if (!res.ok) return;
       const blob = await res.blob();
