@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { validateBody, zPlanCode } from '@alfanumrik/lib/validation';
 
@@ -37,8 +38,8 @@ const BulkActionSchema = z.discriminatedUnion('action', [
 
 // POST /api/internal/admin/bulk-action
 export async function POST(request: NextRequest) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'user.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const ip = request.headers.get('x-forwarded-for') || '';
@@ -72,19 +73,47 @@ export async function POST(request: NextRequest) {
         break;
       }
       case 'upgrade_plan': {
-        const { error } = await supabase
-          .from('students')
-          .update({ subscription_plan: body.plan })
-          .in('id', body.ids);
-        if (error) throw error;
+        // P11 split-brain safety: route each student through the
+        // `atomic_plan_change` RPC (pg_advisory_xact_lock + students +
+        // student_subscriptions updated in one transaction + audit event),
+        // exactly like super-admin/bulk-actions/plan-change. Loop per student
+        // so one failure does not poison the whole batch; aggregate rpcError.
+        const failures: Array<{ student_id: string; error: string }> = [];
+        const reason = `internal.bulk.upgrade_plan: ${body.plan}`;
+        for (const studentId of body.ids) {
+          const { error: rpcError } = await supabase.rpc('atomic_plan_change', {
+            p_student_id: studentId,
+            p_new_plan: body.plan,
+            p_reason: reason,
+          });
+          if (rpcError) failures.push({ student_id: studentId, error: rpcError.message });
+        }
+        if (failures.length > 0) {
+          throw new Error(
+            `atomic_plan_change failed for ${failures.length}/${body.ids.length} students: ` +
+              failures.slice(0, 5).map((f) => `${f.student_id}: ${f.error}`).join('; '),
+          );
+        }
         break;
       }
       case 'downgrade_plan': {
-        const { error } = await supabase
-          .from('students')
-          .update({ subscription_plan: 'free' })
-          .in('id', body.ids);
-        if (error) throw error;
+        // P11 split-brain safety: same atomic RPC path, target plan 'free'.
+        const failures: Array<{ student_id: string; error: string }> = [];
+        const reason = 'internal.bulk.downgrade_plan: free';
+        for (const studentId of body.ids) {
+          const { error: rpcError } = await supabase.rpc('atomic_plan_change', {
+            p_student_id: studentId,
+            p_new_plan: 'free',
+            p_reason: reason,
+          });
+          if (rpcError) failures.push({ student_id: studentId, error: rpcError.message });
+        }
+        if (failures.length > 0) {
+          throw new Error(
+            `atomic_plan_change failed for ${failures.length}/${body.ids.length} students: ` +
+              failures.slice(0, 5).map((f) => `${f.student_id}: ${f.error}`).join('; '),
+          );
+        }
         break;
       }
     }

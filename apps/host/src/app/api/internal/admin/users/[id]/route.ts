@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdminSecret, logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { logAdminAction } from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { validateSubjectWrite } from '@alfanumrik/lib/subjects';
 
@@ -7,8 +8,8 @@ export const runtime = 'nodejs';
 
 // GET /api/internal/admin/users/[id] — fetch single user detail
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'user.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const { id } = await params;
@@ -38,8 +39,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 // PATCH /api/internal/admin/users/[id] — update student fields + bulk actions
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const denied = requireAdminSecret(request);
-  if (denied) return denied;
+  const auth = await authorizeRequest(request, 'user.manage');
+  if (!auth.authorized) return auth.errorResponse!;
 
   const supabase = getSupabaseAdmin();
   const { id } = await params;
@@ -86,13 +87,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
           { status: 400 },
         );
       }
-      // canonicalPlan is now identical to plan since we reject legacy aliases
-      // upstream. Keeping the variable name for the audit detail.
-      const canonicalPlan = plan;
-      await Promise.all([
-        supabase.from('students').update({ subscription_plan: plan }).eq('id', id),
-        supabase.from('student_subscriptions').update({ plan_code: canonicalPlan, updated_at: new Date().toISOString() }).eq('student_id', id),
-      ]);
+      // P11 split-brain safety: route students.subscription_plan AND
+      // student_subscriptions.plan_code through the atomic_plan_change RPC
+      // (pg_advisory_xact_lock + both tables updated in one transaction +
+      // audit event), instead of two unchecked parallel UPDATEs whose errors
+      // were previously swallowed. rpcError is checked so we never silently
+      // report success on a failed write.
+      const { error: rpcError } = await supabase.rpc('atomic_plan_change', {
+        p_student_id: id,
+        p_new_plan: plan,
+        p_reason: 'internal.admin.upgrade_plan',
+      });
+      if (rpcError) {
+        return NextResponse.json(
+          { error: rpcError.message || 'Plan change failed' },
+          { status: 500 },
+        );
+      }
       await logAdminAction({ action: 'upgrade_plan', entity_type: 'student', entity_id: id, details: { plan }, ip });
       return NextResponse.json({ success: true, action: 'plan_upgraded', plan });
     }
