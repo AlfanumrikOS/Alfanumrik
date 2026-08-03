@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
 
 /**
  * POST /api/cron/expired-subscriptions
@@ -31,30 +32,13 @@ import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
-
-function verifyCronSecret(request: NextRequest): boolean {
-  const cronSecret =
-    request.headers.get('x-cron-secret') ||
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !cronSecret) return false;
-  if (cronSecret.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < cronSecret.length; i++) {
-    mismatch |= cronSecret.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
-
 // ─── Handler ─────────────────────────────────────────────────────────────────
+// Auth: shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret,
+// constant-time, fail-closed).
 
 export async function POST(request: NextRequest) {
-  if (!verifyCronSecret(request)) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 },
-    );
+  if (!verifyCronAuth(request).ok) {
+    return unauthorizedResponse();
   }
 
   const startTime = Date.now();

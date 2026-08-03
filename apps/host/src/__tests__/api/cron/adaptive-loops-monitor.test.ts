@@ -214,13 +214,15 @@ describe('adaptive-loops-monitor — auth gate (fail-closed before I/O)', () => 
     expect(rpcCalls).toHaveLength(0);
   });
 
-  it('accepts Bearer, x-cron-secret, and ?token= carriers', async () => {
+  it('accepts Bearer and x-cron-secret carriers; REJECTS ?token= (query carrier removed 2026-08-03)', async () => {
     const { GET } = await loadRoute();
     expect((await GET(req({ authorization: `Bearer ${SECRET}` }))).status).toBe(200);
     expect((await GET(req({ 'x-cron-secret': SECRET }))).status).toBe(200);
+    // P1 batch (verifyCronAuth consolidation): secrets in query strings leak
+    // into access/CDN logs, so the ?token= carrier now 401s.
     expect(
       (await GET(req({}, `http://localhost/api/cron/adaptive-loops-monitor?token=${SECRET}`))).status,
-    ).toBe(200);
+    ).toBe(401);
   });
 
   it('first-present-wins: a wrong Bearer is NOT rescued by a correct x-cron-secret', async () => {

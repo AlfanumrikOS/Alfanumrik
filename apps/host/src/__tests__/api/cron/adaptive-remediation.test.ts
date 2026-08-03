@@ -259,17 +259,19 @@ describe('POST /api/cron/adaptive-remediation — auth gate (REG-118 pattern)', 
     expect(res.status).toBe(200);
   });
 
-  // ── Round 2, architect cond 3 — the ?token= carrier is PINNED, and carrier
-  //    precedence is first-PRESENT-wins (no fall-through): exactly one
-  //    candidate (Bearer > x-cron-secret > ?token=) is compared per request.
-  it('accepts the secret via ?token= (irt-calibrate Vercel-cron precedent)', async () => {
+  // ── P1 batch 2026-08-03 (verifyCronAuth consolidation) — the ?token= query
+  //    carrier was REMOVED: query strings land in access/CDN logs, so a secret
+  //    there is a secret leaked. Carriers are now Bearer > x-cron-secret only,
+  //    first-PRESENT-wins with exactly one constant-time compare per request.
+  it('REJECTS the secret via ?token= — query carrier removed 2026-08-03 → 401', async () => {
     const { POST } = await loadRoute();
     const res = await POST(req(
       {},
       { phase: 'all' },
       `http://localhost/api/cron/adaptive-remediation?token=${SECRET}`,
     ));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
+    expect(fromCalls).toHaveLength(0); // deny still short-circuits before any DB I/O
   });
 
   it('precedence: a WRONG Bearer with a CORRECT x-cron-secret does NOT fall through → 401', async () => {
@@ -282,7 +284,7 @@ describe('POST /api/cron/adaptive-remediation — auth gate (REG-118 pattern)', 
     expect(fromCalls).toHaveLength(0); // still denies BEFORE any DB I/O
   });
 
-  it('precedence: a WRONG x-cron-secret with a CORRECT ?token= does NOT fall through → 401', async () => {
+  it('a WRONG x-cron-secret is NOT rescued by a correct ?token= (query never consulted) → 401', async () => {
     const { POST } = await loadRoute();
     const res = await POST(req(
       { 'x-cron-secret': 'wrong-value' },

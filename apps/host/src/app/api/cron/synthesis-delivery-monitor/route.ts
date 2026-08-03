@@ -35,11 +35,11 @@
 // student name.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'node:crypto';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 import {
   computeRollup,
   WINDOW_HOURS,
@@ -56,31 +56,9 @@ const GENERIC_500_BODY = 'internal_error';
 
 // ════════════════════════════════════════════════════════════════════════════
 // AUTH — fail-closed, constant-time, BEFORE any DB I/O
+// (shared @alfanumrik/lib/cron-auth gate: first-present-wins Bearer, else
+//  x-cron-secret; the legacy ?token= query carrier was removed 2026-08-03)
 // ════════════════════════════════════════════════════════════════════════════
-
-function constantTimeMatch(provided: string, secret: string): boolean {
-  const a = Buffer.from(provided);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
-/** Carrier precedence FIRST-PRESENT-WINS: Bearer, else x-cron-secret, else ?token=. */
-function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false; // fail closed on missing configuration
-
-  const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
-  const headerSecret = req.headers.get('x-cron-secret') ?? '';
-  // new URL(req.url) (not req.nextUrl) so the carrier read works on a plain
-  // Request too (unit tests) as well as the NextRequest Vercel Cron delivers.
-  const token = new URL(req.url).searchParams.get('token') ?? '';
-
-  const provided = bearer || headerSecret || token;
-  if (!provided) return false;
-  return constantTimeMatch(provided, secret);
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // MONITOR
@@ -140,7 +118,7 @@ async function runMonitor(startedAt: number): Promise<NextResponse> {
 async function handle(request: NextRequest): Promise<NextResponse> {
   const startedAt = Date.now();
   // Fail-closed auth BEFORE any DB I/O.
-  if (!isAuthorized(request)) {
+  if (!verifyCronAuth(request).ok) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
   try {

@@ -237,7 +237,11 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // the pre-existing client_metadata column; never score_percent/raw_score/
 // xp_earned/status/submitted_at. Full justification + ratchet-down path in
 // scripts/admin-client-allowlist.json.
-const EXPECTED_COUNT = 269;
+// P1 verifyCronAuth batch (2026-08-03, architect-approved): 269 -> 268.
+// src/app/api/cron/daily/route.ts was DELETED — a deprecated alias for
+// /api/cron/daily-cron, scheduled by nothing, carrying only deprecation
+// telemetry. Its ledger entry is pruned in the same change (ratchet DOWN).
+const EXPECTED_COUNT = 268;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

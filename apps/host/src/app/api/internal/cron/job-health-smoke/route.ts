@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -7,23 +8,8 @@ export const dynamic = 'force-dynamic';
 const SMOKE_PATH = '/api/internal/cron/job-health-smoke';
 const SMOKE_METRIC = 'ops.cron.job_health_smoke.last_success_at';
 
-function constantTimeEquals(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
-
-function verifyCronSecret(request: NextRequest): boolean {
-  const provided =
-    request.headers.get('x-cron-secret') ??
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!provided || !expected) return false;
-  return constantTimeEquals(provided, expected);
-}
+// Auth: shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret,
+// constant-time, fail-closed).
 
 function smokeAllowed(): boolean {
   if (process.env.VERCEL_ENV !== 'production') return true;
@@ -31,7 +17,7 @@ function smokeAllowed(): boolean {
 }
 
 async function run(request: NextRequest): Promise<Response> {
-  if (!verifyCronSecret(request)) {
+  if (!verifyCronAuth(request).ok) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

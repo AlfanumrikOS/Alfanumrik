@@ -40,6 +40,7 @@ import {
 } from '@alfanumrik/lib/ai/validation/synthesis-quality-eval';
 import type { SynthesisBundle } from '@alfanumrik/lib/learn/monthly-synthesis-orchestrator';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -50,20 +51,7 @@ const SAMPLE_SIZE_MAX = 100;
 const SAMPLE_WINDOW_DAYS = 35;
 
 // ─── Auth (constant-time, fail-closed) ───────────────────────────────────────
-
-function verifyCronSecret(request: NextRequest): boolean {
-  const cronSecret =
-    request.headers.get('x-cron-secret') ||
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !cronSecret) return false;
-  if (cronSecret.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < cronSecret.length; i++) {
-    mismatch |= cronSecret.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
+// Shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret).
 
 // ─── DB row shapes ───────────────────────────────────────────────────────────
 
@@ -96,8 +84,8 @@ function pickQuerySize(request: NextRequest): number {
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<Response> {
-  if (!verifyCronSecret(request)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!verifyCronAuth(request).ok) {
+    return unauthorizedResponse();
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;

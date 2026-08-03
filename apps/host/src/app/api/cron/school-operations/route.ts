@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
 
 /**
  * POST /api/cron/school-operations
@@ -56,21 +57,8 @@ interface SchoolWithSub {
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
-
-function verifyCronSecret(request: NextRequest): boolean {
-  const cronSecret =
-    request.headers.get('x-cron-secret') ||
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !cronSecret) return false;
-  // Constant-time comparison to prevent timing attacks
-  if (cronSecret.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < cronSecret.length; i++) {
-    mismatch |= cronSecret.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
+// Shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret, constant-time,
+// fail-closed).
 
 // ─── Step 1: Daily Seat Usage Snapshot ──────────────────────────────────────
 
@@ -526,11 +514,8 @@ async function computeSchoolMetrics(
 
 export async function POST(request: NextRequest) {
   // Auth: verify CRON_SECRET
-  if (!verifyCronSecret(request)) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 }
-    );
+  if (!verifyCronAuth(request).ok) {
+    return unauthorizedResponse();
   }
 
   const startTime = Date.now();

@@ -20,8 +20,9 @@
  * = ~$15/month at the default sample size. Bump SAMPLE_SIZE_DEFAULT down if
  * costs need to be tighter; bump up once the dashboard surfaces value.
  *
- * Auth: x-cron-secret header (Vercel Cron sets it). Same pattern as
- * /api/cron/daily-cron — see verifyCronSecret().
+ * Auth: shared @alfanumrik/lib/cron-auth gate (Authorization: Bearer — sent
+ * automatically by Vercel Cron — or x-cron-secret). Same pattern as
+ * /api/cron/daily-cron.
  *
  * Failure mode: scoring is best-effort. A judge call that returns null
  * (rate-limited, parse failure, network blip) is counted as `failed` in
@@ -41,6 +42,7 @@ import {
   type QualityScoreInput,
 } from '@alfanumrik/lib/foxy/quality-eval';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -62,20 +64,8 @@ const SAMPLE_SIZE_MAX = 100;
 const SAMPLE_WINDOW_HOURS = 24;
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
-
-function verifyCronSecret(request: NextRequest): boolean {
-  const cronSecret =
-    request.headers.get('x-cron-secret') ||
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !cronSecret) return false;
-  if (cronSecret.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < cronSecret.length; i++) {
-    mismatch |= cronSecret.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
+// Shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret, constant-time,
+// fail-closed).
 
 // ─── Types (DB row shapes) ───────────────────────────────────────────────────
 
@@ -129,11 +119,8 @@ function normaliseCitations(sources: unknown): QualityScoreInput['citations'] {
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest): Promise<Response> {
-  if (!verifyCronSecret(request)) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 },
-    );
+  if (!verifyCronAuth(request).ok) {
+    return unauthorizedResponse();
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;

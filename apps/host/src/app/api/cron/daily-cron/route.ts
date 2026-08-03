@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@alfanumrik/lib/logger';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
 
 /**
  * POST /api/cron/daily-cron
@@ -38,31 +39,13 @@ import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 export const runtime = 'nodejs';
 export const maxDuration = 300; // daily-cron can take up to ~5 min on cold caches
 
-// ─── Auth ────────────────────────────────────────────────────────────────────
-
-function verifyCronSecret(request: NextRequest): boolean {
-  const cronSecret =
-    request.headers.get('x-cron-secret') ||
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !cronSecret) return false;
-  // Constant-time comparison to prevent timing attacks
-  if (cronSecret.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < cronSecret.length; i++) {
-    mismatch |= cronSecret.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
-
 // ─── Handler ─────────────────────────────────────────────────────────────────
+// Auth: shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret,
+// constant-time, fail-closed).
 
 export async function POST(request: NextRequest) {
-  if (!verifyCronSecret(request)) {
-    return NextResponse.json(
-      { success: false, error: 'Unauthorized' },
-      { status: 401 },
-    );
+  if (!verifyCronAuth(request).ok) {
+    return unauthorizedResponse();
   }
 
   const startTime = Date.now();

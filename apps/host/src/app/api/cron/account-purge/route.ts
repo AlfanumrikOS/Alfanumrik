@@ -39,30 +39,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
-import { timingSafeEqual } from 'node:crypto';
+import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
-
-function isAuthorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-
-  const auth = req.headers.get('authorization') ?? '';
-  const xCronSecret = req.headers.get('x-cron-secret') ?? '';
-  const provided = auth.startsWith('Bearer ')
-    ? auth.slice('Bearer '.length)
-    : xCronSecret;
-
-  if (!provided) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
+// Shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret, constant-time,
+// fail-closed).
 
 // ─── Per-row dispatch ────────────────────────────────────────────────────────
 
@@ -119,8 +104,8 @@ async function invokeEdgePurge(
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
 async function handle(req: NextRequest) {
-  if (!isAuthorized(req)) {
-    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  if (!verifyCronAuth(req).ok) {
+    return unauthorizedResponse();
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

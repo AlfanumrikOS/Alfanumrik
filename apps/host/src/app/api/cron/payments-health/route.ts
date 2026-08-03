@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 
 /**
  * GET/POST /api/cron/payments-health
@@ -69,19 +70,8 @@ const STALE_HOURS = 2;
 const STUCK_THRESHOLD_MIN = 30;
 const MAX_VERIFY_401_PER_HOUR = 3;
 
-function verifyCronSecret(request: NextRequest): boolean {
-  const cronSecret =
-    request.headers.get('x-cron-secret') ||
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !cronSecret) return false;
-  if (cronSecret.length !== expected.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < cronSecret.length; i++) {
-    mismatch |= cronSecret.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
+// Auth: shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret,
+// constant-time, fail-closed).
 
 interface HealthCheck {
   name: string;
@@ -201,7 +191,7 @@ export async function GET(request: NextRequest) { return run(request); }
 export async function POST(request: NextRequest) { return run(request); }
 
 async function run(request: NextRequest) {
-  if (!verifyCronSecret(request)) {
+  if (!verifyCronAuth(request).ok) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

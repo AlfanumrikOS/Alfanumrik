@@ -18,27 +18,16 @@ import { claimFailedBatch } from '@alfanumrik/lib/qb-fixer/claim';
 import { logSweepComplete } from '@alfanumrik/lib/qb-fixer/ops-event';
 import { runFixFailedQuestions } from '@alfanumrik/lib/ai/agents/agents/fix-failed-questions';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 import type { SweepResult } from '@alfanumrik/lib/qb-fixer/types';
 
 export const runtime = 'nodejs';
 
 const THROTTLE_THRESHOLD = 100;
 
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let r = 0;
-  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return r === 0;
-}
-
-function verifyCronSecret(request: NextRequest): boolean {
-  const cronSecret =
-    request.headers.get('x-cron-secret') ||
-    request.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !cronSecret) return false;
-  return constantTimeEqual(cronSecret, expected);
-}
+// Auth: shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret,
+// constant-time, fail-closed). Missing CRON_SECRET maps to 503 (misconfig),
+// a bad/absent credential to 401 — preserved from the pre-consolidation gate.
 
 async function lastMinuteRunCount(): Promise<number> {
   const since = new Date(Date.now() - 60_000).toISOString();
@@ -55,11 +44,11 @@ async function lastMinuteRunCount(): Promise<number> {
 }
 
 async function handleSweep(request: NextRequest): Promise<NextResponse> {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) {
-    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 503 });
-  }
-  if (!verifyCronSecret(request)) {
+  const auth = verifyCronAuth(request);
+  if (!auth.ok) {
+    if (auth.reason === 'missing_secret') {
+      return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 503 });
+    }
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

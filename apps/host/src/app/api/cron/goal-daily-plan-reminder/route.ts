@@ -31,20 +31,13 @@ import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { logger } from '@alfanumrik/lib/logger';
 import { buildDailyPlanReminderPayload } from '@alfanumrik/lib/notifications/goal-daily-plan-reminder';
+import { verifyCronAuth } from '@alfanumrik/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-function verifyCronSecret(req: NextRequest): boolean {
-  const secret =
-    req.headers.get('x-cron-secret') ||
-    req.headers.get('authorization')?.replace('Bearer ', '');
-  const expected = process.env.CRON_SECRET;
-  if (!expected || !secret || secret.length !== expected.length) return false;
-  let m = 0;
-  for (let i = 0; i < secret.length; i++) m |= secret.charCodeAt(i) ^ expected.charCodeAt(i);
-  return m === 0;
-}
+// Auth: shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret,
+// constant-time, fail-closed).
 
 interface CronResult {
   sent: number;
@@ -56,7 +49,7 @@ interface CronResult {
 
 export async function POST(request: NextRequest) {
   const started = Date.now();
-  if (!verifyCronSecret(request)) {
+  if (!verifyCronAuth(request).ok) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

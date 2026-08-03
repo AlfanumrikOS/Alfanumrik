@@ -1,6 +1,6 @@
 {
   "source": "apps/host/src/app/api/**/route.ts(x)",
-  "routeCount": 392,
+  "routeCount": 390,
   "routes": [
     {
       "path": "/api/alfabot",
@@ -137,14 +137,6 @@
     {
       "path": "/api/cron/build-twin-snapshots",
       "file": "apps/host/src/app/api/cron/build-twin-snapshots/route.ts",
-      "access": "cron",
-      "owner": "platform-ops",
-      "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
-      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
-    },
-    {
-      "path": "/api/cron/daily",
-      "file": "apps/host/src/app/api/cron/daily/route.ts",
       "access": "cron",
       "owner": "platform-ops",
       "rationale": "Scheduled system endpoint; access must be protected by cron secret or platform scheduler controls.",
