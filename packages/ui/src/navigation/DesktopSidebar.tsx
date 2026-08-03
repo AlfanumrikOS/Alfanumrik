@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useLayoutEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth, type UserRole } from '@alfanumrik/lib/AuthContext';
 import { useDashboardData, useFeatureFlags } from '@alfanumrik/lib/swr';
@@ -54,7 +54,7 @@ export function DesktopSidebar() {
 
   // Fallback for browsers without :has() support (Safari < 15.4, Firefox < 121).
   // Only add the class when the sidebar is actually visible (not on /foxy).
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isFocusedFoxy) return;
     document.body.classList.add('has-sidebar');
     return () => document.body.classList.remove('has-sidebar');
