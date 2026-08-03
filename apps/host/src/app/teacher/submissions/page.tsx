@@ -19,34 +19,14 @@ import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-async function api(action: string, params: Record<string, unknown> = {}) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SUPABASE_ANON,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — Edge Function will reject */ }
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json();
-}
+// Edge-function calls go through the shared usePortalAction helper (10s
+// AbortController timeout so a hung backend can't spin forever; bilingual
+// abort copy — P7). Headers match the legacy api(): apikey + Bearer JWT (P13).
 
 /* ─── Styles (matched to /teacher/reports — Atlas warm theme) ─── */
 const pageStyle: React.CSSProperties = {
@@ -334,6 +314,7 @@ function SubmissionDetailView({
   onBack: () => void;
   onSaved: () => void;
 }) {
+  const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
   const [feedback, setFeedback] = useState('');
   const [feedbackHi, setFeedbackHi] = useState('');
   const [scoreOverride, setScoreOverride] = useState<string>('');
@@ -585,6 +566,7 @@ function SubmissionDetailView({
 /* ─── Main page ─── */
 function TeacherSubmissionsPageContent() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
+  const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
   const router = useRouter();
   // Phase 3A Wave B — deep-link target. The Command Center's grading queue
   // links here as /teacher/submissions?assignment=<id>&submission=<id> to drop
@@ -664,7 +646,7 @@ function TeacherSubmissionsPageContent() {
     } finally {
       setSubsLoading(false);
     }
-  }, [teacherId, isHi]);
+  }, [api, teacherId, isHi]);
 
   // Drill-in deeper: open a single submission. Accepts the full roster row when
   // clicked from the list, or a minimal { submission_id } when arriving via a
@@ -683,7 +665,7 @@ function TeacherSubmissionsPageContent() {
     } finally {
       setDetailLoading(false);
     }
-  }, [teacherId, isHi]);
+  }, [api, teacherId, isHi]);
 
   // Deep-link drill-in (Wave B). Once assignments have loaded and both query
   // params are present, open the assignment then the submission automatically —
@@ -726,7 +708,7 @@ function TeacherSubmissionsPageContent() {
         setSubRows(data?.submissions || []);
       } catch { /* keep list stale rather than error-banner over success */ }
     }
-  }, [selected, teacherId]);
+  }, [api, selected, teacherId]);
 
   if (authLoading || (loading && assignments.length === 0 && !error)) {
     return (

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { getLevelFromScore } from '@alfanumrik/lib/score-config';
 import { REPORT_MONTHS_COUNT } from '@alfanumrik/lib/constants';
 import { getQuizScoreColor } from '@alfanumrik/lib/score-colors';
@@ -20,9 +21,6 @@ import {
   resolveLinkedChild,
   withParentChildId,
 } from '../_components/parent-child-scope';
-
-const SB_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SB_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const SESSION_KEY = 'alfanumrik_parent_session';
 const SESSION_TTL_MS = 4 * 60 * 60 * 1000;
@@ -153,38 +151,13 @@ async function loadParentSession(): Promise<{ guardian: ReportParentSession; stu
   } catch { sessionStorage.removeItem(SESSION_KEY); return null; }
 }
 
-async function api(action: string, params: Record<string, unknown> = {}) {
-  // P13: parent-portal binds caller to JWT — Authorization header is now
-  // required for every action except parent_login. Body.guardian_id is
-  // overridden server-side from the JWT-resolved guardian.
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SB_KEY,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — request will be rejected by Edge Function */ }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), PARENT_REPORT_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(`${SB_URL}/functions/v1/parent-portal`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ action, ...params }),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json();
-}
+// P13: parent-portal binds caller to JWT — Authorization header is required
+// for every action except parent_login; body.guardian_id is overridden
+// server-side from the JWT-resolved guardian. The fetch goes through the
+// shared usePortalAction helper (AbortController timeout kept at the page's
+// legacy 15s via PARENT_REPORT_TIMEOUT_MS; abort now surfaces a friendly
+// bilingual message instead of a raw AbortError — P7). Headers match the
+// legacy helper: apikey + Bearer session token.
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -925,6 +898,7 @@ function CircularProgressRing({ value, size = 72, color = '#16A34A', label }: {
 function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false }: {
   guardianId: string; studentId: string; studentName: string; isHi?: boolean;
 }) {
+  const api = usePortalAction('/functions/v1/parent-portal', isHi, PARENT_REPORT_TIMEOUT_MS);
   const months = useMemo(() => getLastNMonths(REPORT_MONTHS_COUNT), []);
   const [selectedMonth, setSelectedMonth] = useState(months[0]?.value ?? '');
   const [monthlyData, setMonthlyData] = useState<MonthlyReportData | null>(null);
@@ -951,7 +925,7 @@ function MonthlyReportSection({ guardianId, studentId, studentName, isHi = false
       setMonthlyLoading(false);
     };
     fetchMonthlyReport();
-  }, [guardianId, studentId, selectedMonth]);
+  }, [api, guardianId, studentId, selectedMonth]);
 
   const handlePrintMonthly = () => {
     window.print();
@@ -1457,6 +1431,7 @@ function ChildSelector({ childList, selectedId, onSelect }: {
 function ParentReportsPage() {
   const auth = useAuth();
   const isHi = auth.isHi ?? false;
+  const api = usePortalAction('/functions/v1/parent-portal', isHi, PARENT_REPORT_TIMEOUT_MS);
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedChildId = readParentChildId(searchParams);
@@ -1542,7 +1517,7 @@ function ParentReportsPage() {
 
     void resolveSession();
     return () => { cancelled = true; };
-  }, [auth.isLoading, auth.guardian, isHi, scopeAttempt]);
+  }, [api, auth.isLoading, auth.guardian, isHi, scopeAttempt]);
 
   // Handle child selection
   const handleSelectChild = (childId: string) => {
@@ -1671,7 +1646,7 @@ function ParentReportsPage() {
     }
 
     if (sequence === reportSequence.current) setLoading(false);
-  }, [guardian, student, dateRange, isHi]);
+  }, [api, guardian, student, dateRange, isHi]);
 
   useEffect(() => {
     if (guardian && student) {

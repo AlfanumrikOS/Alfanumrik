@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { useTeacherAllowedSubjects } from '@alfanumrik/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
@@ -14,30 +15,11 @@ import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 // ============================================================
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-async function fetchDashboard(teacherId: string) {
-  // P13: teacher-dashboard now binds the caller to its JWT-derived teacher_id;
-  // body.teacher_id is ignored on the server. We still pass it for log/trace
-  // continuity but the source of truth is the Authorization header.
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SUPABASE_ANON,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — request will be rejected by Edge Function */ }
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action: 'get_dashboard', teacher_id: teacherId }),
-  });
-  if (!res.ok) throw new Error(`API ${res.status}`);
-  return res.json();
-}
+// P13: teacher-dashboard binds the caller to its JWT-derived teacher_id;
+// body.teacher_id is passed only for log/trace continuity. The fetch goes
+// through the shared usePortalAction helper (10s AbortController timeout so a
+// hung backend can't spin forever; bilingual abort copy — P7), which sends the
+// same headers as the legacy helper: apikey + Bearer session token.
 
 // ── Types ────────────────────────────────────────────────────
 interface ClassData {
@@ -117,6 +99,7 @@ const labelStyle: React.CSSProperties = {
 function AssignmentsPageContent() {
   const { teacher, isLoading: authLoading, isLoggedIn, activeRole, isHi } = useAuth();
   const { subjects, isLoading: subjectsLoading } = useTeacherAllowedSubjects();
+  const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedClass = searchParams.get('class') || '';
@@ -154,7 +137,7 @@ function AssignmentsPageContent() {
     setError('');
     try {
       const [dashData, { data: asgns, error: aErr }] = await Promise.all([
-        fetchDashboard(teacherId),
+        api('get_dashboard', { teacher_id: teacherId }),
         supabase
           .from('assignments')
           .select('*, assignment_submissions(count)')
@@ -169,7 +152,7 @@ function AssignmentsPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [teacherId, isHi]);
+  }, [api, teacherId, isHi]);
 
   useEffect(() => {
     loadData();

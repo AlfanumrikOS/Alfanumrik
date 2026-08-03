@@ -20,7 +20,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { useTeacherGradebookDepth } from '@alfanumrik/lib/use-teacher-gradebook-depth';
 import { BLOOM_LEVEL_ORDER } from '@alfanumrik/lib/types';
 import type { ClassMasteryBloomSummary } from '@alfanumrik/lib/types';
@@ -28,30 +28,9 @@ import { Bone, TeacherTableSkeleton } from '@alfanumrik/ui/Skeleton';
 
 const tt = (isHi: boolean, en: string, hi: string) => (isHi ? hi : en);
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-async function api(action: string, params: Record<string, unknown> = {}) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SUPABASE_ANON,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — Edge Function will reject */ }
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json();
-}
+// Edge-function calls go through the shared usePortalAction helper (10s
+// AbortController timeout so a hung backend can't spin forever; bilingual
+// abort copy — P7). Headers match the legacy api(): apikey + Bearer JWT (P13).
 
 /* ─── Styles (Atlas warm theme) ─── */
 const pageStyle: React.CSSProperties = {
@@ -514,6 +493,7 @@ export default function TeacherGradeBookPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const requestedClassId = searchParams?.get('class') ?? '';
+  const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
 
   // Wave C — gate the mastery/Bloom depth view. Default OFF ⇒ the page is the
   // existing score matrix only (byte-identical).
@@ -565,7 +545,7 @@ export default function TeacherGradeBookPage() {
     } finally {
       setClassesLoading(false);
     }
-  }, [teacherId, selectedClassId, requestedClassId, isHi]);
+  }, [api, teacherId, selectedClassId, requestedClassId, isHi]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
 
@@ -586,7 +566,7 @@ export default function TeacherGradeBookPage() {
     } finally {
       setLoading(false);
     }
-  }, [teacherId, selectedClassId, term, isHi]);
+  }, [api, teacherId, selectedClassId, term, isHi]);
 
   useEffect(() => { loadGradeBook(); }, [loadGradeBook]);
 
@@ -609,7 +589,7 @@ export default function TeacherGradeBookPage() {
     } finally {
       setDepthLoading(false);
     }
-  }, [gradebookDepthEnabled, teacherId, selectedClassId]);
+  }, [api, gradebookDepthEnabled, teacherId, selectedClassId]);
 
   useEffect(() => { loadDepth(); }, [loadDepth]);
 

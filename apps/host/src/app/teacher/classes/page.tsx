@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@alfanumrik/lib/supabase';
+import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { useTeacherAllowedSubjects } from '@alfanumrik/lib/useTeacherAllowedSubjects';
 import { VALID_GRADES } from '@alfanumrik/lib/identity';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
@@ -18,33 +18,10 @@ import { Bone, CardListSkeleton } from '@alfanumrik/ui/Skeleton';
 // ============================================================
 const tt = (isHi: boolean, en: string, hi: string) => isHi ? hi : en;
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-async function api(action: string, params: Record<string, unknown> = {}) {
-  // Build headers — always include apikey; add Bearer token when a session
-  // exists so teacher-dashboard can authenticate the caller via JWT (P13).
-  // Pattern mirrors src/app/teacher/page.tsx api() helper.
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: SUPABASE_ANON,
-  };
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
-  } catch { /* no session — request will be rejected by Edge Function */ }
-
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/teacher-dashboard`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => 'Unknown error');
-    throw new Error(`API error ${res.status}: ${errorText}`);
-  }
-  return res.json();
-}
+// Edge-function calls go through the shared usePortalAction helper (10s
+// AbortController timeout so a hung backend can't spin forever; bilingual
+// abort copy — P7). It preserves the legacy api() headers: apikey + Bearer
+// session token (P13).
 
 interface ClassData {
   id: string;
@@ -113,6 +90,7 @@ export default function TeacherClassesPage() {
   const { subjects } = useTeacherAllowedSubjects();
   const { can } = usePermissions();
   const router = useRouter();
+  const api = usePortalAction('/functions/v1/teacher-dashboard', isHi);
 
   const [classes, setClasses] = useState<ClassData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,7 +137,7 @@ export default function TeacherClassesPage() {
     } finally {
       setLoading(false);
     }
-  }, [teacherId]);
+  }, [api, teacherId]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
 
