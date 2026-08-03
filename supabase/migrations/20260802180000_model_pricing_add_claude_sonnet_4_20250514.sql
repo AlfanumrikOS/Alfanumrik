@@ -1,4 +1,33 @@
--- 20260802120000_model_pricing_add_claude_sonnet_4_20250514.sql
+-- 20260802180000_model_pricing_add_claude_sonnet_4_20250514.sql
+--
+-- Renumbered 2026-08-03 (was 20260802120000). The original timestamp collided
+-- with 20260802120000_seed_ff_wave_b_gap_screens.sql, which arrived from
+-- origin/main via PR #1438 and was APPLIED TO PRODUCTION at 2026-08-02T18:14:30Z
+-- ("Applying migration 20260802120000_seed_ff_wave_b_gap_screens.sql..." in the
+-- deploy-production run's `supabase db push --linked --include-all` log; that
+-- run's later Post-Deploy Health Check failure did not roll the push back).
+--
+-- Why this was NOT benign: supabase_migrations.schema_migrations keys on the
+-- 14-digit VERSION prefix, not the filename, and that column is its PRIMARY
+-- KEY. Two files sharing version 20260802120000 are therefore not merely an
+-- ordering ambiguity — the alphabetical tiebreak never gets a chance to
+-- matter. This repo has already taken the outage: per the incident recorded
+-- in scripts/lint-migrations.js's duplicate-version guard, PRs #1363 and
+-- #1364 both shipped a migration timestamped 20260720170000, and when the
+-- second merged, `supabase db push` failed IN THE PRODUCTION DEPLOY JOB with
+-- a duplicate-key error on schema_migrations_pkey, blocking every migration
+-- in that push until a hotfix renamed the colliding files. Renaming main's
+-- copy instead was never an option: its version is already recorded in
+-- production's ledger, and three sibling main migrations (20260802140000,
+-- 20260802150000, 20260802170000) cross-reference it by filename.
+--
+-- 20260802180000 is the first free slot strictly AFTER main's last applied
+-- migration (20260802170000_ramp_wave_b_gap_screens.sql), so this appends to the
+-- remote ledger rather than inserting behind it, and strictly BEFORE this
+-- session's 20260803120000 / 20260803120001 pair, preserving their ordering.
+-- Verified free across all 506 root migrations + the 349 archived under
+-- _legacy/timestamped/; `npm run lint:migrations` passes (0 failures).
+--
 -- Purpose: seed public.model_pricing with the CORRECT Claude Sonnet model id
 -- ('claude-sonnet-4-20250514'), which the current seed row (from
 -- 20260518000003_model_pricing.sql) does not have — it instead used the

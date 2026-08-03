@@ -10,7 +10,7 @@
 -- ─── Architect governance ruling (Task 2, 2026-08-03) ────────────────────────
 -- ai-engineer asked whether this flag — which governs what percentage of
 -- live student Foxy/ncert-solver/quiz-gen traffic is routed to Claude-primary
--- instead of the already-shipped OpenAI-primary default (REG-332, commit
+-- instead of the already-shipped OpenAI-primary default (REG-334, commit
 -- 5e6ffa9f, 2026-08-02) — should be protected at the `ai_provider` tier
 -- alongside ff_mol_enabled / ff_grounded_answer_mol_shadow_v1 etc.
 --
@@ -89,7 +89,7 @@
 -- migration 20260722090000). Additive only.
 --
 -- Owner: architect (this ruling + DB migration). Reviewers (P14): ai-engineer
--- (TS companion + confirms REG-332/commit provenance), ops (TS companion
+-- (TS companion + confirms REG-334/commit provenance), ops (TS companion
 -- execution / ramp-schedule ownership going forward), testing (count-pin +
 -- SEED_MIGRATION_PATHS updates), quality (build gate).
 -- Added: 2026-08-03.
@@ -108,7 +108,7 @@ BEGIN
       (
         'ff_foxy_openai_primary_rollout_v1',
         'ai_provider',
-        'Foxy OpenAI-primary provider-swap rollback lever (REG-332, commit 5e6ffa9f, 2026-08-02): governs the percentage of live student Foxy/ncert-solver/quiz-gen traffic routed to Claude-primary instead of the shipped OpenAI-primary default. AI provider change affecting real student traffic — requires explicit CEO approval before any enable.'
+        'Foxy OpenAI-primary provider-swap rollback lever (REG-334, commit 5e6ffa9f, 2026-08-02): governs the percentage of live student Foxy/ncert-solver/quiz-gen traffic routed to Claude-primary instead of the shipped OpenAI-primary default. AI provider change affecting real student traffic — requires explicit CEO approval before any enable.'
       )
     ON CONFLICT (flag_name) DO UPDATE
       SET tier = EXCLUDED.tier,

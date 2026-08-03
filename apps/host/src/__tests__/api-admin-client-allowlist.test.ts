@@ -224,7 +224,20 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 //     client used only AFTER supabase.auth.getUser() and scoped to that
 //     auth_user_id (whatsapp_link_challenges insert + student-side
 //     parental_consent existence check, which has no student RLS policy).
-const EXPECTED_COUNT = 268;
+// Mock Exam Runner v2 autosave (2026-08-02, architect-reviewed): 268 -> 269
+// for the new save-only route src/app/api/exams/papers/[id]/autosave/route.ts.
+// Service-role is REQUIRED, not convenience: mock_test_attempts RLS
+// (20260520000008) keys its student policies on student_id = auth.uid()
+// directly, but this route family (including already-ledgered siblings
+// [id]/start/route.ts and [id]/submit/route.ts) resolves and filters on
+// authorizeRequest()'s studentId, which is students.id — a DIFFERENT uuid
+// than auth.uid(). An RLS-scoped client would be silently zero-rowed by the
+// auth.uid()-keyed policy on every call. Bounded to a single UPDATE scoped
+// to id + student_id + exam_paper_id + status='in_progress', touching only
+// the pre-existing client_metadata column; never score_percent/raw_score/
+// xp_earned/status/submitted_at. Full justification + ratchet-down path in
+// scripts/admin-client-allowlist.json.
+const EXPECTED_COUNT = 269;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

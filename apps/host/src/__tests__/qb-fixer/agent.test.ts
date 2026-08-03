@@ -138,8 +138,12 @@ describe('runFixFailedQuestions — canonical paths', () => {
     expect(stepTypes.filter((s) => s === 'tool_call')).toHaveLength(4);
   });
 
-  it('out-of-scope short-circuit: read → mark_unfixable', async () => {
-    const Q1OutOfScope = { ...Q1, verifier_failure_reason: 'no chunks for chapter' };
+  it('out-of-scope short-circuit (chapter not in NCERT for grade — permanent): read → mark_unfixable', async () => {
+    // NOTE: 'chapter not in NCERT for grade' (not 'no chunks for chapter') is
+    // the permanent, structurally-out-of-scope phrase per the updated prompt —
+    // 'no chunks for chapter' / chapter_not_ready now gets one retry first
+    // (see the two 'chapter_not_ready retry' tests below).
+    const Q1OutOfScope = { ...Q1, verifier_failure_reason: 'chapter not in NCERT for grade' };
     fromMock.mockImplementation((t: string) => {
       if (t === 'question_bank') {
         return {
@@ -153,7 +157,7 @@ describe('runFixFailedQuestions — canonical paths', () => {
 
     callClaudeMock
       .mockResolvedValueOnce(llmResp([tu('read_failed_question', { question_id: 'q1' })]))
-      .mockResolvedValueOnce(llmResp([tu('mark_unfixable', { question_id: 'q1', reason: 'no chunks for chapter' })]))
+      .mockResolvedValueOnce(llmResp([tu('mark_unfixable', { question_id: 'q1', reason: 'chapter not in NCERT for grade' })]))
       .mockResolvedValueOnce({ ...llmResp([{ type: 'text', text: 'Marked.' }], 'end_turn'), content: 'Marked.' });
 
     const result = await runFixFailedQuestions({ question_id: 'q1' });
@@ -163,6 +167,157 @@ describe('runFixFailedQuestions — canonical paths', () => {
       .filter((s) => s.tool)
       .map((s) => s.tool!.name);
     expect(toolCalls).toEqual(['read_failed_question', 'mark_unfixable']);
+  });
+
+  it('chapter_not_ready retry succeeds: read → re_verify(unchanged candidate) → commit_fix', async () => {
+    // Post-fix (coverage.ts no longer deadlocks on verified_question_count),
+    // a chapter_not_ready abstain is often stale/transient. The agent must
+    // retry re_verify with the ORIGINAL row's own fields (no regeneration)
+    // before giving up.
+    const Q1NotReady = { ...Q1, verifier_failure_reason: 'abstain:chapter_not_ready' };
+    fromMock.mockImplementation((t: string) => {
+      if (t === 'question_bank') {
+        return {
+          select: () => ({ eq: () => ({ single: async () => ({ data: Q1NotReady, error: null }) }) }),
+          update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+        };
+      }
+      if (t === 'question_bank_fix_history') return mockHistoryInsert();
+      throw new Error('unexpected ' + t);
+    });
+
+    // The gate now clears: re_verify grounds successfully and confirms the
+    // original claimed index — no new content is generated.
+    callGroundedAnswerMock.mockResolvedValueOnce(groundedSuccess(JSON.stringify({
+      verified: true, correct_option_index: Q1.correct_answer_index, supporting_chunk_ids: [], reason: 'OK',
+    })));
+
+    const originalCandidate = {
+      question: Q1.question_text,
+      options: Q1.options,
+      correct_answer_index: Q1.correct_answer_index,
+      explanation: Q1.explanation,
+    };
+
+    callClaudeMock
+      .mockResolvedValueOnce(llmResp([tu('read_failed_question', { question_id: 'q1' })]))
+      .mockResolvedValueOnce(llmResp([tu('re_verify', { question_id: 'q1', candidate: originalCandidate })]))
+      .mockResolvedValueOnce(llmResp([tu('commit_fix', { question_id: 'q1', fixed_question: originalCandidate, fix_strategy: 'full_regen' })]))
+      .mockResolvedValueOnce({ ...llmResp([{ type: 'text', text: 'Reverified.' }], 'end_turn'), content: 'Reverified.' });
+
+    const result = await runFixFailedQuestions({ question_id: 'q1' });
+    expect(result.status).toBe('success');
+    const toolCalls = persistStepMock.mock.calls
+      .map((c) => ((c as unknown[])[0] as { tool?: { name: string } }))
+      .filter((s) => s.tool)
+      .map((s) => s.tool!.name);
+    expect(toolCalls).toEqual(['read_failed_question', 're_verify', 'commit_fix']);
+    expect(toolCalls).not.toContain('regenerate_question');
+  });
+
+  it('chapter_not_ready retry fails (gate still not ready): read → re_verify(abstains again) → mark_unfixable', async () => {
+    const Q1NotReady = { ...Q1, verifier_failure_reason: 'abstain:chapter_not_ready' };
+    fromMock.mockImplementation((t: string) => {
+      if (t === 'question_bank') {
+        return {
+          select: () => ({ eq: () => ({ single: async () => ({ data: Q1NotReady, error: null }) }) }),
+          update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+        };
+      }
+      if (t === 'question_bank_fix_history') return mockHistoryInsert();
+      throw new Error('unexpected ' + t);
+    });
+
+    // re_verify's own handler throws when the underlying grounded-answer call
+    // abstains again — the ONE retry confirms the gate genuinely still fails.
+    callGroundedAnswerMock.mockResolvedValueOnce(groundedAbstain('chapter_not_ready'));
+
+    const originalCandidate = {
+      question: Q1.question_text,
+      options: Q1.options,
+      correct_answer_index: Q1.correct_answer_index,
+      explanation: Q1.explanation,
+    };
+
+    callClaudeMock
+      .mockResolvedValueOnce(llmResp([tu('read_failed_question', { question_id: 'q1' })]))
+      .mockResolvedValueOnce(llmResp([tu('re_verify', { question_id: 'q1', candidate: originalCandidate })]))
+      .mockResolvedValueOnce(llmResp([tu('mark_unfixable', { question_id: 'q1', reason: 'chapter_not_ready_after_retry' })]))
+      .mockResolvedValueOnce({ ...llmResp([{ type: 'text', text: 'Still not ready.' }], 'end_turn'), content: 'Still not ready.' });
+
+    const result = await runFixFailedQuestions({ question_id: 'q1' });
+    expect(result.status).toBe('success');
+    const toolSteps = persistStepMock.mock.calls
+      .map((c) => ((c as unknown[])[0] as { tool?: { name: string; error: string | null } }))
+      .filter((s) => s.tool);
+    expect(toolSteps.map((s) => s.tool!.name)).toEqual(['read_failed_question', 're_verify', 'mark_unfixable']);
+    // The re_verify step recorded the abstain as a tool error before mark_unfixable ran.
+    expect(toolSteps.find((s) => s.tool!.name === 're_verify')!.tool!.error).toMatch(/abstain/i);
+    expect(toolSteps.map((s) => s.tool!.name)).not.toContain('regenerate_question');
+  });
+
+  it('chapter_not_ready retry: gate cleared but verifier disagreed (verified=false, no throw) → routes to regenerate_question, not mark_unfixable', async () => {
+    // Distinct from the two tests above: here re_verify's underlying
+    // grounded-answer call SUCCEEDS (grounded=true — the coverage gate has
+    // cleared) but the verifier disagrees with the claimed answer, so
+    // re_verify returns (does not throw) with verified=false. That is a
+    // content disagreement, not a readiness problem, and must be routed
+    // through the same regenerate_question → re_verify → commit_fix recovery
+    // path every other content-issue reason uses — never mark_unfixable.
+    const Q1NotReady = { ...Q1, verifier_failure_reason: 'abstain:chapter_not_ready' };
+    fromMock.mockImplementation((t: string) => {
+      if (t === 'question_bank') {
+        return {
+          select: () => ({ eq: () => ({ single: async () => ({ data: Q1NotReady, error: null }) }) }),
+          update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+        };
+      }
+      if (t === 'question_bank_fix_history') return mockHistoryInsert();
+      throw new Error('unexpected ' + t);
+    });
+
+    const originalCandidate = {
+      question: Q1.question_text,
+      options: Q1.options,
+      correct_answer_index: Q1.correct_answer_index,
+      explanation: Q1.explanation,
+    };
+
+    callGroundedAnswerMock
+      // re_verify on the original, unchanged candidate: gate clears (grounded:true)
+      // but the verifier disagrees with the claimed index.
+      .mockResolvedValueOnce(groundedSuccess(JSON.stringify({
+        verified: false, correct_option_index: 1, supporting_chunk_ids: [], reason: 'verifier thinks index 1',
+      })))
+      // regenerate_question: fresh candidate from NCERT chunks.
+      .mockResolvedValueOnce(groundedSuccess(JSON.stringify({
+        question_text: FIXED.question, options: FIXED.options,
+        correct_answer_index: FIXED.correct_answer_index, explanation: FIXED.explanation,
+      })))
+      // re_verify on the regenerated candidate: passes.
+      .mockResolvedValueOnce(groundedSuccess(JSON.stringify({
+        verified: true, correct_option_index: FIXED.correct_answer_index, supporting_chunk_ids: [], reason: 'OK',
+      })));
+
+    callClaudeMock
+      .mockResolvedValueOnce(llmResp([tu('read_failed_question', { question_id: 'q1' })]))
+      .mockResolvedValueOnce(llmResp([tu('re_verify', { question_id: 'q1', candidate: originalCandidate })]))
+      .mockResolvedValueOnce(llmResp([tu('regenerate_question', { question_id: 'q1', fix_strategy: 'index_correction', hint: '1' })]))
+      .mockResolvedValueOnce(llmResp([tu('re_verify', { question_id: 'q1', candidate: FIXED })]))
+      .mockResolvedValueOnce(llmResp([tu('commit_fix', { question_id: 'q1', fixed_question: FIXED, fix_strategy: 'index_correction' })]))
+      .mockResolvedValueOnce({ ...llmResp([{ type: 'text', text: 'Fixed after disagreement.' }], 'end_turn'), content: 'Fixed after disagreement.' });
+
+    const result = await runFixFailedQuestions({ question_id: 'q1' });
+    expect(result.status).toBe('success');
+    const toolSteps = persistStepMock.mock.calls
+      .map((c) => ((c as unknown[])[0] as { tool?: { name: string; error: string | null } }))
+      .filter((s) => s.tool);
+    expect(toolSteps.map((s) => s.tool!.name)).toEqual([
+      'read_failed_question', 're_verify', 'regenerate_question', 're_verify', 'commit_fix',
+    ]);
+    // The first re_verify call did not throw (grounded=true, verifier just disagreed) — no tool error recorded.
+    expect(toolSteps.find((s) => s.tool!.name === 're_verify')!.tool!.error).toBeNull();
+    expect(toolSteps.map((s) => s.tool!.name)).not.toContain('mark_unfixable');
   });
 
   it('full_regen with one retry: read → regen → re_verify(fail) → regen → re_verify(pass) → commit', async () => {

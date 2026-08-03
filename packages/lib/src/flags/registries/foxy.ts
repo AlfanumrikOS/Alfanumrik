@@ -262,7 +262,7 @@ export const MODEL_GATEWAY_FLAGS = {
  * OpenAI-primary rollout flag (2026-08-03) — percentage-based rollback lever
  * added ON TOP OF the already-shipped, unconditional 2026-08-02 OpenAI-primary
  * provider swap (MODEL_FALLBACK_ORDER / LEGACY_FALLBACK_ORDER, CEO-approved,
- * REG-332). That swap flipped 100% of traffic to OpenAI-primary at deploy
+ * REG-334). That swap flipped 100% of traffic to OpenAI-primary at deploy
  * time with no ramp; this flag lets ops dial a CONTROLLED, deterministic
  * percentage of traffic back to the reconstructed Claude-primary order
  * (CLAUDE_PRIMARY_FALLBACK_ORDER / packages/lib/src/ai/gateway/rollout.ts)

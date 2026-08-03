@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { supabase } from '@alfanumrik/lib/supabase';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
+import { useFeatureFlags } from '@alfanumrik/lib/swr';
 
 // Mobile-first responsive shell (2026-05-19, Phase 2 — followup #1 of PR #867).
 // Wraps the existing Foxy chat chrome in a CSS-Grid shell with safe-area-inset
@@ -1303,6 +1304,16 @@ function FoxyExperience() {
   const studyArtifacts = useStudyArtifacts();
   const { open: openStudyArtifact } = studyArtifacts;
 
+  // Wave B gap screen 10 "Snap a doubt" (ff_foxy_snap_v1) — navigation-only
+  // entry point into the already-built /foxy/snap route. This flag read does
+  // NOT touch that route's camera/OCR logic (explicitly out of scope per the
+  // shipping commit); it only gates whether the toolbar pill is visible.
+  const { data: navFlags } = useFeatureFlags();
+  const showSnapTool = navFlags?.ff_foxy_snap_v1 === true;
+  const handleOpenSnap = useCallback(() => {
+    router.push('/foxy/snap');
+  }, [router]);
+
   // The two per-surface chapter affordances, named once so that each
   // <StudyToolsBar> mount and `openArtifact`'s no-chapter fallback below share a
   // single definition and can never drift apart.
@@ -1638,10 +1649,12 @@ function FoxyExperience() {
           isHi={isHi}
           showDiagram={genAiContentFlags.diagram}
           showLesson={genAiContentFlags.lesson}
+          showSnap={showSnapTool}
           hasChapter={!!activeTopic}
           accentColor={cfg.color}
           onDiagram={() => openArtifact('diagram', openLegacyChapterPicker)}
           onLesson={() => openArtifact('lesson', openLegacyChapterPicker)}
+          onSnap={handleOpenSnap}
           onNeedChapter={openLegacyChapterPicker}
         />
 
@@ -1781,7 +1794,7 @@ function FoxyExperience() {
           unreachable whenever ff_foxy_os_v1 is ON. Rendered ONLY when at least
           one content flag is ON — otherwise this whole strip is absent and the
           rendered DOM is byte-identical to today. */}
-      {(genAiContentFlags.diagram || genAiContentFlags.lesson) && (
+      {(genAiContentFlags.diagram || genAiContentFlags.lesson || showSnapTool) && (
         <div
           className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto"
           style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}
@@ -1790,10 +1803,12 @@ function FoxyExperience() {
             isHi={isHi}
             showDiagram={genAiContentFlags.diagram}
             showLesson={genAiContentFlags.lesson}
+            showSnap={showSnapTool}
             hasChapter={!!activeTopic}
             accentColor={cfg.color}
             onDiagram={() => openArtifact('diagram', openFoxyOsChapterPicker)}
             onLesson={() => openArtifact('lesson', openFoxyOsChapterPicker)}
+            onSnap={handleOpenSnap}
             onNeedChapter={openFoxyOsChapterPicker}
           />
         </div>

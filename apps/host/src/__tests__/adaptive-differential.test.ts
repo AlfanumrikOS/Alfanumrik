@@ -536,6 +536,10 @@ function makeFakeClient(masteryRows: unknown[]): { client: AdaptiveClient; log: 
           entry.filters[`${col}__not_${op}`] = val;
           return builder;
         },
+        is(col: string, val: unknown) {
+          entry.filters[`${col}__is`] = val;
+          return builder;
+        },
         order() {
           return builder;
         },

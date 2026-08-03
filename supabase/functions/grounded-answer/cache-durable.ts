@@ -40,7 +40,7 @@
 import type { GroundedResponse } from './types.ts';
 import { tuplesMatch, type CacheTuple } from './cache-redis.ts';
 // Percentage-rollout cache-order fix (2026-08-03, assessment finding,
-// REG-333 follow-up) — see gen-ctx.ts's ModelOrder /
+// REG-335 follow-up) — see gen-ctx.ts's ModelOrder /
 // cachedResponseMatchesModelOrder docs.
 import { cachedResponseMatchesModelOrder, type ModelOrder } from './gen-ctx.ts';
 
@@ -99,7 +99,7 @@ export async function getDurableSolution(
     }
     if (payload.response.grounded !== true) return null;
     if (!cachedResponseMatchesModelOrder(payload.response, expectedModelOrder)) {
-      // REG-333 follow-up: redundant backstop — see cache-redis.ts's
+      // REG-335 follow-up: redundant backstop — see cache-redis.ts's
       // getFromRedisL2 for the identical pattern + gen-ctx.ts's
       // cachedResponseMatchesModelOrder doc.
       console.warn('cache_l3_model_order_mismatch', {

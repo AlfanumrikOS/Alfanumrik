@@ -18,7 +18,9 @@
 //     the current request's tuple. Any mismatch is a miss, never served.
 //   - Per-caller TTLs: foxy 20 min, ncert-solver 24 h.
 //   - Percentage-rollout cache-order fix (2026-08-03, assessment finding,
-//     REG-333 follow-up): getFromRedisL2's THIRD, independent defense-in-depth
+//     REG-335 follow-up — renumbered from REG-333 during the origin/main
+//     merge; see .claude/regression/00-header.md's collision note):
+//     getFromRedisL2's THIRD, independent defense-in-depth
 //     check — a stored response whose recorded meta.model_order disagrees
 //     with the caller's currently-expected order is a miss, never served,
 //     even when the tuple/key both matched. See gen-ctx.ts's
@@ -355,7 +357,7 @@ Deno.test('getFromRedisL2 rejects a gen_ctx_hash mismatch — the v1 mode-collis
   }
 });
 
-// ─── Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up) ────
+// ─── Percentage-rollout cache-order fix (2026-08-03, REG-335 follow-up) ────
 
 Deno.test('getFromRedisL2 rejects a model_order mismatch even when the tuple/key both match — defense-in-depth backstop', async () => {
   const fakeHost = 'http://fake-upstash-model-order-mismatch-test.example';

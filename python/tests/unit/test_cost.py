@@ -11,7 +11,9 @@ def test_pricing_has_all_known_models():
     """PRICING must cover the 4 models referenced in router constants.
 
     Sonnet id updated 2026-08-02 (Sonnet model-ID drift companion fix to the
-    OpenAI-primary provider swap, REG-332): the stale
+    OpenAI-primary provider swap, REG-334 [renumbered 2026-08-03 from REG-332
+    during the origin/main merge — see .claude/regression/00-header.md's
+    collision note]): the stale
     'claude-sonnet-4-6-20251022' id was never a real Anthropic model; PRICING's
     key is now 'claude-sonnet-4-20250514', matching registry.ts
     (ANTHROPIC_SONNET_ID), config-model-name-identity.test.ts, and

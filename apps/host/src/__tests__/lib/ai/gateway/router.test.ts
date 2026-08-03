@@ -42,7 +42,9 @@ describe('Model Gateway router — policy ordering', () => {
   });
 
   it('default chain is OpenAI-primary post 2026-08 cost directive, Claude retained as fallback', () => {
-    // Regression pin (REG-332): the 2026-08-02 CEO-directed cost swap flipped
+    // Regression pin (REG-334, renumbered 2026-08-03 from REG-332 during the
+    // origin/main merge — see .claude/regression/00-header.md's collision
+    // note): the 2026-08-02 CEO-directed cost swap flipped
     // MODEL_FALLBACK_ORDER / LEGACY_FALLBACK_ORDER from Anthropic-primary to
     // OpenAI-first, Anthropic-second, for every preference key (Anthropic's
     // per-token cost does not scale with per-student revenue at current

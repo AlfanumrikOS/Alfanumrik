@@ -374,7 +374,7 @@ async def _write_grader_telemetry(
                     # check; get a final live confirmation at the next
                     # review. Also closes the SAME drift bug flagged for
                     # this file in .claude/regression/02-foxy-ai.md's
-                    # REG-332 "Known gap" note (this file was not one of the
+                    # REG-334 "Known gap" note (this file was not one of the
                     # 4 files the ai-engineer follow-up task named, but the
                     # regression catalog independently corroborated it as a
                     # 5th still-stale instance of the same bug).

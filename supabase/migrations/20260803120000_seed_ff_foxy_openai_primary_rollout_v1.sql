@@ -1,7 +1,7 @@
 -- Migration: 20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql
 -- Purpose: Seed the feature flag `ff_foxy_openai_primary_rollout_v1` (percentage-
 --          based rollback lever for the 2026-08-02 OpenAI-primary provider swap,
---          REG-332, commit 5e6ffa9f) so the row EXISTS in public.feature_flags
+--          REG-334, commit 5e6ffa9f) so the row EXISTS in public.feature_flags
 --          and is auditable + flippable from the super-admin console.
 --          Default OFF / 0%.
 --
@@ -49,7 +49,7 @@ BEGIN
     )
     VALUES (
       'ff_foxy_openai_primary_rollout_v1', false, 0,
-      'Percentage-based rollback lever for the 2026-08-02 OpenAI-primary provider swap (REG-332, commit 5e6ffa9f). See migration header for full semantics. Default OFF; CEO/orchestrator decides the ramp schedule after this ships.',
+      'Percentage-based rollback lever for the 2026-08-02 OpenAI-primary provider swap (REG-334, commit 5e6ffa9f). See migration header for full semantics. Default OFF; CEO/orchestrator decides the ramp schedule after this ships.',
       NULL, NULL, NULL, now(), now()
     )
     ON CONFLICT (flag_name) DO NOTHING;

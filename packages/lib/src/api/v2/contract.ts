@@ -982,6 +982,106 @@ registry.registerPath({
   },
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// Wave B — student-frontend exam schedule.
+//
+// A thin route, flag-gated (404 when ff_exam_schedule_v1 is off). No
+// scoring/XP/mastery math in it (P1-P6 owned elsewhere).
+//
+// The "placement check" sibling that originally shipped alongside this
+// (GET /v2/placement, POST /v2/placement/answer, ff_placement_v1) was
+// removed 2026-08-02: assessment determined it duplicated the already-live,
+// more rigorous diagnostic system (see packages/lib/src/diagnostic/,
+// apps/host/src/app/api/diagnostic/). Its selector/hook/component and this
+// contract's PlacementQuestionOption/PlacementQuestion/PlacementResponse/
+// PlacementAnswerRequest/PlacementAnswerResult schemas were deleted together
+// as one orphaned surface. The underlying learning_events widening +
+// idempotency index (migration 20260802090000) and the ff_placement_v1 flag
+// row (seeded by migration 20260802090200_seed_ff_wave_b_frontend_flags.sql,
+// alongside the still-live ff_exam_schedule_v1) were left in place (inert,
+// no live writer) rather than reverted — a schema/migration decision, not
+// this file's.
+// ════════════════════════════════════════════════════════════════════════
+
+// ── E) EXAM SCHEDULE ─────────────────────────────────────────────────────────
+
+/**
+ * Student-facing exam-readiness band. Mirrors ExamReadinessBand in
+ * packages/lib/src/exams/mastery-band.ts — the single canonical relabel of
+ * concept_mastery.mastery_level for this framing. Do not add a 5th value
+ * here without adding it there first.
+ */
+export const ExamReadinessBandSchema = z
+  .enum(['exam_ready', 'getting_it', 'shaky', 'new'])
+  .openapi('ExamReadinessBand');
+
+/** One chapter/topic scoped to an exam-schedule entry. */
+export const ExamScheduleEntryTopic = z
+  .object({
+    id: zUuid,
+    label: z.string().openapi({ example: 'Number Systems' }),
+    band: ExamReadinessBandSchema,
+  })
+  .openapi('ExamScheduleEntryTopic');
+
+/**
+ * One exam-schedule entry. `source` marks which of the three precedence
+ * tiers (school > teacher > student) produced it; only 'student' is
+ * populated today — see the route header (tier 2 binding is a fast-follow).
+ */
+export const ExamScheduleEntry = z
+  .object({
+    id: z.string().openapi({ example: '550e8400-e29b-41d4-a716-446655440000' }),
+    source: z.enum(['school', 'teacher', 'student']),
+    title: z.string().openapi({ example: 'Half-Yearly Exam' }),
+    startsOn: z.string().openapi({ example: '2026-09-01' }),
+    endsOn: z.string().openapi({ example: '2026-09-10' }),
+    setBy: z.string().optional(),
+    setByInitials: z.string().optional(),
+    chapters: z.array(ExamScheduleEntryTopic).optional(),
+    /**
+     * True on every tier-3 (student) entry today. NOTE: this describes the
+     * entry's conceptual ownership only — there is no create/edit/delete
+     * route for student_exam_entries yet (fast-follow). A client MUST NOT
+     * assume a write endpoint exists just because `editable` is true.
+     */
+    editable: z.boolean().optional(),
+  })
+  .openapi('ExamScheduleEntry');
+
+/** Response for GET /v2/exam-schedule. */
+export const ExamScheduleResponse = z
+  .object({
+    schemaVersion: z.literal(1),
+    entries: z.array(ExamScheduleEntry),
+  })
+  .openapi('ExamScheduleResponse');
+
+registry.registerPath({
+  method: 'get',
+  path: '/v2/exam-schedule',
+  operationId: 'getExamSchedule',
+  summary: 'Three-tier exam schedule for the authenticated student',
+  description:
+    'Returns the school/teacher/student exam-schedule entries in school > teacher > student precedence order. Tier 2 (teacher-set, dated + chapter-scoped) is not bound yet — a fast-follow; only tier 3 (student_exam_entries) is populated today. Chapter mastery bands come from resolveExamReadinessBand(), a relabel of the canonical concept_mastery.mastery_level. Requires study_plan.view. 404 when ff_exam_schedule_v1 is off.',
+  tags: ['exam-schedule'],
+  security: SECURITY,
+  responses: {
+    200: {
+      description: 'The resolved exam schedule (which tiers are present depends on what is bound / populated).',
+      content: { 'application/json': { schema: ExamScheduleResponse } },
+    },
+    404: {
+      description: 'Feature flag off, or the caller has no student profile.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+    500: {
+      description: 'Unexpected server error.',
+      content: { 'application/json': { schema: ErrorResponse } },
+    },
+  },
+});
+
 // ── Inferred TS types (convenient for route handlers to import) ─────────────
 export type TErrorResponse = z.infer<typeof ErrorResponse>;
 export type TSuccessAck = z.infer<typeof SuccessAck>;
@@ -1006,3 +1106,8 @@ export type TConceptResponse = z.infer<typeof ConceptResponse>;
 export type TParentChild = z.infer<typeof ParentChild>;
 export type TParentChildrenResponse = z.infer<typeof ParentChildrenResponse>;
 export type TParentGlanceResponse = z.infer<typeof ParentGlanceResponse>;
+
+// Wave B inferred types.
+export type TExamReadinessBand = z.infer<typeof ExamReadinessBandSchema>;
+export type TExamScheduleEntry = z.infer<typeof ExamScheduleEntry>;
+export type TExamScheduleResponse = z.infer<typeof ExamScheduleResponse>;

@@ -14,7 +14,7 @@ export type Mode = 'strict' | 'soft';
 
 /**
  * Percentage-rollout mechanism (2026-08-03, cache-order-blindness fix —
- * assessment finding, REG-333 follow-up). Which model fallback table a
+ * assessment finding, REG-335 follow-up). Which model fallback table a
  * request/response was resolved under:
  *   - 'openai_primary' — MODEL_FALLBACK_ORDER, today's shipped, 100%-live
  *     default (ff_foxy_openai_primary_rollout_v1 disabled, at 0%, or the
@@ -165,7 +165,7 @@ export type GroundedResponse =
         latency_ms: number;
         /**
          * Percentage-rollout cache-order fix (2026-08-03, assessment
-         * finding, REG-333 follow-up): the ModelOrder this response was
+         * finding, REG-335 follow-up): the ModelOrder this response was
          * resolved+generated under, stamped ONLY for cache-eligible
          * requests (pipeline.ts's finalizeGrounded — see gen-ctx.ts's
          * ModelOrder doc). Used exclusively as an independent, exact-match

@@ -37,8 +37,10 @@ def test_under_ceiling_does_not_raise():
 
 def test_over_ceiling_raises_cost_cap_exceeded():
     # Model id updated 2026-08-02 (Sonnet model-ID drift companion fix to the
-    # OpenAI-primary provider swap, REG-332 — see test_cost.py for the full
-    # rationale): the stale id has no PRICING entry, which would make
+    # OpenAI-primary provider swap, REG-334 [renumbered 2026-08-03 from
+    # REG-332 during the origin/main merge — see
+    # .claude/regression/00-header.md's collision note] — see test_cost.py
+    # for the full rationale): the stale id has no PRICING entry, which would make
     # estimate_inr silently return 0.0 and never trip the ceiling — defeating
     # this test's whole point.
     with pytest.raises(MolError) as exc:

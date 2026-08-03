@@ -1,25 +1,30 @@
 'use client';
 
 /**
- * StudyToolsBar — the two flag-gated GenAI affordances in the Foxy controls
- * toolbar, sitting alongside the existing subject pills / chapter dropdown /
- * mode pills:
+ * StudyToolsBar — the flag-gated GenAI + Wave-B affordances in the Foxy
+ * controls toolbar, sitting alongside the existing subject pills / chapter
+ * dropdown / mode pills:
  *
  *   🗺️  "Diagram" / "आरेख"       → ff_content_generation_v1
  *   📔  "Lesson notes" / "पाठ नोट्स" → ff_lesson_generation_v1
+ *   📸  "Snap a doubt" / "फोटो से पूछो" → ff_foxy_snap_v1 (navigation-only link
+ *       to /foxy/snap — screen 10; this pill does NOT touch camera/OCR logic,
+ *       it is only the discoverable entry point into that route)
  *
  * Flag gating is the CALLER's job (page.tsx passes `showDiagram` / `showLesson`
- * straight from `useGenAiContentFlags`). When BOTH are false this component
- * renders `null` — no wrapper, no divider, no whitespace — so the toolbar is
- * byte-identical to today on the OFF path.
+ * / `showSnap` straight from their respective flag reads). When ALL THREE are
+ * false this component renders `null` — no wrapper, no divider, no whitespace
+ * — so the toolbar is byte-identical to today on the OFF path.
  *
  * The buttons reuse the exact `foxy-pill` visual language of the surrounding
  * toolbar controls (same radius, weight, sizing, subject-tinted active state)
  * so the surface reads as native rather than bolted on.
  *
- * No chapter selected → the button does not dead-end: it calls
- * `onNeedChapter()` so the page can open the chapter picker, and it renders in
- * a muted state with an explanatory bilingual title.
+ * No chapter selected → the diagram/lesson buttons do not dead-end: they call
+ * `onNeedChapter()` so the page can open the chapter picker, and render in a
+ * muted state with an explanatory bilingual title. "Snap a doubt" needs no
+ * chapter (it does its own topic matching), so it is never muted by
+ * `hasChapter`.
  */
 
 export interface StudyToolsBarProps {
@@ -28,12 +33,16 @@ export interface StudyToolsBarProps {
   showDiagram: boolean;
   /** ff_lesson_generation_v1 resolved ON. */
   showLesson: boolean;
-  /** True when a chapter is selected — both affordances need one. */
+  /** ff_foxy_snap_v1 resolved ON — shows the "Snap a doubt" navigation pill. */
+  showSnap?: boolean;
+  /** True when a chapter is selected — the diagram/lesson affordances need one. */
   hasChapter: boolean;
   /** Active subject accent colour (same value the toolbar pills use). */
   accentColor: string;
   onDiagram: () => void;
   onLesson: () => void;
+  /** Navigates to /foxy/snap. Does not require a chapter. */
+  onSnap?: () => void;
   /** Called instead of onDiagram/onLesson when no chapter is selected. */
   onNeedChapter: () => void;
 }
@@ -42,14 +51,16 @@ export function StudyToolsBar({
   isHi,
   showDiagram,
   showLesson,
+  showSnap,
   hasChapter,
   accentColor,
   onDiagram,
   onLesson,
+  onSnap,
   onNeedChapter,
 }: StudyToolsBarProps) {
   // OFF path: render literally nothing.
-  if (!showDiagram && !showLesson) return null;
+  if (!showDiagram && !showLesson && !showSnap) return null;
 
   const needChapterHint = isHi
     ? 'पहले एक अध्याय चुनो'
@@ -114,6 +125,31 @@ export function StudyToolsBar({
             : 'Write NCERT-grounded notes for this chapter',
           onClick: onLesson,
         })}
+      {/* Navigation-only entry point into /foxy/snap (ff_foxy_snap_v1). Never
+          muted by `hasChapter` — the snap screen does its own topic matching
+          and needs no chapter pre-selected. */}
+      {showSnap && onSnap && (
+        <button
+          key="snap"
+          type="button"
+          data-testid="foxy-tool-snap"
+          onClick={onSnap}
+          title={isHi ? 'फोटो खींचकर सवाल पूछो' : 'Snap a photo to ask a doubt'}
+          aria-label={isHi ? 'फोटो खींचकर सवाल पूछो' : 'Snap a photo to ask a doubt'}
+          className="foxy-pill shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-[0.97]"
+          style={{
+            background: 'var(--surface-2)',
+            border: '1.5px solid var(--border)',
+            color: accentColor,
+            minHeight: 36,
+          }}
+        >
+          <span className="text-sm" aria-hidden="true">
+            📸
+          </span>
+          <span className="whitespace-nowrap">{isHi ? 'फोटो से पूछो' : 'Snap a doubt'}</span>
+        </button>
+      )}
     </div>
   );
 }

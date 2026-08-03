@@ -1,7 +1,7 @@
 /**
  * Model Gateway — Percentage rollout for the OpenAI-primary swap (2026-08-03)
  *
- * The 2026-08-02 OpenAI-primary provider swap (REG-332, CEO-approved) shipped
+ * The 2026-08-02 OpenAI-primary provider swap (REG-334, CEO-approved) shipped
  * as a flat, unconditional 100%-of-traffic switch: LEGACY_FALLBACK_ORDER (and
  * its Deno mirror, MODEL_FALLBACK_ORDER) now put OpenAI first for every
  * preference, with no gradual ramp. This module adds a deterministic,

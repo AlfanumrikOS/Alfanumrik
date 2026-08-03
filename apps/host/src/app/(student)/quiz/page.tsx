@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { calculateScorePercent } from '@alfanumrik/lib/scoring';
 import { track } from '@alfanumrik/lib/analytics';
-import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession } from '@alfanumrik/lib/supabase';
-import { invalidateDashboard } from '@alfanumrik/lib/swr';
+import { submitQuizResults, saveCognitiveMetrics, saveQuestionResponses, supabase, updateChapterProgress, startQuizSession, checkQuizAnswer, type QuizAnswerCheck } from '@alfanumrik/lib/supabase';
+import { invalidateDashboard, useFeatureFlags } from '@alfanumrik/lib/swr';
+import { useNextTask } from '@alfanumrik/lib/quiz/v2/use-next-task';
 import { assembleQuiz } from '@alfanumrik/lib/quiz-assembler';
 import { XP_RULES } from '@alfanumrik/lib/xp-config';
 import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
@@ -22,6 +23,29 @@ import MathRenderer from '@alfanumrik/ui/math/MathRenderer';
 
 // Lazy-load QuizResults — only shown after quiz completion (results screen)
 const QuizResults = dynamic(() => import('@alfanumrik/ui/quiz/QuizResults'), {
+  ssr: false,
+  loading: () => <LoadingFoxy />,
+});
+// Screen 08 "Result" (Wave B, `ff_quiz_result_v2`) — additive presentational
+// alternative to QuizResults. Flag OFF by default (architect seeds the row
+// separately); the legacy QuizResults path below is completely untouched
+// when the flag is off or still resolving. See
+// packages/ui/src/quiz/v2/ResultSummary.tsx for the full design rationale,
+// including the deliberate mastery-band vocabulary choice flagged for
+// assessment's review.
+const ResultSummary = dynamic(() => import('@alfanumrik/ui/quiz/v2/ResultSummary'), {
+  ssr: false,
+  loading: () => <LoadingFoxy />,
+});
+// Screen 07 "Practice" (Wave B3, `ff_quiz_v2`) — additive presentational
+// alternative for the MCQ-in-progress screen, showing per-question
+// correctness immediately via check_quiz_answer() instead of deferring to
+// the results screen. Flag OFF by default; the legacy per-question JSX
+// inside the quiz screen render branch below is completely untouched when
+// the flag is off, the mode isn't 'practice', or the question isn't MCQ.
+// See packages/ui/src/quiz/v2/PracticeRunner.tsx for the full design
+// rationale, including the "no retry after reveal" enforcement boundary.
+const PracticeRunner = dynamic(() => import('@alfanumrik/ui/quiz/v2/PracticeRunner'), {
   ssr: false,
   loading: () => <LoadingFoxy />,
 });
@@ -199,6 +223,21 @@ export default function QuizPage() {
   const router = useRouter();
   const { unlocked: allowedSubjects } = useAllowedSubjects();
 
+  // Screen 08 "Result" (Wave B, `ff_quiz_result_v2`) — additive flag branch.
+  // OFF by default; when off (or still resolving) the legacy QuizResults
+  // path below is rendered byte-identical to today.
+  const { data: quizV2Flags } = useFeatureFlags();
+  const resultV2On = quizV2Flags?.ff_quiz_result_v2 === true;
+  // Screen 07 "Practice" (Wave B3, `ff_quiz_v2`) — additive flag branch.
+  // OFF by default; when off (or mode isn't 'practice', or the current
+  // question isn't MCQ) the legacy per-question JSX is rendered
+  // byte-identical to today.
+  const practiceV2On = quizV2Flags?.ff_quiz_v2 === true;
+  // "Next task" CTA for the v2 Result screen — reuses the existing
+  // Today-queue mechanism (fails soft to /today). Cheap to resolve
+  // unconditionally; only rendered when resultV2On.
+  const nextTask = useNextTask(student?.id ?? null);
+
   // Setup state
   const [screen, setScreen] = useState<Screen>('select');
   const [quizMode, setQuizMode] = useState<QuizMode>('cognitive');
@@ -253,6 +292,23 @@ export default function QuizPage() {
   const [timer, setTimer] = useState(0);
   const [questionTimer, setQuestionTimer] = useState(0);
   const [changedAnswersCount, setChangedAnswersCount] = useState(0);
+  // Screen 07 "Practice" (`ff_quiz_v2`) — immediate per-question feedback via
+  // check_quiz_answer() (migration 20260802130000). Keyed by question_id.
+  // 'unavailable' = confirmed but no immediate verdict could be obtained
+  // (no server session for this question, or the RPC returned null —
+  // offline/failure). See confirmAnswerPracticeV2 below for the full
+  // offline-degrade design rationale.
+  const [answerChecks, setAnswerChecks] = useState<Record<string, QuizAnswerCheck | 'unavailable'>>({});
+  const [checkingAnswer, setCheckingAnswer] = useState(false);
+  // PRIMARY "no retry after reveal" enforcement: a synchronous, ref-based
+  // guard checked BEFORE any state update or RPC call in
+  // confirmAnswerPracticeV2, so even two click/tap events that both fire
+  // before React re-renders can only ever pass through once per question
+  // id. This is the frontend state-machine responsibility the
+  // check_quiz_answer migration's header comment explicitly calls out as
+  // the primary enforcement point — the RPC's own replay-lock is
+  // defense-in-depth only, not a substitute for this guard.
+  const confirmedPracticeQuestionIdsRef = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [noQuestionsError, setNoQuestionsError] = useState(false);
   const [noQuestionsMessage, setNoQuestionsMessage] = useState('');
@@ -712,6 +768,10 @@ export default function QuizPage() {
       setChangedAnswersCount(0);
       setShowExplanation(false);
       setTimer(0);
+      // Screen 07 "Practice" v2 state — fresh quiz, fresh check-answer state.
+      setAnswerChecks({});
+      setCheckingAnswer(false);
+      confirmedPracticeQuestionIdsRef.current = new Set();
       setCogLoad(initialCognitiveLoad());
       setReflection(null);
       // B2C funnel: quiz-start activation event. Fires exactly once per
@@ -944,6 +1004,88 @@ export default function QuizPage() {
       const bloom = (q.bloom_level || 'remember') as BloomLevel;
       const prompt = getReflectionPrompt(isCorrect, newCogLoad.consecutiveErrors, newCogLoad.consecutiveCorrect, bloom);
       setReflection(prompt);
+    }
+  };
+
+  /**
+   * Screen "07 Practice" (`ff_quiz_v2`) — wraps the EXISTING confirmAnswer()
+   * completely unchanged (same responses[] push, feedback state, cognitive
+   * load, reflection prompts, showExplanation — P1/P2/P3/P4 untouched) and
+   * additionally asks check_quiz_answer() to reveal THIS ONE question's
+   * correctness immediately, exactly once.
+   *
+   * Offline / RPC-failure degrade — DESIGN DECISION (frontend call, flagged
+   * for review in the task report): when checkQuizAnswer() returns null
+   * (network error, offline, or any RPC failure), this does NOT enqueue a
+   * retry via the pending_writes offline queue
+   * (packages/lib/src/offline/store.ts, used by ExamRunner's autosave).
+   * It simply marks the question 'unavailable' and lets the student
+   * continue — the real, authoritative grading still happens exactly once,
+   * at final submit, via the UNCHANGED submitQuizResults() call below.
+   * Reasoning:
+   *   1. check_quiz_answer() is REPLAY-LOCKED server-side: the FIRST call
+   *      that ever reaches it for a (session_id, question_id) pair wins
+   *      permanently (see migration 20260802130000's header). A
+   *      queued-and-later-replayed offline write is a bad fit for that
+   *      semantics — if the student's first attempt was silently queued
+   *      while offline and they kept going, a delayed replay firing
+   *      minutes later (possibly after they've mentally moved on) risks
+   *      confirming a stale/mismatched guess for a feature whose entire
+   *      value proposition is IMMEDIATE feedback. A stale reveal is worse
+   *      than no reveal.
+   *   2. It is safe to skip entirely: this RPC is a pure side-channel
+   *      (durability + display), never a scoring input (per the migration's
+   *      explicit non-goals). The final submit still grades and records
+   *      the session correctly with zero dependency on whether this call
+   *      ever succeeded.
+   *   3. It keeps "no retry after reveal" simple: exactly one attempt, one
+   *      outcome (a verdict or 'unavailable'), never a queued retry that
+   *      could resurface a stale verdict for a question the student has
+   *      already moved past.
+   * A richer "sync when back online" UX is a legitimate future ask, but it
+   * needs its own design pass with assessment/architect on the
+   * replay-lock interaction — not bolted on here under time pressure.
+   */
+  const confirmAnswerPracticeV2 = async () => {
+    if (selectedOption === null) return;
+    const q = questions[currentIdx];
+    if (!q) return;
+    // PRIMARY guard — see doc comment above. Synchronous; runs before any
+    // state update or await, so a second invocation (double-tap, or a
+    // second click queued before re-render) is a pure no-op.
+    if (confirmedPracticeQuestionIdsRef.current.has(q.id)) return;
+    confirmedPracticeQuestionIdsRef.current.add(q.id);
+
+    const selectedAtConfirm = selectedOption;
+    const timeAtConfirm = questionTimer;
+
+    // Existing, unchanged confirm flow: pushes to responses[], drives
+    // feedback/cognitive-load/reflection state, sets showExplanation(true).
+    confirmAnswer();
+
+    if (serverSessionId === null || !isQuestionMCQ(q)) {
+      // No server session to ask (legacy fallback path) — do NOT
+      // reintroduce client-side correct_answer_index comparison for this
+      // flag branch; graceful degrade to the neutral "checked at end" state.
+      setAnswerChecks(prev => ({ ...prev, [q.id]: 'unavailable' }));
+      return;
+    }
+
+    setCheckingAnswer(true);
+    try {
+      const result = await checkQuizAnswer(serverSessionId, q.id, selectedAtConfirm, timeAtConfirm);
+      setAnswerChecks(prev => ({ ...prev, [q.id]: result ?? 'unavailable' }));
+      if (result) {
+        // Upgrade the neutral "Submitted" reaction confirmAnswer() played
+        // above (it can't know correctness in server-shuffle mode) to the
+        // real reaction now that the authoritative verdict is in. Reuses
+        // the existing feedback-engine helpers — no new scoring/sound logic.
+        const fb = result.is_correct ? onCorrectAnswer(feedbackState) : onWrongAnswer(feedbackState);
+        playFeedbackSound(fb);
+        setActiveFeedback(fb);
+      }
+    } finally {
+      setCheckingAnswer(false);
     }
   };
 
@@ -1491,6 +1633,55 @@ export default function QuizPage() {
       : null;
     const isCorrect = !isV2Question && (originalPicked === q.correct_answer_index);
 
+    // Screen 07 "Practice" (Wave B3, `ff_quiz_v2`) — additive branch. Only
+    // engages for MCQ questions in practice mode; written-answer questions
+    // fall through to the legacy JSX below unchanged (they already show
+    // immediate AI-graded feedback via handleWrittenSubmit — no gap to fix
+    // there). When the flag is off, this branch never runs and the legacy
+    // return below is rendered byte-identical to today.
+    if (practiceV2On && quizMode === 'practice' && isQuestionMCQ(q)) {
+      const check = answerChecks[q.id];
+      const checkResultProp =
+        check === undefined
+          ? null
+          : check === 'unavailable'
+            ? ('unavailable' as const)
+            : {
+                isCorrect: check.is_correct,
+                correctDisplayedIndex: check.correct_displayed_index,
+                explanation: check.explanation,
+                explanationHi: check.explanation_hi,
+              };
+      return (
+        <PracticeRunner
+          isHi={isHi}
+          question={{
+            id: q.id,
+            options: opts,
+            questionText: q.question_text,
+            questionTextHi: q.question_hi,
+            chapterNumber: q.chapter_number,
+            bloomLevel: q.bloom_level,
+            hint: q.hint,
+          }}
+          questionNumber={currentIdx + 1}
+          totalQuestions={questions.length}
+          selectedOption={selectedOption}
+          isAnswered={showExplanation}
+          checking={checkingAnswer}
+          checkResult={checkResultProp}
+          subjectName={subMeta?.name}
+          subjectIcon={subMeta?.icon}
+          subjectColor={subMeta?.color}
+          hintLevel={hintLevel}
+          onSelect={selectAnswer}
+          onConfirm={confirmAnswerPracticeV2}
+          onNext={nextQuestion}
+          onRequestHint={() => setHintLevel(1)}
+        />
+      );
+    }
+
     return (
       <div className="mesh-bg min-h-dvh flex flex-col focus-screen">
         {/* Emotional feedback overlay */}
@@ -1989,6 +2180,49 @@ export default function QuizPage() {
 
   // ═══ RESULTS SCREEN ═══
   if (screen === 'results' && results) {
+    const networkErrorBanner = networkError && (
+      <div className="fixed bottom-20 left-4 right-4 bg-amber-500 text-white rounded-xl p-4 text-center z-40 shadow-lg animate-slide-up">
+        <p className="text-sm font-medium mb-2">{networkError}</p>
+        <button
+          onClick={retrySubmit}
+          disabled={loading}
+          className="px-4 py-1.5 bg-white text-amber-700 rounded-lg text-sm font-medium disabled:opacity-50"
+        >
+          {loading
+            ? (isHi ? 'भेज रहे हैं...' : 'Submitting...')
+            : (isHi ? 'पुनः प्रयास करें' : 'Retry')}
+        </button>
+      </div>
+    );
+
+    // Screen 08 v2 branch — additive alternative, gated by ff_quiz_result_v2.
+    // Consumes the EXACT same already-computed `results`/`questions`/
+    // `responses` the legacy QuizResults path below receives; no scoring/XP
+    // recomputation (P1/P2 untouched).
+    if (resultV2On) {
+      return (
+        <>
+          <ResultSummary
+            isHi={isHi}
+            results={results}
+            questions={questions}
+            responses={responses}
+            timer={timer}
+            subject={
+              selectedSubject && subMeta
+                ? { code: selectedSubject, name: subMeta.name, icon: subMeta.icon, color: subMeta.color }
+                : null
+            }
+            nextTask={{ href: nextTask.href, labelEn: nextTask.labelEn, labelHi: nextTask.labelHi }}
+            onRetry={() => { setScreen('select'); setQuestions([]); setResponses([]); setResults(null); setNetworkError(null); pendingSubmissionRef.current = null; }}
+            onAskFoxy={(href) => router.push(href)}
+            onNextTask={(href) => router.push(href)}
+          />
+          {networkErrorBanner}
+        </>
+      );
+    }
+
     return (
       <>
         <QuizResults

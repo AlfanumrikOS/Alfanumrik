@@ -3,8 +3,10 @@
 //   cd supabase/functions/grounded-answer && deno test --allow-all __tests__/model-order-cache-fix.test.ts
 //
 // End-to-end pipeline-level regression test for the percentage-rollout
-// cache-order-blindness fix (2026-08-03, assessment finding, REG-333
-// follow-up). Proves the ACTUAL production bug scenario assessment traced
+// cache-order-blindness fix (2026-08-03, assessment finding, REG-335
+// follow-up — renumbered from REG-333 during the origin/main merge; see
+// .claude/regression/00-header.md's collision note). Proves the ACTUAL
+// production bug scenario assessment traced
 // is closed: with a WARM L1+L2 cache from a caller bucketed to one model
 // order, the SAME caller after a rollout-flag bucket flip (currently
 // expecting the OTHER order) must NEVER be served the stale cross-order

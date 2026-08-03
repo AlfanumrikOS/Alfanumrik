@@ -93,7 +93,9 @@ describe('MODEL_FALLBACK_ORDER Deno ↔ TS parity (P12)', () => {
     // CEO-directed cost swap flipped this from Anthropic-primary to
     // OpenAI-primary — see registry.ts's LEGACY_FALLBACK_ORDER header and
     // router.test.ts's dedicated "OpenAI-primary post 2026-08 cost directive"
-    // regression pin (REG-332) for the companion assertion on the TS side.
+    // regression pin (REG-334, renumbered 2026-08-03 from REG-332 — see
+    // .claude/regression/00-header.md's collision note) for the companion
+    // assertion on the TS side.
     expect(deno.auto.map((t) => `${t.provider}:${t.model}`)).toEqual([
       'openai:gpt-4o-mini',
       'openai:gpt-4o',

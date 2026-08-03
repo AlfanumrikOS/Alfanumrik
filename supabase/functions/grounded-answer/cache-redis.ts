@@ -63,7 +63,7 @@ import { Redis } from 'https://esm.sh/@upstash/redis@1';
 import type { Caller, GroundedResponse } from './types.ts';
 import { normalizeQuery } from './cache.ts';
 // Percentage-rollout cache-order fix (2026-08-03, assessment finding,
-// REG-333 follow-up) — see gen-ctx.ts's ModelOrder /
+// REG-335 follow-up) — see gen-ctx.ts's ModelOrder /
 // cachedResponseMatchesModelOrder docs.
 import { cachedResponseMatchesModelOrder, type ModelOrder } from './gen-ctx.ts';
 
@@ -241,7 +241,7 @@ export async function getFromRedisL2(
     }
     if (raw.response.grounded !== true) return null;
     if (!cachedResponseMatchesModelOrder(raw.response, expectedModelOrder)) {
-      // REG-333 follow-up: redundant backstop — the gen_ctx hash (folded
+      // REG-335 follow-up: redundant backstop — the gen_ctx hash (folded
       // into `key` and `expectedTuple.gen_ctx_hash` above) already
       // structurally prevents this. See gen-ctx.ts's
       // cachedResponseMatchesModelOrder doc.

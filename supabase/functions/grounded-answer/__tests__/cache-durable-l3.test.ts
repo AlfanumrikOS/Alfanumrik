@@ -675,7 +675,7 @@ Deno.test('getDurableSolution rejects a stored tuple mismatch — treated as a m
   assertEquals(result, null, 'a mismatched stored tuple must never be served from L3');
 });
 
-// ── Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up) ──────
+// ── Percentage-rollout cache-order fix (2026-08-03, REG-335 follow-up) ──────
 // getDurableSolution's THIRD, independent defense-in-depth check — mirrors
 // cache-redis.ts's getFromRedisL2. See gen-ctx.ts's
 // cachedResponseMatchesModelOrder doc.

@@ -22,10 +22,27 @@
  *      shrank 56 → 55 the same day when the CEO approved a live production
  *      flip of ff_whatsapp_bot_v1 to is_enabled=true/rollout_percentage=100
  *      (audited via admin_flip_feature_flag) — it is no longer expected
- *      fully-OFF (still staged_rollout-protected for any further change).
+ *      fully-OFF (still staged_rollout-protected for any further change). On
+ *      2026-08-01 EXPECTED_OFF_FLAGS grew 55 → 60 with the 5 GenAI ecosystem
+ *      flags (ff_model_gateway_v1, ff_unified_memory_v1,
+ *      ff_outcome_prediction_v1, ff_lesson_generation_v1,
+ *      ff_content_generation_v1 — seed 20260801120000 companion), closing the
+ *      2026-07-24..27 GenAI generation-agent incident gap — all 5 stay
+ *      seeded OFF/0%, no same-day shrink this time. On 2026-08-03
+ *      EXPECTED_OFF_FLAGS shrank 60 → 57 when three flags were approved as
+ *      intentionally-live in governance (ff_foxy_streaming, ff_goal_aware_rag,
+ *      ff_grounded_ai_concept_engine — commit 0ca72809 / PR #1440: confirmed
+ *      real, tested, functioning features already in production with no
+ *      incident history; their PROTECTED_FLAGS entries stay, so console
+ *      changes still require typed confirmation), then grew 57 → 58 the same
+ *      day with ff_foxy_openai_primary_rollout_v1 (the Foxy OpenAI-primary
+ *      provider-swap rollback lever, REG-334/REG-335 — seeded
+ *      is_enabled=false/rollout_percentage=0 by migration 20260803120000 and
+ *      protected by 20260803120001; its CEO-approved posture stays OFF until
+ *      ops/CEO decide a ramp schedule).
  *      The watched set below is derived from EXPECTED_OFF_FLAGS directly, so
  *      this suite's length pin tracks those net changes (watched set
- *      54 → 56 → 55 → 57 → 56):
+ *      54 → 56 → 55 → 57 → 56 → 61 → 58 → 59):
  *        - any EXPECTED_OFF flag with is_enabled=true OR rollout>0 → drift;
  *        - ff_atomic_subscription_activation disabled OR missing → drift
  *          (P11 kill-switch must exist and be enabled);
@@ -34,6 +51,20 @@
  *          control surface);
  *        - absence of an EXPECTED_OFF row is NOT drift (unseeded envs);
  *        - clean state → { drift: [], count: 0 } and NO ops event / audit.
+ *
+ *      CAUTION — that length pin is the one assertion in this suite that a
+ *      CLEAN 3-way merge can silently falsify. The pin lives HERE; the list it
+ *      counts lives in packages/lib/src/flags/protected-flags.ts. Two branches
+ *      that each touch only ONE of those two files merge with no conflict and
+ *      no warning, leaving the number quietly wrong. That is exactly how the
+ *      60 → 57 shrink above (which updated the assertion but left this
+ *      narrative reading "60") and an independent +1 on another branch
+ *      combined into a stale 58-vs-59 on 2026-08-03. Re-derive, never carry
+ *      forward:
+ *          watched.length === EXPECTED_OFF_FLAGS.length + 1
+ *      (+1 = ff_atomic_subscription_activation, the only watched name that is
+ *      NOT an EXPECTED_OFF member; the two MoL shadow flags ARE members and
+ *      de-dupe away). That relation is asserted alongside the literal below.
  *
  *   3. On drift: ONE ops_events row (severity 'error') + ONE audit_logs row
  *      (action feature_flag.posture_drift_detected, actor_role 'system',
@@ -52,7 +83,7 @@
  *
  * The supabase-admin seam is a recording thenable chain (house pattern from
  * api/cron/adaptive-remediation.test.ts). EXPECTED_OFF_FLAGS is NOT mocked —
- * the route must watch the real, current 55-name list.
+ * the route must watch the real, current 58-name list.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -229,7 +260,7 @@ describe('flag-posture-canary — auth gate (fail-closed before I/O)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe('flag-posture-canary — DB query shape', () => {
-  it('reads feature_flags once, selecting state columns, .in() over the 56-name watched set (55 EXPECTED_OFF + the P11 kill-switch)', async () => {
+  it('reads feature_flags once, selecting state columns, .in() over the 59-name watched set (58 EXPECTED_OFF + the P11 kill-switch)', async () => {
     const { GET } = await loadRoute();
     await GET(req({ 'x-cron-secret': SECRET }));
 
@@ -241,15 +272,24 @@ describe('flag-posture-canary — DB query shape', () => {
     const inOp = fromCalls[0].ops.find((o) => o.op === 'in');
     expect(inOp?.args[0]).toBe('flag_name');
     const watched = inOp?.args[1] as string[];
-    // 55 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
+    // 58 EXPECTED_OFF (53 + the two 2026-07-22 Pedagogy v2 additions, minus
     // ff_adaptive_remediation_v1's 10% pilot exclusion, + ff_whatsapp_alarm_template
     // — the surviving 2026-07-30 WhatsApp bot protected flag, seed
     // 20260801100500 companion — minus ff_whatsapp_bot_v1, which left
-    // EXPECTED_OFF_FLAGS the same day via its own CEO-approved live flip)
+    // EXPECTED_OFF_FLAGS the same day via its own CEO-approved live flip —
+    // + the 5 GenAI ecosystem flags added 2026-08-01, seed 20260801120000
+    // companion, minus the 3 flags approved intentionally-live on 2026-08-03
+    // — ff_foxy_streaming, ff_goal_aware_rag, ff_grounded_ai_concept_engine —
+    // + ff_foxy_openai_primary_rollout_v1, seed 20260803120000 companion)
     // + ATOMIC; the two MoL shadow flags are already members of EXPECTED_OFF,
-    // so the de-duped set is 56.
+    // so the de-duped set is 59.
     expect(new Set(watched).size).toBe(watched.length);
-    expect(watched).toHaveLength(56);
+    expect(watched).toHaveLength(59);
+    // Belt-and-braces against the silent-merge failure mode described in the
+    // file header: pin the RELATION as well as the literal, so a future
+    // EXPECTED_OFF_FLAGS edit that forgets this file fails with a message that
+    // names the real cause instead of a bare off-by-N.
+    expect(watched).toHaveLength(EXPECTED_OFF_FLAGS.length + 1);
     for (const name of EXPECTED_OFF_FLAGS) expect(watched).toContain(name);
     expect(watched).toContain(ATOMIC);
   });
@@ -291,7 +331,10 @@ describe('flag-posture-canary — drift detection matrix', () => {
   });
 
   it('an absent EXPECTED_OFF row is NOT drift (unseeded on non-prod environments)', async () => {
-    // CLEAN_ROWS contains none of the 53 — only the kill-switch.
+    // CLEAN_ROWS contains none of the EXPECTED_OFF names — only the
+    // kill-switch. (Deliberately not restated as a literal count here: this
+    // comment carries no assertion weight and the header's "re-derive, never
+    // carry forward" rule applies to prose too — it had rotted to "53".)
     const { body } = await run(CLEAN_ROWS);
     expect(body).toEqual({ drift: [], count: 0 });
   });

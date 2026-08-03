@@ -31,6 +31,11 @@ export const MORE_ITEMS = [
   { href: '/revision', icon: '🧠', label: 'Revision Center', labelHi: 'दोहराव केंद्र', flagName: 'ff_revision_os_v1' },
   { href: '/exam-prep', icon: '🎯', label: 'Exam Sprint', labelHi: 'परीक्षा की तैयारी', requiresUpcomingExam: true },
   { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+  // Wave B gap screen 16 "Me" — flag-gated (ff_me_v2). Additive presentation
+  // layer over /profile (apps/host/src/app/me/page.tsx); only appears once
+  // the launch flag is ON, same convention as Practice Center / Revision
+  // Center above.
+  { href: '/me', icon: '⚙️', label: 'Me (New)', labelHi: 'मैं (नया)', flagName: 'ff_me_v2' },
   { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
   { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
@@ -73,6 +78,10 @@ export const SIDEBAR_SECTIONS = [
     title: 'Account', titleHi: 'खाता',
     items: [
       { href: '/profile', icon: '👤', label: 'Profile', labelHi: 'प्रोफ़ाइल' },
+      // Wave B gap screen 16 "Me" — flag-gated (ff_me_v2). See MORE_ITEMS above
+      // for the full rationale; mirrored here so the desktop sidebar surfaces
+      // the same additive screen once the flag ramps.
+      { href: '/me', icon: '⚙️', label: 'Me (New)', labelHi: 'मैं (नया)', flagName: 'ff_me_v2' },
       { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
       { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
     ],

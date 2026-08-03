@@ -56,7 +56,7 @@ export interface GenCtx {
   model_route_rev: number;
   /**
    * Percentage-rollout mechanism cache-order fix (2026-08-03, assessment
-   * finding, REG-333 follow-up). Which model fallback table this request's
+   * finding, REG-335 follow-up). Which model fallback table this request's
    * answer was generated under — see types.ts's ModelOrder doc. Resolved
    * ONCE per pipeline run (pipeline.ts, BEFORE Step 2's cache lookup) from
    * the same shouldUseClaudePrimary() the Claude call itself independently
@@ -157,7 +157,7 @@ export function genCtxKeyFragment(fullHash: string): string {
 }
 
 /**
- * Defense-in-depth (assessment finding, REG-333 cache-order-blindness
+ * Defense-in-depth (assessment finding, REG-335 cache-order-blindness
  * follow-up). Independent SECOND check on cache read, using a DIFFERENT
  * signal than the gen_ctx hash (the PRIMARY fix, above): compares the
  * cached response's OWN recorded model_order (stamped at generation time

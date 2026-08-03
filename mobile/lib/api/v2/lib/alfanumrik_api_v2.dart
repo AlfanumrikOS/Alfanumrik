@@ -10,6 +10,7 @@ export 'package:alfanumrik_api_v2/src/auth/oauth.dart';
 export 'package:alfanumrik_api_v2/src/serializers.dart';
 export 'package:alfanumrik_api_v2/src/model/date.dart';
 
+export 'package:alfanumrik_api_v2/src/api/exam_schedule_api.dart';
 export 'package:alfanumrik_api_v2/src/api/learn_api.dart';
 export 'package:alfanumrik_api_v2/src/api/parent_api.dart';
 export 'package:alfanumrik_api_v2/src/api/quiz_api.dart';
@@ -24,6 +25,10 @@ export 'package:alfanumrik_api_v2/src/model/curriculum_subject.dart';
 export 'package:alfanumrik_api_v2/src/model/curriculum_topic.dart';
 export 'package:alfanumrik_api_v2/src/model/encourage_request.dart';
 export 'package:alfanumrik_api_v2/src/model/error_response.dart';
+export 'package:alfanumrik_api_v2/src/model/exam_readiness_band.dart';
+export 'package:alfanumrik_api_v2/src/model/exam_schedule_entry.dart';
+export 'package:alfanumrik_api_v2/src/model/exam_schedule_entry_topic.dart';
+export 'package:alfanumrik_api_v2/src/model/exam_schedule_response.dart';
 export 'package:alfanumrik_api_v2/src/model/leaderboard_entry.dart';
 export 'package:alfanumrik_api_v2/src/model/leaderboard_response.dart';
 export 'package:alfanumrik_api_v2/src/model/parent_child.dart';

@@ -38,6 +38,8 @@ import {
   QuizStartResponse,
   QuizSubmitResult,
   StudentProfileResponse,
+  ExamScheduleResponse,
+  ExamReadinessBandSchema,
   StudentProgressResponse,
   LeaderboardResponse,
   CurriculumResponse,
@@ -329,6 +331,29 @@ describe('/v2 contract conformance — success envelopes parse against contract 
     };
     expectParses(successEnvelope(ConceptResponse), { success: true, data: payload });
   });
+
+  // ── Wave B: GET /v2/exam-schedule — { success, data: ExamScheduleResponse } ──
+  it('GET /v2/exam-schedule envelope conforms with a student-tier entry + chapter bands', () => {
+    const payload = {
+      schemaVersion: 1 as const,
+      entries: [
+        {
+          id: UUID_A,
+          source: 'student' as const,
+          title: 'Coaching test',
+          startsOn: '2026-09-01',
+          endsOn: '2026-09-01',
+          chapters: [{ id: UUID_Q, label: 'Number Systems', band: 'getting_it' as const }],
+          editable: true,
+        },
+      ],
+    };
+    expectParses(successEnvelope(ExamScheduleResponse), { success: true, data: payload });
+  });
+
+  it('GET /v2/exam-schedule envelope conforms with an empty entries array', () => {
+    expectParses(successEnvelope(ExamScheduleResponse), { success: true, data: { schemaVersion: 1, entries: [] } });
+  });
 });
 
 describe('/v2 contract conformance — error envelopes parse against ErrorResponse', () => {
@@ -407,5 +432,19 @@ describe('/v2 contract conformance — drift guards (schema rejects malformed ou
       chapter_number: null,
     };
     expect(QuizQuestion.safeParse(threeOptions).success).toBe(false);
+  });
+
+  // ── Wave B drift guards ──
+  it('ExamReadinessBandSchema REJECTS an invented 5th band value', () => {
+    // Only the four bands the exam-schedule route and mastery-band.ts agree
+    // on are valid — a route change that invents a new label must fail here
+    // rather than silently drifting the mobile Dart client.
+    expect(ExamReadinessBandSchema.safeParse('almost_there').success).toBe(false);
+  });
+
+  it('ExamReadinessBandSchema accepts all 4 documented bands', () => {
+    for (const band of ['exam_ready', 'getting_it', 'shaky', 'new']) {
+      expect(ExamReadinessBandSchema.safeParse(band).success).toBe(true);
+    }
   });
 });

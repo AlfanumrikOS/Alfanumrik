@@ -218,6 +218,11 @@ vi.mock('@alfanumrik/lib/supabase', () => {
       }),
       removeChannel: () => {},
     },
+    // Wave B gap screen 10 "Snap a doubt" — the page reads ff_foxy_snap_v1 via
+    // useFeatureFlags() (packages/lib/src/swr.tsx), which calls getFeatureFlags()
+    // from this module. Empty flags map = the OFF path (no snap pill), matching
+    // this test file's byte-identical-by-default convention.
+    getFeatureFlags: async () => ({}),
     __orCalls: orCalls,
   };
 });

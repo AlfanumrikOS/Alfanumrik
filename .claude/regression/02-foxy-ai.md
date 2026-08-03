@@ -1425,14 +1425,18 @@ alert rule).
 
 ## GenAI Phase 1 — Model Gateway backward-compat + provider-routing safety (2026-07-24) — REG-308
 
-> **CORRECTION 2026-08-02 (superseded by REG-332 below, NOT removed — per this
+> **CORRECTION 2026-08-02 (superseded by REG-334 below, NOT removed — per this
 > catalog's "removing an entry requires explicit user approval" rule):** the
 > "byte-for-byte Anthropic-primary" order this section's test-table row quotes
 > (`claude-haiku-4-5-20251001` → `claude-sonnet-4-20250514` → `gpt-4o-mini` →
 > `gpt-4o`) was the order AS OF 2026-07-24. A CEO-directed cost swap on
 > 2026-08-02 flipped it to OpenAI-primary (Claude retained as the reliability
-> fallback tier, not deleted) — see REG-332 for the new order and its
-> dedicated pinning test. Everything ELSE in this section (the flag-OFF no-op
+> fallback tier, not deleted) — see REG-334 for the new order and its
+> dedicated pinning test [note: authored this session as REG-332, renumbered
+> to REG-334 during the 2026-08-03 merge with `origin/main`, which had
+> independently taken REG-332/REG-333 for unrelated fixes — see
+> `00-header.md`'s collision note]. Everything ELSE in this section (the
+> flag-OFF no-op
 > guarantee, the never-select-a-dormant-provider invariant, config model-name
 > byte-identity, Deno↔TS ordering parity) remains accurate; only the specific
 > legacy order quoted below is now historical, not current.
@@ -1474,7 +1478,13 @@ safety). REG-306..REG-307 were the prior additions (Master Action Plan Phase
 
 ---
 
-## Model Gateway OpenAI-primary provider swap (2026-08-02) — REG-332
+## Model Gateway OpenAI-primary provider swap (2026-08-02) — REG-334
+
+> **RENUMBERED 2026-08-03 (merge with `origin/main`):** authored this session
+> as REG-332. `origin/main` had independently taken REG-332 (and REG-333) for
+> two unrelated fixes and merged first, so this entry — and REG-333 directly
+> below, now REG-335 — were renumbered up during conflict resolution. No
+> content changed; see `00-header.md`'s collision note for the full account.
 
 CEO-directed cost swap (see the approved plan, "Multi-Provider AI Cost/Quality
 Routing Plan Revision 2," Phase 1): Anthropic's per-token cost does not scale
@@ -1508,7 +1518,7 @@ order used to be asserted before this swap.
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-332 | `model_gateway_openai_primary_provider_swap_p12` | **New regression pin:** `selectModelChain('default')` (no constraints) resolves to `[gpt-4o-mini, gpt-4o, claude-haiku-4-5-20251001, claude-sonnet-4-20250514]` — OpenAI-primary, Claude retained as fallback — asserted on BOTH model ids and providers explicitly (an id rename alone can't silently flip a provider and stay green). **Companion coverage (updated, not new):** the Deno↔TS `MODEL_FALLBACK_ORDER`/`LEGACY_FALLBACK_ORDER` parity test (REG-308) now anchors the NEW order on both sides; every `router.test.ts`/`gateway.test.ts` test whose mock adapter map supplied only an `anthropic` entry (implicitly relying on the pre-swap order to mean the real, unmocked `openaiAdapter` was never reached) was restructured to mock both providers explicitly, so none of this suite's green state depends on `OPENAI_API_KEY` being absent from the test environment; the Deno-side `grounded-answer/__tests__/claude.test.ts` "OpenAI finish_reason=length" test (the one test in that 15-test suite that supplies `openaiApiKey` and therefore actually exercises the OpenAI-primary order end-to-end) was updated the same way — the other 14 tests in that file were left green-but-annotated (they now validate the Anthropic-only fallback path taken when no `openaiApiKey` is configured, not "the primary/default path" their names describe, per a new file-header note). **Also found and fixed (full-suite sweep, genuinely failing, distinct from the companion Sonnet-ID file-list note below — formerly this entry's "Known gap"):** `grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts`'s "computes cost via PRICING table for claude-sonnet too" — `_shared/mol/telemetry.ts`'s `PRICING` table WAS correctly repointed to key on `claude-sonnet-4-20250514` (old-id entry removed), but this test's fixture still sent the stale `claude-sonnet-4-6-20251022`, so `calcCost` found no PRICING match and silently returned 0 instead of the expected 1494.00 INR — a real assertion failure, not just a latent drift. **Second independent full-suite sweep (2026-08-02, `python -m pytest tests/unit`, 893 tests across unit+integration): found 3 more genuinely-failing tests from the SAME Sonnet-ID drift, this time on the Python side** — `python/services/ai/mol/cost.py`'s `PRICING` dict was correctly repointed the same way as its TS twin, but `python/tests/unit/test_cost.py::test_pricing_has_all_known_models` and `::test_compute_cost_for_sonnet` still asserted/sent the stale `claude-sonnet-4-6-20251022` (the latter's `compute_cost()` call silently returned `(0.0, 0.0)` instead of the expected $13.50 — the date-suffix fallback regex requires dashes in the trailing date and does not match this id's undashed `20251022` tail, so there is no silent-alias rescue), and `test_cost_cap.py::test_over_ceiling_raises_cost_cap_exceeded` asserted a `MolError` that never raised once the same zeroed-cost estimate could no longer exceed the ₹2.00 `evaluation` ceiling — all 3 fixed by updating the stale literal to `claude-sonnet-4-20250514` (same pricing values, id-only fix, mirrors the TS-side fix pattern). `python/tests/unit/test_providers_anthropic.py` and `test_eval_harness.py` also reference the old id but pass either fixture through inertly (never looked up against `PRICING`), so intentionally left as-is — not broken, no fix needed. | `apps/host/src/__tests__/lib/ai/gateway/router.test.ts` (14 tests, incl. the new "default chain is OpenAI-primary post 2026-08 cost directive, Claude retained as fallback" pin), `deno-parity.test.ts` (5 tests), `gateway.test.ts` (13 tests, 9 restructured); `supabase/functions/grounded-answer/__tests__/claude.test.ts` (15 Deno tests, 1 fixed); `supabase/functions/grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts` (28 tests, 1 fixed); `python/tests/unit/test_cost.py` (2 fixed), `python/tests/unit/test_cost_cap.py` (1 fixed); source under test `packages/lib/src/ai/gateway/registry.ts`, `router.ts`, `gateway.ts`, `supabase/functions/grounded-answer/config.ts`, `claude.ts`, `supabase/functions/_shared/mol/telemetry.ts`, `python/services/ai/mol/cost.py` | E |
+| REG-334 | `model_gateway_openai_primary_provider_swap_p12` | **New regression pin:** `selectModelChain('default')` (no constraints) resolves to `[gpt-4o-mini, gpt-4o, claude-haiku-4-5-20251001, claude-sonnet-4-20250514]` — OpenAI-primary, Claude retained as fallback — asserted on BOTH model ids and providers explicitly (an id rename alone can't silently flip a provider and stay green). **Companion coverage (updated, not new):** the Deno↔TS `MODEL_FALLBACK_ORDER`/`LEGACY_FALLBACK_ORDER` parity test (REG-308) now anchors the NEW order on both sides; every `router.test.ts`/`gateway.test.ts` test whose mock adapter map supplied only an `anthropic` entry (implicitly relying on the pre-swap order to mean the real, unmocked `openaiAdapter` was never reached) was restructured to mock both providers explicitly, so none of this suite's green state depends on `OPENAI_API_KEY` being absent from the test environment; the Deno-side `grounded-answer/__tests__/claude.test.ts` "OpenAI finish_reason=length" test (the one test in that 15-test suite that supplies `openaiApiKey` and therefore actually exercises the OpenAI-primary order end-to-end) was updated the same way — the other 14 tests in that file were left green-but-annotated (they now validate the Anthropic-only fallback path taken when no `openaiApiKey` is configured, not "the primary/default path" their names describe, per a new file-header note). **Also found and fixed (full-suite sweep, genuinely failing, distinct from the companion Sonnet-ID file-list note below — formerly this entry's "Known gap"):** `grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts`'s "computes cost via PRICING table for claude-sonnet too" — `_shared/mol/telemetry.ts`'s `PRICING` table WAS correctly repointed to key on `claude-sonnet-4-20250514` (old-id entry removed), but this test's fixture still sent the stale `claude-sonnet-4-6-20251022`, so `calcCost` found no PRICING match and silently returned 0 instead of the expected 1494.00 INR — a real assertion failure, not just a latent drift. **Second independent full-suite sweep (2026-08-02, `python -m pytest tests/unit`, 893 tests across unit+integration): found 3 more genuinely-failing tests from the SAME Sonnet-ID drift, this time on the Python side** — `python/services/ai/mol/cost.py`'s `PRICING` dict was correctly repointed the same way as its TS twin, but `python/tests/unit/test_cost.py::test_pricing_has_all_known_models` and `::test_compute_cost_for_sonnet` still asserted/sent the stale `claude-sonnet-4-6-20251022` (the latter's `compute_cost()` call silently returned `(0.0, 0.0)` instead of the expected $13.50 — the date-suffix fallback regex requires dashes in the trailing date and does not match this id's undashed `20251022` tail, so there is no silent-alias rescue), and `test_cost_cap.py::test_over_ceiling_raises_cost_cap_exceeded` asserted a `MolError` that never raised once the same zeroed-cost estimate could no longer exceed the ₹2.00 `evaluation` ceiling — all 3 fixed by updating the stale literal to `claude-sonnet-4-20250514` (same pricing values, id-only fix, mirrors the TS-side fix pattern). `python/tests/unit/test_providers_anthropic.py` and `test_eval_harness.py` also reference the old id but pass either fixture through inertly (never looked up against `PRICING`), so intentionally left as-is — not broken, no fix needed. | `apps/host/src/__tests__/lib/ai/gateway/router.test.ts` (14 tests, incl. the new "default chain is OpenAI-primary post 2026-08 cost directive, Claude retained as fallback" pin), `deno-parity.test.ts` (5 tests), `gateway.test.ts` (13 tests, 9 restructured); `supabase/functions/grounded-answer/__tests__/claude.test.ts` (15 Deno tests, 1 fixed); `supabase/functions/grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts` (28 tests, 1 fixed); `python/tests/unit/test_cost.py` (2 fixed), `python/tests/unit/test_cost_cap.py` (1 fixed); source under test `packages/lib/src/ai/gateway/registry.ts`, `router.ts`, `gateway.ts`, `supabase/functions/grounded-answer/config.ts`, `claude.ts`, `supabase/functions/_shared/mol/telemetry.ts`, `python/services/ai/mol/cost.py` | E |
 
 ### Companion Sonnet model-ID drift fix — verified fully applied (corrected 2026-08-02; section originally titled "Known gap")
 
@@ -1535,7 +1545,7 @@ order used to be asserted before this swap.
 > - `supabase/functions/_shared/mol/telemetry.ts` (`PRICING` table key) —
 >   was already fixed at the time this entry was first written; simply
 >   never listed. Its dedicated test fix is already described in the main
->   REG-332 row above (`mol-telemetry-adapter.vitest-harness.ts`).
+>   REG-334 row above (`mol-telemetry-adapter.vitest-harness.ts`).
 > - `supabase/functions/_shared/mol/grader.ts` (`GRADER_MODEL` constant) —
 >   was the open gap; now fixed.
 > - `supabase/functions/_shared/mol/grader-cron.ts` (fallback default
@@ -1548,8 +1558,16 @@ order used to be asserted before this swap.
 > - `supabase/functions/_shared/security/quota.ts` (`mapModel()`'s sonnet
 >   branch) — was already fixed at the time this entry was first written;
 >   simply never listed. Named explicitly as in-scope by migration
->   `20260802120000_model_pricing_add_claude_sonnet_4_20250514.sql`'s own
+>   `20260802180000_model_pricing_add_claude_sonnet_4_20250514.sql`'s own
 >   header comment, and independently confirmed fixed by direct read here.
+>   (That migration was renumbered from `20260802120000` on 2026-08-03 —
+>   its original timestamp collided with main's already-applied-to-prod
+>   `20260802120000_seed_ff_wave_b_gap_screens.sql`. Since
+>   `supabase_migrations.schema_migrations` is keyed on the 14-digit version
+>   prefix as its PRIMARY KEY, that collision is the same failure class that
+>   took down the production deploy job in the #1363/#1364 incident recorded
+>   in `scripts/lint-migrations.js` — not a benign ordering ambiguity. See
+>   the migration's own header for the full record.)
 > - `python/services/ai/mol/cost.py` (`PRICING` dict)
 > - `python/services/ai/mol/router.py` (`SONNET` constant) — was the open
 >   gap; now fixed.
@@ -1570,15 +1588,15 @@ order used to be asserted before this swap.
 > `python/tests/unit/test_cost.py` and
 > `grounded-answer/__vitest__/mol-telemetry-adapter.vitest-harness.ts`
 > (their actual assertions already use the corrected id — see the main
-> REG-332 row above); (c) the already-applied, now-historical
+> REG-334 row above); (c) the already-applied, now-historical
 > `20260518000003_model_pricing.sql` migration, correctly left untouched
-> per migration-immutability convention (`20260802120000_model_pricing_add_claude_sonnet_4_20250514.sql`
+> per migration-immutability convention (`20260802180000_model_pricing_add_claude_sonnet_4_20250514.sql`
 > adds a sibling row rather than editing history — its own header explains
 > why); and (d) two Python test fixtures
 > (`python/tests/unit/test_providers_anthropic.py`,
 > `python/tests/unit/test_eval_harness.py`) that pass the id through
 > inertly and never resolve it against a PRICING lookup. All four of these
-> were already correctly accounted for as non-bugs in the main REG-332 row
+> were already correctly accounted for as non-bugs in the main REG-334 row
 > above — none is a newly discovered gap.
 >
 > **No residual gap.** This section is retained rather than deleted, per
@@ -1598,14 +1616,23 @@ order used to be asserted before this swap.
 
 ### Catalog total (Model Gateway OpenAI-primary swap)
 
-Adds REG-332 (Model Gateway OpenAI-primary provider swap). REG-331 was the
-prior addition (2026-07-30, BoardScore™ subject-scoping fix batch — see
-`00-header.md`); REG-332 is the next free id after REG-331.
-**Total catalog: 332 entries (target: 35 — TARGET EXCEEDED).**
+Adds REG-334 (Model Gateway OpenAI-primary provider swap; authored this
+session as REG-332, renumbered 2026-08-03 — see `00-header.md`'s collision
+note). REG-333 (`select_quiz_questions_rag` verification gate, `origin/main`
+— see `03-quiz-integrity.md`) was the prior addition once both branches'
+histories are merged; REG-334 is the next free id after REG-333.
+**Total catalog: 334 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 
-## OpenAI-primary percentage-rollout mechanism (2026-08-03) — REG-333
+## OpenAI-primary percentage-rollout mechanism (2026-08-03) — REG-335
+
+> **RENUMBERED 2026-08-03 (merge with `origin/main`):** authored this session
+> as REG-333, built on top of REG-332 (this file's Model Gateway swap entry
+> directly above). `origin/main` had independently taken both REG-332 and
+> REG-333 for two unrelated fixes and merged first, so this entry and the one
+> above were renumbered up (REG-332→REG-334, REG-333→REG-335) during conflict
+> resolution. No content changed; see `00-header.md`'s collision note.
 
 > **CLOSURE NOTE 2026-08-03 (same-day testing follow-up; independently
 > re-verified, not taken on any other agent's report alone):** both Known
@@ -1663,7 +1690,7 @@ prior addition (2026-07-30, BoardScore™ subject-scoping fix batch — see
 > was true at authoring time), per this catalog's "removing/rewriting an
 > entry" discipline — this note documents what changed since.
 
-Built ON TOP OF the already-committed, flat REG-332 swap (commit `5e6ffa9f`),
+Built ON TOP OF the already-committed, flat REG-334 swap (commit `5e6ffa9f`),
 still uncommitted at review time: `ff_foxy_openai_primary_rollout_v1` (plain
 `is_enabled`/`rollout_percentage` columns, seeded OFF/0% by a parallel
 architect migration, `20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql`)
@@ -1671,7 +1698,7 @@ adds a deterministic, per-caller rollback lever so ops can dial a controlled
 percentage of traffic BACK to the reconstructed Claude-primary order
 (`CLAUDE_PRIMARY_FALLBACK_ORDER` in both `packages/lib/src/ai/gateway/registry.ts`
 and the Deno mirror `supabase/functions/grounded-answer/config.ts`) instead of
-REG-332's unconditional 100%-OpenAI-primary default, without a second flat
+REG-334's unconditional 100%-OpenAI-primary default, without a second flat
 code deploy. Bucketing reuses the pre-existing, already-parity-tested
 `hashForRollout` family (`packages/lib/src/feature-flags.ts` /
 `supabase/functions/identity/index.ts`) — salted `hash(id + ':' + flagName) %
@@ -1684,7 +1711,7 @@ this review confirmed the distinction by direct side-by-side reading of all
 four implementations' source (seed/accumulator/modulo expressions), not by
 trusting the parity test's green result alone. Fail-safe direction is always
 toward OpenAI-primary: no caller id, flag OFF, `rollout_percentage<=0`, or ANY
-flag-read error all resolve to the shipped REG-332 default, and the no-caller-id
+flag-read error all resolve to the shipped REG-334 default, and the no-caller-id
 check runs BEFORE the flag/network read so an anonymous call never touches the
 flag system at all (proved in Deno via a `stubFetchThrows` that would fail the
 test if a network call were attempted). `resolveDefaultChain`
@@ -1694,7 +1721,7 @@ test if a network call were attempted). `resolveDefaultChain`
 `router.ts`'s `selectModelChain` are byte-for-byte unchanged (`router.ts`'s only
 change is an additive `export` on `passesConstraints`), and that `gateway.ts`'s
 only behavioral change is a single ternary that takes the new path exclusively
-when `effectivePolicy === 'default'` — so REG-332's own pin (`router.test.ts`:
+when `effectivePolicy === 'default'` — so REG-334's own pin (`router.test.ts`:
 "default chain is OpenAI-primary post 2026-08 cost directive, Claude retained
 as fallback") never traverses the new code at all and remains a valid,
 structurally-unmodified regression guard, re-run and reconfirmed green by this
@@ -1702,14 +1729,16 @@ review.
 
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
-| REG-333 | `model_gateway_openai_primary_rollout_percentage_lever_p12` | **New regression pin:** (1) no-caller-id / caller-id-with-flag-OFF / flag-absent-or-erroring all resolve to the unchanged OpenAI-primary chain, with the no-id case proven to never call `isFeatureEnabled` at all; (2) caller-id-with-flag-ON (in-bucket) resolves to the reconstructed `CLAUDE_PRIMARY_FALLBACK_ORDER`/`claudePrimaryChain`, asserted on both model ids AND providers, end-to-end through `callModel` with fake adapters (not just the pure resolver in isolation) including a fallback-within-the-Claude-primary-chain case; (3) TS↔Deno hash-bucketing PARITY (`hashForRollout`/`_model-rollout-flag.ts`) via a 6-uuid matrix plus a source-text pin on the three load-bearing expressions; (4) TS↔Deno FALLBACK-TABLE parity for `CLAUDE_PRIMARY_FALLBACK_ORDER` itself (extends the existing `deno-parity.test.ts`, same technique as the pre-existing `MODEL_FALLBACK_ORDER` pin, plus an explicit "diverges from the OpenAI-primary table" sanity check) — found by this review in the diff, not named in the original change-set summary handed to testing; (5) Deno-only: determinism, integer range [0,99], a 2000-sample decile-uniformity sanity check (generous ±50%-of-expected tolerance band, ~7 standard deviations wide at N=2000 — explicitly documented in its own source comment as a badly-broken-hash sanity check, not a rigorous statistical test, which this review judges to be an honest and sound framing), and exact `rollout_percentage=0`/`=100` boundary behavior over 25 callers each plus a mid-ramp (30%) check against 200 callers verifying BOTH sides of the bucket boundary are populated; (6) `rollout_percentage` clamped to [0,100] and cached 5 minutes (one fetch observed across 3 calls); (7) `callerId` (`request.student_id`) threaded identically through every `callClaude` call site in both `pipeline.ts` and `pipeline-stream.ts` — initial call, retry, and bounded-continuation — so a single answer's provider order cannot flip mid-flow (confirmed by direct diff, not exercised by a dedicated pipeline-level test). **Independently reproduced by testing, not taken on ai-engineer's report alone:** fresh `deno test --no-lock --no-check --allow-read --allow-env` over the 19 CI-scope `grounded-answer/__tests__/` files + the new file = 228/228 (213 + 15, both sub-counts independently re-verified in isolation); fresh `npx vitest run src/__tests__/lib/ai/` = 486/486 (30 files); fresh `tsc --noEmit` (`npm run type-check`) = exit 0. A claimed "599/599 consolidated flag-registry-sensitive run" could NOT be exactly reproduced — three good-faith reconstructions of a plausible file set (import-based: 525/525; filename-based: 505/505; directory+file-list based: 620/620) all passed 100% but none matched 599 exactly; flagged as imprecisely specified rather than as a failure, since no reconstruction attempt found any failing test. **Known gap #1 (CI-enforcement, found by this review):** `supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts` (the 15-test Deno suite covering items 3, 5, and 6 above) is NOT YET added to `DENO_TEST_TARGETS` in `.github/workflows/ci.yml` — it passes locally but does not currently run in CI, so a future regression in the Deno-side hash/bucketing/fail-safe logic would not be caught automatically until this is wired in (the same failure class REG-317 pinned elsewhere in this codebase — a Deno test that exists but was never wired into the CI-run set). **Known gap #2 (adjacent to this mechanism's own correctness; found by this review):** a parallel architect migration (`20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql`) registers this flag in `protected_feature_flags` at tier `ai_provider`, but its self-documented TS companion (`packages/lib/src/flags/protected-flags.ts` PROTECTED_FLAGS/EXPECTED_OFF_FLAGS entries) is not yet applied, and neither is testing's own follow-up (the `protected-flags-registry.test.ts` 76→77/55→56 count-pin bump and the `feature-flags-protected-guardrail.test.ts` `SEED_MIGRATION_PATHS` addition). This review confirmed BOTH existing DB/TS parity tests currently pass GREEN specifically because their parser is still blind to the new migration file — i.e. the console typed-confirmation guardrail does not yet cover this flag. Low practical risk today only because the flag is seeded OFF/0% (a live no-op); should close before any ramp. | `packages/lib/src/ai/gateway/rollout.ts` (10 new tests, `apps/host/src/__tests__/lib/ai/gateway/rollout.test.ts`), `apps/host/src/__tests__/lib/ai/gateway/model-rollout-hash-parity.test.ts` (5 new tests), `apps/host/src/__tests__/lib/ai/gateway/deno-parity.test.ts` (+6 new tests, 5→11 total, `CLAUDE_PRIMARY_FALLBACK_ORDER` parity block), `apps/host/src/__tests__/lib/ai/gateway/gateway.test.ts` (+4 new tests in a dedicated "percentage-rollout mechanism" block, 13→17 total); `supabase/functions/grounded-answer/_model-rollout-flag.ts` (`supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts`, 15 new Deno tests — NOT in `DENO_TEST_TARGETS`, see Known gap #1); source under test `packages/lib/src/ai/gateway/{rollout,gateway,router,registry,index}.ts`, `supabase/functions/grounded-answer/{claude,config,pipeline,pipeline-stream}.ts`, `packages/lib/src/flags/registries/foxy.ts` (`MODEL_ROLLOUT_FLAGS`), `packages/lib/src/grounding-config.ts` + `supabase/functions/grounded-answer/config.ts` (`MODEL_ROUTE_REV` 2→3, kept in parity); migrations `20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql` + `20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql` (structural only, no live-DB execution in this pass) | E |
+| REG-335 | `model_gateway_openai_primary_rollout_percentage_lever_p12` | **New regression pin:** (1) no-caller-id / caller-id-with-flag-OFF / flag-absent-or-erroring all resolve to the unchanged OpenAI-primary chain, with the no-id case proven to never call `isFeatureEnabled` at all; (2) caller-id-with-flag-ON (in-bucket) resolves to the reconstructed `CLAUDE_PRIMARY_FALLBACK_ORDER`/`claudePrimaryChain`, asserted on both model ids AND providers, end-to-end through `callModel` with fake adapters (not just the pure resolver in isolation) including a fallback-within-the-Claude-primary-chain case; (3) TS↔Deno hash-bucketing PARITY (`hashForRollout`/`_model-rollout-flag.ts`) via a 6-uuid matrix plus a source-text pin on the three load-bearing expressions; (4) TS↔Deno FALLBACK-TABLE parity for `CLAUDE_PRIMARY_FALLBACK_ORDER` itself (extends the existing `deno-parity.test.ts`, same technique as the pre-existing `MODEL_FALLBACK_ORDER` pin, plus an explicit "diverges from the OpenAI-primary table" sanity check) — found by this review in the diff, not named in the original change-set summary handed to testing; (5) Deno-only: determinism, integer range [0,99], a 2000-sample decile-uniformity sanity check (generous ±50%-of-expected tolerance band, ~7 standard deviations wide at N=2000 — explicitly documented in its own source comment as a badly-broken-hash sanity check, not a rigorous statistical test, which this review judges to be an honest and sound framing), and exact `rollout_percentage=0`/`=100` boundary behavior over 25 callers each plus a mid-ramp (30%) check against 200 callers verifying BOTH sides of the bucket boundary are populated; (6) `rollout_percentage` clamped to [0,100] and cached 5 minutes (one fetch observed across 3 calls); (7) `callerId` (`request.student_id`) threaded identically through every `callClaude` call site in both `pipeline.ts` and `pipeline-stream.ts` — initial call, retry, and bounded-continuation — so a single answer's provider order cannot flip mid-flow (confirmed by direct diff, not exercised by a dedicated pipeline-level test). **Independently reproduced by testing, not taken on ai-engineer's report alone:** fresh `deno test --no-lock --no-check --allow-read --allow-env` over the 19 CI-scope `grounded-answer/__tests__/` files + the new file = 228/228 (213 + 15, both sub-counts independently re-verified in isolation); fresh `npx vitest run src/__tests__/lib/ai/` = 486/486 (30 files); fresh `tsc --noEmit` (`npm run type-check`) = exit 0. A claimed "599/599 consolidated flag-registry-sensitive run" could NOT be exactly reproduced — three good-faith reconstructions of a plausible file set (import-based: 525/525; filename-based: 505/505; directory+file-list based: 620/620) all passed 100% but none matched 599 exactly; flagged as imprecisely specified rather than as a failure, since no reconstruction attempt found any failing test. **Known gap #1 (CI-enforcement, found by this review):** `supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts` (the 15-test Deno suite covering items 3, 5, and 6 above) is NOT YET added to `DENO_TEST_TARGETS` in `.github/workflows/ci.yml` — it passes locally but does not currently run in CI, so a future regression in the Deno-side hash/bucketing/fail-safe logic would not be caught automatically until this is wired in (the same failure class REG-317 pinned elsewhere in this codebase — a Deno test that exists but was never wired into the CI-run set). **Known gap #2 (adjacent to this mechanism's own correctness; found by this review):** a parallel architect migration (`20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql`) registers this flag in `protected_feature_flags` at tier `ai_provider`, but its self-documented TS companion (`packages/lib/src/flags/protected-flags.ts` PROTECTED_FLAGS/EXPECTED_OFF_FLAGS entries) is not yet applied, and neither is testing's own follow-up (the `protected-flags-registry.test.ts` 76→77/55→56 count-pin bump and the `feature-flags-protected-guardrail.test.ts` `SEED_MIGRATION_PATHS` addition). This review confirmed BOTH existing DB/TS parity tests currently pass GREEN specifically because their parser is still blind to the new migration file — i.e. the console typed-confirmation guardrail does not yet cover this flag. Low practical risk today only because the flag is seeded OFF/0% (a live no-op); should close before any ramp. | `packages/lib/src/ai/gateway/rollout.ts` (10 new tests, `apps/host/src/__tests__/lib/ai/gateway/rollout.test.ts`), `apps/host/src/__tests__/lib/ai/gateway/model-rollout-hash-parity.test.ts` (5 new tests), `apps/host/src/__tests__/lib/ai/gateway/deno-parity.test.ts` (+6 new tests, 5→11 total, `CLAUDE_PRIMARY_FALLBACK_ORDER` parity block), `apps/host/src/__tests__/lib/ai/gateway/gateway.test.ts` (+4 new tests in a dedicated "percentage-rollout mechanism" block, 13→17 total); `supabase/functions/grounded-answer/_model-rollout-flag.ts` (`supabase/functions/grounded-answer/__tests__/model-rollout-flag.test.ts`, 15 new Deno tests — NOT in `DENO_TEST_TARGETS`, see Known gap #1); source under test `packages/lib/src/ai/gateway/{rollout,gateway,router,registry,index}.ts`, `supabase/functions/grounded-answer/{claude,config,pipeline,pipeline-stream}.ts`, `packages/lib/src/flags/registries/foxy.ts` (`MODEL_ROLLOUT_FLAGS`), `packages/lib/src/grounding-config.ts` + `supabase/functions/grounded-answer/config.ts` (`MODEL_ROUTE_REV` 2→3, kept in parity); migrations `20260803120000_seed_ff_foxy_openai_primary_rollout_v1.sql` + `20260803120001_protect_ff_foxy_openai_primary_rollout_v1.sql` (structural only, no live-DB execution in this pass) | E |
 
 ### Catalog total (OpenAI-primary percentage-rollout mechanism)
 
-Adds REG-333 (percentage-rollout lever on top of REG-332). REG-332 was the
-prior addition (2026-08-02, Model Gateway OpenAI-primary provider swap — see
-above); REG-333 is the next free id after REG-332, per `00-header.md`.
-**Total catalog: 333 entries (target: 35 — TARGET EXCEEDED).** Originally
+Adds REG-335 (percentage-rollout lever on top of REG-334; authored this
+session as REG-333, renumbered 2026-08-03 — see `00-header.md`'s collision
+note). REG-334 was the prior addition (2026-08-02, Model Gateway OpenAI-primary
+provider swap — see above); REG-335 is the next free id after REG-334, per
+`00-header.md`.
+**Total catalog: 335 entries (target: 35 — TARGET EXCEEDED).** Originally
 marked **PARTIAL (P)**, not E, for Known gap #1 above (the new Deno suite's
 CI-wiring) plus Known gap #2 (the protected-flags console-guardrail blind
 spot) — the mechanism's own correctness coverage (TS + Deno, both runtimes,

@@ -11,7 +11,9 @@
 //   - genCtxKeyFragment: 12-char prefix of the full hash.
 //
 // Percentage-rollout cache-order fix (2026-08-03, assessment finding,
-// REG-333 follow-up): buildGenCtx's model_order fold-in + the
+// REG-335 follow-up — renumbered from REG-333 during the origin/main merge;
+// see .claude/regression/00-header.md's collision note): buildGenCtx's
+// model_order fold-in + the
 // cachedResponseMatchesModelOrder defense-in-depth read-time check. See
 // gen-ctx.ts's ModelOrder / GenCtx / cachedResponseMatchesModelOrder docs
 // for the full design.
@@ -131,7 +133,7 @@ Deno.test('every gen_ctx component changes the hash (max_tokens, temperature, mo
   assertEquals(new Set([base, ...variants]).size, variants.length + 1);
 });
 
-// ─── Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up) ─────
+// ─── Percentage-rollout cache-order fix (2026-08-03, REG-335 follow-up) ─────
 
 Deno.test('buildGenCtx: defaults model_order to openai_primary, and folds an explicit order in verbatim', () => {
   const defaulted = buildGenCtx(makeRequest(), 0);

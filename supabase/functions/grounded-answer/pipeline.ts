@@ -135,7 +135,7 @@ import {
 // params + template variables + content_version) hashed into every cache
 // key + stored tuple. Fixes the v1 mode-collision bug — see gen-ctx.ts.
 // Percentage-rollout cache-order fix (2026-08-03, assessment finding,
-// REG-333 follow-up): cachedResponseMatchesModelOrder + ModelOrder — see
+// REG-335 follow-up): cachedResponseMatchesModelOrder + ModelOrder — see
 // gen-ctx.ts's doc comments for the full design.
 import {
   buildGenCtx,
@@ -534,7 +534,7 @@ async function finalizeGrounded(
   claudeModelLabel: string,
   tokensUsed: number,
   structured?: FoxyResponse,
-  // Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up): the
+  // Percentage-rollout cache-order fix (2026-08-03, REG-335 follow-up): the
   // SAME modelOrder resolved for the cache key/tuple in Step 2 (null for
   // non-cache-eligible requests, which are never cached and so never need
   // this stamp — see gen-ctx.ts's cachedResponseMatchesModelOrder doc).
@@ -917,7 +917,7 @@ export async function runPipeline(
   let cacheTuple: CacheTuple | null = null;
   let genCtxHash: string | null = null;
   let contentVersion = 0;
-  // Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up):
+  // Percentage-rollout cache-order fix (2026-08-03, REG-335 follow-up):
   // resolved inside the `cacheEligible` block below, reused verbatim for
   // the gen_ctx hash, every cache-tier defense-in-depth check, AND the
   // eventual finalizeGrounded() meta.model_order stamp — so the read
@@ -963,7 +963,7 @@ export async function runPipeline(
     // identical-text collisions).
     //
     // Percentage-rollout cache-order fix (2026-08-03, assessment finding,
-    // REG-333 follow-up): resolve THIS caller's rollout bucket BEFORE any
+    // REG-335 follow-up): resolve THIS caller's rollout bucket BEFORE any
     // cache lookup below (L1/L2/L3), not only inside claude.ts's
     // resolveModelOrder at the Claude-call step. Folding the resolved order
     // into gen_ctx means a bucket flip is a guaranteed cache miss — see
@@ -1000,7 +1000,7 @@ export async function runPipeline(
         });
         return hit;
       }
-      // REG-333 follow-up: redundant backstop (the gen_ctx hash above
+      // REG-335 follow-up: redundant backstop (the gen_ctx hash above
       // already structurally prevents this) — see gen-ctx.ts's
       // cachedResponseMatchesModelOrder doc. Fall through to L2/L3/pipeline.
       console.warn('cache_l1_model_order_mismatch', {
@@ -1918,7 +1918,7 @@ export async function runPipeline(
     claude.model,
     totalTokensUsed,
     structuredForResponse,
-    // Percentage-rollout cache-order fix (2026-08-03, REG-333 follow-up):
+    // Percentage-rollout cache-order fix (2026-08-03, REG-335 follow-up):
     // stamps meta.model_order so a later cache READ of this exact response
     // can independently re-validate it against the reader's then-current
     // expected order — see gen-ctx.ts's cachedResponseMatchesModelOrder.
