@@ -27,7 +27,7 @@
  *
  * P13: no PII in logs.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
@@ -35,6 +35,7 @@ import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { resolveExamReadinessBand, type ExamReadinessBand } from '@alfanumrik/lib/exams/mastery-band';
 import { getTopicTitlesByIds } from '@/lib/curriculum/cached-taxonomy';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,9 +59,9 @@ interface Entry {
   editable?: boolean;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   const auth = await authorizeRequest(request, 'study_plan.view', { requireStudentId: true });
-  if (!auth.authorized || !auth.userId) return auth.errorResponse!;
+  if (!auth.authorized || !auth.userId) return auth.errorResponse as unknown as NextResponse;
 
   const flagOn = await isFeatureEnabled(FLAG_NAME, {
     userId: auth.userId,
@@ -162,4 +163,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

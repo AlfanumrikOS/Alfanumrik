@@ -11,11 +11,12 @@
  *
  * Auth: progress.view_own (a student-scoped read permission).
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 const LIMIT = 50;
 
@@ -32,10 +33,10 @@ interface RpcLeaderboardRow {
   city?: string | null;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     const auth = await authorizeRequest(request, 'progress.view_own');
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
     const url = new URL(request.url);
     const periodParam = url.searchParams.get('period') ?? 'weekly';
@@ -86,4 +87,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

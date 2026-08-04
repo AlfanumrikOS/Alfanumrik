@@ -47,16 +47,31 @@ Every route returns one of:
 { "success": false, "error": "<message>", "code": "<MACHINE_CODE>" }  // code optional
 ```
 
-Use the helpers in `src/lib/api-response.ts` for the bodies. The discriminated
-`success` boolean is what mobile + web branch on. Register the success and error
-envelopes for each route in the registry (`SuccessAck` / `ErrorResponse` are the
-shared building blocks; route-specific data shapes get their own schema).
+Use the helpers in `src/lib/api/v2/envelope.ts` (`@alfanumrik/lib/api/v2/envelope`)
+for the bodies: `v2Success<T>(data, { status?, headers? })` and
+`v2Error(error, status, code?)`. The discriminated `success` boolean is what
+mobile + web branch on. Register the success and error envelopes for each route
+in the registry (`SuccessAck` / `ErrorResponse` are the shared building blocks;
+route-specific data shapes get their own schema).
 
-> Note: `src/lib/api-response.ts` historically emits a bare `{ data }` / `{ error }`
-> envelope. The `/v2` standard adds the top-level `success` boolean. The seeded
-> `encourage` route already returns `{ success: true }` / `{ success: false, error }`.
-> When the route handlers are migrated to validate against the contract
-> (a later wave), align the envelope helper or wrap its output accordingly.
+For the throw path, wrap the handler in `withRoute()`
+(`@alfanumrik/lib/api/v2/with-route`): it passes successful `NextResponse`s
+through unchanged (no rewrapping — the contract shape above is untouched) and,
+if the handler throws, catches it and returns a fixed
+`v2Error('Internal server error', 500, 'INTERNAL_ERROR')` — never the caught
+error's message/stack (P13) — while logging the full error server-side with a
+request id (also attached as the `x-request-id` response header on that error
+path).
+
+```ts
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
+import { v2Success } from '@alfanumrik/lib/api/v2/envelope';
+
+export const GET = withRoute(async (request) => {
+  const data = await doWork();
+  return v2Success(data);
+});
+```
 
 ### 2. Input validation with Zod via `validateBody()`
 

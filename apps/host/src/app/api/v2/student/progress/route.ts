@@ -15,19 +15,20 @@
  *
  * Auth: progress.view_own (same permission /api/v1/performance uses).
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { cacheFetchAsync, CACHE_TTL } from '@alfanumrik/lib/cache';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     const auth = await authorizeRequest(request, 'progress.view_own', {
       requireStudentId: true,
     });
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
     const studentId = auth.studentId;
     if (!studentId) {
@@ -136,4 +137,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});
