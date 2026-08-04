@@ -510,7 +510,7 @@ describe('AuthContext applies normalizeGrade at student-profile read paths', () 
       .replace(/(^|[^:])\/\/.*$/gm, '$1'); // line comments (not URLs)
   }
 
-  const src = readSourceStripped('src/lib/AuthContext.tsx');
+  const src = readSourceStripped('../../packages/lib/src/AuthContext.tsx');
 
   it('reads the AuthContext source (non-vacuous)', () => {
     expect(src.length).toBeGreaterThan(1000);

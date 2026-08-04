@@ -27,7 +27,7 @@ import { join } from 'path';
  * lifecycle and cannot reliably be exercised in vitest.
  */
 
-const HOOK_PATH = join(process.cwd(), 'src/hooks/useCheckout.ts');
+const HOOK_PATH = join(process.cwd(), '../../packages/lib/src/hooks/useCheckout.ts');
 
 describe('useCheckout token refresh before /verify (incident 2026-05-09)', () => {
   const source = readFileSync(HOOK_PATH, 'utf8');

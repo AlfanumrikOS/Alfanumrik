@@ -61,7 +61,7 @@ describe('Adaptive Pipeline Integrity', () => {
   // 3. Client-side CME wiring (processAdaptiveLearning -> cme-engine)
   // ---------------------------------------------------------------
   it('processAdaptiveLearning must call cme-engine record_response', () => {
-    const supabasePath = path.resolve('src/lib/supabase.ts');
+    const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
     // Extract the processAdaptiveLearning function body
     const funcStart = source.indexOf('export async function processAdaptiveLearning');
@@ -116,14 +116,14 @@ describe('Adaptive Pipeline Integrity', () => {
   // 5. Fallback path awareness
   // ---------------------------------------------------------------
   it('submitQuizResults fallback must use atomic_quiz_profile_update', () => {
-    const supabasePath = path.resolve('src/lib/supabase.ts');
+    const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
     // The fallback path after submit_quiz_results RPC fails
     expect(source).toContain('atomic_quiz_profile_update');
   });
 
   it('submitQuizResults must try submit_quiz_results RPC as primary path', () => {
-    const supabasePath = path.resolve('src/lib/supabase.ts');
+    const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
     // The function body within submitQuizResults. Window widened from 500 to
     // 1000 chars — the function now has a dedup prelude + layered try/catch
@@ -141,7 +141,7 @@ describe('Adaptive Pipeline Integrity', () => {
   // 6. Adaptive failure monitoring
   // ---------------------------------------------------------------
   it('processAdaptiveLearning must report failures to ops events', () => {
-    const supabasePath = path.resolve('src/lib/supabase.ts');
+    const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
     const funcStart = source.indexOf('export async function processAdaptiveLearning');
     expect(funcStart).toBeGreaterThan(-1);
@@ -155,7 +155,7 @@ describe('Adaptive Pipeline Integrity', () => {
   // 7. Architectural contract comment
   // ---------------------------------------------------------------
   it('submitQuizResults must have the architectural contract comment', () => {
-    const supabasePath = path.resolve('src/lib/supabase.ts');
+    const supabasePath = path.resolve('../../packages/lib/src/supabase.ts');
     const source = fs.readFileSync(supabasePath, 'utf-8');
     const funcStart = source.indexOf('export async function submitQuizResults');
     expect(funcStart).toBeGreaterThan(-1);

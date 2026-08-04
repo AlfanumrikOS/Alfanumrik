@@ -32,7 +32,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const SOURCE_PATH = resolve(process.cwd(), 'src/lib/school-provisioning.ts');
+const SOURCE_PATH = resolve(process.cwd(), '../../packages/lib/src/school-provisioning.ts');
 
 // Read once; all assertions operate on this text.
 const sourceText = readFileSync(SOURCE_PATH, 'utf8');

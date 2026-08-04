@@ -696,7 +696,7 @@ describe('Section 3: Adaptive Pipeline Integration', () => {
       // follows the content to its new home.
       foxySource =
         readSource('src/app/api/foxy/route.ts') +
-        readSource('src/lib/foxy/prompt-sections.ts');
+        readSource('../../packages/lib/src/foxy/prompt-sections.ts');
     });
 
     it('imports/references cognitive context loading', () => {
@@ -793,7 +793,7 @@ describe('Section 3: Adaptive Pipeline Integration', () => {
     let retrieverSource: string;
 
     beforeAll(() => {
-      retrieverSource = readSource('src/lib/ai/retrieval/ncert-retriever.ts');
+      retrieverSource = readSource('../../packages/lib/src/ai/retrieval/ncert-retriever.ts');
     });
 
     it('exports generateEmbedding function', () => {
@@ -846,7 +846,7 @@ describe('Section 4: Safety Guardrails Health', () => {
     foxySource =
       fs.readFileSync(path.resolve('src/app/api/foxy/route.ts'), 'utf-8') +
       fs.readFileSync(path.resolve('src/app/api/foxy/_lib/constants.ts'), 'utf-8') +
-      fs.readFileSync(path.resolve('src/lib/foxy/prompt-sections.ts'), 'utf-8');
+      fs.readFileSync(path.resolve('../../packages/lib/src/foxy/prompt-sections.ts'), 'utf-8');
   });
 
   describe('Rate limiting and quota checking', () => {

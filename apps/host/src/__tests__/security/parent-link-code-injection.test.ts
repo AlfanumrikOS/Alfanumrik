@@ -103,7 +103,7 @@ describe('PP-2 TS ↔ Deno twin parity', () => {
 
   it('the regex literal is byte-identical in both source files (deploy-boundary copies)', () => {
     const tsSrc = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/sanitize.ts'),
+      path.resolve(process.cwd(), '../../packages/lib/src/sanitize.ts'),
       'utf8',
     );
     const denoSrc = fs.readFileSync(

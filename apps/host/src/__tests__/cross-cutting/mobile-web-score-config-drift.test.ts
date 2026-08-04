@@ -39,7 +39,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const WEB_PATH = resolve(process.cwd(), 'src/lib/score-config.ts');
+const WEB_PATH = resolve(process.cwd(), '../../packages/lib/src/score-config.ts');
 const MOBILE_PATH = resolve(
   process.cwd(),
   'mobile/lib/core/constants/score_config.dart'

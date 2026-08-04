@@ -115,7 +115,7 @@ describe('AlfaBot SSE event-name contract', () => {
   // ─── 4. Client lib recognises the canonical names ───────────────────────
 
   it('consumer (client.ts) recognises meta + done + error/abstain frames', () => {
-    const src = readSource('src/lib/alfabot/client.ts');
+    const src = readSource('../../packages/lib/src/alfabot/client.ts');
     expect(src).toMatch(
       /event\s*===\s*(?:['"]meta['"]|ALFABOT_SSE_EVENTS\.META)/,
     );
@@ -159,7 +159,7 @@ describe('AlfaBot SSE event-name contract', () => {
       // `event: text`. This test asserts the bug-fix has landed and pins
       // it against regression. Documented in REG-67-adjacent catalog entry.
       const routeSrc = readSource('src/app/api/alfabot/route.ts');
-      const clientSrc = readSource('src/lib/alfabot/client.ts');
+      const clientSrc = readSource('../../packages/lib/src/alfabot/client.ts');
       // Negative assertion: 'text' must NOT appear as an SSE event-name
       // match in either consumer. We look for the exact `=== 'text'` shape
       // because the route's pipe-through and the client parser both used it.
@@ -186,7 +186,7 @@ describe('AlfaBot SSE event-name contract', () => {
   // contract test surfaces it so the next change to either surface knows.
 
   it('citation event is in the canonical list but not yet consumed by client', () => {
-    const clientSrc = readSource('src/lib/alfabot/client.ts');
+    const clientSrc = readSource('../../packages/lib/src/alfabot/client.ts');
     // We do NOT assert that the client consumes 'citation' — it's a forward
     // hook for a future enrichment. Just assert it's part of the canonical
     // event-name set so it cannot be removed without test failure.

@@ -38,7 +38,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 const MIGRATION_FILE =
   'supabase/migrations/20260615122659_create_system_metrics.sql';
 
-const LOG_EVENT_FILE = 'src/lib/monitoring/log-event.ts';
+const LOG_EVENT_FILE = '../../packages/lib/src/monitoring/log-event.ts';
 
 function resolveRepoFile(rel: string): string | null {
   const candidates = [

@@ -108,7 +108,7 @@ describe('F6: usePermissions.ts source structure', () => {
     const fs = await import('fs');
     const path = await import('path');
     return fs.readFileSync(
-      path.resolve(process.cwd(), 'src/lib/usePermissions.ts'),
+      path.resolve(process.cwd(), '../../packages/lib/src/usePermissions.ts'),
       'utf-8'
     );
   }

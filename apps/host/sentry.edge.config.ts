@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
-import { redactPII } from './src/lib/ops-events-redactor';
+import { redactPII } from '@alfanumrik/lib/ops-events-redactor';
 import { sanitizeUrl } from '@alfanumrik/lib/sentry-client-redact';
 
 Sentry.init({

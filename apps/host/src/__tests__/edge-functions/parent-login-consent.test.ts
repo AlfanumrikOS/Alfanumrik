@@ -179,7 +179,7 @@ describe('REG-199 — a pending link grants ZERO child data (P8)', () => {
   });
 
   it('relationship.ts filters every guardian read to ACTIVE_GUARDIAN_LINK_STATUSES (layer 1)', () => {
-    const rel = stripComments(read('src/lib/domains/relationship.ts'));
+    const rel = stripComments(read('../../packages/lib/src/domains/relationship.ts'));
     expect(rel).toMatch(/ACTIVE_GUARDIAN_LINK_STATUSES/);
     // Used as the .in('status', …) filter on the link reads.
     const filters = rel.match(/\.in\(\s*'status',\s*ACTIVE_GUARDIAN_LINK_STATUSES/g) || [];
@@ -187,7 +187,7 @@ describe('REG-199 — a pending link grants ZERO child data (P8)', () => {
   });
 
   it('canAccessStudent\'s parent branch only counts active/approved links (layer 2)', () => {
-    const rbac = stripComments(read('src/lib/rbac.ts'));
+    const rbac = stripComments(read('../../packages/lib/src/rbac.ts'));
     const fnStart = rbac.indexOf('export async function canAccessStudent');
     expect(fnStart).toBeGreaterThan(-1);
     const fnEnd = rbac.indexOf('export ', fnStart + 10);

@@ -32,7 +32,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { screenStudentFacingText } from '@alfanumrik/lib/ai/validation/output-screen';
 
-const TS_PATH = join(process.cwd(), 'src/lib/ai/validation/output-screen.ts');
+const TS_PATH = join(process.cwd(), '../../packages/lib/src/ai/validation/output-screen.ts');
 // Canonical Deno implementation (2026-07-29 relocation) — NOT the
 // grounded-answer/output-screen.ts re-export shim, which contains no
 // HARD_BLOCK_PATTERNS literals of its own.

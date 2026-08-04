@@ -150,7 +150,7 @@ describe('Payment flow — UpgradeModal plan codes match usage.ts plans', () => 
 
 describe('Payment flow — CheckoutStatus type', () => {
   it('useCheckout hook is exported', async () => {
-    const mod = await import('@/hooks/useCheckout');
+    const mod = await import('@alfanumrik/lib/hooks/useCheckout');
     expect(mod.useCheckout).toBeDefined();
     expect(typeof mod.useCheckout).toBe('function');
   });
@@ -159,7 +159,7 @@ describe('Payment flow — CheckoutStatus type', () => {
     // CheckoutStatus is a type alias — not available at runtime.
     // We verify the module exports it by checking the named export exists
     // (TypeScript re-exports types as undefined at runtime, but the key exists).
-    const mod = await import('@/hooks/useCheckout');
+    const mod = await import('@alfanumrik/lib/hooks/useCheckout');
     // The hook itself is the primary export; CheckoutStatus is a type-only export.
     // We verify the hook is functional (it uses CheckoutStatus internally).
     expect(mod.useCheckout).toBeDefined();

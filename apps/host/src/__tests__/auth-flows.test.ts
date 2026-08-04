@@ -218,15 +218,15 @@ describe('AuthScreen.tsx — no client-side profile inserts', () => {
 
 describe('AuthContext.tsx — server-only profile creation enforced', () => {
   it('does NOT contain .from(students).insert', () => {
-    expect(readFile('src/lib/AuthContext.tsx')).not.toMatch(/\.from\('students'\)\.insert/);
+    expect(readFile('../../packages/lib/src/AuthContext.tsx')).not.toMatch(/\.from\('students'\)\.insert/);
   });
 
   it('does NOT contain .from(teachers).insert', () => {
-    expect(readFile('src/lib/AuthContext.tsx')).not.toMatch(/\.from\('teachers'\)\.insert/);
+    expect(readFile('../../packages/lib/src/AuthContext.tsx')).not.toMatch(/\.from\('teachers'\)\.insert/);
   });
 
   it('does NOT contain .from(guardians).insert', () => {
-    expect(readFile('src/lib/AuthContext.tsx')).not.toMatch(/\.from\('guardians'\)\.insert/);
+    expect(readFile('../../packages/lib/src/AuthContext.tsx')).not.toMatch(/\.from\('guardians'\)\.insert/);
   });
 });
 
@@ -284,7 +284,7 @@ describe('api/auth/session/route.ts — POST, DELETE, GET handlers', () => {
 describe('CRITICAL AUTH PATH — protection comments on critical files', () => {
   const criticalFiles = [
     'src/proxy.ts',
-    'src/lib/AuthContext.tsx',
+    '../../packages/lib/src/AuthContext.tsx',
     AUTH_SCREEN,
     'src/app/auth/callback/route.ts',
     'src/app/auth/confirm/route.ts',

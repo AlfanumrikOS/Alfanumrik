@@ -36,7 +36,7 @@ const NEW_COMPONENT_FILES = [
   ROUTE,
   'packages/ui/src/foxy/FoxyStructuredRenderer.tsx',
   'packages/ui/src/foxy/ChatBubble.tsx',
-  'apps/host/src/lib/use-foxy-learning-actions-flag.ts',
+  'packages/lib/src/use-foxy-learning-actions-flag.ts',
 ];
 
 const FORBIDDEN_MASTERY_TABLES = [
