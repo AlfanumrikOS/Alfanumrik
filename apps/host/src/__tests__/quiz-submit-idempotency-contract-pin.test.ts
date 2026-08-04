@@ -43,7 +43,7 @@ function read(rel: string): string {
   return p ? fs.readFileSync(p, 'utf-8') : '';
 }
 
-const SUPABASE_TS = 'src/lib/supabase.ts';
+const SUPABASE_TS = '../../packages/lib/src/supabase.ts';
 const SUBMIT_ROUTE = 'src/app/api/quiz/submit/route.ts';
 const FLAG_SEED =
   'supabase/migrations/20260504100300_server_only_quiz_submit_flag.sql';

@@ -715,7 +715,7 @@ describe('Section 5a — getQuizQuestionsV2 theta read is subject-scoped (src/li
   it('the irt_theta read filters student_learning_profiles by (student_id, subject)', () => {
     // Without the subject filter, a student with profiles in 2+ subjects makes
     // maybeSingle() error → theta silently null → adaptivity lost.
-    const src = readSource('src/lib/supabase.ts');
+    const src = readSource('../../packages/lib/src/supabase.ts');
     expect(src).toMatch(
       /from\('student_learning_profiles'\)\s*\.select\('irt_theta'\)\s*\.eq\('student_id', studentId\)\s*\.eq\('subject', subject\)\s*\.maybeSingle\(\)/,
     );
@@ -844,7 +844,7 @@ describe('Section 5d — ghost-column repoint: concept_mastery due reads use nex
 
 describe('Section 5e — learner-loop due count reads the LIVE spaced_repetition_cards table', () => {
   it('buildLoopAugmentation counts spaced_repetition_cards (is_active), never the nonexistent review_cards', () => {
-    const code = codeOnly(readSource('src/lib/state/learner-loop/resolve-next-action.ts'));
+    const code = codeOnly(readSource('../../packages/lib/src/state/learner-loop/resolve-next-action.ts'));
     expect(code).toMatch(/\.from\('spaced_repetition_cards'\)/);
     expect(code).toMatch(/\.eq\('is_active', true\)/);
     // The ghost table (never existed — its read always errored → dueCount 0 →

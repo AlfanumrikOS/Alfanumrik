@@ -69,7 +69,7 @@ function readSource(rel: string): string {
 }
 
 const EXPORT_ROUTE = 'src/app/api/super-admin/observability/export/route.ts';
-const REDACTOR_BARREL = 'src/lib/ops-events-redactor.ts';
+const REDACTOR_BARREL = '../../packages/lib/src/ops-events-redactor.ts';
 
 describe('Tier-2 PR B — super-admin export message redaction (P13) — REG-202', () => {
   // ── Assertion 1 (SOURCE PIN): the route wraps row.message in redactPIIInText ─

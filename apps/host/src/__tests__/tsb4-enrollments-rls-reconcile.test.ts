@@ -52,7 +52,7 @@ import { resolve } from 'node:path';
 
 const POLICY_REL = 'supabase/migrations/20260702050000_class_enrollments_teacher_select_policy.sql';
 const BACKFILL_REL = 'supabase/migrations/20260702060000_class_membership_isactive_backfill.sql';
-const RBAC_REL = 'src/lib/rbac.ts';
+const RBAC_REL = '../../packages/lib/src/rbac.ts';
 
 function resolveRepo(rel: string): string | null {
   for (const c of [resolve(process.cwd(), rel), resolve(process.cwd(), '..', rel)]) {

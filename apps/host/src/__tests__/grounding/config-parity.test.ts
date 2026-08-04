@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 describe('grounding-config parity between Next.js and Deno', () => {
-  const web = fs.readFileSync(path.resolve('src/lib/grounding-config.ts'), 'utf-8');
+  const web = fs.readFileSync(path.resolve('../../packages/lib/src/grounding-config.ts'), 'utf-8');
   const deno = fs.readFileSync(path.resolve('supabase/functions/grounded-answer/config.ts'), 'utf-8');
 
   const extract = (src: string, name: string) => {

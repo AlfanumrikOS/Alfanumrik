@@ -34,7 +34,7 @@ const read = (p: string) => readFileSync(root(p), 'utf8');
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Regression #1: quiz-assembler does not relax the chapter filter', () => {
-  const src = read('src/lib/quiz-assembler.ts');
+  const src = read('../../packages/lib/src/quiz-assembler.ts');
 
   it('the comment block calls out RUNG 3 REMOVED', () => {
     expect(src).toMatch(/RUNG 3 REMOVED/);
@@ -90,7 +90,7 @@ describe('Regression #2: /api/quiz wires academic-scope validation + structured 
 
 describe('Regression #3: Next.js RAG callers are pinned to NCERT', () => {
   it('ncert-retriever calls match_rag_chunks_ncert (not the V1 RPC)', () => {
-    const src = read('src/lib/ai/retrieval/ncert-retriever.ts');
+    const src = read('../../packages/lib/src/ai/retrieval/ncert-retriever.ts');
     expect(src).toMatch(/rpc\(\s*['"]match_rag_chunks_ncert['"]/);
     expect(src).not.toMatch(/rpc\(\s*['"]match_rag_chunks['"]\s*,/);
     expect(src).toMatch(/p_subject_code/);
@@ -130,7 +130,7 @@ describe('Regression #3: Next.js RAG callers are pinned to NCERT', () => {
 
 describe('Regression #4: chapter listing is governed via /api/student/chapters', () => {
   it('getChaptersForSubject is now a fetch shim (not a direct supabase.from(chapters) read)', () => {
-    const src = read('src/lib/supabase.ts');
+    const src = read('../../packages/lib/src/supabase.ts');
     // Locate the function block
     const fnIdx = src.indexOf('export async function getChaptersForSubject');
     expect(fnIdx).toBeGreaterThan(-1);
@@ -141,7 +141,7 @@ describe('Regression #4: chapter listing is governed via /api/student/chapters',
   });
 
   it('useAllowedChapters hook exists and uses SWR', () => {
-    const src = read('src/lib/useAllowedChapters.ts');
+    const src = read('../../packages/lib/src/useAllowedChapters.ts');
     expect(src).toMatch(/import useSWR from 'swr'/);
     expect(src).toMatch(/\/api\/student\/chapters\?subject=/);
   });

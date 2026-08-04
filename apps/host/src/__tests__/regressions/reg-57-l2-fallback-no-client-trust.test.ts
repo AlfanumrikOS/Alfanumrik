@@ -35,7 +35,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
-const SUPABASE_LIB_PATH = resolve(process.cwd(), 'src/lib/supabase.ts');
+const SUPABASE_LIB_PATH = resolve(process.cwd(), '../../packages/lib/src/supabase.ts');
 
 const FORBIDDEN_PATTERNS = [
   /responses\.filter\(\s*r\s*=>\s*r\.is_correct\s*\)\.length/,

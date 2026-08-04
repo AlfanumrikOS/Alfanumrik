@@ -54,10 +54,10 @@ const REPO_ROOT = path.resolve(__dirname, '../../../..');
 // Directories scanned recursively (every *.ts) + explicit observability/analytics libs.
 const SCAN_DIRS = ['src/app/api/super-admin'].map((p) => path.join(REPO_ROOT, p));
 const SCAN_FILES = [
-  'src/lib/analytics.ts',
-  'src/lib/logger.ts',
-  'src/lib/ops-events.ts',
-  'src/lib/ops-events-redactor.ts',
+  '../../packages/lib/src/analytics.ts',
+  '../../packages/lib/src/logger.ts',
+  '../../packages/lib/src/ops-events.ts',
+  '../../packages/lib/src/ops-events-redactor.ts',
 ].map((p) => path.join(REPO_ROOT, p));
 
 // Exact `relpath:line` hits that have been reviewed and confirmed non-PII.
@@ -122,8 +122,8 @@ describe('SAO-4 — bare-name log canary (P13)', () => {
   it('scans a non-trivial slice of the admin + observability source', () => {
     // Guard against the scan silently collecting nothing (path drift).
     expect(SCANNED_FILES.length).toBeGreaterThanOrEqual(100);
-    expect(SCANNED_FILES).toContain('src/lib/analytics.ts');
-    expect(SCANNED_FILES).toContain('src/lib/logger.ts');
+    expect(SCANNED_FILES).toContain('../../packages/lib/src/analytics.ts');
+    expect(SCANNED_FILES).toContain('../../packages/lib/src/logger.ts');
   });
 
   it('no logger call passes a bare name/email/phone key (would bypass key-based redaction)', () => {

@@ -74,7 +74,7 @@ function extractSubmitFn(code: string): string {
   return after > -1 ? code.slice(start, after) : code.slice(start);
 }
 
-const SUPABASE_TS = 'src/lib/supabase.ts';
+const SUPABASE_TS = '../../packages/lib/src/supabase.ts';
 const rawSrc = readFileSync(resolveRepo(SUPABASE_TS), 'utf8');
 const code = stripComments(rawSrc);
 const submitFn = extractSubmitFn(code);

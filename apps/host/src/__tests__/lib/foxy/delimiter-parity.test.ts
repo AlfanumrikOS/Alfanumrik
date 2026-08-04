@@ -36,7 +36,7 @@ const REPO_ROOT = process.cwd();
 // foxy-system.ts (the Next-side safety rails) — read its source text so we can
 // assert on the prompt strings it emits without importing its builder graph.
 const FOXY_SYSTEM_SRC = readFileSync(
-  join(REPO_ROOT, 'src/lib/ai/prompts/foxy-system.ts'),
+  join(REPO_ROOT, '../../packages/lib/src/ai/prompts/foxy-system.ts'),
   'utf8',
 );
 
@@ -50,7 +50,7 @@ const FOXY_TEMPLATE_PATH = join(
 // normalize-inline.ts. Read its source to assert it documents the same
 // canonicalisation target ($ -> \( / \[).
 const NORMALIZE_INLINE_SRC = readFileSync(
-  join(REPO_ROOT, 'src/lib/foxy/normalize-inline.ts'),
+  join(REPO_ROOT, '../../packages/lib/src/foxy/normalize-inline.ts'),
   'utf8',
 );
 

@@ -59,7 +59,7 @@ const MIGRATIONS_DIR = 'supabase/migrations';
 const V2_LATEST = `${MIGRATIONS_DIR}/20260623000500_reapply_submit_quiz_v2_column_fix.sql`;
 const BASELINE = `${MIGRATIONS_DIR}/00000000000000_baseline_from_prod.sql`;
 const QUIZ_RESULTS = 'src/components/quiz/QuizResults.tsx';
-const SCORING_TS = 'src/lib/scoring.ts';
+const SCORING_TS = '../../packages/lib/src/scoring.ts';
 
 // Canonical SQL score expression: ROUND((v_correct::NUMERIC / v_total) * 100)
 const RE_SQL_SCORE =

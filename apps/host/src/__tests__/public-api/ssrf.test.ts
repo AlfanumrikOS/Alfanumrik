@@ -174,7 +174,7 @@ describe('Track A.6 SSRF — normal public https hosts allowed', () => {
 // divergence (a relaxed range, a missing block) fails here loud.
 // ─────────────────────────────────────────────────────────────────────────────
 describe('Track A.6 SSRF — Node copy and Deno _shared copy are kept in sync', () => {
-  const nodeSrc = readFileSync(resolve(process.cwd(), 'src/lib/public-api/ssrf.ts'), 'utf8');
+  const nodeSrc = readFileSync(resolve(process.cwd(), '../../packages/lib/src/public-api/ssrf.ts'), 'utf8');
   const denoSrc = readFileSync(
     resolve(process.cwd(), 'supabase/functions/_shared/ssrf.ts'),
     'utf8',

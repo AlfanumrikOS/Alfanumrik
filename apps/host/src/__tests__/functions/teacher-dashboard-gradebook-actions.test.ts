@@ -501,7 +501,7 @@ describe('teacher-dashboard dispatcher — Phase C.2 actions present', () => {
     // the mistake.
     const fs = await import('node:fs/promises');
     const path = await import('node:path');
-    const sourcePath = path.resolve(process.cwd(), 'src/lib/state/journey/journey.ts');
+    const sourcePath = path.resolve(process.cwd(), '../../packages/lib/src/state/journey/journey.ts');
     const src = await fs.readFile(sourcePath, 'utf8');
     expect(src).toContain("case 'teacher.grade_entry_set':");
   });

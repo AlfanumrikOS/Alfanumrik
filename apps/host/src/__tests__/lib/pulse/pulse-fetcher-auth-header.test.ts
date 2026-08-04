@@ -159,7 +159,7 @@ describe('pulseFetcher — Bearer-token forwarding (over real authHeader)', () =
 
 // ── Structural pin: use-pulse.ts imports AND spreads authHeader() in pulseFetcher. ──
 describe('use-pulse.ts forwards authHeader() into pulseFetcher (structural pin)', () => {
-  const src = readFileSync(resolve(process.cwd(), 'src/lib/pulse/use-pulse.ts'), 'utf8');
+  const src = readFileSync(resolve(process.cwd(), '../../packages/lib/src/pulse/use-pulse.ts'), 'utf8');
 
   it('imports authHeader from the shared helper', () => {
     expect(src).toMatch(

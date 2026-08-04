@@ -31,7 +31,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const WEB_PLANS_PATH = resolve(process.cwd(), 'src/lib/plans.ts');
+const WEB_PLANS_PATH = resolve(process.cwd(), '../../packages/lib/src/plans.ts');
 const MOBILE_SUBSCRIPTION_PATH = resolve(
   process.cwd(),
   'mobile/lib/data/models/subscription.dart'

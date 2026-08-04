@@ -137,7 +137,7 @@ describe('post-login redirect chain — source structure', () => {
 
   it('AuthContext.tsx fallback path queries the school_admins table', () => {
     const file = readFileSync(
-      path.resolve(process.cwd(), 'src/lib/AuthContext.tsx'),
+      path.resolve(process.cwd(), '../../packages/lib/src/AuthContext.tsx'),
       'utf-8'
     );
     // The fallback block (used when get_user_role RPC fails or returns

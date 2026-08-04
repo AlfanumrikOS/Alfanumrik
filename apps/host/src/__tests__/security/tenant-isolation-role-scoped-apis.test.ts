@@ -52,7 +52,7 @@ describe('parent route tenant isolation contracts', () => {
   });
 
   it('central RBAC only accepts active or approved guardian links for same-school child access', () => {
-    const rbac = read('src/lib/rbac.ts');
+    const rbac = read('../../packages/lib/src/rbac.ts');
     expect(rbac).toContain(".from('guardian_student_links')");
     expect(rbac).toContain(".eq('student_id', studentId)");
     expect(rbac).toContain(".in('status', ['active', 'approved'])");
@@ -75,7 +75,7 @@ describe('teacher route tenant isolation contracts', () => {
   });
 
   it('central RBAC grants teacher student access only through assigned active classes', () => {
-    const rbac = read('src/lib/rbac.ts');
+    const rbac = read('../../packages/lib/src/rbac.ts');
     const teacherPath = rbac.slice(
       rbac.indexOf('// Teacher: can access students in assigned classes'),
       rbac.indexOf('return false;', rbac.indexOf('// Teacher: can access students in assigned classes')),
@@ -92,7 +92,7 @@ describe('teacher route tenant isolation contracts', () => {
 
 describe('school-admin and Pulse tenant isolation contracts', () => {
   it('school-admin APIs use school_id resolved from auth instead of request body school_id', () => {
-    const auth = read('src/lib/school-admin-auth.ts');
+    const auth = read('../../packages/lib/src/school-admin-auth.ts');
     const studentsRoute = read('src/app/api/school-admin/students/route.ts');
     const exportRoute = read('src/app/api/school-admin/reports/export/route.ts');
     expect(auth).toContain(".from('school_admins')");
