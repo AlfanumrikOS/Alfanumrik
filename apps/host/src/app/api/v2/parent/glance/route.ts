@@ -19,13 +19,14 @@
  * P5: grade is a string. P13: only the parent-entitled child data (name/grade +
  * the child's own learning stats) crosses the wire; no raw error text leaks.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getGuardianByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { isGuardianLinkedToStudent } from '@alfanumrik/lib/domains/relationship';
 import { isValidUUID } from '@alfanumrik/lib/sanitize';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 /** Edge Function dashboard payload — only the fields we read (matches index.ts). */
 interface DashboardPayload {
@@ -52,11 +53,11 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     // ── 1. AuthZ (RBAC permission gate, P9) ──
     const auth = await authorizeRequest(request, 'child.view_progress');
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
     // ── 2. Validate student_id (must be a UUID). ──
     const studentId = new URL(request.url).searchParams.get('student_id');
@@ -230,4 +231,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

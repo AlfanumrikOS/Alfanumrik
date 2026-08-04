@@ -16,18 +16,19 @@
  * narrow column set; no email / phone / other PII crosses the wire). No raw
  * error text is leaked to the client.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getGuardianByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { listChildrenForGuardian } from '@alfanumrik/lib/domains/relationship';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     // ── 1. AuthZ (RBAC permission gate, P9) ──
     const auth = await authorizeRequest(request, 'child.view_progress');
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
     // ── 2. Resolve guardian from the auth user (same helper as the encourage
     //       + report routes). No guardian profile → 403. ──
@@ -69,4 +70,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

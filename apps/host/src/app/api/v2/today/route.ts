@@ -35,6 +35,7 @@ import {
 import { mapActionToTodayItem } from '@alfanumrik/lib/today/map-action';
 import type { TodayResponse } from '@alfanumrik/lib/today/types';
 import { logger } from '@alfanumrik/lib/logger';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 type ChapterTitleMap = Map<string, { title: string; titleHi: string | null }>;
 
@@ -42,12 +43,12 @@ export const dynamic = 'force-dynamic';
 
 const FLAG_NAME = CONSUMER_MINIMALISM_FLAGS.TODAY_HOME_V1;
 
-export async function GET(request: Request) {
+export const GET = withRoute(async (request: Request) => {
   // 1. Auth — student-scoped read permission. Mirrors /api/student/daily-plan.
   const auth = await authorizeRequest(request, 'study_plan.view', {
     requireStudentId: true,
   });
-  if (!auth.authorized) return auth.errorResponse!;
+  if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
   const userId = auth.userId!;
 
@@ -178,4 +179,4 @@ export async function GET(request: Request) {
     });
     return NextResponse.json({ error: 'internal_error' }, { status: 500 });
   }
-}
+});

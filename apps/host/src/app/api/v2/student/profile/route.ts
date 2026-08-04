@@ -11,19 +11,20 @@
  *
  * Auth: profile.view_own (same permission the oauth-manager profile read uses).
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getStudentByAuthUserId } from '@alfanumrik/lib/domains/identity';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     const auth = await authorizeRequest(request, 'profile.view_own', {
       requireStudentId: true,
     });
-    if (!auth.authorized || !auth.userId) return auth.errorResponse!;
+    if (!auth.authorized || !auth.userId) return auth.errorResponse as unknown as NextResponse;
 
     // Reuse the identity domain read to resolve the student (id + base fields).
     const identity = await getStudentByAuthUserId(auth.userId);
@@ -62,4 +63,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

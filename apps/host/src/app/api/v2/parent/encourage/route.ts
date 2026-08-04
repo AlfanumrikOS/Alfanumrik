@@ -11,6 +11,7 @@ import {
   DEFAULT_MESSAGE_KEY,
   type CheerPreset,
 } from '@alfanumrik/lib/parent/cheer-catalog';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 /**
  * POST /api/v2/parent/encourage — Parent sends a PRESET cheer to a linked child.
@@ -37,11 +38,11 @@ import {
 
 const RATE_LIMIT_HOURS = 6;
 
-export async function POST(request: Request) {
+export const POST = withRoute(async (request: Request) => {
   try {
     // ── 1. AuthZ (RBAC permission gate) ──
     const auth = await authorizeRequest(request, 'child.encourage');
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
     // ── 2. Parse + validate body ──
     let body: unknown;
@@ -242,4 +243,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
+});

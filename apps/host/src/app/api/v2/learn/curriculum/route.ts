@@ -15,7 +15,7 @@
  *
  * Auth: study_plan.view (student-scoped read; same as /api/student/daily-plan).
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
@@ -24,6 +24,7 @@ import {
   getActiveTopicsForSubjects,
   getSubjectIdCodeRows,
 } from '@/lib/curriculum/cached-taxonomy';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 interface AvailableSubjectRow {
   code: string;
@@ -41,12 +42,12 @@ interface TopicRow {
   parent_topic_id: string | null;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     const auth = await authorizeRequest(request, 'study_plan.view', {
       requireStudentId: true,
     });
-    if (!auth.authorized || !auth.userId) return auth.errorResponse!;
+    if (!auth.authorized || !auth.userId) return auth.errorResponse as unknown as NextResponse;
 
     const url = new URL(request.url);
     const subjectFilter = url.searchParams.get('subject');
@@ -145,4 +146,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

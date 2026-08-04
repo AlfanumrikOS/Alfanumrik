@@ -1436,6 +1436,22 @@ jobs:
       - name: Edge Function log PII guard (P13)
         run: node scripts/security/check-edge-logs.mjs
 
+      # P2-2 (API response-envelope consolidation) — withRoute() adoption
+      # ratchet. scripts/check-route-wrapper-ratchet.mjs re-derives from
+      # source how many apps/host/src/app/api/**/route.ts files import
+      # withRoute() (packages/lib/src/api/v2/with-route.ts) and fails if that
+      # count drops below the recorded floor in
+      # scripts/route-wrapper-adoption.json — guards against a route
+      # silently reverting off the wrapper in an unrelated refactor. Pure
+      # node:fs/path/url script, no build or install required. The script
+      # existed but no workflow invoked it, so the ratchet was not
+      # mechanically enforced; this wires it in alongside the other static
+      # check:* gates in this job.
+      #
+      # This step is intentionally BLOCKING with no continue-on-error.
+      - name: withRoute() adoption ratchet (P2-2)
+        run: npm run check:route-wrapper-ratchet
+
   # ── Step 1c: Unit tests (sharded 4×, 2026-07-20 CI speed-up) ──
   # The full-suite `npm test -- --coverage` run (previously a single ~long step
   # inside the quality job) is split across 4 parallel shards. Vitest shards by

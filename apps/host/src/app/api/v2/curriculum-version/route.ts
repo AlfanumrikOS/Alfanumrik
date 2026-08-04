@@ -39,10 +39,11 @@
  *
  * Auth: study_plan.view (student-scoped read; same as /api/v2/learn/curriculum).
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { logger } from '@alfanumrik/lib/logger';
 import { v2Success } from '@alfanumrik/lib/api/v2/envelope';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 import { createCurriculumVersionClient } from './_scoped-client';
 
 /** Verbatim shape of the get_curriculum_versions RPC jsonb. */
@@ -69,12 +70,12 @@ function degraded() {
   return v2Success(emptyVersions(), { headers: { 'Cache-Control': DEGRADED_CACHE } });
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     const auth = await authorizeRequest(request, 'study_plan.view', {
       requireStudentId: true,
     });
-    if (!auth.authorized || !auth.userId) return auth.errorResponse!;
+    if (!auth.authorized || !auth.userId) return auth.errorResponse as unknown as NextResponse;
 
     // No resolved student profile (e.g. a non-student caller, or a profile that
     // is still mid-onboarding) → degrade to empty scopes. Never break the poll.
@@ -125,4 +126,4 @@ export async function GET(request: NextRequest) {
     });
     return degraded();
   }
-}
+});

@@ -6,8 +6,26 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 343 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-336..REG-343 (2026-08-03, P0+P1 launch-hardening batch — eight
+**Total catalog: 344 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-344 (2026-08-04, P2-2 API response-envelope wrapper — pins
+`withRoute()` [`packages/lib/src/api/v2/with-route.ts`], the shared
+error-safety net now adopted by the 11-route `/v2` reference slice: a
+successful handler's `NextResponse` (success OR a deliberate non-200
+`v2Error`) is returned by reference, never rewrapped; an unhandled throw
+ALWAYS becomes the fixed `v2Error('Internal server error', 500,
+'INTERNAL_ERROR')` envelope with the caught error's message/stack/cause
+NEVER serialized into the response body (P13), full detail logged
+server-side only via the structured `logger`; `x-request-id` is echoed
+verbatim if the caller supplied one, else generated, attached ONLY on the
+error path; `opts.onError` fires with the raw caught value on the error
+path and never on the happy path; and `ctx.params` [Next 16's
+`Promise<SegmentParams>` shape] is forwarded to the handler by the exact
+same Promise reference, unread. A companion static ratchet
+[`scripts/check-route-wrapper-ratchet.mjs` +
+`scripts/route-wrapper-adoption.json`] re-derives live `withRoute` adoption
+across every `apps/host/src/app/api/**/route.ts` on each run and fails if
+it ever drops below the recorded floor (11); see `11-infrastructure.md`.)
+Prior: REG-336..REG-343 (2026-08-03, P0+P1 launch-hardening batch — eight
 pins across five shards, catalogued in one pass. REG-336 setup-plans
 caller-contract migration: the x-admin-secret/service-role-key header gate
 is REMOVED in favour of a session-based `authorizeAdmin(request,
@@ -54,7 +72,9 @@ each mechanic empirically verified against vitest 4.1.8, but NO enforcing
 meta-test on the config shape yet, an explicit known gap
 (`11-infrastructure.md`). Sanity for the whole batch: the 14 pin/companion
 test files were re-run green in ONE vitest pass from apps/host — 191/191.)
-**REG-344 is the next free id.**
+**REG-344 is the next free id.** That was true before this pass and is
+superseded above — the P2-2 API response-envelope wrapper regression took
+REG-344 on 2026-08-04, so **REG-345 is now the next free id.**
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

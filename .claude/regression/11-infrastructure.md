@@ -2150,12 +2150,37 @@ per-file threshold (including the 90% xp-rules floors) were tautologies — a
 vacuous gate. Repaired with the glob mechanics verified EMPIRICALLY against
 vitest 4.1.8 and written into the config as rationale.
 
+**REG-344 (P2-2).** `withRoute()` (`packages/lib/src/api/v2/with-route.ts`)
+is the shared error-safety wrapper newly adopted across the 11-route `/v2`
+reference slice (read/metadata routes: `curriculum-version`, `exam-schedule`,
+`learn/concept`, `learn/curriculum`, `parent/{children,encourage,glance}`,
+`student/{profile,leaderboard,progress}`, `today`). Two guarantees matter
+enough to pin as a regression: (a) the happy path is a TRUE pass-through — a
+handler's returned `NextResponse` (success OR a deliberate non-200
+`v2Error`) comes back by the exact same reference, never rewrapped or
+double-wrapped, so the existing per-route contract-conformance pins stay
+valid; (b) an unhandled throw ALWAYS collapses to the fixed
+`v2Error('Internal server error', 500, 'INTERNAL_ERROR')` envelope with the
+caught error's message/stack/cause NEVER serialized into the response body
+(P13) — full detail goes server-side only, via the structured `logger`,
+tagged with a request id that is echoed verbatim from an incoming
+`x-request-id` header or generated fresh, and attached as a response header
+ONLY on the error path. `ctx.params` (Next 16's `Promise<SegmentParams>`
+shape, required not optional) is forwarded to the handler by the exact same
+Promise reference — `withRoute` never reads it. A companion static ratchet
+(`scripts/check-route-wrapper-ratchet.mjs` + `scripts/route-wrapper-
+adoption.json`) re-derives live adoption from source on every run and fails
+if the count ever drops below the recorded floor (11 as of this entry),
+catching a route that silently reverts off the wrapper in an unrelated
+refactor.
+
 | # | Test name | Asserts | Location | Status |
 |---|---|---|---|---|
 | REG-340 | `swr_global_provider_mount` | (a) The root layout imports `SWRProvider` from `@alfanumrik/lib/SWRProvider` and mounts `<SWRProvider>` (open + close) in the JSX tree. (b) OUTERMOST pin: `<SWRProvider>` opens BEFORE `<TenantConfigProvider>` and closes AFTER it — the provider cannot be silently demoted below another provider (where subtrees would escape it). (c) `SWRProvider.tsx` is `'use client'`, imports `SWRConfig` from `swr` and `DEFAULT_CONFIG` from `./swr`, and renders `<SWRConfig value={DEFAULT_CONFIG}>`. (d) `DEFAULT_CONFIG` stays exported from `packages/lib/src/swr.tsx` (typed `SWRConfiguration`) — so no `useSWR` call site can regress to unbounded library-default retries. | `apps/host/src/__tests__/swr-global-provider-mount.test.ts` (5 tests) | E |
 | REG-341 | `proxy_school_lookup_fail_open` | **Behavioral mirror** (byte-mirrored `schoolLookupFailure` / cache-read / 404-gate logic, 6 tests): transient failure with NO last-known-good → 5s error-cache entry (TTL asserted ≤ 5s, never the 60s negative cache); transient failure WITH a stale positive entry → serves the stale config (`{ ok: false, data }`, re-cached 5s WITHOUT the error flag); a prior error entry is never promoted to last-known-good on repeat failure; a cached error entry reads back `ok: false`, so the 404 branch cannot fire from cache; `shouldHard404` is FALSE for every `ok: false` shape (fail open, with or without stale data) and TRUE only for a definitive `{ ok: true, data: null }` on an explicit tenant request (the B2C host is untouched either way). **Source pins on `src/proxy.ts`** (6 tests): ≥2 `AbortSignal.timeout(3000)` fetch bounds (both lookups); ≥4 `return schoolLookupFailure(` call sites (non-2xx AND thrown/timeout branches, both lookups); the `!res.ok` branches contain NO `60_000` cache write; `schoolLookupFailure`'s body writes exactly two `5_000`-TTL arms and no `60_000`; the tenant 404 gate is textually `isExplicitTenantRequest && !schoolConfig && !schoolLookupFailed`; cache reads surface `{ ok: !cached.error, data: cached.data }` in both lookups. | `apps/host/src/__tests__/proxy-school-lookup-fail-open.test.ts` (12 tests) | E |
 | REG-342 | `ci_deploy_health_poll_single_home` | (a) The `ci-gate-and-exact-sha-poll` policy check passes against the REAL current `ci.yml` + `deploy-production.yml`: `deploy-production.yml` carries the bounded exact-SHA poll (`POLL_WINDOW_SECONDS=600` deadline loop, `EXPECTED_SHA` compare, `b.ok===true&&b.status==='healthy'`, `b.version?.git_sha||''`, no `sleep 60`, no soft-pass) and `ci.yml` carries NO `health-check` job at all (`mappingEntryBlock(ci, 'health-check') === ''`). (b) **Mutation pin:** appending a minimal `health-check:` job back into the ci.yml text makes the same check FAIL — reintroducing the duplicate poller is a contract failure, not a style nit. (c) Same suite, same change: the production-deployment-authority check now reads `apps/host/vercel.json` as the authoritative deploy config (the repo-root `vercel.json` was deleted 2026-08-03; a ci.yml quality-job guard watches for its reappearance). | `apps/host/src/__tests__/devops-policy-contract.test.ts` (reintroduction mutation test + re-armed contract) + `scripts/verify-devops-policy-contract.ts` (`ci-gate-and-exact-sha-poll`) | E |
 | REG-343 | `coverage_gate_integrity_honest_include_and_threshold_keys` | The repaired `vitest.config.ts` coverage block, with each mechanic empirically verified against vitest 4.1.8 (picomatch + tinyglobby + pathe) and recorded in-config: (a) `allowExternal: true` — without it, files outside `test.root` are SILENTLY dropped from the report; (b) `include` carries the apps/host `src/**` glob PLUS the BARE `packages/lib/src/**` + `packages/ui/src/**` globs — the bare form is the one that contains-matches covered absolute paths (`../../`-relative include patterns can NEVER match an absolute path); (c) per-file threshold KEYS use the `'../../packages/lib/src/<x>'` form — the ONLY form that reaches the canonical implementations, because vitest matches threshold keys with an ANCHORED picomatch against `path.relative(config.root, coveredFile)` with `config.root` = `apps/host` (bare `packages/...`, `**/packages/...` and absolute key forms all match NOTHING — silently vacuous). Keys repointed: `xp-config.ts` 90/90/90/90 (the real XP surface — the old `'src/lib/xp-rules.ts'`/`'src/lib/xp-config.ts'` STUB keys deleted), `cognitive-engine.ts` 80×4, `exam-engine.ts` 80×4, `feature-flags.ts` 95/85/95/95, `oauth-manager.ts`; (d) test/harness files are excluded from the coverage denominator at ANY depth (`**/*.{test,spec}.{ts,tsx}`, `**/__tests__/**`, `**/__vitest__/**`, `**/__mocks__/**`, stories) plus the packages/ twins of the already-excluded integration territory; (e) global floors recalibrated against the HONEST surface (statements 54 / branches 49 / functions 56 / lines 55 vs measured 60.37 / 51.69 / 58.25 / 62.23 on 1,447 covered files — functions LOWERED 58→56 per the measured−2 repair protocol with before/after recorded in-config); (f) the orphan threshold-free `vitest.mesh.config.ts` escape-hatch lane is DELETED (its agents/eval/state targets already run in the main gated lane). | `vitest.config.ts` coverage block (config-level pin + embedded empirically-verified rationale) | P (config repair; see known-gaps below) |
+| REG-344 | `with_route_error_safety_wrapper` | (a) **Happy-path pass-through**: a handler's returned `NextResponse` — `v2Success(...)` OR a deliberate non-200 `v2Error(...)` — is returned by the SAME reference (`res).toBe(response)`), status/body/headers byte-identical, no `x-request-id` injected. (b) **P13 no-leak 500**: an unhandled throw (Error with message+cause, or a bare non-Error value) ALWAYS returns exactly `{ success:false, error:'Internal server error', code:'INTERNAL_ERROR' }` at HTTP 500 — the serialized body is asserted to NOT contain the thrown sentinel string, the `cause` detail, or a stack-trace fragment. (c) **x-request-id**: generated when absent, echoed VERBATIM when the caller supplies one, attached ONLY on the error path. (d) **logger.error**: called exactly once on the error path with the real `Error` object (non-Error throws wrapped first) + `method`/`path`/`requestId` metadata; NEVER called on the happy path (success OR a handled non-200 `v2Error` — i.e. not every non-2xx is a "throw"). (e) **`opts.onError`**: invoked with the RAW caught value (Error or not) on the error path only, never on the happy path. (f) **`ctx.params` passthrough**: the exact same `Promise` reference reaches the handler untouched, for both a populated dynamic-segment shape and Next 16's empty-object static-route shape. (g) **Adoption ratchet**: `scripts/check-route-wrapper-ratchet.mjs` re-derives live `withRoute` imports across `apps/host/src/app/api/**/route.ts` from source and fails if the count drops below `scripts/route-wrapper-adoption.json`'s recorded floor (11) — verified passing at the 11-route floor. (h) The pre-existing `/v2` contract-conformance suite (34 tests) re-run green after the 11-route adoption, confirming no route's response shape changed. | `packages/lib/src/__tests__/api/v2/with-route.test.ts` (17 tests; mirrored via the auto-generated re-export stub `apps/host/src/lib/__tests__/api/v2/with-route.test.ts` so the unit lane collects it) + `apps/host/src/__tests__/api/v2/contract-conformance.test.ts` (34 tests, re-run) + `scripts/check-route-wrapper-ratchet.mjs` (source-derived static check) | E |
 
 ### Known gaps (REG-343 — recorded honestly, not claimed as covered)
 
@@ -2186,6 +2211,12 @@ vitest 4.1.8 and written into the config as rationale.
   re-export stubs is indistinguishable from a passing gate; the measured
   surface is now the canonical code, and every known remaining blind spot
   is written down rather than silently green.
+- P12/P13 reliability (REG-344) — an unhandled `/v2` route throw can never
+  leak internal error detail to a client and always degrades to a
+  well-formed, discriminated envelope instead of an opaque Next.js 500 HTML
+  page. P8/P9 (RLS/RBAC) are explicitly UNAFFECTED — `withRoute` never
+  touches auth, and every adopted route's own `authorizeRequest()` call runs
+  unchanged, before the wrapper's try/catch is ever exercised.
 
 ### Catalog total
 
@@ -2193,8 +2224,9 @@ Pre-REG-340: 339 entries (through REG-339, the verifyCronAuth consolidation
 — see `10-rbac-rls.md`). The 2026-08-03 P0+P1 batch adds REG-340 (global SWR
 provider mount), REG-341 (proxy school-lookup fail-open), REG-342 (CI/deploy
 health-poll single home) and REG-343 (coverage-gate integrity) — the last
-four of the eight ids REG-336..REG-343 consumed by this batch.
-**Total catalog: 343 entries (target: 35 — TARGET EXCEEDED).**
+four of the eight ids REG-336..REG-343 consumed by this batch. The 2026-08-04
+P2-2 pass adds REG-344 (`withRoute()` API response-envelope wrapper).
+**Total catalog: 344 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
 
