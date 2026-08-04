@@ -130,46 +130,10 @@ import path from 'node:path';
     return originalExistsSync(candidate) ? candidate : input;
   }
 
-  function resolveGeneratedReExportPath(file: unknown): unknown {
-    if (typeof file !== 'string') return file;
-    let current = remapRepoAssetPath(file);
-    if (typeof current !== 'string') return current;
-
-    for (let depth = 0; depth < 5; depth += 1) {
-      if (!originalExistsSync(current)) return current;
-
-      const absolute = path.resolve(current);
-      if (!absolute.startsWith(hostRoot + path.sep)) return current;
-
-      const source = originalReadFileSync(current, 'utf8');
-      const match = /^\/\/ auto-generated re-export stub\s+export \* from ['"]([^'"]+)['"];?\s*$/s.exec(source);
-      if (!match) return current;
-
-      const exportTarget = match[1].replace(/\\/g, '/');
-      const targets = [path.resolve(path.dirname(current), match[1])];
-      const packageSegmentIndex = exportTarget.indexOf('packages/');
-      if (packageSegmentIndex !== -1) {
-        targets.push(path.resolve(repoRoot, exportTarget.slice(packageSegmentIndex)));
-      }
-      const candidates = targets.flatMap((target) => [
-        target,
-        `${target}.ts`,
-        `${target}.tsx`,
-        `${target}.js`,
-        `${target}.jsx`,
-      ]);
-      const next = candidates.find((candidate) => originalExistsSync(candidate));
-      if (!next || next === current) return current;
-      current = next;
-    }
-
-    return current;
-  }
-
   fs.existsSync = ((file: Parameters<typeof fs.existsSync>[0]) =>
     originalExistsSync(remapRepoAssetPath(file))) as typeof fs.existsSync;
   fs.readFileSync = ((file: Parameters<typeof fs.readFileSync>[0], ...args: unknown[]) =>
-    originalReadFileSync(resolveGeneratedReExportPath(file), ...(args as []))) as typeof fs.readFileSync;
+    originalReadFileSync(remapRepoAssetPath(file), ...(args as []))) as typeof fs.readFileSync;
   fs.readdirSync = ((file: Parameters<typeof fs.readdirSync>[0], ...args: unknown[]) =>
     originalReaddirSync(remapRepoAssetPath(file), ...(args as []))) as typeof fs.readdirSync;
   fs.statSync = ((file: Parameters<typeof fs.statSync>[0], ...args: unknown[]) =>
@@ -177,7 +141,7 @@ import path from 'node:path';
   fs.lstatSync = ((file: Parameters<typeof fs.lstatSync>[0], ...args: unknown[]) =>
     originalLstatSync(remapRepoAssetPath(file), ...(args as []))) as typeof fs.lstatSync;
   fs.promises.readFile = ((file: Parameters<typeof fs.promises.readFile>[0], ...args: unknown[]) =>
-    originalPromisesReadFile(resolveGeneratedReExportPath(file), ...(args as []))) as typeof fs.promises.readFile;
+    originalPromisesReadFile(remapRepoAssetPath(file), ...(args as []))) as typeof fs.promises.readFile;
   fs.promises.stat = ((file: Parameters<typeof fs.promises.stat>[0], ...args: unknown[]) =>
     originalPromisesStat(remapRepoAssetPath(file), ...(args as []))) as typeof fs.promises.stat;
   syncBuiltinESMExports();
