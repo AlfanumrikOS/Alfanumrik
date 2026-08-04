@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
-import { redactSentryEvent } from './src/lib/sentry-client-redact';
+import { redactSentryEvent } from '@alfanumrik/lib/sentry-client-redact';
 
 // Browser-side Sentry init — DEFERRED-LOADED module (P10 fix, 2026-08-03).
 //
@@ -50,7 +50,7 @@ export function initSentryClient(): typeof Sentry {
 
     beforeSend(event) {
       // P13 enforcement — see audit 2026-04-27 finding F1.
-      // Redaction is implemented in src/lib/sentry-client-redact.ts so it
+      // Redaction is implemented in packages/lib/src/sentry-client-redact.ts so it
       // can be unit-tested without triggering Sentry SDK side effects.
       // Don't send events in development.
       if (process.env.NODE_ENV !== 'production') return null;

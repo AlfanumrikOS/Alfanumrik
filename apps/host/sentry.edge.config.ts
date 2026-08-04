@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/nextjs';
 import { redactPII } from './src/lib/ops-events-redactor';
-import { sanitizeUrl } from './src/lib/sentry-client-redact';
+import { sanitizeUrl } from '@alfanumrik/lib/sentry-client-redact';
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
