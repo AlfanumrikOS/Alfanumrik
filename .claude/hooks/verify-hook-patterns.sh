@@ -167,8 +167,11 @@ replay_guard backend    packages/lib/src/supabase-admin.ts warn  "P8 canonical a
 replay_guard assessment packages/lib/src/xp-rules.ts       allow "P2 owner may write"
 
 # Generated stubs under apps/host/src/lib — editing one is itself suspicious.
-replay_guard frontend   apps/host/src/lib/xp-rules.ts      deny  "P2 stub XP"
-replay_guard frontend   apps/host/src/lib/rbac.ts          deny  "P9 stub RBAC"
+# (P2-3 Phase 2: source re-export stubs deleted; repointed to canonical —
+# guard.sh's OR-pattern ^(packages/lib/src|apps/host/src/lib)/(xp-rules|rbac)\.ts$
+# still matches the canonical half, so the deny-behavior assertion still holds.)
+replay_guard frontend   packages/lib/src/xp-rules.ts      deny  "P2 stub XP"
+replay_guard frontend   packages/lib/src/rbac.ts          deny  "P9 stub RBAC"
 
 # App surfaces.
 replay_guard frontend   apps/host/src/proxy.ts             deny  "middleware perimeter"
@@ -199,7 +202,7 @@ replay_chain architect   .github/workflows/ci.yml            "P14 deploy config 
 # Bash bypass must be blocked on the CANONICAL path, not just the stub.
 replay_bash frontend "sed -i s/10/99/ packages/lib/src/xp-rules.ts" deny  "bash bypass canonical XP"
 replay_bash frontend "sed -i s/x/y/ packages/lib/src/rbac.ts"       deny  "bash bypass canonical RBAC"
-replay_bash frontend "sed -i s/x/y/ apps/host/src/lib/xp-rules.ts"  deny  "bash bypass stub XP"
+replay_bash frontend "sed -i s/x/y/ packages/lib/src/xp-rules.ts"   deny  "bash bypass stub XP"
 replay_bash frontend "sed -i s/x/y/ apps/host/src/proxy.ts"         deny  "bash bypass middleware"
 replay_bash frontend "cat README.md"                                allow "benign command not blocked"
 echo

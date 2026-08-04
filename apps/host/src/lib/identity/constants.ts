@@ -22,7 +22,7 @@
  * routing, and access control. Run auth tests after any change.
  */
 
-import { GRADES } from '../constants';
+import { GRADES } from '@alfanumrik/lib/constants';
 
 // ── Roles ────────────────────────────────────────────────────
 
