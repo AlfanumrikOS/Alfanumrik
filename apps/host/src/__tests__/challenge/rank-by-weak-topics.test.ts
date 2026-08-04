@@ -12,8 +12,8 @@ import {
   rankChallengesByWeakTopics,
   parseChapterFromText,
   type RankableChallenge,
-} from '../../lib/challenge/rank-by-weak-topics';
-import type { WeakTopic } from '../../lib/state/learner-loop/weak-topics';
+} from '@alfanumrik/lib/challenge/rank-by-weak-topics';
+import type { WeakTopic } from '@alfanumrik/lib/state/learner-loop/weak-topics';
 
 function mkChallenge(overrides: Partial<RankableChallenge>): RankableChallenge {
   return {

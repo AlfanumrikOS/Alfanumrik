@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID, type AdminAuth } from '../../../../lib/admin-auth';
-import { cacheFetch, cacheInvalidatePrefix, CACHE_TTL } from '../../../../lib/cache';
-import { validateBody, zUuid, zGrade } from '../../../../lib/validation';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID, type AdminAuth } from '@alfanumrik/lib/admin-auth';
+import { cacheFetch, cacheInvalidatePrefix, CACHE_TTL } from '@alfanumrik/lib/cache';
+import { validateBody, zUuid, zGrade } from '@alfanumrik/lib/validation';
 import { z } from 'zod';
 
 /**

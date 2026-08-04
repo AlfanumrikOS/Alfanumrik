@@ -19,7 +19,7 @@ import {
 import {
   DomainEventSchema,
   LearnerLessonCompletedSchema,
-} from '../../../lib/state/events/registry';
+} from '@alfanumrik/lib/state/events/registry';
 
 // ─── shouldPublishLessonCompleted ────────────────────────────────────
 

@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   pickActionForToday,
   type LearnerNextResponse,
-} from '../../../lib/swr';
+} from '@alfanumrik/lib/swr';
 
 const SAMPLE_ACTION: LearnerNextResponse['action'] = {
   kind: 'review_due_cards',

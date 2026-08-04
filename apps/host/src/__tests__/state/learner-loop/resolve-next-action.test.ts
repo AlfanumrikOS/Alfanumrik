@@ -16,16 +16,16 @@ import {
   isSundayIst,
   isMonthEndDayIst,
   type LoopAugmentation,
-} from '../../../lib/state/learner-loop/resolve-next-action';
+} from '@alfanumrik/lib/state/learner-loop/resolve-next-action';
 import {
   ALL_ACTION_KINDS,
   LEARNER_LOOP_CONFIG,
-} from '../../../lib/state/learner-loop/types';
-import type { StudentState } from '../../../lib/state/student-state';
+} from '@alfanumrik/lib/state/learner-loop/types';
+import type { StudentState } from '@alfanumrik/lib/state/student-state';
 import {
   DomainEventSchema,
   ALL_EVENT_KINDS,
-} from '../../../lib/state/events/registry';
+} from '@alfanumrik/lib/state/events/registry';
 
 // ── Fixtures ─────────────────────────────────────────────────────────
 

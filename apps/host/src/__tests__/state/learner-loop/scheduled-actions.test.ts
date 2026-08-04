@@ -14,7 +14,7 @@ import {
   monthBucketIst,
   bucketForHorizon,
   expiresAtForHorizon,
-} from '../../../lib/state/learner-loop/scheduled-actions';
+} from '@alfanumrik/lib/state/learner-loop/scheduled-actions';
 
 // ─── dayBucketIst ────────────────────────────────────────────────────
 

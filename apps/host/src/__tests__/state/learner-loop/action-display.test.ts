@@ -9,9 +9,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { actionDisplay } from '../../../lib/state/learner-loop/action-display';
-import type { LearnerAction } from '../../../lib/state/learner-loop/types';
-import { ALL_ACTION_KINDS } from '../../../lib/state/learner-loop/types';
+import { actionDisplay } from '@alfanumrik/lib/state/learner-loop/action-display';
+import type { LearnerAction } from '@alfanumrik/lib/state/learner-loop/types';
+import { ALL_ACTION_KINDS } from '@alfanumrik/lib/state/learner-loop/types';
 
 describe('actionDisplay — every action kind has a bilingual display', () => {
   it('cold_start_diagnostic', () => {

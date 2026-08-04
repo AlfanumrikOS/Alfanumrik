@@ -4,8 +4,8 @@ import {
   supabaseAdminHeaders,
   supabaseAdminUrl,
   type AdminAuth,
-} from '../../../../../lib/admin-auth';
-import { authorizeRequest, type AuthorizationResult } from '../../../../../lib/rbac';
+} from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest, type AuthorizationResult } from '@alfanumrik/lib/rbac';
 import { z } from 'zod';
 
 function asAdminAudit(auth: AuthorizationResult): AdminAuth {

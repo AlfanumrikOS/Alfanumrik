@@ -5,25 +5,25 @@ import {
   weakestChapter,
   isLive,
   type StudentState,
-} from '../../lib/state/student-state';
+} from '@alfanumrik/lib/state/student-state';
 import {
   DomainEventSchema,
   ALL_EVENT_KINDS,
   type DomainEvent,
-} from '../../lib/state/events/registry';
-import { projectJourney, groupByIstDay } from '../../lib/state/journey/journey';
-import { buildAiContext } from '../../lib/state/context/builder';
-import { evaluate, pickDecision } from '../../lib/state/rules/engine';
+} from '@alfanumrik/lib/state/events/registry';
+import { projectJourney, groupByIstDay } from '@alfanumrik/lib/state/journey/journey';
+import { buildAiContext } from '@alfanumrik/lib/state/context/builder';
+import { evaluate, pickDecision } from '@alfanumrik/lib/state/rules/engine';
 import {
   STANDARD_RULES,
   foxyGateMinorWithoutParentRule,
   dashboardSuggestNextQuizRule,
   upsellFamilyPlanRule,
-} from '../../lib/state/rules/stdlib';
+} from '@alfanumrik/lib/state/rules/stdlib';
 import {
   bktUpdate,
   quizCompletionService,
-} from '../../lib/state/services/quiz-completion-service';
+} from '@alfanumrik/lib/state/services/quiz-completion-service';
 
 /**
  * Tests for the unified state architecture. We pin the pure-logic

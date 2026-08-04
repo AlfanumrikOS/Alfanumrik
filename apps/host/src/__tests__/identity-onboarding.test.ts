@@ -19,7 +19,7 @@ import {
   validateIdentityCompleteness,
   type IdentityResolution,
   type OnboardingState,
-} from '../lib/identity/onboarding';
+} from '@alfanumrik/lib/identity/onboarding';
 
 // ── Mock Helpers ────────────────────────────────────────────
 

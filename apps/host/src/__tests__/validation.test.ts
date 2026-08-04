@@ -18,7 +18,7 @@ import {
   contactFormSchema,
   adminUserUpdateSchema,
   validateBody,
-} from '../lib/validation';
+} from '@alfanumrik/lib/validation';
 
 // ── isValidUUID ──────────────────────────────────────────
 

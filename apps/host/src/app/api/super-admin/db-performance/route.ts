@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin } from '../../../../lib/admin-auth';
+import { authorizeAdmin } from '@alfanumrik/lib/admin-auth';
 import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
 interface ConnectionStateRow {

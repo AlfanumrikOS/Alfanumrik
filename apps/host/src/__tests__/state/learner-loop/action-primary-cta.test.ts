@@ -11,9 +11,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { actionPrimaryCta } from '../../../lib/state/learner-loop/action-display';
-import type { LearnerAction } from '../../../lib/state/learner-loop/types';
-import { ALL_ACTION_KINDS } from '../../../lib/state/learner-loop/types';
+import { actionPrimaryCta } from '@alfanumrik/lib/state/learner-loop/action-display';
+import type { LearnerAction } from '@alfanumrik/lib/state/learner-loop/types';
+import { ALL_ACTION_KINDS } from '@alfanumrik/lib/state/learner-loop/types';
 
 // Reasonable button-fit caps; the actual font/width is checked
 // visually but a length guard catches accidentally long copy edits.

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeRequest } from '../../../../../lib/rbac';
-import { supabaseAdmin } from '../../../../../lib/supabase-admin';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
+import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 
 /**
  * Subject Enrollment Violations Report — surfaces students whose current

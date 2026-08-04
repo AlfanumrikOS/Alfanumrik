@@ -18,8 +18,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeRequest } from '@/lib/rbac';
-import { logger } from '@/lib/logger';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
+import { logger } from '@alfanumrik/lib/logger';
 import { isFeatureEnabled } from '@alfanumrik/lib/feature-flags';
 import { callPythonMol } from '@alfanumrik/lib/ai/clients/python-mol';
 import { checkAndIncrementQuota, refundQuota } from '../_lib/quota';

@@ -27,16 +27,16 @@ import {
   computeMasteryDeltas,
   masteryChangedIdempotencyKey,
   quizCompletedIdempotencyKey,
-} from '../../../lib/quiz/submit-side-effects';
+} from '@alfanumrik/lib/quiz/submit-side-effects';
 import {
   DomainEventSchema,
   LearnerMasteryChangedSchema,
   LearnerQuizCompletedSchema,
-} from '../../../lib/state/events/registry';
+} from '@alfanumrik/lib/state/events/registry';
 import {
   publishEvent,
   __resetFlagCacheForTests,
-} from '../../../lib/state/events/publish';
+} from '@alfanumrik/lib/state/events/publish';
 
 // ─── Idempotency key helpers ─────────────────────────────────────────
 

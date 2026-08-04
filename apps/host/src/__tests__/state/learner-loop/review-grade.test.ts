@@ -23,7 +23,7 @@ import {
 import {
   DomainEventSchema,
   LearnerReviewGradedSchema,
-} from '../../../lib/state/events/registry';
+} from '@alfanumrik/lib/state/events/registry';
 
 // ─── applySm2 — parity with legacy client SM-2 ───────────────────────
 
