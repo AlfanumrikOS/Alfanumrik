@@ -16,11 +16,15 @@ on:
   push:
     branches: [main, master, develop]
     paths:
-      # Monorepo paths (2026-07-17 migration): canonical Zod source + its
-      # apps/host re-export stub. The old pre-monorepo 'src/lib/api/v2/contract.ts'
-      # matched nothing, so this gate never fired on contract changes.
+      # Monorepo paths (2026-07-17 migration): canonical Zod source. The old
+      # pre-monorepo 'src/lib/api/v2/contract.ts' matched nothing, so this
+      # gate never fired on contract changes. The apps/host re-export stub
+      # ('apps/host/src/lib/api/v2/contract.ts') was removed from this list
+      # 2026-08-04 — it was deleted from disk in the P2-3 stub-removal
+      # cleanup (Phase 2/3b) and a path filter pointing at a deleted file
+      # can never fire, same dead-pattern class as the hook self-test guards
+      # against.
       - 'packages/lib/src/api/v2/contract.ts'
-      - 'apps/host/src/lib/api/v2/contract.ts'
       - 'scripts/gen-openapi.mjs'
       - 'scripts/gen-openapi.build.mts'
       - 'openapi/v2.json'
@@ -31,9 +35,8 @@ on:
   pull_request:
     branches: [main, master]
     paths:
-      # Keep in lockstep with the push paths above (canonical + stub).
+      # Keep in lockstep with the push paths above (canonical only — see note above).
       - 'packages/lib/src/api/v2/contract.ts'
-      - 'apps/host/src/lib/api/v2/contract.ts'
       - 'scripts/gen-openapi.mjs'
       - 'scripts/gen-openapi.build.mts'
       - 'openapi/v2.json'

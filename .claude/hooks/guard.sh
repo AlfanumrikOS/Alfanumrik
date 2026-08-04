@@ -223,8 +223,12 @@ check_rule \
 
 # Rule 12: Sentry and monitoring config — ops primary
 # Why: Wrong config can suppress error reporting in production.
+# Note: these live at apps/host/ ROOT (not repo root), and the client file
+#       was renamed sentry-client-init.ts (not sentry.client.config.ts) —
+#       repointed 2026-08-04 after the monorepo migration left this pattern
+#       anchored to pre-migration filenames that no longer exist on disk.
 check_rule \
-  "^sentry\.(client|server|edge)\.config\.ts$" \
+  "^apps/host/sentry(-client-init|\.(server|edge)\.config)\.ts$" \
   "ops" \
   "architect" \
   "Monitoring config owned by ops. Architect may review infra settings."
