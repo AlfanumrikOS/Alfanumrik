@@ -27,6 +27,8 @@ const ALL_PRINCIPAL_DESTINATIONS = [
   '/school-admin/reports-depth',
   '/school-admin/announcements',
   '/school-admin/escalations',
+  // P10 fold-in (2026-08-05): safeguarding is a tab of the escalations page.
+  '/school-admin/escalations?tab=safeguarding',
   '/school-admin/billing',
   '/school-admin/branding',
   '/school-admin/modules',

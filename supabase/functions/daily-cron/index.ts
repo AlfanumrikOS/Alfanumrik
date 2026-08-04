@@ -1937,6 +1937,58 @@ async function purgePrincipalAiTranscripts(supabase: ReturnType<typeof createCli
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Safeguarding escalation retention purge (Safeguarding Phase 1).
+//
+// Deletes safeguarding_escalations rows whose retention window has elapsed
+// (retain_until < now()) AND that have been reviewed (status <> 'pending_
+// review'). PENDING ROWS ARE NEVER PURGED — an unreviewed disclosure must
+// never silently disappear; instead, if any pending row is older than 30
+// days we emit a counts-only warning (P13: no ids beyond the count, no
+// excerpt, no student identifiers) so ops can chase the review backlog.
+//
+// Idempotent: re-running deletes nothing new and re-emits at most the same
+// counts-only warning. Fail-isolated by Promise.allSettled like every other
+// step; a missing table (pre-migration deploy order) is a logged no-op.
+// ──────────────────────────────────────────────────────────────────────────
+async function purgeSafeguardingEscalations(supabase: ReturnType<typeof createClient>): Promise<number> {
+  const nowIso = new Date().toISOString()
+
+  const { data, error } = await supabase
+    .from('safeguarding_escalations')
+    .delete({ count: 'exact' })
+    .lt('retain_until', nowIso)
+    .neq('status', 'pending_review')
+    .select('id')
+  if (error) {
+    if (isMissingRelationError(error as { code?: string; message?: string })) {
+      console.log('daily-cron: safeguarding_escalations_purged — table absent (pre-migration), no-op')
+      return 0
+    }
+    throw new Error(`purgeSafeguardingEscalations: ${error.message}`)
+  }
+  const purged = (data as { id: string }[] | null)?.length ?? 0
+
+  // Counts-only stale-pending watchdog: pending rows are never purged, but a
+  // >30d pending row means the review queue is being ignored.
+  const staleCutoff = new Date(Date.now() - 30 * 86_400_000).toISOString()
+  const { count: stalePending, error: staleErr } = await supabase
+    .from('safeguarding_escalations')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending_review')
+    .lt('created_at', staleCutoff)
+  if (staleErr) {
+    // Watchdog failure must not fail the purge step — counts-only log.
+    console.warn(`daily-cron: safeguarding_escalations_purged — stale-pending check failed: ${staleErr.message}`)
+  } else if ((stalePending ?? 0) > 0) {
+    console.warn(`daily-cron: safeguarding_escalations_purged — WARNING: ${stalePending} pending_review escalation(s) older than 30 days (never purged; review queue needs attention)`)
+  }
+
+  // Keys-only log: counts + status only (P13).
+  console.log(`daily-cron: safeguarding_escalations_purged — purged=${purged}, status=ok`)
+  return purged
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Silent verification-email failure monitor (CEO mandate, 2026-07-16).
 //
 // Detects the Mailgun-silently-disabled failure mode: the provider stops
@@ -2072,6 +2124,7 @@ Deno.serve(async (req) => {
       mol_shadow_pairs_graded: () => gradeMolShadowPairs(sb),
       purge_principal_ai: () => purgePrincipalAiTranscripts(sb),
       first_quiz_nudges_sent: () => nudgeFirstQuizStudents(sb),
+      safeguarding_escalations_purged: () => purgeSafeguardingEscalations(sb),
       verification_delivery_checked: () => checkVerificationDelivery(sb),
     })
     const actionStartedAt = new Map(actions.map((action) => [action.name, Date.now()]))

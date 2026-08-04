@@ -6,8 +6,39 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 347 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-345..REG-347 (2026-08-05, Foxy North-Star Phase 0 gate batch —
+**Total catalog: 350 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-348..REG-350 (2026-08-05, Foxy North-Star Phase 1 Safety & Trust
+batch — three pins in `02-foxy-ai.md` covering the ~40-file uncommitted
+Phase 1 change set on branch `Alfanumrik/foxy-system-spec-22f565`.
+REG-348 safeguarding two-tier fail-closed contract [E]: after a Tier-1 regex
+hit, ANY Tier-2 gateway failure (all-failed / throw / unparseable / empty /
+NaN-confidence / wrong-shape JSON) resolves to `{confirmed:true,
+tier:'regex_only'}` — a disclosure can never silently degrade to "no
+escalation" because a model was down; downstream the route terminates the
+turn with the bilingual Childline-1098 helpline envelope, inserts the
+escalation row (500-char excerpt cap, confidence+label-only classifier_meta),
+fans out WITHOUT the excerpt, REFUNDS the quota unit, never calls the LLM,
+awards 0 XP; ambiguous verdicts continue the turn normally in both the
+module and route lanes; `ff_safeguarding_v1` OFF → Tier-1 never invoked
+(zero classifier calls — the rollback contract). REG-349 safeguarding P13
+data boundary [E]: `disclosure_excerpt` is the ONE sanctioned home for
+disclosure text; notifications carry `{escalation_id, category}` only, the
+super-admin + school-admin review LIST projections never select the excerpt
+(only `?id=` detail does), school-admin queries hard-scoped to caller
+school_id on every verb, PATCH `pending_review→reviewed/actioned/dismissed`
+only with 409 on non-pending and metadata-only audit. REG-350 memory
+self-access + scoped erasure [E on TS surfaces, migrations structural-only]:
+migration `20260806000100` pinned RLS-enabled with EXACTLY ONE service_role
+policy and the DELIBERATE-DEVIATION comment present (no
+student/parent/teacher read path — new structure test
+`safeguarding-escalations-migration.test.ts`, 8 tests); `/api/learner/memory`
+GET whitelists the student projection (twin ALWAYS null, cohortPercentile/
+loSkills/knowledgeGaps/nextAction asserted absent) with erasure-guard
+fail-closed blank; scoped DELETE rows route into the scope-aware
+`execute_data_erasure_purge` RPC and NEVER the full-account cascade, with
+`parent.child_erasure_completed` reserved for full-account rows. Honest
+gap: zero live-Postgres execution of the 20260806* migrations this session.)
+Prior: REG-345..REG-347 (2026-08-05, Foxy North-Star Phase 0 gate batch —
 three pins in `03-quiz-integrity.md` covering the ~23-file Phase 0 change set.
 REG-345 SRS grade loop closure [E]: `/quiz?mode=srs` grades each served
 `spaced_repetition_cards` card EXACTLY ONCE via the existing
@@ -106,7 +137,8 @@ test files were re-run green in ONE vitest pass from apps/host — 191/191.)
 **REG-344 is the next free id.** That was true before this pass and is
 superseded above — the P2-2 API response-envelope wrapper regression took
 REG-344 on 2026-08-04, then the Foxy North-Star Phase 0 gate batch took
-REG-345..REG-347 on 2026-08-05, so **REG-348 is now the next free id.**
+REG-345..REG-347 on 2026-08-05, and the same-day Phase 1 Safety & Trust
+batch then took REG-348..REG-350, so **REG-351 is now the next free id.**
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

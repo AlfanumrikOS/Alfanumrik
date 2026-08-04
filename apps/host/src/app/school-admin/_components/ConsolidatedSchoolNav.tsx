@@ -198,6 +198,16 @@ export const SCHOOL_NAV_SECTIONS: ReadonlyArray<ConsolidatedNavSection> = [
       // Read-only list; ungated (no module/rbac restriction) so every admin
       // role can see cases raised by teachers at their school.
       { href: '/school-admin/escalations', label: 'Escalations', labelHi: 'एस्केलेशन', icon: '⚑' },
+      // Foxy North-Star Phase 1 — school-scoped safeguarding review queue.
+      // Ungated like Escalations: every school-admin role can review cases
+      // raised for students at their school.
+      // P10 fold-in (2026-08-05): the queue lives as the second tab of the
+      // grandfathered /school-admin/escalations page (the standalone route
+      // exceeded the 260 kB per-page cap, which the school-admin shell alone
+      // exceeds — see the escalations page header comment). NOTE: activeHref
+      // matching is pathname-based, so this query-string item never
+      // highlights; the Escalations item highlights for both tabs.
+      { href: '/school-admin/escalations?tab=safeguarding', label: 'Safeguarding', labelHi: 'सुरक्षा समीक्षा', icon: '⛨' },
     ],
   },
   {

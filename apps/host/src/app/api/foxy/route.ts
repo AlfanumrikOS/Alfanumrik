@@ -182,6 +182,8 @@ import {
   VALID_GRADES,
   VALID_MODES,
   VALID_COACH_MODES,
+  VALID_SESSION_MOODS,
+  type SessionMood,
   type CoachMode,
   FoxyRequestBodySchema,
   REFUND_ABSTAIN_REASONS,
@@ -257,7 +259,21 @@ import {
   extractValidatedStructured,
   persistMathTurnAndRespond,
   respondCurriculumOutOfScope,
+  respondSafeguarding,
 } from './_lib/responders';
+// Safeguarding Phase 1 (ff_safeguarding_v1, default OFF). Tier-1 is a
+// deterministic lexicon screen on the ORIGINAL student message (Point A, no
+// early return); Tier-2 is the LLM classifier that runs only on a Tier-1 hit
+// after the session is resolved (Point B) and, when CONFIRMED, terminates the
+// turn with the supportive bilingual reply + escalation fan-out + quota
+// refund. Ambiguous verdicts continue the turn untouched. Both modules are
+// ai-engineer-owned fixed contracts.
+import {
+  screenForSafeguarding,
+  type SafeguardingScreenResult,
+} from '@alfanumrik/lib/ai/validation/safeguarding-screen';
+import { classifySafeguarding } from '@alfanumrik/lib/ai/validation/safeguarding-classify';
+import { escalateSafeguarding } from './_lib/safeguarding-escalate';
 // H1 REFACTOR M6c — the SSE streaming turn handler extracted to a co-located
 // module. Imported and called identically here at the same call site (the
 // handleFoxyPost streaming branch); zero behavior change. The single
@@ -601,6 +617,15 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     typeof body.intent === 'string' && VALID_INTENTS.has(body.intent)
       ? body.intent
       : null;
+  // Safeguarding Phase 1: optional self-reported session mood. UNTRUSTED
+  // client field — validated against the enum and dropped silently if invalid
+  // (same posture as coachDirective above). Used ONLY as Tier-2 classifier
+  // context; it never changes prompt assembly or the answer path.
+  const sessionMood: SessionMood | null =
+    typeof body.sessionMood === 'string' &&
+    (VALID_SESSION_MOODS as readonly string[]).includes(body.sessionMood)
+      ? (body.sessionMood as SessionMood)
+      : null;
 
   // 3. Validate inputs
   if (!message) {
@@ -633,6 +658,34 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   if (injectionGuard.neutralized) {
     // P13: boolean/category only — NEVER the student's message text or id.
     logger.warn('foxy.input.injection_neutralized', { subject, grade });
+  }
+
+  // ── Safeguarding Tier-1 screen (Point A, ff_safeguarding_v1) ──────────────
+  // Deterministic lexicon screen on the ORIGINAL message (not safeQuery —
+  // the injection neutralizer must never mask a disclosure). NO early return
+  // here: a Tier-1 hit only arms the Tier-2 classifier at Point B (after the
+  // session is resolved). Flag read is FAIL-CLOSED → any flag-infra error is
+  // treated as OFF and the turn proceeds byte-identical to today.
+  let safeguardingFlagOn = false;
+  try {
+    safeguardingFlagOn = await isFeatureEnabled('ff_safeguarding_v1', {
+      role: 'student',
+      userId: auth.userId!,
+    });
+  } catch {
+    safeguardingFlagOn = false; // fail-closed → OFF
+  }
+  let safeguardingScreen: SafeguardingScreenResult | null = null;
+  if (safeguardingFlagOn) {
+    try {
+      safeguardingScreen = screenForSafeguarding(message);
+    } catch (screenErr) {
+      // Never block the turn on a screen failure. P13: no message text.
+      logger.warn('foxy_safeguarding_screen_failed', {
+        error: screenErr instanceof Error ? screenErr.message : String(screenErr),
+      });
+      safeguardingScreen = null;
+    }
   }
 
   // 4. Resolve student ID and validate subject governance
@@ -708,10 +761,14 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // or deliberate anon-client bypass) gets the 403, while a pre-onboarding
   // user keeps the warn-and-proceed path.
   let dbOnboardingCompleted = false;
+  // Safeguarding Phase 1: the student's school_id (from the SAME already-
+  // fetched students row) is threaded into the escalation row + fan-out at
+  // Point B. Null for B2C students.
+  let dbSchoolId: string | null = null;
   try {
     const { data: studentRow } = await supabaseAdmin
       .from('students')
-      .select('subscription_plan, account_status, academic_goal, name, grade, onboarding_completed')
+      .select('subscription_plan, account_status, academic_goal, name, grade, onboarding_completed, school_id')
       .eq('id', studentId)
       .single();
     const enrollmentScope = resolveFoxyEnrollmentScope(studentRow ?? null);
@@ -726,6 +783,7 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     // grade.
     dbGrade = enrollmentScope.grade;
     dbOnboardingCompleted = studentRow?.onboarding_completed === true;
+    dbSchoolId = (studentRow?.school_id as string | null | undefined) ?? null;
     if (studentRow?.account_status === 'suspended') {
       return errorJson('Your account is suspended.', 'Aapka account suspend hai.', 403);
     }
@@ -851,6 +909,96 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
       'Chat session shuru nahi ho paya. Dobara try karein.',
       500,
     );
+  }
+
+  // ── Safeguarding Tier-2 classify + terminal (Point B, ff_safeguarding_v1) ──
+  // Runs ONLY on a Tier-1 hit with the flag on. CONFIRMED → (a) insert the
+  // safeguarding_escalations case row, (b) fan out in-app notifications to the
+  // school's active admins (metadata only — never the excerpt), (c) refund the
+  // quota unit (the student did not consume a tutoring answer), (d) return the
+  // supportive bilingual terminal. AMBIGUOUS (not confirmed) or any classifier
+  // failure → continue the turn completely normally (no row, normal response).
+  if (safeguardingFlagOn && safeguardingScreen?.hit) {
+    try {
+      const verdict = await classifySafeguarding(message, {
+        sessionMood,
+        categories: safeguardingScreen.categories,
+      });
+      if (verdict.confirmed) {
+        // Confirmed category. On the classifier's fail-closed path (tier
+        // 'regex_only') `category` can be null — fall back to the most-severe
+        // Tier-1 category ([0] is severity-ordered by contract).
+        const confirmedCategory: string =
+          verdict.category ?? safeguardingScreen.categories[0] ?? 'acute_distress';
+        // (a) Case row. classifier_meta carries confidence + label ONLY
+        // (P13: no raw classifier output, no student message). The disclosure
+        // excerpt (first 500 chars) is stored ONLY on this row — it is
+        // surfaced exclusively through the single-row detail view of the
+        // review APIs, never in list payloads or notifications.
+        let escalationId: string | null = null;
+        try {
+          const { data: escRow, error: escErr } = await supabaseAdmin
+            .from('safeguarding_escalations')
+            .insert({
+              student_id: studentId,
+              school_id: dbSchoolId,
+              session_id: resolvedSessionId,
+              message_id: null, // user row not yet persisted at this point
+              category: confirmedCategory,
+              tier: verdict.tier,
+              classifier_meta: { confidence: verdict.confidence, label: confirmedCategory },
+              disclosure_excerpt: message.slice(0, 500),
+            })
+            .select('id')
+            .single();
+          if (escErr) throw new Error(escErr.message);
+          escalationId = (escRow as { id: string } | null)?.id ?? null;
+        } catch (escInsertErr) {
+          // The student STILL gets the supportive terminal even if the case
+          // row failed — never withhold care on a DB error. P13: no text.
+          logger.error('foxy_safeguarding_escalation_insert_failed', {
+            error: escInsertErr instanceof Error ? escInsertErr : new Error(String(escInsertErr)),
+            studentId,
+          });
+        }
+
+        // (b) Fan-out (counts-only, never throws, data = {escalation_id, category}).
+        if (escalationId) {
+          await escalateSafeguarding({
+            escalationId,
+            schoolId: dbSchoolId,
+            category: confirmedCategory,
+          });
+        }
+
+        // (c) Refund the quota unit — same pattern as the legacy-flow /
+        // grounded-failure refunds: the student did not get a tutoring answer.
+        await refundQuota(studentId, 'foxy_chat');
+
+        // (d) Terminal supportive reply (persists the turn, audits
+        // flow:'safeguarding' with category/tier only — never message text).
+        return respondSafeguarding({
+          studentId,
+          userId: auth.userId!,
+          resolvedSessionId,
+          message,
+          subject,
+          grade,
+          chapter,
+          mode,
+          quotaRemaining: remaining,
+          category: confirmedCategory,
+          tier: verdict.tier,
+          traceId: correlationId,
+        });
+      }
+      // Not confirmed (ambiguous) → fall through; the turn proceeds normally.
+    } catch (classifyErr) {
+      // Classifier unavailable ≠ confirmed. Continue the turn normally.
+      logger.warn('foxy_safeguarding_classify_failed', {
+        error: classifyErr instanceof Error ? classifyErr.message : String(classifyErr),
+      });
+    }
   }
 
   // Fire-and-forget success logger. Called immediately before each terminal

@@ -1,13 +1,29 @@
 'use client';
 
 /**
- * /super-admin/foxy-quality — B'-1 Phase 2 dashboard.
+ * /super-admin/foxy-quality — B'-1 Phase 2 dashboard + Safeguarding review.
  *
- * Renders the LLM-as-judge eval signal: 7-day rolling averages, prior-week
- * delta (drift detector), per-day trend table, and the 10 lowest-overall
- * scores in the last 30 days for triage. Fed by /api/super-admin/foxy-quality
- * which reads from foxy_quality_scores (populated nightly by
- * /api/cron/foxy-quality-sample).
+ * TWO TABS:
+ *   1. "Quality" — the LLM-as-judge eval signal: 7-day rolling averages,
+ *      prior-week delta (drift detector), per-day trend table, and the 10
+ *      lowest-overall scores in the last 30 days for triage. Fed by
+ *      /api/super-admin/foxy-quality which reads from foxy_quality_scores
+ *      (populated nightly by /api/cron/foxy-quality-sample).
+ *   2. "Safeguarding" — the Foxy North-Star Phase 1 safeguarding disclosure
+ *      review queue. Deep-link: /super-admin/foxy-quality?tab=safeguarding
+ *
+ * P10 FOLD-IN DECISION (2026-08-05, quality-gate blocker): the safeguarding
+ * queue originally shipped as a standalone route at /super-admin/safeguarding,
+ * which measured 274.1 kB first-load — over the 260 kB per-page cap that new
+ * routes get no grandfathering from. The cap is structurally unreachable for
+ * ANY new route under the super-admin layout (the lightest grandfathered
+ * sibling measures 277.5 kB in the CI baseline — the shell alone exceeds
+ * 260 kB, so code-splitting the queue's own ~2 kB could never reach the cap).
+ * Per the approved fallback, the queue was folded into THIS grandfathered
+ * page (baseline 280.0 kB) as a tab — safeguarding disclosures originate from
+ * Foxy, making this the natural Foxy-safety surface — loaded via next/dynamic
+ * (ssr:false) so it stays out of this route's first-load chunk set, and the
+ * standalone route dir was deleted. The API routes are unchanged.
  *
  * P13: never renders the message body, the question, or studentId. The
  * "Open in workbench" link is keyed on message_id and routes to the
@@ -15,7 +31,20 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import AdminShell, { useAdmin } from '../_components/AdminShell';
+
+// Code-split: the safeguarding queue only loads when its tab is opened.
+const SafeguardingQueue = dynamic(() => import('./SafeguardingQueue'), {
+  ssr: false,
+  loading: () => (
+    <div className="space-y-2 animate-pulse" aria-busy="true">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="h-12 rounded-lg bg-gray-100 border border-gray-200" />
+      ))}
+    </div>
+  ),
+});
 
 interface AvgScores {
   overall: number;
@@ -278,10 +307,44 @@ function FoxyQualityPageInner() {
   );
 }
 
+type PageTab = 'quality' | 'safeguarding';
+
 export default function FoxyQualityPage() {
+  const [tab, setTab] = useState<PageTab>('quality');
+
+  // Deep-link: ?tab=safeguarding (used by the AdminShell nav item and the
+  // safeguarding runbook). Read once on mount — window is client-only, and
+  // reading it in an effect avoids a useSearchParams() Suspense boundary.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'safeguarding') {
+      setTab('safeguarding');
+    }
+  }, []);
+
   return (
     <AdminShell>
-      <FoxyQualityPageInner />
+      <div className="mb-5 flex gap-1 rounded-lg border border-surface-3 bg-surface-1 p-1 w-fit" role="tablist" aria-label="Foxy quality sections">
+        {([
+          { key: 'quality' as const, label: 'Quality scores' },
+          { key: 'safeguarding' as const, label: 'Safeguarding review' },
+        ]).map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              tab === key
+                ? 'bg-purple-600 text-white'
+                : 'text-muted-foreground hover:bg-surface-2'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === 'quality' ? <FoxyQualityPageInner /> : <SafeguardingQueue />}
     </AdminShell>
   );
 }

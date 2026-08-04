@@ -901,6 +901,9 @@ function FoxyExperience() {
         selectedChapters: chapCtx,
         intent: extraParams?.intent,
         coachDirective: extraParams?.coachDirective,
+        // SEL mood check-in — carried on every send for the rest of the
+        // session once selected (absent before selection / on skip).
+        sessionMood: sessionMood ?? undefined,
       },
       {
         onLimitReached: () => {
@@ -942,7 +945,7 @@ function FoxyExperience() {
         },
       },
     );
-  }, [student, studentGrade, activeSubject, language, sessionMode, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations, sendMessageCore]);
+  }, [student, studentGrade, activeSubject, language, sessionMode, sessionMood, activeTopic, chatSessionId, selectedChapters, topics, refreshConversations, sendMessageCore]);
 
   // Auto-send prompt parameter if provided in URL (e.g. from Lesson Blackboard doubts)
   useEffect(() => {

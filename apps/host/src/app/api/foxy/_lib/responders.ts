@@ -502,3 +502,138 @@ export async function respondCurriculumOutOfScope(params: {
     traceId: params.traceId,
   });
 }
+
+// ─── Helper: safeguarding terminal reply (Phase 1, ff_safeguarding_v1) ───────
+//
+// Called when the Tier-2 classifier CONFIRMS a safeguarding disclosure. Same
+// skeleton as respondCurriculumOutOfScope: we DO persist the turn (the student
+// asked, Foxy responded with care — session continuity stands), we run NO
+// solver/RAG/LLM answer, and we award NO XP / NO mastery (P2). The reply is a
+// warm, non-clinical, bilingual (P7) supportive message: acknowledge the
+// courage it took to share, "you are not alone", encourage talking to a
+// trusted adult, and surface Childline 1098 (free, 24x7). Deliberately NO
+// diagnosis language and NO "I'm your best friend" framing — Foxy is a tutor
+// pointing the student to real humans.
+//
+// The envelope carries `safeguarding: { helpline: { name, number } }` and
+// `badgeState: 'safeguarding'` so the renderer can show the helpline card.
+// The audit row (P13: category/tier flags only — NEVER the message text) is
+// written here so every safeguarding terminal is audited exactly once.
+
+const SAFEGUARDING_REPLY_EN =
+  'Thank you for trusting me with this — it took real courage to share. ' +
+  'You are not alone, and how you feel matters. ' +
+  'Please talk to a trusted adult about this — a parent, a teacher, or your school counsellor. ' +
+  'You can also call Childline at 1098 — it is free, confidential, and available 24x7 for children across India. ' +
+  'Whenever you are ready, I am here to help you with your studies.';
+
+const SAFEGUARDING_REPLY_HI =
+  'मुझ पर भरोसा करके यह बताने के लिए धन्यवाद — इसे साझा करने में हिम्मत लगती है। ' +
+  'आप अकेले नहीं हैं, और आपकी भावनाएँ मायने रखती हैं। ' +
+  'कृपया किसी भरोसेमंद बड़े से इस बारे में बात करें — माता-पिता, शिक्षक या स्कूल काउंसलर से। ' +
+  'आप Childline को 1098 पर भी कॉल कर सकते हैं — यह बच्चों के लिए मुफ़्त, गोपनीय और 24x7 उपलब्ध है। ' +
+  'जब भी आप तैयार हों, मैं आपकी पढ़ाई में मदद के लिए यहाँ हूँ।';
+
+export async function respondSafeguarding(params: {
+  studentId: string;
+  userId: string;
+  resolvedSessionId: string;
+  /** The student's ORIGINAL message — persisted to the session, never logged. */
+  message: string;
+  subject: string;
+  grade: string;
+  chapter: string | null;
+  mode: string;
+  quotaRemaining: number;
+  /** Confirmed safeguarding category (enum code, non-PII). */
+  category: string;
+  /** Classifier tier (severity band, non-PII). */
+  tier: string;
+  traceId: string;
+}): Promise<Response> {
+  const responseText = `${SAFEGUARDING_REPLY_EN}\n\n${SAFEGUARDING_REPLY_HI}`;
+
+  // Minimal valid FoxyResponse: one paragraph block carrying the bilingual
+  // supportive message. subject 'general' — this is a meta reply, not subject
+  // content (mirrors respondCurriculumOutOfScope).
+  const structured: FoxyResponse = {
+    title: 'You are not alone',
+    subject: 'general',
+    blocks: [{ type: 'paragraph', text: responseText.slice(0, 2000) }],
+  };
+
+  // Persist user + assistant rows (mirrors respondCurriculumOutOfScope's
+  // INSERT path). tokens_used null; NO XP, NO mastery writes anywhere.
+  let assistantMessageId: string | null = null;
+  const now = new Date().toISOString();
+  try {
+    const { data: insertedRows } = await supabaseAdmin
+      .from('foxy_chat_messages')
+      .insert([
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'user',
+          content: params.message,
+          sources: null,
+          tokens_used: null,
+          created_at: now,
+        },
+        {
+          session_id: params.resolvedSessionId,
+          student_id: params.studentId,
+          role: 'assistant',
+          content: responseText,
+          structured,
+          sources: null,
+          tokens_used: null,
+          created_at: new Date(Date.now() + 1).toISOString(),
+        },
+      ])
+      .select('id, role');
+    if (insertedRows) {
+      const assistantRow = insertedRows.find((r) => r.role === 'assistant');
+      assistantMessageId = (assistantRow?.id as string | undefined) ?? null;
+    }
+  } catch (saveErr) {
+    console.warn(
+      '[foxy] safeguarding message save failed:',
+      saveErr instanceof Error ? saveErr.message : String(saveErr),
+    );
+  }
+
+  // Audit (P13: flow/category/tier flags ONLY — NEVER the student's message
+  // text, NEVER the disclosure excerpt). 0 XP.
+  logAudit(params.userId, {
+    action: 'foxy.chat',
+    resourceType: 'foxy_sessions',
+    resourceId: params.resolvedSessionId,
+    details: {
+      subject: params.subject,
+      grade: params.grade,
+      chapter: params.chapter,
+      mode: params.mode,
+      traceId: params.traceId,
+      flow: 'safeguarding',
+      category: params.category,
+      tier: params.tier,
+      escalated: true,
+      structured_present: true,
+      xpAwarded: 0,
+    },
+  });
+
+  return NextResponse.json({
+    success: true,
+    response: responseText,
+    structured,
+    badgeState: 'safeguarding' as const,
+    safeguarding: {
+      helpline: { name: 'Childline', number: '1098' },
+    },
+    sessionId: params.resolvedSessionId,
+    quotaRemaining: params.quotaRemaining,
+    messageId: assistantMessageId,
+    traceId: params.traceId,
+  });
+}

@@ -241,11 +241,42 @@ const BASELINE_EXCEPTIONS = {
   getUserMedia: [
     'packages/ui/src/foxy/v2/SnapDoubt.tsx',  // [audit→PR3] comment-only mention ("No getUserMedia/camera") documenting that camera capture is deliberately disabled — PR3 policy module should re-home or reword it
   ],
-  // 8e — banned phrases in student-facing source
+  // 8e — banned phrases in student-facing source.
+  // 2026-08-05: the demo-page 'Weak Student' entry was REMOVED (frontend is
+  // renaming the persona label in the same wave the policy module landed).
+  // The two entries below are DAY-ONE hits of the WIDENED list (check 8e now
+  // source-parses ALL_BANNED_PHRASES — incl. 'struggling student' — out of
+  // packages/lib/src/policy/prohibited-inferences.ts instead of a 4-phrase
+  // hardcoded regex). Teacher-facing copy, not student-visible, but T1's
+  // copy audit must move it to evidence language, then DELETE these entries.
   bannedPhrases: [
-    'apps/host/src/app/super-admin/demo/page.tsx', // [fix→PR1/T1] internal super-admin demo persona label 'Weak Student' — not student-visible, but PR1's prohibited-inferences copy audit must rename it
+    'apps/host/src/app/teacher/students/page.tsx', // [fix→T1] "struggling student(s)" in comments + summary copy
+    'apps/host/src/app/for-teachers/page.tsx',     // [fix→T1] marketing copy "Identify struggling students before they fall behind."
   ],
 };
+
+// ── Check 8e source of truth ────────────────────────────────────────────────
+// The banned-phrase list is SOURCE-PARSED from the policy module (PR1 —
+// single denylist consumed by prompts + analyzer; REG-48 SQL/TS-parity
+// pattern). Parity between this parser and the module's ALL_BANNED_PHRASES
+// export is pinned by packages/lib/src/__tests__/policy/
+// prohibited-inferences.test.ts — if you change the module's array format,
+// that test and this parser must move together.
+const PROHIBITED_INFERENCES_MODULE = 'packages/lib/src/policy/prohibited-inferences.ts';
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function parseBannedPhrases() {
+  const text = readText(join(ROOT, ...PROHIBITED_INFERENCES_MODULE.split('/')));
+  if (!text) return null;
+  const phrases = [];
+  const arrRe = /bannedPhrases\s*:\s*\[([^\]]*)\]/g;
+  let m;
+  while ((m = arrRe.exec(text))) {
+    const litRe = /'([^'\\]+)'|"([^"\\]+)"/g;
+    let lm;
+    while ((lm = litRe.exec(m[1]))) phrases.push(lm[1] ?? lm[2]);
+  }
+  return [...new Set(phrases)];
+}
 
 // ── Check 9 constants — WRITERLESS WATCH ────────────────────────────────────
 // table → the tracker record that builds its writer. Once that record is
@@ -643,18 +674,25 @@ function check8InvariantGuards() {
       'PR3: no passive camera/mic observation — capture only in explicit voice/scan surfaces');
   }
 
-  // (e) Banned-phrase lint on student-facing source (T1/PR1).
+  // (e) Banned-phrase lint on student-facing source (T1/PR1). The phrase list
+  // is derived from the policy module (see parseBannedPhrases above) so the
+  // prompt rail and this gate can never drift apart.
   {
-    const hits = [];
-    const re = /(weak student|slow learner|low intelligence|you are weak)/i;
-    for (const abs of codeFiles()) {
-      const rel = toRel(abs);
-      if (!rel.startsWith('apps/host/src/app/') && !rel.startsWith('packages/ui/')) continue;
-      const text = readText(abs);
-      if (text && re.test(text)) hits.push(rel);
+    const phrases = parseBannedPhrases();
+    if (!phrases || phrases.length === 0) {
+      lines.push(`FAIL 8e cannot derive banned-phrase list from ${PROHIBITED_INFERENCES_MODULE} — module missing or no bannedPhrases string literals parsed`);
+    } else {
+      const hits = [];
+      const re = new RegExp(`(${phrases.map(escapeRegex).join('|')})`, 'i');
+      for (const abs of codeFiles()) {
+        const rel = toRel(abs);
+        if (!rel.startsWith('apps/host/src/app/') && !rel.startsWith('packages/ui/')) continue;
+        const text = readText(abs);
+        if (text && re.test(text)) hits.push(rel);
+      }
+      applyExceptions(hits, BASELINE_EXCEPTIONS.bannedPhrases, '8e banned phrase in student-facing source',
+        `T1: describe evidence, never judge identity (list: ${PROHIBITED_INFERENCES_MODULE})`);
     }
-    applyExceptions(hits, BASELINE_EXCEPTIONS.bannedPhrases, '8e banned phrase in student-facing source',
-      'T1: describe evidence, never judge identity');
   }
 
   // Anti-rot: exceptions that no longer match anything should be deleted.

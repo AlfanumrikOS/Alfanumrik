@@ -4,7 +4,12 @@
  * Read-only list of teacher -> school-admin escalations for the caller's
  * school. Reads the SAME generic `notifications` rows the teacher-side
  * `/api/teacher/escalate` route writes (`recipient_type='school_admin'`,
- * `type='teacher_escalation'`) — no new table.
+ * `type='teacher_escalation'`) — no new table. Also includes
+ * `type='safeguarding_escalation'` rows (Foxy North-Star Phase 1) so
+ * safeguarding alerts render somewhere; each row carries additive
+ * `typeLabel`/`typeLabelHi`/`link` fields (bilingual per P7). Safeguarding
+ * rows' `data` payload stays {escalation_id, category} — transcript excerpts
+ * are NEVER joined here (that detail lives behind /api/school-admin/safeguarding).
  *
  * Permission: institution.view_analytics (read-only surface, mirrors
  * `analytics/route.ts`'s gate — the smallest existing permission that fits a
@@ -56,9 +61,9 @@ export async function GET(request: NextRequest) {
   // Step 2: escalation notifications addressed to any admin at this school.
   const { data: notifs, error: notifErr } = await supabase
     .from('notifications')
-    .select('id, recipient_id, title, message, data, is_read, created_at')
+    .select('id, recipient_id, type, title, message, data, is_read, created_at')
     .eq('recipient_type', 'school_admin')
-    .eq('type', 'teacher_escalation')
+    .in('type', ['teacher_escalation', 'safeguarding_escalation'])
     .in('recipient_id', adminIds)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -74,12 +79,14 @@ export async function GET(request: NextRequest) {
   const data = (notifs ?? []).map((row) => {
     const r = row as {
       id: string;
+      type: string;
       title: string;
       message: string;
       data: Record<string, unknown> | null;
       is_read: boolean;
       created_at: string;
     };
+    const isSafeguarding = r.type === 'safeguarding_escalation';
     return {
       id: r.id,
       title: r.title,
@@ -88,6 +95,13 @@ export async function GET(request: NextRequest) {
       created_at: r.created_at,
       student_id: (r.data?.student_id as string | undefined) ?? null,
       class_id: (r.data?.class_id as string | undefined) ?? null,
+      // Additive fields (do not change existing shape — the escalations tab
+      // consumes id/title/message/is_read/created_at/student_id/class_id).
+      typeLabel: isSafeguarding ? 'Safeguarding alert' : 'Teacher escalation',
+      typeLabelHi: isSafeguarding ? 'सुरक्षा सूचना' : 'शिक्षक एस्केलेशन',
+      link: isSafeguarding
+        ? '/school-admin/escalations?tab=safeguarding'
+        : '/school-admin/escalations',
     };
   });
 

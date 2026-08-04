@@ -11,8 +11,15 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-student-misconceptions-lifecycle.sql"],
-        "backend": ["apps/host/src/app/api/foxy/route.ts", "packages/lib/src/learn/foxy-long-memory.ts", "apps/host/src/lib/memory/student-memory.ts", "packages/lib/src/memory/preferences.ts"],
+        "db": [
+          "supabase/migrations/TBD-student-misconceptions-lifecycle.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts",
+          "packages/lib/src/learn/foxy-long-memory.ts",
+          "apps/host/src/lib/memory/student-memory.ts",
+          "packages/lib/src/memory/preferences.ts"
+        ],
         "middleware": "inherit",
         "frontend": [],
         "mobile": "n/a"
@@ -22,7 +29,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "backend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "backend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -33,8 +47,12 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-concept-mastery-additive-params.sql"],
-        "backend": ["packages/lib/src/learner-model/"],
+        "db": [
+          "supabase/migrations/TBD-concept-mastery-additive-params.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -44,7 +62,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["ai-engineer", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -56,7 +81,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["apps/host/src/app/api/foxy/_lib/cognitive-context.ts", "packages/lib/src/learner-model/"],
+        "backend": [
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -66,7 +94,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -78,7 +112,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/foxy/teaching-director.ts", "packages/lib/src/foxy/prompt-sections.ts"],
+        "backend": [
+          "packages/lib/src/foxy/teaching-director.ts",
+          "packages/lib/src/foxy/prompt-sections.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -88,7 +125,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -100,9 +143,13 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/companion/"],
+        "backend": [
+          "packages/lib/src/companion/"
+        ],
         "middleware": [],
-        "frontend": ["apps/host/src/app/foxy/page.tsx"],
+        "frontend": [
+          "apps/host/src/app/foxy/page.tsx"
+        ],
         "mobile": "n/a"
       },
       "owner": "assessment",
@@ -110,7 +157,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["ai-engineer", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -122,9 +176,14 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/learn/weekly-dive-orchestrator.ts"],
+        "backend": [
+          "packages/lib/src/learn/weekly-dive-orchestrator.ts"
+        ],
         "middleware": "inherit",
-        "frontend": ["apps/host/src/app/dive/", "packages/ui/src/dive/"],
+        "frontend": [
+          "apps/host/src/app/dive/",
+          "packages/ui/src/dive/"
+        ],
         "mobile": []
       },
       "owner": "backend",
@@ -132,7 +191,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -141,22 +207,73 @@
       "title": "Foxy Guardian — self-harm/abuse safeguarding escalation + human routing (umbrella; build tracked under U6/S5.6)",
       "specSection": "§1.1",
       "phase": "1",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
-        "backend": [],
+        "db": [
+          "supabase/migrations/20260806000100_safeguarding_escalations.sql",
+          "supabase/migrations/20260806000200_seed_ff_safeguarding_v1.sql"
+        ],
+        "backend": [
+          "packages/lib/src/ai/validation/safeguarding-screen.ts",
+          "packages/lib/src/ai/validation/safeguarding-classify.ts",
+          "apps/host/src/app/api/foxy/route.ts",
+          "apps/host/src/app/api/foxy/_lib/responders.ts",
+          "apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
-      "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
-      "lastVerified": null,
-      "evidence": []
+      "tests": [
+        "apps/host/src/__tests__/api/foxy/safeguarding-route.test.ts",
+        "apps/host/src/__tests__/api/foxy/safeguarding-escalate.test.ts",
+        "apps/host/src/__tests__/api/foxy/respond-safeguarding.test.ts",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-screen.test.ts — classifier tests (138 across screen+classify)",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-classify.test.ts — classifier tests (138 across screen+classify)",
+        "apps/host/src/__tests__/security/safeguarding-escalations-migration.test.ts"
+      ],
+      "regressionIds": [
+        "REG-348",
+        "REG-349"
+      ],
+      "flags": [
+        {
+          "name": "ff_safeguarding_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "testing",
+          "ops",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/ai/validation/safeguarding-screen.ts — Tier-1 deterministic regex pre-filter",
+        "packages/lib/src/ai/validation/safeguarding-classify.ts — Tier-2 LLM confirmation (confirmation floor >=0.7; clearance deliberately floorless)",
+        "apps/host/src/app/api/foxy/route.ts — Tier-1 wired :663, Tier-2 wired :914",
+        "apps/host/src/app/api/foxy/_lib/responders.ts — respondSafeguarding (Childline 1098 template)",
+        "apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts — school-admin notification fan-out (metadata-only, P13)",
+        "supabase/migrations/20260806000100_safeguarding_escalations.sql — table + RLS + safeguarding.review grant",
+        "supabase/migrations/20260806000200_seed_ff_safeguarding_v1.sql — flag seeded OFF"
+      ],
+      "notes": [
+        "ops/mobile/quality verdicts land via orchestrator before status bumps to verified",
+        "Rollout runbook: docs/runbooks/safeguarding-escalation-rollout.md (5%→25%→100% staged enablement; kill switch = ff_safeguarding_v1 OFF)"
+      ]
     },
     {
       "reqId": "S1.8",
@@ -176,7 +293,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -188,7 +311,9 @@
       "status": "verified",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts"],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -198,13 +323,18 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "packages/lib/src/quiz/submit-side-effects.ts — writes quiz_responses.topic_tag + question_id per response",
         "packages/lib/src/state/events/registry.ts — concept_check event kind"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     },
     {
       "reqId": "D2",
@@ -213,8 +343,12 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-quiz-responses-question-version-content-hash.sql"],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts"],
+        "db": [
+          "supabase/migrations/TBD-quiz-responses-question-version-content-hash.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": []
@@ -224,7 +358,15 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "assessment", "testing", "mobile"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing",
+          "mobile"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -235,8 +377,12 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-quiz-responses-answer-method.sql"],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts"],
+        "db": [
+          "supabase/migrations/TBD-quiz-responses-answer-method.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": []
@@ -246,7 +392,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "testing", "mobile"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "testing",
+          "mobile"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -258,7 +411,10 @@
       "status": "verified",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts", "packages/lib/src/quiz/post-submit-telemetry.ts"],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts",
+          "packages/lib/src/quiz/post-submit-telemetry.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -268,36 +424,67 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "packages/lib/src/quiz/submit-side-effects.ts — time_taken_seconds per response",
         "packages/lib/src/quiz/post-submit-telemetry.ts — responseTimeMs / avg_response_time_ms"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     },
     {
       "reqId": "D5",
       "title": "Hints requested — persist hint_level (Phase 0 defect fix F8; hint ladder completes in Phase 3 via L5)",
       "specSection": "§1.2",
       "phase": "0",
-      "status": "tested",
+      "status": "verified",
       "layers": {
         "db": [
           "supabase/migrations/20260805100100_quiz_responses_hint_level.sql",
           "supabase/migrations/20260805100200_submit_quiz_v2_persist_hint_level.sql"
         ],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts"],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
         "middleware": [],
-        "frontend": ["apps/host/src/app/(student)/quiz/page.tsx"],
+        "frontend": [
+          "apps/host/src/app/(student)/quiz/page.tsx"
+        ],
         "mobile": []
       },
       "owner": "backend",
       "prs": [],
-      "tests": ["apps/host/src/__tests__/api/quiz-server-shuffle-authority.test.ts — F8 case"],
-      "regressionIds": ["REG-346"],
+      "tests": [
+        "apps/host/src/__tests__/api/quiz-server-shuffle-authority.test.ts — F8 case"
+      ],
+      "regressionIds": [
+        "REG-346"
+      ],
       "flags": [],
-      "reviewChain": { "required": ["architect", "assessment", "frontend", "testing", "mobile"], "completed": ["assessment", "mobile", "testing"] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "mobile",
+          "testing",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "quality"
+        ]
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "supabase/migrations/20260805100100_quiz_responses_hint_level.sql",
@@ -314,10 +501,17 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-quiz-responses-confidence.sql"],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts"],
+        "db": [
+          "supabase/migrations/TBD-quiz-responses-confidence.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
         "middleware": [],
-        "frontend": ["packages/ui/src/quiz/", "packages/ui/src/foxy-panel/"],
+        "frontend": [
+          "packages/ui/src/quiz/",
+          "packages/ui/src/foxy-panel/"
+        ],
         "mobile": []
       },
       "owner": "backend",
@@ -325,7 +519,15 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "frontend", "testing", "mobile"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -336,8 +538,13 @@
       "phase": "2",
       "status": "in_progress",
       "layers": {
-        "db": ["supabase/migrations/TBD-quiz-responses-misconception-id.sql"],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts", "packages/lib/src/learn/wrong-answer-remediation.ts"],
+        "db": [
+          "supabase/migrations/TBD-quiz-responses-misconception-id.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts",
+          "packages/lib/src/learn/wrong-answer-remediation.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -347,7 +554,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": [],
       "notes": [
@@ -362,7 +576,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["apps/host/src/app/api/foxy/route.ts"],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts"
+        ],
         "middleware": "inherit",
         "frontend": [],
         "mobile": "n/a"
@@ -372,7 +588,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -384,7 +606,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/memory/preferences.ts"],
+        "backend": [
+          "packages/lib/src/memory/preferences.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": []
@@ -394,7 +618,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -406,7 +636,10 @@
       "status": "verified",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/domains/practice.ts", "packages/lib/src/state/events/registry.ts"],
+        "backend": [
+          "packages/lib/src/domains/practice.ts",
+          "packages/lib/src/state/events/registry.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -416,13 +649,18 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "packages/lib/src/state/events/registry.ts — review_graded event kind",
         "packages/lib/src/domains/practice.ts — spaced_repetition_cards (review_count / next_review_at)"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     },
     {
       "reqId": "D11",
@@ -432,7 +670,10 @@
       "status": "verified",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/teacher-dashboard/index.ts", "packages/lib/src/learn/assignment-submission.ts"],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "packages/lib/src/learn/assignment-submission.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -442,13 +683,18 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "supabase/functions/teacher-dashboard/index.ts — assignment_submissions.teacher_feedback + teacher_student_notes",
         "packages/lib/src/learn/assignment-submission.ts — submission capture path"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     },
     {
       "reqId": "D12",
@@ -458,7 +704,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/learner-model/"],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -468,7 +716,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "ai-engineer", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ai-engineer",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -477,54 +732,109 @@
       "title": "No intelligence/personality labels — policy denylist module packages/lib/src/policy/prohibited-inferences.ts + fix prompt-sections.ts:749",
       "specSection": "§1.2",
       "phase": "1",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/policy/prohibited-inferences.ts", "packages/lib/src/foxy/prompt-sections.ts"],
+        "backend": [
+          "packages/lib/src/policy/prohibited-inferences.ts",
+          "packages/lib/src/foxy/prompt-sections.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/policy/prohibited-inferences.test.ts — module shape + findProhibitedPhrases + analyzer-8e parity"
+      ],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "ops", "testing"], "completed": [] },
-      "lastVerified": null,
-      "evidence": []
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/policy/prohibited-inferences.ts — policy denylist module",
+        "packages/lib/src/foxy/prompt-sections.ts — rail 9 + :749 fix + demo rename + Hindi entries"
+      ],
+      "notes": [
+        "Policy module + rail 9 + prompt-sections.ts:749 fix + demo rename + Hindi denylist entries; analyzer check 8e derives from the policy module"
+      ]
     },
     {
       "reqId": "PR2",
       "title": "No mental-health diagnoses — add to policy module + safeguarding classifier boundaries (with U6/S5.6)",
       "specSection": "§1.2",
       "phase": "1",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/policy/prohibited-inferences.ts"],
+        "backend": [
+          "packages/lib/src/policy/prohibited-inferences.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/policy/prohibited-inferences.test.ts",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-classify.test.ts — classifier boundary cases"
+      ],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
-      "lastVerified": null,
-      "evidence": []
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/policy/prohibited-inferences.ts — second-person diagnosis denylist",
+        "packages/lib/src/ai/validation/safeguarding-classify.ts — classifier boundary (routes, never diagnoses)"
+      ],
+      "notes": [
+        "Second-person denylist + classifier boundary: safeguarding classifier categorises for routing only, never emits a diagnosis label"
+      ]
     },
     {
       "reqId": "PR3",
       "title": "No passive camera/mic observation — codify in policy module; analyzer guard (no getUserMedia outside explicit voice/scan routes)",
       "specSection": "§1.2",
       "phase": "1",
-      "status": "planned",
+      "status": "built",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/policy/prohibited-inferences.ts"],
+        "backend": [
+          "packages/lib/src/policy/prohibited-inferences.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -534,19 +844,32 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["ops", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
-      "evidence": []
+      "evidence": [
+        "packages/lib/src/policy/prohibited-inferences.ts — passive camera/mic observation codified as prohibited"
+      ],
+      "notes": [
+        "Policy codified; the getUserMedia analyzer guard (no capture outside explicit voice/scan routes) was already live before Phase 1"
+      ]
     },
     {
       "reqId": "PR4",
       "title": "No irrelevant private emotions — SEL mood retention window + aggregate-only storage defined in the Phase 1 spec",
       "specSection": "§1.2",
       "phase": "1",
-      "status": "planned",
+      "status": "built",
       "layers": {
         "db": [],
-        "backend": [],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -556,18 +879,32 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "ops", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
-      "evidence": []
+      "evidence": [
+        "apps/host/src/app/api/foxy/route.ts — sessionMood held in-request only"
+      ],
+      "notes": [
+        "SEL mood is in-request only — no persistence of per-turn mood; aggregate-only posture per the Phase 1 spec"
+      ]
     },
     {
       "reqId": "PR5",
       "title": "Sensitive conversations only with safeguarding purpose — scoped table, retention policy, access restricted to the safeguarding role (with U6)",
       "specSection": "§1.2",
       "phase": "1",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": ["supabase/migrations/TBD-safeguarding-escalations.sql"],
+        "db": [
+          "supabase/migrations/20260806000100_safeguarding_escalations.sql"
+        ],
         "backend": [],
         "middleware": [],
         "frontend": [],
@@ -575,21 +912,49 @@
       },
       "owner": "architect",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/security/safeguarding-escalations-migration.test.ts"
+      ],
+      "regressionIds": [
+        "REG-349"
+      ],
       "flags": [],
-      "reviewChain": { "required": ["backend", "frontend", "ops", "testing"], "completed": [] },
-      "lastVerified": null,
-      "evidence": []
+      "reviewChain": {
+        "required": [
+          "backend",
+          "frontend",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260806000100_safeguarding_escalations.sql — disclosure_excerpt (<=500 chars) is the single sanctioned home for disclosure text; 90d retain_until; service-role-only RLS gated by safeguarding.review"
+      ],
+      "notes": [
+        "disclosure_excerpt is the ONE sanctioned location for disclosure text (REG-349); pending_review rows are never purged (daily-cron safeguarding_escalations_purged)"
+      ]
     },
     {
       "reqId": "PR6",
       "title": "Latent labeling columns — learning_style becomes the D9 preference store (allowed use); frustration_threshold DROPPED (approval A4 granted)",
       "specSection": "§1.2",
       "phase": "1",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": ["supabase/migrations/TBD-drop-frustration-threshold.sql"],
+        "db": [
+          "supabase/migrations/20260806000800_affective_profile_drop_frustration_threshold.sql"
+        ],
         "backend": [],
         "middleware": [],
         "frontend": [],
@@ -600,21 +965,45 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["backend", "testing"], "completed": [] },
-      "lastVerified": null,
-      "evidence": []
+      "reviewChain": {
+        "required": [
+          "backend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260806000800_affective_profile_drop_frustration_threshold.sql — frustration_threshold dropped (approval A4)"
+      ],
+      "notes": [
+        "frustration_threshold dropped via 20260806000800; learning_style is deliberately RETAINED as the D9 preference store (allowed use) — do not drop it under this record"
+      ]
     },
     {
       "reqId": "T1",
       "title": "Describe evidence, never judge identity — PR1 policy module + copy audit of all student-facing mastery surfaces + analyzer banned-phrase lint",
       "specSection": "§1.2",
       "phase": "1",
-      "status": "planned",
+      "status": "built",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/policy/prohibited-inferences.ts"],
+        "backend": [
+          "packages/lib/src/policy/prohibited-inferences.ts"
+        ],
         "middleware": [],
-        "frontend": [],
+        "frontend": [
+          "apps/host/src/app/(student)/memory/page.tsx"
+        ],
         "mobile": "n/a"
       },
       "owner": "assessment",
@@ -622,31 +1011,93 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["frontend", "ops", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
-      "evidence": []
+      "evidence": [
+        "packages/lib/src/policy/prohibited-inferences.ts — banned-phrase source",
+        "apps/host/src/app/(student)/memory/page.tsx — evidence-language fixes + band labels"
+      ],
+      "notes": [
+        "Evidence-language fixes + band labels shipped on the memory screen; full copy audit continues via analyzer 8e ratchet [fix→T1] — pending exceptions: apps/host/src/app/teacher/students/page.tsx + for-teachers/page.tsx"
+      ]
     },
     {
       "reqId": "T2",
       "title": "What-Foxy-remembers screen (view / correct / remove) — student memory page + /api/learner/memory + per-item erasure via erasure-guard + DPDP flow (RBAC addition A3 granted)",
       "specSection": "§1.2",
       "phase": "1",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": ["supabase/migrations/TBD-per-item-erasure-tombstones.sql"],
-        "backend": ["apps/host/src/app/api/learner/memory/route.ts"],
+        "db": [
+          "supabase/migrations/20260806000300_data_erasure_requests_scope.sql",
+          "supabase/migrations/20260806000400_seed_memory_self_access_permissions.sql",
+          "supabase/migrations/20260806000600_data_erasure_requests_student_initiated.sql",
+          "supabase/migrations/20260806000700_execute_data_erasure_purge_scoped.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/learner/memory/route.ts",
+          "supabase/functions/data-erasure-purger/index.ts"
+        ],
         "middleware": "inherit",
-        "frontend": ["apps/host/src/app/(student)/memory/page.tsx", "packages/ui/src/memory/"],
+        "frontend": [
+          "apps/host/src/app/(student)/memory/page.tsx",
+          "packages/ui/src/memory/"
+        ],
         "mobile": []
       },
       "owner": "frontend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/api/learner-memory.test.ts",
+        "apps/host/src/__tests__/components/memory/memory-page.test.tsx — 10 tests",
+        "apps/host/src/__tests__/lib/data-erasure-purger.test.ts",
+        "apps/host/src/__tests__/lib/data-erasure-purger-scoped-skip.test.ts"
+      ],
+      "regressionIds": [
+        "REG-350"
+      ],
       "flags": [],
-      "reviewChain": { "required": ["architect", "backend", "ops", "testing", "mobile"], "completed": [] },
-      "lastVerified": null,
-      "evidence": []
+      "reviewChain": {
+        "required": [
+          "architect",
+          "backend",
+          "ops",
+          "testing",
+          "mobile"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "apps/host/src/app/api/learner/memory/route.ts — what-Foxy-remembers read + per-item erasure API",
+        "apps/host/src/app/(student)/memory/page.tsx — memory transparency screen",
+        "packages/ui/src/memory/MemoryLayerCard.tsx — layer cards",
+        "packages/ui/src/memory/ErasePanel.tsx — per-item erasure UI",
+        "supabase/migrations/20260806000300_data_erasure_requests_scope.sql — erasure scope",
+        "supabase/migrations/20260806000400_seed_memory_self_access_permissions.sql — memory self-access permissions",
+        "supabase/migrations/20260806000600_data_erasure_requests_student_initiated.sql — student-initiated requests",
+        "supabase/migrations/20260806000700_execute_data_erasure_purge_scoped.sql — scoped purge RPC",
+        "supabase/functions/data-erasure-purger/index.ts — scoped purge routing"
+      ],
+      "notes": [
+        "Band labels + evidence-language copy on the memory screen also serve T1"
+      ]
     },
     {
       "reqId": "P1",
@@ -655,7 +1106,9 @@
       "phase": "live",
       "status": "verified",
       "layers": {
-        "db": ["supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"],
+        "db": [
+          "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"
+        ],
         "backend": [],
         "middleware": [],
         "frontend": [],
@@ -666,12 +1119,17 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql — concept_mastery.mastery_probability + p_know written only by update_learner_state_post_quiz inside the atomic submit chain"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     },
     {
       "reqId": "P2",
@@ -680,8 +1138,12 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-concept-mastery-evidence-columns.sql"],
-        "backend": ["packages/lib/src/learner-model/"],
+        "db": [
+          "supabase/migrations/TBD-concept-mastery-evidence-columns.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -691,7 +1153,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -702,8 +1171,12 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-concept-mastery-variance.sql"],
-        "backend": ["packages/lib/src/learner-model/"],
+        "db": [
+          "supabase/migrations/TBD-concept-mastery-variance.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -713,7 +1186,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -725,7 +1205,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts"],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -735,7 +1217,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -746,7 +1234,9 @@
       "phase": "live",
       "status": "verified",
       "layers": {
-        "db": ["supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"],
+        "db": [
+          "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"
+        ],
         "backend": [],
         "middleware": [],
         "frontend": [],
@@ -757,12 +1247,17 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql — retention_half_life + current_retention maintained in the canonical RPC"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     },
     {
       "reqId": "P6",
@@ -771,7 +1266,9 @@
       "phase": "live",
       "status": "verified",
       "layers": {
-        "db": ["supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"],
+        "db": [
+          "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"
+        ],
         "backend": [],
         "middleware": [],
         "frontend": [],
@@ -782,12 +1279,17 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql — next_review_at / review_interval_days / ease_factor maintained in the canonical RPC"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     },
     {
       "reqId": "P7",
@@ -796,8 +1298,12 @@
       "phase": "live",
       "status": "verified",
       "layers": {
-        "db": ["supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"],
-        "backend": ["packages/lib/src/cognitive-engine.ts"],
+        "db": [
+          "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql"
+        ],
+        "backend": [
+          "packages/lib/src/cognitive-engine.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -807,13 +1313,18 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "packages/lib/src/cognitive-engine.ts — BLOOM_CONFIG",
         "supabase/migrations/20260623000100_fix_post_quiz_canonical_mastery.sql — bloom fields in the canonical RPC"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     },
     {
       "reqId": "P8",
@@ -822,8 +1333,12 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-rpc-independent-hinted-counters.sql"],
-        "backend": ["packages/lib/src/learner-model/"],
+        "db": [
+          "supabase/migrations/TBD-rpc-independent-hinted-counters.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -833,7 +1348,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -845,7 +1367,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/memory/preferences.ts"],
+        "backend": [
+          "packages/lib/src/memory/preferences.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -855,7 +1379,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -867,7 +1397,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/learner-model/", "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"],
+        "backend": [
+          "packages/lib/src/learner-model/",
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -876,8 +1409,19 @@
       "prs": [],
       "tests": [],
       "regressionIds": [],
-      "flags": [{ "name": "ff_goal_aware_foxy", "requiredState": "off" }],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "flags": [
+        {
+          "name": "ff_goal_aware_foxy",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -889,7 +1433,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/state/events/registry.ts"],
+        "backend": [
+          "packages/lib/src/state/events/registry.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -899,7 +1445,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -911,7 +1463,11 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/cognitive-engine.ts", "packages/lib/src/learner-model/", "supabase/functions/queue-consumer/"],
+        "backend": [
+          "packages/lib/src/cognitive-engine.ts",
+          "packages/lib/src/learner-model/",
+          "supabase/functions/queue-consumer/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -921,7 +1477,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["backend", "ai-engineer", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "backend",
+          "ai-engineer",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -933,17 +1496,39 @@
       "status": "in_progress",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/quiz-generator/index.ts"],
+        "backend": [
+          "supabase/functions/quiz-generator/index.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": ["supabase/functions/quiz-generator/__tests__ (deno, pass)"],
-      "regressionIds": ["REG-347"],
-      "flags": [{ "name": "ff_irt_question_selection", "requiredState": "off" }],
-      "reviewChain": { "required": ["assessment", "ops", "testing"], "completed": ["assessment", "mobile", "testing"] },
+      "tests": [
+        "supabase/functions/quiz-generator/__tests__ (deno, pass)"
+      ],
+      "regressionIds": [
+        "REG-347"
+      ],
+      "flags": [
+        {
+          "name": "ff_irt_question_selection",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "mobile",
+          "testing"
+        ]
+      },
       "lastVerified": null,
       "evidence": [
         "supabase/functions/quiz-generator/index.ts:371 — IRT code un-commented, flag-gated (F1)",
@@ -961,20 +1546,36 @@
       "phase": "2",
       "status": "in_progress",
       "layers": {
-        "db": ["supabase/migrations/TBD-retire-cme-concept-state.sql"],
-        "backend": ["packages/lib/src/learner-model/", "supabase/functions/board-score/index.ts"],
+        "db": [
+          "supabase/migrations/TBD-retire-cme-concept-state.sql"
+        ],
+        "backend": [
+          "packages/lib/src/learner-model/",
+          "supabase/functions/board-score/index.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
       },
       "owner": "assessment",
       "prs": [],
-      "tests": ["apps/host/src/__tests__/board-score-edge-function-structural.test.ts"],
+      "tests": [
+        "apps/host/src/__tests__/board-score-edge-function-structural.test.ts"
+      ],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["ai-engineer", "backend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "backend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
-      "evidence": ["supabase/functions/board-score/index.ts"],
+      "evidence": [
+        "supabase/functions/board-score/index.ts"
+      ],
       "notes": [
         "F6: board-score EF re-pointed cme_concept_state→concept_mastery; retired-table refs 20→18 (analyzer ratchet after merge)"
       ]
@@ -989,7 +1590,11 @@
         "db": [],
         "backend": [],
         "middleware": [],
-        "frontend": ["apps/host/src/app/(student)/quiz/page.tsx", "packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx", "packages/ui/src/quiz/QuizResults.tsx"],
+        "frontend": [
+          "apps/host/src/app/(student)/quiz/page.tsx",
+          "packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx",
+          "packages/ui/src/quiz/QuizResults.tsx"
+        ],
         "mobile": "n/a"
       },
       "owner": "assessment",
@@ -998,9 +1603,22 @@
         "apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts",
         "apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx"
       ],
-      "regressionIds": ["REG-345"],
+      "regressionIds": [
+        "REG-345"
+      ],
       "flags": [],
-      "reviewChain": { "required": ["frontend", "backend", "testing"], "completed": ["assessment", "mobile", "testing"] },
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "backend",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "mobile",
+          "testing"
+        ]
+      },
       "lastVerified": null,
       "evidence": [
         "packages/lib/src/learn/srs-quiz-review.ts (NEW)",
@@ -1018,9 +1636,14 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/quiz-generator/index.ts", "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"],
+        "backend": [
+          "supabase/functions/quiz-generator/index.ts",
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"
+        ],
         "middleware": [],
-        "frontend": ["packages/ui/src/quiz/QuizSetup.tsx"],
+        "frontend": [
+          "packages/ui/src/quiz/QuizSetup.tsx"
+        ],
         "mobile": "n/a"
       },
       "owner": "ai-engineer",
@@ -1028,10 +1651,23 @@
       "tests": [],
       "regressionIds": [],
       "flags": [
-        { "name": "ff_prereq_gating_v1", "requiredState": "off" },
-        { "name": "ff_digital_twin_v1", "requiredState": "off" }
+        {
+          "name": "ff_prereq_gating_v1",
+          "requiredState": "off"
+        },
+        {
+          "name": "ff_digital_twin_v1",
+          "requiredState": "off"
+        }
       ],
-      "reviewChain": { "required": ["assessment", "ops", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1043,7 +1679,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/learner-model/"],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1053,7 +1691,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "ops", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1065,7 +1710,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["apps/host/src/app/api/foxy/_lib/cognitive-context.ts", "packages/lib/src/learner-model/"],
+        "backend": [
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1075,7 +1723,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1087,7 +1741,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/foxy/teaching-director.ts", "apps/host/src/app/api/foxy/route.ts"],
+        "backend": [
+          "packages/lib/src/foxy/teaching-director.ts",
+          "apps/host/src/app/api/foxy/route.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1097,7 +1754,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1109,7 +1772,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["apps/host/src/app/api/foxy/_lib/cognitive-context.ts", "packages/lib/src/learner-model/"],
+        "backend": [
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts",
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1119,7 +1785,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1131,7 +1803,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/foxy/teaching-director.ts"],
+        "backend": [
+          "packages/lib/src/foxy/teaching-director.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1141,7 +1815,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1153,9 +1833,15 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/learn/hint-ladder.ts", "apps/host/src/app/api/foxy/remediation/route.ts"],
+        "backend": [
+          "packages/lib/src/learn/hint-ladder.ts",
+          "apps/host/src/app/api/foxy/remediation/route.ts"
+        ],
         "middleware": "inherit",
-        "frontend": ["packages/ui/src/quiz/", "packages/ui/src/foxy-panel/"],
+        "frontend": [
+          "packages/ui/src/quiz/",
+          "packages/ui/src/foxy-panel/"
+        ],
         "mobile": []
       },
       "owner": "ai-engineer",
@@ -1163,7 +1849,15 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "frontend", "testing", "mobile"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1174,8 +1868,12 @@
       "phase": "2",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-update-learner-state-post-quiz-additive-evidence.sql"],
-        "backend": ["packages/lib/src/quiz/submit-side-effects.ts"],
+        "db": [
+          "supabase/migrations/TBD-update-learner-state-post-quiz-additive-evidence.sql"
+        ],
+        "backend": [
+          "packages/lib/src/quiz/submit-side-effects.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1185,7 +1883,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1197,9 +1902,15 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["apps/host/src/app/api/foxy/route.ts", "packages/lib/src/learner-model/"],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts",
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
-        "frontend": ["packages/ui/src/foxy-panel/", "packages/ui/src/quiz/QuizResults.tsx"],
+        "frontend": [
+          "packages/ui/src/foxy-panel/",
+          "packages/ui/src/quiz/QuizResults.tsx"
+        ],
         "mobile": []
       },
       "owner": "ai-engineer",
@@ -1207,7 +1918,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1221,7 +1939,10 @@
         "db": [],
         "backend": [],
         "middleware": "inherit",
-        "frontend": ["packages/ui/src/foxy-panel/", "apps/host/src/app/foxy/page.tsx"],
+        "frontend": [
+          "packages/ui/src/foxy-panel/",
+          "apps/host/src/app/foxy/page.tsx"
+        ],
         "mobile": []
       },
       "owner": "frontend",
@@ -1229,7 +1950,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["ai-engineer", "testing", "mobile"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "testing",
+          "mobile"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1241,7 +1969,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/foxy/teaching-director.ts"],
+        "backend": [
+          "packages/lib/src/foxy/teaching-director.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1251,7 +1981,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1263,7 +1999,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/foxy/struggle-detection.ts"],
+        "backend": [
+          "packages/lib/src/foxy/struggle-detection.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1272,8 +2010,20 @@
       "prs": [],
       "tests": [],
       "regressionIds": [],
-      "flags": [{ "name": "ff_foxy_perception_v1", "requiredState": "off" }],
-      "reviewChain": { "required": ["assessment", "ops", "testing"], "completed": [] },
+      "flags": [
+        {
+          "name": "ff_foxy_perception_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1285,9 +2035,14 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["apps/host/src/app/api/foxy/learning-action/route.ts"],
+        "backend": [
+          "apps/host/src/app/api/foxy/learning-action/route.ts"
+        ],
         "middleware": "inherit",
-        "frontend": ["packages/ui/src/quiz/", "packages/ui/src/foxy-panel/"],
+        "frontend": [
+          "packages/ui/src/quiz/",
+          "packages/ui/src/foxy-panel/"
+        ],
         "mobile": "n/a"
       },
       "owner": "frontend",
@@ -1295,7 +2050,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["backend", "ai-engineer", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "backend",
+          "ai-engineer",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1307,7 +2069,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/companion/"],
+        "backend": [
+          "packages/lib/src/companion/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1317,7 +2081,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["ai-engineer", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1326,22 +2097,81 @@
       "title": "Safeguarding flow (UNICEF) — pre-LLM disclosure classifier; safeguarding_escalations table + RLS (safeguarding role only); human review lane (school-admin + super-admin); Childline 1098 response template; SEL mood routing; anti-dependency rails; metadata-only audit (P13). Approval A1 granted",
       "specSection": "§1.5",
       "phase": "1",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": ["supabase/migrations/TBD-safeguarding-escalations.sql"],
-        "backend": ["apps/host/src/app/api/foxy/route.ts", "packages/lib/src/policy/prohibited-inferences.ts"],
+        "db": [
+          "supabase/migrations/20260806000100_safeguarding_escalations.sql",
+          "supabase/migrations/20260806000200_seed_ff_safeguarding_v1.sql"
+        ],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts",
+          "packages/lib/src/policy/prohibited-inferences.ts",
+          "apps/host/src/app/api/foxy/_lib/responders.ts",
+          "apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts"
+        ],
         "middleware": "inherit",
-        "frontend": ["apps/host/src/app/school-admin/escalations/page.tsx", "apps/host/src/app/super-admin/"],
+        "frontend": [
+          "apps/host/src/app/school-admin/escalations/SafeguardingQueue.tsx",
+          "apps/host/src/app/super-admin/foxy-quality/SafeguardingQueue.tsx"
+        ],
         "mobile": "n/a"
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
-      "flags": [],
-      "reviewChain": { "required": ["architect", "assessment", "backend", "frontend", "ops", "testing"], "completed": [] },
-      "lastVerified": null,
-      "evidence": []
+      "tests": [
+        "apps/host/src/__tests__/api/foxy/safeguarding-route.test.ts",
+        "apps/host/src/__tests__/api/foxy/safeguarding-escalate.test.ts",
+        "apps/host/src/__tests__/api/foxy/respond-safeguarding.test.ts",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-screen.test.ts — classifier tests (138 across screen+classify)",
+        "packages/lib/src/__tests__/ai/validation/safeguarding-classify.test.ts — classifier tests (138 across screen+classify)",
+        "apps/host/src/__tests__/security/safeguarding-escalations-migration.test.ts",
+        "apps/host/src/__tests__/api/super-admin-safeguarding.test.ts",
+        "apps/host/src/__tests__/api/school-admin-safeguarding.test.ts"
+      ],
+      "regressionIds": [
+        "REG-348"
+      ],
+      "flags": [
+        {
+          "name": "ff_safeguarding_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "architect",
+          "assessment",
+          "backend",
+          "frontend",
+          "ops",
+          "testing"
+        ],
+        "completed": [
+          "assessment",
+          "architect",
+          "backend",
+          "frontend",
+          "ops",
+          "testing",
+          "mobile",
+          "quality"
+        ]
+      },
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/ai/validation/safeguarding-screen.ts — Tier-1 pre-filter (same family as S1.7)",
+        "packages/lib/src/ai/validation/safeguarding-classify.ts — Tier-2 LLM confirmation (same family as S1.7)",
+        "apps/host/src/app/api/foxy/route.ts — Tier-1 :663 / Tier-2 :914 + sessionMood plumbing (SEL mood routing into disclosure lane; in-request only per PR4)",
+        "apps/host/src/app/api/foxy/_lib/responders.ts — respondSafeguarding (Childline 1098)",
+        "apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts — school-admin fan-out (metadata-only, P13)",
+        "apps/host/src/app/school-admin/escalations/SafeguardingQueue.tsx — school-scoped human review lane (P10 fold-in: tab at /school-admin/escalations?tab=safeguarding)",
+        "apps/host/src/app/super-admin/foxy-quality/SafeguardingQueue.tsx — platform human review lane (P10 fold-in: tab at /super-admin/foxy-quality?tab=safeguarding)",
+        "supabase/functions/daily-cron/index.ts — safeguarding_escalations_purged step (90d retention, pending never purged, >30d stale-pending counts-only WARN)"
+      ],
+      "notes": [
+        "SEL guardrails + disclosure routing tested; ops review verdict 2026-08-05 APPROVE (queue operability, stale-pending WARN surfaces in daily ops log review, no PII in operational logs)",
+        "Rollout runbook: docs/runbooks/safeguarding-escalation-rollout.md"
+      ]
     },
     {
       "reqId": "U7",
@@ -1361,7 +2191,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1372,8 +2208,12 @@
       "phase": "3",
       "status": "planned",
       "layers": {
-        "db": ["supabase/migrations/TBD-xp-transactions-source-check-widen.sql"],
-        "backend": ["packages/lib/src/xp-config.ts"],
+        "db": [
+          "supabase/migrations/TBD-xp-transactions-source-check-widen.sql"
+        ],
+        "backend": [
+          "packages/lib/src/xp-config.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": []
@@ -1383,7 +2223,16 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["testing", "ai-engineer", "backend", "frontend", "mobile"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1405,7 +2254,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["testing"], "completed": ["testing"] },
+      "reviewChain": {
+        "required": [
+          "testing"
+        ],
+        "completed": [
+          "testing"
+        ]
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "packages/lib/src/xp-config.ts — foxy_chat=0, streak_daily=0",
@@ -1430,7 +2286,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["frontend", "testing", "mobile"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1452,7 +2315,12 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": [],
       "notes": [
@@ -1467,7 +2335,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/teacher-dashboard/index.ts", "packages/lib/src/pulse/"],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "packages/lib/src/pulse/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1476,8 +2347,20 @@
       "prs": [],
       "tests": [],
       "regressionIds": [],
-      "flags": [{ "name": "ff_school_pulse_v1", "requiredState": "off" }],
-      "reviewChain": { "required": ["frontend", "ops", "testing"], "completed": [] },
+      "flags": [
+        {
+          "name": "ff_school_pulse_v1",
+          "requiredState": "off"
+        }
+      ],
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1489,9 +2372,13 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/teacher-dashboard/index.ts"],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts"
+        ],
         "middleware": [],
-        "frontend": ["apps/host/src/app/teacher/"],
+        "frontend": [
+          "apps/host/src/app/teacher/"
+        ],
         "mobile": "n/a"
       },
       "owner": "backend",
@@ -1499,7 +2386,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1511,7 +2405,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/teacher-dashboard/index.ts"],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1521,7 +2417,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1533,9 +2436,13 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/teacher-dashboard/index.ts"],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts"
+        ],
         "middleware": [],
-        "frontend": ["apps/host/src/app/teacher/"],
+        "frontend": [
+          "apps/host/src/app/teacher/"
+        ],
         "mobile": "n/a"
       },
       "owner": "frontend",
@@ -1543,7 +2450,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["backend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "backend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1555,9 +2468,14 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/bulk-question-gen/", "supabase/functions/export-report/"],
+        "backend": [
+          "supabase/functions/bulk-question-gen/",
+          "supabase/functions/export-report/"
+        ],
         "middleware": [],
-        "frontend": ["apps/host/src/app/teacher/"],
+        "frontend": [
+          "apps/host/src/app/teacher/"
+        ],
         "mobile": "n/a"
       },
       "owner": "backend",
@@ -1565,7 +2483,15 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["ai-engineer", "assessment", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1577,7 +2503,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/teacher-dashboard/index.ts"],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1587,7 +2515,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1599,7 +2533,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/teacher-dashboard/index.ts", "packages/lib/src/state/events/registry.ts"],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts",
+          "packages/lib/src/state/events/registry.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1609,7 +2546,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1621,9 +2565,13 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/parent-report-generator/"],
+        "backend": [
+          "supabase/functions/parent-report-generator/"
+        ],
         "middleware": [],
-        "frontend": ["apps/host/src/app/parent/progress/page.tsx"],
+        "frontend": [
+          "apps/host/src/app/parent/progress/page.tsx"
+        ],
         "mobile": []
       },
       "owner": "backend",
@@ -1631,7 +2579,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["frontend", "testing", "mobile"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "frontend",
+          "testing",
+          "mobile"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1643,9 +2598,13 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/learner-model/"],
+        "backend": [
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
-        "frontend": ["apps/host/src/app/school-admin/"],
+        "frontend": [
+          "apps/host/src/app/school-admin/"
+        ],
         "mobile": "n/a"
       },
       "owner": "frontend",
@@ -1653,7 +2612,15 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["backend", "architect", "ops", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "backend",
+          "architect",
+          "ops",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1665,7 +2632,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/state/events/registry.ts", "packages/lib/src/learner-model/"],
+        "backend": [
+          "packages/lib/src/state/events/registry.ts",
+          "packages/lib/src/learner-model/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1675,7 +2645,13 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["architect", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "architect",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1687,7 +2663,10 @@
       "status": "verified",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/grounded-answer/index.ts", "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"],
+        "backend": [
+          "supabase/functions/grounded-answer/index.ts",
+          "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1695,9 +2674,14 @@
       "owner": "ai-engineer",
       "prs": [],
       "tests": [],
-      "regressionIds": ["REG-50"],
+      "regressionIds": [
+        "REG-50"
+      ],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "supabase/functions/grounded-answer/index.ts — RAG retrieval (Voyage rerank-2, RRF k=60, confidence scoring)",
@@ -1712,7 +2696,10 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["apps/host/src/app/api/foxy/route.ts", "packages/lib/src/ai/gateway/"],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts",
+          "packages/lib/src/ai/gateway/"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1722,7 +2709,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "backend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "backend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": [],
       "notes": [
@@ -1737,7 +2731,9 @@
       "status": "in_progress",
       "layers": {
         "db": [],
-        "backend": ["apps/host/src/app/api/foxy/route.ts"],
+        "backend": [
+          "apps/host/src/app/api/foxy/route.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1747,11 +2743,18 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["assessment", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "assessment",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": [],
       "notes": [
-        "F5: foxy_sessions.mode CHECK widened 4→9 (20260805100000) — fixes latent mobile 23514 for doubt/explorer"
+        "F5: foxy_sessions.mode CHECK widened 4→9 (20260805100000) — fixes latent mobile 23514 for doubt/explorer",
+        "Tier-1/Tier-2 safeguarding stages (route.ts:663/:914) staged as gate-stage inputs for the Phase 4 pipeline decomposition (R3)"
       ]
     },
     {
@@ -1762,7 +2765,9 @@
       "status": "planned",
       "layers": {
         "db": [],
-        "backend": ["supabase/functions/teacher-dashboard/index.ts"],
+        "backend": [
+          "supabase/functions/teacher-dashboard/index.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1772,7 +2777,14 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["ai-engineer", "frontend", "testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "ai-engineer",
+          "frontend",
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": []
     },
@@ -1794,7 +2806,12 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": ["testing"], "completed": [] },
+      "reviewChain": {
+        "required": [
+          "testing"
+        ],
+        "completed": []
+      },
       "lastVerified": null,
       "evidence": [],
       "notes": [
@@ -1809,7 +2826,11 @@
       "status": "verified",
       "layers": {
         "db": [],
-        "backend": ["packages/lib/src/ai/gateway/router.ts", "packages/lib/src/ai/gateway/gateway.ts", "packages/lib/src/ai/gateway/registry.ts"],
+        "backend": [
+          "packages/lib/src/ai/gateway/router.ts",
+          "packages/lib/src/ai/gateway/gateway.ts",
+          "packages/lib/src/ai/gateway/registry.ts"
+        ],
         "middleware": [],
         "frontend": [],
         "mobile": "n/a"
@@ -1819,13 +2840,18 @@
       "tests": [],
       "regressionIds": [],
       "flags": [],
-      "reviewChain": { "required": [], "completed": [] },
+      "reviewChain": {
+        "required": [],
+        "completed": []
+      },
       "lastVerified": "2026-08-05",
       "evidence": [
         "packages/lib/src/ai/gateway/router.ts — task-typed routing matrices",
         "packages/lib/src/ai/gateway/registry.ts — OpenAI-primary chain gpt-4o-mini → gpt-4o → Haiku → Sonnet (since 2026-08-02)"
       ],
-      "notes": ["pin backfill scheduled Phase 2 (facade tests will pin these)"]
+      "notes": [
+        "pin backfill scheduled Phase 2 (facade tests will pin these)"
+      ]
     }
   ]
 }

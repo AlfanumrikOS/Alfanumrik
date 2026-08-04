@@ -35,6 +35,27 @@ export type QuizMeWire =
   | { evidential: true; servedItemId: string }
   | { evidential: false; reason?: string | null };
 
+/**
+ * Foxy North-Star Phase 1 — safeguarding envelope. When a turn's response
+ * carries `safeguarding.helpline` (badgeState 'safeguarding'), the chat
+ * renders a distinct, warm helpline card (Childline 1098) beneath the tutor
+ * bubble. Display-only: the client never classifies disclosures itself.
+ */
+export interface SafeguardingWire {
+  helpline: { name: string; number: string };
+}
+
+/** SEL check-in mood — mirrors the `sessionMood` field on POST /api/foxy. */
+export type SessionMood = 'great' | 'good' | 'ok' | 'tired' | 'stressed';
+
+/**
+ * Server-computed badge state carried on the POST /api/foxy envelope.
+ * 'safeguarding' (Foxy North-Star Phase 1) marks a turn that carries the
+ * safeguarding helpline envelope — it is rendered as the HelplineCard, NOT
+ * as a SymPy verifier badge (ChatBubble never receives it).
+ */
+export type FoxyBadgeState = 'verified' | 'check_manually' | 'none' | 'out_of_scope' | 'safeguarding';
+
 export interface StreamingCallbacks {
   onSession?: (sessionId: string) => void;
   onMetadata?: (meta: { groundingStatus: GroundingStatus; traceId?: string; confidence?: number; citationsCount?: number }) => void;
@@ -66,7 +87,12 @@ export interface StreamingCallbacks {
      * DISPLAYS this only — never recomputes correctness. Absent on non-math /
      * legacy responses (renders nothing).
      */
-    badgeState?: 'verified' | 'check_manually' | 'none' | 'out_of_scope';
+    badgeState?: FoxyBadgeState;
+    /**
+     * Foxy North-Star Phase 1 — safeguarding helpline envelope. Present only
+     * when the server classified this turn as a safeguarding disclosure.
+     */
+    safeguarding?: SafeguardingWire;
     /**
      * Phase 2.1 Teaching Director (ff_foxy_teaching_director_v1) — context-aware
      * subset of the four primary post-answer buttons. Present on the enriched
@@ -152,8 +178,17 @@ export interface ChatMessage {
    * /api/foxy envelope (next to `structured`). The renderer DISPLAYS this
    * only — it never recomputes correctness. Absent on every non-math / legacy
    * response, in which case the badge element is NOT rendered (zero DOM change).
+   * 'safeguarding' is rendered as the HelplineCard by MessageList and is
+   * filtered out before the value reaches ChatBubble.
    */
-  badgeState?: 'verified' | 'check_manually' | 'none' | 'out_of_scope';
+  badgeState?: FoxyBadgeState;
+  /**
+   * Foxy North-Star Phase 1 — safeguarding helpline envelope stamped from the
+   * POST /api/foxy response (`data.safeguarding`). When present (or when
+   * badgeState === 'safeguarding'), MessageList renders the warm HelplineCard
+   * (Childline 1098, tel: link, bilingual) beneath this tutor bubble.
+   */
+  safeguarding?: SafeguardingWire;
   /**
    * Part B1: evidential "Quiz me" contract. Present ONLY on a tutor turn that
    * served a "Quiz me" MCQ. Drives whether the MCQ renderer grades through

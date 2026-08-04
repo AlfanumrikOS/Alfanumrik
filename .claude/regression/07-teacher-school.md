@@ -689,8 +689,8 @@ email / name / phone (P13).
 
 ### Pinned tests
 
-- `src/__tests__/lib/school-admin/role-capabilities.test.ts::schoolAdminRoleAllows — per-role coarse summary (count of allowed matrix codes)::vice_principal allows exactly 8 (denies manage_billing + manage_staff only)`
-- `src/__tests__/lib/school-admin/role-capabilities.test.ts::schoolAdminRoleAllows — per-role coarse summary (count of allowed matrix codes)::academic_coordinator allows exactly the 6 shared codes (no manage, no billing, no staff)`
+- `src/__tests__/lib/school-admin/role-capabilities.test.ts::schoolAdminRoleAllows — per-role coarse summary (count of allowed matrix codes)::vice_principal allows exactly 8 (denies manage_billing + manage_staff + safeguarding.review)`
+- `src/__tests__/lib/school-admin/role-capabilities.test.ts::schoolAdminRoleAllows — per-role coarse summary (count of allowed matrix codes)::academic_coordinator allows exactly the 6 shared codes (no manage, no billing, no staff, no safeguarding)`
 - `src/__tests__/lib/school-admin/role-capabilities.test.ts::schoolAdminRoleAllows — non-matrix codes DEFER (allowed) for every role::academic_coordinator defers (allows) non-matrix code school.manage_settings`
 - `src/__tests__/school-admin-auth-rbac-narrowing.test.ts::authorizeSchoolAdmin — flag ON narrowing (denials)::vice_principal calling institution.manage_billing → 403 SCHOOL_ADMIN_ROLE_DENIED`
 - `src/__tests__/school-admin-auth-rbac-narrowing.test.ts::authorizeSchoolAdmin — flag OFF is byte-identical (no narrowing)::vice_principal + institution.manage_billing is AUTHORIZED when the flag is OFF (would be 403 ON)`

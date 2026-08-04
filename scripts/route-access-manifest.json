@@ -624,6 +624,14 @@
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
+      "path": "/api/learner/memory",
+      "file": "apps/host/src/app/api/learner/memory/route.ts",
+      "access": "auth",
+      "owner": "core-backend",
+      "rationale": "Student memory self-access (Foxy North-Star Phase 1): GET whitelisted memory projection + DELETE scoped erasure request, gated by authorizeRequest('memory.view_own'/'memory.erase_own').",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
       "path": "/api/learner/next",
       "file": "apps/host/src/app/api/learner/next/route.ts",
       "access": "auth",
@@ -1281,6 +1289,14 @@
       "access": "school_admin",
       "owner": "school-admin-backend",
       "rationale": "School-admin endpoint; access must derive from school-admin membership and permission checks.",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
+    },
+    {
+      "path": "/api/school-admin/safeguarding",
+      "file": "apps/host/src/app/api/school-admin/safeguarding/route.ts",
+      "access": "school_admin",
+      "owner": "school-admin-backend",
+      "rationale": "Safeguarding review lane (school side): list/detail/PATCH escalations, authorizeSchoolAdmin-gated and hard-scoped to the caller's school_id; safeguarding_escalations is service-role-only by design (REG-350).",
       "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
@@ -2296,6 +2312,14 @@
       "access": "super_admin",
       "owner": "admin-platform",
       "rationale": "Super-admin endpoint; access must derive from admin session/RBAC or explicit admin secret."
+    },
+    {
+      "path": "/api/super-admin/safeguarding",
+      "file": "apps/host/src/app/api/super-admin/safeguarding/route.ts",
+      "access": "super_admin",
+      "owner": "admin-platform",
+      "rationale": "Safeguarding review lane (platform side): list/detail/PATCH escalations, authorizeAdmin(request,'admin')-gated; safeguarding_escalations is service-role-only by design (REG-350).",
+      "serviceRoleUse": "RCA-01/XC-3 compatibility: route imports the service-role/admin client; retain only with route-level authorization and tenant checks until migrated to narrower RLS-scoped access."
     },
     {
       "path": "/api/super-admin/seat-usage",

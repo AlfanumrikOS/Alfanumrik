@@ -122,6 +122,12 @@ const NAV_ITEMS: SidebarItem[] = [
   { type: 'section', label: 'People & Support', labelHi: 'लोग और सहायता' },
   { href: '/super-admin/users', label: 'Users & Roles', labelHi: 'उपयोगकर्ता और भूमिकाएँ', icon: '⊕' },
   { href: '/super-admin/support', label: 'Support Center', labelHi: 'सहायता केंद्र', icon: '⊛' },
+  // Foxy North-Star Phase 1 — safeguarding disclosure review queue.
+  // P10 fold-in (2026-08-05): the queue lives as the Safeguarding tab of the
+  // grandfathered /super-admin/foxy-quality page (the standalone route
+  // exceeded the 260 kB per-page cap, which the super-admin shell alone
+  // exceeds — see the foxy-quality page header comment).
+  { href: '/super-admin/foxy-quality?tab=safeguarding', label: 'Safeguarding', labelHi: 'सुरक्षा समीक्षा', icon: '⛨' },
   { href: '/super-admin/bulk-actions', label: 'Bulk Actions', labelHi: 'बल्क क्रियाएँ', icon: '⊞' },
   { href: '/super-admin/bulk-upload', label: 'Bulk Upload', labelHi: 'बल्क अपलोड', icon: '⊼' },
   { href: '/super-admin/demo', label: 'Demo Accounts', labelHi: 'डेमो खाते', icon: '⊜' },

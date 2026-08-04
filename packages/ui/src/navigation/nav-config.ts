@@ -36,6 +36,8 @@ export const MORE_ITEMS = [
   // the launch flag is ON, same convention as Practice Center / Revision
   // Center above.
   { href: '/me', icon: '⚙️', label: 'Me (New)', labelHi: 'मैं (नया)', flagName: 'ff_me_v2' },
+  // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
+  { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है' },
   { href: '/notifications', icon: '🔔', label: 'Settings & Notifications', labelHi: 'सेटिंग्स और सूचनाएँ' },
   { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
   { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
@@ -82,6 +84,8 @@ export const SIDEBAR_SECTIONS = [
       // for the full rationale; mirrored here so the desktop sidebar surfaces
       // the same additive screen once the flag ramps.
       { href: '/me', icon: '⚙️', label: 'Me (New)', labelHi: 'मैं (नया)', flagName: 'ff_me_v2' },
+      // Foxy North-Star Phase 1 — learner-memory transparency + erasure screen.
+      { href: '/memory', icon: '🦊', label: 'What Foxy remembers', labelHi: 'फॉक्सी क्या याद रखता है' },
       { href: '/help', icon: '❓', label: 'Help & Support', labelHi: 'सहायता और सपोर्ट' },
       { href: '/support', icon: '📨', label: 'My Tickets', labelHi: 'मेरे टिकट' },
     ],

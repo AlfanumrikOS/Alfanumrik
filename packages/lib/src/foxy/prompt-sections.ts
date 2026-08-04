@@ -26,6 +26,7 @@ import {
   buildQuizOracleGraderUserPrompt,
 } from '@alfanumrik/lib/ai/validation/quiz-oracle-prompts';
 import { callClaude } from '@alfanumrik/lib/ai';
+import { PROHIBITED_INFERENCES_PROMPT_SECTION } from '@alfanumrik/lib/policy/prohibited-inferences';
 
 // ─── Helper: pKnow → directive sentence (per-LO bucket) ─────────────────────
 //
@@ -746,7 +747,9 @@ export const PRACTICE_MCQ_DIRECTIVE = [
   `Make the ${PRACTICE_MCQ_COUNT} questions distinct and CALIBRATE their difficulty to`,
   'the student\'s mastery signals in the cognitive context below. Never pose a',
   'question more than ONE Bloom level above the student\'s current ceiling for the',
-  'topic: a struggling student gets mostly easy/medium recall-and-understand items',
+  // PR1 evidence-language fix (Foxy North-Star Phase 1): "a struggling
+  // student" judged identity; the replacement describes the mastery evidence.
+  'topic: a student with low current mastery gets mostly easy/medium recall-and-understand items',
   '(e.g. 2 easy, 1 medium); a proficient student gets a genuine higher-order item',
   '(e.g. 1 easy, 1 medium, 1 hard). If no mastery signal is available yet, default',
   'to a gentle spread (e.g. 2 easy, 1 medium). Stay strictly inside the student\'s',
@@ -1231,6 +1234,12 @@ You are Foxy, a friendly CBSE tutor. Safety rails you must follow:
    like "Generated 5 quiz questions." or "Here are 5 questions" with no
    questions after them. If you cannot produce real questions, say so plainly
    in the student's language instead of claiming a quiz you did not make.
+` + // Rail 9 (Foxy North-Star Phase 1, PR1-PR5 / T1): built from the single
+// policy denylist in packages/lib/src/policy/prohibited-inferences.ts so the
+// prompt, the analyzer's banned-phrase lint (check 8e), and any future output
+// scan all share ONE source. Additive — rails 1-8 above are byte-unchanged.
+`9. Prohibited inferences — describe evidence, never judge identity:
+${PROHIBITED_INFERENCES_PROMPT_SECTION}
 `).trim();
 
 // ─── Part A: bare-open detector ─────────────────────────────────────────────

@@ -36,7 +36,15 @@ import type {
   NextAction,
 } from '@alfanumrik/ui/foxy/ChatBubble';
 import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
-import type { ChatMessage, StreamingCallbacks, QuizMeWire, CoachDirective } from '../_lib/foxy-types';
+import type {
+  ChatMessage,
+  StreamingCallbacks,
+  QuizMeWire,
+  CoachDirective,
+  SafeguardingWire,
+  SessionMood,
+  FoxyBadgeState,
+} from '../_lib/foxy-types';
 import { DIRECTIVE_ECHO_LABELS } from '../_lib/foxy-constants';
 
 // Re-exported for existing importers (page.tsx imports CoachDirective from this
@@ -163,6 +171,9 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
         mode:      params.mode      ?? 'learn',
         ...(typeof params.intent === 'string' ? { intent: params.intent } : {}),
         ...(typeof params.coachDirective === 'string' ? { coachDirective: params.coachDirective } : {}),
+        // SEL check-in mood (Foxy North-Star Phase 1) — optional, carried for
+        // the rest of the session after the student picks a mood.
+        ...(typeof params.sessionMood === 'string' ? { sessionMood: params.sessionMood } : {}),
         ...(params.image_base64 ? {
           image_base64: params.image_base64,
           image_media_type: params.image_media_type ?? 'image/jpeg',
@@ -252,7 +263,9 @@ export async function callFoxyTutor(params: Record<string, any> & { language?: s
       groundedFromChunks:     typeof data.groundedFromChunks === 'boolean' ? data.groundedFromChunks : false,
       citationsCount:         typeof data.citationsCount === 'number' ? data.citationsCount : 0,
       structured:             (data.structured as FoxyResponse | undefined) ?? undefined,
-      badgeState:             (data.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
+      badgeState:             (data.badgeState as (FoxyBadgeState | undefined)) ?? undefined,
+      // Foxy North-Star Phase 1 — safeguarding helpline envelope (display-only).
+      safeguarding:           (data.safeguarding as SafeguardingWire | undefined) ?? undefined,
       messageId:              typeof data.messageId === 'string' ? data.messageId : null,
       // Part B1: evidential "Quiz me" contract (present only on a quiz_me turn).
       quizMe:                 (data.quizMe as QuizMeWire | undefined) ?? undefined,
@@ -334,7 +347,8 @@ export async function callFoxyTutorStream(
         citationsCount: typeof data?.citationsCount === 'number' ? data.citationsCount : 0,
         claudeModel: data?.meta?.claude_model || data?.claudeModel || '',
         structured: (data?.structured as FoxyResponse | undefined) ?? undefined,
-        badgeState: (data?.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
+        badgeState: (data?.badgeState as (FoxyBadgeState | undefined)) ?? undefined,
+        safeguarding: (data?.safeguarding as SafeguardingWire | undefined) ?? undefined,
         // Phase 2.1 Teaching Director — carried on the JSON-fallback done too.
         suggestedButtons: Array.isArray(data?.suggestedButtons) ? (data.suggestedButtons as SuggestedButtonType[]) : undefined,
         nextActions: Array.isArray(data?.nextActions) ? (data.nextActions as NextAction[]) : undefined,
@@ -396,7 +410,8 @@ export async function callFoxyTutorStream(
           citationsCount,
           claudeModel: typeof parsed?.claudeModel === 'string' ? parsed.claudeModel : '',
           structured: (parsed?.structured as FoxyResponse | undefined) ?? undefined,
-          badgeState: (parsed?.badgeState as ('verified' | 'check_manually' | 'none' | 'out_of_scope') | undefined) ?? undefined,
+          badgeState: (parsed?.badgeState as (FoxyBadgeState | undefined)) ?? undefined,
+          safeguarding: (parsed?.safeguarding as SafeguardingWire | undefined) ?? undefined,
           // Phase 2.1 Teaching Director — the `done` frame is enriched in
           // parallel to carry the same subset/next-actions the blocking JSON
           // does. Absent on today's frames ⇒ undefined ⇒ all four render.
@@ -491,6 +506,13 @@ export interface FoxySendPayload {
    * MCQ) for it.
    */
   coachDirective?: CoachDirective;
+  /**
+   * SEL check-in mood (Foxy North-Star Phase 1). Set by the page for every
+   * send after the student picks a mood in the daily SEL check-in; absent
+   * (undefined) before a selection / on skip — the POST body then carries no
+   * `sessionMood` field (byte-identical to today).
+   */
+  sessionMood?: SessionMood;
 }
 
 /** Body for the learning-action telemetry endpoint. */
@@ -852,6 +874,10 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
       };
       if (payload.intent) foxyParams.intent = payload.intent;
       if (payload.coachDirective) foxyParams.coachDirective = payload.coachDirective;
+      // SEL mood — included on the wire for BOTH branches (the streaming
+      // branch spreads foxyParams into the POST body; the blocking branch
+      // reads params.sessionMood inside callFoxyTutor).
+      if (payload.sessionMood) foxyParams.sessionMood = payload.sessionMood;
       if (payload.imageBase64) {
         foxyParams.image_base64 = payload.imageBase64;
         foxyParams.image_media_type = payload.imageMediaType || 'image/jpeg';
@@ -935,6 +961,10 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
                 // when present; absent leaves the bubble byte-identical to today.
                 if (info.badgeState) {
                   next = { ...next, badgeState: info.badgeState };
+                }
+                // Foxy North-Star Phase 1 — safeguarding helpline envelope.
+                if (info.safeguarding) {
+                  next = { ...next, safeguarding: info.safeguarding };
                 }
                 // Phase 2.1 Teaching Director — stamp the context-aware button
                 // subset + advisory next-actions when the enriched `done` frame
@@ -1036,6 +1066,8 @@ export function useFoxyChat(options?: { durableThreadEnabled?: boolean }): UseFo
         suggestedAlternatives: resp.suggestedAlternatives,
         structured: resp.structured,
         badgeState: resp.badgeState,
+        // Foxy North-Star Phase 1 — safeguarding helpline envelope (blocking branch).
+        safeguarding: resp.safeguarding,
         persistedMessageId: resp.messageId ?? undefined,
         // Part B1: stamp the evidential contract so the MCQ renderer knows
         // whether answering moves mastery (evidential) or is practice-only.

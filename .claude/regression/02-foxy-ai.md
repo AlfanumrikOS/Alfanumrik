@@ -2314,3 +2314,193 @@ Known gap above).
 
 ---
 
+## REG-348 — Safeguarding two-tier fail-closed contract: a Tier-1 regex hit can NEVER silently degrade to "no escalation" when Tier-2 fails (2026-08-05)
+
+**Status: E.** Foxy North-Star Phase 1 (spec
+`docs/superpowers/specs/2026-08-05-foxy-north-star-alignment-design.md`,
+S5.6/U6, approval A1), uncommitted at promotion time on branch
+`Alfanumrik/foxy-system-spec-22f565`.
+
+The safeguarding flow is two-tier: Tier-1 is a deterministic regex pre-screen
+(`packages/lib/src/ai/validation/safeguarding-screen.ts`, zero network),
+Tier-2 is an LLM confirmation classifier
+(`packages/lib/src/ai/validation/safeguarding-classify.ts`, gateway
+`callModel`, temperature 0, jsonMode, 0.7 inclusive confirm threshold). The
+contract this entry pins is the FAIL-CLOSED branch: **after a Tier-1 hit, any
+Tier-2 failure — gateway all-candidates-failed result, gateway throw,
+unparseable prose, empty content, non-numeric confidence, JSON-array shape —
+resolves to `{ confirmed: true, category: categories[0], confidence: 0,
+tier: 'regex_only' }`**, i.e. the escalation proceeds on regex evidence alone
+rather than the disclosure being silently dropped because a model was down.
+The classifier itself never throws.
+
+Downstream of a confirmed verdict (either tier), the route
+(`apps/host/src/app/api/foxy/route.ts`, gated by `ff_safeguarding_v1`)
+terminates the turn WITHOUT any LLM answer call and:
+- returns the terminal envelope (`badgeState: 'safeguarding'`,
+  `safeguarding.helpline = { name: 'Childline', number: '1098' }`, bilingual
+  EN + Devanagari copy, warm/non-clinical — no diagnosis language);
+- inserts the `safeguarding_escalations` row (excerpt capped at 500 chars,
+  `classifier_meta` = confidence + label ONLY);
+- fans out via `escalateSafeguarding` with `{ escalationId, schoolId,
+  category }` — NO excerpt (see REG-349);
+- REFUNDS the consumed quota unit (`refundQuota(studentId, 'foxy_chat')`) —
+  a safeguarding disclosure never costs the student a chat;
+- awards 0 XP / touches no mastery table (P2).
+
+The complements are pinned in both directions: an AMBIGUOUS Tier-2 verdict
+(confirmed=false, or model-said-confirmed but confidence < 0.7) lets the turn
+continue completely normally (no row, no refund, grounded answer runs), and a
+route-level classifier rejection (defense-in-depth — the module contract says
+it can't happen) also continues normally rather than 500ing the student.
+Flag OFF → Tier-1 is NEVER invoked (zero `screenForSafeguarding` /
+`classifySafeguarding` calls, no escalation write, legacy grounded path —
+the rollback contract).
+
+Pinned by:
+- `packages/lib/src/__tests__/ai/validation/safeguarding-classify.test.ts`
+  (the "FAIL-CLOSED after a Tier-1 hit" describe: 6 failure shapes → the
+  exact regex_only verdict; plus confirm/below-threshold/JSON-repair/request-
+  hygiene pins, incl. the PR2 no-diagnosis boundary + sessionMood
+  prior-only + prompt-injection-resistant mood token);
+- `packages/lib/src/__tests__/ai/validation/safeguarding-screen.test.ts`
+  (Tier-1 deterministic screen contract);
+- `apps/host/src/__tests__/api/foxy/safeguarding-route.test.ts` (flag-OFF
+  no-op A; confirmed-terminal B incl. refund + no-LLM + capped excerpt;
+  ambiguous-continues C incl. classifier-rejection defense; sessionMood
+  enum validation D — invalid mood dropped silently, never a 400);
+- `apps/host/src/__tests__/api/foxy/respond-safeguarding.test.ts` (terminal
+  envelope: bilingual P7, helpline card data, foxy_chat_messages persistence
+  only, 0 XP; **old-APK safety pin, added 2026-08-05** — 'Childline' AND
+  '1098' must appear in BOTH the EN and the Devanagari-HI segments of the
+  top-level flat `response` string, asserted WITHOUT reference to the
+  structured `safeguarding` envelope, because pre-safeguarding mobile APKs
+  render only `response` and never see `badgeState`/`safeguarding.helpline`;
+  moving the helpline solely into the envelope would show a distressed child
+  a reply with no helpline at all — a child-safety regression).
+
+P12 (no unfiltered/absent safety handling of a disclosure) + P7 + P2.
+
+## REG-349 — Safeguarding data boundary (P13): disclosure text lives in EXACTLY ONE place; notifications, list APIs, and audits are metadata-only (2026-08-05)
+
+**Status: E.** Same Phase 1 change set as REG-348.
+
+Migration `20260806000100_safeguarding_escalations.sql` declares
+`disclosure_excerpt` (≤500 chars, CHECK-enforced) as **the ONE sanctioned home
+for student disclosure text** (PR5: sensitive conversations retained only
+with a safeguarding purpose, 90-day `retain_until`). Everything around it is
+pinned metadata-only:
+
+- **Fan-out** (`apps/host/src/app/api/foxy/_lib/safeguarding-escalate.ts`):
+  one `notifications` row per ACTIVE school admin, `data` carries
+  `{ escalation_id, category }` ONLY — the serialized payload is asserted to
+  never contain `disclosure`/`excerpt`/`student_id`/name/email/phone. Zero
+  active admins → count 0 with the case row still standing in the
+  super-admin queue; B2C (null schoolId) → no lookup at all; DB failure →
+  never throws, count 0.
+- **Review list APIs** (`/api/super-admin/safeguarding` +
+  `/api/school-admin/safeguarding`, canonical `{rows}`/`{row}`/PATCH
+  contracts): the LIST projection NEVER selects or returns
+  `disclosure_excerpt` — only the single-row `?id=` detail does. Super-admin
+  gate is `authorizeAdmin(request, 'admin')` on BOTH verbs; school-admin is
+  `authorizeSchoolAdmin` with EVERY query (list, detail, PATCH load, PATCH
+  update) hard-scoped to the caller's `school_id` (P8). PATCH transitions
+  `pending_review → reviewed/actioned/dismissed` only; non-pending → 409;
+  audit metadata-only.
+- **Route audit**: the `flow:'safeguarding'` audit row carries
+  category/tier/escalated only — asserted to never contain the student's
+  message text. `classifier_meta` on the escalation row is
+  `{ confidence, label }` only.
+
+Pinned by `safeguarding-escalate.test.ts`,
+`super-admin-safeguarding.test.ts`, `school-admin-safeguarding.test.ts`, and
+the audit/fan-out assertions in `safeguarding-route.test.ts` (all under
+`apps/host/src/__tests__/api/`). P13 + P8 + P9.
+
+## REG-350 — Student memory self-access whitelist + scoped erasure routing + RLS-closed safeguarding table (2026-08-05)
+
+**Status: E** on the TS surfaces; the four memory/erasure migrations
+(`20260806000300` scope column, `20260806000400` memory permissions,
+`20260806000600` guardian_id nullable, `20260806000700` scoped purge RPC,
+`20260806000800` frustration_threshold drop + affective fn rewrite) have
+structural coverage only — no live-Postgres execution this session.
+2026-08-05 addendum (PR6 review pin): `20260806000800` now carries a
+dedicated static structure pin,
+`apps/host/src/__tests__/security/affective-profile-drop-migration.test.ts`
+(5 tests, comment-stripped active-DDL assertions): the replaced
+`compute_student_affective_profile` body contains NO
+`frustration_threshold` write and NO `PERCENTILE_CONT` feeder while
+preserving the adaptive_profile boredom_floor/frustration_ceiling upsert;
+exactly ONE `DROP COLUMN` (IF EXISTS, on `student_learning_profiles`
+only), function-first ordering inside a single BEGIN/COMMIT;
+`evaluation_state` (whose same-named integer column is NOT covered by
+approval A4) untouched — the only ALTER TABLE target is
+`public.student_learning_profiles`; SECURITY DEFINER + search_path +
+PUBLIC/anon/authenticated EXECUTE revoke re-asserted.
+
+Three boundaries pinned together:
+
+1. **RLS-closed safeguarding table** — static structure pin
+   `apps/host/src/__tests__/security/safeguarding-escalations-migration.test.ts`
+   (8 tests) on migration `20260806000100`: RLS enabled in the same
+   migration (P8); EXACTLY ONE policy and it is `service_role` ALL; NO
+   `TO authenticated`/`anon`/`auth.uid()`/parent-link/teacher-assigned
+   predicate in active DDL; the DELIBERATE-DEVIATION rationale comment
+   (no student self-read — flag-discovery is itself a harm vector; no
+   parent-linked — A1 human-in-the-loop, the parent may be the subject; no
+   teacher-assigned) pinned PRESENT so a future "conformance fix" toward the
+   house 4-pattern template cannot claim ignorance; excerpt-cap/enum CHECKs;
+   `safeguarding.review` seeded + granted (institution_admin + explicit
+   admin/super_admin replay-order grants) in the SAME migration; additive-only.
+2. **Memory self-access whitelist** — `GET /api/learner/memory`
+   (`memory.view_own` + `requireStudentId`) returns ONLY the student-facing
+   projection: cognitive {weakTopics, strongTopics, revisionDue,
+   recentErrors}, longMemory {summary, highConcepts, lowConcepts,
+   topMisconceptions}, preferences, **twin: null** — cohortPercentile,
+   loSkills/pKnow, knowledgeGaps, nextAction, remediationText asserted
+   ABSENT from the serialized body. Grade is the SERVER-fetched string (P5),
+   409 pre-onboarding. Erasure guard tripped → empty layers +
+   `erasurePending: true` with `getStudentMemory` never called (fail-closed
+   blank, DPDP posture consistent with REG-309).
+3. **Scoped erasure never hits the full-account cascade** —
+   `DELETE /api/learner/memory` (`memory.erase_own`) zod-validates the scope
+   layer (unknown layer → 400, nothing inserted) and writes a pending
+   `data_erasure_requests` row with `scope` jsonb + purge_at ≈ now+30d,
+   metadata-only audit. The worker (`packages/lib/src/data-erasure-purger.ts`
+   + `data-erasure-purger` Edge Function + daily-cron purge step) ROUTES
+   scoped rows into the scope-aware `execute_data_erasure_purge` RPC
+   (migration `20260806000700`: scope IS NOT NULL → mapped memory-layer
+   tables only, unknown layer fails closed INSIDE the RPC — never the
+   full-account cascade); `parent.child_erasure_completed` fires ONLY for
+   full-account (parent-initiated) rows, never scoped ones; pre-migration
+   deploys fall back to the legacy projection (backward-compat pin).
+
+Pinned by `apps/host/src/__tests__/api/learner-memory.test.ts`,
+`apps/host/src/__tests__/lib/data-erasure-purger-scoped-skip.test.ts`, the
+migration structure test above, and
+`packages/lib/src/__tests__/policy/prohibited-inferences.test.ts` (PR2
+never-disclose/never-diagnose policy module shared with the classifier
+prompt). P13 + P8 + P5.
+
+**Known gaps (honest):** no live-Postgres execution of any 202608060001xx-08xx
+migration this session (structural pins only, same posture as REG-346); the
+scoped-purge RPC's per-layer table mapping is pinned at the routing/TS layer,
+not by executing the plpgsql; the review QUEUES (folded into tabs at
+`/super-admin/foxy-quality?tab=safeguarding` and
+`/school-admin/escalations?tab=safeguarding` — components
+`apps/host/src/app/super-admin/foxy-quality/SafeguardingQueue.tsx` /
+`apps/host/src/app/school-admin/escalations/SafeguardingQueue.tsx`) and
+memory screen have component-level tests
+(`HelplineCard.test.tsx`, `memory-page.test.tsx`) but no E2E.
+
+### Catalog total
+
+Pre-REG-348: 347 entries (through REG-347, IRT resurrect behavior-neutrality
+— see `00-header.md`). Adds REG-348 (safeguarding two-tier fail-closed
+contract), REG-349 (safeguarding P13 data boundary), REG-350 (memory
+self-access whitelist + scoped erasure routing + RLS-closed safeguarding
+table).
+**Total catalog: 350 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

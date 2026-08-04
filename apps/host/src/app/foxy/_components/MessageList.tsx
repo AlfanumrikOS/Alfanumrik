@@ -33,6 +33,7 @@ import type { QuizMeBinding } from '@alfanumrik/ui/foxy/FoxyStructuredRenderer';
 import type { SubmitQuizAnswerInput, SubmitQuizAnswerResult } from '../_hooks/useFoxyChat';
 import { RichContent } from '@alfanumrik/ui/foxy/RichContent';
 import { FoxyStructuredRenderer } from '@alfanumrik/ui/foxy/FoxyStructuredRenderer';
+import HelplineCard from '@alfanumrik/ui/foxy/HelplineCard';
 import DynamicScaffold from '@/app/foxy/_components/DynamicScaffold';
 
 export interface MessageListProps {
@@ -224,6 +225,16 @@ export function MessageList({
             ? Boolean(useStructured) || effectiveContent.trim().length > 0 || Boolean(uiActionPayload)
             : true;
 
+        // Foxy North-Star Phase 1 — safeguarding envelope. The helpline card is
+        // envelope-driven: it renders when the turn carried `safeguarding` (or
+        // badgeState 'safeguarding'). 'safeguarding' is NOT a SymPy verifier
+        // state, so it is filtered out before badgeState reaches ChatBubble.
+        const showHelplineCard =
+          msg.role === 'tutor' &&
+          Boolean(msg.safeguarding?.helpline || msg.badgeState === 'safeguarding');
+        const chatBubbleBadgeState =
+          msg.badgeState === 'safeguarding' ? undefined : msg.badgeState;
+
         return (
           <div key={msg.id}>
             <ChatBubble
@@ -258,7 +269,7 @@ export function MessageList({
               traceId={msg.traceId}
               abstainReason={msg.abstainReason}
               suggestedAlternatives={msg.suggestedAlternatives}
-              badgeState={msg.badgeState}
+              badgeState={chatBubbleBadgeState}
               // Only thread the persisted uuid through when the new bar is
               // active — keeps the flag-OFF ReportIssueModal payload
               // byte-identical to today (messageId was undefined before).
@@ -280,6 +291,15 @@ export function MessageList({
               nextActions={learningActionsEnabled ? msg.nextActions : undefined}
               hasBodyContent={hasRenderableBody}
             />
+            {/* Safeguarding helpline card — warm, envelope-driven, bilingual.
+                Default helpline is Childline 1098 when the envelope carried
+                only the badge state without helpline details. */}
+            {showHelplineCard && (
+              <HelplineCard
+                helpline={msg.safeguarding?.helpline ?? { name: 'Childline', number: '1098' }}
+                isHi={isHi}
+              />
+            )}
             {/* Legacy Save-to-flashcard button (flag OFF — byte-identical to
                 today). When the new bar is active, Save lives in its overflow
                 menu, so this legacy button is suppressed. */}

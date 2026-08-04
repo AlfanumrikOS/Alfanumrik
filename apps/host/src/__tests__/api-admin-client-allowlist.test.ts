@@ -249,7 +249,17 @@ const norm = (p: string) => p.replace(/\\/g, '/');
 // through the RLS-scoped createSupabaseServerClient (teacher RPC set: migration
 // 20260803130000, symmetric with the parent set). Their ledger entries are
 // pruned in the SAME change so the guard ratchets DOWN, not drifts.
-const EXPECTED_COUNT = 265;
+// Foxy North-Star Phase 1 Safety & Trust (2026-08-05): 265 -> 268.
+// Three NEW routes legitimately use the admin client (REG-348..REG-350):
+// src/app/api/learner/memory/route.ts (memory.view_own/memory.erase_own-gated
+// self-access; reads via getStudentMemory + writes scoped
+// data_erasure_requests), src/app/api/school-admin/safeguarding/route.ts and
+// src/app/api/super-admin/safeguarding/route.ts (the safeguarding review
+// lane — safeguarding_escalations is DELIBERATELY service-role-only at the
+// RLS layer, so these routes are the ONLY sanctioned read path; school-admin
+// hard-scopes every query to the caller's school_id). Ledger entries added
+// in the same change.
+const EXPECTED_COUNT = 268;
 
 // ════════════════════════════════════════════════════════════════════════════
 // 0. Non-vacuity — if resolution failed, every assertion below would be hollow.

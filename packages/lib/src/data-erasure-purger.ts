@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export type FailureClassification = 'retryable' | 'permanent' | 'partial' | 'orphan-risk';
 export type ErasureResultStatus = 'completed' | 'failed' | 'skipped' | 'dry_run';
 
-export interface ErasureRow { id: string; guardian_id: string; student_id: string }
+export interface ErasureRow { id: string; guardian_id: string | null; student_id: string; scope?: unknown }
 export interface PurgeOptions { dryRun?: boolean }
 export interface PerRowResult { request_id: string; student_id: string; status: ErasureResultStatus; rows_deleted?: Record<string, number>; error?: string; failure_classification?: FailureClassification }
 export interface TickResult { processed: number; errors: number; skipped: number; dry_run: number; results: PerRowResult[] }
@@ -94,17 +94,41 @@ export async function processErasureRow(
     return { request_id: row.id, student_id: row.student_id, status: 'dry_run', rows_deleted: normalized.rows_deleted };
   }
 
-  try {
-    await sb.from('state_events').insert({ event_id: uuid(), kind: 'parent.child_erasure_completed', actor_auth_user_id: row.guardian_id, tenant_id: (data as Record<string, unknown> | null)?.school_id ?? null, idempotency_key: `child_erasure_completed:${row.id}`, occurred_at: now().toISOString(), payload: { requestId: row.id, guardianId: row.guardian_id, studentId: row.student_id, rowsDeleted: normalized.rows_deleted } });
-  } catch {}
+  // parent.child_erasure_completed is only meaningful for the parent-initiated
+  // FULL-ACCOUNT flow. Student-initiated scoped rows (scope != null,
+  // guardian_id null) complete silently — no parent-facing event.
+  if (row.scope == null) {
+    try {
+      await sb.from('state_events').insert({ event_id: uuid(), kind: 'parent.child_erasure_completed', actor_auth_user_id: row.guardian_id, tenant_id: (data as Record<string, unknown> | null)?.school_id ?? null, idempotency_key: `child_erasure_completed:${row.id}`, occurred_at: now().toISOString(), payload: { requestId: row.id, guardianId: row.guardian_id, studentId: row.student_id, rowsDeleted: normalized.rows_deleted } });
+    } catch {}
+  }
   await writeAuditEvent(sb, 'data_erasure.purge_completed', row, { rows_deleted: normalized.rows_deleted, dry_run: false });
   return { request_id: row.id, student_id: row.student_id, status: 'completed', rows_deleted: normalized.rows_deleted };
 }
 
 export async function runErasureTick(sb: SupabaseClient, presentTables: Set<string>, now: () => Date = () => new Date(), uuid: () => string = () => crypto.randomUUID(), options: PurgeOptions = {}): Promise<TickResult> {
-  const { data: due, error } = await sb.from('data_erasure_requests').select('id, guardian_id, student_id').eq('status', 'pending').lte('purge_at', now().toISOString()).order('purge_at', { ascending: true }).limit(100);
-  if (error) throw new Error(`fetch due rows: ${error.message}`);
+  // SCOPED-ROW ROUTING (Foxy North-Star Phase 1): student-initiated scoped
+  // memory erasures write `scope` JSONB rows into this same table. As of
+  // migration 20260806000700, execute_data_erasure_purge is SCOPE-AWARE — it
+  // reads the request row's scope itself and, when scope IS NOT NULL, purges
+  // ONLY the mapped memory-layer tables (never the full-account cascade; an
+  // unknown layer fails closed inside the RPC). Scoped rows are therefore
+  // routed into the same worker path as full-account rows. Fetch stays
+  // backward-compatible: if the `scope` column does not exist yet
+  // (pre-migration deploy), retry the legacy projection — on such a database
+  // scoped rows cannot exist, so every fetched row is full-account.
+  let due: (ErasureRow & { scope?: unknown })[] | null = null;
+  const withScope = await sb.from('data_erasure_requests').select('id, guardian_id, student_id, scope').eq('status', 'pending').lte('purge_at', now().toISOString()).order('purge_at', { ascending: true }).limit(100);
+  if (withScope.error) {
+    const legacy = await sb.from('data_erasure_requests').select('id, guardian_id, student_id').eq('status', 'pending').lte('purge_at', now().toISOString()).order('purge_at', { ascending: true }).limit(100);
+    if (legacy.error) throw new Error(`fetch due rows: ${legacy.error.message}`);
+    due = (legacy.data ?? []) as ErasureRow[];
+  } else {
+    due = (withScope.data ?? []) as (ErasureRow & { scope?: unknown })[];
+  }
   const results: PerRowResult[] = [];
-  for (const row of (due ?? []) as ErasureRow[]) results.push(await processErasureRow(sb, row, presentTables, now, uuid, options));
+  for (const row of due) {
+    results.push(await processErasureRow(sb, row, presentTables, now, uuid, options));
+  }
   return { processed: results.filter((r) => r.status === 'completed').length, errors: results.filter((r) => r.status === 'failed').length, skipped: results.filter((r) => r.status === 'skipped').length, dry_run: results.filter((r) => r.status === 'dry_run').length, results };
 }
