@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
@@ -127,27 +127,29 @@ const ACCOUNTED_FOR: Array<{ reason: string; matches: (abs: string, src: string)
     matches: (_abs, src) => /\bDeno\.test\s*\(/.test(src),
   },
   {
-    reason: 'packages test reached through its auto-generated apps/host re-export stub',
-    // NOTE: `src/__tests__/setup.ts` patches fs.readFileSync to transparently
-    // FOLLOW those stubs, so reading the stub path yields the packages file's
-    // bytes. That equality is exactly the signal we want: if the collected
-    // apps/host path resolves to the same content as this packages file, the
-    // packages tests do execute (under the stub's filename).
-    matches: (abs, src) => {
-      const m = abs.match(/\/packages\/(lib|ui)\/src\/(.+)$/);
-      if (!m) return false;
-      const mirror = m[1] === 'lib'
-        ? path.join(LANE_ROOT, 'src/lib', m[2])
-        : path.join(LANE_ROOT, 'src/components', m[2]);
-      if (!existsSync(mirror)) return false;
-      return readFileSync(mirror, 'utf8') === src;
-    },
-  },
-  {
     reason: 'explicitly excluded in vitest.config.ts with a documented TODO (shebang transform bug)',
     matches: (abs) => abs.endsWith('/apps/host/src/__tests__/reorder-baseline.test.ts'),
   },
 ];
+
+/**
+ * ── P2-3 Phase 3 (2026-08-04) ──────────────────────────────────────────────
+ * Until this phase, `packages/lib/src/**\/*.test.ts` files were reached ONLY
+ * as a side effect of importing a 2-line `export * from '...'` mirror stub
+ * under `apps/host/src/lib/**` (`src/__tests__/setup.ts` patched fs reads so
+ * this guard could compare stub-vs-canonical bytes and treat that as
+ * "collected"). The 30 mirror stubs are now DELETED and
+ * `PACKAGE_SOURCE_TEST_GLOBS` in `vitest.config.ts` globs
+ * `packages/lib/src/**` and `packages/ui/src/**` test files directly (the
+ * same repo-anchored `repoGlob()` mechanism as `CROSS_PACKAGE_TEST_GLOBS`).
+ * That means `isCollected()` now returns true for those files on its own —
+ * there is no more "reached via stub" special case to account for, and none
+ * is added back here. If a packages/lib or packages/ui test file is ever
+ * orphaned again (e.g. someone narrows `PACKAGE_SOURCE_TEST_GLOBS`), this
+ * guard must fail loudly rather than silently re-exempting it — do not
+ * re-add a stub-equivalence exemption without an actual stub mechanism to
+ * justify it.
+ */
 
 describe('vitest lane coverage (anti-orphan guard)', () => {
   const files = testFilesOnDisk();
