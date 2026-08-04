@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, type AdminLevel } from '../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, type AdminLevel } from '@alfanumrik/lib/admin-auth';
 
 async function fetchAll(table: string, select: string, filter?: string) {
   let queryParams = `select=${select}&order=created_at.desc&limit=5000`;

@@ -24,8 +24,8 @@ import {
   resolveTeacherRemediation,
   type LoopAugmentation,
   type PendingTeacherRemediation,
-} from '../../../lib/state/learner-loop/resolve-next-action';
-import type { StudentState, LiveSessionState } from '../../../lib/state/student-state';
+} from '@alfanumrik/lib/state/learner-loop/resolve-next-action';
+import type { StudentState, LiveSessionState } from '@alfanumrik/lib/state/student-state';
 
 // ── Fixtures (mirror today-queue.test.ts) ────────────────────────────
 

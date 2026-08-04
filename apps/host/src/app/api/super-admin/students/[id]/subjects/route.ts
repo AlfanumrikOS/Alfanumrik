@@ -3,9 +3,9 @@ import {
   logAdminAudit,
   isValidUUID,
   type AdminAuth,
-} from '../../../../../../lib/admin-auth';
-import { authorizeRequest, type AuthorizationResult } from '../../../../../../lib/rbac';
-import { supabaseAdmin } from '../../../../../../lib/supabase-admin';
+} from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest, type AuthorizationResult } from '@alfanumrik/lib/rbac';
+import { supabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { z } from 'zod';
 
 function asAdminAudit(auth: AuthorizationResult): AdminAuth {

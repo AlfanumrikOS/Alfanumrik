@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, isValidUUID, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { authorizeAdmin, isValidUUID, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '@alfanumrik/lib/admin-auth';
 import { logger } from '@alfanumrik/lib/logger';
 
 // GET — list schools with pagination and search

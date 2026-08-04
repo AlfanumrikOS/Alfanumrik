@@ -13,9 +13,9 @@ import { describe, it, expect } from 'vitest';
 import {
   weakTopicsForStudent,
   type WeakTopic,
-} from '../../../lib/state/learner-loop/weak-topics';
+} from '@alfanumrik/lib/state/learner-loop/weak-topics';
 import { buildFlashcardPayload } from '../../../app/api/learner/queue-from-scan/helpers';
-import type { StudentState } from '../../../lib/state/student-state';
+import type { StudentState } from '@alfanumrik/lib/state/student-state';
 
 // ─── Fixture ─────────────────────────────────────────────────────────
 

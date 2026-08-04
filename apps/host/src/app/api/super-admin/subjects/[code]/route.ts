@@ -4,9 +4,9 @@ import {
   supabaseAdminHeaders,
   supabaseAdminUrl,
   type AdminAuth,
-} from '../../../../../lib/admin-auth';
-import { authorizeRequest, type AuthorizationResult } from '../../../../../lib/rbac';
-import { validateBody } from '../../../../../lib/validation';
+} from '@alfanumrik/lib/admin-auth';
+import { authorizeRequest, type AuthorizationResult } from '@alfanumrik/lib/rbac';
+import { validateBody } from '@alfanumrik/lib/validation';
 import { z } from 'zod';
 
 /**

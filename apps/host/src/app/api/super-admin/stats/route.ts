@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { authorizeAdmin, supabaseAdminHeaders, supabaseAdminUrl } from '@alfanumrik/lib/admin-auth';
 
 async function countRows(table: string, filter?: string): Promise<number> {
   try {

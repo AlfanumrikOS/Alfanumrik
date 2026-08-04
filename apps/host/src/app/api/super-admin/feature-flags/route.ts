@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@alfanumrik/lib/logger';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
-import { invalidateFlagCache } from '../../../../lib/feature-flags';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '@alfanumrik/lib/admin-auth';
+import { invalidateFlagCache } from '@alfanumrik/lib/feature-flags';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { getProtection, type FlagProtection } from '@alfanumrik/lib/flags/protected-flags';
-import { featureFlagSchema, validateBody, zUuid } from '../../../../lib/validation';
+import { featureFlagSchema, validateBody, zUuid } from '@alfanumrik/lib/validation';
 import { z } from 'zod';
-import type { AdminAuth } from '../../../../lib/admin-auth';
+import type { AdminAuth } from '@alfanumrik/lib/admin-auth';
 
 /**
  * Feature Flags API — supports global, per-institution, per-role, per-environment scoping.

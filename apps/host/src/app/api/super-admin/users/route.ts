@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
-import { validateBody, zUuid, zGrade } from '../../../../lib/validation';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '@alfanumrik/lib/admin-auth';
+import { validateBody, zUuid, zGrade } from '@alfanumrik/lib/validation';
 import { z } from 'zod';
 import { VALID_ROLES, ROLE_ALIASES } from '@alfanumrik/lib/identity';
 

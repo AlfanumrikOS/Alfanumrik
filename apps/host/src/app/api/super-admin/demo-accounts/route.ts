@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID, type AdminAuth } from '../../../../lib/admin-auth';
-import { validateBody } from '../../../../lib/validation';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl, isValidUUID, type AdminAuth } from '@alfanumrik/lib/admin-auth';
+import { validateBody } from '@alfanumrik/lib/validation';
 import { z } from 'zod';
-import { DEMO_PERSONAS, DEMO_ROLES, DEMO_STREAMS, PERSONA_PROFILES, normalisePersona, streamRequiredForGrade, type DemoRole, type DemoStream } from '../../../../lib/demo/personas';
-import { generateSecurePassword } from '../../../../lib/crypto/password';
+import { DEMO_PERSONAS, DEMO_ROLES, DEMO_STREAMS, PERSONA_PROFILES, normalisePersona, streamRequiredForGrade, type DemoRole, type DemoStream } from '@alfanumrik/lib/demo/personas';
+import { generateSecurePassword } from '@alfanumrik/lib/crypto/password';
 
 // ---------------------------------------------------------------------------
 // Helpers

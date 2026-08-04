@@ -7,10 +7,10 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeRequest } from '@/lib/rbac';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { authorizeRequest } from '@alfanumrik/lib/rbac';
+import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { calculateLevel, xpToNextLevel, LEVEL_NAMES } from '@alfanumrik/lib/xp-config';
-import { logger } from '@/lib/logger';
+import { logger } from '@alfanumrik/lib/logger';
 
 export interface EngagementSnapshot {
   xp: {

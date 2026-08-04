@@ -23,8 +23,8 @@ import { randomUUID } from 'node:crypto';
 import {
   DomainEventSchema,
   LearnerScanExtractedSchema,
-} from '../../../lib/state/events/registry';
-import { publishEvent, __resetFlagCacheForTests } from '../../../lib/state/events/publish';
+} from '@alfanumrik/lib/state/events/registry';
+import { publishEvent, __resetFlagCacheForTests } from '@alfanumrik/lib/state/events/publish';
 
 // Replica of the event-building block in
 // src/app/api/scan-solve/route.ts. Keep these in sync — any divergence

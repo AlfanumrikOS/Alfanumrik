@@ -19,15 +19,15 @@ import {
   resolveNextLearnerAction,
   resolveTodayQueue,
   type LoopAugmentation,
-} from '../../../lib/state/learner-loop/resolve-next-action';
+} from '@alfanumrik/lib/state/learner-loop/resolve-next-action';
 import {
   LEARNER_LOOP_CONFIG,
   MAX_TODAY_QUEUE_ITEMS,
-} from '../../../lib/state/learner-loop/types';
+} from '@alfanumrik/lib/state/learner-loop/types';
 import type {
   StudentState,
   LiveSessionState,
-} from '../../../lib/state/student-state';
+} from '@alfanumrik/lib/state/student-state';
 
 // ── Fixtures (mirror resolve-next-action.test.ts) ────────────────────
 

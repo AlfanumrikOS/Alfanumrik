@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
-import { generateSecurePassword } from '../../../../lib/crypto/password';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '@alfanumrik/lib/admin-auth';
+import { generateSecurePassword } from '@alfanumrik/lib/crypto/password';
 
 export async function POST(request: NextRequest) {
   // Creates real auth users with full sign-in privileges. Mirrors the

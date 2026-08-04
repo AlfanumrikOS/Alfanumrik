@@ -21,11 +21,11 @@ import { randomUUID } from 'node:crypto';
 import {
   DomainEventSchema,
   LearnerConceptCheckAnsweredSchema,
-} from '../../../lib/state/events/registry';
+} from '@alfanumrik/lib/state/events/registry';
 import {
   publishEvent,
   __resetFlagCacheForTests,
-} from '../../../lib/state/events/publish';
+} from '@alfanumrik/lib/state/events/publish';
 
 // Replica of the event-building block at the bottom of
 // src/app/api/tutor/answer/route.ts (legacy concept_check_answered branch).

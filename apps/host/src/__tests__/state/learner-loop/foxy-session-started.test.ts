@@ -20,7 +20,7 @@ import {
 import {
   DomainEventSchema,
   FoxySessionStartedSchema,
-} from '../../../lib/state/events/registry';
+} from '@alfanumrik/lib/state/events/registry';
 
 // ─── mapFoxyModeToEventMode ──────────────────────────────────────────
 

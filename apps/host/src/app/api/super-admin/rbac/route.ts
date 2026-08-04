@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '../../../../lib/admin-auth';
+import { authorizeAdmin, logAdminAudit, supabaseAdminHeaders, supabaseAdminUrl } from '@alfanumrik/lib/admin-auth';
 import { grantElevation, revokeElevation } from '@alfanumrik/lib/rbac-elevation';
 import { startImpersonation, endImpersonation } from '@alfanumrik/lib/rbac-impersonation';
 import { createDelegationToken, revokeDelegationToken } from '@alfanumrik/lib/rbac-delegation';
