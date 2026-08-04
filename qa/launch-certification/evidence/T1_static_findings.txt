@@ -1,0 +1,25 @@
+T1 STATIC-REVIEW EVIDENCE — captured 2026-08-04 (repo baseline)
+================================================================
+REG-0004 (Anthropic retry helper): retry helper defined at
+  supabase/functions/_shared/mol/providers/shared.ts
+  Candidate direct-call sites needing per-path confirmation (NOT auto-PASS):
+  packages/lib/src/ai/validation/synthesis-quality-eval.ts, packages/lib/src/rag/pack-quality-oracle.ts,
+  packages/lib/src/foxy/quality-eval.ts, supabase/functions/{ncert-solver,daily-cron,bulk-non-mcq-gen,
+  scan-ocr,generate-answers,extract-ncert-questions,extract-diagrams}/index.ts
+  VERDICT: NOT RUN — requires ai-engineer per-path review that each routes through MOL retry.
+
+SEC-0001 (server-side role checks): authorizeRequest|authorizeAdmin referenced 743x under apps/host/src/app/api.
+  VERDICT: strong structural indicator; full "every mutating route" coverage audit pending (architect).
+
+SEC-0003 (destructive anon-executable functions locked down): baseline has SECURITY DEFINER functions but
+  0 explicit "REVOKE ... FROM anon"/"REVOKE ALL" in baseline. Absence of REVOKE != safe (anon may simply
+  lack GRANT), but this MUST be positively confirmed. VERDICT: NOT RUN — architect review required (candidate finding QA-FIND-002).
+
+FE / REG-0001 (one canonical UI): one_experience_v3 flags lifecycle confirmed in migrations —
+  seed 20260711010000 -> enforce-disabled 20260712052203 -> REMOVE 20260715160000.
+  Supports single-UI posture; live no-dual-UI browser check still required (T4).
+
+FOXY-0004 / 17_I18N (LANGUAGE_GAP): grep for "LANGUAGE_GAP" across apps/host/src, packages, supabase/functions = 0 hits.
+  FINDING QA-FIND-001: the explicit Hindi->LANGUAGE_GAP contract asserted by the suite is NOT implemented in code
+  (appears only in docs/MOL_ARCHITECTURE.md). Candidate P1 defect. Live confirm whether Hindi questions are answered
+  in Hindi or silently in English before final PASS/FAIL.

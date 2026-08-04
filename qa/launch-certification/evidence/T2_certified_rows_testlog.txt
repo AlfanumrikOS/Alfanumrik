@@ -1,0 +1,101 @@
+
+ RUN  v4.1.8 /home/user/Alfanumrik/apps/host
+
+ ✓ src/__tests__/payments/webhook-retry-and-dedupe-semantics.test.ts > webhook route — PAY-7 missing-secret is retryable (503), forged signature is rejected (4xx) > missing RAZORPAY_WEBHOOK_SECRET env → 503 (Razorpay retries) and event NOT processed 11ms
+ ✓ src/__tests__/payments/webhook-retry-and-dedupe-semantics.test.ts > webhook route — PAY-7 missing-secret is retryable (503), forged signature is rejected (4xx) > invalid (forged) signature → 400 reject, event NOT processed 2ms
+ ✓ src/__tests__/payments/webhook-retry-and-dedupe-semantics.test.ts > webhook route — PAY-7 missing-secret is retryable (503), forged signature is rejected (4xx) > missing signature HEADER stays a 400 client error (not retryable) 1ms
+ ✓ src/__tests__/payments/webhook-retry-and-dedupe-semantics.test.ts > webhook route — PAY-5 re-delivery never double-grants > an already-recorded (duplicate) event ACKs 200 with note=dedupe and does NOT activate 4ms
+ ✓ src/__tests__/payments/webhook-retry-and-dedupe-semantics.test.ts > webhook route — PAY-5 re-delivery never double-grants > an un-dedupable event (no account_id/id) STILL routes through the idempotent activation RPC 8ms
+stdout | src/__tests__/payments/webhook-concurrent-fire.test.ts > webhook concurrent fire — exactly one activation > 5 parallel webhook deliveries of the SAME event_id → exactly one activate call
+{"level":"info","message":"Webhook: payment.captured","timestamp":"2026-08-04T04:16:04.448Z","environment":"test","version":"2.0.0","paymentId":"pay_1","orderId":"ord_1","planCode":"pro"}
+
+ ✓ src/__tests__/payments/webhook-concurrent-fire.test.ts > webhook concurrent fire — exactly one activation > 5 parallel webhook deliveries of the SAME event_id → exactly one activate call 26ms
+ ✓ src/__tests__/api/foxy/structured-abstain-and-history.test.ts > /api/foxy hard-abstain — structured stays absent (case C) > hard-abstain response omits structured and inserts no message rows 2307ms
+ ✓ src/__tests__/api/foxy/grounded-failure-fallback.test.ts > /api/foxy grounded failures fall back to legacy AI > returns a normal answer when grounded-answer reports upstream_error 2287ms
+ ✓ src/__tests__/api/foxy/structured-abstain-and-history.test.ts > /api/foxy GET history — surfaces structured column (case D) > selects the structured column and returns it on assistant rows 3ms
+ ✓ src/__tests__/api/foxy/grounded-failure-fallback.test.ts > /api/foxy grounded failures fall back to legacy AI > returns a normal answer when grounded-answer reports circuit_open 6ms
+stderr | src/__tests__/api/quiz-server-shuffle-authority.test.ts > startQuizSession — client contract > returns null on RPC error so caller can fall back to legacy path
+start_quiz_session RPC failed: boom
+
+stderr | src/__tests__/api/quiz-server-shuffle-authority.test.ts > startQuizSession — client contract > returns null when network throws
+start_quiz_session error: Error: network down
+    at /home/user/Alfanumrik/apps/host/src/__tests__/api/quiz-server-shuffle-authority.test.ts:117:35
+    at file:///home/user/Alfanumrik/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///home/user/Alfanumrik/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///home/user/Alfanumrik/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///home/user/Alfanumrik/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///home/user/Alfanumrik/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///home/user/Alfanumrik/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///home/user/Alfanumrik/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64
+
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > startQuizSession — client contract > calls start_quiz_session RPC with student_id + question_ids 6ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > startQuizSession — client contract > returns null on RPC error so caller can fall back to legacy path 2ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > startQuizSession — client contract > returns null on malformed RPC response (no session_id) 0ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > startQuizSession — client contract > returns null when network throws 5ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > submitQuizResults — v2 dispatch contract > calls submit_quiz_results_v2 with session_id when provided 4ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > submitQuizResults — v2 dispatch contract > falls back to v1 submit_quiz_results when sessionId is null 0ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > submitQuizResults — v2 dispatch contract > falls back to v1 if v2 RPC returns an error 1ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > submit_quiz_results_v2 — snapshot scoring (parity port) > picking the visually-correct option scores correct on every shuffle 1ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > submit_quiz_results_v2 — snapshot scoring (parity port) > mid-session edit to question_bank.options DOES NOT change scoring (snapshot wins) 1ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > submit_quiz_results_v2 — snapshot scoring (parity port) > picking a wrong option is wrong on every shuffle 0ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > submit_quiz_results_v2 — snapshot scoring (parity port) > out-of-range selected index → not correct, but does not throw 0ms
+ ✓ src/__tests__/api/quiz-server-shuffle-authority.test.ts > submit_quiz_results_v2 — snapshot scoring (parity port) > missing snapshot row → is_correct=false, correct_option_text=null (defensive) 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy quota refund policy > refunds on upstream_error (service/hop failure) 3ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy quota refund policy > refunds on circuit_open (breaker tripped) 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy quota refund policy > refunds on chapter_not_ready (content gap) 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy quota refund policy > does NOT refund on low_similarity (service did retrieve) 1ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy quota refund policy > does NOT refund on no_supporting_chunks (service did run Claude) 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy quota refund policy > does NOT refund on scope_mismatch (caller misuse) 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy quota refund policy > does NOT refund on no_chunks_retrieved (content gap with no alternatives) 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy grounding status derivation > confidence=1.0 → grounded 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy grounding status derivation > confidence at threshold → grounded (strictly less-than triggers unverified) 1ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy grounding status derivation > confidence just below threshold → unverified 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy grounding status derivation > confidence=0 → unverified 0ms
+ ✓ src/__tests__/foxy-grounded-gate.test.ts > foxy grounded-answer request shape > SOFT_CONFIDENCE_BANNER_THRESHOLD is between 0.4 and 0.8 0ms
+stderr | src/__tests__/api/payments/verify-hmac-reject.test.ts
+[deprecated] GRADE_SUBJECTS from @alfanumrik/lib/constants is a compat shim; use useAllowedSubjects() instead.
+
+ ✓ src/__tests__/api/payments/verify-hmac-reject.test.ts > POST /api/payments/verify — HMAC signature rejection (PAY-6, P11) > rejects a mismatched signature (derived with a different secret) with 401 and grants NO access 13ms
+ ✓ src/__tests__/api/payments/verify-hmac-reject.test.ts > POST /api/payments/verify — HMAC signature rejection (PAY-6, P11) > rejects a too-short (wrong-length) signature with 401 before any DB work 2ms
+ ✓ src/__tests__/api/payments/verify-hmac-reject.test.ts > POST /api/payments/verify — HMAC signature rejection (PAY-6, P11) > positive control: a correctly-derived signature passes the HMAC gate into DB territory 2ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkMinimumTime > returns false for 0 questions (guard against division by zero) 2ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkMinimumTime > returns true at exactly 3.0s average — boundary is inclusive 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkMinimumTime > returns false when average is below 3s boundary 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkMinimumTime > returns true for comfortable pace (12s average) 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkMinimumTime > returns false for 1s average (single fast question) 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkMinimumTime > returns true at exactly 3s for single question 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkMinimumTime > returns false for speed hack: 10s for 10 questions 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkNotAllSameAnswer > returns true for <= 3 questions even when all same (exempt) 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkNotAllSameAnswer > returns true for 2 questions all same (exempt) 1ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkNotAllSameAnswer > returns true for 1 question (always exempt) 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkNotAllSameAnswer > returns false for 4 questions all same option 0 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkNotAllSameAnswer > returns true for 4 questions with mixed options 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkNotAllSameAnswer > returns true for 10 questions where 9 are same and 1 is different 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkNotAllSameAnswer > returns false for 10 questions all same option 2 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkNotAllSameAnswer > returns false for 10 questions all same option 3 (mirrors RPC check 2) 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkResponseCount > returns true when response count exactly equals question count 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkResponseCount > returns false when responses are fewer than questions (8 vs 10) 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkResponseCount > returns false when responses exceed questions (11 vs 10) 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkResponseCount > returns true for 0 responses and 0 questions (empty quiz edge case) 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkResponseCount > returns false for 0 responses with 5 questions 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > checkResponseCount > returns true for 1 response and 1 question 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > validateAntiCheat > rejects speed hack: 10s for 10 questions with mixed answers 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > validateAntiCheat > rejects same answer pattern: 40s for 4 questions all answering option 0 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > validateAntiCheat > rejects count mismatch: 40s for 10 questions but only 9 responses 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > validateAntiCheat > accepts valid submission: 40s, mixed answers, count matches 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > validateAntiCheat > speed hack takes priority over same answer pattern 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > validateAntiCheat > same answer pattern takes priority over count mismatch 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > validateAntiCheat > accepts small quiz (3 questions) where all same is exempt 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > validateAntiCheat > returns { valid: false, reason: "count_mismatch" } when extra responses injected 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > RPC parity: server checks mirror client checks > check 2 parity: client checkNotAllSameAnswer(4 x same) === false matches RPC flag 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > RPC parity: server checks mirror client checks > check 2 parity: client checkNotAllSameAnswer(3 x same) === true matches RPC exemption 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > RPC parity: server checks mirror client checks > check 3 parity: client checkResponseCount(9, 10) === false matches RPC rejection 0ms
+ ✓ src/__tests__/anti-cheat-server-parity.test.ts > RPC parity: server checks mirror client checks > check 3 parity: client checkResponseCount(10, 10) === true matches RPC acceptance 0ms
+
+ Test Files  8 passed (8)
+      Tests  70 passed (70)
+   Start at  04:16:00
+   Duration  6.51s (transform 3.63s, setup 903ms, import 1.67s, tests 4.73s, environment 8.23s)
+
