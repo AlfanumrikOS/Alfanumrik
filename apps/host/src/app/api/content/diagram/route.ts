@@ -36,7 +36,7 @@
  * a learner-memory sub-read failure passes NEUTRAL memory to the generator (which
  * abstains if it must) rather than 500-ing the route.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest, logAudit } from '@alfanumrik/lib/rbac';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { logger } from '@alfanumrik/lib/logger';
@@ -51,6 +51,7 @@ import type {
   DiagramLanguage,
 } from '@alfanumrik/lib/diagram/types';
 import { getStudentMemory, type StudentMemory } from '@/lib/memory/student-memory';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -180,7 +181,7 @@ function toDiagramMemoryInput(memory: StudentMemory): DiagramMemoryInput {
   };
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(async (request: NextRequest) => {
   try {
     // ── 0. FLAG GATE (default OFF) — short-circuit before any auth/DB work ──
     const flagEnabled = await isFeatureEnabled(CONTENT_GENERATION_FLAGS.V1);
@@ -193,7 +194,7 @@ export async function POST(request: NextRequest) {
     const auth = await authorizeRequest(request, 'progress.view_own', {
       requireStudentId: true,
     });
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
     const callerId = auth.userId!;
     const studentId = auth.studentId;
     if (!studentId) {
@@ -365,4 +366,4 @@ export async function POST(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

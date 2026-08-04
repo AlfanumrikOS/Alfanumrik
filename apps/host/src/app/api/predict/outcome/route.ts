@@ -42,7 +42,7 @@
  * P5: grades are STRINGS. P13: no PII in logs. Fail-soft: any optional sub-read
  * failure passes null/undefined to the composer rather than 500-ing the route.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import {
   authorizeRequest,
   canAccessStudent,
@@ -68,6 +68,7 @@ import type { ExamChapter } from '@alfanumrik/lib/cognitive-engine';
 import type { PulseSignals } from '@alfanumrik/lib/pulse/signals';
 import { getStudentMemory } from '@/lib/memory/student-memory';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -124,7 +125,7 @@ function weakestChapterLabel(c: unknown): string | null {
   return null;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     // ── 0. FLAG GATE (default OFF) — short-circuit before any auth/DB work ──
     // Read roles/userId lazily only after we know the flag might be on; the flag
@@ -140,7 +141,7 @@ export async function GET(request: NextRequest) {
     const auth = await authorizeRequest(request, undefined, {
       requireStudentId: true,
     });
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
     const callerId = auth.userId!;
 
     // Re-evaluate the flag WITH role/user context (role/rollout scoping) now that
@@ -457,4 +458,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});
