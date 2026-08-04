@@ -64,7 +64,7 @@ jobs:
       run:
         working-directory: python
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -129,7 +129,7 @@ jobs:
       # job reconstructs the full URL locally where the secret is re-read.
       image_sha: ${{ steps.image.outputs.short_sha }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute image tag
         id: image
@@ -193,7 +193,7 @@ jobs:
       # output) — the SHA alone identifies the build unambiguously.
       image_sha: ${{ needs.build-and-push.outputs.image_sha }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Authenticate to GCP (Workload Identity Federation)
         uses: google-github-actions/auth@v2

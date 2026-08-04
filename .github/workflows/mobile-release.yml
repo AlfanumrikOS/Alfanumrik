@@ -73,7 +73,7 @@ jobs:
           echo "Release secrets present."
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # Same Flutter version mobile-ci.yml is pinned to (3.41.9 / stable).
       - name: Set up Flutter
