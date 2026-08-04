@@ -1,8 +1,11 @@
 {
-  "_comment": "P2-2 (API response-envelope consolidation) ratchet ledger for withRoute() adoption (packages/lib/src/api/v2/with-route.ts). RATCHETS UP ONLY: 'count' records the floor of API route.ts files under apps/host/src/app/api that import withRoute (either directly from '@alfanumrik/lib/api/v2/with-route' or the apps/host stub '@/lib/api/v2/with-route'). scripts/check-route-wrapper-ratchet.mjs recounts adoption from source on every run and FAILS if the live count drops below 'count' (a regression — e.g. a route reverted off withRoute without updating this ledger). When a PR adopts withRoute on additional routes, bump 'count' and append the route paths to 'routes' in the SAME PR so the ledger stays an honest floor, not a stale minimum. 'totalRoutes' is the total apps/host/src/app/api/**/route.ts file count at the time this ledger was last authored — informational only (not gated), recorded so adoption progress can be read as a fraction. Baseline recorded 2026-08-04 by the architect agent (P2-2 PR-1): withRoute() was built in this PR but NOT yet adopted by any route handler (route handler adoption is explicitly out of scope for this PR — backend adopts it next). count=0 was correct at that point, not a placeholder. UPDATED 2026-08-04 by the backend agent (P2-2 route-adoption pass): adopted withRoute() on the 11-route SAFE reference slice (read/metadata routes owned by backend, already on v2Success/v2Error or an identically-shaped raw envelope, no scoring/XP/quiz-generation/AI-LLM path). Explicitly excluded and deferred: apps/host/src/app/api/v2/quiz/{submit,start,questions}/route.ts (P1/P3/P4/P6 — need assessment in the review chain) and apps/host/src/app/api/lesson/route.ts, apps/host/src/app/api/predict/outcome/route.ts, apps/host/src/app/api/content/diagram/route.ts (AI/RAG/content-owned — need ai-engineer). Pure mechanical wrap: no response shape, status code, or business logic changed.",
+  "_comment": "P2-2 (API response-envelope consolidation) ratchet ledger for withRoute() adoption (packages/lib/src/api/v2/with-route.ts). RATCHETS UP ONLY: 'count' records the floor of API route.ts files under apps/host/src/app/api that import withRoute (either directly from '@alfanumrik/lib/api/v2/with-route' or the apps/host stub '@/lib/api/v2/with-route'). scripts/check-route-wrapper-ratchet.mjs recounts adoption from source on every run and FAILS if the live count drops below 'count' (a regression — e.g. a route reverted off withRoute without updating this ledger). When a PR adopts withRoute on additional routes, bump 'count' and append the route paths to 'routes' in the SAME PR so the ledger stays an honest floor, not a stale minimum. 'totalRoutes' is the total apps/host/src/app/api/**/route.ts file count at the time this ledger was last authored — informational only (not gated), recorded so adoption progress can be read as a fraction. Baseline recorded 2026-08-04 by the architect agent (P2-2 PR-1): withRoute() was built in this PR but NOT yet adopted by any route handler (route handler adoption is explicitly out of scope for this PR — backend adopts it next). count=0 was correct at that point, not a placeholder. UPDATED 2026-08-04 by the backend agent (P2-2 route-adoption pass): adopted withRoute() on the 11-route SAFE reference slice (read/metadata routes owned by backend, already on v2Success/v2Error or an identically-shaped raw envelope, no scoring/XP/quiz-generation/AI-LLM path). Explicitly excluded and deferred: apps/host/src/app/api/v2/quiz/{submit,start,questions}/route.ts (P1/P3/P4/P6 — need assessment in the review chain) and apps/host/src/app/api/lesson/route.ts, apps/host/src/app/api/predict/outcome/route.ts, apps/host/src/app/api/content/diagram/route.ts (AI/RAG/content-owned — need ai-engineer). Pure mechanical wrap: no response shape, status code, or business logic changed. UPDATED 2026-08-04 by the backend agent (P2-2b — the 6 previously-deferred quiz/AI routes): adopted withRoute() on the 6 routes excluded above. Pure mechanical wrap identical in method to the first pass — no response shape, status code, scoring (P1), XP (P2), anti-cheat (P3), atomic-submission (P4), question-quality (P6), or AI/RAG (P12) logic changed. Behavior-preservation review by assessment + ai-engineer is the required follow-up per this PR's own instructions (not yet performed as of this ledger update).",
   "totalRoutes": 389,
-  "count": 11,
+  "count": 17,
   "routes": [
+    "apps/host/src/app/api/content/diagram/route.ts",
+    "apps/host/src/app/api/lesson/route.ts",
+    "apps/host/src/app/api/predict/outcome/route.ts",
     "apps/host/src/app/api/v2/curriculum-version/route.ts",
     "apps/host/src/app/api/v2/exam-schedule/route.ts",
     "apps/host/src/app/api/v2/learn/concept/route.ts",
@@ -10,22 +13,20 @@
     "apps/host/src/app/api/v2/parent/children/route.ts",
     "apps/host/src/app/api/v2/parent/encourage/route.ts",
     "apps/host/src/app/api/v2/parent/glance/route.ts",
+    "apps/host/src/app/api/v2/quiz/questions/route.ts",
+    "apps/host/src/app/api/v2/quiz/start/route.ts",
+    "apps/host/src/app/api/v2/quiz/submit/route.ts",
     "apps/host/src/app/api/v2/student/leaderboard/route.ts",
     "apps/host/src/app/api/v2/student/profile/route.ts",
     "apps/host/src/app/api/v2/student/progress/route.ts",
     "apps/host/src/app/api/v2/today/route.ts"
   ],
   "migratedThisPR": [
-    "apps/host/src/app/api/v2/curriculum-version/route.ts",
-    "apps/host/src/app/api/v2/exam-schedule/route.ts",
-    "apps/host/src/app/api/v2/learn/concept/route.ts",
-    "apps/host/src/app/api/v2/learn/curriculum/route.ts",
-    "apps/host/src/app/api/v2/parent/children/route.ts",
-    "apps/host/src/app/api/v2/parent/encourage/route.ts",
-    "apps/host/src/app/api/v2/parent/glance/route.ts",
-    "apps/host/src/app/api/v2/student/leaderboard/route.ts",
-    "apps/host/src/app/api/v2/student/profile/route.ts",
-    "apps/host/src/app/api/v2/student/progress/route.ts",
-    "apps/host/src/app/api/v2/today/route.ts"
+    "apps/host/src/app/api/content/diagram/route.ts",
+    "apps/host/src/app/api/lesson/route.ts",
+    "apps/host/src/app/api/predict/outcome/route.ts",
+    "apps/host/src/app/api/v2/quiz/questions/route.ts",
+    "apps/host/src/app/api/v2/quiz/start/route.ts",
+    "apps/host/src/app/api/v2/quiz/submit/route.ts"
   ]
 }

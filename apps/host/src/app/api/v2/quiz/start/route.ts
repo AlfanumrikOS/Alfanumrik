@@ -18,7 +18,7 @@
  * runs under a JWT-bound client so its SECURITY DEFINER auth.uid() guard sees
  * the calling student.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
@@ -26,6 +26,7 @@ import { logger } from '@alfanumrik/lib/logger';
 import { validateBody } from '@alfanumrik/lib/validation';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { QuizStartRequest } from '@alfanumrik/lib/api/v2/contract';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 interface ServerShuffledQuestion {
   question_id: string;
@@ -45,11 +46,11 @@ interface ServerQuizSession {
   questions: ServerShuffledQuestion[];
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(async (request: NextRequest) => {
   try {
     // 1. RBAC.
     const auth = await authorizeRequest(request, 'quiz.attempt');
-    if (!auth.authorized || !auth.userId) return auth.errorResponse!;
+    if (!auth.authorized || !auth.userId) return auth.errorResponse as unknown as NextResponse;
 
     // 2. Body validation.
     let raw: unknown;
@@ -121,4 +122,4 @@ export async function POST(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

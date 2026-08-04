@@ -450,8 +450,11 @@ describe('Foxy study artifacts — client/route contract canary', () => {
   );
 
   it('the diagram route exports POST (and NOT GET)', () => {
-    expect(diagramRoute).toMatch(/export\s+async\s+function\s+POST\s*\(/);
-    expect(diagramRoute).not.toMatch(/export\s+async\s+function\s+GET\s*\(/);
+    // Accepts both `export async function METHOD(` and the `withRoute()`-wrapped
+    // `export const METHOD = withRoute(async (...) =>` idiom (P2-2b wrapped these
+    // routes with withRoute()).
+    expect(diagramRoute).toMatch(/export\s+(?:async\s+function|const)\s+POST\b/);
+    expect(diagramRoute).not.toMatch(/export\s+(?:async\s+function|const)\s+GET\b/);
   });
 
   it('the diagram route reads the NESTED chapter object the client sends', () => {
@@ -461,8 +464,11 @@ describe('Foxy study artifacts — client/route contract canary', () => {
   });
 
   it('the lesson route exports GET (and NOT POST)', () => {
-    expect(lessonRoute).toMatch(/export\s+async\s+function\s+GET\s*\(/);
-    expect(lessonRoute).not.toMatch(/export\s+async\s+function\s+POST\s*\(/);
+    // Accepts both `export async function METHOD(` and the `withRoute()`-wrapped
+    // `export const METHOD = withRoute(async (...) =>` idiom (P2-2b wrapped these
+    // routes with withRoute()).
+    expect(lessonRoute).toMatch(/export\s+(?:async\s+function|const)\s+GET\b/);
+    expect(lessonRoute).not.toMatch(/export\s+(?:async\s+function|const)\s+POST\b/);
   });
 
   it('the lesson route reads the FLAT query params the client sends', () => {

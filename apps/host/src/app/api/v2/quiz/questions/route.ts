@@ -18,7 +18,7 @@
  *
  * No scoring / XP / anti-cheat math here.
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
 import { logger } from '@alfanumrik/lib/logger';
@@ -26,6 +26,7 @@ import { validateSubjectWrite } from '@alfanumrik/lib/subjects';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { QuizQuestion, type TQuizQuestion } from '@alfanumrik/lib/api/v2/contract';
 import { logOpsEvent } from '@alfanumrik/lib/ops-events';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 
 const VALID_COUNTS = [5, 10, 15, 20];
 const VALID_DIFFICULTIES = ['easy', 'medium', 'hard', 'mixed', 'progressive'];
@@ -57,13 +58,13 @@ function projectQuestion(row: Record<string, unknown>): TQuizQuestion {
   };
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   try {
     // 1. Auth — same permission + requireStudentId as /api/quiz GET.
     const auth = await authorizeRequest(request, 'quiz.attempt', {
       requireStudentId: true,
     });
-    if (!auth.authorized) return auth.errorResponse!;
+    if (!auth.authorized) return auth.errorResponse as unknown as NextResponse;
 
     const url = new URL(request.url);
     const subject = url.searchParams.get('subject');
@@ -225,4 +226,4 @@ export async function GET(request: NextRequest) {
     });
     return v2Error('Internal server error', 500, 'INTERNAL_ERROR');
   }
-}
+});

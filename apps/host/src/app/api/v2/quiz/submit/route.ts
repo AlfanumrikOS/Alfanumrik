@@ -29,7 +29,7 @@
  * Auth boundary (P9): authorizeRequest('quiz.attempt') + JWT/body studentId
  * cross-check (403 on mismatch). Idempotency-Key (UUID) is REQUIRED (400).
  */
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authorizeRequest } from '@alfanumrik/lib/rbac';
 import { createSupabaseServerClient } from '@alfanumrik/lib/supabase-server';
 import { getSupabaseAdmin } from '@alfanumrik/lib/supabase-admin';
@@ -38,6 +38,7 @@ import { logOpsEvent } from '@alfanumrik/lib/ops-events';
 import { validateBody } from '@alfanumrik/lib/validation';
 import { v2Success, v2Error } from '@alfanumrik/lib/api/v2/envelope';
 import { QuizSubmitRequest } from '@alfanumrik/lib/api/v2/contract';
+import { withRoute } from '@alfanumrik/lib/api/v2/with-route';
 import {
   runQuizSubmitSideEffects,
   type QuizSubmitOfflineMeta,
@@ -93,11 +94,11 @@ function shapeResult(r: QuizV2Result) {
   };
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withRoute(async (request: NextRequest) => {
   // 1. RBAC: must hold quiz.attempt (same as /api/quiz/submit).
   const auth = await authorizeRequest(request, 'quiz.attempt');
   if (!auth.authorized || !auth.userId) {
-    return auth.errorResponse ?? v2Error('Unauthorized', 401, 'AUTH_REQUIRED');
+    return (auth.errorResponse ?? v2Error('Unauthorized', 401, 'AUTH_REQUIRED')) as unknown as NextResponse;
   }
 
   // 2. Idempotency-Key header (REQUIRED, UUID — same as /api/quiz/submit).
@@ -442,4 +443,4 @@ export async function POST(request: NextRequest) {
 
   // 9. Return the RPC result VERBATIM (server-authoritative; never recomputed).
   return v2Success(shapeResult(rpcData));
-}
+});
