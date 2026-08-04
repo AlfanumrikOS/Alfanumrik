@@ -340,6 +340,15 @@ export default function QuizResults({
               front_text: q.question_text.slice(0, 1000),
               back_text: `${correctAnswer}${explanation ? `\n\n${explanation}` : ''}`.slice(0, 4000),
               hint: q.hint || undefined,
+              // SM-2 canonical params — single source: update_learner_state_post_quiz
+              // (20260623000100); do not fork. Creation seeds ONLY the initial
+              // state (ease 2.5, interval 1 day — identical to the DB column
+              // defaults, pinned explicitly so client and schema can't drift).
+              // Grading-time math (ease +0.1 correct / -0.2 wrong, clamp
+              // [1.3, 3.0], interval cap 365d) lives in the RPC and the
+              // /api/learner/review/grade endpoint — never client-side.
+              ease_factor: 2.5,
+              interval_days: 1,
               source: 'quiz_wrong_answer',
               // The quiz-generator review-fill reader resolves source_id as a
               // question_bank.id. Write the QUESTION id (not the session id)

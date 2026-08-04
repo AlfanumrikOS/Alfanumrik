@@ -66,6 +66,15 @@ import {
   initialCognitiveLoad, updateCognitiveLoad, getReflectionPrompt, classifyError,
   type BloomLevel, type CognitiveLoadState, type ReflectionPrompt, type ErrorType,
 } from '@alfanumrik/lib/cognitive-engine';
+// Foxy North-Star Phase 0 (F2/F3/F4) — shared SRS due-card query/selection,
+// SM-2 quality mapping → EXISTING /api/learner/review/grade endpoint (which
+// owns the math), and the batched topic-mastery lookup for classifyError.
+import {
+  fetchSrsDueQuizCards,
+  selectSrsReviewSet,
+  gradeSrsCardsFireAndForget,
+  fetchTopicMasteryByQuestionId,
+} from '@alfanumrik/lib/learn/srs-quiz-review';
 
 type QuizMode = 'practice' | 'cognitive' | 'exam';
 type Screen = 'select' | 'quiz' | 'feedback' | 'results';
@@ -114,6 +123,13 @@ interface Response {
    * `question_bank.correct_answer_index`.
    */
   shuffle_map?: number[] | null;
+  /**
+   * F8 (Foxy North-Star Phase 0): hint depth (0-3) the student had revealed
+   * AT ANSWER TIME for this question. Field name is a fixed server contract
+   * (`hint_level`); architect is adding the column + RPC read in parallel.
+   * Optional so older stored/pending payloads stay valid.
+   */
+  hint_level?: number;
   telemetry?: {
     latency_ms?: number;
     changed_answers_count?: number;
@@ -344,6 +360,19 @@ export default function QuizPage() {
   // scoring/XP/anti-cheat/submit path (P1/P2/P3/P4 untouched) — the resolve
   // route owns the status flip; the quiz graded as a normal student quiz.
   const remediationResolvedRef = useRef(false);
+
+  // F4 (Foxy North-Star Phase 0): question_id → concept_mastery.mastery_probability
+  // for the CURRENT quiz's topics. Populated by ONE batched fire-and-forget
+  // fetch at quiz start (never blocks quiz load); read by classifyError with
+  // an explicit 0.5 fallback for topics with no concept_mastery row.
+  const masteryByQidRef = useRef<Record<string, number>>({});
+  // F2 (Foxy North-Star Phase 0): question_bank id → spaced_repetition_cards id
+  // for /quiz?mode=srs sessions. After a successful submit, each answered
+  // question's card is graded fire-and-forget via the EXISTING
+  // /api/learner/review/grade endpoint (which owns the SM-2 math). Cleared
+  // after grading fires (and on any non-SRS quiz start) so a card can never
+  // be graded twice for one session.
+  const srsCardIdByQidRef = useRef<Record<string, string>>({});
 
   // JEE/NEET tag mode — grades 11-12 only, persisted to localStorage
   const [jeeNeetMode, setJeeNeetMode] = useState(false);
@@ -758,6 +787,20 @@ export default function QuizPage() {
         setServerSessionId(null);
       }
 
+      // F2: an SRS card map only survives into a pinnedOnly (SRS review)
+      // session — any other quiz start clears it so stale mappings from an
+      // abandoned SRS session can never grade cards against a normal quiz.
+      if (!pinnedOnly) srsCardIdByQidRef.current = {};
+
+      // F4: ONE batched fetch at quiz start — topics of the served questions
+      // → concept_mastery.mastery_probability. Fire-and-forget (quiz start
+      // latency unaffected); classifyError falls back to 0.5 until/unless it
+      // resolves, and permanently for topics with no mastery row.
+      masteryByQidRef.current = {};
+      void fetchTopicMasteryByQuestionId(supabase, student.id, qs.map((qq: Question) => qq.id))
+        .then((m) => { masteryByQidRef.current = m; })
+        .catch(() => { /* keep {} — classifyError uses the 0.5 fallback */ });
+
       setQuestions(displayQuestions);
       // shuffleMaps stays all-null in both Phase A paths; see comment at
       // state declaration.
@@ -843,34 +886,27 @@ export default function QuizPage() {
         }
 
         // kind === 'srs' — review quiz sourced from due SRS cards born from
-        // wrong quiz answers. Mirrors the get_review_cards / listDueCards due
-        // filter: own active cards, next_review_date <= today, with a
-        // question_bank source_id to resolve.
-        const todayIso = new Date().toISOString().slice(0, 10);
-        let cardsQuery = supabase
-          .from('spaced_repetition_cards')
-          .select('source_id, subject')
-          .eq('student_id', student.id)
-          .eq('is_active', true)
-          .eq('source', 'quiz_wrong_answer')
-          .not('source_id', 'is', null)
-          .lte('next_review_date', todayIso)
-          .order('next_review_date', { ascending: true })
-          .limit(50);
-        if (deepLink.subject) cardsQuery = cardsQuery.eq('subject', deepLink.subject);
-        const { data: cards } = await cardsQuery;
-        const dueCards = (cards ?? []) as Array<{ source_id: string | null; subject: string | null }>;
+        // wrong quiz answers. The due filter + subject/dedupe selection live
+        // in the SHARED helper (packages/lib/src/learn/srs-quiz-review.ts) so
+        // the dashboard lane COUNT and this quiz's CONTENT agree by
+        // construction (F3): own active cards, source quiz_wrong_answer,
+        // next_review_date <= today, with a question_bank source_id.
+        const dueCards = await fetchSrsDueQuizCards(supabase, student.id, {
+          subject: deepLink.subject,
+        });
         // A quiz session has a single subject — honor the URL filter when
         // present, else use the earliest-due card's subject.
-        const srsSubject = deepLink.subject ?? dueCards.find(c => c.subject)?.subject ?? null;
+        const reviewSet = selectSrsReviewSet(dueCards, {
+          subject: deepLink.subject,
+          cap: questionCount, // cap at page count default
+        });
+        const srsSubject = reviewSet.subject;
+        const dueIds = reviewSet.questionIds;
         if (!srsSubject) { setLoading(false); return; }
-        const dueIds: string[] = [];
-        for (const c of dueCards) {
-          if (c.subject !== srsSubject || !c.source_id) continue;
-          if (!dueIds.includes(c.source_id)) dueIds.push(c.source_id);
-          if (dueIds.length >= questionCount) break; // cap at page count default
-        }
         if (dueIds.length === 0) { setLoading(false); return; }
+        // F2: remember which card each served question came from so the
+        // post-submit grade loop can close (question → card → SM-2 grade).
+        srsCardIdByQidRef.current = reviewSet.cardIdByQuestionId;
         const { data: rows } = await supabase
           .from('question_bank')
           .select(QB_COLUMNS)
@@ -960,7 +996,12 @@ export default function QuizPage() {
     const avgTime = responses.length > 0
       ? responses.reduce((a, r) => a + r.time_spent, 0) / responses.length
       : questionTimer;
-    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty, 0.5);
+    // F4: real per-topic mastery from the batched quiz-start fetch. Explicit
+    // 0.5 fallback ONLY when this question's topic has no concept_mastery row
+    // (or the fire-and-forget fetch hasn't resolved / failed) — the previous
+    // hardcoded 0.5 disabled classifyError's two mastery-dependent branches.
+    const studentMastery = masteryByQidRef.current[q.id] ?? 0.5;
+    const errorType = classifyError(isCorrect, questionTimer, avgTime, q.difficulty, studentMastery);
 
     setResponses(prev => [...prev, {
       question_id: q.id,
@@ -972,6 +1013,8 @@ export default function QuizPage() {
       // this field; v1 RPC accepts null and treats selected_option as
       // already-original (correct fallback semantics).
       shuffle_map: null,
+      // F8: hint depth captured AT ANSWER TIME (0-3). Server contract field.
+      hint_level: Math.min(Math.max(hintLevel, 0), 3),
       telemetry: {
         latency_ms: questionTimer * 1000,
         changed_answers_count: changedAnswersCount,
@@ -1163,6 +1206,8 @@ export default function QuizPage() {
       // P1 server-side shuffle fix: written answers are not shuffled,
       // selected_option (-1) is already in original space.
       shuffle_map: null,
+      // F8: hint depth captured AT ANSWER TIME (0-3). Server contract field.
+      hint_level: Math.min(Math.max(hintLevel, 0), 3),
       telemetry: {
         latency_ms: timeSpent * 1000,
         changed_answers_count: 0,
@@ -1204,6 +1249,8 @@ export default function QuizPage() {
       rubric_feedback: 'Skipped',
       // P1 server-side shuffle fix: skipped written answers carry no shuffle.
       shuffle_map: null,
+      // F8: hint depth captured AT ANSWER (skip) TIME (0-3).
+      hint_level: Math.min(Math.max(hintLevel, 0), 3),
       telemetry: {
         latency_ms: 0,
         changed_answers_count: 0,
@@ -1256,6 +1303,8 @@ export default function QuizPage() {
               is_correct: lastIsCorrect,
               time_spent: questionTimer,
               shuffle_map: null,
+              // F8: hint depth captured at answer time (0-3).
+              hint_level: Math.min(Math.max(hintLevel, 0), 3),
               telemetry: {
                 latency_ms: questionTimer * 1000,
                 changed_answers_count: changedAnswersCount,
@@ -1347,6 +1396,20 @@ export default function QuizPage() {
             const review = reviewByQid.get(r.question_id);
             return review ? { ...r, is_correct: review.is_correct } : r;
           }));
+        }
+        // F2 (SRS grade loop close): for /quiz?mode=srs sessions, grade each
+        // served card via the EXISTING /api/learner/review/grade endpoint.
+        // Runs AFTER the server-truth is_correct sync above (in v2 mode the
+        // per-answer is_correct is provisional until the submit response), and
+        // fire-and-forget so submit latency is unaffected. The map is cleared
+        // first so a retry/double-render can never grade a card twice.
+        if (Object.keys(srsCardIdByQidRef.current).length > 0) {
+          const srsCardMap = srsCardIdByQidRef.current;
+          srsCardIdByQidRef.current = {};
+          gradeSrsCardsFireAndForget({
+            cardIdByQuestionId: srsCardMap,
+            responses: allResponses,
+          });
         }
         refreshSnapshot();
         // Invalidate SWR dashboard cache so DailyRhythmQueue reflects new unlock state
@@ -1453,6 +1516,8 @@ export default function QuizPage() {
               is_correct: lastIsCorrect,
               time_spent: questionTimer,
               shuffle_map: null,
+              // F8: hint depth captured at answer time (0-3).
+              hint_level: Math.min(Math.max(hintLevel, 0), 3),
             });
           }
         }
@@ -1509,6 +1574,21 @@ export default function QuizPage() {
           const review = reviewByQid.get(r.question_id);
           return review ? { ...r, is_correct: review.is_correct } : r;
         }));
+        // Keep the retry payload in sync with server truth (mirrors the F6
+        // in-place sync on the happy path) before the F2 grade loop reads it.
+        for (const r of allResponses) {
+          const review = reviewByQid.get(r.question_id);
+          if (review) r.is_correct = review.is_correct;
+        }
+      }
+      // F2 (SRS grade loop close) — retry path mirror of the happy-path call.
+      if (Object.keys(srsCardIdByQidRef.current).length > 0) {
+        const srsCardMap = srsCardIdByQidRef.current;
+        srsCardIdByQidRef.current = {};
+        gradeSrsCardsFireAndForget({
+          cardIdByQuestionId: srsCardMap,
+          responses: allResponses,
+        });
       }
       refreshSnapshot();
       // Invalidate SWR dashboard cache so DailyRhythmQueue reflects new unlock state

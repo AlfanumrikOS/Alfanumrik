@@ -6,8 +6,39 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 344 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-344 (2026-08-04, P2-2 API response-envelope wrapper — pins
+**Total catalog: 347 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-345..REG-347 (2026-08-05, Foxy North-Star Phase 0 gate batch —
+three pins in `03-quiz-integrity.md` covering the ~23-file Phase 0 change set.
+REG-345 SRS grade loop closure [E]: `/quiz?mode=srs` grades each served
+`spaced_repetition_cards` card EXACTLY ONCE via the existing
+`POST /api/learner/review/grade` endpoint with the zod-accepted quality set
+{0,3,4,5} mapped from server-truth `is_correct` + speed (correct <10s→5 else
+4; wrong→ALWAYS 0, never 3 — SM-2 treats quality>=3 as successful recall, so
+3 for a wrong answer would advance the interval; only the flashcard UI may
+send 3 — re-pinned 2026-08-05 per assessment mandate, superseding this
+entry's original "wrong <5s→0 else 3" mapping),
+fire-and-forget/never-throws, and the dashboard SRS
+lane COUNT and the quiz CONTENT both flow through the ONE shared
+`fetchSrsDueQuizCards` + `selectSrsReviewSet` pair so they can never disagree;
+plus the F4 rider that `classifyError` receives REAL per-topic mastery with
+0.5 only as the explicit no-row fallback. REG-346 hint_level end-to-end
+persistence [P]: UI captures 0-3 at answer time, `_mapV2` forwards verbatim
+(omitted → undefined → SQL NULL) without disturbing the v2 strip contract,
+migration `20260805100100` adds the nullable CHECKed column, `20260805100200`
+regex-guards (`^[0-3]$`) so malformed payloads can never abort the submit
+transaction, and a sanctioned-sites sweep proves v_hint_level feeds NO
+scoring/XP/anti-cheat logic — P, honestly: zero live-Postgres execution of
+either migration this session, structural pins only. REG-347 IRT resurrect
+behavior-neutrality [P]: quiz-generator's `useIRT` gate is live code reading
+`ff_irt_question_selection` (requires enabled AND rollout ≥100, FAIL-CLOSED
+on read error; flag seeded OFF/0%, posture unchanged — F9 only corrected the
+self-contradictory reason text), the RPC call pinned to the exact six
+baseline:~6702 arg names with the `question_id`→`id` row normalization —
+explicit known gap: NO Deno-lane test executes the flag-ON branch; new pin
+file `apps/host/src/__tests__/regressions/foxy-phase0-structural.test.ts`
+(11 tests). Full-suite + type-check + lint run as the Phase 0 gate in the
+same session.)
+Prior: REG-344 (2026-08-04, P2-2 API response-envelope wrapper — pins
 `withRoute()` [`packages/lib/src/api/v2/with-route.ts`], the shared
 error-safety net now adopted by the 11-route `/v2` reference slice: a
 successful handler's `NextResponse` (success OR a deliberate non-200
@@ -74,7 +105,8 @@ meta-test on the config shape yet, an explicit known gap
 test files were re-run green in ONE vitest pass from apps/host — 191/191.)
 **REG-344 is the next free id.** That was true before this pass and is
 superseded above — the P2-2 API response-envelope wrapper regression took
-REG-344 on 2026-08-04, so **REG-345 is now the next free id.**
+REG-344 on 2026-08-04, then the Foxy North-Star Phase 0 gate batch took
+REG-345..REG-347 on 2026-08-05, so **REG-348 is now the next free id.**
 Prior: REG-335 (2026-08-03, OpenAI-primary percentage-rollout mechanism —
 built ON TOP OF the already-committed REG-334 flat swap [commit `5e6ffa9f`],
 still uncommitted at review time. New flag `ff_foxy_openai_primary_rollout_v1`

@@ -237,7 +237,7 @@ export async function buildRhythmQueue(
       userId,
     });
   }
-  const dueRows: DueReviewRow[] = (dueRowsRaw ?? []).map((r: Record<string, unknown>) => ({
+  let dueRows: DueReviewRow[] = (dueRowsRaw ?? []).map((r: Record<string, unknown>) => ({
     topic_id: String(r.topic_id ?? ''),
     mastery_probability: typeof r.mastery_probability === 'number' ? r.mastery_probability : null,
     last_attempted_at: typeof r.last_attempted_at === 'string' ? r.last_attempted_at : null,
@@ -246,6 +246,50 @@ export async function buildRhythmQueue(
 
   // Build conceptToQuestion map: one active question per due topic.
   const dueTopicIds = dueRows.map((r) => r.topic_id).filter(Boolean);
+
+  // ── F7 (Foxy North-Star Phase 0): SM-2 field merge ──────────────────────
+  // The get_due_reviews RPC's RETURNS TABLE is frozen at 6 columns and does
+  // not surface ease_factor / next_review_at, so we batch-fetch those two
+  // fields additively from concept_mastery (RLS-scoped: student reads own
+  // rows) for exactly the due topics and merge them onto the rows. NON-FATAL:
+  // on any error the fields stay absent and the adapter falls back to its
+  // documented defaults (easeFactor 2.5 = column default, nextReviewAt null),
+  // so the queue composition is unchanged — this only stops dropping data.
+  if (dueTopicIds.length > 0) {
+    try {
+      const { data: sm2Rows } = await supabase
+        .from('concept_mastery')
+        .select('topic_id, ease_factor, next_review_at')
+        .eq('student_id', studentRow.id)
+        .in('topic_id', dueTopicIds);
+      const sm2ByTopic = new Map<string, { ease_factor: number | null; next_review_at: string | null }>();
+      for (const r of sm2Rows ?? []) {
+        const row = r as {
+          topic_id?: string;
+          ease_factor?: number | null;
+          next_review_at?: string | null;
+        };
+        const tid = String(row.topic_id ?? '');
+        if (tid) {
+          sm2ByTopic.set(tid, {
+            ease_factor: typeof row.ease_factor === 'number' ? row.ease_factor : null,
+            next_review_at: typeof row.next_review_at === 'string' ? row.next_review_at : null,
+          });
+        }
+      }
+      dueRows = dueRows.map((r) => {
+        const sm2 = sm2ByTopic.get(r.topic_id);
+        return sm2
+          ? { ...r, ease_factor: sm2.ease_factor, next_review_at: sm2.next_review_at }
+          : r;
+      });
+    } catch (err) {
+      logger.error('rhythm/today: sm2 field merge fetch failed', {
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
   const conceptToQuestion = new Map<string, string>();
   if (dueTopicIds.length > 0) {
     const { data: qbRows } = await supabase

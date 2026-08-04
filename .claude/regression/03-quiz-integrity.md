@@ -1449,3 +1449,80 @@ suite in this or any prior session).
 **Total catalog: 333 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-345 — Foxy North-Star Phase 0: SRS grade loop closure (F2/F3/F4)
+
+Added 2026-08-05 (testing agent, Phase 0 gate for the Foxy North-Star plan —
+spec `docs/superpowers/specs/2026-08-05-foxy-north-star-alignment-design.md`).
+
+A `/quiz?mode=srs` session now CLOSES the SM-2 loop: after submit, each served
+`spaced_repetition_cards` card is graded via the EXISTING
+`POST /api/learner/review/grade` endpoint — the quiz client never re-implements
+SM-2 math (no-duplicate rule; the endpoint owns ease/interval updates).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-345 | `srs_grade_loop_closure` | **(1) Quality mapping (RE-PINNED 2026-08-05, assessment mandate)** — `srsQualityForResponse` emits ONLY from the endpoint's zod-accepted set {0,3,4,5} (the same four ratings QuickRecallSection exposes): correct <10s → 5, correct ≥10s → 4, **wrong → ALWAYS 0, regardless of speed — NEVER 3**. SM-2 defines quality >= 3 as SUCCESSFUL recall, so emitting 3 for a wrong answer would count as a correct review and advance the interval (1→6), corrupting the schedule for failed cards; 0 is the only failure value in the accepted set. Quality 3 stays in the `SrsQuality` union solely because the flashcard UI (QuickRecallSection's "Hard" button) legitimately sends it — the auto-mapper must never emit it. A sweep pins the closed emitted set {0,4,5} across speeds (the original entry's "wrong <5s→0 else ≥5s→3" mapping is the pinned-ABSENT defect shape). **(2) No double-grading** — `gradeSrsCardsFireAndForget` grades each card AT MOST ONCE per invocation (two question ids mapping to the same card → one POST), POSTs QuickRecallSection's EXACT request contract (`{ cardId, quality }`, JSON, same-origin), and NEVER throws on fetch failure (fire-and-forget; the card simply stays due). **(3) Count/content agreement (F3)** — `fetchSrsDueQuizCards` + `selectSrsReviewSet` are THE shared due-query/selection used by BOTH the quiz deep-link content and the dashboard DailyRhythmQueue SRS lane count (single-subject selection, `source_id` dedupe, cap; explicit subject filter wins, else earliest-due card's subject; the exact filter set `source='quiz_wrong_answer'`, `is_active=true`, `source_id NOT NULL`, `next_review_date <= today`, limit 50 is pinned). **(4) End-to-end** — the REAL quiz page rendered with `/quiz?mode=srs` POSTs exactly ONE grade per card after submit using SERVER-truth `is_correct` from the submit response (quality 5 for a fast correct). **(5) F4 rider** — `classifyError` receives the REAL per-topic mastery (0.62 from a `concept_mastery` row) and the explicit 0.5 fallback ONLY when no row exists; `fetchTopicMasteryByQuestionId` degrades to `{}` on any client failure (never blocks quiz start). | `apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts` (14 tests, updated 2026-08-05 for the wrong→always-0 re-pin); `apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx` (F2 + F4 describe blocks, real quiz page render); `apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx` (lane count from the shared query) | E | P1-adjacent (server-truth correctness), learner-state rules |
+
+Known gaps: no live-DB test of `/api/learner/review/grade` itself (pre-existing
+endpoint, unchanged this phase); the fire-and-forget POST is not retried, by
+design — a lost grade leaves the card due, never corrupts SM-2 state.
+
+Pre-REG-345: 344 entries. Adds REG-345.
+**Total catalog: 345 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-346 — Foxy North-Star Phase 0: hint_level end-to-end persistence contract (F8)
+
+Added 2026-08-05 (testing agent, Phase 0 gate).
+
+`hint_level` (0 = no hint .. 3) is an ADDITIVE, TELEMETRY-ONLY field flowing
+UI → `_mapV2` → `submit_quiz_results_v2` → `quiz_responses.hint_level`. Field
+name is a fixed cross-agent contract — do not rename. It feeds NO scoring/XP/
+anti-cheat decision anywhere (P1/P2/P3 untouched).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-346 | `hint_level_end_to_end_persistence` | **(1) UI capture** — the real quiz page stamps `hint_level` on every response AT ANSWER TIME (1 after revealing one hint, 0 answered clean; always a number 0-3). **(2) Client pass-through** — `_mapV2` forwards `hint_level` verbatim to the `submit_quiz_results_v2` payload when set, and leaves it `undefined` when omitted (dropped by JSON → SQL NULL), WITHOUT disturbing the existing v2 contract (`selected_displayed_index` present, `is_correct`/`shuffle_map` still stripped). **(3) Column migration** (`20260805100100`) — nullable smallint, `CHECK (hint_level >= 0 AND hint_level <= 3)`, duplicate_object-guarded, NO backfill/NOT NULL. **(4) RPC persistence** (`20260805100200`) — `v_hint_level SMALLINT` declared; the client value is REGEX-GUARDED (`~ '^[0-3]$'` → smallint, else NULL) so a malformed payload can never violate the CHECK and abort the whole submit transaction; the `quiz_responses` INSERT carries the column+value. **(5) Telemetry-only proof** — every executable `v_hint_level` occurrence in the migration is one of declaration / normalization / INSERT value list (sanctioned-sites sweep), and no scoring variable is computed from it. | `apps/host/src/__tests__/api/quiz-server-shuffle-authority.test.ts` (F8 case); `apps/host/src/__tests__/app/quiz-foxy-phase0.test.tsx` (F8 describe block); `apps/host/src/__tests__/regressions/foxy-phase0-structural.test.ts` (5 migration pins) | P | P1/P2/P3 (untouched-proof), P4-adjacent (submit transaction never aborted by telemetry) |
+
+Status P, honestly: the two migrations have had NO live-Postgres execution in
+this session (structural source pins only — the same recorded limitation as
+REG-318/REG-331/REG-333 for this environment). The TS-side contract (capture +
+pass-through) is behaviorally tested.
+
+Pre-REG-346: 345 entries. Adds REG-346.
+**Total catalog: 346 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+
+## REG-347 — Foxy North-Star Phase 0: IRT selection resurrect, behavior-neutral flag-off (F1)
+
+Added 2026-08-05 (testing agent, Phase 0 gate).
+
+The Phase-4 IRT question-selection code in
+`supabase/functions/quiz-generator/index.ts` was un-commented and wired live,
+gated by `ff_irt_question_selection` (protected tier `staged_rollout`, seeded
+OFF/0% — posture unchanged this phase; the F9 companion migration
+`20260805100300` + `packages/lib/src/flags/protected-flags.ts` only correct the
+self-contradictory reason TEXT, no tier/posture change). Flag-off, the adaptive
+flow must be byte-identical to the pre-change legacy mastery-driven path.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-347 | `irt_resurrect_flag_off_neutrality` | **(1) Gate is live, not the dead stub** — `const useIRT = await isIRTSelectionEnabled(supabase)` replaces the dead `const useIRT = false` / `const irtQuestions: any[] = []` stubs (both pinned ABSENT as executable code). **(2) Flag semantics** — the gate reads `feature_flags.ff_irt_question_selection` and requires `is_enabled === true AND (rollout_percentage ?? 0) >= 100`; production posture OFF/0% ⇒ the IRT branch is dead and the legacy flow runs. **(3) FAIL-CLOSED** — any flag-read error caches and returns `false` (60s TTL). **(4) RPC contract** — `selectQuestionsByIRT` calls `select_questions_by_irt_info` with EXACTLY the six baseline arg names (`p_student_id, p_subject, p_grade, p_chapter_number, p_match_count, p_exclude_ids`), cross-checked verbatim against the baseline migration's `CREATE OR REPLACE FUNCTION` signature (`00000000000000_baseline_from_prod.sql` ~L6702) — no seventh arg, no rename. **(5) Row normalization** — the RPC's `question_id` return column is mapped onto `id` (`id: r.question_id`), which is load-bearing downstream (dedup sets + question-history upsert); the un-normalized cast is what made the previously commented-out code unshippable. | `apps/host/src/__tests__/regressions/foxy-phase0-structural.test.ts` (6 IRT pins, incl. baseline signature cross-check); `supabase/functions/quiz-generator/__tests__/actions.contract.test.ts` (Deno, action-surface unchanged — re-run green this session) | P | P6-adjacent (selection path), P9-adjacent (flag gating) |
+
+Known gaps (explicit — do not read this entry as broader than it is):
+- **No Deno-lane test executes the flag-ON IRT branch end-to-end** (no harness
+  stubs `feature_flags` + the RPC inside `Deno.serve` in this repo's CI-scope
+  Deno lane). The behavior-neutrality claim rests on the flag-off posture
+  (seeded OFF/0%, protected staged_rollout tier) + source pins, not on a
+  runtime A/B. Closing this needs a `selectQuestionsByIRT`/gate extraction
+  into a testable module or a served-harness Deno test — flagged as the
+  Phase-3 shadow-evaluation prerequisite.
+- No live-DB execution of the `select_questions_by_irt_info` RPC this session.
+
+Pre-REG-347: 346 entries. Adds REG-347.
+**Total catalog: 347 entries (target: 35 — TARGET EXCEEDED).**
+
+---

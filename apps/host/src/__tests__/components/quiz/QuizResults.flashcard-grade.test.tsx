@@ -291,20 +291,32 @@ describe('QuizResults — auto flashcard insert payload (Wave 0 Task 0.7b)', () 
       // it is a real production column (nullable text, baseline ~13552) and
       // both review-card display paths prefer it over the machine `topic`
       // dedupe key — without it students would see `math:5:uuid` labels.
+      // `ease_factor` / `interval_days` added deliberately (F10, Foxy
+      // North-Star Phase 0): SM-2 canonical creation seeds — single source
+      // update_learner_state_post_quiz (20260623000100). Identical to the DB
+      // column defaults (baseline ~13552), pinned explicitly so client and
+      // schema can't drift.
       expect(Object.keys(card).sort()).toEqual([
         'back_text',
         'card_type',
         'chapter_number',
         'chapter_title',
+        'ease_factor',
         'front_text',
         'grade',
         'hint',
+        'interval_days',
         'source',
         'source_id',
         'student_id',
         'subject',
         'topic',
       ]);
+      // F10 canonical SM-2 creation seeds: initial ease 2.5, interval 1 day.
+      // Grading-time params (±0.1/0.2, clamp [1.3,3.0], cap 365d) are the
+      // RPC's / grade endpoint's — the client must never seed anything else.
+      expect(card.ease_factor).toBe(2.5);
+      expect(card.interval_days).toBe(1);
       // P5: grade is a string "6"-"12", sourced from useAuth().student.grade.
       // toMatch throws on non-strings, so this also pins "never a number".
       expect(card.grade).toBe('8');

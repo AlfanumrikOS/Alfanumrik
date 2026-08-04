@@ -165,6 +165,42 @@ describe('submitQuizResults — v2 dispatch contract', () => {
     }
   });
 
+  // Foxy North-Star F8 (2026-08-05): hint_level is an ADDITIVE optional
+  // pass-through on each v2 response element (0 = no hint .. 3). When the
+  // caller sets it, _mapV2 must forward it verbatim to the RPC payload;
+  // when the caller omits it, the serialized element must not carry a
+  // defined value (undefined → dropped by JSON → SQL NULL server-side).
+  // Field name `hint_level` is a fixed cross-agent contract — do not rename.
+  it('passes hint_level through to the v2 payload when provided, undefined when omitted (F8)', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: { total: 2, correct: 1, score_percent: 50, xp_earned: 10, session_id: 'qs-1', flagged: false, questions: [] },
+      error: null,
+    });
+
+    await submitQuizResults(
+      'student-1', 'science', '8', 'Light', 11,
+      [
+        { question_id: 'q-1', selected_option: 2, is_correct: true, time_spent: 9, shuffle_map: null, hint_level: 2 },
+        { question_id: 'q-2', selected_option: 0, is_correct: false, time_spent: 7, shuffle_map: null }, // no hint_level
+      ],
+      30,
+      'session-hint', // <-- v2 path
+    );
+
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    const [name, args] = rpcMock.mock.calls[0];
+    expect(name).toBe('submit_quiz_results_v2');
+    const responses = args.p_responses as Array<Record<string, unknown>>;
+    expect(responses[0].hint_level).toBe(2);
+    expect(responses[1].hint_level).toBeUndefined();
+    // The additive field must not disturb the existing v2 contract.
+    for (const r of responses) {
+      expect(r).toHaveProperty('selected_displayed_index');
+      expect(r).not.toHaveProperty('is_correct');
+      expect(r).not.toHaveProperty('shuffle_map');
+    }
+  });
+
   it('falls back to v1 submit_quiz_results when sessionId is null', async () => {
     rpcMock.mockResolvedValueOnce({
       data: { total: 1, correct: 1, score_percent: 100, xp_earned: 80, session_id: 'qs-1', flagged: false },

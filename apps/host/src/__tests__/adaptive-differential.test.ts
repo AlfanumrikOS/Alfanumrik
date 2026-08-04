@@ -799,8 +799,22 @@ describe('Section 5c — quiz page adaptive deep links (?qid= / ?mode=srs): fire
     expect(code).toMatch(/pinnedOnly/);
     // SRS branch reads DUE cards from the live SM-2 table with the
     // quiz_wrong_answer source and a resolvable source_id.
-    expect(code).toMatch(/\.eq\('source', 'quiz_wrong_answer'\)/);
-    expect(code).toMatch(/\.not\('source_id', 'is', null\)/);
+    //
+    // 2026-08-05 (Foxy North-Star Phase 0, F3): the raw due-card query moved
+    // OUT of the page into the SHARED helper
+    // packages/lib/src/learn/srs-quiz-review.ts so the dashboard lane COUNT
+    // and this quiz's CONTENT agree by construction. The pin now asserts
+    // (a) the page goes through the helper, and (b) the helper keeps the
+    // exact due-card predicates the old inline query enforced.
+    expect(code).toMatch(/fetchSrsDueQuizCards\(/);
+    expect(code).toMatch(/selectSrsReviewSet\(/);
+    const helperCode = codeOnly(
+      readSource('../../packages/lib/src/learn/srs-quiz-review.ts'),
+    );
+    expect(helperCode).toMatch(/\.eq\('source', 'quiz_wrong_answer'\)/);
+    expect(helperCode).toMatch(/\.not\('source_id', 'is', null\)/);
+    expect(helperCode).toMatch(/\.eq\('is_active', true\)/);
+    expect(helperCode).toMatch(/\.lte\('next_review_date',/);
   });
 });
 

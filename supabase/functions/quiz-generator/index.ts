@@ -368,6 +368,7 @@ async function fetchDueReviewQuestions(
  * Select questions using the student's concept_mastery data.
  * Weak topics (mastery < 0.65 or past due for review) get priority.
  * Targets an appropriate difficulty for each weak concept.
+ */
 
 // ─── Phase 4 IRT-info selection (gated by ff_irt_question_selection) ────
 
@@ -415,12 +416,16 @@ async function selectQuestionsByIRT(
     return []
   }
   // The RPC returns a row shape compatible with QuestionRow at the columns
-  // the quiz-generator caller actually reads. Cast through unknown to keep
-  // strict TS happy without re-defining the RPC row type here.
-  return (data ?? []) as unknown as QuestionRow[]
+  // the quiz-generator caller actually reads, EXCEPT the primary key comes
+  // back as `question_id` (not `id`). Normalize it — `q.id` is load-bearing
+  // downstream (dedup sets + question-history upsert). Cast through unknown
+  // to keep strict TS happy without re-defining the RPC row type here.
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    ...r,
+    id: r.question_id,
+  })) as unknown as QuestionRow[]
 }
 
- */
 async function selectAdaptiveQuestions(
   supabase: SupabaseClient,
   studentId: string,
@@ -1261,9 +1266,17 @@ Deno.serve(async (req) => {
       // ranking via select_questions_by_irt_info RPC. Falls back to the
       // legacy mastery-driven flow when the flag is off (default) or when
       // the RPC returns fewer rows than requested.
-      const useIRT = false
+      const useIRT = await isIRTSelectionEnabled(supabase)
       if (useIRT) {
-        const irtQuestions: any[] = []
+        const irtQuestions = await selectQuestionsByIRT(
+          supabase,
+          student_id,
+          subject,
+          grade,
+          chapterNumber,
+          adaptiveSlots,
+          usedAfterReview,
+        )
         if (irtQuestions.length >= adaptiveSlots) {
           adaptiveQuestions = irtQuestions
           weakTopicsTargeted = 0  // IRT path does not target weak topics directly

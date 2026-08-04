@@ -30,6 +30,16 @@ export interface DueSm2Card {
   questionId: string;
   topicId: string;
   isAheadOfGrade: boolean;
+  /**
+   * SM-2 scheduling signals (Foxy North-Star Phase 0, F7 — additive).
+   * Carried through so the scheduling data is no longer dropped at the
+   * adapter boundary; slot composition does NOT read these yet (Phase 3).
+   * Optional so existing constructors (tests, older callers) stay valid.
+   */
+  easeFactor?: number;
+  reviewIntervalDays?: number;
+  nextReviewAt?: string | null;
+  masteryProbability?: number | null;
 }
 
 export interface CandidateProblem {

@@ -500,6 +500,12 @@ export interface QuizResponseV2 {
   marks_awarded?: number;
   marks_possible?: number;
   rubric_feedback?: string;
+  /**
+   * Foxy North-Star F8 (2026-08-05): highest hint tier used on this question
+   * (0 = none, 1-3). Optional — undefined → SQL NULL. Persisted to
+   * quiz_responses.hint_level by submit_quiz_results_v2 (telemetry only).
+   */
+  hint_level?: number;
 }
 
 // Dedup guard: prevents double-click / SWR retry from re-submitting a quiz (5 min window).
@@ -508,7 +514,9 @@ const _quizDedup = new Set<string>();
 // v2 response mapper -- strips is_correct + shuffle_map; server re-derives both from snapshot.
 type _RX = import('./types').QuizResponse & { error_type?: string; student_answer_text?: string; marks_awarded?: number; marks_possible?: number; rubric_feedback?: string };
 function _mapV2(responses: import('./types').QuizResponse[]) {
-  return responses.map(r => { const rx = r as _RX; return { question_id: r.question_id, selected_displayed_index: typeof r.selected_option === 'number' ? r.selected_option : Number(r.selected_option), time_spent: r.time_spent, error_type: rx.error_type, student_answer_text: rx.student_answer_text, marks_awarded: rx.marks_awarded, marks_possible: rx.marks_possible, rubric_feedback: rx.rubric_feedback }; });
+  // hint_level (F8, 2026-08-05): additive optional pass-through — undefined is
+  // dropped by JSON serialization and lands as SQL NULL in the RPC.
+  return responses.map(r => { const rx = r as _RX; return { question_id: r.question_id, selected_displayed_index: typeof r.selected_option === 'number' ? r.selected_option : Number(r.selected_option), time_spent: r.time_spent, error_type: rx.error_type, student_answer_text: rx.student_answer_text, marks_awarded: rx.marks_awarded, marks_possible: rx.marks_possible, rubric_feedback: rx.rubric_feedback, hint_level: r.hint_level }; });
 }
 
 /**
