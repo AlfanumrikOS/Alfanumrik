@@ -34,8 +34,9 @@
  *
  * Repairs, all three of which are structural (not one-file patches):
  *
- *   A. resolveSource() follows stub re-exports to the canonical implementation
- *      and works from EITHER cwd (repo root or apps/host).
+ *   A. Every check below reads its target from the canonical path directly
+ *      (packages/lib/src/*, packages/ui/src/*) and works from EITHER cwd
+ *      (repo root or apps/host).
  *   B. All content patterns are multi-line-aware (`\s` spans newlines, and
  *      interleaved // and /* *\/ comments are tolerated).
  *   C. Three fail-loud floors:
@@ -45,6 +46,16 @@
  *        - known-bad fixture: every content pattern is executed against an
  *          embedded violating sample at startup and MUST flag it. If a future
  *          refactor breaks a regex, the guard fails instead of going green.
+ *
+ * 2026-08-04 — P2-3 deleted the entire re-export-stub layer repo-wide (zero
+ * `export * from '<canonical>'` stubs remain anywhere under apps/host/src).
+ * Point A above originally read "resolveSource() follows stub re-exports to
+ * the canonical implementation" — that chain-following machinery is now
+ * unreachable (every path this guard scans is already canonical) and has
+ * been removed. resolveSource() is now a plain file reader. The vacuity
+ * floors in point C are untouched and still guard against any future
+ * regression (stub or otherwise) that would make a check read empty/missing
+ * content.
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * Checks:
@@ -121,43 +132,26 @@ function exists(relPath) {
 }
 
 /**
- * Read a source file, transparently following auto-generated re-export stubs
- * (`export * from '<relative path>'`) to the canonical implementation.
+ * Read a source file's content for content-scanning.
  *
- * Returns { file, source, viaStub } or null when unresolvable.
- * This is the general fix for the stub-vs-canonical problem: it is NOT
- * hardcoded to one file, so a future check pointed at any apps/host/src/lib/*
- * stub still lands on real code.
+ * Returns { file, source } or null when unresolvable.
+ *
+ * Historical note: this used to also transparently follow auto-generated
+ * re-export stubs (`export * from '<relative path>'`) to their canonical
+ * implementation, because every apps/host/src/lib/* file was once a ~90-byte
+ * stub. P2-3 (2026-08) deleted that stub layer repo-wide — every path this
+ * guard scans below is already the canonical implementation file, so the
+ * chain-following branch was unreachable dead code and has been removed. If
+ * a stub-shaped indirection layer is ever reintroduced, MIN_CONTENT_BYTES
+ * below still fails the build loudly (see loadForScan) rather than passing
+ * vacuously — that floor does not depend on this function "seeing through"
+ * the indirection.
  */
-function resolveSource(relPath, depth = 0) {
+function resolveSource(relPath) {
   const abs = path.join(ROOT, relPath);
   if (!fs.existsSync(abs)) return null;
   const source = fs.readFileSync(abs, 'utf-8');
-
-  // Stub shape: only comments + `export * from '...'` / `export { x } from '...'`
-  const stripped = source
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^\s*\/\/[^\n]*$/gm, '')
-    .trim();
-  const stubMatch = /^export\s+(?:\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"];?$/.exec(stripped);
-
-  if (stubMatch && depth < 5) {
-    let target = stubMatch[1];
-    // Resolve @alfanumrik/lib/x and @alfanumrik/ui/x aliases too.
-    if (target.startsWith('@alfanumrik/lib/')) {
-      target = path.join('packages/lib/src', target.slice('@alfanumrik/lib/'.length));
-    } else if (target.startsWith('@alfanumrik/ui/')) {
-      target = path.join('packages/ui/src', target.slice('@alfanumrik/ui/'.length));
-    } else {
-      target = path.relative(ROOT, path.resolve(path.dirname(abs), target));
-    }
-    for (const ext of ['', '.ts', '.tsx', '/index.ts', '/index.tsx']) {
-      const next = resolveSource(target + ext, depth + 1);
-      if (next) return { ...next, viaStub: true };
-    }
-  }
-
-  return { file: relPath, source, viaStub: false };
+  return { file: relPath, source };
 }
 
 /**
@@ -187,10 +181,7 @@ function loadForScan(relPath, label, positiveMarker) {
     return null;
   }
   scannedFiles++;
-  console.log(
-    `  scanned ${label}: ${resolved.file} (${resolved.source.length} bytes` +
-      `${resolved.viaStub ? ', followed re-export stub' : ''})`,
-  );
+  console.log(`  scanned ${label}: ${resolved.file} (${resolved.source.length} bytes)`);
   return resolved.source;
 }
 
