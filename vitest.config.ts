@@ -109,11 +109,28 @@ const CROSS_PACKAGE_TEST_GLOBS = [
   'supabase/functions/grounded-answer/__vitest__/mol-shadow-governance.vitest-harness.ts',
   // PR-2 bulk-jee-neet-import static-source contract canary + pure validators.
   'supabase/functions/bulk-jee-neet-import/__tests__/index.test.ts',
-  // packages/lib tests are normally reached through the auto-generated
-  // re-export stubs under apps/host/src/lib/**. This one has no stub, so it
-  // needs an explicit entry or it runs nowhere. The lane-coverage guard fails
-  // if another un-stubbed packages test appears without being listed here.
-  'packages/lib/src/foxy/foxy-report.test.ts',
+].map(repoGlob);
+
+/**
+ * ── P2-3 Phase 3 (2026-08-04): packages/lib + packages/ui collect DIRECTLY ──
+ *
+ * Previously, canonical `packages/lib/src/**\/*.test.ts` files were reached
+ * ONLY as a side-effect of importing a 2-line `export * from '...'` mirror
+ * stub under `apps/host/src/lib/**` (one exception: `foxy-report.test.ts`,
+ * which had no stub and was listed verbatim in CROSS_PACKAGE_TEST_GLOBS
+ * above). The 30 mirror stubs are now deleted — this glob is the ONLY path
+ * by which those tests are collected, so it must never be narrowed without
+ * first re-adding stubs or another collection path.
+ *
+ * Repo-anchored via repoGlob() for the same CWD-independence reason as
+ * CROSS_PACKAGE_TEST_GLOBS (see the "Orphaned-lane fix" note above): vitest
+ * resolves relative includes against `test.root` = CWD = apps/host in every
+ * lane, so a bare `packages/lib/src/**` pattern would silently match zero
+ * files.
+ */
+const PACKAGE_SOURCE_TEST_GLOBS = [
+  'packages/lib/src/**/*.{test,spec}.{ts,tsx}',
+  'packages/ui/src/**/*.{test,spec}.{ts,tsx}',
 ].map(repoGlob);
 
 export default defineConfig({
@@ -131,6 +148,9 @@ export default defineConfig({
           // Repo-anchored so they resolve from ANY cwd — see the
           // "Orphaned-lane fix" note on CROSS_PACKAGE_TEST_GLOBS above.
           ...CROSS_PACKAGE_TEST_GLOBS,
+          // packages/lib + packages/ui canonical tests, collected DIRECTLY
+          // (P2-3 Phase 3) — see the PACKAGE_SOURCE_TEST_GLOBS note above.
+          ...PACKAGE_SOURCE_TEST_GLOBS,
         ],
     exclude: isIntegrationRun
       ? [
