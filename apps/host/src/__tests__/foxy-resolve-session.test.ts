@@ -84,9 +84,13 @@ vi.mock('@alfanumrik/lib/ai/prompts/tenant-overrides', () => ({
 vi.mock('@alfanumrik/lib/foxy/schema', () => ({
   FoxyResponseSchema: { safeParse: vi.fn() },
 }));
-vi.mock('@alfanumrik/lib/foxy/recover-from-text', () => ({
-  recoverFoxyResponseFromText: vi.fn(),
-}));
+// Partial mock via importOriginal (see FOXY-RAWJSON, 2026-08-05): a hand-written
+// factory silently omits any export the module later gains, and MessageList then
+// throws at render. Spreading the original is future-proof.
+vi.mock('@alfanumrik/lib/foxy/recover-from-text', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@alfanumrik/lib/foxy/recover-from-text')>();
+  return { ...real };
+});
 vi.mock('@alfanumrik/lib/foxy/denormalize', () => ({
   denormalizeFoxyResponse: vi.fn(),
 }));

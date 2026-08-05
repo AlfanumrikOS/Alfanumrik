@@ -898,8 +898,13 @@ export function validateSubjectRules(
  * (`supabase/functions/grounded-answer/structured-schema.ts`). Keep the two
  * in sync — drift means the Node side and Edge Function side disagree on
  * what "looks like JSON".
+ *
+ * EXPORTED (2026-08-05, FOXY-RAWJSON incident): the unconditional
+ * "never ship raw JSON to a student" guards in `./recover-from-text` reuse
+ * this exact predicate so every boundary agrees on what counts as JSON-shaped.
+ * Behaviour is unchanged — this is an export-visibility change only.
  */
-function isJsonShapedRawText(rawText: string): boolean {
+export function isJsonShapedRawText(rawText: string): boolean {
   if (typeof rawText !== 'string') return false;
   const stripped = rawText.replace(/^[\s`]*(?:json|javascript|js)?\s*/i, '');
   return /^[{[]/.test(stripped);

@@ -37,6 +37,12 @@ import {
   type AbstainReason,
 } from '@alfanumrik/lib/ai/grounded-client';
 import { denormalizeFoxyResponse } from '@alfanumrik/lib/foxy/denormalize';
+// P12 unconditional "never raw JSON to a student" guard (FOXY-RAWJSON).
+import {
+  coerceStudentFacingStructured,
+  coerceStudentFacingText,
+} from '@alfanumrik/lib/foxy/recover-from-text';
+import type { FoxyResponse } from '@alfanumrik/lib/foxy/schema';
 import {
   extractExpectation,
   writeExpectation,
@@ -183,6 +189,17 @@ export async function handleStreamingFoxyTurn(params: {
   // until a `done` frame with an object payload arrives; when no plan is present
   // the raw upstream done frame is re-emitted verbatim instead (byte-identical).
   let lastDonePayload: Record<string, unknown> | null = null;
+  // FOXY-RAWJSON (2026-08-05): the payload the CLIENT is told to render on the
+  // `done` frame. Until now the upstream done frame was re-emitted VERBATIM, so
+  // the browser rendered whatever the Edge Function claimed while the DB kept
+  // the boundary-validated value — they could disagree, and when upstream's
+  // `structured` was rejected here the browser was left rendering the raw JSON
+  // text deltas it had accumulated. This is set in persistOnDone() to the
+  // boundary-validated payload, falling back to a coercion of the accumulated
+  // text so a JSON-shaped stream ALWAYS resolves to renderable blocks. Null
+  // only for genuine prose (legacy / non-Foxy upstream), where the client's
+  // markdown path is correct.
+  let wireStructured: FoxyResponse | null = null;
   // Synthesize a leading `session` event so the client knows the sessionId
   // up front (Edge Function doesn't know it).
   const encoder = new TextEncoder();
@@ -239,9 +256,21 @@ export async function handleStreamingFoxyTurn(params: {
       },
     );
 
+    // P12 raw-JSON backstop (FOXY-RAWJSON, 2026-08-05). On the streaming path
+    // `accumulatedText` is the concatenation of the raw `text.delta` frames —
+    // i.e. the model's literal JSON when the structured-output contract is in
+    // force. If boundary validation AND text recovery both fail, persisting it
+    // verbatim means the session-resume GET (and the parent portal, and mobile,
+    // which reads `content` with no structured fallback) later re-serve raw
+    // JSON to the student. Byte-identical no-op for non-JSON-shaped text.
     const assistantContent = structured
       ? denormalizeFoxyResponse(structured)
-      : accumulatedText;
+      : coerceStudentFacingText(accumulatedText);
+
+    // What the browser will render. Prefer the boundary-validated payload; if
+    // it was absent/rejected, coerce the accumulated deltas (non-null for any
+    // JSON-shaped stream, null for genuine prose).
+    wireStructured = structured ?? coerceStudentFacingStructured(accumulatedText);
 
     // ── FOX-1 (P12): screen the COMPLETE buffered answer before commit ───────
     // True mid-stream blocking is infeasible (each delta is re-emitted verbatim
@@ -572,15 +601,26 @@ export async function handleStreamingFoxyTurn(params: {
           // streaming client renders the plan-driven action buttons. With no plan
           // (flag OFF / non-teaching / Director failure) the upstream done frame
           // is re-emitted verbatim → byte-identical to today.
-          if (params.teachingPlan && lastDonePayload) {
+          //
+          // FOXY-RAWJSON (2026-08-05): the re-serialization ALSO replaces the
+          // upstream `structured` with `wireStructured` — the payload that
+          // passed OUR boundary validation (or the coercion of the accumulated
+          // deltas). Key order is preserved by the spread, so a frame whose
+          // structured payload was already valid stays byte-identical. When
+          // `wireStructured` is null the key is DELETED rather than sent as
+          // null, because upstream's value (if any) failed boundary validation
+          // and must never be handed to the renderer (P12: no unfiltered LLM
+          // output). The client's own coercion then covers the text bubble.
+          if (lastDonePayload) {
+            const donePayload: Record<string, unknown> = { ...lastDonePayload };
+            if (wireStructured) donePayload.structured = wireStructured;
+            else delete donePayload.structured;
+            if (params.teachingPlan) {
+              donePayload.suggestedButtons = params.teachingPlan.suggestedButtons;
+              donePayload.nextActions = params.teachingPlan.recommendedNextActions;
+            }
             controller.enqueue(
-              encoder.encode(
-                `event: done\ndata: ${JSON.stringify({
-                  ...lastDonePayload,
-                  suggestedButtons: params.teachingPlan.suggestedButtons,
-                  nextActions: params.teachingPlan.recommendedNextActions,
-                })}\n\n`,
-              ),
+              encoder.encode(`event: done\ndata: ${JSON.stringify(donePayload)}\n\n`),
             );
           } else if (bufferedDoneFrame) {
             controller.enqueue(bufferedDoneFrame);

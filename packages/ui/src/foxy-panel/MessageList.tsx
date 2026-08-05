@@ -25,7 +25,7 @@ import Image from 'next/image';
 import ChatBubble, { type LearningActionType } from '@alfanumrik/ui/foxy/ChatBubble';
 import { StructuredRenderBoundary } from '@alfanumrik/ui/foxy/StructuredRenderBoundary';
 import { isFoxyResponse } from '@alfanumrik/lib/foxy/is-foxy-response';
-import { recoverFoxyResponseFromText } from '@alfanumrik/lib/foxy/recover-from-text';
+import { coerceStudentFacingStructured } from '@alfanumrik/lib/foxy/recover-from-text';
 import { denormalizeFoxyResponse } from '@alfanumrik/lib/foxy/denormalize';
 import type { ReactNode } from 'react';
 import type { ChatMessage } from './foxy-types';
@@ -176,12 +176,25 @@ export function MessageList({
         }
 
         // ── Phase 2 renderer choice (structured vs legacy markdown) ──
-        // Recovery branch: legacy persisted rows that have raw ```json ...```
-        // in `content` and NULL `structured` get parsed at render time so the
-        // student sees real blocks instead of a fenced JSON dump.
+        // Recovery branch: rows that have raw ```json ...``` (or bare JSON) in
+        // `content` and NULL `structured` get parsed at render time so the
+        // student sees real blocks instead of a JSON dump.
+        //
+        // FOXY-RAWJSON (2026-08-05, P12 — LAST LINE OF DEFENCE): this is now
+        // `coerceStudentFacingStructured`, not `recoverFoxyResponseFromText`.
+        // The difference is the guarantee: recovery returns null when the JSON
+        // is truncated / illegally escaped / schema-failing, and the old code
+        // treated null as "render the string as markdown" — which, for a
+        // pretty-printed JSON envelope, is an indented markdown CODE BLOCK.
+        // That is exactly what a Grade-6 student saw in production. The
+        // coercion never returns null for JSON-shaped input (it falls through
+        // rescue → "text"-field extraction → a friendly bilingual "my answer
+        // got cut off" message), and still returns null for genuine prose so
+        // the normal markdown path is byte-identical. Whatever any server path
+        // does, raw JSON can no longer reach the DOM.
         const recoveredStructured =
           msg.role === 'tutor' && !msg.structured
-            ? recoverFoxyResponseFromText(msg.content)
+            ? coerceStudentFacingStructured(msg.content)
             : null;
         const effectiveStructured = msg.structured ?? recoveredStructured ?? undefined;
         const useStructured =

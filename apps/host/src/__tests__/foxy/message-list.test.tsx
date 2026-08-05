@@ -63,9 +63,19 @@ vi.mock('@alfanumrik/ui/foxy/ChatBubble', () => {
 vi.mock('@alfanumrik/lib/foxy/is-foxy-response', () => ({
   isFoxyResponse: () => false,
 }));
-vi.mock('@alfanumrik/lib/foxy/recover-from-text', () => ({
-  recoverFoxyResponseFromText: () => null,
-}));
+// Partial mock via importOriginal — deliberately keeps the REAL recovery /
+// coercion helpers. This module used to be hand-stubbed to
+// `recoverFoxyResponseFromText: () => null`, which broke the moment
+// MessageList switched to `coerceStudentFacingStructured` (FOXY-RAWJSON,
+// 2026-08-05): the factory did not list the new export, so every tutor render
+// threw. Spreading the original means a future export cannot break this suite
+// again, AND it makes the safety property below a real assertion: prose must
+// still coerce to `null` so it flows to RichContent byte-identically, and only
+// JSON-shaped text gets coerced. A `() => null` stub would have faked that.
+vi.mock('@alfanumrik/lib/foxy/recover-from-text', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@alfanumrik/lib/foxy/recover-from-text')>();
+  return { ...real };
+});
 vi.mock('@alfanumrik/lib/foxy/denormalize', () => ({
   denormalizeFoxyResponse: (x: unknown) => x,
 }));
@@ -141,6 +151,13 @@ describe('MessageList', () => {
       const bubble = getByTestId('bubble-tutor');
       expect(bubble.textContent).toContain('Photosynthesis is...');
     });
+    // FOXY-RAWJSON safety property (added 2026-08-05, with the real coercion
+    // now in play): plain prose must reach RichContent BYTE-IDENTICALLY. If
+    // `coerceStudentFacingStructured` ever started coercing prose, the text
+    // handed to the legacy renderer would be a denormalized rewrite (or the
+    // bilingual "answer got cut off" fallback) rather than the exact input.
+    // `toBe`, not `toContain`, is the point of this assertion.
+    expect(getByTestId('rich-content').textContent).toBe('Photosynthesis is...');
   });
 
   it('empty messages — renders no bubble and no collapsing button', () => {

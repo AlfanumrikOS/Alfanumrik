@@ -51,7 +51,26 @@ vi.mock('@/app/foxy/_components/DynamicScaffold', () => ({
 // only consulted when `structured` is truthy (short-circuit), so the other cases
 // are unaffected.
 vi.mock('@alfanumrik/lib/foxy/is-foxy-response', () => ({ isFoxyResponse: () => true }));
-vi.mock('@alfanumrik/lib/foxy/recover-from-text', () => ({ recoverFoxyResponseFromText: () => null }));
+// Partial mock (importOriginal) so a future export added to this module cannot
+// break the suite the way `coerceStudentFacingStructured` did on 2026-08-05 —
+// but with BOTH recovery entry points explicitly neutralised to `null`.
+//
+// This is the deliberate exception to "prefer the real module". This suite
+// isolates ONE decision: hasRenderableBody → ChatBubble's `hasBodyContent`. It
+// already forces `isFoxyResponse: () => true` and an identity `denormalize`,
+// so letting the real coercion run would silently reroute the ui_action case
+// through the structured branch and make that test pass for a different reason
+// than its name claims. The real coercion behaviour is covered by
+// foxy/raw-json-leak-guard.test.ts (20 tests) and by the byte-identity
+// assertion in foxy/message-list.test.tsx.
+vi.mock('@alfanumrik/lib/foxy/recover-from-text', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@alfanumrik/lib/foxy/recover-from-text')>();
+  return {
+    ...real,
+    recoverFoxyResponseFromText: () => null,
+    coerceStudentFacingStructured: () => null,
+  };
+});
 vi.mock('@alfanumrik/lib/foxy/denormalize', () => ({ denormalizeFoxyResponse: (x: unknown) => x }));
 vi.mock('@alfanumrik/lib/AuthContext', () => ({ useAuth: () => ({ isHi: false }) }));
 

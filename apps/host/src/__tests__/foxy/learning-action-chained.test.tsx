@@ -250,7 +250,15 @@ vi.mock('@alfanumrik/lib/cognitive-engine', () => ({
 }));
 
 vi.mock('@alfanumrik/lib/foxy/is-foxy-response', () => ({ isFoxyResponse: () => false }));
-vi.mock('@alfanumrik/lib/foxy/recover-from-text', () => ({ recoverFoxyResponseFromText: () => null }));
+// Partial mock via importOriginal — keeps the REAL recovery/coercion helpers.
+// The old `() => null` hand-stub omitted `coerceStudentFacingStructured` and
+// threw on every tutor render once MessageList adopted it (FOXY-RAWJSON,
+// 2026-08-05). Every message in this suite is plain prose, which the real
+// coercion returns `null` for, so the legacy render path is unchanged.
+vi.mock('@alfanumrik/lib/foxy/recover-from-text', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@alfanumrik/lib/foxy/recover-from-text')>();
+  return { ...real };
+});
 vi.mock('@alfanumrik/lib/foxy/denormalize', () => ({ denormalizeFoxyResponse: (x: unknown) => x }));
 vi.mock('@alfanumrik/lib/foxy/starter-intents', () => ({}));
 

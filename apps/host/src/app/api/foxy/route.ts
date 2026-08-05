@@ -107,6 +107,9 @@ import {
 import { buildTenantOverrideSection } from '@alfanumrik/lib/ai/prompts/tenant-overrides';
 import { type FoxyResponse } from '@alfanumrik/lib/foxy/schema';
 import { denormalizeFoxyResponse } from '@alfanumrik/lib/foxy/denormalize';
+// P12 unconditional "never raw JSON to a student" guard (FOXY-RAWJSON,
+// 2026-08-05). Byte-identical no-op on prose; only fires on JSON-shaped text.
+import { coerceStudentFacingText } from '@alfanumrik/lib/foxy/recover-from-text';
 import { stripFakeQuizClaim } from '@alfanumrik/lib/foxy/anti-fake-quiz-claim';
 import {
   gateQuizMeMcq,
@@ -2811,9 +2814,16 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
   // denormalized rendering (title + blocks → flat string with `$$ ... $$`
   // wrappers around math). When absent (legacy/kill-switch/malformed), keep
   // the existing behavior of storing the raw `answer` string.
+  // FOXY-RAWJSON (2026-08-05, P12): when `structured` is null the upstream
+  // `answer` is stored verbatim. If that answer is itself the model's raw JSON
+  // envelope (upstream parse/validation drift, or a non-structured upstream
+  // that still emitted JSON), persisting it means the chat bubble, the
+  // session-resume GET, mobile (which reads only the plain string) and the
+  // parent portal all show raw JSON. `coerceStudentFacingText` is byte-identical
+  // for prose and only fires on JSON-shaped input.
   const assistantContent = structured
     ? denormalizeFoxyResponse(structured)
-    : grounded.answer;
+    : coerceStudentFacingText(grounded.answer);
 
   // ── FOX-1 (P12): deterministic output content backstop ───────────────────
   // EVERY student-facing grounded answer passes through the deterministic
@@ -3395,7 +3405,15 @@ async function handleFoxyPost(request: NextRequest): Promise<Response> {
     //
     // For a rejected/failed quiz_me, `quizMeWireText` is the denormalized
     // graceful-fallback text so string-only clients also avoid the broken MCQ.
-    response: quizMeWireText ?? grounded.answer,
+    //
+    // FOXY-RAWJSON (2026-08-05, P12): `assistantContent` is the SAME text we
+    // persisted, already passed through the raw-JSON coercion. The Flutter app
+    // (mobile/lib/data/repositories/chat_repository.dart) reads ONLY this
+    // string — it has no `structured` fallback — so a raw JSON `answer` here
+    // reached mobile students verbatim. Identical to the previous
+    // `grounded.answer` on every healthy turn (structured present ⇒ upstream
+    // already denormalized; structured absent ⇒ coercion is a prose no-op).
+    response: quizMeWireText ?? assistantContent,
     sessionId: resolvedSessionId,
     quotaRemaining: remaining,
     tokensUsed: grounded.meta.tokens_used,
