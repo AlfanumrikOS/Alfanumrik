@@ -1,33 +1,38 @@
 'use client';
 
 /**
- * Parent progress page (K8). Replaces the 15-line legacy redirect stub with a
- * real weekly-highlights + monthly-synthesis surface. Reuses:
+ * ProgressPanel — the surface formerly at `/parent/progress` (K8: weekly
+ * highlights + monthly synthesis).
+ *
+ * P10 FOLD-IN (2026-08-05): the standalone `/parent/progress` route was
+ * deleted and this component was folded into `/parent/reports` as the third
+ * viewMode ('progress', deep-link `?tab=progress`). Mirrors the Phase 1
+ * safeguarding-queues + Phase 5 leadership-dashboard fold-ins documented in
+ * `docs/runbooks/*-embed-rollout.md`. The host page dynamic-imports this
+ * module (`ssr:false`, `null` loading) so first-load cost is unchanged.
+ *
+ * Reuses:
  *   - useParentChildScope (shared hook — same authenticated child scoping as
  *     parent/reports/page.tsx)
  *   - parent-portal `get_child_dashboard` (weekly viewMode)
  *   - /api/synthesis/parent-share + existing ParentShareCard
  *   - ConversationPromptsCard for the "Ask your child" surface
  *
- * P7 bilingual. P13 no PII in logs. Dynamic-imported chunks so the base page
- * stays under CAP_PAGE_KB.
+ * P7 bilingual. P13 no PII in logs.
  */
 
-import { Suspense, useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { usePortalAction } from '@alfanumrik/lib/usePortalFetch';
 import { useParentChildScope } from '@alfanumrik/lib/parent/use-parent-child-scope';
 import { SectionErrorBoundary } from '@alfanumrik/ui/SectionErrorBoundary';
-import {
-  readParentChildId,
-} from '../_components/parent-child-scope';
+import { readParentChildId } from '../_components/parent-child-scope';
 
-// P10: dynamic-imported (ssr:false, null loading) — both cards are conditional
-// (ConversationPromptsCard mounts only when the weekly report carries prompts;
-// ParentShareCard mounts only when a monthly synthesis exists), so lazy load
-// is behaviorally invisible.
+// Both cards are conditional (ConversationPromptsCard mounts only when the
+// weekly report carries prompts; ParentShareCard mounts only when a monthly
+// synthesis exists), so lazy load is behaviorally invisible.
 const ConversationPromptsCard = dynamic(
   () => import('@alfanumrik/ui/parent/ConversationPromptsCard').then((m) => m.ConversationPromptsCard),
   { ssr: false, loading: () => null },
@@ -54,7 +59,7 @@ interface MonthlySynthesisShare {
   parent_share_sent_at: string | null;
 }
 
-function ParentProgressInner() {
+export default function ProgressPanel() {
   const auth = useAuth();
   const isHi = auth.isHi ?? false;
   const searchParams = useSearchParams();
@@ -121,19 +126,19 @@ function ParentProgressInner() {
 
   if (checking || auth.isLoading) {
     return (
-      <main className="max-w-3xl mx-auto p-4">
+      <div className="max-w-3xl mx-auto p-4">
         <div
           className="h-32 rounded-2xl animate-pulse"
           style={{ background: 'var(--surface-2)' }}
           aria-hidden="true"
         />
-      </main>
+      </div>
     );
   }
 
   if (scopeError || !student) {
     return (
-      <main className="max-w-3xl mx-auto p-4 text-center">
+      <div className="max-w-3xl mx-auto p-4 text-center">
         <p className="text-sm" style={{ color: 'var(--danger, #DC2626)' }}>
           {scopeError || t(isHi, 'No child selected.', 'कोई बच्चा चयनित नहीं।')}
         </p>
@@ -145,19 +150,19 @@ function ParentProgressInner() {
         >
           {t(isHi, 'Retry', 'पुनः प्रयास')}
         </button>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="max-w-3xl mx-auto p-4 flex flex-col gap-4">
+    <div className="max-w-3xl mx-auto p-4 flex flex-col gap-4">
       <header>
-        <h1
-          className="text-2xl font-extrabold m-0 font-heading"
+        <h2
+          className="text-xl font-extrabold m-0 font-heading"
           style={{ color: 'var(--text-1)' }}
         >
           {t(isHi, `${student.name}'s progress`, `${student.name} की प्रगति`)}
-        </h1>
+        </h2>
         <p className="text-sm mt-1 m-0" style={{ color: 'var(--text-3)' }}>
           {t(isHi, 'This week and this month, at a glance.', 'इस सप्ताह और इस महीने का सारांश।')}
         </p>
@@ -172,12 +177,12 @@ function ParentProgressInner() {
             boxShadow: 'var(--shadow-sm)',
           }}
         >
-          <h2
+          <h3
             className="text-base font-bold m-0 mb-2 font-heading"
             style={{ color: 'var(--text-1)' }}
           >
             {t(isHi, 'This week', 'इस सप्ताह')}
-          </h2>
+          </h3>
           {weeklyLoading ? (
             <div
               className="h-20 rounded-lg animate-pulse"
@@ -260,14 +265,6 @@ function ParentProgressInner() {
           {synthesisErr}
         </p>
       )}
-    </main>
-  );
-}
-
-export default function ParentProgressPage() {
-  return (
-    <Suspense fallback={null}>
-      <ParentProgressInner />
-    </Suspense>
+    </div>
   );
 }

@@ -142,7 +142,7 @@ Engine division of labor:
 | K5 | Draft assignments / worksheets | PART | bulk-question-gen + export-report EFs exist | Teacher draft flow reusing both (no new generator); oracle-gated output (REG-54 pattern) |
 | K6 | Fast-progressing student highlights | MISS | none | Small addition to get_class_overview (positive deltas from facade) |
 | K7 | Teacher approve/override Foxy; inputs = governed evidence | MISS | Only score override + alert resolve exist; autonomous loops have no approval gate | Approve/override on interventions (K4 lane); teacher.override event kind; override feeds planner tier 2 (D11); autonomy tiers documented per loop |
-| K8 | Parents: everyday language, conversational prompts, no surveillance | LIVE mostly | Weekly LLM report (plain-language prompt verified) + monthly synthesis w/ fabrication oracle + WhatsApp share | ADD conversation_prompts[] field to weekly report JSON (dinner prompts); surface reports in-app: replace 15-line /parent/progress stub; NO transcript exposure (stays) |
+| K8 | Parents: everyday language, conversational prompts, no surveillance | LIVE mostly | Weekly LLM report (plain-language prompt verified) + monthly synthesis w/ fabrication oracle + WhatsApp share | ADD conversation_prompts[] field to weekly report JSON (dinner prompts); surface reports in-app at /parent/reports?tab=progress (folded in from the retired /parent/progress route, 2026-08-05); NO transcript exposure (stays) |
 | K9 | Leadership: competency growth, retention, coverage, safety incidents; PARAKH-style | PART | School Pulse (flag OFF); nep-compliance EF; subject_content_readiness_daily | Leadership dashboard page assembling: facade aggregates (growth/retention), syllabus coverage views (exist), safety-incident counts from safeguarding_escalations (counts only). Reuses school-admin surface |
 
 ### 1.7 Spec §7 — Technical Restructuring
@@ -225,7 +225,7 @@ Execution model: within each phase, DB + BE + MW + FE + MOB workstreams run IN P
 |---|---|---|---|---|---|
 | Teacher clusters + evidence (K2,K3,K6) | — | get_misconception_clusters + evidence payloads in teacher-dashboard EF | inherit | CommandCenter cluster panel + evidence drawer | — |
 | Approve/override (K4,K7) | teacher.override event kind | wire deploy_intervention; override feeds planner | — | approval lane UI | — |
-| Parent (K8) | — | conversation_prompts[] in weekly report JSON | — | /parent/progress real page surfacing existing reports | parity |
+| Parent (K8) | — | conversation_prompts[] in weekly report JSON | — | /parent/reports?tab=progress (folded in from /parent/progress, 2026-08-05) surfacing existing reports | parity |
 | Leadership (K9) | — | counts-only safety metrics; facade aggregates | — | leadership dashboard on school-admin surface | — |
 | Play + SEL (S1.5,S1.6,U5) | mission defs reuse dive tables | mission framework on dive/challenge substrate; teach-back activity | — | mission UI; CASEL reflection prompts | later wave |
 | Leaderboard bands (U10) | — | percentile calc in leaderboard routes | — | bands display replaces absolute rank | parity |

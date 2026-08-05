@@ -3299,7 +3299,7 @@
     },
     {
       "reqId": "K8",
-      "title": "Parents — ADD conversation_prompts[] to weekly report JSON (dinner prompts); surface reports in-app replacing the /parent/progress stub; NO transcript exposure (stays)",
+      "title": "Parents — ADD conversation_prompts[] to weekly report JSON (dinner prompts); surface reports in-app at /parent/reports?tab=progress (folded in from the retired /parent/progress route, 2026-08-05); NO transcript exposure (stays)",
       "specSection": "§1.6",
       "phase": "5",
       "status": "verified",
@@ -3310,7 +3310,7 @@
         ],
         "middleware": [],
         "frontend": [
-          "apps/host/src/app/parent/progress/page.tsx"
+          "apps/host/src/app/parent/reports/ProgressPanel.tsx"
         ],
         "mobile": []
       },

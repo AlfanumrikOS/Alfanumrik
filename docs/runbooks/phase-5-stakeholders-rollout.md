@@ -106,8 +106,11 @@ back-pointer — indicates the publish action is being bypassed.
 
 **What ships:** `parent-report-generator` Edge Function's LLM prompt is
 extended to emit a `conversation_prompts[]` array (dinner-prompts style)
-inside the weekly report JSON. Frontend `/parent/progress/page.tsx` replaces
-its prior stub with in-app rendering via `ConversationPromptsCard.tsx`. A
+inside the weekly report JSON. Frontend renders it at
+`/parent/reports?tab=progress` via the `ProgressPanel.tsx` fold-in (2026-08-05
+P10 fold-in: the standalone `/parent/progress` route was deleted and its
+surface moved into `/parent/reports` as the third viewMode) using
+`ConversationPromptsCard.tsx`. A
 zod schema validates the payload; on validation failure the deterministic
 bilingual template fallback (already live for the parent summary body per
 REG-302) provides safe copy so the render surface can never show raw model
@@ -119,7 +122,7 @@ malformed prompts, the fallback kicks in and the render is safe; still
 alert on fallback trigger rate >10%.
 
 **Monitor:**
-- Weekly `conversation_prompts` render rate on `/parent/progress` — expected
+- Weekly `conversation_prompts` render rate on `/parent/reports?tab=progress` — expected
   non-zero within one weekly cycle post-merge.
 - Zod validation failure rate for the prompts field — steady-state should be
   <2%. Sustained >10% = raise with ai-engineer to retune the prompt.
