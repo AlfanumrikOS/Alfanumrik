@@ -15,6 +15,9 @@ import { Card, Button, ProgressBar, LoadingFoxy } from '@alfanumrik/ui/ui';
 import { useAllowedSubjects } from '@alfanumrik/lib/useAllowedSubjects';
 import { authHeader } from '@alfanumrik/lib/api/auth-header';
 import QuizSetup from '@alfanumrik/ui/quiz/QuizSetup';
+// Foxy North-Star Phase 3 (L5/E5) — 5-rung hint ladder + prereq warm-up card.
+import HintLadder from '@alfanumrik/ui/quiz/HintLadder';
+import PrereqSuggestion from '@alfanumrik/ui/quiz/PrereqSuggestion';
 import FeedbackOverlay from '@alfanumrik/ui/quiz/FeedbackOverlay';
 // D6 (Foxy North-Star Phase 2) — sampled, non-blocking 1-tap confidence
 // prompt shown AFTER the answer is confirmed (P3 timing untouched).
@@ -414,6 +417,11 @@ export default function QuizPage() {
   const [initialMode, setInitialMode] = useState<QuizMode>('cognitive');
   const [initialCount, setInitialCount] = useState<number>(10);
   const [initialChapter, setInitialChapter] = useState<number | null>(null);
+  // E5: live (subject, chapter) from QuizSetup — feeds PrereqSuggestion above.
+  const [setupSelection, setSetupSelection] = useState<{ subject: string | null; chapter: number | null }>({
+    subject: null,
+    chapter: null,
+  });
   // Adaptive deep-links emitted by Daily Rhythm / adaptive surfaces:
   //   /quiz?qid=<question_bank id> → start a quiz with that question first
   //   /quiz?mode=srs               → review quiz sourced from due SRS cards
@@ -1030,7 +1038,7 @@ export default function QuizPage() {
       // already-original (correct fallback semantics).
       shuffle_map: null,
       // F8: hint depth captured AT ANSWER TIME (0-3). Server contract field.
-      hint_level: Math.min(Math.max(hintLevel, 0), 3),
+      hint_level: Math.min(Math.max(hintLevel, 0), 5),
       telemetry: {
         latency_ms: questionTimer * 1000,
         changed_answers_count: changedAnswersCount,
@@ -1242,7 +1250,7 @@ export default function QuizPage() {
       // selected_option (-1) is already in original space.
       shuffle_map: null,
       // F8: hint depth captured AT ANSWER TIME (0-3). Server contract field.
-      hint_level: Math.min(Math.max(hintLevel, 0), 3),
+      hint_level: Math.min(Math.max(hintLevel, 0), 5),
       telemetry: {
         latency_ms: timeSpent * 1000,
         changed_answers_count: 0,
@@ -1285,7 +1293,7 @@ export default function QuizPage() {
       // P1 server-side shuffle fix: skipped written answers carry no shuffle.
       shuffle_map: null,
       // F8: hint depth captured AT ANSWER (skip) TIME (0-3).
-      hint_level: Math.min(Math.max(hintLevel, 0), 3),
+      hint_level: Math.min(Math.max(hintLevel, 0), 5),
       telemetry: {
         latency_ms: 0,
         changed_answers_count: 0,
@@ -1339,7 +1347,7 @@ export default function QuizPage() {
               time_spent: questionTimer,
               shuffle_map: null,
               // F8: hint depth captured at answer time (0-3).
-              hint_level: Math.min(Math.max(hintLevel, 0), 3),
+              hint_level: Math.min(Math.max(hintLevel, 0), 5),
               telemetry: {
                 latency_ms: questionTimer * 1000,
                 changed_answers_count: changedAnswersCount,
@@ -1552,7 +1560,7 @@ export default function QuizPage() {
               time_spent: questionTimer,
               shuffle_map: null,
               // F8: hint depth captured at answer time (0-3).
-              hint_level: Math.min(Math.max(hintLevel, 0), 3),
+              hint_level: Math.min(Math.max(hintLevel, 0), 5),
             });
           }
         }
@@ -1718,17 +1726,43 @@ export default function QuizPage() {
   // ═══ SUBJECT SELECTION SCREEN ═══
   if (screen === 'select') {
     return (
-      <QuizSetup
-        isHi={isHi}
-        initialSubject={initialSubject}
-        initialMode={initialMode}
-        initialCount={initialCount}
-        initialChapter={initialChapter}
-        loading={loading}
-        studentGrade={student?.grade ?? ''}
-        onStart={startQuiz}
-        onGoBack={() => router.push(experienceV3 ? '/today' : '/dashboard')}
-      />
+      <div>
+        {/* Foxy North-Star Phase 3 (E5) — Prerequisite warm-up suggestion.
+            Fetches /api/learn/prereq-check; renders nothing when the flag is
+            off (route returns null) or when prereqs are met. Warm-up switches
+            the chapter and immediately starts the prereq quiz; dismiss lets
+            the student continue with the originally-picked chapter. */}
+        <PrereqSuggestion
+          isHi={isHi}
+          subject={setupSelection.subject}
+          grade={student?.grade ?? ''}
+          chapter={setupSelection.chapter}
+          onWarmUp={(prereqChapter, s) => {
+            setInitialChapter(prereqChapter);
+            void startQuiz({
+              subject: setupSelection.subject ?? initialSubject ?? undefined,
+              chapterNumber: prereqChapter,
+              quizMode,
+              questionCount,
+            });
+            // Analytics is safe to omit here — the destination click is the
+            // authoritative signal; the route redirects to /quiz already.
+            void s;
+          }}
+        />
+        <QuizSetup
+          isHi={isHi}
+          initialSubject={initialSubject}
+          initialMode={initialMode}
+          initialCount={initialCount}
+          initialChapter={initialChapter}
+          loading={loading}
+          studentGrade={student?.grade ?? ''}
+          onStart={startQuiz}
+          onGoBack={() => router.push(experienceV3 ? '/today' : '/dashboard')}
+          onSelectionChange={setSetupSelection}
+        />
+      </div>
     );
   }
 
@@ -2092,36 +2126,45 @@ export default function QuizPage() {
                 </div>
               )}
 
-              {/* Progressive Hints */}
-              {!isAnswered && q.hint && (
-                <div className="space-y-2">
-                  {hintLevel >= 1 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(245,166,35,0.08)', border: '1px solid rgba(245,166,35,0.2)', color: 'var(--text-2)' }}>
-                      💡 {q.hint}
-                    </div>
-                  )}
-                  {hintLevel >= 2 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.15)', color: 'var(--text-2)' }}>
-                      🔍 {q.hint} {isHi ? 'अंतर्निहित अवधारणा और सूत्र के बारे में सोचो।' : 'Think about the underlying concept and formula.'}
-                    </div>
-                  )}
-                  {hintLevel >= 3 && (
-                    <div className="rounded-xl p-3 text-sm" style={{ background: 'rgba(22,163,74,0.06)', border: '1px solid rgba(22,163,74,0.15)', color: 'var(--text-2)' }}>
-                      🎯 {isHi ? 'उत्तर से संबंधित:' : 'The answer involves:'} {q.explanation?.split('.')[0] || (isHi ? 'व्याख्या उपलब्ध नहीं' : 'No explanation available')}
-                    </div>
-                  )}
-                </div>
+              {/* Foxy North-Star Phase 3 (L5) — 5-rung Hint Ladder.
+                  Replaces the legacy 3-tier padded hints (rung state machine
+                  + P3 lock live in @alfanumrik/lib/learn/hint-ladder.ts).
+                  Rungs 2-5 unlock only after a recorded wrong answer, which
+                  in legacy path is `isAnswered && !isV2Question && !isCorrect`
+                  with `originalPicked` as the distractor index. In v2 mode
+                  the client doesn't know correctness until session-end, so
+                  wrongAttempt stays null and only rung 1 is available. */}
+              {q.id && (
+                <HintLadder
+                  isHi={isHi}
+                  question={{
+                    id: q.id,
+                    hint: q.hint,
+                    explanation: q.explanation,
+                    explanation_hi: q.explanation_hi,
+                  }}
+                  wrongAttempt={
+                    isAnswered && !isV2Question && !isCorrect && originalPicked !== null
+                      ? { distractorIndex: originalPicked }
+                      : null
+                  }
+                  onHintLevelChange={(lvl) => setHintLevel(lvl)}
+                  onRequestEquivalent={() => {
+                    // "Equivalent question" — additive, non-blocking: advance
+                    // past the current question. The pinned/pool assembler
+                    // owns question replacement; a proper foxy_served_items
+                    // twin request is a follow-up (see report handoff).
+                    void nextQuestion();
+                  }}
+                />
               )}
 
               {/* Action Buttons */}
               <div className="flex gap-3 mt-auto pb-2">
                 {!isAnswered ? (
                   <>
-                    {q.hint && selectedOption === null && hintLevel < 3 && (
-                      <Button variant="ghost" onClick={() => setHintLevel(prev => Math.min(prev + 1, 3))} size="sm">
-                        {hintLevel === 0 ? (isHi ? '💡 संकेत' : '💡 Hint') : `💡 ${hintLevel}/3`}
-                      </Button>
-                    )}
+                    {/* Legacy inline hint button removed — HintLadder above
+                        owns the reveal UX end-to-end (rungs 1-5). */}
                     <Button
                       fullWidth
                       onClick={confirmAnswer}

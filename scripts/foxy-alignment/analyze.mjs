@@ -163,9 +163,17 @@ const DUP_SIGNATURES = [
   {
     name: 'SM-2 update',
     re: /function\s+sm2Update|applySm2/,
+    // Match semantics: the regex runs against FILE CONTENT (not symbol defs),
+    // so a mere `export { applySm2 } from …` re-export or an import in a
+    // caller matches identically to a definition. That is why the grade
+    // endpoint's helpers.ts (re-export) and route.ts (importer) must stay
+    // allowlisted even though the one true implementation moved to
+    // packages/lib. Test files never match (walk() skips __tests__/ and
+    // *.test.* — see CODE_EXTS/EXCLUDE_DIRS above).
     allow: [
-      'apps/host/src/app/api/learner/review/grade/helpers.ts',   // [canonical] live SM-2 writer; F10 freezes params = SQL values
-      'apps/host/src/app/api/learner/review/grade/route.ts',     // [canonical] caller of the helper above
+      'packages/lib/src/learn/sm2.ts',                           // [canonical] THE TS SM-2 (Phase 3 E4/F10); params frozen = SQL RPC values
+      'apps/host/src/app/api/learner/review/grade/helpers.ts',   // [re-export] 2-line SM-2 re-export of the canonical module (route glue otherwise)
+      'apps/host/src/app/api/learner/review/grade/route.ts',     // [caller] imports applySm2 via the helpers re-export
       // 2026-08-05 (post-consolidation, Phase 2): cognitive-engine's divergent
       // SM-2 impl (sm2Update) was DELETED in the E1/E4 consolidation — its
       // [debt→E4] entry removed in the same PR (ratchet locked).

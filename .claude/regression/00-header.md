@@ -6,8 +6,65 @@ user approval.
 
 Status key: `E` = exists and passing | `P` = partial | `M` = missing.
 
-**Total catalog: 353 entries (target: 35 — TARGET EXCEEDED).**
-Latest: REG-351..REG-353 (2026-08-05, Foxy North-Star Phase 2 Canonical
+**Total catalog: 358 entries (target: 35 — TARGET EXCEEDED).**
+Latest: REG-354..REG-358 (2026-08-05, Foxy North-Star Phase 3 Adaptive +
+Check loop batch — five pins across `03-quiz-integrity.md` (REG-354, 355,
+356, 358) and `02-foxy-ai.md` (REG-357) covering the ~50-file uncommitted
+Phase 3 change set on branch `Alfanumrik/foxy-system-spec-22f565`.
+REG-354 XP capped-award contract [E]: `award_xp_capped` RPC in migration
+`20260809000300` is SECURITY DEFINER + service_role-only EXECUTE (browser
+callers cannot invoke); per-source idempotency via `p_reference_id` on the
+partial-unique `xp_transactions_reference_id_uniq` (replay returns
+`effective_xp: 0`); IST day boundary anchor (`date_trunc('day', now() AT
+TIME ZONE 'Asia/Kolkata')` — extends REG-318's mixed-anchor fix); the three
+Phase-3 lane amounts (`retention_award=6`, `remediation_recovery_award=15`,
+`thoughtful_question_award=5`) sum to a daily maximum of 71 XP — <<< the
+200 XP `quiz_daily_cap`; `awardXpCapped` helper (`packages/lib/src/xp-award.ts`)
+never throws / rejects / defines an XP number (all amounts + caps come from
+XP_RULES at the call site).
+REG-355 hint-ladder P3 lock [E]: `nextRung()` returns
+`{ok:false, reason:'locked_pre_attempt'}` when pre-attempt — the P3 lock
+lives IN the state machine, no UI loop can bypass; rung 5 is the HONEST
+skip-only descriptor (`source:'skip', kind:'skip'`) with same-topic
+evidential twin deferred (TODO(L5) in module header, plan-tracker E5/L5);
+hint_level widened 0..5 via migration `20260809000400` with USING-clamp
+preserving existing rows; `HintLevel` type = `0|1|2|3|4|5`; unhinted
+XP bonus keys off `hint_level === 0`.
+REG-356 transfer-evidence direction & registry parity (D12) [E]: canonical
+RPC call inverts pure-module naming (`p_topic_id = rec.fromTopicId` = SOURCE,
+`p_from_topic_id = rec.topicId` = TARGET — mastery lands on the already-solid
+prerequisite); bus payload uses `sourceTopicId`/`targetTopicId` role-anchored
+keys; BOTH event registries (Next `packages/lib/src/state/events/registry.ts`
++ Deno `supabase/functions/_shared/state-runtime/events-registry.ts`) declare
+that shape and only that shape; a new repo-wide static test
+(`apps/host/src/__tests__/regressions/phase3-transfer-event-payload-shape.test.ts`,
+5 pins) confirms NO non-test source file pairs the `'learner.transfer_evidence'`
+kind literal with a payload literal carrying the pre-fix keys — closes the
+assessment "no other consumer besides journey/edge registry depended on old
+sourceTopicId names" concern.
+REG-357 IRT shadow serving-order-unchanged + telemetry P13 [E in
+02-foxy-ai.md]: `select_questions_by_irt_info_v2` (migration `20260809000100`)
+is a shadow-only extension — return set + ORDER BY identical to v1, so
+quiz-question serving order is unchanged whether callers read v1 or v2;
+`ff_irt_shadow_v1` (seed `20260809000000`, default OFF/0%) gates ONLY
+telemetry emission, not selection; `estimateTheta` (`packages/lib/src/irt/
+estimate-theta.ts`) is a pure TS mirror of the Newton-Raphson for
+shadow-metric computation; `/api/telemetry/irt-shadow` payload carries
+UUIDs + numbers + a short `served_via` enum only (P13). Honest gap: the
+20260809000100 migration has never executed against real Postgres this
+session.
+REG-358 SRS single predicate [E]: `packages/lib/src/learn/srs-predicate.ts`
+freezes `SRS_DUE_PREDICATE_DESCRIPTOR` (`is_active=true`,
+`source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <=
+today`, `ORDER BY next_review_date ASC`, defaultLimit 50, hardLimit 100)
+and exposes `buildSrsDueQuery`, called by BOTH the client-side deep-link
+consumer (`srs-quiz-review.ts` → `fetchSrsDueQuizCards` →
+`selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND
+the `DailyRhythmQueue` count — the dashboard SRS lane COUNT and the
+`/quiz?mode=srs` CONTENT cannot disagree because they resolve through the
+same predicate object; closes the drift REG-345 pinned at the fetcher level
+one layer deeper at the predicate level.)
+Prior: REG-351..REG-353 (2026-08-05, Foxy North-Star Phase 2 Canonical
 Learner Model batch — three pins in `03-quiz-integrity.md` covering the
 ~70-file uncommitted Phase 2 change set on branch
 `Alfanumrik/foxy-system-spec-22f565`.

@@ -28,6 +28,7 @@
     "foxy:analyze": "node scripts/foxy-alignment/analyze.mjs",
     "gen:openapi": "node scripts/gen-openapi.mjs",
     "gen:openapi:check": "node scripts/gen-openapi.mjs --check",
-    "eval:teacher:harness": "npm run eval:teacher:harness -w apps/host --"
+    "eval:teacher:harness": "npm run eval:teacher:harness -w apps/host --",
+    "eval:irt:harness": "npx tsx eval/irt/harness/cli.ts"
   }
 }

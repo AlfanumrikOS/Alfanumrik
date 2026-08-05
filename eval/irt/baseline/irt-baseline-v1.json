@@ -1,0 +1,12 @@
+{
+  "$schema_note": "IRT shadow-eval baseline (Phase 3 E2). Consumed by eval/irt/harness/cli.ts via the IrtBaseline shape in run-eval.ts: { version, metrics_placeholder, metrics }. `metrics` holds the last reviewed run's headline values so subsequent runs can report drift (baselineDrift in the report artifact). The PASS/FAIL gates themselves live in eval/irt/harness/verdict.ts (MIN_CALIBRATED_RESPONSES=500, MIN_STUDENTS=50, deltaAUC >= +0.03, deltaBrier <= -0.005) and are NOT read from this file — the baseline is informational drift context, not the gate.",
+  "placeholder_note": "PLACEHOLDER — populated by a reviewed full run of `npm run eval:irt:harness` (repo root) once ff_irt_shadow_v1 telemetry and 2PL calibration have accumulated. While metrics_placeholder=true, baselineDrift fields in the report are null and MUST NOT be interpreted. A baseline refresh is an explicit, reviewed action — never automatic.",
+  "version": "v1",
+  "metrics_placeholder": true,
+  "metrics": {
+    "deltaAUC": null,
+    "deltaBrier": null,
+    "medianSpearman": null,
+    "medianTop10Overlap": null
+  }
+}

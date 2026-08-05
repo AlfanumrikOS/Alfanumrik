@@ -151,7 +151,7 @@ export const LearnerLearningActionSchema = EventBaseSchema.extend({
     messageId: uuidLike(),
     sessionId: uuidLike(),
     conceptId: uuidLike().nullable().optional(),
-    actionType: z.enum(['got_it', 'explain_simpler', 'show_example', 'quiz_me', 'save']),
+    actionType: z.enum(['got_it', 'explain_simpler', 'show_example', 'quiz_me', 'save', 'give_hint', 'let_me_try']),
     subjectCode: z.string().nullable(),
     chapterNumber: z.number().int().nonnegative().nullable(),
   }),
@@ -242,6 +242,21 @@ export const LearnerNextActionResolvedSchema = EventBaseSchema.extend({
     actionPayload: z.record(z.string(), z.unknown()),
     generatedAt:  isoDatetime(),
     expiresAt:    isoDatetime(),
+  }),
+})
+
+// D12 transfer evidence (Foxy North-Star Phase 3) — produced by the
+// build-twin-snapshots transfer step (gated ff_prereq_gating_v1).
+// Observability-only; canonical write is the record_transfer_evidence RPC.
+// P13: UUIDs + a subject code + a bounded number only.
+export const LearnerTransferEvidenceSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.transfer_evidence'),
+  payload: z.object({
+    studentId: uuidLike(),
+    sourceTopicId: uuidLike(),
+    targetTopicId: uuidLike(),
+    subjectCode: z.string().max(64).nullable(),
+    sourceMastery: z.number().min(0).max(1),
   }),
 })
 
@@ -666,6 +681,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerStruggleObservedSchema,
   LearnerTurnClassifiedSchema,
   LearnerNextActionResolvedSchema,
+  LearnerTransferEvidenceSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
@@ -718,6 +734,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.struggle_observed',
   'learner.turn_classified',
   'learner.next_action_resolved',
+  'learner.transfer_evidence',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',
   'parent.linked_to_learner',

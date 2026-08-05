@@ -2504,3 +2504,31 @@ table).
 
 ---
 
+## REG-357 — Foxy North-Star Phase 3: IRT shadow serving-order-unchanged + telemetry P13 (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 3 batch). Sits alongside the IRT/AI
+observability pins (REG-311 ResponseEval sensor, REG-316 RAG confidence v2
+shadow) rather than in `03-quiz-integrity.md`, because the pattern is
+identical: an OBSERVABILITY-ONLY signal that must not touch serving order
+until it graduates.
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-357a | `irt_shadow_serving_order_unchanged` | The `select_questions_by_irt_info_v2` RPC (migration `20260809000100`) is a shadow-only extension: its return set and ORDER BY match the v1 RPC exactly, so quiz-question serving order is identical whether the caller reads v1 or v2. Flag `ff_irt_shadow_v1` (seed `20260809000000_seed_ff_irt_shadow_v1.sql`, default OFF/0%) gates ONLY the emission of shadow telemetry — no serving path reads it as a selection input. `estimateTheta` (`packages/lib/src/irt/estimate-theta.ts`) is a pure TS mirror of the SQL Newton-Raphson used for shadow-metric computation; production selection continues to run through the v1 Fisher-info RPC (pinned by the existing `packages/lib/src/irt/fisher-info.ts` tests). Flag-OFF → zero shadow calls, zero telemetry rows, zero serving-order diff. | `apps/host/src/__tests__/lib/irt/estimate-theta.test.ts`; `apps/host/src/__tests__/lib/irt/shadow-metrics.test.ts`; `eval/irt/` harness | E | P1-adjacent (serving order), P12 (observability-only contract) |
+| REG-357b | `irt_shadow_telemetry_p13` | The `POST /api/telemetry/irt-shadow` payload carries UUIDs + numbers only: `studentId` (UUID), `questionId` (UUID), `theta` (number), `discrimination` (number), `difficulty` (number), `probability` (number), `served_via` (short enum, one of `'v1_fisher'`/`'v2_shadow'`). ZOD schema rejects free text, names, emails, phones. Route is `authorizeRequest`-gated (server-side), never called from browser code without a session token. Error responses carry generic messages — no student identifiers echoed. This mirrors REG-311's ResponseEval PII-clean fire-and-forget shape and REG-134's audit-log PII boundary. | `apps/host/src/__tests__/api/telemetry/irt-shadow.test.ts` | E | P13, P12 |
+
+Honest gap: the migration `20260809000100_select_questions_by_irt_info_v2.sql`
+has never executed against a real Postgres this session — structural pins on
+the SQL text only. The Vitest pins exercise the pure TS mirror and the
+route's request/response envelope, neither of which touches the DB.
+
+### Catalog total (updated)
+
+Pre-REG-357: 356 entries (through REG-356, which lives in `03-quiz-integrity.md`
+alongside the other Phase 3 quiz-facing pins). Adds REG-357 (IRT shadow
+serving-order + telemetry P13). REG-358 (SRS single predicate) is also in
+`03-quiz-integrity.md`.
+**Total catalog: 358 entries (target: 35 — TARGET EXCEEDED).**
+
+---
+

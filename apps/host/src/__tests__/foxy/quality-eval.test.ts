@@ -90,6 +90,7 @@ describe('parseJudgeJson', () => {
     scaffold_fidelity: 80,
     age_appropriateness: 95,
     cbse_scope: 100,
+    question_depth: 55,
     notes: 'scaffold fidelity is the lowest because the answer skipped the leading sub-question',
   });
 
@@ -98,6 +99,7 @@ describe('parseJudgeJson', () => {
     expect(out).not.toBeNull();
     expect(out!.accuracy).toBe(90);
     expect(out!.scaffold_fidelity).toBe(80);
+    expect(out!.question_depth).toBe(55);
     expect(out!.notes).toMatch(/scaffold fidelity/);
   });
 
@@ -130,7 +132,19 @@ describe('parseJudgeJson', () => {
       accuracy: 90,
       scaffold_fidelity: 80,
       age_appropriateness: 95,
+      question_depth: 40,
       // cbse_scope missing
+    });
+    expect(parseJudgeJson(partial)).toBeNull();
+  });
+
+  it('returns null when question_depth is missing (v3 contract — 5 required keys)', () => {
+    const partial = JSON.stringify({
+      accuracy: 90,
+      scaffold_fidelity: 80,
+      age_appropriateness: 95,
+      cbse_scope: 100,
+      // question_depth missing
     });
     expect(parseJudgeJson(partial)).toBeNull();
   });
@@ -141,6 +155,7 @@ describe('parseJudgeJson', () => {
       scaffold_fidelity: 80,
       age_appropriateness: 95,
       cbse_scope: 100,
+      question_depth: 40,
     });
     expect(parseJudgeJson(bad)).toBeNull();
   });
@@ -151,11 +166,13 @@ describe('parseJudgeJson', () => {
       scaffold_fidelity: -20,
       age_appropriateness: 95,
       cbse_scope: 100,
+      question_depth: 400,
     });
     const out = parseJudgeJson(bad);
     expect(out).not.toBeNull();
     expect(out!.accuracy).toBe(100);
     expect(out!.scaffold_fidelity).toBe(0);
+    expect(out!.question_depth).toBe(100);
   });
 
   it('rounds non-integer scores to int', () => {
@@ -164,10 +181,12 @@ describe('parseJudgeJson', () => {
       scaffold_fidelity: 72.3,
       age_appropriateness: 95.5,
       cbse_scope: 100,
+      question_depth: 33.4,
     });
     const out = parseJudgeJson(fractional);
     expect(out!.accuracy).toBe(88);
     expect(out!.scaffold_fidelity).toBe(72);
+    expect(out!.question_depth).toBe(33);
   });
 
   it('caps notes at 1000 chars', () => {
@@ -176,6 +195,7 @@ describe('parseJudgeJson', () => {
       scaffold_fidelity: 80,
       age_appropriateness: 95,
       cbse_scope: 100,
+      question_depth: 40,
       notes: 'x'.repeat(2000),
     });
     const out = parseJudgeJson(long);
@@ -188,6 +208,7 @@ describe('parseJudgeJson', () => {
       scaffold_fidelity: 80,
       age_appropriateness: 95,
       cbse_scope: 100,
+      question_depth: 40,
     });
     const out = parseJudgeJson(noNotes);
     expect(out).not.toBeNull();
@@ -195,13 +216,39 @@ describe('parseJudgeJson', () => {
   });
 });
 
+describe('question_depth exclusion from overallScore (v3 — scores the student, not Foxy)', () => {
+  it('overall blend is identical whatever question_depth the judge emitted', () => {
+    const base = {
+      accuracy: 90,
+      scaffold_fidelity: 80,
+      age_appropriateness: 95,
+      cbse_scope: 100,
+    };
+    const low = parseJudgeJson(JSON.stringify({ ...base, question_depth: 0 }))!;
+    const high = parseJudgeJson(JSON.stringify({ ...base, question_depth: 100 }))!;
+    // computeOverallScore's contract takes only the 4 Foxy dimensions; the
+    // parsed rubric carries question_depth alongside but it never blends.
+    expect(computeOverallScore(low)).toBe(computeOverallScore(high));
+  });
+});
+
 describe('buildJudgeSystemPrompt', () => {
-  it('lists all four rubric dimensions by name', () => {
+  it('lists all five rubric dimensions by name (v3 adds question_depth)', () => {
     const p = buildJudgeSystemPrompt();
     expect(p).toContain('accuracy');
     expect(p).toContain('scaffold_fidelity');
     expect(p).toContain('age_appropriateness');
     expect(p).toContain('cbse_scope');
+    expect(p).toContain('question_depth');
+  });
+
+  it('question_depth scores the STUDENT question and is excluded from overall quality', () => {
+    const p = buildJudgeSystemPrompt();
+    expect(p).toContain('Score the STUDENT QUESTION, not the answer');
+    expect(p).toMatch(/NOT part of the/);
+    expect(p).toMatch(/answer-fishing/);
+    // The required JSON shape carries the fifth key.
+    expect(p).toContain('"question_depth": <int 0-100>');
   });
 
   it('describes all three coach modes (socratic / answer / review)', () => {
@@ -325,6 +372,10 @@ describe('module constants', () => {
   it('exports a versioned rubric so historical signal can be filtered', () => {
     expect(typeof RUBRIC_VERSION).toBe('string');
     expect(RUBRIC_VERSION.length).toBeGreaterThan(0);
+  });
+
+  it('pins rubric v3 (question_depth wave) — bump only with a rubric change', () => {
+    expect(RUBRIC_VERSION).toBe('v3');
   });
 
   it('pins judge model to a Sonnet variant (latency-tolerant nightly cron)', () => {

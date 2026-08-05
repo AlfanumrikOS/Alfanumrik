@@ -168,6 +168,14 @@ const VALID_PAYLOADS: Record<DomainEventKind, Record<string, unknown>> = {
     generatedAt: FIXTURE_ISO,
     expiresAt: FIXTURE_ISO,
   },
+  // D12 transfer evidence (Foxy North-Star Phase 3). Observability-only.
+  'learner.transfer_evidence': {
+    studentId: FIXTURE_UUID_B,
+    sourceTopicId: FIXTURE_UUID_A, // already-solid prerequisite
+    targetTopicId: FIXTURE_UUID_C, // dependent topic student succeeded on
+    subjectCode: 'math',
+    sourceMastery: 0.82,
+  },
   'ai.foxy_session_started': {
     foxySessionId: FIXTURE_UUID_C,
     subjectCode: 'math',

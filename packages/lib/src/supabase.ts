@@ -1382,7 +1382,27 @@ export async function getQuizQuestionsV2(
         } catch {
           allowFisherInfo = false; // fail-closed: proxy_distance ranking
         }
-        const { questions: adaptiveRows, weakTopicsTargeted } = await selectAdaptiveQuestions(
+        // ── IRT SHADOW gate (ff_irt_shadow_v1 — Phase 3 E2) ──────────────────
+        // When ON, the selector scores every candidate BOTH ways (live serving
+        // path + fisher_info-forced shadow path) on rows it already fetched —
+        // zero extra I/O — and returns a divergence sample we ship to
+        // /api/telemetry/irt-shadow fire-and-forget. Serving is UNAFFECTED.
+        // FAIL-CLOSED: flag missing / read error / false → no shadow scoring.
+        // Flag seeded OFF by migration 20260809000000; evaluated per-student
+        // for deterministic percentage ramps (same convention as
+        // ff_irt_question_selection above). The telemetry route re-checks the
+        // flag server-side — this client gate is a cost gate, not a security
+        // boundary.
+        let computeShadow = false;
+        try {
+          computeShadow = await isFeatureEnabled(
+            'ff_irt_shadow_v1',
+            { userId: studentId, role: 'student' },
+          );
+        } catch {
+          computeShadow = false; // fail-closed: no shadow scoring
+        }
+        const { questions: adaptiveRows, weakTopicsTargeted, shadow } = await selectAdaptiveQuestions(
           supabase as unknown as AdaptiveClient,
           {
             studentId,
@@ -1392,12 +1412,53 @@ export async function getQuizQuestionsV2(
             irtTheta,
             excludeIds: [],
             allowFisherInfo,
+            computeShadow,
           },
         );
         if (Array.isArray(adaptiveRows) && adaptiveRows.length > 0 && weakTopicsTargeted > 0) {
           // weakTopicsTargeted is computed for observability/tests; the
           // candidates themselves are what matter for selection.
           adaptiveCandidates = adaptiveRows;
+        }
+        // ── Shadow telemetry (fire-and-forget; NEVER touches the quiz path) ──
+        // Contract (backend E2, apps/host/src/app/api/telemetry/irt-shadow):
+        //   POST { theta, nCandidates, nCalibrated, spearmanRho, top5Overlap,
+        //          top10Overlap, subject, grade } → 204.
+        // The route's zod schema requires all three divergence metrics as
+        // finite numbers, so null-metric samples (degenerate candidate sets:
+        // < 2 candidates or zero score variance) are not sent — they carry no
+        // divergence signal anyway. No studentId in the payload (the server
+        // derives it from auth; P13 — no identifiers beyond the session).
+        // keepalive so a navigation right after quiz start does not drop the
+        // beacon. Guarded for non-browser contexts; any telemetry failure is
+        // swallowed — the quiz path must be unaware.
+        if (
+          shadow &&
+          typeof fetch === 'function' &&
+          shadow.spearmanRho !== null &&
+          shadow.top5Overlap !== null &&
+          shadow.top10Overlap !== null
+        ) {
+          try {
+            void fetch('/api/telemetry/irt-shadow', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              keepalive: true,
+              body: JSON.stringify({
+                theta: shadow.theta,
+                nCandidates: shadow.nCandidates,
+                nCalibrated: shadow.nCalibrated,
+                spearmanRho: shadow.spearmanRho,
+                top5Overlap: shadow.top5Overlap,
+                top10Overlap: shadow.top10Overlap,
+                subject,
+                grade,
+              }),
+            }).catch(() => { /* telemetry is best-effort */ });
+          } catch {
+            /* telemetry failure never touches the quiz path */
+          }
         }
       }
     } catch (e) {

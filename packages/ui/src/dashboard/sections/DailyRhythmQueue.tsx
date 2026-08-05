@@ -32,12 +32,15 @@ import Link from 'next/link';
 import { useAuth } from '@alfanumrik/lib/AuthContext';
 import { trackDashboardCta } from '@alfanumrik/lib/posthog/dashboard-cta';
 // F3 (Foxy North-Star Phase 0): the SRS lane links to /quiz?mode=srs, which
-// serves due spaced_repetition_cards — but the lane count used to come from
-// concept_mastery (get_due_reviews) via /api/rhythm/today, so count and
-// content disagreed. Short-term fix: source the COUNT from the SAME shared
-// due-cards query + selection the quiz deep-link uses. Full store
-// unification is Phase 3.
-import { fetchSrsDueQuizCards, selectSrsReviewSet } from '@alfanumrik/lib/learn/srs-quiz-review';
+// serves due spaced_repetition_cards. The RAW due-cards read now comes from
+// /api/learner/srs/due (RLS-scoped, applies the shared SRS-due predicate in
+// packages/lib/src/learn/srs-predicate.ts — same predicate the quiz page
+// uses via fetchSrsDueQuizCards, so lane count and quiz content agree by
+// construction). The single-subject/dedupe selection stays client-side via
+// selectSrsReviewSet so this component and the quiz page use IDENTICAL
+// selection logic. Full store unification is Phase 3. This component no
+// longer imports the supabase browser client — enforced by construction.
+import { selectSrsReviewSet, type SrsDueCard } from '@alfanumrik/lib/learn/srs-quiz-review';
 
 interface RhythmItem {
   kind: 'srs_review' | 'zpd_problem' | 'reflection' | 'remediation_review' | 'blocked_prerequisite';
@@ -83,13 +86,30 @@ export default function DailyRhythmQueue() {
     let cancelled = false;
     (async () => {
       try {
-        // Dynamic import keeps the supabase client out of this component's
-        // module graph at load time (and out of tests that don't mock it).
-        const { supabase } = await import('@alfanumrik/lib/supabase');
-        const cards = await fetchSrsDueQuizCards(supabase, student.id);
-        // Same selection the /quiz?mode=srs deep link applies: single
-        // subject (earliest-due card's), deduped question ids. Cap at 5 —
-        // the lane renders "n/5".
+        // /api/learner/srs/due is auth-gated (progress.view_own,
+        // requireStudentId) and applies the shared SRS-due predicate over
+        // the RLS server client. `?withItems=1` returns the earliest-due
+        // rows so we can apply selectSrsReviewSet (single subject, deduped
+        // question ids, capped at 5) — the SAME selection the /quiz?mode=srs
+        // deep link uses. Only the resulting count is displayed.
+        const res = await fetch('/api/learner/srs/due?withItems=1', { credentials: 'same-origin' });
+        if (!res.ok) {
+          if (!cancelled) setSrsDueCount(null); // fail-soft → legacy count
+          return;
+        }
+        const body = (await res.json()) as {
+          success?: boolean;
+          count?: number;
+          items?: Array<{ id: string; sourceId: string | null; subject: string | null }>;
+        };
+        // Map API shape (camelCase sourceId) → SrsDueCard shape (snake_case
+        // source_id) so selectSrsReviewSet reads the same fields it reads
+        // from the shared client-side fetcher.
+        const cards: SrsDueCard[] = (body.items ?? []).map((r) => ({
+          id: r.id,
+          source_id: r.sourceId,
+          subject: r.subject,
+        }));
         const reviewSet = selectSrsReviewSet(cards, { cap: 5 });
         if (!cancelled) setSrsDueCount(reviewSet.questionIds.length);
       } catch {

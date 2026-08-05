@@ -28,8 +28,10 @@ export interface TopicMasteryRollupRow {
 /**
  * Fetch the student's per-topic mastery rollup for one subject.
  * Best-effort: any error yields [] (chapter chips fall back to 'not_started').
- * Ordered by chapter_number so downstream `.find()` matching is stable
- * (the view has no updated_at column — the old ordering does not apply).
+ * Ordered by chapter_number so downstream `.find()` matching is stable.
+ * (The view DOES expose updated_at — migration 20260808000100 projects
+ * cm.updated_at — but it is deliberately not part of this fixed column list,
+ * and chapter_number ordering is what keeps chip matching deterministic.)
  */
 export async function fetchMastery(studentId: string, subject: string): Promise<TopicMasteryRollupRow[]> {
   const { data } = await supabase

@@ -30,10 +30,10 @@
  * Client-safe: no supabase-admin import. Callers pass an RLS-scoped client.
  */
 
+import { buildSrsDueQuery, type SrsQueryClient } from './srs-predicate';
+
 /** Minimal structural view of the supabase-js client used here. */
-type QueryClient = {
-  from: (table: string) => any;
-};
+type QueryClient = SrsQueryClient;
 
 export interface SrsDueCard {
   id: string;
@@ -46,25 +46,22 @@ export interface SrsDueCard {
  * deep-link and the dashboard lane count must use (F3 agreement contract):
  * own active cards, source 'quiz_wrong_answer', a resolvable question_bank
  * source_id, next_review_date <= today, earliest due first, capped at 50.
+ *
+ * Delegates to buildSrsDueQuery (single source of the predicate; see
+ * packages/lib/src/learn/srs-predicate.ts) so the browser/client, RLS
+ * server, and cron paths cannot drift apart.
  */
 export async function fetchSrsDueQuizCards(
   client: QueryClient,
   studentId: string,
   opts: { subject?: string | null } = {},
 ): Promise<SrsDueCard[]> {
-  const todayIso = new Date().toISOString().slice(0, 10);
-  let query = client
-    .from('spaced_repetition_cards')
-    .select('id, source_id, subject')
-    .eq('student_id', studentId)
-    .eq('is_active', true)
-    .eq('source', 'quiz_wrong_answer')
-    .not('source_id', 'is', null)
-    .lte('next_review_date', todayIso)
-    .order('next_review_date', { ascending: true })
-    .limit(50);
-  if (opts.subject) query = query.eq('subject', opts.subject);
-  const { data } = await query;
+  const { data } = await buildSrsDueQuery(client, studentId, {
+    subject: opts.subject ?? null,
+    // Existing behavior: id/source_id/subject projection, capped at 50.
+    columns: 'id, source_id, subject',
+    limit: 50,
+  });
   return (data ?? []) as SrsDueCard[];
 }
 

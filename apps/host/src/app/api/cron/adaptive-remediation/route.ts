@@ -107,6 +107,8 @@ import {
   type PrerequisiteMasteryObservation,
 } from '@alfanumrik/lib/learn/blocked-prerequisite-verify-evaluation';
 import { publishEvent } from '@alfanumrik/lib/state/events/publish';
+import { XP_RULES } from '@alfanumrik/lib/xp-config';
+import { awardXpCapped } from '@alfanumrik/lib/xp-award';
 import { auditLog } from '@alfanumrik/lib/audit';
 import {
   onRemediationAssigned,
@@ -2117,6 +2119,24 @@ async function verifyCliffRow(
         });
       }
     }
+    // XP: verified recovery from an autonomous remediation (Foxy North-Star
+    // Phase 3). Amount + cap from XP_RULES (P2, never literals); the RPC owns
+    // the daily-cap clamp and reference-id idempotency (cron re-runs dedupe on
+    // `remediation_<interventionId>`). awardXpCapped never throws — an award
+    // failure can never break the verify sweep. P13: counts-only metadata.
+    await awardXpCapped(admin, {
+      studentId: row.student_id,
+      source: 'remediation_recovered',
+      amount: XP_RULES.remediation_recovered_xp,
+      dailyCap: XP_RULES.remediation_recovered_daily_cap,
+      dailyCategory: 'remediation',
+      referenceId: `remediation_${row.id}`,
+      metadata: {
+        chapterNumber: row.chapter_number,
+        recoveredMastery: Math.min(1, Math.max(0, evaluation.masteryNow ?? 0)),
+      },
+    });
+
     await onRemediationRecovered(row.student_id, {
       subjectCode: row.subject_code,
       chapterNumber: row.chapter_number,

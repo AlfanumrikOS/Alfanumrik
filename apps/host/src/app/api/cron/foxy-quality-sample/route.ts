@@ -43,6 +43,8 @@ import {
 } from '@alfanumrik/lib/foxy/quality-eval';
 import { recordCronJobHealth } from '@alfanumrik/lib/cron-job-health';
 import { verifyCronAuth, unauthorizedResponse } from '@alfanumrik/lib/cron-auth';
+import { XP_RULES } from '@alfanumrik/lib/xp-config';
+import { awardXpCapped } from '@alfanumrik/lib/xp-award';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -62,6 +64,13 @@ const SAMPLE_SIZE_MAX = 100;
 
 /** Sample window — only messages from the last 24h are eligible. */
 const SAMPLE_WINDOW_HOURS = 24;
+
+/**
+ * question_depth_score threshold for the thoughtful-question XP award
+ * (Foxy North-Star Phase 3 fixed contract). This is a QUALITY GATE, not an
+ * XP amount — the amount/cap live in XP_RULES (P2).
+ */
+const THOUGHTFUL_QUESTION_MIN_DEPTH = 75;
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 // Shared @alfanumrik/lib/cron-auth gate (Bearer / x-cron-secret, constant-time,
@@ -285,6 +294,16 @@ export async function POST(request: NextRequest): Promise<Response> {
       continue;
     }
 
+    // question_depth_score is an additive rubric dimension (Foxy North-Star
+    // Phase 3; column added by architect, judge dimension added by
+    // ai-engineer's quality-eval lane). Read defensively so this cron keeps
+    // working against a judge that doesn't emit it yet.
+    const questionDepthScore =
+      typeof (result as { questionDepthScore?: unknown }).questionDepthScore === 'number' &&
+      Number.isFinite((result as { questionDepthScore?: number }).questionDepthScore)
+        ? ((result as { questionDepthScore?: number }).questionDepthScore as number)
+        : null;
+
     const { error: insertErr } = await supabaseAdmin
       .from('foxy_quality_scores')
       .insert({
@@ -300,6 +319,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         rubric_version: result.rubricVersion,
         raw_judge_response: result.rawJudgeResponse,
         notes: result.notes,
+        question_depth_score: questionDepthScore,
       });
     if (insertErr) {
       // UNIQUE-violation race (duplicate cron fire) → silently skip; treat as
@@ -314,6 +334,26 @@ export async function POST(request: NextRequest): Promise<Response> {
       continue;
     }
     scored += 1;
+
+    // XP: thoughtful-question reward (Foxy North-Star Phase 3). Only when the
+    // judge scored the preceding question's depth >= 75. Awarded AFTER a
+    // successful insert (the UNIQUE(message_id, rubric_version) row is the
+    // natural dedupe: a duplicate-cron race skips the insert AND the award).
+    // Amount + cap from XP_RULES (P2); the RPC owns the daily-cap clamp and
+    // the `thoughtful_<messageId>` reference dedupe. awardXpCapped never
+    // throws — an award failure can never break the scoring loop.
+    if (questionDepthScore !== null && questionDepthScore >= THOUGHTFUL_QUESTION_MIN_DEPTH) {
+      await awardXpCapped(supabaseAdmin, {
+        studentId: msg.student_id,
+        source: 'thoughtful_question',
+        amount: XP_RULES.thoughtful_question_xp,
+        dailyCap: XP_RULES.thoughtful_question_daily_cap,
+        dailyCategory: 'curiosity',
+        referenceId: `thoughtful_${msg.id}`,
+        // P13: numbers only — never the question/answer text.
+        metadata: { questionDepthScore },
+      });
+    }
   }
 
   const durationMs = Date.now() - startTime;

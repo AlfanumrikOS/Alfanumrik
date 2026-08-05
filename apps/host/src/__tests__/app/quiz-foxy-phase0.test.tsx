@@ -296,11 +296,12 @@ describe('Quiz page — F8 hint_level in the submit payload', () => {
     expect(responses[0].hint_level).toBe(1); // hint revealed before answering
     expect(responses[1].question_id).toBe('q2');
     expect(responses[1].hint_level).toBe(0); // answered clean
-    // Contract shape: always present, always 0-3.
+    // Contract shape: always present, always 0-5 (widened from 0-3 in
+    // Foxy North-Star Phase 3 L5 — 5-rung Hint Ladder + DB CHECK widening).
     for (const r of responses) {
       expect(typeof r.hint_level).toBe('number');
       expect(r.hint_level).toBeGreaterThanOrEqual(0);
-      expect(r.hint_level).toBeLessThanOrEqual(3);
+      expect(r.hint_level).toBeLessThanOrEqual(5);
     }
   });
 });

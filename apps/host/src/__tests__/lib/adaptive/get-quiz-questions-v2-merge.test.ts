@@ -23,7 +23,7 @@
  * isolation.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── Mock: structured logger (no console noise, no PII path) ──────────────────
 vi.mock('@alfanumrik/lib/logger', () => ({
@@ -505,5 +505,167 @@ describe('assembleQuiz — assertion 3 (BLOCKING) count always met', () => {
 
     expect(res.questions).toHaveLength(count);
     expect(res.returnedCount).toBe(count);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3 E2 — ff_irt_shadow_v1 wiring + /api/telemetry/irt-shadow beacon
+//
+// getQuizQuestionsV2 evaluates ff_irt_shadow_v1 per-student (fail-closed),
+// passes computeShadow to the selector, and on a returned shadow sample fires
+// a fire-and-forget keepalive POST to /api/telemetry/irt-shadow. Telemetry
+// failure must never touch the quiz path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('getQuizQuestionsV2 — IRT shadow gate (ff_irt_shadow_v1) + telemetry beacon', () => {
+  const SHADOW_SAMPLE = {
+    theta: 0.4,
+    nCandidates: 12,
+    nCalibrated: 5,
+    spearmanRho: 0.82,
+    top5Overlap: 0.6667,
+    top10Overlap: 0.8,
+    servedPathCounts: { fisher_info: 0, proxy_distance: 10, uncalibrated: 2 },
+  };
+
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function flagsOn(shadowOn: boolean, fisherOn = false) {
+    isFeatureEnabledMock.mockImplementation((flag: unknown) => {
+      if (flag === 'ff_irt_shadow_v1') return Promise.resolve(shadowOn);
+      if (flag === 'ff_irt_question_selection') return Promise.resolve(fisherOn);
+      return Promise.resolve(false);
+    });
+  }
+
+  it('shadow flag ON: selector receives computeShadow: true, evaluated per-student', async () => {
+    state.flagEnabled = true;
+    state.edgeQuestions = questionRows(10, 'edge');
+    flagsOn(true);
+    selectAdaptiveQuestionsMock.mockResolvedValue({ questions: [], weakTopicsTargeted: 0 });
+
+    await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    expect(selectAdaptiveQuestionsMock.mock.calls[0][1]).toMatchObject({
+      computeShadow: true,
+    });
+    expect(isFeatureEnabledMock).toHaveBeenCalledWith(
+      'ff_irt_shadow_v1',
+      expect.objectContaining({ userId: 'student-1', role: 'student' }),
+    );
+  });
+
+  it('shadow flag OFF: computeShadow: false and NO telemetry POST', async () => {
+    state.flagEnabled = true;
+    state.edgeQuestions = questionRows(10, 'edge');
+    flagsOn(false);
+    selectAdaptiveQuestionsMock.mockResolvedValue({ questions: [], weakTopicsTargeted: 0 });
+
+    await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    expect(selectAdaptiveQuestionsMock.mock.calls[0][1]).toMatchObject({
+      computeShadow: false,
+    });
+    const telemetryCalls = fetchMock.mock.calls.filter(
+      (c: unknown[]) => c[0] === '/api/telemetry/irt-shadow',
+    );
+    expect(telemetryCalls).toHaveLength(0);
+  });
+
+  it('shadow flag read FAILURE fails closed (computeShadow: false), quiz unharmed', async () => {
+    state.flagEnabled = true;
+    state.edgeQuestions = questionRows(10, 'edge');
+    isFeatureEnabledMock.mockImplementation((flag: unknown) =>
+      flag === 'ff_irt_shadow_v1'
+        ? Promise.reject(new Error('flags down'))
+        : Promise.resolve(false),
+    );
+    selectAdaptiveQuestionsMock.mockResolvedValue({ questions: [], weakTopicsTargeted: 0 });
+
+    const out = await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    expect(selectAdaptiveQuestionsMock.mock.calls[0][1]).toMatchObject({
+      computeShadow: false,
+    });
+    expect(out).toHaveLength(10);
+  });
+
+  it('shadow sample returned → fire-and-forget POST with the exact backend contract', async () => {
+    state.flagEnabled = true;
+    state.edgeQuestions = questionRows(10, 'edge');
+    flagsOn(true);
+    selectAdaptiveQuestionsMock.mockResolvedValue({
+      questions: [],
+      weakTopicsTargeted: 0,
+      shadow: SHADOW_SAMPLE,
+    });
+
+    const out = await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+    expect(out).toHaveLength(10);
+
+    const telemetryCalls = fetchMock.mock.calls.filter(
+      (c: unknown[]) => c[0] === '/api/telemetry/irt-shadow',
+    );
+    expect(telemetryCalls).toHaveLength(1);
+    const [, init] = telemetryCalls[0] as [string, RequestInit];
+    expect(init.method).toBe('POST');
+    expect(init.keepalive).toBe(true);
+    // Exact POST contract (backend zod schema): 8 keys, no studentId (P13).
+    const body = JSON.parse(String(init.body));
+    expect(body).toEqual({
+      theta: 0.4,
+      nCandidates: 12,
+      nCalibrated: 5,
+      spearmanRho: 0.82,
+      top5Overlap: 0.6667,
+      top10Overlap: 0.8,
+      subject: 'math',
+      grade: '7',
+    });
+    expect(Object.keys(body)).not.toContain('studentId');
+  });
+
+  it('null-metric shadow samples (degenerate sets) are NOT sent (zod would 400 them)', async () => {
+    state.flagEnabled = true;
+    state.edgeQuestions = questionRows(10, 'edge');
+    flagsOn(true);
+    selectAdaptiveQuestionsMock.mockResolvedValue({
+      questions: [],
+      weakTopicsTargeted: 0,
+      shadow: { ...SHADOW_SAMPLE, spearmanRho: null },
+    });
+
+    await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    const telemetryCalls = fetchMock.mock.calls.filter(
+      (c: unknown[]) => c[0] === '/api/telemetry/irt-shadow',
+    );
+    expect(telemetryCalls).toHaveLength(0);
+  });
+
+  it('telemetry fetch REJECTION never touches the quiz result', async () => {
+    state.flagEnabled = true;
+    state.edgeQuestions = questionRows(10, 'edge');
+    flagsOn(true);
+    fetchMock.mockRejectedValue(new Error('network down'));
+    selectAdaptiveQuestionsMock.mockResolvedValue({
+      questions: [],
+      weakTopicsTargeted: 0,
+      shadow: SHADOW_SAMPLE,
+    });
+
+    const out = await getQuizQuestionsV2('math', '7', 10, 'mixed', null, ['mcq']);
+
+    expect(out).toHaveLength(10);
+    expect(out.map((q: any) => q.id)).toEqual(state.edgeQuestions!.map((q: any) => q.id));
   });
 });

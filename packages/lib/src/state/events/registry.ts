@@ -187,7 +187,9 @@ export const LearnerLearningActionSchema = EventBaseSchema.extend({
     // The concept the answer was about, when the client knows it. Nullable +
     // optional because the post-answer bar fires before any concept is bound.
     conceptId: uuidLike().nullable().optional(),
-    actionType: z.enum(['got_it', 'explain_simpler', 'show_example', 'quiz_me', 'save']),
+    // 'give_hint' | 'let_me_try' added for the Foxy hint-ladder surface
+    // (Foxy North-Star Phase 3 / wave 3b) — same non-evidential contract.
+    actionType: z.enum(['got_it', 'explain_simpler', 'show_example', 'quiz_me', 'save', 'give_hint', 'let_me_try']),
     subjectCode: z.string().nullable(),
     chapterNumber: z.number().int().nonnegative().nullable(),
   }),
@@ -339,6 +341,44 @@ export const LearnerNextActionResolvedSchema = EventBaseSchema.extend({
     // projector's row is byte-identical to the route's optimistic write.
     generatedAt:  isoDatetime(),
     expiresAt:    isoDatetime(),
+  }),
+});
+
+// D12 transfer evidence (Foxy North-Star Phase 3, backend cron producer:
+// /api/cron/build-twin-snapshots' transfer step, gated ff_prereq_gating_v1).
+// Emitted when yesterday's CORRECT response on a target concept sits on a
+// `concept_edges` edge_type='transfer' edge whose SOURCE concept the student
+// already holds at solid mastery (threshold TRANSFER_SOURCE_MASTERY_MIN owned
+// by the pure module packages/lib/src/learn/transfer-evidence.ts — never
+// re-defined here or in the cron). The canonical write is the
+// `record_transfer_evidence` RPC (migration 20260809000600); this event is
+// observability only.
+//
+//   ⚠️ BINDING learner-state contract (mirrors learner.learning_action): no
+//   subscriber may consume this event to write ANY mastery surface. Transfer
+//   evidence reaches concept_mastery ONLY through the service-role-only RPC's
+//   canonical counter — never through the bus.
+//
+// P13: payload is UUIDs + a subject code + a bounded number only.
+export const LearnerTransferEvidenceSchema = EventBaseSchema.extend({
+  kind: z.literal('learner.transfer_evidence'),
+  payload: z.object({
+    studentId: uuidLike(),
+    // curriculum_topics UUIDs — the transfer edge's endpoints, named by role
+    // so subscribers cannot invert them (a mis-binding double-credits the
+    // wrong topic). `sourceTopicId` = the already-solid prerequisite whose
+    // mastery this event evidences (matches record_transfer_evidence's
+    // p_topic_id — the row incremented in concept_mastery). `targetTopicId` =
+    // the dependent topic the student succeeded on today (matches
+    // p_from_topic_id — provenance only, not incremented). Mirrors the twin
+    // registry at supabase/functions/_shared/state-runtime/events-registry.ts.
+    sourceTopicId: uuidLike(),
+    targetTopicId: uuidLike(),
+    // Nullable: the topic pair implies subject, but the producer forwards it
+    // when known so subscribers avoid a join.
+    subjectCode: z.string().max(64).nullable(),
+    // Source-concept mastery at evidence time (0..1).
+    sourceMastery: z.number().min(0).max(1),
   }),
 });
 
@@ -900,6 +940,7 @@ export const DomainEventSchema = z.discriminatedUnion('kind', [
   LearnerStruggleObservedSchema,
   LearnerTurnClassifiedSchema,
   LearnerNextActionResolvedSchema,
+  LearnerTransferEvidenceSchema,
   FoxySessionStartedSchema,
   FoxySessionCompletedSchema,
   ParentLinkedSchema,
@@ -958,6 +999,7 @@ export const ALL_EVENT_KINDS: readonly DomainEventKind[] = [
   'learner.struggle_observed',
   'learner.turn_classified',
   'learner.next_action_resolved',
+  'learner.transfer_evidence',
   'ai.foxy_session_started',
   'ai.foxy_session_completed',
   'parent.linked_to_learner',

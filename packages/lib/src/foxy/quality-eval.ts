@@ -6,7 +6,8 @@
  * will sample N assistant messages/day, call `scoreFoxyAnswer()` for each,
  * and INSERT the result into `foxy_quality_scores`.
  *
- * The scoring rubric is 4 dimensions × 0..100:
+ * The scoring rubric is 5 judged dimensions × 0..100 (4 score FOXY; the 5th
+ * scores the STUDENT's question and is EXCLUDED from the composite):
  *   - accuracy:           does the answer agree with the cited NCERT chunks?
  *   - scaffoldFidelity:   did the model follow the coach-mode directive?
  *                         (rubric v2: ALSO scores math-format house style —
@@ -19,8 +20,16 @@
  *                         the score of a non-math answer.)
  *   - ageAppropriateness: suitable for grades 6-12?
  *   - cbseScope:          stays inside the CBSE curriculum boundary?
+ *   - questionDepth (v3): how much genuine reasoning does the STUDENT's
+ *                         question show (why/how, connecting concepts) vs
+ *                         answer-fishing? Scores the student, NOT Foxy —
+ *                         therefore NEVER blended into overallScore. It is a
+ *                         learning-behaviour signal for the North-Star
+ *                         question-depth metric. Persistable to the nullable
+ *                         foxy_quality_scores.question_depth_score column
+ *                         (migration 20260809000700).
  *
- * Composite (default weights):
+ * Composite (default weights — question_depth deliberately excluded):
  *   0.40 * accuracy + 0.30 * scaffoldFidelity + 0.20 * ageAppropriateness
  *   + 0.10 * cbseScope
  *
@@ -87,7 +96,15 @@ export interface QualityScoreOutput {
   scaffoldFidelityScore: number;    // 0..100
   ageAppropriatenessScore: number;  // 0..100
   cbseScopeScore: number;           // 0..100
-  overallScore: number;             // 0..100, weighted blend
+  /**
+   * v3: depth of the STUDENT's question (0 = pure answer-fishing, 100 = deep
+   * reasoning connecting concepts). Scores the student, not Foxy — EXCLUDED
+   * from overallScore. Persistence target: the nullable
+   * foxy_quality_scores.question_depth_score column (20260809000700); also
+   * rides in rawJudgeResponse (jsonb).
+   */
+  questionDepthScore: number;       // 0..100
+  overallScore: number;             // 0..100, weighted blend (4 Foxy dims only)
   judgeModel: string;
   rubricVersion: string;
   rawJudgeResponse: unknown;        // for spot-check via super-admin
@@ -103,7 +120,15 @@ export interface QualityScoreOutput {
 // scores filterable and re-opens recent messages for v2 scoring (the cron's
 // anti-join is per rubric_version; UNIQUE(message_id, rubric_version) keeps
 // runs idempotent).
-export const RUBRIC_VERSION = 'v2';
+// v2 → v3 (2026-08-05, Foxy North-Star Phase 3 E2): 5th judge dimension
+// `question_depth` added — it scores the STUDENT's question (reasoning /
+// why-how / connects-concepts vs answer-fishing), NOT Foxy, and is EXCLUDED
+// from overallScore (composite weights unchanged). The judge JSON contract
+// gains the required `question_depth` key; DB: additive nullable
+// foxy_quality_scores.question_depth_score column (20260809000700) — the
+// 4-dimension composite columns are unchanged. Same versioning consequence:
+// v2 history stays filterable, recent messages re-open for v3 scoring.
+export const RUBRIC_VERSION = 'v3';
 
 // Sonnet for the judge. Latency doesn't matter (nightly cron); rubric
 // fidelity does. Pinned to the same model id used elsewhere in the codebase
@@ -179,6 +204,7 @@ export async function scoreFoxyAnswer(
     scaffoldFidelityScore: parsed.scaffold_fidelity,
     ageAppropriatenessScore: parsed.age_appropriateness,
     cbseScopeScore: parsed.cbse_scope,
+    questionDepthScore: parsed.question_depth,
     overallScore,
     judgeModel: JUDGE_MODEL,
     rubricVersion: RUBRIC_VERSION,
@@ -208,6 +234,8 @@ interface JudgeRubric {
   scaffold_fidelity: number;
   age_appropriateness: number;
   cbse_scope: number;
+  /** v3: depth of the STUDENT's question — never part of overallScore. */
+  question_depth: number;
   notes?: string;
 }
 
@@ -237,12 +265,14 @@ export function parseJudgeJson(raw: string): JudgeRubric | null {
   const scaffoldFidelity = clampScore(r.scaffold_fidelity);
   const ageAppropriateness = clampScore(r.age_appropriateness);
   const cbseScope = clampScore(r.cbse_scope);
+  const questionDepth = clampScore(r.question_depth);
 
   if (
     accuracy === null ||
     scaffoldFidelity === null ||
     ageAppropriateness === null ||
-    cbseScope === null
+    cbseScope === null ||
+    questionDepth === null
   ) {
     return null;
   }
@@ -256,6 +286,7 @@ export function parseJudgeJson(raw: string): JudgeRubric | null {
     scaffold_fidelity: scaffoldFidelity,
     age_appropriateness: ageAppropriateness,
     cbse_scope: cbseScope,
+    question_depth: questionDepth,
     notes,
   };
 }
@@ -283,8 +314,9 @@ export function buildJudgeSystemPrompt(): string {
     'CBSE students in grades 6-12.',
     '',
     'You will be given a (student question, Foxy answer, optional cited',
-    'NCERT chunks, grade, subject, expected coach mode) tuple. Score the',
-    'answer on FOUR dimensions, each 0..100:',
+    'NCERT chunks, grade, subject, expected coach mode) tuple. Score FIVE',
+    'dimensions, each 0..100. Dimensions 1-4 score the ANSWER; dimension 5',
+    'scores the STUDENT QUESTION itself:',
     '',
     '  1. accuracy — Does the answer agree with the cited chunks? Penalise',
     '     hallucinations that contradict the chunks. If no citations were',
@@ -331,6 +363,20 @@ export function buildJudgeSystemPrompt(): string {
     '  4. cbse_scope — Answer stays inside the CBSE curriculum boundary',
     '     for the stated subject. Off-syllabus tangents penalise.',
     '',
+    '  5. question_depth — Score the STUDENT QUESTION, not the answer. How',
+    '     much genuine reasoning does the question show?',
+    '       High (70-100): asks WHY or HOW something works, probes causes or',
+    '         mechanisms, connects two or more concepts, proposes and tests a',
+    '         hypothesis, or follows up on a previous idea with reasoning.',
+    '       Mid (30-69): a legitimate conceptual question stated plainly',
+    '         (define X, explain Y) with no visible reasoning attempt.',
+    '       Low (0-29): answer-fishing — asks only for a final answer, a',
+    '         result to copy, homework output, or "give me the answer"-style',
+    '         requests with no interest in the underlying idea.',
+    '     This dimension measures the student, NOT Foxy. It must NOT be',
+    '     influenced by the quality of the answer, and it is NOT part of the',
+    "     answer's overall quality score.",
+    '',
     'Output ONLY a JSON object with exactly this shape:',
     '',
     '  {',
@@ -338,6 +384,7 @@ export function buildJudgeSystemPrompt(): string {
     '    "scaffold_fidelity": <int 0-100>,',
     '    "age_appropriateness": <int 0-100>,',
     '    "cbse_scope": <int 0-100>,',
+    '    "question_depth": <int 0-100>,',
     '    "notes": "<one-sentence reason for the LOWEST-scoring dimension>"',
     '  }',
     '',

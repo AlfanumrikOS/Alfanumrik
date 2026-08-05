@@ -1578,3 +1578,60 @@ REG-353 (consolidation ratchet).
 **Total catalog: 353 entries (target: 35 — TARGET EXCEEDED).**
 
 ---
+
+## REG-354 — Foxy North-Star Phase 3: XP capped-award contract (server-only RPC, per-source idempotency, IST day boundary, sum-of-lanes ≪ quiz cap) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 3 batch).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-354 | `xp_capped_award_contract` | **RPC ownership**: `award_xp_capped` in migration `20260809000300` is `SECURITY DEFINER`, `EXECUTE granted to service_role only` (NOT `authenticated`/`anon`) — browser callers can never invoke it directly. **Idempotency**: repeat calls with the same `p_reference_id` return `{idempotent_replay: true, effective_xp: 0}` — the second award is a no-op, not a double-credit; the `xp_transactions_reference_id_uniq` partial-unique index enforces it at the DB layer. **IST day boundary**: `today_earned` is scoped to `date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata')` — never UTC (P2 IST anchor, extends REG-318's mixed-anchor fix). **Sum-of-lanes ≪ quiz cap**: the three Phase-3 lane amounts (`retention_award = 6 XP/review`, `remediation_recovery_award = 15 XP`, `thoughtful_question_award = 5 XP`) sum to a daily maximum of 71 XP even under maximum plausible density, staying <<< the 200 XP `quiz_daily_cap` — pinned as literal constants in `packages/lib/src/xp-config.ts` with a comment-anchored derivation. **Browser fail-safe**: the `awardXpCapped` helper (`packages/lib/src/xp-award.ts`) never throws / never rejects; RPC error → warn-logged with counts-only metadata (P13) + returns null; malformed return → null. **Call-site XP literals**: helper takes `amount` + `dailyCap` from XP_RULES at the call site — the helper module contains no XP number. | `apps/host/src/__tests__/lib/xp-award.test.ts`; `apps/host/src/__tests__/api/learner/review-grade-xp-award.test.ts`; `apps/host/src/__tests__/api/cron/foxy-quality-thoughtful-xp.test.ts`; migration `supabase/migrations/20260809000300_xp_sources_widen_and_award_rpc.sql` | E | P2, P13 |
+
+---
+
+## REG-355 — Foxy North-Star Phase 3: hint-ladder P3 lock (rungs 2-5 refuse pre-attempt, hint_level widened 0..5, rung 5 = skip in v1) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 3 batch).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-355 | `hint_ladder_p3_lock` | **Module refuses**: `nextRung()` in `packages/lib/src/learn/hint-ladder.ts` returns `{ok: false, reason: 'locked_pre_attempt'}` when `state.currentRung === 1` and `!state.wrongAttempted` — the lock lives IN the state machine, so no UI loop can bypass it. **Rung 5 = skip**: `rungContentSpec(5, …)` returns `{source: 'skip', kind: 'skip', fields: null, transform: null}` — the v1 label is HONEST (the wave-3b UI CTA advances to `nextQuestion()`, not a same-topic evidential twin); the same-misconception evidential twin is deferred (see header TODO(L5) in hint-ladder.ts, plan-tracker record E5/L5). **hint_level widened 0..5**: `HintLevel` type = `0 | 1 | 2 | 3 | 4 | 5`; migration `20260809000400_quiz_responses_hint_level_widen_0_5.sql` widens the CHECK constraint from `IN (0,1,2,3)` to `IN (0,1,2,3,4,5)` with `USING (CASE WHEN hint_level IS NULL OR hint_level BETWEEN 0 AND 5 THEN hint_level ELSE 0 END)` clamp preserving existing rows; the regex-guard from REG-346 (`'^[0-3]$'` payload sanitiser) remains as belt-and-braces normalize-never-abort but is superseded for the accepted range. **Unhinted-mastery XP bonus keys off `hint_level === 0`** (P2 surface anchor). **UI cannot bypass**: the `HintLadder` and `PrereqSuggestion` components call `nextRung()` — they do not synthesize rung numbers. | `packages/lib/src/__tests__/learn/hint-ladder.test.ts`; `apps/host/src/__tests__/components/quiz/HintLadder.test.tsx`; migration `supabase/migrations/20260809000400_quiz_responses_hint_level_widen_0_5.sql` | E | P3, P2 |
+
+Honest gap: no live-Postgres execution of migration `20260809000400` this
+session — structural pins on the SQL text only. The Vitest tests exercise
+the pure state machine and the React component, neither of which touch the
+DB.
+
+---
+
+## REG-356 — Foxy North-Star Phase 3: transfer-evidence direction & registry parity (D12) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 3 batch — closes the assessment
+review-mandated inversion + payload-shape fix flagged during Phase 3 sign-off).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-356a | `transfer_evidence_lands_on_source` | The build-twin cron's `record_transfer_evidence` call maps `p_topic_id = rec.fromTopicId` (SOURCE — the already-solid prerequisite whose mastery is re-evidenced) and `p_from_topic_id = rec.topicId` (TARGET — today's dependent success). Getting these backwards double-credits the wrong topic. Migration `20260809000600`'s comment reads "mastery of p_topic_id evidenced indirectly from correct work in dependent p_from_topic_id" — this pin makes the mapping executable. | `apps/host/src/__tests__/api/cron/build-twin-snapshots-transfer.test.ts` | E | E6, D12 |
+| REG-356b | `transfer_evidence_payload_shape` | The `learner.transfer_evidence` bus payload uses `sourceTopicId` (= `rec.fromTopicId` = SOURCE) and `targetTopicId` (= `rec.topicId` = TARGET) — role-anchored keys, not the pure module's field names. The event schema in BOTH registries (`packages/lib/src/state/events/registry.ts` + `supabase/functions/_shared/state-runtime/events-registry.ts`) declares that shape and only that shape. The absence pin closes the assessment's "no other consumer besides journey/edge registry depended on old `sourceTopicId` names" concern: a repo-wide static scan of `apps/`, `packages/`, `supabase/functions/` confirms NO non-test source file pairs the `'learner.transfer_evidence'` kind literal with a payload literal carrying the pre-fix keys (`topicId`/`fromTopicId`). | `apps/host/src/__tests__/api/cron/build-twin-snapshots-transfer.test.ts`; `apps/host/src/__tests__/regressions/phase3-transfer-event-payload-shape.test.ts` (5 pins, incl. NEXT ↔ Deno registry parity + repo-wide absence scan) | E | P8, P13, D12 |
+
+---
+
+## REG-358 — Foxy North-Star Phase 3: SRS single predicate (one helper, count and content agree by construction) (2026-08-05)
+
+Added 2026-08-05 (testing agent, Phase 3 batch).
+
+| # | Test name | Asserts | Location | Status | Invariants |
+|---|---|---|---|---|---|
+| REG-358 | `srs_single_predicate` | `packages/lib/src/learn/srs-predicate.ts` is the ONLY helper that shapes the "due quiz-wrong-answer cards" query: `SRS_DUE_PREDICATE_DESCRIPTOR` freezes the predicate (`is_active=true`, `source='quiz_wrong_answer'`, `source_id IS NOT NULL`, `next_review_date <= today`, `ORDER BY next_review_date ASC`, `defaultLimit=50`, `hardLimit=100`); `buildSrsDueQuery(client, studentId, opts)` is called by BOTH the client-side deep-link consumer (`packages/lib/src/learn/srs-quiz-review.ts` → `fetchSrsDueQuizCards` → `selectSrsReviewSet`) AND the server-side `/api/learner/srs/due` route AND the `DailyRhythmQueue` count. The dashboard SRS lane COUNT and the quiz `/quiz?mode=srs` CONTENT cannot disagree because they resolve through the same predicate object — the drift that REG-345 pinned at the fetcher level is now closed at the predicate level. Limit clamping (1 ≤ limit ≤ 100), today-yyyy-mm-dd date rendering, and optional-subject narrowing are all owned by the helper (call sites never assemble query strings). | `apps/host/src/__tests__/lib/learn/srs-source.test.ts`; `apps/host/src/__tests__/api/learner/srs-due.test.ts`; `apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx` | E | E4, drift-prevention |
+
+---
+
+Pre-REG-354: 353 entries (through REG-353 above). Adds REG-354 (XP
+capped-award contract), REG-355 (hint-ladder P3 lock), REG-356
+(transfer-evidence direction & registry parity). REG-357 is claimed for the
+IRT shadow contract in `02-foxy-ai.md` (kept in that shard to sit next to
+the other IRT/AI observability pins — REG-311/316). REG-358 (SRS single
+predicate) is above. Continuous through REG-358.
+**Total catalog: 358 entries (target: 35 — TARGET EXCEEDED).**
+
+---

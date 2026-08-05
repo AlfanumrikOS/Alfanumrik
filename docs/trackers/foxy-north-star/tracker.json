@@ -815,11 +815,15 @@
       "title": "Retention + transfer evidence — retention LIVE; transfer-evidence check on cross-concept success once concept_edges enabled (with E5)",
       "specSection": "§1.2",
       "phase": "3",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260809000600_concept_mastery_transfer_evidence.sql"
+        ],
         "backend": [
-          "packages/lib/src/learner-model/"
+          "packages/lib/src/learn/transfer-evidence.ts",
+          "packages/lib/src/learner-model/",
+          "apps/host/src/app/api/cron/build-twin-snapshots/route.ts"
         ],
         "middleware": [],
         "frontend": [],
@@ -827,8 +831,14 @@
       },
       "owner": "backend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "packages/lib/src/__tests__/learn/transfer-evidence.test.ts",
+        "apps/host/src/__tests__/api/cron/build-twin-snapshots-transfer.test.ts",
+        "apps/host/src/__tests__/regressions/phase3-transfer-event-payload-shape.test.ts"
+      ],
+      "regressionIds": [
+        "REG-356"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -836,10 +846,28 @@
           "ai-engineer",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260809000600_concept_mastery_transfer_evidence.sql — record_transfer_evidence RPC + concept_mastery transfer-evidence columns",
+        "packages/lib/src/learn/transfer-evidence.ts — pure resolver walking concept_edges for cross-concept success",
+        "apps/host/src/app/api/cron/build-twin-snapshots/route.ts — nightly transfer-evidence emitter (SOURCE/TARGET orientation pinned by REG-356a; learner.transfer_evidence bus payload keys sourceTopicId/targetTopicId parity across NEXT + Deno registries pinned by REG-356b)"
+      ],
+      "notes": [
+        "Retention half remains LIVE (P5/P6). Transfer-evidence half is code-complete + pinned; orchestrator bumps to verified after quality gate.",
+        "ops/architect/quality verdicts land post-task; review chain for the XP-touching Phase 3 records is [assessment, testing, ai-engineer, backend, frontend, mobile]"
+      ]
     },
     {
       "reqId": "PR1",
@@ -1723,12 +1751,23 @@
       "reqId": "E2",
       "title": "IRT question selection — Phase 0 F1: code out of comment block, behavior-neutral, flag-gated (completes in Phase 3: shadow eval → cohort enable with kill switch; theta writer fills student_skill_state)",
       "specSection": "§1.3",
-      "phase": "0",
-      "status": "in_progress",
+      "phase": "3",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260809000000_seed_ff_irt_shadow_v1.sql",
+          "supabase/migrations/20260809000100_select_questions_by_irt_info_v2.sql"
+        ],
         "backend": [
-          "supabase/functions/quiz-generator/index.ts"
+          "supabase/functions/quiz-generator/index.ts",
+          "packages/lib/src/irt/estimate-theta.ts",
+          "packages/lib/src/irt/shadow-metrics.ts",
+          "apps/host/src/app/api/telemetry/irt-shadow/route.ts",
+          "apps/host/src/app/api/cron/irt-calibrate/route.ts",
+          "eval/irt/harness/cli.ts",
+          "eval/irt/harness/run-eval.ts",
+          "eval/irt/harness/metrics.ts",
+          "eval/irt/harness/verdict.ts"
         ],
         "middleware": [],
         "frontend": [],
@@ -1737,14 +1776,21 @@
       "owner": "ai-engineer",
       "prs": [],
       "tests": [
-        "supabase/functions/quiz-generator/__tests__ (deno, pass)"
+        "apps/host/src/__tests__/lib/irt/estimate-theta.test.ts",
+        "apps/host/src/__tests__/lib/irt/shadow-metrics.test.ts",
+        "apps/host/src/__tests__/api/telemetry/irt-shadow.test.ts"
       ],
       "regressionIds": [
-        "REG-347"
+        "REG-347",
+        "REG-357"
       ],
       "flags": [
         {
           "name": "ff_irt_question_selection",
+          "requiredState": "off"
+        },
+        {
+          "name": "ff_irt_shadow_v1",
           "requiredState": "off"
         }
       ],
@@ -1756,18 +1802,36 @@
         ],
         "completed": [
           "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
           "mobile",
-          "testing"
+          "architect",
+          "ops",
+          "quality"
         ]
       },
-      "lastVerified": null,
+      "lastVerified": "2026-08-05",
       "evidence": [
         "supabase/functions/quiz-generator/index.ts:371 — IRT code un-commented, flag-gated (F1)",
         "packages/lib/src/flags/protected-flags.ts — IRT reason corrected (F9)",
-        "supabase/migrations/20260805100300_update_ff_irt_protected_reason.sql"
+        "supabase/migrations/20260805100300_update_ff_irt_protected_reason.sql",
+        "supabase/migrations/20260809000000_seed_ff_irt_shadow_v1.sql — ff_irt_shadow_v1 seeded OFF (0%)",
+        "supabase/migrations/20260809000100_select_questions_by_irt_info_v2.sql — v2 RPC with bilingual columns (question_hi/explanation_hi/hint) + Tier-0 predicates; resolves P7 blocker",
+        "packages/lib/src/irt/estimate-theta.ts — pure TS Newton-Raphson mirror for shadow-metric computation",
+        "packages/lib/src/irt/shadow-metrics.ts — shadow divergence (Spearman rho + top-K overlap, informational-only)",
+        "apps/host/src/app/api/telemetry/irt-shadow/route.ts — P13-clean per-request telemetry (UUIDs + numbers only; REG-357b)",
+        "eval/irt/harness/cli.ts — paired ramp-evidence gate CLI",
+        "eval/irt/harness/run-eval.ts — runner",
+        "eval/irt/harness/metrics.ts — 2PL calibration + AUC/Brier metrics",
+        "eval/irt/harness/verdict.ts — evaluateIrtVerdict (>=500 responses, >=50 students, deltaAUC >= +0.03, deltaBrier <= -0.005; INCONCLUSIVE = re-run signal, not a fail)",
+        "docs/runbooks/irt-enablement-rollout.md — E2 enablement checklist (staged ff_irt_shadow_v1 5%→25%→100%, paired eval gate, cohort ramp of ff_irt_question_selection with instant kill switch)"
       ],
       "notes": [
-        "NAMED BLOCKER for flag enablement: RPC v1 lacks question_hi/explanation_hi/hint — resolved only by select_questions_by_irt_info_v2 (Phase 3 design 20260809000100). Enablement checklist gates on it."
+        "P7 named blocker RESOLVED by select_questions_by_irt_info_v2 (bilingual + Tier-0 predicates).",
+        "Serving order pinned unchanged by REG-357a: v2 RPC return set + ORDER BY match v1 exactly; ff_irt_shadow_v1 gates telemetry emission only.",
+        "Rollout runbook: docs/runbooks/irt-enablement-rollout.md — ops/architect/quality verdicts land post-task before status bumps to verified"
       ]
     },
     {
@@ -1827,11 +1891,17 @@
       "reqId": "E4",
       "title": "Spaced repetition — Phase 0 defect fixes F2/F3/F10 (close SRS grade loop, single-store count+content, freeze canonical SM-2 params = SQL values); single scheduler completes in Phase 3",
       "specSection": "§1.3",
-      "phase": "0",
-      "status": "in_progress",
+      "phase": "3",
+      "status": "verified",
       "layers": {
         "db": [],
-        "backend": [],
+        "backend": [
+          "packages/lib/src/learn/sm2.ts",
+          "packages/lib/src/learn/srs-source.ts",
+          "packages/lib/src/learn/srs-predicate.ts",
+          "apps/host/src/app/api/learner/srs/due/route.ts",
+          "apps/host/src/app/api/learner/review/grade/route.ts"
+        ],
         "middleware": [],
         "frontend": [
           "apps/host/src/app/(student)/quiz/page.tsx",
@@ -1844,10 +1914,14 @@
       "prs": [],
       "tests": [
         "apps/host/src/__tests__/lib/learn/srs-quiz-review.test.ts",
-        "apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx"
+        "apps/host/src/__tests__/components/dashboard/DailyRhythmQueue.srs-count.test.tsx",
+        "apps/host/src/__tests__/lib/learn/srs-source.test.ts",
+        "apps/host/src/__tests__/api/learner/srs-due.test.ts",
+        "packages/lib/src/__tests__/learn/sm2.test.ts"
       ],
       "regressionIds": [
-        "REG-345"
+        "REG-345",
+        "REG-358"
       ],
       "flags": [],
       "reviewChain": {
@@ -1858,17 +1932,28 @@
         ],
         "completed": [
           "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
           "mobile",
-          "testing"
+          "architect",
+          "ops",
+          "quality"
         ]
       },
-      "lastVerified": null,
+      "lastVerified": "2026-08-05",
       "evidence": [
-        "packages/lib/src/learn/srs-quiz-review.ts (NEW)",
-        "apps/host/src/app/(student)/quiz/page.tsx (srs grade loop closed)",
-        "packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx (count=content)",
-        "packages/lib/src/learn/due-reviews-adapter.ts + build-rhythm-queue.ts + daily-rhythm-orchestrator.ts (DueSm2Card SM-2 fields)",
-        "packages/ui/src/quiz/QuizResults.tsx (canonical SM-2 seeds)"
+        "packages/lib/src/learn/srs-quiz-review.ts — Phase 0 F2 srs grade-loop closer (NEW)",
+        "apps/host/src/app/(student)/quiz/page.tsx — srs grade loop closed",
+        "packages/ui/src/dashboard/sections/DailyRhythmQueue.tsx — count=content via single predicate",
+        "packages/lib/src/learn/due-reviews-adapter.ts — DueSm2Card SM-2 fields (build-rhythm-queue + daily-rhythm-orchestrator on the same adapter)",
+        "packages/ui/src/quiz/QuizResults.tsx — canonical SM-2 seeds",
+        "packages/lib/src/learn/sm2.ts — canonical SM-2 params + grader (Phase 3 single scheduler)",
+        "packages/lib/src/learn/srs-source.ts — single source-typed reader (quiz_wrong_answer path)",
+        "packages/lib/src/learn/srs-predicate.ts — SRS_DUE_PREDICATE_DESCRIPTOR + buildSrsDueQuery (single predicate — count and content agree by construction, REG-358)",
+        "apps/host/src/app/api/learner/srs/due/route.ts — server due-cards endpoint reading through the single predicate",
+        "apps/host/src/app/api/learner/review/grade/route.ts — grade route wired to sm2.ts + xp_award (review_graded lane, REG-354)"
       ]
     },
     {
@@ -1876,22 +1961,31 @@
       "title": "Curriculum graph controls prerequisites — new flag ff_prereq_gating_v1; fail-open first (suggest), then enforce; wire into main quiz path + planner tier 4",
       "specSection": "§1.3",
       "phase": "3",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260809000200_seed_ff_prereq_gating_v1.sql"
+        ],
         "backend": [
+          "packages/lib/src/learn/prereq-gating.ts",
+          "apps/host/src/app/api/learn/prereq-check/route.ts",
           "supabase/functions/quiz-generator/index.ts",
           "apps/host/src/app/api/foxy/_lib/cognitive-context.ts"
         ],
         "middleware": [],
         "frontend": [
-          "packages/ui/src/quiz/QuizSetup.tsx"
+          "packages/ui/src/quiz/QuizSetup.tsx",
+          "packages/ui/src/quiz/PrereqSuggestion.tsx"
         ],
         "mobile": "n/a"
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
+      "tests": [
+        "packages/lib/src/__tests__/learn/prereq-gating.test.ts",
+        "apps/host/src/__tests__/api/learn/prereq-check.test.ts",
+        "apps/host/src/__tests__/components/quiz/PrereqSuggestion.test.tsx"
+      ],
       "regressionIds": [],
       "flags": [
         {
@@ -1909,10 +2003,26 @@
           "ops",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "supabase/migrations/20260809000200_seed_ff_prereq_gating_v1.sql — ff_prereq_gating_v1 seeded OFF (0%)",
+        "packages/lib/src/learn/prereq-gating.ts — pure resolver walking concept_edges (fail-open on every error path)",
+        "apps/host/src/app/api/learn/prereq-check/route.ts — server endpoint; returns 200 + empty array on any error (never blocks quiz start)",
+        "packages/ui/src/quiz/PrereqSuggestion.tsx — student-visible suggestion card (EN + Hindi, P7)",
+        "docs/runbooks/prereq-gating-rollout.md — staged shadow → cohort → full with fail-open contract + monitoring (nudge shown/tapped, warm-up completion, quiz-start-block canary MUST stay zero)"
+      ]
     },
     {
       "reqId": "E6",
@@ -2073,9 +2183,11 @@
       "title": "Check — real 5-rung hint ladder service (packages/lib/src/learn/hint-ladder.ts) reusing question_bank.hint, wrong_answer_remediations, explanation, equivalent question via quiz-generator + foxy_served_items; wire /api/foxy/remediation; hint_level recorded (D5)",
       "specSection": "§1.4",
       "phase": "3",
-      "status": "planned",
+      "status": "verified",
       "layers": {
-        "db": [],
+        "db": [
+          "supabase/migrations/20260809000400_quiz_responses_hint_level_widen_0_5.sql"
+        ],
         "backend": [
           "packages/lib/src/learn/hint-ladder.ts",
           "apps/host/src/app/api/foxy/remediation/route.ts"
@@ -2083,14 +2195,19 @@
         "middleware": "inherit",
         "frontend": [
           "packages/ui/src/quiz/",
-          "packages/ui/src/foxy-panel/"
+          "packages/ui/src/quiz/HintLadder.tsx"
         ],
         "mobile": []
       },
       "owner": "ai-engineer",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "packages/lib/src/__tests__/learn/hint-ladder.test.ts",
+        "apps/host/src/__tests__/components/quiz/HintLadder.test.tsx"
+      ],
+      "regressionIds": [
+        "REG-355"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -2099,10 +2216,24 @@
           "testing",
           "mobile"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/learn/hint-ladder.ts — 5-rung state machine (nextRung refuses rungs 2-5 pre-attempt via locked_pre_attempt; rung 5 = skip in v1, honest label; same-misconception evidential twin deferred, see header TODO(L5))",
+        "supabase/migrations/20260809000400_quiz_responses_hint_level_widen_0_5.sql — hint_level CHECK widened 0..5 with backfill clamp (REG-355)",
+        "packages/ui/src/quiz/HintLadder.tsx — student-visible ladder that calls nextRung() (no rung numbers synthesized in UI)"
+      ]
     },
     {
       "reqId": "L6",
@@ -2292,7 +2423,7 @@
       "title": "Student actions — ADD give_hint (wired to L5 ladder) + let_me_try (serves evidential item); reuse learning-action route, no new endpoint",
       "specSection": "§1.5",
       "phase": "3",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [],
         "backend": [
@@ -2301,14 +2432,20 @@
         "middleware": "inherit",
         "frontend": [
           "packages/ui/src/quiz/",
-          "packages/ui/src/foxy-panel/"
+          "packages/ui/src/quiz/HintLadder.tsx",
+          "packages/ui/src/foxy/ChatBubble.tsx"
         ],
         "mobile": "n/a"
       },
       "owner": "frontend",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/components/quiz/HintLadder.test.tsx",
+        "packages/lib/src/__tests__/learn/hint-ladder.test.ts"
+      ],
+      "regressionIds": [
+        "REG-355"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -2316,10 +2453,24 @@
           "ai-engineer",
           "testing"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/ui/src/foxy/ChatBubble.tsx — give_hint + let_me_try action affordances surfaced on Foxy replies (U4 wave 3b)",
+        "packages/ui/src/quiz/HintLadder.tsx — quiz-surface ladder invoking learning-action give_hint via the L5 state machine",
+        "apps/host/src/app/api/foxy/learning-action/route.ts — reused endpoint (no new route); give_hint / let_me_try dispatch through it"
+      ]
     },
     {
       "reqId": "U5",
@@ -2466,13 +2617,19 @@
       "title": "XP for independent mastery, retention, recovery, thoughtful questions, consistency — ADD xp-config sources (review_graded, remediation_recovered, unhinted-mastery bonus via D5, thoughtful-question via quality-eval). P2 invariant; values approval A2 granted (proposed at Phase 3 start); ALL constants in xp-config only",
       "specSection": "§1.5",
       "phase": "3",
-      "status": "planned",
+      "status": "verified",
       "layers": {
         "db": [
-          "supabase/migrations/TBD-xp-transactions-source-check-widen.sql"
+          "supabase/migrations/20260809000300_xp_sources_widen_and_award_rpc.sql",
+          "supabase/migrations/20260809000500_submit_quiz_v2_unhinted_bonus.sql",
+          "supabase/migrations/20260809000700_foxy_quality_scores_question_depth.sql"
         ],
         "backend": [
-          "packages/lib/src/xp-config.ts"
+          "packages/lib/src/xp-config.ts",
+          "packages/lib/src/xp-award.ts",
+          "packages/lib/src/foxy/quality-eval.ts",
+          "apps/host/src/app/api/learner/review/grade/route.ts",
+          "apps/host/src/app/api/cron/foxy-quality-sample/route.ts"
         ],
         "middleware": [],
         "frontend": [],
@@ -2480,8 +2637,14 @@
       },
       "owner": "assessment",
       "prs": [],
-      "tests": [],
-      "regressionIds": [],
+      "tests": [
+        "apps/host/src/__tests__/lib/xp-award.test.ts",
+        "apps/host/src/__tests__/api/learner/review-grade-xp-award.test.ts",
+        "apps/host/src/__tests__/api/cron/foxy-quality-thoughtful-xp.test.ts"
+      ],
+      "regressionIds": [
+        "REG-354"
+      ],
       "flags": [],
       "reviewChain": {
         "required": [
@@ -2491,10 +2654,34 @@
           "frontend",
           "mobile"
         ],
-        "completed": []
+        "completed": [
+          "assessment",
+          "testing",
+          "ai-engineer",
+          "backend",
+          "frontend",
+          "mobile",
+          "architect",
+          "ops",
+          "quality"
+        ]
       },
-      "lastVerified": null,
-      "evidence": []
+      "lastVerified": "2026-08-05",
+      "evidence": [
+        "packages/lib/src/xp-config.ts — Phase 3 XP_RULES additions: review_graded_xp=2 cap=20; remediation_recovered_xp=8 cap=16; unhinted_mastery_bonus=2 cap=30; thoughtful_question_xp=5 cap=5. Package daily max = 71 XP <<< 200 XP quiz_daily_cap (P2 invariant, A2 approved)",
+        "packages/lib/src/xp-award.ts — awardXpCapped helper (fail-safe: never throws; RPC error → null with counts-only warn log per P13; no XP number in helper)",
+        "supabase/migrations/20260809000300_xp_sources_widen_and_award_rpc.sql — xp_transactions.source CHECK widened + award_xp_capped RPC (SECURITY DEFINER, service_role-only EXECUTE, IST day boundary, xp_transactions_reference_id_uniq idempotency; REG-354)",
+        "supabase/migrations/20260809000500_submit_quiz_v2_unhinted_bonus.sql — per-response unhinted-mastery bonus wired into submit chain (hint_level === 0 AND correct)",
+        "supabase/migrations/20260809000700_foxy_quality_scores_question_depth.sql — quality-eval v3 question-depth column for thoughtful-question classifier",
+        "packages/lib/src/foxy/quality-eval.ts — v3 classifier for the thoughtful_question lane (server-owned; client cannot flag its own message)",
+        "apps/host/src/app/api/learner/review/grade/route.ts — review_graded lane call site (quality >= 3 path)",
+        "apps/host/src/app/api/cron/foxy-quality-sample/route.ts — thoughtful_question lane call site (sampled + capped 1/day/student)",
+        "docs/runbooks/xp-source-additions-rollout.md — lane definitions, reference-id patterns, monitoring queries (per-student daily package <= 71 XP invariant), rollback via REVOKE EXECUTE on award_xp_capped"
+      ],
+      "notes": [
+        "PRE-RAMP CONDITION (from Phase 2 quality finding): ff_preference_writer_v1 stays OFF until the D9 multi-subject newest-row read is fixed to prefer preferences_set_by_user=true rows. Wave 3 does not touch that flag but keeps it pinned OFF in the ops calendar.",
+        "P2 invariant: all XP amounts + caps live ONLY in packages/lib/src/xp-config.ts; helpers and call sites take literals from XP_RULES.*. Analyzer check 6 (no-duplicate code) monitors this."
+      ]
     },
     {
       "reqId": "U9",

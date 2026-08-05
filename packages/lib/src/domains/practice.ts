@@ -133,6 +133,10 @@ export async function listDueCards(
     .from('spaced_repetition_cards')
     .select(CARD_COLUMNS)
     .eq('student_id', studentId)
+    // E4 fix (Foxy North-Star Phase 3): mirror the get_review_cards RPC
+    // predicate — soft-deleted (is_active = false) cards are never due.
+    // Historically missing here; pinned by the srs-source parity test.
+    .eq('is_active', true)
     .lte('next_review_date', today)
     .order('next_review_date', { ascending: true })
     .limit(limit);
@@ -208,6 +212,9 @@ export async function countDueByStudent(
     .from('spaced_repetition_cards')
     .select('subject')
     .eq('student_id', studentId)
+    // E4 fix: mirror the get_review_cards RPC predicate — never count
+    // soft-deleted (is_active = false) cards toward the due total.
+    .eq('is_active', true)
     .lte('next_review_date', today);
 
   if (error) {

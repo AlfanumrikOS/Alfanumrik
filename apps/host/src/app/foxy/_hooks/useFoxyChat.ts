@@ -519,7 +519,11 @@ export interface FoxySendPayload {
 export interface LearningActionInput {
   /** Persisted DB uuid of the assistant message (ChatMessage.persistedMessageId). */
   messageId: string;
-  actionType: 'got_it' | 'explain_simpler' | 'show_example' | 'quiz_me' | 'save';
+  // Foxy North-Star Phase 3 (U4) — coaching actions widened 2026-08-05 to
+  // mirror the ChatBubble LearningActionType, the `learner.learning_action`
+  // event registry enum, and the /api/foxy/learning-action VALID_ACTIONS
+  // validator. Telemetry-only (no XP / no mastery).
+  actionType: 'got_it' | 'explain_simpler' | 'show_example' | 'quiz_me' | 'save' | 'give_hint' | 'let_me_try';
   sessionId?: string | null;
   conceptId?: string | null;
   subjectCode?: string | null;
